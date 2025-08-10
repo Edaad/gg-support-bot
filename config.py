@@ -13,7 +13,7 @@ ADMIN_USER_IDS = [
     # 987654321,
     493310710,  # edaad personal
     6713100304,  # rtsupport
-    8318575265,  # ccsupport
+    8318575265,  # ccsupport #
 ]
 
 # You can also add comments to track who each ID belongs to:
