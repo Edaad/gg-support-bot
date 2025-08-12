@@ -214,6 +214,7 @@ async def delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del user_cmds[name]
         save_data()
         await update.message.reply_text(f"Deleted /{name}.")
+        await update_user_commands_menu(context.bot, uid)
     else:
         await update.message.reply_text(f"You don't have a /{name} command.")
 
@@ -275,9 +276,6 @@ async def set_get_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     name = context.user_data.get("pending_cmd_name")
     if not name:
-        await update.message.reply_text(
-            "Hmm, I lost the command name. Please /set again."
-        )
         return ConversationHandler.END
 
     uid = update.effective_user.id
@@ -285,37 +283,22 @@ async def set_get_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Handle photo message
     if update.message.photo:
-        # Get the largest photo
+        # Save photo command
         photo = update.message.photo[-1]
+        file_id = photo.file_id
         caption = update.message.caption or ""
-
-        user_cmds[name] = {
-            "type": "photo",
-            "file_id": photo.file_id,
-            "caption": caption,
-        }
+        user_cmds[name] = {"type": "photo", "file_id": file_id, "caption": caption}
         save_data()
-
-        await update.message.reply_text(
-            f"Done! /{name} has been saved as a photo command. Try it now: /{name}"
-        )
-
-    # Handle text message
+        await update.message.reply_text(f"Saved /{name} (photo command).")
+        await update_user_commands_menu(context.bot, uid)
     elif update.message.text:
-        msg = update.message.text
-
-        user_cmds[name] = {"type": "text", "content": msg}
+        # Save text command
+        user_cmds[name] = update.message.text
         save_data()
-
-        await update.message.reply_text(
-            f"Done! /{name} has been saved for you. Try it now: /{name}"
-        )
-
+        await update.message.reply_text(f"Saved /{name}.")
+        await update_user_commands_menu(context.bot, uid)
     else:
-        await update.message.reply_text(
-            "Please send either a text message or a photo. Send /cancel to abort."
-        )
-        return SET_MESSAGE
+        await update.message.reply_text("Please send text or a photo for your command.")
 
     context.user_data.pop("pending_cmd_name", None)
     return ConversationHandler.END
