@@ -99,6 +99,30 @@ async def update_user_commands_menu(bot, uid: int) -> None:
         print(f"Failed to update commands menu for user {uid}: {e}")
 
 
+async def update_group_commands_menu(bot, chat_id: int, user_id: int) -> None:
+    """
+    Sets the command menu for a group chat, using the commands of the user who created the group (or triggered the update).
+    """
+    try:
+        user_cmds = get_user_dict(user_id)
+        # System commands
+        commands = [
+            BotCommand("start", "What I can do"),
+            BotCommand("help", "What I can do"),
+            BotCommand("set", "Create your own command"),
+            BotCommand("mycmds", "List your commands"),
+            BotCommand("delete", "Delete a command"),
+            BotCommand("whoami", "Show your user ID"),
+        ]
+        # Add user's custom commands
+        for cmd_name, cmd_data in sorted(user_cmds.items()):
+            commands.append(BotCommand(cmd_name, "Custom command"))
+        scope = BotCommandScopeChat(chat_id=chat_id)
+        await bot.set_my_commands(commands, scope=scope)
+    except Exception as e:
+        print(f"Failed to update group commands menu for chat {chat_id}: {e}")
+
+
 def load_data() -> None:
     global USER_COMMANDS
     if os.path.exists(DATA_FILE):
@@ -155,6 +179,11 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /whoami — show your user ID\n\n"
         "After you add a command, just type /<name> to use it."
     )
+    # If in a group chat, update group menu for this user
+    if update.effective_chat and update.effective_chat.type in ["group", "supergroup"]:
+        await update_group_commands_menu(
+            context.bot, update.effective_chat.id, update.effective_user.id
+        )
 
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -215,6 +244,12 @@ async def delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_data()
         await update.message.reply_text(f"Deleted /{name}.")
         await update_user_commands_menu(context.bot, uid)
+        # If in a group chat, update group menu for this user
+        if update.effective_chat and update.effective_chat.type in [
+            "group",
+            "supergroup",
+        ]:
+            await update_group_commands_menu(context.bot, update.effective_chat.id, uid)
     else:
         await update.message.reply_text(f"You don't have a /{name} command.")
 
@@ -299,6 +334,10 @@ async def set_get_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update_user_commands_menu(context.bot, uid)
     else:
         await update.message.reply_text("Please send text or a photo for your command.")
+
+    # If in a group chat, update group menu for this user
+    if update.effective_chat and update.effective_chat.type in ["group", "supergroup"]:
+        await update_group_commands_menu(context.bot, update.effective_chat.id, uid)
 
     context.user_data.pop("pending_cmd_name", None)
     return ConversationHandler.END
