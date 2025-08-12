@@ -9,6 +9,7 @@ import argparse
 from typing import Dict, Set, Tuple, Optional, List
 
 from telegram import Update, BotCommand
+from telegram import BotCommandScopeChat
 from config import ADMIN_USER_IDS
 from telegram.ext import (
     ApplicationBuilder,
@@ -49,6 +50,53 @@ CMD_NAME_RE = re.compile(r"^[A-Za-z0-9_]{1,32}$")  # Telegram command naming rul
 
 def is_allowed(uid: int) -> bool:
     return not ALLOWED_USER_IDS or uid in ALLOWED_USER_IDS
+
+
+# Update the Telegram menu for a specific user to show their personal commands
+async def update_user_commands_menu(bot, uid: int) -> None:
+    try:
+        user_cmds = get_user_dict(uid)
+        # System commands
+        commands = [
+            BotCommand("start", "What I can do"),
+            BotCommand("help", "What I can do"),
+            BotCommand("set", "Create your own command"),
+            BotCommand("mycmds", "List your commands"),
+            BotCommand("delete", "Delete a command"),
+            BotCommand("whoami", "Show your user ID"),
+        ]
+        # Add user's custom commands
+        for cmd_name, cmd_data in sorted(user_cmds.items()):
+            if isinstance(cmd_data, dict):
+                cmd_type = cmd_data.get("type", "text")
+                if cmd_type == "photo":
+                    description = "📷 Photo command"
+                else:
+                    content = cmd_data.get("content", "")
+                    description = (
+                        (
+                            content.splitlines()[0][:50] + "..."
+                            if len(content) > 50
+                            else content.splitlines()[0]
+                        )
+                        if content
+                        else "Custom command"
+                    )
+            else:
+                description = (
+                    (
+                        cmd_data.splitlines()[0][:50] + "..."
+                        if len(cmd_data) > 50
+                        else cmd_data.splitlines()[0]
+                    )
+                    if cmd_data
+                    else "Custom command"
+                )
+            commands.append(BotCommand(cmd_name, description))
+        scope = BotCommandScopeChat(chat_id=uid)
+        await bot.set_my_commands(commands, scope=scope)
+    except Exception as e:
+        print(f"Failed to update commands menu for user {uid}: {e}")
 
 
 def load_data() -> None:
@@ -340,16 +388,16 @@ async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def post_init(app):
-    # Public menu just shows core helpers; per-user commands aren’t added to the bot menu.
-    cmds = [
-        # BotCommand("start", "What I can do"),
-        # BotCommand("help", "What I can do"),
-        # BotCommand("set", "Create your own command"),
-        # BotCommand("mycmds", "List your commands"),
-        # BotCommand("delete", "Delete a command"),
-        # BotCommand("whoami", "Show your user ID"),
-    ]
-    await app.bot.set_my_commands(cmds)
+    # Clear global commands - we'll set per-user commands instead
+    await app.bot.set_my_commands([])
+    # Initialize command menus for existing users
+    for user_id_str in USER_COMMANDS.keys():
+        try:
+            user_id = int(user_id_str)
+            if is_allowed(user_id):
+                await update_user_commands_menu(app.bot, user_id)
+        except Exception as e:
+            print(f"Failed to update menu for user {user_id_str}: {e}")
 
 
 def main():
