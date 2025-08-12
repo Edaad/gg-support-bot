@@ -22,7 +22,7 @@ from telegram.ext import (
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CONFIG
-
+# test-deploy
 # Admin user IDs are now loaded from config.py
 # Edit config.py to add/remove admin users
 ALLOWED_USER_IDS: Set[int] = set(ADMIN_USER_IDS)
