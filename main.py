@@ -25,9 +25,10 @@ from telegram.ext import (
 # ──────────────────────────────────────────────────────────────────────────────
 # DATABASE FUNCTIONS
 
+
 def get_db_connection():
     """Get database connection from Heroku DATABASE_URL or fallback to local"""
-    database_url = os.getenv('DATABASE_URL')
+    database_url = os.getenv("DATABASE_URL")
     if database_url:
         # Parse Heroku DATABASE_URL
         url = urlparse(database_url)
@@ -36,12 +37,13 @@ def get_db_connection():
             user=url.username,
             password=url.password,
             host=url.hostname,
-            port=url.port
+            port=url.port,
         )
     else:
         # Fallback to local database or create in-memory storage
         print("No DATABASE_URL found, using JSON file fallback")
         return None
+
 
 def init_database():
     """Initialize the database tables"""
@@ -49,10 +51,11 @@ def init_database():
         conn = get_db_connection()
         if not conn:
             return  # Will use JSON fallback
-        
+
         with conn:
             with conn.cursor() as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS user_commands (
                         user_id BIGINT NOT NULL,
                         command_name VARCHAR(32) NOT NULL,
@@ -63,11 +66,13 @@ def init_database():
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         PRIMARY KEY (user_id, command_name)
                     )
-                """)
+                """
+                )
         conn.close()
         print("Database initialized successfully")
     except Exception as e:
         print(f"Database initialization failed: {e}")
+
 
 def load_user_commands_from_db():
     """Load all user commands from database into USER_COMMANDS dict"""
@@ -78,23 +83,25 @@ def load_user_commands_from_db():
             # Fallback to JSON file
             load_data_from_file()
             return
-        
+
         USER_COMMANDS = {}
         with conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT user_id, command_name, command_type, content, file_id, caption FROM user_commands")
+                cur.execute(
+                    "SELECT user_id, command_name, command_type, content, file_id, caption FROM user_commands"
+                )
                 for row in cur.fetchall():
                     user_id, cmd_name, cmd_type, content, file_id, caption = row
                     user_id_str = str(user_id)
-                    
+
                     if user_id_str not in USER_COMMANDS:
                         USER_COMMANDS[user_id_str] = {}
-                    
-                    if cmd_type == 'photo':
+
+                    if cmd_type == "photo":
                         USER_COMMANDS[user_id_str][cmd_name] = {
                             "type": "photo",
                             "file_id": file_id,
-                            "caption": caption or ""
+                            "caption": caption or "",
                         }
                     else:
                         USER_COMMANDS[user_id_str][cmd_name] = content
@@ -105,6 +112,7 @@ def load_user_commands_from_db():
         # Fallback to JSON file
         load_data_from_file()
 
+
 def save_user_command_to_db(user_id: int, command_name: str, command_data):
     """Save a single user command to database"""
     try:
@@ -113,32 +121,57 @@ def save_user_command_to_db(user_id: int, command_name: str, command_data):
             # Fallback to JSON file
             save_data_to_file()
             return
-        
+
         with conn:
             with conn.cursor() as cur:
-                if isinstance(command_data, dict) and command_data.get('type') == 'photo':
+                if (
+                    isinstance(command_data, dict)
+                    and command_data.get("type") == "photo"
+                ):
                     # Photo command
-                    cur.execute("""
+                    cur.execute(
+                        """
                         INSERT INTO user_commands (user_id, command_name, command_type, file_id, caption)
                         VALUES (%s, %s, %s, %s, %s)
                         ON CONFLICT (user_id, command_name) 
                         DO UPDATE SET command_type = %s, file_id = %s, caption = %s
-                    """, (user_id, command_name, 'photo', command_data.get('file_id'), command_data.get('caption', ''),
-                          'photo', command_data.get('file_id'), command_data.get('caption', '')))
+                    """,
+                        (
+                            user_id,
+                            command_name,
+                            "photo",
+                            command_data.get("file_id"),
+                            command_data.get("caption", ""),
+                            "photo",
+                            command_data.get("file_id"),
+                            command_data.get("caption", ""),
+                        ),
+                    )
                 else:
                     # Text command
-                    cur.execute("""
+                    cur.execute(
+                        """
                         INSERT INTO user_commands (user_id, command_name, command_type, content)
                         VALUES (%s, %s, %s, %s)
                         ON CONFLICT (user_id, command_name) 
                         DO UPDATE SET command_type = %s, content = %s
-                    """, (user_id, command_name, 'text', command_data, 'text', command_data))
+                    """,
+                        (
+                            user_id,
+                            command_name,
+                            "text",
+                            command_data,
+                            "text",
+                            command_data,
+                        ),
+                    )
         conn.close()
         print(f"Saved command /{command_name} for user {user_id}")
     except Exception as e:
         print(f"Failed to save to database: {e}")
         # Fallback to JSON file
         save_data_to_file()
+
 
 def delete_user_command_from_db(user_id: int, command_name: str):
     """Delete a user command from database"""
@@ -148,11 +181,13 @@ def delete_user_command_from_db(user_id: int, command_name: str):
             # Fallback to JSON file
             save_data_to_file()
             return
-        
+
         with conn:
             with conn.cursor() as cur:
-                cur.execute("DELETE FROM user_commands WHERE user_id = %s AND command_name = %s", 
-                           (user_id, command_name))
+                cur.execute(
+                    "DELETE FROM user_commands WHERE user_id = %s AND command_name = %s",
+                    (user_id, command_name),
+                )
         conn.close()
         print(f"Deleted command /{command_name} for user {user_id}")
     except Exception as e:
@@ -160,8 +195,10 @@ def delete_user_command_from_db(user_id: int, command_name: str):
         # Fallback to JSON file
         save_data_to_file()
 
+
 # ──────────────────────────────────────────────────────────────────────────────
 # FALLBACK JSON FILE FUNCTIONS (for local development)
+
 
 def load_data_from_file() -> None:
     """Fallback: Load data from JSON file"""
@@ -175,12 +212,14 @@ def load_data_from_file() -> None:
     else:
         USER_COMMANDS = {}
 
+
 def save_data_to_file() -> None:
     """Fallback: Save data to JSON file"""
     tmp = DATA_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(USER_COMMANDS, f, ensure_ascii=False, indent=2)
     os.replace(tmp, DATA_FILE)
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CONFIG
