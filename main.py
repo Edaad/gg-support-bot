@@ -566,7 +566,7 @@ async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def post_init(app):
     # Clear global commands - we'll set per-user commands instead
     await app.bot.set_my_commands([])
-    
+
     # Clear per-user command menus for all admin users (to remove old cached commands)
     for user_id in ADMIN_USER_IDS:
         try:
@@ -575,7 +575,7 @@ async def post_init(app):
             print(f"Cleared command menu for user {user_id}")
         except Exception as e:
             print(f"Failed to clear menu for user {user_id}: {e}")
-    
+
     # Initialize command menus for existing users with actual commands
     for user_id_str in USER_COMMANDS.keys():
         try:
