@@ -6,6 +6,8 @@ import os
 import re
 import json
 import argparse
+import psycopg2
+from urllib.parse import urlparse
 from typing import Dict, Set, Tuple, Optional, List
 
 from telegram import Update, BotCommand
@@ -19,6 +21,166 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DATABASE FUNCTIONS
+
+def get_db_connection():
+    """Get database connection from Heroku DATABASE_URL or fallback to local"""
+    database_url = os.getenv('DATABASE_URL')
+    if database_url:
+        # Parse Heroku DATABASE_URL
+        url = urlparse(database_url)
+        return psycopg2.connect(
+            database=url.path[1:],
+            user=url.username,
+            password=url.password,
+            host=url.hostname,
+            port=url.port
+        )
+    else:
+        # Fallback to local database or create in-memory storage
+        print("No DATABASE_URL found, using JSON file fallback")
+        return None
+
+def init_database():
+    """Initialize the database tables"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return  # Will use JSON fallback
+        
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS user_commands (
+                        user_id BIGINT NOT NULL,
+                        command_name VARCHAR(32) NOT NULL,
+                        command_type VARCHAR(10) DEFAULT 'text',
+                        content TEXT,
+                        file_id TEXT,
+                        caption TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (user_id, command_name)
+                    )
+                """)
+        conn.close()
+        print("Database initialized successfully")
+    except Exception as e:
+        print(f"Database initialization failed: {e}")
+
+def load_user_commands_from_db():
+    """Load all user commands from database into USER_COMMANDS dict"""
+    global USER_COMMANDS
+    try:
+        conn = get_db_connection()
+        if not conn:
+            # Fallback to JSON file
+            load_data_from_file()
+            return
+        
+        USER_COMMANDS = {}
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT user_id, command_name, command_type, content, file_id, caption FROM user_commands")
+                for row in cur.fetchall():
+                    user_id, cmd_name, cmd_type, content, file_id, caption = row
+                    user_id_str = str(user_id)
+                    
+                    if user_id_str not in USER_COMMANDS:
+                        USER_COMMANDS[user_id_str] = {}
+                    
+                    if cmd_type == 'photo':
+                        USER_COMMANDS[user_id_str][cmd_name] = {
+                            "type": "photo",
+                            "file_id": file_id,
+                            "caption": caption or ""
+                        }
+                    else:
+                        USER_COMMANDS[user_id_str][cmd_name] = content
+        conn.close()
+        print(f"Loaded commands for {len(USER_COMMANDS)} users from database")
+    except Exception as e:
+        print(f"Failed to load from database: {e}")
+        # Fallback to JSON file
+        load_data_from_file()
+
+def save_user_command_to_db(user_id: int, command_name: str, command_data):
+    """Save a single user command to database"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            # Fallback to JSON file
+            save_data_to_file()
+            return
+        
+        with conn:
+            with conn.cursor() as cur:
+                if isinstance(command_data, dict) and command_data.get('type') == 'photo':
+                    # Photo command
+                    cur.execute("""
+                        INSERT INTO user_commands (user_id, command_name, command_type, file_id, caption)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (user_id, command_name) 
+                        DO UPDATE SET command_type = %s, file_id = %s, caption = %s
+                    """, (user_id, command_name, 'photo', command_data.get('file_id'), command_data.get('caption', ''),
+                          'photo', command_data.get('file_id'), command_data.get('caption', '')))
+                else:
+                    # Text command
+                    cur.execute("""
+                        INSERT INTO user_commands (user_id, command_name, command_type, content)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (user_id, command_name) 
+                        DO UPDATE SET command_type = %s, content = %s
+                    """, (user_id, command_name, 'text', command_data, 'text', command_data))
+        conn.close()
+        print(f"Saved command /{command_name} for user {user_id}")
+    except Exception as e:
+        print(f"Failed to save to database: {e}")
+        # Fallback to JSON file
+        save_data_to_file()
+
+def delete_user_command_from_db(user_id: int, command_name: str):
+    """Delete a user command from database"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            # Fallback to JSON file
+            save_data_to_file()
+            return
+        
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM user_commands WHERE user_id = %s AND command_name = %s", 
+                           (user_id, command_name))
+        conn.close()
+        print(f"Deleted command /{command_name} for user {user_id}")
+    except Exception as e:
+        print(f"Failed to delete from database: {e}")
+        # Fallback to JSON file
+        save_data_to_file()
+
+# ──────────────────────────────────────────────────────────────────────────────
+# FALLBACK JSON FILE FUNCTIONS (for local development)
+
+def load_data_from_file() -> None:
+    """Fallback: Load data from JSON file"""
+    global USER_COMMANDS
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                USER_COMMANDS = json.load(f)
+        except Exception:
+            USER_COMMANDS = {}
+    else:
+        USER_COMMANDS = {}
+
+def save_data_to_file() -> None:
+    """Fallback: Save data to JSON file"""
+    tmp = DATA_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(USER_COMMANDS, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, DATA_FILE)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CONFIG
@@ -100,22 +262,13 @@ async def update_user_commands_menu(bot, uid: int) -> None:
 
 
 def load_data() -> None:
-    global USER_COMMANDS
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                USER_COMMANDS = json.load(f)
-        except Exception:
-            USER_COMMANDS = {}
-    else:
-        USER_COMMANDS = {}
+    """Load user commands from database (or JSON file as fallback)"""
+    load_user_commands_from_db()
 
 
 def save_data() -> None:
-    tmp = DATA_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(USER_COMMANDS, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, DATA_FILE)
+    """This function is kept for compatibility but individual saves are now handled by save_user_command_to_db"""
+    pass
 
 
 def get_user_dict(uid: int) -> Dict[str, dict]:
@@ -212,7 +365,7 @@ async def delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_cmds = get_user_dict(uid)
     if name in user_cmds:
         del user_cmds[name]
-        save_data()
+        delete_user_command_from_db(uid, name)
         await update.message.reply_text(f"Deleted /{name}.")
         await update_user_commands_menu(context.bot, uid)
     else:
@@ -287,14 +440,15 @@ async def set_get_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo = update.message.photo[-1]
         file_id = photo.file_id
         caption = update.message.caption or ""
-        user_cmds[name] = {"type": "photo", "file_id": file_id, "caption": caption}
-        save_data()
+        command_data = {"type": "photo", "file_id": file_id, "caption": caption}
+        user_cmds[name] = command_data
+        save_user_command_to_db(uid, name, command_data)
         await update.message.reply_text(f"Saved /{name} (photo command).")
         await update_user_commands_menu(context.bot, uid)
     elif update.message.text:
         # Save text command
         user_cmds[name] = update.message.text
-        save_data()
+        save_user_command_to_db(uid, name, update.message.text)
         await update.message.reply_text(f"Saved /{name}.")
         await update_user_commands_menu(context.bot, uid)
     else:
@@ -398,6 +552,8 @@ def main():
             "Error: provide a token with --token or TELEGRAM_BOT_TOKEN env var."
         )
 
+    # Initialize database and load data
+    init_database()
     load_data()
 
     application = ApplicationBuilder().token(token).post_init(post_init).build()
