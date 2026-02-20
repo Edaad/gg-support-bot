@@ -767,7 +767,8 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     method_display = _DEPOSIT_METHOD_DISPLAY.get(cmd_name, cmd_name)
     context.user_data["pending_deposit_method_display"] = method_display
     await query.edit_message_text(
-        f"You selected {method_display}. How much would you like to deposit? Please select this message and hit reply to reply correctly",
+        f"You selected {method_display}. How much would you like to deposit?\n\n"
+        "Please select this message and hit reply to reply correctly.",
         reply_markup=InlineKeyboardMarkup([]),
     )
     return DEPOSIT_AMOUNT
@@ -810,7 +811,7 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
     user_name = update.effective_user.full_name or "Customer"
     try:
         await update.effective_chat.send_message(
-            f"Deposit request for {amount_text or '(not specified)'} on {method_display} — {user_name}"
+            f"Deposit request for {amount_text or '(not specified)'} on {method_display}"
         )
     except Exception:
         pass
