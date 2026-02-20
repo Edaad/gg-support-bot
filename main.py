@@ -804,12 +804,6 @@ async def on_my_chat_member_updated(
     chat_id = update.effective_chat.id
     club_user_id = update.effective_user.id
     set_group_club(chat_id, club_user_id)
-    try:
-        await update.effective_chat.send_message(
-            "This group is now linked to this club. Customers can use /deposit."
-        )
-    except Exception:
-        pass
 
 
 # ──────────────────────────────────────────────────────────────────────────────
