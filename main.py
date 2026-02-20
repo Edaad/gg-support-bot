@@ -710,6 +710,7 @@ def _deposit_method_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("Cashapp", callback_data="deposit:botcashapp"),
                 InlineKeyboardButton("Crypto", callback_data="deposit:botcrypto"),
             ],
+            [InlineKeyboardButton("Cancel", callback_data="deposit:cancel")],
         ]
     )
 
@@ -762,14 +763,25 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     if not data.startswith("deposit:"):
         return ConversationHandler.END
     cmd_name = data.split(":", 1)[1]
+    if cmd_name == "cancel":
+        await query.edit_message_text(
+            "Cancelled.",
+            reply_markup=InlineKeyboardMarkup([]),
+        )
+        context.user_data.pop("pending_deposit_method", None)
+        context.user_data.pop("pending_deposit_chat_id", None)
+        context.user_data.pop("pending_deposit_method_display", None)
+        return ConversationHandler.END
     context.user_data["pending_deposit_method"] = cmd_name
     context.user_data["pending_deposit_chat_id"] = update.effective_chat.id
     method_display = _DEPOSIT_METHOD_DISPLAY.get(cmd_name, cmd_name)
     context.user_data["pending_deposit_method_display"] = method_display
     await query.edit_message_text(
         f"You selected {method_display}. How much would you like to deposit?\n\n"
-        "Please select this message and hit reply to reply correctly.",
-        reply_markup=InlineKeyboardMarkup([]),
+        "Reply to this message with the amount.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Cancel", callback_data="deposit:cancel")],
+        ]),
     )
     return DEPOSIT_AMOUNT
 
@@ -833,6 +845,25 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
             await update.message.reply_text(amount_line + content)
     else:
         await update.message.reply_text(amount_line + (cmd_data or ""))
+    return ConversationHandler.END
+
+
+async def deposit_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancel deposit flow when user taps Cancel button."""
+    if not update.callback_query:
+        return ConversationHandler.END
+    query = update.callback_query
+    await query.answer()
+    try:
+        await query.edit_message_text(
+            "Cancelled.",
+            reply_markup=InlineKeyboardMarkup([]),
+        )
+    except Exception:
+        pass
+    context.user_data.pop("pending_deposit_method", None)
+    context.user_data.pop("pending_deposit_chat_id", None)
+    context.user_data.pop("pending_deposit_method_display", None)
     return ConversationHandler.END
 
 
@@ -1011,6 +1042,9 @@ def main():
                 MessageHandler(
                     filters.TEXT & (~filters.COMMAND),
                     deposit_amount_received,
+                ),
+                CallbackQueryHandler(
+                    deposit_cancel_callback, pattern="^deposit:cancel$"
                 ),
             ],
         },
