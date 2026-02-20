@@ -3,6 +3,7 @@
 # Install:   pip install python-telegram-bot==20.*
 
 import os
+import warnings
 import re
 import json
 import argparse
@@ -13,6 +14,10 @@ from typing import Dict, Set, Tuple, Optional, List
 from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import BotCommandScopeChat
 from config import ADMIN_USER_IDS
+from telegram.warnings import PTBUserWarning
+
+warnings.filterwarnings("ignore", message=r".*CallbackQueryHandler.*", category=PTBUserWarning)
+
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -690,6 +695,7 @@ def _deposit_method_keyboard() -> InlineKeyboardMarkup:
 
 async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start /deposit: only in groups; show method keyboard."""
+    print("[deposit] entry: /deposit received")
     if not update.message or not update.effective_chat or not update.effective_user:
         return ConversationHandler.END
     chat = update.effective_chat
@@ -722,6 +728,7 @@ _DEPOSIT_METHOD_DISPLAY = {
 
 async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """User tapped a method button; ask for amount (send new msg, keep selection visible)."""
+    print("[deposit] method_chosen: button tapped")
     if not update.callback_query or not update.effective_user or not update.effective_chat:
         return ConversationHandler.END
     query = update.callback_query
@@ -740,6 +747,7 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """User sent amount; reply with club's payment content + amount."""
+    print("[deposit] amount_received: amount message received")
     if not update.message or not update.effective_user or not update.effective_chat:
         return ConversationHandler.END
     chat_id = update.effective_chat.id
