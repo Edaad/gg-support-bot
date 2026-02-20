@@ -11,7 +11,7 @@ import psycopg2
 from urllib.parse import urlparse
 from typing import Dict, Set, Tuple, Optional, List
 
-from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, BotCommand, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import BotCommandScopeChat
 from config import ADMIN_USER_IDS
 from telegram.warnings import PTBUserWarning
@@ -742,8 +742,8 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     method_display = _DEPOSIT_METHOD_DISPLAY.get(cmd_name, cmd_name)
     context.user_data["pending_deposit_method_display"] = method_display
     await query.message.reply_text(
-        "How much would you like to deposit?\n\n"
-        "Reply to this message with the amount."
+        "How much would you like to deposit?",
+        reply_markup=ForceReply(selective=True, input_field_placeholder="e.g. 50 or $100"),
     )
     return DEPOSIT_AMOUNT
 
