@@ -10,16 +10,18 @@ import psycopg2
 from urllib.parse import urlparse
 from typing import Dict, Set, Tuple, Optional, List
 
-from telegram import Update, BotCommand
+from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import BotCommandScopeChat
 from config import ADMIN_USER_IDS
 from telegram.ext import (
     ApplicationBuilder,
+    CallbackQueryHandler,
     CommandHandler,
     MessageHandler,
     ConversationHandler,
     ContextTypes,
     filters,
+    ChatMemberHandler,
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -65,6 +67,14 @@ def init_database():
                         caption TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         PRIMARY KEY (user_id, command_name)
+                    )
+                """
+                )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS group_club (
+                        chat_id BIGINT PRIMARY KEY,
+                        club_user_id BIGINT NOT NULL
                     )
                 """
                 )
@@ -197,6 +207,93 @@ def delete_user_command_from_db(user_id: int, command_name: str):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# GROUP -> CLUB MAPPING (for deposit flow)
+
+
+def load_group_club_from_db() -> None:
+    """Load group -> club mapping from database into GROUP_TO_CLUB"""
+    global GROUP_TO_CLUB
+    try:
+        conn = get_db_connection()
+        if not conn:
+            load_group_club_from_file()
+            return
+
+        GROUP_TO_CLUB = {}
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT chat_id, club_user_id FROM group_club")
+                for row in cur.fetchall():
+                    chat_id, club_user_id = row
+                    GROUP_TO_CLUB[int(chat_id)] = int(club_user_id)
+        conn.close()
+        print(f"Loaded group_club mapping for {len(GROUP_TO_CLUB)} groups")
+    except Exception as e:
+        print(f"Failed to load group_club from database: {e}")
+        load_group_club_from_file()
+
+
+def save_group_club_to_db(chat_id: int, club_user_id: int) -> None:
+    """Save or update group -> club mapping"""
+    GROUP_TO_CLUB[chat_id] = club_user_id
+    try:
+        conn = get_db_connection()
+        if not conn:
+            save_group_club_to_file()
+            return
+
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO group_club (chat_id, club_user_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT (chat_id) DO UPDATE SET club_user_id = EXCLUDED.club_user_id
+                    """,
+                    (chat_id, club_user_id),
+                )
+        conn.close()
+        print(f"Linked group {chat_id} to club {club_user_id}")
+    except Exception as e:
+        print(f"Failed to save group_club: {e}")
+        save_group_club_to_file()
+
+
+def load_group_club_from_file() -> None:
+    """Fallback: Load group_club from JSON file"""
+    global GROUP_TO_CLUB
+    if os.path.exists(GROUP_CLUB_FILE):
+        try:
+            with open(GROUP_CLUB_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            GROUP_TO_CLUB = {int(k): int(v) for k, v in raw.items()}
+        except Exception:
+            GROUP_TO_CLUB = {}
+    else:
+        GROUP_TO_CLUB = {}
+
+
+def save_group_club_to_file() -> None:
+    """Fallback: Save GROUP_TO_CLUB to JSON file"""
+    raw = {str(k): v for k, v in GROUP_TO_CLUB.items()}
+    tmp = GROUP_CLUB_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(raw, f, indent=2)
+    os.replace(tmp, GROUP_CLUB_FILE)
+
+
+def get_club_for_chat(chat_id: int) -> Optional[int]:
+    """Return the club user_id for this group, or None if not linked."""
+    return GROUP_TO_CLUB.get(chat_id)
+
+
+def set_group_club(chat_id: int, club_user_id: int) -> None:
+    """Link a group to a club (in-memory + DB/file)."""
+    GROUP_TO_CLUB[chat_id] = club_user_id
+    save_group_club_to_db(chat_id, club_user_id)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # FALLBACK JSON FILE FUNCTIONS (for local development)
 
 
@@ -230,9 +327,11 @@ ALLOWED_USER_IDS: Set[int] = set(ADMIN_USER_IDS)
 
 # Where per-user commands are stored on disk
 DATA_FILE = "user_commands.json"
+# Where group -> club mapping is stored (JSON fallback when no DB)
+GROUP_CLUB_FILE = "group_club.json"
 
 # Reserved command names that the bot uses internally
-RESERVED_CMDS = {"start", "help", "whoami", "set", "cancel", "delete", "mycmds"}
+RESERVED_CMDS = {"start", "help", "whoami", "set", "cancel", "delete", "mycmds", "deposit"}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # RUNTIME STATE
@@ -241,7 +340,12 @@ RESERVED_CMDS = {"start", "help", "whoami", "set", "cancel", "delete", "mycmds"}
 # Shape: { "<user_id>": { "command": {"type": "text|photo", "content": "message", "file_id": "..."}, ... }, ... }
 USER_COMMANDS: Dict[str, Dict[str, dict]] = {}
 
+# Group -> club mapping: chat_id -> club user_id (who added the bot)
+GROUP_TO_CLUB: Dict[int, int] = {}
+
 SET_NAME, SET_MESSAGE = range(2)
+# Deposit conversation states
+DEPOSIT_CHOOSE, DEPOSIT_AMOUNT = range(2, 4)
 
 CMD_NAME_RE = re.compile(r"^[A-Za-z0-9_]{1,32}$")  # Telegram command naming rules
 
@@ -301,8 +405,9 @@ async def update_user_commands_menu(bot, uid: int) -> None:
 
 
 def load_data() -> None:
-    """Load user commands from database (or JSON file as fallback)"""
+    """Load user commands and group_club mapping from database (or JSON file as fallback)"""
     load_user_commands_from_db()
+    load_group_club_from_db()
 
 
 def save_data() -> None:
@@ -505,6 +610,120 @@ async def set_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# /deposit FLOW (groups only; uses club's bot* commands)
+
+
+def _deposit_method_keyboard() -> InlineKeyboardMarkup:
+    """Inline keyboard for deposit method selection."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Venmo", callback_data="deposit:botvenmo"),
+                InlineKeyboardButton("Zelle", callback_data="deposit:botzelle"),
+            ],
+            [
+                InlineKeyboardButton("Apple Pay", callback_data="deposit:botstripe"),
+                InlineKeyboardButton("Debit Card", callback_data="deposit:botstripe"),
+            ],
+            [
+                InlineKeyboardButton("Cashapp", callback_data="deposit:botcashapp"),
+                InlineKeyboardButton("Crypto", callback_data="deposit:botcrypto"),
+            ],
+        ]
+    )
+
+
+async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start /deposit: only in groups; show method keyboard."""
+    if not update.message or not update.effective_chat or not update.effective_user:
+        return ConversationHandler.END
+    chat = update.effective_chat
+    if chat.type not in ("group", "supergroup"):
+        await update.message.reply_text("Use /deposit in a club group.")
+        return ConversationHandler.END
+    chat_id = chat.id
+    club_id = get_club_for_chat(chat_id)
+    if club_id is None:
+        await update.message.reply_text(
+            "This group isn't linked to a club. The club account must add the bot to this group."
+        )
+        return ConversationHandler.END
+    await update.message.reply_text(
+        "What method would you like to make a deposit with?",
+        reply_markup=_deposit_method_keyboard(),
+    )
+    return DEPOSIT_CHOOSE
+
+
+async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """User tapped a method button; ask for amount."""
+    if not update.callback_query or not update.effective_user or not update.effective_chat:
+        return ConversationHandler.END
+    query = update.callback_query
+    await query.answer()
+    data = query.data or ""
+    if not data.startswith("deposit:"):
+        return ConversationHandler.END
+    cmd_name = data.split(":", 1)[1]
+    context.user_data["pending_deposit_method"] = cmd_name
+    context.user_data["pending_deposit_chat_id"] = update.effective_chat.id
+    await query.edit_message_text("How much would you like to deposit?")
+    return DEPOSIT_AMOUNT
+
+
+async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """User sent amount; reply with club's payment content + amount."""
+    if not update.message or not update.effective_user or not update.effective_chat:
+        return ConversationHandler.END
+    chat_id = update.effective_chat.id
+    if context.user_data.get("pending_deposit_chat_id") != chat_id:
+        return ConversationHandler.END
+    cmd_name = context.user_data.pop("pending_deposit_method", None)
+    context.user_data.pop("pending_deposit_chat_id", None)
+    if not cmd_name:
+        return ConversationHandler.END
+    club_id = get_club_for_chat(chat_id)
+    if club_id is None:
+        await update.message.reply_text("This group is no longer linked to a club.")
+        return ConversationHandler.END
+    amount_text = (update.message.text or "").strip()
+    club_cmds = get_user_dict(club_id)
+    cmd_data = club_cmds.get(cmd_name)
+    if cmd_data is None:
+        await update.message.reply_text(
+            f"This club hasn't set up that payment method yet."
+        )
+        return ConversationHandler.END
+    amount_line = f"Amount: {amount_text}\n\n" if amount_text else ""
+    if isinstance(cmd_data, dict):
+        cmd_type = cmd_data.get("type", "text")
+        if cmd_type == "photo":
+            file_id = cmd_data.get("file_id")
+            caption = cmd_data.get("caption", "")
+            if amount_line:
+                caption = amount_line.rstrip() + "\n\n" + (caption or "")
+            if file_id:
+                await update.message.reply_photo(photo=file_id, caption=caption or None)
+            else:
+                await update.message.reply_text("Error: Photo data is corrupted.")
+        else:
+            content = cmd_data.get("content", "")
+            await update.message.reply_text(amount_line + content)
+    else:
+        await update.message.reply_text(amount_line + (cmd_data or ""))
+    return ConversationHandler.END
+
+
+async def deposit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancel deposit flow."""
+    if update.message:
+        await update.message.reply_text("Cancelled.")
+    context.user_data.pop("pending_deposit_method", None)
+    context.user_data.pop("pending_deposit_chat_id", None)
+    return ConversationHandler.END
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # CATCH-ALL COMMAND ROUTER (per-user lookup)
 
 
@@ -557,6 +776,40 @@ async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         # Legacy text format - handle old commands
         await reply_long(update, cmd_data)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# BOT ADDED TO GROUP (link group to club)
+
+
+def _bot_was_added_to_chat(update: Update) -> bool:
+    """True if this update indicates the bot was just added to the chat."""
+    if not update.my_chat_member:
+        return False
+    old_status = update.my_chat_member.old_chat_member.status
+    new_status = update.my_chat_member.new_chat_member.status
+    return new_status == "member" and old_status in ("left", "kicked")
+
+
+async def on_my_chat_member_updated(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """When the bot is added to a group, link that group to the user who added it (club)."""
+    if not update.effective_chat or not update.effective_user:
+        return
+    if update.effective_chat.type not in ("group", "supergroup"):
+        return
+    if not _bot_was_added_to_chat(update):
+        return
+    chat_id = update.effective_chat.id
+    club_user_id = update.effective_user.id
+    set_group_club(chat_id, club_user_id)
+    try:
+        await update.effective_chat.send_message(
+            "This group is now linked to this club. Customers can use /deposit."
+        )
+    except Exception:
+        pass
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -629,6 +882,34 @@ def main():
         persistent=False,
     )
     application.add_handler(set_conv)
+
+    # /deposit flow (groups only; any user)
+    deposit_conv = ConversationHandler(
+        entry_points=[CommandHandler("deposit", deposit_entry)],
+        states={
+            DEPOSIT_CHOOSE: [
+                CallbackQueryHandler(
+                    deposit_method_chosen, pattern="^deposit:"
+                ),
+            ],
+            DEPOSIT_AMOUNT: [
+                MessageHandler(
+                    filters.TEXT & (~filters.COMMAND),
+                    deposit_amount_received,
+                ),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", deposit_cancel)],
+        name="deposit_conv",
+        per_chat=True,
+        per_user=True,
+    )
+    application.add_handler(deposit_conv)
+
+    # Bot added to group -> link group to club
+    application.add_handler(
+        ChatMemberHandler(on_my_chat_member_updated, ChatMemberHandler.MY_CHAT_MEMBER)
+    )
 
     # Catch-all router for any other command (must be added last)
     application.add_handler(MessageHandler(filters.COMMAND, command_router))
