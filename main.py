@@ -766,8 +766,8 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data["pending_deposit_chat_id"] = update.effective_chat.id
     method_display = _DEPOSIT_METHOD_DISPLAY.get(cmd_name, cmd_name)
     context.user_data["pending_deposit_method_display"] = method_display
-    await query.message.reply_text(
-        "How much would you like to deposit?",
+    await query.edit_message_text(
+        f"You selected {method_display}. How much would you like to deposit? Please select this message and hit reply to reply correctly",
         reply_markup=ForceReply(
             selective=True, input_field_placeholder="e.g. 50 or $100"
         ),
