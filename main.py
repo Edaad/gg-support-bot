@@ -806,6 +806,15 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
             f"This club hasn't set up that payment method yet."
         )
         return ConversationHandler.END
+
+    user_name = update.effective_user.full_name or "Customer"
+    try:
+        await update.effective_chat.send_message(
+            f"Deposit request for {amount_text or '(not specified)'} on {method_display} — {user_name}"
+        )
+    except Exception:
+        pass
+
     amount_line = f"Amount: {amount_text}\n\n" if amount_text else ""
     if isinstance(cmd_data, dict):
         cmd_type = cmd_data.get("type", "text")
@@ -823,14 +832,6 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
             await update.message.reply_text(amount_line + content)
     else:
         await update.message.reply_text(amount_line + (cmd_data or ""))
-
-    user_name = update.effective_user.full_name or "Customer"
-    try:
-        await update.effective_chat.send_message(
-            f"Deposit request for {amount_text or '(not specified)'} on {method_display}"
-        )
-    except Exception:
-        pass
     return ConversationHandler.END
 
 
