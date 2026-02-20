@@ -11,12 +11,20 @@ import psycopg2
 from urllib.parse import urlparse
 from typing import Dict, Set, Tuple, Optional, List
 
-from telegram import Update, BotCommand, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    BotCommand,
+    ForceReply,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram import BotCommandScopeChat
 from config import ADMIN_USER_IDS
 from telegram.warnings import PTBUserWarning
 
-warnings.filterwarnings("ignore", message=r".*CallbackQueryHandler.*", category=PTBUserWarning)
+warnings.filterwarnings(
+    "ignore", message=r".*CallbackQueryHandler.*", category=PTBUserWarning
+)
 
 from telegram.ext import (
     ApplicationBuilder,
@@ -210,7 +218,11 @@ def load_club_command_from_db(club_user_id: int, command_name: str):
                 if club_str not in USER_COMMANDS:
                     USER_COMMANDS[club_str] = {}
                 if cmd_type == "photo":
-                    data = {"type": "photo", "file_id": file_id or "", "caption": caption or ""}
+                    data = {
+                        "type": "photo",
+                        "file_id": file_id or "",
+                        "caption": caption or "",
+                    }
                 else:
                     data = content or ""
                 USER_COMMANDS[club_str][command_name] = data
@@ -391,7 +403,16 @@ DATA_FILE = "user_commands.json"
 GROUP_CLUB_FILE = "group_club.json"
 
 # Reserved command names that the bot uses internally
-RESERVED_CMDS = {"start", "help", "whoami", "set", "cancel", "delete", "mycmds", "deposit"}
+RESERVED_CMDS = {
+    "start",
+    "help",
+    "whoami",
+    "set",
+    "cancel",
+    "delete",
+    "mycmds",
+    "deposit",
+}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # RUNTIME STATE
@@ -729,7 +750,11 @@ _DEPOSIT_METHOD_DISPLAY = {
 async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """User tapped a method button; ask for amount (send new msg, keep selection visible)."""
     print("[deposit] method_chosen: button tapped")
-    if not update.callback_query or not update.effective_user or not update.effective_chat:
+    if (
+        not update.callback_query
+        or not update.effective_user
+        or not update.effective_chat
+    ):
         return ConversationHandler.END
     query = update.callback_query
     await query.answer()
@@ -743,7 +768,9 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data["pending_deposit_method_display"] = method_display
     await query.message.reply_text(
         "How much would you like to deposit?",
-        reply_markup=ForceReply(selective=True, input_field_placeholder="e.g. 50 or $100"),
+        reply_markup=ForceReply(
+            selective=True, input_field_placeholder="e.g. 50 or $100"
+        ),
     )
     return DEPOSIT_AMOUNT
 
@@ -758,7 +785,9 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         return ConversationHandler.END
     cmd_name = context.user_data.pop("pending_deposit_method", None)
     context.user_data.pop("pending_deposit_chat_id", None)
-    method_display = context.user_data.pop("pending_deposit_method_display", cmd_name or "?")
+    method_display = context.user_data.pop(
+        "pending_deposit_method_display", cmd_name or "?"
+    )
     if not cmd_name:
         return ConversationHandler.END
     club_id = get_club_for_chat(chat_id)
@@ -772,7 +801,9 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
     if cmd_data is None:
         cmd_data = load_club_command_from_db(club_id, cmd_name)
     if cmd_data is None:
-        print(f"[deposit] club_id={club_id} cmd={cmd_name} not found. Keys: {list(club_cmds.keys())}")
+        print(
+            f"[deposit] club_id={club_id} cmd={cmd_name} not found. Keys: {list(club_cmds.keys())}"
+        )
         await update.message.reply_text(
             f"This club hasn't set up that payment method yet."
         )
@@ -798,7 +829,7 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
     user_name = update.effective_user.full_name or "Customer"
     try:
         await update.effective_chat.send_message(
-            f"📋 Deposit: {user_name} selected {method_display}, amount: {amount_text or '(not specified)'}"
+            f"Deposit request for {amount_text or '(not specified)'} on {method_display}"
         )
     except Exception:
         pass
@@ -974,9 +1005,7 @@ def main():
         entry_points=[CommandHandler("deposit", deposit_entry)],
         states={
             DEPOSIT_CHOOSE: [
-                CallbackQueryHandler(
-                    deposit_method_chosen, pattern="^deposit:"
-                ),
+                CallbackQueryHandler(deposit_method_chosen, pattern="^deposit:"),
             ],
             DEPOSIT_AMOUNT: [
                 MessageHandler(
