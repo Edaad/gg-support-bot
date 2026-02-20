@@ -767,7 +767,11 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     method_display = _DEPOSIT_METHOD_DISPLAY.get(cmd_name, cmd_name)
     context.user_data["pending_deposit_method_display"] = method_display
     await query.edit_message_text(
-        f"You selected {method_display}. How much would you like to deposit? Please select this message and hit reply to reply correctly",
+        f"You selected {method_display}. How much would you like to deposit?",
+        reply_markup=InlineKeyboardMarkup([]),
+    )
+    await query.message.reply_text(
+        "Reply with the amount:",
         reply_markup=ForceReply(
             selective=True, input_field_placeholder="e.g. 50 or $100"
         ),
