@@ -183,6 +183,40 @@ def save_user_command_to_db(user_id: int, command_name: str, command_data):
         save_data_to_file()
 
 
+def load_club_command_from_db(club_user_id: int, command_name: str):
+    """Load a single club command from DB (for Heroku multi-dyno / restarts).
+    Returns command data (str or dict) or None. Updates USER_COMMANDS if found."""
+    conn = get_db_connection()
+    if not conn:
+        return None
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT command_type, content, file_id, caption FROM user_commands "
+                    "WHERE user_id = %s AND command_name = %s",
+                    (club_user_id, command_name),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                cmd_type, content, file_id, caption = row
+                club_str = str(club_user_id)
+                if club_str not in USER_COMMANDS:
+                    USER_COMMANDS[club_str] = {}
+                if cmd_type == "photo":
+                    data = {"type": "photo", "file_id": file_id or "", "caption": caption or ""}
+                else:
+                    data = content or ""
+                USER_COMMANDS[club_str][command_name] = data
+                return data
+    except Exception as e:
+        print(f"[deposit] load_club_command_from_db failed: {e}")
+        return None
+    finally:
+        conn.close()
+
+
 def delete_user_command_from_db(user_id: int, command_name: str):
     """Delete a user command from database"""
     try:
@@ -283,8 +317,29 @@ def save_group_club_to_file() -> None:
 
 
 def get_club_for_chat(chat_id: int) -> Optional[int]:
-    """Return the club user_id for this group, or None if not linked."""
-    return GROUP_TO_CLUB.get(chat_id)
+    """Return the club user_id for this group, or None if not linked.
+    Falls back to DB if not in cache (fixes Heroku multi-dyno / restarts)."""
+    if chat_id in GROUP_TO_CLUB:
+        return GROUP_TO_CLUB[chat_id]
+    conn = get_db_connection()
+    if conn:
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT club_user_id FROM group_club WHERE chat_id = %s",
+                        (chat_id,),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        club_id = int(row[0])
+                        GROUP_TO_CLUB[chat_id] = club_id
+                        return club_id
+        except Exception as e:
+            print(f"[deposit] get_club_for_chat DB fallback failed: {e}")
+        finally:
+            conn.close()
+    return None
 
 
 def set_group_club(chat_id: int, club_user_id: int) -> None:
@@ -655,8 +710,18 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return DEPOSIT_CHOOSE
 
 
+# Display names for deposit methods (for admin notification)
+_DEPOSIT_METHOD_DISPLAY = {
+    "botvenmo": "Venmo",
+    "botzelle": "Zelle",
+    "botstripe": "Stripe (Apple Pay/Debit Card)",
+    "botcashapp": "Cashapp",
+    "botcrypto": "Crypto",
+}
+
+
 async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """User tapped a method button; ask for amount."""
+    """User tapped a method button; ask for amount (send new msg, keep selection visible)."""
     if not update.callback_query or not update.effective_user or not update.effective_chat:
         return ConversationHandler.END
     query = update.callback_query
@@ -667,7 +732,9 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     cmd_name = data.split(":", 1)[1]
     context.user_data["pending_deposit_method"] = cmd_name
     context.user_data["pending_deposit_chat_id"] = update.effective_chat.id
-    await query.edit_message_text("How much would you like to deposit?")
+    method_display = _DEPOSIT_METHOD_DISPLAY.get(cmd_name, cmd_name)
+    context.user_data["pending_deposit_method_display"] = method_display
+    await query.message.reply_text("How much would you like to deposit?")
     return DEPOSIT_AMOUNT
 
 
@@ -680,16 +747,21 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         return ConversationHandler.END
     cmd_name = context.user_data.pop("pending_deposit_method", None)
     context.user_data.pop("pending_deposit_chat_id", None)
+    method_display = context.user_data.pop("pending_deposit_method_display", cmd_name or "?")
     if not cmd_name:
         return ConversationHandler.END
     club_id = get_club_for_chat(chat_id)
     if club_id is None:
+        print(f"[deposit] chat_id={chat_id} has no club linked")
         await update.message.reply_text("This group is no longer linked to a club.")
         return ConversationHandler.END
     amount_text = (update.message.text or "").strip()
     club_cmds = get_user_dict(club_id)
     cmd_data = club_cmds.get(cmd_name)
     if cmd_data is None:
+        cmd_data = load_club_command_from_db(club_id, cmd_name)
+    if cmd_data is None:
+        print(f"[deposit] club_id={club_id} cmd={cmd_name} not found. Keys: {list(club_cmds.keys())}")
         await update.message.reply_text(
             f"This club hasn't set up that payment method yet."
         )
@@ -711,6 +783,14 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
             await update.message.reply_text(amount_line + content)
     else:
         await update.message.reply_text(amount_line + (cmd_data or ""))
+
+    user_name = update.effective_user.full_name or "Customer"
+    try:
+        await update.effective_chat.send_message(
+            f"📋 Deposit: {user_name} selected {method_display}, amount: {amount_text or '(not specified)'}"
+        )
+    except Exception:
+        pass
     return ConversationHandler.END
 
 
@@ -720,6 +800,7 @@ async def deposit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Cancelled.")
     context.user_data.pop("pending_deposit_method", None)
     context.user_data.pop("pending_deposit_chat_id", None)
+    context.user_data.pop("pending_deposit_method_display", None)
     return ConversationHandler.END
 
 
