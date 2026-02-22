@@ -723,7 +723,6 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_chat or not update.effective_user:
         return ConversationHandler.END
     if is_allowed(update.effective_user.id):
-        await update.message.reply_text("/deposit is for customers only.")
         return ConversationHandler.END
     chat = update.effective_chat
     if chat.type not in ("group", "supergroup"):
@@ -887,7 +886,6 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_chat or not update.effective_user:
         return ConversationHandler.END
     if is_allowed(update.effective_user.id):
-        await update.message.reply_text("/cashout is for customers only.")
         return ConversationHandler.END
     chat = update.effective_chat
     if chat.type not in ("group", "supergroup"):
