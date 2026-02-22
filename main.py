@@ -413,6 +413,7 @@ RESERVED_CMDS = {
     "mycmds",
     "deposit",
     "cashout",
+    "list",
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -628,7 +629,7 @@ async def set_get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Invalid command name. Use only letters, numbers, or underscores (max 32). Try again."
         )
         return SET_NAME
-    if name in RESERVED_CMDS:
+    if name in RESERVED_CMDS and name != "list":
         await update.message.reply_text(f"/{name} is reserved. Pick another name.")
         return SET_NAME
 
@@ -992,6 +993,49 @@ async def cashout_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# /list — shows club's list content (customers + admins; group or DM)
+
+
+async def list_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show club's list content. In groups: group's linked club. In DM: user's own list."""
+    if not update.message or not update.effective_chat or not update.effective_user:
+        return
+    chat = update.effective_chat
+    uid = update.effective_user.id
+
+    if chat.type in ("group", "supergroup"):
+        club_id = get_club_for_chat(chat.id)
+        if club_id is None:
+            await update.message.reply_text(
+                "This group isn't linked to a club. The club account must add the bot to this group."
+            )
+            return
+    else:
+        club_id = uid
+
+    club_cmds = get_user_dict(club_id)
+    cmd_data = club_cmds.get("list")
+    if cmd_data is None:
+        await update.message.reply_text("No list set for this club.")
+        return
+
+    if isinstance(cmd_data, dict):
+        cmd_type = cmd_data.get("type", "text")
+        if cmd_type == "photo":
+            file_id = cmd_data.get("file_id")
+            caption = cmd_data.get("caption", "")
+            if file_id:
+                await update.message.reply_photo(photo=file_id, caption=caption)
+            else:
+                await update.message.reply_text("Error: Photo data is corrupted.")
+        else:
+            content = cmd_data.get("content", "")
+            await reply_long(update, content)
+    else:
+        await reply_long(update, cmd_data)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # CATCH-ALL COMMAND ROUTER (per-user lookup)
 
 
@@ -1191,6 +1235,9 @@ def main():
     application.add_handler(
         ChatMemberHandler(on_my_chat_member_updated, ChatMemberHandler.MY_CHAT_MEMBER)
     )
+
+    # /list — club-set content; usable by customers and admins
+    application.add_handler(CommandHandler("list", list_handler))
 
     # Catch-all router for any other command (must be added last)
     application.add_handler(MessageHandler(filters.COMMAND, command_router))
