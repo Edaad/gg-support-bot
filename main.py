@@ -734,7 +734,7 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return ConversationHandler.END
     await update.message.reply_text(
-        "What method would you like to make a deposit with?",
+        "Hey brother! What method would you like to make a deposit with?",
         reply_markup=_deposit_method_keyboard(),
     )
     return DEPOSIT_CHOOSE
@@ -895,7 +895,7 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return ConversationHandler.END
     await update.message.reply_text(
-        "What method would you like to cashout with?",
+        "Hey brother! What method would you like to cashout with?",
         reply_markup=_cashout_method_keyboard(),
     )
     return CASHOUT_CHOOSE
