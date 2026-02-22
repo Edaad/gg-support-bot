@@ -821,23 +821,20 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
     except Exception:
         pass
 
-    amount_line = f"Amount: {amount_text}\n\n" if amount_text else ""
     if isinstance(cmd_data, dict):
         cmd_type = cmd_data.get("type", "text")
         if cmd_type == "photo":
             file_id = cmd_data.get("file_id")
             caption = cmd_data.get("caption", "")
-            if amount_line:
-                caption = amount_line.rstrip() + "\n\n" + (caption or "")
             if file_id:
                 await update.message.reply_photo(photo=file_id, caption=caption or None)
             else:
                 await update.message.reply_text("Error: Photo data is corrupted.")
         else:
             content = cmd_data.get("content", "")
-            await update.message.reply_text(amount_line + content)
+            await update.message.reply_text(content)
     else:
-        await update.message.reply_text(amount_line + (cmd_data or ""))
+        await update.message.reply_text(cmd_data or "")
     return ConversationHandler.END
 
 
@@ -967,23 +964,20 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
     except Exception:
         pass
 
-    amount_line = f"Amount: {amount_text}\n\n" if amount_text else ""
     if isinstance(cmd_data, dict):
         cmd_type = cmd_data.get("type", "text")
         if cmd_type == "photo":
             file_id = cmd_data.get("file_id")
             caption = cmd_data.get("caption", "")
-            if amount_line:
-                caption = amount_line.rstrip() + "\n\n" + (caption or "")
             if file_id:
                 await update.message.reply_photo(photo=file_id, caption=caption or None)
             else:
                 await update.message.reply_text("Error: Photo data is corrupted.")
         else:
             content = cmd_data.get("content", "")
-            await update.message.reply_text(amount_line + content)
+            await update.message.reply_text(content)
     else:
-        await update.message.reply_text(amount_line + (cmd_data or ""))
+        await update.message.reply_text(cmd_data or "")
     return ConversationHandler.END
 
 
