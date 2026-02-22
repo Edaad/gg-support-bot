@@ -412,6 +412,7 @@ RESERVED_CMDS = {
     "delete",
     "mycmds",
     "deposit",
+    "cashout",
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -427,6 +428,8 @@ GROUP_TO_CLUB: Dict[int, int] = {}
 SET_NAME, SET_MESSAGE = range(2)
 # Deposit conversation states
 DEPOSIT_CHOOSE, DEPOSIT_AMOUNT = range(2, 4)
+# Cashout conversation states
+CASHOUT_CHOOSE, CASHOUT_AMOUNT = range(4, 6)
 
 CMD_NAME_RE = re.compile(r"^[A-Za-z0-9_]{1,32}$")  # Telegram command naming rules
 
@@ -847,6 +850,150 @@ async def deposit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# /cashout FLOW (groups only; uses club's botcashout* commands)
+
+
+def _cashout_method_keyboard() -> InlineKeyboardMarkup:
+    """Inline keyboard for cashout method selection."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Zelle", callback_data="cashout:botcashoutzelle"),
+                InlineKeyboardButton(
+                    "Crypto", callback_data="cashout:botcashoutcrypto"
+                ),
+                InlineKeyboardButton(
+                    "Cashapp", callback_data="cashout:botcashoutcashapp"
+                ),
+                InlineKeyboardButton("Venmo", callback_data="cashout:botcashoutvenmo"),
+            ],
+        ]
+    )
+
+
+_CASHOUT_METHOD_DISPLAY = {
+    "botcashoutzelle": "Zelle",
+    "botcashoutcrypto": "Crypto",
+    "botcashoutcashapp": "Cashapp",
+    "botcashoutvenmo": "Venmo",
+}
+
+
+async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start /cashout: only in groups; show method keyboard."""
+    if not update.message or not update.effective_chat or not update.effective_user:
+        return ConversationHandler.END
+    chat = update.effective_chat
+    if chat.type not in ("group", "supergroup"):
+        await update.message.reply_text("Use /cashout in a club group.")
+        return ConversationHandler.END
+    chat_id = chat.id
+    club_id = get_club_for_chat(chat_id)
+    if club_id is None:
+        await update.message.reply_text(
+            "This group isn't linked to a club. The club account must add the bot to this group."
+        )
+        return ConversationHandler.END
+    await update.message.reply_text(
+        "What method would you like to cashout with?",
+        reply_markup=_cashout_method_keyboard(),
+    )
+    return CASHOUT_CHOOSE
+
+
+async def cashout_method_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """User tapped a cashout method button; ask for amount."""
+    if (
+        not update.callback_query
+        or not update.effective_user
+        or not update.effective_chat
+    ):
+        return ConversationHandler.END
+    query = update.callback_query
+    await query.answer()
+    data = query.data or ""
+    if not data.startswith("cashout:"):
+        return ConversationHandler.END
+    cmd_name = data.split(":", 1)[1]
+    context.user_data["pending_cashout_method"] = cmd_name
+    context.user_data["pending_cashout_chat_id"] = update.effective_chat.id
+    method_display = _CASHOUT_METHOD_DISPLAY.get(cmd_name, cmd_name)
+    context.user_data["pending_cashout_method_display"] = method_display
+    await query.edit_message_text(
+        f"You selected {method_display}. How much would you like to cashout?\n\n"
+        "Please select this message and hit reply to reply correctly.",
+        reply_markup=InlineKeyboardMarkup([]),
+    )
+    return CASHOUT_AMOUNT
+
+
+async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """User sent amount; send cashout request message then club's content."""
+    if not update.message or not update.effective_user or not update.effective_chat:
+        return ConversationHandler.END
+    chat_id = update.effective_chat.id
+    if context.user_data.get("pending_cashout_chat_id") != chat_id:
+        return ConversationHandler.END
+    cmd_name = context.user_data.pop("pending_cashout_method", None)
+    context.user_data.pop("pending_cashout_chat_id", None)
+    method_display = context.user_data.pop(
+        "pending_cashout_method_display", cmd_name or "?"
+    )
+    if not cmd_name:
+        return ConversationHandler.END
+    club_id = get_club_for_chat(chat_id)
+    if club_id is None:
+        await update.message.reply_text("This group is no longer linked to a club.")
+        return ConversationHandler.END
+    amount_text = (update.message.text or "").strip()
+    club_cmds = get_user_dict(club_id)
+    cmd_data = club_cmds.get(cmd_name)
+    if cmd_data is None:
+        cmd_data = load_club_command_from_db(club_id, cmd_name)
+    if cmd_data is None:
+        await update.message.reply_text(
+            "This club hasn't set up that cashout method yet."
+        )
+        return ConversationHandler.END
+
+    try:
+        await update.effective_chat.send_message(
+            f"Cashout request for {amount_text or '(not specified)'} on {method_display}"
+        )
+    except Exception:
+        pass
+
+    amount_line = f"Amount: {amount_text}\n\n" if amount_text else ""
+    if isinstance(cmd_data, dict):
+        cmd_type = cmd_data.get("type", "text")
+        if cmd_type == "photo":
+            file_id = cmd_data.get("file_id")
+            caption = cmd_data.get("caption", "")
+            if amount_line:
+                caption = amount_line.rstrip() + "\n\n" + (caption or "")
+            if file_id:
+                await update.message.reply_photo(photo=file_id, caption=caption or None)
+            else:
+                await update.message.reply_text("Error: Photo data is corrupted.")
+        else:
+            content = cmd_data.get("content", "")
+            await update.message.reply_text(amount_line + content)
+    else:
+        await update.message.reply_text(amount_line + (cmd_data or ""))
+    return ConversationHandler.END
+
+
+async def cashout_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancel cashout flow."""
+    if update.message:
+        await update.message.reply_text("Cancelled.")
+    context.user_data.pop("pending_cashout_method", None)
+    context.user_data.pop("pending_cashout_chat_id", None)
+    context.user_data.pop("pending_cashout_method_display", None)
+    return ConversationHandler.END
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # CATCH-ALL COMMAND ROUTER (per-user lookup)
 
 
@@ -1020,6 +1167,27 @@ def main():
         per_user=True,
     )
     application.add_handler(deposit_conv)
+
+    # /cashout flow (groups only; any user)
+    cashout_conv = ConversationHandler(
+        entry_points=[CommandHandler("cashout", cashout_entry)],
+        states={
+            CASHOUT_CHOOSE: [
+                CallbackQueryHandler(cashout_method_chosen, pattern="^cashout:"),
+            ],
+            CASHOUT_AMOUNT: [
+                MessageHandler(
+                    filters.TEXT & (~filters.COMMAND),
+                    cashout_amount_received,
+                ),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cashout_cancel)],
+        name="cashout_conv",
+        per_chat=True,
+        per_user=True,
+    )
+    application.add_handler(cashout_conv)
 
     # Bot added to group -> link group to club
     application.add_handler(
