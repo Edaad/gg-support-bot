@@ -718,9 +718,12 @@ def _deposit_method_keyboard() -> InlineKeyboardMarkup:
 
 
 async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start /deposit: only in groups; show method keyboard."""
+    """Start /deposit: only in groups; show method keyboard. Blocked for admins."""
     print("[deposit] entry: /deposit received")
     if not update.message or not update.effective_chat or not update.effective_user:
+        return ConversationHandler.END
+    if is_allowed(update.effective_user.id):
+        await update.message.reply_text("/deposit is for customers only.")
         return ConversationHandler.END
     chat = update.effective_chat
     if chat.type not in ("group", "supergroup"):
@@ -880,8 +883,11 @@ _CASHOUT_METHOD_DISPLAY = {
 
 
 async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start /cashout: only in groups; show method keyboard."""
+    """Start /cashout: only in groups; show method keyboard. Blocked for admins."""
     if not update.message or not update.effective_chat or not update.effective_user:
+        return ConversationHandler.END
+    if is_allowed(update.effective_user.id):
+        await update.message.reply_text("/cashout is for customers only.")
         return ConversationHandler.END
     chat = update.effective_chat
     if chat.type not in ("group", "supergroup"):
