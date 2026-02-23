@@ -773,8 +773,7 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     method_display = _DEPOSIT_METHOD_DISPLAY.get(cmd_name, cmd_name)
     context.user_data["pending_deposit_method_display"] = method_display
     await query.edit_message_text(
-        f"You selected {method_display}. How much would you like to deposit?\n\n"
-        "Please select this message and hit reply to reply correctly.",
+        f"You selected {method_display}. How much would you like to deposit?\n\n",
         reply_markup=InlineKeyboardMarkup([]),
     )
     return DEPOSIT_AMOUNT
@@ -922,8 +921,7 @@ async def cashout_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     method_display = _CASHOUT_METHOD_DISPLAY.get(cmd_name, cmd_name)
     context.user_data["pending_cashout_method_display"] = method_display
     await query.edit_message_text(
-        f"You selected {method_display}. How much would you like to cashout?\n\n"
-        "Please select this message and hit reply to reply correctly.",
+        f"You selected {method_display}. How much would you like to cashout?\n\n",
         reply_markup=InlineKeyboardMarkup([]),
     )
     return CASHOUT_AMOUNT
