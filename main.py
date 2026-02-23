@@ -414,6 +414,7 @@ RESERVED_CMDS = {
     "deposit",
     "cashout",
     "list",
+    "botwelcome",
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -629,7 +630,7 @@ async def set_get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Invalid command name. Use only letters, numbers, or underscores (max 32). Try again."
         )
         return SET_NAME
-    if name in RESERVED_CMDS and name != "list":
+    if name in RESERVED_CMDS and name not in ("list", "botwelcome"):
         await update.message.reply_text(f"/{name} is reserved. Pick another name.")
         return SET_NAME
 
@@ -1114,6 +1115,38 @@ async def on_my_chat_member_updated(
     chat_id = update.effective_chat.id
     club_user_id = update.effective_user.id
     set_group_club(chat_id, club_user_id)
+
+    # Send the club's botwelcome message if set
+    club_cmds = get_user_dict(club_user_id)
+    cmd_data = club_cmds.get("botwelcome")
+    if cmd_data is not None and context.bot:
+        try:
+            if isinstance(cmd_data, dict):
+                cmd_type = cmd_data.get("type", "text")
+                if cmd_type == "photo":
+                    file_id = cmd_data.get("file_id")
+                    caption = cmd_data.get("caption", "")
+                    if file_id:
+                        await context.bot.send_photo(
+                            chat_id=chat_id, photo=file_id, caption=caption
+                        )
+                    # else skip corrupted photo
+                else:
+                    content = cmd_data.get("content", "")
+                    chunk_size = 4096
+                    for i in range(0, len(content), chunk_size):
+                        await context.bot.send_message(
+                            chat_id=chat_id, text=content[i : i + chunk_size]
+                        )
+            else:
+                text = cmd_data or ""
+                chunk_size = 4096
+                for i in range(0, len(text), chunk_size):
+                    await context.bot.send_message(
+                        chat_id=chat_id, text=text[i : i + chunk_size]
+                    )
+        except Exception as e:
+            print(f"Failed to send botwelcome to chat {chat_id}: {e}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
