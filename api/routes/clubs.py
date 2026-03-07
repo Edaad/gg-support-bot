@@ -25,6 +25,7 @@ def _club_to_read(club: Club) -> ClubRead:
         list_file_id=club.list_file_id,
         list_caption=club.list_caption,
         allow_multi_cashout=club.allow_multi_cashout,
+        allow_admin_commands=club.allow_admin_commands,
         is_active=club.is_active,
         created_at=club.created_at,
         method_count=len(club.payment_methods),

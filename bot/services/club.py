@@ -195,3 +195,11 @@ def get_club_allows_multi_cashout(club_id: int) -> bool:
         if not club:
             return False
         return bool(club.allow_multi_cashout)
+
+
+def get_club_allows_admin_commands(club_id: int) -> bool:
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club:
+            return True
+        return bool(club.allow_admin_commands)

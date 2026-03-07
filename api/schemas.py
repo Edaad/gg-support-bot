@@ -31,6 +31,7 @@ class ClubCreate(BaseModel):
     list_file_id: Optional[str] = None
     list_caption: Optional[str] = None
     allow_multi_cashout: bool = True
+    allow_admin_commands: bool = True
     is_active: bool = True
 
 
@@ -46,6 +47,7 @@ class ClubUpdate(BaseModel):
     list_file_id: Optional[str] = None
     list_caption: Optional[str] = None
     allow_multi_cashout: Optional[bool] = None
+    allow_admin_commands: Optional[bool] = None
     is_active: Optional[bool] = None
 
 
@@ -64,6 +66,7 @@ class ClubRead(BaseModel):
     list_file_id: Optional[str]
     list_caption: Optional[str]
     allow_multi_cashout: bool
+    allow_admin_commands: bool
     is_active: bool
     created_at: Optional[datetime]
     method_count: int = 0

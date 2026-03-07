@@ -12,7 +12,8 @@ from telegram.ext import (
     filters,
 )
 
-from bot.services.club import get_club_for_chat, get_methods_for_amount, get_method_by_id, get_sub_options, get_sub_option_by_id
+from config import ADMIN_USER_IDS
+from bot.services.club import get_club_for_chat, get_methods_for_amount, get_method_by_id, get_sub_options, get_sub_option_by_id, get_club_allows_admin_commands
 
 DEPOSIT_AMOUNT, DEPOSIT_CHOOSE, DEPOSIT_SUB = range(3)
 
@@ -30,6 +31,11 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "This group isn't linked to a club yet. The club owner must add the bot."
         )
         return ConversationHandler.END
+
+    user_id = update.effective_user.id
+    if user_id in ADMIN_USER_IDS and not get_club_allows_admin_commands(club_id):
+        return ConversationHandler.END
+
     context.user_data["deposit_club_id"] = club_id
     context.user_data["deposit_chat_id"] = chat.id
     await update.message.reply_text("How much would you like to deposit?")

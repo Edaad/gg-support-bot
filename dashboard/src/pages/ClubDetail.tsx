@@ -135,6 +135,19 @@ function GeneralTab({
           <label className="flex items-center gap-2 text-sm text-gray-300">
             <input
               type="checkbox"
+              checked={form.allow_admin_commands ?? true}
+              onChange={(e) => setField('allow_admin_commands', e.target.checked)}
+              className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500"
+            />
+            Allow admin /deposit and /cashout
+          </label>
+          <p className="ml-6 text-xs text-gray-500">
+            When enabled, admin users can use /deposit and /cashout in this club's groups.
+            When disabled, those commands are restricted to non-admin players only.
+          </p>
+          <label className="flex items-center gap-2 text-sm text-gray-300">
+            <input
+              type="checkbox"
               checked={form.is_active ?? true}
               onChange={(e) => setField('is_active', e.target.checked)}
               className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500"

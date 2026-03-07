@@ -12,6 +12,7 @@ from telegram.ext import (
     filters,
 )
 
+from config import ADMIN_USER_IDS
 from bot.services.club import (
     get_club_for_chat,
     get_methods_for_amount,
@@ -19,6 +20,7 @@ from bot.services.club import (
     get_sub_options,
     get_sub_option_by_id,
     get_club_allows_multi_cashout,
+    get_club_allows_admin_commands,
 )
 
 CASHOUT_AMOUNT, CASHOUT_CHOOSE, CASHOUT_SUB = range(3)
@@ -37,6 +39,11 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "This group isn't linked to a club yet. The club owner must add the bot."
         )
         return ConversationHandler.END
+
+    user_id = update.effective_user.id
+    if user_id in ADMIN_USER_IDS and not get_club_allows_admin_commands(club_id):
+        return ConversationHandler.END
+
     context.user_data["cashout_club_id"] = club_id
     context.user_data["cashout_chat_id"] = chat.id
     context.user_data["cashout_selected"] = []
