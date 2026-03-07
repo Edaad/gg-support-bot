@@ -140,51 +140,25 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     method_name = context.user_data.get("deposit_method_name", "")
     display = f"{method_name} — {sub['name']}"
 
-    await _send_sub_response(query, sub, amount, display)
+    await _send_response(query, sub, amount, display)
     _cleanup(context)
     return ConversationHandler.END
 
 
-async def _send_response(query, method, amount, display_name):
-    try:
-        await query.message.chat.send_message(
-            f"Deposit request for ${amount} via {display_name}"
-        )
-    except Exception:
-        pass
+async def _send_response(query, data, amount, display_name):
+    """Edit the keyboard message to the announcement, then send instructions as a new message below."""
+    announcement = f"Deposit request for ${amount} via {display_name}"
+    await query.edit_message_text(announcement)
 
-    if method["response_type"] == "photo" and method.get("response_file_id"):
-        await query.message.reply_photo(
-            photo=method["response_file_id"],
-            caption=method.get("response_caption") or None,
+    if data["response_type"] == "photo" and data.get("response_file_id"):
+        await query.message.chat.send_photo(
+            photo=data["response_file_id"],
+            caption=data.get("response_caption") or None,
         )
     else:
-        text = method.get("response_text") or ""
+        text = data.get("response_text") or ""
         if text:
-            await query.edit_message_text(text)
-        else:
-            await query.edit_message_text(f"Deposit request for ${amount} via {display_name} submitted.")
-
-
-async def _send_sub_response(query, sub, amount, display_name):
-    try:
-        await query.message.chat.send_message(
-            f"Deposit request for ${amount} via {display_name}"
-        )
-    except Exception:
-        pass
-
-    if sub["response_type"] == "photo" and sub.get("response_file_id"):
-        await query.message.reply_photo(
-            photo=sub["response_file_id"],
-            caption=sub.get("response_caption") or None,
-        )
-    else:
-        text = sub.get("response_text") or ""
-        if text:
-            await query.edit_message_text(text)
-        else:
-            await query.edit_message_text(f"Deposit request for ${amount} via {display_name} submitted.")
+            await query.message.chat.send_message(text)
 
 
 def _cleanup(context):

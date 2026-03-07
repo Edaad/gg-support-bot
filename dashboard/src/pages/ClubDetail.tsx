@@ -118,15 +118,30 @@ function GeneralTab({
             />
           </div>
         </div>
-        <label className="mt-4 flex items-center gap-2 text-sm text-gray-300">
-          <input
-            type="checkbox"
-            checked={form.is_active ?? true}
-            onChange={(e) => setField('is_active', e.target.checked)}
-            className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500"
-          />
-          Active
-        </label>
+        <div className="mt-4 space-y-3">
+          <label className="flex items-center gap-2 text-sm text-gray-300">
+            <input
+              type="checkbox"
+              checked={form.allow_multi_cashout ?? true}
+              onChange={(e) => setField('allow_multi_cashout', e.target.checked)}
+              className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500"
+            />
+            Allow multiple cashout methods
+          </label>
+          <p className="ml-6 text-xs text-gray-500">
+            When enabled, players can select multiple cashout methods in one session.
+            When disabled, they pick one method and the cashout is submitted immediately.
+          </p>
+          <label className="flex items-center gap-2 text-sm text-gray-300">
+            <input
+              type="checkbox"
+              checked={form.is_active ?? true}
+              onChange={(e) => setField('is_active', e.target.checked)}
+              className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500"
+            />
+            Active
+          </label>
+        </div>
       </div>
 
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">

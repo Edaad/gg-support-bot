@@ -31,6 +31,7 @@ class Club(Base):
     list_text = Column(Text)
     list_file_id = Column(Text)
     list_caption = Column(Text)
+    allow_multi_cashout = Column(Boolean, default=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
 

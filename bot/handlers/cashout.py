@@ -1,4 +1,4 @@
-"""Cashout conversation: amount first, filtered methods, multi-method selection, crypto sub-options."""
+"""Cashout conversation: amount first, filtered methods, optional multi-method with inline Done button."""
 
 from decimal import Decimal, InvalidOperation
 
@@ -12,9 +12,16 @@ from telegram.ext import (
     filters,
 )
 
-from bot.services.club import get_club_for_chat, get_methods_for_amount, get_method_by_id, get_sub_options, get_sub_option_by_id
+from bot.services.club import (
+    get_club_for_chat,
+    get_methods_for_amount,
+    get_method_by_id,
+    get_sub_options,
+    get_sub_option_by_id,
+    get_club_allows_multi_cashout,
+)
 
-CASHOUT_AMOUNT, CASHOUT_CHOOSE, CASHOUT_SUB, CASHOUT_MORE = range(4)
+CASHOUT_AMOUNT, CASHOUT_CHOOSE, CASHOUT_SUB = range(3)
 
 
 async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -33,6 +40,7 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["cashout_club_id"] = club_id
     context.user_data["cashout_chat_id"] = chat.id
     context.user_data["cashout_selected"] = []
+    context.user_data["cashout_multi"] = get_club_allows_multi_cashout(club_id)
     await update.message.reply_text("How much would you like to cashout?")
     return CASHOUT_AMOUNT
 
@@ -54,26 +62,21 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
         return CASHOUT_AMOUNT
 
     context.user_data["cashout_amount"] = amount
-    return await _show_method_keyboard(update, context, amount, is_callback=False)
+    return await _show_method_keyboard(update, context, first_pick=True)
 
 
-async def _show_method_keyboard(update, context, amount, is_callback=False):
+async def _show_method_keyboard(update, context, first_pick=False):
+    """Show available methods. After the first pick (multi-mode), includes a Done button."""
     club_id = context.user_data["cashout_club_id"]
+    amount = context.user_data["cashout_amount"]
     already_selected = {s["id"] for s in context.user_data.get("cashout_selected", [])}
+    is_multi = context.user_data.get("cashout_multi", False)
 
     methods = get_methods_for_amount(club_id, "cashout", amount)
     available = [m for m in methods if m["id"] not in already_selected]
 
     if not available:
-        if context.user_data.get("cashout_selected"):
-            return await _finalize_cashout(update, context, is_callback)
-        msg = f"No cashout methods available for ${amount}. Please try a different amount."
-        if is_callback:
-            await update.callback_query.edit_message_text(msg)
-        else:
-            await update.message.reply_text(msg)
-        _cleanup(context)
-        return ConversationHandler.END
+        return await _finalize_cashout(update, context)
 
     buttons = []
     row = []
@@ -85,11 +88,20 @@ async def _show_method_keyboard(update, context, amount, is_callback=False):
     if row:
         buttons.append(row)
 
-    text = f"Cashout amount: ${amount}\nSelect your cashout method:"
-    if is_callback:
-        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+    if is_multi and not first_pick:
+        buttons.append([InlineKeyboardButton("Done — Submit cashout", callback_data="codone")])
+
+    if first_pick:
+        text = f"Cashout amount: ${amount}\nSelect your cashout method:"
     else:
+        text = "Select another cashout method, or tap Done to submit:"
+
+    if first_pick and update.message:
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+    elif update.callback_query:
+        await update.callback_query.message.chat.send_message(
+            text, reply_markup=InlineKeyboardMarkup(buttons)
+        )
     return CASHOUT_CHOOSE
 
 
@@ -100,6 +112,11 @@ async def cashout_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
 
     data = query.data or ""
+
+    if data == "codone":
+        await query.edit_message_text("Submitting cashout...")
+        return await _finalize_cashout(update, context)
+
     if not data.startswith("co:"):
         return ConversationHandler.END
 
@@ -130,9 +147,14 @@ async def cashout_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
             return CASHOUT_SUB
 
     amount = context.user_data.get("cashout_amount", "?")
-    await _send_method_response(query, method, amount)
+    await _send_response(query, method, amount, method["name"])
     context.user_data.setdefault("cashout_selected", []).append({"id": method_id, "name": method["name"]})
-    return await _ask_more(query, context)
+
+    is_multi = context.user_data.get("cashout_multi", False)
+    if not is_multi:
+        return await _finalize_cashout(update, context)
+
+    return await _show_method_keyboard(update, context, first_pick=False)
 
 
 async def cashout_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -155,102 +177,54 @@ async def cashout_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     amount = context.user_data.get("cashout_amount", "?")
     display = f"{method.get('name', '')} — {sub['name']}"
-    await _send_sub_response(query, sub, amount, display)
+    await _send_response(query, sub, amount, display)
 
     context.user_data.setdefault("cashout_selected", []).append({"id": method.get("id"), "name": display})
-    return await _ask_more(query, context)
+
+    is_multi = context.user_data.get("cashout_multi", False)
+    if not is_multi:
+        return await _finalize_cashout(update, context)
+
+    return await _show_method_keyboard(update, context, first_pick=False)
 
 
-async def _ask_more(query, context):
-    buttons = [
-        [
-            InlineKeyboardButton("Yes", callback_data="comore:yes"),
-            InlineKeyboardButton("No", callback_data="comore:no"),
-        ]
-    ]
-    await query.message.reply_text(
-        "Would you like to add another cashout method?",
-        reply_markup=InlineKeyboardMarkup(buttons),
-    )
-    return CASHOUT_MORE
+async def _send_response(query, data, amount, display_name):
+    """Edit the keyboard message to the announcement, then send instructions as a new message."""
+    announcement = f"Cashout request for ${amount} via {display_name}"
+    await query.edit_message_text(announcement)
+
+    if data["response_type"] == "photo" and data.get("response_file_id"):
+        await query.message.chat.send_photo(
+            photo=data["response_file_id"],
+            caption=data.get("response_caption") or None,
+        )
+    else:
+        text = data.get("response_text") or ""
+        if text:
+            await query.message.chat.send_message(text)
 
 
-async def cashout_more_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.callback_query:
-        return ConversationHandler.END
-    query = update.callback_query
-    await query.answer()
-
-    choice = (query.data or "").split(":")[1] if ":" in (query.data or "") else "no"
-
-    if choice == "yes":
-        amount = context.user_data.get("cashout_amount")
-        return await _show_method_keyboard(update, context, amount, is_callback=True)
-
-    return await _finalize_cashout(update, context, is_callback=True)
-
-
-async def _finalize_cashout(update, context, is_callback=False):
+async def _finalize_cashout(update, context):
     amount = context.user_data.get("cashout_amount", "?")
     selected = context.user_data.get("cashout_selected", [])
     method_names = ", ".join(s["name"] for s in selected) if selected else "None"
 
-    summary = f"Cashout request submitted: ${amount} via {method_names}"
+    summary = f"Cashout submitted: ${amount} via {method_names}"
     try:
-        chat = update.callback_query.message.chat if is_callback else update.message.chat
-        await chat.send_message(summary)
+        if update.callback_query:
+            await update.callback_query.message.chat.send_message(summary)
+        elif update.message:
+            await update.message.chat.send_message(summary)
     except Exception:
         pass
 
-    if is_callback:
-        await update.callback_query.edit_message_text(summary)
-    else:
-        await update.message.reply_text(summary)
     _cleanup(context)
     return ConversationHandler.END
 
 
-async def _send_method_response(query, method, amount):
-    try:
-        await query.message.chat.send_message(
-            f"Cashout request for ${amount} via {method['name']}"
-        )
-    except Exception:
-        pass
-
-    if method["response_type"] == "photo" and method.get("response_file_id"):
-        await query.message.reply_photo(
-            photo=method["response_file_id"],
-            caption=method.get("response_caption") or None,
-        )
-    else:
-        text = method.get("response_text") or ""
-        if text:
-            await query.edit_message_text(text)
-
-
-async def _send_sub_response(query, sub, amount, display_name):
-    try:
-        await query.message.chat.send_message(
-            f"Cashout request for ${amount} via {display_name}"
-        )
-    except Exception:
-        pass
-
-    if sub["response_type"] == "photo" and sub.get("response_file_id"):
-        await query.message.reply_photo(
-            photo=sub["response_file_id"],
-            caption=sub.get("response_caption") or None,
-        )
-    else:
-        text = sub.get("response_text") or ""
-        if text:
-            await query.edit_message_text(text)
-
-
 def _cleanup(context):
     for key in ("cashout_club_id", "cashout_chat_id", "cashout_amount",
-                "cashout_selected", "cashout_current_method"):
+                "cashout_selected", "cashout_current_method", "cashout_multi"):
         context.user_data.pop(key, None)
 
 
@@ -270,12 +244,10 @@ def get_cashout_handler() -> ConversationHandler:
             ],
             CASHOUT_CHOOSE: [
                 CallbackQueryHandler(cashout_method_chosen, pattern=r"^co:\d+$"),
+                CallbackQueryHandler(cashout_method_chosen, pattern=r"^codone$"),
             ],
             CASHOUT_SUB: [
                 CallbackQueryHandler(cashout_sub_chosen, pattern=r"^cosub:\d+$"),
-            ],
-            CASHOUT_MORE: [
-                CallbackQueryHandler(cashout_more_chosen, pattern=r"^comore:"),
             ],
         },
         fallbacks=[CommandHandler("cancel", cashout_cancel)],

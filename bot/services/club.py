@@ -187,3 +187,11 @@ def get_club_id_for_telegram_user(telegram_user_id: int) -> Optional[int]:
     with get_db() as session:
         club = session.query(Club).filter_by(telegram_user_id=telegram_user_id).first()
         return club.id if club else None
+
+
+def get_club_allows_multi_cashout(club_id: int) -> bool:
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club:
+            return False
+        return bool(club.allow_multi_cashout)

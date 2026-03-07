@@ -89,6 +89,7 @@ export interface Club {
   list_text: string | null
   list_file_id: string | null
   list_caption: string | null
+  allow_multi_cashout: boolean
   is_active: boolean
   created_at: string | null
   method_count: number
