@@ -228,6 +228,11 @@ function CommandsTab({ token, clubId }: { token: string; clubId: number }) {
               <span className="ml-3 text-xs text-gray-500">
                 {c.response_type === 'photo' ? '[Photo]' : (c.response_text || '').slice(0, 60)}
               </span>
+              {c.customer_visible && (
+                <span className="ml-2 rounded bg-green-900/50 px-1.5 py-0.5 text-[10px] font-medium text-green-400">
+                  Customer visible
+                </span>
+              )}
             </div>
             <div className="flex gap-2">
               <button onClick={() => { setEditId(c.id); setForm({ ...c }); setShowAdd(true) }} className="text-xs text-gray-400 hover:text-white">Edit</button>
@@ -255,6 +260,20 @@ function CommandsTab({ token, clubId }: { token: string; clubId: number }) {
             caption={form.response_caption || ''}
             onChange={(field, value) => setForm({ ...form, [field]: value })}
           />
+          <div className="mt-4">
+            <label className="flex items-center gap-2 text-sm text-gray-300">
+              <input
+                type="checkbox"
+                checked={form.customer_visible ?? false}
+                onChange={(e) => setForm({ ...form, customer_visible: e.target.checked })}
+                className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500"
+              />
+              Visible to customers
+            </label>
+            <p className="ml-6 mt-1 text-xs text-gray-500">
+              Off by default. When enabled, non-admin users can also use this command.
+            </p>
+          </div>
           <div className="mt-4 flex gap-2">
             <button onClick={handleSave} className="rounded-lg bg-indigo-600 px-6 py-2 text-sm font-medium text-white hover:bg-indigo-500">
               {editId ? 'Update' : 'Add'}

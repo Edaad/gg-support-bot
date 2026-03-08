@@ -180,6 +180,7 @@ def get_custom_command(club_id: int, command_name: str) -> Optional[dict]:
             "response_text": cmd.response_text,
             "response_file_id": cmd.response_file_id,
             "response_caption": cmd.response_caption,
+            "customer_visible": bool(cmd.customer_visible),
         }
 
 

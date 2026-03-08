@@ -173,6 +173,7 @@ class CommandCreate(BaseModel):
     response_text: Optional[str] = None
     response_file_id: Optional[str] = None
     response_caption: Optional[str] = None
+    customer_visible: bool = False
     is_active: bool = True
 
 
@@ -182,6 +183,7 @@ class CommandUpdate(BaseModel):
     response_text: Optional[str] = None
     response_file_id: Optional[str] = None
     response_caption: Optional[str] = None
+    customer_visible: Optional[bool] = None
     is_active: Optional[bool] = None
 
 
@@ -195,6 +197,7 @@ class CommandRead(BaseModel):
     response_text: Optional[str]
     response_file_id: Optional[str]
     response_caption: Optional[str]
+    customer_visible: bool
     is_active: bool
 
 

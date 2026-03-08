@@ -127,6 +127,7 @@ class CustomCommand(Base):
     response_text = Column(Text)
     response_file_id = Column(Text)
     response_caption = Column(Text)
+    customer_visible = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
 
     club = relationship("Club", back_populates="custom_commands")

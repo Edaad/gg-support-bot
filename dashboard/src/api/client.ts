@@ -137,6 +137,7 @@ export interface Command {
   response_text: string | null
   response_file_id: string | null
   response_caption: string | null
+  customer_visible: boolean
   is_active: boolean
 }
 

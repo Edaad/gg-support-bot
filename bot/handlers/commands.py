@@ -219,6 +219,9 @@ async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Unknown command. Use /mycmds or /set.")
         return
 
+    if not _is_admin(uid) and not data.get("customer_visible", False):
+        return
+
     if data["response_type"] == "photo" and data.get("response_file_id"):
         await update.message.reply_photo(
             photo=data["response_file_id"],
