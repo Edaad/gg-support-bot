@@ -1,5 +1,6 @@
 """Admin-only custom command management: /set, /mycmds, /delete, and the catch-all router."""
 
+import logging
 import re
 
 from telegram import Update
@@ -193,6 +194,9 @@ async def delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ── Catch-all command router ──────────────────────────────────────────────────
 
+logger = logging.getLogger(__name__)
+
+
 async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_user or not update.effective_chat:
         return
@@ -210,10 +214,13 @@ async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         club_id = get_club_id_for_telegram_user(uid)
 
+    logger.info("command_router: cmd=%s uid=%s chat=%s chat_type=%s club_id=%s", cmd, uid, chat.id, chat.type, club_id)
+
     if club_id is None:
         return
 
     data = get_custom_command(club_id, cmd)
+    logger.info("command_router: get_custom_command(%s, %s) -> %s", club_id, cmd, "found" if data else "None")
     if not data:
         if _is_admin(uid):
             await update.message.reply_text("Unknown command. Use /mycmds or /set.")
