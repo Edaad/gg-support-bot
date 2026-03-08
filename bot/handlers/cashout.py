@@ -65,7 +65,9 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
         if amount <= 0:
             raise InvalidOperation()
     except (InvalidOperation, Exception):
-        await update.message.reply_text("Please enter a valid dollar amount (e.g. 50 or 100.00).")
+        await update.message.reply_text(
+            "Please enter a valid dollar amount (Example: 50 or 100.00)."
+        )
         return CASHOUT_AMOUNT
 
     context.user_data["cashout_amount"] = amount
@@ -96,7 +98,9 @@ async def _show_method_keyboard(update, context, first_pick=False):
         buttons.append(row)
 
     if is_multi and not first_pick:
-        buttons.append([InlineKeyboardButton("Done — Submit cashout", callback_data="codone")])
+        buttons.append(
+            [InlineKeyboardButton("Done — Submit cashout", callback_data="codone")]
+        )
 
     if first_pick:
         text = f"Cashout amount: ${amount}\nSelect your cashout method:"
@@ -104,7 +108,9 @@ async def _show_method_keyboard(update, context, first_pick=False):
         text = "Select another cashout method, or tap Done to submit:"
 
     if first_pick and update.message:
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+        await update.message.reply_text(
+            text, reply_markup=InlineKeyboardMarkup(buttons)
+        )
     elif update.callback_query:
         await update.callback_query.message.chat.send_message(
             text, reply_markup=InlineKeyboardMarkup(buttons)
@@ -141,7 +147,9 @@ async def cashout_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
             buttons = []
             row = []
             for s in subs:
-                row.append(InlineKeyboardButton(s["name"], callback_data=f"cosub:{s['id']}"))
+                row.append(
+                    InlineKeyboardButton(s["name"], callback_data=f"cosub:{s['id']}")
+                )
                 if len(row) == 2:
                     buttons.append(row)
                     row = []
@@ -155,7 +163,9 @@ async def cashout_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
 
     amount = context.user_data.get("cashout_amount", "?")
     await _send_response(query, method, amount, method["name"])
-    context.user_data.setdefault("cashout_selected", []).append({"id": method_id, "name": method["name"]})
+    context.user_data.setdefault("cashout_selected", []).append(
+        {"id": method_id, "name": method["name"]}
+    )
 
     is_multi = context.user_data.get("cashout_multi", False)
     if not is_multi:
@@ -186,7 +196,9 @@ async def cashout_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     display = f"{method.get('name', '')} — {sub['name']}"
     await _send_response(query, sub, amount, display)
 
-    context.user_data.setdefault("cashout_selected", []).append({"id": method.get("id"), "name": display})
+    context.user_data.setdefault("cashout_selected", []).append(
+        {"id": method.get("id"), "name": display}
+    )
 
     is_multi = context.user_data.get("cashout_multi", False)
     if not is_multi:
@@ -230,8 +242,14 @@ async def _finalize_cashout(update, context):
 
 
 def _cleanup(context):
-    for key in ("cashout_club_id", "cashout_chat_id", "cashout_amount",
-                "cashout_selected", "cashout_current_method", "cashout_multi"):
+    for key in (
+        "cashout_club_id",
+        "cashout_chat_id",
+        "cashout_amount",
+        "cashout_selected",
+        "cashout_current_method",
+        "cashout_multi",
+    ):
         context.user_data.pop(key, None)
 
 
@@ -247,7 +265,9 @@ def get_cashout_handler() -> ConversationHandler:
         entry_points=[CommandHandler("cashout", cashout_entry)],
         states={
             CASHOUT_AMOUNT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, cashout_amount_received),
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND, cashout_amount_received
+                ),
             ],
             CASHOUT_CHOOSE: [
                 CallbackQueryHandler(cashout_method_chosen, pattern=r"^co:\d+$"),

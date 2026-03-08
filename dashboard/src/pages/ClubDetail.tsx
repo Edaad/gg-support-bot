@@ -44,9 +44,8 @@ export default function ClubDetail({ token }: { token: string }) {
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition ${
-              tab === t ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-gray-200'
-            }`}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition ${tab === t ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-gray-200'
+              }`}
           >
             {t}
           </button>
@@ -200,7 +199,7 @@ function CommandsTab({ token, clubId }: { token: string; clubId: number }) {
   const [editId, setEditId] = useState<number | null>(null)
   const [form, setForm] = useState<Partial<Command>>({})
 
-  const load = () => listCommands(token, clubId).then(setCmds).catch(() => {})
+  const load = () => listCommands(token, clubId).then(setCmds).catch(() => { })
   useEffect(() => { load() }, [clubId])
 
   const resetForm = () => { setForm({}); setShowAdd(false); setEditId(null) }
@@ -250,7 +249,7 @@ function CommandsTab({ token, clubId }: { token: string; clubId: number }) {
               value={form.command_name || ''}
               onChange={(e) => setForm({ ...form, command_name: e.target.value })}
               className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
-              placeholder="e.g. referral"
+              placeholder="Example: referral"
             />
           </div>
           <ResponseEditor
@@ -292,7 +291,7 @@ function CommandsTab({ token, clubId }: { token: string; clubId: number }) {
 
 function GroupsTab({ token, clubId }: { token: string; clubId: number }) {
   const [groups, setGroups] = useState<GroupT[]>([])
-  useEffect(() => { listGroups(token, clubId).then(setGroups).catch(() => {}) }, [clubId])
+  useEffect(() => { listGroups(token, clubId).then(setGroups).catch(() => { }) }, [clubId])
 
   return (
     <div>

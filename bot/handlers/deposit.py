@@ -13,7 +13,14 @@ from telegram.ext import (
 )
 
 from config import ADMIN_USER_IDS
-from bot.services.club import get_club_for_chat, get_methods_for_amount, get_method_by_id, get_sub_options, get_sub_option_by_id, get_club_allows_admin_commands
+from bot.services.club import (
+    get_club_for_chat,
+    get_methods_for_amount,
+    get_method_by_id,
+    get_sub_options,
+    get_sub_option_by_id,
+    get_club_allows_admin_commands,
+)
 
 DEPOSIT_AMOUNT, DEPOSIT_CHOOSE, DEPOSIT_SUB = range(3)
 
@@ -55,7 +62,9 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         if amount <= 0:
             raise InvalidOperation()
     except (InvalidOperation, Exception):
-        await update.message.reply_text("Please enter a valid dollar amount (e.g. 50 or 100.00).")
+        await update.message.reply_text(
+            "Please enter a valid dollar amount (Example: 50 or 100.00)."
+        )
         return DEPOSIT_AMOUNT
 
     context.user_data["deposit_amount"] = amount
@@ -107,7 +116,9 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
             buttons = []
             row = []
             for s in subs:
-                row.append(InlineKeyboardButton(s["name"], callback_data=f"depsub:{s['id']}"))
+                row.append(
+                    InlineKeyboardButton(s["name"], callback_data=f"depsub:{s['id']}")
+                )
                 if len(row) == 2:
                     buttons.append(row)
                     row = []
@@ -168,7 +179,12 @@ async def _send_response(query, data, amount, display_name):
 
 
 def _cleanup(context):
-    for key in ("deposit_club_id", "deposit_chat_id", "deposit_amount", "deposit_method_name"):
+    for key in (
+        "deposit_club_id",
+        "deposit_chat_id",
+        "deposit_amount",
+        "deposit_method_name",
+    ):
         context.user_data.pop(key, None)
 
 
@@ -184,7 +200,9 @@ def get_deposit_handler() -> ConversationHandler:
         entry_points=[CommandHandler("deposit", deposit_entry)],
         states={
             DEPOSIT_AMOUNT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, deposit_amount_received),
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND, deposit_amount_received
+                ),
             ],
             DEPOSIT_CHOOSE: [
                 CallbackQueryHandler(deposit_method_chosen, pattern=r"^dep:\d+$"),

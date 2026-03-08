@@ -32,7 +32,7 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
   const dragItem = useRef<number | null>(null)
   const dragOver = useRef<number | null>(null)
 
-  const load = () => listMethods(token, clubId, direction).then(setMethods).catch(() => {})
+  const load = () => listMethods(token, clubId, direction).then(setMethods).catch(() => { })
   useEffect(() => { load() }, [clubId, direction])
 
   const resetForm = () => { setForm({ ...EMPTY }); setShowAdd(false); setEditId(null); setError('') }
@@ -78,7 +78,7 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
     setMethods(reordered)
     dragItem.current = null
     dragOver.current = null
-    await reorderMethods(token, clubId, reordered.map((m) => m.id)).catch(() => {})
+    await reorderMethods(token, clubId, reordered.map((m) => m.id)).catch(() => { })
   }
 
   const setField = (field: string, value: any) => setForm((f) => ({ ...f, [field]: value }))
@@ -169,7 +169,7 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
                 value={form.name || ''}
                 onChange={(e) => setField('name', e.target.value)}
                 className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
-                placeholder="e.g. Venmo"
+                placeholder="Example: Venmo"
               />
             </div>
             <div>
@@ -178,7 +178,7 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
                 value={form.slug || ''}
                 onChange={(e) => setField('slug', e.target.value)}
                 className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
-                placeholder="e.g. venmo"
+                placeholder="Example: venmo"
               />
               <p className="mt-1 text-xs text-gray-600">Internal identifier. Use lowercase letters/numbers.</p>
             </div>
@@ -212,7 +212,7 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
                 onChange={(e) => setField('has_sub_options', e.target.checked)}
                 className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500 focus:ring-indigo-500"
               />
-              Has sub-options (e.g. crypto coins)
+              Has sub-options (Example: crypto coins)
             </label>
             <label className="flex items-center gap-2 text-sm text-gray-300">
               <input

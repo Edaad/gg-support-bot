@@ -190,11 +190,10 @@ export default function ChatPreview({ clubName, direction, methods }: Props) {
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.from === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
-              className={`max-w-[80%] rounded-xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
-                m.from === 'user'
+              className={`max-w-[80%] rounded-xl px-4 py-2.5 text-sm whitespace-pre-wrap ${m.from === 'user'
                   ? 'bg-indigo-600 text-white'
                   : 'bg-gray-800 text-gray-200'
-              }`}
+                }`}
             >
               {m.text}
               {m.buttons && (
@@ -226,7 +225,7 @@ export default function ChatPreview({ clubName, direction, methods }: Props) {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
-              placeholder="Enter amount (e.g. 50)"
+              placeholder="Enter amount (Example: 50)"
               autoFocus
             />
             <button

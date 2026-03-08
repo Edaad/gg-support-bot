@@ -9,7 +9,7 @@ export default function Clubs({ token }: { token: string }) {
   const [tgId, setTgId] = useState('')
   const [error, setError] = useState('')
 
-  const load = () => listClubs(token).then(setClubs).catch(() => {})
+  const load = () => listClubs(token).then(setClubs).catch(() => { })
   useEffect(() => { load() }, [])
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -54,7 +54,7 @@ export default function Clubs({ token }: { token: string }) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-white focus:border-indigo-500 focus:outline-none"
-              placeholder="e.g. RT Club"
+              placeholder="Example: RT Club"
               required
             />
           </div>
@@ -64,7 +64,7 @@ export default function Clubs({ token }: { token: string }) {
               value={tgId}
               onChange={(e) => setTgId(e.target.value)}
               className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-white focus:border-indigo-500 focus:outline-none"
-              placeholder="e.g. 6713100304"
+              placeholder="Example: 6713100304"
               required
             />
             <p className="mt-1 text-xs text-gray-500">

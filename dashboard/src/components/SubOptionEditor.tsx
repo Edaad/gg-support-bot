@@ -14,7 +14,7 @@ export default function SubOptionEditor({ token, methodId }: { token: string; me
   const [editId, setEditId] = useState<number | null>(null)
   const [form, setForm] = useState<Partial<SubOption>>({})
 
-  const load = () => listSubOptions(token, methodId).then(setSubs).catch(() => {})
+  const load = () => listSubOptions(token, methodId).then(setSubs).catch(() => { })
   useEffect(() => { load() }, [methodId])
 
   const resetForm = () => {
@@ -48,7 +48,7 @@ export default function SubOptionEditor({ token, methodId }: { token: string; me
   return (
     <div className="mt-3 rounded-lg border border-gray-700 bg-gray-800/50 p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h4 className="text-sm font-medium text-gray-300">Sub-options (e.g. crypto coins)</h4>
+        <h4 className="text-sm font-medium text-gray-300">Sub-options (Example: crypto coins)</h4>
         <button
           onClick={() => { resetForm(); setShowAdd(true) }}
           className="text-xs text-indigo-400 hover:text-indigo-300"
@@ -80,7 +80,7 @@ export default function SubOptionEditor({ token, methodId }: { token: string; me
                 value={form.name || ''}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
-                placeholder="e.g. Bitcoin"
+                placeholder="Example: Bitcoin"
               />
             </div>
             <div>
@@ -89,7 +89,7 @@ export default function SubOptionEditor({ token, methodId }: { token: string; me
                 value={form.slug || ''}
                 onChange={(e) => setForm({ ...form, slug: e.target.value })}
                 className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
-                placeholder="e.g. btc"
+                placeholder="Example: btc"
               />
             </div>
           </div>
