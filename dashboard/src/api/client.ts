@@ -67,6 +67,16 @@ export const updateCommand = (token: string, id: number, data: Partial<Command>)
 export const deleteCommand = (token: string, id: number) =>
   request<void>(`/commands/${id}`, { method: 'DELETE' }, token)
 
+// Tiers
+export const listTiers = (token: string, methodId: number) =>
+  request<Tier[]>(`/methods/${methodId}/tiers`, {}, token)
+export const createTier = (token: string, methodId: number, data: Partial<Tier>) =>
+  request<Tier>(`/methods/${methodId}/tiers`, { method: 'POST', body: JSON.stringify(data) }, token)
+export const updateTier = (token: string, id: number, data: Partial<Tier>) =>
+  request<Tier>(`/tiers/${id}`, { method: 'PUT', body: JSON.stringify(data) }, token)
+export const deleteTier = (token: string, id: number) =>
+  request<void>(`/tiers/${id}`, { method: 'DELETE' }, token)
+
 // Groups
 export const listGroups = (token: string, clubId: number) =>
   request<Group[]>(`/clubs/${clubId}/groups`, {}, token)
@@ -114,6 +124,20 @@ export interface Method {
   sort_order: number
   created_at: string | null
   sub_options: SubOption[]
+  tiers: Tier[]
+}
+
+export interface Tier {
+  id: number
+  method_id: number
+  label: string
+  min_amount: number | null
+  max_amount: number | null
+  response_type: string | null
+  response_text: string | null
+  response_file_id: string | null
+  response_caption: string | null
+  sort_order: number
 }
 
 export interface SubOption {

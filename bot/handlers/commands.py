@@ -47,7 +47,7 @@ async def set_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def set_get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_user:
         return ConversationHandler.END
-    name = (update.message.text or "").strip().lstrip("/")
+    name = (update.message.text or "").strip().lstrip("/").lower()
     if not CMD_NAME_RE.match(name):
         await update.message.reply_text(
             "Invalid name. Use only letters, numbers, or underscores (max 32). Try again."
@@ -178,7 +178,7 @@ async def delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not args:
         await update.message.reply_text("Usage: /delete <command_name>")
         return
-    name = args[0].lstrip("/")
+    name = args[0].lstrip("/").lower()
     club_id = get_club_id_for_telegram_user(uid)
     if club_id is None:
         await update.message.reply_text("You don't have a club set up yet.")
@@ -201,7 +201,7 @@ async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_user or not update.effective_chat:
         return
     text = update.message.text or ""
-    cmd = text.split()[0].lstrip("/").split("@")[0]
+    cmd = text.split()[0].lstrip("/").split("@")[0].lower()
     if cmd in RESERVED_CMDS:
         return
 

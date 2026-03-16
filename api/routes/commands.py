@@ -24,7 +24,9 @@ def create_command(club_id: int, body: CommandCreate, db: Session = Depends(get_
     club = db.query(Club).get(club_id)
     if not club:
         raise HTTPException(404, "Club not found")
-    cmd = CustomCommand(club_id=club_id, **body.model_dump())
+    data = body.model_dump()
+    data["command_name"] = data["command_name"].lower()
+    cmd = CustomCommand(club_id=club_id, **data)
     db.add(cmd)
     db.flush()
     db.refresh(cmd)
@@ -37,6 +39,8 @@ def update_command(cmd_id: int, body: CommandUpdate, db: Session = Depends(get_d
     if not cmd:
         raise HTTPException(404, "Command not found")
     for field, value in body.model_dump(exclude_unset=True).items():
+        if field == "command_name" and value is not None:
+            value = value.lower()
         setattr(cmd, field, value)
     db.flush()
     db.refresh(cmd)

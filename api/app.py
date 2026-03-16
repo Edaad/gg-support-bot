@@ -41,11 +41,13 @@ def create_app() -> FastAPI:
     from api.routes.methods import router as methods_router
     from api.routes.sub_options import router as sub_options_router
     from api.routes.commands import router as commands_router
+    from api.routes.tiers import router as tiers_router
     from api.routes.simulate import router as simulate_router
 
     app.include_router(clubs_router)
     app.include_router(methods_router)
     app.include_router(sub_options_router)
+    app.include_router(tiers_router)
     app.include_router(commands_router)
     app.include_router(simulate_router)
 

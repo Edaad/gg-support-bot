@@ -6,7 +6,7 @@ from typing import Optional, List, Tuple
 from sqlalchemy.orm import Session
 
 from db.connection import get_db
-from db.models import Club, PaymentMethod, PaymentSubOption, Group, CustomCommand
+from db.models import Club, PaymentMethod, PaymentMethodTier, PaymentSubOption, Group, CustomCommand
 
 
 def get_club_by_telegram_id(telegram_user_id: int) -> Optional[Club]:
@@ -166,11 +166,34 @@ def get_club_list_content(club_id: int) -> Optional[dict]:
         }
 
 
+def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
+    """Return the response tier matching the amount, or None to use the method default."""
+    with get_db() as session:
+        tiers = (
+            session.query(PaymentMethodTier)
+            .filter_by(method_id=method_id)
+            .order_by(PaymentMethodTier.sort_order)
+            .all()
+        )
+        for t in tiers:
+            if t.min_amount is not None and amount < t.min_amount:
+                continue
+            if t.max_amount is not None and amount > t.max_amount:
+                continue
+            return {
+                "response_type": t.response_type,
+                "response_text": t.response_text,
+                "response_file_id": t.response_file_id,
+                "response_caption": t.response_caption,
+            }
+    return None
+
+
 def get_custom_command(club_id: int, command_name: str) -> Optional[dict]:
     with get_db() as session:
         cmd = (
             session.query(CustomCommand)
-            .filter_by(club_id=club_id, command_name=command_name, is_active=True)
+            .filter_by(club_id=club_id, command_name=command_name.lower(), is_active=True)
             .first()
         )
         if not cmd:

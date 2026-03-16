@@ -9,6 +9,7 @@ import {
 } from '../api/client'
 import ResponseEditor from './ResponseEditor'
 import SubOptionEditor from './SubOptionEditor'
+import TierEditor from './TierEditor'
 
 interface Props {
   token: string
@@ -28,6 +29,7 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
   const [editId, setEditId] = useState<number | null>(null)
   const [form, setForm] = useState<Partial<Method>>({ ...EMPTY })
   const [expandedSub, setExpandedSub] = useState<number | null>(null)
+  const [expandedTier, setExpandedTier] = useState<number | null>(null)
   const [error, setError] = useState('')
   const dragItem = useRef<number | null>(null)
   const dragOver = useRef<number | null>(null)
@@ -141,12 +143,22 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
                     {expandedSub === m.id ? 'Hide' : 'Sub-options'}
                   </button>
                 )}
+                <button
+                  onClick={() => setExpandedTier(expandedTier === m.id ? null : m.id)}
+                  className="text-xs text-amber-400 hover:text-amber-300"
+                >
+                  {expandedTier === m.id ? 'Hide' : 'Tiers'}
+                  {m.tiers && m.tiers.length > 0 && ` (${m.tiers.length})`}
+                </button>
                 <button onClick={() => handleEdit(m)} className="text-xs text-gray-400 hover:text-white">Edit</button>
                 <button onClick={() => handleDelete(m.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
               </div>
             </div>
             {expandedSub === m.id && m.has_sub_options && (
               <SubOptionEditor token={token} methodId={m.id} />
+            )}
+            {expandedTier === m.id && (
+              <TierEditor token={token} methodId={m.id} />
             )}
           </div>
         ))}

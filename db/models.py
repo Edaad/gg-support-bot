@@ -76,6 +76,10 @@ class PaymentMethod(Base):
     sub_options = relationship(
         "PaymentSubOption", back_populates="method", cascade="all, delete-orphan"
     )
+    tiers = relationship(
+        "PaymentMethodTier", back_populates="method", cascade="all, delete-orphan",
+        order_by="PaymentMethodTier.sort_order",
+    )
 
 
 class PaymentSubOption(Base):
@@ -98,6 +102,25 @@ class PaymentSubOption(Base):
     sort_order = Column(Integer, default=0)
 
     method = relationship("PaymentMethod", back_populates="sub_options")
+
+
+class PaymentMethodTier(Base):
+    __tablename__ = "payment_method_tiers"
+
+    id = Column(Integer, primary_key=True)
+    method_id = Column(
+        Integer, ForeignKey("payment_methods.id", ondelete="CASCADE"), nullable=False
+    )
+    label = Column(String(50), nullable=False)
+    min_amount = Column(Numeric(12, 2), nullable=True)
+    max_amount = Column(Numeric(12, 2), nullable=True)
+    response_type = Column(String(10), default="text")
+    response_text = Column(Text)
+    response_file_id = Column(Text)
+    response_caption = Column(Text)
+    sort_order = Column(Integer, default=0)
+
+    method = relationship("PaymentMethod", back_populates="tiers")
 
 
 class Group(Base):

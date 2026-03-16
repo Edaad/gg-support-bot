@@ -21,6 +21,7 @@ from bot.services.club import (
     get_sub_option_by_id,
     get_club_allows_multi_cashout,
     get_club_allows_admin_commands,
+    get_tier_for_amount,
 )
 
 CASHOUT_AMOUNT, CASHOUT_CHOOSE, CASHOUT_SUB = range(3)
@@ -162,7 +163,8 @@ async def cashout_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
             return CASHOUT_SUB
 
     amount = context.user_data.get("cashout_amount", "?")
-    await _send_response(query, method, amount, method["name"])
+    tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
+    await _send_response(query, tier or method, amount, method["name"])
     context.user_data.setdefault("cashout_selected", []).append(
         {"id": method_id, "name": method["name"]}
     )

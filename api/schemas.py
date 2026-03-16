@@ -139,6 +139,46 @@ class MethodRead(BaseModel):
     sort_order: int
     created_at: Optional[datetime]
     sub_options: List[SubOptionRead] = []
+    tiers: List[TierRead] = []
+
+
+# ── Payment Method Tier ───────────────────────────────────────────────────────
+
+class TierCreate(BaseModel):
+    label: str
+    min_amount: Optional[Decimal] = None
+    max_amount: Optional[Decimal] = None
+    response_type: str = "text"
+    response_text: Optional[str] = None
+    response_file_id: Optional[str] = None
+    response_caption: Optional[str] = None
+    sort_order: int = 0
+
+
+class TierUpdate(BaseModel):
+    label: Optional[str] = None
+    min_amount: Optional[Decimal] = None
+    max_amount: Optional[Decimal] = None
+    response_type: Optional[str] = None
+    response_text: Optional[str] = None
+    response_file_id: Optional[str] = None
+    response_caption: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class TierRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    method_id: int
+    label: str
+    min_amount: Optional[Decimal]
+    max_amount: Optional[Decimal]
+    response_type: Optional[str]
+    response_text: Optional[str]
+    response_file_id: Optional[str]
+    response_caption: Optional[str]
+    sort_order: int
 
 
 # ── Payment Sub-Option ────────────────────────────────────────────────────────

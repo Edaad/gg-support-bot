@@ -20,6 +20,7 @@ from bot.services.club import (
     get_sub_options,
     get_sub_option_by_id,
     get_club_allows_admin_commands,
+    get_tier_for_amount,
 )
 
 DEPOSIT_AMOUNT, DEPOSIT_CHOOSE, DEPOSIT_SUB = range(3)
@@ -131,7 +132,8 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
             return DEPOSIT_SUB
 
     amount = context.user_data.get("deposit_amount", "?")
-    await _send_response(query, method, amount, method["name"])
+    tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
+    await _send_response(query, tier or method, amount, method["name"])
     _cleanup(context)
     return ConversationHandler.END
 
