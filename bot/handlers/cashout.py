@@ -22,6 +22,7 @@ from bot.services.club import (
     get_club_allows_multi_cashout,
     get_club_allows_admin_commands,
     get_tier_for_amount,
+    get_lowest_minimum,
 )
 
 CASHOUT_AMOUNT, CASHOUT_CHOOSE, CASHOUT_SUB = range(3)
@@ -86,6 +87,18 @@ async def _show_method_keyboard(update, context, first_pick=False):
     available = [m for m in methods if m["id"] not in already_selected]
 
     if not available:
+        if first_pick:
+            lowest = get_lowest_minimum(club_id, "cashout")
+            if lowest is not None and amount < lowest:
+                msg = f"Sorry! The minimum cashout amount is ${lowest:,.2f}."
+            else:
+                msg = f"No cashout methods available for ${amount}. Please try a different amount."
+            if update.message:
+                await update.message.reply_text(msg)
+            elif update.callback_query:
+                await update.callback_query.message.chat.send_message(msg)
+            _cleanup(context)
+            return ConversationHandler.END
         return await _finalize_cashout(update, context)
 
     buttons = []

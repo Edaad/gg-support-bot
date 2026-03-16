@@ -21,6 +21,7 @@ from bot.services.club import (
     get_sub_option_by_id,
     get_club_allows_admin_commands,
     get_tier_for_amount,
+    get_lowest_minimum,
 )
 
 DEPOSIT_AMOUNT, DEPOSIT_CHOOSE, DEPOSIT_SUB = range(3)
@@ -71,9 +72,15 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
     context.user_data["deposit_amount"] = amount
     methods = get_methods_for_amount(club_id, "deposit", amount)
     if not methods:
-        await update.message.reply_text(
-            f"No deposit methods available for ${amount}. Please try a different amount."
-        )
+        lowest = get_lowest_minimum(club_id, "deposit")
+        if lowest is not None and amount < lowest:
+            await update.message.reply_text(
+                f"Sorry! The minimum deposit amount is ${lowest:,.2f}."
+            )
+        else:
+            await update.message.reply_text(
+                f"No deposit methods available for ${amount}. Please try a different amount."
+            )
         return ConversationHandler.END
 
     buttons = []

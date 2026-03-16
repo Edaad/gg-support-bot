@@ -166,6 +166,18 @@ def get_club_list_content(club_id: int) -> Optional[dict]:
         }
 
 
+def get_lowest_minimum(club_id: int, direction: str) -> Optional[Decimal]:
+    """Return the smallest min_amount across all active methods, or None if none have a minimum."""
+    with get_db() as session:
+        methods = (
+            session.query(PaymentMethod)
+            .filter_by(club_id=club_id, direction=direction, is_active=True)
+            .all()
+        )
+        mins = [m.min_amount for m in methods if m.min_amount is not None]
+        return min(mins) if mins else None
+
+
 def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
     """Return the response tier matching the amount, or None to use the method default."""
     with get_db() as session:
