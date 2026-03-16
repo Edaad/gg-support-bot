@@ -82,41 +82,53 @@ async def set_get_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.photo:
         photo = update.message.photo[-1]
         media_group_id = update.message.media_group_id
-
-        file_ids = context.user_data.setdefault("pending_file_ids", [])
-        file_ids.append(photo.file_id)
-        if update.message.caption:
-            context.user_data["pending_caption"] = update.message.caption
+        caption = update.message.caption or ""
 
         if media_group_id:
+            prev_group = context.user_data.get("set_media_group_id")
+            if prev_group == media_group_id:
+                # Same album — append this file ID to the DB record
+                with get_db() as session:
+                    existing = session.query(CustomCommand).filter_by(
+                        club_id=club_id, command_name=name).first()
+                    if existing and existing.response_file_id:
+                        existing.response_file_id += "," + photo.file_id
+                        if caption:
+                            existing.response_caption = caption
+                return SET_MESSAGE
+
+            # First photo of a new album
             context.user_data["set_media_group_id"] = media_group_id
-            for j in context.job_queue.get_jobs_by_name(f"set_done_{uid}"):
-                j.schedule_removal()
-            context.job_queue.run_once(
-                _finalize_set_photos,
-                when=2.0,
-                data={"user_id": uid, "chat_id": update.effective_chat.id,
-                      "club_id": club_id, "name": name},
-                name=f"set_done_{uid}",
-            )
+            with get_db() as session:
+                existing = session.query(CustomCommand).filter_by(
+                    club_id=club_id, command_name=name).first()
+                if existing:
+                    existing.response_type = "photo"
+                    existing.response_file_id = photo.file_id
+                    existing.response_caption = caption
+                    existing.response_text = None
+                else:
+                    session.add(CustomCommand(
+                        club_id=club_id, command_name=name,
+                        response_type="photo", response_file_id=photo.file_id,
+                        response_caption=caption,
+                    ))
             return SET_MESSAGE
 
-        caption = context.user_data.pop("pending_caption", "") or ""
-        file_ids_str = ",".join(file_ids)
-        context.user_data.pop("pending_file_ids", None)
-
+        # Single photo (not part of an album)
+        context.user_data.pop("set_media_group_id", None)
         with get_db() as session:
             existing = session.query(CustomCommand).filter_by(
                 club_id=club_id, command_name=name).first()
             if existing:
                 existing.response_type = "photo"
-                existing.response_file_id = file_ids_str
+                existing.response_file_id = photo.file_id
                 existing.response_caption = caption
                 existing.response_text = None
             else:
                 session.add(CustomCommand(
                     club_id=club_id, command_name=name,
-                    response_type="photo", response_file_id=file_ids_str,
+                    response_type="photo", response_file_id=photo.file_id,
                     response_caption=caption,
                 ))
         await update.message.reply_text(f"Saved /{name} (photo command).")
@@ -124,9 +136,13 @@ async def set_get_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     elif update.message.text:
-        context.user_data.pop("pending_file_ids", None)
-        context.user_data.pop("pending_caption", None)
-        context.user_data.pop("set_media_group_id", None)
+        # If we were collecting an album, this text ends the album flow
+        if context.user_data.pop("set_media_group_id", None):
+            await update.message.reply_text(
+                f"Saved /{name} (photo album). Send /cancel to stop, or send new content to replace.")
+            context.user_data.pop("pending_cmd_name", None)
+            return ConversationHandler.END
+
         with get_db() as session:
             existing = session.query(CustomCommand).filter_by(
                 club_id=club_id, command_name=name).first()
@@ -146,43 +162,6 @@ async def set_get_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Please send text or a photo.")
         return SET_MESSAGE
-
-
-async def _finalize_set_photos(context: ContextTypes.DEFAULT_TYPE):
-    """Job callback: save accumulated media-group photos and confirm."""
-    data = context.job.data
-    user_id, chat_id = data["user_id"], data["chat_id"]
-    club_id, name = data["club_id"], data["name"]
-
-    ud = context.application.user_data.get(user_id, {})
-    file_ids = ud.pop("pending_file_ids", [])
-    caption = ud.pop("pending_caption", "") or ""
-    ud.pop("pending_cmd_name", None)
-    ud.pop("set_media_group_id", None)
-
-    if not file_ids:
-        return
-
-    file_ids_str = ",".join(file_ids)
-    with get_db() as session:
-        existing = session.query(CustomCommand).filter_by(
-            club_id=club_id, command_name=name).first()
-        if existing:
-            existing.response_type = "photo"
-            existing.response_file_id = file_ids_str
-            existing.response_caption = caption
-            existing.response_text = None
-        else:
-            session.add(CustomCommand(
-                club_id=club_id, command_name=name,
-                response_type="photo", response_file_id=file_ids_str,
-                response_caption=caption,
-            ))
-
-    count = len(file_ids)
-    await context.bot.send_message(
-        chat_id, f"Saved /{name} ({count} photo{'s' if count > 1 else ''})."
-    )
 
 
 async def set_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
