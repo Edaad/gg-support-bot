@@ -35,12 +35,13 @@ export default function ResponseEditor({ type, text, fileId, caption, onChange }
       ) : (
         <>
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-400">Telegram File ID</label>
-            <input
+            <label className="mb-1 block text-xs font-medium text-gray-400">Telegram File ID(s)</label>
+            <textarea
               value={fileId || ''}
               onChange={(e) => onChange('response_file_id', e.target.value)}
+              rows={2}
               className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
-              placeholder="File ID from Telegram"
+              placeholder="File ID from Telegram (comma-separated for multiple photos)"
             />
           </div>
           <div>
