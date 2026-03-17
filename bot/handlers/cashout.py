@@ -21,6 +21,7 @@ from bot.services.club import (
     get_sub_option_by_id,
     get_club_allows_multi_cashout,
     get_club_allows_admin_commands,
+    get_club_simple_mode,
     get_tier_for_amount,
     get_lowest_minimum,
 )
@@ -44,6 +45,11 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
     if user_id in ADMIN_USER_IDS and not get_club_allows_admin_commands(club_id):
+        return ConversationHandler.END
+
+    simple = get_club_simple_mode(club_id, "cashout")
+    if simple:
+        await _send_simple_response(update.message, simple)
         return ConversationHandler.END
 
     context.user_data["cashout_club_id"] = club_id
@@ -260,6 +266,25 @@ async def _finalize_cashout(update, context):
 
     _cleanup(context)
     return ConversationHandler.END
+
+
+async def _send_simple_response(message, data):
+    """Send the simple-mode response (text or photo) directly."""
+    if data["response_type"] == "photo" and data.get("response_file_id"):
+        file_ids = [fid.strip() for fid in data["response_file_id"].split(",") if fid.strip()]
+        caption = data.get("response_caption") or None
+        if len(file_ids) == 1:
+            await message.reply_photo(photo=file_ids[0], caption=caption)
+        else:
+            media = [
+                InputMediaPhoto(media=fid, caption=caption if i == 0 else None)
+                for i, fid in enumerate(file_ids)
+            ]
+            await message.chat.send_media_group(media=media)
+    else:
+        text = data.get("response_text") or ""
+        if text:
+            await message.reply_text(text)
 
 
 def _cleanup(context):

@@ -157,6 +157,56 @@ function GeneralTab({
       </div>
 
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
+        <h3 className="mb-4 font-semibold">Deposit Simple Mode</h3>
+        <label className="flex items-center gap-2 text-sm text-gray-300">
+          <input
+            type="checkbox"
+            checked={form.deposit_simple_mode ?? false}
+            onChange={(e) => setField('deposit_simple_mode', e.target.checked)}
+            className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500"
+          />
+          Enable simple deposit mode
+        </label>
+        <p className="ml-6 mt-1 mb-3 text-xs text-gray-500">
+          When enabled, /deposit skips the amount &amp; method selection and sends a single message instead.
+        </p>
+        {form.deposit_simple_mode && (
+          <ResponseEditor
+            type={form.deposit_simple_type || 'text'}
+            text={form.deposit_simple_text || ''}
+            fileId={form.deposit_simple_file_id || ''}
+            caption={form.deposit_simple_caption || ''}
+            onChange={(field, value) => setField(field.replace('response_', 'deposit_simple_'), value)}
+          />
+        )}
+      </div>
+
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
+        <h3 className="mb-4 font-semibold">Cashout Simple Mode</h3>
+        <label className="flex items-center gap-2 text-sm text-gray-300">
+          <input
+            type="checkbox"
+            checked={form.cashout_simple_mode ?? false}
+            onChange={(e) => setField('cashout_simple_mode', e.target.checked)}
+            className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500"
+          />
+          Enable simple cashout mode
+        </label>
+        <p className="ml-6 mt-1 mb-3 text-xs text-gray-500">
+          When enabled, /cashout skips the amount &amp; method selection and sends a single message instead.
+        </p>
+        {form.cashout_simple_mode && (
+          <ResponseEditor
+            type={form.cashout_simple_type || 'text'}
+            text={form.cashout_simple_text || ''}
+            fileId={form.cashout_simple_file_id || ''}
+            caption={form.cashout_simple_caption || ''}
+            onChange={(field, value) => setField(field.replace('response_', 'cashout_simple_'), value)}
+          />
+        )}
+      </div>
+
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
         <h3 className="mb-4 font-semibold">Welcome Message</h3>
         <p className="mb-3 text-xs text-gray-500">Sent when the bot is added to a group by this club's owner.</p>
         <ResponseEditor

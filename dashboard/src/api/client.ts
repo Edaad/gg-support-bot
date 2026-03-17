@@ -101,6 +101,16 @@ export interface Club {
   list_caption: string | null
   allow_multi_cashout: boolean
   allow_admin_commands: boolean
+  deposit_simple_mode: boolean
+  deposit_simple_type: string | null
+  deposit_simple_text: string | null
+  deposit_simple_file_id: string | null
+  deposit_simple_caption: string | null
+  cashout_simple_mode: boolean
+  cashout_simple_type: string | null
+  cashout_simple_text: string | null
+  cashout_simple_file_id: string | null
+  cashout_simple_caption: string | null
   is_active: boolean
   created_at: string | null
   method_count: number

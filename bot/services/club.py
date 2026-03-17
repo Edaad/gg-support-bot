@@ -233,6 +233,23 @@ def get_club_allows_multi_cashout(club_id: int) -> bool:
         return bool(club.allow_multi_cashout)
 
 
+def get_club_simple_mode(club_id: int, direction: str) -> Optional[dict]:
+    """If simple mode is on for the direction, return the response dict; otherwise None."""
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club:
+            return None
+        prefix = f"{direction}_simple"
+        if not getattr(club, f"{prefix}_mode", False):
+            return None
+        return {
+            "response_type": getattr(club, f"{prefix}_type", "text") or "text",
+            "response_text": getattr(club, f"{prefix}_text", None),
+            "response_file_id": getattr(club, f"{prefix}_file_id", None),
+            "response_caption": getattr(club, f"{prefix}_caption", None),
+        }
+
+
 def get_club_allows_admin_commands(club_id: int) -> bool:
     with get_db() as session:
         club = session.query(Club).get(club_id)

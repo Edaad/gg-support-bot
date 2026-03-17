@@ -32,6 +32,16 @@ class ClubCreate(BaseModel):
     list_caption: Optional[str] = None
     allow_multi_cashout: bool = True
     allow_admin_commands: bool = True
+    deposit_simple_mode: bool = False
+    deposit_simple_type: str = "text"
+    deposit_simple_text: Optional[str] = None
+    deposit_simple_file_id: Optional[str] = None
+    deposit_simple_caption: Optional[str] = None
+    cashout_simple_mode: bool = False
+    cashout_simple_type: str = "text"
+    cashout_simple_text: Optional[str] = None
+    cashout_simple_file_id: Optional[str] = None
+    cashout_simple_caption: Optional[str] = None
     is_active: bool = True
 
 
@@ -48,6 +58,16 @@ class ClubUpdate(BaseModel):
     list_caption: Optional[str] = None
     allow_multi_cashout: Optional[bool] = None
     allow_admin_commands: Optional[bool] = None
+    deposit_simple_mode: Optional[bool] = None
+    deposit_simple_type: Optional[str] = None
+    deposit_simple_text: Optional[str] = None
+    deposit_simple_file_id: Optional[str] = None
+    deposit_simple_caption: Optional[str] = None
+    cashout_simple_mode: Optional[bool] = None
+    cashout_simple_type: Optional[str] = None
+    cashout_simple_text: Optional[str] = None
+    cashout_simple_file_id: Optional[str] = None
+    cashout_simple_caption: Optional[str] = None
     is_active: Optional[bool] = None
 
 
@@ -67,6 +87,16 @@ class ClubRead(BaseModel):
     list_caption: Optional[str]
     allow_multi_cashout: bool
     allow_admin_commands: bool
+    deposit_simple_mode: bool
+    deposit_simple_type: Optional[str]
+    deposit_simple_text: Optional[str]
+    deposit_simple_file_id: Optional[str]
+    deposit_simple_caption: Optional[str]
+    cashout_simple_mode: bool
+    cashout_simple_type: Optional[str]
+    cashout_simple_text: Optional[str]
+    cashout_simple_file_id: Optional[str]
+    cashout_simple_caption: Optional[str]
     is_active: bool
     created_at: Optional[datetime]
     method_count: int = 0
