@@ -2,7 +2,7 @@
 
 from decimal import Decimal, InvalidOperation
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
@@ -24,6 +24,7 @@ from bot.services.club import (
     get_tier_for_amount,
     get_lowest_minimum,
 )
+from bot.handlers.response_utils import send_response_messages
 
 DEPOSIT_AMOUNT, DEPOSIT_CHOOSE, DEPOSIT_SUB = range(3)
 
@@ -181,41 +182,12 @@ async def _send_response(query, data, amount, display_name):
     """Edit the keyboard message to the announcement, then send instructions as a new message below."""
     announcement = f"Deposit request for ${amount} via {display_name}"
     await query.edit_message_text(announcement)
-
-    if data["response_type"] == "photo" and data.get("response_file_id"):
-        file_ids = [fid.strip() for fid in data["response_file_id"].split(",") if fid.strip()]
-        caption = data.get("response_caption") or None
-        if len(file_ids) == 1:
-            await query.message.chat.send_photo(photo=file_ids[0], caption=caption)
-        else:
-            media = [
-                InputMediaPhoto(media=fid, caption=caption if i == 0 else None)
-                for i, fid in enumerate(file_ids)
-            ]
-            await query.message.chat.send_media_group(media=media)
-    else:
-        text = data.get("response_text") or ""
-        if text:
-            await query.message.chat.send_message(text)
+    await send_response_messages(query.message.chat, data)
 
 
 async def _send_simple_response(message, data):
     """Send the simple-mode response (text or photo) directly."""
-    if data["response_type"] == "photo" and data.get("response_file_id"):
-        file_ids = [fid.strip() for fid in data["response_file_id"].split(",") if fid.strip()]
-        caption = data.get("response_caption") or None
-        if len(file_ids) == 1:
-            await message.reply_photo(photo=file_ids[0], caption=caption)
-        else:
-            media = [
-                InputMediaPhoto(media=fid, caption=caption if i == 0 else None)
-                for i, fid in enumerate(file_ids)
-            ]
-            await message.chat.send_media_group(media=media)
-    else:
-        text = data.get("response_text") or ""
-        if text:
-            await message.reply_text(text)
+    await send_response_messages(message, data)
 
 
 def _cleanup(context):

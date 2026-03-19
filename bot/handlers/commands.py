@@ -3,7 +3,7 @@
 import logging
 import re
 
-from telegram import Update, InputMediaPhoto
+from telegram import Update
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
@@ -14,6 +14,7 @@ from telegram.ext import (
 
 from config import ADMIN_USER_IDS
 from bot.services.club import get_club_id_for_telegram_user, get_custom_command
+from bot.handlers.response_utils import send_response_messages
 from db.connection import get_db
 from db.models import CustomCommand, Club
 
@@ -277,19 +278,4 @@ async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_admin(uid) and not data.get("customer_visible", False):
         return
 
-    if data["response_type"] == "photo" and data.get("response_file_id"):
-        file_ids = [fid.strip() for fid in data["response_file_id"].split(",") if fid.strip()]
-        caption = data.get("response_caption") or None
-        if len(file_ids) == 1:
-            await update.message.reply_photo(photo=file_ids[0], caption=caption)
-        else:
-            media = [
-                InputMediaPhoto(media=fid, caption=caption if i == 0 else None)
-                for i, fid in enumerate(file_ids)
-            ]
-            await update.message.reply_media_group(media=media)
-    elif data.get("response_text"):
-        chunk = 4096
-        text = data["response_text"]
-        for i in range(0, len(text), chunk):
-            await update.message.reply_text(text[i : i + chunk])
+    await send_response_messages(update.message, data)
