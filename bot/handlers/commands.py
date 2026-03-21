@@ -13,10 +13,15 @@ from telegram.ext import (
 )
 
 from config import ADMIN_USER_IDS
-from bot.services.club import get_club_id_for_telegram_user, get_custom_command
+from bot.services.club import (
+    get_club_id_for_telegram_user,
+    get_custom_command,
+    is_club_primary_owner,
+    is_club_staff,
+)
 from bot.handlers.response_utils import send_response_messages
 from db.connection import get_db
-from db.models import CustomCommand, Club
+from db.models import CustomCommand
 
 ALLOWED = set(ADMIN_USER_IDS)
 CMD_NAME_RE = re.compile(r"^[A-Za-z0-9_]{1,32}$")
@@ -32,12 +37,17 @@ def _is_admin(uid: int) -> bool:
     return not ALLOWED or uid in ALLOWED
 
 
-# ── /set conversation ─────────────────────────────────────────────────────────
+def _can_use_non_customer_custom_command(uid: int, club_id: int) -> bool:
+    """Global admin or primary/linked club staff for this club."""
+    return _is_admin(uid) or is_club_staff(uid, club_id)
+
+
+# ── /set conversation (primary club owner only; changes apply to whole club) ──
 
 async def set_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_user:
         return ConversationHandler.END
-    if not _is_admin(update.effective_user.id):
+    if not is_club_primary_owner(update.effective_user.id):
         return ConversationHandler.END
     await update.message.reply_text(
         "Send the command name (without the /). Example: referral\n\nSend /cancel to abort."
@@ -47,6 +57,9 @@ async def set_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def set_get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_user:
+        return ConversationHandler.END
+    uid = update.effective_user.id
+    if not is_club_primary_owner(uid):
         return ConversationHandler.END
     name = (update.message.text or "").strip().lstrip("/").lower()
     if not CMD_NAME_RE.match(name):
@@ -74,6 +87,14 @@ async def set_get_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     uid = update.effective_user.id
+    if not is_club_primary_owner(uid):
+        await update.message.reply_text(
+            "Only the club primary Telegram account can use /set. Linked accounts can use admin-only "
+            "commands in groups; ask the primary owner to run /set or use the dashboard."
+        )
+        context.user_data.pop("pending_cmd_name", None)
+        return ConversationHandler.END
+
     club_id = get_club_id_for_telegram_user(uid)
     if club_id is None:
         await update.message.reply_text("You need a club set up first. Ask the admin to create one.")
@@ -194,7 +215,7 @@ async def mycmds_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_user:
         return
     uid = update.effective_user.id
-    if not _is_admin(uid):
+    if not is_club_primary_owner(uid):
         return
     club_id = get_club_id_for_telegram_user(uid)
     if club_id is None:
@@ -221,7 +242,7 @@ async def delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_user:
         return
     uid = update.effective_user.id
-    if not _is_admin(uid):
+    if not is_club_primary_owner(uid):
         return
     args = context.args or []
     if not args:
@@ -271,11 +292,13 @@ async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = get_custom_command(club_id, cmd)
     logger.info("command_router: get_custom_command(%s, %s) -> %s", club_id, cmd, "found" if data else "None")
     if not data:
-        if _is_admin(uid):
+        if _can_use_non_customer_custom_command(uid, club_id):
             await update.message.reply_text("Unknown command. Use /mycmds or /set.")
         return
 
-    if not _is_admin(uid) and not data.get("customer_visible", False):
+    if not data.get("customer_visible", False) and not _can_use_non_customer_custom_command(
+        uid, club_id
+    ):
         return
 
     await send_response_messages(update.message, data)

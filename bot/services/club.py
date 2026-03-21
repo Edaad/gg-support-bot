@@ -261,6 +261,29 @@ def get_club_id_for_telegram_user(telegram_user_id: int) -> Optional[int]:
         return _club_id_for_telegram_user(session, telegram_user_id)
 
 
+def is_club_primary_owner(telegram_user_id: int) -> bool:
+    """True if this user is the active primary owner (clubs.telegram_user_id) of some club."""
+    with get_db() as session:
+        club = session.query(Club).filter_by(telegram_user_id=telegram_user_id).first()
+        return club is not None and bool(club.is_active)
+
+
+def is_club_staff(telegram_user_id: int, club_id: int) -> bool:
+    """True if primary owner or a linked backup account for this club."""
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club or not club.is_active:
+            return False
+        if club.telegram_user_id == telegram_user_id:
+            return True
+        return (
+            session.query(ClubLinkedAccount)
+            .filter_by(club_id=club_id, telegram_user_id=telegram_user_id)
+            .first()
+            is not None
+        )
+
+
 def get_club_allows_multi_cashout(club_id: int) -> bool:
     with get_db() as session:
         club = session.query(Club).get(club_id)

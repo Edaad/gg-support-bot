@@ -5,7 +5,8 @@ Each club has a **primary** Telegram user ID on the club record (`Telegram User 
 ## Behavior
 
 - **Primary** and **linked** accounts can add the bot to a group; the group is linked to that club.
-- In **private chat** with the bot, primary and linked accounts resolve to the same club for `/set`, `/mycmds`, and `/delete`.
+- **Custom commands** (including those not visible to customers): in **groups**, both **primary** and **linked** accounts can trigger them, as can global `ADMIN_USER_IDS`. In **private** chat, the same rule applies when the user is tied to that club (primary or linked).
+- **`/set`, `/mycmds`, `/delete`**: only the **primary** Telegram user ID on the club can use these in DMs. Linked accounts should use the dashboard or ask the primary owner. Changes from `/set` apply to the whole club.
 - Each numeric Telegram user ID can only be used **once** across the system: either as one club’s primary, or as one linked row (not both clubs).
 
 ## Configuration
@@ -15,9 +16,9 @@ Each club has a **primary** Telegram user ID on the club record (`Telegram User 
    Enter a numeric Telegram user ID (from `@userinfobot`, `/whoami` in your bot, etc.) and click **Add backup account**.
 
 2. **`config.py` / `ADMIN_USER_IDS`**  
-   **Not required** for linked club accounts.  
-   `ADMIN_USER_IDS` is for **global** bot operators (who can use `/set` regardless of club in some setups, etc.).  
-   Only add linked users there if they should also be global admins.
+   **Not required** for linked accounts to use admin-only **custom commands** in groups.  
+   `ADMIN_USER_IDS` is still used for **global** operators (e.g. extra access across clubs).  
+   Add users there only if they should be global admins.
 
 ## Database / deployment
 

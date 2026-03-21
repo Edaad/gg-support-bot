@@ -144,10 +144,12 @@ function LinkedAccountsSection({
     <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
       <h3 className="mb-2 font-semibold">Linked Telegram accounts (backup)</h3>
       <p className="mb-4 text-xs text-gray-500">
-        Primary owner ID is set in Club Info above. Add backup Telegram user IDs so those accounts can add the bot to
-        groups and use /set, /mycmds, and /delete in DMs. Each ID can only belong to one club worldwide.
-        Global bot admins (<code className="text-gray-400">ADMIN_USER_IDS</code> in config) are separate; linked accounts
-        do not need to be listed there unless they should be global admins too.
+        Primary owner ID is set in Club Info above. Backups can add the bot to groups and use the same club: in groups they
+        can run admin-only custom commands (not visible to customers) alongside the primary. Only the{' '}
+        <strong className="text-gray-400">primary</strong> account can use /set, /mycmds, and /delete in DMs (or use the
+        dashboard). Each ID can only belong to one club worldwide. Global{' '}
+        <code className="text-gray-400">ADMIN_USER_IDS</code> still grants extra privileges; linked accounts do not need
+        to be listed there unless you want that.
       </p>
       {err && <div className="mb-3 rounded-lg bg-red-900/30 px-3 py-2 text-sm text-red-300">{err}</div>}
       {accounts.length === 0 ? (
