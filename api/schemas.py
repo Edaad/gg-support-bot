@@ -101,6 +101,20 @@ class ClubRead(BaseModel):
     created_at: Optional[datetime]
     method_count: int = 0
     group_count: int = 0
+    linked_account_count: int = 0
+
+
+class LinkedAccountCreate(BaseModel):
+    telegram_user_id: int
+
+
+class LinkedAccountRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    club_id: int
+    telegram_user_id: int
+    created_at: Optional[datetime]
 
 
 # ── Payment Method ────────────────────────────────────────────────────────────

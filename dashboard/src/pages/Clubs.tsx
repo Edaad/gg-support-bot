@@ -86,6 +86,7 @@ export default function Clubs({ token }: { token: string }) {
             <tr>
               <th className="px-4 py-3 text-left font-medium">Name</th>
               <th className="px-4 py-3 text-left font-medium">Telegram ID</th>
+              <th className="px-4 py-3 text-left font-medium">Linked</th>
               <th className="px-4 py-3 text-left font-medium">Methods</th>
               <th className="px-4 py-3 text-left font-medium">Groups</th>
               <th className="px-4 py-3 text-left font-medium">Status</th>
@@ -101,6 +102,7 @@ export default function Clubs({ token }: { token: string }) {
                   </Link>
                 </td>
                 <td className="px-4 py-3 font-mono text-gray-400">{c.telegram_user_id}</td>
+                <td className="px-4 py-3 text-gray-400">{c.linked_account_count ?? 0}</td>
                 <td className="px-4 py-3 text-gray-400">{c.method_count}</td>
                 <td className="px-4 py-3 text-gray-400">{c.group_count}</td>
                 <td className="px-4 py-3">
@@ -123,7 +125,7 @@ export default function Clubs({ token }: { token: string }) {
             ))}
             {clubs.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                   No clubs yet. Click "+ New Club" to get started.
                 </td>
               </tr>

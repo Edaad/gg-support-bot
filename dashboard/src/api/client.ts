@@ -35,6 +35,13 @@ export const updateClub = (token: string, id: number, data: Partial<Club>) =>
 export const deleteClub = (token: string, id: number) =>
   request<void>(`/clubs/${id}`, { method: 'DELETE' }, token)
 
+export const listLinkedAccounts = (token: string, clubId: number) =>
+  request<LinkedAccount[]>(`/clubs/${clubId}/linked-accounts`, {}, token)
+export const addLinkedAccount = (token: string, clubId: number, data: { telegram_user_id: number }) =>
+  request<LinkedAccount>(`/clubs/${clubId}/linked-accounts`, { method: 'POST', body: JSON.stringify(data) }, token)
+export const deleteLinkedAccount = (token: string, clubId: number, accountId: number) =>
+  request<void>(`/clubs/${clubId}/linked-accounts/${accountId}`, { method: 'DELETE' }, token)
+
 // Methods
 export const listMethods = (token: string, clubId: number, direction?: string) =>
   request<Method[]>(`/clubs/${clubId}/methods${direction ? `?direction=${direction}` : ''}`, {}, token)
@@ -115,6 +122,14 @@ export interface Club {
   created_at: string | null
   method_count: number
   group_count: number
+  linked_account_count: number
+}
+
+export interface LinkedAccount {
+  id: number
+  club_id: number
+  telegram_user_id: number
+  created_at: string | null
 }
 
 export interface Method {

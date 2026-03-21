@@ -6,12 +6,49 @@ from typing import Optional, List, Tuple
 from sqlalchemy.orm import Session
 
 from db.connection import get_db
-from db.models import Club, PaymentMethod, PaymentMethodTier, PaymentSubOption, Group, CustomCommand
+from db.models import (
+    Club,
+    ClubLinkedAccount,
+    PaymentMethod,
+    PaymentMethodTier,
+    PaymentSubOption,
+    Group,
+    CustomCommand,
+)
+
+
+def _club_id_for_telegram_user(session: Session, telegram_user_id: int) -> Optional[int]:
+    """Resolve club_id for a primary or linked Telegram user. None if inactive or unknown."""
+    club = session.query(Club).filter_by(telegram_user_id=telegram_user_id).first()
+    if club:
+        return club.id if club.is_active else None
+    link = (
+        session.query(ClubLinkedAccount)
+        .filter_by(telegram_user_id=telegram_user_id)
+        .first()
+    )
+    if not link:
+        return None
+    c = session.query(Club).get(link.club_id)
+    return c.id if c and c.is_active else None
 
 
 def get_club_by_telegram_id(telegram_user_id: int) -> Optional[Club]:
     with get_db() as session:
-        club = session.query(Club).filter_by(telegram_user_id=telegram_user_id, is_active=True).first()
+        club = session.query(Club).filter_by(
+            telegram_user_id=telegram_user_id, is_active=True
+        ).first()
+        if club:
+            session.expunge(club)
+            return club
+        link = (
+            session.query(ClubLinkedAccount)
+            .filter_by(telegram_user_id=telegram_user_id)
+            .first()
+        )
+        if not link:
+            return None
+        club = session.query(Club).filter_by(id=link.club_id, is_active=True).first()
         if club:
             session.expunge(club)
         return club
@@ -35,17 +72,17 @@ def get_club_by_id(club_id: int) -> Optional[Club]:
 
 
 def set_group_club(chat_id: int, telegram_user_id: int) -> Optional[int]:
-    """Link a group to the club owned by telegram_user_id. Returns club_id or None."""
+    """Link a group to the club owned by telegram_user_id (primary or linked). Returns club_id or None."""
     with get_db() as session:
-        club = session.query(Club).filter_by(telegram_user_id=telegram_user_id).first()
-        if not club:
+        club_id = _club_id_for_telegram_user(session, telegram_user_id)
+        if not club_id:
             return None
         existing = session.query(Group).filter_by(chat_id=chat_id).first()
         if existing:
-            existing.club_id = club.id
+            existing.club_id = club_id
         else:
-            session.add(Group(chat_id=chat_id, club_id=club.id))
-        return club.id
+            session.add(Group(chat_id=chat_id, club_id=club_id))
+        return club_id
 
 
 def get_methods_for_amount(
@@ -221,8 +258,7 @@ def get_custom_command(club_id: int, command_name: str) -> Optional[dict]:
 
 def get_club_id_for_telegram_user(telegram_user_id: int) -> Optional[int]:
     with get_db() as session:
-        club = session.query(Club).filter_by(telegram_user_id=telegram_user_id).first()
-        return club.id if club else None
+        return _club_id_for_telegram_user(session, telegram_user_id)
 
 
 def get_club_allows_multi_cashout(club_id: int) -> bool:

@@ -55,6 +55,24 @@ class Club(Base):
     groups = relationship(
         "Group", back_populates="club", cascade="all, delete-orphan"
     )
+    linked_accounts = relationship(
+        "ClubLinkedAccount", back_populates="club", cascade="all, delete-orphan"
+    )
+
+
+class ClubLinkedAccount(Base):
+    """Additional Telegram user IDs for the same club (backup admins). Primary stays on Club.telegram_user_id."""
+
+    __tablename__ = "club_linked_accounts"
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    telegram_user_id = Column(BigInteger, unique=True, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    club = relationship("Club", back_populates="linked_accounts")
 
 
 class PaymentMethod(Base):

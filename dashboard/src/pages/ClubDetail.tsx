@@ -3,7 +3,8 @@ import { useParams, Link } from 'react-router-dom'
 import {
   getClub, updateClub, listGroups, listCommands,
   createCommand, updateCommand, deleteCommand,
-  type Club, type Group as GroupT, type Command,
+  listLinkedAccounts, addLinkedAccount, deleteLinkedAccount,
+  type Club, type Group as GroupT, type Command, type LinkedAccount,
 } from '../api/client'
 import MethodEditor from '../components/MethodEditor'
 import ResponseEditor from '../components/ResponseEditor'
@@ -61,6 +62,7 @@ export default function ClubDetail({ token }: { token: string }) {
           token={token}
           club={club}
           saving={saving}
+          onClubRefresh={async () => { await getClub(token, clubId).then(setClub) }}
           onSave={async (data) => {
             setSaving(true)
             setMsg('')
@@ -85,13 +87,120 @@ export default function ClubDetail({ token }: { token: string }) {
 
 /* ── General Tab ──────────────────────────────────────────────────────────── */
 
+function LinkedAccountsSection({
+  token,
+  clubId,
+  primaryTgId,
+  onChanged,
+}: {
+  token: string
+  clubId: number
+  primaryTgId: number
+  onChanged: () => Promise<void>
+}) {
+  const [accounts, setAccounts] = useState<LinkedAccount[]>([])
+  const [newId, setNewId] = useState('')
+  const [err, setErr] = useState('')
+
+  const load = () => listLinkedAccounts(token, clubId).then(setAccounts).catch(() => { })
+
+  useEffect(() => {
+    load()
+  }, [clubId, token])
+
+  const add = async () => {
+    setErr('')
+    const n = Number(newId.trim())
+    if (!Number.isFinite(n) || n <= 0) {
+      setErr('Enter a valid numeric Telegram user ID')
+      return
+    }
+    if (n === primaryTgId) {
+      setErr('That ID is already the primary account')
+      return
+    }
+    try {
+      await addLinkedAccount(token, clubId, { telegram_user_id: n })
+      setNewId('')
+      await load()
+      await onChanged()
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Failed to add')
+    }
+  }
+
+  const remove = async (accountId: number) => {
+    if (!confirm('Remove this linked account?')) return
+    try {
+      await deleteLinkedAccount(token, clubId, accountId)
+      await load()
+      await onChanged()
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Failed to remove')
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
+      <h3 className="mb-2 font-semibold">Linked Telegram accounts (backup)</h3>
+      <p className="mb-4 text-xs text-gray-500">
+        Primary owner ID is set in Club Info above. Add backup Telegram user IDs so those accounts can add the bot to
+        groups and use /set, /mycmds, and /delete in DMs. Each ID can only belong to one club worldwide.
+        Global bot admins (<code className="text-gray-400">ADMIN_USER_IDS</code> in config) are separate; linked accounts
+        do not need to be listed there unless they should be global admins too.
+      </p>
+      {err && <div className="mb-3 rounded-lg bg-red-900/30 px-3 py-2 text-sm text-red-300">{err}</div>}
+      {accounts.length === 0 ? (
+        <p className="mb-3 text-sm text-gray-500">No backup accounts linked yet.</p>
+      ) : (
+        <ul className="mb-4 space-y-2">
+          {accounts.map((a) => (
+            <li key={a.id} className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-950 px-3 py-2">
+              <span className="font-mono text-sm text-gray-300">{a.telegram_user_id}</span>
+              <button
+                type="button"
+                onClick={() => remove(a.id)}
+                className="text-xs text-red-400 hover:text-red-300"
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <input
+          type="text"
+          inputMode="numeric"
+          value={newId}
+          onChange={(e) => setNewId(e.target.value)}
+          placeholder="Telegram user ID (numeric)"
+          className="min-w-[200px] flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={add}
+          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+        >
+          Add backup account
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function GeneralTab({
-  club, saving, onSave,
+  token, club, saving, onSave, onClubRefresh,
 }: {
   token: string; club: Club; saving: boolean;
   onSave: (data: Partial<Club>) => Promise<void>
+  onClubRefresh: () => Promise<void>
 }) {
   const [form, setForm] = useState<Partial<Club>>({ ...club })
+
+  useEffect(() => {
+    setForm({ ...club })
+  }, [club])
 
   const setField = (f: string, v: any) => setForm((prev) => ({ ...prev, [f]: v }))
 
@@ -155,6 +264,13 @@ function GeneralTab({
           </label>
         </div>
       </div>
+
+      <LinkedAccountsSection
+        token={token}
+        clubId={club.id}
+        primaryTgId={Number(form.telegram_user_id ?? club.telegram_user_id)}
+        onChanged={onClubRefresh}
+      />
 
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
         <h3 className="mb-4 font-semibold">Deposit Simple Mode</h3>
