@@ -43,6 +43,7 @@ def create_app() -> FastAPI:
     from api.routes.commands import router as commands_router
     from api.routes.tiers import router as tiers_router
     from api.routes.simulate import router as simulate_router
+    from api.routes.broadcast import router as broadcast_router
 
     app.include_router(clubs_router)
     app.include_router(methods_router)
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(tiers_router)
     app.include_router(commands_router)
     app.include_router(simulate_router)
+    app.include_router(broadcast_router)
 
     # ── Serve React dashboard (production build) ─────────────────────────
     dist_dir = pathlib.Path(__file__).resolve().parent.parent / "dashboard" / "dist"

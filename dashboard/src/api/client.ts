@@ -88,6 +88,10 @@ export const deleteTier = (token: string, id: number) =>
 export const listGroups = (token: string, clubId: number) =>
   request<Group[]>(`/clubs/${clubId}/groups`, {}, token)
 
+// Broadcast
+export const sendBroadcast = (token: string, clubId: number, data: BroadcastRequest) =>
+  request<BroadcastResult>(`/clubs/${clubId}/broadcast`, { method: 'POST', body: JSON.stringify(data) }, token)
+
 // Simulate
 export const getSimulation = (token: string, clubId: number, direction: string) =>
   request<SimulateResponse>(`/clubs/${clubId}/simulate/${direction}`, {}, token)
@@ -194,6 +198,20 @@ export interface Group {
   chat_id: number
   club_id: number
   added_at: string | null
+}
+
+export interface BroadcastRequest {
+  response_type: string
+  response_text: string | null
+  response_file_id: string | null
+  response_caption: string | null
+}
+
+export interface BroadcastResult {
+  total_groups: number
+  sent: number
+  failed: number
+  errors: string[]
 }
 
 export interface SimulateMethod {

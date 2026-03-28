@@ -4,12 +4,14 @@ import {
   getClub, updateClub, listGroups, listCommands,
   createCommand, updateCommand, deleteCommand,
   listLinkedAccounts, addLinkedAccount, deleteLinkedAccount,
+  sendBroadcast,
   type Club, type Group as GroupT, type Command, type LinkedAccount,
+  type BroadcastRequest, type BroadcastResult,
 } from '../api/client'
 import MethodEditor from '../components/MethodEditor'
 import ResponseEditor from '../components/ResponseEditor'
 
-const TABS = ['General', 'Deposit Methods', 'Cashout Methods', 'Custom Commands', 'Groups'] as const
+const TABS = ['General', 'Deposit Methods', 'Cashout Methods', 'Custom Commands', 'Broadcast', 'Groups'] as const
 type Tab = (typeof TABS)[number]
 
 export default function ClubDetail({ token }: { token: string }) {
@@ -80,6 +82,7 @@ export default function ClubDetail({ token }: { token: string }) {
       {tab === 'Deposit Methods' && <MethodEditor token={token} clubId={clubId} direction="deposit" />}
       {tab === 'Cashout Methods' && <MethodEditor token={token} clubId={clubId} direction="cashout" />}
       {tab === 'Custom Commands' && <CommandsTab token={token} clubId={clubId} />}
+      {tab === 'Broadcast' && <BroadcastTab token={token} clubId={clubId} groupCount={club.group_count} />}
       {tab === 'Groups' && <GroupsTab token={token} clubId={clubId} />}
     </div>
   )
@@ -355,6 +358,87 @@ function GeneralTab({
       >
         {saving ? 'Saving...' : 'Save Changes'}
       </button>
+    </div>
+  )
+}
+
+/* ── Broadcast Tab ────────────────────────────────────────────────────────── */
+
+function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: number; groupCount: number }) {
+  const [form, setForm] = useState<BroadcastRequest>({
+    response_type: 'text',
+    response_text: null,
+    response_file_id: null,
+    response_caption: null,
+  })
+  const [sending, setSending] = useState(false)
+  const [result, setResult] = useState<BroadcastResult | null>(null)
+  const [err, setErr] = useState('')
+
+  const handleSend = async () => {
+    if (!form.response_text && !(form.response_type === 'photo' && form.response_file_id)) {
+      setErr('Enter a message or photo to broadcast.')
+      return
+    }
+    if (!confirm(`Send this broadcast to ${groupCount} group(s)?`)) return
+    setErr('')
+    setResult(null)
+    setSending(true)
+    try {
+      const res = await sendBroadcast(token, clubId, form)
+      setResult(res)
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Broadcast failed')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
+        <h3 className="mb-2 text-lg font-semibold">Broadcast to all groups</h3>
+        <p className="mb-4 text-sm text-gray-400">
+          Send a message to all <strong className="text-white">{groupCount}</strong> group(s) linked to this club.
+          Supports text, photos, and multi-message (use <code className="rounded bg-gray-800 px-1 text-gray-400">---</code> to
+          split). Photo messages will send first, followed by any text.
+        </p>
+
+        <ResponseEditor
+          type={form.response_type}
+          text={form.response_text || ''}
+          fileId={form.response_file_id || ''}
+          caption={form.response_caption || ''}
+          onChange={(field, value) => {
+            const key = field as keyof BroadcastRequest
+            setForm((prev) => ({ ...prev, [key]: value || null }))
+          }}
+        />
+
+        {err && <div className="mt-4 rounded-lg bg-red-900/30 px-4 py-2 text-sm text-red-300">{err}</div>}
+
+        {result && (
+          <div className="mt-4 rounded-lg bg-gray-800 px-4 py-3 text-sm">
+            <p className="text-green-400">
+              Sent to {result.sent} / {result.total_groups} group(s).
+              {result.failed > 0 && <span className="ml-2 text-red-400">{result.failed} failed.</span>}
+            </p>
+            {result.errors.length > 0 && (
+              <ul className="mt-2 max-h-32 overflow-y-auto space-y-1 text-xs text-red-300">
+                {result.errors.map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
+
+        <button
+          onClick={handleSend}
+          disabled={sending || groupCount === 0}
+          className="mt-4 rounded-lg bg-indigo-600 px-6 py-2.5 font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
+        >
+          {sending ? 'Sending...' : `Send Broadcast to ${groupCount} group(s)`}
+        </button>
+      </div>
     </div>
   )
 }
