@@ -315,3 +315,28 @@ def get_club_allows_admin_commands(club_id: int) -> bool:
         if not club:
             return True
         return bool(club.allow_admin_commands)
+
+
+def is_group_linked(chat_id: int) -> bool:
+    """Check if a group chat already has a club association in the DB."""
+    with get_db() as session:
+        return session.query(Group).filter_by(chat_id=chat_id).first() is not None
+
+
+def try_link_group_by_admin(chat_id: int, admin_user_ids: list[int]) -> Optional[int]:
+    """Try to link a group to a club by matching any of the provided admin user IDs.
+
+    Checks each admin against known club owners (primary + linked accounts).
+    Returns the club_id if linked successfully, else None.
+    """
+    with get_db() as session:
+        for uid in admin_user_ids:
+            club_id = _club_id_for_telegram_user(session, uid)
+            if club_id:
+                existing = session.query(Group).filter_by(chat_id=chat_id).first()
+                if existing:
+                    existing.club_id = club_id
+                else:
+                    session.add(Group(chat_id=chat_id, club_id=club_id))
+                return club_id
+    return None

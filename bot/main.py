@@ -37,7 +37,7 @@ def run_bot(token: str | None = None):
     from bot.handlers.deposit import get_deposit_handler
     from bot.handlers.cashout import get_cashout_handler
     from bot.handlers.list_cmd import list_handler
-    from bot.handlers.groups import on_my_chat_member_updated
+    from bot.handlers.groups import on_my_chat_member_updated, auto_link_group
 
     app = ApplicationBuilder().token(token).build()
 
@@ -56,8 +56,14 @@ def run_bot(token: str | None = None):
     )
     app.add_handler(CommandHandler("list", list_handler))
 
-    # Catch-all for custom commands (must be last)
+    # Catch-all for custom commands (must be last among command handlers)
     app.add_handler(MessageHandler(filters.COMMAND, command_router))
+
+    # Auto-link unlinked groups on any message (group=1 so it doesn't block other handlers)
+    app.add_handler(
+        MessageHandler(filters.ChatType.GROUPS & filters.ALL, auto_link_group),
+        group=1,
+    )
 
     print("Bot is running. Press Ctrl+C to stop.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
