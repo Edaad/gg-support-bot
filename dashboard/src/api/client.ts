@@ -89,8 +89,10 @@ export const listGroups = (token: string, clubId: number) =>
   request<Group[]>(`/clubs/${clubId}/groups`, {}, token)
 
 // Broadcast
-export const sendBroadcast = (token: string, clubId: number, data: BroadcastRequest) =>
-  request<BroadcastResult>(`/clubs/${clubId}/broadcast`, { method: 'POST', body: JSON.stringify(data) }, token)
+export const startBroadcast = (token: string, clubId: number, data: BroadcastRequest) =>
+  request<BroadcastJob>(`/clubs/${clubId}/broadcast`, { method: 'POST', body: JSON.stringify(data) }, token)
+export const getBroadcastStatus = (token: string, clubId: number, jobId: number) =>
+  request<BroadcastJob>(`/clubs/${clubId}/broadcast/${jobId}`, {}, token)
 
 // Simulate
 export const getSimulation = (token: string, clubId: number, direction: string) =>
@@ -207,11 +209,16 @@ export interface BroadcastRequest {
   response_caption: string | null
 }
 
-export interface BroadcastResult {
+export interface BroadcastJob {
+  id: number
+  club_id: number
+  status: 'running' | 'done'
   total_groups: number
   sent: number
   failed: number
   errors: string[]
+  created_at: string | null
+  finished_at: string | null
 }
 
 export interface SimulateMethod {

@@ -4,9 +4,9 @@ import {
   getClub, updateClub, listGroups, listCommands,
   createCommand, updateCommand, deleteCommand,
   listLinkedAccounts, addLinkedAccount, deleteLinkedAccount,
-  sendBroadcast,
+  startBroadcast, getBroadcastStatus,
   type Club, type Group as GroupT, type Command, type LinkedAccount,
-  type BroadcastRequest, type BroadcastResult,
+  type BroadcastRequest, type BroadcastJob,
 } from '../api/client'
 import MethodEditor from '../components/MethodEditor'
 import ResponseEditor from '../components/ResponseEditor'
@@ -371,9 +371,22 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
     response_file_id: null,
     response_caption: null,
   })
-  const [sending, setSending] = useState(false)
-  const [result, setResult] = useState<BroadcastResult | null>(null)
+  const [starting, setStarting] = useState(false)
+  const [job, setJob] = useState<BroadcastJob | null>(null)
   const [err, setErr] = useState('')
+
+  // Poll for progress while job is running
+  useEffect(() => {
+    if (!job || job.status !== 'running') return
+    const interval = setInterval(async () => {
+      try {
+        const updated = await getBroadcastStatus(token, clubId, job.id)
+        setJob(updated)
+        if (updated.status === 'done') clearInterval(interval)
+      } catch { /* ignore transient errors */ }
+    }, 2000)
+    return () => clearInterval(interval)
+  }, [job?.id, job?.status, token, clubId])
 
   const handleSend = async () => {
     if (!form.response_text && !(form.response_type === 'photo' && form.response_file_id)) {
@@ -382,17 +395,21 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
     }
     if (!confirm(`Send this broadcast to ${groupCount} group(s)?`)) return
     setErr('')
-    setResult(null)
-    setSending(true)
+    setJob(null)
+    setStarting(true)
     try {
-      const res = await sendBroadcast(token, clubId, form)
-      setResult(res)
+      const j = await startBroadcast(token, clubId, form)
+      setJob(j)
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Broadcast failed')
     } finally {
-      setSending(false)
+      setStarting(false)
     }
   }
+
+  const pct = job && job.total_groups > 0
+    ? Math.round(((job.sent + job.failed) / job.total_groups) * 100)
+    : 0
 
   return (
     <div className="space-y-6">
@@ -417,15 +434,32 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
 
         {err && <div className="mt-4 rounded-lg bg-red-900/30 px-4 py-2 text-sm text-red-300">{err}</div>}
 
-        {result && (
-          <div className="mt-4 rounded-lg bg-gray-800 px-4 py-3 text-sm">
-            <p className="text-green-400">
-              Sent to {result.sent} / {result.total_groups} group(s).
-              {result.failed > 0 && <span className="ml-2 text-red-400">{result.failed} failed.</span>}
-            </p>
-            {result.errors.length > 0 && (
-              <ul className="mt-2 max-h-32 overflow-y-auto space-y-1 text-xs text-red-300">
-                {result.errors.map((e, i) => <li key={i}>{e}</li>)}
+        {/* Progress bar */}
+        {job && (
+          <div className="mt-4 rounded-lg bg-gray-800 px-4 py-4 text-sm">
+            <div className="mb-2 flex items-center justify-between">
+              <span className={job.status === 'done' ? 'font-medium text-green-400' : 'text-gray-300'}>
+                {job.status === 'done' ? 'Broadcast complete' : 'Broadcasting...'}
+              </span>
+              <span className="text-gray-400">
+                {job.sent + job.failed} / {job.total_groups}
+                {job.failed > 0 && <span className="ml-1 text-red-400">({job.failed} failed)</span>}
+              </span>
+            </div>
+
+            {/* Bar */}
+            <div className="h-3 w-full overflow-hidden rounded-full bg-gray-700">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${job.status === 'done' ? 'bg-green-500' : 'bg-indigo-500'}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+
+            <p className="mt-1.5 text-right text-xs text-gray-500">{pct}%</p>
+
+            {job.status === 'done' && job.errors.length > 0 && (
+              <ul className="mt-3 max-h-32 overflow-y-auto space-y-1 text-xs text-red-300">
+                {job.errors.map((e, i) => <li key={i}>{e}</li>)}
               </ul>
             )}
           </div>
@@ -433,10 +467,14 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
 
         <button
           onClick={handleSend}
-          disabled={sending || groupCount === 0}
+          disabled={starting || (job?.status === 'running') || groupCount === 0}
           className="mt-4 rounded-lg bg-indigo-600 px-6 py-2.5 font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
         >
-          {sending ? 'Sending...' : `Send Broadcast to ${groupCount} group(s)`}
+          {starting
+            ? 'Starting...'
+            : job?.status === 'running'
+              ? 'Broadcast in progress...'
+              : `Send Broadcast to ${groupCount} group(s)`}
         </button>
       </div>
     </div>

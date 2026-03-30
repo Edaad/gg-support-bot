@@ -163,6 +163,28 @@ class Group(Base):
     club = relationship("Club", back_populates="groups")
 
 
+class BroadcastJob(Base):
+    __tablename__ = "broadcast_jobs"
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    status = Column(String(20), nullable=False, default="running")
+    total_groups = Column(Integer, nullable=False, default=0)
+    sent = Column(Integer, nullable=False, default=0)
+    failed = Column(Integer, nullable=False, default=0)
+    errors_json = Column(Text, default="[]")
+    response_type = Column(String(10), default="text")
+    response_text = Column(Text)
+    response_file_id = Column(Text)
+    response_caption = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())
+    finished_at = Column(DateTime, nullable=True)
+
+    club = relationship("Club")
+
+
 class CustomCommand(Base):
     __tablename__ = "custom_commands"
     __table_args__ = (

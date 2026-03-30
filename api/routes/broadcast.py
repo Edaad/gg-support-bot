@@ -1,8 +1,14 @@
-"""Broadcast a message to all groups linked to a club via the Telegram Bot API."""
+"""Broadcast a message to all groups linked to a club via the Telegram Bot API.
+
+Uses a background asyncio task so the HTTP request returns immediately.
+The dashboard polls a status endpoint to track progress.
+"""
 
 import asyncio
+import json
 import os
-from typing import List
+from datetime import datetime, timezone
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -11,14 +17,8 @@ from telegram import Bot, InputMediaPhoto
 from telegram.error import RetryAfter, TimedOut
 
 from api.auth import get_current_admin
-from db.connection import get_db_dependency
-from db.models import Club
-
-# Stay safely under Telegram's 30 msg/sec global cap.
-# At 20 msgs/sec we have headroom even if a send triggers multiple API calls
-# (e.g. media group = several calls internally).
-_SEND_INTERVAL = 0.05  # seconds between groups
-_MAX_RETRIES = 3
+from db.connection import get_db_dependency, get_db
+from db.models import Club, BroadcastJob
 
 router = APIRouter(
     prefix="/api/clubs",
@@ -26,23 +26,47 @@ router = APIRouter(
     dependencies=[Depends(get_current_admin)],
 )
 
+_SEND_INTERVAL = 0.05  # 50ms between groups — ~20 groups/sec
+_MAX_RETRIES = 3
+SEPARATOR = "\n---\n"
+
+
+# ── Request / Response schemas ────────────────────────────────────────────────
 
 class BroadcastRequest(BaseModel):
     response_type: str = "text"
-    response_text: str | None = None
-    response_file_id: str | None = None
-    response_caption: str | None = None
+    response_text: Optional[str] = None
+    response_file_id: Optional[str] = None
+    response_caption: Optional[str] = None
 
 
-class BroadcastResult(BaseModel):
+class BroadcastJobRead(BaseModel):
+    id: int
+    club_id: int
+    status: str
     total_groups: int
     sent: int
     failed: int
     errors: List[str]
+    created_at: Optional[str] = None
+    finished_at: Optional[str] = None
 
 
-SEPARATOR = "\n---\n"
+def _job_to_read(job: BroadcastJob) -> BroadcastJobRead:
+    return BroadcastJobRead(
+        id=job.id,
+        club_id=job.club_id,
+        status=job.status,
+        total_groups=job.total_groups,
+        sent=job.sent,
+        failed=job.failed,
+        errors=json.loads(job.errors_json or "[]"),
+        created_at=job.created_at.isoformat() if job.created_at else None,
+        finished_at=job.finished_at.isoformat() if job.finished_at else None,
+    )
 
+
+# ── Telegram helpers ──────────────────────────────────────────────────────────
 
 def _get_bot() -> Bot:
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -51,11 +75,11 @@ def _get_bot() -> Bot:
     return Bot(token=token)
 
 
-async def _send_to_chat(bot: Bot, chat_id: int, data: BroadcastRequest) -> None:
-    """Send a broadcast message (photo and/or multi-part text) to one chat."""
-    if data.response_type == "photo" and data.response_file_id:
-        file_ids = [f.strip() for f in data.response_file_id.split(",") if f.strip()]
-        caption = data.response_caption or None
+async def _send_to_chat(bot: Bot, chat_id: int, data: dict) -> None:
+    rtype = data.get("response_type", "text")
+    if rtype == "photo" and data.get("response_file_id"):
+        file_ids = [f.strip() for f in data["response_file_id"].split(",") if f.strip()]
+        caption = data.get("response_caption") or None
         if len(file_ids) == 1:
             await bot.send_photo(chat_id=chat_id, photo=file_ids[0], caption=caption)
         else:
@@ -65,31 +89,63 @@ async def _send_to_chat(bot: Bot, chat_id: int, data: BroadcastRequest) -> None:
             ]
             await bot.send_media_group(chat_id=chat_id, media=media)
 
-    text = data.response_text or ""
+    text = data.get("response_text") or ""
     if text:
         parts = [p.strip() for p in text.split(SEPARATOR) if p.strip()]
         for part in parts:
             await bot.send_message(chat_id=chat_id, text=part)
 
 
-async def _send_with_retry(bot: Bot, chat_id: int, data: BroadcastRequest) -> None:
-    """Attempt _send_to_chat with automatic back-off on RetryAfter / TimedOut."""
+async def _send_with_retry(bot: Bot, chat_id: int, data: dict) -> None:
     for attempt in range(_MAX_RETRIES):
         try:
             await _send_to_chat(bot, chat_id, data)
             return
         except RetryAfter as exc:
-            # Telegram told us exactly how long to wait
-            wait = exc.retry_after + 1
-            await asyncio.sleep(wait)
+            await asyncio.sleep(exc.retry_after + 1)
         except TimedOut:
-            # Brief network hiccup — back off exponentially
             await asyncio.sleep(2 ** attempt)
-    # Final attempt — let the exception propagate so the caller records the error
     await _send_to_chat(bot, chat_id, data)
 
 
-@router.post("/{club_id}/broadcast", response_model=BroadcastResult)
+# ── Background worker ─────────────────────────────────────────────────────────
+
+async def _run_broadcast(job_id: int, chat_ids: List[int], message_data: dict) -> None:
+    bot = Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
+    errors: list[str] = []
+    sent = 0
+
+    for i, cid in enumerate(chat_ids):
+        if i > 0:
+            await asyncio.sleep(_SEND_INTERVAL)
+        try:
+            await _send_with_retry(bot, cid, message_data)
+            sent += 1
+        except Exception as exc:
+            errors.append(f"chat {cid}: {exc}")
+
+        # Flush progress to DB every 10 groups (or on last)
+        if (i + 1) % 10 == 0 or i == len(chat_ids) - 1:
+            with get_db() as session:
+                job = session.query(BroadcastJob).get(job_id)
+                if job:
+                    job.sent = sent
+                    job.failed = len(errors)
+                    job.errors_json = json.dumps(errors[-50:])  # keep last 50
+
+    with get_db() as session:
+        job = session.query(BroadcastJob).get(job_id)
+        if job:
+            job.sent = sent
+            job.failed = len(errors)
+            job.errors_json = json.dumps(errors[-50:])
+            job.status = "done"
+            job.finished_at = datetime.now(timezone.utc)
+
+
+# ── Routes ─────────────────────────────────────────────────────────────────────
+
+@router.post("/{club_id}/broadcast", response_model=BroadcastJobRead, status_code=202)
 async def broadcast(
     club_id: int, body: BroadcastRequest, db: Session = Depends(get_db_dependency)
 ):
@@ -108,23 +164,47 @@ async def broadcast(
     if not has_content:
         raise HTTPException(400, "Provide at least response_text or a photo file ID")
 
-    bot = _get_bot()
-    sent = 0
-    errors: list[str] = []
-
-    for i, g in enumerate(groups):
-        # Throttle: pause between every send to stay under Telegram's rate limit
-        if i > 0:
-            await asyncio.sleep(_SEND_INTERVAL)
-        try:
-            await _send_with_retry(bot, g.chat_id, body)
-            sent += 1
-        except Exception as exc:
-            errors.append(f"chat {g.chat_id}: {exc}")
-
-    return BroadcastResult(
-        total_groups=len(groups),
-        sent=sent,
-        failed=len(errors),
-        errors=errors,
+    # Block if there's already a running broadcast for this club
+    running = (
+        db.query(BroadcastJob)
+        .filter_by(club_id=club_id, status="running")
+        .first()
     )
+    if running:
+        raise HTTPException(409, "A broadcast is already running for this club")
+
+    chat_ids = [g.chat_id for g in groups]
+
+    job = BroadcastJob(
+        club_id=club_id,
+        status="running",
+        total_groups=len(chat_ids),
+        response_type=body.response_type,
+        response_text=body.response_text,
+        response_file_id=body.response_file_id,
+        response_caption=body.response_caption,
+    )
+    db.add(job)
+    db.flush()
+    db.refresh(job)
+
+    message_data = {
+        "response_type": body.response_type,
+        "response_text": body.response_text,
+        "response_file_id": body.response_file_id,
+        "response_caption": body.response_caption,
+    }
+
+    asyncio.create_task(_run_broadcast(job.id, chat_ids, message_data))
+
+    return _job_to_read(job)
+
+
+@router.get("/{club_id}/broadcast/{job_id}", response_model=BroadcastJobRead)
+def get_broadcast_status(
+    club_id: int, job_id: int, db: Session = Depends(get_db_dependency)
+):
+    job = db.query(BroadcastJob).filter_by(id=job_id, club_id=club_id).first()
+    if not job:
+        raise HTTPException(404, "Broadcast job not found")
+    return _job_to_read(job)
