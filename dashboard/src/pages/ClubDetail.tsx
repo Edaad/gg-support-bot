@@ -4,7 +4,7 @@ import {
   getClub, updateClub, listGroups, listCommands,
   createCommand, updateCommand, deleteCommand,
   listLinkedAccounts, addLinkedAccount, deleteLinkedAccount,
-  startBroadcast, getBroadcastStatus,
+  startBroadcast, getBroadcastStatus, cancelBroadcast,
   type Club, type Group as GroupT, type Command, type LinkedAccount,
   type BroadcastRequest, type BroadcastJob,
 } from '../api/client'
@@ -382,7 +382,7 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
       try {
         const updated = await getBroadcastStatus(token, clubId, job.id)
         setJob(updated)
-        if (updated.status === 'done') clearInterval(interval)
+        if (updated.status !== 'running') clearInterval(interval)
       } catch { /* ignore transient errors */ }
     }, 2000)
     return () => clearInterval(interval)
@@ -404,6 +404,17 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
       setErr(e instanceof Error ? e.message : 'Broadcast failed')
     } finally {
       setStarting(false)
+    }
+  }
+
+  const handleCancel = async () => {
+    if (!job || job.status !== 'running') return
+    if (!confirm('Cancel this broadcast? Messages already sent cannot be undone.')) return
+    try {
+      const updated = await cancelBroadcast(token, clubId, job.id)
+      setJob(updated)
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Failed to cancel')
     }
   }
 
@@ -438,8 +449,14 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
         {job && (
           <div className="mt-4 rounded-lg bg-gray-800 px-4 py-4 text-sm">
             <div className="mb-2 flex items-center justify-between">
-              <span className={job.status === 'done' ? 'font-medium text-green-400' : 'text-gray-300'}>
-                {job.status === 'done' ? 'Broadcast complete' : 'Broadcasting...'}
+              <span className={
+                job.status === 'done' ? 'font-medium text-green-400'
+                  : job.status === 'cancelled' ? 'font-medium text-yellow-400'
+                    : 'text-gray-300'
+              }>
+                {job.status === 'done' ? 'Broadcast complete'
+                  : job.status === 'cancelled' ? 'Broadcast cancelled'
+                    : 'Broadcasting...'}
               </span>
               <span className="text-gray-400">
                 {job.sent + job.failed} / {job.total_groups}
@@ -450,14 +467,18 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
             {/* Bar */}
             <div className="h-3 w-full overflow-hidden rounded-full bg-gray-700">
               <div
-                className={`h-full rounded-full transition-all duration-500 ${job.status === 'done' ? 'bg-green-500' : 'bg-indigo-500'}`}
+                className={`h-full rounded-full transition-all duration-500 ${
+                  job.status === 'done' ? 'bg-green-500'
+                    : job.status === 'cancelled' ? 'bg-yellow-500'
+                      : 'bg-indigo-500'
+                }`}
                 style={{ width: `${pct}%` }}
               />
             </div>
 
             <p className="mt-1.5 text-right text-xs text-gray-500">{pct}%</p>
 
-            {job.status === 'done' && job.errors.length > 0 && (
+            {job.status !== 'running' && job.errors.length > 0 && (
               <ul className="mt-3 max-h-32 overflow-y-auto space-y-1 text-xs text-red-300">
                 {job.errors.map((e, i) => <li key={i}>{e}</li>)}
               </ul>
@@ -465,17 +486,27 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
           </div>
         )}
 
-        <button
-          onClick={handleSend}
-          disabled={starting || (job?.status === 'running') || groupCount === 0}
-          className="mt-4 rounded-lg bg-indigo-600 px-6 py-2.5 font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
-        >
-          {starting
-            ? 'Starting...'
-            : job?.status === 'running'
-              ? 'Broadcast in progress...'
-              : `Send Broadcast to ${groupCount} group(s)`}
-        </button>
+        <div className="mt-4 flex gap-3">
+          <button
+            onClick={handleSend}
+            disabled={starting || (job?.status === 'running') || groupCount === 0}
+            className="rounded-lg bg-indigo-600 px-6 py-2.5 font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
+          >
+            {starting
+              ? 'Starting...'
+              : job?.status === 'running'
+                ? 'Broadcast in progress...'
+                : `Send Broadcast to ${groupCount} group(s)`}
+          </button>
+          {job?.status === 'running' && (
+            <button
+              onClick={handleCancel}
+              className="rounded-lg bg-red-600 px-6 py-2.5 font-medium text-white transition hover:bg-red-500"
+            >
+              Cancel Broadcast
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

@@ -93,6 +93,8 @@ export const startBroadcast = (token: string, clubId: number, data: BroadcastReq
   request<BroadcastJob>(`/clubs/${clubId}/broadcast`, { method: 'POST', body: JSON.stringify(data) }, token)
 export const getBroadcastStatus = (token: string, clubId: number, jobId: number) =>
   request<BroadcastJob>(`/clubs/${clubId}/broadcast/${jobId}`, {}, token)
+export const cancelBroadcast = (token: string, clubId: number, jobId: number) =>
+  request<BroadcastJob>(`/clubs/${clubId}/broadcast/${jobId}/cancel`, { method: 'POST' }, token)
 
 // Simulate
 export const getSimulation = (token: string, clubId: number, direction: string) =>
@@ -212,7 +214,7 @@ export interface BroadcastRequest {
 export interface BroadcastJob {
   id: number
   club_id: number
-  status: 'running' | 'done'
+  status: 'running' | 'done' | 'cancelled'
   total_groups: number
   sent: number
   failed: number

@@ -114,10 +114,20 @@ async def _run_broadcast(job_id: int, chat_ids: List[int], message_data: dict) -
     bot = Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
     errors: list[str] = []
     sent = 0
+    cancelled = False
 
     for i, cid in enumerate(chat_ids):
         if i > 0:
             await asyncio.sleep(_SEND_INTERVAL)
+
+        # Check for cancellation every 10 groups
+        if i % 10 == 0:
+            with get_db() as session:
+                job = session.query(BroadcastJob).get(job_id)
+                if job and job.status == "cancelled":
+                    cancelled = True
+                    break
+
         try:
             await _send_with_retry(bot, cid, message_data)
             sent += 1
@@ -131,7 +141,7 @@ async def _run_broadcast(job_id: int, chat_ids: List[int], message_data: dict) -
                 if job:
                     job.sent = sent
                     job.failed = len(errors)
-                    job.errors_json = json.dumps(errors[-50:])  # keep last 50
+                    job.errors_json = json.dumps(errors[-50:])
 
     with get_db() as session:
         job = session.query(BroadcastJob).get(job_id)
@@ -139,7 +149,8 @@ async def _run_broadcast(job_id: int, chat_ids: List[int], message_data: dict) -
             job.sent = sent
             job.failed = len(errors)
             job.errors_json = json.dumps(errors[-50:])
-            job.status = "done"
+            if not cancelled:
+                job.status = "done"
             job.finished_at = datetime.now(timezone.utc)
 
 
@@ -207,4 +218,19 @@ def get_broadcast_status(
     job = db.query(BroadcastJob).filter_by(id=job_id, club_id=club_id).first()
     if not job:
         raise HTTPException(404, "Broadcast job not found")
+    return _job_to_read(job)
+
+
+@router.post("/{club_id}/broadcast/{job_id}/cancel", response_model=BroadcastJobRead)
+def cancel_broadcast(
+    club_id: int, job_id: int, db: Session = Depends(get_db_dependency)
+):
+    job = db.query(BroadcastJob).filter_by(id=job_id, club_id=club_id).first()
+    if not job:
+        raise HTTPException(404, "Broadcast job not found")
+    if job.status != "running":
+        raise HTTPException(400, "Broadcast is not running")
+    job.status = "cancelled"
+    db.flush()
+    db.refresh(job)
     return _job_to_read(job)
