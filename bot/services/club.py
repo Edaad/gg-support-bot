@@ -544,25 +544,27 @@ def check_cashout_eligibility(
     elig_day = _day_label(eligible_at_est.date(), now_est.date())
     elig_time = eligible_at_est.strftime("%-I:%M %p")
 
-    # If business hours are configured and eligible time falls outside them,
-    # tell them the actual eligible time AND when active hours start.
     if settings["hours_enabled"] and not _is_within_hours(
         eligible_at_est, settings["hours_start"], settings["hours_end"]
     ):
         open_at = _next_open_time(
             eligible_at_est, settings["hours_start"], settings["hours_end"]
         )
-        open_day = _day_label(open_at.date(), now_est.date())
         open_time = open_at.strftime("%-I:%M %p")
+        # Format the hours range nicely (e.g. "8 AM - 11 PM")
+        sh, sm = _parse_time(settings["hours_start"])
+        eh, em = _parse_time(settings["hours_end"])
+        range_start = datetime(2000, 1, 1, sh, sm).strftime("%-I %p") if sm == 0 else datetime(2000, 1, 1, sh, sm).strftime("%-I:%M %p")
+        range_end = datetime(2000, 1, 1, eh, em).strftime("%-I %p") if em == 0 else datetime(2000, 1, 1, eh, em).strftime("%-I:%M %p")
         return False, (
-            f"Sorry! You need to wait {wait_str} before requesting a cashout. "
-            f"You can reach back out at {elig_time} EST {elig_day} to request your cashout, "
-            f"but since our active cashout hours start at {open_time} EST, "
-            f"you should request it then {open_day} to get instantly cashed out!"
+            f"Sorry! You need to wait {wait_str} before requesting a cashout.\n\n"
+            f"You can reach back out at {elig_time} EST {elig_day} to request your cashout!\n\n"
+            f"Note: Since that falls outside of our active instant cashout hours "
+            f"({range_start} - {range_end} EST) you will be cashed out at {open_time} EST."
         )
 
     return False, (
-        f"Sorry! You need to wait {wait_str} before requesting a cashout. "
+        f"Sorry! You need to wait {wait_str} before requesting a cashout.\n\n"
         f"You can reach back out at {elig_time} EST {elig_day} "
         f"and you will be cashed out instantly!"
     )
