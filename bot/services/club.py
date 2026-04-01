@@ -551,7 +551,15 @@ def check_cashout_eligibility(
                 f"{next_open.strftime('%-I:%M %p')} EST on {next_open.strftime('%A, %B %-d')}."
             )
 
+    # Add "today", "tomorrow", or the date for clarity
+    if eligible_at_est.date() == now_est.date():
+        day_str = "today"
+    elif eligible_at_est.date() == (now_est + timedelta(days=1)).date():
+        day_str = "tomorrow"
+    else:
+        day_str = f"on {eligible_at_est.strftime('%A, %B %-d')}"
+
     return False, (
         f"Sorry! You need to wait {wait_str} before requesting a cashout. "
-        f"You can reach back out at {eligible_at_est.strftime('%-I:%M %p')} EST."
+        f"You can reach back out at {eligible_at_est.strftime('%-I:%M %p')} EST {day_str}."
     )
