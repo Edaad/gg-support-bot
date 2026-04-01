@@ -23,6 +23,7 @@ from bot.services.club import (
     get_club_simple_mode,
     get_tier_for_amount,
     get_lowest_minimum,
+    record_activity,
 )
 from bot.handlers.response_utils import send_response_messages
 
@@ -54,6 +55,7 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data["deposit_club_id"] = club_id
     context.user_data["deposit_chat_id"] = chat.id
+    context.user_data["deposit_user_id"] = user_id
     await update.message.reply_text("How much would you like to deposit?")
     return DEPOSIT_AMOUNT
 
@@ -148,6 +150,7 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     amount = context.user_data.get("deposit_amount", "?")
     tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
     await _send_response(query, tier or method, amount, method["name"])
+    _record_deposit(context)
     _cleanup(context)
     return ConversationHandler.END
 
@@ -174,8 +177,20 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     display = f"{method_name} — {sub['name']}"
 
     await _send_response(query, sub, amount, display)
+    _record_deposit(context)
     _cleanup(context)
     return ConversationHandler.END
+
+
+def _record_deposit(context):
+    club_id = context.user_data.get("deposit_club_id")
+    user_id = context.user_data.get("deposit_user_id")
+    chat_id = context.user_data.get("deposit_chat_id")
+    if club_id and user_id and chat_id:
+        try:
+            record_activity(club_id, user_id, chat_id, "deposit")
+        except Exception:
+            pass
 
 
 async def _send_response(query, data, amount, display_name):
@@ -194,6 +209,7 @@ def _cleanup(context):
     for key in (
         "deposit_club_id",
         "deposit_chat_id",
+        "deposit_user_id",
         "deposit_amount",
         "deposit_method_name",
     ):

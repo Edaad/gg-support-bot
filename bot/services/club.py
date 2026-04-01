@@ -1,7 +1,9 @@
 """Shared database queries used by bot handlers."""
 
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional, List, Tuple
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -14,7 +16,11 @@ from db.models import (
     PaymentSubOption,
     Group,
     CustomCommand,
+    PlayerActivity,
+    CooldownBypass,
 )
+
+EST = ZoneInfo("America/New_York")
 
 
 def _club_id_for_telegram_user(session: Session, telegram_user_id: int) -> Optional[int]:
@@ -340,3 +346,212 @@ def try_link_group_by_admin(chat_id: int, admin_user_ids: list[int]) -> Optional
                     session.add(Group(chat_id=chat_id, club_id=club_id))
                 return club_id
     return None
+
+
+# ── Cashout cooldown helpers ─────────────────────────────────────────────────
+
+
+def get_cooldown_settings(club_id: int) -> Optional[dict]:
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club:
+            return None
+        return {
+            "cooldown_enabled": bool(club.cashout_cooldown_enabled),
+            "cooldown_hours": club.cashout_cooldown_hours or 24,
+            "hours_enabled": bool(club.cashout_hours_enabled),
+            "hours_start": club.cashout_hours_start or "08:00",
+            "hours_end": club.cashout_hours_end or "23:00",
+        }
+
+
+def record_activity(
+    club_id: int, telegram_user_id: int, chat_id: int, activity_type: str
+) -> None:
+    with get_db() as session:
+        session.add(
+            PlayerActivity(
+                club_id=club_id,
+                telegram_user_id=telegram_user_id,
+                chat_id=chat_id,
+                activity_type=activity_type,
+            )
+        )
+
+
+def cancel_last_cashout_activity(club_id: int, telegram_user_id: int) -> None:
+    """Mark the most recent non-cancelled cashout as cancelled so the timer falls back."""
+    with get_db() as session:
+        activity = (
+            session.query(PlayerActivity)
+            .filter_by(
+                club_id=club_id,
+                telegram_user_id=telegram_user_id,
+                activity_type="cashout",
+                cancelled=False,
+            )
+            .order_by(PlayerActivity.created_at.desc())
+            .first()
+        )
+        if activity:
+            activity.cancelled = True
+
+
+def get_last_activity(club_id: int, telegram_user_id: int) -> Optional[datetime]:
+    """Return created_at (UTC) of the latest non-cancelled deposit or cashout, or None."""
+    with get_db() as session:
+        activity = (
+            session.query(PlayerActivity)
+            .filter_by(
+                club_id=club_id,
+                telegram_user_id=telegram_user_id,
+                cancelled=False,
+            )
+            .order_by(PlayerActivity.created_at.desc())
+            .first()
+        )
+        if activity and activity.created_at:
+            ts = activity.created_at
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            return ts
+    return None
+
+
+def check_and_consume_bypass(club_id: int, telegram_user_id: int) -> Optional[str]:
+    """Check for a bypass. Returns 'permanent', 'one_time' (and consumes it), or None."""
+    with get_db() as session:
+        perm = (
+            session.query(CooldownBypass)
+            .filter_by(
+                club_id=club_id,
+                telegram_user_id=telegram_user_id,
+                bypass_type="permanent",
+            )
+            .first()
+        )
+        if perm:
+            return "permanent"
+        one = (
+            session.query(CooldownBypass)
+            .filter_by(
+                club_id=club_id,
+                telegram_user_id=telegram_user_id,
+                bypass_type="one_time",
+                used=False,
+            )
+            .order_by(CooldownBypass.created_at.desc())
+            .first()
+        )
+        if one:
+            one.used = True
+            return "one_time"
+    return None
+
+
+def grant_bypass(club_id: int, telegram_user_id: int, bypass_type: str) -> None:
+    with get_db() as session:
+        session.add(
+            CooldownBypass(
+                club_id=club_id,
+                telegram_user_id=telegram_user_id,
+                bypass_type=bypass_type,
+            )
+        )
+
+
+def _parse_time(t: str) -> tuple[int, int]:
+    parts = t.split(":")
+    return int(parts[0]), int(parts[1])
+
+
+def check_cashout_eligibility(
+    club_id: int, telegram_user_id: int
+) -> tuple[bool, Optional[str]]:
+    """Check cooldown + business hours. Returns (eligible, denial_message).
+
+    If eligible is True, denial_message is None and the cashout may proceed.
+    """
+    settings = get_cooldown_settings(club_id)
+    if not settings:
+        return True, None
+
+    now_utc = datetime.now(timezone.utc)
+    now_est = now_utc.astimezone(EST)
+
+    # ── Business hours gate (applies regardless of cooldown) ──────────────
+    if settings["hours_enabled"]:
+        h_start_h, h_start_m = _parse_time(settings["hours_start"])
+        h_end_h, h_end_m = _parse_time(settings["hours_end"])
+        current_minutes = now_est.hour * 60 + now_est.minute
+        start_minutes = h_start_h * 60 + h_start_m
+        end_minutes = h_end_h * 60 + h_end_m
+
+        if current_minutes < start_minutes or current_minutes >= end_minutes:
+            return False, (
+                f"Cashouts are currently closed. "
+                f"Please reach out at {settings['hours_start']} EST."
+            )
+
+    # ── Cooldown gate ─────────────────────────────────────────────────────
+    if not settings["cooldown_enabled"]:
+        return True, None
+
+    # Check bypass
+    bypass = check_and_consume_bypass(club_id, telegram_user_id)
+    if bypass:
+        return True, None
+
+    last = get_last_activity(club_id, telegram_user_id)
+    if last is None:
+        return True, None
+
+    cooldown_td = timedelta(hours=settings["cooldown_hours"])
+    eligible_at_utc = last + cooldown_td
+
+    if now_utc >= eligible_at_utc:
+        return True, None
+
+    # Player is still in cooldown
+    eligible_at_est = eligible_at_utc.astimezone(EST)
+    remaining = eligible_at_utc - now_utc
+    hours_left = int(remaining.total_seconds() // 3600)
+    mins_left = int((remaining.total_seconds() % 3600) // 60)
+
+    if hours_left > 0 and mins_left > 0:
+        wait_str = f"{hours_left} hour{'s' if hours_left != 1 else ''} and {mins_left} minute{'s' if mins_left != 1 else ''}"
+    elif hours_left > 0:
+        wait_str = f"{hours_left} hour{'s' if hours_left != 1 else ''}"
+    else:
+        wait_str = f"{mins_left} minute{'s' if mins_left != 1 else ''}"
+
+    # If business hours are enabled, check if eligible_at falls inside them
+    if settings["hours_enabled"]:
+        h_start_h, h_start_m = _parse_time(settings["hours_start"])
+        h_end_h, h_end_m = _parse_time(settings["hours_end"])
+        elig_minutes = eligible_at_est.hour * 60 + eligible_at_est.minute
+        start_minutes = h_start_h * 60 + h_start_m
+        end_minutes = h_end_h * 60 + h_end_m
+
+        if elig_minutes < start_minutes or elig_minutes >= end_minutes:
+            # Eligible time is outside business hours — tell them the next open time
+            if elig_minutes >= end_minutes:
+                # Next open is tomorrow morning
+                next_open = (eligible_at_est + timedelta(days=1)).replace(
+                    hour=h_start_h, minute=h_start_m, second=0, microsecond=0
+                )
+            else:
+                # Eligible before open today
+                next_open = eligible_at_est.replace(
+                    hour=h_start_h, minute=h_start_m, second=0, microsecond=0
+                )
+            return False, (
+                f"Sorry! You need to wait {wait_str} before requesting a cashout. "
+                f"Since that falls outside of our cashout hours, please reach out at "
+                f"{next_open.strftime('%-I:%M %p')} EST on {next_open.strftime('%A, %B %-d')}."
+            )
+
+    return False, (
+        f"Sorry! You need to wait {wait_str} before requesting a cashout. "
+        f"You can reach back out at {eligible_at_est.strftime('%-I:%M %p')} EST."
+    )

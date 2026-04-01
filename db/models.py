@@ -43,6 +43,11 @@ class Club(Base):
     cashout_simple_text = Column(Text)
     cashout_simple_file_id = Column(Text)
     cashout_simple_caption = Column(Text)
+    cashout_cooldown_enabled = Column(Boolean, default=False)
+    cashout_cooldown_hours = Column(Integer, default=24)
+    cashout_hours_enabled = Column(Boolean, default=False)
+    cashout_hours_start = Column(String(5), default="08:00")
+    cashout_hours_end = Column(String(5), default="23:00")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
 
@@ -183,6 +188,37 @@ class BroadcastJob(Base):
     finished_at = Column(DateTime, nullable=True)
 
     club = relationship("Club")
+
+
+class PlayerActivity(Base):
+    """Tracks completed deposits and cashouts per player per club for cooldown logic."""
+
+    __tablename__ = "player_activities"
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    telegram_user_id = Column(BigInteger, nullable=False)
+    chat_id = Column(BigInteger, nullable=False)
+    activity_type = Column(String(10), nullable=False)  # "deposit" or "cashout"
+    cancelled = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class CooldownBypass(Base):
+    """Admin-granted cooldown bypasses for specific players."""
+
+    __tablename__ = "cooldown_bypasses"
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    telegram_user_id = Column(BigInteger, nullable=False)
+    bypass_type = Column(String(20), nullable=False)  # "one_time" or "permanent"
+    used = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
 
 
 class CustomCommand(Base):

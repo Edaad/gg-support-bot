@@ -42,6 +42,11 @@ class ClubCreate(BaseModel):
     cashout_simple_text: Optional[str] = None
     cashout_simple_file_id: Optional[str] = None
     cashout_simple_caption: Optional[str] = None
+    cashout_cooldown_enabled: bool = False
+    cashout_cooldown_hours: int = 24
+    cashout_hours_enabled: bool = False
+    cashout_hours_start: str = "08:00"
+    cashout_hours_end: str = "23:00"
     is_active: bool = True
 
 
@@ -68,6 +73,11 @@ class ClubUpdate(BaseModel):
     cashout_simple_text: Optional[str] = None
     cashout_simple_file_id: Optional[str] = None
     cashout_simple_caption: Optional[str] = None
+    cashout_cooldown_enabled: Optional[bool] = None
+    cashout_cooldown_hours: Optional[int] = None
+    cashout_hours_enabled: Optional[bool] = None
+    cashout_hours_start: Optional[str] = None
+    cashout_hours_end: Optional[str] = None
     is_active: Optional[bool] = None
 
 
@@ -97,6 +107,11 @@ class ClubRead(BaseModel):
     cashout_simple_text: Optional[str]
     cashout_simple_file_id: Optional[str]
     cashout_simple_caption: Optional[str]
+    cashout_cooldown_enabled: bool
+    cashout_cooldown_hours: int
+    cashout_hours_enabled: bool
+    cashout_hours_start: Optional[str]
+    cashout_hours_end: Optional[str]
     is_active: bool
     created_at: Optional[datetime]
     method_count: int = 0

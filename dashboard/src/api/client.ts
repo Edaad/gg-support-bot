@@ -126,6 +126,11 @@ export interface Club {
   cashout_simple_text: string | null
   cashout_simple_file_id: string | null
   cashout_simple_caption: string | null
+  cashout_cooldown_enabled: boolean
+  cashout_cooldown_hours: number
+  cashout_hours_enabled: boolean
+  cashout_hours_start: string | null
+  cashout_hours_end: string | null
   is_active: boolean
   created_at: string | null
   method_count: number

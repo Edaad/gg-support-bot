@@ -278,6 +278,75 @@ function GeneralTab({
       />
 
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
+        <h3 className="mb-4 font-semibold">Cashout Cooldown</h3>
+        <label className="flex items-center gap-2 text-sm text-gray-300">
+          <input
+            type="checkbox"
+            checked={form.cashout_cooldown_enabled ?? false}
+            onChange={(e) => setField('cashout_cooldown_enabled', e.target.checked)}
+            className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500"
+          />
+          Enable cashout cooldown
+        </label>
+        <p className="ml-6 mt-1 mb-3 text-xs text-gray-500">
+          When enabled, players must wait a set number of hours after their last deposit or cashout before
+          requesting a new cashout. Admins are exempt.
+        </p>
+        {form.cashout_cooldown_enabled && (
+          <div className="mt-3 space-y-4 rounded-lg border border-gray-800 bg-gray-950 p-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-400">Cooldown hours</label>
+              <input
+                type="number"
+                min={1}
+                value={form.cashout_cooldown_hours ?? 24}
+                onChange={(e) => setField('cashout_cooldown_hours', Number(e.target.value))}
+                className="w-32 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-gray-500">Hours a player must wait between deposit/cashout and their next cashout.</p>
+            </div>
+            <div>
+              <label className="flex items-center gap-2 text-sm text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={form.cashout_hours_enabled ?? false}
+                  onChange={(e) => setField('cashout_hours_enabled', e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500"
+                />
+                Enable cashout business hours
+              </label>
+              <p className="ml-6 mt-1 text-xs text-gray-500">
+                When enabled, cashouts are only allowed during set hours (EST). Outside these hours
+                the bot tells the player when to come back.
+              </p>
+            </div>
+            {form.cashout_hours_enabled && (
+              <div className="flex gap-4">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-400">Open time (EST)</label>
+                  <input
+                    type="time"
+                    value={form.cashout_hours_start ?? '08:00'}
+                    onChange={(e) => setField('cashout_hours_start', e.target.value)}
+                    className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-400">Close time (EST)</label>
+                  <input
+                    type="time"
+                    value={form.cashout_hours_end ?? '23:00'}
+                    onChange={(e) => setField('cashout_hours_end', e.target.value)}
+                    className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
         <h3 className="mb-4 font-semibold">Deposit Simple Mode</h3>
         <label className="flex items-center gap-2 text-sm text-gray-300">
           <input

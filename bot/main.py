@@ -38,6 +38,7 @@ def run_bot(token: str | None = None):
     from bot.handlers.cashout import get_cashout_handler
     from bot.handlers.list_cmd import list_handler
     from bot.handlers.groups import on_my_chat_member_updated, auto_link_group
+    from bot.handlers.bypass import bypass_handler, bypass_permanent_handler
 
     app = ApplicationBuilder().token(token).build()
 
@@ -46,6 +47,8 @@ def run_bot(token: str | None = None):
     app.add_handler(CommandHandler("whoami", whoami_handler))
     app.add_handler(CommandHandler("mycmds", mycmds_handler))
     app.add_handler(CommandHandler("delete", delete_handler))
+    app.add_handler(CommandHandler("bypass", bypass_handler))
+    app.add_handler(CommandHandler("bypasspermanent", bypass_permanent_handler))
 
     app.add_handler(get_set_handler())
     app.add_handler(get_deposit_handler())
