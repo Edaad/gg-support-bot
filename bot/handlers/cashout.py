@@ -63,6 +63,10 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     simple = get_club_simple_mode(club_id, "cashout")
     if simple:
         await _send_simple_response(update.message, simple)
+        try:
+            record_activity(club_id, user_id, chat.id, "cashout")
+        except Exception:
+            pass
         return ConversationHandler.END
 
     context.user_data["cashout_club_id"] = club_id
