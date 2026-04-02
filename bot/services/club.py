@@ -498,71 +498,93 @@ def _next_open_time(est_dt, hours_start: str, hours_end: str):
     return est_dt
 
 
+def _hours_range_str(settings: dict) -> str:
+    """Format business hours as e.g. '8 AM - 11 PM'."""
+    sh, sm = _parse_time(settings["hours_start"])
+    eh, em = _parse_time(settings["hours_end"])
+    fmt_s = datetime(2000, 1, 1, sh, sm).strftime("%-I %p" if sm == 0 else "%-I:%M %p")
+    fmt_e = datetime(2000, 1, 1, eh, em).strftime("%-I %p" if em == 0 else "%-I:%M %p")
+    return f"{fmt_s} - {fmt_e}"
+
+
 def check_cashout_eligibility(
     club_id: int, telegram_user_id: int
 ) -> tuple[bool, Optional[str]]:
-    """Check cooldown. Returns (eligible, denial_message).
-
-    If eligible is True, denial_message is None and the cashout may proceed.
-    Business hours are only used to adjust the "reach back out" time in cooldown
-    messages — they never block a cashout on their own.
-    """
+    """Check cooldown + business hours. Returns (eligible, denial_message)."""
     settings = get_cooldown_settings(club_id)
-    if not settings or not settings["cooldown_enabled"]:
-        return True, None
-
-    bypass = check_and_consume_bypass(club_id, telegram_user_id)
-    if bypass:
-        return True, None
-
-    last = get_last_activity(club_id, telegram_user_id)
-    if last is None:
+    if not settings:
         return True, None
 
     now_utc = datetime.now(timezone.utc)
     now_est = now_utc.astimezone(EST)
+    hours_on = settings["hours_enabled"]
+    cooldown_on = settings["cooldown_enabled"]
 
-    cooldown_td = timedelta(hours=settings["cooldown_hours"])
-    eligible_at_utc = last + cooldown_td
+    # ── Determine if cooldown has passed ──────────────────────────────────
+    cooldown_passed = True
+    eligible_at_est = None
+    wait_str = ""
 
-    if now_utc >= eligible_at_utc:
+    if cooldown_on:
+        bypass = check_and_consume_bypass(club_id, telegram_user_id)
+        if not bypass:
+            last = get_last_activity(club_id, telegram_user_id)
+            if last is not None:
+                cooldown_td = timedelta(hours=settings["cooldown_hours"])
+                eligible_at_utc = last + cooldown_td
+
+                if now_utc < eligible_at_utc:
+                    cooldown_passed = False
+                    eligible_at_est = eligible_at_utc.astimezone(EST)
+                    remaining = eligible_at_utc - now_utc
+                    hours_left = int(remaining.total_seconds() // 3600)
+                    mins_left = int((remaining.total_seconds() % 3600) // 60)
+
+                    if hours_left > 0 and mins_left > 0:
+                        wait_str = f"{hours_left} hour{'s' if hours_left != 1 else ''} and {mins_left} minute{'s' if mins_left != 1 else ''}"
+                    elif hours_left > 0:
+                        wait_str = f"{hours_left} hour{'s' if hours_left != 1 else ''}"
+                    else:
+                        wait_str = f"{mins_left} minute{'s' if mins_left != 1 else ''}"
+
+    # ── Eligible + within business hours → allow ──────────────────────────
+    if cooldown_passed and (not hours_on or _is_within_hours(now_est, settings["hours_start"], settings["hours_end"])):
         return True, None
 
-    # Still in cooldown
-    eligible_at_est = eligible_at_utc.astimezone(EST)
-    remaining = eligible_at_utc - now_utc
-    hours_left = int(remaining.total_seconds() // 3600)
-    mins_left = int((remaining.total_seconds() % 3600) // 60)
+    hours_range = _hours_range_str(settings) if hours_on else ""
 
-    if hours_left > 0 and mins_left > 0:
-        wait_str = f"{hours_left} hour{'s' if hours_left != 1 else ''} and {mins_left} minute{'s' if mins_left != 1 else ''}"
-    elif hours_left > 0:
-        wait_str = f"{hours_left} hour{'s' if hours_left != 1 else ''}"
-    else:
-        wait_str = f"{mins_left} minute{'s' if mins_left != 1 else ''}"
+    # ── Eligible + outside business hours → block with "come back at open" ─
+    if cooldown_passed and hours_on:
+        open_at = _next_open_time(now_est, settings["hours_start"], settings["hours_end"])
+        open_time = open_at.strftime("%-I:%M %p")
+        open_day = _day_label(open_at.date(), now_est.date())
+        return False, (
+            f"It is currently outside active instant cashout hours ({hours_range} EST).\n\n"
+            f"Please request a cashout at {open_time} EST {open_day} "
+            f"and we will get you cashed out instantly!\n\n"
+            f"Deposits and any other inquiries are open 24/7 so feel free "
+            f"to reach out to our team about anything else!"
+        )
 
-    elig_day = _day_label(eligible_at_est.date(), now_est.date())
-    elig_time = eligible_at_est.strftime("%-I:%M %p")
+    # ── Not eligible (in cooldown) ────────────────────────────────────────
 
-    if settings["hours_enabled"] and not _is_within_hours(
+    # Check if the eligible time falls outside business hours
+    if hours_on and eligible_at_est and not _is_within_hours(
         eligible_at_est, settings["hours_start"], settings["hours_end"]
     ):
-        open_at = _next_open_time(
-            eligible_at_est, settings["hours_start"], settings["hours_end"]
-        )
+        open_at = _next_open_time(eligible_at_est, settings["hours_start"], settings["hours_end"])
         open_time = open_at.strftime("%-I:%M %p")
-        # Format the hours range nicely (e.g. "8 AM - 11 PM")
-        sh, sm = _parse_time(settings["hours_start"])
-        eh, em = _parse_time(settings["hours_end"])
-        range_start = datetime(2000, 1, 1, sh, sm).strftime("%-I %p") if sm == 0 else datetime(2000, 1, 1, sh, sm).strftime("%-I:%M %p")
-        range_end = datetime(2000, 1, 1, eh, em).strftime("%-I %p") if em == 0 else datetime(2000, 1, 1, eh, em).strftime("%-I:%M %p")
+        open_day = _day_label(open_at.date(), now_est.date())
         return False, (
             f"Sorry! You need to wait {wait_str} before requesting a cashout.\n\n"
-            f"You can reach back out at {elig_time} EST {elig_day} to request your cashout!\n\n"
-            f"Note: Since that falls outside of our active instant cashout hours "
-            f"({range_start} - {range_end} EST) you will be cashed out at {open_time} EST."
+            f"Since that time falls outside of our active instant cashout hours "
+            f"({hours_range} EST) you can reach back out to us at "
+            f"{open_time} EST {open_day} and we will get you cashed out instantly!"
         )
 
+    # Eligible time is within business hours
+    elig_time = eligible_at_est.strftime("%-I:%M %p") if eligible_at_est else ""
+    elig_day = _day_label(eligible_at_est.date(), now_est.date()) if eligible_at_est else ""
     return False, (
         f"Sorry! You need to wait {wait_str} before requesting a cashout.\n\n"
         f"You can reach back out at {elig_time} EST {elig_day} "
