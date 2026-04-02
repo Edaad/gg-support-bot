@@ -315,6 +315,25 @@ async def cashout_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+async def cashout_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = context.user_data.get("cashout_chat_id")
+    if chat_id:
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "We didn't hear back from you so we are canceling your request! "
+                    "Please use /cashout to cashout again!"
+                ),
+            )
+        except Exception:
+            pass
+    _cleanup(context)
+
+
+TIMEOUT_SECONDS = 600
+
+
 def get_cashout_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[CommandHandler("cashout", cashout_entry)],
@@ -331,8 +350,12 @@ def get_cashout_handler() -> ConversationHandler:
             CASHOUT_SUB: [
                 CallbackQueryHandler(cashout_sub_chosen, pattern=r"^cosub:\d+$"),
             ],
+            ConversationHandler.TIMEOUT: [
+                MessageHandler(filters.ALL, cashout_timeout),
+            ],
         },
         fallbacks=[CommandHandler("cancel", cashout_cancel)],
+        conversation_timeout=TIMEOUT_SECONDS,
         name="cashout_conv",
         per_chat=True,
         per_user=True,

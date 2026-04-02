@@ -227,6 +227,25 @@ async def deposit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = context.user_data.get("deposit_chat_id")
+    if chat_id:
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "We didn't hear back from you so we are canceling your request! "
+                    "Please use /deposit to deposit again!"
+                ),
+            )
+        except Exception:
+            pass
+    _cleanup(context)
+
+
+TIMEOUT_SECONDS = 600
+
+
 def get_deposit_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[CommandHandler("deposit", deposit_entry)],
@@ -242,8 +261,12 @@ def get_deposit_handler() -> ConversationHandler:
             DEPOSIT_SUB: [
                 CallbackQueryHandler(deposit_sub_chosen, pattern=r"^depsub:\d+$"),
             ],
+            ConversationHandler.TIMEOUT: [
+                MessageHandler(filters.ALL, deposit_timeout),
+            ],
         },
         fallbacks=[CommandHandler("cancel", deposit_cancel)],
+        conversation_timeout=TIMEOUT_SECONDS,
         name="deposit_conv",
         per_chat=True,
         per_user=True,
