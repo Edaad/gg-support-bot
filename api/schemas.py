@@ -179,6 +179,20 @@ class SubOptionRead(BaseModel):
     sort_order: int
 
 
+class VariantRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    method_id: int
+    label: str
+    weight: int
+    response_type: Optional[str]
+    response_text: Optional[str]
+    response_file_id: Optional[str]
+    response_caption: Optional[str]
+    sort_order: int
+
+
 class MethodRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -199,6 +213,7 @@ class MethodRead(BaseModel):
     created_at: Optional[datetime]
     sub_options: List[SubOptionRead] = []
     tiers: List[TierRead] = []
+    variants: List[VariantRead] = []
 
 
 # ── Payment Method Tier ───────────────────────────────────────────────────────
@@ -238,6 +253,28 @@ class TierRead(BaseModel):
     response_file_id: Optional[str]
     response_caption: Optional[str]
     sort_order: int
+
+
+# ── Method Variant (weighted rotation) ────────────────────────────────────────
+
+class VariantCreate(BaseModel):
+    label: str
+    weight: int = 1
+    response_type: str = "text"
+    response_text: Optional[str] = None
+    response_file_id: Optional[str] = None
+    response_caption: Optional[str] = None
+    sort_order: int = 0
+
+
+class VariantUpdate(BaseModel):
+    label: Optional[str] = None
+    weight: Optional[int] = None
+    response_type: Optional[str] = None
+    response_text: Optional[str] = None
+    response_file_id: Optional[str] = None
+    response_caption: Optional[str] = None
+    sort_order: Optional[int] = None
 
 
 # ── Payment Sub-Option ────────────────────────────────────────────────────────

@@ -84,6 +84,16 @@ export const updateTier = (token: string, id: number, data: Partial<Tier>) =>
 export const deleteTier = (token: string, id: number) =>
   request<void>(`/tiers/${id}`, { method: 'DELETE' }, token)
 
+// Variants (weighted rotation)
+export const listVariants = (token: string, methodId: number) =>
+  request<Variant[]>(`/methods/${methodId}/variants`, {}, token)
+export const createVariant = (token: string, methodId: number, data: Partial<Variant>) =>
+  request<Variant>(`/methods/${methodId}/variants`, { method: 'POST', body: JSON.stringify(data) }, token)
+export const updateVariant = (token: string, id: number, data: Partial<Variant>) =>
+  request<Variant>(`/variants/${id}`, { method: 'PUT', body: JSON.stringify(data) }, token)
+export const deleteVariant = (token: string, id: number) =>
+  request<void>(`/variants/${id}`, { method: 'DELETE' }, token)
+
 // Groups
 export const listGroups = (token: string, clubId: number) =>
   request<Group[]>(`/clubs/${clubId}/groups`, {}, token)
@@ -163,6 +173,7 @@ export interface Method {
   created_at: string | null
   sub_options: SubOption[]
   tiers: Tier[]
+  variants: Variant[]
 }
 
 export interface Tier {
@@ -171,6 +182,18 @@ export interface Tier {
   label: string
   min_amount: number | null
   max_amount: number | null
+  response_type: string | null
+  response_text: string | null
+  response_file_id: string | null
+  response_caption: string | null
+  sort_order: number
+}
+
+export interface Variant {
+  id: number
+  method_id: number
+  label: string
+  weight: number
   response_type: string | null
   response_text: string | null
   response_file_id: string | null

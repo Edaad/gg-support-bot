@@ -24,6 +24,7 @@ from bot.services.club import (
     get_tier_for_amount,
     get_lowest_minimum,
     record_activity,
+    pick_variant,
 )
 from bot.handlers.response_utils import send_response_messages
 
@@ -153,7 +154,8 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
 
     amount = context.user_data.get("deposit_amount", "?")
     tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
-    await _send_response(query, tier or method, amount, method["name"])
+    response_data = tier or pick_variant(method_id) or method
+    await _send_response(query, response_data, amount, method["name"])
     _record_deposit(context)
     _cleanup(context)
     return ConversationHandler.END

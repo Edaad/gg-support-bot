@@ -1,5 +1,6 @@
 """Shared database queries used by bot handlers."""
 
+import random
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional, List, Tuple
@@ -14,6 +15,7 @@ from db.models import (
     PaymentMethod,
     PaymentMethodTier,
     PaymentSubOption,
+    MethodVariant,
     Group,
     CustomCommand,
     PlayerActivity,
@@ -242,6 +244,30 @@ def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
                 "response_caption": t.response_caption,
             }
     return None
+
+
+def pick_variant(method_id: int) -> Optional[dict]:
+    """If the method has weighted variants, pick one at random based on weights.
+
+    Returns the chosen variant's response dict, or None if no variants exist
+    (meaning the caller should fall back to the method's own response).
+    """
+    with get_db() as session:
+        variants = (
+            session.query(MethodVariant)
+            .filter_by(method_id=method_id)
+            .all()
+        )
+        if not variants:
+            return None
+        weights = [v.weight for v in variants]
+        chosen = random.choices(variants, weights=weights, k=1)[0]
+        return {
+            "response_type": chosen.response_type,
+            "response_text": chosen.response_text,
+            "response_file_id": chosen.response_file_id,
+            "response_caption": chosen.response_caption,
+        }
 
 
 def get_custom_command(club_id: int, command_name: str) -> Optional[dict]:

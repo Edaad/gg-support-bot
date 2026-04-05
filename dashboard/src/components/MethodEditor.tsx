@@ -10,6 +10,7 @@ import {
 import ResponseEditor from './ResponseEditor'
 import SubOptionEditor from './SubOptionEditor'
 import TierEditor from './TierEditor'
+import VariantEditor from './VariantEditor'
 
 interface Props {
   token: string
@@ -30,6 +31,7 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
   const [form, setForm] = useState<Partial<Method>>({ ...EMPTY })
   const [expandedSub, setExpandedSub] = useState<number | null>(null)
   const [expandedTier, setExpandedTier] = useState<number | null>(null)
+  const [expandedVariant, setExpandedVariant] = useState<number | null>(null)
   const [error, setError] = useState('')
   const dragItem = useRef<number | null>(null)
   const dragOver = useRef<number | null>(null)
@@ -150,6 +152,13 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
                   {expandedTier === m.id ? 'Hide' : 'Tiers'}
                   {m.tiers && m.tiers.length > 0 && ` (${m.tiers.length})`}
                 </button>
+                <button
+                  onClick={() => setExpandedVariant(expandedVariant === m.id ? null : m.id)}
+                  className="text-xs text-emerald-400 hover:text-emerald-300"
+                >
+                  {expandedVariant === m.id ? 'Hide' : 'Variants'}
+                  {m.variants && m.variants.length > 0 && ` (${m.variants.length})`}
+                </button>
                 <button onClick={() => handleEdit(m)} className="text-xs text-gray-400 hover:text-white">Edit</button>
                 <button onClick={() => handleDelete(m.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
               </div>
@@ -159,6 +168,9 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
             )}
             {expandedTier === m.id && (
               <TierEditor token={token} methodId={m.id} />
+            )}
+            {expandedVariant === m.id && (
+              <VariantEditor token={token} methodId={m.id} />
             )}
           </div>
         ))}

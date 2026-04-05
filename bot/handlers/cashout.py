@@ -28,6 +28,7 @@ from bot.services.club import (
     cancel_last_cashout_activity,
     check_cashout_eligibility,
     is_club_staff,
+    pick_variant,
 )
 from bot.handlers.response_utils import send_response_messages
 
@@ -201,7 +202,8 @@ async def cashout_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
 
     amount = context.user_data.get("cashout_amount", "?")
     tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
-    await _send_response(query, tier or method, amount, method["name"])
+    response_data = tier or pick_variant(method_id) or method
+    await _send_response(query, response_data, amount, method["name"])
     context.user_data.setdefault("cashout_selected", []).append(
         {"id": method_id, "name": method["name"]}
     )
