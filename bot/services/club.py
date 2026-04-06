@@ -631,7 +631,9 @@ def check_cashout_eligibility(
             f"{rule_line}\n\n"
             f"Since that time falls outside of our active instant cashout hours "
             f"({hours_range} EST) you can reach back out to us at "
-            f"{open_time} EST {open_day} and we will get you cashed out instantly!"
+            f"{open_time} EST {open_day} and we will get you cashed out instantly!\n\n"
+            f"Deposits and any other inquiries are open 24/7 so feel free "
+            f"to reach out to our team about anything else!"
         )
 
     # Eligible time is within business hours
@@ -640,5 +642,7 @@ def check_cashout_eligibility(
     return False, (
         f"{rule_line}\n\n"
         f"You can reach back out at {elig_time} EST {elig_day} "
-        f"and you will be cashed out instantly!"
+        f"and you will be cashed out instantly!\n\n"
+        f"Deposits and any other inquiries are open 24/7 so feel free "
+        f"to reach out to our team about anything else!"
     )
