@@ -614,6 +614,12 @@ def check_cashout_eligibility(
 
     # ── Not eligible (in cooldown) ────────────────────────────────────────
 
+    cooldown_hours = settings["cooldown_hours"]
+    rule_line = (
+        f"Sorry, you must wait {cooldown_hours} hours since your last deposit or cashout! "
+        f"Your remaining waiting time is {wait_str}."
+    )
+
     # Check if the eligible time falls outside business hours
     if hours_on and eligible_at_est and not _is_within_hours(
         eligible_at_est, settings["hours_start"], settings["hours_end"]
@@ -622,7 +628,7 @@ def check_cashout_eligibility(
         open_time = open_at.strftime("%-I:%M %p")
         open_day = _day_label(open_at.date(), now_est.date())
         return False, (
-            f"Sorry! You need to wait {wait_str} before requesting a cashout.\n\n"
+            f"{rule_line}\n\n"
             f"Since that time falls outside of our active instant cashout hours "
             f"({hours_range} EST) you can reach back out to us at "
             f"{open_time} EST {open_day} and we will get you cashed out instantly!"
@@ -632,7 +638,7 @@ def check_cashout_eligibility(
     elig_time = eligible_at_est.strftime("%-I:%M %p") if eligible_at_est else ""
     elig_day = _day_label(eligible_at_est.date(), now_est.date()) if eligible_at_est else ""
     return False, (
-        f"Sorry! You need to wait {wait_str} before requesting a cashout.\n\n"
+        f"{rule_line}\n\n"
         f"You can reach back out at {elig_time} EST {elig_day} "
         f"and you will be cashed out instantly!"
     )
