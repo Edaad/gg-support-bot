@@ -30,6 +30,7 @@ from bot.services.club import (
     is_club_staff,
     pick_variant,
     get_cashout_max_amount,
+    get_cashout_soft_limit,
 )
 from bot.handlers.response_utils import send_response_messages
 
@@ -152,6 +153,17 @@ async def cashout_simple_amount_received(update: Update, context: ContextTypes.D
     chat_id = context.user_data.get("cashout_chat_id")
     if simple_data:
         await _send_simple_response(update.message, simple_data)
+
+    soft = get_cashout_soft_limit(club_id)
+    if soft is not None and amount > soft:
+        try:
+            await update.message.reply_text(
+                f"${soft:,.2f} will be sent instantly, and your remaining "
+                f"cashout will be sent within 24 hours!"
+            )
+        except Exception:
+            pass
+
     try:
         record_activity(club_id, user_id, chat_id, "cashout")
     except Exception:
@@ -320,16 +332,31 @@ async def _send_response(query, data, amount, display_name):
 async def _finalize_cashout(update, context):
     amount = context.user_data.get("cashout_amount", "?")
     selected = context.user_data.get("cashout_selected", [])
+    club_id = context.user_data.get("cashout_club_id")
     method_names = ", ".join(s["name"] for s in selected) if selected else "None"
 
     summary = f"Cashout submitted: ${amount} via {method_names}"
+    chat = None
     try:
         if update.callback_query:
-            await update.callback_query.message.chat.send_message(summary)
+            chat = update.callback_query.message.chat
+            await chat.send_message(summary)
         elif update.message:
-            await update.message.chat.send_message(summary)
+            chat = update.message.chat
+            await chat.send_message(summary)
     except Exception:
         pass
+
+    if chat and club_id and isinstance(amount, Decimal):
+        soft = get_cashout_soft_limit(club_id)
+        if soft is not None and amount > soft:
+            try:
+                await chat.send_message(
+                    f"${soft:,.2f} will be sent instantly, and your remaining "
+                    f"cashout will be sent within 24 hours!"
+                )
+            except Exception:
+                pass
 
     _record_cashout(context)
     _cleanup(context)

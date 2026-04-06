@@ -377,6 +377,14 @@ def get_cashout_max_amount(club_id: int) -> Optional[Decimal]:
         return Decimal(str(club.cashout_max_amount))
 
 
+def get_cashout_soft_limit(club_id: int) -> Optional[Decimal]:
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club or club.cashout_soft_limit is None:
+            return None
+        return Decimal(str(club.cashout_soft_limit))
+
+
 def is_group_linked(chat_id: int) -> bool:
     """Check if a group chat already has a club association in the DB."""
     with get_db() as session:

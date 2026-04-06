@@ -48,6 +48,7 @@ class ClubCreate(BaseModel):
     cashout_hours_start: str = "08:00"
     cashout_hours_end: str = "23:00"
     cashout_max_amount: Optional[Decimal] = None
+    cashout_soft_limit: Optional[Decimal] = None
     is_active: bool = True
 
 
@@ -80,6 +81,7 @@ class ClubUpdate(BaseModel):
     cashout_hours_start: Optional[str] = None
     cashout_hours_end: Optional[str] = None
     cashout_max_amount: Optional[Decimal] = None
+    cashout_soft_limit: Optional[Decimal] = None
     is_active: Optional[bool] = None
 
 
@@ -115,6 +117,7 @@ class ClubRead(BaseModel):
     cashout_hours_start: Optional[str]
     cashout_hours_end: Optional[str]
     cashout_max_amount: Optional[Decimal] = None
+    cashout_soft_limit: Optional[Decimal] = None
     is_active: bool
     created_at: Optional[datetime]
     method_count: int = 0
