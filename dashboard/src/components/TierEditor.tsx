@@ -7,12 +7,14 @@ import {
   type Tier,
 } from '../api/client'
 import ResponseEditor from './ResponseEditor'
+import VariantEditor from './VariantEditor'
 
 export default function TierEditor({ token, methodId }: { token: string; methodId: number }) {
   const [tiers, setTiers] = useState<Tier[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [form, setForm] = useState<Partial<Tier>>({})
+  const [expandedVariant, setExpandedVariant] = useState<number | null>(null)
 
   const load = () => listTiers(token, methodId).then(setTiers).catch(() => { })
   useEffect(() => { load() }, [methodId])
@@ -69,18 +71,30 @@ export default function TierEditor({ token, methodId }: { token: string; methodI
       </div>
 
       {tiers.map((t) => (
-        <div key={t.id} className="mb-2 flex items-center justify-between rounded-lg bg-gray-800 px-3 py-2">
-          <div>
-            <span className="text-sm font-medium text-white">{t.label}</span>
-            <span className="ml-2 text-xs text-gray-500">{amountLabel(t)}</span>
-            {t.response_type === 'text' && t.response_text && (
-              <p className="mt-0.5 max-w-md truncate text-xs text-gray-500">{t.response_text}</p>
-            )}
+        <div key={t.id} className="mb-2 rounded-lg bg-gray-800 px-3 py-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-sm font-medium text-white">{t.label}</span>
+              <span className="ml-2 text-xs text-gray-500">{amountLabel(t)}</span>
+              {t.response_type === 'text' && t.response_text && (
+                <p className="mt-0.5 max-w-md truncate text-xs text-gray-500">{t.response_text}</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setExpandedVariant(expandedVariant === t.id ? null : t.id)}
+                className="text-xs text-emerald-400 hover:text-emerald-300"
+              >
+                {expandedVariant === t.id ? 'Hide' : 'Variants'}
+                {t.variants && t.variants.length > 0 && ` (${t.variants.length})`}
+              </button>
+              <button onClick={() => handleEdit(t)} className="text-xs text-gray-400 hover:text-white">Edit</button>
+              <button onClick={() => handleDelete(t.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => handleEdit(t)} className="text-xs text-gray-400 hover:text-white">Edit</button>
-            <button onClick={() => handleDelete(t.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
-          </div>
+          {expandedVariant === t.id && (
+            <VariantEditor token={token} methodId={methodId} tierId={t.id} />
+          )}
         </div>
       ))}
 

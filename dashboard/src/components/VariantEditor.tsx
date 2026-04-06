@@ -2,20 +2,31 @@ import { useState, useEffect } from 'react'
 import {
   listVariants,
   createVariant,
+  listTierVariants,
+  createTierVariant,
   updateVariant,
   deleteVariant,
   type Variant,
 } from '../api/client'
 import ResponseEditor from './ResponseEditor'
 
-export default function VariantEditor({ token, methodId }: { token: string; methodId: number }) {
+interface Props {
+  token: string
+  methodId: number
+  tierId?: number
+}
+
+export default function VariantEditor({ token, methodId, tierId }: Props) {
   const [variants, setVariants] = useState<Variant[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [form, setForm] = useState<Partial<Variant>>({})
 
-  const load = () => listVariants(token, methodId).then(setVariants).catch(() => { })
-  useEffect(() => { load() }, [methodId])
+  const load = () => {
+    const fetcher = tierId ? listTierVariants(token, tierId) : listVariants(token, methodId)
+    fetcher.then(setVariants).catch(() => { })
+  }
+  useEffect(() => { load() }, [methodId, tierId])
 
   const resetForm = () => {
     setForm({})
@@ -28,7 +39,12 @@ export default function VariantEditor({ token, methodId }: { token: string; meth
     if (editId) {
       await updateVariant(token, editId, form)
     } else {
-      await createVariant(token, methodId, { ...form, weight: form.weight || 1 })
+      const data = { ...form, weight: form.weight || 1 }
+      if (tierId) {
+        await createTierVariant(token, tierId, data)
+      } else {
+        await createVariant(token, methodId, data)
+      }
     }
     resetForm()
     load()

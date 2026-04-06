@@ -238,6 +238,7 @@ def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
             if t.max_amount is not None and amount > t.max_amount:
                 continue
             return {
+                "id": t.id,
                 "response_type": t.response_type,
                 "response_text": t.response_text,
                 "response_file_id": t.response_file_id,
@@ -246,16 +247,35 @@ def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
     return None
 
 
-def pick_variant(method_id: int) -> Optional[dict]:
-    """If the method has weighted variants, pick one at random based on weights.
+def pick_variant(method_id: int, tier_id: Optional[int] = None) -> Optional[dict]:
+    """Pick a weighted-random variant for a method or tier.
 
-    Returns the chosen variant's response dict, or None if no variants exist
-    (meaning the caller should fall back to the method's own response).
+    If tier_id is given, looks for tier-level variants first.
+    If tier_id is None (or no tier variants exist), looks for method-level
+    variants (those with tier_id IS NULL).
+
+    Returns the chosen variant's response dict, or None if no variants exist.
     """
     with get_db() as session:
+        if tier_id is not None:
+            variants = (
+                session.query(MethodVariant)
+                .filter_by(tier_id=tier_id)
+                .all()
+            )
+            if variants:
+                weights = [v.weight for v in variants]
+                chosen = random.choices(variants, weights=weights, k=1)[0]
+                return {
+                    "response_type": chosen.response_type,
+                    "response_text": chosen.response_text,
+                    "response_file_id": chosen.response_file_id,
+                    "response_caption": chosen.response_caption,
+                }
+
         variants = (
             session.query(MethodVariant)
-            .filter_by(method_id=method_id)
+            .filter_by(method_id=method_id, tier_id=None)
             .all()
         )
         if not variants:

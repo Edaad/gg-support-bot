@@ -1,4 +1,4 @@
-"""One-time migration: create method_variants table.
+"""One-time migration: create method_variants table and add tier_id column.
 
 Run on Heroku:
   heroku run python migrate_variants.py
@@ -17,6 +17,7 @@ with engine.begin() as conn:
         CREATE TABLE IF NOT EXISTS method_variants (
             id SERIAL PRIMARY KEY,
             method_id INTEGER NOT NULL REFERENCES payment_methods(id) ON DELETE CASCADE,
+            tier_id INTEGER REFERENCES payment_method_tiers(id) ON DELETE CASCADE,
             label VARCHAR(100) NOT NULL,
             weight INTEGER NOT NULL DEFAULT 1,
             response_type VARCHAR(10) DEFAULT 'text',
@@ -27,3 +28,9 @@ with engine.begin() as conn:
         )
     """))
     print("method_variants table created (or already exists).")
+
+    conn.execute(text("""
+        ALTER TABLE method_variants ADD COLUMN IF NOT EXISTS tier_id
+        INTEGER REFERENCES payment_method_tiers(id) ON DELETE CASCADE
+    """))
+    print("tier_id column ensured on method_variants.")

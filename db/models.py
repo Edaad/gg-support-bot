@@ -120,13 +120,16 @@ class PaymentMethod(Base):
 
 
 class MethodVariant(Base):
-    """Weighted response variants for a payment method (load-balancing / rotation)."""
+    """Weighted response variants for a payment method or tier (load-balancing / rotation)."""
 
     __tablename__ = "method_variants"
 
     id = Column(Integer, primary_key=True)
     method_id = Column(
         Integer, ForeignKey("payment_methods.id", ondelete="CASCADE"), nullable=False
+    )
+    tier_id = Column(
+        Integer, ForeignKey("payment_method_tiers.id", ondelete="CASCADE"), nullable=True
     )
     label = Column(String(100), nullable=False)
     weight = Column(Integer, nullable=False, default=1)
@@ -137,6 +140,7 @@ class MethodVariant(Base):
     sort_order = Column(Integer, default=0)
 
     method = relationship("PaymentMethod", back_populates="variants")
+    tier = relationship("PaymentMethodTier", back_populates="variants")
 
 
 class PaymentSubOption(Base):
@@ -178,6 +182,10 @@ class PaymentMethodTier(Base):
     sort_order = Column(Integer, default=0)
 
     method = relationship("PaymentMethod", back_populates="tiers")
+    variants = relationship(
+        "MethodVariant", back_populates="tier", cascade="all, delete-orphan",
+        order_by="MethodVariant.sort_order",
+    )
 
 
 class Group(Base):

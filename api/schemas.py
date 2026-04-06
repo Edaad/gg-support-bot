@@ -184,6 +184,7 @@ class VariantRead(BaseModel):
 
     id: int
     method_id: int
+    tier_id: Optional[int] = None
     label: str
     weight: int
     response_type: Optional[str]
@@ -253,6 +254,7 @@ class TierRead(BaseModel):
     response_file_id: Optional[str]
     response_caption: Optional[str]
     sort_order: int
+    variants: List[VariantRead] = []
 
 
 # ── Method Variant (weighted rotation) ────────────────────────────────────────

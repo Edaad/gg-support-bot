@@ -154,7 +154,10 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
 
     amount = context.user_data.get("deposit_amount", "?")
     tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
-    response_data = tier or pick_variant(method_id) or method
+    if tier:
+        response_data = pick_variant(method_id, tier_id=tier["id"]) or tier
+    else:
+        response_data = pick_variant(method_id) or method
     await _send_response(query, response_data, amount, method["name"])
     _record_deposit(context)
     _cleanup(context)
