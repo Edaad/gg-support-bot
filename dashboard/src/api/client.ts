@@ -147,6 +147,7 @@ export interface Club {
   cashout_hours_enabled: boolean
   cashout_hours_start: string | null
   cashout_hours_end: string | null
+  cashout_max_amount: number | null
   is_active: boolean
   created_at: string | null
   method_count: number

@@ -29,10 +29,11 @@ from bot.services.club import (
     check_cashout_eligibility,
     is_club_staff,
     pick_variant,
+    get_cashout_max_amount,
 )
 from bot.handlers.response_utils import send_response_messages
 
-CASHOUT_AMOUNT, CASHOUT_CHOOSE, CASHOUT_SUB = range(3)
+CASHOUT_AMOUNT, CASHOUT_CHOOSE, CASHOUT_SUB, CASHOUT_SIMPLE_AMOUNT = range(4)
 
 
 async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -63,6 +64,15 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     simple = get_club_simple_mode(club_id, "cashout")
     if simple:
+        max_amt = get_cashout_max_amount(club_id)
+        if max_amt is not None:
+            context.user_data["cashout_club_id"] = club_id
+            context.user_data["cashout_chat_id"] = chat.id
+            context.user_data["cashout_user_id"] = user_id
+            context.user_data["cashout_simple_data"] = simple
+            await update.message.reply_text("How much would you like to cashout?")
+            return CASHOUT_SIMPLE_AMOUNT
+
         await _send_simple_response(update.message, simple)
         try:
             record_activity(club_id, user_id, chat.id, "cashout")
@@ -97,8 +107,57 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
         )
         return CASHOUT_AMOUNT
 
+    max_amt = get_cashout_max_amount(club_id)
+    if max_amt is not None and amount > max_amt:
+        await update.message.reply_text(
+            f"Please enter an amount below ${max_amt:,.2f} as that is our maximum "
+            f"cashout amount per day! You can request another cashout for the "
+            f"remaining amount after 24 hours."
+        )
+        return CASHOUT_AMOUNT
+
     context.user_data["cashout_amount"] = amount
     return await _show_method_keyboard(update, context, first_pick=True)
+
+
+async def cashout_simple_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return ConversationHandler.END
+    club_id = context.user_data.get("cashout_club_id")
+    if not club_id:
+        return ConversationHandler.END
+
+    raw = (update.message.text or "").strip().replace("$", "").replace(",", "")
+    try:
+        amount = Decimal(raw)
+        if amount <= 0:
+            raise InvalidOperation()
+    except (InvalidOperation, Exception):
+        await update.message.reply_text(
+            "Please enter a valid dollar amount (Example: 50 or 100.00)."
+        )
+        return CASHOUT_SIMPLE_AMOUNT
+
+    max_amt = get_cashout_max_amount(club_id)
+    if max_amt is not None and amount > max_amt:
+        await update.message.reply_text(
+            f"Please enter an amount below ${max_amt:,.2f} as that is our maximum "
+            f"cashout amount per day! You can request another cashout for the "
+            f"remaining amount after 24 hours."
+        )
+        return CASHOUT_SIMPLE_AMOUNT
+
+    simple_data = context.user_data.get("cashout_simple_data")
+    user_id = context.user_data.get("cashout_user_id")
+    chat_id = context.user_data.get("cashout_chat_id")
+    if simple_data:
+        await _send_simple_response(update.message, simple_data)
+    try:
+        record_activity(club_id, user_id, chat_id, "cashout")
+    except Exception:
+        pass
+    _cleanup(context)
+    return ConversationHandler.END
 
 
 async def _show_method_keyboard(update, context, first_pick=False):
@@ -302,6 +361,7 @@ def _cleanup(context):
         "cashout_selected",
         "cashout_current_method",
         "cashout_multi",
+        "cashout_simple_data",
     ):
         context.user_data.pop(key, None)
 
@@ -346,6 +406,11 @@ def get_cashout_handler() -> ConversationHandler:
             CASHOUT_AMOUNT: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND, cashout_amount_received
+                ),
+            ],
+            CASHOUT_SIMPLE_AMOUNT: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND, cashout_simple_amount_received
                 ),
             ],
             CASHOUT_CHOOSE: [

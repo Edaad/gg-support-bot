@@ -369,6 +369,14 @@ def get_club_allows_admin_commands(club_id: int) -> bool:
         return bool(club.allow_admin_commands)
 
 
+def get_cashout_max_amount(club_id: int) -> Optional[Decimal]:
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club or club.cashout_max_amount is None:
+            return None
+        return Decimal(str(club.cashout_max_amount))
+
+
 def is_group_linked(chat_id: int) -> bool:
     """Check if a group chat already has a club association in the DB."""
     with get_db() as session:

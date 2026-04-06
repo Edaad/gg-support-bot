@@ -48,6 +48,7 @@ def _club_to_read(club: Club) -> ClubRead:
         cashout_hours_enabled=club.cashout_hours_enabled or False,
         cashout_hours_start=club.cashout_hours_start,
         cashout_hours_end=club.cashout_hours_end,
+        cashout_max_amount=club.cashout_max_amount,
         is_active=club.is_active,
         created_at=club.created_at,
         method_count=len(club.payment_methods),

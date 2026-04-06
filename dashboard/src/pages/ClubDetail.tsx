@@ -347,6 +347,26 @@ function GeneralTab({
       </div>
 
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
+        <h3 className="mb-4 font-semibold">Cashout Max Amount</h3>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-400">Maximum cashout amount per day ($)</label>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={form.cashout_max_amount ?? ''}
+            onChange={(e) => setField('cashout_max_amount', e.target.value ? Number(e.target.value) : null)}
+            placeholder="No limit"
+            className="w-48 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Leave empty for no limit. When set, players cannot cashout more than this amount at once and are told to request
+            the remaining amount after 24 hours. In simple cashout mode the bot will still ask for an amount first.
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
         <h3 className="mb-4 font-semibold">Deposit Simple Mode</h3>
         <label className="flex items-center gap-2 text-sm text-gray-300">
           <input
