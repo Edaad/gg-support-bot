@@ -5,8 +5,10 @@ import {
   createCommand, updateCommand, deleteCommand,
   listLinkedAccounts, addLinkedAccount, deleteLinkedAccount,
   startBroadcast, getBroadcastStatus, cancelBroadcast,
+  listBroadcastGroups, createBroadcastGroup, deleteBroadcastGroup,
+  addBroadcastGroupMember, removeBroadcastGroupMember,
   type Club, type Group as GroupT, type Command, type LinkedAccount,
-  type BroadcastRequest, type BroadcastJob,
+  type BroadcastRequest, type BroadcastJob, type BroadcastGroupT,
 } from '../api/client'
 import MethodEditor from '../components/MethodEditor'
 import ResponseEditor from '../components/ResponseEditor'
@@ -526,10 +528,21 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
     response_text: null,
     response_file_id: null,
     response_caption: null,
+    broadcast_group_id: null,
   })
   const [starting, setStarting] = useState(false)
   const [job, setJob] = useState<BroadcastJob | null>(null)
   const [err, setErr] = useState('')
+
+  // Broadcast groups
+  const [bgs, setBgs] = useState<BroadcastGroupT[]>([])
+  const [allGroups, setAllGroups] = useState<GroupT[]>([])
+  const [newBgName, setNewBgName] = useState('')
+  const [managingBg, setManagingBg] = useState<number | null>(null)
+  const [search, setSearch] = useState('')
+
+  const loadBgs = () => listBroadcastGroups(token, clubId).then(setBgs).catch(() => {})
+  useEffect(() => { loadBgs(); listGroups(token, clubId).then(setAllGroups).catch(() => {}) }, [clubId])
 
   // Poll for progress while job is running
   useEffect(() => {
@@ -544,12 +557,16 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
     return () => clearInterval(interval)
   }, [job?.id, job?.status, token, clubId])
 
+  const selectedBg = bgs.find(b => b.id === form.broadcast_group_id) || null
+  const targetCount = selectedBg ? selectedBg.member_count : groupCount
+
   const handleSend = async () => {
     if (!form.response_text && !(form.response_type === 'photo' && form.response_file_id)) {
       setErr('Enter a message or photo to broadcast.')
       return
     }
-    if (!confirm(`Send this broadcast to ${groupCount} group(s)?`)) return
+    const label = selectedBg ? `"${selectedBg.name}" (${targetCount} group(s))` : `${targetCount} group(s)`
+    if (!confirm(`Send this broadcast to ${label}?`)) return
     setErr('')
     setJob(null)
     setStarting(true)
@@ -578,15 +595,161 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
     ? Math.round(((job.sent + job.failed) / job.total_groups) * 100)
     : 0
 
+  const managedBg = bgs.find(b => b.id === managingBg)
+  const memberChatIds = new Set(managedBg?.members.map(m => m.chat_id) || [])
+  const filteredGroups = allGroups.filter(g => {
+    if (memberChatIds.has(g.chat_id)) return false
+    if (!search) return true
+    return (g.name || '').toLowerCase().includes(search.toLowerCase())
+      || String(g.chat_id).includes(search)
+  })
+
   return (
     <div className="space-y-6">
+      {/* Broadcast Groups Manager */}
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-        <h3 className="mb-2 text-lg font-semibold">Broadcast to all groups</h3>
+        <h3 className="mb-2 text-lg font-semibold">Broadcast Groups</h3>
         <p className="mb-4 text-sm text-gray-400">
-          Send a message to all <strong className="text-white">{groupCount}</strong> group(s) linked to this club.
+          Create named groups of chats to target broadcasts to specific subsets instead of all groups.
+        </p>
+
+        <div className="mb-4 flex gap-2">
+          <input
+            value={newBgName}
+            onChange={(e) => setNewBgName(e.target.value)}
+            placeholder="New group name..."
+            className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+          />
+          <button
+            onClick={async () => {
+              if (!newBgName.trim()) return
+              await createBroadcastGroup(token, clubId, newBgName.trim())
+              setNewBgName('')
+              loadBgs()
+            }}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+          >
+            Create
+          </button>
+        </div>
+
+        {bgs.length === 0 ? (
+          <p className="py-4 text-center text-sm text-gray-500">No broadcast groups yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {bgs.map(bg => (
+              <div key={bg.id} className="rounded-lg border border-gray-800 bg-gray-950 px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-medium text-white">{bg.name}</span>
+                    <span className="ml-2 text-xs text-gray-500">{bg.member_count} member(s)</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setManagingBg(managingBg === bg.id ? null : bg.id)}
+                      className="text-xs text-indigo-400 hover:text-indigo-300"
+                    >
+                      {managingBg === bg.id ? 'Close' : 'Manage'}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`Delete broadcast group "${bg.name}"?`)) return
+                        await deleteBroadcastGroup(token, clubId, bg.id)
+                        if (managingBg === bg.id) setManagingBg(null)
+                        if (form.broadcast_group_id === bg.id) setForm(f => ({ ...f, broadcast_group_id: null }))
+                        loadBgs()
+                      }}
+                      className="text-xs text-red-400 hover:text-red-300"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+
+                {managingBg === bg.id && managedBg && (
+                  <div className="mt-3 space-y-3 border-t border-gray-800 pt-3">
+                    {/* Current members */}
+                    {managedBg.members.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-gray-400">Current members:</p>
+                        {managedBg.members.map(m => (
+                          <div key={m.chat_id} className="flex items-center justify-between rounded bg-gray-900 px-3 py-1.5 text-sm">
+                            <span className="text-gray-300">{m.group_name || m.chat_id}</span>
+                            <button
+                              onClick={async () => {
+                                const updated = await removeBroadcastGroupMember(token, clubId, bg.id, m.chat_id)
+                                setBgs(prev => prev.map(b => b.id === bg.id ? updated : b))
+                              }}
+                              className="text-xs text-red-400 hover:text-red-300"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Search & add */}
+                    <div>
+                      <input
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="Search groups by name or ID..."
+                        className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                      />
+                      {search && (
+                        <div className="mt-1 max-h-48 overflow-y-auto rounded-lg border border-gray-700 bg-gray-800">
+                          {filteredGroups.length === 0 ? (
+                            <p className="px-3 py-2 text-xs text-gray-500">No matching groups</p>
+                          ) : (
+                            filteredGroups.slice(0, 20).map(g => (
+                              <button
+                                key={g.chat_id}
+                                onClick={async () => {
+                                  const updated = await addBroadcastGroupMember(token, clubId, bg.id, g.chat_id)
+                                  setBgs(prev => prev.map(b => b.id === bg.id ? updated : b))
+                                  setSearch('')
+                                }}
+                                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-700"
+                              >
+                                <span className="text-gray-300">{g.name || '(unnamed)'}</span>
+                                <span className="text-xs text-gray-500">{g.chat_id}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Send Broadcast */}
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
+        <h3 className="mb-2 text-lg font-semibold">Send Broadcast</h3>
+        <p className="mb-4 text-sm text-gray-400">
           Supports text, photos, and multi-message (use <code className="rounded bg-gray-800 px-1 text-gray-400">---</code> to
           split). Photo messages will send first, followed by any text.
         </p>
+
+        {/* Target selector */}
+        <div className="mb-4">
+          <label className="mb-1 block text-xs font-medium text-gray-400">Send to</label>
+          <select
+            value={form.broadcast_group_id ?? ''}
+            onChange={(e) => setForm(f => ({ ...f, broadcast_group_id: e.target.value ? Number(e.target.value) : null }))}
+            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+          >
+            <option value="">All groups ({groupCount})</option>
+            {bgs.map(bg => (
+              <option key={bg.id} value={bg.id}>{bg.name} ({bg.member_count})</option>
+            ))}
+          </select>
+        </div>
 
         <ResponseEditor
           type={form.response_type}
@@ -645,14 +808,14 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
         <div className="mt-4 flex gap-3">
           <button
             onClick={handleSend}
-            disabled={starting || (job?.status === 'running') || groupCount === 0}
+            disabled={starting || (job?.status === 'running') || targetCount === 0}
             className="rounded-lg bg-indigo-600 px-6 py-2.5 font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
           >
             {starting
               ? 'Starting...'
               : job?.status === 'running'
                 ? 'Broadcast in progress...'
-                : `Send Broadcast to ${groupCount} group(s)`}
+                : `Send Broadcast to ${targetCount} group(s)`}
           </button>
           {job?.status === 'running' && (
             <button

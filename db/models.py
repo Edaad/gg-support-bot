@@ -278,3 +278,40 @@ class CustomCommand(Base):
     is_active = Column(Boolean, default=True)
 
     club = relationship("Club", back_populates="custom_commands")
+
+
+class BroadcastGroup(Base):
+    """Named collection of group chats for targeted broadcasts."""
+
+    __tablename__ = "broadcast_groups"
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    name = Column(String(100), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    club = relationship("Club")
+    members = relationship(
+        "BroadcastGroupMember",
+        back_populates="broadcast_group",
+        cascade="all, delete-orphan",
+    )
+
+
+class BroadcastGroupMember(Base):
+    """Links a group chat to a broadcast group."""
+
+    __tablename__ = "broadcast_group_members"
+    __table_args__ = (
+        UniqueConstraint("broadcast_group_id", "chat_id", name="uq_bg_chat"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    broadcast_group_id = Column(
+        Integer, ForeignKey("broadcast_groups.id", ondelete="CASCADE"), nullable=False
+    )
+    chat_id = Column(BigInteger, nullable=False)
+
+    broadcast_group = relationship("BroadcastGroup", back_populates="members")

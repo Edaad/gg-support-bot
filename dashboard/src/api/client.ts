@@ -112,6 +112,18 @@ export const getBroadcastStatus = (token: string, clubId: number, jobId: number)
 export const cancelBroadcast = (token: string, clubId: number, jobId: number) =>
   request<BroadcastJob>(`/clubs/${clubId}/broadcast/${jobId}/cancel`, { method: 'POST' }, token)
 
+// Broadcast Groups
+export const listBroadcastGroups = (token: string, clubId: number) =>
+  request<BroadcastGroupT[]>(`/clubs/${clubId}/broadcast-groups`, {}, token)
+export const createBroadcastGroup = (token: string, clubId: number, name: string) =>
+  request<BroadcastGroupT>(`/clubs/${clubId}/broadcast-groups`, { method: 'POST', body: JSON.stringify({ name }) }, token)
+export const deleteBroadcastGroup = (token: string, clubId: number, bgId: number) =>
+  request<void>(`/clubs/${clubId}/broadcast-groups/${bgId}`, { method: 'DELETE' }, token)
+export const addBroadcastGroupMember = (token: string, clubId: number, bgId: number, chatId: number) =>
+  request<BroadcastGroupT>(`/clubs/${clubId}/broadcast-groups/${bgId}/members`, { method: 'POST', body: JSON.stringify({ chat_id: chatId }) }, token)
+export const removeBroadcastGroupMember = (token: string, clubId: number, bgId: number, chatId: number) =>
+  request<BroadcastGroupT>(`/clubs/${clubId}/broadcast-groups/${bgId}/members/${chatId}`, { method: 'DELETE' }, token)
+
 // Simulate
 export const getSimulation = (token: string, clubId: number, direction: string) =>
   request<SimulateResponse>(`/clubs/${clubId}/simulate/${direction}`, {}, token)
@@ -246,11 +258,26 @@ export interface Group {
   added_at: string | null
 }
 
+export interface BroadcastGroupMember {
+  chat_id: number
+  group_name: string | null
+}
+
+export interface BroadcastGroupT {
+  id: number
+  club_id: number
+  name: string
+  member_count: number
+  members: BroadcastGroupMember[]
+  created_at: string | null
+}
+
 export interface BroadcastRequest {
   response_type: string
   response_text: string | null
   response_file_id: string | null
   response_caption: string | null
+  broadcast_group_id?: number | null
 }
 
 export interface BroadcastJob {

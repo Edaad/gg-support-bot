@@ -18,7 +18,7 @@ from telegram.error import RetryAfter, TimedOut
 
 from api.auth import get_current_admin
 from db.connection import get_db_dependency, get_db
-from db.models import Club, BroadcastJob
+from db.models import Club, BroadcastJob, BroadcastGroup
 
 router = APIRouter(
     prefix="/api/clubs",
@@ -38,6 +38,7 @@ class BroadcastRequest(BaseModel):
     response_text: Optional[str] = None
     response_file_id: Optional[str] = None
     response_caption: Optional[str] = None
+    broadcast_group_id: Optional[int] = None
 
 
 class BroadcastJobRead(BaseModel):
@@ -164,16 +165,27 @@ async def broadcast(
     if not club:
         raise HTTPException(404, "Club not found")
 
-    groups = club.groups
-    if not groups:
-        raise HTTPException(400, "This club has no linked groups to broadcast to")
-
     has_content = (
         (body.response_type == "photo" and body.response_file_id)
         or body.response_text
     )
     if not has_content:
         raise HTTPException(400, "Provide at least response_text or a photo file ID")
+
+    if body.broadcast_group_id:
+        bg = db.query(BroadcastGroup).filter_by(
+            id=body.broadcast_group_id, club_id=club_id
+        ).first()
+        if not bg:
+            raise HTTPException(404, "Broadcast group not found")
+        chat_ids = [m.chat_id for m in bg.members]
+        if not chat_ids:
+            raise HTTPException(400, "This broadcast group has no members")
+    else:
+        groups = club.groups
+        if not groups:
+            raise HTTPException(400, "This club has no linked groups to broadcast to")
+        chat_ids = [g.chat_id for g in groups]
 
     # Block if there's already a running broadcast for this club
     running = (
@@ -183,8 +195,6 @@ async def broadcast(
     )
     if running:
         raise HTTPException(409, "A broadcast is already running for this club")
-
-    chat_ids = [g.chat_id for g in groups]
 
     job = BroadcastJob(
         club_id=club_id,
