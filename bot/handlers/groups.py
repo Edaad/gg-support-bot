@@ -15,6 +15,7 @@ from bot.services.club import (
     get_club_welcome,
     is_group_linked,
     try_link_group_by_admin,
+    update_group_name,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,7 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
 
     chat_id = update.effective_chat.id
     adder_uid = update.effective_user.id
-    club_id = set_group_club(chat_id, adder_uid)
+    club_id = set_group_club(chat_id, adder_uid, chat_title=update.effective_chat.title)
 
     _auto_link_attempted.discard(chat_id)
 
@@ -88,6 +89,7 @@ async def auto_link_group(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     _auto_link_attempted.add(chat_id)
 
     if is_group_linked(chat_id):
+        update_group_name(chat_id, chat.title)
         return
 
     try:
@@ -97,7 +99,7 @@ async def auto_link_group(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.warning("auto_link_group: could not fetch admins for %s: %s", chat_id, exc)
         return
 
-    club_id = try_link_group_by_admin(chat_id, admin_ids)
+    club_id = try_link_group_by_admin(chat_id, admin_ids, chat_title=chat.title)
     if club_id:
         logger.info("auto_link_group: linked chat %s to club %s", chat_id, club_id)
     else:

@@ -27,6 +27,7 @@ from bot.services.club import (
     pick_variant,
     is_first_deposit,
     get_first_deposit_settings,
+    update_group_name,
 )
 from bot.handlers.response_utils import send_response_messages
 
@@ -46,6 +47,8 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "This group isn't linked to a club yet. The club owner must add the bot."
         )
         return ConversationHandler.END
+
+    update_group_name(chat.id, chat.title)
 
     user_id = update.effective_user.id
     if user_id in ADMIN_USER_IDS and not get_club_allows_admin_commands(club_id):

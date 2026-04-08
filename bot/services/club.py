@@ -79,7 +79,7 @@ def get_club_by_id(club_id: int) -> Optional[Club]:
         return club
 
 
-def set_group_club(chat_id: int, telegram_user_id: int) -> Optional[int]:
+def set_group_club(chat_id: int, telegram_user_id: int, chat_title: Optional[str] = None) -> Optional[int]:
     """Link a group to the club owned by telegram_user_id (primary or linked). Returns club_id or None."""
     with get_db() as session:
         club_id = _club_id_for_telegram_user(session, telegram_user_id)
@@ -88,8 +88,10 @@ def set_group_club(chat_id: int, telegram_user_id: int) -> Optional[int]:
         existing = session.query(Group).filter_by(chat_id=chat_id).first()
         if existing:
             existing.club_id = club_id
+            if chat_title:
+                existing.name = chat_title
         else:
-            session.add(Group(chat_id=chat_id, club_id=club_id))
+            session.add(Group(chat_id=chat_id, club_id=club_id, name=chat_title))
         return club_id
 
 
@@ -420,7 +422,7 @@ def is_group_linked(chat_id: int) -> bool:
         return session.query(Group).filter_by(chat_id=chat_id).first() is not None
 
 
-def try_link_group_by_admin(chat_id: int, admin_user_ids: list[int]) -> Optional[int]:
+def try_link_group_by_admin(chat_id: int, admin_user_ids: list[int], chat_title: Optional[str] = None) -> Optional[int]:
     """Try to link a group to a club by matching any of the provided admin user IDs.
 
     Checks each admin against known club owners (primary + linked accounts).
@@ -433,10 +435,22 @@ def try_link_group_by_admin(chat_id: int, admin_user_ids: list[int]) -> Optional
                 existing = session.query(Group).filter_by(chat_id=chat_id).first()
                 if existing:
                     existing.club_id = club_id
+                    if chat_title:
+                        existing.name = chat_title
                 else:
-                    session.add(Group(chat_id=chat_id, club_id=club_id))
+                    session.add(Group(chat_id=chat_id, club_id=club_id, name=chat_title))
                 return club_id
     return None
+
+
+def update_group_name(chat_id: int, chat_title: Optional[str]) -> None:
+    """Update the stored name for a group (keeps it fresh if renamed)."""
+    if not chat_title:
+        return
+    with get_db() as session:
+        group = session.query(Group).filter_by(chat_id=chat_id).first()
+        if group and group.name != chat_title:
+            group.name = chat_title
 
 
 # ── Cashout cooldown helpers ─────────────────────────────────────────────────

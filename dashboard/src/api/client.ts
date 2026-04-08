@@ -242,6 +242,7 @@ export interface Command {
 export interface Group {
   chat_id: number
   club_id: number
+  name: string | null
   added_at: string | null
 }
 

@@ -361,6 +361,7 @@ class GroupRead(BaseModel):
 
     chat_id: int
     club_id: int
+    name: Optional[str] = None
     added_at: Optional[datetime]
 
 

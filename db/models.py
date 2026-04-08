@@ -200,6 +200,7 @@ class Group(Base):
     club_id = Column(
         Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
     )
+    name = Column(String(255), nullable=True)
     added_at = Column(DateTime, server_default=func.now())
 
     club = relationship("Club", back_populates="groups")

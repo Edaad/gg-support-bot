@@ -783,6 +783,7 @@ function GroupsTab({ token, clubId }: { token: string; clubId: number }) {
           <table className="w-full text-sm">
             <thead className="bg-gray-900 text-gray-400">
               <tr>
+                <th className="px-4 py-3 text-left font-medium">Group Name</th>
                 <th className="px-4 py-3 text-left font-medium">Chat ID</th>
                 <th className="px-4 py-3 text-left font-medium">Added</th>
               </tr>
@@ -790,7 +791,8 @@ function GroupsTab({ token, clubId }: { token: string; clubId: number }) {
             <tbody className="divide-y divide-gray-800">
               {groups.map((g) => (
                 <tr key={g.chat_id} className="bg-gray-950">
-                  <td className="px-4 py-3 font-mono text-gray-300">{g.chat_id}</td>
+                  <td className="px-4 py-3 text-gray-300">{g.name || '—'}</td>
+                  <td className="px-4 py-3 font-mono text-gray-400">{g.chat_id}</td>
                   <td className="px-4 py-3 text-gray-400">
                     {g.added_at ? new Date(g.added_at).toLocaleDateString() : '—'}
                   </td>
