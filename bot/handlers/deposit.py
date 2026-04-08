@@ -67,7 +67,7 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if first and settings and settings["referral_enabled"]:
         await update.message.reply_text(
             "Welcome to the club! How did you hear about us? "
-            "If it was a player, please type their username!"
+            "If it was a player, please type their GG username."
         )
         return DEPOSIT_REFERRAL
 
