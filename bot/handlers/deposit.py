@@ -242,7 +242,8 @@ async def _finish_simple_deposit(message, context):
         try:
             await message.reply_text(
                 f"Since this is your first deposit, you will get a "
-                f"{settings['bonus_pct']}% first deposit bonus on us!"
+                f"{settings['bonus_pct']}% first deposit bonus on us!\n\n"
+                f"This must be your first time depositing in the club to be eligible for this bonus."
             )
         except Exception:
             pass
@@ -266,7 +267,8 @@ async def _send_bonus_message(chat, context):
         await chat.send_message(
             f"Since this is your first deposit, you will get a "
             f"{pct}% first deposit bonus of ${bonus:,.2f} added to "
-            f"your deposit of ${amount:,.2f} on us!"
+            f"your deposit of ${amount:,.2f} on us!\n\n"
+            f"This must be your first time depositing in the club to be eligible for this bonus."
         )
     except Exception:
         pass
