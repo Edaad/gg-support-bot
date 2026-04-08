@@ -50,6 +50,9 @@ class Club(Base):
     cashout_hours_end = Column(String(5), default="23:00")
     cashout_max_amount = Column(Numeric(12, 2), nullable=True)
     cashout_soft_limit = Column(Numeric(12, 2), nullable=True)
+    referral_enabled = Column(Boolean, default=False)
+    first_deposit_bonus_enabled = Column(Boolean, default=False)
+    first_deposit_bonus_pct = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
 

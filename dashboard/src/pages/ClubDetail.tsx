@@ -384,6 +384,56 @@ function GeneralTab({
       </div>
 
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
+        <h3 className="mb-4 font-semibold">First Deposit Settings</h3>
+        <div className="space-y-5">
+          <div>
+            <label className="flex items-center gap-2 text-sm text-gray-300">
+              <input
+                type="checkbox"
+                checked={form.referral_enabled ?? false}
+                onChange={(e) => setField('referral_enabled', e.target.checked)}
+                className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500"
+              />
+              Enable referral question
+            </label>
+            <p className="ml-6 mt-1 text-xs text-gray-500">
+              On a player's first deposit, the bot asks "How did you hear about us?" before proceeding with the deposit flow.
+            </p>
+          </div>
+          <div>
+            <label className="flex items-center gap-2 text-sm text-gray-300">
+              <input
+                type="checkbox"
+                checked={form.first_deposit_bonus_enabled ?? false}
+                onChange={(e) => setField('first_deposit_bonus_enabled', e.target.checked)}
+                className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500"
+              />
+              Enable first deposit bonus
+            </label>
+            <p className="ml-6 mt-1 text-xs text-gray-500">
+              After a player's first deposit, the bot tells them about a bonus percentage added to their deposit.
+            </p>
+          </div>
+          {form.first_deposit_bonus_enabled && (
+            <div className="ml-6">
+              <label className="mb-1 block text-xs font-medium text-gray-400">Bonus percentage (%)</label>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={form.first_deposit_bonus_pct ?? 0}
+                onChange={(e) => setField('first_deposit_bonus_pct', Number(e.target.value))}
+                className="w-32 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                The bonus percentage auto-calculated on the deposit amount (e.g. 100% on a $50 deposit = $50 bonus).
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
         <h3 className="mb-4 font-semibold">Deposit Simple Mode</h3>
         <label className="flex items-center gap-2 text-sm text-gray-300">
           <input

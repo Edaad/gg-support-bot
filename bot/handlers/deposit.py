@@ -25,10 +25,12 @@ from bot.services.club import (
     get_lowest_minimum,
     record_activity,
     pick_variant,
+    is_first_deposit,
+    get_first_deposit_settings,
 )
 from bot.handlers.response_utils import send_response_messages
 
-DEPOSIT_AMOUNT, DEPOSIT_CHOOSE, DEPOSIT_SUB = range(3)
+DEPOSIT_REFERRAL, DEPOSIT_AMOUNT, DEPOSIT_CHOOSE, DEPOSIT_SUB = range(4)
 
 
 async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -49,18 +51,41 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id in ADMIN_USER_IDS and not get_club_allows_admin_commands(club_id):
         return ConversationHandler.END
 
-    simple = get_club_simple_mode(club_id, "deposit")
-    if simple:
-        await _send_simple_response(update.message, simple)
-        try:
-            record_activity(club_id, user_id, chat.id, "deposit")
-        except Exception:
-            pass
-        return ConversationHandler.END
+    first = is_first_deposit(club_id, user_id)
+    settings = get_first_deposit_settings(club_id) if first else None
 
     context.user_data["deposit_club_id"] = club_id
     context.user_data["deposit_chat_id"] = chat.id
     context.user_data["deposit_user_id"] = user_id
+    context.user_data["deposit_is_first"] = first
+    context.user_data["deposit_fd_settings"] = settings
+
+    simple = get_club_simple_mode(club_id, "deposit")
+    if simple:
+        context.user_data["deposit_simple_data"] = simple
+
+    if first and settings and settings["referral_enabled"]:
+        await update.message.reply_text(
+            "Welcome to the club! How did you hear about us? "
+            "If it was a player, please type their username!"
+        )
+        return DEPOSIT_REFERRAL
+
+    if simple:
+        return await _finish_simple_deposit(update.message, context)
+
+    await update.message.reply_text("How much would you like to deposit?")
+    return DEPOSIT_AMOUNT
+
+
+async def deposit_referral_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return ConversationHandler.END
+
+    simple = context.user_data.get("deposit_simple_data")
+    if simple:
+        return await _finish_simple_deposit(update.message, context)
+
     await update.message.reply_text("How much would you like to deposit?")
     return DEPOSIT_AMOUNT
 
@@ -160,6 +185,7 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
         response_data = pick_variant(method_id) or method
     await _send_response(query, response_data, amount, method["name"])
     _record_deposit(context)
+    await _send_bonus_message(query.message.chat, context)
     _cleanup(context)
     return ConversationHandler.END
 
@@ -187,8 +213,60 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     await _send_response(query, sub, amount, display)
     _record_deposit(context)
+    await _send_bonus_message(query.message.chat, context)
     _cleanup(context)
     return ConversationHandler.END
+
+
+async def _finish_simple_deposit(message, context):
+    """Handle simple-mode deposit: send response, record, bonus message."""
+    simple = context.user_data.get("deposit_simple_data")
+    club_id = context.user_data.get("deposit_club_id")
+    user_id = context.user_data.get("deposit_user_id")
+    chat_id = context.user_data.get("deposit_chat_id")
+
+    if simple:
+        await _send_simple_response(message, simple)
+
+    try:
+        record_activity(club_id, user_id, chat_id, "deposit")
+    except Exception:
+        pass
+
+    first = context.user_data.get("deposit_is_first", False)
+    settings = context.user_data.get("deposit_fd_settings")
+    if first and settings and settings["bonus_enabled"] and settings["bonus_pct"] > 0:
+        try:
+            await message.reply_text(
+                f"Since this is your first deposit, you will get a "
+                f"{settings['bonus_pct']}% first deposit bonus on us!"
+            )
+        except Exception:
+            pass
+
+    _cleanup(context)
+    return ConversationHandler.END
+
+
+async def _send_bonus_message(chat, context):
+    """If this is a first deposit and bonus is enabled, send the bonus announcement."""
+    first = context.user_data.get("deposit_is_first", False)
+    settings = context.user_data.get("deposit_fd_settings")
+    if not first or not settings or not settings["bonus_enabled"] or settings["bonus_pct"] <= 0:
+        return
+    amount = context.user_data.get("deposit_amount")
+    if not isinstance(amount, Decimal):
+        return
+    pct = settings["bonus_pct"]
+    bonus = (amount * pct / 100).quantize(Decimal("0.01"))
+    try:
+        await chat.send_message(
+            f"Since this is your first deposit, you will get a "
+            f"{pct}% first deposit bonus of ${bonus:,.2f} added to "
+            f"your deposit of ${amount:,.2f} on us!"
+        )
+    except Exception:
+        pass
 
 
 def _record_deposit(context):
@@ -221,6 +299,9 @@ def _cleanup(context):
         "deposit_user_id",
         "deposit_amount",
         "deposit_method_name",
+        "deposit_is_first",
+        "deposit_fd_settings",
+        "deposit_simple_data",
     ):
         context.user_data.pop(key, None)
 
@@ -255,6 +336,11 @@ def get_deposit_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[CommandHandler("deposit", deposit_entry)],
         states={
+            DEPOSIT_REFERRAL: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND, deposit_referral_received
+                ),
+            ],
             DEPOSIT_AMOUNT: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND, deposit_amount_received

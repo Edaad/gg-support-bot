@@ -49,6 +49,9 @@ class ClubCreate(BaseModel):
     cashout_hours_end: str = "23:00"
     cashout_max_amount: Optional[Decimal] = None
     cashout_soft_limit: Optional[Decimal] = None
+    referral_enabled: bool = False
+    first_deposit_bonus_enabled: bool = False
+    first_deposit_bonus_pct: int = 0
     is_active: bool = True
 
 
@@ -82,6 +85,9 @@ class ClubUpdate(BaseModel):
     cashout_hours_end: Optional[str] = None
     cashout_max_amount: Optional[Decimal] = None
     cashout_soft_limit: Optional[Decimal] = None
+    referral_enabled: Optional[bool] = None
+    first_deposit_bonus_enabled: Optional[bool] = None
+    first_deposit_bonus_pct: Optional[int] = None
     is_active: Optional[bool] = None
 
 
@@ -118,6 +124,9 @@ class ClubRead(BaseModel):
     cashout_hours_end: Optional[str]
     cashout_max_amount: Optional[Decimal] = None
     cashout_soft_limit: Optional[Decimal] = None
+    referral_enabled: bool
+    first_deposit_bonus_enabled: bool
+    first_deposit_bonus_pct: int
     is_active: bool
     created_at: Optional[datetime]
     method_count: int = 0

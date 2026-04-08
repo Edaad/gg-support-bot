@@ -385,6 +385,35 @@ def get_cashout_soft_limit(club_id: int) -> Optional[Decimal]:
         return Decimal(str(club.cashout_soft_limit))
 
 
+def is_first_deposit(club_id: int, telegram_user_id: int) -> bool:
+    """True if the user has never completed a deposit in this club."""
+    with get_db() as session:
+        count = (
+            session.query(PlayerActivity)
+            .filter_by(
+                club_id=club_id,
+                telegram_user_id=telegram_user_id,
+                activity_type="deposit",
+            )
+            .filter(PlayerActivity.cancelled == False)
+            .count()
+        )
+        return count == 0
+
+
+def get_first_deposit_settings(club_id: int) -> dict:
+    """Return referral_enabled, first_deposit_bonus_enabled, and bonus pct for a club."""
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club:
+            return {"referral_enabled": False, "bonus_enabled": False, "bonus_pct": 0}
+        return {
+            "referral_enabled": bool(club.referral_enabled),
+            "bonus_enabled": bool(club.first_deposit_bonus_enabled),
+            "bonus_pct": club.first_deposit_bonus_pct or 0,
+        }
+
+
 def is_group_linked(chat_id: int) -> bool:
     """Check if a group chat already has a club association in the DB."""
     with get_db() as session:
