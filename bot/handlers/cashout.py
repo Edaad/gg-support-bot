@@ -69,7 +69,8 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     simple = get_club_simple_mode(club_id, "cashout")
     if simple:
         max_amt = get_cashout_max_amount(club_id)
-        if max_amt is not None:
+        soft_limit = get_cashout_soft_limit(club_id)
+        if max_amt is not None or soft_limit is not None:
             context.user_data["cashout_club_id"] = club_id
             context.user_data["cashout_chat_id"] = chat.id
             context.user_data["cashout_user_id"] = user_id
