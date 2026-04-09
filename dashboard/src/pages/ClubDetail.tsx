@@ -416,7 +416,7 @@ function GeneralTab({
               After a player's first deposit, the bot tells them about a bonus percentage added to their deposit.
             </p>
           </div>
-          {form.first_deposit_bonus_enabled && (
+          {form.first_deposit_bonus_enabled && (<>
             <div className="ml-6">
               <label className="mb-1 block text-xs font-medium text-gray-400">Bonus percentage (%)</label>
               <input
@@ -431,7 +431,22 @@ function GeneralTab({
                 The bonus percentage auto-calculated on the deposit amount (e.g. 100% on a $50 deposit = $50 bonus).
               </p>
             </div>
-          )}
+            <div className="ml-6 mt-3">
+              <label className="mb-1 block text-xs font-medium text-gray-400">Bonus cap ($)</label>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={form.first_deposit_bonus_cap ?? ''}
+                onChange={(e) => setField('first_deposit_bonus_cap', e.target.value ? Number(e.target.value) : null)}
+                placeholder="No cap"
+                className="w-40 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Maximum bonus amount in dollars. Leave empty for no cap.
+              </p>
+            </div>
+          </>)}
         </div>
       </div>
 

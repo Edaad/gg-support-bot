@@ -265,6 +265,9 @@ async def _send_bonus_message(chat, context):
         return
     pct = settings["bonus_pct"]
     bonus = (amount * pct / 100).quantize(Decimal("0.01"))
+    cap = settings.get("bonus_cap")
+    if cap is not None and bonus > cap:
+        bonus = cap.quantize(Decimal("0.01"))
     try:
         await chat.send_message(
             f"Since this is your first deposit, you will get a "

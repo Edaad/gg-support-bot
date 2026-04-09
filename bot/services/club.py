@@ -413,6 +413,7 @@ def get_first_deposit_settings(club_id: int) -> dict:
             "referral_enabled": bool(club.referral_enabled),
             "bonus_enabled": bool(club.first_deposit_bonus_enabled),
             "bonus_pct": club.first_deposit_bonus_pct or 0,
+            "bonus_cap": Decimal(str(club.first_deposit_bonus_cap)) if club.first_deposit_bonus_cap is not None else None,
         }
 
 

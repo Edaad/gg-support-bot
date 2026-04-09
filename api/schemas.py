@@ -52,6 +52,7 @@ class ClubCreate(BaseModel):
     referral_enabled: bool = False
     first_deposit_bonus_enabled: bool = False
     first_deposit_bonus_pct: int = 0
+    first_deposit_bonus_cap: Optional[Decimal] = None
     is_active: bool = True
 
 
@@ -88,6 +89,7 @@ class ClubUpdate(BaseModel):
     referral_enabled: Optional[bool] = None
     first_deposit_bonus_enabled: Optional[bool] = None
     first_deposit_bonus_pct: Optional[int] = None
+    first_deposit_bonus_cap: Optional[Decimal] = None
     is_active: Optional[bool] = None
 
 
@@ -127,6 +129,7 @@ class ClubRead(BaseModel):
     referral_enabled: bool
     first_deposit_bonus_enabled: bool
     first_deposit_bonus_pct: int
+    first_deposit_bonus_cap: Optional[Decimal] = None
     is_active: bool
     created_at: Optional[datetime]
     method_count: int = 0

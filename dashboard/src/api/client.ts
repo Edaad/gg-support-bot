@@ -164,6 +164,7 @@ export interface Club {
   referral_enabled: boolean
   first_deposit_bonus_enabled: boolean
   first_deposit_bonus_pct: number
+  first_deposit_bonus_cap: number | null
   is_active: boolean
   created_at: string | null
   method_count: number

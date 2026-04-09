@@ -53,6 +53,7 @@ def _club_to_read(club: Club) -> ClubRead:
         referral_enabled=club.referral_enabled or False,
         first_deposit_bonus_enabled=club.first_deposit_bonus_enabled or False,
         first_deposit_bonus_pct=club.first_deposit_bonus_pct or 0,
+        first_deposit_bonus_cap=club.first_deposit_bonus_cap,
         is_active=club.is_active,
         created_at=club.created_at,
         method_count=len(club.payment_methods),

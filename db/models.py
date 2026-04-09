@@ -53,6 +53,7 @@ class Club(Base):
     referral_enabled = Column(Boolean, default=False)
     first_deposit_bonus_enabled = Column(Boolean, default=False)
     first_deposit_bonus_pct = Column(Integer, default=0)
+    first_deposit_bonus_cap = Column(Numeric(12, 2), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
 
