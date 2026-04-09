@@ -26,6 +26,7 @@ from bot.services.club import (
     record_activity,
     pick_variant,
     is_first_deposit,
+    is_first_deposit_claimed,
     get_first_deposit_settings,
     update_group_name,
 )
@@ -54,7 +55,8 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id in ADMIN_USER_IDS and not get_club_allows_admin_commands(club_id):
         return ConversationHandler.END
 
-    first = is_first_deposit(club_id, user_id)
+    claimed = is_first_deposit_claimed(chat.id)
+    first = False if claimed else is_first_deposit(club_id, user_id)
     settings = get_first_deposit_settings(club_id) if first else None
 
     context.user_data["deposit_club_id"] = club_id

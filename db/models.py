@@ -201,6 +201,7 @@ class Group(Base):
         Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
     )
     name = Column(String(255), nullable=True)
+    first_deposit_claimed = Column(Boolean, default=False)
     added_at = Column(DateTime, server_default=func.now())
 
     club = relationship("Club", back_populates="groups")

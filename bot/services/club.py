@@ -416,6 +416,13 @@ def get_first_deposit_settings(club_id: int) -> dict:
         }
 
 
+def is_first_deposit_claimed(chat_id: int) -> bool:
+    """True if this group chat has already been marked as claimed (pre-existing)."""
+    with get_db() as session:
+        g = session.query(Group).filter_by(chat_id=chat_id).first()
+        return bool(g and g.first_deposit_claimed)
+
+
 def is_group_linked(chat_id: int) -> bool:
     """Check if a group chat already has a club association in the DB."""
     with get_db() as session:
