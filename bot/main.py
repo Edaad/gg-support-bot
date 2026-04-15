@@ -39,6 +39,7 @@ def run_bot(token: str | None = None):
     from bot.handlers.list_cmd import list_handler
     from bot.handlers.groups import on_my_chat_member_updated, auto_link_group
     from bot.handlers.bypass import bypass_handler, bypass_permanent_handler
+    from bot.handlers.track import on_new_chat_title, track_handler, info_handler
 
     app = ApplicationBuilder().token(token).build()
 
@@ -49,6 +50,8 @@ def run_bot(token: str | None = None):
     app.add_handler(CommandHandler("delete", delete_handler))
     app.add_handler(CommandHandler("bypass", bypass_handler))
     app.add_handler(CommandHandler("bypasspermanent", bypass_permanent_handler))
+    app.add_handler(CommandHandler("track", track_handler))
+    app.add_handler(CommandHandler("info", info_handler))
 
     app.add_handler(get_set_handler())
     app.add_handler(get_deposit_handler())
@@ -57,6 +60,7 @@ def run_bot(token: str | None = None):
     app.add_handler(
         ChatMemberHandler(on_my_chat_member_updated, ChatMemberHandler.MY_CHAT_MEMBER)
     )
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_TITLE, on_new_chat_title))
     app.add_handler(CommandHandler("list", list_handler))
 
     # Catch-all for custom commands (must be last among command handlers)

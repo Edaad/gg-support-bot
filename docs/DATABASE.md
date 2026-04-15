@@ -13,6 +13,7 @@ erDiagram
     clubs ||--o{ club_linked_accounts : "backup admins"
     clubs ||--o{ payment_methods : "deposit or cashout"
     clubs ||--o{ groups : "telegram groups"
+    clubs ||--o{ player_details : "GG player chats"
     clubs ||--o{ custom_commands : "slash commands"
     clubs ||--o{ broadcast_jobs : "mass messages"
     clubs ||--o{ player_activities : "cooldown timeline"
@@ -136,6 +137,38 @@ Maps a **Telegram group/supergroup** (`chat_id` = Telegram chat id) to exactly o
 
 ---
 
+### `player_details`
+
+Maps an external **GG player id** to a **club** and a list of **Telegram group chat ids** (`chat_ids`). One row per **`(gg_player_id, club_id)`**; multiple groups are stored in the **`BIGINT[]`** column (not `INTEGER[]`, so typical Telegram supergroup ids fit).
+
+| Column | Type | Business meaning |
+|--------|------|------------------|
+| `id` | integer PK | |
+| `chat_ids` | `bigint[]` | Telegram group chat ids for this player–club link. |
+| `gg_player_id` | string(255) | External GG player identifier. |
+| `club_id` | FK → `clubs.id` CASCADE | |
+
+**Constraint:** `uq_player_details_gg_player_club` — unique `(gg_player_id, club_id)`.
+
+**Indexes:** B-tree on `club_id` and `gg_player_id`; **GIN** on `chat_ids` for containment queries (e.g. `chat_ids @> ARRAY[id]::bigint[]`).
+
+**No FK to `groups`:** PostgreSQL cannot attach a foreign key to individual elements of an array. Whether each id exists in `groups` must be enforced in **application code** (or custom triggers). Deleting a `groups` row does **not** remove that `chat_id` from arrays automatically.
+
+**Migration:** [`migrate_player_details.py`](../migrate_player_details.py) (`DATABASE_URL=... python migrate_player_details.py`). New deploys also get the table from `Base.metadata.create_all` once the model exists.
+
+**Bulk import (CSV):** [`scripts/import_player_details_csv.py`](../scripts/import_player_details_csv.py) reads `chat_id`, `gg_player_id`, `club_id` (supports `[n]` and `"[2, 3]"`). It aggregates rows, merges `chat_ids` on duplicate `(gg_player_id, club_id)`, and uses `ON CONFLICT` to merge with existing DB rows. **Strict validation:** `gg_player_id` must match `^[0-9]{1,48}-[0-9]{1,48}$`; `chat_id` must be negative (Telegram group chats) unless `--allow-nonnegative-chat-id`; `club_id` must be in `[1, 1000000]`; control characters and CSV formula prefixes (`=`, `+`, `@` on non-chat columns) are stripped. Run **dry run** first (default): `python scripts/import_player_details_csv.py --csv player_data_mapped.csv`. To write: `DATABASE_URL=... python scripts/import_player_details_csv.py --csv player_data_mapped.csv --apply`. Rows with unknown `club_id` in the DB or invalid fields are skipped (warnings printed).
+
+**Auto-tracking via group title:** The bot can bind a group chat to `player_details` by parsing the group title and appending the chat id to `chat_ids` for the `(gg_player_id, club_id)` row.
+
+- **Format**: `SHORTHAND / GGPLAYERID / anything` (example: `GTO / 8190-5287 / ThePirate343`)
+- **Club resolution**: `SHORTHAND` is mapped to a canonical `clubs.name` via `CLUB_SHORTHAND_TO_NAME` in [`config.py`](../config.py), then resolved to `clubs.id` (case-insensitive exact match).
+- **Triggers**:
+  - Rename the group title (bot listens for NEW_CHAT_TITLE). If invalid format, bot is silent.
+  - `/track` in the group to bind now (responds with invalid format if it can't parse/resolve).
+  - `/info` shows what GG player id(s) are currently bound for this chat (or Not bound).
+
+---
+
 ### `broadcast_jobs`
 
 Tracks **dashboard-initiated broadcasts** to all linked groups. Status values include `running`, `done`, `cancelled`. Payload snapshot is stored (`response_type`, text, file id, caption) for audit; progress fields `sent`, `failed`, `errors_json` update during the async send. See [`api/routes/broadcast.py`](../api/routes/broadcast.py).
@@ -213,6 +246,7 @@ Club-defined **slash commands** (without the leading slash in the column) with o
 | `ck_direction` | `payment_methods` — `direction IN ('deposit', 'cashout')` |
 | `uq_method_slug` | `payment_sub_options` — unique `(method_id, slug)` |
 | `uq_club_command` | `custom_commands` — unique `(club_id, command_name)` |
+| `uq_player_details_gg_player_club` | `player_details` — unique `(gg_player_id, club_id)` |
 | Unique | `clubs.telegram_user_id`, `club_linked_accounts.telegram_user_id` |
 
 Foreign keys generally use **ON DELETE CASCADE** from `clubs` so child rows disappear if a club is deleted.
@@ -221,7 +255,7 @@ Foreign keys generally use **ON DELETE CASCADE** from `clubs` so child rows disa
 
 ## Operational notes
 
-- **Schema changes:** New columns may be added with manual SQL or small scripts (e.g. [`migrate_cooldown.py`](../migrate_cooldown.py)) if `create_all` already ran without them.
+- **Schema changes:** New columns may be added with manual SQL or small scripts (e.g. [`migrate_cooldown.py`](../migrate_cooldown.py), [`migrate_player_details.py`](../migrate_player_details.py)) if `create_all` already ran without them.
 - **Legacy:** Root [`main.py`](../main.py) uses older tables (`user_commands`, `group_club`); migration from that layout is described in [`db/migrate.py`](../db/migrate.py). The running bot uses [`bot/`](../bot/) and the models above.
 
 ---
