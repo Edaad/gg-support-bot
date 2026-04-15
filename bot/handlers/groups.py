@@ -17,6 +17,7 @@ from bot.services.club import (
     try_link_group_by_admin,
     update_group_name,
 )
+from bot.services.player_details import bind_chat_from_title
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,17 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
     if club_id is None:
         print(f"User {adder_uid} added bot to group {chat_id} but has no club")
         return
+
+    # Also attempt player_details binding from the group title. Silent on invalid format.
+    gg_player_id = bind_chat_from_title(chat_id=chat_id, title=update.effective_chat.title)
+    if gg_player_id and context.bot:
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"Successfully tracking player id: {gg_player_id}",
+            )
+        except Exception:
+            pass
 
     welcome = get_club_welcome(club_id)
     if not welcome:
