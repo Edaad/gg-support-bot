@@ -49,6 +49,19 @@ def resolve_club_id_from_shorthand(shorthand: str) -> Optional[int]:
         return int(club.id) if club else None
 
 
+def bind_chat_from_title(*, chat_id: int, title: str | None) -> Optional[str]:
+    """Parse title, resolve club, and bind. Returns gg_player_id on success, else None."""
+    parsed = parse_tracking_title(title)
+    if not parsed:
+        return None
+    shorthand, gg_player_id = parsed
+    club_id = resolve_club_id_from_shorthand(shorthand)
+    if not club_id:
+        return None
+    bind_chat_to_player(club_id=club_id, gg_player_id=gg_player_id, chat_id=chat_id)
+    return gg_player_id
+
+
 def bind_chat_to_player(*, club_id: int, gg_player_id: str, chat_id: int) -> None:
     """Upsert (gg_player_id, club_id) and merge chat_id into chat_ids distinct."""
     stmt = text(

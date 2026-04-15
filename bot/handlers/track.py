@@ -15,7 +15,7 @@ from bot.services.club import get_club_for_chat
 from bot.services.player_details import (
     parse_tracking_title,
     resolve_club_id_from_shorthand,
-    bind_chat_to_player,
+    bind_chat_from_title,
     get_bound_players,
 )
 
@@ -28,16 +28,8 @@ async def _bind_from_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     chat = update.effective_chat
     if not chat or chat.type not in ("group", "supergroup"):
         return False, None
-    title = chat.title or ""
-    parsed = parse_tracking_title(title)
-    if not parsed:
-        return False, None
-    shorthand, gg_player_id = parsed
-    club_id = resolve_club_id_from_shorthand(shorthand)
-    if not club_id:
-        return False, None
-    bind_chat_to_player(club_id=club_id, gg_player_id=gg_player_id, chat_id=chat.id)
-    return True, gg_player_id
+    gg_player_id = bind_chat_from_title(chat_id=chat.id, title=chat.title)
+    return (True, gg_player_id) if gg_player_id else (False, None)
 
 
 async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
