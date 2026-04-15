@@ -52,35 +52,37 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
         print(f"User {adder_uid} added bot to group {chat_id} but has no club")
         return
 
-    # Also attempt player_details binding from the group title. Silent on invalid format.
-    gg_player_id = bind_chat_from_title(chat_id=chat_id, title=update.effective_chat.title)
-    if gg_player_id and context.bot:
+    welcome = get_club_welcome(club_id)
+    if welcome:
         try:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"Successfully tracking player id: {gg_player_id}",
-            )
+            if welcome["type"] == "photo" and welcome.get("file_id"):
+                await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=welcome["file_id"],
+                    caption=welcome.get("caption") or None,
+                )
+            elif welcome.get("text"):
+                text = welcome["text"]
+                chunk = 4096
+                for i in range(0, len(text), chunk):
+                    await context.bot.send_message(chat_id=chat_id, text=text[i : i + chunk])
+        except Exception as e:
+            print(f"Failed to send welcome to {chat_id}: {e}")
+
+    # Also attempt player_details binding from the group title (after welcome).
+    # Silent on invalid format; show explicit conflict errors.
+    res = bind_chat_from_title(chat_id=chat_id, title=update.effective_chat.title)
+    if context.bot:
+        try:
+            if res.ok and res.gg_player_id:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"Successfully tracking player id: {res.gg_player_id}",
+                )
+            elif res.error and res.error.startswith("Conflict:"):
+                await context.bot.send_message(chat_id=chat_id, text=res.error)
         except Exception:
             pass
-
-    welcome = get_club_welcome(club_id)
-    if not welcome:
-        return
-
-    try:
-        if welcome["type"] == "photo" and welcome.get("file_id"):
-            await context.bot.send_photo(
-                chat_id=chat_id,
-                photo=welcome["file_id"],
-                caption=welcome.get("caption") or None,
-            )
-        elif welcome.get("text"):
-            text = welcome["text"]
-            chunk = 4096
-            for i in range(0, len(text), chunk):
-                await context.bot.send_message(chat_id=chat_id, text=text[i : i + chunk])
-    except Exception as e:
-        print(f"Failed to send welcome to {chat_id}: {e}")
 
 
 async def auto_link_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

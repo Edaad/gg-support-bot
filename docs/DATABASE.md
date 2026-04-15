@@ -160,6 +160,7 @@ Maps an external **GG player id** to a **club** and a list of **Telegram group c
 
 **Auto-tracking via group title:** The bot can bind a group chat to `player_details` by parsing the group title and appending the chat id to `chat_ids` for the `(gg_player_id, club_id)` row.
 
+- **One-group-per-(club,player)**: The bot enforces that a given `(club_id, gg_player_id)` pair cannot be tracked by multiple different Telegram group chats. If another group chat id is already present in `chat_ids` for that row, the bind is blocked and the bot returns a conflict message (title-change and “bot added” triggers still remain silent only for invalid format, not for conflicts).
 - **Format**: `SHORTHAND / GGPLAYERID / anything` (example: `GTO / 8190-5287 / ThePirate343`)
 - **Club resolution**: `SHORTHAND` is mapped to a canonical `clubs.name` via `CLUB_SHORTHAND_TO_NAME` in [`config.py`](../config.py), then resolved to `clubs.id` (case-insensitive exact match).
 - **Triggers**:
