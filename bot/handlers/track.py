@@ -11,6 +11,7 @@ from __future__ import annotations
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from config import ADMIN_USER_IDS
 from bot.services.club import get_club_for_chat
 from bot.services.player_details import (
     parse_tracking_title,
@@ -48,6 +49,8 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Manual bind command. Replies with invalid format if not parsable/resolvable."""
     if not update.message or not update.effective_chat:
         return
+    if not update.effective_user or update.effective_user.id not in ADMIN_USER_IDS:
+        return
     chat = update.effective_chat
     if chat.type not in ("group", "supergroup"):
         await update.message.reply_text("Use /track in a club group chat.")
@@ -62,6 +65,8 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show what this chat is currently bound to (player ids) for the resolved club."""
     if not update.message or not update.effective_chat:
+        return
+    if not update.effective_user or update.effective_user.id not in ADMIN_USER_IDS:
         return
     chat = update.effective_chat
     if chat.type not in ("group", "supergroup"):
