@@ -8,6 +8,7 @@ Example:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
 from typing import Optional, Tuple, List
 
@@ -18,6 +19,14 @@ from db.connection import get_db
 from db.models import Club
 
 _GG_RE = re.compile(r"^[0-9]{1,48}-[0-9]{1,48}$")
+
+
+@dataclass(frozen=True)
+class BindResult:
+    ok: bool
+    gg_player_id: Optional[str] = None
+    club_id: Optional[int] = None
+    error: Optional[str] = None
 
 
 def parse_tracking_title(title: str | None) -> Optional[Tuple[str, str]]:
@@ -49,17 +58,73 @@ def resolve_club_id_from_shorthand(shorthand: str) -> Optional[int]:
         return int(club.id) if club else None
 
 
-def bind_chat_from_title(*, chat_id: int, title: str | None) -> Optional[str]:
-    """Parse title, resolve club, and bind. Returns gg_player_id on success, else None."""
+def get_existing_chat_ids(*, club_id: int, gg_player_id: str) -> Optional[List[int]]:
+    """Return chat_ids array for an existing (club_id, gg_player_id) row, or None if not present."""
+    stmt = text(
+        """
+        SELECT chat_ids
+        FROM player_details
+        WHERE club_id = :club_id
+          AND gg_player_id = :gg_player_id
+        LIMIT 1
+        """
+    )
+    with get_db() as session:
+        row = session.execute(
+            stmt, {"club_id": int(club_id), "gg_player_id": gg_player_id}
+        ).fetchone()
+        if not row:
+            return None
+        chat_ids = row[0] or []
+        try:
+            return [int(x) for x in chat_ids]
+        except Exception:
+            return []
+
+
+def check_same_club_player_conflict(
+    *, club_id: int, gg_player_id: str, chat_id: int
+) -> Optional[str]:
+    """If gg_player_id is already tracked by other chat(s) in the same club, return an error string."""
+    existing = get_existing_chat_ids(club_id=club_id, gg_player_id=gg_player_id)
+    if not existing:
+        return None
+    others = [c for c in existing if int(c) != int(chat_id)]
+    if not others:
+        return None
+    if len(others) == 1:
+        return (
+            f"Conflict: player id {gg_player_id} is already being tracked by another group "
+            f"for this club (chat_id {others[0]})."
+        )
+    return (
+        f"Conflict: player id {gg_player_id} is already being tracked by other groups "
+        f"for this club ({len(others)} group chats)."
+    )
+
+
+def bind_chat_from_title(*, chat_id: int, title: str | None) -> BindResult:
+    """Parse title, resolve club, and bind (with same-club conflict checks)."""
     parsed = parse_tracking_title(title)
     if not parsed:
-        return None
+        return BindResult(ok=False, error="Invalid group name format.")
     shorthand, gg_player_id = parsed
     club_id = resolve_club_id_from_shorthand(shorthand)
     if not club_id:
-        return None
+        return BindResult(ok=False, gg_player_id=gg_player_id, error="Unknown club shorthand.")
+
+    conflict = check_same_club_player_conflict(
+        club_id=club_id, gg_player_id=gg_player_id, chat_id=chat_id
+    )
+    if conflict:
+        return BindResult(
+            ok=False,
+            gg_player_id=gg_player_id,
+            club_id=club_id,
+            error=conflict,
+        )
     bind_chat_to_player(club_id=club_id, gg_player_id=gg_player_id, chat_id=chat_id)
-    return gg_player_id
+    return BindResult(ok=True, gg_player_id=gg_player_id, club_id=club_id)
 
 
 def bind_chat_to_player(*, club_id: int, gg_player_id: str, chat_id: int) -> None:

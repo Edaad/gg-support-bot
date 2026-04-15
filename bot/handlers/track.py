@@ -17,6 +17,7 @@ from bot.services.player_details import (
     parse_tracking_title,
     resolve_club_id_from_shorthand,
     bind_chat_from_title,
+    BindResult,
     get_bound_players,
 )
 
@@ -29,19 +30,29 @@ async def _bind_from_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     chat = update.effective_chat
     if not chat or chat.type not in ("group", "supergroup"):
         return False, None
-    gg_player_id = bind_chat_from_title(chat_id=chat.id, title=chat.title)
-    return (True, gg_player_id) if gg_player_id else (False, None)
+    res = bind_chat_from_title(chat_id=chat.id, title=chat.title)
+    return (True, res.gg_player_id) if res.ok and res.gg_player_id else (False, None)
+
+
+def _bind_result(update: Update) -> BindResult:
+    chat = update.effective_chat
+    if not chat:
+        return BindResult(ok=False, error="No chat.")
+    return bind_chat_from_title(chat_id=chat.id, title=chat.title)
 
 
 async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Auto-bind on group title change. Silent on invalid."""
-    ok, gg = await _bind_from_title(update, context)
-    if not ok or not gg:
+    res = _bind_result(update)
+    if not res.ok:
+        # Silent only for invalid format. For same-club conflicts, notify.
+        if res.error and res.error.startswith("Conflict:") and context.bot and update.effective_chat:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=res.error)
         return
-    if context.bot and update.effective_chat:
+    if context.bot and update.effective_chat and res.gg_player_id:
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text=f"Successfully tracking player id: {gg}",
+            text=f"Successfully tracking player id: {res.gg_player_id}",
         )
 
 
@@ -55,11 +66,16 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if chat.type not in ("group", "supergroup"):
         await update.message.reply_text("Use /track in a club group chat.")
         return
-    ok, gg = await _bind_from_title(update, context)
-    if ok and gg:
-        await update.message.reply_text(f"Successfully tracking player id: {gg}")
+    res = _bind_result(update)
+    if res.ok and res.gg_player_id:
+        await update.message.reply_text(
+            f"Successfully tracking player id: {res.gg_player_id}"
+        )
     else:
-        await update.message.reply_text(f"Invalid group name format. {_EXPECTED}")
+        if res.error and res.error.startswith("Conflict:"):
+            await update.message.reply_text(res.error)
+        else:
+            await update.message.reply_text(f"Invalid group name format. {_EXPECTED}")
 
 
 async def info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
