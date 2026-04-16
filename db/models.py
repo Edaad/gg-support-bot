@@ -10,7 +10,10 @@ from sqlalchemy import (
     ForeignKey,
     UniqueConstraint,
     CheckConstraint,
+    Index,
+    text,
 )
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
 
@@ -68,6 +71,9 @@ class Club(Base):
     )
     linked_accounts = relationship(
         "ClubLinkedAccount", back_populates="club", cascade="all, delete-orphan"
+    )
+    player_details = relationship(
+        "PlayerDetails", back_populates="club", cascade="all, delete-orphan"
     )
 
 
@@ -208,6 +214,41 @@ class Group(Base):
     added_at = Column(DateTime, server_default=func.now())
 
     club = relationship("Club", back_populates="groups")
+
+
+class PlayerDetails(Base):
+    """GG player id scoped to a club; Telegram group chats stored as bigint array (no FK to groups — DB cannot FK array elements)."""
+
+    __tablename__ = "player_details"
+    __table_args__ = (
+        UniqueConstraint(
+            "gg_player_id",
+            "club_id",
+            name="uq_player_details_gg_player_club",
+        ),
+        Index("ix_player_details_club_id", "club_id"),
+        Index("ix_player_details_gg_player_id", "gg_player_id"),
+        Index(
+            "ix_player_details_chat_ids",
+            "chat_ids",
+            postgresql_using="gin",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    chat_ids = Column(
+        ARRAY(BigInteger),
+        nullable=False,
+        server_default=text("'{}'::bigint[]"),
+    )
+    gg_player_id = Column(String(255), nullable=False)
+    club_id = Column(
+        Integer,
+        ForeignKey("clubs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    club = relationship("Club", back_populates="player_details")
 
 
 class BroadcastJob(Base):
