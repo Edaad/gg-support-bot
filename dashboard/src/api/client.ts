@@ -53,6 +53,8 @@ export const deleteMethod = (token: string, id: number) =>
   request<void>(`/methods/${id}`, { method: 'DELETE' }, token)
 export const reorderMethods = (token: string, clubId: number, order: number[]) =>
   request<void>(`/clubs/${clubId}/methods/reorder`, { method: 'PUT', body: JSON.stringify({ order }) }, token)
+export const resetMethodAccumulated = (token: string, methodId: number) =>
+  request<Method>(`/methods/${methodId}/reset-accumulated`, { method: 'POST' }, token)
 
 // Sub-options
 export const listSubOptions = (token: string, methodId: number) =>
@@ -194,6 +196,8 @@ export interface Method {
   response_caption: string | null
   is_active: boolean
   sort_order: number
+  deposit_limit: number | null
+  accumulated_amount: number | null
   created_at: string | null
   sub_options: SubOption[]
   tiers: Tier[]

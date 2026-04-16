@@ -29,6 +29,7 @@ from bot.services.club import (
     is_first_deposit_claimed,
     get_first_deposit_settings,
     update_group_name,
+    record_method_deposit,
 )
 from bot.handlers.response_utils import send_response_messages
 
@@ -161,6 +162,7 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
         return ConversationHandler.END
 
     context.user_data["deposit_method_name"] = method["name"]
+    context.user_data["deposit_method_id"] = method_id
 
     if method["has_sub_options"]:
         subs = get_sub_options(method_id)
@@ -189,6 +191,11 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     else:
         response_data = pick_variant(method_id) or method
     await _send_response(query, response_data, amount, method["name"])
+    if isinstance(amount, Decimal):
+        try:
+            record_method_deposit(method_id, amount)
+        except Exception:
+            pass
     _record_deposit(context)
     await _send_bonus_message(query.message.chat, context)
     _cleanup(context)
@@ -217,6 +224,12 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     display = f"{method_name} — {sub['name']}"
 
     await _send_response(query, sub, amount, display)
+    method_id = context.user_data.get("deposit_method_id")
+    if method_id and isinstance(amount, Decimal):
+        try:
+            record_method_deposit(method_id, amount)
+        except Exception:
+            pass
     _record_deposit(context)
     await _send_bonus_message(query.message.chat, context)
     _cleanup(context)
@@ -309,6 +322,7 @@ def _cleanup(context):
         "deposit_user_id",
         "deposit_amount",
         "deposit_method_name",
+        "deposit_method_id",
         "deposit_is_first",
         "deposit_fd_settings",
         "deposit_simple_data",

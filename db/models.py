@@ -109,6 +109,8 @@ class PaymentMethod(Base):
     response_caption = Column(Text)
     is_active = Column(Boolean, default=True)
     sort_order = Column(Integer, default=0)
+    deposit_limit = Column(Numeric(12, 2), nullable=True)
+    accumulated_amount = Column(Numeric(12, 2), default=0)
     created_at = Column(DateTime, server_default=func.now())
 
     club = relationship("Club", back_populates="payment_methods")

@@ -65,6 +65,17 @@ def delete_method(method_id: int, db: Session = Depends(get_db_dependency)):
     db.delete(method)
 
 
+@router.post("/methods/{method_id}/reset-accumulated", response_model=MethodRead)
+def reset_accumulated(method_id: int, db: Session = Depends(get_db_dependency)):
+    method = db.query(PaymentMethod).get(method_id)
+    if not method:
+        raise HTTPException(404, "Method not found")
+    method.accumulated_amount = 0
+    db.flush()
+    db.refresh(method)
+    return MethodRead.model_validate(method)
+
+
 @router.put("/clubs/{club_id}/methods/reorder")
 def reorder_methods(club_id: int, body: dict, db: Session = Depends(get_db_dependency)):
     """Body: {"order": [method_id, method_id, ...]}"""

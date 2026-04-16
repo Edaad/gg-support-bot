@@ -165,6 +165,7 @@ class MethodCreate(BaseModel):
     response_caption: Optional[str] = None
     is_active: bool = True
     sort_order: int = 0
+    deposit_limit: Optional[Decimal] = None
 
 
 class MethodUpdate(BaseModel):
@@ -180,6 +181,7 @@ class MethodUpdate(BaseModel):
     response_caption: Optional[str] = None
     is_active: Optional[bool] = None
     sort_order: Optional[int] = None
+    deposit_limit: Optional[Decimal] = None
 
 
 class SubOptionRead(BaseModel):
@@ -229,6 +231,8 @@ class MethodRead(BaseModel):
     response_caption: Optional[str]
     is_active: bool
     sort_order: int
+    deposit_limit: Optional[Decimal] = None
+    accumulated_amount: Optional[Decimal] = None
     created_at: Optional[datetime]
     sub_options: List[SubOptionRead] = []
     tiers: List[TierRead] = []

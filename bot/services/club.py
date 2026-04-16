@@ -112,6 +112,9 @@ def get_methods_for_amount(
         methods = q.all()
         result = []
         for m in methods:
+            if m.deposit_limit is not None and m.accumulated_amount is not None:
+                if m.accumulated_amount >= m.deposit_limit:
+                    continue
             if amount is not None:
                 if m.min_amount is not None and amount < m.min_amount:
                     continue
@@ -130,6 +133,14 @@ def get_methods_for_amount(
                 "response_caption": m.response_caption,
             })
         return result
+
+
+def record_method_deposit(method_id: int, amount: Decimal) -> None:
+    """Atomically add deposit amount to a method's accumulated total."""
+    with get_db() as session:
+        m = session.query(PaymentMethod).get(method_id)
+        if m:
+            m.accumulated_amount = (m.accumulated_amount or 0) + amount
 
 
 def get_method_by_id(method_id: int) -> Optional[dict]:
