@@ -76,6 +76,11 @@ def create_app() -> FastAPI:
     if assets_dir.is_dir() and index_html.is_file():
         app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
+        @app.get("/")
+        def serve_spa_root():
+            """`/{full_path:path}` does not match GET / in FastAPI; root must be explicit."""
+            return FileResponse(str(index_html))
+
         @app.get("/{full_path:path}")
         def serve_spa(full_path: str):
             file = dist_dir / full_path
