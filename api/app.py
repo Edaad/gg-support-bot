@@ -46,6 +46,7 @@ def create_app() -> FastAPI:
     from api.routes.broadcast import router as broadcast_router
     from api.routes.variants import router as variants_router
     from api.routes.broadcast_groups import router as broadcast_groups_router
+    from api.routes.weekly_stats import router as weekly_stats_router
 
     app.include_router(clubs_router)
     app.include_router(methods_router)
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(broadcast_router)
     app.include_router(variants_router)
     app.include_router(broadcast_groups_router)
+    app.include_router(weekly_stats_router)
 
     # ── Serve React dashboard (production build) ─────────────────────────
     dist_dir = pathlib.Path(__file__).resolve().parent.parent / "dashboard" / "dist"

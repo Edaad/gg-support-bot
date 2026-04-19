@@ -5,6 +5,7 @@ import Clubs from './pages/Clubs'
 import ClubDetail from './pages/ClubDetail'
 import FlowSimulator from './pages/FlowSimulator'
 import Settings from './pages/Settings'
+import WeeklyStats from './pages/WeeklyStats'
 import Layout from './components/Layout'
 
 export default function App() {
@@ -27,6 +28,7 @@ export default function App() {
         <Route path="/clubs/:id" element={<ClubDetail token={token} />} />
         <Route path="/clubs/:id/test" element={<FlowSimulator token={token} />} />
         <Route path="/settings" element={<Settings token={token} />} />
+        <Route path="/weekly-stats" element={<WeeklyStats token={token} />} />
       </Routes>
     </Layout>
   )

@@ -130,6 +130,20 @@ export const removeBroadcastGroupMember = (token: string, clubId: number, bgId: 
 export const getSimulation = (token: string, clubId: number, direction: string) =>
   request<SimulateResponse>(`/clubs/${clubId}/simulate/${direction}`, {}, token)
 
+// Weekly stats messaging (player_details + Telegram; JWT auth)
+export const getWeeklyPlayerChatIds = (token: string, clubSlug: string, ggPlayerId: string) =>
+  request<{ chat_ids: number[] }>(
+    `/weekly-stats/player-chats?${new URLSearchParams({ club_slug: clubSlug, gg_player_id: ggPlayerId }).toString()}`,
+    {},
+    token,
+  )
+
+export const sendWeeklyPlayerMessage = (
+  token: string,
+  body: { club_slug: string; gg_player_id: string; message: string; chat_id: number },
+) =>
+  request<{ ok: boolean }>(`/weekly-stats/message`, { method: 'POST', body: JSON.stringify(body) }, token)
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface Club {

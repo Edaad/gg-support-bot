@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 
 const NAV = [
   { to: '/clubs', label: 'Clubs' },
+  { to: '/weekly-stats', label: 'Weekly stats' },
   { to: '/settings', label: 'Settings' },
 ]
 

@@ -47,6 +47,69 @@ Missing or invalid token → **401** (`Invalid token`, `Token expired`, etc.).
 
 ---
 
+## Weekly stats (Telegram messaging)
+
+Prefix: `/api/weekly-stats` — all routes require Bearer auth.
+
+Used by the dashboard **Weekly stats** page to resolve a player’s linked Telegram **group** chats from Postgres (`player_details`) and send a text message via the bot (`TELEGRAM_BOT_TOKEN`).
+
+**Club slug:** `club_slug` must be one of the configured slugs (see [`dashboard/src/config/clubMap.ts`](../dashboard/src/config/clubMap.ts)); the server maps each slug to a canonical `clubs.name` and then to `clubs.id`.
+
+### List group chat ids for a player
+
+| | |
+|---|---|
+| **GET** | `/api/weekly-stats/player-chats` |
+
+**Query parameters**
+
+| Name | Required | Description |
+|------|----------|-------------|
+| `club_slug` | Yes | gg-computer club slug (e.g. `round-table`) |
+| `gg_player_id` | Yes | GG player id string (must match `player_details.gg_player_id`) |
+
+**Response** `200`:
+
+```json
+{ "chat_ids": [-1001234567890] }
+```
+
+**Errors:** `404` if no `player_details` row exists for that club + player.
+
+### Send a message to a group chat
+
+| | |
+|---|---|
+| **POST** | `/api/weekly-stats/message` |
+
+**Request body**
+
+```json
+{
+  "club_slug": "round-table",
+  "gg_player_id": "8190-5287",
+  "message": "Hey …",
+  "chat_id": -1001234567890
+}
+```
+
+`chat_id` must appear in `player_details.chat_ids` for that `(club, gg_player_id)`. The message is sent with `Bot.send_message` to that group.
+
+**Response** `200`: `{ "ok": true }`
+
+**Errors:** `400` unknown slug or `chat_id` not allowed; `404` no matching `player_details` row; `500` if `TELEGRAM_BOT_TOKEN` is missing or Telegram API fails.
+
+---
+
+## Dashboard: gg-computer (read-only) API
+
+The **Weekly stats** UI loads processed weeks and player rows from the separate **gg-computer** HTTP service (MongoDB), not from this FastAPI app.
+
+- **Build-time env:** set `VITE_WEEKLY_STATS_BASE_URL` to the full base URL of gg-computer (no trailing slash), e.g. `https://your-gg-computer-host`, when the browser must call another origin (production). If unset, the dev build defaults to same-origin **`/weekly-stats`**, and Vite proxies that path to `http://127.0.0.1:3000` (see [`dashboard/vite.config.ts`](../dashboard/vite.config.ts)).
+- **Endpoints used:** `GET /processed-weeks?clubId=<slug>`, `GET /players?clubId=&weekId=&filters&page=&pageSize=`.
+
+---
+
 ## Clubs
 
 Prefix: `/api/clubs` — all routes require Bearer auth.
