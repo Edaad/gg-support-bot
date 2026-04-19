@@ -77,7 +77,11 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
             if res.ok and res.gg_player_id:
                 await context.bot.send_message(
                     chat_id=chat_id,
-                    text=f"Successfully tracking player id: {res.gg_player_id}",
+                    text=(
+                        "Thank you for playing at our club!!\n"
+                        f"\nPlayer ID: {res.gg_player_id}"
+                    ),
+               
                 )
             elif res.error and res.error.startswith("Conflict:"):
                 await context.bot.send_message(chat_id=chat_id, text=res.error)

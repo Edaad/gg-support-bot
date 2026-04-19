@@ -107,6 +107,7 @@ The **Weekly stats** UI loads processed weeks and player rows from the separate 
 
 - **Build-time env:** set `VITE_WEEKLY_STATS_BASE_URL` to the full base URL of gg-computer (no trailing slash), e.g. `https://your-gg-computer-host`, when the browser must call another origin (production). If unset, the dev build defaults to same-origin **`/weekly-stats`**, and Vite proxies that path to `http://127.0.0.1:3000` (see [`dashboard/vite.config.ts`](../dashboard/vite.config.ts)).
 - **Endpoints used:** `GET /processed-weeks?clubId=<slug>`, `GET /players?clubId=&weekId=&filters&page=&pageSize=`.
+- **Sync (dashboard button):** `POST /process-week/sync` with optional JSON body `{ "clubId": "<slug>" }` to process missing `weekly_profits` rows for one club; omit `clubId` in the upstream API to scan all clubs (the dashboard button always sends the **currently selected** club slug).
 
 ---
 

@@ -3,6 +3,7 @@ import { CLUB_OPTIONS, displayLabelForSlug } from '../config/clubMap'
 import {
   getProcessedWeeks,
   getPlayers,
+  processWeekSync,
   type PlayerFilters,
   type ProcessedWeekSummary,
   type WeeklyPlayerRow,
@@ -74,6 +75,9 @@ export default function WeeklyStats({ token }: { token: string }) {
   const [loadingPlayers, setLoadingPlayers] = useState(false)
   const [err, setErr] = useState('')
 
+  const [syncBusy, setSyncBusy] = useState(false)
+  const [syncBanner, setSyncBanner] = useState<string | null>(null)
+
   const [sendOpen, setSendOpen] = useState(false)
   const [sendRow, setSendRow] = useState<WeeklyPlayerRow | null>(null)
   const [sendChats, setSendChats] = useState<number[]>([])
@@ -122,6 +126,10 @@ export default function WeeklyStats({ token }: { token: string }) {
   useEffect(() => {
     void loadWeeks()
   }, [loadWeeks])
+
+  useEffect(() => {
+    setSyncBanner(null)
+  }, [slug])
 
   const loadPlayers = useCallback(async () => {
     if (!weekId) {
@@ -293,6 +301,21 @@ export default function WeeklyStats({ token }: { token: string }) {
     setPage(1)
   }
 
+  const handleProcessWeekSync = async () => {
+    setSyncBusy(true)
+    setSyncBanner(null)
+    setErr('')
+    try {
+      const res = await processWeekSync(slug)
+      setSyncBanner(JSON.stringify(res, null, 2))
+      await loadWeeks()
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Sync failed')
+    } finally {
+      setSyncBusy(false)
+    }
+  }
+
   return (
     <div>
       <h1 className="mb-2 text-2xl font-bold">Weekly player stats</h1>
@@ -303,6 +326,12 @@ export default function WeeklyStats({ token }: { token: string }) {
 
       {err && (
         <div className="mb-4 rounded-lg bg-red-900/40 px-4 py-2 text-sm text-red-300">{err}</div>
+      )}
+      {syncBanner && (
+        <div className="mb-4 rounded-lg border border-emerald-800/60 bg-emerald-950/40 px-4 py-3 text-xs text-emerald-100">
+          <div className="mb-1 font-medium text-emerald-200">Sync finished (gg-computer)</div>
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-emerald-100/90">{syncBanner}</pre>
+        </div>
       )}
 
       <div className="mb-6 flex flex-wrap items-end gap-4 rounded-xl border border-gray-800 bg-gray-900 p-4">
@@ -319,6 +348,18 @@ export default function WeeklyStats({ token }: { token: string }) {
               </option>
             ))}
           </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-gray-400">gg-computer</span>
+          <button
+            type="button"
+            disabled={syncBusy}
+            title="POST /process-week/sync — fills missing weekly_profits for the selected club slug"
+            onClick={() => void handleProcessWeekSync()}
+            className="rounded-lg border border-gray-600 bg-gray-800 px-4 py-2 text-sm font-medium text-gray-200 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {syncBusy ? 'Syncing…' : 'Sync missing weeks'}
+          </button>
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-400">Week</label>
