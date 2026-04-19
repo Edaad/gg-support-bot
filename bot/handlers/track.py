@@ -52,7 +52,10 @@ async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if context.bot and update.effective_chat and res.gg_player_id:
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text=f"Successfully tracking player id: {res.gg_player_id}",
+            text=(
+                "Thank you for playing at our club!!\n"
+                f"Player ID: {res.gg_player_id}"
+            ),
         )
 
 
