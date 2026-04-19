@@ -1,0 +1,8 @@
+{
+  "name": "GG Support Bot",
+  "description": "Node buildpack runs first (dashboard Vite build), then Python.",
+  "buildpacks": [
+    { "url": "heroku/nodejs" },
+    { "url": "heroku/python" }
+  ]
+}

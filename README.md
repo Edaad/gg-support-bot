@@ -90,6 +90,10 @@ Run the bot in a separate process:
 python run_bot.py
 ```
 
+### Heroku
+
+Deploy runs **`npm run build` for `dashboard/` automatically** via the root `package.json` `heroku-postbuild` script (Node buildpack before Python). Buildpack order and details: **[`docs/HEROKU.md`](docs/HEROKU.md)**.
+
 ## Configuration
 
 - **`config.py` — `ADMIN_USER_IDS`**  

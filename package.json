@@ -1,0 +1,11 @@
+{
+  "name": "gg-support-bot",
+  "private": true,
+  "description": "Root package for Heroku: Node buildpack runs heroku-postbuild to compile dashboard/ before Python.",
+  "scripts": {
+    "heroku-postbuild": "npm ci --prefix dashboard --include=dev && npm run build --prefix dashboard"
+  },
+  "engines": {
+    "node": "20.x"
+  }
+}
