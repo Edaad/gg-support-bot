@@ -7,7 +7,7 @@ export type ClubOption = { slug: string; label: string }
 export const CLUB_OPTIONS: ClubOption[] = [
   { slug: 'clubgto', label: 'ClubGTO' },
   { slug: 'round-table', label: 'Round Table' },
-  { slug: 'aces-table', label: 'Round Table' },
+  { slug: 'aces-table', label: 'Aces Table' },
   { slug: 'creator-club', label: 'Creator Club' },
 ]
 

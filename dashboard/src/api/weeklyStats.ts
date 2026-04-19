@@ -38,6 +38,70 @@ export type PlayersResponse = {
   players: WeeklyPlayerRow[]
 }
 
+/** Unwrap common API shapes, e.g. `{ player: { ... } }`. */
+function unwrapPlayerRow(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  if (o.player && typeof o.player === 'object') {
+    return o.player as Record<string, unknown>
+  }
+  return o
+}
+
+function num(v: unknown): number {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : 0
+  }
+  return 0
+}
+
+/** Safe string for display — never returns a plain object (avoids React "invalid child" errors). */
+function stringField(v: unknown, fallback: string): string {
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  if (v && typeof v === 'object') {
+    const n = (v as { nickname?: unknown }).nickname
+    if (typeof n === 'string') return n
+    return fallback
+  }
+  return fallback
+}
+
+function ggIdField(v: unknown): string | null {
+  if (v == null || v === '') return null
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v)
+  return null
+}
+
+function agentField(v: unknown): string | null {
+  if (v == null || v === '') return null
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  return null
+}
+
+/**
+ * Normalize a raw /players row from gg-computer (field shapes can vary).
+ * Ensures we never pass objects into React text nodes.
+ */
+export function normalizeWeeklyPlayer(raw: unknown): WeeklyPlayerRow {
+  const p = unwrapPlayerRow(raw)
+  if (!p) {
+    return { nickname: '—', gg_id: null, rake: 0, rakeback: 0, profit: 0, agent: null }
+  }
+  return {
+    nickname: stringField(p.nickname, '—'),
+    gg_id: ggIdField(p.gg_id),
+    rake: num(p.rake),
+    rakeback: num(p.rakeback),
+    profit: num(p.profit),
+    agent: agentField(p.agent),
+  }
+}
+
 export type PlayerFilters = {
   minProfit?: number
   maxProfit?: number
@@ -86,5 +150,7 @@ export async function getPlayers(params: {
   if (f.maxRake != null) q.set('maxRake', String(f.maxRake))
   if (f.minRakeback != null) q.set('minRakeback', String(f.minRakeback))
   if (f.maxRakeback != null) q.set('maxRakeback', String(f.maxRakeback))
-  return weeklyFetch<PlayersResponse>(`/players?${q.toString()}`)
+  const res = await weeklyFetch<PlayersResponse>(`/players?${q.toString()}`)
+  const players = Array.isArray(res.players) ? res.players.map((row) => normalizeWeeklyPlayer(row)) : []
+  return { ...res, players }
 }

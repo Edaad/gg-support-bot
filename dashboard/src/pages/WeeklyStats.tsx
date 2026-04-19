@@ -21,10 +21,6 @@ function rbPercent(row: WeeklyPlayerRow): string {
   return `${((rb / r) * 100).toFixed(1)}%`
 }
 
-function defaultMessage(nickname: string, profit: number, rake: number): string {
-  return `Hey ${nickname}, your weekly stats are ready.\nProfit: $${fmtMoney(profit)}\nRake: $${fmtMoney(rake)}`
-}
-
 type FilterState = {
   minProfit: string
   maxProfit: string
@@ -86,6 +82,17 @@ export default function WeeklyStats({ token }: { token: string }) {
   const [sendLoading, setSendLoading] = useState(false)
   const [sendErr, setSendErr] = useState('')
 
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkSummary, setBulkSummary] = useState<string | null>(null)
+  const [bulkModalOpen, setBulkModalOpen] = useState(false)
+  const [bulkModalText, setBulkModalText] = useState('')
+  const [bulkModalErr, setBulkModalErr] = useState('')
+
+  const messageableOnPage = useMemo(
+    () => data?.players.filter((p) => p.gg_id) ?? [],
+    [data],
+  )
+
   const loadWeeks = useCallback(async () => {
     setLoadingWeeks(true)
     setErr('')
@@ -144,6 +151,13 @@ export default function WeeklyStats({ token }: { token: string }) {
     void loadPlayers()
   }, [loadPlayers])
 
+  useEffect(() => {
+    setBulkSummary(null)
+    setBulkModalOpen(false)
+    setBulkModalText('')
+    setBulkModalErr('')
+  }, [slug, weekId, page, appliedFilters])
+
   const weekLabel = useMemo(() => {
     return (w: ProcessedWeekSummary) => {
       const parts = [
@@ -160,7 +174,7 @@ export default function WeeklyStats({ token }: { token: string }) {
     setSendErr('')
     setSendChats([])
     setSendChatId(null)
-    setSendText(defaultMessage(row.nickname, row.profit, row.rake))
+    setSendText('')
     setSendOpen(true)
     setSendLoading(true)
     try {
@@ -184,13 +198,18 @@ export default function WeeklyStats({ token }: { token: string }) {
 
   const handleSend = async () => {
     if (!sendRow?.gg_id || sendChatId == null) return
+    const body = sendText.trim()
+    if (!body) {
+      setSendErr('Enter a message to send.')
+      return
+    }
     setSendLoading(true)
     setSendErr('')
     try {
       await sendWeeklyPlayerMessage(token, {
         club_slug: slug,
         gg_player_id: sendRow.gg_id,
-        message: sendText,
+        message: body,
         chat_id: sendChatId,
       })
       closeSend()
@@ -199,6 +218,61 @@ export default function WeeklyStats({ token }: { token: string }) {
     } finally {
       setSendLoading(false)
     }
+  }
+
+  const openBulkModal = () => {
+    setBulkModalErr('')
+    setBulkModalText('')
+    setBulkModalOpen(true)
+  }
+
+  const closeBulkModal = () => {
+    setBulkModalOpen(false)
+    setBulkModalText('')
+    setBulkModalErr('')
+  }
+
+  /** Sends the same user-authored message to each row on the current page (filters + pagination as in the table). */
+  const runBulkSend = async () => {
+    const rows = messageableOnPage
+    const message = bulkModalText.trim()
+    if (rows.length === 0) return
+    if (!message) {
+      setBulkModalErr('Enter the message to send. Nothing is added automatically.')
+      return
+    }
+    setBulkModalErr('')
+    setBulkBusy(true)
+    setBulkSummary(null)
+    let sent = 0
+    const failed: string[] = []
+    const delayMs = 350
+    for (const row of rows) {
+      if (!row.gg_id) continue
+      try {
+        const { chat_ids } = await getWeeklyPlayerChatIds(token, slug, row.gg_id)
+        if (chat_ids.length === 0) {
+          failed.push(`${row.nickname} (no linked group chat)`)
+          continue
+        }
+        const chat_id = chat_ids[0]
+        await sendWeeklyPlayerMessage(token, {
+          club_slug: slug,
+          gg_player_id: row.gg_id,
+          message,
+          chat_id,
+        })
+        sent++
+        await new Promise((r) => setTimeout(r, delayMs))
+      } catch (e: unknown) {
+        failed.push(`${row.nickname}: ${e instanceof Error ? e.message : 'error'}`)
+      }
+    }
+    const parts = [`Sent ${sent} message(s).`]
+    if (failed.length) parts.push(`Skipped / failed (${failed.length}): ${failed.join('; ')}`)
+    setBulkSummary(parts.join(' '))
+    setBulkBusy(false)
+    closeBulkModal()
   }
 
   const applyFilters = () => {
@@ -233,7 +307,7 @@ export default function WeeklyStats({ token }: { token: string }) {
 
       <div className="mb-6 flex flex-wrap items-end gap-4 rounded-xl border border-gray-800 bg-gray-900 p-4">
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-400">Club (API slug)</label>
+          <label className="mb-1 block text-xs font-medium text-gray-400">Club</label>
           <select
             value={slug}
             onChange={(e) => setSlug(e.target.value)}
@@ -241,7 +315,7 @@ export default function WeeklyStats({ token }: { token: string }) {
           >
             {CLUB_OPTIONS.map((c) => (
               <option key={c.slug} value={c.slug}>
-                {c.label} ({c.slug})
+                {c.label}
               </option>
             ))}
           </select>
@@ -305,7 +379,7 @@ export default function WeeklyStats({ token }: { token: string }) {
             </div>
           </div>
 
-          <div className="mb-2 flex items-center justify-between text-sm text-gray-400">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm text-gray-400">
             <span>
               {data != null ? (
                 <>
@@ -320,12 +394,30 @@ export default function WeeklyStats({ token }: { token: string }) {
                 '—'
               )}
             </span>
-            {data && data.total > 0 && (
-              <span>
-                Page {page} of {Math.max(1, Math.ceil(data.total / pageSize))}
-              </span>
-            )}
+            <div className="flex flex-wrap items-center gap-3">
+              {data && data.players.length > 0 && (
+                <button
+                  type="button"
+                  disabled={bulkBusy || loadingPlayers || messageableOnPage.length === 0}
+                  title="You choose the exact text; the same message is sent to each player with a GG id on this page. First linked group chat if several exist."
+                  onClick={openBulkModal}
+                  className="rounded-lg border border-indigo-500/60 bg-indigo-950/50 px-3 py-1.5 text-xs font-medium text-indigo-200 hover:bg-indigo-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {bulkBusy ? 'Sending…' : `Message all on this page (${messageableOnPage.length})`}
+                </button>
+              )}
+              {data && data.total > 0 && (
+                <span>
+                  Page {page} of {Math.max(1, Math.ceil(data.total / pageSize))}
+                </span>
+              )}
+            </div>
           </div>
+          {bulkSummary && (
+            <div className="mb-2 rounded-lg border border-gray-700 bg-gray-900/80 px-3 py-2 text-xs text-gray-300">
+              {bulkSummary}
+            </div>
+          )}
 
           <div className="overflow-hidden rounded-xl border border-gray-800">
             <table className="w-full text-sm">
@@ -413,7 +505,8 @@ export default function WeeklyStats({ token }: { token: string }) {
           <div className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-xl">
             <h2 className="mb-2 text-lg font-semibold text-white">Send message</h2>
             <p className="mb-4 text-xs text-gray-400">
-              Club: {displayLabelForSlug(slug)} (<code>{slug}</code>) · Player: {sendRow.nickname}
+              Club: {displayLabelForSlug(slug)} (<code>{slug}</code>) · Player:{' '}
+              {typeof sendRow.nickname === 'string' ? sendRow.nickname : '—'}
             </p>
             {sendErr && <div className="mb-3 rounded bg-red-900/40 px-3 py-2 text-sm text-red-300">{sendErr}</div>}
             {sendLoading && sendChats.length === 0 && !sendErr && (
@@ -445,9 +538,13 @@ export default function WeeklyStats({ token }: { token: string }) {
               </p>
             )}
             <label className="mb-1 block text-xs text-gray-400">Message</label>
+            <p className="mb-2 text-xs text-amber-200/80">
+              Only what you type is sent. Table figures are not included unless you add them yourself.
+            </p>
             <textarea
               value={sendText}
               onChange={(e) => setSendText(e.target.value)}
+              placeholder="Type your message…"
               rows={6}
               className="mb-4 w-full rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
             />
@@ -461,11 +558,62 @@ export default function WeeklyStats({ token }: { token: string }) {
               </button>
               <button
                 type="button"
-                disabled={sendLoading || sendChats.length === 0 || sendChatId == null}
+                disabled={
+                  sendLoading ||
+                  sendChats.length === 0 ||
+                  sendChatId == null ||
+                  !sendText.trim()
+                }
                 onClick={() => void handleSend()}
                 className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
               >
                 {sendLoading ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-xl">
+            <h2 className="mb-2 text-lg font-semibold text-white">Message all on this page</h2>
+            <p className="mb-3 text-xs text-gray-400">
+              Sends to <strong className="text-gray-200">{messageableOnPage.length}</strong> player
+              {messageableOnPage.length === 1 ? '' : 's'} with a GG id on the current page. Same text to
+              each; uses the first linked group chat when several exist.
+            </p>
+            <p className="mb-3 text-xs text-amber-200/80">
+              Player financial data from this screen is confidential—nothing is added to your message automatically.
+            </p>
+            {bulkModalErr && (
+              <div className="mb-3 rounded bg-red-900/40 px-3 py-2 text-sm text-red-300">{bulkModalErr}</div>
+            )}
+            <label className="mb-1 block text-xs text-gray-400">Message</label>
+            <textarea
+              value={bulkModalText}
+              onChange={(e) => setBulkModalText(e.target.value)}
+              placeholder="Enter the exact message to send to each chat…"
+              rows={8}
+              disabled={bulkBusy}
+              className="mb-4 w-full rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white disabled:opacity-50"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={bulkBusy}
+                onClick={closeBulkModal}
+                className="rounded border border-gray-600 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkBusy || !bulkModalText.trim()}
+                onClick={() => void runBulkSend()}
+                className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+              >
+                {bulkBusy ? 'Sending…' : 'Send to all'}
               </button>
             </div>
           </div>

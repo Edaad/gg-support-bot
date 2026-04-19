@@ -1,5 +1,12 @@
 import os
-import pathlib
+from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,7 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(weekly_stats_router)
 
     # ── Serve React dashboard (production build) ─────────────────────────
-    dist_dir = pathlib.Path(__file__).resolve().parent.parent / "dashboard" / "dist"
+    dist_dir = Path(__file__).resolve().parent.parent / "dashboard" / "dist"
     if dist_dir.is_dir():
         app.mount("/assets", StaticFiles(directory=str(dist_dir / "assets")), name="assets")
 
