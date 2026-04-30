@@ -17,7 +17,7 @@ from bot.services.club import (
     try_link_group_by_admin,
     update_group_name,
 )
-from bot.services.player_details import bind_chat_from_title
+from bot.services.player_details import bind_chat_from_title, is_same_club_player_conflict_message
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
                     ),
                
                 )
-            elif res.error and res.error.startswith("Conflict:"):
+            elif res.error and is_same_club_player_conflict_message(res.error):
                 await context.bot.send_message(chat_id=chat_id, text=res.error)
         except Exception:
             pass

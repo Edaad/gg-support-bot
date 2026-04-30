@@ -19,6 +19,7 @@ from bot.services.player_details import (
     bind_chat_from_title,
     BindResult,
     get_bound_players,
+    is_same_club_player_conflict_message,
 )
 
 
@@ -46,7 +47,12 @@ async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     res = _bind_result(update)
     if not res.ok:
         # Silent only for invalid format. For same-club conflicts, notify.
-        if res.error and res.error.startswith("Conflict:") and context.bot and update.effective_chat:
+        if (
+            res.error
+            and is_same_club_player_conflict_message(res.error)
+            and context.bot
+            and update.effective_chat
+        ):
             await context.bot.send_message(chat_id=update.effective_chat.id, text=res.error)
         return
     if context.bot and update.effective_chat and res.gg_player_id:
@@ -75,7 +81,7 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             f"Successfully tracking player id: {res.gg_player_id}"
         )
     else:
-        if res.error and res.error.startswith("Conflict:"):
+        if res.error and is_same_club_player_conflict_message(res.error):
             await update.message.reply_text(res.error)
         else:
             await update.message.reply_text(f"Invalid group name format. {_EXPECTED}")
