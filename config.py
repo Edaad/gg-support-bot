@@ -1,4 +1,7 @@
 # config.py
+#
+# Shared bot settings. For MTProto `/gc` (support megagroup creation), club-specific
+# fields live in club_gc_settings.py — see re-exports at the bottom of this file.
 
 ADMIN_USER_IDS = [
     493310710,  # edaad personal
@@ -15,3 +18,31 @@ CLUB_SHORTHAND_TO_NAME = {
     "AT": "Round Table",
     "CC": "Creator Club",
 }
+
+# --- `/gc` (MTProto) ----------------------------------------------------------
+# Who may run /gc is NOT granted by ADMIN_USER_IDS alone; see club_gc_settings.
+# Users to auto-invite into new /gc groups: edit tuples below, or set GC_USERS_* in
+# .env (env wins when non-empty). Keys: round_table, creator_club, clubgto.
+# Example tuple: ("@alice", "@bob")
+GC_USERS_TO_INVITE = {
+    "round_table": ("@gg_support_bot", "@RoundTableSupport3"),
+    "creator_club": ("@gg_support_bot","@CreatorClubSupport3"),
+    "clubgto": ("@gg_support_bot", "@ClubGTOAdmin"),
+}
+
+from club_gc_settings import (  # noqa: E402
+    CLUB_GC_CONFIG,
+    ClubGcConfig,
+    get_club_config_for_admin,
+    get_tg_mtproto_credentials,
+)
+
+__all__ = [
+    "ADMIN_USER_IDS",
+    "CLUB_SHORTHAND_TO_NAME",
+    "GC_USERS_TO_INVITE",
+    "CLUB_GC_CONFIG",
+    "ClubGcConfig",
+    "get_club_config_for_admin",
+    "get_tg_mtproto_credentials",
+]

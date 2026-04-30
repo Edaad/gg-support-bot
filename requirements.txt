@@ -6,3 +6,4 @@ sqlalchemy==2.0.36
 PyJWT==2.10.1
 python-multipart==0.0.20
 python-dotenv>=1.0.0
+telethon==1.38.1

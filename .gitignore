@@ -7,6 +7,11 @@ __pycache__/
 user_commands.json
 group_club.json
 
+# MTProto Telethon sessions (contain auth state)
+sessions/
+*.session
+*.session-journal
+
 # Dashboard
 dashboard/node_modules/
 dashboard/dist/
