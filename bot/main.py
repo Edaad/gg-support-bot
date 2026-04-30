@@ -37,7 +37,12 @@ def run_bot(token: str | None = None):
     from bot.handlers.deposit import get_deposit_handler
     from bot.handlers.cashout import get_cashout_handler
     from bot.handlers.list_cmd import list_handler
-    from bot.handlers.groups import on_my_chat_member_updated, auto_link_group
+    from bot.handlers.groups import (
+        on_my_chat_member_updated,
+        on_new_chat_members,
+        on_other_chat_member_join,
+        auto_link_group,
+    )
     from bot.handlers.bypass import bypass_handler, bypass_permanent_handler
     from bot.handlers.track import on_new_chat_title, track_handler, info_handler
     from bot.handlers.group_create import get_gc_handler
@@ -62,7 +67,17 @@ def run_bot(token: str | None = None):
     app.add_handler(
         ChatMemberHandler(on_my_chat_member_updated, ChatMemberHandler.MY_CHAT_MEMBER)
     )
+
+    app.add_handler(
+        ChatMemberHandler(on_other_chat_member_join, ChatMemberHandler.CHAT_MEMBER),
+    )
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_TITLE, on_new_chat_title))
+    app.add_handler(
+        MessageHandler(
+            filters.ChatType.GROUPS & filters.StatusUpdate.NEW_CHAT_MEMBERS,
+            on_new_chat_members,
+        )
+    )
     app.add_handler(CommandHandler("list", list_handler))
 
     # Catch-all for custom commands (must be last among command handlers)

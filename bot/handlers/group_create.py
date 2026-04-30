@@ -61,52 +61,41 @@ def _compose_status_text(
     db_id: int | None,
     db_err: str | None,
 ) -> str:
-    lines = [
-        f"Created group: {outcome.telegram_chat_title}",
-        "",
-        f"Invite link: {outcome.invite_link or '(export failed — check failed list)'}",
-        "",
-        "Added:",
-    ]
-    if outcome.added_users:
-        for row in outcome.added_users:
-            u = row.get("user") or "?"
-            lines.append(f"- {u}")
-    else:
-        lines.append("- (none)")
+    """Short operator-facing reply; details stay in logs / DB."""
 
-    lines.append("")
-    lines.append("Failed:")
+    title = outcome.telegram_chat_title.strip() or "(untitled)"
+    link = outcome.invite_link.strip() if outcome.invite_link else ""
+
+    chunks: list[str] = [title, link or "(invite link unavailable)"]
+
     human_failed = [
         row
         for row in outcome.failed_users
         if not str(row.get("user") or "").startswith("__")
     ]
-
     if human_failed:
-        for row in human_failed:
-            lines.append(f"- {row.get('user')}: {row.get('reason')}")
-    else:
-        lines.append("- (none)")
+        chunks.append("")
+        chunks.append(
+            "\n".join(
+                f"Failed: {row.get('user') or '?'} — {row.get('reason') or 'unknown'}"
+                for row in human_failed[:12]
+            )
+        )
 
     if cfg.group_photo_path and not outcome.group_photo_ok:
-        lines.extend(["", "Group photo failed or skipped — see warnings."])
+
+        chunks.append("Photo skipped or failed.")
 
     if outcome.warnings:
-        lines.extend(["", "Warnings:"])
-        lines.extend([f"- {w}" for w in outcome.warnings[:10]])
+        chunks.append("")
+        chunks.extend(outcome.warnings[:8])
 
-    db_line = f"Saved to DB: {'yes' if db_id is not None else 'no'}"
-    if db_id is not None:
-        db_line += f" (id={db_id})"
+    cid = outcome.telegram_chat_id
+    if cid is not None and db_id is None:
+        chunks.append("")
+        chunks.append(f"Audit DB: {db_err or 'save failed — see logs'}")
 
-    elif db_err:
-        db_line += f" ({db_err})"
-
-    lines.extend(["", db_line])
-
-
-    return "\n".join(lines)
+    return "\n".join(chunks)
 
 
 _EXPIRED_REPLY = (
@@ -152,7 +141,6 @@ async def gc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if authorized:
         me = await context.bot.get_me()
         bot_username = me.username.strip() if me and me.username else None
-        await update.message.reply_text("MTProto session is ready — creating support group...")
 
         try:
 
