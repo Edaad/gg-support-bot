@@ -15,6 +15,7 @@ from telegram.ext import (
 )
 
 from telethon.errors import PhoneCodeInvalidError, SessionPasswordNeededError
+from telethon.errors.rpcerrorlist import PhoneCodeExpiredError, PhoneNumberInvalidError
 
 from club_gc_settings import (
     CLUB_GC_CONFIG,
@@ -41,15 +42,80 @@ TIMEOUT_SECONDS = 900
 GC_PHONE_WAIT, GC_CODE_WAIT, GC_PASSWORD_WAIT = range(3)
 
 
-def _sanitize_phone(raw: str) -> str:
-    s = (raw or "").strip()
-    digits = "".join(c for c in s if c.isdigit())
-    if "+" in s:
-        return f"+{digits}" if digits else ""
-    return digits
+def normalize_phone_for_mtproto(raw: str) -> str:
+    """Normalize for Telethon ``SendCode``: ``+<digits>`` after stripping spaces/separators."""
+    stripped = "".join(
+        ch for ch in (raw or "").strip() if ch not in " \t\n\r-().[]/"
+    )
+    digits_all = "".join(ch for ch in stripped if ch.isdigit())
+    if not digits_all:
+        return ""
+
+    if digits_all.startswith("00") and len(digits_all) >= 10:
+        digits_all = digits_all[2:]
+    return f"+{digits_all}"
+
+
+def _e164_digit_count(plus_phone: str) -> int:
+    """Count national digits assuming ``+<country><subscriber>``."""
+
+    return len(plus_phone) - 1 if plus_phone.startswith("+") else 0
+
+
+PHONE_INVALID_REPLY = (
+    "Telegram says that phone number is invalid.\n\n"
+    "Use international format: a leading + then country code and full number "
+    "(no spaces). Examples: +14155552671 (US), +447911123456 (UK).\n\n"
+    "If you rely on MT_PROTO_PHONE_* in Heroku Config Vars, update it there "
+    "and redeploy—or remove it and enter the phone when the bot asks."
+)
+
+
+
+def _phone_len_bounds_ok(plus_phone: str) -> bool:
+    n = _e164_digit_count(plus_phone)
+    return bool(plus_phone) and 8 <= n <= 15
+
+
+async def request_mtproto_login_code(
+    cfg: ClubGcConfig,
+    phone_plus: str,
+) -> tuple[str | None, str | None]:
+    """Returns ``(phone_code_hash, None)`` or ``(None, error_message)``.
+
+    ``error_message`` is ``\"invalid_phone\"`` for Telethon invalid number, or plain
+    text for the user (including our ``RuntimeError`` rate-limit hints).
+    """
+
+    try:
+        return await send_code_for_phone(cfg, phone_plus), None
+    except PhoneNumberInvalidError:
+
+        logger.warning(
+            "MTProto SendCode: invalid phone format (intl_digits=%s)",
+            _e164_digit_count(phone_plus),
+        )
+        return None, "invalid_phone"
+    except RuntimeError as e:
+
+
+        logger.warning("MTProto SendCode rejected: %s", e)
+        return None, str(e)
+
+
+
+    except Exception as e:
+
+        logger.exception("send_code_failed %s", type(e).__name__)
+        return None, (
+            "Could not request a login code (unexpected error; details in server logs). "
+            "Try /gc again later."
+        )
+
 
 
 def _clear_gc_ud(context: ContextTypes.DEFAULT_TYPE) -> None:
+
     keys = [k for k in context.user_data if str(k).startswith("gc_")]
     for k in keys:
         context.user_data.pop(k, None)
@@ -275,41 +341,37 @@ async def gc_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     configured_phone = cfg.mtproto_phone_number
     if configured_phone:
-        normalized = _sanitize_phone(configured_phone)
-
-
-        await update.message.reply_text(f"{prelude}\nRequesting Telegram code for {normalized}...")
-        try:
-            hsh = await send_code_for_phone(cfg, normalized)
-        except Exception as e:
-
-
-            hint = type(e).__name__
-
-            logger.exception("send_code_failed %s", hint)
-
+        normalized = normalize_phone_for_mtproto(configured_phone)
+        if not _phone_len_bounds_ok(normalized):
             await update.message.reply_text(
-                "Could not request a login code. Check phone/network, TG_API_ID / TG_API_HASH, "
-                f"session path permissions, then try again. Telegram error hint: {hint}"
+                "Configured MT_PROTO_PHONE_* does not look like a valid international "
+                "number. Use + then country code and full number (8–15 digits after +). "
+                "Fix the Heroku Config Var or remove it and type the phone here."
             )
-
-
             _clear_gc_ud(context)
             return ConversationHandler.END
 
+        await update.message.reply_text(f"{prelude}\nRequesting Telegram code for {normalized}...")
+        hsh, err = await request_mtproto_login_code(cfg, normalized)
+        if err == "invalid_phone":
+            await update.message.reply_text(PHONE_INVALID_REPLY)
+            _clear_gc_ud(context)
+            return ConversationHandler.END
+        if err:
+            await update.message.reply_text(err)
+            _clear_gc_ud(context)
+            return ConversationHandler.END
 
         context.user_data["gc_phone"] = normalized
         context.user_data["gc_phone_code_hash"] = hsh
-
         await update.message.reply_text("Paste the Telegram login code you received.")
         return GC_CODE_WAIT
 
     await update.message.reply_text(
-        prelude + "\n\nReply with phone number incl. country code, e.g. +15551234567"
-
+        prelude
+        + "\n\nReply with your phone in international form: + and country code, then the "
+        "full number (digits only after +). Example (US): +14155552671."
     )
-
-
     return GC_PHONE_WAIT
 
 
@@ -326,31 +388,24 @@ async def gc_phone_received(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         _clear_gc_ud(context)
         return ConversationHandler.END
 
-    phone = _sanitize_phone(msg.text or "")
+    phone = normalize_phone_for_mtproto(msg.text or "")
 
-    if len(phone.lstrip("+")) < 8:
-
-
-        await msg.reply_text("That phone looks invalid — include country code and try again.")
-
+    if not _phone_len_bounds_ok(phone):
+        await msg.reply_text(
+            "That does not look like a full international phone number "
+            "(use +country code then number — usually 8–15 digits after +). Try again."
+        )
         return GC_PHONE_WAIT
 
-    try:
-        hsh = await send_code_for_phone(cfg, phone)
-    except Exception as e:
-        hint = type(e).__name__
+    hsh, err = await request_mtproto_login_code(cfg, phone)
+    if err == "invalid_phone":
+        await msg.reply_text(PHONE_INVALID_REPLY)
+        return GC_PHONE_WAIT
 
-        logger.exception("send_code_failed %s", hint)
-
-        await msg.reply_text(
-
-            f"Could not request login code ({hint}). Adjust phone or wait and retry /gc."
-        )
-
-
+    if err:
+        await msg.reply_text(err)
         _clear_gc_ud(context)
         return ConversationHandler.END
-
 
     context.user_data["gc_phone"] = phone
     context.user_data["gc_phone_code_hash"] = hsh
@@ -404,22 +459,31 @@ async def gc_code_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         return GC_PASSWORD_WAIT
 
-
-    except PhoneCodeInvalidError:
-        await msg.reply_text("That code is invalid or expired — request a new login by sending /gc again.")
-
+    except PhoneCodeExpiredError:
+        logger.info("MTProto sign-in: PhoneCodeExpired club=%s", cfg.club_key)
+        await msg.reply_text(
+            "Telegram says this login code is expired for the current request.\n\n"
+            "Even if you paste immediately, this often means:\n"
+            "— Telegram already issued a newer code (e.g. two /gc runs, or two SendCode requests).\n"
+            "— More than one bot worker is running; only one should poll Telegram.\n"
+            "— You used an older SMS; if you got two texts, only the latest matches the stored hash.\n\n"
+            "Fix: run /gc once, wait for a single new code, paste it. Scale Heroku bot worker to 1."
+        )
         _clear_gc_ud(context)
-
-
         return ConversationHandler.END
 
+    except PhoneCodeInvalidError:
+        logger.info("MTProto sign-in: rejected login code")
+        await msg.reply_text(
+            "That login code doesn't match what Telegram expects. Double-check digits, "
+            "or send /gc again for a fresh code."
+        )
+        _clear_gc_ud(context)
+        return ConversationHandler.END
 
     except Exception as e:
-
         hint = type(e).__name__
-
         logger.warning("MTProto SMS sign-in failure %s", hint)
-
         await msg.reply_text(f"Could not verify the code ({hint}). Fix the input or run /gc again.")
 
         _clear_gc_ud(context)

@@ -83,19 +83,38 @@ async def is_client_authorized(cfg: ClubGcConfig) -> bool:
 
 
 async def send_code_for_phone(cfg: ClubGcConfig, phone: str) -> str:
-    """Request Telegram login code; returns ``phone_code_hash`` (caller stores — never logged)."""
+    """Request Telegram login code; returns ``phone_code_hash`` (caller stores — never logged).
+
+    **No FloodWait auto-retry:** a second ``SendCodeRequest`` invalidates the previous code.
+    If Telegram rate-limits, we surface a single message so the next ``/gc`` does one fresh send.
+    """
 
     async with get_mtproto_lock(cfg.club_key):
         client = make_client(cfg)
         await client.connect()
         try:
-            sent = await _with_single_flood_retry(
-                "send_code_request",
-                lambda: client.send_code_request(phone.strip()),
-            )
+            try:
+                sent = await client.send_code_request(phone.strip())
+            except FloodWaitError as e:
+                if e.seconds > FLOODWAIT_MAX_SECONDS:
+                    logger.warning("send_code FloodWait too long: %ss", e.seconds)
+                    raise RuntimeError(
+                        f"Telegram rate limit: wait ~{e.seconds}s, then run /gc once (only one code request)."
+                    ) from e
+                logger.info(
+                    "send_code FloodWait %ss club=%s — do not parallel /gc; wait then one /gc",
+                    e.seconds,
+                    cfg.club_key,
+                )
+                raise RuntimeError(
+                    f"Telegram asked to wait ~{e.seconds}s before another login code. "
+                    "Wait, then send /gc exactly once (asking again invalidates the earlier code)."
+                ) from e
+
             hash_value = getattr(sent, "phone_code_hash", None)
             if not hash_value:
                 raise RuntimeError("Telegram returned no phone_code_hash (cannot continue login).")
+            logger.info("MTProto SendCode succeeded club=%s", cfg.club_key)
             return str(hash_value)
         finally:
             await client.disconnect()
@@ -114,14 +133,17 @@ async def authenticate_mtproto_code(
         client = make_client(cfg)
         await client.connect()
         try:
-            await _with_single_flood_retry(
-                "sign_in(code)",
-                lambda: client.sign_in(
+            # Single sign_in only — retrying can interact badly with Telegram login state.
+            try:
+                await client.sign_in(
                     phone.strip(),
                     code.strip(),
                     phone_code_hash=phone_code_hash,
-                ),
-            )
+                )
+            except FloodWaitError as e:
+                raise RuntimeError(
+                    f"Telegram rate limit during sign-in (~{e.seconds}s). Wait, then run /gc for a new code."
+                ) from e
 
             authorized = await client.is_user_authorized()
             if not authorized:
@@ -138,10 +160,12 @@ async def authenticate_mtproto_password(cfg: ClubGcConfig, *, password: str) -> 
         client = make_client(cfg)
         await client.connect()
         try:
-            await _with_single_flood_retry(
-                "sign_in(password)",
-                lambda: client.sign_in(password=str(password)),
-            )
+            try:
+                await client.sign_in(password=str(password))
+            except FloodWaitError as e:
+                raise RuntimeError(
+                    f"Telegram rate limit (~{e.seconds}s). Wait and try sending the password again."
+                ) from e
             authorized = await client.is_user_authorized()
             if not authorized:
                 raise RuntimeError("2FA succeeded but MTProto session is still not authorized.")
