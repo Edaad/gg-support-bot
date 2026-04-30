@@ -30,7 +30,7 @@ When an authorized club operator sends `/gc` in a **private chat** with the bot:
 
 - **SMS codes and Cloud Passwords are never stored in the database.**
 - **SMS codes and Cloud Passwords are not logged.**
-- Telethon **session files** contain authentication state and **must be treated as secrets**.
+- Telethon **session files** and **database-backed session strings** both grant account access — treat Postgres rows in `mtproto_session_credentials` as **secrets**.
 
 ## Command scope (private chat only)
 
@@ -100,8 +100,9 @@ If the club’s Telethon session is missing or Telegram revokes authorization:
 
 1. Open the **GG Dashboard** (JWT login) → **Telegram login** (`/telegram-login` in dev).
 2. Pick the club, **Send login code**, then paste the OTP (and Cloud Password if 2FA is enabled).
-3. The API writes `*.session` on the filesystem where **`run_api`/the web process** runs (see deployment note below).
-4. After that, **`/gc` in Telegram** only runs megagroup creation.
+3. During the OTP flow the web dyno writes the usual Telethon **SQLite `.session`** under `sessions/` (ephemeral during login). Once Telegram accepts OTP/2FA, the server snapshots that authorization into Postgres (`mtproto_session_credentials`).
+
+4. **`/gc` on the Telegram bot dyno** prefers the **Postgres-backed StringSession**, so workers do **not** need the web filesystem.
 
 Protected HTTP API (JWT), implemented in [`api/routes/gc_mtproto.py`](../api/routes/gc_mtproto.py):
 
@@ -109,10 +110,18 @@ Protected HTTP API (JWT), implemented in [`api/routes/gc_mtproto.py`](../api/rou
 - `POST /api/gc/mtproto/send-code`
 - `POST /api/gc/mtproto/sign-in`
 - `POST /api/gc/mtproto/cloud-password`
+- `POST /api/gc/mtproto/sync-disk-session` `{ "club_key": "…" }` — promotes an authorized on-disk `.session` on **this host** into Postgres (migration helper).
+
+### Postgres table
+
+- Model [`MtProtoSessionCredential`](../db/models.py).
+- Migration: [`migrate_mtproto_session_credentials.py`](../migrate_mtproto_session_credentials.py) (tables are also ensured by startup `create_all`).
+- Rows hold **secrets** (same sensitivity as committing `*.session` files). Rotate if leaked.
+- **`GC_MTPROTO_DB_SESSIONS=false`** — skip Postgres (file-only Telethon paths; suited to single-machine dev).
 
 ### Web vs bot workers (Heroku-style)
 
-Dashboard login runs on whichever dyno/process serves **`run_api`**; **`/gc` runs on the bot worker**. Regular Heroku disks are **not shared** between dynos. If login succeeds in the UI but **`/gc` still says expired**, the bot worker is not reading the updated `sessions/` files (persist sessions to attached storage both use, consolidate processes, run bot+API locally on one disk, etc.).
+Dashboard OTP runs where **`run_api`/web** lives (scratch `sessions/`). The bot **`worker`** has a separate disk unless you bolt on shared volumes. Postgres is the canonical copy of authorization after OTP so **`/gc` works on the worker** without copying files manually. If you had already logged in on web **before** this feature shipped, redeploy migrations and either complete **Telegram login** once again or call **`/api/gc/mtproto/sync-disk-session`** with JWT while this release’s web dyno still has an authorized `sessions/` file.
 
 ## Database persistence
 

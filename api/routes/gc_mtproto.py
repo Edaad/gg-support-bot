@@ -12,11 +12,13 @@ from telethon.errors.rpcerrorlist import PhoneCodeExpiredError, PhoneNumberInval
 from api.auth import get_current_admin
 from api.schemas import (
     GcMtProtoClubRead,
+    MtProtoClubKeyBody,
     MtProtoPasswordRequest,
     MtProtoSendCodeRequest,
     MtProtoSendCodeResponse,
     MtProtoSignInRequest,
     MtProtoSignInResponse,
+    MtProtoSyncDiskResponse,
 )
 from bot.services.gc_phone import PHONE_INVALID_REPLY, normalize_phone_for_mtproto, phone_len_bounds_ok
 from bot.services.mtproto_group_create import (
@@ -25,6 +27,7 @@ from bot.services.mtproto_group_create import (
     is_client_authorized,
     send_code_for_phone,
 )
+from bot.services.mtproto_session_db import snapshot_disk_session_to_database
 from club_gc_settings import CLUB_GC_CONFIG, ClubGcConfig, get_tg_mtproto_credentials
 
 logger = logging.getLogger(__name__)
@@ -64,6 +67,23 @@ async def list_gc_mtproto_clubs():
         )
         for c, a in zip(configs, flags)
     ]
+
+
+@router.post("/sync-disk-session", response_model=MtProtoSyncDiskResponse)
+async def mtproto_sync_disk_session(body: MtProtoClubKeyBody):
+    """Promote an on-disk `.session` (on this dyno only) into Postgres — one-time migration helper."""
+
+    await _require_api_credentials()
+    cfg = _cfg(body.club_key)
+    if await snapshot_disk_session_to_database(cfg):
+        return MtProtoSyncDiskResponse(
+            ok=True,
+            message="Session copied into Postgres; the Telegram bot worker should see it on next `/gc`.",
+        )
+    raise HTTPException(
+        status_code=404,
+        detail="No authorized on-disk Telethon session for this club on this server (or DB sync disabled).",
+    )
 
 
 def _resolve_phone(cfg: ClubGcConfig, body_phone: str | None) -> str:
@@ -156,6 +176,17 @@ async def mtproto_sign_in(body: MtProtoSignInRequest):
         logger.warning("MTProto sign-in failure %s", type(e).__name__)
         raise HTTPException(status_code=400, detail=str(e) or type(e).__name__) from e
 
+    if not await snapshot_disk_session_to_database(cfg):
+        logger.error("mtproto session DB snapshot failed club=%s (after OTP sign-in)", cfg.club_key)
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Telegram accepted the login, but syncing the Telethon session to Postgres failed "
+                "(the bot worker will not share an ephemeral filesystem with this dyno). "
+                "See server logs. Ensure DATABASE_URL works and migrations / create_all ran."
+            ),
+        )
+
     return MtProtoSignInResponse(logged_in=True, needs_password=False)
 
 
@@ -172,5 +203,15 @@ async def mtproto_cloud_password(body: MtProtoPasswordRequest):
     except Exception as e:
         logger.warning("MTProto cloud password failure %s", type(e).__name__)
         raise HTTPException(status_code=400, detail=str(e) or "Cloud Password not accepted.") from e
+
+    if not await snapshot_disk_session_to_database(cfg):
+        logger.error("mtproto session DB snapshot failed club=%s (after 2FA)", cfg.club_key)
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Telegram accepted 2FA, but syncing the Telethon session to Postgres failed "
+                "(the bot worker will not see filesystem sessions from this dyno). See server logs."
+            ),
+        )
 
     return MtProtoSignInResponse(logged_in=True, needs_password=False)

@@ -429,3 +429,12 @@ class MtProtoSendCodeResponse(BaseModel):
     message: str
     phone_code_hash: str
     phone_e164: str
+
+
+class MtProtoClubKeyBody(BaseModel):
+    club_key: str
+
+
+class MtProtoSyncDiskResponse(BaseModel):
+    ok: bool
+    message: str

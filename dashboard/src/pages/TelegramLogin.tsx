@@ -87,7 +87,9 @@ export default function TelegramLogin({ token }: { token: string }) {
         setPhoneCodeHash('')
         setCode('')
         setCloudPassword('')
-        setInfo('Session saved on this server. You can send /gc in Telegram to create a megagroup.')
+                setInfo(
+                  'Telegram logged in; session synced to Postgres for the bot worker. Send /gc in Telegram to create a megagroup.',
+                )
         const rows = await gcMtprotoListClubs(token)
         setClubs(rows)
       }
@@ -109,7 +111,9 @@ export default function TelegramLogin({ token }: { token: string }) {
         setPhoneCodeHash('')
         setCode('')
         setCloudPassword('')
-        setInfo('Session saved on this server. You can send /gc in Telegram to create a megagroup.')
+                setInfo(
+                  'Telegram logged in; session synced to Postgres for the bot worker. Send /gc in Telegram to create a megagroup.',
+                )
         const rows = await gcMtprotoListClubs(token)
         setClubs(rows)
       }
@@ -238,10 +242,13 @@ export default function TelegramLogin({ token }: { token: string }) {
       </div>
 
       <p className="mt-6 max-w-2xl text-xs text-gray-500">
-        Deployments with separate API and bot workers must share the same <code className="text-gray-400">sessions/</code>{' '}
-        files (both processes need to read the Telethon session). If login works in the Dashboard but{' '}
-        <code className="text-gray-400">/gc</code> still says expired, the bot process is not seeing the updated session
-        file.
+        Separate web/API and Telegram bot dynos do not share local disk — after Dashboard login succeeds, credentials are
+        written to Postgres so the bot can load Telethon auth without the web&apos;s ephemeral{' '}
+        <code className="text-gray-400">sessions/</code>. If upgrading from an older deployment, redeploy DB migrations
+        and sign in once here again, or POST <code className="text-gray-400">/api/gc/mtproto/sync-disk-session</code>{' '}
+        with JWT if this server already has an authorized{' '}
+        <code className="text-gray-400">.session</code>{' '}file under <code className="text-gray-400">sessions/</code>.
+        Set <code className="text-gray-400">GC_MTPROTO_DB_SESSIONS=false</code> to force file-only (single-host dev).
       </p>
     </div>
   )

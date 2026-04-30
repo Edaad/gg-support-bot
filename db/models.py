@@ -362,6 +362,20 @@ class BroadcastGroupMember(Base):
     broadcast_group = relationship("BroadcastGroup", back_populates="members")
 
 
+class MtProtoSessionCredential(Base):
+    """Portable Telethon StringSession payloads for MTProto (/gc); shared by web + worker."""
+
+    __tablename__ = "mtproto_session_credentials"
+
+    club_key = Column(String(64), primary_key=True)
+    telethon_auth_string = Column(Text, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class SupportGroupChat(Base):
     """Megagroups created via /gc MTProto automation (per-club sessions)."""
 

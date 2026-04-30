@@ -9,9 +9,11 @@ from pathlib import Path
 
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError, RPCError, SessionPasswordNeededError
+from telethon.sessions import StringSession
 from telethon.tl.functions.channels import CreateChannelRequest, InviteToChannelRequest
 
 from club_gc_settings import ClubGcConfig, get_tg_mtproto_credentials
+from bot.services.mtproto_session_db import load_session_string_for_club
 
 
 logger = logging.getLogger(__name__)
@@ -43,8 +45,18 @@ def normalize_invite_link(link: str | None) -> str | None:
     return s if s else None
 
 
-def make_client(cfg: ClubGcConfig) -> TelegramClient:
+def make_client(cfg: ClubGcConfig, *, prefer_database: bool = True) -> TelegramClient:
+    """Build a Telethon client.
+
+    ``prefer_database=False`` forces the on-disk SQLite ``.session`` file and is used **only**
+    for the Dashboard SMS/2FA handshake so a stale Postgres row cannot block ``SendCode``.
+    """
     api_id, api_hash = get_tg_mtproto_credentials()
+    if prefer_database:
+        db_string = load_session_string_for_club(cfg.club_key)
+        if db_string:
+            return TelegramClient(StringSession(db_string), api_id=api_id, api_hash=api_hash)
+
     resolved = resolve_repo_path(cfg.mtproto_session)
     if resolved.suffix == ".session":
         stem = resolved.with_suffix("")
@@ -90,7 +102,7 @@ async def send_code_for_phone(cfg: ClubGcConfig, phone: str) -> str:
     """
 
     async with get_mtproto_lock(cfg.club_key):
-        client = make_client(cfg)
+        client = make_client(cfg, prefer_database=False)
         await client.connect()
         try:
             try:
@@ -130,7 +142,7 @@ async def authenticate_mtproto_code(
     """Submit SMS code. Raises ``SessionPasswordNeededError`` when Telegram needs the Cloud Password."""
 
     async with get_mtproto_lock(cfg.club_key):
-        client = make_client(cfg)
+        client = make_client(cfg, prefer_database=False)
         await client.connect()
         try:
             # Single sign_in only — retrying can interact badly with Telegram login state.
@@ -157,7 +169,7 @@ async def authenticate_mtproto_password(cfg: ClubGcConfig, *, password: str) -> 
     """Finish interactive login using the account Cloud Password after ``SessionPasswordNeededError``."""
 
     async with get_mtproto_lock(cfg.club_key):
-        client = make_client(cfg)
+        client = make_client(cfg, prefer_database=False)
         await client.connect()
         try:
             try:
