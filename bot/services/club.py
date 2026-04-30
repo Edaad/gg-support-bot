@@ -685,8 +685,9 @@ def check_cashout_eligibility(
         return False, (
             f"It is currently outside active instant cashout hours ({hours_range} EST).\n\n"
             f"Please request a cashout at {open_time} EST {open_day} "
-            f"and we will get you cashed out instantly!\n\n"
-            f"Deposits and any other inquiries are open 24/7 so feel free "
+            f"and it will be sent instantly! Keep in mind, cashouts are only available "
+            f"after 24 hours have passed since your last deposit and cashout.\n\n"
+            f"Deposits and any other inquiries are open 24/7, so feel free "
             f"to reach out to our team about anything else!"
         )
 
