@@ -10,8 +10,8 @@ When an authorized club operator sends `/gc` in a **private chat** with the bot:
 
 - **Identifies club** by matching the sender’s Telegram user id against per-club config (`command_admin_user_id`).
 - **Loads the club’s MTProto session** (Telethon `*.session` file).
-- If the session is not authenticated, it runs an **interactive login flow** (SMS code + optional 2FA Cloud Password).
-- Creates a new **megagroup** titled per the club config.
+- If the session is **not authenticated**, `/gc` tells you it **expired or is missing**, and directs you to **Dashboard → Telegram login** to complete SMS / Telegram code + optional 2FA (no OTP in Telegram bot DMs anymore).
+- When the session is authorized, **`/gc` creates a new megagroup** titled per the club config (no interactive login in the bot).
 - Adds members best-effort:
   - configured `users_to_add` (usernames like `@name`, phone contacts if resolvable, etc.)
   - the **bot account** (if it can be resolved as a username)
@@ -54,7 +54,7 @@ Each entry includes:
 - `club_display_name`
 - `command_admin_user_id` (who may run `/gc` for this club)
 - `mtproto_session` (path to Telethon session file, typically under `sessions/`)
-- `mtproto_phone_number` (optional: if set, `/gc` can request the SMS code without asking for a phone)
+- `mtproto_phone_number` (optional: if set, Dashboard **Telegram login** does not ask for phone; `/gc` does not consume this for login anymore)
 - `group_title`
 - `group_photo_path` (optional)
 - `users_to_add`: default from [`config.py`](../config.py) **`GC_USERS_TO_INVITE`** tuples (e.g. `("@user1",)`); override with comma-separated env `GC_USERS_ROUND_TABLE`, `GC_USERS_CREATOR_CLUB`, or `GC_USERS_CLUB_GTO` when set
@@ -94,21 +94,25 @@ This repo ignores them via [`.gitignore`](../.gitignore):
 
 **Do not commit session files.**
 
-## MTProto login flow (interactive)
+## MTProto login (Dashboard)
 
-If the club’s `mtproto_session` is missing or not authorized:
+If the club’s Telethon session is missing or Telegram revokes authorization:
 
-1. Operator runs `/gc` in DM.
-2. Bot requests phone number *unless* `mtproto_phone_number` is configured for that club.
-3. Bot requests Telegram to send an SMS/Telegram login code.
-4. Operator replies with the code.
-5. If Telegram requires 2FA, bot prompts for the **Cloud Password**.
-6. Session is saved to disk and subsequent `/gc` runs skip login.
+1. Open the **GG Dashboard** (JWT login) → **Telegram login** (`/telegram-login` in dev).
+2. Pick the club, **Send login code**, then paste the OTP (and Cloud Password if 2FA is enabled).
+3. The API writes `*.session` on the filesystem where **`run_api`/the web process** runs (see deployment note below).
+4. After that, **`/gc` in Telegram** only runs megagroup creation.
 
-Operational notes:
+Protected HTTP API (JWT), implemented in [`api/routes/gc_mtproto.py`](../api/routes/gc_mtproto.py):
 
-- Login state is tracked **in memory** in `context.user_data` during the conversation.
-- If the bot restarts mid-flow, just run `/gc` again.
+- `GET /api/gc/mtproto/clubs`
+- `POST /api/gc/mtproto/send-code`
+- `POST /api/gc/mtproto/sign-in`
+- `POST /api/gc/mtproto/cloud-password`
+
+### Web vs bot workers (Heroku-style)
+
+Dashboard login runs on whichever dyno/process serves **`run_api`**; **`/gc` runs on the bot worker**. Regular Heroku disks are **not shared** between dynos. If login succeeds in the UI but **`/gc` still says expired**, the bot worker is not reading the updated `sessions/` files (persist sessions to attached storage both use, consolidate processes, run bot+API locally on one disk, etc.).
 
 ## Database persistence
 
@@ -132,7 +136,7 @@ DATABASE_URL=postgresql://... python migrate_support_group_chats.py
 - **FloodWait / rate limits**: the MTProto service will sleep + retry for short waits; long waits are surfaced cleanly.
 - **Heroku / ephemeral FS**: Telethon sessions will be lost after redeploy unless you persist them. If sessions disappear, `/gc` will require login again.
 
-- **`PhoneNumberInvalidError` / Telegram says invalid phone**: numbers must look like Telegram’s SMS login format (`+<country_code><subscriber>`, digits only after `+`, typically 8–15 national digits total). Typical mistakes: omitting country code (`555…` alone), pasted spaces/parentheses that leave too few digits, or a typo in **`MT_PROTO_PHONE_*`** on Heroku. Fix the Config Var (`+14155552671`–style), redeploy if needed, or remove it so the bot asks for the number in-chat.
+- **`PhoneNumberInvalidError` / Telegram says invalid phone**: same format (`+<country_code><subscriber>`). Typical mistakes: wrong **`MT_PROTO_PHONE_*`** on Heroku or pasting messy formats in Dashboard. Fix the Config Var (`+14155552671`–style), or omit it and submit the phone in **Telegram login**.
 
 - **`PhoneCodeExpiredError`**: Telegram ties each code to one **`phone_code_hash`**. It can look “instant” but still fail if anything triggered a **second** `SendCode` (another `/gc`, retry logic, or **two bot workers** polling the same token so two processes both request codes). **Heroku:** use **exactly one** `worker` dyno for the Telegram bot. Another common case: two SMS messages — only the **latest** matches the hash the bot saved. The app no longer auto-retries `SendCode` after `FloodWait` (that retry could issue a second code and invalidate the first).
 

@@ -391,3 +391,41 @@ class SimulateResponse(BaseModel):
     club_name: str
     direction: str
     methods: List[SimulateMethodOut]
+
+
+# ── `/gc` MTProto (Dashboard login for Telethon sessions) ──────────────────
+
+class GcMtProtoClubRead(BaseModel):
+    club_key: str
+    club_display_name: str
+    session_authorized: bool
+    phone_configured: bool
+
+
+class MtProtoSendCodeRequest(BaseModel):
+    club_key: str
+    phone: Optional[str] = None
+
+
+class MtProtoSignInRequest(BaseModel):
+    club_key: str
+    phone: str
+    code: str
+    phone_code_hash: str
+
+
+class MtProtoPasswordRequest(BaseModel):
+    club_key: str
+    password: str
+
+
+class MtProtoSignInResponse(BaseModel):
+    logged_in: bool
+    needs_password: bool = False
+
+
+class MtProtoSendCodeResponse(BaseModel):
+    ok: bool
+    message: str
+    phone_code_hash: str
+    phone_e164: str
