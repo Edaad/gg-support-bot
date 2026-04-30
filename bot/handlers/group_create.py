@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from telegram import Update
 from telegram.constants import ChatType
@@ -119,6 +120,13 @@ def _clear_gc_ud(context: ContextTypes.DEFAULT_TYPE) -> None:
     keys = [k for k in context.user_data if str(k).startswith("gc_")]
     for k in keys:
         context.user_data.pop(k, None)
+
+
+def _mark_gc_code_issued(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """After a successful ``SendCode``, so we can compare timing on ``PhoneCodeExpiredError``."""
+
+    context.user_data["gc_code_sent_mono"] = time.monotonic()
+    context.user_data["gc_code_sent_wall"] = time.time()
 
 
 def _club_from_context(context: ContextTypes.DEFAULT_TYPE) -> ClubGcConfig | None:
@@ -364,6 +372,7 @@ async def gc_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
         context.user_data["gc_phone"] = normalized
         context.user_data["gc_phone_code_hash"] = hsh
+        _mark_gc_code_issued(context)
         await update.message.reply_text("Paste the Telegram login code you received.")
         return GC_CODE_WAIT
 
@@ -409,6 +418,7 @@ async def gc_phone_received(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     context.user_data["gc_phone"] = phone
     context.user_data["gc_phone_code_hash"] = hsh
+    _mark_gc_code_issued(context)
 
     await msg.reply_text("Paste the Telegram login code you received.")
 
@@ -459,15 +469,45 @@ async def gc_code_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         return GC_PASSWORD_WAIT
 
-    except PhoneCodeExpiredError:
-        logger.info("MTProto sign-in: PhoneCodeExpired club=%s", cfg.club_key)
+    except PhoneCodeExpiredError as e:
+        t_send = context.user_data.get("gc_code_sent_mono")
+        t_wall = context.user_data.get("gc_code_sent_wall")
+        delay_s: float | None = None
+        if isinstance(t_send, (int, float)):
+            delay_s = max(0.0, time.monotonic() - float(t_send))
+        wall_skew_s: str | None = None
+        if isinstance(t_wall, (int, float)):
+            wall_skew_s = f"{max(0.0, time.time() - float(t_wall)):.1f}"
+
+        req = getattr(e, "request", None)
+        req_type = type(req).__name__ if req is not None else "unknown"
+        tel_msg = str(e).strip()
+
+        logger.warning(
+            "PhoneCodeExpired club=%s telegram=%r delay_since_send_s=%s wall_delta_s=%s "
+            "hash_len=%s code_len=%s request_type=%s",
+            cfg.club_key,
+            tel_msg,
+            f"{delay_s:.2f}" if delay_s is not None else None,
+            wall_skew_s,
+            len(hsh),
+            len(code),
+            req_type,
+        )
+
+        timing = (
+            f"From this bot: sign-in was ~{delay_s:.1f}s after SendCode completed for this chat."
+            if delay_s is not None
+            else "From this bot: could not measure delay (run /gc again for a clean attempt)."
+        )
+
         await msg.reply_text(
-            "Telegram says this login code is expired for the current request.\n\n"
-            "Even if you paste immediately, this often means:\n"
-            "— Telegram already issued a newer code (e.g. two /gc runs, or two SendCode requests).\n"
-            "— More than one bot worker is running; only one should poll Telegram.\n"
-            "— You used an older SMS; if you got two texts, only the latest matches the stored hash.\n\n"
-            "Fix: run /gc once, wait for a single new code, paste it. Scale Heroku bot worker to 1."
+            f"{tel_msg}\n\n{timing}\n\n"
+            "Telegram almost never returns a more specific reason than “expired” here. "
+            "If delay is tiny but it still fails, typical causes are a second SendCode (another "
+            "/gc or an old build that retried SendCode), or another process using the same MTProto "
+            "session. Check Heroku logs for the line starting with PhoneCodeExpired — it includes "
+            "delay, hash length, and request type (not your code)."
         )
         _clear_gc_ud(context)
         return ConversationHandler.END

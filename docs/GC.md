@@ -136,3 +136,5 @@ DATABASE_URL=postgresql://... python migrate_support_group_chats.py
 
 - **`PhoneCodeExpiredError`**: Telegram ties each code to one **`phone_code_hash`**. It can look “instant” but still fail if anything triggered a **second** `SendCode` (another `/gc`, retry logic, or **two bot workers** polling the same token so two processes both request codes). **Heroku:** use **exactly one** `worker` dyno for the Telegram bot. Another common case: two SMS messages — only the **latest** matches the hash the bot saved. The app no longer auto-retries `SendCode` after `FloodWait` (that retry could issue a second code and invalidate the first).
 
+  **More detail:** Telegram’s MTProto layer usually only returns the generic string *“The confirmation code has expired”* (often with *“(caused by SignInRequest)”*). There is typically **no extra machine-readable reason**. The bot logs a **`PhoneCodeExpired`** line with **seconds since SendCode**, **`phone_code_hash` length**, **code length**, and **request type** (never the code or hash value) so you can tell if the failure was immediate or not.
+
