@@ -7,10 +7,15 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from telethon import TelegramClient
+from telethon import TelegramClient, utils
 from telethon.errors import FloodWaitError, RPCError, SessionPasswordNeededError
 from telethon.sessions import StringSession
-from telethon.tl.functions.channels import CreateChannelRequest, InviteToChannelRequest
+from telethon.tl.functions.channels import (
+    CreateChannelRequest,
+    EditPhotoRequest,
+    InviteToChannelRequest,
+)
+from telethon.tl.types import InputChatUploadedPhoto
 
 from club_gc_settings import ClubGcConfig, get_tg_mtproto_credentials
 from bot.services.mtproto_session_db import load_session_string_for_club
@@ -314,19 +319,27 @@ async def create_support_megagroup(
             if isinstance(title_attr, str) and title_attr.strip():
                 title_out = title_attr.strip()
 
-            invite_targets = list(cfg.users_to_add)
+            raw_invites = list(cfg.users_to_add)
             if bot_label:
-                invite_targets.append(bot_label)
+                raw_invites.append(bot_label)
             else:
                 warnings_local.append(
                     "Skipping bot invite: bot has no username in Telegram and GC_BOT_ACCOUNT is unset."
                 )
 
-            for raw in invite_targets:
+            invite_seen: set[str] = set()
+            invite_targets: list[str] = []
+            for raw in raw_invites:
                 marker = raw.strip()
                 if not marker:
                     continue
+                norm = marker.lower().lstrip("@")
+                if norm in invite_seen:
+                    continue
+                invite_seen.add(norm)
+                invite_targets.append(marker)
 
+            for marker in invite_targets:
                 ok, err = await _invite_one(client, channel_ent, marker)
 
                 bn = bot_label or ""
@@ -346,18 +359,19 @@ async def create_support_megagroup(
                 photo_abs = resolve_repo_path(cfg.group_photo_path)
                 if photo_abs.exists():
                     try:
-                        edit_fn = getattr(client, "edit_photo", None)
-                        if callable(edit_fn):
 
-                            async def upload_edit():
-                                return await edit_fn(channel_ent, file=photo_abs.as_posix())
+                        async def upload_channel_photo():
+                            uploaded = await client.upload_file(photo_abs.as_posix())
+                            inp = utils.get_input_channel(channel_ent)
+                            await client(
+                                EditPhotoRequest(
+                                    inp,
+                                    InputChatUploadedPhoto(file=uploaded),
+                                )
+                            )
 
-                            await _with_single_flood_retry("edit_photo", upload_edit)
-                            photo_ok = True
-                        else:
-
-                            warnings_local.append("Telethon client has no edit_photo; skipped photo.")
-
+                        await _with_single_flood_retry("EditPhotoRequest", upload_channel_photo)
+                        photo_ok = True
                     except Exception as e:
 
                         warnings_local.append(f"group photo upload failed ({type(e).__name__})")
