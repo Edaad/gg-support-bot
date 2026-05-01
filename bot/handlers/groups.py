@@ -149,28 +149,56 @@ async def _maybe_send_member_join_intro(context: ContextTypes.DEFAULT_TYPE, chat
     now = time.monotonic()
     last = _join_intro_sent_at.get(chat_id)
     if last is not None and (now - last) < JOIN_INTRO_THROTTLE_S:
-
-
         return
     _join_intro_sent_at[chat_id] = now
 
     club = get_club_by_id(club_id)
     club_name = (club.name or "our club").strip() if club else "our club"
+
+    if club:
+        preamble = (club.member_join_preamble_text or "").strip()
+        if preamble:
+            try:
+                cz = 4096
+                for i in range(0, len(preamble), cz):
+                    await context.bot.send_message(chat_id=chat_id, text=preamble[i : i + cz])
+            except Exception as e:
+                logger.warning(
+                    "member_join_intro: preamble send failed chat_id=%s: %s",
+                    chat_id,
+                    e,
+                )
+
+
+        tos_doc = (club.member_join_tos_file_id or "").strip()
+        if tos_doc:
+            cap_raw = (club.member_join_tos_caption or "").strip()
+            try:
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=tos_doc,
+                    caption=cap_raw or None,
+                )
+            except Exception as e:
+                logger.warning(
+                    "member_join_intro: TOS document send failed chat_id=%s: %s",
+                    chat_id,
+                    e,
+                )
+
+
     text = MEMBER_JOIN_INTRO_TEMPLATE.format(club_name=club_name)
-
-
     try:
         await context.bot.send_message(chat_id=chat_id, text=text)
-
-
     except Exception as e:
-
-
-        logger.warning("member_join_intro: send_message failed chat_id=%s: %s", chat_id, e)
+        logger.warning(
+            "member_join_intro: main intro send_message failed chat_id=%s: %s",
+            chat_id,
+            e,
+        )
 
 
 async def on_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-
 
     chat = update.effective_chat
     msg = update.message

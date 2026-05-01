@@ -26,6 +26,9 @@ class ClubCreate(BaseModel):
     welcome_text: Optional[str] = None
     welcome_file_id: Optional[str] = None
     welcome_caption: Optional[str] = None
+    member_join_preamble_text: Optional[str] = None
+    member_join_tos_file_id: Optional[str] = None
+    member_join_tos_caption: Optional[str] = None
     list_type: str = "text"
     list_text: Optional[str] = None
     list_file_id: Optional[str] = None
@@ -63,6 +66,9 @@ class ClubUpdate(BaseModel):
     welcome_text: Optional[str] = None
     welcome_file_id: Optional[str] = None
     welcome_caption: Optional[str] = None
+    member_join_preamble_text: Optional[str] = None
+    member_join_tos_file_id: Optional[str] = None
+    member_join_tos_caption: Optional[str] = None
     list_type: Optional[str] = None
     list_text: Optional[str] = None
     list_file_id: Optional[str] = None
@@ -103,6 +109,9 @@ class ClubRead(BaseModel):
     welcome_text: Optional[str]
     welcome_file_id: Optional[str]
     welcome_caption: Optional[str]
+    member_join_preamble_text: Optional[str]
+    member_join_tos_file_id: Optional[str]
+    member_join_tos_caption: Optional[str]
     list_type: Optional[str]
     list_text: Optional[str]
     list_file_id: Optional[str]

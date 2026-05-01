@@ -196,6 +196,9 @@ export interface Club {
   welcome_text: string | null
   welcome_file_id: string | null
   welcome_caption: string | null
+  member_join_preamble_text: string | null
+  member_join_tos_file_id: string | null
+  member_join_tos_caption: string | null
   list_type: string | null
   list_text: string | null
   list_file_id: string | null
