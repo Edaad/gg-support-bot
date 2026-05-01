@@ -29,19 +29,11 @@ logger = logging.getLogger(__name__)
 # bot process lifetime (avoids calling get_chat_administrators on every message).
 _auto_link_attempted: set[int] = set()
 
-# Shown whenever a human joins a group already linked to a club (not the bot-added welcome).
-MEMBER_JOIN_INTRO_TEMPLATE = (
-    "👋 Hey, glad to have you at {club_name}!\n\n"
-    "Please use your group chat for all club inquiries. "
-    "We will only ever respond there.\n\n"
-    "Please USE THE FOLLOWING COMMANDS on this groupchat to request deposits and cashouts:"
-)
-
 # Supergroups often emit ``chat_member`` instead of ``new_chat_members``; throttle avoids double texts.
 JOIN_INTRO_THROTTLE_S = 2.0
 _join_intro_sent_at: dict[int, float] = {}
 
-# Avoid sending preamble + PDF + 👋 twice when bot-add and player join handlers fire seconds apart.
+# Avoid sending preamble + PDF bundle twice when bot-add and player join handlers fire seconds apart.
 MEMBER_JOIN_BUNDLE_COOLDOWN_S = 25.0
 _member_join_bundle_until: dict[int, float] = {}
 
@@ -139,7 +131,6 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
         except Exception:
             pass
 
-    await _send_member_join_intro_template(chat_id, club_id, context.bot)
     _mark_member_join_bundle_cooldown(chat_id)
     _join_intro_sent_at[chat_id] = time.monotonic()
 
@@ -184,7 +175,7 @@ def _mark_member_join_bundle_cooldown(chat_id: int) -> None:
 
 
 async def _send_member_join_preamble_and_pdf(chat_id: int, club_id: int, bot) -> None:
-    """Dashboard member join copy + TOS file (sent before Welcome and before 👋 intro line)."""
+    """Dashboard member join copy + TOS file (typically before Dashboard Welcome on bot add)."""
 
     club = get_club_by_id(club_id)
 
@@ -219,32 +210,15 @@ async def _send_member_join_preamble_and_pdf(chat_id: int, club_id: int, bot) ->
                 )
 
 
-async def _send_member_join_intro_template(chat_id: int, club_id: int, bot) -> None:
-    """👋 standardized intro (sent after preamble/PDF/welcome/player-id messages on bot-added groups)."""
-
-    club = get_club_by_id(club_id)
-    club_name = (club.name or "our club").strip() if club else "our club"
-    text = MEMBER_JOIN_INTRO_TEMPLATE.format(club_name=club_name)
-    try:
-        await bot.send_message(chat_id=chat_id, text=text)
-    except Exception as e:
-        logger.warning(
-            "member_join_intro: main intro send_message failed chat_id=%s: %s",
-            chat_id,
-            e,
-        )
-
-
 async def _deliver_member_join_intro_messages(chat_id: int, club_id: int, bot) -> None:
-    """When a player joins only: preamble → TOS → 👋 (no Dashboard welcome — that is bot-add only)."""
+    """When a player joins only: preamble → TOS — no canned bot intro block (Dashboard welcome is bot-add only)."""
 
     await _send_member_join_preamble_and_pdf(chat_id, club_id, bot)
-    await _send_member_join_intro_template(chat_id, club_id, bot)
     _mark_member_join_bundle_cooldown(chat_id)
 
 
 async def send_post_gc_intro_bundle(bot, chat_id: int, club_id: int, chat_title: str | None) -> None:
-    """After MTProto ``/gc``: preamble+PDF → welcome → player-id hint → 👋 template."""
+    """After MTProto ``/gc``: preamble+PDF → welcome → player-id hint."""
 
     _mark_post_gc_bundle_window(chat_id)
 
@@ -281,7 +255,6 @@ async def send_post_gc_intro_bundle(bot, chat_id: int, club_id: int, chat_title:
     except Exception:
         pass
 
-    await _send_member_join_intro_template(chat_id, club_id, bot)
     _mark_member_join_bundle_cooldown(chat_id)
     _join_intro_sent_at[chat_id] = time.monotonic()
 

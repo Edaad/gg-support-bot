@@ -515,10 +515,11 @@ function GeneralTab({
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
         <h3 className="mb-4 font-semibold">Member join (players)</h3>
         <p className="mb-3 text-xs text-gray-500">
-          Saving only updates the club record—the bot does not send anything until the next player join event (invite a
-          new account or leave and return to trigger it). Sent automatically when someone joins any{' '}
-          <strong className="text-gray-400">linked</strong> Telegram group for this club, before the standard “Glad to
-          have you…” reminder. Configure per club below.
+          Saving stores settings only—the bot sends on the next qualifying event (player join, leave/rejoin, or when GG
+          Support is added). For a{' '}
+          <strong className="text-gray-400">linked</strong> group: optional preamble → optional Terms PDF; if the bot
+          was added, Dashboard <strong className="text-gray-400">Welcome message</strong> follows that bundle. Put
+          deposits/cashouts copy in preamble or Welcome as you prefer.
           For the Terms PDF: send the file once to your support bot (in private), copy the Telegram{' '}
           <code className="text-gray-400">document</code> file_id, and paste it here.
         </p>
