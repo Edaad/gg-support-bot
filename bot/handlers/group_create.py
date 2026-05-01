@@ -9,6 +9,8 @@ from telegram.constants import ChatType
 from telegram.ext import CommandHandler, ContextTypes, filters
 
 from club_gc_settings import ClubGcConfig, get_club_config_for_admin, get_tg_mtproto_credentials
+from bot.handlers.groups import send_post_gc_intro_bundle
+from bot.services.club import ensure_group_chat_linked
 from bot.services.mtproto_group_create import MtProtoGroupOutcome, create_support_megagroup, is_client_authorized
 from bot.services.support_group_chats import persist_support_group_chat_row
 
@@ -160,6 +162,32 @@ async def gc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         pk, persist_err = _persist_row(cfg, outcome, commander_id=commander)
+
+        cid = outcome.telegram_chat_id
+        dash_club_id = cfg.link_club_id
+        if cid is not None:
+            linked = ensure_group_chat_linked(cid, dash_club_id, outcome.telegram_chat_title)
+            if not linked:
+                logger.warning(
+                    "/gc ensure_group_chat_linked failed chat_id=%s dashboard_club_id=%s (inactive club or bad id)",
+                    cid,
+                    dash_club_id,
+                )
+            elif context.bot:
+                try:
+
+                    await send_post_gc_intro_bundle(
+                        context.bot,
+                        cid,
+                        dash_club_id,
+                        outcome.telegram_chat_title,
+                    )
+
+
+                except Exception as e:
+
+
+                    logger.exception("post-/gc dashboard intro bundle failed chat_id=%s: %s", cid, type(e).__name__)
 
         await update.message.reply_text(
             _compose_status_text(cfg, outcome, pk, persist_err),

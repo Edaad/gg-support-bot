@@ -28,6 +28,23 @@ def _env_str(key: str, default: str) -> str:
     return v.strip()
 
 
+def _env_optional_int(key: str) -> int | None:
+    raw = os.getenv(key)
+    if raw is None or not str(raw).strip():
+        return None
+    try:
+        return int(str(raw).strip())
+    except ValueError:
+        return None
+
+
+def _link_club_id_for_gc(env_key: str, *, default_dashboard_id: int) -> int:
+    """Production defaults for ``clubs.id`` per `/gc` profile; env overrides."""
+
+    parsed = _env_optional_int(env_key)
+    return default_dashboard_id if parsed is None else parsed
+
+
 def _invite_list(env_var: str, club_key: str) -> tuple[str, ...]:
     """Env GC_USERS_* overrides config.GC_USERS_TO_INVITE when non-empty."""
 
@@ -69,6 +86,8 @@ class ClubGcConfig:
     users_to_add: tuple[str, ...]
     bot_account: str | None
     initial_group_message_template: str
+    # Dashboard clubs.id — link megagroups from /gc so the bot sends welcome + member-join bundle.
+    link_club_id: int
 
 
 def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
@@ -93,6 +112,7 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
                 "GC_INITIAL_MSG_ROUND_TABLE",
                 "Group created. Invite link: {invite_link}",
             ),
+            link_club_id=_link_club_id_for_gc("GC_LINK_CLUB_ID_ROUND_TABLE", default_dashboard_id=2),
         ),
         "creator_club": ClubGcConfig(
             club_key="creator_club",
@@ -112,6 +132,7 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
                 "GC_INITIAL_MSG_CREATOR_CLUB",
                 "Group created. Invite link: {invite_link}",
             ),
+            link_club_id=_link_club_id_for_gc("GC_LINK_CLUB_ID_CREATOR_CLUB", default_dashboard_id=3),
         ),
         "clubgto": ClubGcConfig(
             club_key="clubgto",
@@ -129,6 +150,7 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
                 "GC_INITIAL_MSG_CLUB_GTO",
                 "Group created. Invite link: {invite_link}",
             ),
+            link_club_id=_link_club_id_for_gc("GC_LINK_CLUB_ID_CLUB_GTO", default_dashboard_id=4),
         ),
     }
 

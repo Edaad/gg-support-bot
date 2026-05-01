@@ -393,26 +393,29 @@ async def create_support_megagroup(
                     {"user": "__invite_link__", "reason": repr(e)[1:200], "kind": "invite"}
                 )
 
-            if invite_link:
-                tmpl = cfg.initial_group_message_template
-                inner = tmpl.format(invite_link=invite_link, group_title=title_out)
-                try:
-                    await _with_single_flood_retry(
-                        "send_message(inner)",
-                        lambda: client.send_message(channel_ent, inner),
-                    )
-                    initial_sent = True
+            tmpl = cfg.initial_group_message_template
+            link_for_tpl = (
+                invite_link.strip()
+                if (invite_link and invite_link.strip())
+                else "(invite link unavailable)"
+            )
+            inner = tmpl.format(invite_link=link_for_tpl, group_title=title_out)
+            try:
+                await _with_single_flood_retry(
+                    "send_message(inner)",
+                    lambda: client.send_message(channel_ent, inner),
+                )
+                initial_sent = True
+            except Exception as e:
 
-                except Exception as e:
-
-                    warnings_local.append(f"failed to send inner message ({type(e).__name__})")
-                    failed_ok.append(
-                        {
-                            "user": "__inner_message__",
-                            "reason": repr(e)[1:200],
-                            "kind": "message",
-                        }
-                    )
+                warnings_local.append(f"failed to send inner message ({type(e).__name__})")
+                failed_ok.append(
+                    {
+                        "user": "__inner_message__",
+                        "reason": repr(e)[1:200],
+                        "kind": "message",
+                    }
+                )
 
             mega_ok_out = chat_id_big is not None
             ghint = None

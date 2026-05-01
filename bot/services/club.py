@@ -95,6 +95,31 @@ def set_group_club(chat_id: int, telegram_user_id: int, chat_title: Optional[str
         return club_id
 
 
+def ensure_group_chat_linked(
+    chat_id: int,
+    club_id: int,
+    chat_title: Optional[str] = None,
+) -> bool:
+    """Force-link chat_id to dashboard club_id (ignores who added the bot).
+
+    Used after MTProto ``/gc`` when the inviting user account may not match
+    ``Club.telegram_user_id`` / linked accounts, so ``set_group_club`` would not link.
+    Returns False if club_id is missing or inactive.
+    """
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club or not club.is_active:
+            return False
+        existing = session.query(Group).filter_by(chat_id=chat_id).first()
+        if existing:
+            existing.club_id = club_id
+            if chat_title:
+                existing.name = chat_title
+        else:
+            session.add(Group(chat_id=chat_id, club_id=club_id, name=chat_title))
+        return True
+
+
 def get_methods_for_amount(
     club_id: int, direction: str, amount: Optional[Decimal] = None
 ) -> List[dict]:
