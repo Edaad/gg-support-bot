@@ -102,6 +102,8 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
         )
         return
 
+    await _send_member_join_preamble_and_pdf(chat_id, club_id, context.bot)
+
     welcome = get_club_welcome(club_id)
     if welcome:
         try:
@@ -137,7 +139,8 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
         except Exception:
             pass
 
-    await _deliver_member_join_intro_messages(chat_id, club_id, context.bot)
+    await _send_member_join_intro_template(chat_id, club_id, context.bot)
+    _mark_member_join_bundle_cooldown(chat_id)
     _join_intro_sent_at[chat_id] = time.monotonic()
 
 
@@ -176,11 +179,14 @@ async def auto_link_group(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.debug("auto_link_group: no matching club owner found among admins of %s", chat_id)
 
 
-async def _deliver_member_join_intro_messages(chat_id: int, club_id: int, bot) -> None:
-    """Preamble → TOS PDF → 👋 standardized intro (order fixed; Dashboard welcome stays separate earlier)."""
+def _mark_member_join_bundle_cooldown(chat_id: int) -> None:
+    _member_join_bundle_until[chat_id] = time.monotonic() + MEMBER_JOIN_BUNDLE_COOLDOWN_S
+
+
+async def _send_member_join_preamble_and_pdf(chat_id: int, club_id: int, bot) -> None:
+    """Dashboard member join copy + TOS file (sent before Welcome and before 👋 intro line)."""
 
     club = get_club_by_id(club_id)
-    club_name = (club.name or "our club").strip() if club else "our club"
 
     if club:
         preamble = (club.member_join_preamble_text or "").strip()
@@ -212,6 +218,12 @@ async def _deliver_member_join_intro_messages(chat_id: int, club_id: int, bot) -
                     e,
                 )
 
+
+async def _send_member_join_intro_template(chat_id: int, club_id: int, bot) -> None:
+    """👋 standardized intro (sent after preamble/PDF/welcome/player-id messages on bot-added groups)."""
+
+    club = get_club_by_id(club_id)
+    club_name = (club.name or "our club").strip() if club else "our club"
     text = MEMBER_JOIN_INTRO_TEMPLATE.format(club_name=club_name)
     try:
         await bot.send_message(chat_id=chat_id, text=text)
@@ -222,13 +234,21 @@ async def _deliver_member_join_intro_messages(chat_id: int, club_id: int, bot) -
             e,
         )
 
-    _member_join_bundle_until[chat_id] = time.monotonic() + MEMBER_JOIN_BUNDLE_COOLDOWN_S
+
+async def _deliver_member_join_intro_messages(chat_id: int, club_id: int, bot) -> None:
+    """When a player joins only: preamble → TOS → 👋 (no Dashboard welcome — that is bot-add only)."""
+
+    await _send_member_join_preamble_and_pdf(chat_id, club_id, bot)
+    await _send_member_join_intro_template(chat_id, club_id, bot)
+    _mark_member_join_bundle_cooldown(chat_id)
 
 
 async def send_post_gc_intro_bundle(bot, chat_id: int, club_id: int, chat_title: str | None) -> None:
-    """After MTProto ``/gc``: welcome, player-detail hint if title matches, member-join bundle."""
+    """After MTProto ``/gc``: preamble+PDF → welcome → player-id hint → 👋 template."""
 
     _mark_post_gc_bundle_window(chat_id)
+
+    await _send_member_join_preamble_and_pdf(chat_id, club_id, bot)
 
     welcome = get_club_welcome(club_id)
     if welcome:
@@ -261,7 +281,8 @@ async def send_post_gc_intro_bundle(bot, chat_id: int, club_id: int, chat_title:
     except Exception:
         pass
 
-    await _deliver_member_join_intro_messages(chat_id, club_id, bot)
+    await _send_member_join_intro_template(chat_id, club_id, bot)
+    _mark_member_join_bundle_cooldown(chat_id)
     _join_intro_sent_at[chat_id] = time.monotonic()
 
 
