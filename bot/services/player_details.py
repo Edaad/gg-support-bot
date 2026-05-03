@@ -92,15 +92,22 @@ def check_same_club_player_conflict(
     others = [c for c in existing if int(c) != int(chat_id)]
     if not others:
         return None
+    conflict_prefix = "Oops! Seems like the player with PLAYER ID:"
     if len(others) == 1:
         return (
-            f"Conflict: player id {gg_player_id} is already being tracked by another group "
-            f"for this club (chat_id {others[0]})."
+            f"{conflict_prefix} {gg_player_id} already has another group chat for this club."
         )
     return (
-        f"Conflict: player id {gg_player_id} is already being tracked by other groups "
-        f"for this club ({len(others)} group chats)."
+        f"{conflict_prefix} {gg_player_id} already has other group chats "
+        f"for this club ({len(others)} linked chats)."
     )
+
+
+def is_same_club_player_conflict_message(msg: Optional[str]) -> bool:
+    """True if error text was produced by check_same_club_player_conflict (for handler routing)."""
+    if not msg:
+        return False
+    return msg.startswith("Oops! Seems like the player with PLAYER ID:")
 
 
 def bind_chat_from_title(*, chat_id: int, title: str | None) -> BindResult:

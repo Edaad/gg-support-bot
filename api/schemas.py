@@ -26,6 +26,9 @@ class ClubCreate(BaseModel):
     welcome_text: Optional[str] = None
     welcome_file_id: Optional[str] = None
     welcome_caption: Optional[str] = None
+    member_join_preamble_text: Optional[str] = None
+    member_join_tos_file_id: Optional[str] = None
+    member_join_tos_caption: Optional[str] = None
     list_type: str = "text"
     list_text: Optional[str] = None
     list_file_id: Optional[str] = None
@@ -63,6 +66,9 @@ class ClubUpdate(BaseModel):
     welcome_text: Optional[str] = None
     welcome_file_id: Optional[str] = None
     welcome_caption: Optional[str] = None
+    member_join_preamble_text: Optional[str] = None
+    member_join_tos_file_id: Optional[str] = None
+    member_join_tos_caption: Optional[str] = None
     list_type: Optional[str] = None
     list_text: Optional[str] = None
     list_file_id: Optional[str] = None
@@ -103,6 +109,9 @@ class ClubRead(BaseModel):
     welcome_text: Optional[str]
     welcome_file_id: Optional[str]
     welcome_caption: Optional[str]
+    member_join_preamble_text: Optional[str]
+    member_join_tos_file_id: Optional[str]
+    member_join_tos_caption: Optional[str]
     list_type: Optional[str]
     list_text: Optional[str]
     list_file_id: Optional[str]
@@ -391,3 +400,50 @@ class SimulateResponse(BaseModel):
     club_name: str
     direction: str
     methods: List[SimulateMethodOut]
+
+
+# ── `/gc` MTProto (Dashboard login for Telethon sessions) ──────────────────
+
+class GcMtProtoClubRead(BaseModel):
+    club_key: str
+    club_display_name: str
+    session_authorized: bool
+    phone_configured: bool
+
+
+class MtProtoSendCodeRequest(BaseModel):
+    club_key: str
+    phone: Optional[str] = None
+
+
+class MtProtoSignInRequest(BaseModel):
+    club_key: str
+    phone: str
+    code: str
+    phone_code_hash: str
+
+
+class MtProtoPasswordRequest(BaseModel):
+    club_key: str
+    password: str
+
+
+class MtProtoSignInResponse(BaseModel):
+    logged_in: bool
+    needs_password: bool = False
+
+
+class MtProtoSendCodeResponse(BaseModel):
+    ok: bool
+    message: str
+    phone_code_hash: str
+    phone_e164: str
+
+
+class MtProtoClubKeyBody(BaseModel):
+    club_key: str
+
+
+class MtProtoSyncDiskResponse(BaseModel):
+    ok: bool
+    message: str

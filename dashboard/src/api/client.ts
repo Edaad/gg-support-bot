@@ -13,8 +13,14 @@ async function request<T>(path: string, opts: RequestInit = {}, token?: string):
   }
   if (res.status === 204) return undefined as unknown as T
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || `HTTP ${res.status}`)
+    const body = await res.json().catch(() => ({})) as { detail?: unknown }
+    let msg: string | undefined
+    const d = body.detail
+    if (typeof d === 'string') msg = d
+    else if (Array.isArray(d))
+      msg = d.map((x) => (typeof x === 'object' && x != null && 'msg' in x ? String((x as { msg: unknown }).msg) : String(x))).join('; ')
+    else if (d != null) msg = String(d)
+    throw new Error(msg || `HTTP ${res.status}`)
   }
   return res.json()
 }
@@ -144,6 +150,42 @@ export const sendWeeklyPlayerMessage = (
 ) =>
   request<{ ok: boolean }>(`/weekly-stats/message`, { method: 'POST', body: JSON.stringify(body) }, token)
 
+// `/gc` MTProto sessions (JWT; server must have TG_API_ID / TG_API_HASH)
+
+export interface GcMtProtoClub {
+  club_key: string
+  club_display_name: string
+  session_authorized: boolean
+  phone_configured: boolean
+}
+
+export const gcMtprotoListClubs = (token: string) =>
+  request<GcMtProtoClub[]>('/gc/mtproto/clubs', {}, token)
+
+export const gcMtprotoSendCode = (token: string, body: { club_key: string; phone?: string }) =>
+  request<{ ok: boolean; message: string; phone_code_hash: string; phone_e164: string }>(
+    '/gc/mtproto/send-code',
+    { method: 'POST', body: JSON.stringify(body) },
+    token,
+  )
+
+export const gcMtprotoSignIn = (
+  token: string,
+  body: { club_key: string; phone: string; code: string; phone_code_hash: string },
+) =>
+  request<{ logged_in: boolean; needs_password: boolean }>(
+    '/gc/mtproto/sign-in',
+    { method: 'POST', body: JSON.stringify(body) },
+    token,
+  )
+
+export const gcMtprotoCloudPassword = (token: string, body: { club_key: string; password: string }) =>
+  request<{ logged_in: boolean; needs_password: boolean }>(
+    '/gc/mtproto/cloud-password',
+    { method: 'POST', body: JSON.stringify(body) },
+    token,
+  )
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface Club {
@@ -154,6 +196,9 @@ export interface Club {
   welcome_text: string | null
   welcome_file_id: string | null
   welcome_caption: string | null
+  member_join_preamble_text: string | null
+  member_join_tos_file_id: string | null
+  member_join_tos_caption: string | null
   list_type: string | null
   list_text: string | null
   list_file_id: string | null

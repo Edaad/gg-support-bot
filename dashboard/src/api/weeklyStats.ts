@@ -124,6 +124,41 @@ async function weeklyFetch<T>(path: string): Promise<T> {
   return res.json()
 }
 
+async function weeklyPost<T>(path: string, body: object = {}): Promise<T> {
+  const base = getWeeklyStatsBase()
+  const url = `${base}${path.startsWith('/') ? path : `/${path}`}`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const parsed = await res.json().catch(() => ({}))
+    const detail = (parsed as { error?: string; message?: string }).error
+      || (parsed as { message?: string }).message
+    throw new Error(detail || `Weekly API HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+/** Response from gg-computer `POST /process-week/sync` (fields may vary by version). */
+export type ProcessWeekSyncResponse = {
+  scanned?: { playerCount?: number } | number
+  skippedAlreadyPresent?: { playerCount?: number } | number
+  processed?: { playerCount?: number } | number
+  skippedNoWeekData?: number
+  errors?: unknown
+}
+
+/**
+ * Run gg-computer batch processing for weeks missing `weekly_profits` rows.
+ * @param clubId - Optional club slug; omit to scan all clubs.
+ */
+export async function processWeekSync(clubId?: string): Promise<ProcessWeekSyncResponse> {
+  const body = clubId ? { clubId } : {}
+  return weeklyPost<ProcessWeekSyncResponse>('/process-week/sync', body)
+}
+
 export async function getProcessedWeeks(clubSlug: string): Promise<ProcessedWeekSummary[]> {
   const q = new URLSearchParams({ clubId: clubSlug })
   return weeklyFetch<ProcessedWeekSummary[]>(`/processed-weeks?${q.toString()}`)

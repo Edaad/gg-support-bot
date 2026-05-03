@@ -513,6 +513,49 @@ function GeneralTab({
       </div>
 
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
+        <h3 className="mb-4 font-semibold">Member join (players)</h3>
+        <p className="mb-3 text-xs text-gray-500">
+          Saving stores settings only—the bot sends on the next qualifying event (player join, leave/rejoin, or when GG
+          Support is added). For a{' '}
+          <strong className="text-gray-400">linked</strong> group: optional preamble → optional Terms PDF; if the bot
+          was added, Dashboard <strong className="text-gray-400">Welcome message</strong> follows that bundle. Put
+          deposits/cashouts copy in preamble or Welcome as you prefer.
+          For the Terms PDF: send the file once to your support bot (in private), copy the Telegram{' '}
+          <code className="text-gray-400">document</code> file_id, and paste it here.
+        </p>
+        <div className="mb-4">
+          <label className="mb-1 block text-xs font-medium text-gray-400">Preamble text (optional)</label>
+          <textarea
+            value={form.member_join_preamble_text || ''}
+            onChange={(e) => setField('member_join_preamble_text', e.target.value)}
+            rows={6}
+            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+            placeholder="Club-specific intro shown first (e.g. rules summary)…"
+          />
+        </div>
+        <div className="mb-4">
+          <label className="mb-1 block text-xs font-medium text-gray-400">Terms of Service PDF — Telegram file ID</label>
+          <textarea
+            value={form.member_join_tos_file_id || ''}
+            onChange={(e) => setField('member_join_tos_file_id', e.target.value)}
+            rows={2}
+            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+            placeholder="e.g. BQACAgIAAxkB..."
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-400">PDF caption (optional)</label>
+          <textarea
+            value={form.member_join_tos_caption || ''}
+            onChange={(e) => setField('member_join_tos_caption', e.target.value)}
+            rows={2}
+            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+            placeholder="Shown under the document in Telegram (optional)"
+          />
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
         <h3 className="mb-4 font-semibold">List Content</h3>
         <p className="mb-3 text-xs text-gray-500">Shown when someone uses /list in the group.</p>
         <ResponseEditor

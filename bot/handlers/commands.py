@@ -28,6 +28,7 @@ CMD_NAME_RE = re.compile(r"^[A-Za-z0-9_]{1,32}$")
 RESERVED_CMDS = {
     "start", "help", "whoami", "set", "cancel", "delete",
     "mycmds", "deposit", "cashout", "list", "botwelcome",
+    "gc",
 }
 
 SET_NAME, SET_MESSAGE = range(2)

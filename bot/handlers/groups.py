@@ -6,24 +6,58 @@ the group automatically.
 """
 
 import logging
+import time
 
 from telegram import Update
+from telegram.constants import ChatMemberStatus as CMS
 from telegram.ext import ContextTypes
 
 from bot.services.club import (
     set_group_club,
     get_club_welcome,
+    get_club_for_chat,
+    get_club_by_id,
     is_group_linked,
     try_link_group_by_admin,
     update_group_name,
 )
-from bot.services.player_details import bind_chat_from_title
+from bot.services.player_details import bind_chat_from_title, is_same_club_player_conflict_message
 
 logger = logging.getLogger(__name__)
 
 # Keep a small in-memory set so we only attempt auto-link once per chat per
 # bot process lifetime (avoids calling get_chat_administrators on every message).
 _auto_link_attempted: set[int] = set()
+
+# Supergroups often emit ``chat_member`` instead of ``new_chat_members``; throttle avoids double texts.
+JOIN_INTRO_THROTTLE_S = 2.0
+_join_intro_sent_at: dict[int, float] = {}
+
+# Avoid sending preamble + PDF bundle twice when bot-add and player join handlers fire seconds apart.
+MEMBER_JOIN_BUNDLE_COOLDOWN_S = 25.0
+_member_join_bundle_until: dict[int, float] = {}
+
+# After `/gc`, we send welcome + member-join bundle from the Bot API — suppress duplicates from
+# near-simaneous ``my_chat_member`` join events within this window (seconds since monotonic()).
+_POST_GC_REDUNDANT_WINDOW_S = 45.0
+_post_gc_recent_until: dict[int, float] = {}
+
+
+def _suppress_post_gc_redundant_recently(chat_id: int) -> bool:
+    until = _post_gc_recent_until.get(chat_id)
+    if until is None:
+        return False
+    now = time.monotonic()
+    if now >= until:
+        _post_gc_recent_until.pop(chat_id, None)
+        return False
+    return True
+
+
+def _mark_post_gc_bundle_window(chat_id: int) -> None:
+    """Call before awaited sends so parallel ``my_chat_member`` skips duplicate welcome."""
+
+    _post_gc_recent_until[chat_id] = time.monotonic() + _POST_GC_REDUNDANT_WINDOW_S
 
 
 def _bot_was_added(update: Update) -> bool:
@@ -52,6 +86,16 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
         print(f"User {adder_uid} added bot to group {chat_id} but has no club")
         return
 
+    if _suppress_post_gc_redundant_recently(chat_id):
+        logger.info(
+            "Skipping welcome (recent /gc post-bundle suppression) chat_id=%s club_id=%s",
+            chat_id,
+            club_id,
+        )
+        return
+
+    await _send_member_join_preamble_and_pdf(chat_id, club_id, context.bot)
+
     welcome = get_club_welcome(club_id)
     if welcome:
         try:
@@ -77,12 +121,18 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
             if res.ok and res.gg_player_id:
                 await context.bot.send_message(
                     chat_id=chat_id,
-                    text=f"Successfully tracking player id: {res.gg_player_id}",
+                    text=(
+                        "Thank you for playing at our club!!\n"
+                        f"\nPlayer ID: {res.gg_player_id}"
+                    ),
                 )
-            elif res.error and res.error.startswith("Conflict:"):
+            elif res.error and is_same_club_player_conflict_message(res.error):
                 await context.bot.send_message(chat_id=chat_id, text=res.error)
         except Exception:
             pass
+
+    _mark_member_join_bundle_cooldown(chat_id)
+    _join_intro_sent_at[chat_id] = time.monotonic()
 
 
 async def auto_link_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -118,3 +168,163 @@ async def auto_link_group(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.info("auto_link_group: linked chat %s to club %s", chat_id, club_id)
     else:
         logger.debug("auto_link_group: no matching club owner found among admins of %s", chat_id)
+
+
+def _mark_member_join_bundle_cooldown(chat_id: int) -> None:
+    _member_join_bundle_until[chat_id] = time.monotonic() + MEMBER_JOIN_BUNDLE_COOLDOWN_S
+
+
+async def _send_member_join_preamble_and_pdf(chat_id: int, club_id: int, bot) -> None:
+    """Dashboard member join copy + TOS file (typically before Dashboard Welcome on bot add)."""
+
+    club = get_club_by_id(club_id)
+
+    if club:
+        preamble = (club.member_join_preamble_text or "").strip()
+        if preamble:
+            try:
+                cz = 4096
+                for i in range(0, len(preamble), cz):
+                    await bot.send_message(chat_id=chat_id, text=preamble[i : i + cz])
+            except Exception as e:
+                logger.warning(
+                    "member_join_intro: preamble send failed chat_id=%s: %s",
+                    chat_id,
+                    e,
+                )
+
+        tos_doc = (club.member_join_tos_file_id or "").strip()
+        if tos_doc:
+            cap_raw = (club.member_join_tos_caption or "").strip()
+            try:
+                await bot.send_document(
+                    chat_id=chat_id,
+                    document=tos_doc,
+                    caption=cap_raw or None,
+                )
+            except Exception as e:
+                logger.warning(
+                    "member_join_intro: TOS document send failed chat_id=%s: %s",
+                    chat_id,
+                    e,
+                )
+
+
+async def _deliver_member_join_intro_messages(chat_id: int, club_id: int, bot) -> None:
+    """When a player joins only: preamble → TOS — no canned bot intro block (Dashboard welcome is bot-add only)."""
+
+    await _send_member_join_preamble_and_pdf(chat_id, club_id, bot)
+    _mark_member_join_bundle_cooldown(chat_id)
+
+
+async def send_post_gc_intro_bundle(bot, chat_id: int, club_id: int, chat_title: str | None) -> None:
+    """After MTProto ``/gc``: preamble+PDF → welcome → player-id hint."""
+
+    _mark_post_gc_bundle_window(chat_id)
+
+    await _send_member_join_preamble_and_pdf(chat_id, club_id, bot)
+
+    welcome = get_club_welcome(club_id)
+    if welcome:
+        try:
+            if welcome["type"] == "photo" and welcome.get("file_id"):
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=welcome["file_id"],
+                    caption=welcome.get("caption") or None,
+                )
+            elif welcome.get("text"):
+                text_w = welcome["text"]
+                for i in range(0, len(text_w), 4096):
+                    await bot.send_message(chat_id=chat_id, text=text_w[i : i + 4096])
+        except Exception as e:
+            logger.warning("post_gc_intro: welcome send failed chat_id=%s: %s", chat_id, e)
+
+    res = bind_chat_from_title(chat_id=chat_id, title=chat_title)
+    try:
+        if res.ok and res.gg_player_id:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "Thank you for playing at our club!!\n"
+                    f"\nPlayer ID: {res.gg_player_id}"
+                ),
+            )
+        elif res.error and is_same_club_player_conflict_message(res.error):
+            await bot.send_message(chat_id=chat_id, text=res.error)
+    except Exception:
+        pass
+
+    _mark_member_join_bundle_cooldown(chat_id)
+    _join_intro_sent_at[chat_id] = time.monotonic()
+
+
+async def _maybe_send_member_join_intro(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
+    """Standard club intro after a human joins — only when this chat is linked to a dashboard club."""
+
+    club_id = get_club_for_chat(chat_id)
+    if not club_id:
+        return
+
+    if _suppress_post_gc_redundant_recently(chat_id):
+        return
+
+    until_bundle = _member_join_bundle_until.get(chat_id)
+    if until_bundle is not None and time.monotonic() < until_bundle:
+        return
+
+    now = time.monotonic()
+    last = _join_intro_sent_at.get(chat_id)
+    if last is not None and (now - last) < JOIN_INTRO_THROTTLE_S:
+        return
+    _join_intro_sent_at[chat_id] = now
+
+    await _deliver_member_join_intro_messages(chat_id, club_id, context.bot)
+
+
+async def on_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+
+    chat = update.effective_chat
+    msg = update.message
+
+    if not chat or chat.type not in ("group", "supergroup"):
+        return
+
+
+    if not msg or not msg.new_chat_members:
+        return
+
+    humans = [u for u in msg.new_chat_members if not u.is_bot]
+    if not humans:
+
+
+        return
+
+    await _maybe_send_member_join_intro(context, chat.id)
+
+
+
+async def on_other_chat_member_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+
+
+    """Megagroups / supergroups: join notifications as ``chat_member`` updates."""
+
+    cu = update.chat_member
+    chat = update.effective_chat
+    if not cu or not chat or chat.type not in ("group", "supergroup"):
+        return
+
+
+
+    if cu.new_chat_member.user.is_bot:
+
+
+        return
+
+    old = cu.old_chat_member.status
+    nw = cu.new_chat_member.status
+    # User entered the chat (invite link / add / returning after leave).
+    if old not in (CMS.LEFT, CMS.BANNED) or nw in (CMS.LEFT, CMS.BANNED):
+        return
+
+    await _maybe_send_member_join_intro(context, chat.id)

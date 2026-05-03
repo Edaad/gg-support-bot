@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Runs at the end of the Heroku Python buildpack compile step.
+# If the app only has heroku/python (no Node buildpack), this downloads a
+# Node binary, runs npm ci + vite build in dashboard/, and leaves dashboard/dist
+# in the slug. If heroku/nodejs ran first and heroku-postbuild already built
+# dist/, we exit without doing extra work.
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DIST_INDEX="$ROOT_DIR/dashboard/dist/index.html"
+DIST_ASSETS="$ROOT_DIR/dashboard/dist/assets"
+
+if [[ -f "$DIST_INDEX" && -d "$DIST_ASSETS" ]]; then
+  echo "-----> Dashboard dist/ already present (Node buildpack or cache); skipping bin/post_compile"
+  exit 0
+fi
+
+NODE_VERSION="${NODE_VERSION:-20.18.1}"
+NODE_TAR="node-v${NODE_VERSION}-linux-x64"
+TMP_NODE="/tmp/node-heroku-${NODE_VERSION}"
+
+if [[ ! -x "$TMP_NODE/bin/node" ]]; then
+  echo "-----> Installing Node.js ${NODE_VERSION} for dashboard build (Python-only slug)"
+  rm -rf "$TMP_NODE"
+  mkdir -p "$TMP_NODE"
+  curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TAR}.tar.xz" \
+    | tar -xJ --strip-components=1 -C "$TMP_NODE"
+fi
+
+export PATH="$TMP_NODE/bin:$PATH"
+node -v
+npm -v
+
+echo "-----> Building dashboard (Vite)"
+cd "$ROOT_DIR/dashboard"
+npm ci --include=dev
+npm run build
+
+echo "-----> Dashboard build finished"
+ls -la "$ROOT_DIR/dashboard/dist"

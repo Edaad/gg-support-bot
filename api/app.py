@@ -54,6 +54,7 @@ def create_app() -> FastAPI:
     from api.routes.variants import router as variants_router
     from api.routes.broadcast_groups import router as broadcast_groups_router
     from api.routes.weekly_stats import router as weekly_stats_router
+    from api.routes.gc_mtproto import router as gc_mtproto_router
 
     app.include_router(clubs_router)
     app.include_router(methods_router)
@@ -65,18 +66,29 @@ def create_app() -> FastAPI:
     app.include_router(variants_router)
     app.include_router(broadcast_groups_router)
     app.include_router(weekly_stats_router)
+    app.include_router(gc_mtproto_router)
 
     # ── Serve React dashboard (production build) ─────────────────────────
-    dist_dir = Path(__file__).resolve().parent.parent / "dashboard" / "dist"
-    if dist_dir.is_dir():
-        app.mount("/assets", StaticFiles(directory=str(dist_dir / "assets")), name="assets")
+    # Only mount if a real Vite build exists (dist/assets + index.html). Heroku/API-only
+    # deploys often omit dashboard/dist — the API must still start.
+    root = Path(__file__).resolve().parent.parent
+    dist_dir = root / "dashboard" / "dist"
+    assets_dir = dist_dir / "assets"
+    index_html = dist_dir / "index.html"
+    if assets_dir.is_dir() and index_html.is_file():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+        @app.get("/")
+        def serve_spa_root():
+            """`/{full_path:path}` does not match GET / in FastAPI; root must be explicit."""
+            return FileResponse(str(index_html))
 
         @app.get("/{full_path:path}")
         def serve_spa(full_path: str):
             file = dist_dir / full_path
             if file.is_file():
                 return FileResponse(str(file))
-            return FileResponse(str(dist_dir / "index.html"))
+            return FileResponse(str(index_html))
 
     return app
 
