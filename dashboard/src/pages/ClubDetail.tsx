@@ -257,8 +257,8 @@ function GeneralTab({
             Allow admin /deposit and /cashout
           </label>
           <p className="ml-6 text-xs text-gray-500">
-            When enabled, admin users can use /deposit and /cashout in this club's groups.
-            When disabled, those commands are restricted to non-admin players only.
+            When enabled, admin users can start /deposit and /cashout for customers — the
+            bot will prompt and listen for the customer's response instead of the admin's.
           </p>
           <label className="flex items-center gap-2 text-sm text-gray-300">
             <input

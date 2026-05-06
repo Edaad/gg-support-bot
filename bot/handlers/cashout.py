@@ -55,12 +55,36 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_group_name(chat.id, chat.title)
 
     user_id = update.effective_user.id
-    if user_id in ADMIN_USER_IDS and not get_club_allows_admin_commands(club_id):
-        return ConversationHandler.END
+    is_bot_admin = user_id in ADMIN_USER_IDS
 
-    # Cooldown + business hours check (admins are exempt)
-    is_admin = user_id in ADMIN_USER_IDS or is_club_staff(user_id, club_id)
-    if not is_admin:
+    if is_bot_admin:
+        if not get_club_allows_admin_commands(club_id):
+            return ConversationHandler.END
+        context.chat_data["cashout_club_id"] = club_id
+        context.chat_data["cashout_chat_id"] = chat.id
+        context.chat_data["cashout_admin_initiated"] = True
+        context.chat_data["cashout_admin_user_id"] = user_id
+
+        simple = get_club_simple_mode(club_id, "cashout")
+        if simple:
+            max_amt = get_cashout_max_amount(club_id)
+            soft_limit = get_cashout_soft_limit(club_id)
+            if max_amt is not None or soft_limit is not None:
+                context.chat_data["cashout_simple_data"] = simple
+                await update.message.reply_text("How much would you like to cashout?")
+                return CASHOUT_SIMPLE_AMOUNT
+            await _send_simple_response(update.message, simple)
+            _cleanup(context)
+            return ConversationHandler.END
+
+        context.chat_data["cashout_selected"] = []
+        context.chat_data["cashout_multi"] = get_club_allows_multi_cashout(club_id)
+        await update.message.reply_text("How much would you like to cashout?")
+        return CASHOUT_AMOUNT
+
+    # Cooldown + business hours check (admins/staff are exempt)
+    is_staff = is_club_staff(user_id, club_id)
+    if not is_staff:
         eligible, deny_msg = check_cashout_eligibility(club_id, user_id)
         if not eligible:
             await update.message.reply_text(deny_msg)
@@ -71,10 +95,10 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         max_amt = get_cashout_max_amount(club_id)
         soft_limit = get_cashout_soft_limit(club_id)
         if max_amt is not None or soft_limit is not None:
-            context.user_data["cashout_club_id"] = club_id
-            context.user_data["cashout_chat_id"] = chat.id
-            context.user_data["cashout_user_id"] = user_id
-            context.user_data["cashout_simple_data"] = simple
+            context.chat_data["cashout_club_id"] = club_id
+            context.chat_data["cashout_chat_id"] = chat.id
+            context.chat_data["cashout_user_id"] = user_id
+            context.chat_data["cashout_simple_data"] = simple
             await update.message.reply_text("How much would you like to cashout?")
             return CASHOUT_SIMPLE_AMOUNT
 
@@ -85,11 +109,11 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         return ConversationHandler.END
 
-    context.user_data["cashout_club_id"] = club_id
-    context.user_data["cashout_chat_id"] = chat.id
-    context.user_data["cashout_user_id"] = user_id
-    context.user_data["cashout_selected"] = []
-    context.user_data["cashout_multi"] = get_club_allows_multi_cashout(club_id)
+    context.chat_data["cashout_club_id"] = club_id
+    context.chat_data["cashout_chat_id"] = chat.id
+    context.chat_data["cashout_user_id"] = user_id
+    context.chat_data["cashout_selected"] = []
+    context.chat_data["cashout_multi"] = get_club_allows_multi_cashout(club_id)
     await update.message.reply_text("How much would you like to cashout?")
     return CASHOUT_AMOUNT
 
@@ -97,7 +121,24 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return ConversationHandler.END
-    club_id = context.user_data.get("cashout_club_id")
+
+    admin_uid = context.chat_data.get("cashout_admin_user_id")
+    if admin_uid and update.effective_user and update.effective_user.id == admin_uid:
+        return CASHOUT_AMOUNT
+
+    if context.chat_data.get("cashout_admin_initiated") and update.effective_user:
+        context.chat_data["cashout_user_id"] = update.effective_user.id
+        club_id = context.chat_data.get("cashout_club_id")
+        if club_id:
+            cust_id = update.effective_user.id
+            if not is_club_staff(cust_id, club_id):
+                eligible, deny_msg = check_cashout_eligibility(club_id, cust_id)
+                if not eligible:
+                    await update.message.reply_text(deny_msg)
+                    _cleanup(context)
+                    return ConversationHandler.END
+
+    club_id = context.chat_data.get("cashout_club_id")
     if not club_id:
         return ConversationHandler.END
 
@@ -121,14 +162,31 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
         )
         return CASHOUT_AMOUNT
 
-    context.user_data["cashout_amount"] = amount
+    context.chat_data["cashout_amount"] = amount
     return await _show_method_keyboard(update, context, first_pick=True)
 
 
 async def cashout_simple_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return ConversationHandler.END
-    club_id = context.user_data.get("cashout_club_id")
+
+    admin_uid = context.chat_data.get("cashout_admin_user_id")
+    if admin_uid and update.effective_user and update.effective_user.id == admin_uid:
+        return CASHOUT_SIMPLE_AMOUNT
+
+    if context.chat_data.get("cashout_admin_initiated") and update.effective_user:
+        context.chat_data["cashout_user_id"] = update.effective_user.id
+        club_id = context.chat_data.get("cashout_club_id")
+        if club_id:
+            cust_id = update.effective_user.id
+            if not is_club_staff(cust_id, club_id):
+                eligible, deny_msg = check_cashout_eligibility(club_id, cust_id)
+                if not eligible:
+                    await update.message.reply_text(deny_msg)
+                    _cleanup(context)
+                    return ConversationHandler.END
+
+    club_id = context.chat_data.get("cashout_club_id")
     if not club_id:
         return ConversationHandler.END
 
@@ -152,9 +210,9 @@ async def cashout_simple_amount_received(update: Update, context: ContextTypes.D
         )
         return CASHOUT_SIMPLE_AMOUNT
 
-    simple_data = context.user_data.get("cashout_simple_data")
-    user_id = context.user_data.get("cashout_user_id")
-    chat_id = context.user_data.get("cashout_chat_id")
+    simple_data = context.chat_data.get("cashout_simple_data")
+    user_id = context.chat_data.get("cashout_user_id")
+    chat_id = context.chat_data.get("cashout_chat_id")
     if simple_data:
         await _send_simple_response(update.message, simple_data)
 
@@ -178,10 +236,10 @@ async def cashout_simple_amount_received(update: Update, context: ContextTypes.D
 
 async def _show_method_keyboard(update, context, first_pick=False):
     """Show available methods. After the first pick (multi-mode), includes a Done button."""
-    club_id = context.user_data["cashout_club_id"]
-    amount = context.user_data["cashout_amount"]
-    already_selected = {s["id"] for s in context.user_data.get("cashout_selected", [])}
-    is_multi = context.user_data.get("cashout_multi", False)
+    club_id = context.chat_data["cashout_club_id"]
+    amount = context.chat_data["cashout_amount"]
+    already_selected = {s["id"] for s in context.chat_data.get("cashout_selected", [])}
+    is_multi = context.chat_data.get("cashout_multi", False)
 
     methods = get_methods_for_amount(club_id, "cashout", amount)
     available = [m for m in methods if m["id"] not in already_selected]
@@ -253,7 +311,7 @@ async def cashout_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("That method is no longer available.")
         return ConversationHandler.END
 
-    context.user_data["cashout_current_method"] = method
+    context.chat_data["cashout_current_method"] = method
 
     if method["has_sub_options"]:
         subs = get_sub_options(method_id)
@@ -275,18 +333,18 @@ async def cashout_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
             )
             return CASHOUT_SUB
 
-    amount = context.user_data.get("cashout_amount", "?")
+    amount = context.chat_data.get("cashout_amount", "?")
     tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
     if tier:
         response_data = pick_variant(method_id, tier_id=tier["id"]) or tier
     else:
         response_data = pick_variant(method_id) or method
     await _send_response(query, response_data, amount, method["name"])
-    context.user_data.setdefault("cashout_selected", []).append(
+    context.chat_data.setdefault("cashout_selected", []).append(
         {"id": method_id, "name": method["name"]}
     )
 
-    is_multi = context.user_data.get("cashout_multi", False)
+    is_multi = context.chat_data.get("cashout_multi", False)
     if not is_multi:
         return await _finalize_cashout(update, context)
 
@@ -305,21 +363,21 @@ async def cashout_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     sub_id = int(data.split(":")[1])
     sub = get_sub_option_by_id(sub_id)
-    method = context.user_data.get("cashout_current_method", {})
+    method = context.chat_data.get("cashout_current_method", {})
     if not sub:
         await query.edit_message_text("That option is no longer available.")
         _cleanup(context)
         return ConversationHandler.END
 
-    amount = context.user_data.get("cashout_amount", "?")
+    amount = context.chat_data.get("cashout_amount", "?")
     display = f"{method.get('name', '')} — {sub['name']}"
     await _send_response(query, sub, amount, display)
 
-    context.user_data.setdefault("cashout_selected", []).append(
+    context.chat_data.setdefault("cashout_selected", []).append(
         {"id": method.get("id"), "name": display}
     )
 
-    is_multi = context.user_data.get("cashout_multi", False)
+    is_multi = context.chat_data.get("cashout_multi", False)
     if not is_multi:
         return await _finalize_cashout(update, context)
 
@@ -334,9 +392,9 @@ async def _send_response(query, data, amount, display_name):
 
 
 async def _finalize_cashout(update, context):
-    amount = context.user_data.get("cashout_amount", "?")
-    selected = context.user_data.get("cashout_selected", [])
-    club_id = context.user_data.get("cashout_club_id")
+    amount = context.chat_data.get("cashout_amount", "?")
+    selected = context.chat_data.get("cashout_selected", [])
+    club_id = context.chat_data.get("cashout_club_id")
     method_names = ", ".join(s["name"] for s in selected) if selected else "None"
 
     summary = f"Cashout submitted: ${amount} via {method_names}"
@@ -373,9 +431,9 @@ async def _send_simple_response(message, data):
 
 
 def _record_cashout(context):
-    club_id = context.user_data.get("cashout_club_id")
-    user_id = context.user_data.get("cashout_user_id")
-    chat_id = context.user_data.get("cashout_chat_id")
+    club_id = context.chat_data.get("cashout_club_id")
+    user_id = context.chat_data.get("cashout_user_id")
+    chat_id = context.chat_data.get("cashout_chat_id")
     if club_id and user_id and chat_id:
         try:
             record_activity(club_id, user_id, chat_id, "cashout")
@@ -393,13 +451,15 @@ def _cleanup(context):
         "cashout_current_method",
         "cashout_multi",
         "cashout_simple_data",
+        "cashout_admin_initiated",
+        "cashout_admin_user_id",
     ):
-        context.user_data.pop(key, None)
+        context.chat_data.pop(key, None)
 
 
 async def cashout_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    club_id = context.user_data.get("cashout_club_id")
-    user_id = context.user_data.get("cashout_user_id")
+    club_id = context.chat_data.get("cashout_club_id")
+    user_id = context.chat_data.get("cashout_user_id")
     if club_id and user_id:
         try:
             cancel_last_cashout_activity(club_id, user_id)
@@ -412,7 +472,7 @@ async def cashout_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cashout_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = context.user_data.get("cashout_chat_id")
+    chat_id = context.chat_data.get("cashout_chat_id")
     if chat_id:
         try:
             await context.bot.send_message(
@@ -459,5 +519,5 @@ def get_cashout_handler() -> ConversationHandler:
         conversation_timeout=TIMEOUT_SECONDS,
         name="cashout_conv",
         per_chat=True,
-        per_user=True,
+        per_user=False,
     )

@@ -53,22 +53,38 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_group_name(chat.id, chat.title)
 
     user_id = update.effective_user.id
-    if user_id in ADMIN_USER_IDS and not get_club_allows_admin_commands(club_id):
-        return ConversationHandler.END
+    is_bot_admin = user_id in ADMIN_USER_IDS
+
+    if is_bot_admin:
+        if not get_club_allows_admin_commands(club_id):
+            return ConversationHandler.END
+        context.chat_data["deposit_club_id"] = club_id
+        context.chat_data["deposit_chat_id"] = chat.id
+        context.chat_data["deposit_admin_initiated"] = True
+        context.chat_data["deposit_admin_user_id"] = user_id
+
+        simple = get_club_simple_mode(club_id, "deposit")
+        if simple:
+            await _send_simple_response(update.message, simple)
+            _cleanup(context)
+            return ConversationHandler.END
+
+        await update.message.reply_text("How much would you like to deposit?")
+        return DEPOSIT_AMOUNT
 
     claimed = is_first_deposit_claimed(chat.id)
     first = False if claimed else is_first_deposit(club_id, user_id)
     settings = get_first_deposit_settings(club_id) if first else None
 
-    context.user_data["deposit_club_id"] = club_id
-    context.user_data["deposit_chat_id"] = chat.id
-    context.user_data["deposit_user_id"] = user_id
-    context.user_data["deposit_is_first"] = first
-    context.user_data["deposit_fd_settings"] = settings
+    context.chat_data["deposit_club_id"] = club_id
+    context.chat_data["deposit_chat_id"] = chat.id
+    context.chat_data["deposit_user_id"] = user_id
+    context.chat_data["deposit_is_first"] = first
+    context.chat_data["deposit_fd_settings"] = settings
 
     simple = get_club_simple_mode(club_id, "deposit")
     if simple:
-        context.user_data["deposit_simple_data"] = simple
+        context.chat_data["deposit_simple_data"] = simple
 
     if first and settings and settings["referral_enabled"]:
         await update.message.reply_text(
@@ -88,7 +104,7 @@ async def deposit_referral_received(update: Update, context: ContextTypes.DEFAUL
     if not update.message:
         return ConversationHandler.END
 
-    simple = context.user_data.get("deposit_simple_data")
+    simple = context.chat_data.get("deposit_simple_data")
     if simple:
         return await _finish_simple_deposit(update.message, context)
 
@@ -99,7 +115,15 @@ async def deposit_referral_received(update: Update, context: ContextTypes.DEFAUL
 async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_chat:
         return ConversationHandler.END
-    club_id = context.user_data.get("deposit_club_id")
+
+    admin_uid = context.chat_data.get("deposit_admin_user_id")
+    if admin_uid and update.effective_user and update.effective_user.id == admin_uid:
+        return DEPOSIT_AMOUNT
+
+    if context.chat_data.get("deposit_admin_initiated") and update.effective_user:
+        context.chat_data["deposit_user_id"] = update.effective_user.id
+
+    club_id = context.chat_data.get("deposit_club_id")
     if not club_id:
         return ConversationHandler.END
 
@@ -114,7 +138,7 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         )
         return DEPOSIT_AMOUNT
 
-    context.user_data["deposit_amount"] = amount
+    context.chat_data["deposit_amount"] = amount
     methods = get_methods_for_amount(club_id, "deposit", amount)
     if not methods:
         lowest = get_lowest_minimum(club_id, "deposit")
@@ -161,8 +185,8 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("That method is no longer available.")
         return ConversationHandler.END
 
-    context.user_data["deposit_method_name"] = method["name"]
-    context.user_data["deposit_method_id"] = method_id
+    context.chat_data["deposit_method_name"] = method["name"]
+    context.chat_data["deposit_method_id"] = method_id
 
     if method["has_sub_options"]:
         subs = get_sub_options(method_id)
@@ -184,7 +208,7 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
             )
             return DEPOSIT_SUB
 
-    amount = context.user_data.get("deposit_amount", "?")
+    amount = context.chat_data.get("deposit_amount", "?")
     tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
     if tier:
         response_data = pick_variant(method_id, tier_id=tier["id"]) or tier
@@ -219,12 +243,12 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
         _cleanup(context)
         return ConversationHandler.END
 
-    amount = context.user_data.get("deposit_amount", "?")
-    method_name = context.user_data.get("deposit_method_name", "")
+    amount = context.chat_data.get("deposit_amount", "?")
+    method_name = context.chat_data.get("deposit_method_name", "")
     display = f"{method_name} — {sub['name']}"
 
     await _send_response(query, sub, amount, display)
-    method_id = context.user_data.get("deposit_method_id")
+    method_id = context.chat_data.get("deposit_method_id")
     if method_id and isinstance(amount, Decimal):
         try:
             record_method_deposit(method_id, amount)
@@ -238,10 +262,10 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def _finish_simple_deposit(message, context):
     """Handle simple-mode deposit: send response, record, bonus message."""
-    simple = context.user_data.get("deposit_simple_data")
-    club_id = context.user_data.get("deposit_club_id")
-    user_id = context.user_data.get("deposit_user_id")
-    chat_id = context.user_data.get("deposit_chat_id")
+    simple = context.chat_data.get("deposit_simple_data")
+    club_id = context.chat_data.get("deposit_club_id")
+    user_id = context.chat_data.get("deposit_user_id")
+    chat_id = context.chat_data.get("deposit_chat_id")
 
     if simple:
         await _send_simple_response(message, simple)
@@ -251,8 +275,8 @@ async def _finish_simple_deposit(message, context):
     except Exception:
         pass
 
-    first = context.user_data.get("deposit_is_first", False)
-    settings = context.user_data.get("deposit_fd_settings")
+    first = context.chat_data.get("deposit_is_first", False)
+    settings = context.chat_data.get("deposit_fd_settings")
     if first and settings and settings["bonus_enabled"] and settings["bonus_pct"] > 0:
         try:
             await message.reply_text(
@@ -269,11 +293,11 @@ async def _finish_simple_deposit(message, context):
 
 async def _send_bonus_message(chat, context):
     """If this is a first deposit and bonus is enabled, send the bonus announcement."""
-    first = context.user_data.get("deposit_is_first", False)
-    settings = context.user_data.get("deposit_fd_settings")
+    first = context.chat_data.get("deposit_is_first", False)
+    settings = context.chat_data.get("deposit_fd_settings")
     if not first or not settings or not settings["bonus_enabled"] or settings["bonus_pct"] <= 0:
         return
-    amount = context.user_data.get("deposit_amount")
+    amount = context.chat_data.get("deposit_amount")
     if not isinstance(amount, Decimal):
         return
     pct = settings["bonus_pct"]
@@ -293,9 +317,9 @@ async def _send_bonus_message(chat, context):
 
 
 def _record_deposit(context):
-    club_id = context.user_data.get("deposit_club_id")
-    user_id = context.user_data.get("deposit_user_id")
-    chat_id = context.user_data.get("deposit_chat_id")
+    club_id = context.chat_data.get("deposit_club_id")
+    user_id = context.chat_data.get("deposit_user_id")
+    chat_id = context.chat_data.get("deposit_chat_id")
     if club_id and user_id and chat_id:
         try:
             record_activity(club_id, user_id, chat_id, "deposit")
@@ -326,8 +350,10 @@ def _cleanup(context):
         "deposit_is_first",
         "deposit_fd_settings",
         "deposit_simple_data",
+        "deposit_admin_initiated",
+        "deposit_admin_user_id",
     ):
-        context.user_data.pop(key, None)
+        context.chat_data.pop(key, None)
 
 
 async def deposit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -338,7 +364,7 @@ async def deposit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = context.user_data.get("deposit_chat_id")
+    chat_id = context.chat_data.get("deposit_chat_id")
     if chat_id:
         try:
             await context.bot.send_message(
@@ -384,5 +410,5 @@ def get_deposit_handler() -> ConversationHandler:
         conversation_timeout=TIMEOUT_SECONDS,
         name="deposit_conv",
         per_chat=True,
-        per_user=True,
+        per_user=False,
     )
