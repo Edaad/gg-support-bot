@@ -55,6 +55,7 @@ def create_app() -> FastAPI:
     from api.routes.broadcast_groups import router as broadcast_groups_router
     from api.routes.weekly_stats import router as weekly_stats_router
     from api.routes.gc_mtproto import router as gc_mtproto_router
+    from api.routes.bonus import router as bonus_router
 
     app.include_router(clubs_router)
     app.include_router(methods_router)
@@ -67,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(broadcast_groups_router)
     app.include_router(weekly_stats_router)
     app.include_router(gc_mtproto_router)
+    app.include_router(bonus_router)
 
     # ── Serve React dashboard (production build) ─────────────────────────
     # Only mount if a real Vite build exists (dist/assets + index.html). Heroku/API-only

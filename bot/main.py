@@ -46,6 +46,7 @@ def run_bot(token: str | None = None):
     from bot.handlers.bypass import bypass_handler, bypass_permanent_handler
     from bot.handlers.track import on_new_chat_title, track_handler, info_handler
     from bot.handlers.group_create import get_gc_handler
+    from bot.handlers.bonus import get_bonus_handler
 
     app = ApplicationBuilder().token(token).build()
 
@@ -63,6 +64,7 @@ def run_bot(token: str | None = None):
     app.add_handler(get_deposit_handler())
     app.add_handler(get_cashout_handler())
     app.add_handler(get_gc_handler())
+    app.add_handler(get_bonus_handler())
 
     app.add_handler(
         ChatMemberHandler(on_my_chat_member_updated, ChatMemberHandler.MY_CHAT_MEMBER)

@@ -447,3 +447,40 @@ class MtProtoClubKeyBody(BaseModel):
 class MtProtoSyncDiskResponse(BaseModel):
     ok: bool
     message: str
+
+
+# ── Bonus Types & Records ─────────────────────────────────────────────────────
+
+class BonusTypeCreate(BaseModel):
+    name: str
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class BonusTypeUpdate(BaseModel):
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class BonusTypeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    is_active: bool
+    sort_order: int
+    created_at: Optional[datetime]
+
+
+class BonusRecordRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    player_username: str
+    amount: Decimal
+    bonus_type_name: Optional[str] = None
+    custom_description: Optional[str] = None
+    club_name: Optional[str] = None
+    admin_telegram_user_id: int
+    created_at: Optional[datetime]

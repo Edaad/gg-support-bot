@@ -7,6 +7,7 @@ import FlowSimulator from './pages/FlowSimulator'
 import Settings from './pages/Settings'
 import WeeklyStats from './pages/WeeklyStats'
 import TelegramLogin from './pages/TelegramLogin'
+import BonusTypes from './pages/BonusTypes'
 import Layout from './components/Layout'
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/clubs/:id/test" element={<FlowSimulator token={token} />} />
         <Route path="/settings" element={<Settings token={token} />} />
         <Route path="/telegram-login" element={<TelegramLogin token={token} />} />
+        <Route path="/bonus-types" element={<BonusTypes token={token} />} />
         <Route path="/weekly-stats" element={<WeeklyStats token={token} />} />
       </Routes>
     </Layout>

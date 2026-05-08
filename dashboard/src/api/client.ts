@@ -186,6 +186,18 @@ export const gcMtprotoCloudPassword = (token: string, body: { club_key: string; 
     token,
   )
 
+// Bonus types
+export const listBonusTypes = (token: string) =>
+  request<BonusTypeT[]>('/bonus/types', {}, token)
+export const createBonusType = (token: string, data: { name: string; sort_order?: number }) =>
+  request<BonusTypeT>('/bonus/types', { method: 'POST', body: JSON.stringify(data) }, token)
+export const updateBonusType = (token: string, id: number, data: Partial<BonusTypeT>) =>
+  request<BonusTypeT>(`/bonus/types/${id}`, { method: 'PUT', body: JSON.stringify(data) }, token)
+export const deleteBonusType = (token: string, id: number) =>
+  request<void>(`/bonus/types/${id}`, { method: 'DELETE' }, token)
+export const listBonusRecords = (token: string) =>
+  request<BonusRecordT[]>('/bonus/records', {}, token)
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface Club {
@@ -373,4 +385,23 @@ export interface SimulateResponse {
   club_name: string
   direction: string
   methods: SimulateMethod[]
+}
+
+export interface BonusTypeT {
+  id: number
+  name: string
+  is_active: boolean
+  sort_order: number
+  created_at: string | null
+}
+
+export interface BonusRecordT {
+  id: number
+  player_username: string
+  amount: number
+  bonus_type_name: string | null
+  custom_description: string | null
+  club_name: string | null
+  admin_telegram_user_id: number
+  created_at: string | null
 }

@@ -365,6 +365,40 @@ class BroadcastGroupMember(Base):
     broadcast_group = relationship("BroadcastGroup", back_populates="members")
 
 
+class BonusType(Base):
+    """Admin-configurable bonus categories shown in the /bonus flow."""
+
+    __tablename__ = "bonus_types"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False, unique=True)
+    is_active = Column(Boolean, default=True)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class BonusRecord(Base):
+    """Individual bonus entries recorded via /bonus by admins."""
+
+    __tablename__ = "bonus_records"
+
+    id = Column(Integer, primary_key=True)
+    player_username = Column(String(255), nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
+    bonus_type_id = Column(
+        Integer, ForeignKey("bonus_types.id", ondelete="SET NULL"), nullable=True
+    )
+    custom_description = Column(Text, nullable=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    admin_telegram_user_id = Column(BigInteger, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    bonus_type = relationship("BonusType")
+    club = relationship("Club")
+
+
 class MtProtoSessionCredential(Base):
     """Portable Telethon StringSession payloads for MTProto (/gc); shared by web + worker."""
 
