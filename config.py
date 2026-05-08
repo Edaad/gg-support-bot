@@ -25,9 +25,9 @@ CLUB_SHORTHAND_TO_NAME = {
 # .env (env wins when non-empty). Keys: round_table, creator_club, clubgto.
 # Example tuple: ("@alice", "@bob")
 GC_USERS_TO_INVITE = {
-    "round_table": ("@RoundTableSupport3",),
-    "creator_club": ("@CreatorClubSupport3",),
-    "clubgto": ("@ClubGTOAdmin",),
+    "round_table": ("@RoundTableSupport3","@YTranslateBot"),
+    "creator_club": ("@CreatorClubSupport3","@YTranslateBot"),
+    "clubgto": ("@ClubGTOAdmin","@YTranslateBot"),
 }
 
 from club_gc_settings import (  # noqa: E402
