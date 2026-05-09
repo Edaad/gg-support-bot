@@ -447,6 +447,21 @@ async def create_support_megagroup(
             if isinstance(title_attr, str) and title_attr.strip():
                 title_out = title_attr.strip()
 
+            # Before inviting the bot (triggers ``my_chat_member``), mark suppression so
+            # ``on_my_chat_member_updated`` does not send the same preamble/welcome/TOS as
+            # ``send_post_gc_intro_bundle`` (race if the update is processed first).
+            if chat_id_big is not None:
+                try:
+                    from bot.handlers.groups import _mark_post_gc_bundle_window
+
+                    _mark_post_gc_bundle_window(chat_id_big)
+                except Exception as e:
+                    logger.warning(
+                        "post_gc suppression window mark failed chat_id=%s: %s",
+                        chat_id_big,
+                        type(e).__name__,
+                    )
+
             if player_user is not None:
                 player_direct_add_ok = False
                 ok_ent, err_ent = await _invite_user_entity(
