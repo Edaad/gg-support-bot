@@ -187,9 +187,12 @@ def get_tg_mtproto_credentials() -> tuple[int, str]:
 
 
 def is_dm_gc_listener_enabled() -> bool:
-    """When true, Telethon listens for outgoing /gc in admin→player DMs (single-process only)."""
-    return os.getenv("GC_DM_GC_LISTENER_ENABLED", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
+    """Telethon listens for outgoing /gc in admin→player DMs unless explicitly disabled.
+
+    Default **on**. Set ``GC_DM_GC_LISTENER_ENABLED`` to ``false``, ``0``, ``no``, or ``off`` to turn off.
+    Use a single bot worker when enabled (same MTProto session must not connect twice).
+    """
+    raw = os.getenv("GC_DM_GC_LISTENER_ENABLED")
+    if raw is None or not str(raw).strip():
+        return True
+    return str(raw).strip().lower() not in ("0", "false", "no", "off", "")

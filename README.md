@@ -27,7 +27,7 @@ Heroku-style split: `web` runs Uvicorn, `worker` runs the bot (see `Procfile`).
 | `DASHBOARD_PASSWORD` | No | Shared password for dashboard login; JWT signing secret. Defaults to `changeme` — **set in production**. |
 | `TG_API_ID` | Yes for `/gc` | Integer app id from [my.telegram.org](https://my.telegram.org/apps) — used only for MTProto (Telethon) sessions that create megagroups. |
 | `TG_API_HASH` | Yes for `/gc` | Api hash paired with `TG_API_ID`. Do not expose publicly. |
-| `GC_DM_GC_LISTENER_ENABLED` | No | Set to `true` on **one** bot worker so Telethon listens for **outgoing** `/gc` in **private DMs between a club admin account and a player** (creates or reuses a per-player support megagroup). Multiple processes must **not** share the same MTProto session. |
+| `GC_DM_GC_LISTENER_ENABLED` | No | **Default on.** Telethon listens for **outgoing** `/gc` in **private DMs** from each club’s MTProto admin to a player. Set to `false` / `0` / `no` / `off` to disable. Use **one** bot worker only (same MTProto session must not connect twice). |
 
 ## Local setup
 
@@ -119,7 +119,7 @@ Deploy runs **`npm run build` for `dashboard/` automatically** via the root `pac
 There are two triggers:
 
 1. **Bot command** — Authorized operators (per-club `command_admin_user_id` in [`club_gc_settings.py`](club_gc_settings.py)) send **`/gc` in private chat with the bot** to create a **generic** support megagroup (no target player row).
-2. **Admin DM (optional)** — With **`GC_DM_GC_LISTENER_ENABLED=true`** on a **single** bot process, each club’s **MTProto user** session listens for the admin sending **`/gc` in a private DM with a player**. The message is deleted, one megagroup per `(club, player)` is created or reused, the player gets a DM, and metadata is stored on `support_group_chats`. **Do not** run two workers with the same Telethon session.
+2. **Admin DM** — By default each club’s **MTProto user** session listens for the admin sending **`/gc` in a private DM with a player**. The message is deleted, one megagroup per `(club, player)` is created or reused, the player gets a DM, and metadata is stored on `support_group_chats`. Set **`GC_DM_GC_LISTENER_ENABLED=false`** to turn this off. **Do not** run two workers with the same Telethon session.
 
 Shared setup:
 
@@ -128,7 +128,7 @@ Shared setup:
 3. **Sessions**: Telethon uses `*.session` under **`sessions/`** (gitignored) and/or Postgres `mtproto_session_credentials` when `GC_MTPROTO_DB_SESSIONS` is on.
 4. **Login**: Use **Dashboard → Telegram login** or optional [`scripts/mtproto_login_cli.py`](scripts/mtproto_login_cli.py). **SMS codes and 2FA secrets are never written to logs or the database.**
 5. **Migrate DB**: run [`migrate_support_group_chats.py`](migrate_support_group_chats.py) and [`migrate_support_group_chats_player_dm.py`](migrate_support_group_chats_player_dm.py) on existing databases.
-6. **Testing (DM flow)**: Enable the env flag on one worker, authorize all three MTProto sessions, open a DM from a club admin phone to a player, send exactly `/gc`, confirm the command disappears, the group exists, and the DB row has `player_telegram_user_id` set.
+6. **Testing (DM flow)**: Run one worker (listener is on by default), authorize all three MTProto sessions, open a DM from a club admin phone to a player, send exactly `/gc`, confirm the command disappears, the group exists, and the DB row has `player_telegram_user_id` set.
 
 Full operator guide: [`docs/GC.md`](docs/GC.md).
 

@@ -310,7 +310,7 @@ async def _async_main(bot_token: str) -> None:
 
 def start_listener_background(bot_token: str) -> None:
     if not is_dm_gc_listener_enabled():
-        logger.info("dm_gc listener disabled (GC_DM_GC_LISTENER_ENABLED)")
+        logger.info("dm_gc listener disabled (GC_DM_GC_LISTENER_ENABLED is false/off)")
         return
 
     def runner():

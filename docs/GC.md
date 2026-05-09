@@ -6,14 +6,14 @@ Key point: **the group is created by a club’s Telegram user account via MTProt
 
 ## Outgoing `/gc` in admin → player DMs (optional)
 
-When **`GC_DM_GC_LISTENER_ENABLED=true`** on the **bot worker** (use **one** process only — the same Telethon session must not connect twice):
+**On by default** on the bot worker (set **`GC_DM_GC_LISTENER_ENABLED=false`** to disable). Use **one** process only — the same Telethon session must not connect twice:
 
 - Each configured club starts a Telethon client using that club’s session (file and/or Postgres `StringSession`).
 - If an outgoing private message text is **exactly** `/gc`, the handler deletes that message, resolves the **player** from the DM peer, and either **creates** a new megagroup or **reuses** the existing one for `(club_key, player_telegram_user_id)`.
 - The player receives a **global** DM template (see [`bot/services/player_support_dm_messages.py`](../bot/services/player_support_dm_messages.py)).
 - Metadata is written to **`support_group_chats`** (run [`migrate_support_group_chats_player_dm.py`](../migrate_support_group_chats_player_dm.py) on existing DBs).
 
-**Testing:** Authorize the club’s MTProto session (Dashboard **Telegram login** or [`scripts/mtproto_login_cli.py`](../scripts/mtproto_login_cli.py)), enable the env flag on a single `python run_bot.py` process, open Telegram as the club admin user, DM a player, send `/gc`, and confirm the command disappears and the group + DB row appear.
+**Testing:** Authorize the club’s MTProto session (Dashboard **Telegram login** or [`scripts/mtproto_login_cli.py`](../scripts/mtproto_login_cli.py)), run a single `python run_bot.py` worker (listener is on unless `GC_DM_GC_LISTENER_ENABLED=false`), open Telegram as the club admin user, DM a player, send `/gc`, and confirm the command disappears and the group + DB row appear.
 
 ## What `/gc` does (private chat with the **bot**)
 
@@ -83,7 +83,7 @@ They are **shared across clubs** and used only for Telethon sessions.
 
 Per-club overrides are supported via `GC_*` variables (see [`.env.example`](../.env.example)).
 
-- **`GC_DM_GC_LISTENER_ENABLED`** — `true` / `1` / `yes` starts the outgoing-DM `/gc` Telethon listeners (see above).
+- **`GC_DM_GC_LISTENER_ENABLED`** — omit or leave empty for **on**; set `false` / `0` / `no` / `off` to disable outgoing-DM `/gc` listeners.
 
 ### Bot account invite behavior
 
