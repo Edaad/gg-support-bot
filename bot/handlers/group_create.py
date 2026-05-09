@@ -43,8 +43,8 @@ def _persist_row(
         added_users=outcome.added_users,
         failed_users=outcome.failed_users,
         group_photo_path=cfg.group_photo_path,
-        initial_message_sent=outcome.initial_message_sent,
-        error_message=err_msg,
+        initial_group_message_sent=outcome.initial_message_sent,
+        last_error_message=err_msg,
     )
     if persist_err:
 

@@ -1,17 +1,28 @@
 # MTProto `/gc` — support group automation
 
-This project supports creating **new Telegram support megagroups** via **MTProto (Telethon)**, triggered by the bot command **`/gc`**.
+This project supports creating **new Telegram support megagroups** via **MTProto (Telethon)**, triggered either by the bot command **`/gc`** or (optionally) by a club admin sending **`/gc` in a private DM with a player** from the MTProto-logged-in admin account.
 
 Key point: **the group is created by a club’s Telegram user account via MTProto, not by the bot via the Bot API**.
 
-## What `/gc` does
+## Outgoing `/gc` in admin → player DMs (optional)
+
+When **`GC_DM_GC_LISTENER_ENABLED=true`** on the **bot worker** (use **one** process only — the same Telethon session must not connect twice):
+
+- Each configured club starts a Telethon client using that club’s session (file and/or Postgres `StringSession`).
+- If an outgoing private message text is **exactly** `/gc`, the handler deletes that message, resolves the **player** from the DM peer, and either **creates** a new megagroup or **reuses** the existing one for `(club_key, player_telegram_user_id)`.
+- The player receives a **global** DM template (see [`bot/services/player_support_dm_messages.py`](../bot/services/player_support_dm_messages.py)).
+- Metadata is written to **`support_group_chats`** (run [`migrate_support_group_chats_player_dm.py`](../migrate_support_group_chats_player_dm.py) on existing DBs).
+
+**Testing:** Authorize the club’s MTProto session (Dashboard **Telegram login** or [`scripts/mtproto_login_cli.py`](../scripts/mtproto_login_cli.py)), enable the env flag on a single `python run_bot.py` process, open Telegram as the club admin user, DM a player, send `/gc`, and confirm the command disappears and the group + DB row appear.
+
+## What `/gc` does (private chat with the **bot**)
 
 When an authorized club operator sends `/gc` in a **private chat** with the bot:
 
 - **Identifies club** by matching the sender’s Telegram user id against per-club config (`command_admin_user_id`).
 - **Loads the club’s MTProto session** (Telethon `*.session` file).
 - If the session is **not authenticated**, `/gc` tells you it **expired or is missing**, and directs you to **Dashboard → Telegram login** to complete SMS / Telegram code + optional 2FA (no OTP in Telegram bot DMs anymore).
-- When the session is authorized, **`/gc` creates a new megagroup** titled per the club config (no interactive login in the bot).
+- When the session is authorized, **`/gc` creates a new megagroup** titled **`{RT|CC|GTO} / / {player label}`**: club prefix (`RT`, `CC`, or `GTO`), then literal **` / / `**, then player identity in order **`@username` → `First Last` → `First` → `New Player`** (bot-only `/gc` uses `New Player` as the label). Telegram has a ~255-character title cap; extra-long labels are truncated.
 - Adds members best-effort:
   - configured `users_to_add` (usernames like `@name`, phone contacts if resolvable, etc.)
   - the **bot account** (if it can be resolved as a username)
@@ -55,7 +66,7 @@ Each entry includes:
 - `command_admin_user_id` (who may run `/gc` for this club)
 - `mtproto_session` (path to Telethon session file, typically under `sessions/`)
 - `mtproto_phone_number` (optional: if set, Dashboard **Telegram login** does not ask for phone; `/gc` does not consume this for login anymore)
-- `group_title`
+- `group_title` (legacy env fallback; megagroups use `RT/CC/GTO / / …` naming — see megagroup title helpers in [`bot/services/mtproto_group_create.py`](../bot/services/mtproto_group_create.py))
 - `group_photo_path` (optional)
 - `users_to_add`: default from [`config.py`](../config.py) **`GC_USERS_TO_INVITE`** tuples (e.g. `("@user1",)`); override with comma-separated env `GC_USERS_ROUND_TABLE`, `GC_USERS_CREATOR_CLUB`, or `GC_USERS_CLUB_GTO` when set
 - `bot_account` (optional override; see below)
@@ -71,6 +82,8 @@ MTProto requires Telegram developer API credentials:
 They are **shared across clubs** and used only for Telethon sessions.
 
 Per-club overrides are supported via `GC_*` variables (see [`.env.example`](../.env.example)).
+
+- **`GC_DM_GC_LISTENER_ENABLED`** — `true` / `1` / `yes` starts the outgoing-DM `/gc` Telethon listeners (see above).
 
 ### Bot account invite behavior
 
@@ -129,12 +142,13 @@ Table: `support_group_chats`
 
 - SQLAlchemy model: `SupportGroupChat` in [`db/models.py`](../db/models.py)
 - Insert helper: [`bot/services/support_group_chats.py`](../bot/services/support_group_chats.py)
-- Migration script: [`migrate_support_group_chats.py`](../migrate_support_group_chats.py)
+- Migration scripts: [`migrate_support_group_chats.py`](../migrate_support_group_chats.py), [`migrate_support_group_chats_player_dm.py`](../migrate_support_group_chats_player_dm.py)
 
-To create the table in an existing database:
+To create / extend the table in an existing database:
 
 ```bash
 DATABASE_URL=postgresql://... python migrate_support_group_chats.py
+DATABASE_URL=postgresql://... python migrate_support_group_chats_player_dm.py
 ```
 
 ## Troubleshooting

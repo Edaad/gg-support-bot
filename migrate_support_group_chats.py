@@ -21,13 +21,13 @@ CREATE TABLE IF NOT EXISTS support_group_chats (
     telegram_chat_id BIGINT NOT NULL,
     telegram_chat_title TEXT NOT NULL,
     invite_link TEXT,
-    created_by_telegram_user_id BIGINT NOT NULL,
+    created_by_telegram_user_id BIGINT,
     mtproto_session_name TEXT,
     added_users JSONB,
     failed_users JSONB,
     group_photo_path TEXT,
-    initial_message_sent BOOLEAN NOT NULL DEFAULT false,
-    error_message TEXT,
+    initial_group_message_sent BOOLEAN NOT NULL DEFAULT false,
+    last_error_message TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

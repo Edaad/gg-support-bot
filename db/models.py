@@ -422,21 +422,33 @@ class SupportGroupChat(Base):
         Index("ix_support_group_chats_telegram_chat_id", "telegram_chat_id"),
         Index("ix_support_group_chats_created_by", "created_by_telegram_user_id"),
         Index("ix_support_group_chats_created_at", "created_at"),
+        Index("ix_support_group_chats_player_telegram_user_id", "player_telegram_user_id"),
+        Index(
+            "uq_support_group_chats_club_player",
+            "club_key",
+            "player_telegram_user_id",
+            unique=True,
+            postgresql_where=text("player_telegram_user_id IS NOT NULL"),
+        ),
     )
 
     id = Column(Integer, primary_key=True)
     club_key = Column(String(64), nullable=False)
     club_display_name = Column(String(255), nullable=False)
+    player_telegram_user_id = Column(BigInteger, nullable=True)
+    player_username = Column(Text, nullable=True)
+    player_display_name = Column(Text, nullable=True)
     telegram_chat_id = Column(BigInteger, nullable=False)
     telegram_chat_title = Column(Text, nullable=False)
     invite_link = Column(Text, nullable=True)
-    created_by_telegram_user_id = Column(BigInteger, nullable=False)
+    created_by_telegram_user_id = Column(BigInteger, nullable=True)
     mtproto_session_name = Column(Text, nullable=True)
     added_users = Column(JSONB, nullable=True)
     failed_users = Column(JSONB, nullable=True)
     group_photo_path = Column(Text, nullable=True)
-    initial_message_sent = Column(Boolean, nullable=False, default=False)
-    error_message = Column(Text, nullable=True)
+    initial_group_message_sent = Column(Boolean, nullable=False, default=False)
+    player_dm_status = Column(Text, nullable=True)
+    last_error_message = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),

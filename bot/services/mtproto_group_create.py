@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Literal
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from telethon import TelegramClient, utils
 from telethon.errors import FloodWaitError, RPCError, SessionPasswordNeededError
+from telethon.errors.rpcerrorlist import UserAlreadyParticipantError
 from telethon.sessions import StringSession
 from telethon.tl.functions.channels import (
     CreateChannelRequest,
     EditPhotoRequest,
+    GetParticipantRequest,
     InviteToChannelRequest,
 )
 from telethon.tl.types import InputChatUploadedPhoto
@@ -25,6 +28,16 @@ logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FLOODWAIT_MAX_SECONDS = 120
+
+# Telegram channel / megagroup title limit (characters).
+_TITLE_MAX_CHARS = 255
+
+# Short prefix segment before literal `` / / `` — must match ops naming (Round Table → RT, etc.).
+_TITLE_PREFIX_BY_CLUB: dict[str, str] = {
+    "round_table": "RT",
+    "creator_club": "CC",
+    "clubgto": "GTO",
+}
 
 _mtproto_locks: dict[str, asyncio.Lock] = {}
 
@@ -48,6 +61,47 @@ def normalize_invite_link(link: str | None) -> str | None:
         return None
     s = link.strip()
     return s if s else None
+
+
+def megagroup_title_prefix_for_club(cfg: ClubGcConfig) -> str:
+    """First segment before `` / / `` (e.g. RT, CC, GTO)."""
+
+    return _TITLE_PREFIX_BY_CLUB.get(cfg.club_key, cfg.club_key[:3].upper())
+
+
+def player_label_for_support_megagroup_title(player_user) -> str:
+    """Human-readable tail for titles: @username → full name → first name → New Player."""
+
+    if player_user is None:
+        return "New Player"
+    un = getattr(player_user, "username", None)
+    if isinstance(un, str) and un.strip():
+        return f"@{un.strip().lstrip('@')}"
+    fn = (getattr(player_user, "first_name", None) or "").strip()
+    ln = (getattr(player_user, "last_name", None) or "").strip()
+    if fn and ln:
+        return f"{fn} {ln}"
+    if fn:
+        return fn
+    return "New Player"
+
+
+def build_support_megagroup_title(cfg: ClubGcConfig, player_user) -> str:
+    """``RT / / @player`` format — two slashes separated by spaces: `` / / ``."""
+
+    prefix = megagroup_title_prefix_for_club(cfg)
+    sep = " / / "
+    label = player_label_for_support_megagroup_title(player_user)
+    title = f"{prefix}{sep}{label}"
+    if len(title) <= _TITLE_MAX_CHARS:
+        return title
+
+    reserve = len(prefix) + len(sep)
+    max_label = _TITLE_MAX_CHARS - reserve
+    if max_label < 4:
+        return title[: _TITLE_MAX_CHARS]
+    shortened = label[:max_label].rstrip()
+    return f"{prefix}{sep}{shortened}"[:_TITLE_MAX_CHARS]
 
 
 def make_client(cfg: ClubGcConfig, *, prefer_database: bool = True) -> TelegramClient:
@@ -206,6 +260,29 @@ class MtProtoGroupOutcome:
     group_photo_ok: bool
     warnings: list[str] = field(default_factory=list)
     error_hint: str | None = None
+    player_direct_add_ok: bool | None = None
+
+
+async def ensure_player_in_support_group(
+    client: TelegramClient, channel_entity, player_user
+) -> Literal["already_member", "invited_ok", "invite_failed"]:
+    """Re-add flow: detect membership or best-effort invite."""
+
+    from telethon.errors.rpcerrorlist import UserNotParticipantError
+
+    try:
+        await _with_single_flood_retry(
+            "GetParticipantRequest",
+            lambda: client(GetParticipantRequest(channel_entity, player_user)),
+        )
+        return "already_member"
+    except UserNotParticipantError:
+        pass
+    except Exception as e:
+        logger.info("GetParticipantRequest: %s", type(e).__name__)
+
+    ok, _ = await _invite_user_entity(client, channel_entity, player_user)
+    return "invited_ok" if ok else "invite_failed"
 
 
 async def _export_invite_link(client: TelegramClient, peer) -> str:
@@ -221,6 +298,50 @@ async def _export_invite_link(client: TelegramClient, peer) -> str:
         lambda: client(functions.messages.ExportChatInviteRequest(peer=inp)),
     )
     return inv.link
+
+
+async def export_invite_link_for_peer(client: TelegramClient, peer) -> str | None:
+    """Best-effort invite link for a channel/megagroup entity."""
+    try:
+        return normalize_invite_link(await _export_invite_link(client, peer))
+    except Exception as e:
+        logger.info("export_invite_link_for_peer: %s", type(e).__name__)
+        return None
+
+
+def _player_log_marker(user_entity) -> str:
+    un = getattr(user_entity, "username", None)
+    if isinstance(un, str) and un.strip():
+        return f"@{un.strip().lstrip('@')}"
+    uid = getattr(user_entity, "id", None)
+    return str(uid) if uid is not None else "player"
+
+
+async def _invite_user_entity(
+    client: TelegramClient, channel_entity, user_entity
+) -> tuple[bool, str | None]:
+    try:
+        await _with_single_flood_retry(
+            "invite_user_entity",
+            lambda: client(
+                InviteToChannelRequest(channel=channel_entity, users=[user_entity])
+            ),
+        )
+        return True, None
+    except UserAlreadyParticipantError:
+        return True, None
+    except Exception as e:
+        low = repr(e).lower()
+        readable: str | None = str(e).strip()
+        if not readable:
+            readable = type(e).__name__
+        if isinstance(e, RPCError):
+            readable = getattr(e, "message", readable) or readable
+        if "privacy" in low or "user_privacy" in low:
+            readable = "privacy restricted"
+        readable = readable[:500]
+        logger.info("Invite entity skipped: %s", type(e).__name__)
+        return False, readable
 
 
 async def _invite_one(
@@ -241,6 +362,8 @@ async def _invite_one(
             ),
         )
         return True, None
+    except UserAlreadyParticipantError:
+        return True, None
     except Exception as e:
         low = repr(e).lower()
         readable: str | None = str(e).strip()
@@ -259,9 +382,12 @@ async def create_support_megagroup(
     cfg: ClubGcConfig,
     *,
     bot_dm_username: str | None,
+    player_user=None,
 ) -> MtProtoGroupOutcome:
     """
     Create megagroup for ``cfg`` via MTProto, invite users + bot, optional photo + inner message.
+
+    When ``player_user`` is set (Telethon User), invite that account first (best-effort).
 
     Caller must ensure session is authenticated.
     """
@@ -275,7 +401,9 @@ async def create_support_megagroup(
     initial_sent = False
     invite_link: str | None = None
     chat_id_big: int | None = None
-    title_out = cfg.group_title
+    title_for_channel = build_support_megagroup_title(cfg, player_user)
+    title_out = title_for_channel
+    player_direct_add_ok: bool | None = None
 
     bot_label = cfg.bot_account or (f"@{bot_dm_username}" if bot_dm_username else None)
 
@@ -292,7 +420,7 @@ async def create_support_megagroup(
                 "CreateChannelRequest",
                 lambda: client(
                     CreateChannelRequest(
-                        title=cfg.group_title,
+                        title=title_for_channel,
                         about="Support group",
                         megagroup=True,
                         broadcast=False,
@@ -318,6 +446,20 @@ async def create_support_megagroup(
             title_attr = getattr(channel_ent, "title", None) or getattr(chan, "title", None)
             if isinstance(title_attr, str) and title_attr.strip():
                 title_out = title_attr.strip()
+
+            if player_user is not None:
+                player_direct_add_ok = False
+                ok_ent, err_ent = await _invite_user_entity(
+                    client, channel_ent, player_user
+                )
+                pm = _player_log_marker(player_user)
+                if ok_ent:
+                    player_direct_add_ok = True
+                    added_ok.append({"user": pm, "kind": "player"})
+                else:
+                    failed_ok.append(
+                        {"user": pm, "reason": err_ent or "unknown", "kind": "player"}
+                    )
 
             raw_invites = list(cfg.users_to_add)
             if bot_label:
@@ -436,6 +578,7 @@ async def create_support_megagroup(
                 group_photo_ok=group_photo_final,
                 warnings=warnings_local,
                 error_hint=ghint,
+                player_direct_add_ok=player_direct_add_ok,
             )
         finally:
             await client.disconnect()

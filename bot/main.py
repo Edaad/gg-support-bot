@@ -19,6 +19,24 @@ from db.connection import init_engine
 from db.models import Base
 
 
+async def _post_init_dm_gc_listener(app):
+    from club_gc_settings import is_dm_gc_listener_enabled
+
+    if is_dm_gc_listener_enabled():
+        from bot.services.mtproto_dm_gc_listener import start_listener_background
+
+        start_listener_background(app.bot.token)
+
+
+async def _post_shutdown_dm_gc_listener(app):
+    from club_gc_settings import is_dm_gc_listener_enabled
+
+    if is_dm_gc_listener_enabled():
+        from bot.services.mtproto_dm_gc_listener import stop_listener_background
+
+        stop_listener_background()
+
+
 def run_bot(token: str | None = None):
     token = token or os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
@@ -48,7 +66,13 @@ def run_bot(token: str | None = None):
     from bot.handlers.group_create import get_gc_handler
     from bot.handlers.bonus import get_bonus_handler
 
-    app = ApplicationBuilder().token(token).build()
+    app = (
+        ApplicationBuilder()
+        .token(token)
+        .post_init(_post_init_dm_gc_listener)
+        .post_shutdown(_post_shutdown_dm_gc_listener)
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("help", help_handler))

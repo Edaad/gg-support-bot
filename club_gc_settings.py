@@ -81,6 +81,8 @@ class ClubGcConfig:
     command_admin_user_id: int
     mtproto_session: str
     mtproto_phone_number: str | None
+    # Megagroup names are ``{RT|CC|GTO} / / {player label}`` (see mtproto_group_create.build_support_megagroup_title).
+    # ``group_title`` env defaults remain for overrides if future code references them only.
     group_title: str
     group_photo_path: str | None
     users_to_add: tuple[str, ...]
@@ -182,3 +184,12 @@ def get_tg_mtproto_credentials() -> tuple[int, str]:
         )
     api_id = int(api_id_raw)
     return api_id, api_hash
+
+
+def is_dm_gc_listener_enabled() -> bool:
+    """When true, Telethon listens for outgoing /gc in admin→player DMs (single-process only)."""
+    return os.getenv("GC_DM_GC_LISTENER_ENABLED", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
