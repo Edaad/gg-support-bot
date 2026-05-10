@@ -3,7 +3,7 @@
 Triggers:
 - Group title change (NEW_CHAT_TITLE): silent on invalid format; success message on bind.
 - /track: same bind logic; replies with invalid format on failure.
-- /info: show current bindings for this chat (or not bound).
+- /info: show current bindings; also schedules MTProto player contact sync when enabled (see mtproto_track_contact).
 """
 
 from __future__ import annotations
@@ -58,11 +58,6 @@ async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
     if context.bot and update.effective_chat and res.gg_player_id:
         chat = update.effective_chat
-        schedule_save_player_contact_named_group(
-            chat_id=chat.id,
-            club_id=res.club_id,
-            chat_title=chat.title,
-        )
         await context.bot.send_message(
             chat_id=chat.id,
             text=(
@@ -84,11 +79,6 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     res = _bind_result(update)
     if res.ok and res.gg_player_id:
-        schedule_save_player_contact_named_group(
-            chat_id=chat.id,
-            club_id=res.club_id,
-            chat_title=chat.title,
-        )
         await update.message.reply_text(
             f"Successfully tracking player id: {res.gg_player_id}"
         )
@@ -100,7 +90,7 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show what this chat is currently bound to (player ids) for the resolved club."""
+    """Show what this chat is currently bound to; MTProto contact sync runs only from here."""
     if not update.message or not update.effective_chat:
         return
     if not update.effective_user or update.effective_user.id not in ADMIN_USER_IDS:

@@ -28,7 +28,7 @@ Heroku-style split: `web` runs Uvicorn, `worker` runs the bot (see `Procfile`).
 | `TG_API_ID` | Yes for `/gc` | Integer app id from [my.telegram.org](https://my.telegram.org/apps) — used only for MTProto (Telethon) sessions that create megagroups. |
 | `TG_API_HASH` | Yes for `/gc` | Api hash paired with `TG_API_ID`. Do not expose publicly. |
 | `GC_DM_GC_LISTENER_ENABLED` | No | **Default on.** Telethon listens for **outgoing** `/gc` in **private DMs** from each club’s MTProto admin to a player. Set to `false` / `0` / `no` / `off` to disable. Use **one** bot worker only (same MTProto session must not connect twice). |
-| `GC_CONTACT_SAVE_ENABLED` | No | **Default on.** After successful group title tracking bind, `/track`, or `/info`, the club MTProto user may **add/update one contact** (chat title as name) when exactly one non-admin, non-`GC_USERS_*` human remains. See [`docs/GC.md`](docs/GC.md). Disable with `false` / `0` / `no` / `off`. |
+| `GC_CONTACT_SAVE_ENABLED` | No | **Default on.** On **`/info`** in a linked group only, the club MTProto user may **add/update one contact** (chat title as name) when exactly one non-admin, non-`GC_USERS_*` human remains. See [`docs/GC.md`](docs/GC.md). Disable with `false` / `0` / `no` / `off`. |
 
 ## Local setup
 

@@ -29,7 +29,7 @@ def schedule_save_player_contact_named_group(
     club_id: int | None,
     chat_title: str | None,
 ) -> None:
-    """Fire-and-forget; never raises. Safe from async PTB handlers."""
+    """Fire-and-forget; never raises. Call only from `/info` (see track.info_handler)."""
     if not is_contact_save_enabled():
         return
     if club_id is None:
