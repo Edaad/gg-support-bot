@@ -1,6 +1,8 @@
 """Telegram bot entry point — registers all handlers and starts polling."""
 
+import logging
 import os
+import sys
 import warnings
 
 from telegram import Update
@@ -17,6 +19,36 @@ warnings.filterwarnings("ignore", message=r".*CallbackQueryHandler.*", category=
 
 from db.connection import init_engine
 from db.models import Base
+
+
+def _configure_worker_logging() -> None:
+    """Send application ``logging`` to stderr so dynos (e.g. Heroku) show ``INFO`` lines.
+
+    Honors ``LOG_LEVEL`` (default ``INFO``). Skips installing a duplicate handler when the root
+    logger is already configured (e.g. tests, embedded runs).
+    """
+
+    root = logging.getLogger()
+    level_name = (os.getenv("LOG_LEVEL") or "INFO").strip().upper()
+    level = getattr(logging, level_name, logging.INFO)
+
+    if root.handlers:
+        # Something else configured handlers; still widen level so INFO propagates from app loggers.
+        root.setLevel(level)
+        for h in root.handlers:
+            try:
+                h.setLevel(level)
+            except Exception:
+                pass
+        return
+
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setLevel(level)
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    root.addHandler(handler)
+    root.setLevel(level)
 
 
 async def _post_init_dm_gc_listener(app):
@@ -41,6 +73,8 @@ def run_bot(token: str | None = None):
     token = token or os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
         raise SystemExit("Provide a token via TELEGRAM_BOT_TOKEN env var")
+
+    _configure_worker_logging()
 
     engine = init_engine()
     Base.metadata.create_all(engine)
