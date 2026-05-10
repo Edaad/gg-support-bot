@@ -146,7 +146,7 @@ Run **`/info`** after naming the group so the operator can explicitly refresh co
 
 **Club selection:** Uses [`get_club_gc_config_by_link_club_id()`](../club_gc_settings.py) — **`clubs.id`** must match that club’s **`link_club_id`** (Round Table / Creator Club / ClubGTO profiles).
 
-**Who is saved:** All **non-bot** members are scanned. **Excluded:** group **admins**, and every user id resolved from **`ClubGcConfig.users_to_add`** ([`GC_USERS_*`](../config.py)) plus **`GC_BOT_ACCOUNT`** when set. If **exactly one** human remains, that user is added/updated as a contact with **first name** = the **group chat title** (truncated for Telegram limits). If **zero or two or more** such members, the feature **does nothing** (ambiguous).
+**Who is saved:** All **non-bot** members are scanned. **Excluded:** group **admins**; **`ClubGcConfig.users_to_add`** ([`GC_USERS_*`](../config.py)) plus **`GC_BOT_ACCOUNT`** when set (resolved to user ids); the three **`/gc` MTProto operator** Telegram IDs ([`gc_mtproto_operator_telegram_user_ids()`](../club_gc_settings.py)); and [`ADMIN_USER_IDS`](../config.py) (dashboard operators). Often the club MTProto human sits in the support group beside the player but is **not** a Telegram “admin”; excluding those IDs restores a single plausible **player** candidate. If **exactly one** human remains after exclusions, contact **first name** = **group chat title** (truncated). Otherwise the feature **does nothing** (ambiguous)—see worker logs **`contact_save: skip`** / **`candidate_count`**.
 
 **Disable:** `GC_CONTACT_SAVE_ENABLED=false` (or `0` / `no` / `off`). Default is on.
 

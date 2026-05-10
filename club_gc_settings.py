@@ -174,6 +174,12 @@ def get_club_config_for_admin(telegram_user_id: int) -> ClubGcConfig | None:
     return None
 
 
+def gc_mtproto_operator_telegram_user_ids() -> frozenset[int]:
+    """Club MTProto `/gc` admin Telegram user IDs (Round Table / Creator Club / ClubGTO)."""
+
+    return frozenset(int(cfg.command_admin_user_id) for cfg in CLUB_GC_CONFIG.values())
+
+
 def get_club_gc_config_by_link_club_id(dashboard_clubs_id: int) -> ClubGcConfig | None:
     """Maps ``clubs.id`` (dashboard) to `/gc` MTProto club profile when IDs match."""
 

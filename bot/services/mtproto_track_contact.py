@@ -7,9 +7,11 @@ import logging
 
 from club_gc_settings import (
     ClubGcConfig,
+    gc_mtproto_operator_telegram_user_ids,
     get_club_gc_config_by_link_club_id,
     is_contact_save_enabled,
 )
+from config import ADMIN_USER_IDS
 from bot.services.mtproto_group_create import (
     _with_single_flood_retry,
     get_mtproto_lock,
@@ -51,10 +53,17 @@ def schedule_save_player_contact_named_group(
         logger.warning("contact_save: no running event loop chat_id=%s", chat_id)
         return
 
-    loop.create_task(
-        _maybe_save_player_contact(chat_id=chat_id, cfg=cfg, chat_title=title_t),
-        name=f"contact-save-{chat_id}",
-    )
+    async def _run_wrapped():
+        try:
+            await _maybe_save_player_contact(chat_id=chat_id, cfg=cfg, chat_title=title_t)
+        except Exception:
+            logger.exception(
+                "contact_save: unexpected error chat_id=%s club=%s",
+                chat_id,
+                cfg.club_key,
+            )
+
+    loop.create_task(_run_wrapped(), name=f"contact-save-{chat_id}")
 
 
 def _truncate_first_name(raw: str) -> str:
@@ -154,6 +163,9 @@ async def _maybe_save_player_contact(*, chat_id: int, cfg: ClubGcConfig, chat_ti
             admin_ids = await _admin_user_ids(client, chan)
             invite_ids = await _resolve_invitee_user_ids(client, cfg)
 
+            skip_operators = gc_mtproto_operator_telegram_user_ids()
+            skip_dashboard_admins = frozenset(int(x) for x in ADMIN_USER_IDS)
+
             candidates: list = []
 
             async def collect():
@@ -170,6 +182,12 @@ async def _maybe_save_player_contact(*, chat_id: int, cfg: ClubGcConfig, chat_ti
                         continue
                     if uid_int in invite_ids:
                         continue
+                    # MTProto `/gc` club accounts usually stay in support groups but are not
+                    # admins; excluding them restores "exactly one player" candidate semantics.
+                    if uid_int in skip_operators:
+                        continue
+                    if uid_int in skip_dashboard_admins:
+                        continue
                     candidates.append(u)
 
             try:
@@ -183,11 +201,16 @@ async def _maybe_save_player_contact(*, chat_id: int, cfg: ClubGcConfig, chat_ti
                 return
 
             if len(candidates) != 1:
-                logger.info(
-                    "contact_save: skip chat_id=%s club=%s candidates=%s",
+                preview = ",".join(
+                    str(getattr(u, "id", "?"))
+                    for u in candidates[:6]
+                )
+                logger.warning(
+                    "contact_save: skip chat_id=%s club=%s candidate_count=%s ids_sample=%s",
                     chat_id,
                     cfg.club_key,
                     len(candidates),
+                    preview,
                 )
                 return
 

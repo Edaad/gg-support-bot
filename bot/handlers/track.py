@@ -125,8 +125,8 @@ async def info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     if len(players) == 1:
-        await update.message.reply_text(f"Tracking player id: {players[0]}")
+        await update.message.reply_text(f"Tracking player ID: {players[0]}")
     else:
         joined = ", ".join(players)
-        await update.message.reply_text(f"Tracking player ids: {joined}")
+        await update.message.reply_text(f"Tracking player IDs: {joined}")
 
