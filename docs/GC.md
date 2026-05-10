@@ -84,6 +84,7 @@ They are **shared across clubs** and used only for Telethon sessions.
 Per-club overrides are supported via `GC_*` variables (see [`.env.example`](../.env.example)).
 
 - **`GC_DM_GC_LISTENER_ENABLED`** — omit or leave empty for **on**; set `false` / `0` / `no` / `off` to disable outgoing-DM `/gc` listeners.
+- **`GC_DM_GC_VERBOSE_LOGS`** — set `true` / `1` / `yes` to emit extra **INFO** lines for outgoing-DM `/gc` (`dm_capture`, `/gc_match`, bootstrap). Omit for **quiet** INFO (warnings and errors still log).
 
 ### Bot account invite behavior
 

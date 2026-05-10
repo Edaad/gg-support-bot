@@ -220,3 +220,13 @@ def is_contact_save_enabled() -> bool:
     if raw is None or not str(raw).strip():
         return True
     return str(raw).strip().lower() not in ("0", "false", "no", "off")
+
+
+def is_dm_gc_verbose_logging() -> bool:
+    """Extra ``INFO`` logs for outgoing-DM ``/gc`` (captures, bootstrap, success). Default off."""
+
+    return os.getenv("GC_DM_GC_VERBOSE_LOGS", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )

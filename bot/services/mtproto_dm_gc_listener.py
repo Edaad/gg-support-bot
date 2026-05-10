@@ -14,6 +14,7 @@ from club_gc_settings import (
     CLUB_GC_CONFIG,
     get_tg_mtproto_credentials,
     is_dm_gc_listener_enabled,
+    is_dm_gc_verbose_logging,
 )
 from bot.handlers.groups import send_post_gc_intro_bundle
 from bot.services.club import ensure_group_chat_linked
@@ -42,6 +43,11 @@ from bot.services.support_group_chats import (
 logger = logging.getLogger(__name__)
 
 _clients: list[TelegramClient] = []
+
+
+def _dm_gc_verbose_info(msg: str, *args) -> None:
+    if is_dm_gc_verbose_logging():
+        logger.info(msg, *args)
 _loop_holder: dict[str, Any] = {}
 
 
@@ -133,7 +139,7 @@ async def _flow_existing_group(
         player_dm_status=dm_status + ("_dm_failed" if not dm_ok else ""),
         last_error_message=err_extra if err_extra else "",
     )
-    logger.info(
+    _dm_gc_verbose_info(
         "dm_gc /gc finished existing_support_group club_key=%s listener=%s player=%s status=%s",
         cfg.club_key,
         listener_label,
@@ -233,7 +239,7 @@ async def _flow_new_group(
     )
 
     if perr == "duplicate_club_player":
-        logger.info(
+        _dm_gc_verbose_info(
             "dm_gc /gc raced duplicate DB row club_key=%s listener=%s player=%s — running existing-group flow",
             cfg.club_key,
             listener_label,
@@ -279,7 +285,7 @@ async def _flow_new_group(
                 cid,
                 type(e).__name__,
             )
-    logger.info(
+    _dm_gc_verbose_info(
         "dm_gc /gc finished new_support_group club_key=%s listener=%s player=%s chat_id=%s row_id=%s",
         cfg.club_key,
         listener_label,
@@ -314,7 +320,7 @@ async def handle_dm_gc_message(
     peer_user_id = getattr(event.peer_id, "user_id", None)
     msg_id = getattr(msg, "id", None)
     snippet = trimmed[:400] + ("..." if len(trimmed) > 400 else "")
-    logger.info(
+    _dm_gc_verbose_info(
         "dm_gc dm_capture club_key=%s listener=%s peer_user_id=%s message_id=%s "
         "message=%r /gc_match=%s",
         cfg.club_key,
@@ -360,7 +366,7 @@ async def handle_dm_gc_message(
     player_id = player.id
     player_label = _telethon_user_label(player)
 
-    logger.info(
+    _dm_gc_verbose_info(
         "dm_gc sensed outgoing /gc club_key=%s listener_account=%s player=%s",
         cfg.club_key,
         listener_label,
@@ -463,7 +469,7 @@ async def _async_main(bot_token: str) -> None:
 
         me_who = await client.get_me()
         listener_label = _telethon_user_label(me_who)
-        logger.info(
+        _dm_gc_verbose_info(
             "dm_gc listening for outgoing /gc club_key=%s listener_account=%s telegram_user_id=%s",
             cfg.club_key,
             listener_label,
@@ -491,7 +497,7 @@ async def _async_main(bot_token: str) -> None:
     _clients[:] = started
     _loop_holder["ptb_bot"] = ptb_bot
 
-    logger.info(
+    _dm_gc_verbose_info(
         "dm_gc listener bootstrap complete telethon_sessions=%s for_outgoing_dm_gc",
         len(started),
     )
@@ -520,7 +526,7 @@ async def _async_main(bot_token: str) -> None:
 
 def start_listener_background(bot_token: str) -> None:
     if not is_dm_gc_listener_enabled():
-        logger.info("dm_gc listener disabled (GC_DM_GC_LISTENER_ENABLED is false/off)")
+        _dm_gc_verbose_info("dm_gc listener disabled (GC_DM_GC_LISTENER_ENABLED is false/off)")
         return
 
     def runner():
@@ -534,7 +540,7 @@ def start_listener_background(bot_token: str) -> None:
             _loop_holder.pop("loop", None)
 
     threading.Thread(target=runner, daemon=True, name="mtproto-dm-gc").start()
-    logger.info("dm_gc listener thread started")
+    _dm_gc_verbose_info("dm_gc listener thread started")
 
 
 def stop_listener_background() -> None:
