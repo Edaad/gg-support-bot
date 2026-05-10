@@ -45,6 +45,23 @@ _clients: list[TelegramClient] = []
 _loop_holder: dict[str, Any] = {}
 
 
+def _telethon_user_label(ent: Any) -> str:
+    """Readable label for Telegram user / Telethon ``get_me()`` (for operator logs)."""
+    if ent is None:
+        return "(?)"
+    uid = getattr(ent, "id", None)
+    un = getattr(ent, "username", None)
+    if isinstance(un, str) and un.strip():
+        handle = un.strip().lstrip("@")
+        return f"@{handle} [id={uid}]"
+    fn = (getattr(ent, "first_name", None) or "").strip()
+    ln = (getattr(ent, "last_name", None) or "").strip()
+    name = f"{fn} {ln}".strip()
+    if name:
+        return f"{name} [id={uid}]"
+    return f"user[id={uid}]"
+
+
 async def _send_player_dm_safe(client: TelegramClient, player: User, text: str) -> tuple[bool, str | None]:
     try:
         await client.send_message(player, text)
@@ -59,11 +76,20 @@ async def _flow_existing_group(
     cfg,
     row,
     player: User,
+    *,
+    listener_label: str,
 ) -> None:
     try:
         channel = await client.get_entity(row.telegram_chat_id)
     except Exception as e:
-        logger.warning("dm_gc get_entity channel: %s", type(e).__name__)
+        logger.warning(
+            "dm_gc /gc failed: cannot_load_existing_megagroup club_key=%s listener=%s "
+            "telegram_chat_id=%s err=%s",
+            cfg.club_key,
+            listener_label,
+            row.telegram_chat_id,
+            type(e).__name__,
+        )
         return
 
     st = await ensure_player_in_support_group(client, channel, player)
@@ -84,6 +110,16 @@ async def _flow_existing_group(
         dm_status = "existing_invite_fallback"
 
     dm_ok, dm_err = await _send_player_dm_safe(client, player, dm_body)
+    player_label_existing = _telethon_user_label(player)
+    if not dm_ok:
+        logger.warning(
+            "dm_gc /gc player_dm_issue club_key=%s listener=%s player=%s err=%s template=%s(flow=existing)",
+            cfg.club_key,
+            listener_label,
+            player_label_existing,
+            dm_err,
+            dm_status,
+        )
 
     uname = player.username.strip() if player.username else None
     dname = (f"{player.first_name or ''} {player.last_name or ''}").strip() or None
@@ -97,6 +133,13 @@ async def _flow_existing_group(
         player_dm_status=dm_status + ("_dm_failed" if not dm_ok else ""),
         last_error_message=err_extra if err_extra else "",
     )
+    logger.info(
+        "dm_gc /gc finished existing_support_group club_key=%s listener=%s player=%s status=%s",
+        cfg.club_key,
+        listener_label,
+        player_label_existing,
+        dm_status,
+    )
 
 
 async def _flow_new_group(
@@ -105,22 +148,41 @@ async def _flow_new_group(
     player: User,
     bot_dm_username: str | None,
     ptb_bot,
+    *,
+    listener_label: str,
 ) -> None:
     me = await client.get_me()
     admin_id = me.id
     uname = player.username.strip() if player.username else None
     dname = (f"{player.first_name or ''} {player.last_name or ''}").strip() or None
+    player_label = _telethon_user_label(player)
 
     try:
         outcome = await create_support_megagroup(
             cfg, bot_dm_username=bot_dm_username, player_user=player
         )
     except Exception as e:
-        logger.exception("dm_gc create_support_megagroup failed: %s", type(e).__name__)
+        logger.exception(
+            "dm_gc /gc failed: create_support_megagroup threw club_key=%s listener=%s player=%s: %s",
+            cfg.club_key,
+            listener_label,
+            player_label,
+            type(e).__name__,
+        )
         return
 
     cid = outcome.telegram_chat_id
     if cid is None:
+        warn_tail = "; ".join((outcome.warnings or [])[:8]) if outcome.warnings else ""
+        logger.warning(
+            "dm_gc /gc failed: megagroup_missing_chat_id club_key=%s listener=%s player=%s "
+            "error_hint=%s warnings_preview=%s",
+            cfg.club_key,
+            listener_label,
+            player_label,
+            outcome.error_hint or "(none)",
+            warn_tail[:500] if warn_tail else "(none)",
+        )
         return
 
     link = (outcome.invite_link or "").strip()
@@ -134,6 +196,15 @@ async def _flow_new_group(
         dm_status = "player_invite_fallback"
 
     dm_ok, dm_err = await _send_player_dm_safe(client, player, dm_body)
+    if not dm_ok:
+        logger.warning(
+            "dm_gc /gc player_dm_issue club_key=%s listener=%s player=%s err=%s template=%s",
+            cfg.club_key,
+            listener_label,
+            player_label,
+            dm_err,
+            dm_status,
+        )
 
     errs = list(outcome.warnings)
     if outcome.error_hint:
@@ -162,18 +233,36 @@ async def _flow_new_group(
     )
 
     if perr == "duplicate_club_player":
+        logger.info(
+            "dm_gc /gc raced duplicate DB row club_key=%s listener=%s player=%s — running existing-group flow",
+            cfg.club_key,
+            listener_label,
+            player_label,
+        )
         existing = fetch_support_group_chat_by_club_player(cfg.club_key, player.id)
         if existing:
-            await _flow_existing_group(client, cfg, existing, player)
+            await _flow_existing_group(
+                client, cfg, existing, player, listener_label=listener_label
+            )
         return
 
     if pk is None:
+        logger.warning(
+            "dm_gc /gc failed: support_group_chat_row_not_saved club_key=%s listener=%s "
+            "player=%s persist_err=%s",
+            cfg.club_key,
+            listener_label,
+            player_label,
+            perr or "unknown",
+        )
         return
 
     linked = ensure_group_chat_linked(cid, cfg.link_club_id, outcome.telegram_chat_title)
     if not linked:
         logger.warning(
-            "dm_gc ensure_group_chat_linked failed chat_id=%s club_id=%s",
+            "dm_gc /gc failed: dashboard_group_link club_key=%s listener=%s chat_id=%s link_club_id=%s",
+            cfg.club_key,
+            listener_label,
             cid,
             cfg.link_club_id,
         )
@@ -183,7 +272,21 @@ async def _flow_new_group(
                 ptb_bot, cid, cfg.link_club_id, outcome.telegram_chat_title
             )
         except Exception as e:
-            logger.exception("dm_gc send_post_gc_intro_bundle: %s", type(e).__name__)
+            logger.exception(
+                "dm_gc /gc failed: post_intro_bundle club_key=%s listener=%s chat_id=%s: %s",
+                cfg.club_key,
+                listener_label,
+                cid,
+                type(e).__name__,
+            )
+    logger.info(
+        "dm_gc /gc finished new_support_group club_key=%s listener=%s player=%s chat_id=%s row_id=%s",
+        cfg.club_key,
+        listener_label,
+        player_label,
+        cid,
+        pk,
+    )
 
 
 async def handle_dm_gc_message(
@@ -191,47 +294,124 @@ async def handle_dm_gc_message(
     cfg,
     bot_dm_username: str | None,
     ptb_bot,
+    *,
+    listener_label: str,
 ) -> None:
     if not event.is_private:
         return
     if not isinstance(event.peer_id, PeerUser):
         return
 
-    text = (event.raw_text or "").strip()
+    msg = getattr(event, "message", None)
+    body_raw = event.raw_text
+    if not body_raw and msg is not None:
+        attr = getattr(msg, "message", None)
+        body_raw = attr if isinstance(attr, str) else ""
+    body_raw = body_raw if isinstance(body_raw, str) else ""
+    trimmed = body_raw.strip()
+    gc_match = trimmed == "/gc"
+
+    peer_user_id = getattr(event.peer_id, "user_id", None)
+    msg_id = getattr(msg, "id", None)
+    snippet = trimmed[:400] + ("..." if len(trimmed) > 400 else "")
+    logger.info(
+        "dm_gc dm_capture club_key=%s listener=%s peer_user_id=%s message_id=%s "
+        "message=%r /gc_match=%s",
+        cfg.club_key,
+        listener_label,
+        peer_user_id,
+        msg_id,
+        snippet,
+        gc_match,
+    )
+
+    text = trimmed
     if text != "/gc":
         return
 
     try:
         chat = await event.get_chat()
     except Exception as e:
-        logger.warning("dm_gc get_chat: %s", type(e).__name__)
+        logger.warning(
+            "dm_gc /gc failed: cannot_resolve_dm_peer club_key=%s listener=%s err=%s",
+            cfg.club_key,
+            listener_label,
+            type(e).__name__,
+        )
         return
 
-    if not isinstance(chat, User) or getattr(chat, "bot", False):
+    if not isinstance(chat, User):
+        logger.warning(
+            "dm_gc /gc ignored: peer_not_user club_key=%s listener=%s peer_type=%s",
+            cfg.club_key,
+            listener_label,
+            type(chat).__name__,
+        )
+        return
+    if getattr(chat, "bot", False):
+        logger.warning(
+            "dm_gc /gc ignored: peer_is_bot club_key=%s listener=%s",
+            cfg.club_key,
+            listener_label,
+        )
         return
 
     player = chat
     player_id = player.id
+    player_label = _telethon_user_label(player)
+
+    logger.info(
+        "dm_gc sensed outgoing /gc club_key=%s listener_account=%s player=%s",
+        cfg.club_key,
+        listener_label,
+        player_label,
+    )
 
     try:
         await event.delete()
     except Exception as e:
-        logger.warning("dm_gc delete /gc: %s", type(e).__name__)
+        logger.warning(
+            "dm_gc delete /gc failed (continuing): club_key=%s listener=%s err=%s",
+            cfg.club_key,
+            listener_label,
+            type(e).__name__,
+        )
 
     lock_sess, acquired = try_pg_advisory_lock_club_player(cfg.club_key, player_id)
     if not acquired:
-        logger.info("dm_gc advisory lock busy club=%s player=%s", cfg.club_key, player_id)
+        logger.warning(
+            "dm_gc /gc failed: advisory_lock_busy club_key=%s listener=%s player=%s "
+            "(another worker may hold lock)",
+            cfg.club_key,
+            listener_label,
+            player_label,
+        )
         return
 
     try:
         client = event.client
         existing = fetch_support_group_chat_by_club_player(cfg.club_key, player_id)
         if existing:
-            await _flow_existing_group(client, cfg, existing, player)
+            await _flow_existing_group(
+                client, cfg, existing, player, listener_label=listener_label
+            )
         else:
-            await _flow_new_group(client, cfg, player, bot_dm_username, ptb_bot)
+            await _flow_new_group(
+                client,
+                cfg,
+                player,
+                bot_dm_username,
+                ptb_bot,
+                listener_label=listener_label,
+            )
     except Exception as e:
-        logger.exception("dm_gc handler error: %s", type(e).__name__)
+        logger.exception(
+            "dm_gc /gc failed: unexpected handler_error club_key=%s listener=%s player=%s: %s",
+            cfg.club_key,
+            listener_label,
+            player_label,
+            type(e).__name__,
+        )
     finally:
         pg_advisory_unlock_session(lock_sess, cfg.club_key, player_id)
 
@@ -264,27 +444,57 @@ async def _async_main(bot_token: str) -> None:
 
     for cfg in CLUB_GC_CONFIG.values():
         if not await is_client_authorized(cfg):
-            logger.warning("dm_gc skip club=%s (session not authorized)", cfg.club_key)
+            logger.warning(
+                "dm_gc skip club_key=%s: Telethon session not authorized — outgoing /gc in admin→player DM "
+                "will not trigger for this club until Dashboard Telegram login (or CLI) completes.",
+                cfg.club_key,
+            )
             continue
 
         client = make_client(cfg)
         await client.connect()
         if not await client.is_user_authorized():
-            logger.warning("dm_gc skip club=%s (not authorized after connect)", cfg.club_key)
+            logger.warning(
+                "dm_gc skip club_key=%s: not authorized after connect (check session file / Postgres StringSession)",
+                cfg.club_key,
+            )
             await client.disconnect()
             continue
 
-        def _register(c: TelegramClient, club_cfg):
+        me_who = await client.get_me()
+        listener_label = _telethon_user_label(me_who)
+        logger.info(
+            "dm_gc listening for outgoing /gc club_key=%s listener_account=%s telegram_user_id=%s",
+            cfg.club_key,
+            listener_label,
+            getattr(me_who, "id", "?"),
+        )
+
+        def _make_dm_gc_handler(label: str, club_cfg_inner):
             async def _handler(event):
-                await handle_dm_gc_message(event, club_cfg, bot_dm_username, ptb_bot)
+                await handle_dm_gc_message(
+                    event,
+                    club_cfg_inner,
+                    bot_dm_username,
+                    ptb_bot,
+                    listener_label=label,
+                )
 
-            c.add_event_handler(_handler, events.NewMessage(outgoing=True))
+            return _handler
 
-        _register(client, cfg)
+        client.add_event_handler(
+            _make_dm_gc_handler(listener_label, cfg),
+            events.NewMessage(outgoing=True),
+        )
         started.append(client)
 
     _clients[:] = started
     _loop_holder["ptb_bot"] = ptb_bot
+
+    logger.info(
+        "dm_gc listener bootstrap complete telethon_sessions=%s for_outgoing_dm_gc",
+        len(started),
+    )
 
     if not started:
         logger.warning("dm_gc no Telethon clients started")
