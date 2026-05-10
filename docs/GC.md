@@ -136,6 +136,25 @@ Protected HTTP API (JWT), implemented in [`api/routes/gc_mtproto.py`](../api/rou
 
 Dashboard OTP runs where **`run_api`/web** lives (scratch `sessions/`). The bot **`worker`** has a separate disk unless you bolt on shared volumes. Postgres is the canonical copy of authorization after OTP so **`/gc` works on the worker** without copying files manually. If you had already logged in on web **before** this feature shipped, redeploy migrations and either complete **Telegram login** once again or call **`/api/gc/mtproto/sync-disk-session`** with JWT while this release’s web dyno still has an authorized `sessions/` file.
 
+## Player contact sync (group title tracking + `/info`)
+
+When **`TG_API_ID` / `TG_API_HASH`** are set and the club’s Telethon session is authorized, the worker may **save or update one Telegram contact** on that club MTProto account (same session as `/gc`):
+
+**Triggers:**
+
+- Successful **tracking bind** from a **rename** (`NEW_CHAT_TITLE` → parsed title binds in [`bot/handlers/track.py`](../bot/handlers/track.py)), or **`/track`** succeeds.
+- **`/info`** after the dashboard **`club_id`** was resolved from the chat title shorthand or **`groups`** link.
+
+**Club selection:** Uses [`get_club_gc_config_by_link_club_id()`](../club_gc_settings.py) — **`clubs.id`** must match that club’s **`link_club_id`** (Round Table / Creator Club / ClubGTO profiles).
+
+**Who is saved:** All **non-bot** members are scanned. **Excluded:** group **admins**, and every user id resolved from **`ClubGcConfig.users_to_add`** ([`GC_USERS_*`](../config.py)) plus **`GC_BOT_ACCOUNT`** when set. If **exactly one** human remains, that user is added/updated as a contact with **first name** = the **group chat title** (truncated for Telegram limits). If **zero or two or more** such members, the feature **does nothing** (ambiguous).
+
+**Disable:** `GC_CONTACT_SAVE_ENABLED=false` (or `0` / `no` / `off`). Default is on.
+
+**Edge cases:** A **player promoted to admin** is excluded from the candidate pool, so no contact is saved. Unresolvable `users_to_add` markers are skipped for exclusion (logged); they do not block the rest of the list.
+
+Implementation: [`bot/services/mtproto_track_contact.py`](../bot/services/mtproto_track_contact.py).
+
 ## Database persistence
 
 Table: `support_group_chats`

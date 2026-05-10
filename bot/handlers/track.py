@@ -13,6 +13,7 @@ from telegram.ext import ContextTypes
 
 from config import ADMIN_USER_IDS
 from bot.services.club import get_club_for_chat
+from bot.services.mtproto_track_contact import schedule_save_player_contact_named_group
 from bot.services.player_details import (
     parse_tracking_title,
     resolve_club_id_from_shorthand,
@@ -56,8 +57,14 @@ async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await context.bot.send_message(chat_id=update.effective_chat.id, text=res.error)
         return
     if context.bot and update.effective_chat and res.gg_player_id:
+        chat = update.effective_chat
+        schedule_save_player_contact_named_group(
+            chat_id=chat.id,
+            club_id=res.club_id,
+            chat_title=chat.title,
+        )
         await context.bot.send_message(
-            chat_id=update.effective_chat.id,
+            chat_id=chat.id,
             text=(
                 "Thank you for playing at our club!!\n"
                 f"Player ID: {res.gg_player_id}"
@@ -77,6 +84,11 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     res = _bind_result(update)
     if res.ok and res.gg_player_id:
+        schedule_save_player_contact_named_group(
+            chat_id=chat.id,
+            club_id=res.club_id,
+            chat_title=chat.title,
+        )
         await update.message.reply_text(
             f"Successfully tracking player id: {res.gg_player_id}"
         )
@@ -110,6 +122,12 @@ async def info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not club_id:
         await update.message.reply_text("Not bound.")
         return
+
+    schedule_save_player_contact_named_group(
+        chat_id=chat.id,
+        club_id=club_id,
+        chat_title=chat.title,
+    )
 
     players = get_bound_players(club_id=club_id, chat_id=chat.id)
     if not players:

@@ -174,6 +174,15 @@ def get_club_config_for_admin(telegram_user_id: int) -> ClubGcConfig | None:
     return None
 
 
+def get_club_gc_config_by_link_club_id(dashboard_clubs_id: int) -> ClubGcConfig | None:
+    """Maps ``clubs.id`` (dashboard) to `/gc` MTProto club profile when IDs match."""
+
+    for cfg in CLUB_GC_CONFIG.values():
+        if int(cfg.link_club_id) == int(dashboard_clubs_id):
+            return cfg
+    return None
+
+
 def get_tg_mtproto_credentials() -> tuple[int, str]:
     """Telegram developer API credentials (shared across club MTProto sessions)."""
     api_id_raw = os.getenv("TG_API_ID", "").strip()
@@ -196,3 +205,12 @@ def is_dm_gc_listener_enabled() -> bool:
     if raw is None or not str(raw).strip():
         return True
     return str(raw).strip().lower() not in ("0", "false", "no", "off", "")
+
+
+def is_contact_save_enabled() -> bool:
+    """Telethon saves player contacts from track/info flows unless explicitly disabled."""
+
+    raw = os.getenv("GC_CONTACT_SAVE_ENABLED")
+    if raw is None or not str(raw).strip():
+        return True
+    return str(raw).strip().lower() not in ("0", "false", "no", "off")
