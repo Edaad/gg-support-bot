@@ -137,13 +137,13 @@ Protected HTTP API (JWT), implemented in [`api/routes/gc_mtproto.py`](../api/rou
 
 Dashboard OTP runs where **`run_api`/web** lives (scratch `sessions/`). The bot **`worker`** has a separate disk unless you bolt on shared volumes. Postgres is the canonical copy of authorization after OTP so **`/gc` works on the worker** without copying files manually. If you had already logged in on web **before** this feature shipped, redeploy migrations and either complete **Telegram login** once again or call **`/api/gc/mtproto/sync-disk-session`** with JWT while this release’s web dyno still has an authorized `sessions/` file.
 
-## Player contact sync (`/info` only)
+## Player contact sync (rename, `/track`, `/info`)
 
 When **`TG_API_ID` / `TG_API_HASH`** are set and the club’s Telethon session is authorized, the worker may **save or update one Telegram contact** on that club MTProto account (same session as `/gc`):
 
-**Trigger (only):** **`/info`** in a supergroup — after dashboard **`club_id`** is resolved from the chat title shorthand or **`groups`** link. Rename bindings and **`/track`** do **not** run contact sync.
+**Triggers:** **Group title change** after a successful bind (same path as the “Thank you for playing…” message), **`/track`** after a successful bind, and **`/info`**. Club resolution: title shorthand or **`groups`** link.
 
-Run **`/info`** after naming the group so the operator can explicitly refresh contacts when needed.
+**Failure DM:** If sync cannot complete (e.g. session not authorized, ambiguous members, `AddContact` error), the bot sends a **short private message** to that club’s **`command_admin_user_id`** ([`GC_ADMIN_USER_*`](../club_gc_settings.py)). That user must have **`/start`**ed the bot so Telegram accepts the DM.
 
 **Club selection:** Uses [`get_club_gc_config_by_link_club_id()`](../club_gc_settings.py) — **`clubs.id`** must match that club’s **`link_club_id`** (Round Table / Creator Club / ClubGTO profiles).
 

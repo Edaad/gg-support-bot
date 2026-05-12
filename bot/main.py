@@ -52,6 +52,10 @@ def _configure_worker_logging() -> None:
 
 
 async def _post_init_dm_gc_listener(app):
+    from bot.services.mtproto_track_contact import set_contact_save_notify_bot
+
+    set_contact_save_notify_bot(app.bot)
+
     from club_gc_settings import is_dm_gc_listener_enabled
 
     if is_dm_gc_listener_enabled():

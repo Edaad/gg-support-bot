@@ -214,7 +214,7 @@ def is_dm_gc_listener_enabled() -> bool:
 
 
 def is_contact_save_enabled() -> bool:
-    """Telethon saves player contacts from track/info flows unless explicitly disabled."""
+    """Telethon saves player contacts from title change, /track, and /info unless explicitly disabled."""
 
     raw = os.getenv("GC_CONTACT_SAVE_ENABLED")
     if raw is None or not str(raw).strip():

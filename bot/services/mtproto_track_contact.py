@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from telegram import Bot
+
 from club_gc_settings import (
     ClubGcConfig,
     gc_mtproto_operator_telegram_user_ids,
@@ -24,6 +26,15 @@ logger = logging.getLogger(__name__)
 # Telegram contact first name conservative cap (characters).
 _CONTACT_FIRST_MAX = 64
 
+_notify_bot: Bot | None = None
+
+
+def set_contact_save_notify_bot(bot: Bot | None) -> None:
+    """Called from bot ``post_init`` so contact-save failures can DM the club GC admin."""
+
+    global _notify_bot
+    _notify_bot = bot
+
 
 def schedule_save_player_contact_named_group(
     *,
@@ -31,7 +42,7 @@ def schedule_save_player_contact_named_group(
     club_id: int | None,
     chat_title: str | None,
 ) -> None:
-    """Fire-and-forget; never raises. Call only from `/info` (see track.info_handler)."""
+    """Fire-and-forget; never raises. Triggers: group title change, ``/track``, ``/info``."""
     if not is_contact_save_enabled():
         return
     if club_id is None:
@@ -55,15 +66,42 @@ def schedule_save_player_contact_named_group(
 
     async def _run_wrapped():
         try:
-            await _maybe_save_player_contact(chat_id=chat_id, cfg=cfg, chat_title=title_t)
+            note = await _maybe_save_player_contact(
+                chat_id=chat_id, cfg=cfg, chat_title=title_t
+            )
+            if note:
+                await _notify_club_gc_admin_dm(cfg, chat_id, note)
         except Exception:
             logger.exception(
                 "contact_save: unexpected error chat_id=%s club=%s",
                 chat_id,
                 cfg.club_key,
             )
+            await _notify_club_gc_admin_dm(
+                cfg,
+                chat_id,
+                "Contact save crashed (see worker logs).",
+            )
 
     loop.create_task(_run_wrapped(), name=f"contact-save-{chat_id}")
+
+
+async def _notify_club_gc_admin_dm(
+    cfg: ClubGcConfig, chat_id: int, reason: str
+) -> None:
+    bot = _notify_bot
+    if not bot:
+        return
+    text = f"[{cfg.club_display_name}] Chat {chat_id}: {reason}"[:4096]
+    try:
+        await bot.send_message(chat_id=cfg.command_admin_user_id, text=text)
+    except Exception:
+        logger.debug(
+            "contact_save: DM notify failed club=%s admin_user_id=%s",
+            cfg.club_key,
+            cfg.command_admin_user_id,
+            exc_info=True,
+        )
 
 
 def _truncate_first_name(raw: str) -> str:
@@ -128,22 +166,26 @@ async def _admin_user_ids(client, channel_ent) -> set[int]:
     return ids
 
 
-async def _maybe_save_player_contact(*, chat_id: int, cfg: ClubGcConfig, chat_title: str) -> None:
+async def _maybe_save_player_contact(
+    *, chat_id: int, cfg: ClubGcConfig, chat_title: str
+) -> str | None:
+    """Returns a short human reason for admin DM when save does not succeed; ``None`` on success."""
+
     try:
         from bot.services.mtproto_group_create import get_tg_mtproto_credentials
 
         get_tg_mtproto_credentials()
     except RuntimeError:
         logger.debug("contact_save: TG_API_ID/TG_API_HASH unset")
-        return
+        return None
 
     fn = _truncate_first_name(chat_title)
     if not fn:
-        return
+        return None
 
     if not await is_client_authorized(cfg):
         logger.info("contact_save: MTProto unauthorized club=%s", cfg.club_key)
-        return
+        return "MTProto session not authorized (log in via Dashboard)."
 
     async with get_mtproto_lock(cfg.club_key):
         client = make_client(cfg)
@@ -155,10 +197,18 @@ async def _maybe_save_player_contact(*, chat_id: int, cfg: ClubGcConfig, chat_ti
             except Exception:
                 self_id = None
 
-            chan = await _with_single_flood_retry(
-                "get_entity_chat",
-                lambda: client.get_entity(chat_id),
-            )
+            try:
+                chan = await _with_single_flood_retry(
+                    "get_entity_chat",
+                    lambda: client.get_entity(chat_id),
+                )
+            except Exception as e:
+                logger.warning(
+                    "contact_save: get_entity failed chat_id=%s: %s",
+                    chat_id,
+                    type(e).__name__,
+                )
+                return f"Could not open chat ({type(e).__name__})."
 
             admin_ids = await _admin_user_ids(client, chan)
             invite_ids = await _resolve_invitee_user_ids(client, cfg)
@@ -198,7 +248,7 @@ async def _maybe_save_player_contact(*, chat_id: int, cfg: ClubGcConfig, chat_ti
                     chat_id,
                     type(e).__name__,
                 )
-                return
+                return f"Could not list members ({type(e).__name__})."
 
             if len(candidates) != 1:
                 preview = ",".join(
@@ -212,12 +262,22 @@ async def _maybe_save_player_contact(*, chat_id: int, cfg: ClubGcConfig, chat_ti
                     len(candidates),
                     preview,
                 )
-                return
+                return (
+                    f"Contact not saved: need exactly one eligible player, "
+                    f"found {len(candidates)}."
+                )
 
             user_obj = candidates[0]
             from telethon.tl import functions
 
-            inp = await client.get_input_entity(user_obj)
+            try:
+                inp = await client.get_input_entity(user_obj)
+            except Exception as e:
+                logger.warning(
+                    "contact_save: get_input_entity failed: %s", type(e).__name__
+                )
+                return f"Could not resolve player ({type(e).__name__})."
+
             try:
                 await _with_single_flood_retry(
                     "AddContactRequest",
@@ -236,11 +296,13 @@ async def _maybe_save_player_contact(*, chat_id: int, cfg: ClubGcConfig, chat_ti
                     cfg.club_key,
                     getattr(user_obj, "id", "?"),
                 )
+                return None
             except Exception as e:
                 logger.warning(
                     "contact_save: AddContact failed club=%s: %s",
                     cfg.club_key,
                     type(e).__name__,
                 )
+                return f"AddContact failed ({type(e).__name__})."
         finally:
             await client.disconnect()

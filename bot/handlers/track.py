@@ -1,9 +1,10 @@
 """Group title tracking for player_details.
 
 Triggers:
-- Group title change (NEW_CHAT_TITLE): silent on invalid format; success message on bind.
-- /track: same bind logic; replies with invalid format on failure.
-- /info: show current bindings; also schedules MTProto player contact sync when enabled (see mtproto_track_contact).
+- Group title change (NEW_CHAT_TITLE): silent on invalid format; success message on bind;
+  MTProto contact sync when enabled (see mtproto_track_contact).
+- /track: same bind logic; replies with invalid format on failure; contact sync on successful bind.
+- /info: show current bindings; schedules MTProto player contact sync when enabled.
 """
 
 from __future__ import annotations
@@ -25,6 +26,17 @@ from bot.services.player_details import (
 
 
 _EXPECTED = "Expected: SHORTHAND / GGPLAYERID / anything (example: GTO / 8190-5287 / ThePirate343)"
+
+
+def _club_id_for_contact_sync(chat) -> int | None:
+    """Resolve dashboard club_id from title shorthand or groups link (for MTProto contact save)."""
+    parsed = parse_tracking_title(chat.title or "")
+    if parsed:
+        shorthand, _ = parsed
+        cid = resolve_club_id_from_shorthand(shorthand)
+        if cid:
+            return cid
+    return get_club_for_chat(chat.id)
 
 
 async def _bind_from_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> tuple[bool, str | None]:
@@ -65,6 +77,12 @@ async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 f"Player ID: {res.gg_player_id}"
             ),
         )
+        club_id = _club_id_for_contact_sync(chat)
+        schedule_save_player_contact_named_group(
+            chat_id=chat.id,
+            club_id=club_id,
+            chat_title=chat.title,
+        )
 
 
 async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -82,6 +100,12 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text(
             f"Successfully tracking player id: {res.gg_player_id}"
         )
+        club_id = _club_id_for_contact_sync(chat)
+        schedule_save_player_contact_named_group(
+            chat_id=chat.id,
+            club_id=club_id,
+            chat_title=chat.title,
+        )
     else:
         if res.error and is_same_club_player_conflict_message(res.error):
             await update.message.reply_text(res.error)
@@ -90,7 +114,7 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show what this chat is currently bound to; MTProto contact sync runs only from here."""
+    """Show what this chat is currently bound to; schedules MTProto contact sync when enabled."""
     if not update.message or not update.effective_chat:
         return
     if not update.effective_user or update.effective_user.id not in ADMIN_USER_IDS:
@@ -100,15 +124,7 @@ async def info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Use /info in a club group chat.")
         return
 
-    # Prefer club resolved from title shorthand; fallback to DB group->club mapping.
-    club_id = None
-    parsed = parse_tracking_title(chat.title or "")
-    if parsed:
-        shorthand, _ = parsed
-        club_id = resolve_club_id_from_shorthand(shorthand)
-    if not club_id:
-        club_id = get_club_for_chat(chat.id)
-
+    club_id = _club_id_for_contact_sync(chat)
     if not club_id:
         await update.message.reply_text("Not bound.")
         return
