@@ -55,9 +55,6 @@ async def cash_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not _can_use_cash(admin_id, club_id):
         return
 
-    if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
-        return
-
     amount = _parse_from_args(context.args or [])
     if amount is None:
         await update.message.reply_text(
@@ -79,6 +76,20 @@ async def cash_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     try:
+        record_activity(club_id, target_user.id, chat.id, "cashout")
+    except Exception:
+        logger.exception(
+            "cash: record_activity failed club_id=%s user_id=%s chat_id=%s",
+            club_id,
+            target_user.id,
+            chat.id,
+        )
+
+    # Club MTProto operator: Telethon deletes /cash and posts pinned owed + ASAP.
+    if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
+        return
+
+    try:
         await context.bot.delete_message(
             chat_id=chat.id, message_id=update.message.message_id
         )
@@ -95,13 +106,3 @@ async def cash_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         club_id=club_id,
         amount=amount,
     )
-
-    try:
-        record_activity(club_id, target_user.id, chat.id, "cashout")
-    except Exception:
-        logger.exception(
-            "cash: record_activity failed club_id=%s user_id=%s chat_id=%s",
-            club_id,
-            target_user.id,
-            chat.id,
-        )

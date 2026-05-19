@@ -56,10 +56,6 @@ async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not _can_use_add(admin_id, club_id):
         return
 
-    # Club MTProto operator: outgoing Telethon handler deletes /add and sends confirmation (like /gc).
-    if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
-        return
-
     parsed = _parse_from_args(context.args or [])
     if parsed is None:
         await update.message.reply_text(
@@ -82,6 +78,20 @@ async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("Cannot add balance for a bot.")
         return
 
+    try:
+        record_activity(club_id, target_user.id, chat.id, "deposit")
+    except Exception:
+        logger.exception(
+            "add: record_activity failed club_id=%s user_id=%s chat_id=%s",
+            club_id,
+            target_user.id,
+            chat.id,
+        )
+
+    # Club MTProto operator: Telethon deletes /add and sends confirmation (like /gc).
+    if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
+        return
+
     confirmation = format_add_confirmation(amount, bonus)
 
     try:
@@ -101,13 +111,3 @@ async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         club_id=club_id,
         text=confirmation,
     )
-
-    try:
-        record_activity(club_id, target_user.id, chat.id, "deposit")
-    except Exception:
-        logger.exception(
-            "add: record_activity failed club_id=%s user_id=%s chat_id=%s",
-            club_id,
-            target_user.id,
-            chat.id,
-        )
