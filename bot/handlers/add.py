@@ -13,6 +13,7 @@ from club_gc_settings import get_club_config_for_admin, is_dm_gc_listener_enable
 from bot.services.club import (
     get_club_allows_admin_commands,
     get_club_for_chat,
+    invalidate_pending_one_time_bypasses,
     is_club_staff,
     record_activity,
 )
@@ -80,6 +81,7 @@ async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     try:
         record_activity(club_id, target_user.id, chat.id, "deposit")
+        invalidate_pending_one_time_bypasses(club_id, target_user.id)
     except Exception:
         logger.exception(
             "add: record_activity failed club_id=%s user_id=%s chat_id=%s",

@@ -10,7 +10,11 @@ from decimal import Decimal
 from telethon import events
 
 from club_gc_settings import ClubGcConfig, get_club_gc_config_by_link_club_id
-from bot.services.club import get_club_for_chat, record_activity
+from bot.services.club import (
+    get_club_for_chat,
+    invalidate_pending_one_time_bypasses,
+    record_activity,
+)
 from bot.services.mtproto_group_add import _format_money, _parse_money_token
 from bot.services.mtproto_group_create import (
     get_mtproto_lock,
@@ -156,6 +160,11 @@ async def handle_group_cash_outgoing(
             int(sender.id),
             int(event.chat_id),
             "cashout",
+        )
+        await asyncio.to_thread(
+            invalidate_pending_one_time_bypasses,
+            int(club_id),
+            int(sender.id),
         )
     except Exception:
         logger.exception(

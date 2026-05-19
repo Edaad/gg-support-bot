@@ -11,7 +11,11 @@ from decimal import Decimal, InvalidOperation
 from telethon import events
 
 from club_gc_settings import ClubGcConfig, get_club_gc_config_by_link_club_id
-from bot.services.club import get_club_for_chat, record_activity
+from bot.services.club import (
+    get_club_for_chat,
+    invalidate_pending_one_time_bypasses,
+    record_activity,
+)
 from bot.services.mtproto_group_create import (
     get_mtproto_lock,
     is_client_authorized,
@@ -182,6 +186,11 @@ async def handle_group_add_outgoing(
             int(sender.id),
             int(event.chat_id),
             "deposit",
+        )
+        await asyncio.to_thread(
+            invalidate_pending_one_time_bypasses,
+            int(club_id),
+            int(sender.id),
         )
     except Exception:
         logger.exception(

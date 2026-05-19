@@ -609,6 +609,19 @@ def grant_bypass(club_id: int, telegram_user_id: int, bypass_type: str) -> None:
         )
 
 
+def invalidate_pending_one_time_bypasses(
+    club_id: int, telegram_user_id: int
+) -> None:
+    """Mark unused one-time bypasses as used when a new cooldown anchor is set (/add, /cash)."""
+    with get_db() as session:
+        session.query(CooldownBypass).filter_by(
+            club_id=club_id,
+            telegram_user_id=telegram_user_id,
+            bypass_type="one_time",
+            used=False,
+        ).update({CooldownBypass.used: True}, synchronize_session=False)
+
+
 def _parse_time(t: str) -> tuple[int, int]:
     parts = t.split(":")
     return int(parts[0]), int(parts[1])
