@@ -3,29 +3,26 @@
 from __future__ import annotations
 
 import logging
-import random
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from config import ADMIN_USER_IDS
+from club_gc_settings import get_club_config_for_admin, is_dm_gc_listener_enabled
 from bot.services.club import (
     get_club_allows_admin_commands,
     get_club_for_chat,
     is_club_staff,
     record_activity,
 )
+from bot.services.mtproto_group_add import (
+    format_add_confirmation,
+    parse_add_amount,
+    schedule_send_add_confirmation_from_club,
+)
 
 logger = logging.getLogger(__name__)
-
-ADD_CONFIRMATION_MESSAGES = (
-    "good luck",
-    "best of luck",
-    "have fun at the tables",
-    "best of luck at the tables",
-    "enjoy",
-)
 
 
 def _can_use_add(user_id: int, club_id: int) -> bool:
@@ -36,17 +33,10 @@ def _can_use_add(user_id: int, club_id: int) -> bool:
     return False
 
 
-def _parse_amount(args: list[str]) -> Decimal | None:
+def _parse_amount_from_args(args: list[str]) -> Decimal | None:
     if not args:
         return None
-    raw = args[0].strip().replace("$", "").replace(",", "")
-    try:
-        amount = Decimal(raw)
-        if amount <= 0:
-            return None
-        return amount
-    except (InvalidOperation, Exception):
-        return None
+    return parse_add_amount(f"/add {args[0]}")
 
 
 async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -66,7 +56,11 @@ async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not _can_use_add(admin_id, club_id):
         return
 
-    amount = _parse_amount(context.args or [])
+    # Club MTProto operator: outgoing Telethon handler edits in place (like /gc).
+    if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
+        return
+
+    amount = _parse_amount_from_args(context.args or [])
     if amount is None:
         await update.message.reply_text(
             "Usage: reply to the player's message with /add <amount> (Example: /add 500)"
@@ -85,8 +79,7 @@ async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("Cannot add balance for a bot.")
         return
 
-    phrase = random.choice(ADD_CONFIRMATION_MESSAGES)
-    confirmation = f"Added ${amount:,.2f}, {phrase}!!"
+    confirmation = format_add_confirmation(amount)
 
     try:
         await context.bot.delete_message(
@@ -100,7 +93,11 @@ async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             exc_info=True,
         )
 
-    await context.bot.send_message(chat_id=chat.id, text=confirmation)
+    schedule_send_add_confirmation_from_club(
+        chat_id=chat.id,
+        club_id=club_id,
+        text=confirmation,
+    )
 
     try:
         record_activity(club_id, target_user.id, chat.id, "deposit")
