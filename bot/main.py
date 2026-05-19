@@ -100,6 +100,7 @@ def run_bot(token: str | None = None):
         auto_link_group,
     )
     from bot.handlers.bypass import bypass_handler, bypass_permanent_handler
+    from bot.handlers.add import add_handler
     from bot.handlers.track import on_new_chat_title, track_handler, info_handler
     from bot.handlers.group_create import get_gc_handler
     from bot.handlers.bonus import get_bonus_handler
@@ -119,6 +120,7 @@ def run_bot(token: str | None = None):
     app.add_handler(CommandHandler("delete", delete_handler))
     app.add_handler(CommandHandler("bypass", bypass_handler))
     app.add_handler(CommandHandler("bypasspermanent", bypass_permanent_handler))
+    app.add_handler(CommandHandler("add", add_handler))
     app.add_handler(CommandHandler("track", track_handler))
     app.add_handler(CommandHandler("info", info_handler))
 
