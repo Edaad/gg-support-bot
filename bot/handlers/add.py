@@ -34,10 +34,10 @@ def _can_use_add(user_id: int, club_id: int) -> bool:
     return False
 
 
-def _parse_from_args(args: list[str]) -> tuple[Decimal, Decimal | None] | None:
+def _parse_from_args(args: list[str]) -> tuple[Decimal, Decimal | None, str | None] | None:
     if not args:
         return None
-    return parse_add_command("/add " + " ".join(args[:2]))
+    return parse_add_command("/add " + " ".join(args))
 
 
 async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -60,17 +60,17 @@ async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     parsed = _parse_from_args(context.args or [])
     if parsed is None:
         await update.message.reply_text(
-            "Usage: reply to the player's message with /add <amount> [bonus] "
-            "(Example: /add 500 or /add 500 50)"
+            "Usage: reply to the player's message with /add <amount> [bonus] [name] "
+            "(Example: /add 500, /add 500 50, /add 500 Jacob, /add 500 50 Jacob)"
         )
         return
-    amount, bonus = parsed
+    amount, bonus, name = parsed
 
     reply = update.message.reply_to_message
     if not reply or not reply.from_user:
         await update.message.reply_text(
-            "Reply to the player's message with /add <amount> [bonus] "
-            "(Example: /add 500 or /add 500 50)"
+            "Reply to the player's message with /add <amount> [bonus] [name] "
+            "(Example: /add 500, /add 500 50, /add 500 Jacob, /add 500 50 Jacob)"
         )
         return
 
@@ -94,7 +94,7 @@ async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
         return
 
-    confirmation = format_add_confirmation(amount, bonus)
+    confirmation = format_add_confirmation(amount, bonus, name=name)
 
     try:
         await context.bot.delete_message(

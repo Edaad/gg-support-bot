@@ -32,9 +32,7 @@ ADD_CONFIRMATION_MESSAGES = (
     "enjoy",
 )
 
-_ADD_CMD_RE = re.compile(
-    r"^/add(?:@\w+)?\s+(\S+)(?:\s+(\S+))?\s*$", re.IGNORECASE
-)
+_ADD_CMD_RE = re.compile(r"^/add(?:@\w+)?\s+(.+?)\s*$", re.IGNORECASE)
 
 
 def _parse_money_token(raw: str) -> Decimal | None:
@@ -53,21 +51,35 @@ def _format_money(amount: Decimal) -> str:
     return f"${int(amount):,}"
 
 
-def parse_add_command(text: str) -> tuple[Decimal, Decimal | None] | None:
-    """Return (amount, optional_bonus) from ``/add 500`` or ``/add 500 50``."""
+def parse_add_command(
+    text: str,
+) -> tuple[Decimal, Decimal | None, str | None] | None:
+    """Return (amount, optional_bonus, optional_name).
+
+    Examples:
+        /add 500
+        /add 500 50
+        /add 500 Jacob
+        /add 500 50 Jacob
+    """
     m = _ADD_CMD_RE.match((text or "").strip())
     if not m:
         return None
-    amount = _parse_money_token(m.group(1))
+    parts = m.group(1).split()
+    if not parts:
+        return None
+    amount = _parse_money_token(parts[0])
     if amount is None:
         return None
-    bonus_raw = m.group(2)
-    if bonus_raw is None:
-        return amount, None
-    bonus = _parse_money_token(bonus_raw)
-    if bonus is None:
-        return None
-    return amount, bonus
+    if len(parts) == 1:
+        return amount, None, None
+    second_money = _parse_money_token(parts[1])
+    if second_money is not None:
+        bonus = second_money
+        name = " ".join(parts[2:]).strip() or None
+        return amount, bonus, name
+    name = " ".join(parts[1:]).strip() or None
+    return amount, None, name
 
 
 def parse_add_amount(text: str) -> Decimal | None:
@@ -78,12 +90,21 @@ def parse_add_amount(text: str) -> Decimal | None:
     return parsed[0]
 
 
-def format_add_confirmation(amount: Decimal, bonus: Decimal | None = None) -> str:
+def format_add_confirmation(
+    amount: Decimal,
+    bonus: Decimal | None = None,
+    *,
+    name: str | None = None,
+) -> str:
     phrase = random.choice(ADD_CONFIRMATION_MESSAGES)
     amt = _format_money(amount)
     if bonus is not None:
-        return f"Added {amt} plus {_format_money(bonus)} bonus, {phrase}!!"
-    return f"Added {amt}, {phrase}!!"
+        core = f"Added {amt} plus {_format_money(bonus)} bonus, {phrase}"
+    else:
+        core = f"Added {amt}, {phrase}"
+    if name:
+        return f"{core} {name}!!"
+    return f"{core}!!"
 
 
 async def _send_add_confirmation_once(cfg: ClubGcConfig, chat_id: int, text: str) -> None:
@@ -142,7 +163,7 @@ async def handle_group_add_outgoing(
     parsed = parse_add_command(event.raw_text or "")
     if parsed is None:
         return
-    amount, bonus = parsed
+    amount, bonus, name = parsed
 
     club_id = await asyncio.to_thread(get_club_for_chat, event.chat_id)
     if club_id is None or int(club_id) != int(cfg.link_club_id):
@@ -156,7 +177,7 @@ async def handle_group_add_outgoing(
     if not sender or getattr(sender, "bot", False):
         return
 
-    confirmation = format_add_confirmation(amount, bonus)
+    confirmation = format_add_confirmation(amount, bonus, name=name)
 
     try:
         await event.delete()
