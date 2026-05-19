@@ -18,7 +18,7 @@ from bot.services.club import (
 )
 from bot.services.mtproto_group_add import (
     format_add_confirmation,
-    parse_add_amount,
+    parse_add_command,
     schedule_send_add_confirmation_from_club,
 )
 
@@ -33,10 +33,10 @@ def _can_use_add(user_id: int, club_id: int) -> bool:
     return False
 
 
-def _parse_amount_from_args(args: list[str]) -> Decimal | None:
+def _parse_from_args(args: list[str]) -> tuple[Decimal, Decimal | None] | None:
     if not args:
         return None
-    return parse_add_amount(f"/add {args[0]}")
+    return parse_add_command("/add " + " ".join(args[:2]))
 
 
 async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -60,17 +60,20 @@ async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
         return
 
-    amount = _parse_amount_from_args(context.args or [])
-    if amount is None:
+    parsed = _parse_from_args(context.args or [])
+    if parsed is None:
         await update.message.reply_text(
-            "Usage: reply to the player's message with /add <amount> (Example: /add 500)"
+            "Usage: reply to the player's message with /add <amount> [bonus] "
+            "(Example: /add 500 or /add 500 50)"
         )
         return
+    amount, bonus = parsed
 
     reply = update.message.reply_to_message
     if not reply or not reply.from_user:
         await update.message.reply_text(
-            "Reply to the player's message with /add <amount> (Example: /add 500)"
+            "Reply to the player's message with /add <amount> [bonus] "
+            "(Example: /add 500 or /add 500 50)"
         )
         return
 
@@ -79,7 +82,7 @@ async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("Cannot add balance for a bot.")
         return
 
-    confirmation = format_add_confirmation(amount)
+    confirmation = format_add_confirmation(amount, bonus)
 
     try:
         await context.bot.delete_message(
