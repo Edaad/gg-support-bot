@@ -56,7 +56,7 @@ async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not _can_use_add(admin_id, club_id):
         return
 
-    # Club MTProto operator: outgoing Telethon handler edits in place (like /gc).
+    # Club MTProto operator: outgoing Telethon handler deletes /add and sends confirmation (like /gc).
     if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
         return
 

@@ -1,4 +1,4 @@
-"""MTProto /add in support groups: edit outgoing command in place (like /gc delete)."""
+"""MTProto /add in support groups: delete command and send confirmation (like /gc)."""
 
 from __future__ import annotations
 
@@ -99,7 +99,7 @@ async def handle_group_add_outgoing(
     *,
     listener_label: str,
 ) -> None:
-    """Outgoing /add in a megagroup: replace command text in place, record cooldown."""
+    """Outgoing /add in a megagroup: delete command, send new message, record cooldown."""
     if event.is_private:
         return
 
@@ -122,28 +122,25 @@ async def handle_group_add_outgoing(
     confirmation = format_add_confirmation(amount)
 
     try:
-        await event.edit(confirmation)
+        await event.delete()
     except Exception as e:
         logger.warning(
-            "group_add: edit failed club=%s listener=%s chat_id=%s err=%s",
+            "group_add: delete failed club=%s listener=%s chat_id=%s err=%s",
             cfg.club_key,
             listener_label,
             event.chat_id,
             type(e).__name__,
         )
-        try:
-            await event.delete()
-        except Exception:
-            pass
-        try:
-            await event.client.send_message(event.chat_id, confirmation)
-        except Exception:
-            logger.exception(
-                "group_add: send fallback failed club=%s chat_id=%s",
-                cfg.club_key,
-                event.chat_id,
-            )
-            return
+
+    try:
+        await event.client.send_message(event.chat_id, confirmation)
+    except Exception:
+        logger.exception(
+            "group_add: send failed club=%s chat_id=%s",
+            cfg.club_key,
+            event.chat_id,
+        )
+        return
 
     try:
         await asyncio.to_thread(
