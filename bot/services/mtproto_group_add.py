@@ -78,7 +78,7 @@ def format_add_confirmation(amount: Decimal, bonus: Decimal | None = None) -> st
     phrase = random.choice(ADD_CONFIRMATION_MESSAGES)
     amt = _format_money(amount)
     if bonus is not None:
-        return f"Added {amt} plus {_format_money(bonus)}, {phrase}!!"
+        return f"Added {amt} plus {_format_money(bonus)} bonus, {phrase}!!"
     return f"Added {amt}, {phrase}!!"
 
 
