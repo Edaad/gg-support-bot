@@ -195,30 +195,31 @@ Append-only style log of **completed** deposit and cashout actions for **cooldow
 |--------|------|------------------|
 | `id` | integer PK | |
 | `club_id` | FK → `clubs.id` CASCADE | |
-| `telegram_user_id` | bigint | Player. |
-| `chat_id` | bigint | Group where it happened. |
+| `telegram_user_id` | bigint | Player (audit; eligibility is per group). |
+| `chat_id` | bigint | Support group where it happened; **cooldown key**. |
 | `activity_type` | string(10) | `deposit` or `cashout`. |
 | `cancelled` | bool | |
 | `created_at` | datetime | |
 
-**Business logic:** `check_cashout_eligibility` uses the **latest non-cancelled** deposit or cashout timestamp for that user and club. If cooldown is enabled, the user must wait `cashout_cooldown_hours` after that timestamp before another cashout (subject to business hours and bypasses).
+**Business logic:** `check_cashout_eligibility` uses the **latest non-cancelled** deposit or cashout timestamp for that **support group** (`club_id` + `chat_id`). If cooldown is enabled, the next `/cashout` in that group must wait `cashout_cooldown_hours` after that timestamp (subject to business hours and bypasses). Admin `/add` and `/cash` set the timer for the current group without replying to a message.
 
 ---
 
 ### `cooldown_bypasses`
 
-Per-player exceptions **for cooldown only** (not for business hours alone—see code in `check_cashout_eligibility`).
+Per **support group chat** exceptions for cooldown only (not for business hours alone—see code in `check_cashout_eligibility`).
 
 | Column | Type | Business meaning |
 |--------|------|------------------|
 | `id` | integer PK | |
 | `club_id` | FK → `clubs.id` CASCADE | |
-| `telegram_user_id` | bigint | |
+| `chat_id` | bigint | Support group the bypass applies to. |
+| `telegram_user_id` | bigint | Legacy; unused for eligibility. |
 | `bypass_type` | string(20) | `one_time` (consumed on next successful check) or `permanent`. |
 | `used` | bool | For one-time bypass after use. |
 | `created_at` | datetime | |
 
-**Business logic:** Granted via `/bypass` and `/bypasspermanent` in groups (reply to player’s message); see [`bot/handlers/bypass.py`](../bot/handlers/bypass.py).
+**Business logic:** Granted via `/bypass` and `/bypasspermanent` in the support group (no reply required); see [`bot/handlers/bypass.py`](../bot/handlers/bypass.py). Run [`migrate_cooldown_bypass_chat_id.py`](../migrate_cooldown_bypass_chat_id.py) on existing DBs; re-grant bypasses per group after migration.
 
 ---
 

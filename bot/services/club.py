@@ -528,14 +528,30 @@ def record_activity(
         )
 
 
-def cancel_last_cashout_activity(club_id: int, telegram_user_id: int) -> None:
+def record_activity_for_chat(
+    club_id: int,
+    chat_id: int,
+    activity_type: str,
+    *,
+    telegram_user_id: int | None = None,
+) -> None:
+    """Record cooldown anchor for this support group (optional player id for audit)."""
+    uid = telegram_user_id
+    if uid is None:
+        from bot.services.support_group_chats import fetch_player_telegram_user_id_for_chat
+
+        uid = fetch_player_telegram_user_id_for_chat(chat_id) or 0
+    record_activity(club_id, uid, chat_id, activity_type)
+
+
+def cancel_last_cashout_activity(club_id: int, chat_id: int) -> None:
     """Mark the most recent non-cancelled cashout as cancelled so the timer falls back."""
     with get_db() as session:
         activity = (
             session.query(PlayerActivity)
             .filter_by(
                 club_id=club_id,
-                telegram_user_id=telegram_user_id,
+                chat_id=chat_id,
                 activity_type="cashout",
                 cancelled=False,
             )
@@ -546,14 +562,14 @@ def cancel_last_cashout_activity(club_id: int, telegram_user_id: int) -> None:
             activity.cancelled = True
 
 
-def get_last_activity(club_id: int, telegram_user_id: int) -> Optional[datetime]:
-    """Return created_at (UTC) of the latest non-cancelled deposit or cashout, or None."""
+def get_last_activity(club_id: int, chat_id: int) -> Optional[datetime]:
+    """Return created_at (UTC) of the latest non-cancelled deposit or cashout in this group, or None."""
     with get_db() as session:
         activity = (
             session.query(PlayerActivity)
             .filter_by(
                 club_id=club_id,
-                telegram_user_id=telegram_user_id,
+                chat_id=chat_id,
                 cancelled=False,
             )
             .order_by(PlayerActivity.created_at.desc())
@@ -567,14 +583,14 @@ def get_last_activity(club_id: int, telegram_user_id: int) -> Optional[datetime]
     return None
 
 
-def check_and_consume_bypass(club_id: int, telegram_user_id: int) -> Optional[str]:
-    """Check for a bypass. Returns 'permanent', 'one_time' (and consumes it), or None."""
+def check_and_consume_bypass(club_id: int, chat_id: int) -> Optional[str]:
+    """Check for a bypass on this support group. Returns 'permanent', 'one_time' (and consumes it), or None."""
     with get_db() as session:
         perm = (
             session.query(CooldownBypass)
             .filter_by(
                 club_id=club_id,
-                telegram_user_id=telegram_user_id,
+                chat_id=chat_id,
                 bypass_type="permanent",
             )
             .first()
@@ -585,7 +601,7 @@ def check_and_consume_bypass(club_id: int, telegram_user_id: int) -> Optional[st
             session.query(CooldownBypass)
             .filter_by(
                 club_id=club_id,
-                telegram_user_id=telegram_user_id,
+                chat_id=chat_id,
                 bypass_type="one_time",
                 used=False,
             )
@@ -598,25 +614,23 @@ def check_and_consume_bypass(club_id: int, telegram_user_id: int) -> Optional[st
     return None
 
 
-def grant_bypass(club_id: int, telegram_user_id: int, bypass_type: str) -> None:
+def grant_bypass(club_id: int, chat_id: int, bypass_type: str) -> None:
     with get_db() as session:
         session.add(
             CooldownBypass(
                 club_id=club_id,
-                telegram_user_id=telegram_user_id,
+                chat_id=chat_id,
                 bypass_type=bypass_type,
             )
         )
 
 
-def invalidate_pending_one_time_bypasses(
-    club_id: int, telegram_user_id: int
-) -> None:
+def invalidate_pending_one_time_bypasses(club_id: int, chat_id: int) -> None:
     """Mark unused one-time bypasses as used when a new cooldown anchor is set (/add, /cash)."""
     with get_db() as session:
         session.query(CooldownBypass).filter_by(
             club_id=club_id,
-            telegram_user_id=telegram_user_id,
+            chat_id=chat_id,
             bypass_type="one_time",
             used=False,
         ).update({CooldownBypass.used: True}, synchronize_session=False)
@@ -670,9 +684,9 @@ def _hours_range_str(settings: dict) -> str:
 
 
 def check_cashout_eligibility(
-    club_id: int, telegram_user_id: int
+    club_id: int, chat_id: int
 ) -> tuple[bool, Optional[str]]:
-    """Check cooldown + business hours. Returns (eligible, denial_message)."""
+    """Check cooldown + business hours for this support group. Returns (eligible, denial_message)."""
     settings = get_cooldown_settings(club_id)
     if not settings:
         return True, None
@@ -688,9 +702,9 @@ def check_cashout_eligibility(
     wait_str = ""
 
     if cooldown_on:
-        bypass = check_and_consume_bypass(club_id, telegram_user_id)
+        bypass = check_and_consume_bypass(club_id, chat_id)
         if not bypass:
-            last = get_last_activity(club_id, telegram_user_id)
+            last = get_last_activity(club_id, chat_id)
             if last is not None:
                 cooldown_td = timedelta(hours=settings["cooldown_hours"])
                 eligible_at_utc = last + cooldown_td

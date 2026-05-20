@@ -1,4 +1,4 @@
-"""Admin commands to bypass cashout cooldown for specific players."""
+"""Admin commands to bypass cashout cooldown for a support group."""
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -16,12 +16,12 @@ def _is_admin_for_club(user_id: int, club_id: int) -> bool:
 
 
 async def bypass_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Grant a one-time cashout cooldown bypass. Admin must reply to the target player's message."""
+    """Grant a one-time cashout cooldown bypass for this support group."""
     await _handle_bypass(update, "one_time")
 
 
 async def bypass_permanent_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Grant a permanent cashout cooldown bypass. Admin must reply to the target player's message."""
+    """Grant a permanent cashout cooldown bypass for this support group."""
     await _handle_bypass(update, "permanent")
 
 
@@ -43,29 +43,15 @@ async def _handle_bypass(update: Update, bypass_type: str) -> None:
     if not _is_admin_for_club(admin_id, club_id):
         return
 
-    reply = update.message.reply_to_message
-    if not reply or not reply.from_user:
-        await update.message.reply_text(
-            "Reply to a message from the player you want to bypass the cooldown for."
-        )
-        return
-
-    target_user = reply.from_user
-    if target_user.is_bot:
-        await update.message.reply_text("Cannot bypass cooldown for a bot.")
-        return
-
-    grant_bypass(club_id, target_user.id, bypass_type)
-
-    display_name = target_user.first_name or str(target_user.id)
+    grant_bypass(club_id, chat.id, bypass_type)
 
     if bypass_type == "one_time":
         await update.message.reply_text(
-            f"One-time cashout bypass granted for {display_name}. "
-            f"Their next /cashout will skip the cooldown."
+            "One-time cashout bypass granted for this group. "
+            "The next /cashout here will skip the cooldown."
         )
     else:
         await update.message.reply_text(
-            f"Permanent cashout bypass granted for {display_name}. "
-            f"Cooldown rules will never apply to them in this club."
+            "Permanent cashout bypass granted for this group. "
+            "Cooldown rules will never apply here."
         )

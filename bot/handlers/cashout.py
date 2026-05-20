@@ -85,7 +85,7 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Cooldown + business hours check (admins/staff are exempt)
     is_staff = is_club_staff(user_id, club_id)
     if not is_staff:
-        eligible, deny_msg = check_cashout_eligibility(club_id, user_id)
+        eligible, deny_msg = check_cashout_eligibility(club_id, chat.id)
         if not eligible:
             await update.message.reply_text(deny_msg)
             return ConversationHandler.END
@@ -129,10 +129,11 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
     if context.chat_data.get("cashout_admin_initiated") and update.effective_user:
         context.chat_data["cashout_user_id"] = update.effective_user.id
         club_id = context.chat_data.get("cashout_club_id")
-        if club_id:
+        cashout_chat_id = context.chat_data.get("cashout_chat_id")
+        if club_id and cashout_chat_id:
             cust_id = update.effective_user.id
             if not is_club_staff(cust_id, club_id):
-                eligible, deny_msg = check_cashout_eligibility(club_id, cust_id)
+                eligible, deny_msg = check_cashout_eligibility(club_id, cashout_chat_id)
                 if not eligible:
                     await update.message.reply_text(deny_msg)
                     _cleanup(context)
@@ -177,10 +178,11 @@ async def cashout_simple_amount_received(update: Update, context: ContextTypes.D
     if context.chat_data.get("cashout_admin_initiated") and update.effective_user:
         context.chat_data["cashout_user_id"] = update.effective_user.id
         club_id = context.chat_data.get("cashout_club_id")
-        if club_id:
+        cashout_chat_id = context.chat_data.get("cashout_chat_id")
+        if club_id and cashout_chat_id:
             cust_id = update.effective_user.id
             if not is_club_staff(cust_id, club_id):
-                eligible, deny_msg = check_cashout_eligibility(club_id, cust_id)
+                eligible, deny_msg = check_cashout_eligibility(club_id, cashout_chat_id)
                 if not eligible:
                     await update.message.reply_text(deny_msg)
                     _cleanup(context)
@@ -459,10 +461,10 @@ def _cleanup(context):
 
 async def cashout_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     club_id = context.chat_data.get("cashout_club_id")
-    user_id = context.chat_data.get("cashout_user_id")
-    if club_id and user_id:
+    chat_id = context.chat_data.get("cashout_chat_id")
+    if club_id and chat_id:
         try:
-            cancel_last_cashout_activity(club_id, user_id)
+            cancel_last_cashout_activity(club_id, chat_id)
         except Exception:
             pass
     if update.message:

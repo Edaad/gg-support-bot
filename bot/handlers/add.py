@@ -15,7 +15,7 @@ from bot.services.club import (
     get_club_for_chat,
     invalidate_pending_one_time_bypasses,
     is_club_staff,
-    record_activity,
+    record_activity_for_chat,
 )
 from bot.services.mtproto_group_add import (
     format_add_confirmation,
@@ -60,37 +60,22 @@ async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     parsed = _parse_from_args(context.args or [])
     if parsed is None:
         await update.message.reply_text(
-            "Usage: reply to the player's message with /add <amount> [bonus] [name] "
+            "Usage: /add <amount> [bonus] [name] "
             "(Example: /add 500, /add 500 50, /add 500 Jacob, /add 500 50 Jacob)"
         )
         return
     amount, bonus, name = parsed
 
-    reply = update.message.reply_to_message
-    if not reply or not reply.from_user:
-        await update.message.reply_text(
-            "Reply to the player's message with /add <amount> [bonus] [name] "
-            "(Example: /add 500, /add 500 50, /add 500 Jacob, /add 500 50 Jacob)"
-        )
-        return
-
-    target_user = reply.from_user
-    if target_user.is_bot:
-        await update.message.reply_text("Cannot add balance for a bot.")
-        return
-
     try:
-        record_activity(club_id, target_user.id, chat.id, "deposit")
-        invalidate_pending_one_time_bypasses(club_id, target_user.id)
+        record_activity_for_chat(club_id, chat.id, "deposit")
+        invalidate_pending_one_time_bypasses(club_id, chat.id)
     except Exception:
         logger.exception(
-            "add: record_activity failed club_id=%s user_id=%s chat_id=%s",
+            "add: record_activity failed club_id=%s chat_id=%s",
             club_id,
-            target_user.id,
             chat.id,
         )
 
-    # Club MTProto operator: Telethon deletes /add and sends confirmation (like /gc).
     if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
         return
 

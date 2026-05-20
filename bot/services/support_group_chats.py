@@ -13,6 +13,20 @@ from db.models import SupportGroupChat
 logger = logging.getLogger(__name__)
 
 
+def fetch_player_telegram_user_id_for_chat(telegram_chat_id: int) -> int | None:
+    """Return player Telegram user id for a support megagroup, if known."""
+    with get_db() as session:
+        row = (
+            session.query(SupportGroupChat.player_telegram_user_id)
+            .filter(SupportGroupChat.telegram_chat_id == telegram_chat_id)
+            .order_by(SupportGroupChat.created_at.desc())
+            .first()
+        )
+        if row is None or row[0] is None:
+            return None
+        return int(row[0])
+
+
 def fetch_support_group_chat_by_club_player(
     club_key: str, player_telegram_user_id: int
 ) -> SupportGroupChat | None:

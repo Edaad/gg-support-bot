@@ -293,7 +293,7 @@ class PlayerActivity(Base):
 
 
 class CooldownBypass(Base):
-    """Admin-granted cooldown bypasses for specific players."""
+    """Admin-granted cooldown bypasses per support group chat."""
 
     __tablename__ = "cooldown_bypasses"
 
@@ -301,7 +301,8 @@ class CooldownBypass(Base):
     club_id = Column(
         Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
     )
-    telegram_user_id = Column(BigInteger, nullable=False)
+    chat_id = Column(BigInteger, nullable=False)
+    telegram_user_id = Column(BigInteger, nullable=True)  # legacy; unused for eligibility
     bypass_type = Column(String(20), nullable=False)  # "one_time" or "permanent"
     used = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())

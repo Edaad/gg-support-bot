@@ -14,7 +14,7 @@ from club_gc_settings import ClubGcConfig, get_club_gc_config_by_link_club_id
 from bot.services.club import (
     get_club_for_chat,
     invalidate_pending_one_time_bypasses,
-    record_activity,
+    record_activity_for_chat,
 )
 from bot.services.mtproto_group_create import (
     get_mtproto_lock,
@@ -169,14 +169,6 @@ async def handle_group_add_outgoing(
     if club_id is None or int(club_id) != int(cfg.link_club_id):
         return
 
-    reply = await event.get_reply_message()
-    if not reply:
-        return
-
-    sender = await reply.get_sender()
-    if not sender or getattr(sender, "bot", False):
-        return
-
     confirmation = format_add_confirmation(amount, bonus, name=name)
 
     try:
@@ -202,21 +194,19 @@ async def handle_group_add_outgoing(
 
     try:
         await asyncio.to_thread(
-            record_activity,
+            record_activity_for_chat,
             int(club_id),
-            int(sender.id),
             int(event.chat_id),
             "deposit",
         )
         await asyncio.to_thread(
             invalidate_pending_one_time_bypasses,
             int(club_id),
-            int(sender.id),
+            int(event.chat_id),
         )
     except Exception:
         logger.exception(
-            "group_add: record_activity failed club_id=%s user_id=%s chat_id=%s",
+            "group_add: record_activity failed club_id=%s chat_id=%s",
             club_id,
-            sender.id,
             event.chat_id,
         )
