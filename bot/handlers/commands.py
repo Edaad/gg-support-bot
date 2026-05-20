@@ -293,6 +293,11 @@ async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = get_custom_command(club_id, cmd)
     logger.info("command_router: get_custom_command(%s, %s) -> %s", club_id, cmd, "found" if data else "None")
     if not data:
+        if cmd.isdigit():
+            from bot.handlers.add import try_add_shorthand_command
+
+            if await try_add_shorthand_command(update, context):
+                return
         if _can_use_non_customer_custom_command(uid, club_id):
             await update.message.reply_text("Unknown command. Use /mycmds or /set.")
         return

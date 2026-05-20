@@ -33,6 +33,7 @@ ADD_CONFIRMATION_MESSAGES = (
 )
 
 _ADD_CMD_RE = re.compile(r"^/add(?:@\w+)?\s+(.+?)\s*$", re.IGNORECASE)
+_ADD_SHORTHAND_RE = re.compile(r"^/(\d+)(?:@\w+)?(?:\s+(.+?))?\s*$", re.IGNORECASE)
 
 
 def _parse_money_token(raw: str) -> Decimal | None:
@@ -61,10 +62,20 @@ def parse_add_command(
         /add 500 50
         /add 500 Jacob
         /add 500 50 Jacob
+        /500
+        /500 50 Jacob
     """
-    m = _ADD_CMD_RE.match((text or "").strip())
+    raw = (text or "").strip()
+    m = _ADD_CMD_RE.match(raw)
     if not m:
-        return None
+        sm = _ADD_SHORTHAND_RE.match(raw)
+        if not sm:
+            return None
+        rest = (sm.group(2) or "").strip()
+        raw = f"/add {sm.group(1)}" + (f" {rest}" if rest else "")
+        m = _ADD_CMD_RE.match(raw)
+        if not m:
+            return None
     parts = m.group(1).split()
     if not parts:
         return None

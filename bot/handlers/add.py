@@ -40,31 +40,18 @@ def _parse_from_args(args: list[str]) -> tuple[Decimal, Decimal | None, str | No
     return parse_add_command("/add " + " ".join(args))
 
 
-async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not update.message or not update.effective_chat or not update.effective_user:
-        return
-
+async def _execute_add(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    club_id: int,
+    amount: Decimal,
+    bonus: Decimal | None,
+    name: str | None,
+) -> None:
     chat = update.effective_chat
-    if chat.type not in ("group", "supergroup"):
-        return
-
-    club_id = get_club_for_chat(chat.id)
-    if club_id is None:
-        await update.message.reply_text("This group isn't linked to a club.")
-        return
-
     admin_id = update.effective_user.id
-    if not _can_use_add(admin_id, club_id):
-        return
-
-    parsed = _parse_from_args(context.args or [])
-    if parsed is None:
-        await update.message.reply_text(
-            "Usage: /add <amount> [bonus] [name] "
-            "(Example: /add 500, /add 500 50, /add 500 Jacob, /add 500 50 Jacob)"
-        )
-        return
-    amount, bonus, name = parsed
+    assert chat is not None and update.message is not None
 
     try:
         record_activity_for_chat(club_id, chat.id, "deposit")
@@ -97,4 +84,69 @@ async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         chat_id=chat.id,
         club_id=club_id,
         text=confirmation,
+    )
+
+
+async def try_add_shorthand_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> bool:
+    """Handle /500-style add shorthand (Bot API; not a named CommandHandler)."""
+    if not update.message or not update.effective_chat or not update.effective_user:
+        return False
+
+    chat = update.effective_chat
+    if chat.type not in ("group", "supergroup"):
+        return False
+
+    text = update.message.text or ""
+    cmd = text.split()[0].lstrip("/").split("@")[0]
+    if not cmd.isdigit():
+        return False
+
+    parsed = parse_add_command(text)
+    if parsed is None:
+        return False
+
+    club_id = get_club_for_chat(chat.id)
+    if club_id is None:
+        return False
+
+    admin_id = update.effective_user.id
+    if not _can_use_add(admin_id, club_id):
+        return False
+
+    amount, bonus, name = parsed
+    await _execute_add(
+        update, context, club_id=club_id, amount=amount, bonus=bonus, name=name
+    )
+    return True
+
+
+async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message or not update.effective_chat or not update.effective_user:
+        return
+
+    chat = update.effective_chat
+    if chat.type not in ("group", "supergroup"):
+        return
+
+    club_id = get_club_for_chat(chat.id)
+    if club_id is None:
+        await update.message.reply_text("This group isn't linked to a club.")
+        return
+
+    admin_id = update.effective_user.id
+    if not _can_use_add(admin_id, club_id):
+        return
+
+    parsed = _parse_from_args(context.args or [])
+    if parsed is None:
+        await update.message.reply_text(
+            "Usage: /add <amount> [bonus] [name] or /<amount> "
+            "(Example: /add 500, /500, /add 500 50 Jacob, /500 50 Jacob)"
+        )
+        return
+    amount, bonus, name = parsed
+    await _execute_add(
+        update, context, club_id=club_id, amount=amount, bonus=bonus, name=name
     )
