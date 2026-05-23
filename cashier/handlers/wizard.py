@@ -109,7 +109,11 @@ async def _show_confirm_amount(
         ]
     )
     if edit and update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=keyboard)
+        try:
+            await update.callback_query.edit_message_text(text, reply_markup=keyboard)
+        except Exception:
+            logger.exception("wizard confirm amount edit failed job_id=%s", context.user_data.get("gc_job_id"))
+            await update.callback_query.message.reply_text(text, reply_markup=keyboard)
     elif update.callback_query:
         await update.callback_query.message.reply_text(text, reply_markup=keyboard)
     elif update.message:
@@ -180,7 +184,51 @@ async def job_callback_entry(update: Update, context: ContextTypes.DEFAULT_TYPE)
         job.get("trigger"),
         job.get("amount"),
     )
-    return await _show_confirm_amount(update, context, edit=True)
+    try:
+        return await _show_confirm_amount(update, context, edit=True)
+    except Exception:
+        logger.exception("wizard job resume failed job_id=%s", job_id)
+        await query.message.reply_text(
+            "Something went wrong opening this cashout. Try /cashout or tap Continue again."
+        )
+        return ConversationHandler.END
+
+
+async def job_cancel_from_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancel a group /cash job from the notify DM (works even mid-conversation)."""
+    if not update.callback_query or not update.effective_user:
+        return ConversationHandler.END
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data or ""
+    if not data.startswith("gc_job_cancel:"):
+        return ConversationHandler.END
+
+    job_id = int(data.split(":")[1])
+    job = get_job(job_id)
+    if not job:
+        await query.edit_message_text("This cashout job is no longer available.")
+        return ConversationHandler.END
+
+    user_id = update.effective_user.id
+    if not can_access_job(user_id, int(job["initiated_by"]), int(job["club_id"])):
+        await query.edit_message_text("You cannot cancel this cashout job.")
+        return ConversationHandler.END
+
+    if job["status"] in ("completed", "cancelled"):
+        await query.edit_message_text(f"This cashout was already {job['status']}.")
+        return ConversationHandler.END
+
+    cancel_job(job_id)
+    _cleanup_user_data(context)
+    logger.info(
+        "wizard job cancelled from notify job_id=%s user_id=%s",
+        job_id,
+        user_id,
+    )
+    await query.edit_message_text("Cashout cancelled.")
+    return ConversationHandler.END
 
 
 async def title_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -702,51 +750,67 @@ async def wizard_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup_user_data(context)
 
 
+# Handled in every state so notify buttons work even during an active /cashout flow.
+_JOB_NOTIFY_HANDLERS = [
+    CallbackQueryHandler(job_callback_entry, pattern=r"^gc_job:\d+$"),
+    CallbackQueryHandler(job_cancel_from_notify, pattern=r"^gc_job_cancel:\d+$"),
+]
+
+
 def get_cashier_wizard_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler(
                 "cashout", cashout_dm_entry, filters=filters.ChatType.PRIVATE
             ),
-            CallbackQueryHandler(job_callback_entry, pattern=r"^gc_job:\d+$"),
+            *_JOB_NOTIFY_HANDLERS,
         ],
         states={
             GC_TITLE: [
+                *_JOB_NOTIFY_HANDLERS,
                 MessageHandler(filters.TEXT & ~filters.COMMAND, title_received),
             ],
             GC_AMOUNT: [
+                *_JOB_NOTIFY_HANDLERS,
                 MessageHandler(filters.TEXT & ~filters.COMMAND, amount_received),
             ],
             GC_CONFIRM: [
+                *_JOB_NOTIFY_HANDLERS,
                 CallbackQueryHandler(
                     confirm_amount_callback,
                     pattern=r"^gc_(confirm|modify|cancel)$",
                 ),
             ],
             GC_TRADE: [
+                *_JOB_NOTIFY_HANDLERS,
                 CallbackQueryHandler(
                     trade_callback, pattern=r"^gc_(trade_yes|cancel)$"
                 ),
             ],
             GC_COOLDOWN: [
+                *_JOB_NOTIFY_HANDLERS,
                 CallbackQueryHandler(
                     cooldown_callback, pattern=r"^gc_(cooldown_yes|cancel)$"
                 ),
             ],
             GC_METHOD: [
+                *_JOB_NOTIFY_HANDLERS,
                 CallbackQueryHandler(
                     method_chosen, pattern=r"^gc_(m:\d+|cancel)$"
                 ),
             ],
             GC_SUB: [
+                *_JOB_NOTIFY_HANDLERS,
                 CallbackQueryHandler(
                     sub_chosen, pattern=r"^gc_(sub:\d+|cancel)$"
                 ),
             ],
             GC_PAYOUT: [
+                *_JOB_NOTIFY_HANDLERS,
                 MessageHandler(filters.TEXT & ~filters.COMMAND, payout_received),
             ],
             GC_CONFIRM_DETAILS: [
+                *_JOB_NOTIFY_HANDLERS,
                 CallbackQueryHandler(
                     confirm_details_callback,
                     pattern=r"^gc_(details_confirm|details_edit|cancel)$",
@@ -759,7 +823,9 @@ def get_cashier_wizard_handler() -> ConversationHandler:
         fallbacks=[
             CommandHandler("cancel", _send_cancelled),
             CallbackQueryHandler(_send_cancelled, pattern=r"^gc_cancel$"),
+            *_JOB_NOTIFY_HANDLERS,
         ],
+        allow_reentry=True,
         conversation_timeout=TIMEOUT_SECONDS,
         name="cashier_wizard",
         per_chat=True,

@@ -40,7 +40,16 @@ async def notify_staff_cashout_job(
         f"Tap below to complete the cashout."
     )
     keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Continue cashout", callback_data=f"gc_job:{job_id}")]]
+        [
+            [
+                InlineKeyboardButton(
+                    "Continue cashout", callback_data=f"gc_job:{job_id}"
+                ),
+                InlineKeyboardButton(
+                    "CANCEL", callback_data=f"gc_job_cancel:{job_id}"
+                ),
+            ]
+        ]
     )
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
