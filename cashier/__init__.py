@@ -1,0 +1,1 @@
+"""GGCashier bot package."""

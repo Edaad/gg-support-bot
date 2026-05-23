@@ -414,6 +414,44 @@ class MtProtoSessionCredential(Base):
     )
 
 
+class CashierCashoutJob(Base):
+    """Staff cashout wizard jobs (GGCashier bot)."""
+
+    __tablename__ = "cashier_cashout_jobs"
+    __table_args__ = (
+        Index("ix_cashier_cashout_jobs_status", "status"),
+        Index("ix_cashier_cashout_jobs_initiated_by", "initiated_by"),
+        Index("ix_cashier_cashout_jobs_chat_id", "chat_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    chat_id = Column(BigInteger, nullable=False)
+    group_title = Column(String(255), nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
+    payment_method_id = Column(
+        Integer, ForeignKey("payment_methods.id", ondelete="SET NULL"), nullable=True
+    )
+    payment_sub_option_id = Column(
+        Integer, ForeignKey("payment_sub_options.id", ondelete="SET NULL"), nullable=True
+    )
+    method_display_name = Column(String(100), nullable=True)
+    payout_details = Column(Text, nullable=True)
+    trade_record_checked = Column(Boolean, default=False)
+    cooldown_checked = Column(Boolean, default=False)
+    initiated_by = Column(BigInteger, nullable=False)
+    trigger = Column(String(20), nullable=False)  # group_cash | dm_cashout
+    status = Column(String(20), nullable=False, default="initiated")
+    created_at = Column(DateTime, server_default=func.now())
+    completed_at = Column(DateTime, nullable=True)
+
+    club = relationship("Club")
+    payment_method = relationship("PaymentMethod")
+    payment_sub_option = relationship("PaymentSubOption")
+
+
 class SupportGroupChat(Base):
     """Megagroups created via /gc MTProto automation (per-club sessions)."""
 

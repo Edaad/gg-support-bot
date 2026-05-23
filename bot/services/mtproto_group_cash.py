@@ -1,4 +1,4 @@
-"""MTProto /cash in support groups: delete command, pin owed amount, send ASAP message."""
+"""MTProto /cash in support groups: working message + GGCashier job (defer pin/ASAP)."""
 
 from __future__ import annotations
 
@@ -10,16 +10,16 @@ from decimal import Decimal
 from telethon import events
 
 from club_gc_settings import ClubGcConfig, get_club_gc_config_by_link_club_id
-from bot.services.club import (
-    get_club_for_chat,
-    invalidate_pending_one_time_bypasses,
-    record_activity_for_chat,
-)
+from bot.services.club import get_club_for_chat
 from bot.services.mtproto_group_add import _format_money, _parse_money_token
 from bot.services.mtproto_group_create import (
     get_mtproto_lock,
     is_client_authorized,
     make_client,
+)
+from cashier.services.group_cash_init import (
+    WORKING_ON_CASHOUT_MESSAGE,
+    initiate_group_cash_job,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,7 @@ def format_cash_owed(amount: Decimal) -> str:
 
 
 async def _execute_cash_flow(cfg: ClubGcConfig, chat_id: int, amount: Decimal) -> None:
+    """Pin owed amount and send ASAP (called after wizard completes)."""
     owed_text = format_cash_owed(amount)
     async with get_mtproto_lock(cfg.club_key):
         client = make_client(cfg)
@@ -100,7 +101,7 @@ async def handle_group_cash_outgoing(
     *,
     listener_label: str,
 ) -> None:
-    """Outgoing /cash in a megagroup: delete command, pin owed, send ASAP, record cooldown."""
+    """Outgoing /cash: delete command, post working message, start GGCashier job."""
     if event.is_private:
         return
 
@@ -123,43 +124,36 @@ async def handle_group_cash_outgoing(
             type(e).__name__,
         )
 
-    owed_text = format_cash_owed(amount)
+    group_title = "Unknown group"
     try:
-        owed_msg = await event.client.send_message(event.chat_id, owed_text)
-        try:
-            await owed_msg.pin(notify=False)
-        except Exception as e:
-            logger.warning(
-                "group_cash: pin failed club=%s listener=%s chat_id=%s err=%s",
-                cfg.club_key,
-                listener_label,
-                event.chat_id,
-                type(e).__name__,
-            )
-        await event.client.send_message(event.chat_id, CASH_ASAP_MESSAGE)
+        chat = await event.get_chat()
+        group_title = getattr(chat, "title", None) or group_title
+        await event.client.send_message(event.chat_id, WORKING_ON_CASHOUT_MESSAGE)
     except Exception:
         logger.exception(
-            "group_cash: send failed club=%s chat_id=%s",
+            "group_cash: working message failed club=%s chat_id=%s",
             cfg.club_key,
             event.chat_id,
         )
         return
 
+    sender_id = event.sender_id
+    if not sender_id:
+        logger.warning("group_cash: no sender_id chat_id=%s", event.chat_id)
+        return
+
     try:
         await asyncio.to_thread(
-            record_activity_for_chat,
-            int(club_id),
-            int(event.chat_id),
-            "cashout",
-        )
-        await asyncio.to_thread(
-            invalidate_pending_one_time_bypasses,
-            int(club_id),
-            int(event.chat_id),
+            initiate_group_cash_job,
+            chat_id=int(event.chat_id),
+            club_id=int(club_id),
+            group_title=group_title,
+            amount=amount,
+            initiated_by=int(sender_id),
         )
     except Exception:
         logger.exception(
-            "group_cash: record_activity failed club_id=%s chat_id=%s",
+            "group_cash: initiate_group_cash_job failed club_id=%s chat_id=%s",
             club_id,
             event.chat_id,
         )

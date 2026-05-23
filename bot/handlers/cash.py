@@ -1,4 +1,4 @@
-"""Admin /cash: pin owed amount, ASAP message, and reset cashout cooldown."""
+"""Admin /cash: start GGCashier wizard (defer pin/ASAP until completion)."""
 
 from __future__ import annotations
 
@@ -10,16 +10,11 @@ from telegram.ext import ContextTypes
 
 from config import ADMIN_USER_IDS
 from club_gc_settings import get_club_config_for_admin, is_dm_gc_listener_enabled
-from bot.services.club import (
-    get_club_allows_admin_commands,
-    get_club_for_chat,
-    invalidate_pending_one_time_bypasses,
-    is_club_staff,
-    record_activity_for_chat,
-)
-from bot.services.mtproto_group_cash import (
-    parse_cash_command,
-    schedule_cash_flow_from_club,
+from bot.services.club import get_club_allows_admin_commands, get_club_for_chat, is_club_staff
+from bot.services.mtproto_group_cash import parse_cash_command
+from cashier.services.group_cash_init import (
+    WORKING_ON_CASHOUT_MESSAGE,
+    initiate_group_cash_job,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,16 +58,6 @@ async def cash_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
-    try:
-        record_activity_for_chat(club_id, chat.id, "cashout")
-        invalidate_pending_one_time_bypasses(club_id, chat.id)
-    except Exception:
-        logger.exception(
-            "cash: record_activity failed club_id=%s chat_id=%s",
-            club_id,
-            chat.id,
-        )
-
     if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
         return
 
@@ -88,8 +73,23 @@ async def cash_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             exc_info=True,
         )
 
-    schedule_cash_flow_from_club(
-        chat_id=chat.id,
-        club_id=club_id,
-        amount=amount,
-    )
+    await update.message.reply_text(WORKING_ON_CASHOUT_MESSAGE)
+
+    try:
+        initiate_group_cash_job(
+            chat_id=chat.id,
+            club_id=club_id,
+            group_title=chat.title or "Unknown group",
+            amount=amount,
+            initiated_by=admin_id,
+        )
+    except Exception:
+        logger.exception(
+            "cash: initiate_group_cash_job failed club_id=%s chat_id=%s",
+            club_id,
+            chat.id,
+        )
+        await context.bot.send_message(
+            chat_id=chat.id,
+            text="Could not start cashout wizard. Try again or contact support.",
+        )

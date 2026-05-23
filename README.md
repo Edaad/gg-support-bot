@@ -7,10 +7,11 @@ Telegram bot and web dashboard for club operators: configurable welcome and list
 | Component | Role |
 |-----------|------|
 | **Bot** (`bot/main.py`, `run_bot.py`) | Long-polling Telegram worker: `/start`, `/deposit`, `/cashout`, `/gc` (Telethon-backed megagroups), `/list`, `/set`, linked groups, cooldown bypass, etc. |
+| **GGCashier** (`cashier/main.py`, `run_cashier.py`) | Separate staff bot: cashout wizard in DM, Zapier → Glide, defers group pin/ASAP until completion. |
 | **API** (`api/`, `run_api.py`) | FastAPI backend for the dashboard; creates tables on startup (`Base.metadata.create_all`). |
 | **Dashboard** (`dashboard/`) | React + Vite + Tailwind SPA; in production the API serves `dashboard/dist`. |
 
-Heroku-style split: `web` runs Uvicorn, `worker` runs the bot (see `Procfile`).
+Heroku-style split: `web` runs Uvicorn, `worker` runs the support bot, `cashier` runs GGCashier (see `Procfile`).
 
 ## Requirements
 
@@ -24,6 +25,8 @@ Heroku-style split: `web` runs Uvicorn, `worker` runs the bot (see `Procfile`).
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | PostgreSQL URL (e.g. `postgresql://user:pass@host:5432/dbname`). `postgres://` is normalized to `postgresql://`. |
 | `TELEGRAM_BOT_TOKEN` | Yes (bot) | Token from [@BotFather](https://t.me/BotFather). |
+| `TELEGRAM_CASHIER_BOT_TOKEN` | Yes (cashier) | Separate GGCashier bot token for staff cashout wizard. |
+| `ZAPIER_CASHOUT_WEBHOOK_URL` | No | Zapier webhook for completed cashouts (Glide). Defaults to production URL when unset in code; omit to skip POST in dev. |
 | `DASHBOARD_PASSWORD` | No | Shared password for dashboard login; JWT signing secret. Defaults to `changeme` — **set in production**. |
 | `TG_API_ID` | Yes for `/gc` | Integer app id from [my.telegram.org](https://my.telegram.org/apps) — used only for MTProto (Telethon) sessions that create megagroups. |
 | `TG_API_HASH` | Yes for `/gc` | Api hash paired with `TG_API_ID`. Do not expose publicly. |
@@ -82,6 +85,24 @@ export DATABASE_URL="postgresql://..."
 python run_bot.py
 ```
 
+### 5. GGCashier (staff cashout wizard)
+
+Register a second bot with BotFather, set `TELEGRAM_CASHIER_BOT_TOKEN`, and run the cashier worker (separate terminal or Heroku `cashier` dyno):
+
+```bash
+export TELEGRAM_CASHIER_BOT_TOKEN="your-cashier-token"
+export DATABASE_URL="postgresql://..."
+python run_cashier.py
+```
+
+Migrate the jobs table on existing databases:
+
+```bash
+DATABASE_URL=postgresql://... python migrate_cashier_jobs.py
+```
+
+**Flow:** Staff runs `/cash <amount>` in a linked support group → group shows “Working on your cashout” → staff gets a GGCashier DM to complete attestation, method selection, and payout details → on confirm, Zapier creates a Glide row and the group gets the pinned owed amount + ASAP message. Staff can also start from scratch with `/cashout` in a private chat with GGCashier (paste group title, then amount).
+
 ## Production build
 
 Build the SPA so the API can serve it from `dashboard/dist`:
@@ -98,10 +119,11 @@ Start the API (serves static assets and `/api/*`):
 uvicorn api.app:app --host 0.0.0.0 --port 8000
 ```
 
-Run the bot in a separate process:
+Run the support bot and GGCashier in separate processes:
 
 ```bash
 python run_bot.py
+python run_cashier.py
 ```
 
 ### Heroku
@@ -139,12 +161,14 @@ Full operator guide: [`docs/GC.md`](docs/GC.md).
 ```
 api/           # FastAPI app, auth, routes
 bot/           # Telegram handlers and services
+cashier/       # GGCashier staff cashout wizard bot
 dashboard/     # React dashboard (Vite)
 db/            # SQLAlchemy models, connection, migrations
 config.py            # ADMIN_USER_IDS and shorthand map
 club_gc_settings.py # /gc clubs + GC_* env knobs
 run_api.py     # Local API entrypoint
-run_bot.py     # Bot worker entrypoint
+run_bot.py     # Support bot worker entrypoint
+run_cashier.py # GGCashier worker entrypoint
 ```
 
 ## Legacy note
