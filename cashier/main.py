@@ -88,7 +88,10 @@ async def _on_job_continue(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         log_conversation_state(wizard, update, "after_gc_job_continue", new_state=result)
         logger.info("gc_job handled new_state=%s", result)
     except Exception as exc:
-        sync_wizard_state(wizard, update, None)
+        try:
+            sync_wizard_state(wizard, update, None)
+        except Exception:
+            logger.exception("sync_wizard_state failed during gc_job error recovery")
         await reply_exception(update, context, exc, prefix="Continue cashout failed")
 
 
@@ -109,7 +112,10 @@ async def _on_job_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         log_conversation_state(wizard, update, "after_gc_job_cancel", new_state=result)
         logger.info("gc_job_cancel handled new_state=%s", result)
     except Exception as exc:
-        sync_wizard_state(wizard, update, None)
+        try:
+            sync_wizard_state(wizard, update, None)
+        except Exception:
+            logger.exception("sync_wizard_state failed during gc_job_cancel error recovery")
         await reply_exception(update, context, exc, prefix="Cancel failed")
 
 

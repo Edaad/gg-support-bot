@@ -35,10 +35,16 @@ from cashier.chat_reply import (
     reply_error,
     reply_exception,
     reply_text,
+    safe_answer_callback,
     TIMEOUT_USER_MESSAGE,
     wizard_chat_id,
 )
-from cashier.debug_log import log_update, log_user_data_keys, state_label
+from cashier.debug_log import (
+    log_conversation_state,
+    log_update,
+    log_user_data_keys,
+    state_label,
+)
 from cashier.services.jobs import cancel_job, get_job, mark_in_progress, update_job
 
 logger = logging.getLogger(__name__)
@@ -161,7 +167,7 @@ async def job_callback_entry(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return ConversationHandler.END
     query = update.callback_query
-    await query.answer()
+    await safe_answer_callback(query)
 
     data = query.data or ""
     if not data.startswith("gc_job:"):
@@ -215,6 +221,20 @@ async def job_callback_entry(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logger.info("job_callback_entry -> state %s", state_label(next_state))
         return next_state
     except Exception as exc:
+        from telegram.error import BadRequest
+
+        if isinstance(exc, BadRequest) and (
+            "query is too old" in str(exc).lower()
+            or "query id is invalid" in str(exc).lower()
+        ):
+            logger.warning("wizard job resume stale callback job_id=%s", job_id)
+            await reply_text(
+                update,
+                context,
+                "That Continue button expired. Run /cash in the group again, "
+                "or send /cashout here.",
+            )
+            return ConversationHandler.END
         logger.exception("wizard job resume failed job_id=%s", job_id)
         await reply_exception(
             update,
@@ -232,7 +252,7 @@ async def job_cancel_from_notify(update: Update, context: ContextTypes.DEFAULT_T
         logger.warning("job_cancel_from_notify: missing callback_query or user")
         return ConversationHandler.END
     query = update.callback_query
-    await query.answer()
+    await safe_answer_callback(query)
 
     data = query.data or ""
     if not data.startswith("gc_job_cancel:"):

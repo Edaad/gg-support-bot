@@ -36,9 +36,35 @@ def user_facing_error(exc: BaseException | None) -> str:
         )
     if "connection" in lower or "operationalerror" in lower:
         return "Database connection error. Try again in a moment."
+    if "query is too old" in lower or "query id is invalid" in lower:
+        return (
+            "That button expired (cashier was offline or you waited too long). "
+            "Run /cash in the group again, or send /cashout here."
+        )
     if isinstance(exc, TelegramError) and text:
         return f"Telegram error: {text[:200]}"
     return GENERIC_ERROR_MESSAGE
+
+
+async def safe_answer_callback(
+    query,
+    *,
+    text: str | None = None,
+    show_alert: bool = False,
+) -> bool:
+    """Answer callback query; return False if Telegram rejected it (expired tap)."""
+    try:
+        if text:
+            await query.answer(text[:200], show_alert=show_alert)
+        else:
+            await query.answer()
+        return True
+    except BadRequest as exc:
+        msg = str(exc).lower()
+        if "query is too old" in msg or "query id is invalid" in msg:
+            logger.warning("callback query expired, continuing without answer: %s", exc)
+            return False
+        raise
 
 
 async def reply_text(
@@ -55,15 +81,13 @@ async def reply_text(
 
     if update.callback_query:
         query = update.callback_query
-        try:
-            await query.answer()
-        except Exception:
-            pass
+        await safe_answer_callback(query)
         try:
             await query.edit_message_text(text)
             return
-        except BadRequest:
-            pass
+        except BadRequest as exc:
+            if "message is not modified" not in str(exc).lower():
+                logger.debug("reply_text edit BadRequest: %s", exc)
         except Exception:
             logger.debug("reply_text edit failed, sending new message", exc_info=True)
 
@@ -88,10 +112,9 @@ async def reply_error(
 ) -> None:
     """Show an error in chat (callback alert + message when possible)."""
     if update.callback_query:
-        try:
-            await update.callback_query.answer(text[:200], show_alert=alert)
-        except Exception:
-            pass
+        await safe_answer_callback(
+            update.callback_query, text=text[:200] if alert else None, show_alert=alert
+        )
     await reply_text(update, context, text, chat_id=chat_id)
 
 
