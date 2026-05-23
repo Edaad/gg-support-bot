@@ -95,19 +95,40 @@ def build_zapier_payload(job: dict[str, Any]) -> tuple[Optional[dict], Optional[
 
 async def fire_zapier_webhook(job: dict[str, Any]) -> tuple[bool, Optional[str]]:
     """POST completed cashout to Zapier. Returns (success, error_message)."""
+    job_id = job.get("id")
     payload, err = build_zapier_payload(job)
     if err or not payload:
+        logger.warning(
+            "zapier payload build failed job_id=%s err=%s",
+            job_id,
+            err,
+        )
         return False, err
 
     url = os.getenv(ZAPIER_CASHOUT_WEBHOOK_ENV) or DEFAULT_WEBHOOK_URL
     if not url:
+        logger.info("zapier webhook skipped (no URL) job_id=%s", job_id)
         return True, None
+
+    field = next((k for k in METHOD_FIELDS if payload.get(k)), "other")
+    logger.info(
+        "zapier webhook posting job_id=%s name=%r opening_balance=%s field=%s",
+        job_id,
+        payload.get("name"),
+        payload.get("opening_balance"),
+        field,
+    )
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
+        logger.info(
+            "zapier webhook ok job_id=%s status=%s",
+            job_id,
+            resp.status_code,
+        )
         return True, None
-    except Exception as e:
-        logger.exception("Zapier cashout webhook failed job_id=%s", job.get("id"))
-        return False, f"Zapier webhook failed: {type(e).__name__}"
+    except Exception:
+        logger.exception("zapier webhook failed job_id=%s", job_id)
+        return False, "Zapier webhook failed"

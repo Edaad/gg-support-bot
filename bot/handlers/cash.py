@@ -76,12 +76,20 @@ async def cash_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(WORKING_ON_CASHOUT_MESSAGE)
 
     try:
-        initiate_group_cash_job(
+        job_id = initiate_group_cash_job(
             chat_id=chat.id,
             club_id=club_id,
             group_title=chat.title or "Unknown group",
             amount=amount,
             initiated_by=admin_id,
+        )
+        logger.info(
+            "cash: wizard started job_id=%s chat_id=%s club_id=%s amount=%s admin=%s",
+            job_id,
+            chat.id,
+            club_id,
+            amount,
+            admin_id,
         )
     except Exception:
         logger.exception(

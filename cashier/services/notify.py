@@ -62,6 +62,11 @@ async def notify_staff_cashout_job(
                     data.get("description"),
                 )
                 return False
+        logger.info(
+            "notify_staff_cashout_job ok job_id=%s staff_user_id=%s",
+            job_id,
+            staff_user_id,
+        )
         return True
     except Exception:
         logger.exception(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal, InvalidOperation
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -30,6 +31,8 @@ from bot.services.player_details import (
 from cashier.handlers.auth import can_access_job, can_use_cashier
 from cashier.services.complete import complete_cashout_job
 from cashier.services.jobs import cancel_job, get_job, mark_in_progress, update_job
+
+logger = logging.getLogger(__name__)
 
 (
     GC_TITLE,
@@ -70,8 +73,12 @@ def _cleanup_user_data(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def _send_cancelled(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     job_id = context.user_data.get("gc_job_id")
+    user_id = update.effective_user.id if update.effective_user else None
     if job_id:
         cancel_job(int(job_id))
+        logger.info("wizard cancelled job_id=%s user_id=%s", job_id, user_id)
+    else:
+        logger.info("wizard cancelled (no job) user_id=%s", user_id)
     _cleanup_user_data(context)
     msg = "Cashout cancelled."
     if update.callback_query:
@@ -120,6 +127,10 @@ async def cashout_dm_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup_user_data(context)
     context.user_data["gc_trigger"] = "dm_cashout"
     context.user_data["gc_staff_id"] = update.effective_user.id
+    logger.info(
+        "wizard /cashout started user_id=%s",
+        update.effective_user.id,
+    )
     await update.message.reply_text(
         "Paste the support group title\n"
         "(Example: RT / 2427-3267 / Samin)"
@@ -149,6 +160,12 @@ async def job_callback_entry(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     user_id = update.effective_user.id
     if not can_access_job(user_id, int(job["initiated_by"]), int(job["club_id"])):
+        logger.warning(
+            "wizard job access denied job_id=%s user_id=%s initiated_by=%s",
+            job_id,
+            user_id,
+            job["initiated_by"],
+        )
         await query.edit_message_text("You cannot access this cashout job.")
         return ConversationHandler.END
 
@@ -156,6 +173,13 @@ async def job_callback_entry(update: Update, context: ContextTypes.DEFAULT_TYPE)
     _load_job_into_user_data(context, job)
     context.user_data["gc_staff_id"] = user_id
     mark_in_progress(job_id)
+    logger.info(
+        "wizard job resumed job_id=%s user_id=%s trigger=%s amount=%s",
+        job_id,
+        user_id,
+        job.get("trigger"),
+        job.get("amount"),
+    )
     return await _show_confirm_amount(update, context, edit=True)
 
 
@@ -180,6 +204,11 @@ async def title_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     staff_id = context.user_data.get("gc_staff_id")
     if staff_id and not can_use_cashier(int(staff_id), club_id):
+        logger.warning(
+            "wizard auth denied user_id=%s club_id=%s",
+            staff_id,
+            club_id,
+        )
         await update.message.reply_text("You are not authorized for this club.")
         _cleanup_user_data(context)
         return ConversationHandler.END
@@ -225,6 +254,13 @@ async def title_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["gc_club_id"] = club_id
     context.user_data["gc_chat_id"] = chat_id
     context.user_data["gc_group_title"] = title
+    logger.info(
+        "wizard title resolved user_id=%s club_id=%s chat_id=%s title=%r",
+        staff_id,
+        club_id,
+        chat_id,
+        title,
+    )
 
     await update.message.reply_text("Enter the cashout amount:")
     return GC_AMOUNT
@@ -262,6 +298,12 @@ async def amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         context.user_data["gc_job_id"] = job["id"]
         mark_in_progress(job["id"])
+        logger.info(
+            "wizard dm job created job_id=%s amount=%s club_id=%s",
+            job["id"],
+            amount,
+            context.user_data["gc_club_id"],
+        )
 
     return await _show_confirm_amount(update, context)
 
@@ -286,6 +328,11 @@ async def confirm_amount_callback(update: Update, context: ContextTypes.DEFAULT_
     job_id = context.user_data.get("gc_job_id")
     if job_id:
         update_job(int(job_id), amount=context.user_data["gc_amount"])
+    logger.info(
+        "wizard amount confirmed job_id=%s amount=%s",
+        job_id,
+        context.user_data.get("gc_amount"),
+    )
 
     text = (
         f"Trade record checked?\n"
@@ -425,6 +472,11 @@ async def method_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return GC_METHOD
 
     method_id = int(data.split(":")[1])
+    logger.info(
+        "wizard method selected job_id=%s method_id=%s",
+        context.user_data.get("gc_job_id"),
+        method_id,
+    )
     method = get_method_by_id(method_id)
     if not method:
         await query.edit_message_text("That method is no longer available.")
@@ -462,6 +514,12 @@ async def method_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     context.user_data["gc_method_display_name"] = display
     context.user_data["gc_slug"] = slug
+    logger.info(
+        "wizard method resolved job_id=%s display=%r slug=%s",
+        context.user_data.get("gc_job_id"),
+        display,
+        slug,
+    )
 
     text = (
         f"Record payout details\n"
@@ -502,6 +560,13 @@ async def sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     context.user_data["gc_method_display_name"] = display
     context.user_data["gc_slug"] = slug
+    logger.info(
+        "wizard sub-option selected job_id=%s sub_id=%s display=%r slug=%s",
+        context.user_data.get("gc_job_id"),
+        sub_id,
+        display,
+        slug,
+    )
 
     text = (
         f"Record payout details\n"
@@ -525,6 +590,12 @@ async def payout_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return GC_PAYOUT
 
     context.user_data["gc_payout_details"] = details
+    logger.info(
+        "wizard payout entered job_id=%s method=%s len=%s",
+        context.user_data.get("gc_job_id"),
+        context.user_data.get("gc_method_display_name"),
+        len(details),
+    )
     return await _show_confirm_details(update, context)
 
 
@@ -600,6 +671,11 @@ async def confirm_details_callback(update: Update, context: ContextTypes.DEFAULT
 
     ok, err = await complete_cashout_job(int(job_id))
     if not ok:
+        logger.warning(
+            "wizard complete failed job_id=%s err=%s",
+            job_id,
+            err,
+        )
         await query.edit_message_text(err or "Failed to complete cashout.")
         return ConversationHandler.END
 
@@ -622,6 +698,7 @@ async def wizard_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     job_id = context.user_data.get("gc_job_id")
     if job_id:
         cancel_job(int(job_id))
+        logger.info("wizard timeout job_id=%s", job_id)
     _cleanup_user_data(context)
 
 

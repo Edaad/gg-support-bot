@@ -32,6 +32,14 @@ def initiate_group_cash_job(
         trigger="group_cash",
     )
     job_id = int(job["id"])
+    logger.info(
+        "group_cash initiated job_id=%s chat_id=%s club_id=%s amount=%s staff=%s",
+        job_id,
+        chat_id,
+        club_id,
+        amount,
+        initiated_by,
+    )
 
     async def _notify():
         await notify_staff_cashout_job(
@@ -47,4 +55,5 @@ def initiate_group_cash_job(
     except RuntimeError:
         asyncio.run(_notify())
 
+    logger.debug("group_cash notify scheduled job_id=%s", job_id)
     return job_id

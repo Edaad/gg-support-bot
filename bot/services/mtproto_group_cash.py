@@ -143,13 +143,21 @@ async def handle_group_cash_outgoing(
         return
 
     try:
-        await asyncio.to_thread(
+        job_id = await asyncio.to_thread(
             initiate_group_cash_job,
             chat_id=int(event.chat_id),
             club_id=int(club_id),
             group_title=group_title,
             amount=amount,
             initiated_by=int(sender_id),
+        )
+        logger.info(
+            "group_cash: wizard started job_id=%s chat_id=%s club_id=%s amount=%s staff=%s",
+            job_id,
+            event.chat_id,
+            club_id,
+            amount,
+            sender_id,
         )
     except Exception:
         logger.exception(

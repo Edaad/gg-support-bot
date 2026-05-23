@@ -14,6 +14,8 @@ warnings.filterwarnings("ignore", message=r".*CallbackQueryHandler.*", category=
 from db.connection import init_engine
 from db.models import Base
 
+logger = logging.getLogger(__name__)
+
 
 def _configure_worker_logging() -> None:
     root = logging.getLogger()
@@ -44,6 +46,8 @@ def run_cashier(token: str | None = None):
         raise SystemExit("Provide TELEGRAM_CASHIER_BOT_TOKEN env var")
 
     _configure_worker_logging()
+    level_name = (os.getenv("LOG_LEVEL") or "INFO").strip().upper()
+    logger.info("GGCashier starting (LOG_LEVEL=%s)", level_name)
 
     engine = init_engine()
     Base.metadata.create_all(engine)
@@ -53,6 +57,7 @@ def run_cashier(token: str | None = None):
     app = ApplicationBuilder().token(token).build()
 
     app.add_handler(get_cashier_wizard_handler())
+    logger.info("GGCashier handlers registered")
 
     async def start_handler(update, context):
         if update.message:
@@ -66,5 +71,5 @@ def run_cashier(token: str | None = None):
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("help", start_handler))
 
-    print("GGCashier bot is running. Press Ctrl+C to stop.")
+    logger.info("GGCashier polling started")
     app.run_polling(allowed_updates=Update.ALL_TYPES)

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Optional
 
 from db.connection import get_db
 from db.models import CashierCashoutJob
+
+logger = logging.getLogger(__name__)
 
 
 def _job_to_dict(job: CashierCashoutJob) -> dict[str, Any]:
@@ -52,7 +55,18 @@ def create_job(
         )
         session.add(job)
         session.flush()
-        return _job_to_dict(job)
+        out = _job_to_dict(job)
+        logger.info(
+            "cashier job created id=%s club_id=%s chat_id=%s trigger=%s "
+            "amount=%s initiated_by=%s",
+            out["id"],
+            out["club_id"],
+            out["chat_id"],
+            out["trigger"],
+            out["amount"],
+            out["initiated_by"],
+        )
+        return out
 
 
 def get_job(job_id: int) -> Optional[dict[str, Any]]:
@@ -65,12 +79,26 @@ def update_job(job_id: int, **fields) -> Optional[dict[str, Any]]:
     with get_db() as session:
         job = session.get(CashierCashoutJob, int(job_id))
         if not job:
+            logger.warning("cashier job update: not found id=%s", job_id)
             return None
         for key, value in fields.items():
             if hasattr(job, key):
                 setattr(job, key, value)
         session.flush()
-        return _job_to_dict(job)
+        out = _job_to_dict(job)
+        if "status" in fields:
+            logger.info(
+                "cashier job updated id=%s status=%s",
+                job_id,
+                out["status"],
+            )
+        else:
+            logger.debug(
+                "cashier job updated id=%s fields=%s",
+                job_id,
+                list(fields.keys()),
+            )
+        return out
 
 
 def mark_in_progress(job_id: int) -> Optional[dict[str, Any]]:
