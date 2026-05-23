@@ -14,6 +14,26 @@ logger = logging.getLogger(__name__)
 CASHIER_BOT_TOKEN_ENV = "TELEGRAM_CASHIER_BOT_TOKEN"
 
 
+async def _send_notify_error(
+    staff_user_id: int, text: str, *, token: str | None
+) -> None:
+    """Best-effort error DM to staff when notify fails."""
+    if not token:
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            await client.post(
+                url,
+                json={"chat_id": staff_user_id, "text": f"Cashout notify failed\n\n{text}"},
+            )
+    except Exception:
+        logger.exception(
+            "notify error DM failed staff_user_id=%s",
+            staff_user_id,
+        )
+
+
 def _format_amount(amount: Decimal) -> str:
     if amount == amount.to_integral_value():
         return f"${int(amount):,}"
@@ -31,6 +51,12 @@ async def notify_staff_cashout_job(
     token = os.getenv(CASHIER_BOT_TOKEN_ENV)
     if not token:
         logger.warning("notify_staff_cashout_job: %s not set", CASHIER_BOT_TOKEN_ENV)
+        await _send_notify_error(
+            staff_user_id,
+            "GGCashier is not configured (TELEGRAM_CASHIER_BOT_TOKEN missing). "
+            "Ask an admin to set it and restart the cashier worker.",
+            token=None,
+        )
         return False
 
     text = (
@@ -72,10 +98,16 @@ async def notify_staff_cashout_job(
             resp.raise_for_status()
             data = resp.json()
             if not data.get("ok"):
+                err = data.get("description") or "Unknown Telegram error"
                 logger.warning(
                     "notify_staff_cashout_job failed job_id=%s: %s",
                     job_id,
-                    data.get("description"),
+                    err,
+                )
+                await _send_notify_error(
+                    staff_user_id,
+                    f"Could not send cashout prompt for job #{job_id}: {err}",
+                    token=token,
                 )
                 return False
             result = data.get("result") or {}
@@ -87,10 +119,15 @@ async def notify_staff_cashout_job(
                 result.get("message_id"),
             )
         return True
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "notify_staff_cashout_job failed job_id=%s staff=%s",
             job_id,
             staff_user_id,
+        )
+        await _send_notify_error(
+            staff_user_id,
+            f"Could not send cashout prompt for job #{job_id}: {type(exc).__name__}",
+            token=token,
         )
         return False

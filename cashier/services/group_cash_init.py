@@ -42,12 +42,18 @@ def initiate_group_cash_job(
     )
 
     async def _notify():
-        await notify_staff_cashout_job(
+        ok = await notify_staff_cashout_job(
             staff_user_id=initiated_by,
             job_id=job_id,
             group_title=group_title or "Unknown group",
             amount=amount,
         )
+        if not ok:
+            logger.warning(
+                "group_cash notify failed job_id=%s staff=%s — staff may not see Continue button",
+                job_id,
+                initiated_by,
+            )
 
     try:
         loop = asyncio.get_running_loop()

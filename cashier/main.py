@@ -17,6 +17,7 @@ from telegram.warnings import PTBUserWarning
 
 warnings.filterwarnings("ignore", message=r".*CallbackQueryHandler.*", category=PTBUserWarning)
 
+from cashier.chat_reply import reply_exception
 from db.connection import init_engine
 from db.models import Base
 
@@ -86,15 +87,9 @@ async def _on_job_continue(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         sync_wizard_state(wizard, update, result)
         log_conversation_state(wizard, update, "after_gc_job_continue", new_state=result)
         logger.info("gc_job handled new_state=%s", result)
-    except Exception:
-        logger.exception("gc_job handler failed")
-        if update.callback_query:
-            try:
-                await update.callback_query.answer(
-                    "Something went wrong. Try again.", show_alert=True
-                )
-            except Exception:
-                pass
+    except Exception as exc:
+        sync_wizard_state(wizard, update, None)
+        await reply_exception(update, context, exc, prefix="Continue cashout failed")
 
 
 async def _on_job_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -113,15 +108,34 @@ async def _on_job_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         sync_wizard_state(wizard, update, result)
         log_conversation_state(wizard, update, "after_gc_job_cancel", new_state=result)
         logger.info("gc_job_cancel handled new_state=%s", result)
+    except Exception as exc:
+        sync_wizard_state(wizard, update, None)
+        await reply_exception(update, context, exc, prefix="Cancel failed")
+
+
+async def _on_unhandled_error(
+    update: object, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    exc = context.error
+    logger.error("GGCashier unhandled error", exc_info=exc)
+    if not isinstance(update, Update):
+        return
+    try:
+        await reply_exception(
+            update,
+            context,
+            exc if isinstance(exc, BaseException) else RuntimeError(str(exc)),
+            prefix="Error",
+        )
     except Exception:
-        logger.exception("gc_job_cancel handler failed")
-        if update.callback_query:
-            try:
-                await update.callback_query.answer(
-                    "Something went wrong. Try again.", show_alert=True
-                )
-            except Exception:
-                pass
+        logger.exception("GGCashier could not send error message to chat")
+    wizard = context.application.bot_data.get("cashier_wizard")
+    if wizard and isinstance(update, Update) and update.effective_user and update.effective_chat:
+        try:
+            key = wizard._get_key(update)
+            wizard._conversations.pop(key, None)
+        except Exception:
+            pass
 
 
 def run_cashier(token: str | None = None):
@@ -157,7 +171,6 @@ def run_cashier(token: str | None = None):
         )
         logger.info("GGCashier verbose callback logging enabled (group=-1)")
 
-    # Notify DM buttons — registered before ConversationHandler so they always fire.
     app.add_handler(CallbackQueryHandler(_on_job_continue, pattern=r"^gc_job:\d+$"))
     app.add_handler(
         CallbackQueryHandler(_on_job_cancel, pattern=r"^gc_job_cancel:\d+$")
@@ -180,14 +193,7 @@ def run_cashier(token: str | None = None):
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("help", start_handler))
 
-    async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-        logger.exception(
-            "GGCashier unhandled error update=%s",
-            update,
-            exc_info=context.error,
-        )
-
-    app.add_error_handler(on_error)
+    app.add_error_handler(_on_unhandled_error)
 
     logger.info("GGCashier polling started")
     app.run_polling(allowed_updates=Update.ALL_TYPES)

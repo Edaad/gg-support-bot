@@ -30,12 +30,15 @@ from bot.services.player_details import (
 )
 from cashier.handlers.auth import can_access_job, can_use_cashier
 from cashier.services.complete import complete_cashout_job
-from cashier.debug_log import (
-    log_conversation_state,
-    log_update,
-    log_user_data_keys,
-    state_label,
+from cashier.chat_reply import (
+    remember_wizard_chat,
+    reply_error,
+    reply_exception,
+    reply_text,
+    TIMEOUT_USER_MESSAGE,
+    wizard_chat_id,
 )
+from cashier.debug_log import log_update, log_user_data_keys, state_label
 from cashier.services.jobs import cancel_job, get_job, mark_in_progress, update_job
 
 logger = logging.getLogger(__name__)
@@ -137,6 +140,7 @@ async def cashout_dm_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup_user_data(context)
     context.user_data["gc_trigger"] = "dm_cashout"
     context.user_data["gc_staff_id"] = update.effective_user.id
+    remember_wizard_chat(context, update)
     logger.info(
         "wizard /cashout started user_id=%s",
         update.effective_user.id,
@@ -152,6 +156,9 @@ async def job_callback_entry(update: Update, context: ContextTypes.DEFAULT_TYPE)
     log_update(update, "job_callback_entry")
     if not update.callback_query or not update.effective_user:
         logger.warning("job_callback_entry: missing callback_query or user")
+        await reply_error(
+            update, context, "Could not open this cashout (invalid button tap)."
+        )
         return ConversationHandler.END
     query = update.callback_query
     await query.answer()
@@ -192,6 +199,7 @@ async def job_callback_entry(update: Update, context: ContextTypes.DEFAULT_TYPE)
     _cleanup_user_data(context)
     _load_job_into_user_data(context, job)
     context.user_data["gc_staff_id"] = user_id
+    remember_wizard_chat(context, update)
     mark_in_progress(job_id)
     log_user_data_keys(context, "job_callback_entry")
     logger.info(
@@ -206,10 +214,13 @@ async def job_callback_entry(update: Update, context: ContextTypes.DEFAULT_TYPE)
         next_state = await _show_confirm_amount(update, context, edit=True)
         logger.info("job_callback_entry -> state %s", state_label(next_state))
         return next_state
-    except Exception:
+    except Exception as exc:
         logger.exception("wizard job resume failed job_id=%s", job_id)
-        await query.message.reply_text(
-            "Something went wrong opening this cashout. Try /cashout or tap Continue again."
+        await reply_exception(
+            update,
+            context,
+            exc,
+            prefix="Could not open cashout",
         )
         return ConversationHandler.END
 
@@ -326,6 +337,7 @@ async def title_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["gc_club_id"] = club_id
     context.user_data["gc_chat_id"] = chat_id
     context.user_data["gc_group_title"] = title
+    remember_wizard_chat(context, update)
     logger.info(
         "wizard title resolved user_id=%s club_id=%s chat_id=%s title=%r",
         staff_id,
@@ -360,22 +372,28 @@ async def amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if trigger == "dm_cashout" and staff_id:
         from cashier.services.jobs import create_job
 
-        job = create_job(
-            club_id=int(context.user_data["gc_club_id"]),
-            chat_id=int(context.user_data["gc_chat_id"]),
-            group_title=context.user_data["gc_group_title"],
-            amount=amount,
-            initiated_by=int(staff_id),
-            trigger="dm_cashout",
-        )
-        context.user_data["gc_job_id"] = job["id"]
-        mark_in_progress(job["id"])
-        logger.info(
-            "wizard dm job created job_id=%s amount=%s club_id=%s",
-            job["id"],
-            amount,
-            context.user_data["gc_club_id"],
-        )
+        try:
+            job = create_job(
+                club_id=int(context.user_data["gc_club_id"]),
+                chat_id=int(context.user_data["gc_chat_id"]),
+                group_title=context.user_data["gc_group_title"],
+                amount=amount,
+                initiated_by=int(staff_id),
+                trigger="dm_cashout",
+            )
+            context.user_data["gc_job_id"] = job["id"]
+            mark_in_progress(job["id"])
+            logger.info(
+                "wizard dm job created job_id=%s amount=%s club_id=%s",
+                job["id"],
+                amount,
+                context.user_data["gc_club_id"],
+            )
+        except Exception as exc:
+            await reply_exception(
+                update, context, exc, prefix="Could not create cashout job"
+            )
+            return ConversationHandler.END
 
     return await _show_confirm_amount(update, context)
 
@@ -769,10 +787,27 @@ async def confirm_details_callback(update: Update, context: ContextTypes.DEFAULT
 
 async def wizard_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     job_id = context.user_data.get("gc_job_id")
+    chat_id = wizard_chat_id(context, update)
     if job_id:
         cancel_job(int(job_id))
-        logger.info("wizard timeout job_id=%s", job_id)
+        logger.info("wizard timeout job_id=%s chat_id=%s", job_id, chat_id)
     _cleanup_user_data(context)
+    wizard = context.application.bot_data.get("cashier_wizard")
+    if wizard and update:
+        try:
+            key = wizard._get_key(update)
+            wizard._conversations.pop(key, None)
+        except Exception:
+            pass
+    try:
+        await reply_text(
+            update,
+            context,
+            TIMEOUT_USER_MESSAGE,
+            chat_id=chat_id,
+        )
+    except Exception:
+        logger.exception("wizard_timeout: could not notify user chat_id=%s", chat_id)
 
 
 def sync_wizard_state(
