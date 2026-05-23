@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from bot.services.club import get_method_by_id
+from bot.services.club import get_method_by_id, get_sub_option_by_id
 from bot.services.player_details import parse_tracking_title
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,14 @@ def build_zapier_payload(job: dict[str, Any]) -> tuple[Optional[dict], Optional[
     method_values = {f: "" for f in METHOD_FIELDS}
     method_values[field] = payout
 
+    crypto_asset = ""
+    if slug == "crypto":
+        sub_id = job.get("payment_sub_option_id")
+        if sub_id:
+            sub = get_sub_option_by_id(int(sub_id))
+            if sub:
+                crypto_asset = sub.get("name") or ""
+
     amount = job.get("amount")
     if isinstance(amount, Decimal):
         opening_balance = float(amount)
@@ -86,6 +94,7 @@ def build_zapier_payload(job: dict[str, Any]) -> tuple[Optional[dict], Optional[
         "name": name,
         "opening_balance": opening_balance,
         **method_values,
+        "crypto_asset": crypto_asset,
         "reset": False,
         "date_time": date_time,
         "tr_checked": tr_checked,
@@ -112,11 +121,12 @@ async def fire_zapier_webhook(job: dict[str, Any]) -> tuple[bool, Optional[str]]
 
     field = next((k for k in METHOD_FIELDS if payload.get(k)), "other")
     logger.info(
-        "zapier webhook posting job_id=%s name=%r opening_balance=%s field=%s",
+        "zapier webhook posting job_id=%s name=%r opening_balance=%s field=%s crypto_asset=%r",
         job_id,
         payload.get("name"),
         payload.get("opening_balance"),
         field,
+        payload.get("crypto_asset"),
     )
 
     try:
