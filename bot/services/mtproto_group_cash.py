@@ -24,7 +24,7 @@ from cashier.services.group_cash_init import (
 
 logger = logging.getLogger(__name__)
 
-CASH_ASAP_MESSAGE = "Getting this sent ASAP!!!!"
+CASH_ASAP_MESSAGE = "Your cashout will be processed ASAP!"
 
 _CASH_CMD_RE = re.compile(r"^/cash(?:@\w+)?\s+(\S+)\s*$", re.IGNORECASE)
 
