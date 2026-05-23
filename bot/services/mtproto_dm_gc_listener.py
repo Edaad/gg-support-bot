@@ -45,12 +45,26 @@ from bot.services.support_group_chats import (
 logger = logging.getLogger(__name__)
 
 _clients: list[TelegramClient] = []
+_loop_holder: dict[str, Any] = {}
 
 
 def _dm_gc_verbose_info(msg: str, *args) -> None:
     if is_dm_gc_verbose_logging():
         logger.info(msg, *args)
-_loop_holder: dict[str, Any] = {}
+
+
+def get_dm_gc_listener_status() -> dict[str, Any]:
+    """Public snapshot of the background Telethon listener thread."""
+    from club_gc_settings import is_dm_gc_listener_enabled
+
+    loop = _loop_holder.get("loop")
+    connected = sum(1 for c in _clients if c.is_connected())
+    return {
+        "enabled": is_dm_gc_listener_enabled(),
+        "loop_running": loop is not None and loop.is_running(),
+        "connected_clients": connected,
+        "total_clients": len(_clients),
+    }
 
 
 def _telethon_user_label(ent: Any) -> str:
