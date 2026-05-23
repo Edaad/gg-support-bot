@@ -39,15 +39,13 @@ async def notify_staff_cashout_job(
         f"Amount: {_format_amount(amount)}\n\n"
         f"Tap below to complete the cashout."
     )
+    continue_cb = f"gc_job:{job_id}"
+    cancel_cb = f"gc_job_cancel:{job_id}"
     keyboard = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(
-                    "Continue cashout", callback_data=f"gc_job:{job_id}"
-                ),
-                InlineKeyboardButton(
-                    "CANCEL", callback_data=f"gc_job_cancel:{job_id}"
-                ),
+                InlineKeyboardButton("Continue cashout", callback_data=continue_cb),
+                InlineKeyboardButton("CANCEL", callback_data=cancel_cb),
             ]
         ]
     )
@@ -58,6 +56,15 @@ async def notify_staff_cashout_job(
         "text": text,
         "reply_markup": keyboard.to_dict(),
     }
+
+    logger.info(
+        "notify_staff_cashout_job sending job_id=%s staff_user_id=%s "
+        "callbacks continue=%r cancel=%r",
+        job_id,
+        staff_user_id,
+        continue_cb,
+        cancel_cb,
+    )
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -71,11 +78,14 @@ async def notify_staff_cashout_job(
                     data.get("description"),
                 )
                 return False
-        logger.info(
-            "notify_staff_cashout_job ok job_id=%s staff_user_id=%s",
-            job_id,
-            staff_user_id,
-        )
+            result = data.get("result") or {}
+            logger.info(
+                "notify_staff_cashout_job ok job_id=%s staff_user_id=%s "
+                "telegram_message_id=%s",
+                job_id,
+                staff_user_id,
+                result.get("message_id"),
+            )
         return True
     except Exception:
         logger.exception(

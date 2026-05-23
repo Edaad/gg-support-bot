@@ -95,6 +95,8 @@ export DATABASE_URL="postgresql://..."
 python run_cashier.py
 ```
 
+Debug stuck Continue/Cancel buttons: set `LOG_LEVEL=DEBUG` and `CASHIER_VERBOSE_LOGS=true`, restart the cashier worker, tap a button, and check stderr for lines like `handler_gc_job_continue`, `sync_wizard_state`, and `job_callback_entry`.
+
 Migrate the jobs table on existing databases:
 
 ```bash

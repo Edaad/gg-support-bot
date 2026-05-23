@@ -30,6 +30,12 @@ from bot.services.player_details import (
 )
 from cashier.handlers.auth import can_access_job, can_use_cashier
 from cashier.services.complete import complete_cashout_job
+from cashier.debug_log import (
+    log_conversation_state,
+    log_update,
+    log_user_data_keys,
+    state_label,
+)
 from cashier.services.jobs import cancel_job, get_job, mark_in_progress, update_job
 
 logger = logging.getLogger(__name__)
@@ -143,22 +149,32 @@ async def cashout_dm_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def job_callback_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    log_update(update, "job_callback_entry")
     if not update.callback_query or not update.effective_user:
+        logger.warning("job_callback_entry: missing callback_query or user")
         return ConversationHandler.END
     query = update.callback_query
     await query.answer()
 
     data = query.data or ""
     if not data.startswith("gc_job:"):
+        logger.warning("job_callback_entry: unexpected callback_data=%r", data)
         return ConversationHandler.END
 
     job_id = int(data.split(":")[1])
+    logger.info("job_callback_entry loading job_id=%s", job_id)
     job = get_job(job_id)
     if not job:
+        logger.warning("job_callback_entry: job not found id=%s", job_id)
         await query.edit_message_text("This cashout job is no longer available.")
         return ConversationHandler.END
 
     if job["status"] in ("completed", "cancelled"):
+        logger.info(
+            "job_callback_entry: job already %s id=%s",
+            job["status"],
+            job_id,
+        )
         await query.edit_message_text(f"This cashout was already {job['status']}.")
         return ConversationHandler.END
 
@@ -177,15 +193,19 @@ async def job_callback_entry(update: Update, context: ContextTypes.DEFAULT_TYPE)
     _load_job_into_user_data(context, job)
     context.user_data["gc_staff_id"] = user_id
     mark_in_progress(job_id)
+    log_user_data_keys(context, "job_callback_entry")
     logger.info(
-        "wizard job resumed job_id=%s user_id=%s trigger=%s amount=%s",
+        "wizard job resumed job_id=%s user_id=%s trigger=%s amount=%s status=%s",
         job_id,
         user_id,
         job.get("trigger"),
         job.get("amount"),
+        job.get("status"),
     )
     try:
-        return await _show_confirm_amount(update, context, edit=True)
+        next_state = await _show_confirm_amount(update, context, edit=True)
+        logger.info("job_callback_entry -> state %s", state_label(next_state))
+        return next_state
     except Exception:
         logger.exception("wizard job resume failed job_id=%s", job_id)
         await query.message.reply_text(
@@ -196,16 +216,20 @@ async def job_callback_entry(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def job_cancel_from_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancel a group /cash job from the notify DM (works even mid-conversation)."""
+    log_update(update, "job_cancel_from_notify")
     if not update.callback_query or not update.effective_user:
+        logger.warning("job_cancel_from_notify: missing callback_query or user")
         return ConversationHandler.END
     query = update.callback_query
     await query.answer()
 
     data = query.data or ""
     if not data.startswith("gc_job_cancel:"):
+        logger.warning("job_cancel_from_notify: unexpected callback_data=%r", data)
         return ConversationHandler.END
 
     job_id = int(data.split(":")[1])
+    logger.info("job_cancel_from_notify job_id=%s", job_id)
     job = get_job(job_id)
     if not job:
         await query.edit_message_text("This cashout job is no longer available.")
@@ -362,6 +386,7 @@ async def confirm_amount_callback(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     await query.answer()
     data = query.data or ""
+    log_update(update, f"confirm_amount:{data}")
 
     if data == "gc_cancel":
         return await _send_cancelled(update, context)
@@ -750,11 +775,30 @@ async def wizard_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup_user_data(context)
 
 
-# Handled in every state so notify buttons work even during an active /cashout flow.
-_JOB_NOTIFY_HANDLERS = [
-    CallbackQueryHandler(job_callback_entry, pattern=r"^gc_job:\d+$"),
-    CallbackQueryHandler(job_cancel_from_notify, pattern=r"^gc_job_cancel:\d+$"),
-]
+def sync_wizard_state(
+    conversation: ConversationHandler,
+    update: Update,
+    new_state: int | None,
+) -> None:
+    """Keep ConversationHandler in sync after standalone notify button handlers."""
+    key = conversation._get_key(update)
+    old = conversation._conversations.get(key)
+    if new_state is None or new_state == ConversationHandler.END:
+        conversation._conversations.pop(key, None)
+        logger.info(
+            "sync_wizard_state cleared conv_key=%s was=%s",
+            key,
+            state_label(old),
+        )
+    else:
+        conversation._conversations[key] = new_state
+        logger.info(
+            "sync_wizard_state conv_key=%s %s -> %s",
+            key,
+            state_label(old),
+            state_label(new_state),
+        )
+    log_conversation_state(conversation, update, "after_sync", new_state=new_state)
 
 
 def get_cashier_wizard_handler() -> ConversationHandler:
@@ -763,54 +807,44 @@ def get_cashier_wizard_handler() -> ConversationHandler:
             CommandHandler(
                 "cashout", cashout_dm_entry, filters=filters.ChatType.PRIVATE
             ),
-            *_JOB_NOTIFY_HANDLERS,
         ],
         states={
             GC_TITLE: [
-                *_JOB_NOTIFY_HANDLERS,
                 MessageHandler(filters.TEXT & ~filters.COMMAND, title_received),
             ],
             GC_AMOUNT: [
-                *_JOB_NOTIFY_HANDLERS,
                 MessageHandler(filters.TEXT & ~filters.COMMAND, amount_received),
             ],
             GC_CONFIRM: [
-                *_JOB_NOTIFY_HANDLERS,
                 CallbackQueryHandler(
                     confirm_amount_callback,
                     pattern=r"^gc_(confirm|modify|cancel)$",
                 ),
             ],
             GC_TRADE: [
-                *_JOB_NOTIFY_HANDLERS,
                 CallbackQueryHandler(
                     trade_callback, pattern=r"^gc_(trade_yes|cancel)$"
                 ),
             ],
             GC_COOLDOWN: [
-                *_JOB_NOTIFY_HANDLERS,
                 CallbackQueryHandler(
                     cooldown_callback, pattern=r"^gc_(cooldown_yes|cancel)$"
                 ),
             ],
             GC_METHOD: [
-                *_JOB_NOTIFY_HANDLERS,
                 CallbackQueryHandler(
                     method_chosen, pattern=r"^gc_(m:\d+|cancel)$"
                 ),
             ],
             GC_SUB: [
-                *_JOB_NOTIFY_HANDLERS,
                 CallbackQueryHandler(
                     sub_chosen, pattern=r"^gc_(sub:\d+|cancel)$"
                 ),
             ],
             GC_PAYOUT: [
-                *_JOB_NOTIFY_HANDLERS,
                 MessageHandler(filters.TEXT & ~filters.COMMAND, payout_received),
             ],
             GC_CONFIRM_DETAILS: [
-                *_JOB_NOTIFY_HANDLERS,
                 CallbackQueryHandler(
                     confirm_details_callback,
                     pattern=r"^gc_(details_confirm|details_edit|cancel)$",
@@ -823,7 +857,6 @@ def get_cashier_wizard_handler() -> ConversationHandler:
         fallbacks=[
             CommandHandler("cancel", _send_cancelled),
             CallbackQueryHandler(_send_cancelled, pattern=r"^gc_cancel$"),
-            *_JOB_NOTIFY_HANDLERS,
         ],
         allow_reentry=True,
         conversation_timeout=TIMEOUT_SECONDS,
