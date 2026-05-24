@@ -101,6 +101,11 @@ def parse_add_amount(text: str) -> Decimal | None:
     return parsed[0]
 
 
+def _format_chips(amount: Decimal) -> str:
+    """Whole chips count (e.g. 500 chips, 1,000 chips)."""
+    return f"{int(amount):,} chips"
+
+
 def format_add_confirmation(
     amount: Decimal,
     bonus: Decimal | None = None,
@@ -108,9 +113,9 @@ def format_add_confirmation(
     name: str | None = None,
 ) -> str:
     phrase = random.choice(ADD_CONFIRMATION_MESSAGES)
-    amt = _format_money(amount)
+    amt = _format_chips(amount)
     if bonus is not None:
-        core = f"Added {amt} plus {_format_money(bonus)} bonus, {phrase}"
+        core = f"Added {amt} plus {_format_chips(bonus)} bonus, {phrase}"
     else:
         core = f"Added {amt}, {phrase}"
     if name:
