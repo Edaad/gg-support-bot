@@ -115,7 +115,7 @@ def format_add_confirmation(
     phrase = random.choice(ADD_CONFIRMATION_MESSAGES)
     amt = _format_chips(amount)
     if bonus is not None:
-        core = f"Added {amt} plus {_format_chips(bonus)} bonus, {phrase}"
+        core = f"Added {amt} plus {int(bonus):,} bonus, {phrase}"
     else:
         core = f"Added {amt}, {phrase}"
     if name:
