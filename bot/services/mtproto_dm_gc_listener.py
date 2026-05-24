@@ -1,4 +1,4 @@
-"""Telethon listeners: outgoing /gc in admin→player DMs creates or reuses support megagroups."""
+"""Telethon listeners: /gc on admin→player DMs (outgoing /gc) and on any incoming player DM."""
 
 from __future__ import annotations
 
@@ -311,6 +311,145 @@ async def _flow_new_group(
     )
 
 
+async def _run_gc_flow_for_player(
+    event,
+    cfg,
+    player: User,
+    bot_dm_username: str | None,
+    ptb_bot,
+    *,
+    listener_label: str,
+    trigger: str,
+    delete_trigger_message: bool = False,
+) -> None:
+    """Create or reuse a support megagroup for ``player`` (shared by incoming DM and outgoing /gc)."""
+    player_id = player.id
+    player_label = _telethon_user_label(player)
+
+    _dm_gc_verbose_info(
+        "dm_gc sensed %s club_key=%s listener_account=%s player=%s",
+        trigger,
+        cfg.club_key,
+        listener_label,
+        player_label,
+    )
+
+    if delete_trigger_message:
+        try:
+            await event.delete()
+        except Exception as e:
+            logger.warning(
+                "dm_gc delete trigger failed (continuing): club_key=%s listener=%s trigger=%s err=%s",
+                cfg.club_key,
+                listener_label,
+                trigger,
+                type(e).__name__,
+            )
+
+    lock_sess, acquired = try_pg_advisory_lock_club_player(cfg.club_key, player_id)
+    if not acquired:
+        logger.warning(
+            "dm_gc /gc failed: advisory_lock_busy club_key=%s listener=%s player=%s trigger=%s "
+            "(another worker may hold lock)",
+            cfg.club_key,
+            listener_label,
+            player_label,
+            trigger,
+        )
+        return
+
+    try:
+        client = event.client
+        existing = fetch_support_group_chat_by_club_player(cfg.club_key, player_id)
+        if existing:
+            await _flow_existing_group(
+                client, cfg, existing, player, listener_label=listener_label
+            )
+        else:
+            await _flow_new_group(
+                client,
+                cfg,
+                player,
+                bot_dm_username,
+                ptb_bot,
+                listener_label=listener_label,
+            )
+    except Exception as e:
+        logger.exception(
+            "dm_gc /gc failed: unexpected handler_error club_key=%s listener=%s player=%s trigger=%s: %s",
+            cfg.club_key,
+            listener_label,
+            player_label,
+            trigger,
+            type(e).__name__,
+        )
+    finally:
+        pg_advisory_unlock_session(lock_sess, cfg.club_key, player_id)
+
+
+async def _resolve_dm_player(event) -> User | None:
+    try:
+        chat = await event.get_chat()
+    except Exception:
+        return None
+    if not isinstance(chat, User):
+        return None
+    if getattr(chat, "bot", False):
+        return None
+    return chat
+
+
+async def handle_dm_gc_incoming(
+    event,
+    cfg,
+    bot_dm_username: str | None,
+    ptb_bot,
+    *,
+    listener_label: str,
+) -> None:
+    """Incoming private DM to the club MTProto account — run /gc for the sender."""
+    if not event.is_private or event.out:
+        return
+    if not isinstance(event.peer_id, PeerUser):
+        return
+
+    player = await _resolve_dm_player(event)
+    if not player:
+        return
+
+    try:
+        me = await event.client.get_me()
+        if int(player.id) == int(me.id):
+            return
+    except Exception:
+        pass
+
+    msg = getattr(event, "message", None)
+    body_raw = event.raw_text
+    if not body_raw and msg is not None:
+        attr = getattr(msg, "message", None)
+        body_raw = attr if isinstance(attr, str) else ""
+    snippet = ((body_raw if isinstance(body_raw, str) else "") or "").strip()[:400]
+    _dm_gc_verbose_info(
+        "dm_gc incoming_dm club_key=%s listener=%s player=%s message=%r",
+        cfg.club_key,
+        listener_label,
+        _telethon_user_label(player),
+        snippet + ("..." if len(snippet) >= 400 else ""),
+    )
+
+    await _run_gc_flow_for_player(
+        event,
+        cfg,
+        player,
+        bot_dm_username,
+        ptb_bot,
+        listener_label=listener_label,
+        trigger="incoming_dm",
+        delete_trigger_message=False,
+    )
+
+
 async def handle_dm_gc_message(
     event,
     cfg,
@@ -379,63 +518,16 @@ async def handle_dm_gc_message(
         return
 
     player = chat
-    player_id = player.id
-    player_label = _telethon_user_label(player)
-
-    _dm_gc_verbose_info(
-        "dm_gc sensed outgoing /gc club_key=%s listener_account=%s player=%s",
-        cfg.club_key,
-        listener_label,
-        player_label,
+    await _run_gc_flow_for_player(
+        event,
+        cfg,
+        player,
+        bot_dm_username,
+        ptb_bot,
+        listener_label=listener_label,
+        trigger="outgoing_gc_command",
+        delete_trigger_message=True,
     )
-
-    try:
-        await event.delete()
-    except Exception as e:
-        logger.warning(
-            "dm_gc delete /gc failed (continuing): club_key=%s listener=%s err=%s",
-            cfg.club_key,
-            listener_label,
-            type(e).__name__,
-        )
-
-    lock_sess, acquired = try_pg_advisory_lock_club_player(cfg.club_key, player_id)
-    if not acquired:
-        logger.warning(
-            "dm_gc /gc failed: advisory_lock_busy club_key=%s listener=%s player=%s "
-            "(another worker may hold lock)",
-            cfg.club_key,
-            listener_label,
-            player_label,
-        )
-        return
-
-    try:
-        client = event.client
-        existing = fetch_support_group_chat_by_club_player(cfg.club_key, player_id)
-        if existing:
-            await _flow_existing_group(
-                client, cfg, existing, player, listener_label=listener_label
-            )
-        else:
-            await _flow_new_group(
-                client,
-                cfg,
-                player,
-                bot_dm_username,
-                ptb_bot,
-                listener_label=listener_label,
-            )
-    except Exception as e:
-        logger.exception(
-            "dm_gc /gc failed: unexpected handler_error club_key=%s listener=%s player=%s: %s",
-            cfg.club_key,
-            listener_label,
-            player_label,
-            type(e).__name__,
-        )
-    finally:
-        pg_advisory_unlock_session(lock_sess, cfg.club_key, player_id)
 
 
 async def _async_main(bot_token: str) -> None:
@@ -486,11 +578,23 @@ async def _async_main(bot_token: str) -> None:
         me_who = await client.get_me()
         listener_label = _telethon_user_label(me_who)
         _dm_gc_verbose_info(
-            "dm_gc listening for outgoing /gc club_key=%s listener_account=%s telegram_user_id=%s",
+            "dm_gc listening for incoming DMs + outgoing /gc club_key=%s listener_account=%s telegram_user_id=%s",
             cfg.club_key,
             listener_label,
             getattr(me_who, "id", "?"),
         )
+
+        def _make_dm_gc_incoming_handler(label: str, club_cfg_inner):
+            async def _handler(event):
+                await handle_dm_gc_incoming(
+                    event,
+                    club_cfg_inner,
+                    bot_dm_username,
+                    ptb_bot,
+                    listener_label=label,
+                )
+
+            return _handler
 
         def _make_dm_gc_handler(label: str, club_cfg_inner):
             async def _handler(event):
@@ -524,6 +628,10 @@ async def _async_main(bot_token: str) -> None:
             return _handler
 
         client.add_event_handler(
+            _make_dm_gc_incoming_handler(listener_label, cfg),
+            events.NewMessage(incoming=True, func=lambda e: e.is_private),
+        )
+        client.add_event_handler(
             _make_dm_gc_handler(listener_label, cfg),
             events.NewMessage(outgoing=True),
         )
@@ -541,7 +649,7 @@ async def _async_main(bot_token: str) -> None:
     _loop_holder["ptb_bot"] = ptb_bot
 
     _dm_gc_verbose_info(
-        "dm_gc listener bootstrap complete telethon_sessions=%s for_outgoing_dm_gc",
+        "dm_gc listener bootstrap complete telethon_sessions=%s (incoming_dm + outgoing_gc)",
         len(started),
     )
 

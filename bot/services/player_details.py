@@ -2,6 +2,7 @@
 
 Title convention:
     SHORTHAND / GGPLAYERID / anything
+    SHORTHAND may be combined for Round Table unions: RT AT / GGPLAYERID / anything
 Example:
     GTO / 8190-5287 / ThePirate343
 """
@@ -10,11 +11,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Set
 
 from sqlalchemy import text
 
 from config import CLUB_SHORTHAND_TO_NAME
+from bot.services.round_table_unions import ROUND_TABLE_UNION_SHORTHANDS
 from db.connection import get_db
 from db.models import Club
 
@@ -29,33 +31,103 @@ class BindResult:
     error: Optional[str] = None
 
 
-def parse_tracking_title(title: str | None) -> Optional[Tuple[str, str]]:
-    """Return (shorthand, gg_player_id) if the title matches, else None."""
+@dataclass(frozen=True)
+class GroupTitleParts:
+    shorthands: frozenset[str]
+    gg_player_id: str
+    tail: str
+
+
+def _shorthands_from_prefix_segment(segment: str) -> Set[str]:
+    return {
+        token.upper()
+        for token in (segment or "").split()
+        if token.upper() in CLUB_SHORTHAND_TO_NAME
+    }
+
+
+def format_title_prefix_segment(shorthands: Set[str]) -> str:
+    """Render first title segment from known shorthand tokens."""
+    s = {x.upper() for x in shorthands if x.upper() in CLUB_SHORTHAND_TO_NAME}
+    if not s:
+        return ""
+    if "RT" in s and "AT" in s:
+        return "RT AT"
+    if len(s) == 1:
+        return next(iter(s))
+    return " ".join(sorted(s))
+
+
+def parse_group_title_parts(title: str | None) -> Optional[GroupTitleParts]:
+    """Parse group title into shorthand set, gg_player_id, and trailing label."""
     if not title:
         return None
     parts = [p.strip() for p in title.split("/") if p.strip()]
     if len(parts) < 2:
         return None
-    shorthand = parts[0].upper()
     gg_player_id = parts[1]
-    if not shorthand or not _GG_RE.match(gg_player_id):
+    if not _GG_RE.match(gg_player_id):
         return None
-    return shorthand, gg_player_id
+    shorthands = _shorthands_from_prefix_segment(parts[0])
+    if not shorthands:
+        return None
+    tail = " / ".join(parts[2:]).strip() if len(parts) > 2 else ""
+    return GroupTitleParts(
+        shorthands=frozenset(shorthands),
+        gg_player_id=gg_player_id,
+        tail=tail,
+    )
+
+
+def merge_union_prefix(current_title: str | None, chosen_shorthand: str) -> Optional[str]:
+    """Return new group title if deposit union shorthand should be merged into prefix."""
+    chosen = (chosen_shorthand or "").strip().upper()
+    if chosen not in ROUND_TABLE_UNION_SHORTHANDS:
+        return None
+    parsed = parse_group_title_parts(current_title)
+    if not parsed:
+        return None
+    if chosen in parsed.shorthands:
+        return None
+    merged = set(parsed.shorthands) | {chosen}
+    prefix = format_title_prefix_segment(merged)
+    if parsed.tail:
+        return f"{prefix} / {parsed.gg_player_id} / {parsed.tail}"
+    return f"{prefix} / {parsed.gg_player_id}"
+
+
+def parse_tracking_title(title: str | None) -> Optional[Tuple[str, str]]:
+    """Return (shorthand, gg_player_id) if the title matches, else None."""
+    parsed = parse_group_title_parts(title)
+    if not parsed:
+        return None
+    prefix = format_title_prefix_segment(set(parsed.shorthands))
+    if not prefix:
+        return None
+    return prefix, parsed.gg_player_id
 
 
 def resolve_club_id_from_shorthand(shorthand: str) -> Optional[int]:
     """Map shorthand to clubs.name then resolve to clubs.id (case-insensitive exact match)."""
-    full_name = CLUB_SHORTHAND_TO_NAME.get(shorthand.upper())
-    if not full_name:
-        return None
-    with get_db() as session:
-        club = (
-            session.query(Club)
-            .filter(text("lower(name) = lower(:n)"))
-            .params(n=full_name)
-            .first()
-        )
-        return int(club.id) if club else None
+    tokens = [t for t in (shorthand or "").upper().split() if t]
+    if not tokens and shorthand:
+        tokens = [shorthand.upper()]
+    seen_names: set[str] = set()
+    for token in tokens:
+        full_name = CLUB_SHORTHAND_TO_NAME.get(token)
+        if not full_name or full_name in seen_names:
+            continue
+        seen_names.add(full_name)
+        with get_db() as session:
+            club = (
+                session.query(Club)
+                .filter(text("lower(name) = lower(:n)"))
+                .params(n=full_name)
+                .first()
+            )
+            if club:
+                return int(club.id)
+    return None
 
 
 def get_existing_chat_ids(*, club_id: int, gg_player_id: str) -> Optional[List[int]]:

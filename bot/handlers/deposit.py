@@ -1,5 +1,6 @@
 """Deposit conversation: amount first, then filtered method selection, then optional crypto sub-option."""
 
+import logging
 from decimal import Decimal, InvalidOperation
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -31,9 +32,17 @@ from bot.services.club import (
     update_group_name,
     record_method_deposit,
 )
+from bot.services.player_details import merge_union_prefix
+from bot.services.round_table_unions import (
+    ROUND_TABLE_DEPOSIT_UNIONS,
+    is_round_table_club,
+    union_label_for_shorthand,
+)
 from bot.handlers.response_utils import send_response_messages
 
-DEPOSIT_REFERRAL, DEPOSIT_AMOUNT, DEPOSIT_CHOOSE, DEPOSIT_SUB = range(4)
+logger = logging.getLogger(__name__)
+
+DEPOSIT_REFERRAL, DEPOSIT_AMOUNT, DEPOSIT_UNION, DEPOSIT_CHOOSE, DEPOSIT_SUB = range(5)
 
 
 async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -152,6 +161,49 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
             )
         return ConversationHandler.END
 
+    if is_round_table_club(int(club_id)):
+        await _prompt_deposit_union(update.message, context)
+        return DEPOSIT_UNION
+
+    await _prompt_deposit_methods(update.message, context, amount=amount)
+    return DEPOSIT_CHOOSE
+
+
+async def deposit_union_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.callback_query:
+        return ConversationHandler.END
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data or ""
+    if not data.startswith("depunion:"):
+        return DEPOSIT_UNION
+
+    shorthand = data.split(":", 1)[1].strip().upper()
+    label = union_label_for_shorthand(shorthand)
+    if not label:
+        await query.edit_message_text("That option is no longer available.")
+        return ConversationHandler.END
+
+    context.chat_data["deposit_union_shorthand"] = shorthand
+    context.chat_data["deposit_union_label"] = label
+
+    amount = context.chat_data.get("deposit_amount")
+    if not isinstance(amount, Decimal):
+        await query.edit_message_text("Deposit session expired. Use /deposit again.")
+        _cleanup(context)
+        return ConversationHandler.END
+
+    await _prompt_deposit_methods(
+        query.message,
+        context,
+        amount=amount,
+        edit_message=query,
+    )
+    return DEPOSIT_CHOOSE
+
+
+def _deposit_method_buttons(methods) -> list[list[InlineKeyboardButton]]:
     buttons = []
     row = []
     for m in methods:
@@ -161,12 +213,39 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
             row = []
     if row:
         buttons.append(row)
+    return buttons
 
-    await update.message.reply_text(
-        f"Deposit amount: ${amount}\nSelect your deposit method:",
+
+async def _prompt_deposit_union(message, context) -> None:
+    buttons = [
+        [
+            InlineKeyboardButton(
+                union["label"], callback_data=f"depunion:{union['shorthand']}"
+            )
+        ]
+        for union in ROUND_TABLE_DEPOSIT_UNIONS
+    ]
+    await message.reply_text(
+        "Which club would you like your deposit to be added to?",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
-    return DEPOSIT_CHOOSE
+
+
+async def _prompt_deposit_methods(
+    message,
+    context,
+    *,
+    amount: Decimal,
+    edit_message=None,
+) -> None:
+    club_id = context.chat_data.get("deposit_club_id")
+    methods = get_methods_for_amount(club_id, "deposit", amount)
+    text = f"Deposit amount: ${amount}\nSelect your deposit method:"
+    markup = InlineKeyboardMarkup(_deposit_method_buttons(methods))
+    if edit_message is not None:
+        await edit_message.edit_message_text(text, reply_markup=markup)
+    else:
+        await message.reply_text(text, reply_markup=markup)
 
 
 async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -220,10 +299,7 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
             record_method_deposit(method_id, amount)
         except Exception:
             pass
-    _record_deposit(context)
-    await _send_bonus_message(query.message.chat, context)
-    _cleanup(context)
-    return ConversationHandler.END
+    return await _complete_deposit_flow(query.message.chat, context)
 
 
 async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -254,10 +330,7 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
             record_method_deposit(method_id, amount)
         except Exception:
             pass
-    _record_deposit(context)
-    await _send_bonus_message(query.message.chat, context)
-    _cleanup(context)
-    return ConversationHandler.END
+    return await _complete_deposit_flow(query.message.chat, context)
 
 
 async def _finish_simple_deposit(message, context):
@@ -287,6 +360,65 @@ async def _finish_simple_deposit(message, context):
         except Exception:
             pass
 
+    _cleanup(context)
+    return ConversationHandler.END
+
+
+async def _send_union_chips_message(chat, context) -> None:
+    label = context.chat_data.get("deposit_union_label")
+    if not label:
+        return
+    try:
+        await chat.send_message(f"Your chips will be added to {label}!")
+    except Exception:
+        pass
+
+
+async def _maybe_rename_group_for_union(context: ContextTypes.DEFAULT_TYPE) -> None:
+    shorthand = context.chat_data.get("deposit_union_shorthand")
+    chat_id = context.chat_data.get("deposit_chat_id")
+    if not shorthand or not chat_id:
+        return
+
+    current_title = None
+    try:
+        chat = await context.bot.get_chat(int(chat_id))
+        current_title = chat.title
+    except Exception:
+        logger.warning(
+            "deposit union rename: could not fetch chat title chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+        return
+
+    new_title = merge_union_prefix(current_title, str(shorthand))
+    if not new_title:
+        return
+
+    try:
+        await context.bot.set_chat_title(int(chat_id), new_title)
+        update_group_name(int(chat_id), new_title)
+        logger.info(
+            "deposit union rename chat_id=%s old=%r new=%r",
+            chat_id,
+            current_title,
+            new_title,
+        )
+    except Exception:
+        logger.warning(
+            "deposit union rename failed chat_id=%s new_title=%r",
+            chat_id,
+            new_title,
+            exc_info=True,
+        )
+
+
+async def _complete_deposit_flow(chat, context: ContextTypes.DEFAULT_TYPE):
+    _record_deposit(context)
+    await _send_union_chips_message(chat, context)
+    await _maybe_rename_group_for_union(context)
+    await _send_bonus_message(chat, context)
     _cleanup(context)
     return ConversationHandler.END
 
@@ -352,6 +484,8 @@ def _cleanup(context):
         "deposit_simple_data",
         "deposit_admin_initiated",
         "deposit_admin_user_id",
+        "deposit_union_shorthand",
+        "deposit_union_label",
     ):
         context.chat_data.pop(key, None)
 
@@ -394,6 +528,11 @@ def get_deposit_handler() -> ConversationHandler:
             DEPOSIT_AMOUNT: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND, deposit_amount_received
+                ),
+            ],
+            DEPOSIT_UNION: [
+                CallbackQueryHandler(
+                    deposit_union_chosen, pattern=r"^depunion:(RT|AT)$"
                 ),
             ],
             DEPOSIT_CHOOSE: [

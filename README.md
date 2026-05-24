@@ -30,7 +30,7 @@ Heroku-style split: `web` runs Uvicorn, `worker` runs the support bot, `cashier`
 | `DASHBOARD_PASSWORD` | No | Shared password for dashboard login; JWT signing secret. Defaults to `changeme` — **set in production**. |
 | `TG_API_ID` | Yes for `/gc` | Integer app id from [my.telegram.org](https://my.telegram.org/apps) — used only for MTProto (Telethon) sessions that create megagroups. |
 | `TG_API_HASH` | Yes for `/gc` | Api hash paired with `TG_API_ID`. Do not expose publicly. |
-| `GC_DM_GC_LISTENER_ENABLED` | No | **Default on.** Telethon listens for **outgoing** `/gc` in **private DMs** from each club’s MTProto admin to a player. Set to `false` / `0` / `no` / `off` to disable. Use **one** bot worker only (same MTProto session must not connect twice). |
+| `GC_DM_GC_LISTENER_ENABLED` | No | **Default on.** Telethon runs `/gc` when a player **DMs the club MTProto account** (any incoming private message) and when staff send **`/gc` in a private DM with a player** (outgoing). Set to `false` / `0` / `no` / `off` to disable. Use **one** bot worker only (same MTProto session must not connect twice). |
 | `GC_DM_GC_VERBOSE_LOGS` | No | **Default off.** Emit extra **INFO** for dm_gc (`dm_capture`, `/gc_match`, bootstrap). Set `true` / `1` / `yes` to enable. Warnings/errors always log. |
 | `GC_CONTACT_SAVE_ENABLED` | No | **Default on.** On **group rename** (after bind), **`/track`** (success), and **`/info`**, the club MTProto user may **add/update one contact** (chat title as name) when exactly one non-admin, non-`GC_USERS_*` human remains. Failures DM the club **`GC_ADMIN_USER_*`** account via the bot (they must `/start` the bot). See [`docs/GC.md`](docs/GC.md). Disable with `false` / `0` / `no` / `off`. |
 
@@ -145,7 +145,7 @@ Deploy runs **`npm run build` for `dashboard/` automatically** via the root `pac
 There are two triggers:
 
 1. **Bot command** — Authorized operators (per-club `command_admin_user_id` in [`club_gc_settings.py`](club_gc_settings.py)) send **`/gc` in private chat with the bot** to create a **generic** support megagroup (no target player row).
-2. **Admin DM** — By default each club’s **MTProto user** session listens for the admin sending **`/gc` in a private DM with a player**. The message is deleted, one megagroup per `(club, player)` is created or reused, the player gets a DM, and metadata is stored on `support_group_chats`. Set **`GC_DM_GC_LISTENER_ENABLED=false`** to turn this off. **Do not** run two workers with the same Telethon session.
+2. **Admin DM** — By default each club’s **MTProto user** session runs `/gc` when a **player DMs that account** (any incoming private message), and when staff send **`/gc` in a private DM with a player** (outgoing; command is deleted). One megagroup per `(club, player)` is created or reused, the player gets a DM, and metadata is stored on `support_group_chats`. Set **`GC_DM_GC_LISTENER_ENABLED=false`** to turn this off. **Do not** run two workers with the same Telethon session.
 
 Shared setup:
 

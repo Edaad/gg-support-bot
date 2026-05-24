@@ -1,19 +1,20 @@
 # MTProto `/gc` — support group automation
 
-This project supports creating **new Telegram support megagroups** via **MTProto (Telethon)**, triggered either by the bot command **`/gc`** or (optionally) by a club admin sending **`/gc` in a private DM with a player** from the MTProto-logged-in admin account.
+This project supports creating **new Telegram support megagroups** via **MTProto (Telethon)**, triggered by the bot command **`/gc`**, when a **player DMs the club MTProto account**, or when staff send **`/gc` in a private DM with a player** from that account.
 
 Key point: **the group is created by a club’s Telegram user account via MTProto, not by the bot via the Bot API**.
 
-## Outgoing `/gc` in admin → player DMs (optional)
+## Incoming player DMs + outgoing `/gc` in admin → player DMs (optional)
 
 **On by default** on the bot worker (set **`GC_DM_GC_LISTENER_ENABLED=false`** to disable). Use **one** process only — the same Telethon session must not connect twice:
 
 - Each configured club starts a Telethon client using that club’s session (file and/or Postgres `StringSession`).
-- If an outgoing private message text is **exactly** `/gc`, the handler deletes that message, resolves the **player** from the DM peer, and either **creates** a new megagroup or **reuses** the existing one for `(club_key, player_telegram_user_id)`.
+- **Incoming:** When anyone **DMs the club MTProto account** (private chat, non-bot), the handler creates or reuses the support megagroup for `(club_key, player_telegram_user_id)` and DMs the player (same flow as `/gc`).
+- **Outgoing:** If an outgoing private message text is **exactly** `/gc`, the handler deletes that message, resolves the **player** from the DM peer, and runs the same create/reuse flow.
 - The player receives a **global** DM template (see [`bot/services/player_support_dm_messages.py`](../bot/services/player_support_dm_messages.py)).
 - Metadata is written to **`support_group_chats`** (run [`migrate_support_group_chats_player_dm.py`](../migrate_support_group_chats_player_dm.py) on existing DBs).
 
-**Testing:** Authorize the club’s MTProto session (Dashboard **Telegram login** or [`scripts/mtproto_login_cli.py`](../scripts/mtproto_login_cli.py)), run a single `python run_bot.py` worker (listener is on unless `GC_DM_GC_LISTENER_ENABLED=false`), open Telegram as the club admin user, DM a player, send `/gc`, and confirm the command disappears and the group + DB row appear.
+**Testing:** Authorize the club’s MTProto session (Dashboard **Telegram login** or [`scripts/mtproto_login_cli.py`](../scripts/mtproto_login_cli.py)), run a single `python run_bot.py` worker (listener is on unless `GC_DM_GC_LISTENER_ENABLED=false`), have a player DM the club support account (or send `/gc` from staff in a player DM), and confirm the group + DB row appear.
 
 ## What `/gc` does (private chat with the **bot**)
 
