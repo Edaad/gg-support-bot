@@ -32,6 +32,7 @@ from bot.services.club import (
     update_group_name,
     record_method_deposit,
 )
+from bot.services.mtproto_group_rename import rename_support_group_title
 from bot.services.player_details import merge_union_prefix
 from bot.services.round_table_unions import (
     ROUND_TABLE_DEPOSIT_UNIONS,
@@ -377,7 +378,8 @@ async def _send_union_chips_message(chat, context) -> None:
 async def _maybe_rename_group_for_union(context: ContextTypes.DEFAULT_TYPE) -> None:
     shorthand = context.chat_data.get("deposit_union_shorthand")
     chat_id = context.chat_data.get("deposit_chat_id")
-    if not shorthand or not chat_id:
+    club_id = context.chat_data.get("deposit_club_id")
+    if not shorthand or not chat_id or not club_id:
         return
 
     current_title = None
@@ -396,21 +398,18 @@ async def _maybe_rename_group_for_union(context: ContextTypes.DEFAULT_TYPE) -> N
     if not new_title:
         return
 
-    try:
-        await context.bot.set_chat_title(int(chat_id), new_title)
-        update_group_name(int(chat_id), new_title)
-        logger.info(
-            "deposit union rename chat_id=%s old=%r new=%r",
-            chat_id,
-            current_title,
-            new_title,
-        )
-    except Exception:
+    ok = await rename_support_group_title(
+        int(chat_id),
+        int(club_id),
+        new_title,
+        bot=context.bot,
+        current_title=current_title,
+    )
+    if not ok:
         logger.warning(
             "deposit union rename failed chat_id=%s new_title=%r",
             chat_id,
             new_title,
-            exc_info=True,
         )
 
 
