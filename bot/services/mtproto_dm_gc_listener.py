@@ -515,7 +515,10 @@ async def _async_main(bot_token: str) -> None:
         def _make_group_cash_handler(label: str, club_cfg_inner):
             async def _handler(event):
                 await handle_group_cash_outgoing(
-                    event, club_cfg_inner, listener_label=label
+                    event,
+                    club_cfg_inner,
+                    listener_label=label,
+                    ptb_bot=ptb_bot,
                 )
 
             return _handler
