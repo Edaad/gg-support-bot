@@ -13,7 +13,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from config import ADMIN_USER_IDS
-from bot.services.club import get_club_for_chat
+from bot.services.club import get_club_for_chat, update_group_name
 from bot.services.mtproto_track_contact import schedule_save_player_contact_named_group
 from bot.services.player_details import (
     parse_tracking_title,
@@ -57,6 +57,10 @@ def _bind_result(update: Update) -> BindResult:
 
 async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Auto-bind on group title change. Silent on invalid."""
+    chat = update.effective_chat
+    if chat:
+        update_group_name(chat.id, chat.title)
+
     res = _bind_result(update)
     if not res.ok:
         # Silent only for invalid format. For same-club conflicts, notify.
@@ -97,6 +101,7 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     res = _bind_result(update)
     if res.ok and res.gg_player_id:
+        update_group_name(chat.id, chat.title)
         await update.message.reply_text(
             f"Successfully tracking player id: {res.gg_player_id}"
         )

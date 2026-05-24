@@ -131,7 +131,13 @@ Maps a **Telegram group/supergroup** (`chat_id` = Telegram chat id) to exactly o
 |--------|------|------------------|
 | `chat_id` | bigint PK | Telegram group id. |
 | `club_id` | FK → `clubs.id` CASCADE | Which club’s config applies (`/deposit`, `/cashout`, `/list`, custom commands, etc.). |
+| `name` | string(255), nullable | **Current Telegram group title** — updated on every `NEW_CHAT_TITLE` event, and refreshed on `/deposit` / `/cashout`. Intended lookup key `(club_id, name)` → `chat_id` for downstream integrations (`find_group_chat_id_by_name` in [`bot/services/club.py`](../bot/services/club.py)). |
+| `first_deposit_claimed` | bool | Promo / first-deposit tracking. |
 | `added_at` | datetime | |
+
+**Indexes:** `ix_groups_club_id_name` on `(club_id, name)` for title lookup (see [`migrate_groups_name_index.py`](../migrate_groups_name_index.py)).
+
+**Title sync:** [`update_group_name()`](../bot/services/club.py) keeps `groups.name` in sync and also updates `support_group_chats.telegram_chat_title` for any row with the same `telegram_chat_id`. Triggered from [`on_new_chat_title`](../bot/handlers/track.py) on every rename (even when player bind fails). Run [`backfill_group_names.py`](../backfill_group_names.py) once after deploy to fix historical stale titles.
 
 **Business logic:** `/deposit` and `/cashout` only run in groups that have a row here. **Broadcast** sends to **all** `chat_id`s for the club’s `groups`. There is no per-group override table; everything is club-level.
 

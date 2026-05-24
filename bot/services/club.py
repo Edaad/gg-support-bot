@@ -1,5 +1,6 @@
 """Shared database queries used by bot handlers."""
 
+import logging
 import random
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -20,7 +21,13 @@ from db.models import (
     CustomCommand,
     PlayerActivity,
     CooldownBypass,
+    SupportGroupChat,
 )
+
+logger = logging.getLogger(__name__)
+
+_GROUP_NAME_MAX = 255
+_SUPPORT_GROUP_TITLE_MAX = 5000
 
 EST = ZoneInfo("America/New_York")
 
@@ -488,13 +495,56 @@ def try_link_group_by_admin(chat_id: int, admin_user_ids: list[int], chat_title:
 
 
 def update_group_name(chat_id: int, chat_title: Optional[str]) -> None:
-    """Update the stored name for a group (keeps it fresh if renamed)."""
-    if not chat_title:
+    """Update stored title for a linked group and matching /gc rows."""
+    title = (chat_title or "").strip()
+    if not title:
         return
+
+    group_name = title[:_GROUP_NAME_MAX]
+    support_title = title[:_SUPPORT_GROUP_TITLE_MAX]
+
     with get_db() as session:
         group = session.query(Group).filter_by(chat_id=chat_id).first()
-        if group and group.name != chat_title:
-            group.name = chat_title
+        if group and group.name != group_name:
+            logger.info(
+                "group title updated chat_id=%s club_id=%s old=%r new=%r",
+                chat_id,
+                group.club_id,
+                group.name,
+                group_name,
+            )
+            group.name = group_name
+
+        sgc_rows = (
+            session.query(SupportGroupChat)
+            .filter(SupportGroupChat.telegram_chat_id == int(chat_id))
+            .all()
+        )
+        for row in sgc_rows:
+            if row.telegram_chat_title != support_title:
+                logger.info(
+                    "support_group_chats title updated chat_id=%s row_id=%s old=%r new=%r",
+                    chat_id,
+                    row.id,
+                    row.telegram_chat_title,
+                    support_title,
+                )
+                row.telegram_chat_title = support_title
+
+
+def find_group_chat_id_by_name(club_id: int, name: str) -> Optional[int]:
+    """Exact match on stored title for a club. Returns chat_id or None."""
+    title = (name or "").strip()
+    if not title:
+        return None
+    lookup_name = title[:_GROUP_NAME_MAX]
+    with get_db() as session:
+        group = (
+            session.query(Group)
+            .filter_by(club_id=int(club_id), name=lookup_name)
+            .first()
+        )
+        return int(group.chat_id) if group else None
 
 
 # ── Cashout cooldown helpers ─────────────────────────────────────────────────

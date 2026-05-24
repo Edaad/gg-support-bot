@@ -207,6 +207,7 @@ class PaymentMethodTier(Base):
 
 class Group(Base):
     __tablename__ = "groups"
+    __table_args__ = (Index("ix_groups_club_id_name", "club_id", "name"),)
 
     chat_id = Column(BigInteger, primary_key=True)
     club_id = Column(
