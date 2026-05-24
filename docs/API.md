@@ -105,7 +105,8 @@ Used by the dashboard **Weekly stats** page to resolve a player’s linked Teleg
 
 The **Weekly stats** UI loads processed weeks and player rows from the separate **gg-computer** HTTP service (MongoDB), not from this FastAPI app.
 
-- **Build-time env:** set `VITE_WEEKLY_STATS_BASE_URL` to the full base URL of gg-computer (no trailing slash), e.g. `https://your-gg-computer-host`, when the browser must call another origin (production). If unset, the dev build defaults to same-origin **`/weekly-stats`**, and Vite proxies that path to `http://127.0.0.1:3000` (see [`dashboard/vite.config.ts`](../dashboard/vite.config.ts)).
+- **Production (recommended):** leave `VITE_WEEKLY_STATS_BASE_URL` unset so the dashboard calls same-origin **`/weekly-stats`**. Set **`GG_COMPUTER_BASE_URL`** on the FastAPI server (Heroku config var) to the gg-computer base URL (no trailing slash), e.g. `https://your-gg-computer-host`. The API proxies `/weekly-stats/*` to gg-computer (see [`api/routes/weekly_stats_proxy.py`](../api/routes/weekly_stats_proxy.py)).
+- **Alternative:** set **`VITE_WEEKLY_STATS_BASE_URL`** at dashboard build time to call gg-computer directly from the browser (requires gg-computer CORS). If unset in dev, Vite proxies `/weekly-stats` to `http://127.0.0.1:3000` (see [`dashboard/vite.config.ts`](../dashboard/vite.config.ts)).
 - **Endpoints used:** `GET /processed-weeks?clubId=<slug>`, `GET /players?clubId=&weekId=&filters&page=&pageSize=`.
 - **Sync (dashboard button):** `POST /process-week/sync` with optional JSON body `{ "clubId": "<slug>" }` to process missing `weekly_profits` rows for one club; omit `clubId` in the upstream API to scan all clubs (the dashboard button always sends the **currently selected** club slug).
 
