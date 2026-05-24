@@ -13,7 +13,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from config import ADMIN_USER_IDS
-from bot.services.club import get_club_for_chat, update_group_name
+from bot.services.club import get_club_for_chat, get_group_name, update_group_name
 from bot.services.mtproto_track_contact import schedule_save_player_contact_named_group
 from bot.services.player_details import (
     parse_tracking_title,
@@ -21,6 +21,7 @@ from bot.services.player_details import (
     bind_chat_from_title,
     BindResult,
     get_bound_players,
+    gg_player_id_from_title,
     is_same_club_player_conflict_message,
 )
 
@@ -58,7 +59,9 @@ def _bind_result(update: Update) -> BindResult:
 async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Auto-bind on group title change. Silent on invalid."""
     chat = update.effective_chat
+    previous_gg_player_id = None
     if chat:
+        previous_gg_player_id = gg_player_id_from_title(get_group_name(chat.id))
         update_group_name(chat.id, chat.title)
 
     res = _bind_result(update)
@@ -74,13 +77,15 @@ async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
     if context.bot and update.effective_chat and res.gg_player_id:
         chat = update.effective_chat
-        await context.bot.send_message(
-            chat_id=chat.id,
-            text=(
-                "Thank you for playing at our club!!\n"
-                f"Player ID: {res.gg_player_id}"
-            ),
-        )
+        player_id_changed = res.gg_player_id != previous_gg_player_id
+        if player_id_changed:
+            await context.bot.send_message(
+                chat_id=chat.id,
+                text=(
+                    "Thank you for playing at our club!!\n"
+                    f"Player ID: {res.gg_player_id}"
+                ),
+            )
         club_id = _club_id_for_contact_sync(chat)
         schedule_save_player_contact_named_group(
             chat_id=chat.id,

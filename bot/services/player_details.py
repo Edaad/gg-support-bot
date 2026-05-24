@@ -96,6 +96,12 @@ def merge_union_prefix(current_title: str | None, chosen_shorthand: str) -> Opti
     return f"{prefix} / {parsed.gg_player_id}"
 
 
+def gg_player_id_from_title(title: str | None) -> Optional[str]:
+    """Return the GG player id segment from a group title, if present."""
+    parsed = parse_group_title_parts(title)
+    return parsed.gg_player_id if parsed else None
+
+
 def parse_tracking_title(title: str | None) -> Optional[Tuple[str, str]]:
     """Return (shorthand, gg_player_id) if the title matches, else None."""
     parsed = parse_group_title_parts(title)

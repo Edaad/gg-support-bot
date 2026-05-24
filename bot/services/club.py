@@ -494,6 +494,16 @@ def try_link_group_by_admin(chat_id: int, admin_user_ids: list[int], chat_title:
     return None
 
 
+def get_group_name(chat_id: int) -> Optional[str]:
+    """Last stored Telegram title for a linked group, or None."""
+    with get_db() as session:
+        group = session.query(Group).filter_by(chat_id=int(chat_id)).first()
+        if not group or not group.name:
+            return None
+        title = str(group.name).strip()
+        return title or None
+
+
 def update_group_name(chat_id: int, chat_title: Optional[str]) -> None:
     """Update stored title for a linked group and matching /gc rows."""
     title = (chat_title or "").strip()
