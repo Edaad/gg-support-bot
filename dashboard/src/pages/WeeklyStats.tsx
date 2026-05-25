@@ -92,6 +92,13 @@ export default function WeeklyStats({ token }: { token: string }) {
   const [bulkModalText, setBulkModalText] = useState('')
   const [bulkModalErr, setBulkModalErr] = useState('')
 
+  const [filtersOpen, setFiltersOpen] = useState(false)
+
+  const hasActiveFilters = useMemo(
+    () => Object.keys(appliedFilters).length > 0,
+    [appliedFilters],
+  )
+
   const messageableOnPage = useMemo(
     () => data?.players.filter((p) => p.gg_id) ?? [],
     [data],
@@ -384,40 +391,63 @@ export default function WeeklyStats({ token }: { token: string }) {
 
       {weekId && (
         <>
-          <div className="mb-4 grid gap-3 rounded-xl border border-gray-800 bg-gray-900 p-4 sm:grid-cols-2 lg:grid-cols-3">
-            {(
-              [
-                ['minProfit', 'Min profit'],
-                ['maxProfit', 'Max profit'],
-                ['minRake', 'Min rake'],
-                ['maxRake', 'Max rake'],
-                ['minRakeback', 'Min rakeback'],
-                ['maxRakeback', 'Max rakeback'],
-              ] as const
-            ).map(([key, label]) => (
-              <div key={key}>
-                <label className="mb-1 block text-xs text-gray-400">{label}</label>
-                <input
-                  type="number"
-                  step="any"
-                  value={filterInputs[key]}
-                  onChange={(e) => setFilterInputs((f) => ({ ...f, [key]: e.target.value }))}
-                  className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white"
-                />
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((open) => !open)}
+              className="rounded-lg border border-gray-700 bg-gray-900 px-4 py-2 text-sm font-medium text-gray-200 hover:bg-gray-800"
+            >
+              {filtersOpen ? 'Hide filters' : 'Show filters'}
+              {!filtersOpen && hasActiveFilters ? ' (active)' : ''}
+            </button>
+
+            {filtersOpen && (
+              <div className="mt-3 grid gap-3 rounded-xl border border-gray-800 bg-gray-900 p-4 sm:grid-cols-2 lg:grid-cols-3">
+                {(
+                  [
+                    ['minProfit', 'Min profit'],
+                    ['maxProfit', 'Max profit'],
+                    ['minRake', 'Min rake'],
+                    ['maxRake', 'Max rake'],
+                    ['minRakeback', 'Min rakeback'],
+                    ['maxRakeback', 'Max rakeback'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key}>
+                    <label className="mb-1 block text-xs text-gray-400">{label}</label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={filterInputs[key]}
+                      onChange={(e) => setFilterInputs((f) => ({ ...f, [key]: e.target.value }))}
+                      className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white"
+                    />
+                  </div>
+                ))}
+                <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3">
+                  <button
+                    type="button"
+                    onClick={applyFilters}
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+                  >
+                    Apply filters
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="rounded-lg border border-gray-600 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800"
+                  >
+                    Clear
+                  </button>
+                </div>
               </div>
-            ))}
-            <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3">
-              <button
-                type="button"
-                onClick={applyFilters}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
-              >
-                Apply filters
-              </button>
-              <button type="button" onClick={clearFilters} className="rounded-lg border border-gray-600 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800">
-                Clear
-              </button>
-            </div>
+            )}
+
+            <p className="mt-3 rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3 text-xs leading-relaxed text-gray-400">
+              If <span className="font-medium text-gray-300">Send message</span> is greyed out, the player
+              likely does not have a group chat with us yet. If they do have a group chat with us but the
+              button is still greyed out, contact Jeehan.
+            </p>
           </div>
 
           <div className="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm text-gray-400">
@@ -505,7 +535,11 @@ export default function WeeklyStats({ token }: { token: string }) {
                         <button
                           type="button"
                           disabled={!row.gg_id}
-                          title={!row.gg_id ? 'No GG id — cannot message' : 'Send to linked group chat'}
+                          title={
+                            !row.gg_id
+                              ? 'No group chat linked — cannot message'
+                              : 'Send to linked group chat'
+                          }
                           onClick={() => void openSend(row)}
                           className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500"
                         >
