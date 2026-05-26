@@ -108,6 +108,29 @@ def persist_session_string_for_club(club_key: str, telethon_auth_string: str) ->
             row.telethon_auth_string = s
 
 
+def delete_session_for_club(club_key: str) -> bool:
+    """Delete stored StringSession for ``club_key``. Returns True if a row was removed."""
+    if not _db_sessions_enabled():
+        return False
+    try:
+        from db.connection import get_db
+        from db.models import MtProtoSessionCredential
+
+        with get_db() as db:
+            row = (
+                db.query(MtProtoSessionCredential)
+                .filter(MtProtoSessionCredential.club_key == club_key)
+                .one_or_none()
+            )
+            if row is None:
+                return False
+            db.delete(row)
+        return True
+    except Exception as e:
+        logger.warning("mtproto session DB delete failed club=%s: %s", club_key, e)
+        return False
+
+
 async def snapshot_disk_session_to_database(cfg: ClubGcConfig) -> bool:
     """Read SQLite ``.session`` from disk and persist StringSession blob to Postgres.
 

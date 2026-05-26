@@ -4,6 +4,7 @@ import {
   gcMtprotoSendCode,
   gcMtprotoSignIn,
   gcMtprotoCloudPassword,
+  gcMtprotoDeleteSession,
   type GcMtProtoClub,
 } from '../api/client'
 
@@ -20,6 +21,7 @@ export default function TelegramLogin({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [info, setInfo] = useState<string | null>(null)
+  const [confirmLogout, setConfirmLogout] = useState(false)
 
   const selected = clubs.find((c) => c.club_key === clubKey)
 
@@ -41,6 +43,28 @@ export default function TelegramLogin({ token }: { token: string }) {
       cancelled = true
     }
   }, [token])
+
+  async function logOut() {
+    if (!clubKey) return
+    setError(null)
+    setInfo(null)
+    setBusy(true)
+    try {
+      await gcMtprotoDeleteSession(token, clubKey)
+      setConfirmLogout(false)
+      setPhoneCodeHash('')
+      setCode('')
+      setNeedsPassword(false)
+      setCloudPassword('')
+      setInfo('Session cleared. Log in again below to generate a new session.')
+      const rows = await gcMtprotoListClubs(token)
+      setClubs(rows)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function sendCode() {
     if (!clubKey) return
@@ -155,6 +179,7 @@ export default function TelegramLogin({ token }: { token: string }) {
             setCloudPassword('')
             setError(null)
             setInfo(null)
+            setConfirmLogout(false)
           }}
           className={`${inputCls} cursor-pointer`}
         >
@@ -166,6 +191,42 @@ export default function TelegramLogin({ token }: { token: string }) {
             </option>
           ))}
         </select>
+
+        {selected?.session_authorized && (
+          <div className="mt-3 flex items-center gap-3">
+            <span className="text-xs text-green-400">Session active</span>
+            {!confirmLogout ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirmLogout(true)}
+                className="rounded-lg border border-red-700 px-3 py-1 text-xs font-medium text-red-400 hover:bg-red-950/50 disabled:opacity-40"
+              >
+                Log out
+              </button>
+            ) : (
+              <>
+                <span className="text-xs text-gray-400">Clear this session and re-login?</span>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={logOut}
+                  className="rounded-lg bg-red-700 px-3 py-1 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-40"
+                >
+                  {busy ? 'Clearing…' : 'Confirm log out'}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setConfirmLogout(false)}
+                  className="text-xs text-gray-500 hover:text-gray-300 disabled:opacity-40"
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         {selected && !selected.phone_configured && (
           <div className="mt-4">

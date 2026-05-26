@@ -27,6 +27,7 @@ from bot.services.mtproto_group_create import (
     send_code_for_phone,
 )
 from bot.services.mtproto_session_db import (
+    delete_session_for_club,
     load_session_string_for_club,
     snapshot_disk_session_to_database,
 )
@@ -73,6 +74,13 @@ async def list_gc_mtproto_clubs():
         )
         for c, f in zip(configs, flags)
     ]
+
+
+@router.delete("/session/{club_key}", status_code=204)
+async def mtproto_delete_session(club_key: str):
+    """Clear the stored Telethon session from DB. Worker will lose MTProto access until re-login."""
+    _cfg(club_key)  # 404 if unknown
+    await asyncio.to_thread(delete_session_for_club, club_key)
 
 
 @router.post("/sync-disk-session", response_model=MtProtoSyncDiskResponse)

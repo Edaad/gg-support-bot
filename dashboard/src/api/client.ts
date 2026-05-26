@@ -186,6 +186,9 @@ export const gcMtprotoCloudPassword = (token: string, body: { club_key: string; 
     token,
   )
 
+export const gcMtprotoDeleteSession = (token: string, clubKey: string) =>
+  request<void>(`/gc/mtproto/session/${encodeURIComponent(clubKey)}`, { method: 'DELETE' }, token)
+
 // Bonus types
 export const listBonusTypes = (token: string) =>
   request<BonusTypeT[]>('/bonus/types', {}, token)
