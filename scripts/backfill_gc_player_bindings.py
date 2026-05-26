@@ -13,6 +13,7 @@ Usage:
   python3.11 scripts/backfill_gc_player_bindings.py --club-key round_table
   python3.11 scripts/backfill_gc_player_bindings.py --club-key round_table --apply
   python3.11 scripts/backfill_gc_player_bindings.py --club-key round_table --json
+  python3.11 scripts/backfill_gc_player_bindings.py --club-key round_table --quiet
 """
 
 from __future__ import annotations
@@ -20,10 +21,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger("backfill_gc_player_bindings")
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
@@ -83,6 +87,23 @@ def _is_group_dialog(dialog) -> bool:
     return False
 
 
+def _configure_logging(*, quiet: bool) -> None:
+    level = logging.WARNING if quiet else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(message)s",
+        stream=sys.stderr,
+        force=True,
+    )
+
+
+def _title_snippet(title: str, max_len: int = 60) -> str:
+    t = (title or "").strip()
+    if len(t) <= max_len:
+        return t
+    return t[: max_len - 3] + "..."
+
+
 def _player_labels(user) -> tuple[str | None, str | None]:
     uname = getattr(user, "username", None)
     username = uname.strip() if isinstance(uname, str) and uname.strip() else None
@@ -109,20 +130,31 @@ async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[s
         raise SystemExit(f"Unknown club_key: {club_key!r}")
 
     init_engine()
+    logger.info("Database engine ready")
 
     if not await is_client_authorized(cfg):
         raise SystemExit(
             "Telethon session is not authorized for this club. "
             "Log in via dashboard or scripts/mtproto_login_cli.py"
         )
+    logger.info("Telethon session authorized for club_key=%s", club_key)
 
     rows_out: list[GroupScanRow] = []
     sole = ambiguous = no_player = 0
     bound_updated = bound_inserted = already_bound = skipped_conflict = errors = 0
     group_dialogs = 0
 
+    mode = "APPLY" if apply else "DRY-RUN"
+    logger.info(
+        "Starting scan club=%s (%s) mode=%s",
+        cfg.club_display_name,
+        club_key,
+        mode,
+    )
+
     async with get_mtproto_lock(cfg.club_key):
         client = make_client(cfg)
+        logger.info("Connecting Telethon client...")
         await client.connect()
         try:
             if not await client.is_user_authorized():
@@ -130,20 +162,48 @@ async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[s
 
             me = await client.get_me()
             self_id = int(me.id) if me and getattr(me, "id", None) is not None else None
+            me_label = getattr(me, "username", None) or getattr(me, "first_name", "?")
+            logger.info(
+                "Connected as @%s (id=%s); listing dialogs...",
+                me_label,
+                self_id,
+            )
 
+            dialogs_seen = 0
             async for dialog in client.iter_dialogs():
+                dialogs_seen += 1
+                if dialogs_seen % 50 == 0:
+                    logger.info(
+                        "Dialog progress: %s scanned (%s groups so far)",
+                        dialogs_seen,
+                        group_dialogs,
+                    )
                 if not _is_group_dialog(dialog):
                     continue
                 group_dialogs += 1
                 chat_id = int(dialog.id)
                 title = (dialog.title or dialog.name or "").strip()
+                logger.info(
+                    "[%s] Checking group chat_id=%s title=%r",
+                    group_dialogs,
+                    chat_id,
+                    _title_snippet(title),
+                )
 
                 parsed = parse_tracking_title(title)
                 gg_player_id = parsed[1] if parsed else None
+                if gg_player_id:
+                    logger.info("  Parsed gg_player_id=%s", gg_player_id)
 
                 try:
+                    logger.info("  Loading chat entity...")
                     entity = await client.get_entity(chat_id)
                 except Exception as e:
+                    logger.warning(
+                        "  Failed to open chat_id=%s: %s",
+                        chat_id,
+                        type(e).__name__,
+                    )
                     rows_out.append(
                         GroupScanRow(
                             chat_id=chat_id,
@@ -162,10 +222,16 @@ async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[s
                     continue
 
                 try:
+                    logger.info("  Listing eligible participants...")
                     sole_result = await find_sole_player_participant(
                         client, entity, cfg, self_id=self_id
                     )
                 except Exception as e:
+                    logger.warning(
+                        "  Failed to list members chat_id=%s: %s",
+                        chat_id,
+                        type(e).__name__,
+                    )
                     rows_out.append(
                         GroupScanRow(
                             chat_id=chat_id,
@@ -189,10 +255,17 @@ async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[s
                     user = sole_result.user
                     pid = int(user.id)
                     username, display = _player_labels(user)
+                    logger.info(
+                        "  Sole player: id=%s @%s %s",
+                        pid,
+                        username or "?",
+                        display or "",
+                    )
                     bind_status: str | None = None
                     bind_row_id: int | None = None
 
                     if apply:
+                        logger.info("  Writing support_group_chats binding...")
                         bind_status, bind_row_id = await asyncio.to_thread(
                             bind_player_for_gc_reuse,
                             club_key=cfg.club_key,
@@ -217,8 +290,10 @@ async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[s
                             skipped_conflict += 1
                         elif bind_status == "error":
                             errors += 1
+                        logger.info("  Bind result: %s%s", bind_status, f" row_id={bind_row_id}" if bind_row_id else "")
                     else:
                         bind_status = "would_bind"
+                        logger.info("  Would bind player_id=%s (dry-run)", pid)
 
                     rows_out.append(
                         GroupScanRow(
@@ -236,6 +311,7 @@ async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[s
                     )
                 elif n == 0:
                     no_player += 1
+                    logger.info("  No eligible player (0 candidates)")
                     rows_out.append(
                         GroupScanRow(
                             chat_id=chat_id,
@@ -252,6 +328,12 @@ async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[s
                     )
                 else:
                     ambiguous += 1
+                    ids_preview = ",".join(str(x) for x in sole_result.candidate_ids[:6])
+                    logger.info(
+                        "  Ambiguous: %s candidates ids=[%s]",
+                        n,
+                        ids_preview,
+                    )
                     rows_out.append(
                         GroupScanRow(
                             chat_id=chat_id,
@@ -267,7 +349,25 @@ async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[s
                         )
                     )
         finally:
+            logger.info("Disconnecting Telethon client...")
             await client.disconnect()
+
+    logger.info(
+        "Scan complete: groups=%s sole=%s ambiguous=%s no_player=%s errors=%s",
+        group_dialogs,
+        sole,
+        ambiguous,
+        no_player,
+        errors,
+    )
+    if apply:
+        logger.info(
+            "Apply totals: inserted=%s updated=%s already_bound=%s conflicts=%s",
+            bound_inserted,
+            bound_updated,
+            already_bound,
+            skipped_conflict,
+        )
 
     summary = ScanSummary(
         mtproto_club_key=club_key,
@@ -342,7 +442,15 @@ def main() -> None:
         help="Write support_group_chats.player_telegram_user_id (default: report only).",
     )
     parser.add_argument("--json", action="store_true", help="JSON to stdout.")
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Only warnings/errors on stderr (no per-group progress).",
+    )
     args = parser.parse_args()
+
+    if not args.json:
+        _configure_logging(quiet=args.quiet)
 
     summary, rows = asyncio.run(_scan(args.club_key, apply=args.apply))
 
