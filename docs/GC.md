@@ -156,6 +156,20 @@ When **`TG_API_ID` / `TG_API_HASH`** are set and the club’s Telethon session i
 
 Implementation: [`bot/services/mtproto_track_contact.py`](../bot/services/mtproto_track_contact.py).
 
+## `/delete confirm` (erase support group on Telegram)
+
+Staff on a **club MTProto account** can permanently remove a linked support megagroup by sending **`/delete confirm`** in that group (exact text; bare `/delete` is ignored).
+
+- **Outgoing only** — same listener as `/add` and `/cash` ([`bot/services/mtproto_dm_gc_listener.py`](../bot/services/mtproto_dm_gc_listener.py)); not a Bot API command.
+- **Club scope** — the group must be linked in Postgres and match that club’s `link_club_id` (same checks as `/cash`).
+- **Telegram actions** — deletes the command message, kicks all participants the account can remove (best-effort), then calls `channels.deleteChannel`.
+- **Postgres** — rows in `groups`, `player_details`, `support_group_chats`, etc. are **not** removed; clean those manually if needed.
+- **Failures** — a short DM is sent to that club’s `command_admin_user_id` when delete cannot complete.
+
+**Requirements:** The MTProto user should be **creator** (typical for `/gc` megagroups). Groups where that account is only a member may fail to delete even if some kicks succeed.
+
+Implementation: [`bot/services/mtproto_group_delete.py`](../bot/services/mtproto_group_delete.py).
+
 ## Database persistence
 
 Table: `support_group_chats`

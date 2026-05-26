@@ -34,6 +34,7 @@ from bot.services.player_support_dm_messages import (
 )
 from bot.services.mtproto_group_add import handle_group_add_outgoing
 from bot.services.mtproto_group_cash import handle_group_cash_outgoing
+from bot.services.mtproto_group_delete import handle_group_delete_outgoing
 from bot.services.support_group_chats import (
     fetch_support_group_chat_by_club_player,
     persist_support_group_chat_row,
@@ -627,6 +628,14 @@ async def _async_main(bot_token: str) -> None:
 
             return _handler
 
+        def _make_group_delete_handler(label: str, club_cfg_inner):
+            async def _handler(event):
+                await handle_group_delete_outgoing(
+                    event, club_cfg_inner, listener_label=label
+                )
+
+            return _handler
+
         client.add_event_handler(
             _make_dm_gc_incoming_handler(listener_label, cfg),
             events.NewMessage(incoming=True, func=lambda e: e.is_private),
@@ -641,6 +650,10 @@ async def _async_main(bot_token: str) -> None:
         )
         client.add_event_handler(
             _make_group_cash_handler(listener_label, cfg),
+            events.NewMessage(outgoing=True),
+        )
+        client.add_event_handler(
+            _make_group_delete_handler(listener_label, cfg),
             events.NewMessage(outgoing=True),
         )
         started.append(client)
