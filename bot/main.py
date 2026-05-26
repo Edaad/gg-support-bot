@@ -105,6 +105,7 @@ def run_bot(token: str | None = None):
     from bot.handlers.track import on_new_chat_title, track_handler, info_handler
     from bot.handlers.telemsg import telemsg_handler
     from bot.handlers.lookup import lookup_handler
+    from bot.handlers.findgc import findgc_handler
     from bot.handlers.group_create import get_gc_handler
     from bot.handlers.bonus import get_bonus_handler
 
@@ -129,6 +130,7 @@ def run_bot(token: str | None = None):
     app.add_handler(CommandHandler("info", info_handler))
     app.add_handler(CommandHandler("telemsg", telemsg_handler))
     app.add_handler(CommandHandler("lookup", lookup_handler))
+    app.add_handler(CommandHandler("findgc", findgc_handler))
 
     app.add_handler(get_set_handler())
     app.add_handler(get_deposit_handler())

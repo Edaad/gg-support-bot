@@ -27,6 +27,22 @@ def fetch_player_telegram_user_id_for_chat(telegram_chat_id: int) -> int | None:
         return int(row[0])
 
 
+def fetch_support_group_chat_by_telegram_chat_id(
+    telegram_chat_id: int,
+) -> SupportGroupChat | None:
+    """Latest ``support_group_chats`` row for a megagroup chat id, if any."""
+    with get_db() as session:
+        row = (
+            session.query(SupportGroupChat)
+            .filter(SupportGroupChat.telegram_chat_id == int(telegram_chat_id))
+            .order_by(SupportGroupChat.created_at.desc())
+            .first()
+        )
+        if row is not None:
+            session.expunge(row)
+        return row
+
+
 def fetch_support_group_chat_by_club_player(
     club_key: str, player_telegram_user_id: int
 ) -> SupportGroupChat | None:
@@ -116,6 +132,7 @@ def update_support_group_chat_row(
     last_error_message: str | None = None,
     initial_group_message_sent: bool | None = None,
     telegram_chat_title: str | None = None,
+    player_telegram_user_id: int | None = None,
 ) -> tuple[bool, str | None]:
     """Update an existing row by primary key. Returns (ok, error)."""
     try:
@@ -141,10 +158,84 @@ def update_support_group_chat_row(
                 row.initial_group_message_sent = initial_group_message_sent
             if telegram_chat_title is not None:
                 row.telegram_chat_title = telegram_chat_title[:5000]
+            if player_telegram_user_id is not None:
+                row.player_telegram_user_id = int(player_telegram_user_id)
         return True, None
     except Exception as e:
         logger.exception("support_group_chats update failed (%s)", type(e).__name__)
         return False, type(e).__name__
+
+
+def bind_player_for_gc_reuse(
+    *,
+    club_key: str,
+    club_display_name: str,
+    telegram_chat_id: int,
+    telegram_chat_title: str,
+    player_telegram_user_id: int,
+    player_username: str | None = None,
+    player_display_name: str | None = None,
+) -> tuple[str, int | None]:
+    """Link a megagroup to a player so ``/gc`` reuses it instead of creating a new group.
+
+    Returns ``(status, row_id)`` where status is one of:
+    ``already_bound``, ``updated``, ``inserted``, ``player_bound_elsewhere``,
+    ``chat_other_player``, ``duplicate_club_player``, ``error``.
+    """
+    pid = int(player_telegram_user_id)
+    cid = int(telegram_chat_id)
+    title = (telegram_chat_title or "")[:5000]
+
+    by_player = fetch_support_group_chat_by_club_player(club_key, pid)
+    if by_player is not None and int(by_player.telegram_chat_id) != cid:
+        return (
+            "player_bound_elsewhere",
+            by_player.id,
+        )
+
+    by_chat = fetch_support_group_chat_by_telegram_chat_id(cid)
+    if by_chat is not None:
+        existing_pid = by_chat.player_telegram_user_id
+        if existing_pid is not None and int(existing_pid) != pid:
+            return ("chat_other_player", by_chat.id)
+        if existing_pid is not None and int(existing_pid) == pid:
+            return ("already_bound", by_chat.id)
+        ok, err = update_support_group_chat_row(
+            by_chat.id,
+            player_telegram_user_id=pid,
+            player_username=player_username,
+            player_display_name=player_display_name,
+            telegram_chat_title=title,
+            player_dm_status="backfill_player_binding",
+        )
+        if not ok:
+            return ("error", by_chat.id if err != "not_found" else None)
+        return ("updated", by_chat.id)
+
+    pk, err = persist_support_group_chat_row(
+        club_key=club_key,
+        club_display_name=club_display_name,
+        telegram_chat_id=cid,
+        telegram_chat_title=title,
+        invite_link=None,
+        created_by_telegram_user_id=None,
+        mtproto_session_name=None,
+        added_users=[],
+        failed_users=[],
+        group_photo_path=None,
+        initial_group_message_sent=False,
+        last_error_message=None,
+        player_telegram_user_id=pid,
+        player_username=player_username,
+        player_display_name=player_display_name,
+        player_dm_status="backfill_player_binding",
+    )
+    if err == "duplicate_club_player":
+        row = fetch_support_group_chat_by_club_player(club_key, pid)
+        return ("duplicate_club_player", row.id if row else None)
+    if pk is None:
+        return ("error", None)
+    return ("inserted", pk)
 
 
 def try_pg_advisory_lock_club_player(club_key: str, player_telegram_user_id: int) -> tuple[Any, bool]:

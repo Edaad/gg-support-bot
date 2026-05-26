@@ -557,6 +557,31 @@ def find_group_chat_id_by_name(club_id: int, name: str) -> Optional[int]:
         return int(group.chat_id) if group else None
 
 
+def get_group_title_for_chat(chat_id: int) -> Tuple[Optional[str], Optional[int]]:
+    """Return ``(title, club_id)`` from ``groups.name`` or ``support_group_chats``."""
+    cid = int(chat_id)
+    with get_db() as session:
+        group = session.query(Group).filter_by(chat_id=cid).first()
+        if group and (group.name or "").strip():
+            return (group.name.strip(), int(group.club_id))
+
+        sgc = (
+            session.query(SupportGroupChat)
+            .filter(SupportGroupChat.telegram_chat_id == cid)
+            .order_by(SupportGroupChat.created_at.desc())
+            .first()
+        )
+        if sgc and (sgc.telegram_chat_title or "").strip():
+            club_id = None
+            if group:
+                club_id = int(group.club_id)
+            return (sgc.telegram_chat_title.strip(), club_id)
+
+        if group:
+            return (None, int(group.club_id))
+    return (None, None)
+
+
 # ── Cashout cooldown helpers ─────────────────────────────────────────────────
 
 

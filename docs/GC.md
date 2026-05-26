@@ -178,6 +178,18 @@ Staff on a **club MTProto account** can permanently remove a linked support mega
 
 Implementation: [`bot/services/mtproto_group_delete.py`](../bot/services/mtproto_group_delete.py).
 
+## Backfill player binding for legacy groups
+
+Older megagroups may lack ``support_group_chats.player_telegram_user_id``. Without it, ``/gc`` creates a **new** group instead of reusing the existing one.
+
+Script [`scripts/backfill_gc_player_bindings.py`](../scripts/backfill_gc_player_bindings.py):
+
+1. Scans the club MTProto account’s group dialogs.
+2. Finds **exactly one** eligible human (same rules as contact save — excludes admins, ``GC_USERS_*``, MTProto operators, bots).
+3. Dry-run by default; ``--apply`` sets ``player_telegram_user_id`` on ``support_group_chats`` (insert or update).
+
+**Duplicate groups for one player:** Postgres allows only one row per ``(club_key, player_telegram_user_id)``. The first group bound in a run becomes the ``/gc`` target; other chats for the same player report ``player_bound_elsewhere`` (resolve duplicates manually or delete extras).
+
 ## Database persistence
 
 Table: `support_group_chats`

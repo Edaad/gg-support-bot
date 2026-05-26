@@ -9,17 +9,16 @@ from telegram import Bot
 
 from club_gc_settings import (
     ClubGcConfig,
-    gc_mtproto_operator_telegram_user_ids,
     get_club_gc_config_by_link_club_id,
     is_contact_save_enabled,
 )
-from config import ADMIN_USER_IDS
 from bot.services.mtproto_group_create import (
     _with_single_flood_retry,
     get_mtproto_lock,
     is_client_authorized,
     make_client,
 )
+from bot.services.mtproto_group_player import find_sole_player_participant
 
 logger = logging.getLogger(__name__)
 
@@ -113,59 +112,6 @@ def _truncate_first_name(raw: str) -> str:
     return s[: _CONTACT_FIRST_MAX - 1].rstrip() + "…"
 
 
-async def _resolve_invitee_user_ids(client, cfg: ClubGcConfig) -> set[int]:
-    out: set[int] = set()
-    markers: list[str] = list(cfg.users_to_add)
-    if cfg.bot_account and str(cfg.bot_account).strip():
-        bn = str(cfg.bot_account).strip()
-        markers.append(bn)
-    seen: set[str] = set()
-    for marker in markers:
-        m = marker.strip()
-        key = m.lower().lstrip("@")
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        try:
-            ent = await _with_single_flood_retry(
-                f"invite_entity:{key}",
-                lambda: client.get_entity(m),
-            )
-            uid = getattr(ent, "id", None)
-            if uid is not None:
-                out.add(int(uid))
-        except Exception as e:
-            logger.warning(
-                "contact_save: unresolved users_to_add marker %s: %s",
-                m[:40],
-                type(e).__name__,
-            )
-    return out
-
-
-async def _admin_user_ids(client, channel_ent) -> set[int]:
-    from telethon.tl.types import ChannelParticipantsAdmins
-
-    ids: set[int] = set()
-
-    async def walk():
-        async for u in client.iter_participants(
-            channel_ent, filter=ChannelParticipantsAdmins()
-        ):
-            if u and getattr(u, "id", None) is not None:
-                ids.add(int(u.id))
-
-    try:
-        await _with_single_flood_retry("iter_admin_participants", walk)
-    except Exception as e:
-        logger.warning(
-            "contact_save: admin list failed chat=%s: %s",
-            getattr(channel_ent, "id", "?"),
-            type(e).__name__,
-        )
-    return ids
-
-
 async def _maybe_save_player_contact(
     *, chat_id: int, cfg: ClubGcConfig, chat_title: str
 ) -> str | None:
@@ -210,38 +156,10 @@ async def _maybe_save_player_contact(
                 )
                 return f"Could not open chat ({type(e).__name__})."
 
-            admin_ids = await _admin_user_ids(client, chan)
-            invite_ids = await _resolve_invitee_user_ids(client, cfg)
-
-            skip_operators = gc_mtproto_operator_telegram_user_ids()
-            skip_dashboard_admins = frozenset(int(x) for x in ADMIN_USER_IDS)
-
-            candidates: list = []
-
-            async def collect():
-                async for u in client.iter_participants(chan):
-                    if not u or getattr(u, "bot", False):
-                        continue
-                    uid = getattr(u, "id", None)
-                    if uid is None:
-                        continue
-                    uid_int = int(uid)
-                    if self_id is not None and uid_int == self_id:
-                        continue
-                    if uid_int in admin_ids:
-                        continue
-                    if uid_int in invite_ids:
-                        continue
-                    # MTProto `/gc` club accounts usually stay in support groups but are not
-                    # admins; excluding them restores "exactly one player" candidate semantics.
-                    if uid_int in skip_operators:
-                        continue
-                    if uid_int in skip_dashboard_admins:
-                        continue
-                    candidates.append(u)
-
             try:
-                await _with_single_flood_retry("iter_participants", collect)
+                sole = await find_sole_player_participant(
+                    client, chan, cfg, self_id=self_id
+                )
             except Exception as e:
                 logger.warning(
                     "contact_save: list participants chat_id=%s: %s",
@@ -250,24 +168,21 @@ async def _maybe_save_player_contact(
                 )
                 return f"Could not list members ({type(e).__name__})."
 
-            if len(candidates) != 1:
-                preview = ",".join(
-                    str(getattr(u, "id", "?"))
-                    for u in candidates[:6]
-                )
+            if sole.candidate_count != 1 or sole.user is None:
+                preview = ",".join(str(x) for x in sole.candidate_ids[:6])
                 logger.warning(
                     "contact_save: skip chat_id=%s club=%s candidate_count=%s ids_sample=%s",
                     chat_id,
                     cfg.club_key,
-                    len(candidates),
+                    sole.candidate_count,
                     preview,
                 )
                 return (
                     f"Contact not saved: need exactly one eligible player, "
-                    f"found {len(candidates)}."
+                    f"found {sole.candidate_count}."
                 )
 
-            user_obj = candidates[0]
+            user_obj = sole.user
             from telethon.tl import functions
 
             try:
