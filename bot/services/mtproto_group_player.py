@@ -76,6 +76,11 @@ async def collect_eligible_player_participants(
 ) -> list[Any]:
     """All non-bot player candidates after staff/operator exclusions (see ``find_sole_player_participant``)."""
     invite_ids = await _resolve_invitee_user_ids(client, cfg)
+    invite_usernames = frozenset(
+        m.strip().lower().lstrip("@")
+        for m in (list(cfg.users_to_add) + ([cfg.bot_account] if cfg.bot_account else []))
+        if isinstance(m, str) and m.strip()
+    )
     skip_operators = gc_mtproto_operator_telegram_user_ids()
     skip_dashboard_admins = frozenset(int(x) for x in ADMIN_USER_IDS)
 
@@ -93,6 +98,11 @@ async def collect_eligible_player_participants(
                 continue
             if uid_int in invite_ids:
                 continue
+            if invite_usernames:
+                un = getattr(u, "username", None)
+                key = un.strip().lower().lstrip("@") if isinstance(un, str) and un.strip() else ""
+                if key and key in invite_usernames:
+                    continue
             if uid_int in skip_operators:
                 continue
             if uid_int in skip_dashboard_admins:

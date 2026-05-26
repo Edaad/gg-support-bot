@@ -54,6 +54,7 @@ class GroupScanRow:
     title: str
     candidate_count: int
     candidate_ids: tuple[int, ...]
+    eligible_labels: tuple[str, ...]
     player_telegram_user_id: int | None
     player_username: str | None
     player_display_name: str | None
@@ -102,6 +103,13 @@ def _title_snippet(title: str, max_len: int = 60) -> str:
     if len(t) <= max_len:
         return t
     return t[: max_len - 3] + "..."
+
+
+def _eligible_labels_from_result(sole_result) -> tuple[str, ...]:
+    return tuple(
+        f"id={p.user_id} {p.username or ''} {p.display_name}".strip()
+        for p in sole_result.eligible
+    )
 
 
 def _player_labels(user) -> tuple[str | None, str | None]:
@@ -210,6 +218,7 @@ async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[s
                             title=title,
                             candidate_count=-1,
                             candidate_ids=(),
+                            eligible_labels=(),
                             player_telegram_user_id=None,
                             player_username=None,
                             player_display_name=None,
@@ -238,6 +247,7 @@ async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[s
                             title=title,
                             candidate_count=-1,
                             candidate_ids=(),
+                            eligible_labels=(),
                             player_telegram_user_id=None,
                             player_username=None,
                             player_display_name=None,
@@ -301,6 +311,7 @@ async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[s
                             title=title,
                             candidate_count=1,
                             candidate_ids=sole_result.candidate_ids,
+                            eligible_labels=_eligible_labels_from_result(sole_result),
                             player_telegram_user_id=pid,
                             player_username=username,
                             player_display_name=display,
@@ -318,6 +329,7 @@ async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[s
                             title=title,
                             candidate_count=0,
                             candidate_ids=(),
+                            eligible_labels=(),
                             player_telegram_user_id=None,
                             player_username=None,
                             player_display_name=None,
@@ -328,18 +340,17 @@ async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[s
                     )
                 else:
                     ambiguous += 1
-                    ids_preview = ",".join(str(x) for x in sole_result.candidate_ids[:6])
-                    logger.info(
-                        "  Ambiguous: %s candidates ids=[%s]",
-                        n,
-                        ids_preview,
-                    )
+                    eligible_labels = _eligible_labels_from_result(sole_result)
+                    logger.info("  Ambiguous: %s eligible humans (need exactly 1):", n)
+                    for label in eligible_labels:
+                        logger.info("    %s", label)
                     rows_out.append(
                         GroupScanRow(
                             chat_id=chat_id,
                             title=title,
                             candidate_count=n,
                             candidate_ids=sole_result.candidate_ids,
+                            eligible_labels=eligible_labels,
                             player_telegram_user_id=None,
                             player_username=None,
                             player_display_name=None,
@@ -423,9 +434,10 @@ def _print_human(summary: ScanSummary, rows: list[dict[str, Any]]) -> None:
     if amb:
         print(f"--- Ambiguous ({len(amb)} groups, not bound) ---")
         for r in amb[:30]:
-            ids = ",".join(str(x) for x in (r.get("candidate_ids") or [])[:8])
-            print(f"  chat_id={r['chat_id']} count={r['candidate_count']} ids=[{ids}]")
+            print(f"  chat_id={r['chat_id']} count={r['candidate_count']}")
             print(f"    title: {r['title']}")
+            for label in r.get("eligible_labels") or []:
+                print(f"    - {label}")
         if len(amb) > 30:
             print(f"  ... and {len(amb) - 30} more")
         print()
