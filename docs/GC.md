@@ -16,6 +16,14 @@ Key point: **the group is created by a club’s Telegram user account via MTProt
 
 **Testing:** Authorize the club’s MTProto session (Dashboard **Telegram login** or [`scripts/mtproto_login_cli.py`](../scripts/mtproto_login_cli.py)), run a single `python run_bot.py` worker (listener is on unless `GC_DM_GC_LISTENER_ENABLED=false`), have a player DM the club support account (or send `/gc` from staff in a player DM), and confirm the group + DB row appear.
 
+### Supervised listener recovery
+
+The worker runs a **supervised loop** ([`bot/services/mtproto_dm_gc_listener.py`](../bot/services/mtproto_dm_gc_listener.py)): each cycle connects club Telethon clients, registers handlers (`/gc`, `/add`, `/cash`, `/delete confirm`, incoming DMs), and runs until disconnect. On exit or crash it logs the reason, tears down clients, waits (bounded backoff), then **reconnects and re-registers handlers**.
+
+- Tune reconnect on every `TelegramClient`: `GC_MTPROTO_CONNECTION_RETRIES`, `GC_MTPROTO_RETRY_DELAY`, `GC_MTPROTO_REQUEST_RETRIES`, `GC_MTPROTO_AUTO_RECONNECT` (see [`.env.example`](../.env.example)).
+- Tune supervision backoff: `GC_DM_GC_LISTENER_RESTART_DELAY_SEC`, `GC_DM_GC_LISTENER_RESTART_DELAY_MAX_SEC`, `GC_DM_GC_LISTENER_RESTART_BACKOFF`.
+- **`/telemsg`** reports listener health (`connected_clients`, `restart_count`, `last_disconnect_reason`) via `get_dm_gc_listener_status()`.
+
 ## What `/gc` does (private chat with the **bot**)
 
 When an authorized club operator sends `/gc` in a **private chat** with the bot:

@@ -114,9 +114,15 @@ def format_telethon_latest_check(
             "Listener: "
             f"{'enabled' if listener_status.get('enabled') else 'disabled'}, "
             f"{listener_status.get('connected_clients', 0)}/"
-            f"{listener_status.get('total_clients', 0)} sessions connected"
+            f"{listener_status.get('total_clients', 0)} sessions connected, "
+            f"running={listener_status.get('listener_running')}, "
+            f"restarts={listener_status.get('restart_count', 0)}"
         ),
     ]
+    if listener_status.get("last_disconnect_reason"):
+        lines.append(
+            f"Last listener exit: {listener_status.get('last_disconnect_reason')}"
+        )
 
     if not result.authorized:
         lines.append(f"Session: not authorized")

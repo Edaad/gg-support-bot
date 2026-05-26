@@ -20,7 +20,11 @@ from telethon.tl.functions.channels import (
 )
 from telethon.tl.types import InputChatUploadedPhoto
 
-from club_gc_settings import ClubGcConfig, get_tg_mtproto_credentials
+from club_gc_settings import (
+    ClubGcConfig,
+    get_mtproto_telethon_client_kwargs,
+    get_tg_mtproto_credentials,
+)
 from bot.services.mtproto_session_db import load_session_string_for_club
 
 
@@ -109,12 +113,20 @@ def make_client(cfg: ClubGcConfig, *, prefer_database: bool = True) -> TelegramC
 
     ``prefer_database=False`` forces the on-disk SQLite ``.session`` file and is used **only**
     for the Dashboard SMS/2FA handshake so a stale Postgres row cannot block ``SendCode``.
+
+    Reconnect tuning via ``GC_MTPROTO_*`` env vars (see ``get_mtproto_telethon_client_kwargs``).
     """
     api_id, api_hash = get_tg_mtproto_credentials()
+    telethon_kw = get_mtproto_telethon_client_kwargs()
     if prefer_database:
         db_string = load_session_string_for_club(cfg.club_key)
         if db_string:
-            return TelegramClient(StringSession(db_string), api_id=api_id, api_hash=api_hash)
+            return TelegramClient(
+                StringSession(db_string),
+                api_id=api_id,
+                api_hash=api_hash,
+                **telethon_kw,
+            )
 
     resolved = resolve_repo_path(cfg.mtproto_session)
     if resolved.suffix == ".session":
@@ -123,7 +135,7 @@ def make_client(cfg: ClubGcConfig, *, prefer_database: bool = True) -> TelegramC
         stem = resolved
     stem.resolve().parent.mkdir(parents=True, exist_ok=True)
     session_arg = stem.as_posix()
-    return TelegramClient(session_arg, api_id=api_id, api_hash=api_hash)
+    return TelegramClient(session_arg, api_id=api_id, api_hash=api_hash, **telethon_kw)
 
 
 async def _with_single_flood_retry(tag: str, coro_factory):

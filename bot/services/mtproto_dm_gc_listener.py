@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from datetime import datetime, timezone
 from typing import Any
 
 from telethon import TelegramClient, events
@@ -12,6 +13,7 @@ from telethon.tl.types import PeerUser, User
 
 from club_gc_settings import (
     CLUB_GC_CONFIG,
+    get_dm_gc_listener_restart_config,
     get_tg_mtproto_credentials,
     is_dm_gc_listener_enabled,
     is_dm_gc_verbose_logging,
@@ -47,6 +49,15 @@ logger = logging.getLogger(__name__)
 
 _clients: list[TelegramClient] = []
 _loop_holder: dict[str, Any] = {}
+_listener_stop = threading.Event()
+_listener_metrics: dict[str, Any] = {
+    "restart_count": 0,
+    "cycle": 0,
+    "last_exit_at": None,
+    "last_error": None,
+    "last_disconnect_reason": None,
+    "running": False,
+}
 
 
 def _dm_gc_verbose_info(msg: str, *args) -> None:
@@ -56,8 +67,6 @@ def _dm_gc_verbose_info(msg: str, *args) -> None:
 
 def get_dm_gc_listener_status() -> dict[str, Any]:
     """Public snapshot of the background Telethon listener thread."""
-    from club_gc_settings import is_dm_gc_listener_enabled
-
     loop = _loop_holder.get("loop")
     connected = sum(1 for c in _clients if c.is_connected())
     return {
@@ -65,6 +74,12 @@ def get_dm_gc_listener_status() -> dict[str, Any]:
         "loop_running": loop is not None and loop.is_running(),
         "connected_clients": connected,
         "total_clients": len(_clients),
+        "listener_running": bool(_listener_metrics.get("running")),
+        "restart_count": int(_listener_metrics.get("restart_count") or 0),
+        "cycle": int(_listener_metrics.get("cycle") or 0),
+        "last_exit_at": _listener_metrics.get("last_exit_at"),
+        "last_error": _listener_metrics.get("last_error"),
+        "last_disconnect_reason": _listener_metrics.get("last_disconnect_reason"),
     }
 
 
@@ -531,30 +546,95 @@ async def handle_dm_gc_message(
     )
 
 
-async def _async_main(bot_token: str) -> None:
-    global _clients
+def _register_club_event_handlers(
+    client: TelegramClient,
+    cfg: Any,
+    *,
+    listener_label: str,
+    bot_dm_username: str | None,
+    ptb_bot: Any,
+) -> None:
+    """Attach all dm_gc / group MTProto handlers to a connected client (per cycle)."""
 
-    try:
-        get_tg_mtproto_credentials()
-    except RuntimeError as e:
-        logger.error("dm_gc listener: %s", e)
-        return
+    def _make_dm_gc_incoming_handler(label: str, club_cfg_inner):
+        async def _handler(event):
+            await handle_dm_gc_incoming(
+                event,
+                club_cfg_inner,
+                bot_dm_username,
+                ptb_bot,
+                listener_label=label,
+            )
 
-    if not is_dm_gc_listener_enabled():
-        return
+        return _handler
 
-    from telegram import Bot
+    def _make_dm_gc_handler(label: str, club_cfg_inner):
+        async def _handler(event):
+            await handle_dm_gc_message(
+                event,
+                club_cfg_inner,
+                bot_dm_username,
+                ptb_bot,
+                listener_label=label,
+            )
 
-    ptb_bot = Bot(bot_token)
-    await ptb_bot.initialize()
-    try:
-        me = await ptb_bot.get_me()
-        bot_dm_username = me.username.strip() if me.username else None
-    except Exception as e:
-        logger.exception("dm_gc Bot.get_me failed: %s", type(e).__name__)
-        await ptb_bot.shutdown()
-        return
+        return _handler
 
+    def _make_group_add_handler(label: str, club_cfg_inner):
+        async def _handler(event):
+            await handle_group_add_outgoing(
+                event, club_cfg_inner, listener_label=label
+            )
+
+        return _handler
+
+    def _make_group_cash_handler(label: str, club_cfg_inner):
+        async def _handler(event):
+            await handle_group_cash_outgoing(
+                event,
+                club_cfg_inner,
+                listener_label=label,
+                ptb_bot=ptb_bot,
+            )
+
+        return _handler
+
+    def _make_group_delete_handler(label: str, club_cfg_inner):
+        async def _handler(event):
+            await handle_group_delete_outgoing(
+                event, club_cfg_inner, listener_label=label
+            )
+
+        return _handler
+
+    client.add_event_handler(
+        _make_dm_gc_incoming_handler(listener_label, cfg),
+        events.NewMessage(incoming=True, func=lambda e: e.is_private),
+    )
+    client.add_event_handler(
+        _make_dm_gc_handler(listener_label, cfg),
+        events.NewMessage(outgoing=True),
+    )
+    client.add_event_handler(
+        _make_group_add_handler(listener_label, cfg),
+        events.NewMessage(outgoing=True),
+    )
+    client.add_event_handler(
+        _make_group_cash_handler(listener_label, cfg),
+        events.NewMessage(outgoing=True),
+    )
+    client.add_event_handler(
+        _make_group_delete_handler(listener_label, cfg),
+        events.NewMessage(outgoing=True),
+    )
+
+
+async def _start_telethon_clients(
+    *,
+    bot_dm_username: str | None,
+    ptb_bot: Any,
+) -> list[TelegramClient]:
+    """Connect authorized club sessions and register handlers. Returns started clients."""
     started: list[TelegramClient] = []
 
     for cfg in CLUB_GC_CONFIG.values():
@@ -567,125 +647,215 @@ async def _async_main(bot_token: str) -> None:
             continue
 
         client = make_client(cfg)
-        await client.connect()
-        if not await client.is_user_authorized():
-            logger.warning(
-                "dm_gc skip club_key=%s: not authorized after connect (check session file / Postgres StringSession)",
+        setattr(client, "_gg_club_key", cfg.club_key)
+        try:
+            await client.connect()
+            if not await client.is_user_authorized():
+                logger.warning(
+                    "dm_gc skip club_key=%s: not authorized after connect "
+                    "(check session file / Postgres StringSession)",
+                    cfg.club_key,
+                )
+                await client.disconnect()
+                continue
+
+            me_who = await client.get_me()
+            listener_label = _telethon_user_label(me_who)
+            _dm_gc_verbose_info(
+                "dm_gc listening club_key=%s listener_account=%s telegram_user_id=%s",
                 cfg.club_key,
+                listener_label,
+                getattr(me_who, "id", "?"),
             )
-            await client.disconnect()
-            continue
-
-        me_who = await client.get_me()
-        listener_label = _telethon_user_label(me_who)
-        _dm_gc_verbose_info(
-            "dm_gc listening for incoming DMs + outgoing /gc club_key=%s listener_account=%s telegram_user_id=%s",
-            cfg.club_key,
-            listener_label,
-            getattr(me_who, "id", "?"),
-        )
-
-        def _make_dm_gc_incoming_handler(label: str, club_cfg_inner):
-            async def _handler(event):
-                await handle_dm_gc_incoming(
-                    event,
-                    club_cfg_inner,
-                    bot_dm_username,
-                    ptb_bot,
-                    listener_label=label,
-                )
-
-            return _handler
-
-        def _make_dm_gc_handler(label: str, club_cfg_inner):
-            async def _handler(event):
-                await handle_dm_gc_message(
-                    event,
-                    club_cfg_inner,
-                    bot_dm_username,
-                    ptb_bot,
-                    listener_label=label,
-                )
-
-            return _handler
-
-        def _make_group_add_handler(label: str, club_cfg_inner):
-            async def _handler(event):
-                await handle_group_add_outgoing(
-                    event, club_cfg_inner, listener_label=label
-                )
-
-            return _handler
-
-        def _make_group_cash_handler(label: str, club_cfg_inner):
-            async def _handler(event):
-                await handle_group_cash_outgoing(
-                    event,
-                    club_cfg_inner,
-                    listener_label=label,
-                    ptb_bot=ptb_bot,
-                )
-
-            return _handler
-
-        def _make_group_delete_handler(label: str, club_cfg_inner):
-            async def _handler(event):
-                await handle_group_delete_outgoing(
-                    event, club_cfg_inner, listener_label=label
-                )
-
-            return _handler
-
-        client.add_event_handler(
-            _make_dm_gc_incoming_handler(listener_label, cfg),
-            events.NewMessage(incoming=True, func=lambda e: e.is_private),
-        )
-        client.add_event_handler(
-            _make_dm_gc_handler(listener_label, cfg),
-            events.NewMessage(outgoing=True),
-        )
-        client.add_event_handler(
-            _make_group_add_handler(listener_label, cfg),
-            events.NewMessage(outgoing=True),
-        )
-        client.add_event_handler(
-            _make_group_cash_handler(listener_label, cfg),
-            events.NewMessage(outgoing=True),
-        )
-        client.add_event_handler(
-            _make_group_delete_handler(listener_label, cfg),
-            events.NewMessage(outgoing=True),
-        )
-        started.append(client)
-
-    _clients[:] = started
-    _loop_holder["ptb_bot"] = ptb_bot
-
-    _dm_gc_verbose_info(
-        "dm_gc listener bootstrap complete telethon_sessions=%s (incoming_dm + outgoing_gc)",
-        len(started),
-    )
-
-    if not started:
-        logger.warning("dm_gc no Telethon clients started")
-        await ptb_bot.shutdown()
-        return
-
-    try:
-        await asyncio.gather(*(c.run_until_disconnected() for c in started))
-    finally:
-        for c in started:
+            _register_club_event_handlers(
+                client,
+                cfg,
+                listener_label=listener_label,
+                bot_dm_username=bot_dm_username,
+                ptb_bot=ptb_bot,
+            )
+            started.append(client)
+        except Exception as e:
+            logger.exception(
+                "dm_gc failed to start client club_key=%s: %s",
+                cfg.club_key,
+                type(e).__name__,
+            )
             try:
-                if c.is_connected():
-                    await c.disconnect()
+                if client.is_connected():
+                    await client.disconnect()
             except Exception:
                 pass
+
+    return started
+
+
+async def _teardown_listener_cycle(
+    started: list[TelegramClient],
+    ptb_bot: Any | None,
+) -> None:
+    for c in started:
+        club_key = getattr(c, "_gg_club_key", "?")
+        try:
+            if c.is_connected():
+                await c.disconnect()
+        except Exception as e:
+            logger.warning(
+                "dm_gc disconnect failed club_key=%s: %s",
+                club_key,
+                type(e).__name__,
+            )
+    if ptb_bot is not None:
         try:
             await ptb_bot.shutdown()
         except Exception:
             pass
-        _clients.clear()
-        _loop_holder.pop("ptb_bot", None)
+    _clients.clear()
+    _loop_holder.pop("ptb_bot", None)
+
+
+async def _run_listener_cycle(bot_token: str) -> str:
+    """One supervised cycle: bootstrap clients, run until disconnect, teardown. Returns exit reason."""
+    global _clients
+
+    from telegram import Bot
+
+    ptb_bot = Bot(bot_token)
+    await ptb_bot.initialize()
+    bot_dm_username: str | None = None
+    try:
+        me = await ptb_bot.get_me()
+        bot_dm_username = me.username.strip() if me.username else None
+    except Exception:
+        logger.exception("dm_gc Bot.get_me failed")
+        await ptb_bot.shutdown()
+        return "ptb_bot_get_me_failed"
+
+    started = await _start_telethon_clients(
+        bot_dm_username=bot_dm_username,
+        ptb_bot=ptb_bot,
+    )
+    _clients[:] = started
+    _loop_holder["ptb_bot"] = ptb_bot
+
+    logger.info(
+        "dm_gc listener cycle started telethon_sessions=%s",
+        len(started),
+    )
+    _dm_gc_verbose_info(
+        "dm_gc listener bootstrap complete telethon_sessions=%s",
+        len(started),
+    )
+
+    if not started:
+        logger.warning("dm_gc no Telethon clients started this cycle")
+        await _teardown_listener_cycle([], ptb_bot)
+        return "no_telethon_clients_started"
+
+    exit_reason = "unknown"
+    try:
+        results = await asyncio.gather(
+            *(c.run_until_disconnected() for c in started),
+            return_exceptions=True,
+        )
+        parts: list[str] = []
+        for client, result in zip(started, results):
+            club_key = getattr(client, "_gg_club_key", "?")
+            if isinstance(result, Exception):
+                logger.error(
+                    "dm_gc Telethon disconnected with error club_key=%s: %s: %s",
+                    club_key,
+                    type(result).__name__,
+                    result,
+                )
+                parts.append(f"{club_key}={type(result).__name__}")
+            else:
+                logger.warning(
+                    "dm_gc Telethon run_until_disconnected ended club_key=%s result=%r",
+                    club_key,
+                    result,
+                )
+                parts.append(f"{club_key}=disconnected")
+        exit_reason = "; ".join(parts) if parts else "all_clients_disconnected"
+    finally:
+        await _teardown_listener_cycle(started, ptb_bot)
+
+    return exit_reason
+
+
+async def _async_main(bot_token: str) -> None:
+    try:
+        get_tg_mtproto_credentials()
+    except RuntimeError as e:
+        logger.error("dm_gc listener: %s", e)
+        return
+
+    if not is_dm_gc_listener_enabled():
+        return
+
+    initial_delay, max_delay, backoff = get_dm_gc_listener_restart_config()
+    delay_sec = initial_delay
+
+    logger.info(
+        "dm_gc supervised listener starting (restart_delay=%.0fs max=%.0fs backoff=%.1fx)",
+        initial_delay,
+        max_delay,
+        backoff,
+    )
+
+    while not _listener_stop.is_set():
+        if not is_dm_gc_listener_enabled():
+            logger.info("dm_gc listener disabled via GC_DM_GC_LISTENER_ENABLED")
+            break
+
+        _listener_metrics["cycle"] = int(_listener_metrics.get("cycle") or 0) + 1
+        _listener_metrics["running"] = True
+        _listener_metrics["last_error"] = None
+
+        cycle_num = _listener_metrics["cycle"]
+        logger.info("dm_gc listener cycle #%s begin", cycle_num)
+
+        exit_reason = "unknown"
+        try:
+            exit_reason = await _run_listener_cycle(bot_token)
+        except asyncio.CancelledError:
+            exit_reason = "cancelled"
+            _listener_metrics["last_error"] = exit_reason
+            logger.info("dm_gc listener cycle #%s cancelled", cycle_num)
+            raise
+        except Exception as e:
+            exit_reason = f"{type(e).__name__}: {e}"
+            _listener_metrics["last_error"] = exit_reason
+            logger.exception("dm_gc listener cycle #%s crashed", cycle_num)
+        finally:
+            _listener_metrics["running"] = False
+            _listener_metrics["last_exit_at"] = datetime.now(timezone.utc).isoformat()
+            _listener_metrics["last_disconnect_reason"] = exit_reason
+
+        if _listener_stop.is_set() or not is_dm_gc_listener_enabled():
+            logger.info("dm_gc supervised listener stopping (reason=%s)", exit_reason)
+            break
+
+        _listener_metrics["restart_count"] = int(_listener_metrics.get("restart_count") or 0) + 1
+        restart_n = _listener_metrics["restart_count"]
+        logger.warning(
+            "dm_gc listener cycle #%s ended (%s); supervised restart #%s in %.0fs",
+            cycle_num,
+            exit_reason,
+            restart_n,
+            delay_sec,
+        )
+
+        slept = 0.0
+        while slept < delay_sec and not _listener_stop.is_set():
+            chunk = min(1.0, delay_sec - slept)
+            await asyncio.sleep(chunk)
+            slept += chunk
+
+        delay_sec = min(delay_sec * backoff, max_delay)
+
+    _listener_metrics["running"] = False
+    logger.info("dm_gc supervised listener exited")
 
 
 def start_listener_background(bot_token: str) -> None:
@@ -693,21 +863,39 @@ def start_listener_background(bot_token: str) -> None:
         _dm_gc_verbose_info("dm_gc listener disabled (GC_DM_GC_LISTENER_ENABLED is false/off)")
         return
 
+    _listener_stop.clear()
+    _listener_metrics.update(
+        {
+            "restart_count": 0,
+            "cycle": 0,
+            "last_exit_at": None,
+            "last_error": None,
+            "last_disconnect_reason": None,
+            "running": False,
+        }
+    )
+
     def runner():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         _loop_holder["loop"] = loop
         try:
             loop.run_until_complete(_async_main(bot_token))
+        except Exception:
+            logger.exception("dm_gc listener thread exited with error")
         finally:
+            _listener_metrics["running"] = False
             loop.close()
             _loop_holder.pop("loop", None)
+            logger.info("dm_gc listener thread finished")
 
     threading.Thread(target=runner, daemon=True, name="mtproto-dm-gc").start()
+    logger.info("dm_gc supervised listener thread started")
     _dm_gc_verbose_info("dm_gc listener thread started")
 
 
 def stop_listener_background() -> None:
+    _listener_stop.set()
     loop = _loop_holder.get("loop")
     if not loop or not loop.is_running():
         return

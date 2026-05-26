@@ -230,3 +230,56 @@ def is_dm_gc_verbose_logging() -> bool:
         "true",
         "yes",
     )
+
+
+def _env_int(key: str, default: int) -> int:
+    raw = os.getenv(key)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        return int(str(raw).strip())
+    except ValueError:
+        return default
+
+
+def _env_float(key: str, default: float) -> float:
+    raw = os.getenv(key)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        return float(str(raw).strip())
+    except ValueError:
+        return default
+
+
+def _env_bool(key: str, default: bool) -> bool:
+    raw = os.getenv(key)
+    if raw is None or not str(raw).strip():
+        return default
+    return str(raw).strip().lower() not in ("0", "false", "no", "off")
+
+
+def get_mtproto_telethon_client_kwargs() -> dict[str, int | float | bool]:
+    """Kwargs passed to every ``TelegramClient`` (listener + one-shot MTProto ops)."""
+
+    return {
+        "connection_retries": _env_int("GC_MTPROTO_CONNECTION_RETRIES", 5),
+        "retry_delay": _env_float("GC_MTPROTO_RETRY_DELAY", 1.0),
+        "request_retries": _env_int("GC_MTPROTO_REQUEST_RETRIES", 5),
+        "auto_reconnect": _env_bool("GC_MTPROTO_AUTO_RECONNECT", True),
+    }
+
+
+def get_dm_gc_listener_restart_config() -> tuple[float, float, float]:
+    """``(initial_delay_sec, max_delay_sec, backoff_multiplier)`` for listener supervision."""
+
+    initial = _env_float("GC_DM_GC_LISTENER_RESTART_DELAY_SEC", 5.0)
+    max_delay = _env_float("GC_DM_GC_LISTENER_RESTART_DELAY_MAX_SEC", 120.0)
+    multiplier = _env_float("GC_DM_GC_LISTENER_RESTART_BACKOFF", 2.0)
+    if initial < 1.0:
+        initial = 1.0
+    if max_delay < initial:
+        max_delay = initial
+    if multiplier < 1.0:
+        multiplier = 1.0
+    return initial, max_delay, multiplier
