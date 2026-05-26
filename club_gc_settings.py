@@ -45,6 +45,21 @@ def _link_club_id_for_gc(env_key: str, *, default_dashboard_id: int) -> int:
     return default_dashboard_id if parsed is None else parsed
 
 
+# Default `/gc` staff invitees (also excluded when finding the sole player).
+# `config.py` re-exports this; keep in sync when editing invite lists.
+GC_USERS_TO_INVITE: dict[str, tuple[str, ...]] = {
+    "round_table": ("@RoundTableSupport3", "@YTranslateBot"),
+    "creator_club": ("@CreatorClubSupport3", "@twocardcashier", "@YTranslateBot"),
+    "clubgto": ("@ClubGTOAdmin", "@YTranslateBot"),
+}
+
+_GC_USERS_ENV_BY_CLUB_KEY: dict[str, str] = {
+    "round_table": "GC_USERS_ROUND_TABLE",
+    "creator_club": "GC_USERS_CREATOR_CLUB",
+    "clubgto": "GC_USERS_CLUB_GTO",
+}
+
+
 def _invite_list(env_var: str, club_key: str) -> tuple[str, ...]:
     """Return invite/exclusion list for `/gc` staff accounts.
 
@@ -54,14 +69,9 @@ def _invite_list(env_var: str, club_key: str) -> tuple[str, ...]:
     """
 
     csv = _env_csv_tuple(env_var)
-    defaults: tuple[str, ...] = ()
-    try:
-        import config as _cfg
-
-        raw = getattr(_cfg, "GC_USERS_TO_INVITE", {}).get(club_key, ())
-        defaults = tuple(str(x).strip() for x in raw if str(x).strip())
-    except Exception:
-        defaults = ()
+    defaults = tuple(
+        str(x).strip() for x in GC_USERS_TO_INVITE.get(club_key, ()) if str(x).strip()
+    )
 
     merged = list(defaults) + list(csv)
     seen: set[str] = set()
@@ -171,6 +181,19 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
 
 
 CLUB_GC_CONFIG = build_club_gc_config()
+
+
+def get_gc_users_to_add(cfg: ClubGcConfig) -> tuple[str, ...]:
+    """Resolve staff invite list at runtime (env + defaults).
+
+    Prefer this over ``cfg.users_to_add`` when exclusion must reflect current env.
+    """
+
+    env_key = _GC_USERS_ENV_BY_CLUB_KEY.get(cfg.club_key, "")
+    if not env_key:
+        return cfg.users_to_add
+    return _invite_list(env_key, cfg.club_key)
+
 
 _command_admin_ids: tuple[tuple[int, ClubGcConfig], ...] = tuple(
     sorted(

@@ -187,11 +187,13 @@ def bind_player_for_gc_reuse(
     title = (telegram_chat_title or "")[:5000]
 
     by_player = fetch_support_group_chat_by_club_player(club_key, pid)
-    if by_player is not None and int(by_player.telegram_chat_id) != cid:
-        return (
-            "player_bound_elsewhere",
-            by_player.id,
-        )
+    # If this (club_key, player) already has a binding row, do not attempt to
+    # "rebind" by updating some other audit row for the same chat. This avoids
+    # uniqueness violations when multiple audit rows exist for a chat_id.
+    if by_player is not None:
+        if int(by_player.telegram_chat_id) == cid:
+            return ("already_bound", by_player.id)
+        return ("player_bound_elsewhere", by_player.id)
 
     by_chat = fetch_support_group_chat_by_telegram_chat_id(cid)
     if by_chat is not None:

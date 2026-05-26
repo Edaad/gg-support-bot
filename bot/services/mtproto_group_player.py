@@ -6,7 +6,11 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from club_gc_settings import ClubGcConfig, gc_mtproto_operator_telegram_user_ids
+from club_gc_settings import (
+    ClubGcConfig,
+    gc_mtproto_operator_telegram_user_ids,
+    get_gc_users_to_add,
+)
 from config import ADMIN_USER_IDS
 from bot.services.mtproto_group_create import _with_single_flood_retry
 
@@ -15,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 async def _resolve_invitee_user_ids(client, cfg: ClubGcConfig) -> set[int]:
     out: set[int] = set()
-    markers: list[str] = list(cfg.users_to_add)
+    markers: list[str] = list(get_gc_users_to_add(cfg))
     if cfg.bot_account and str(cfg.bot_account).strip():
         markers.append(str(cfg.bot_account).strip())
     seen: set[str] = set()
@@ -78,7 +82,7 @@ async def collect_eligible_player_participants(
     invite_ids = await _resolve_invitee_user_ids(client, cfg)
     invite_usernames = frozenset(
         m.strip().lower().lstrip("@")
-        for m in (list(cfg.users_to_add) + ([cfg.bot_account] if cfg.bot_account else []))
+        for m in (list(get_gc_users_to_add(cfg)) + ([cfg.bot_account] if cfg.bot_account else []))
         if isinstance(m, str) and m.strip()
     )
     skip_operators = gc_mtproto_operator_telegram_user_ids()

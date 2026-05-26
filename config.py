@@ -21,18 +21,13 @@ CLUB_SHORTHAND_TO_NAME = {
 
 # --- `/gc` (MTProto) ----------------------------------------------------------
 # Who may run /gc is NOT granted by ADMIN_USER_IDS alone; see club_gc_settings.
-# Users to auto-invite into new /gc groups: edit tuples below, or set GC_USERS_* in
-# .env (env wins when non-empty). Keys: round_table, creator_club, clubgto.
-# Example tuple: ("@alice", "@bob")
-GC_USERS_TO_INVITE = {
-    "round_table": ("@RoundTableSupport3","@YTranslateBot"),
-    "creator_club": ("@CreatorClubSupport3","@YTranslateBot"),
-    "clubgto": ("@ClubGTOAdmin","@YTranslateBot"),
-}
+# Users to auto-invite: edit GC_USERS_TO_INVITE in club_gc_settings.py, or set
+# GC_USERS_* in .env to add more (merged with defaults). Keys: round_table, creator_club, clubgto.
 
 from club_gc_settings import (  # noqa: E402
     CLUB_GC_CONFIG,
     ClubGcConfig,
+    GC_USERS_TO_INVITE,
     get_club_config_for_admin,
     get_tg_mtproto_credentials,
 )

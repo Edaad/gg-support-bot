@@ -22,6 +22,7 @@ from telethon.tl.types import InputChatUploadedPhoto
 
 from club_gc_settings import (
     ClubGcConfig,
+    get_gc_users_to_add,
     get_mtproto_telethon_client_kwargs,
     get_tg_mtproto_credentials,
 )
@@ -501,7 +502,7 @@ async def create_support_megagroup(
                         {"user": pm, "reason": err_ent or "unknown", "kind": "player"}
                     )
 
-            raw_invites = list(cfg.users_to_add)
+            raw_invites = list(get_gc_users_to_add(cfg))
             if bot_label:
                 raw_invites.append(bot_label)
             else:
