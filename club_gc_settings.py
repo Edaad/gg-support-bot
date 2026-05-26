@@ -46,23 +46,36 @@ def _link_club_id_for_gc(env_key: str, *, default_dashboard_id: int) -> int:
 
 
 def _invite_list(env_var: str, club_key: str) -> tuple[str, ...]:
-    """Env GC_USERS_* overrides config.GC_USERS_TO_INVITE when non-empty."""
+    """Return invite/exclusion list for `/gc` staff accounts.
+
+    We treat configured staff invitees as *exclusions* when searching for the sole
+    player in a support group. `GC_USERS_*` may be used to add more accounts, but
+    should not accidentally drop the repo defaults.
+    """
 
     csv = _env_csv_tuple(env_var)
-    if csv:
-        return csv
+    defaults: tuple[str, ...] = ()
     try:
-
         import config as _cfg
 
         raw = getattr(_cfg, "GC_USERS_TO_INVITE", {}).get(club_key, ())
-
-        return tuple(str(x).strip() for x in raw if str(x).strip())
-
-
+        defaults = tuple(str(x).strip() for x in raw if str(x).strip())
     except Exception:
+        defaults = ()
 
-        return ()
+    merged = list(defaults) + list(csv)
+    seen: set[str] = set()
+    out: list[str] = []
+    for m in merged:
+        key = str(m).strip()
+        if not key:
+            continue
+        norm = key.lower()
+        if norm in seen:
+            continue
+        seen.add(norm)
+        out.append(key)
+    return tuple(out)
 
 
 def _nullable_path(key: str, default_rel: str) -> str | None:
