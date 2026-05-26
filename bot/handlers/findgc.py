@@ -6,26 +6,14 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from config import ADMIN_USER_IDS
+from bot.handlers.gc_chat_id import parse_gc_chat_id_args
 from bot.services.club import get_group_title_for_chat
 
 _USAGE = (
     "Usage: /findgc <chat_id>\n"
     "Example: /findgc -1001234567890\n"
-    "Example: /findgc tg_gc_id -1001234567890"
+    "Example: /findgc gc_id -1001234567890"
 )
-
-
-def _parse_chat_id_arg(args: list[str]) -> int | None:
-    rest = list(args)
-    if rest and rest[0].lower() in ("tg_gc_id", "gc_id", "chat_id"):
-        rest = rest[1:]
-    if not rest:
-        return None
-    raw = rest[0].strip()
-    try:
-        return int(raw)
-    except ValueError:
-        return None
 
 
 async def findgc_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -34,7 +22,7 @@ async def findgc_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if update.effective_user.id not in ADMIN_USER_IDS:
         return
 
-    chat_id = _parse_chat_id_arg(context.args or [])
+    chat_id = parse_gc_chat_id_args(context.args or [])
     if chat_id is None:
         await update.message.reply_text(_USAGE)
         return

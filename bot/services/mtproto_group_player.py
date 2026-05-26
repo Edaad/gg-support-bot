@@ -13,29 +13,6 @@ from bot.services.mtproto_group_create import _with_single_flood_retry
 logger = logging.getLogger(__name__)
 
 
-async def _admin_user_ids(client, channel_ent) -> set[int]:
-    from telethon.tl.types import ChannelParticipantsAdmins
-
-    ids: set[int] = set()
-
-    async def walk():
-        async for u in client.iter_participants(
-            channel_ent, filter=ChannelParticipantsAdmins()
-        ):
-            if u and getattr(u, "id", None) is not None:
-                ids.add(int(u.id))
-
-    try:
-        await _with_single_flood_retry("iter_admin_participants", walk)
-    except Exception as e:
-        logger.warning(
-            "group_player: admin list failed chat=%s: %s",
-            getattr(channel_ent, "id", "?"),
-            type(e).__name__,
-        )
-    return ids
-
-
 async def _resolve_invitee_user_ids(client, cfg: ClubGcConfig) -> set[int]:
     out: set[int] = set()
     markers: list[str] = list(cfg.users_to_add)
@@ -66,21 +43,38 @@ async def _resolve_invitee_user_ids(client, cfg: ClubGcConfig) -> set[int]:
 
 
 @dataclass(frozen=True)
+class EligiblePlayer:
+    user_id: int
+    display_name: str
+    username: str | None
+
+
+@dataclass(frozen=True)
 class SolePlayerResult:
     user: Any | None
     candidate_count: int
     candidate_ids: tuple[int, ...]
+    eligible: tuple[EligiblePlayer, ...] = ()
 
 
-async def find_sole_player_participant(
+def format_telegram_user_display(user: Any) -> tuple[str, str | None]:
+    """Return ``(display_name, @username or None)`` for a Telethon user."""
+    un = getattr(user, "username", None)
+    username = f"@{un.strip().lstrip('@')}" if isinstance(un, str) and un.strip() else None
+    fn = (getattr(user, "first_name", None) or "").strip()
+    ln = (getattr(user, "last_name", None) or "").strip()
+    display = f"{fn} {ln}".strip() or (username or "").lstrip("@") or f"user {getattr(user, 'id', '?')}"
+    return display, username
+
+
+async def collect_eligible_player_participants(
     client: Any,
     channel_ent: Any,
     cfg: ClubGcConfig,
     *,
     self_id: int | None,
-) -> SolePlayerResult:
-    """Return the single non-bot player candidate, or count != 1."""
-    admin_ids = await _admin_user_ids(client, channel_ent)
+) -> list[Any]:
+    """All non-bot player candidates after staff/operator exclusions (see ``find_sole_player_participant``)."""
     invite_ids = await _resolve_invitee_user_ids(client, cfg)
     skip_operators = gc_mtproto_operator_telegram_user_ids()
     skip_dashboard_admins = frozenset(int(x) for x in ADMIN_USER_IDS)
@@ -97,8 +91,6 @@ async def find_sole_player_participant(
             uid_int = int(uid)
             if self_id is not None and uid_int == self_id:
                 continue
-            if uid_int in admin_ids:
-                continue
             if uid_int in invite_ids:
                 continue
             if uid_int in skip_operators:
@@ -108,8 +100,55 @@ async def find_sole_player_participant(
             candidates.append(u)
 
     await _with_single_flood_retry("iter_participants_sole_player", collect)
+    return candidates
 
-    ids = tuple(int(getattr(u, "id", 0)) for u in candidates)
+
+def _eligible_from_users(users: list[Any]) -> tuple[EligiblePlayer, ...]:
+    out: list[EligiblePlayer] = []
+    for u in users:
+        uid = getattr(u, "id", None)
+        if uid is None:
+            continue
+        display, username = format_telegram_user_display(u)
+        out.append(
+            EligiblePlayer(
+                user_id=int(uid),
+                display_name=display,
+                username=username,
+            )
+        )
+    return tuple(out)
+
+
+async def find_sole_player_participant(
+    client: Any,
+    channel_ent: Any,
+    cfg: ClubGcConfig,
+    *,
+    self_id: int | None,
+) -> SolePlayerResult:
+    """Return the single eligible player candidate, or count != 1.
+
+    Excludes bots, the scanning MTProto account (``self``), ``GC_USERS_*`` / bot
+    invitees, club MTProto operator IDs, and ``ADMIN_USER_IDS``. Does **not** exclude
+    everyone with Telegram admin rights — players are often promoted to admin in
+    support groups; blanket admin exclusion produced false ``0`` counts.
+    """
+    candidates = await collect_eligible_player_participants(
+        client, channel_ent, cfg, self_id=self_id
+    )
+    eligible = _eligible_from_users(candidates)
+    ids = tuple(p.user_id for p in eligible)
     if len(candidates) == 1:
-        return SolePlayerResult(user=candidates[0], candidate_count=1, candidate_ids=ids)
-    return SolePlayerResult(user=None, candidate_count=len(candidates), candidate_ids=ids)
+        return SolePlayerResult(
+            user=candidates[0],
+            candidate_count=1,
+            candidate_ids=ids,
+            eligible=eligible,
+        )
+    return SolePlayerResult(
+        user=None,
+        candidate_count=len(candidates),
+        candidate_ids=ids,
+        eligible=eligible,
+    )

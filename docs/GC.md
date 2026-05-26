@@ -156,11 +156,11 @@ When **`TG_API_ID` / `TG_API_HASH`** are set and the club’s Telethon session i
 
 **Club selection:** Uses [`get_club_gc_config_by_link_club_id()`](../club_gc_settings.py) — **`clubs.id`** must match that club’s **`link_club_id`** (Round Table / Creator Club / ClubGTO profiles).
 
-**Who is saved:** All **non-bot** members are scanned. **Excluded:** group **admins**; **`ClubGcConfig.users_to_add`** ([`GC_USERS_*`](../config.py)) plus **`GC_BOT_ACCOUNT`** when set (resolved to user ids); the three **`/gc` MTProto operator** Telegram IDs ([`gc_mtproto_operator_telegram_user_ids()`](../club_gc_settings.py)); and [`ADMIN_USER_IDS`](../config.py) (dashboard operators). Often the club MTProto human sits in the support group beside the player but is **not** a Telegram “admin”; excluding those IDs restores a single plausible **player** candidate. If **exactly one** human remains after exclusions, contact **first name** = **group chat title** (truncated). Otherwise the feature **does nothing** (ambiguous)—see worker logs **`contact_save: skip`** / **`candidate_count`**.
+**Who is saved:** All **non-bot** members are scanned. **Excluded:** the club MTProto account running the scan; **`ClubGcConfig.users_to_add`** ([`GC_USERS_*`](../config.py)) plus **`GC_BOT_ACCOUNT`** when set (resolved to user ids); the three **`/gc` MTProto operator** Telegram IDs ([`gc_mtproto_operator_telegram_user_ids()`](../club_gc_settings.py)); and [`ADMIN_USER_IDS`](../config.py) (dashboard operators). **Not** excluded solely for Telegram admin rights (players are often admin in support groups). If **exactly one** eligible human remains, contact **first name** = **group chat title** (truncated). Otherwise the feature **does nothing** (ambiguous)—see worker logs **`contact_save: skip`** / **`candidate_count`**.
 
 **Disable:** `GC_CONTACT_SAVE_ENABLED=false` (or `0` / `no` / `off`). Default is on.
 
-**Edge cases:** A **player promoted to admin** is excluded from the candidate pool, so no contact is saved. Unresolvable `users_to_add` markers are skipped for exclusion (logged); they do not block the rest of the list.
+**Edge cases:** Staff automation accounts that are not bots should be listed in **`GC_USERS_*`** so they are excluded. Unresolvable `users_to_add` markers are skipped for exclusion (logged); they do not block the rest of the list.
 
 Implementation: [`bot/services/mtproto_track_contact.py`](../bot/services/mtproto_track_contact.py).
 
@@ -185,7 +185,7 @@ Older megagroups may lack ``support_group_chats.player_telegram_user_id``. Witho
 Script [`scripts/backfill_gc_player_bindings.py`](../scripts/backfill_gc_player_bindings.py):
 
 1. Scans the club MTProto account’s group dialogs.
-2. Finds **exactly one** eligible human (same rules as contact save — excludes admins, ``GC_USERS_*``, MTProto operators, bots).
+2. Finds **exactly one** eligible human (same rules as contact save — excludes bots, MTProto self, ``GC_USERS_*``, MTProto operators, dashboard admin IDs; not all Telegram admins).
 3. Dry-run by default; ``--apply`` sets ``player_telegram_user_id`` on ``support_group_chats`` (insert or update).
 
 **Duplicate groups for one player:** Postgres allows only one row per ``(club_key, player_telegram_user_id)``. The first group bound in a run becomes the ``/gc`` target; other chats for the same player report ``player_bound_elsewhere`` (resolve duplicates manually or delete extras).
