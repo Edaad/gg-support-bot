@@ -28,9 +28,21 @@ from club_gc_settings import (
 from bot.services.mtproto_session_db import load_session_string_for_club
 
 
+import os
+
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _assert_not_web_dyno(operation: str) -> None:
+    dyno = os.getenv("DYNO", "")
+    if dyno.startswith("web"):
+        raise RuntimeError(
+            f"Telethon operation '{operation}' called on web dyno ({dyno!r}). "
+            "This reuses the worker's production session from a different IP and causes "
+            "AuthKeyDuplicatedError. Read session status from the DB instead."
+        )
 FLOODWAIT_MAX_SECONDS = 120
 
 # Telegram channel / megagroup title limit (characters).
@@ -157,6 +169,7 @@ async def _with_single_flood_retry(tag: str, coro_factory):
 
 
 async def is_client_authorized(cfg: ClubGcConfig) -> bool:
+    _assert_not_web_dyno("is_client_authorized")
     client = make_client(cfg)
     await client.connect()
     try:

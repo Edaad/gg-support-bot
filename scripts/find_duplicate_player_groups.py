@@ -136,6 +136,8 @@ async def _scan(club_key: str) -> tuple[ScanSummary, list[dict[str, Any]]]:
             dialogs_scanned += 1
             if not _is_group_dialog(dialog):
                 continue
+            if getattr(dialog.entity, "left", False):
+                continue
             group_dialogs += 1
 
             title = (dialog.title or dialog.name or "").strip()
@@ -250,13 +252,20 @@ def main() -> None:
 
     try:
         summary, duplicates = asyncio.run(_scan(args.club_key))
-    except RuntimeError as e:
-        if "DATABASE_URL" in str(e):
+    except Exception as e:
+        msg = str(e)
+        if "DATABASE_URL" in msg:
             print(
                 "DATABASE_URL is required to resolve club shorthand to clubs.id.",
                 file=sys.stderr,
             )
-        raise SystemExit(str(e)) from e
+        elif "AuthKeyDuplicated" in type(e).__name__ or "AuthKeyDuplicated" in msg:
+            print(
+                "ERROR: The MTProto session is already in use by the bot worker.\n"
+                "Stop the bot worker first, or rerun with GC_DM_GC_LISTENER_ENABLED=false.",
+                file=sys.stderr,
+            )
+        raise SystemExit(msg) from e
 
     if args.json:
         out = {

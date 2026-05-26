@@ -24,10 +24,12 @@ from bot.services.gc_phone import PHONE_INVALID_REPLY, normalize_phone_for_mtpro
 from bot.services.mtproto_group_create import (
     authenticate_mtproto_code,
     authenticate_mtproto_password,
-    is_client_authorized,
     send_code_for_phone,
 )
-from bot.services.mtproto_session_db import snapshot_disk_session_to_database
+from bot.services.mtproto_session_db import (
+    load_session_string_for_club,
+    snapshot_disk_session_to_database,
+)
 from club_gc_settings import CLUB_GC_CONFIG, ClubGcConfig, get_tg_mtproto_credentials
 
 logger = logging.getLogger(__name__)
@@ -57,15 +59,19 @@ async def _require_api_credentials() -> None:
 async def list_gc_mtproto_clubs():
     await _require_api_credentials()
     configs = list(CLUB_GC_CONFIG.values())
-    flags = await asyncio.gather(*(is_client_authorized(c) for c in configs))
+    # Check session presence via DB only — never connect with the production session
+    # from the web dyno (different IP from worker → AuthKeyDuplicatedError).
+    flags = await asyncio.gather(
+        *(asyncio.to_thread(load_session_string_for_club, c.club_key) for c in configs)
+    )
     return [
         GcMtProtoClubRead(
             club_key=c.club_key,
             club_display_name=c.club_display_name,
-            session_authorized=a,
+            session_authorized=bool(f),
             phone_configured=c.mtproto_phone_number is not None,
         )
-        for c, a in zip(configs, flags)
+        for c, f in zip(configs, flags)
     ]
 
 
