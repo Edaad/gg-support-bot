@@ -24,7 +24,9 @@ from telethon.errors.rpcerrorlist import (
     ChatAdminRequiredError,
 )
 from telethon.tl.functions.channels import DeleteChannelRequest, EditBannedRequest
-from telethon.tl.types import ChatBannedRights
+from telethon.tl.functions.messages import DeleteChatRequest
+from telethon.tl.types import Channel, Chat, ChatBannedRights
+from telethon.utils import get_input_channel
 
 from club_gc_settings import ClubGcConfig
 from bot.services.club import get_club_for_chat
@@ -34,10 +36,9 @@ logger = logging.getLogger(__name__)
 
 _DELETE_CONFIRM_RE = re.compile(r"^/delete(?:@\w+)?\s+confirm\s*$", re.IGNORECASE)
 
-_KICK_BAN_RIGHTS = ChatBannedRights(
-    until_date=datetime.timedelta(seconds=30),
-    view_messages=True,
-)
+def _kick_ban_rights() -> ChatBannedRights:
+    until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=30)
+    return ChatBannedRights(until_date=until, view_messages=True)
 
 
 def parse_delete_confirm_command(text: str) -> bool:
@@ -70,14 +71,29 @@ async def _notify_delete_failure(
         )
 
 
-async def _kick_all_participants(client: Any, channel_ent: Any, self_id: int) -> tuple[int, int]:
+async def _resolve_group_entity(client: Any, chat_id: int) -> Channel | Chat:
+    """Full entity with access_hash; ``event.get_chat()`` may be the wrong TL type."""
+    entity = await client.get_entity(int(chat_id))
+    if isinstance(entity, (Channel, Chat)):
+        return entity
+    raise TypeError(f"Cannot delete entity type {type(entity).__name__}")
+
+
+async def _kick_all_participants(
+    client: Any, entity: Channel | Chat, self_id: int
+) -> tuple[int, int]:
     """Kick every participant except ``self_id``. Returns (kicked, failed)."""
+    if isinstance(entity, Chat):
+        return 0, 0
+
     kicked = 0
     failed = 0
+    channel_inp = get_input_channel(entity)
+    ban_rights = _kick_ban_rights()
 
     async def walk():
         nonlocal kicked, failed
-        async for user in client.iter_participants(channel_ent):
+        async for user in client.iter_participants(entity):
             uid = getattr(user, "id", None)
             if uid is None:
                 continue
@@ -86,9 +102,7 @@ async def _kick_all_participants(client: Any, channel_ent: Any, self_id: int) ->
                 continue
 
             async def do_kick(u=user):
-                await client(
-                    EditBannedRequest(channel_ent, u, _KICK_BAN_RIGHTS)
-                )
+                await client(EditBannedRequest(channel_inp, u, ban_rights))
 
             try:
                 await _with_single_flood_retry(
@@ -100,7 +114,7 @@ async def _kick_all_participants(client: Any, channel_ent: Any, self_id: int) ->
                 failed += 1
                 logger.warning(
                     "group_delete: kick failed chat=%s user=%s err=%s",
-                    getattr(channel_ent, "id", "?"),
+                    getattr(entity, "id", "?"),
                     uid,
                     type(e).__name__,
                 )
@@ -109,11 +123,25 @@ async def _kick_all_participants(client: Any, channel_ent: Any, self_id: int) ->
     return kicked, failed
 
 
-async def _delete_channel(client: Any, channel_ent: Any) -> None:
-    await _with_single_flood_retry(
-        "DeleteChannelRequest",
-        lambda: client(DeleteChannelRequest(channel_ent)),
-    )
+async def _delete_group_entity(client: Any, entity: Channel | Chat) -> None:
+    if isinstance(entity, Channel):
+        channel_inp = get_input_channel(entity)
+
+        async def _delete_mega():
+            await client(DeleteChannelRequest(channel_inp))
+
+        await _with_single_flood_retry("DeleteChannelRequest", _delete_mega)
+        return
+
+    if isinstance(entity, Chat):
+
+        async def _delete_basic():
+            await client(DeleteChatRequest(chat_id=int(entity.id)))
+
+        await _with_single_flood_retry("DeleteChatRequest", _delete_basic)
+        return
+
+    raise TypeError(f"Cannot delete entity type {type(entity).__name__}")
 
 
 def _rpc_error_reason(exc: RPCError) -> str:
@@ -133,9 +161,13 @@ async def _erase_group_chat(
     *,
     cfg: ClubGcConfig,
     chat_id: int,
-    channel_ent: Any,
 ) -> str | None:
     """Kick participants then delete channel. Returns error reason or None on success."""
+    try:
+        entity = await _resolve_group_entity(client, chat_id)
+    except Exception as e:
+        return f"Could not resolve chat entity ({type(e).__name__}: {e})."
+
     try:
         me = await client.get_me()
         self_id = int(me.id) if me and getattr(me, "id", None) is not None else None
@@ -147,7 +179,7 @@ async def _erase_group_chat(
 
     try:
         kicked, kick_failed = await _kick_all_participants(
-            client, channel_ent, self_id
+            client, entity, self_id
         )
         logger.info(
             "group_delete: kicks club=%s chat_id=%s kicked=%s failed=%s",
@@ -167,17 +199,20 @@ async def _erase_group_chat(
         return f"Could not list/kick participants ({type(e).__name__})."
 
     try:
-        await _delete_channel(client, channel_ent)
+        await _delete_group_entity(client, entity)
         logger.info(
-            "group_delete: channel deleted club=%s chat_id=%s",
+            "group_delete: group deleted club=%s chat_id=%s entity=%s",
             cfg.club_key,
             chat_id,
+            type(entity).__name__,
         )
         return None
     except RPCError as e:
         return _rpc_error_reason(e)
+    except TypeError as e:
+        return f"Delete failed ({e})."
     except Exception as e:
-        return f"DeleteChannel failed ({type(e).__name__})."
+        return f"Delete failed ({type(e).__name__}: {e})."
 
 
 async def handle_group_delete_outgoing(
@@ -235,24 +270,10 @@ async def handle_group_delete_outgoing(
 
     async with get_mtproto_lock(cfg.club_key):
         client = event.client
-        try:
-            channel_ent = await event.get_chat()
-        except Exception as e:
-            reason = f"Could not open chat ({type(e).__name__})."
-            logger.warning(
-                "group_delete: get_chat failed club=%s chat_id=%s err=%s",
-                cfg.club_key,
-                chat_id,
-                type(e).__name__,
-            )
-            await _notify_delete_failure(client, cfg=cfg, chat_id=chat_id, reason=reason)
-            return
-
         err = await _erase_group_chat(
             client,
             cfg=cfg,
             chat_id=chat_id,
-            channel_ent=channel_ent,
         )
         if err:
             await _notify_delete_failure(client, cfg=cfg, chat_id=chat_id, reason=err)
