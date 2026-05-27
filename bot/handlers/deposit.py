@@ -343,13 +343,20 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if parent:
             parent_slug = parent.get("slug") or ""
 
+    # Stripe Checkout is triggered by the parent method slug "stripe", or by known
+    # Stripe-related sub-option slugs.
+    effective_slug = parent_slug
+    sub_slug = (sub.get("slug") or "").strip().lower()
+    if sub_slug in ("applepay", "debit-card", "debit_card", "debitcard"):
+        effective_slug = "stripe"
+
     await _send_deposit_method_response(
         query,
         context,
         amount=amount,
         display_name=display,
         method_id=int(parent_method_id) if parent_method_id else None,
-        method_slug=parent_slug,
+        method_slug=effective_slug,
         response_data=sub,
     )
     method_id = parent_method_id
