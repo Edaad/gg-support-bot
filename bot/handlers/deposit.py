@@ -40,6 +40,10 @@ from bot.services.round_table_unions import (
     union_label_for_shorthand,
 )
 from bot.handlers.response_utils import send_response_messages
+from bot.services.stripe_deposit import (
+    create_stripe_checkout_session,
+    stripe_configured,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -294,7 +298,15 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
         response_data = pick_variant(method_id, tier_id=tier["id"]) or tier
     else:
         response_data = pick_variant(method_id) or method
-    await _send_response(query, response_data, amount, method["name"])
+    await _send_deposit_method_response(
+        query,
+        context,
+        amount=amount,
+        display_name=method["name"],
+        method_id=method_id,
+        method_slug=method.get("slug") or "",
+        response_data=response_data,
+    )
     if isinstance(amount, Decimal):
         try:
             record_method_deposit(method_id, amount)
@@ -324,8 +336,23 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     method_name = context.chat_data.get("deposit_method_name", "")
     display = f"{method_name} — {sub['name']}"
 
-    await _send_response(query, sub, amount, display)
-    method_id = context.chat_data.get("deposit_method_id")
+    parent_method_id = context.chat_data.get("deposit_method_id")
+    parent_slug = ""
+    if parent_method_id:
+        parent = get_method_by_id(int(parent_method_id))
+        if parent:
+            parent_slug = parent.get("slug") or ""
+
+    await _send_deposit_method_response(
+        query,
+        context,
+        amount=amount,
+        display_name=display,
+        method_id=int(parent_method_id) if parent_method_id else None,
+        method_slug=parent_slug,
+        response_data=sub,
+    )
+    method_id = parent_method_id
     if method_id and isinstance(amount, Decimal):
         try:
             record_method_deposit(method_id, amount)
@@ -456,6 +483,53 @@ def _record_deposit(context):
             record_activity(club_id, user_id, chat_id, "deposit")
         except Exception:
             pass
+
+
+async def _send_deposit_method_response(
+    query,
+    context,
+    *,
+    amount,
+    display_name: str,
+    method_id: int | None,
+    method_slug: str,
+    response_data: dict,
+) -> None:
+    """Stripe slug: unique Checkout link; otherwise static dashboard response."""
+    if (
+        (method_slug or "").strip().lower() == "stripe"
+        and stripe_configured()
+        and isinstance(amount, Decimal)
+    ):
+        club_id = context.chat_data.get("deposit_club_id")
+        chat_id = context.chat_data.get("deposit_chat_id") or query.message.chat.id
+        if club_id is not None:
+            try:
+                group_title = getattr(query.message.chat, "title", None)
+                result = create_stripe_checkout_session(
+                    telegram_chat_id=int(chat_id),
+                    club_id=int(club_id),
+                    amount=amount,
+                    payment_method_id=method_id,
+                    group_title=group_title,
+                )
+                announcement = f"Deposit request for ${amount} via {display_name}"
+                await query.edit_message_text(announcement)
+                await query.message.chat.send_message(
+                    f"Pay ${amount} (debit card / Apple Pay):\n{result.checkout_url}"
+                )
+                if response_data.get("response_text") or response_data.get(
+                    "response_file_id"
+                ):
+                    await send_response_messages(query.message.chat, response_data)
+                return
+            except Exception:
+                logger.exception(
+                    "stripe checkout failed chat_id=%s method_id=%s",
+                    chat_id,
+                    method_id,
+                )
+    await _send_response(query, response_data, amount, display_name)
 
 
 async def _send_response(query, data, amount, display_name):

@@ -57,8 +57,10 @@ def create_app() -> FastAPI:
     from api.routes.weekly_stats_proxy import router as weekly_stats_proxy_router
     from api.routes.gc_mtproto import router as gc_mtproto_router
     from api.routes.bonus import router as bonus_router
+    from api.routes.stripe_deposit import router as stripe_deposit_router
 
     app.include_router(weekly_stats_proxy_router)
+    app.include_router(stripe_deposit_router)
     app.include_router(clubs_router)
     app.include_router(methods_router)
     app.include_router(sub_options_router)

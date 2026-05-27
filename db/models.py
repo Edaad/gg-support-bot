@@ -495,3 +495,74 @@ class SupportGroupChat(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class StripeCustomer(Base):
+    """Maps a support group chat to a stable Stripe Customer for debit-card deposits."""
+
+    __tablename__ = "stripe_customers"
+    __table_args__ = (
+        Index("ix_stripe_customers_club_id", "club_id"),
+        Index("ix_stripe_customers_stripe_customer_id", "stripe_customer_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    telegram_chat_id = Column(BigInteger, unique=True, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    stripe_customer_id = Column(String(255), unique=True, nullable=False)
+    gg_player_id = Column(String(255), nullable=True)
+    player_display_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    club = relationship("Club")
+    checkout_sessions = relationship(
+        "StripeCheckoutSession",
+        back_populates="customer",
+        foreign_keys="StripeCheckoutSession.stripe_customer_id",
+        primaryjoin="StripeCustomer.stripe_customer_id == StripeCheckoutSession.stripe_customer_id",
+    )
+
+
+class StripeCheckoutSession(Base):
+    """One Stripe Checkout Session per /deposit Stripe request."""
+
+    __tablename__ = "stripe_checkout_sessions"
+    __table_args__ = (
+        Index("ix_stripe_checkout_sessions_telegram_chat_id", "telegram_chat_id"),
+        Index("ix_stripe_checkout_sessions_stripe_customer_id", "stripe_customer_id"),
+        Index(
+            "ix_stripe_checkout_sessions_stripe_checkout_session_id",
+            "stripe_checkout_session_id",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    stripe_checkout_session_id = Column(String(255), unique=True, nullable=False)
+    stripe_customer_id = Column(
+        String(255),
+        ForeignKey("stripe_customers.stripe_customer_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    amount_cents = Column(Integer, nullable=False)
+    currency = Column(String(10), nullable=False, default="usd")
+    status = Column(String(20), nullable=False, default="open")
+    payment_method_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    customer = relationship(
+        "StripeCustomer",
+        back_populates="checkout_sessions",
+        foreign_keys=[stripe_customer_id],
+    )
+    club = relationship("Club")
