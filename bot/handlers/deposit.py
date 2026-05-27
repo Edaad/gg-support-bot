@@ -44,6 +44,8 @@ from bot.services.stripe_deposit import (
     create_stripe_checkout_session,
     stripe_configured,
 )
+from db.connection import get_db
+from db.models import Club
 
 logger = logging.getLogger(__name__)
 
@@ -347,7 +349,14 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Stripe-related sub-option slugs.
     effective_slug = parent_slug
     sub_slug = (sub.get("slug") or "").strip().lower()
-    if sub_slug in ("applepay", "debit-card", "debit_card", "debitcard"):
+    if sub_slug in (
+        "applepay",
+        "apple-pay",
+        "apple_pay",
+        "debit-card",
+        "debit_card",
+        "debitcard",
+    ):
         effective_slug = "stripe"
 
     await _send_deposit_method_response(
@@ -503,11 +512,24 @@ async def _send_deposit_method_response(
     response_data: dict,
 ) -> None:
     """Stripe slug: unique Checkout link; otherwise static dashboard response."""
-    if (
-        (method_slug or "").strip().lower() == "stripe"
-        and stripe_configured()
-        and isinstance(amount, Decimal)
-    ):
+    slug = (method_slug or "").strip().lower()
+    stripe_like_slugs = {
+        "stripe",
+        "applepay",
+        "apple-pay",
+        "apple_pay",
+        "debitcard",
+        "debit-card",
+        "debit_card",
+    }
+    is_stripe_like = slug in stripe_like_slugs
+
+    if is_stripe_like and not stripe_configured():
+        club_id = context.chat_data.get("deposit_club_id")
+        if club_id is not None:
+            await _notify_missing_stripe_secret(context, int(club_id))
+
+    if is_stripe_like and stripe_configured() and isinstance(amount, Decimal):
         club_id = context.chat_data.get("deposit_club_id")
         chat_id = context.chat_data.get("deposit_chat_id") or query.message.chat.id
         if club_id is not None:
@@ -537,6 +559,36 @@ async def _send_deposit_method_response(
                     method_id,
                 )
     await _send_response(query, response_data, amount, display_name)
+
+
+async def _notify_missing_stripe_secret(context, club_id: int) -> None:
+    """DM the club owner when Stripe is selected but STRIPE_SECRET_KEY isn't set."""
+    try:
+        with get_db() as session:
+            club = session.query(Club).filter(Club.id == int(club_id)).one_or_none()
+            if not club:
+                return
+            admin_id = int(club.telegram_user_id)
+    except Exception:
+        return
+
+    # Basic per-process throttle to avoid spamming the same owner.
+    key = f"stripe_secret_missing_notified:{club_id}"
+    if context.bot_data.get(key):
+        return
+    context.bot_data[key] = True
+
+    try:
+        await context.bot.send_message(
+            chat_id=admin_id,
+            text=(
+                f"[{club.name}] Stripe Checkout is not configured on the bot worker.\n"
+                "Stripe deposits are currently using the static dashboard text instead of a unique checkout link.\n\n"
+                "Fix: set STRIPE_SECRET_KEY on the worker environment and restart."
+            ),
+        )
+    except Exception:
+        return
 
 
 async def _send_response(query, data, amount, display_name):
