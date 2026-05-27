@@ -72,11 +72,24 @@ def _checkout_product_data(group_title: str | None) -> dict[str, str]:
     return data
 
 
-def _create_custom_amount_price_id(group_title: str | None) -> str:
-    """Create a one-time Price with $20–$100 custom amount (Stripe-recommended flow)."""
+def _create_custom_amount_price_id(group_title: str | None, *, no_minimum: bool = False) -> str:
+    """Create a one-time Price with custom amount.
+
+    When no_minimum is True, omits min/max so the player can enter any amount.
+    """
     product_data = _checkout_product_data(group_title)
-    logger.info("stripe: creating product+price custom_unit_amount min=%s max=%s", 
-                STRIPE_CHECKOUT_MIN_CENTS, STRIPE_CHECKOUT_MAX_CENTS)
+    if no_minimum:
+        logger.info("stripe: creating product+price custom_unit_amount (no minimum)")
+        custom_unit_amount: dict = {"enabled": True}
+    else:
+        logger.info("stripe: creating product+price custom_unit_amount min=%s max=%s",
+                    STRIPE_CHECKOUT_MIN_CENTS, STRIPE_CHECKOUT_MAX_CENTS)
+        custom_unit_amount = {
+            "enabled": True,
+            "minimum": STRIPE_CHECKOUT_MIN_CENTS,
+            "maximum": STRIPE_CHECKOUT_MAX_CENTS,
+            "preset": STRIPE_CHECKOUT_PRESET_CENTS,
+        }
     product = stripe.Product.create(
         name=product_data["name"],
         description=product_data.get("description"),
@@ -84,12 +97,7 @@ def _create_custom_amount_price_id(group_title: str | None) -> str:
     price = stripe.Price.create(
         currency="usd",
         product=product.id,
-        custom_unit_amount={
-            "enabled": True,
-            "minimum": STRIPE_CHECKOUT_MIN_CENTS,
-            "maximum": STRIPE_CHECKOUT_MAX_CENTS,
-            "preset": STRIPE_CHECKOUT_PRESET_CENTS,
-        },
+        custom_unit_amount=custom_unit_amount,
     )
     logger.info("stripe: created price_id=%s product_id=%s", price.id, product.id)
     return str(price.id)
@@ -168,16 +176,21 @@ def create_stripe_checkout_session(
     club_id: int,
     payment_method_id: int | None = None,
     group_title: str | None = None,
+    no_minimum: bool = False,
 ) -> StripeCheckoutResult:
-    """Create a Checkout Session where the player picks amount ($20–$100) on Stripe."""
+    """Create a Checkout Session where the player picks amount on Stripe.
+
+    When no_minimum is True, no lower/upper bound is enforced on the checkout page.
+    """
     _stripe_client()
     cid = int(telegram_chat_id)
     club = int(club_id)
     logger.info(
-        "stripe: create_checkout_session start chat_id=%s club_id=%s payment_method_id=%s",
+        "stripe: create_checkout_session start chat_id=%s club_id=%s payment_method_id=%s no_minimum=%s",
         cid,
         club,
         payment_method_id,
+        no_minimum,
     )
     if group_title:
         update_group_name(cid, group_title)
@@ -205,7 +218,7 @@ def create_stripe_checkout_session(
     if effective_title:
         session_metadata["group_title_snapshot"] = effective_title[:500]
 
-    price_id = _create_custom_amount_price_id(effective_title)
+    price_id = _create_custom_amount_price_id(effective_title, no_minimum=no_minimum)
     logger.info("stripe: creating checkout session customer=%s price=%s", stripe_customer_id, price_id)
     checkout = stripe.checkout.Session.create(
         customer=stripe_customer_id,

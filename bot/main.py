@@ -109,6 +109,7 @@ def run_bot(token: str | None = None):
     from bot.handlers.checkplayer import checkplayer_handler
     from bot.handlers.group_create import get_gc_handler
     from bot.handlers.bonus import get_bonus_handler
+    from bot.handlers.teststripe import teststripe_handler
 
     app = (
         ApplicationBuilder()
@@ -133,6 +134,7 @@ def run_bot(token: str | None = None):
     app.add_handler(CommandHandler("lookup", lookup_handler))
     app.add_handler(CommandHandler("findgc", findgc_handler))
     app.add_handler(CommandHandler("checkplayer", checkplayer_handler))
+    app.add_handler(CommandHandler("teststripe", teststripe_handler))
 
     app.add_handler(get_set_handler())
     app.add_handler(get_deposit_handler())
