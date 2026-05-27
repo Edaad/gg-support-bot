@@ -530,6 +530,13 @@ async def _send_deposit_method_response(
             await _notify_missing_stripe_secret(context, int(club_id))
 
     if is_stripe_like and stripe_configured() and isinstance(amount, Decimal):
+        # Hard cap for card payments.
+        if amount > Decimal("100"):
+            await query.edit_message_text(
+                "Maximum for Apple Pay / Debit Card is $100. Please enter a smaller amount."
+            )
+            return
+
         club_id = context.chat_data.get("deposit_club_id")
         chat_id = context.chat_data.get("deposit_chat_id") or query.message.chat.id
         if club_id is not None:
@@ -544,13 +551,19 @@ async def _send_deposit_method_response(
                 )
                 announcement = f"Deposit request for ${amount} via {display_name}"
                 await query.edit_message_text(announcement)
-                await query.message.chat.send_message(
-                    f"Pay ${amount} (debit card / Apple Pay):\n{result.checkout_url}"
+                # Do not send the dashboard-configured response for stripe-like methods.
+                # We send a standardized message with the unique Checkout Session link.
+                pay_text = (
+                    "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
+                    "• Once sent, please inform us, and an agent will confirm the transaction and add your chips within 2 minutes!\n\n"
+                    "• Just post a screenshot of your transaction, and it will be credited to your account!\n\n"
+                    f'<a href="{result.checkout_url}">Pay here</a>'
                 )
-                if response_data.get("response_text") or response_data.get(
-                    "response_file_id"
-                ):
-                    await send_response_messages(query.message.chat, response_data)
+                await query.message.chat.send_message(
+                    pay_text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
                 return
             except Exception:
                 logger.exception(
