@@ -2,6 +2,14 @@
 
 When a player picks Apple Pay / Debit Card (`applepay`, `debitcard`, etc.), the bot creates a **unique Stripe Checkout Session** per request. The player **chooses the amount on Stripe** ($20 minimum, $100 maximum), not from the `/deposit` amount step. One **Stripe Customer** (`cus_…`) is reused per Telegram group chat.
 
+## Stable customer (no guest checkout)
+
+Every bot-generated Checkout Session is created with `customer=<stored stripe_customer_id>` from `stripe_customers` for that `telegram_chat_id`. The bot does **not** use guest checkout or `customer_creation="always"` on normal deposit links.
+
+Mapping: `telegram_chat_id` → one `cus_…` in `stripe_customers` → all future Checkout Sessions and Zapier `customer_id` lookups.
+
+Checkout links issued before this behavior was deployed may still be open; only **new** links from `create_stripe_checkout_session()` are guaranteed to be customer-bound.
+
 ## Database tables
 
 | Table | Purpose |

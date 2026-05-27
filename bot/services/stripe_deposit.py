@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import stripe
+from sqlalchemy.exc import IntegrityError
 
 from bot.services.club import get_group_title_for_chat, update_group_name
 from bot.services.player_details import parse_group_title_parts
@@ -150,16 +151,31 @@ def get_or_create_stripe_customer(
     customer = stripe.Customer.create(metadata=metadata)
     stripe_customer_id = str(customer.id)
 
-    with get_db() as session:
-        session.add(
-            StripeCustomer(
-                telegram_chat_id=cid,
-                club_id=club,
-                stripe_customer_id=stripe_customer_id,
-                gg_player_id=gg_player_id,
-                player_display_name=player_display_name,
+    try:
+        with get_db() as session:
+            session.add(
+                StripeCustomer(
+                    telegram_chat_id=cid,
+                    club_id=club,
+                    stripe_customer_id=stripe_customer_id,
+                    gg_player_id=gg_player_id,
+                    player_display_name=player_display_name,
+                )
             )
+    except IntegrityError:
+        logger.warning(
+            "stripe: duplicate stripe_customers insert chat_id=%s; reusing existing row",
+            cid,
         )
+        with get_db() as session:
+            row = (
+                session.query(StripeCustomer)
+                .filter(StripeCustomer.telegram_chat_id == cid)
+                .one_or_none()
+            )
+            if row is None:
+                raise
+            return str(row.stripe_customer_id)
 
     logger.info(
         "stripe customer created chat_id=%s club_id=%s customer_id=%s",
@@ -179,6 +195,9 @@ def create_stripe_checkout_session(
     no_minimum: bool = False,
 ) -> StripeCheckoutResult:
     """Create a Checkout Session where the player picks amount on Stripe.
+
+    Always attaches the stored Stripe Customer (customer=cus_...); no guest checkout.
+    Do not pass customer_creation on Session.create.
 
     When no_minimum is True, no lower/upper bound is enforced on the checkout page.
     """

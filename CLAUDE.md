@@ -32,7 +32,11 @@ npm run build    # Production build → dashboard/dist
 npm run lint     # ESLint
 ```
 
-There are no automated tests in this repo.
+### Tests (Stripe deposit)
+
+```bash
+python -m unittest discover -s tests -p 'test_*.py' -v
+```
 
 ## Architecture
 
