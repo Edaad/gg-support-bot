@@ -1,5 +1,6 @@
 """Deposit conversation: amount first, then filtered method selection, then optional crypto sub-option."""
 
+import html
 import logging
 from decimal import Decimal, InvalidOperation
 
@@ -50,6 +51,23 @@ from db.models import Club
 logger = logging.getLogger(__name__)
 
 DEPOSIT_REFERRAL, DEPOSIT_AMOUNT, DEPOSIT_UNION, DEPOSIT_CHOOSE, DEPOSIT_SUB = range(5)
+
+# Payment method slugs that use Stripe Checkout (custom $20–$100 on Stripe).
+STRIPE_LIKE_SLUGS = frozenset(
+    {
+        "stripe",
+        "applepay",
+        "apple-pay",
+        "apple_pay",
+        "debitcard",
+        "debit-card",
+        "debit_card",
+    }
+)
+
+
+def _is_stripe_like_slug(slug: str | None) -> bool:
+    return (slug or "").strip().lower() in STRIPE_LIKE_SLUGS
 
 
 async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -271,6 +289,17 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("That method is no longer available.")
         return ConversationHandler.END
 
+    method_slug = (method.get("slug") or "").strip().lower()
+    logger.info(
+        "deposit_method_chosen chat_id=%s method_id=%s slug=%r name=%r has_sub_options=%s stripe_configured=%s",
+        query.message.chat.id if query.message else None,
+        method_id,
+        method_slug,
+        method.get("name"),
+        method.get("has_sub_options"),
+        stripe_configured(),
+    )
+
     context.chat_data["deposit_method_name"] = method["name"]
     context.chat_data["deposit_method_id"] = method_id
 
@@ -300,15 +329,17 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
         response_data = pick_variant(method_id, tier_id=tier["id"]) or tier
     else:
         response_data = pick_variant(method_id) or method
-    await _send_deposit_method_response(
+    ok = await _send_deposit_method_response(
         query,
         context,
         amount=amount,
         display_name=method["name"],
         method_id=method_id,
-        method_slug=method.get("slug") or "",
+        method_slug=method_slug,
         response_data=response_data,
     )
+    if not ok:
+        return ConversationHandler.END
     if isinstance(amount, Decimal):
         try:
             record_method_deposit(method_id, amount)
@@ -345,21 +376,18 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if parent:
             parent_slug = parent.get("slug") or ""
 
-    # Stripe Checkout is triggered by the parent method slug "stripe", or by known
-    # Stripe-related sub-option slugs.
-    effective_slug = parent_slug
     sub_slug = (sub.get("slug") or "").strip().lower()
-    if sub_slug in (
-        "applepay",
-        "apple-pay",
-        "apple_pay",
-        "debit-card",
-        "debit_card",
-        "debitcard",
-    ):
-        effective_slug = "stripe"
+    effective_slug = sub_slug if _is_stripe_like_slug(sub_slug) else parent_slug
+    logger.info(
+        "deposit_sub_chosen chat_id=%s sub_id=%s sub_slug=%r parent_slug=%r effective_slug=%r",
+        query.message.chat.id if query.message else None,
+        sub_id,
+        sub_slug,
+        parent_slug,
+        effective_slug,
+    )
 
-    await _send_deposit_method_response(
+    ok = await _send_deposit_method_response(
         query,
         context,
         amount=amount,
@@ -368,6 +396,8 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
         method_slug=effective_slug,
         response_data=sub,
     )
+    if not ok:
+        return ConversationHandler.END
     method_id = parent_method_id
     if method_id and isinstance(amount, Decimal):
         try:
@@ -510,61 +540,110 @@ async def _send_deposit_method_response(
     method_id: int | None,
     method_slug: str,
     response_data: dict,
-) -> None:
-    """Stripe slug: unique Checkout link; otherwise static dashboard response."""
+) -> bool:
+    """Stripe slug: unique Checkout link; otherwise static dashboard response.
+
+    Returns True if the deposit response was delivered, False on hard failure.
+    """
     slug = (method_slug or "").strip().lower()
-    stripe_like_slugs = {
-        "stripe",
-        "applepay",
-        "apple-pay",
-        "apple_pay",
-        "debitcard",
-        "debit-card",
-        "debit_card",
-    }
-    is_stripe_like = slug in stripe_like_slugs
+    is_stripe_like = _is_stripe_like_slug(slug)
+    chat_id = context.chat_data.get("deposit_chat_id") or (
+        query.message.chat.id if query.message else None
+    )
+    club_id = context.chat_data.get("deposit_club_id")
+
+    logger.info(
+        "deposit_send_response chat_id=%s club_id=%s method_id=%s slug=%r stripe_like=%s configured=%s",
+        chat_id,
+        club_id,
+        method_id,
+        slug,
+        is_stripe_like,
+        stripe_configured(),
+    )
 
     if is_stripe_like and not stripe_configured():
-        club_id = context.chat_data.get("deposit_club_id")
+        logger.warning("deposit: stripe_like but STRIPE_SECRET_KEY not set chat_id=%s", chat_id)
         if club_id is not None:
             await _notify_missing_stripe_secret(context, int(club_id))
+        await query.edit_message_text(
+            "Card checkout is not available right now (Stripe not configured on the bot). "
+            "Please contact support."
+        )
+        return False
 
     if is_stripe_like and stripe_configured():
-        club_id = context.chat_data.get("deposit_club_id")
-        chat_id = context.chat_data.get("deposit_chat_id") or query.message.chat.id
-        if club_id is not None:
+        if club_id is None:
+            logger.error("deposit: stripe_like but deposit_club_id missing chat_id=%s", chat_id)
+            await query.edit_message_text(
+                "This group is not linked to a club. Card checkout cannot be started."
+            )
+            return False
+
+        try:
+            group_title = getattr(query.message.chat, "title", None)
+            result = create_stripe_checkout_session(
+                telegram_chat_id=int(chat_id),
+                club_id=int(club_id),
+                payment_method_id=method_id,
+                group_title=group_title,
+            )
+            announcement = f"Deposit request via {display_name} ($20–$100 on checkout)"
+            await query.edit_message_text(announcement)
+
+            safe_url = html.escape(result.checkout_url, quote=True)
+            pay_text = (
+                "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
+                "• Enter your deposit amount on the checkout page ($20 minimum, $100 maximum).\n\n"
+                "• Once sent, please inform us, and an agent will confirm the transaction and add your chips within 2 minutes!\n\n"
+                "• Just post a screenshot of your transaction, and it will be credited to your account!\n\n"
+                f'<a href="{safe_url}">PAY HERE</a>'
+            )
+            pay_text_plain = (
+                "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
+                "• Enter your deposit amount on the checkout page ($20 minimum, $100 maximum).\n\n"
+                "• Once sent, please inform us, and an agent will confirm the transaction and add your chips within 2 minutes!\n\n"
+                "• Just post a screenshot of your transaction, and it will be credited to your account!\n\n"
+                f"{result.checkout_url}"
+            )
             try:
-                group_title = getattr(query.message.chat, "title", None)
-                result = create_stripe_checkout_session(
-                    telegram_chat_id=int(chat_id),
-                    club_id=int(club_id),
-                    payment_method_id=method_id,
-                    group_title=group_title,
-                )
-                announcement = f"Deposit request via {display_name} ($20–$100 on checkout)"
-                await query.edit_message_text(announcement)
-                # Do not send the dashboard-configured response for stripe-like methods.
-                # Amount is chosen on Stripe ($20 min, $100 max), not from /deposit amount.
-                pay_text = (
-                    "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
-                    "• Enter your deposit amount on the checkout page ($20 minimum, $100 maximum).\n\n"
-                    "• Once sent, please inform us, and an agent will confirm the transaction and add your chips within 2 minutes!\n\n"
-                    "• Just post a screenshot of your transaction, and it will be credited to your account!\n\n"
-                    f'<a href="{result.checkout_url}">PAY HERE</a>'
-                )
                 await query.message.chat.send_message(
                     pay_text,
                     parse_mode="HTML",
                     disable_web_page_preview=True,
                 )
-                return
             except Exception:
-                logger.exception(
-                    "stripe checkout failed chat_id=%s method_id=%s",
+                logger.warning(
+                    "deposit: HTML pay message failed, retrying plain link chat_id=%s",
                     chat_id,
-                    method_id,
+                    exc_info=True,
                 )
+                await query.message.chat.send_message(pay_text_plain)
+            logger.info(
+                "deposit: stripe checkout sent chat_id=%s session_id=%s customer_id=%s",
+                chat_id,
+                result.session_id,
+                result.customer_id,
+            )
+            return True
+        except Exception as e:
+            err_short = type(e).__name__
+            if hasattr(e, "user_message") and getattr(e, "user_message", None):
+                err_short = str(getattr(e, "user_message"))[:200]
+            logger.exception(
+                "deposit: stripe checkout failed chat_id=%s method_id=%s slug=%r: %s",
+                chat_id,
+                method_id,
+                slug,
+                err_short,
+            )
+            await query.edit_message_text(
+                "Card checkout failed to start. Please try again in a minute or contact support."
+            )
+            return False
+
     await _send_response(query, response_data, amount, display_name)
+    return True
 
 
 async def _notify_missing_stripe_secret(context, club_id: int) -> None:

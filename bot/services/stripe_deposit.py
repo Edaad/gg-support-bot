@@ -72,6 +72,29 @@ def _checkout_product_data(group_title: str | None) -> dict[str, str]:
     return data
 
 
+def _create_custom_amount_price_id(group_title: str | None) -> str:
+    """Create a one-time Price with $20–$100 custom amount (Stripe-recommended flow)."""
+    product_data = _checkout_product_data(group_title)
+    logger.info("stripe: creating product+price custom_unit_amount min=%s max=%s", 
+                STRIPE_CHECKOUT_MIN_CENTS, STRIPE_CHECKOUT_MAX_CENTS)
+    product = stripe.Product.create(
+        name=product_data["name"],
+        description=product_data.get("description"),
+    )
+    price = stripe.Price.create(
+        currency="usd",
+        product=product.id,
+        custom_unit_amount={
+            "enabled": True,
+            "minimum": STRIPE_CHECKOUT_MIN_CENTS,
+            "maximum": STRIPE_CHECKOUT_MAX_CENTS,
+            "preset": STRIPE_CHECKOUT_PRESET_CENTS,
+        },
+    )
+    logger.info("stripe: created price_id=%s product_id=%s", price.id, product.id)
+    return str(price.id)
+
+
 def get_or_create_stripe_customer(
     *,
     telegram_chat_id: int,
@@ -84,6 +107,13 @@ def get_or_create_stripe_customer(
     club = int(club_id)
     title = (group_title or "").strip() or None
     gg_player_id, player_display_name = _title_player_fields(title)
+    logger.info(
+        "stripe: get_or_create_customer chat_id=%s club_id=%s title=%r gg_player_id=%s",
+        cid,
+        club,
+        (title or "")[:80],
+        gg_player_id,
+    )
 
     with get_db() as session:
         row = (
@@ -92,6 +122,7 @@ def get_or_create_stripe_customer(
             .one_or_none()
         )
         if row is not None:
+            logger.info("stripe: reusing customer_id=%s", row.stripe_customer_id)
             if gg_player_id:
                 row.gg_player_id = gg_player_id
             if player_display_name:
@@ -142,6 +173,12 @@ def create_stripe_checkout_session(
     _stripe_client()
     cid = int(telegram_chat_id)
     club = int(club_id)
+    logger.info(
+        "stripe: create_checkout_session start chat_id=%s club_id=%s payment_method_id=%s",
+        cid,
+        club,
+        payment_method_id,
+    )
     if group_title:
         update_group_name(cid, group_title)
     title, _ = get_group_title_for_chat(cid)
@@ -168,6 +205,8 @@ def create_stripe_checkout_session(
     if effective_title:
         session_metadata["group_title_snapshot"] = effective_title[:500]
 
+    price_id = _create_custom_amount_price_id(effective_title)
+    logger.info("stripe: creating checkout session customer=%s price=%s", stripe_customer_id, price_id)
     checkout = stripe.checkout.Session.create(
         customer=stripe_customer_id,
         mode="payment",
@@ -175,45 +214,39 @@ def create_stripe_checkout_session(
         success_url=success_url,
         cancel_url=cancel_url,
         metadata=session_metadata,
-        line_items=[
-            {
-                "price_data": {
-                    "currency": "usd",
-                    "product_data": _checkout_product_data(effective_title),
-                    "custom_unit_amount": {
-                        "enabled": True,
-                        "minimum": STRIPE_CHECKOUT_MIN_CENTS,
-                        "maximum": STRIPE_CHECKOUT_MAX_CENTS,
-                        "preset": STRIPE_CHECKOUT_PRESET_CENTS,
-                    },
-                },
-                "quantity": 1,
-            }
-        ],
+        line_items=[{"price": price_id, "quantity": 1}],
     )
     session_id = str(checkout.id)
     checkout_url = str(checkout.url or "")
     if not checkout_url:
         raise RuntimeError("Stripe Checkout Session returned no URL")
 
-    with get_db() as session:
-        session.add(
-            StripeCheckoutSession(
-                stripe_checkout_session_id=session_id,
-                stripe_customer_id=stripe_customer_id,
-                telegram_chat_id=cid,
-                club_id=club,
-                amount_cents=0,
-                currency="usd",
-                status="open",
-                payment_method_id=int(payment_method_id) if payment_method_id else None,
+    try:
+        with get_db() as session:
+            session.add(
+                StripeCheckoutSession(
+                    stripe_checkout_session_id=session_id,
+                    stripe_customer_id=stripe_customer_id,
+                    telegram_chat_id=cid,
+                    club_id=club,
+                    amount_cents=0,
+                    currency="usd",
+                    status="open",
+                    payment_method_id=int(payment_method_id) if payment_method_id else None,
+                )
             )
+    except Exception as e:
+        logger.exception(
+            "stripe: DB insert stripe_checkout_sessions failed session_id=%s (checkout still valid)",
+            session_id,
         )
+        raise RuntimeError(f"Failed to save checkout session to database: {type(e).__name__}") from e
 
     logger.info(
-        "stripe checkout created chat_id=%s session_id=%s (custom amount $20-$100)",
+        "stripe checkout created chat_id=%s session_id=%s url_len=%s (custom $20-$100)",
         cid,
         session_id,
+        len(checkout_url),
     )
     return StripeCheckoutResult(
         checkout_url=checkout_url,
