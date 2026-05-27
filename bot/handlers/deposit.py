@@ -557,7 +557,7 @@ async def _send_deposit_method_response(
                     "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
                     "• Once sent, please inform us, and an agent will confirm the transaction and add your chips within 2 minutes!\n\n"
                     "• Just post a screenshot of your transaction, and it will be credited to your account!\n\n"
-                    f'<a href="{result.checkout_url}">Pay here</a>'
+                    f'<a href="{result.checkout_url}">PAY HERE</a>'
                 )
                 await query.message.chat.send_message(
                     pay_text,
