@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 import stripe
@@ -22,6 +21,11 @@ STRIPE_SUCCESS_URL_ENV = "STRIPE_CHECKOUT_SUCCESS_URL"
 STRIPE_CANCEL_URL_ENV = "STRIPE_CHECKOUT_CANCEL_URL"
 DEFAULT_SUCCESS_URL = "https://stripe.com/docs/payments/checkout"
 DEFAULT_CANCEL_URL = "https://stripe.com"
+
+# Player chooses amount on the Stripe Checkout page (USD cents).
+STRIPE_CHECKOUT_MIN_CENTS = 2000  # $20
+STRIPE_CHECKOUT_MAX_CENTS = 10000  # $100
+STRIPE_CHECKOUT_PRESET_CENTS = 5000  # $50 default shown on checkout
 
 
 @dataclass(frozen=True)
@@ -66,11 +70,6 @@ def _checkout_product_data(group_title: str | None) -> dict[str, str]:
     if group_title:
         data["description"] = group_title[:500]
     return data
-
-
-def _amount_to_cents(amount: Decimal) -> int:
-    cents = (amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    return int(cents)
 
 
 def get_or_create_stripe_customer(
@@ -136,11 +135,10 @@ def create_stripe_checkout_session(
     *,
     telegram_chat_id: int,
     club_id: int,
-    amount: Decimal,
     payment_method_id: int | None = None,
     group_title: str | None = None,
 ) -> StripeCheckoutResult:
-    """Create a unique Checkout Session for one deposit request."""
+    """Create a Checkout Session where the player picks amount ($20–$100) on Stripe."""
     _stripe_client()
     cid = int(telegram_chat_id)
     club = int(club_id)
@@ -155,9 +153,6 @@ def create_stripe_checkout_session(
         club_id=club,
         group_title=effective_title,
     )
-    amount_cents = _amount_to_cents(amount)
-    if amount_cents < 50:
-        raise ValueError("Stripe checkout minimum is $0.50")
 
     success_url = (
         os.getenv(STRIPE_SUCCESS_URL_ENV) or DEFAULT_SUCCESS_URL
@@ -184,8 +179,13 @@ def create_stripe_checkout_session(
             {
                 "price_data": {
                     "currency": "usd",
-                    "unit_amount": amount_cents,
                     "product_data": _checkout_product_data(effective_title),
+                    "custom_unit_amount": {
+                        "enabled": True,
+                        "minimum": STRIPE_CHECKOUT_MIN_CENTS,
+                        "maximum": STRIPE_CHECKOUT_MAX_CENTS,
+                        "preset": STRIPE_CHECKOUT_PRESET_CENTS,
+                    },
                 },
                 "quantity": 1,
             }
@@ -203,7 +203,7 @@ def create_stripe_checkout_session(
                 stripe_customer_id=stripe_customer_id,
                 telegram_chat_id=cid,
                 club_id=club,
-                amount_cents=amount_cents,
+                amount_cents=0,
                 currency="usd",
                 status="open",
                 payment_method_id=int(payment_method_id) if payment_method_id else None,
@@ -211,10 +211,9 @@ def create_stripe_checkout_session(
         )
 
     logger.info(
-        "stripe checkout created chat_id=%s session_id=%s amount_cents=%s",
+        "stripe checkout created chat_id=%s session_id=%s (custom amount $20-$100)",
         cid,
         session_id,
-        amount_cents,
     )
     return StripeCheckoutResult(
         checkout_url=checkout_url,

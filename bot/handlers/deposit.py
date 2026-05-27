@@ -529,14 +529,7 @@ async def _send_deposit_method_response(
         if club_id is not None:
             await _notify_missing_stripe_secret(context, int(club_id))
 
-    if is_stripe_like and stripe_configured() and isinstance(amount, Decimal):
-        # Hard cap for card payments.
-        if amount > Decimal("100"):
-            await query.edit_message_text(
-                "Maximum for Apple Pay / Debit Card is $100. Please enter a smaller amount."
-            )
-            return
-
+    if is_stripe_like and stripe_configured():
         club_id = context.chat_data.get("deposit_club_id")
         chat_id = context.chat_data.get("deposit_chat_id") or query.message.chat.id
         if club_id is not None:
@@ -545,16 +538,16 @@ async def _send_deposit_method_response(
                 result = create_stripe_checkout_session(
                     telegram_chat_id=int(chat_id),
                     club_id=int(club_id),
-                    amount=amount,
                     payment_method_id=method_id,
                     group_title=group_title,
                 )
-                announcement = f"Deposit request for ${amount} via {display_name}"
+                announcement = f"Deposit request via {display_name} ($20–$100 on checkout)"
                 await query.edit_message_text(announcement)
                 # Do not send the dashboard-configured response for stripe-like methods.
-                # We send a standardized message with the unique Checkout Session link.
+                # Amount is chosen on Stripe ($20 min, $100 max), not from /deposit amount.
                 pay_text = (
                     "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
+                    "• Enter your deposit amount on the checkout page ($20 minimum, $100 maximum).\n\n"
                     "• Once sent, please inform us, and an agent will confirm the transaction and add your chips within 2 minutes!\n\n"
                     "• Just post a screenshot of your transaction, and it will be credited to your account!\n\n"
                     f'<a href="{result.checkout_url}">PAY HERE</a>'
