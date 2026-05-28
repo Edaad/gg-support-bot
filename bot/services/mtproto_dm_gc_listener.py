@@ -140,16 +140,16 @@ async def _flow_existing_group(
     new_link = exported or row.invite_link
     link = (new_link or "").strip()
 
+    # After a manual /bind, we want every subsequent incoming DM or /gc invocation
+    # to send the standard invite-link DM (even if the player is already a member).
+    dm_body = PLAYER_EXISTING_INVITE_MESSAGE.format(
+        invite_link=link or "(invite link unavailable)"
+    )
     if st == "already_member":
-        dm_body = PLAYER_EXISTING_GROUP_MESSAGE
-        dm_status = "existing_member"
+        dm_status = "existing_invite_member"
     elif st == "invited_ok":
-        dm_body = PLAYER_RE_ADDED_MESSAGE
-        dm_status = "re_added"
+        dm_status = "existing_invite_re_added"
     else:
-        dm_body = PLAYER_EXISTING_INVITE_MESSAGE.format(
-            invite_link=link or "(invite link unavailable)"
-        )
         dm_status = "existing_invite_fallback"
 
     dm_ok, dm_err = await _send_player_dm_safe(client, player, dm_body)
