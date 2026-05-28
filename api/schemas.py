@@ -173,6 +173,7 @@ class MethodCreate(BaseModel):
     response_file_id: Optional[str] = None
     response_caption: Optional[str] = None
     use_group_checkout_link: bool = False
+    group_checkout_provider: Optional[str] = None
     hyperlink_text: Optional[str] = None
     is_active: bool = True
     sort_order: int = 0
@@ -191,6 +192,7 @@ class MethodUpdate(BaseModel):
     response_file_id: Optional[str] = None
     response_caption: Optional[str] = None
     use_group_checkout_link: Optional[bool] = None
+    group_checkout_provider: Optional[str] = None
     hyperlink_text: Optional[str] = None
     is_active: Optional[bool] = None
     sort_order: Optional[int] = None
@@ -243,6 +245,7 @@ class MethodRead(BaseModel):
     response_file_id: Optional[str]
     response_caption: Optional[str]
     use_group_checkout_link: bool = False
+    group_checkout_provider: Optional[str] = None
     hyperlink_text: Optional[str] = None
     is_active: bool
     sort_order: int

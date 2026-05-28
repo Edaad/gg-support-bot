@@ -23,7 +23,7 @@ const EMPTY: Partial<Method> = {
   name: '', slug: '', min_amount: null, max_amount: null,
   has_sub_options: false, response_type: 'text', response_text: '',
   response_file_id: '', response_caption: '', is_active: true, sort_order: 0,
-  use_group_checkout_link: false, hyperlink_text: 'PAY HERE',
+  use_group_checkout_link: false, group_checkout_provider: 'stripe', hyperlink_text: 'PAY HERE',
 }
 
 export default function MethodEditor({ token, clubId, direction }: Props) {
@@ -88,9 +88,8 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
   }
 
   const setField = (field: string, value: any) => setForm((f) => ({ ...f, [field]: value }))
-  const slug = (form.slug || '').trim().toLowerCase()
-  const isStripeLike =
-    ['stripe', 'applepay', 'apple-pay', 'apple_pay', 'debitcard', 'debit-card', 'debit_card'].includes(slug)
+  const groupLinkEnabled = Boolean(form.use_group_checkout_link)
+  const provider = (form.group_checkout_provider || '').trim().toLowerCase()
 
   return (
     <div>
@@ -310,13 +309,13 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
             />
           </div>
 
-          {direction === 'deposit' && isStripeLike && (
+          {direction === 'deposit' && (
             <div className="mt-4 rounded-xl border border-gray-800 bg-gray-950 p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm font-medium text-white">Group-specific Stripe Checkout link</div>
+                  <div className="text-sm font-medium text-white">Use group specific link</div>
                   <div className="mt-1 text-xs text-gray-500">
-                    When enabled, the bot generates a unique per-group Checkout Session and you can insert it in
+                    When enabled, the bot generates a unique per-group link and you can insert it in
                     Response Text using <span className="font-mono text-gray-300">{'{{hyperlink}}'}</span>.
                   </div>
                 </div>
@@ -331,8 +330,17 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
                 </label>
               </div>
 
-              {form.use_group_checkout_link && (
+              {groupLinkEnabled && (
                 <div className="mt-3">
+                  <label className="mb-1 block text-xs font-medium text-gray-400">Provider</label>
+                  <select
+                    value={form.group_checkout_provider ?? 'stripe'}
+                    onChange={(e) => setField('group_checkout_provider', e.target.value)}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="stripe">Stripe</option>
+                  </select>
+
                   <label className="mb-1 block text-xs font-medium text-gray-400">Hyperlink text</label>
                   <input
                     value={form.hyperlink_text ?? 'PAY HERE'}
@@ -344,6 +352,12 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
                     In your Response Text, put <span className="font-mono">{'{{hyperlink}}'}</span> where you want
                     the clickable link to appear.
                   </div>
+
+                  {provider !== 'stripe' && (
+                    <div className="mt-2 text-xs text-yellow-400">
+                      Only Stripe is supported right now.
+                    </div>
+                  )}
                 </div>
               )}
             </div>

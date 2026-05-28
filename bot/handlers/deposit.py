@@ -541,29 +541,34 @@ async def _send_deposit_method_response(
     method_slug: str,
     response_data: dict,
 ) -> bool:
-    """Stripe slug: unique Checkout link; otherwise static dashboard response.
+    """Stripe-like deposits: optionally generate per-group checkout link; otherwise static response.
 
     Returns True if the deposit response was delivered, False on hard failure.
     """
     slug = (method_slug or "").strip().lower()
     is_stripe_like = _is_stripe_like_slug(slug)
+    group_link_enabled = bool(response_data.get("use_group_checkout_link"))
+    provider = (response_data.get("group_checkout_provider") or "").strip().lower()
+    use_stripe_checkout = bool(is_stripe_like or (group_link_enabled and provider == "stripe"))
     chat_id = context.chat_data.get("deposit_chat_id") or (
         query.message.chat.id if query.message else None
     )
     club_id = context.chat_data.get("deposit_club_id")
 
     logger.info(
-        "deposit_send_response chat_id=%s club_id=%s method_id=%s slug=%r stripe_like=%s configured=%s",
+        "deposit_send_response chat_id=%s club_id=%s method_id=%s slug=%r stripe_like=%s group_link=%s provider=%r configured=%s",
         chat_id,
         club_id,
         method_id,
         slug,
         is_stripe_like,
+        group_link_enabled,
+        provider,
         stripe_configured(),
     )
 
-    if is_stripe_like and not stripe_configured():
-        logger.warning("deposit: stripe_like but STRIPE_SECRET_KEY not set chat_id=%s", chat_id)
+    if use_stripe_checkout and not stripe_configured():
+        logger.warning("deposit: stripe checkout requested but STRIPE_SECRET_KEY not set chat_id=%s", chat_id)
         if club_id is not None:
             await _notify_missing_stripe_secret(context, int(club_id))
         await query.edit_message_text(
@@ -572,9 +577,9 @@ async def _send_deposit_method_response(
         )
         return False
 
-    if is_stripe_like and stripe_configured():
+    if use_stripe_checkout and stripe_configured():
         if club_id is None:
-            logger.error("deposit: stripe_like but deposit_club_id missing chat_id=%s", chat_id)
+            logger.error("deposit: stripe checkout requested but deposit_club_id missing chat_id=%s", chat_id)
             await query.edit_message_text(
                 "This group is not linked to a club. Card checkout cannot be started."
             )
@@ -591,8 +596,7 @@ async def _send_deposit_method_response(
             announcement = f"Deposit request via {display_name} ($20–$100 on checkout)"
             await query.edit_message_text(announcement)
 
-            use_group_link = bool(response_data.get("use_group_checkout_link"))
-            if use_group_link and (response_data.get("response_type") or "text") == "text":
+            if group_link_enabled and provider == "stripe" and (response_data.get("response_type") or "text") == "text":
                 hyperlink_text = (response_data.get("hyperlink_text") or "PAY HERE").strip() or "PAY HERE"
 
                 safe_url = html.escape(result.checkout_url, quote=True)

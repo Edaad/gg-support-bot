@@ -269,6 +269,7 @@ export interface Method {
   response_file_id: string | null
   response_caption: string | null
   use_group_checkout_link: boolean
+  group_checkout_provider: string | null
   hyperlink_text: string | null
   is_active: boolean
   sort_order: number

@@ -29,11 +29,12 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
             "response_type": "text",
             "response_text": "Line1\n\n{{hyperlink}}\n\nLine3",
             "use_group_checkout_link": True,
+            "group_checkout_provider": "stripe",
             "hyperlink_text": "PAY HERE",
         }
 
         with (
-            patch.object(dep, "_is_stripe_like_slug", return_value=True),
+            patch.object(dep, "_is_stripe_like_slug", return_value=False),
             patch.object(dep, "stripe_configured", return_value=True),
             patch.object(dep, "create_stripe_checkout_session", return_value=result),
         ):
@@ -43,7 +44,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
                 amount="?",
                 display_name="Debit Card",
                 method_id=123,
-                method_slug="debitcard",
+                method_slug="cashapp",
                 response_data=response_data,
             )
 
@@ -73,11 +74,12 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
             "response_type": "text",
             "response_text": "Hello",
             "use_group_checkout_link": True,
+            "group_checkout_provider": "stripe",
             "hyperlink_text": "PAY",
         }
 
         with (
-            patch.object(dep, "_is_stripe_like_slug", return_value=True),
+            patch.object(dep, "_is_stripe_like_slug", return_value=False),
             patch.object(dep, "stripe_configured", return_value=True),
             patch.object(dep, "create_stripe_checkout_session", return_value=result),
         ):
@@ -87,7 +89,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
                 amount="?",
                 display_name="Stripe",
                 method_id=123,
-                method_slug="stripe",
+                method_slug="cashapp",
                 response_data=response_data,
             )
 

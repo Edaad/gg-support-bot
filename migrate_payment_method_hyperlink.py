@@ -2,6 +2,7 @@
 
 Adds:
 - payment_methods.use_group_checkout_link (bool, default false)
+- payment_methods.group_checkout_provider (varchar(32), nullable)
 - payment_methods.hyperlink_text (varchar(64), nullable)
 """
 
@@ -33,6 +34,16 @@ def main() -> None:
                     """
                     ALTER TABLE payment_methods
                     ADD COLUMN use_group_checkout_link BOOLEAN NOT NULL DEFAULT FALSE
+                    """
+                )
+            )
+
+        if not _has_column(session, "payment_methods", "group_checkout_provider"):
+            session.execute(
+                text(
+                    """
+                    ALTER TABLE payment_methods
+                    ADD COLUMN group_checkout_provider VARCHAR(32) NULL
                     """
                 )
             )
