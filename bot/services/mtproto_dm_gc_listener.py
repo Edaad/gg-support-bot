@@ -408,14 +408,20 @@ async def _run_gc_flow_for_player(
         pg_advisory_unlock_session(lock_sess, cfg.club_key, player_id)
 
 
-def _parse_bind_target_title(text: str) -> str | None:
+def _parse_bind_invite_link(text: str) -> str | None:
     t = (text or "").strip()
     if not t:
         return None
     if not t.lower().startswith("/bind"):
         return None
     rest = t[5:].strip()
-    return rest or None
+    if not rest:
+        return None
+    # Require an invite link (t.me/+..., t.me/joinchat/..., or similar).
+    low = rest.lower()
+    if "t.me/" not in low and "joinchat" not in low and "+" not in rest:
+        return None
+    return rest
 
 
 async def _run_bind_flow_for_player(
@@ -423,14 +429,17 @@ async def _run_bind_flow_for_player(
     event,
     cfg,
     player: User,
-    target_title: str,
+    invite_link: str,
     listener_label: str,
     ptb_bot,
 ) -> None:
-    """Bind player to a support megagroup by exact Telegram group title.
+    """Bind player to a support megagroup using a provided invite link.
 
-    Searches the club MTProto account's accessible dialogs for an exact title match.
-    Binds only when exactly one match is found; otherwise notifies the club admin.
+    Resolves the chat via Telethon invite APIs, then:
+    - links chat_id to club (groups table)
+    - stores invite_link + chat title in support_group_chats
+    - binds the DM'ing player to this chat for future /gc reuse
+    - DMs player the provided invite link
     """
     player_id = int(player.id)
     player_label = _telethon_user_label(player)
@@ -446,105 +455,106 @@ async def _run_bind_flow_for_player(
         return
 
     try:
-        desired = (target_title or "").strip()
-        if not desired:
+        raw_link = (invite_link or "").strip()
+        if not raw_link:
             return
 
-        # Find exact title matches in accessible dialogs.
-        matches: list[tuple[int, Any]] = []
+        # Extract invite hash from common formats.
+        # Examples: https://t.me/+HASH, https://t.me/joinchat/HASH
+        s = raw_link.strip()
+        hash_part = ""
+        if "t.me/" in s:
+            tail = s.split("t.me/", 1)[1]
+            tail = tail.split("?", 1)[0].strip().lstrip("/")
+            if tail.startswith("+"):
+                hash_part = tail[1:]
+            elif tail.lower().startswith("joinchat/"):
+                hash_part = tail.split("/", 1)[1]
+            else:
+                # Not an invite link (public username). Treat as invalid for /bind.
+                hash_part = ""
+        elif s.startswith("+"):
+            hash_part = s[1:]
+        else:
+            hash_part = ""
+
+        hash_part = hash_part.strip()
+        if not hash_part:
+            await _send_player_dm_safe(
+                event.client,
+                player,
+                "Bind failed: please send a valid Telegram invite link (t.me/+...).",
+            )
+            return
+
+        # Resolve invite → chat entity.
         try:
+            from telethon.tl import functions
             from telethon.utils import get_peer_id
 
-            async for d in event.client.iter_dialogs():
-                title = (getattr(d, "name", None) or "").strip()
-                if title != desired:
-                    continue
-                ent = getattr(d, "entity", None)
-                if ent is None:
-                    continue
-                try:
-                    cid = int(get_peer_id(ent))
-                except Exception:
-                    continue
-                matches.append((cid, ent))
-                if len(matches) >= 20:
-                    break
+            checked = await event.client(functions.messages.CheckChatInviteRequest(hash_part))
         except Exception:
             await _send_player_dm_safe(
                 event.client,
                 player,
-                "Bind failed: could not search dialogs on the club account.",
+                "Bind failed: could not check that invite link on the club account.",
             )
             return
 
-        if len(matches) != 1:
-            # Best-effort export invite links for conflict report (cap to keep it fast).
-            preview = matches[:10]
-            details: list[str] = []
-            for cid, ent in preview:
-                try:
-                    inv = await export_invite_link_for_peer(event.client, ent)
-                    inv = (inv or "").strip() or "(invite link unavailable)"
-                except Exception:
-                    inv = "(invite link unavailable)"
-                details.append(f"- chat_id={cid} invite_link={inv}")
-            if len(matches) > len(preview):
-                details.append(f"- ... and {len(matches) - len(preview)} more matches")
+        channel = None
+        chat_id = None
+        try:
+            # If already a member, Telethon returns a chat/channel object.
+            already = getattr(checked, "chat", None)
+            if already is not None:
+                channel = already
+                chat_id = int(get_peer_id(channel))
+        except Exception:
+            channel = None
 
-            # Notify club admin via Bot API.
-            admin_id = None
+        if channel is None or chat_id is None:
+            # Not a member yet — import/join so we can resolve chat id + metadata.
             try:
-                with get_db() as session:
-                    club = session.query(Club).filter(Club.id == int(cfg.link_club_id)).one_or_none()
-                    if club:
-                        admin_id = int(club.telegram_user_id)
+                from telethon.tl import functions
+                from telethon.utils import get_peer_id
+
+                upd = await event.client(functions.messages.ImportChatInviteRequest(hash_part))
+                # Updates usually contain chats; pick first.
+                chats = getattr(upd, "chats", None) or []
+                if chats:
+                    channel = chats[0]
+                    chat_id = int(get_peer_id(channel))
             except Exception:
-                admin_id = None
+                await _send_player_dm_safe(
+                    event.client,
+                    player,
+                    "Bind failed: could not join/resolve that invite link on the club account.",
+                )
+                return
 
-            if admin_id is not None and ptb_bot is not None:
-                try:
-                    await ptb_bot.send_message(
-                        chat_id=admin_id,
-                        text=(
-                            f"/bind failed for club={cfg.club_display_name} ({cfg.club_key}).\n"
-                            f"GC name: {desired}\n"
-                            f"Matches found: {len(matches)}\n\n"
-                            + "\n".join(details)
-                            + "\n\nFix: rename the target GC to be unique, then run /bind again."
-                        ),
-                    )
-                except Exception:
-                    pass
-
+        if channel is None or chat_id is None:
             await _send_player_dm_safe(
                 event.client,
                 player,
-                "Could not bind you to a group right now (group name was not unique).\n"
-                "An agent will assist you shortly.",
+                "Bind failed: could not resolve chat from invite link.",
             )
             return
 
-        chat_id, channel = matches[0]
-
-        exported = await export_invite_link_for_peer(event.client, channel)
-        link = (exported or "").strip()
-        if not link:
-            # Fallback to last stored invite link if we have an audit row.
-            existing_by_chat = fetch_support_group_chat_by_telegram_chat_id(int(chat_id))
-            link = ((existing_by_chat.invite_link if existing_by_chat else "") or "").strip()
+        # We keep the staff-provided invite link as the canonical link to DM the player.
+        link = raw_link
 
         # Bind the player to this group for /gc reuse.
         uname = player.username.strip() if player.username else None
         dname = (f"{player.first_name or ''} {player.last_name or ''}").strip() or None
         title_attr = getattr(channel, "title", None)
         entity_title = title_attr.strip() if isinstance(title_attr, str) and title_attr.strip() else None
-        ensure_group_chat_linked(int(chat_id), int(cfg.link_club_id), entity_title or target_title)
+        ensure_group_chat_linked(int(chat_id), int(cfg.link_club_id), entity_title or "")
         title_now, _ = get_group_title_for_chat(int(chat_id))
         status, row_id = bind_player_for_gc_reuse(
             club_key=cfg.club_key,
             club_display_name=cfg.club_display_name,
             telegram_chat_id=int(chat_id),
-            telegram_chat_title=title_now or entity_title or target_title,
+            telegram_chat_title=title_now or entity_title or "",
             player_telegram_user_id=player_id,
             player_username=uname,
             player_display_name=dname,
@@ -554,17 +564,9 @@ async def _run_bind_flow_for_player(
             update_support_group_chat_row(
                 int(row_id),
                 invite_link=link,
-                player_dm_status=f"bind_cmd_{status}",
+                telegram_chat_title=(title_now or entity_title or ""),
+                player_dm_status=f"bind_invite_{status}",
             )
-
-        if not link:
-            await _send_player_dm_safe(
-                event.client,
-                player,
-                "Bound you to the group, but an invite link could not be exported.\n"
-                "An agent may need to add you manually.",
-            )
-            return
 
         await _send_player_dm_safe(
             event.client,
@@ -668,7 +670,7 @@ async def handle_dm_gc_message(
     body_raw = body_raw if isinstance(body_raw, str) else ""
     trimmed = body_raw.strip()
     gc_match = trimmed == "/gc"
-    bind_title = _parse_bind_target_title(trimmed)
+    bind_link = _parse_bind_invite_link(trimmed)
 
     peer_user_id = getattr(event.peer_id, "user_id", None)
     msg_id = getattr(msg, "id", None)
@@ -682,11 +684,11 @@ async def handle_dm_gc_message(
         msg_id,
         snippet,
         gc_match,
-        bool(bind_title),
+        bool(bind_link),
     )
 
     text = trimmed
-    if text != "/gc" and not bind_title:
+    if text != "/gc" and not bind_link:
         return
 
     try:
@@ -717,7 +719,7 @@ async def handle_dm_gc_message(
         return
 
     player = chat
-    if bind_title:
+    if bind_link:
         # Keep staff DM clean (same behavior as /gc): delete the command message.
         try:
             await event.delete()
@@ -727,7 +729,7 @@ async def handle_dm_gc_message(
             event=event,
             cfg=cfg,
             player=player,
-            target_title=bind_title,
+            invite_link=bind_link,
             listener_label=listener_label,
             ptb_bot=ptb_bot,
         )
