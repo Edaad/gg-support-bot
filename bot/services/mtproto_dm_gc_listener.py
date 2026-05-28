@@ -478,6 +478,19 @@ async def _run_bind_flow_for_player(
             return
 
         if len(matches) != 1:
+            # Best-effort export invite links for conflict report (cap to keep it fast).
+            preview = matches[:10]
+            details: list[str] = []
+            for cid, ent in preview:
+                try:
+                    inv = await export_invite_link_for_peer(event.client, ent)
+                    inv = (inv or "").strip() or "(invite link unavailable)"
+                except Exception:
+                    inv = "(invite link unavailable)"
+                details.append(f"- chat_id={cid} invite_link={inv}")
+            if len(matches) > len(preview):
+                details.append(f"- ... and {len(matches) - len(preview)} more matches")
+
             # Notify club admin via Bot API.
             admin_id = None
             try:
@@ -496,7 +509,8 @@ async def _run_bind_flow_for_player(
                             f"/bind failed for club={cfg.club_display_name} ({cfg.club_key}).\n"
                             f"GC name: {desired}\n"
                             f"Matches found: {len(matches)}\n\n"
-                            "Fix: rename the target GC to be unique, then run /bind again."
+                            + "\n".join(details)
+                            + "\n\nFix: rename the target GC to be unique, then run /bind again."
                         ),
                     )
                 except Exception:
@@ -704,6 +718,11 @@ async def handle_dm_gc_message(
 
     player = chat
     if bind_title:
+        # Keep staff DM clean (same behavior as /gc): delete the command message.
+        try:
+            await event.delete()
+        except Exception:
+            pass
         await _run_bind_flow_for_player(
             event=event,
             cfg=cfg,
