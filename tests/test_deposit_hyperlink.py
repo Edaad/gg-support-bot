@@ -98,6 +98,42 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Hello", sent_text)
         self.assertIn('<a href="https://checkout.stripe.com/test">PAY</a>', sent_text)
 
+    async def test_cashapp_over_100_does_not_use_stripe_like_by_slug(self):
+        chat = SimpleNamespace(send_message=AsyncMock())
+        message = SimpleNamespace(chat=chat)
+        query = SimpleNamespace(
+            message=message,
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
+
+        response_data = {
+            "response_type": "text",
+            "response_text": "cashapp instructions",
+            "use_group_checkout_link": False,
+            "group_checkout_provider": None,
+            "hyperlink_text": "PAY HERE",
+        }
+
+        with (
+            patch.object(dep, "stripe_configured", return_value=True),
+            patch.object(dep, "create_stripe_checkout_session") as create_session,
+            patch.object(dep, "send_response_messages", AsyncMock()) as send_response,
+        ):
+            ok = await dep._send_deposit_method_response(
+                query,
+                context,
+                amount=dep.Decimal("150"),
+                display_name="Cashapp",
+                method_id=123,
+                method_slug="cashapp",
+                response_data=response_data,
+            )
+
+        self.assertTrue(ok)
+        create_session.assert_not_called()
+        send_response.assert_awaited()
+
 
 if __name__ == "__main__":
     unittest.main()

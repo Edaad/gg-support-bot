@@ -62,6 +62,8 @@ STRIPE_LIKE_SLUGS = frozenset(
         "debitcard",
         "debit-card",
         "debit_card",
+        # Special-case: cashapp can be routed to Stripe Checkout for <= $100 deposits.
+        "cashapp",
     }
 )
 
@@ -547,6 +549,13 @@ async def _send_deposit_method_response(
     """
     slug = (method_slug or "").strip().lower()
     is_stripe_like = _is_stripe_like_slug(slug)
+    if slug == "cashapp":
+        # Only treat cashapp as Stripe-like for deposits <= $100 (variants/tiers can route small deposits).
+        try:
+            if not isinstance(amount, Decimal) or amount > Decimal("100"):
+                is_stripe_like = False
+        except Exception:
+            is_stripe_like = False
     group_link_enabled = bool(response_data.get("use_group_checkout_link"))
     provider = (response_data.get("group_checkout_provider") or "").strip().lower()
     use_stripe_checkout = bool(is_stripe_like or (group_link_enabled and provider == "stripe"))
