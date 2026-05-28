@@ -47,6 +47,8 @@ from bot.services.support_group_chats import (
     bind_player_for_gc_reuse,
     update_support_group_chat_row,
 )
+from db.connection import get_db
+from db.models import Club
 
 logger = logging.getLogger(__name__)
 
@@ -423,13 +425,12 @@ async def _run_bind_flow_for_player(
     player: User,
     target_title: str,
     listener_label: str,
+    ptb_bot,
 ) -> None:
-    """Bind player to an existing support group and DM invite link.
+    """Bind player to a support megagroup by exact Telegram group title.
 
-    Supports:
-    - exact stored dashboard group title (if linked in DB)
-    - raw Telegram chat id (e.g. -100123...)
-    - usernames / t.me links resolvable by Telethon (best-effort)
+    Searches the club MTProto account's accessible dialogs for an exact title match.
+    Binds only when exactly one match is found; otherwise notifies the club admin.
     """
     player_id = int(player.id)
     player_label = _telethon_user_label(player)
@@ -445,49 +446,71 @@ async def _run_bind_flow_for_player(
         return
 
     try:
-        # First: try exact stored Group.name match for this club.
-        chat_id: int | None = find_group_chat_id_by_name(int(cfg.link_club_id), target_title)
-        channel = None
-        if chat_id is not None:
-            try:
-                channel = await event.client.get_entity(int(chat_id))
-            except Exception:
-                channel = None
+        desired = (target_title or "").strip()
+        if not desired:
+            return
 
-        # Fallback: try to resolve the provided marker via Telethon even if not in DB.
-        if channel is None:
-            marker = target_title.strip()
-            try:
-                maybe_int = int(marker)
-                marker_obj = maybe_int
-            except Exception:
-                marker_obj = marker
+        # Find exact title matches in accessible dialogs.
+        matches: list[tuple[int, Any]] = []
+        try:
+            from telethon.utils import get_peer_id
 
-            try:
-                channel = await event.client.get_entity(marker_obj)
-            except Exception:
-                await _send_player_dm_safe(
-                    event.client,
-                    player,
-                    "Could not resolve that group on Telegram. Please send the GC chat id (starts with -100...) "
-                    "or a link/username that the club account can access.",
-                )
-                return
-
-            try:
-                from telethon.utils import get_peer_id
-
-                chat_id = int(get_peer_id(channel))
-            except Exception:
-                chat_id = None
-
-        if chat_id is None:
+            async for d in event.client.iter_dialogs():
+                title = (getattr(d, "name", None) or "").strip()
+                if title != desired:
+                    continue
+                ent = getattr(d, "entity", None)
+                if ent is None:
+                    continue
+                try:
+                    cid = int(get_peer_id(ent))
+                except Exception:
+                    continue
+                matches.append((cid, ent))
+                if len(matches) >= 20:
+                    break
+        except Exception:
             await _send_player_dm_safe(
                 event.client,
                 player,
-                "Could not determine the chat id for that group.",
+                "Bind failed: could not search dialogs on the club account.",
             )
             return
+
+        if len(matches) != 1:
+            # Notify club admin via Bot API.
+            admin_id = None
+            try:
+                with get_db() as session:
+                    club = session.query(Club).filter(Club.id == int(cfg.link_club_id)).one_or_none()
+                    if club:
+                        admin_id = int(club.telegram_user_id)
+            except Exception:
+                admin_id = None
+
+            if admin_id is not None and ptb_bot is not None:
+                try:
+                    await ptb_bot.send_message(
+                        chat_id=admin_id,
+                        text=(
+                            f"/bind failed for club={cfg.club_display_name} ({cfg.club_key}).\n"
+                            f"GC name: {desired}\n"
+                            f"Matches found: {len(matches)}\n\n"
+                            "Fix: rename the target GC to be unique, then run /bind again."
+                        ),
+                    )
+                except Exception:
+                    pass
+
+            await _send_player_dm_safe(
+                event.client,
+                player,
+                "Could not bind you to a group right now (group name was not unique).\n"
+                "An agent will assist you shortly.",
+            )
+            return
+
+        chat_id, channel = matches[0]
 
         exported = await export_invite_link_for_peer(event.client, channel)
         link = (exported or "").strip()
@@ -687,6 +710,7 @@ async def handle_dm_gc_message(
             player=player,
             target_title=bind_title,
             listener_label=listener_label,
+            ptb_bot=ptb_bot,
         )
         return
 
