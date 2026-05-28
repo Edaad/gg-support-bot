@@ -9,6 +9,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Welcome to GG Support Bot!\n\n"
         "In a group:\n"
         "• /deposit — Make a deposit\n"
+        "• /stripe — Stripe checkout link (group chats only)\n"
         "• /cashout — Request a cashout\n"
         "• /list — View the club's list\n\n"
         "Admins:\n"
