@@ -23,6 +23,7 @@ const EMPTY: Partial<Method> = {
   name: '', slug: '', min_amount: null, max_amount: null,
   has_sub_options: false, response_type: 'text', response_text: '',
   response_file_id: '', response_caption: '', is_active: true, sort_order: 0,
+  use_group_checkout_link: false, hyperlink_text: 'PAY HERE',
 }
 
 export default function MethodEditor({ token, clubId, direction }: Props) {
@@ -87,6 +88,9 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
   }
 
   const setField = (field: string, value: any) => setForm((f) => ({ ...f, [field]: value }))
+  const slug = (form.slug || '').trim().toLowerCase()
+  const isStripeLike =
+    ['stripe', 'applepay', 'apple-pay', 'apple_pay', 'debitcard', 'debit-card', 'debit_card'].includes(slug)
 
   return (
     <div>
@@ -305,6 +309,45 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
               onChange={(field, value) => setField(field, value)}
             />
           </div>
+
+          {direction === 'deposit' && isStripeLike && (
+            <div className="mt-4 rounded-xl border border-gray-800 bg-gray-950 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-white">Group-specific Stripe Checkout link</div>
+                  <div className="mt-1 text-xs text-gray-500">
+                    When enabled, the bot generates a unique per-group Checkout Session and you can insert it in
+                    Response Text using <span className="font-mono text-gray-300">{'{{hyperlink}}'}</span>.
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={form.use_group_checkout_link || false}
+                    onChange={(e) => setField('use_group_checkout_link', e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500 focus:ring-indigo-500"
+                  />
+                  Enabled
+                </label>
+              </div>
+
+              {form.use_group_checkout_link && (
+                <div className="mt-3">
+                  <label className="mb-1 block text-xs font-medium text-gray-400">Hyperlink text</label>
+                  <input
+                    value={form.hyperlink_text ?? 'PAY HERE'}
+                    onChange={(e) => setField('hyperlink_text', e.target.value)}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                    placeholder='Example: "PAY HERE"'
+                  />
+                  <div className="mt-1 text-xs text-gray-600">
+                    In your Response Text, put <span className="font-mono">{'{{hyperlink}}'}</span> where you want
+                    the clickable link to appear.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mt-4 flex gap-2">
             <button onClick={handleSave} className="rounded-lg bg-indigo-600 px-6 py-2 text-sm font-medium text-white hover:bg-indigo-500">

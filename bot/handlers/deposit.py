@@ -591,34 +591,73 @@ async def _send_deposit_method_response(
             announcement = f"Deposit request via {display_name} ($20–$100 on checkout)"
             await query.edit_message_text(announcement)
 
-            safe_url = html.escape(result.checkout_url, quote=True)
-            pay_text = (
-                "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
-                "• Enter your deposit amount on the checkout page ($20 minimum, $100 maximum).\n\n"
-                "• Once sent, please inform us, and an agent will confirm the transaction and add your chips within 2 minutes!\n\n"
-                "• Just post a screenshot of your transaction, and it will be credited to your account!\n\n"
-                f'<a href="{safe_url}">PAY HERE</a>'
-            )
-            pay_text_plain = (
-                "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
-                "• Enter your deposit amount on the checkout page ($20 minimum, $100 maximum).\n\n"
-                "• Once sent, please inform us, and an agent will confirm the transaction and add your chips within 2 minutes!\n\n"
-                "• Just post a screenshot of your transaction, and it will be credited to your account!\n\n"
-                f"{result.checkout_url}"
-            )
-            try:
-                await query.message.chat.send_message(
-                    pay_text,
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
+            use_group_link = bool(response_data.get("use_group_checkout_link"))
+            if use_group_link and (response_data.get("response_type") or "text") == "text":
+                hyperlink_text = (response_data.get("hyperlink_text") or "PAY HERE").strip() or "PAY HERE"
+
+                safe_url = html.escape(result.checkout_url, quote=True)
+                safe_label = html.escape(hyperlink_text, quote=False)
+                html_link = f'<a href="{safe_url}">{safe_label}</a>'
+
+                text_template = (response_data.get("response_text") or "").strip()
+                if "{{hyperlink}}" not in text_template:
+                    text_template = (text_template + "\n\n{{hyperlink}}").strip()
+
+                html_text = text_template.replace("{{hyperlink}}", html_link)
+                plain_text = text_template.replace("{{hyperlink}}", result.checkout_url)
+
+                payload = {
+                    **response_data,
+                    "response_text": html_text,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                }
+                try:
+                    await send_response_messages(query.message.chat, payload)
+                except Exception:
+                    logger.warning(
+                        "deposit: HTML templated response failed, retrying plain link chat_id=%s",
+                        chat_id,
+                        exc_info=True,
+                    )
+                    await send_response_messages(
+                        query.message.chat,
+                        {
+                            **response_data,
+                            "response_text": plain_text,
+                            "parse_mode": None,
+                            "disable_web_page_preview": True,
+                        },
+                    )
+            else:
+                safe_url = html.escape(result.checkout_url, quote=True)
+                pay_text = (
+                    "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
+                    "• Enter your deposit amount on the checkout page ($20 minimum, $100 maximum).\n\n"
+                    "• Once sent, please inform us, and an agent will confirm the transaction and add your chips within 2 minutes!\n\n"
+                    "• Just post a screenshot of your transaction, and it will be credited to your account!\n\n"
+                    f'<a href="{safe_url}">PAY HERE</a>'
                 )
-            except Exception:
-                logger.warning(
-                    "deposit: HTML pay message failed, retrying plain link chat_id=%s",
-                    chat_id,
-                    exc_info=True,
+                pay_text_plain = (
+                    "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
+                    "• Enter your deposit amount on the checkout page ($20 minimum, $100 maximum).\n\n"
+                    "• Once sent, please inform us, and an agent will confirm the transaction and add your chips within 2 minutes!\n\n"
+                    "• Just post a screenshot of your transaction, and it will be credited to your account!\n\n"
+                    f"{result.checkout_url}"
                 )
-                await query.message.chat.send_message(pay_text_plain)
+                try:
+                    await query.message.chat.send_message(
+                        pay_text,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                except Exception:
+                    logger.warning(
+                        "deposit: HTML pay message failed, retrying plain link chat_id=%s",
+                        chat_id,
+                        exc_info=True,
+                    )
+                    await query.message.chat.send_message(pay_text_plain)
             logger.info(
                 "deposit: stripe checkout sent chat_id=%s session_id=%s customer_id=%s",
                 chat_id,

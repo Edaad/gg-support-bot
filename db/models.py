@@ -116,6 +116,9 @@ class PaymentMethod(Base):
     response_text = Column(Text)
     response_file_id = Column(Text)
     response_caption = Column(Text)
+    # Stripe-like deposit methods can optionally embed a per-group Checkout hyperlink into response_text.
+    use_group_checkout_link = Column(Boolean, default=False)
+    hyperlink_text = Column(String(64), nullable=True)
     is_active = Column(Boolean, default=True)
     sort_order = Column(Integer, default=0)
     deposit_limit = Column(Numeric(12, 2), nullable=True)

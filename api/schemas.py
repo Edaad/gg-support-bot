@@ -172,6 +172,8 @@ class MethodCreate(BaseModel):
     response_text: Optional[str] = None
     response_file_id: Optional[str] = None
     response_caption: Optional[str] = None
+    use_group_checkout_link: bool = False
+    hyperlink_text: Optional[str] = None
     is_active: bool = True
     sort_order: int = 0
     deposit_limit: Optional[Decimal] = None
@@ -188,6 +190,8 @@ class MethodUpdate(BaseModel):
     response_text: Optional[str] = None
     response_file_id: Optional[str] = None
     response_caption: Optional[str] = None
+    use_group_checkout_link: Optional[bool] = None
+    hyperlink_text: Optional[str] = None
     is_active: Optional[bool] = None
     sort_order: Optional[int] = None
     deposit_limit: Optional[Decimal] = None
@@ -238,6 +242,8 @@ class MethodRead(BaseModel):
     response_text: Optional[str]
     response_file_id: Optional[str]
     response_caption: Optional[str]
+    use_group_checkout_link: bool = False
+    hyperlink_text: Optional[str] = None
     is_active: bool
     sort_order: int
     deposit_limit: Optional[Decimal] = None

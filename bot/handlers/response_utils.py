@@ -28,6 +28,8 @@ async def send_response_messages(target, data):
     is_reply = hasattr(target, "reply_text")
     chat = target.chat if is_reply else target
     rtype = data.get("response_type", "text")
+    parse_mode = data.get("parse_mode")
+    disable_web_page_preview = bool(data.get("disable_web_page_preview", False))
 
     if rtype == "photo" and data.get("response_file_id"):
         file_ids = [f.strip() for f in data["response_file_id"].split(",") if f.strip()]
@@ -53,7 +55,15 @@ async def send_response_messages(target, data):
         parts = _split_text(text)
         for part in parts:
             if is_reply:
-                await target.reply_text(part)
+                await target.reply_text(
+                    part,
+                    parse_mode=parse_mode,
+                    disable_web_page_preview=disable_web_page_preview,
+                )
                 is_reply = False
             else:
-                await chat.send_message(part)
+                await chat.send_message(
+                    part,
+                    parse_mode=parse_mode,
+                    disable_web_page_preview=disable_web_page_preview,
+                )

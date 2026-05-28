@@ -268,6 +268,8 @@ export interface Method {
   response_text: string | null
   response_file_id: string | null
   response_caption: string | null
+  use_group_checkout_link: boolean
+  hyperlink_text: string | null
   is_active: boolean
   sort_order: number
   deposit_limit: number | null

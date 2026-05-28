@@ -163,6 +163,8 @@ def get_methods_for_amount(
                 "response_text": m.response_text,
                 "response_file_id": m.response_file_id,
                 "response_caption": m.response_caption,
+                "use_group_checkout_link": bool(getattr(m, "use_group_checkout_link", False)),
+                "hyperlink_text": getattr(m, "hyperlink_text", None),
             })
         return result
 
@@ -189,6 +191,8 @@ def get_method_by_id(method_id: int) -> Optional[dict]:
             "response_text": m.response_text,
             "response_file_id": m.response_file_id,
             "response_caption": m.response_caption,
+            "use_group_checkout_link": bool(getattr(m, "use_group_checkout_link", False)),
+            "hyperlink_text": getattr(m, "hyperlink_text", None),
         }
 
 
