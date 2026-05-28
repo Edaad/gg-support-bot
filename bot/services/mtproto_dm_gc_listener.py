@@ -20,6 +20,7 @@ from club_gc_settings import (
 )
 from bot.handlers.groups import send_post_gc_intro_bundle
 from bot.services.club import ensure_group_chat_linked
+from bot.services.club import find_group_chat_id_by_name, get_group_title_for_chat
 from bot.services.mtproto_group_create import (
     create_support_megagroup,
     ensure_player_in_support_group,
@@ -39,9 +40,11 @@ from bot.services.mtproto_group_cash import handle_group_cash_outgoing
 from bot.services.mtproto_group_delete import handle_group_delete_outgoing
 from bot.services.support_group_chats import (
     fetch_support_group_chat_by_club_player,
+    fetch_support_group_chat_by_telegram_chat_id,
     persist_support_group_chat_row,
     pg_advisory_unlock_session,
     try_pg_advisory_lock_club_player,
+    bind_player_for_gc_reuse,
     update_support_group_chat_row,
 )
 
@@ -403,6 +406,147 @@ async def _run_gc_flow_for_player(
         pg_advisory_unlock_session(lock_sess, cfg.club_key, player_id)
 
 
+def _parse_bind_target_title(text: str) -> str | None:
+    t = (text or "").strip()
+    if not t:
+        return None
+    if not t.lower().startswith("/bind"):
+        return None
+    rest = t[5:].strip()
+    return rest or None
+
+
+async def _run_bind_flow_for_player(
+    *,
+    event,
+    cfg,
+    player: User,
+    target_title: str,
+    listener_label: str,
+) -> None:
+    """Bind player to an existing support group and DM invite link.
+
+    Supports:
+    - exact stored dashboard group title (if linked in DB)
+    - raw Telegram chat id (e.g. -100123...)
+    - usernames / t.me links resolvable by Telethon (best-effort)
+    """
+    player_id = int(player.id)
+    player_label = _telethon_user_label(player)
+
+    lock_sess, acquired = try_pg_advisory_lock_club_player(cfg.club_key, player_id)
+    if not acquired:
+        logger.warning(
+            "dm_gc /bind failed: advisory_lock_busy club_key=%s listener=%s player=%s",
+            cfg.club_key,
+            listener_label,
+            player_label,
+        )
+        return
+
+    try:
+        # First: try exact stored Group.name match for this club.
+        chat_id: int | None = find_group_chat_id_by_name(int(cfg.link_club_id), target_title)
+        channel = None
+        if chat_id is not None:
+            try:
+                channel = await event.client.get_entity(int(chat_id))
+            except Exception:
+                channel = None
+
+        # Fallback: try to resolve the provided marker via Telethon even if not in DB.
+        if channel is None:
+            marker = target_title.strip()
+            try:
+                maybe_int = int(marker)
+                marker_obj = maybe_int
+            except Exception:
+                marker_obj = marker
+
+            try:
+                channel = await event.client.get_entity(marker_obj)
+            except Exception:
+                await _send_player_dm_safe(
+                    event.client,
+                    player,
+                    "Could not resolve that group on Telegram. Please send the GC chat id (starts with -100...) "
+                    "or a link/username that the club account can access.",
+                )
+                return
+
+            try:
+                from telethon.utils import get_peer_id
+
+                chat_id = int(get_peer_id(channel))
+            except Exception:
+                chat_id = None
+
+        if chat_id is None:
+            await _send_player_dm_safe(
+                event.client,
+                player,
+                "Could not determine the chat id for that group.",
+            )
+            return
+
+        exported = await export_invite_link_for_peer(event.client, channel)
+        link = (exported or "").strip()
+        if not link:
+            # Fallback to last stored invite link if we have an audit row.
+            existing_by_chat = fetch_support_group_chat_by_telegram_chat_id(int(chat_id))
+            link = ((existing_by_chat.invite_link if existing_by_chat else "") or "").strip()
+
+        # Bind the player to this group for /gc reuse.
+        uname = player.username.strip() if player.username else None
+        dname = (f"{player.first_name or ''} {player.last_name or ''}").strip() or None
+        title_attr = getattr(channel, "title", None)
+        entity_title = title_attr.strip() if isinstance(title_attr, str) and title_attr.strip() else None
+        ensure_group_chat_linked(int(chat_id), int(cfg.link_club_id), entity_title or target_title)
+        title_now, _ = get_group_title_for_chat(int(chat_id))
+        status, row_id = bind_player_for_gc_reuse(
+            club_key=cfg.club_key,
+            club_display_name=cfg.club_display_name,
+            telegram_chat_id=int(chat_id),
+            telegram_chat_title=title_now or entity_title or target_title,
+            player_telegram_user_id=player_id,
+            player_username=uname,
+            player_display_name=dname,
+        )
+
+        if row_id and link:
+            update_support_group_chat_row(
+                int(row_id),
+                invite_link=link,
+                player_dm_status=f"bind_cmd_{status}",
+            )
+
+        if not link:
+            await _send_player_dm_safe(
+                event.client,
+                player,
+                "Bound you to the group, but an invite link could not be exported.\n"
+                "An agent may need to add you manually.",
+            )
+            return
+
+        await _send_player_dm_safe(
+            event.client,
+            player,
+            f"Please use this link to join the group:\n{link}\n\n"
+            "Once joined, an agent will assist you shortly.",
+        )
+        _dm_gc_verbose_info(
+            "dm_gc /bind ok club_key=%s listener=%s player=%s chat_id=%s status=%s",
+            cfg.club_key,
+            listener_label,
+            player_label,
+            chat_id,
+            status,
+        )
+    finally:
+        pg_advisory_unlock_session(lock_sess, cfg.club_key, player_id)
+
+
 async def _resolve_dm_player(event) -> User | None:
     try:
         chat = await event.get_chat()
@@ -487,23 +631,25 @@ async def handle_dm_gc_message(
     body_raw = body_raw if isinstance(body_raw, str) else ""
     trimmed = body_raw.strip()
     gc_match = trimmed == "/gc"
+    bind_title = _parse_bind_target_title(trimmed)
 
     peer_user_id = getattr(event.peer_id, "user_id", None)
     msg_id = getattr(msg, "id", None)
     snippet = trimmed[:400] + ("..." if len(trimmed) > 400 else "")
     _dm_gc_verbose_info(
         "dm_gc dm_capture club_key=%s listener=%s peer_user_id=%s message_id=%s "
-        "message=%r /gc_match=%s",
+        "message=%r /gc_match=%s /bind_match=%s",
         cfg.club_key,
         listener_label,
         peer_user_id,
         msg_id,
         snippet,
         gc_match,
+        bool(bind_title),
     )
 
     text = trimmed
-    if text != "/gc":
+    if text != "/gc" and not bind_title:
         return
 
     try:
@@ -534,6 +680,16 @@ async def handle_dm_gc_message(
         return
 
     player = chat
+    if bind_title:
+        await _run_bind_flow_for_player(
+            event=event,
+            cfg=cfg,
+            player=player,
+            target_title=bind_title,
+            listener_label=listener_label,
+        )
+        return
+
     await _run_gc_flow_for_player(
         event,
         cfg,
