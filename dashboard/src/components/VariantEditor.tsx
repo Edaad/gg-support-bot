@@ -116,7 +116,7 @@ export default function VariantEditor({ token, methodId, tierId, direction, embe
         {!(embedded && !tierId) && (
           <div>
             <h4 className="text-sm font-medium text-ink">
-              {tierId ? 'Tier rotation variants' : 'Fallback rotation variants'}
+              {tierId ? 'Tier rotation variants' : 'Rotation variants'}
             </h4>
             {!tierId && !embedded && (
               <p className="text-xs text-ink-muted">Used only when no amount tier matches.</p>

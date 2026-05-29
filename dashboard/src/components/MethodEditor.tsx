@@ -28,7 +28,7 @@ interface Props {
   direction: 'deposit' | 'cashout'
 }
 
-type MethodPanel = 'details' | 'tiers' | 'suboptions' | 'fallback'
+type MethodPanel = 'details' | 'tiers' | 'suboptions' | 'variants'
 
 const EMPTY: Partial<Method> = {
   name: '', slug: '', min_amount: null, max_amount: null,
@@ -41,10 +41,10 @@ function countTierVariants(m: Method): number {
   return (m.tiers ?? []).reduce((sum, t) => sum + (t.variants?.length ?? 0), 0)
 }
 
-function showFallbackPanel(m: Method): boolean {
+function showVariantsTab(m: Method): boolean {
   const tierVars = countTierVariants(m)
-  const fallback = m.variants?.length ?? 0
-  return tierVars === 0 || fallback > 0
+  const variantCount = m.variants?.length ?? 0
+  return tierVars === 0 || variantCount > 0
 }
 
 const DETAILS_SNAPSHOT_KEYS: (keyof Method)[] = [
@@ -80,7 +80,7 @@ function methodSummary(m: Method): string[] {
   }
   if ((m.tiers?.length ?? 0) > 0) parts.push(`${m.tiers!.length} tier${m.tiers!.length === 1 ? '' : 's'}`)
   if (m.has_sub_options) parts.push('sub-options')
-  if ((m.variants?.length ?? 0) > 0) parts.push(`${m.variants!.length} fallback`)
+  if ((m.variants?.length ?? 0) > 0) parts.push(`${m.variants!.length} variant${m.variants!.length === 1 ? '' : 's'}`)
   return parts
 }
 
@@ -300,7 +300,7 @@ function ConfigTabs({
     { id: 'tiers', label: 'Amount tiers' },
   ]
   if (m.has_sub_options) tabs.push({ id: 'suboptions', label: 'Sub-options' })
-  if (showFallbackPanel(m)) tabs.push({ id: 'fallback', label: 'Fallback' })
+  if (showVariantsTab(m)) tabs.push({ id: 'variants', label: 'Variants' })
 
   return (
     <div className="config-tab-bar" role="tablist" aria-label={`Configure ${m.name}`}>
@@ -411,7 +411,7 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
 
   const resolvePanel = (m: Method, tab: MethodPanel): MethodPanel => {
     if (tab === 'suboptions' && !m.has_sub_options) return 'details'
-    if (tab === 'fallback' && !showFallbackPanel(m)) return 'details'
+    if (tab === 'variants' && !showVariantsTab(m)) return 'details'
     return tab
   }
 
@@ -576,7 +576,7 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
     if (panel === 'suboptions' && context.has_sub_options) {
       return <SubOptionEditor token={token} methodId={m.id} embedded />
     }
-    if (panel === 'fallback' && showFallbackPanel(context)) {
+    if (panel === 'variants' && showVariantsTab(context)) {
       return (
         <div className="space-y-3">
           <p className="text-xs text-ink-muted">
