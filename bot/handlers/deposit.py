@@ -98,6 +98,30 @@ def _with_method_checkout_settings(
     return merged
 
 
+# Temporary until dashboard tier/variant Stripe flags are fully migrated.
+_STRIPE_HARDCODE_SLUGS = frozenset({"cashapp", "applepay"})
+_STRIPE_HARDCODE_MAX = Decimal("100")
+
+
+def _apply_hardcoded_stripe_below_100(
+    response_data: dict,
+    *,
+    method_slug: str,
+    amount,
+) -> dict:
+    """Force Stripe checkout for Cashapp / Apple Pay deposits up to $100."""
+    slug = (method_slug or "").strip().lower()
+    if slug not in _STRIPE_HARDCODE_SLUGS:
+        return response_data
+    if not isinstance(amount, Decimal) or amount > _STRIPE_HARDCODE_MAX:
+        return response_data
+    merged = dict(response_data)
+    merged["use_group_checkout_link"] = True
+    merged["group_checkout_provider"] = "stripe"
+    merged.setdefault("hyperlink_text", "PAY HERE")
+    return merged
+
+
 def _stripe_checkout_enabled(response_data: dict) -> bool:
     if not response_data.get("use_group_checkout_link"):
         return False
@@ -629,6 +653,11 @@ async def _send_deposit_method_response(
 
     Returns True if the deposit response was delivered, False on hard failure.
     """
+    response_data = _apply_hardcoded_stripe_below_100(
+        response_data,
+        method_slug=method_slug,
+        amount=amount,
+    )
     slug = (method_slug or "").strip().lower()
     use_stripe_checkout = _stripe_checkout_enabled(response_data)
     if (
