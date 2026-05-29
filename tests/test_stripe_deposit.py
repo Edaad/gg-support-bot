@@ -94,6 +94,18 @@ def _stripe_mocks():
 
 
 class StripeDepositTestCase(unittest.TestCase):
+    def test_resolve_checkout_amount_cents_from_dashboard(self):
+        min_c, max_c, preset = sd.resolve_checkout_amount_cents(min_usd=25, max_usd=75)
+        self.assertEqual(min_c, 2500)
+        self.assertEqual(max_c, 7500)
+        self.assertEqual(preset, 5000)
+
+    def test_resolve_checkout_amount_cents_defaults(self):
+        min_c, max_c, preset = sd.resolve_checkout_amount_cents()
+        self.assertEqual(min_c, sd.STRIPE_CHECKOUT_MIN_CENTS)
+        self.assertEqual(max_c, sd.STRIPE_CHECKOUT_MAX_CENTS)
+        self.assertEqual(preset, sd.STRIPE_CHECKOUT_PRESET_CENTS)
+
     def setUp(self):
         self.env_patch = patch.dict(
             os.environ,

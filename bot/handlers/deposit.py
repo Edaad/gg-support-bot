@@ -52,24 +52,67 @@ logger = logging.getLogger(__name__)
 
 DEPOSIT_REFERRAL, DEPOSIT_AMOUNT, DEPOSIT_UNION, DEPOSIT_CHOOSE, DEPOSIT_SUB = range(5)
 
-# Payment method slugs that use Stripe Checkout (custom $20–$100 on Stripe).
-STRIPE_LIKE_SLUGS = frozenset(
-    {
-        "stripe",
-        "applepay",
-        "apple-pay",
-        "apple_pay",
-        "debitcard",
-        "debit-card",
-        "debit_card",
-        # Special-case: cashapp can be routed to Stripe Checkout for <= $100 deposits.
-        "cashapp",
-    }
+_CHECKOUT_SETTING_KEYS = (
+    "use_group_checkout_link",
+    "group_checkout_provider",
+    "hyperlink_text",
+    "min_amount",
+    "max_amount",
 )
 
 
-def _is_stripe_like_slug(slug: str | None) -> bool:
-    return (slug or "").strip().lower() in STRIPE_LIKE_SLUGS
+def _with_method_checkout_settings(
+    response_data: dict,
+    method: dict | None,
+    *,
+    tier: dict | None = None,
+) -> dict:
+    """Merge checkout settings: method defaults, then tier overrides when present."""
+    merged = dict(response_data)
+    if method:
+        for key in _CHECKOUT_SETTING_KEYS:
+            if key not in merged or merged.get(key) is None:
+                merged[key] = method.get(key)
+    if tier:
+        for key in _CHECKOUT_SETTING_KEYS:
+            if key in tier and tier.get(key) is not None:
+                merged[key] = tier.get(key)
+            elif key == "use_group_checkout_link":
+                merged[key] = bool(tier.get("use_group_checkout_link"))
+    return merged
+
+
+def _stripe_checkout_enabled(response_data: dict) -> bool:
+    provider = (response_data.get("group_checkout_provider") or "").strip().lower()
+    return bool(response_data.get("use_group_checkout_link")) and provider == "stripe"
+
+
+def _build_stripe_response_payload(response_data: dict, checkout_url: str) -> dict:
+    hyperlink_text = (response_data.get("hyperlink_text") or "PAY HERE").strip() or "PAY HERE"
+    safe_url = html.escape(checkout_url, quote=True)
+    safe_label = html.escape(hyperlink_text, quote=False)
+    html_link = f'<a href="{safe_url}">{safe_label}</a>'
+
+    payload = dict(response_data)
+    rtype = payload.get("response_type") or "text"
+    if rtype == "text":
+        text_field = "response_text"
+        template = (payload.get("response_text") or "").strip()
+    else:
+        text_field = "response_caption"
+        template = (payload.get("response_caption") or "").strip()
+
+    if "{{hyperlink}}" not in template:
+        template = (template + "\n\n{{hyperlink}}").strip() if template else "{{hyperlink}}"
+
+    html_text = template.replace("{{hyperlink}}", html_link)
+    plain_text = template.replace("{{hyperlink}}", checkout_url)
+    payload[text_field] = html_text
+    payload["parse_mode"] = "HTML"
+    payload["disable_web_page_preview"] = True
+    payload["_stripe_plain_fallback"] = plain_text
+    payload["_stripe_plain_field"] = text_field
+    return payload
 
 
 async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -329,8 +372,10 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
     if tier:
         response_data = pick_variant(method_id, tier_id=tier["id"]) or tier
+        response_data = _with_method_checkout_settings(response_data, method, tier=tier)
     else:
         response_data = pick_variant(method_id) or method
+        response_data = _with_method_checkout_settings(response_data, method)
     ok = await _send_deposit_method_response(
         query,
         context,
@@ -372,21 +417,17 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     display = f"{method_name} — {sub['name']}"
 
     parent_method_id = context.chat_data.get("deposit_method_id")
-    parent_slug = ""
-    if parent_method_id:
-        parent = get_method_by_id(int(parent_method_id))
-        if parent:
-            parent_slug = parent.get("slug") or ""
-
+    parent = get_method_by_id(int(parent_method_id)) if parent_method_id else None
+    parent_slug = (parent.get("slug") or "") if parent else ""
+    response_data = _with_method_checkout_settings(sub, parent)
     sub_slug = (sub.get("slug") or "").strip().lower()
-    effective_slug = sub_slug if _is_stripe_like_slug(sub_slug) else parent_slug
     logger.info(
-        "deposit_sub_chosen chat_id=%s sub_id=%s sub_slug=%r parent_slug=%r effective_slug=%r",
+        "deposit_sub_chosen chat_id=%s sub_id=%s sub_slug=%r parent_slug=%r group_checkout=%s",
         query.message.chat.id if query.message else None,
         sub_id,
         sub_slug,
         parent_slug,
-        effective_slug,
+        _stripe_checkout_enabled(response_data),
     )
 
     ok = await _send_deposit_method_response(
@@ -395,8 +436,8 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
         amount=amount,
         display_name=display,
         method_id=int(parent_method_id) if parent_method_id else None,
-        method_slug=effective_slug,
-        response_data=sub,
+        method_slug=parent_slug or sub_slug,
+        response_data=response_data,
     )
     if not ok:
         return ConversationHandler.END
@@ -543,36 +584,24 @@ async def _send_deposit_method_response(
     method_slug: str,
     response_data: dict,
 ) -> bool:
-    """Stripe-like deposits: optionally generate per-group checkout link; otherwise static response.
+    """When dashboard group Stripe checkout is enabled, create a per-group link from response text.
 
     Returns True if the deposit response was delivered, False on hard failure.
     """
     slug = (method_slug or "").strip().lower()
-    is_stripe_like = _is_stripe_like_slug(slug)
-    if slug == "cashapp":
-        # Only treat cashapp as Stripe-like for deposits <= $100 (variants/tiers can route small deposits).
-        try:
-            if not isinstance(amount, Decimal) or amount > Decimal("100"):
-                is_stripe_like = False
-        except Exception:
-            is_stripe_like = False
-    group_link_enabled = bool(response_data.get("use_group_checkout_link"))
-    provider = (response_data.get("group_checkout_provider") or "").strip().lower()
-    use_stripe_checkout = bool(is_stripe_like or (group_link_enabled and provider == "stripe"))
+    use_stripe_checkout = _stripe_checkout_enabled(response_data)
     chat_id = context.chat_data.get("deposit_chat_id") or (
         query.message.chat.id if query.message else None
     )
     club_id = context.chat_data.get("deposit_club_id")
 
     logger.info(
-        "deposit_send_response chat_id=%s club_id=%s method_id=%s slug=%r stripe_like=%s group_link=%s provider=%r configured=%s",
+        "deposit_send_response chat_id=%s club_id=%s method_id=%s slug=%r group_checkout=%s configured=%s",
         chat_id,
         club_id,
         method_id,
         slug,
-        is_stripe_like,
-        group_link_enabled,
-        provider,
+        use_stripe_checkout,
         stripe_configured(),
     )
 
@@ -601,76 +630,27 @@ async def _send_deposit_method_response(
                 club_id=int(club_id),
                 payment_method_id=method_id,
                 group_title=group_title,
+                checkout_min_usd=response_data.get("min_amount"),
+                checkout_max_usd=response_data.get("max_amount"),
             )
-            announcement = f"Deposit request via {display_name} ($20–$100 on checkout)"
-            await query.edit_message_text(announcement)
+            await query.edit_message_text(f"Deposit via {display_name}")
 
-            if group_link_enabled and provider == "stripe" and (response_data.get("response_type") or "text") == "text":
-                hyperlink_text = (response_data.get("hyperlink_text") or "PAY HERE").strip() or "PAY HERE"
-
-                safe_url = html.escape(result.checkout_url, quote=True)
-                safe_label = html.escape(hyperlink_text, quote=False)
-                html_link = f'<a href="{safe_url}">{safe_label}</a>'
-
-                text_template = (response_data.get("response_text") or "").strip()
-                if "{{hyperlink}}" not in text_template:
-                    text_template = (text_template + "\n\n{{hyperlink}}").strip()
-
-                html_text = text_template.replace("{{hyperlink}}", html_link)
-                plain_text = text_template.replace("{{hyperlink}}", result.checkout_url)
-
-                payload = {
-                    **response_data,
-                    "response_text": html_text,
-                    "parse_mode": "HTML",
-                    "disable_web_page_preview": True,
-                }
-                try:
-                    await send_response_messages(query.message.chat, payload)
-                except Exception:
-                    logger.warning(
-                        "deposit: HTML templated response failed, retrying plain link chat_id=%s",
-                        chat_id,
-                        exc_info=True,
-                    )
-                    await send_response_messages(
-                        query.message.chat,
-                        {
-                            **response_data,
-                            "response_text": plain_text,
-                            "parse_mode": None,
-                            "disable_web_page_preview": True,
-                        },
-                    )
-            else:
-                safe_url = html.escape(result.checkout_url, quote=True)
-                pay_text = (
-                    "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
-                    "• Enter your deposit amount on the checkout page ($20 minimum, $100 maximum).\n\n"
-                    "• Once sent, please inform us, and an agent will confirm the transaction and add your chips within 2 minutes!\n\n"
-                    "• Just post a screenshot of your transaction, and it will be credited to your account!\n\n"
-                    f'<a href="{safe_url}">PAY HERE</a>'
+            payload = _build_stripe_response_payload(response_data, result.checkout_url)
+            plain_field = payload.pop("_stripe_plain_field", "response_text")
+            plain_fallback = payload.pop("_stripe_plain_fallback", result.checkout_url)
+            try:
+                await send_response_messages(query.message.chat, payload)
+            except Exception:
+                logger.warning(
+                    "deposit: HTML templated response failed, retrying plain link chat_id=%s",
+                    chat_id,
+                    exc_info=True,
                 )
-                pay_text_plain = (
-                    "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
-                    "• Enter your deposit amount on the checkout page ($20 minimum, $100 maximum).\n\n"
-                    "• Once sent, please inform us, and an agent will confirm the transaction and add your chips within 2 minutes!\n\n"
-                    "• Just post a screenshot of your transaction, and it will be credited to your account!\n\n"
-                    f"{result.checkout_url}"
-                )
-                try:
-                    await query.message.chat.send_message(
-                        pay_text,
-                        parse_mode="HTML",
-                        disable_web_page_preview=True,
-                    )
-                except Exception:
-                    logger.warning(
-                        "deposit: HTML pay message failed, retrying plain link chat_id=%s",
-                        chat_id,
-                        exc_info=True,
-                    )
-                    await query.message.chat.send_message(pay_text_plain)
+                fallback = dict(response_data)
+                fallback[plain_field] = plain_fallback
+                fallback["parse_mode"] = None
+                fallback["disable_web_page_preview"] = True
+                await send_response_messages(query.message.chat, fallback)
             logger.info(
                 "deposit: stripe checkout sent chat_id=%s session_id=%s customer_id=%s",
                 chat_id,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Optional
 
 import stripe
@@ -73,7 +74,47 @@ def _checkout_product_data(group_title: str | None) -> dict[str, str]:
     return data
 
 
-def _create_custom_amount_price_id(group_title: str | None, *, no_minimum: bool = False) -> str:
+def _usd_to_cents(value: Decimal | float | int | str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        dollars = Decimal(str(value))
+    except Exception:
+        return None
+    if dollars <= 0:
+        return None
+    return int((dollars * 100).to_integral_value())
+
+
+def resolve_checkout_amount_cents(
+    *,
+    min_usd: Decimal | float | int | str | None = None,
+    max_usd: Decimal | float | int | str | None = None,
+) -> tuple[int, int, int]:
+    """Return (min_cents, max_cents, preset_cents) for Stripe custom_unit_amount."""
+    min_c = _usd_to_cents(min_usd)
+    max_c = _usd_to_cents(max_usd)
+    if min_c is None:
+        min_c = STRIPE_CHECKOUT_MIN_CENTS
+    if max_c is None:
+        max_c = STRIPE_CHECKOUT_MAX_CENTS
+    if min_c > max_c:
+        min_c, max_c = max_c, min_c
+    if min_usd is None and max_usd is None:
+        preset = STRIPE_CHECKOUT_PRESET_CENTS
+    else:
+        preset = (min_c + max_c) // 2
+    return min_c, max_c, preset
+
+
+def _create_custom_amount_price_id(
+    group_title: str | None,
+    *,
+    no_minimum: bool = False,
+    min_cents: int | None = None,
+    max_cents: int | None = None,
+    preset_cents: int | None = None,
+) -> str:
     """Create a one-time Price with custom amount.
 
     When no_minimum is True, omits min/max so the player can enter any amount.
@@ -83,13 +124,19 @@ def _create_custom_amount_price_id(group_title: str | None, *, no_minimum: bool 
         logger.info("stripe: creating product+price custom_unit_amount (no minimum)")
         custom_unit_amount: dict = {"enabled": True}
     else:
-        logger.info("stripe: creating product+price custom_unit_amount min=%s max=%s",
-                    STRIPE_CHECKOUT_MIN_CENTS, STRIPE_CHECKOUT_MAX_CENTS)
+        if min_cents is None or max_cents is None or preset_cents is None:
+            min_cents, max_cents, preset_cents = resolve_checkout_amount_cents()
+        logger.info(
+            "stripe: creating product+price custom_unit_amount min=%s max=%s preset=%s",
+            min_cents,
+            max_cents,
+            preset_cents,
+        )
         custom_unit_amount = {
             "enabled": True,
-            "minimum": STRIPE_CHECKOUT_MIN_CENTS,
-            "maximum": STRIPE_CHECKOUT_MAX_CENTS,
-            "preset": STRIPE_CHECKOUT_PRESET_CENTS,
+            "minimum": min_cents,
+            "maximum": max_cents,
+            "preset": preset_cents,
         }
     product = stripe.Product.create(
         name=product_data["name"],
@@ -193,6 +240,8 @@ def create_stripe_checkout_session(
     payment_method_id: int | None = None,
     group_title: str | None = None,
     no_minimum: bool = False,
+    checkout_min_usd: Decimal | float | int | str | None = None,
+    checkout_max_usd: Decimal | float | int | str | None = None,
 ) -> StripeCheckoutResult:
     """Create a Checkout Session where the player picks amount on Stripe.
 
@@ -237,7 +286,19 @@ def create_stripe_checkout_session(
     if effective_title:
         session_metadata["group_title_snapshot"] = effective_title[:500]
 
-    price_id = _create_custom_amount_price_id(effective_title, no_minimum=no_minimum)
+    min_cents = max_cents = preset_cents = None
+    if not no_minimum:
+        min_cents, max_cents, preset_cents = resolve_checkout_amount_cents(
+            min_usd=checkout_min_usd,
+            max_usd=checkout_max_usd,
+        )
+    price_id = _create_custom_amount_price_id(
+        effective_title,
+        no_minimum=no_minimum,
+        min_cents=min_cents,
+        max_cents=max_cents,
+        preset_cents=preset_cents,
+    )
     logger.info("stripe: creating checkout session customer=%s price=%s", stripe_customer_id, price_id)
     checkout = stripe.checkout.Session.create(
         customer=stripe_customer_id,

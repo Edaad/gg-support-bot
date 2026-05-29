@@ -1,6 +1,6 @@
 # Stripe per-deposit checkout
 
-When a player picks Apple Pay / Debit Card (`applepay`, `debitcard`, etc.), the bot creates a **unique Stripe Checkout Session** per request. The player **chooses the amount on Stripe** ($20 minimum, $100 maximum), not from the `/deposit` amount step. One **Stripe Customer** (`cus_…`) is reused per Telegram group chat.
+When a deposit method has **Use group specific link** enabled with provider **Stripe**, the bot creates a **unique Stripe Checkout Session** per request. The player **chooses the amount on the Stripe checkout page** within the method’s dashboard **Min/Max Amount** (defaults $20–$100 if unset). One **Stripe Customer** (`cus_…`) is reused per Telegram group chat.
 
 ## Stable customer (no guest checkout)
 
@@ -40,10 +40,9 @@ If `STRIPE_SECRET_KEY` is unset, Stripe deposits fall back to the static dashboa
 
 ## Bot flow
 
-1. `/deposit` → amount (for other methods) → Apple Pay / Debit Card
-2. Bot calls Stripe: get/create customer for `chat_id`, create Checkout Session with **custom amount** ($20–$100)
-3. Group receives: announcement + **Pay here** link (amount entered on Stripe)
-4. Optional static instructions from the payment method still send if configured
+1. `/deposit` → amount → payment method with **Use group specific link** + Stripe
+2. Bot calls Stripe: get/create customer for `chat_id`, create Checkout Session with **custom amount** (method min/max)
+3. Group receives: short announcement + dashboard **Response Text** with `{{hyperlink}}` replaced by the checkout link
 
 ## Zapier: (Glide) Confirm Stripe Payments
 

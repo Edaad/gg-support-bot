@@ -187,6 +187,8 @@ def get_method_by_id(method_id: int) -> Optional[dict]:
             "id": m.id,
             "name": m.name,
             "slug": m.slug,
+            "min_amount": m.min_amount,
+            "max_amount": m.max_amount,
             "has_sub_options": m.has_sub_options,
             "response_type": m.response_type,
             "response_text": m.response_text,
@@ -290,10 +292,18 @@ def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
                 continue
             return {
                 "id": t.id,
+                "label": t.label,
+                "min_amount": t.min_amount,
+                "max_amount": t.max_amount,
                 "response_type": t.response_type,
                 "response_text": t.response_text,
                 "response_file_id": t.response_file_id,
                 "response_caption": t.response_caption,
+                "use_group_checkout_link": bool(
+                    getattr(t, "use_group_checkout_link", False)
+                ),
+                "group_checkout_provider": getattr(t, "group_checkout_provider", None),
+                "hyperlink_text": getattr(t, "hyperlink_text", None),
             }
     return None
 

@@ -267,6 +267,9 @@ class TierCreate(BaseModel):
     response_text: Optional[str] = None
     response_file_id: Optional[str] = None
     response_caption: Optional[str] = None
+    use_group_checkout_link: bool = False
+    group_checkout_provider: Optional[str] = None
+    hyperlink_text: Optional[str] = None
     sort_order: int = 0
 
 
@@ -278,6 +281,9 @@ class TierUpdate(BaseModel):
     response_text: Optional[str] = None
     response_file_id: Optional[str] = None
     response_caption: Optional[str] = None
+    use_group_checkout_link: Optional[bool] = None
+    group_checkout_provider: Optional[str] = None
+    hyperlink_text: Optional[str] = None
     sort_order: Optional[int] = None
 
 
@@ -293,6 +299,9 @@ class TierRead(BaseModel):
     response_text: Optional[str]
     response_file_id: Optional[str]
     response_caption: Optional[str]
+    use_group_checkout_link: bool = False
+    group_checkout_provider: Optional[str] = None
+    hyperlink_text: Optional[str] = None
     sort_order: int
     variants: List[VariantRead] = []
 

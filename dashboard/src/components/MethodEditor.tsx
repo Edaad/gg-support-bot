@@ -202,7 +202,7 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
               <SubOptionEditor token={token} methodId={m.id} />
             )}
             {expandedTier === m.id && (
-              <TierEditor token={token} methodId={m.id} />
+              <TierEditor token={token} methodId={m.id} direction={direction} />
             )}
             {expandedVariant === m.id && (
               <VariantEditor token={token} methodId={m.id} />
@@ -315,8 +315,10 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
                 <div>
                   <div className="text-sm font-medium text-white">Use group specific link</div>
                   <div className="mt-1 text-xs text-gray-500">
-                    When enabled, the bot generates a unique per-group link and you can insert it in
-                    Response Text using <span className="font-mono text-gray-300">{'{{hyperlink}}'}</span>.
+                    When enabled, the bot generates a unique per-group Stripe checkout link. Put{' '}
+                    <span className="font-mono text-gray-300">{'{{hyperlink}}'}</span> in Response Text
+                    (or photo caption). Min/Max Amount above set the checkout page limits (defaults $20–$100
+                    if unset).
                   </div>
                 </div>
                 <label className="flex items-center gap-2 text-sm text-gray-300">

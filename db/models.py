@@ -200,6 +200,9 @@ class PaymentMethodTier(Base):
     response_text = Column(Text)
     response_file_id = Column(Text)
     response_caption = Column(Text)
+    use_group_checkout_link = Column(Boolean, default=False)
+    group_checkout_provider = Column(String(32), nullable=True)
+    hyperlink_text = Column(String(64), nullable=True)
     sort_order = Column(Integer, default=0)
 
     method = relationship("PaymentMethod", back_populates="tiers")

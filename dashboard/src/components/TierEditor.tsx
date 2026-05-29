@@ -9,7 +9,15 @@ import {
 import ResponseEditor from './ResponseEditor'
 import VariantEditor from './VariantEditor'
 
-export default function TierEditor({ token, methodId }: { token: string; methodId: number }) {
+export default function TierEditor({
+  token,
+  methodId,
+  direction,
+}: {
+  token: string
+  methodId: number
+  direction: 'deposit' | 'cashout'
+}) {
   const [tiers, setTiers] = useState<Tier[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -48,6 +56,9 @@ export default function TierEditor({ token, methodId }: { token: string; methodI
     load()
   }
 
+  const groupLinkEnabled = Boolean(form.use_group_checkout_link)
+  const provider = (form.group_checkout_provider || '').trim().toLowerCase()
+
   const amountLabel = (t: Tier) => {
     if (t.min_amount != null && t.max_amount != null) return `$${t.min_amount} – $${t.max_amount}`
     if (t.min_amount != null) return `$${t.min_amount}+`
@@ -76,6 +87,9 @@ export default function TierEditor({ token, methodId }: { token: string; methodI
             <div>
               <span className="text-sm font-medium text-white">{t.label}</span>
               <span className="ml-2 text-xs text-gray-500">{amountLabel(t)}</span>
+              {direction === 'deposit' && t.use_group_checkout_link && (
+                <span className="ml-2 text-xs text-indigo-400">Stripe link</span>
+              )}
               {t.response_type === 'text' && t.response_text && (
                 <p className="mt-0.5 max-w-md truncate text-xs text-gray-500">{t.response_text}</p>
               )}
@@ -142,6 +156,58 @@ export default function TierEditor({ token, methodId }: { token: string; methodI
             caption={form.response_caption || ''}
             onChange={(field, value) => setForm({ ...form, [field]: value })}
           />
+
+          {direction === 'deposit' && (
+            <div className="rounded-xl border border-gray-800 bg-gray-950 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-white">Use group specific link</div>
+                  <div className="mt-1 text-xs text-gray-500">
+                    Per-tier Stripe checkout for this amount band. Put{' '}
+                    <span className="font-mono text-gray-300">{'{{hyperlink}}'}</span> in Response Text
+                    (or photo caption). Tier Min/Max set checkout limits (defaults $20–$100 if unset).
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={form.use_group_checkout_link || false}
+                    onChange={(e) => setForm({ ...form, use_group_checkout_link: e.target.checked })}
+                    className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500 focus:ring-indigo-500"
+                  />
+                  Enabled
+                </label>
+              </div>
+
+              {groupLinkEnabled && (
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-400">Provider</label>
+                    <select
+                      value={form.group_checkout_provider ?? 'stripe'}
+                      onChange={(e) => setForm({ ...form, group_checkout_provider: e.target.value })}
+                      className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                    >
+                      <option value="stripe">Stripe</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-400">Hyperlink text</label>
+                    <input
+                      value={form.hyperlink_text ?? 'PAY HERE'}
+                      onChange={(e) => setForm({ ...form, hyperlink_text: e.target.value })}
+                      className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                      placeholder='Example: "PAY HERE"'
+                    />
+                  </div>
+                  {provider !== 'stripe' && (
+                    <p className="text-xs text-yellow-400">Only Stripe is supported right now.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-2">
             <button onClick={handleSave} className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-indigo-500">
               {editId ? 'Update' : 'Add'}
