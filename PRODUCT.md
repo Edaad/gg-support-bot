@@ -6,35 +6,42 @@ product
 
 ## Users
 
-Club operators and internal GG staff share the same GG Dashboard. Operators configure their club bot (payment methods, welcome copy, groups, cooldowns) often under time pressure during live player support. Staff manage many clubs and need fast scanning, comparison, and bulk edits without hunting through nested UI.
-
-Context is typically a desktop browser at a desk, sometimes mid-incident, with PostgreSQL-backed config that must stay accurate because mistakes flow straight to Telegram players.
+Club operators and support staff who run Telegram-based player support for poker clubs. They work in short, focused sessions: configuring deposit and cashout flows, editing bot responses, managing payment method variants, running broadcasts, and testing player-facing flows before they go live. Context is operational, not exploratory. Mistakes affect real money and real players.
 
 ## Product Purpose
 
-GG Support Bot gives poker clubs a configurable Telegram support experience: deposits, cashouts, custom commands, group linking, broadcasts, and staff tooling (GGCashier, `/gc` megagroups). The dashboard is the control plane for that behavior.
+GG Dashboard is the admin control plane for the GG Support Bot ecosystem. Operators use it to configure clubs, payment methods, custom commands, linked accounts, and broadcast groups without touching code. Success means an operator can find the right setting quickly, make a change confidently, and verify the player experience (via flow simulator) before players see it.
 
-Success means operators can find and change the right setting quickly, preview how players will see it, and trust that what they saved is what the bot will send.
+The dashboard serves the bots; it is not player-facing. Clarity and reliability matter more than brand spectacle.
 
 ## Brand Personality
 
-Fast, dense, no-nonsense. The UI should feel like a capable operations console: information-forward, low ceremony, no decorative chrome that slows repeat tasks. Confidence comes from clarity and predictable structure, not from marketing polish.
+**Practical, precise, calm.**
+
+Voice is direct and operational: labels say what they do, errors say what went wrong, confirmations are explicit. The interface should feel like a well-organized control room: dark, low-glare, information-dense without clutter. Operators should feel competent and in control, not marketed to.
+
+Emotional goal: quiet confidence. The tool disappears into the workflow.
 
 ## Anti-references
 
-- Generic dark SaaS (gray-950 canvas, indigo accent everywhere, identical bordered cards for every block)
-- Flashy marketing patterns (gradient heroes, glassmorphism, gradient text, metric callouts)
-- Consumer-playful UI (oversized rounding, illustration-heavy empty states, bubbly copy)
-- Telegram chat-app mimicry (we configure the bot; we are not the messenger)
+- Generic SaaS marketing dashboards (hero metrics, gradient accents, eyebrow labels on every section)
+- Overly playful or gamified admin UIs that undermine trust around financial operations
+- Light-mode "friendly startup" aesthetics that feel wrong for late-night ops work
+- Dense data tables with no hierarchy, empty states, or error recovery
+- Player-facing Telegram bot copy tone bleeding into admin labels (too casual, too emoji-heavy)
 
 ## Design Principles
 
-1. **Density earns trust for repeat users.** Prefer scannable tables, tight vertical rhythm, and inline actions over card stacks when the task is operational.
-2. **Hierarchy follows the job.** Club list, club detail, and nested editors (methods, variants, tiers) should read as clear levels; never flatten everything into same-weight panels.
-3. **Configure with confidence.** Labels, helper text, and previews should make player-facing outcomes obvious before save (especially payment flows and message templates).
-4. **Speed over spectacle.** Every screen should answer "what can I do here?" in one glance; decoration that does not aid the task is removed.
-5. **Mixed audience, one shell.** Operator self-serve and staff multi-club workflows share navigation; differentiate through copy and defaults where mental models diverge, not duplicate layouts.
+1. **Task-first navigation.** Every screen answers "what am I doing here?" before "what can I click?" Primary actions are obvious; destructive actions require confirmation.
+2. **Configure, then verify.** Editing flows and testing them belong in the same mental model. Changes should feel reversible until explicitly saved or broadcast.
+3. **Financial gravity.** Payment methods, tiers, and variants are high-stakes. Use clear labels, visible state, and explicit save/error feedback. Never hide failure modes.
+4. **Density with breathing room.** Operators manage many clubs and methods. Show enough context to work without paging, but avoid nested cards and visual noise.
+5. **Consistent operator language.** Use the same terms the bots and staff already use (club, deposit, cashout, variant, tier). Avoid abstract product jargon.
 
 ## Accessibility & Inclusion
 
-Target WCAG 2.1 AA for contrast, visible focus, and keyboard reachability on interactive controls. Respect `prefers-reduced-motion`: use instant state changes or subtle opacity crossfades instead of motion-heavy entrances on dashboard surfaces.
+- Target WCAG 2.1 AA for contrast, focus states, and form labels
+- Support keyboard navigation for all interactive controls (tabs, editors, modals)
+- Respect `prefers-reduced-motion` for any transitions or loading states
+- Error messages must be readable and specific, not color-only indicators
+- No known requirements beyond standard WCAG; revisit if operator accessibility needs are identified
