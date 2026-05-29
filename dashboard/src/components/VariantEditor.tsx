@@ -69,9 +69,14 @@ export default function VariantEditor({ token, methodId, tierId }: Props) {
     <div className="mt-3 rounded-lg border border-gray-700 bg-gray-800/50 p-4">
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <h4 className="text-sm font-medium text-gray-300">Response Variants (Rotation)</h4>
+          <h4 className="text-sm font-medium text-gray-300">
+            Response Variants (Rotation){tierId ? ' — tier' : ' — method'}
+          </h4>
           <p className="text-xs text-gray-500">
             Add multiple responses that rotate based on weight. If no variants are added, the default response is always used.
+            {tierId
+              ? ' These apply when this tier’s amount band matches.'
+              : ' These apply when no response tier matches the deposit amount.'}
           </p>
         </div>
         <button

@@ -26,6 +26,10 @@ const EMPTY: Partial<Method> = {
   use_group_checkout_link: false, group_checkout_provider: 'stripe', hyperlink_text: 'PAY HERE',
 }
 
+function countTierVariants(m: Method): number {
+  return (m.tiers ?? []).reduce((sum, t) => sum + (t.variants?.length ?? 0), 0)
+}
+
 export default function MethodEditor({ token, clubId, direction }: Props) {
   const [methods, setMethods] = useState<Method[]>([])
   const [showAdd, setShowAdd] = useState(false)
@@ -186,12 +190,15 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
                 >
                   {expandedTier === m.id ? 'Hide' : 'Tiers'}
                   {m.tiers && m.tiers.length > 0 && ` (${m.tiers.length})`}
+                  {countTierVariants(m) > 0 && (
+                    <span className="text-emerald-500/80"> · {countTierVariants(m)} tier variant{countTierVariants(m) === 1 ? '' : 's'}</span>
+                  )}
                 </button>
                 <button
                   onClick={() => setExpandedVariant(expandedVariant === m.id ? null : m.id)}
                   className="text-xs text-emerald-400 hover:text-emerald-300"
                 >
-                  {expandedVariant === m.id ? 'Hide' : 'Variants'}
+                  {expandedVariant === m.id ? 'Hide' : 'Method variants'}
                   {m.variants && m.variants.length > 0 && ` (${m.variants.length})`}
                 </button>
                 <button onClick={() => handleEdit(m)} className="text-xs text-gray-400 hover:text-white">Edit</button>
@@ -205,7 +212,22 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
               <TierEditor token={token} methodId={m.id} direction={direction} />
             )}
             {expandedVariant === m.id && (
-              <VariantEditor token={token} methodId={m.id} />
+              <>
+                {countTierVariants(m) > 0 && (
+                  <p className="mt-3 rounded-lg border border-amber-900/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-200/90">
+                    {countTierVariants(m)} rotation variant{countTierVariants(m) === 1 ? ' is' : 's are'} on{' '}
+                    <button
+                      type="button"
+                      onClick={() => setExpandedTier(m.id)}
+                      className="font-medium text-amber-300 underline hover:text-amber-200"
+                    >
+                      Tiers
+                    </button>
+                    {' '}→ Variants on each tier (e.g. Under $100 / Over $100). Method variants below apply only when no tier matches.
+                  </p>
+                )}
+                <VariantEditor token={token} methodId={m.id} />
+              </>
             )}
           </div>
         ))}

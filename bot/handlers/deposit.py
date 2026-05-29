@@ -40,6 +40,7 @@ from bot.services.round_table_unions import (
     is_round_table_club,
     union_label_for_shorthand,
 )
+from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
 from bot.handlers.response_utils import send_response_messages
 from bot.services.stripe_deposit import (
     create_stripe_checkout_session,
@@ -148,6 +149,7 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _cleanup(context)
             return ConversationHandler.END
 
+        mark_active_flow(context, "deposit")
         await update.message.reply_text("How much would you like to deposit?")
         return DEPOSIT_AMOUNT
 
@@ -166,6 +168,7 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.chat_data["deposit_simple_data"] = simple
 
     if first and settings and settings["referral_enabled"]:
+        mark_active_flow(context, "deposit")
         await update.message.reply_text(
             "Welcome to the club! How did you hear about us? "
             "If it was a player, please type their GG username."
@@ -175,6 +178,7 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if simple:
         return await _finish_simple_deposit(update.message, context)
 
+    mark_active_flow(context, "deposit")
     await update.message.reply_text("How much would you like to deposit?")
     return DEPOSIT_AMOUNT
 
@@ -721,6 +725,7 @@ async def _send_simple_response(message, data):
 
 
 def _cleanup(context):
+    clear_active_flow(context)
     for key in (
         "deposit_club_id",
         "deposit_chat_id",

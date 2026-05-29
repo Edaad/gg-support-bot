@@ -15,6 +15,7 @@ from telegram.ext import (
 )
 
 from config import ADMIN_USER_IDS
+from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
 from db.connection import get_db
 from db.models import BonusType, BonusRecord, Club
 
@@ -94,6 +95,7 @@ async def bonus_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     context.user_data["bonus_admin_id"] = user_id
+    mark_active_flow(context, "bonus")
     await update.message.reply_text("Player Username:")
     return BONUS_USERNAME
 
@@ -253,6 +255,7 @@ async def bonus_club_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def _cleanup(context):
+    clear_active_flow(context)
     for key in (
         "bonus_admin_id",
         "bonus_player",
@@ -282,30 +285,38 @@ async def bonus_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup(context)
 
 
+_BONUS_CANCEL = CommandHandler("cancel", bonus_cancel)
+
+
 def get_bonus_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[CommandHandler("bonus", bonus_entry)],
         states={
             BONUS_USERNAME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, bonus_username),
+                _BONUS_CANCEL,
             ],
             BONUS_AMOUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, bonus_amount),
+                _BONUS_CANCEL,
             ],
             BONUS_TYPE: [
                 CallbackQueryHandler(bonus_type_chosen, pattern=r"^btype:"),
+                _BONUS_CANCEL,
             ],
             BONUS_DESCRIPTION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, bonus_description),
+                _BONUS_CANCEL,
             ],
             BONUS_CLUB: [
                 CallbackQueryHandler(bonus_club_chosen, pattern=r"^bclub:\d+$"),
+                _BONUS_CANCEL,
             ],
             ConversationHandler.TIMEOUT: [
                 MessageHandler(filters.ALL, bonus_timeout),
             ],
         },
-        fallbacks=[CommandHandler("cancel", bonus_cancel)],
+        fallbacks=[_BONUS_CANCEL],
         conversation_timeout=300,
         name="bonus_conv",
         per_chat=False,

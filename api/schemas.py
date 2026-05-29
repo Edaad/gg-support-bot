@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional, List
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -255,6 +255,14 @@ class MethodRead(BaseModel):
     sub_options: List[SubOptionRead] = []
     tiers: List[TierRead] = []
     variants: List[VariantRead] = []
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def _method_level_variants_only(cls, values, handler):
+        """PaymentMethod.variants includes tier rows; expose only method-level here."""
+        result = handler(values)
+        result.variants = [v for v in result.variants if v.tier_id is None]
+        return result
 
 
 # ── Payment Method Tier ───────────────────────────────────────────────────────

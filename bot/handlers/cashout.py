@@ -33,6 +33,7 @@ from bot.services.club import (
     get_cashout_soft_limit,
     update_group_name,
 )
+from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
 from bot.handlers.response_utils import send_response_messages
 
 CASHOUT_AMOUNT, CASHOUT_CHOOSE, CASHOUT_SUB, CASHOUT_SIMPLE_AMOUNT = range(4)
@@ -71,6 +72,7 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             soft_limit = get_cashout_soft_limit(club_id)
             if max_amt is not None or soft_limit is not None:
                 context.chat_data["cashout_simple_data"] = simple
+                mark_active_flow(context, "cashout")
                 await update.message.reply_text("How much would you like to cashout?")
                 return CASHOUT_SIMPLE_AMOUNT
             await _send_simple_response(update.message, simple)
@@ -79,6 +81,7 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         context.chat_data["cashout_selected"] = []
         context.chat_data["cashout_multi"] = get_club_allows_multi_cashout(club_id)
+        mark_active_flow(context, "cashout")
         await update.message.reply_text("How much would you like to cashout?")
         return CASHOUT_AMOUNT
 
@@ -99,6 +102,7 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.chat_data["cashout_chat_id"] = chat.id
             context.chat_data["cashout_user_id"] = user_id
             context.chat_data["cashout_simple_data"] = simple
+            mark_active_flow(context, "cashout")
             await update.message.reply_text("How much would you like to cashout?")
             return CASHOUT_SIMPLE_AMOUNT
 
@@ -114,6 +118,7 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.chat_data["cashout_user_id"] = user_id
     context.chat_data["cashout_selected"] = []
     context.chat_data["cashout_multi"] = get_club_allows_multi_cashout(club_id)
+    mark_active_flow(context, "cashout")
     await update.message.reply_text("How much would you like to cashout?")
     return CASHOUT_AMOUNT
 
@@ -444,6 +449,7 @@ def _record_cashout(context):
 
 
 def _cleanup(context):
+    clear_active_flow(context)
     for key in (
         "cashout_club_id",
         "cashout_chat_id",

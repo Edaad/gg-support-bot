@@ -27,10 +27,22 @@ export default function TierEditor({
   const load = () => listTiers(token, methodId).then(setTiers).catch(() => { })
   useEffect(() => { load() }, [methodId])
 
+  const tierFormDefaults: Partial<Tier> = {
+    use_group_checkout_link: false,
+    group_checkout_provider: 'stripe',
+    hyperlink_text: 'PAY HERE',
+  }
+
   const resetForm = () => {
     setForm({})
     setShowAdd(false)
     setEditId(null)
+  }
+
+  const openAddForm = () => {
+    resetForm()
+    setForm({ ...tierFormDefaults })
+    setShowAdd(true)
   }
 
   const handleSave = async () => {
@@ -46,7 +58,12 @@ export default function TierEditor({
 
   const handleEdit = (t: Tier) => {
     setEditId(t.id)
-    setForm({ ...t })
+    setForm({
+      ...tierFormDefaults,
+      ...t,
+      group_checkout_provider: t.group_checkout_provider ?? 'stripe',
+      hyperlink_text: t.hyperlink_text ?? 'PAY HERE',
+    })
     setShowAdd(true)
   }
 
@@ -74,7 +91,7 @@ export default function TierEditor({
           <p className="text-xs text-gray-500">Send different messages based on the deposit/cashout amount. If no tiers are configured, the default response above is used.</p>
         </div>
         <button
-          onClick={() => { resetForm(); setShowAdd(true) }}
+          onClick={openAddForm}
           className="text-xs text-indigo-400 hover:text-indigo-300"
         >
           + Add Tier
@@ -149,23 +166,15 @@ export default function TierEditor({
               />
             </div>
           </div>
-          <ResponseEditor
-            type={form.response_type || 'text'}
-            text={form.response_text || ''}
-            fileId={form.response_file_id || ''}
-            caption={form.response_caption || ''}
-            onChange={(field, value) => setForm({ ...form, [field]: value })}
-          />
 
           {direction === 'deposit' && (
-            <div className="rounded-xl border border-gray-800 bg-gray-950 p-4">
+            <div className="rounded-xl border border-indigo-900/40 bg-gray-950 p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-medium text-white">Use group specific link</div>
                   <div className="mt-1 text-xs text-gray-500">
-                    Per-tier Stripe checkout for this amount band. Put{' '}
-                    <span className="font-mono text-gray-300">{'{{hyperlink}}'}</span> in Response Text
-                    (or photo caption). Tier Min/Max set checkout limits (defaults $20–$100 if unset).
+                    Per-tier Stripe checkout for this amount band. Tier Min/Max set checkout limits
+                    (defaults $20–$100 if unset).
                   </div>
                 </div>
                 <label className="flex items-center gap-2 text-sm text-gray-300">
@@ -199,6 +208,10 @@ export default function TierEditor({
                       className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
                       placeholder='Example: "PAY HERE"'
                     />
+                    <p className="mt-1 text-xs text-gray-600">
+                      In Response Text below, put <span className="font-mono text-gray-400">{'{{hyperlink}}'}</span>{' '}
+                      where the pay link should appear.
+                    </p>
                   </div>
                   {provider !== 'stripe' && (
                     <p className="text-xs text-yellow-400">Only Stripe is supported right now.</p>
@@ -206,6 +219,20 @@ export default function TierEditor({
                 </div>
               )}
             </div>
+          )}
+
+          <ResponseEditor
+            type={form.response_type || 'text'}
+            text={form.response_text || ''}
+            fileId={form.response_file_id || ''}
+            caption={form.response_caption || ''}
+            onChange={(field, value) => setForm({ ...form, [field]: value })}
+          />
+          {direction === 'deposit' && groupLinkEnabled && (
+            <p className="text-xs text-indigo-300/80">
+              Tip: include <span className="font-mono">{'{{hyperlink}}'}</span> in the response above — the bot
+              replaces it with the per-group Stripe checkout link.
+            </p>
           )}
 
           <div className="flex gap-2">
