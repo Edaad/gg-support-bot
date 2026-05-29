@@ -67,7 +67,10 @@ def _apply_checkout_layer(target: dict, source: dict | None) -> None:
     if not source:
         return
     if source.get("use_group_checkout_link") is not None:
-        target["use_group_checkout_link"] = bool(source["use_group_checkout_link"])
+        enabled = bool(source["use_group_checkout_link"])
+        target["use_group_checkout_link"] = enabled
+        if not enabled:
+            target.pop("group_checkout_provider", None)
     if source.get("group_checkout_provider"):
         target["group_checkout_provider"] = source.get("group_checkout_provider")
     elif target.get("use_group_checkout_link") and not target.get("group_checkout_provider"):
@@ -124,16 +127,24 @@ def _build_stripe_response_payload(response_data: dict, checkout_url: str) -> di
         text_field = "response_caption"
         template = (payload.get("response_caption") or "").strip()
 
-    if "{{hyperlink}}" not in template:
-        template = (template + "\n\n{{hyperlink}}").strip() if template else "{{hyperlink}}"
-
-    html_text = template.replace("{{hyperlink}}", html_link)
-    plain_text = template.replace("{{hyperlink}}", checkout_url)
-    payload[text_field] = html_text
-    payload["parse_mode"] = "HTML"
-    payload["disable_web_page_preview"] = True
-    payload["_stripe_plain_fallback"] = plain_text
-    payload["_stripe_plain_field"] = text_field
+    if "{{hyperlink}}" in template:
+        html_text = template.replace("{{hyperlink}}", html_link)
+        plain_text = template.replace("{{hyperlink}}", checkout_url)
+        payload[text_field] = html_text
+        payload["parse_mode"] = "HTML"
+        payload["disable_web_page_preview"] = True
+        payload["_stripe_plain_fallback"] = plain_text
+        payload["_stripe_plain_field"] = text_field
+    elif template:
+        payload[text_field] = template
+        payload["_stripe_link_only_html"] = html_link
+        payload["_stripe_link_only_plain"] = checkout_url
+    else:
+        payload[text_field] = html_link
+        payload["parse_mode"] = "HTML"
+        payload["disable_web_page_preview"] = True
+        payload["_stripe_plain_fallback"] = checkout_url
+        payload["_stripe_plain_field"] = text_field
     return payload
 
 
@@ -677,9 +688,17 @@ async def _send_deposit_method_response(
 
             payload = _build_stripe_response_payload(response_data, result.checkout_url)
             plain_field = payload.pop("_stripe_plain_field", "response_text")
-            plain_fallback = payload.pop("_stripe_plain_fallback", result.checkout_url)
+            plain_fallback = payload.pop("_stripe_plain_fallback", None)
+            link_only_html = payload.pop("_stripe_link_only_html", None)
+            link_only_plain = payload.pop("_stripe_link_only_plain", None)
             try:
                 await send_response_messages(query.message.chat, payload)
+                if link_only_html:
+                    await query.message.chat.send_message(
+                        link_only_html,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
             except Exception:
                 logger.warning(
                     "deposit: HTML templated response failed, retrying plain link chat_id=%s",
@@ -687,10 +706,14 @@ async def _send_deposit_method_response(
                     exc_info=True,
                 )
                 fallback = dict(response_data)
-                fallback[plain_field] = plain_fallback
-                fallback["parse_mode"] = None
-                fallback["disable_web_page_preview"] = True
-                await send_response_messages(query.message.chat, fallback)
+                if plain_fallback is not None:
+                    fallback[plain_field] = plain_fallback
+                    fallback["parse_mode"] = None
+                    fallback["disable_web_page_preview"] = True
+                    await send_response_messages(query.message.chat, fallback)
+                elif link_only_plain:
+                    await send_response_messages(query.message.chat, payload)
+                    await query.message.chat.send_message(link_only_plain)
             logger.info(
                 "deposit: stripe checkout sent chat_id=%s session_id=%s customer_id=%s",
                 chat_id,
@@ -699,16 +722,34 @@ async def _send_deposit_method_response(
             )
             return True
         except Exception as e:
-            err_short = type(e).__name__
-            if hasattr(e, "user_message") and getattr(e, "user_message", None):
-                err_short = str(getattr(e, "user_message"))[:200]
+            err_detail = _stripe_error_detail(e)
             logger.exception(
-                "deposit: stripe checkout failed chat_id=%s method_id=%s slug=%r: %s",
+                "deposit: stripe checkout failed chat_id=%s club_id=%s method_id=%s slug=%r "
+                "amount=%r checkout_min_usd=%r checkout_max_usd=%r display_name=%r: %s",
                 chat_id,
+                club_id,
                 method_id,
                 slug,
-                err_short,
+                amount,
+                response_data.get("min_amount"),
+                response_data.get("max_amount"),
+                display_name,
+                err_detail,
             )
+            if club_id is not None:
+                await _notify_stripe_checkout_failure(
+                    context,
+                    club_id=int(club_id),
+                    chat_id=int(chat_id) if chat_id is not None else None,
+                    group_title=group_title,
+                    method_id=method_id,
+                    method_slug=slug,
+                    display_name=display_name,
+                    amount=amount,
+                    checkout_min_usd=response_data.get("min_amount"),
+                    checkout_max_usd=response_data.get("max_amount"),
+                    error_detail=err_detail,
+                )
             await query.edit_message_text(
                 "Card checkout failed to start. Please try again in a minute or contact support."
             )
@@ -733,6 +774,88 @@ async def _send_deposit_method_response(
 
     await _send_response(query, response_data, amount, display_name)
     return True
+
+
+def _stripe_error_detail(exc: BaseException) -> str:
+    """Human-readable Stripe/API error for logs and admin DM."""
+    parts: list[str] = [type(exc).__name__]
+    msg = str(exc).strip()
+    if msg:
+        parts.append(msg[:300])
+    code = getattr(exc, "code", None)
+    if code:
+        parts.append(f"code={code}")
+    user_msg = getattr(exc, "user_message", None)
+    if user_msg:
+        um = str(user_msg).strip()
+        if um and um not in msg:
+            parts.append(f"stripe_message={um[:200]}")
+    return " | ".join(parts)[:500]
+
+
+async def _notify_stripe_checkout_failure(
+    context,
+    *,
+    club_id: int,
+    chat_id: int | None,
+    group_title: str | None,
+    method_id: int | None,
+    method_slug: str,
+    display_name: str,
+    amount,
+    checkout_min_usd,
+    checkout_max_usd,
+    error_detail: str,
+) -> None:
+    """DM the club owner when Stripe Checkout session creation fails."""
+    try:
+        with get_db() as session:
+            club = session.query(Club).filter(Club.id == int(club_id)).one_or_none()
+            if not club:
+                logger.warning("deposit: stripe failure notify skipped — club_id=%s not found", club_id)
+                return
+            admin_id = int(club.telegram_user_id)
+            club_name = club.name
+    except Exception:
+        logger.warning("deposit: stripe failure notify — could not load club_id=%s", club_id, exc_info=True)
+        return
+
+    lines = [
+        f"[{club_name}] Stripe checkout failed to start",
+        "",
+    ]
+    if group_title:
+        lines.append(f"Group: {group_title[:120]}")
+    if chat_id is not None:
+        lines.append(f"Chat id: {chat_id}")
+    if display_name or method_slug:
+        lines.append(f"Method: {display_name or method_slug} ({method_slug or 'n/a'})")
+    if method_id is not None:
+        lines.append(f"Method id: {method_id}")
+    if amount is not None and amount != "?":
+        lines.append(f"Deposit amount entered: ${amount}")
+    if checkout_min_usd is not None or checkout_max_usd is not None:
+        lo = f"${checkout_min_usd}" if checkout_min_usd is not None else "—"
+        hi = f"${checkout_max_usd}" if checkout_max_usd is not None else "—"
+        lines.append(f"Checkout limits (dashboard): {lo} – {hi}")
+    lines.extend(["", f"Error: {error_detail}", "", "See worker logs for full traceback."])
+    text = "\n".join(lines)[:3900]
+
+    try:
+        await context.bot.send_message(chat_id=admin_id, text=text)
+        logger.info(
+            "deposit: stripe failure DM sent club_id=%s admin_user_id=%s chat_id=%s",
+            club_id,
+            admin_id,
+            chat_id,
+        )
+    except Exception:
+        logger.warning(
+            "deposit: stripe failure DM failed club_id=%s admin_user_id=%s (did they /start the bot?)",
+            club_id,
+            admin_id,
+            exc_info=True,
+        )
 
 
 async def _notify_missing_stripe_secret(context, club_id: int) -> None:

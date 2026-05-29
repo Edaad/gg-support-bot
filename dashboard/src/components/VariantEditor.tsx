@@ -18,7 +18,7 @@ interface Props {
 }
 
 const variantFormDefaults: Partial<Variant> = {
-  use_group_checkout_link: null,
+  use_group_checkout_link: false,
   group_checkout_provider: 'stripe',
   hyperlink_text: 'PAY HERE',
 }
@@ -50,6 +50,7 @@ export default function VariantEditor({ token, methodId, tierId, direction }: Pr
   const handleSave = async () => {
     if (!form.label?.trim()) return
     const payload = { ...form }
+    payload.use_group_checkout_link = Boolean(payload.use_group_checkout_link)
     if (!payload.use_group_checkout_link) {
       payload.group_checkout_provider = null
       payload.hyperlink_text = null
@@ -73,6 +74,7 @@ export default function VariantEditor({ token, methodId, tierId, direction }: Pr
     setForm({
       ...variantFormDefaults,
       ...v,
+      use_group_checkout_link: v.use_group_checkout_link === true,
       group_checkout_provider: v.group_checkout_provider ?? 'stripe',
       hyperlink_text: v.hyperlink_text ?? 'PAY HERE',
     })
@@ -209,6 +211,14 @@ export default function VariantEditor({ token, methodId, tierId, direction }: Pr
             </div>
           </div>
 
+          <ResponseEditor
+            type={form.response_type || 'text'}
+            text={form.response_text || ''}
+            fileId={form.response_file_id || ''}
+            caption={form.response_caption || ''}
+            onChange={(field, value) => setForm({ ...form, [field]: value })}
+          />
+
           {direction === 'deposit' && (
             <>
               <div className="grid grid-cols-2 gap-3">
@@ -239,8 +249,9 @@ export default function VariantEditor({ token, methodId, tierId, direction }: Pr
                   <div>
                     <div className="text-sm font-medium text-white">Use group specific link</div>
                     <div className="mt-1 text-xs text-gray-500">
-                      Per-variant Stripe checkout. Min/Max above set checkout limits when enabled
-                      (otherwise inherits tier or method limits).
+                      {tierId
+                        ? 'Unchecked = send only the response text above (static Cashapp, etc.). Checked = Stripe checkout for this variant only.'
+                        : 'Per-variant Stripe checkout when enabled. Min/Max set checkout limits (otherwise inherit method).'}
                     </div>
                   </div>
                   <label className="flex items-center gap-2 text-sm text-gray-300">
@@ -250,7 +261,7 @@ export default function VariantEditor({ token, methodId, tierId, direction }: Pr
                       onChange={(e) =>
                         setForm({
                           ...form,
-                          use_group_checkout_link: e.target.checked ? true : null,
+                          use_group_checkout_link: e.target.checked,
                         })
                       }
                       className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500 focus:ring-indigo-500"
@@ -280,8 +291,8 @@ export default function VariantEditor({ token, methodId, tierId, direction }: Pr
                         placeholder='Example: "PAY HERE"'
                       />
                       <p className="mt-1 text-xs text-gray-600">
-                        In Response Text below, put <span className="font-mono text-gray-400">{'{{hyperlink}}'}</span>{' '}
-                        where the pay link should appear.
+                        Put <span className="font-mono text-gray-400">{'{{hyperlink}}'}</span> in Response Text
+                        where you want the pay link — the bot will not add it automatically.
                       </p>
                     </div>
                     {provider !== 'stripe' && (
@@ -291,20 +302,6 @@ export default function VariantEditor({ token, methodId, tierId, direction }: Pr
                 )}
               </div>
             </>
-          )}
-
-          <ResponseEditor
-            type={form.response_type || 'text'}
-            text={form.response_text || ''}
-            fileId={form.response_file_id || ''}
-            caption={form.response_caption || ''}
-            onChange={(field, value) => setForm({ ...form, [field]: value })}
-          />
-          {direction === 'deposit' && groupLinkEnabled && (
-            <p className="text-xs text-indigo-300/80">
-              Tip: include <span className="font-mono">{'{{hyperlink}}'}</span> in the response above — the bot
-              replaces it with the per-group Stripe checkout link.
-            </p>
           )}
           <div className="flex gap-2">
             <button onClick={handleSave} className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-indigo-500">

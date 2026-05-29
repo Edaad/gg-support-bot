@@ -103,7 +103,7 @@ def run_bot(token: str | None = None):
     from bot.handlers.bypass import bypass_handler, bypass_permanent_handler
     from bot.handlers.add import add_handler
     from bot.handlers.cash import cash_handler
-    from bot.handlers.track import on_new_chat_title, track_handler, info_handler
+    from bot.handlers.track import on_new_chat_title, track_handler, info_handler, override_handler
     from bot.handlers.telemsg import telemsg_handler
     from bot.handlers.lookup import lookup_handler
     from bot.handlers.findgc import findgc_handler
@@ -132,6 +132,7 @@ def run_bot(token: str | None = None):
     app.add_handler(CommandHandler("add", add_handler))
     app.add_handler(CommandHandler("cash", cash_handler))
     app.add_handler(CommandHandler("track", track_handler))
+    app.add_handler(CommandHandler("override", override_handler))
     app.add_handler(CommandHandler("info", info_handler))
     app.add_handler(CommandHandler("telemsg", telemsg_handler))
     app.add_handler(CommandHandler("lookup", lookup_handler))

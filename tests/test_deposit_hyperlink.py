@@ -193,7 +193,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(create_session.call_args.kwargs.get("checkout_min_usd"), 25)
         self.assertEqual(create_session.call_args.kwargs.get("checkout_max_usd"), 75)
 
-    async def test_stripe_hyperlink_placeholder_appended_when_missing(self):
+    async def test_stripe_without_placeholder_sends_link_separately(self):
         chat = SimpleNamespace(send_message=AsyncMock())
         message = SimpleNamespace(chat=chat)
         query = SimpleNamespace(
@@ -231,9 +231,26 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertTrue(ok)
-        sent_text = chat.send_message.call_args.args[0]
-        self.assertIn("Hello", sent_text)
-        self.assertIn('<a href="https://checkout.stripe.com/test">PAY</a>', sent_text)
+        self.assertGreaterEqual(chat.send_message.await_count, 2)
+        first_text = chat.send_message.await_args_list[0].args[0]
+        second_text = chat.send_message.await_args_list[1].args[0]
+        self.assertEqual(first_text, "Hello")
+        self.assertIn('<a href="https://checkout.stripe.com/test">PAY</a>', second_text)
+
+    async def test_variant_false_overrides_tier_stripe(self):
+        variant = {
+            "response_type": "text",
+            "response_text": "cashapp static",
+            "use_group_checkout_link": False,
+        }
+        method = {"use_group_checkout_link": False}
+        tier = {
+            "use_group_checkout_link": True,
+            "group_checkout_provider": "stripe",
+            "hyperlink_text": "PAY",
+        }
+        merged = dep._with_method_checkout_settings(variant, method, tier=tier)
+        self.assertFalse(dep._stripe_checkout_enabled(merged))
 
     async def test_stripe_slug_without_group_checkout_uses_static_response(self):
         chat = SimpleNamespace(send_message=AsyncMock())

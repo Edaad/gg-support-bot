@@ -13,7 +13,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from config import ADMIN_USER_IDS
-from bot.services.club import get_club_for_chat, get_group_name, update_group_name
+from bot.services.club import get_club_for_chat, get_group_name, is_club_staff, update_group_name
 from bot.services.mtproto_track_contact import schedule_save_player_contact_named_group
 from bot.services.player_details import (
     parse_tracking_title,
@@ -23,10 +23,15 @@ from bot.services.player_details import (
     get_bound_players,
     gg_player_id_from_title,
     is_same_club_player_conflict_message,
+    override_chat_for_player,
 )
 
 
 _EXPECTED = "Expected: SHORTHAND / GGPLAYERID / anything (example: GTO / 8190-5287 / ThePirate343)"
+
+
+def _can_manage_player_tracking(user_id: int, club_id: int) -> bool:
+    return user_id in ADMIN_USER_IDS or is_club_staff(user_id, club_id)
 
 
 def _club_id_for_contact_sync(chat) -> int | None:
@@ -92,6 +97,59 @@ async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             club_id=club_id,
             chat_title=chat.title,
         )
+
+
+async def override_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Force this group to be the tracked chat for a player id (replaces other links)."""
+    if not update.message or not update.effective_chat or not update.effective_user:
+        return
+    chat = update.effective_chat
+    if chat.type not in ("group", "supergroup"):
+        await update.message.reply_text("Use /override in a club group chat.")
+        return
+
+    club_id = get_club_for_chat(chat.id)
+    if not club_id:
+        await update.message.reply_text(
+            "This group is not linked to a club yet. Add the bot as a club owner first."
+        )
+        return
+    if not _can_manage_player_tracking(update.effective_user.id, club_id):
+        return
+
+    args = (context.args or [])
+    gg_player_id = args[0].strip() if args else gg_player_id_from_title(chat.title)
+    if not gg_player_id:
+        await update.message.reply_text(
+            "Usage: /override PLAYER_ID\n"
+            "Example: /override 1111-2222\n\n"
+            f"Player id can also be taken from the group title. {_EXPECTED}"
+        )
+        return
+
+    res = override_chat_for_player(
+        club_id=club_id,
+        gg_player_id=gg_player_id,
+        chat_id=chat.id,
+    )
+    if not res.ok:
+        await update.message.reply_text(res.error or "Override failed.")
+        return
+
+    update_group_name(chat.id, chat.title)
+    lines = [
+        f"This chat is now the tracked group for player ID {res.gg_player_id}.",
+    ]
+    if res.previous_chat_ids:
+        prev = ", ".join(str(c) for c in res.previous_chat_ids)
+        lines.append(f"Replaced previous linked chat id(s) for this player: {prev}")
+    await update.message.reply_text("\n".join(lines))
+
+    schedule_save_player_contact_named_group(
+        chat_id=chat.id,
+        club_id=club_id,
+        chat_title=chat.title,
+    )
 
 
 async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

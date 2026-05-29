@@ -8,7 +8,11 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.handlers.deposit import _notify_missing_stripe_secret
+from bot.handlers.deposit import (
+    _notify_missing_stripe_secret,
+    _notify_stripe_checkout_failure,
+    _stripe_error_detail,
+)
 from bot.services.club import get_club_for_chat, update_group_name
 from bot.services.stripe_deposit import create_stripe_checkout_session, stripe_configured
 
@@ -48,8 +52,27 @@ async def stripe_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             club_id=int(club_id),
             group_title=chat.title,
         )
-    except Exception:
-        logger.exception("stripe cmd: checkout creation failed chat_id=%s", chat.id)
+    except Exception as e:
+        err_detail = _stripe_error_detail(e)
+        logger.exception(
+            "stripe cmd: checkout creation failed chat_id=%s club_id=%s: %s",
+            chat.id,
+            club_id,
+            err_detail,
+        )
+        await _notify_stripe_checkout_failure(
+            context,
+            club_id=int(club_id),
+            chat_id=chat.id,
+            group_title=chat.title,
+            method_id=None,
+            method_slug="stripe",
+            display_name="/stripe",
+            amount=None,
+            checkout_min_usd=None,
+            checkout_max_usd=None,
+            error_detail=err_detail,
+        )
         await update.message.reply_text(
             "Card checkout failed to start. Please try again in a minute or contact support."
         )

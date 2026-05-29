@@ -32,6 +32,15 @@ class BindResult:
 
 
 @dataclass(frozen=True)
+class OverrideResult:
+    ok: bool
+    gg_player_id: Optional[str] = None
+    club_id: Optional[int] = None
+    previous_chat_ids: Tuple[int, ...] = ()
+    error: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class GroupTitleParts:
     shorthands: frozenset[str]
     gg_player_id: str
@@ -210,6 +219,55 @@ def bind_chat_from_title(*, chat_id: int, title: str | None) -> BindResult:
         )
     bind_chat_to_player(club_id=club_id, gg_player_id=gg_player_id, chat_id=chat_id)
     return BindResult(ok=True, gg_player_id=gg_player_id, club_id=club_id)
+
+
+def override_chat_for_player(*, club_id: int, gg_player_id: str, chat_id: int) -> OverrideResult:
+    """Make *chat_id* the only tracked group for this player in the club (replaces other chats)."""
+    if not _GG_RE.match(gg_player_id):
+        return OverrideResult(ok=False, error="Invalid player id format (example: 1111-2222).")
+    cid = int(chat_id)
+    club = int(club_id)
+    previous = get_existing_chat_ids(club_id=club, gg_player_id=gg_player_id) or []
+    previous_other = tuple(c for c in previous if int(c) != cid)
+
+    remove_stmt = text(
+        """
+        UPDATE player_details
+        SET chat_ids = COALESCE(
+            (
+                SELECT ARRAY(
+                    SELECT x
+                    FROM unnest(chat_ids) AS x
+                    WHERE x <> :chat_id
+                    ORDER BY 1
+                )
+            ),
+            '{}'::bigint[]
+        )
+        WHERE club_id = :club_id
+          AND chat_ids @> ARRAY[:chat_id]::bigint[]
+        """
+    )
+    set_stmt = text(
+        """
+        INSERT INTO player_details (chat_ids, gg_player_id, club_id)
+        VALUES (ARRAY[:chat_id]::bigint[], :gg_player_id, :club_id)
+        ON CONFLICT (gg_player_id, club_id) DO UPDATE SET
+            chat_ids = ARRAY[:chat_id]::bigint[]
+        """
+    )
+    with get_db() as session:
+        session.execute(remove_stmt, {"chat_id": cid, "club_id": club})
+        session.execute(
+            set_stmt,
+            {"chat_id": cid, "gg_player_id": gg_player_id, "club_id": club},
+        )
+    return OverrideResult(
+        ok=True,
+        gg_player_id=gg_player_id,
+        club_id=club,
+        previous_chat_ids=previous_other,
+    )
 
 
 def bind_chat_to_player(*, club_id: int, gg_player_id: str, chat_id: int) -> None:

@@ -310,8 +310,10 @@ def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
     return None
 
 
-def _variant_response_dict(v: MethodVariant) -> dict:
+def _variant_response_dict(v: MethodVariant, *, tier_scoped: bool = False) -> dict:
     link = getattr(v, "use_group_checkout_link", None)
+    if tier_scoped and link is None:
+        link = False
     provider = getattr(v, "group_checkout_provider", None)
     if link is True and not provider:
         provider = "stripe"
@@ -326,7 +328,7 @@ def _variant_response_dict(v: MethodVariant) -> dict:
     }
     if link is not None:
         data["use_group_checkout_link"] = bool(link)
-    if provider:
+    if provider and data.get("use_group_checkout_link"):
         data["group_checkout_provider"] = provider
     return data
 
@@ -350,7 +352,7 @@ def pick_variant(method_id: int, tier_id: Optional[int] = None) -> Optional[dict
             if variants:
                 weights = [v.weight for v in variants]
                 chosen = random.choices(variants, weights=weights, k=1)[0]
-                return _variant_response_dict(chosen)
+                return _variant_response_dict(chosen, tier_scoped=True)
 
         variants = (
             session.query(MethodVariant)
@@ -361,7 +363,7 @@ def pick_variant(method_id: int, tier_id: Optional[int] = None) -> Optional[dict
             return None
         weights = [v.weight for v in variants]
         chosen = random.choices(variants, weights=weights, k=1)[0]
-        return _variant_response_dict(chosen)
+        return _variant_response_dict(chosen, tier_scoped=False)
 
 
 def get_custom_command(club_id: int, command_name: str) -> Optional[dict]:
