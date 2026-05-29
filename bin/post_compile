@@ -10,10 +10,14 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_INDEX="$ROOT_DIR/dashboard/dist/index.html"
 DIST_ASSETS="$ROOT_DIR/dashboard/dist/assets"
 
-if [[ -f "$DIST_INDEX" && -d "$DIST_ASSETS" ]]; then
-  echo "-----> Dashboard dist/ already present (Node buildpack or cache); skipping bin/post_compile"
+# Only skip when heroku/nodejs ran heroku-postbuild (root node_modules exists).
+# Do not skip for a stale dashboard/dist committed to git or restored from cache alone.
+if [[ -f "$DIST_INDEX" && -d "$DIST_ASSETS" && -d "$ROOT_DIR/node_modules" ]]; then
+  echo "-----> Dashboard dist/ already present (Node buildpack); skipping bin/post_compile"
   exit 0
 fi
+
+rm -rf "$ROOT_DIR/dashboard/dist"
 
 NODE_VERSION="${NODE_VERSION:-20.18.1}"
 NODE_TAR="node-v${NODE_VERSION}-linux-x64"
