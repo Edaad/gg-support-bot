@@ -1,64 +1,76 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 export default function Settings({ token: _token }: { token: string }) {
   const [testToken, setTestToken] = useState('')
+  const testTokenId = useId()
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold">Settings</h1>
+      <h1 className="mb-6 text-2xl font-bold text-balance">Settings</h1>
 
       <div className="space-y-6">
-        <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-          <h3 className="mb-2 font-semibold">Bot Status</h3>
-          <p className="text-sm text-gray-400">
-            The production bot runs as a separate worker process. It reads the same database
-            as this dashboard, so changes you make here take effect immediately.
+        <section className="panel">
+          <h2 className="mb-2 text-lg font-semibold text-ink">Bot status</h2>
+          <p className="text-sm text-ink-muted">
+            The production bot runs as a separate worker process. It reads the same database as this
+            dashboard, so changes you make here take effect immediately.
           </p>
           <div className="mt-3 flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
-            <span className="text-sm text-green-400">Connected (shares database)</span>
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-success-ink" aria-hidden />
+            <span className="text-sm text-success-ink">Connected (shares database)</span>
           </div>
-        </div>
+        </section>
 
-        <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-          <h3 className="mb-2 font-semibold">Test Bot Token</h3>
-          <p className="mb-3 text-sm text-gray-400">
-            Optionally set a second Telegram bot token for testing. Create a test bot via
-            @BotFather, then paste its token below. Set it as the <code className="text-xs text-indigo-400">TEST_BOT_TOKEN</code> environment
-            variable on your deployment.
+        <section className="panel">
+          <h2 className="mb-2 text-lg font-semibold text-ink">Test bot token</h2>
+          <p className="mb-3 text-sm text-ink-muted">
+            Optionally set a second Telegram bot token for testing. Create a test bot via @BotFather,
+            then paste its token below. Set it as the <code>TEST_BOT_TOKEN</code> environment variable on
+            your deployment.
           </p>
+          <label htmlFor={testTokenId} className="label-field">
+            Token (reference only)
+          </label>
           <input
+            id={testTokenId}
             value={testToken}
             onChange={(e) => setTestToken(e.target.value)}
-            className="mb-3 w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+            className="input-field mb-3"
             placeholder="123456:ABC-DEF..."
+            autoComplete="off"
           />
-          <p className="text-xs text-gray-500">
-            Note: The test bot token must be set as an environment variable on the server.
-            This field is for reference only.
+          <p className="text-xs text-ink-muted">
+            The test bot token must be set as an environment variable on the server. This field is
+            for reference only.
           </p>
-        </div>
+        </section>
 
-        <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-          <h3 className="mb-2 font-semibold">Admin User IDs</h3>
-          <p className="text-sm text-gray-400">
-            Admin Telegram user IDs are configured in <code className="text-xs text-indigo-400">config.py</code> on the server.
-            Admins can use /set, /mycmds, and /delete in the bot.
+        <section className="panel">
+          <h2 className="mb-2 text-lg font-semibold text-ink">Admin user IDs</h2>
+          <p className="text-sm text-ink-muted">
+            Admin Telegram user IDs are configured in <code>config.py</code> on the server. Admins can
+            use /set, /mycmds, and /delete in the bot.
           </p>
-          <div className="mt-3 rounded-lg bg-gray-800 px-4 py-3 font-mono text-sm text-gray-300">
+          <div className="mt-3 rounded-lg bg-surface-raised px-4 py-3 font-mono text-sm text-ink">
             493310710, 6713100304, 8318575265
           </div>
-        </div>
+        </section>
 
-        <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-          <h3 className="mb-2 font-semibold">How to Test</h3>
-          <ol className="ml-4 list-decimal space-y-2 text-sm text-gray-400">
-            <li>Use the <strong>Flow Simulator</strong> on each club's page to preview deposit/cashout flows without Telegram.</li>
-            <li>For live Telegram testing, create a test bot via @BotFather and set <code className="text-xs text-indigo-400">TEST_BOT_TOKEN</code>.</li>
+        <section className="panel">
+          <h2 className="mb-2 text-lg font-semibold text-ink">How to test</h2>
+          <ol className="ml-4 list-decimal space-y-2 text-sm text-ink-muted">
+            <li>
+              Use the <strong className="text-ink">flow simulator</strong> on each club&apos;s page to
+              preview deposit and cashout flows without Telegram.
+            </li>
+            <li>
+              For live Telegram testing, create a test bot via @BotFather and set{' '}
+              <code>TEST_BOT_TOKEN</code>.
+            </li>
             <li>Add the test bot to a private group and run through /deposit and /cashout flows.</li>
-            <li>Both bots (prod + test) share the same database, so club configurations apply to both.</li>
+            <li>Both bots (production and test) share the same database, so club configs apply to both.</li>
           </ol>
-        </div>
+        </section>
       </div>
     </div>
   )

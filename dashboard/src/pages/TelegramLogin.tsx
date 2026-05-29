@@ -149,25 +149,25 @@ export default function TelegramLogin({ token }: { token: string }) {
   }
 
   const inputCls =
-    'mt-2 w-full max-w-md rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none'
+    'mt-2 w-full max-w-md rounded-lg border border-border bg-surface-raised px-4 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none'
 
   return (
     <div>
       <h1 className="mb-2 text-2xl font-bold">Telegram login</h1>
-      <p className="mb-6 max-w-2xl text-sm text-gray-400">
-        Signs in each club&apos;s Telethon (<code className="text-indigo-400">/gc</code>) account with an SMS /
+      <p className="mb-6 max-w-2xl text-sm text-ink-muted">
+        Signs in each club&apos;s Telethon (<code className="text-accent">/gc</code>) account with an SMS /
         Telegram app code instead of DMing credentials to the bot. After logging in here,{' '}
-        <strong className="text-gray-200">/gc</strong> only creates megagroups.
+        <strong className="text-ink">/gc</strong> only creates megagroups.
       </p>
 
       {loadError && (
-        <p className="mb-4 max-w-2xl whitespace-pre-wrap rounded-lg bg-red-950/50 px-4 py-3 text-sm text-red-300">
+        <p role="alert" className="alert-danger mb-4 max-w-2xl whitespace-pre-wrap">
           {loadError}
         </p>
       )}
 
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-        <label className="block text-sm font-medium text-gray-300">Club</label>
+      <div className="rounded-xl border border-border bg-surface p-6">
+        <label className="block text-sm font-medium text-ink">Club</label>
         <select
           value={clubKey}
           onChange={(e) => {
@@ -194,24 +194,24 @@ export default function TelegramLogin({ token }: { token: string }) {
 
         {selected?.session_authorized && (
           <div className="mt-3 flex items-center gap-3">
-            <span className="text-xs text-green-400">Session active</span>
+            <span className="text-xs text-success-ink">Session active</span>
             {!confirmLogout ? (
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => setConfirmLogout(true)}
-                className="rounded-lg border border-red-700 px-3 py-1 text-xs font-medium text-red-400 hover:bg-red-950/50 disabled:opacity-40"
+                className="btn-danger-outline disabled:opacity-40"
               >
                 Log out
               </button>
             ) : (
               <>
-                <span className="text-xs text-gray-400">Clear this session and re-login?</span>
+                <span className="text-xs text-ink-muted">Clear this session and re-login?</span>
                 <button
                   type="button"
                   disabled={busy}
                   onClick={logOut}
-                  className="rounded-lg bg-red-700 px-3 py-1 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-40"
+                  className="btn-danger disabled:opacity-40"
                 >
                   {busy ? 'Clearing…' : 'Confirm log out'}
                 </button>
@@ -219,7 +219,7 @@ export default function TelegramLogin({ token }: { token: string }) {
                   type="button"
                   disabled={busy}
                   onClick={() => setConfirmLogout(false)}
-                  className="text-xs text-gray-500 hover:text-gray-300 disabled:opacity-40"
+                  className="text-xs text-ink-muted hover:text-ink disabled:opacity-40"
                 >
                   Cancel
                 </button>
@@ -230,7 +230,7 @@ export default function TelegramLogin({ token }: { token: string }) {
 
         {selected && !selected.phone_configured && (
           <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-300">Phone (international)</label>
+            <label className="block text-sm font-medium text-ink">Phone (international)</label>
             <input
               className={inputCls}
               placeholder="+14155552671"
@@ -245,18 +245,18 @@ export default function TelegramLogin({ token }: { token: string }) {
             type="button"
             disabled={busy || !clubKey}
             onClick={sendCode}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+            className="btn-primary disabled:opacity-40"
           >
             Send login code
           </button>
         </div>
 
         {phoneCodeHash && !needsPassword && (
-          <div className="mt-6 border-t border-gray-800 pt-6">
-            <p className="text-xs text-gray-500">
-              Phone used: <span className="font-mono text-gray-400">{phoneE164}</span>
+          <div className="mt-6 border-t border-border pt-6">
+            <p className="text-xs text-ink-muted">
+              Phone used: <span className="font-mono text-ink-muted">{phoneE164}</span>
             </p>
-            <label className="mt-3 block text-sm font-medium text-gray-300">Login code</label>
+            <label className="mt-3 block text-sm font-medium text-ink">Login code</label>
             <input
               className={inputCls}
               inputMode="numeric"
@@ -268,7 +268,7 @@ export default function TelegramLogin({ token }: { token: string }) {
               type="button"
               disabled={busy || !code.trim()}
               onClick={signIn}
-              className="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+              className="mt-3 btn-primary disabled:opacity-40"
             >
               Sign in with code
             </button>
@@ -276,8 +276,8 @@ export default function TelegramLogin({ token }: { token: string }) {
         )}
 
         {needsPassword && (
-          <div className="mt-6 border-t border-gray-800 pt-6">
-            <label className="block text-sm font-medium text-gray-300">Cloud Password (2FA)</label>
+          <div className="mt-6 border-t border-border pt-6">
+            <label className="block text-sm font-medium text-ink">Cloud Password (2FA)</label>
             <input
               type="password"
               className={inputCls}
@@ -289,7 +289,7 @@ export default function TelegramLogin({ token }: { token: string }) {
               type="button"
               disabled={busy || !cloudPassword}
               onClick={submitPassword}
-              className="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+              className="mt-3 btn-primary disabled:opacity-40"
             >
               Submit Cloud Password
             </button>
@@ -297,19 +297,21 @@ export default function TelegramLogin({ token }: { token: string }) {
         )}
 
         {error && (
-          <p className="mt-4 whitespace-pre-wrap rounded-lg bg-red-950/50 px-3 py-2 text-sm text-red-300">{error}</p>
+          <p role="alert" className="alert-danger mt-4 whitespace-pre-wrap">
+            {error}
+          </p>
         )}
-        {info && <p className="mt-4 text-sm text-green-400">{info}</p>}
+        {info && <p className="mt-4 text-sm text-success-ink">{info}</p>}
       </div>
 
-      <p className="mt-6 max-w-2xl text-xs text-gray-500">
+      <p className="mt-6 max-w-2xl text-xs text-ink-muted">
         Separate web/API and Telegram bot dynos do not share local disk — after Dashboard login succeeds, credentials are
         written to Postgres so the bot can load Telethon auth without the web&apos;s ephemeral{' '}
-        <code className="text-gray-400">sessions/</code>. If upgrading from an older deployment, redeploy DB migrations
-        and sign in once here again, or POST <code className="text-gray-400">/api/gc/mtproto/sync-disk-session</code>{' '}
+        <code className="text-ink-muted">sessions/</code>. If upgrading from an older deployment, redeploy DB migrations
+        and sign in once here again, or POST <code className="text-ink-muted">/api/gc/mtproto/sync-disk-session</code>{' '}
         with JWT if this server already has an authorized{' '}
-        <code className="text-gray-400">.session</code>{' '}file under <code className="text-gray-400">sessions/</code>.
-        Set <code className="text-gray-400">GC_MTPROTO_DB_SESSIONS=false</code> to force file-only (single-host dev).
+        <code className="text-ink-muted">.session</code>{' '}file under <code className="text-ink-muted">sessions/</code>.
+        Set <code className="text-ink-muted">GC_MTPROTO_DB_SESSIONS=false</code> to force file-only (single-host dev).
       </p>
     </div>
   )

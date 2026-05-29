@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { CLUB_OPTIONS, displayLabelForSlug } from '../config/clubMap'
 import {
   getProcessedWeeks,
@@ -9,6 +9,8 @@ import {
   type WeeklyPlayerRow,
 } from '../api/weeklyStats'
 import { getWeeklyPlayerChatIds, sendWeeklyPlayerMessage } from '../api/client'
+import Modal from '../components/Modal'
+import { LabeledSelect, LabeledTextarea } from '../components/Field'
 
 function fmtMoney(n: number): string {
   const v = Math.max(0, Number(n) || 0)
@@ -56,6 +58,8 @@ function buildFilters(f: FilterState): PlayerFilters {
 }
 
 export default function WeeklyStats({ token }: { token: string }) {
+  const clubSelectId = useId()
+  const weekSelectId = useId()
   const [slug, setSlug] = useState(CLUB_OPTIONS[0]?.slug ?? 'round-table')
   const [weeks, setWeeks] = useState<ProcessedWeekSummary[]>([])
   const [weekId, setWeekId] = useState<string | null>(null)
@@ -326,28 +330,31 @@ export default function WeeklyStats({ token }: { token: string }) {
   return (
     <div>
       <h1 className="mb-2 text-2xl font-bold">Weekly player stats</h1>
-      <p className="mb-6 text-sm text-gray-400">
+      <p className="mb-6 text-sm text-ink-muted">
         Data from gg-computer. Messages are sent to the player&apos;s linked Telegram group via this bot (
-        <code className="text-gray-300">player_details</code>).
+        <code className="text-ink">player_details</code>).
       </p>
 
       {err && (
-        <div className="mb-4 rounded-lg bg-red-900/40 px-4 py-2 text-sm text-red-300">{err}</div>
+        <div className="mb-4 rounded-lg bg-danger-bg px-4 py-2 text-sm text-danger-ink">{err}</div>
       )}
       {syncBanner && (
-        <div className="mb-4 rounded-lg border border-emerald-800/60 bg-emerald-950/40 px-4 py-3 text-xs text-emerald-100">
-          <div className="mb-1 font-medium text-emerald-200">Sync finished (gg-computer)</div>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-emerald-100/90">{syncBanner}</pre>
+        <div className="alert-success mb-4" role="status">
+          <div className="mb-1 font-medium">Sync finished (gg-computer)</div>
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-sm opacity-90">{syncBanner}</pre>
         </div>
       )}
 
-      <div className="mb-6 flex flex-wrap items-end gap-4 rounded-xl border border-gray-800 bg-gray-900 p-4">
+      <div className="mb-6 flex flex-wrap items-end gap-4 rounded-xl border border-border bg-surface p-4">
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-400">Club</label>
+          <label htmlFor={clubSelectId} className="mb-1 block text-xs font-medium text-ink-muted">
+            Club
+          </label>
           <select
+            id={clubSelectId}
             value={slug}
             onChange={(e) => setSlug(e.target.value)}
-            className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
+            className="input-field-sm"
           >
             {CLUB_OPTIONS.map((c) => (
               <option key={c.slug} value={c.slug}>
@@ -357,27 +364,30 @@ export default function WeeklyStats({ token }: { token: string }) {
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-gray-400">gg-computer</span>
+          <span className="text-xs font-medium text-ink-muted">gg-computer</span>
           <button
             type="button"
             disabled={syncBusy}
             title="POST /process-week/sync — fills missing weekly_profits for the selected club slug"
             onClick={() => void handleProcessWeekSync()}
-            className="rounded-lg border border-gray-600 bg-gray-800 px-4 py-2 text-sm font-medium text-gray-200 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg border border-border bg-surface-raised px-4 py-2 text-sm font-medium text-ink hover:bg-control-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {syncBusy ? 'Syncing…' : 'Sync missing weeks'}
           </button>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-400">Week</label>
+          <label htmlFor={weekSelectId} className="mb-1 block text-xs font-medium text-ink-muted">
+            Week
+          </label>
           <select
+            id={weekSelectId}
             value={weekId ?? ''}
             onChange={(e) => {
               setWeekId(e.target.value || null)
               setPage(1)
             }}
             disabled={loadingWeeks || weeks.length === 0}
-            className="min-w-[240px] rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white disabled:opacity-50"
+            className="w-full min-w-0 rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink sm:min-w-[240px] sm:w-auto disabled:opacity-50"
           >
             <option value="">{loadingWeeks ? 'Loading…' : 'Select week'}</option>
             {weeks.map((w) => (
@@ -395,14 +405,14 @@ export default function WeeklyStats({ token }: { token: string }) {
             <button
               type="button"
               onClick={() => setFiltersOpen((open) => !open)}
-              className="rounded-lg border border-gray-700 bg-gray-900 px-4 py-2 text-sm font-medium text-gray-200 hover:bg-gray-800"
+              className="rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium text-ink hover:bg-surface-raised"
             >
               {filtersOpen ? 'Hide filters' : 'Show filters'}
               {!filtersOpen && hasActiveFilters ? ' (active)' : ''}
             </button>
 
             {filtersOpen && (
-              <div className="mt-3 grid gap-3 rounded-xl border border-gray-800 bg-gray-900 p-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="mt-3 grid gap-3 rounded-xl border border-border bg-surface p-4 sm:grid-cols-2 lg:grid-cols-3">
                 {(
                   [
                     ['minProfit', 'Min profit'],
@@ -414,13 +424,13 @@ export default function WeeklyStats({ token }: { token: string }) {
                   ] as const
                 ).map(([key, label]) => (
                   <div key={key}>
-                    <label className="mb-1 block text-xs text-gray-400">{label}</label>
+                    <label className="mb-1 block text-xs text-ink-muted">{label}</label>
                     <input
                       type="number"
                       step="any"
                       value={filterInputs[key]}
                       onChange={(e) => setFilterInputs((f) => ({ ...f, [key]: e.target.value }))}
-                      className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white"
+                      className="w-full rounded border border-border bg-surface-raised px-2 py-1.5 text-sm text-ink"
                     />
                   </div>
                 ))}
@@ -428,14 +438,14 @@ export default function WeeklyStats({ token }: { token: string }) {
                   <button
                     type="button"
                     onClick={applyFilters}
-                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+                    className="btn-primary"
                   >
                     Apply filters
                   </button>
                   <button
                     type="button"
                     onClick={clearFilters}
-                    className="rounded-lg border border-gray-600 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800"
+                    className="rounded-lg border border-border px-4 py-2 text-sm text-ink hover:bg-surface-raised"
                   >
                     Clear
                   </button>
@@ -443,20 +453,20 @@ export default function WeeklyStats({ token }: { token: string }) {
               </div>
             )}
 
-            <p className="mt-3 rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3 text-xs leading-relaxed text-gray-400">
-              If <span className="font-medium text-gray-300">Send message</span> is greyed out, the player
+            <p className="mt-3 rounded-lg border border-border bg-surface/60 px-4 py-3 text-xs leading-relaxed text-ink-muted">
+              If <span className="font-medium text-ink">Send message</span> is greyed out, the player
               likely does not have a group chat with us yet. If they do have a group chat with us but the
               button is still greyed out, contact Jeehan.
             </p>
           </div>
 
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm text-gray-400">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm text-ink-muted">
             <span>
               {data != null ? (
                 <>
-                  Total matching: <strong className="text-white">{data.total}</strong>
+                  Total matching: <strong className="text-ink">{data.total}</strong>
                   {data.total === 0 && (
-                    <span className="ml-2 text-amber-400/90">
+                    <span className="ml-2 text-chart-3/90">
                       (Week may not be processed yet, or filters exclude everyone.)
                     </span>
                   )}
@@ -472,7 +482,7 @@ export default function WeeklyStats({ token }: { token: string }) {
                   disabled={bulkBusy || loadingPlayers || messageableOnPage.length === 0}
                   title="You choose the exact text; the same message is sent to each player with a GG id on this page. First linked group chat if several exist."
                   onClick={openBulkModal}
-                  className="rounded-lg border border-indigo-500/60 bg-indigo-950/50 px-3 py-1.5 text-xs font-medium text-indigo-200 hover:bg-indigo-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="min-h-11 rounded-lg border border-accent/50 bg-accent/10 px-3 py-2 text-sm font-medium text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {bulkBusy ? 'Sending…' : `Message all on this page (${messageableOnPage.length})`}
                 </button>
@@ -485,14 +495,14 @@ export default function WeeklyStats({ token }: { token: string }) {
             </div>
           </div>
           {bulkSummary && (
-            <div className="mb-2 rounded-lg border border-gray-700 bg-gray-900/80 px-3 py-2 text-xs text-gray-300">
+            <div className="mb-2 rounded-lg border border-border bg-surface/80 px-3 py-2 text-xs text-ink">
               {bulkSummary}
             </div>
           )}
 
-          <div className="overflow-hidden rounded-xl border border-gray-800">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-900 text-gray-400">
+          <div className="table-scroll">
+            <table className="min-w-[48rem]">
+              <thead className="bg-surface text-ink-muted">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Nickname</th>
                   <th className="px-3 py-2 text-right font-medium">Rake</th>
@@ -503,32 +513,32 @@ export default function WeeklyStats({ token }: { token: string }) {
                   <th className="px-3 py-2 text-right font-medium">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-800">
+              <tbody className="divide-y divide-border">
                 {loadingPlayers && (
                   <tr>
-                    <td colSpan={7} className="px-3 py-8 text-center text-gray-500">
+                    <td colSpan={7} className="px-3 py-8 text-center text-ink-muted">
                       Loading players…
                     </td>
                   </tr>
                 )}
                 {!loadingPlayers && data && data.players.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-3 py-8 text-center text-gray-500">
+                    <td colSpan={7} className="px-3 py-8 text-center text-ink-muted">
                       No data for this selection.
                     </td>
                   </tr>
                 )}
                 {!loadingPlayers &&
                   data?.players.map((row) => (
-                    <tr key={`${row.nickname}-${row.gg_id ?? 'x'}`} className="bg-gray-950 hover:bg-gray-900">
-                      <td className="px-3 py-2 font-medium text-white">{row.nickname}</td>
+                    <tr key={`${row.nickname}-${row.gg_id ?? 'x'}`} className="bg-bg hover:bg-surface">
+                      <td className="px-3 py-2 font-medium text-ink">{row.nickname}</td>
                       <td className="px-3 py-2 text-right tabular-nums">${fmtMoney(row.rake)}</td>
                       <td className="px-3 py-2 text-right">{rbPercent(row)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">${fmtMoney(row.rakeback)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-emerald-400">
+                      <td className="px-3 py-2 text-right tabular-nums text-success-ink">
                         ${fmtMoney(row.profit)}
                       </td>
-                      <td className="px-3 py-2 text-gray-400">
+                      <td className="px-3 py-2 text-ink-muted">
                         {row.agent != null && row.agent !== '' ? row.agent : '—'}
                       </td>
                       <td className="px-3 py-2 text-right">
@@ -541,7 +551,7 @@ export default function WeeklyStats({ token }: { token: string }) {
                               : 'Send to linked group chat'
                           }
                           onClick={() => void openSend(row)}
-                          className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500"
+                          className="btn-primary-sm disabled:cursor-not-allowed disabled:bg-control disabled:text-ink-muted"
                         >
                           Send message
                         </button>
@@ -558,7 +568,7 @@ export default function WeeklyStats({ token }: { token: string }) {
                 type="button"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="rounded border border-gray-600 px-4 py-2 text-sm disabled:opacity-40"
+                className="rounded border border-border px-4 py-2 text-sm disabled:opacity-40"
               >
                 Previous
               </button>
@@ -566,7 +576,7 @@ export default function WeeklyStats({ token }: { token: string }) {
                 type="button"
                 disabled={page >= Math.ceil(data.total / pageSize)}
                 onClick={() => setPage((p) => p + 1)}
-                className="rounded border border-gray-600 px-4 py-2 text-sm disabled:opacity-40"
+                className="rounded border border-border px-4 py-2 text-sm disabled:opacity-40"
               >
                 Next
               </button>
@@ -575,28 +585,30 @@ export default function WeeklyStats({ token }: { token: string }) {
         </>
       )}
 
-      {sendOpen && sendRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-xl">
-            <h2 className="mb-2 text-lg font-semibold text-white">Send message</h2>
-            <p className="mb-4 text-xs text-gray-400">
+      <Modal open={sendOpen && !!sendRow} onClose={closeSend} title="Send message">
+        {sendRow && (
+          <>
+            <p className="mb-4 text-sm text-ink-muted">
               Club: {displayLabelForSlug(slug)} (<code>{slug}</code>) · Player:{' '}
               {typeof sendRow.nickname === 'string' ? sendRow.nickname : '—'}
             </p>
-            {sendErr && <div className="mb-3 rounded bg-red-900/40 px-3 py-2 text-sm text-red-300">{sendErr}</div>}
+            {sendErr && (
+              <div role="alert" className="alert-danger mb-3">
+                {sendErr}
+              </div>
+            )}
             {sendLoading && sendChats.length === 0 && !sendErr && (
-              <p className="mb-3 text-sm text-gray-400">Loading group chats…</p>
+              <p className="mb-3 text-sm text-ink-muted">Loading group chats…</p>
             )}
             {!sendLoading && sendChats.length === 0 && !sendErr && sendRow.gg_id && (
-              <p className="mb-3 text-sm text-amber-300">No Telegram groups linked for this player in the database.</p>
+              <p className="mb-3 text-sm text-warning-ink">No Telegram groups linked for this player in the database.</p>
             )}
             {sendChats.length > 1 && (
               <div className="mb-4">
-                <label className="mb-1 block text-xs text-gray-400">Group chat</label>
-                <select
+                <LabeledSelect
+                  label="Group chat"
                   value={sendChatId ?? ''}
                   onChange={(e) => setSendChatId(Number(e.target.value))}
-                  className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
                 >
                   <option value="">Select chat</option>
                   {sendChats.map((id) => (
@@ -604,31 +616,25 @@ export default function WeeklyStats({ token }: { token: string }) {
                       {id}
                     </option>
                   ))}
-                </select>
+                </LabeledSelect>
               </div>
             )}
             {sendChats.length === 1 && (
-              <p className="mb-4 text-xs text-gray-500">
-                Sending to chat_id <code className="text-gray-300">{sendChats[0]}</code>
+              <p className="mb-4 text-xs text-ink-muted">
+                Sending to chat_id <code className="text-ink">{sendChats[0]}</code>
               </p>
             )}
-            <label className="mb-1 block text-xs text-gray-400">Message</label>
-            <p className="mb-2 text-xs text-amber-200/80">
-              Only what you type is sent. Table figures are not included unless you add them yourself.
-            </p>
-            <textarea
+            <LabeledTextarea
+              label="Message"
+              description="Only what you type is sent. Table figures are not included unless you add them yourself."
               value={sendText}
               onChange={(e) => setSendText(e.target.value)}
               placeholder="Type your message…"
               rows={6}
-              className="mb-4 w-full rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
+              className="mb-4"
             />
             <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={closeSend}
-                className="rounded border border-gray-600 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800"
-              >
+              <button type="button" onClick={closeSend} className="btn-secondary">
                 Cancel
               </button>
               <button
@@ -640,60 +646,50 @@ export default function WeeklyStats({ token }: { token: string }) {
                   !sendText.trim()
                 }
                 onClick={() => void handleSend()}
-                className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+                className="btn-primary disabled:opacity-40"
               >
-                {sendLoading ? 'Sending…' : 'Send'}
+                {sendLoading ? 'Sending…' : 'Send message'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
 
-      {bulkModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-xl">
-            <h2 className="mb-2 text-lg font-semibold text-white">Message all on this page</h2>
-            <p className="mb-3 text-xs text-gray-400">
-              Sends to <strong className="text-gray-200">{messageableOnPage.length}</strong> player
-              {messageableOnPage.length === 1 ? '' : 's'} with a GG id on the current page. Same text to
-              each; uses the first linked group chat when several exist.
-            </p>
-            <p className="mb-3 text-xs text-amber-200/80">
-              Player financial data from this screen is confidential—nothing is added to your message automatically.
-            </p>
-            {bulkModalErr && (
-              <div className="mb-3 rounded bg-red-900/40 px-3 py-2 text-sm text-red-300">{bulkModalErr}</div>
-            )}
-            <label className="mb-1 block text-xs text-gray-400">Message</label>
-            <textarea
-              value={bulkModalText}
-              onChange={(e) => setBulkModalText(e.target.value)}
-              placeholder="Enter the exact message to send to each chat…"
-              rows={8}
-              disabled={bulkBusy}
-              className="mb-4 w-full rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white disabled:opacity-50"
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                disabled={bulkBusy}
-                onClick={closeBulkModal}
-                className="rounded border border-gray-600 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={bulkBusy || !bulkModalText.trim()}
-                onClick={() => void runBulkSend()}
-                className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-              >
-                {bulkBusy ? 'Sending…' : 'Send to all'}
-              </button>
-            </div>
+      <Modal open={bulkModalOpen} onClose={closeBulkModal} title="Message all on this page">
+        <p className="mb-3 text-sm text-ink-muted">
+          Sends to <strong className="text-ink">{messageableOnPage.length}</strong> player
+          {messageableOnPage.length === 1 ? '' : 's'} with a GG id on the current page. Same text to each;
+          uses the first linked group chat when several exist.
+        </p>
+        {bulkModalErr && (
+          <div role="alert" className="alert-danger mb-3">
+            {bulkModalErr}
           </div>
+        )}
+        <LabeledTextarea
+          label="Message"
+          description="Player financial data from this screen is confidential. Nothing is added to your message automatically."
+          value={bulkModalText}
+          onChange={(e) => setBulkModalText(e.target.value)}
+          placeholder="Enter the exact message to send to each chat…"
+          rows={8}
+          disabled={bulkBusy}
+          className="mb-4 disabled:opacity-50"
+        />
+        <div className="flex justify-end gap-2">
+          <button type="button" disabled={bulkBusy} onClick={closeBulkModal} className="btn-secondary disabled:opacity-50">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={bulkBusy || !bulkModalText.trim()}
+            onClick={() => void runBulkSend()}
+            className="btn-primary disabled:opacity-40"
+          >
+            {bulkBusy ? 'Sending…' : 'Send to all'}
+          </button>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }

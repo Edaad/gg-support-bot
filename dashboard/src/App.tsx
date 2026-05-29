@@ -9,6 +9,7 @@ import WeeklyStats from './pages/WeeklyStats'
 import TelegramLogin from './pages/TelegramLogin'
 import BonusTypes from './pages/BonusTypes'
 import Layout from './components/Layout'
+import { ConfirmProvider } from './components/ConfirmProvider'
 
 export default function App() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'))
@@ -18,12 +19,12 @@ export default function App() {
     else localStorage.removeItem('token')
   }, [token])
 
-  if (!token) {
-    return <Login onLogin={setToken} />
-  }
-
   return (
-    <Layout onLogout={() => setToken(null)}>
+    <ConfirmProvider>
+      {!token ? (
+        <Login onLogin={setToken} />
+      ) : (
+        <Layout onLogout={() => setToken(null)}>
       <Routes>
         <Route path="/" element={<Navigate to="/clubs" replace />} />
         <Route path="/clubs" element={<Clubs token={token} />} />
@@ -34,6 +35,8 @@ export default function App() {
         <Route path="/bonus-types" element={<BonusTypes token={token} />} />
         <Route path="/weekly-stats" element={<WeeklyStats token={token} />} />
       </Routes>
-    </Layout>
+        </Layout>
+      )}
+    </ConfirmProvider>
   )
 }

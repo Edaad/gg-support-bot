@@ -165,23 +165,25 @@ export default function ChatPreview({ clubName, direction, methods }: Props) {
   }
 
   return (
-    <div className="flex flex-col rounded-xl border border-gray-800 bg-gray-900">
+    <div className="flex flex-col rounded-xl border border-border bg-surface">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div>
-          <span className="text-sm font-medium text-white">{clubName}</span>
-          <span className="ml-2 text-xs capitalize text-gray-400">{direction} flow</span>
+          <span className="text-sm font-medium text-ink">{clubName}</span>
+          <span className="ml-2 text-xs capitalize text-ink-muted">{direction} flow</span>
         </div>
-        <button onClick={reset} className="text-xs text-gray-400 hover:text-white">Reset</button>
+        <button type="button" onClick={reset} className="action-chip text-ink-muted hover:bg-control hover:text-ink">
+          Reset
+        </button>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 space-y-3 overflow-y-auto p-4" style={{ minHeight: 400, maxHeight: 500 }}>
+      <div className="min-h-[min(50vh,28rem)] max-h-[min(70vh,32rem)] flex-1 space-y-3 overflow-y-auto p-4 sm:min-h-[25rem]">
         {messages.length === 0 && (
           <div className="flex h-full items-center justify-center">
             <button
               onClick={startFlow}
-              className="rounded-lg bg-indigo-600 px-6 py-3 font-medium text-white hover:bg-indigo-500"
+              className="btn-primary py-3"
             >
               Start /{direction}
             </button>
@@ -191,8 +193,8 @@ export default function ChatPreview({ clubName, direction, methods }: Props) {
           <div key={i} className={`flex ${m.from === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
               className={`max-w-[80%] rounded-xl px-4 py-2.5 text-sm whitespace-pre-wrap ${m.from === 'user'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-800 text-gray-200'
+                  ? 'bg-accent text-on-accent'
+                  : 'bg-surface-raised text-ink'
                 }`}
             >
               {m.text}
@@ -202,7 +204,7 @@ export default function ChatPreview({ clubName, direction, methods }: Props) {
                     <button
                       key={j}
                       onClick={b.onClick}
-                      className="rounded-lg border border-gray-600 bg-gray-700 px-3 py-1 text-xs text-white transition hover:bg-gray-600"
+                      className="rounded-lg border border-border bg-control px-3 py-1 text-xs text-ink transition hover:bg-control-hover"
                     >
                       {b.label}
                     </button>
@@ -216,7 +218,7 @@ export default function ChatPreview({ clubName, direction, methods }: Props) {
 
       {/* Input */}
       {step === 'amount' && (
-        <div className="border-t border-gray-800 p-3">
+        <div className="border-t border-border p-3">
           <form
             onSubmit={(e) => { e.preventDefault(); handleAmountSubmit() }}
             className="flex gap-2"
@@ -224,13 +226,13 @@ export default function ChatPreview({ clubName, direction, methods }: Props) {
             <input
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+              className="flex-1 rounded-lg border border-border bg-surface-raised px-4 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none"
               placeholder="Enter amount (Example: 50)"
               autoFocus
             />
             <button
               type="submit"
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+              className="btn-primary"
             >
               Send
             </button>
@@ -239,10 +241,10 @@ export default function ChatPreview({ clubName, direction, methods }: Props) {
       )}
 
       {step === 'done' && (
-        <div className="border-t border-gray-800 p-3 text-center">
+        <div className="border-t border-border p-3 text-center">
           <button
             onClick={startFlow}
-            className="text-sm text-indigo-400 hover:text-indigo-300"
+            className="text-sm text-accent hover:text-accent-hover"
           >
             Restart flow
           </button>

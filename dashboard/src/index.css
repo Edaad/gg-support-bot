@@ -1,1 +1,394 @@
 @import "tailwindcss";
+
+/* ── Theme tokens (light default; dark via media or data-theme) ─────────── */
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: oklch(0.98 0.006 250);
+  --surface: oklch(0.96 0.008 250);
+  --surface-raised: oklch(1 0 0);
+  --control: oklch(0.93 0.01 250);
+  --control-hover: oklch(0.9 0.012 250);
+
+  --ink: oklch(0.25 0.03 250);
+  --ink-muted: oklch(0.38 0.025 250);
+  --ink-faint: oklch(0.48 0.02 250);
+
+  --border: oklch(0.88 0.01 250);
+
+  --accent: oklch(0.52 0.08 250);
+  --accent-hover: oklch(0.46 0.09 250);
+  --on-accent: oklch(0.99 0.005 250);
+
+  --danger-bg: oklch(0.95 0.04 25);
+  --danger-ink: oklch(0.42 0.14 25);
+  --on-danger: oklch(0.99 0.005 250);
+
+  --success-bg: oklch(0.95 0.04 145);
+  --success-ink: oklch(0.42 0.12 145);
+
+  --warning-bg: oklch(0.95 0.05 85);
+  --warning-ink: oklch(0.48 0.12 85);
+
+  --chart-1: oklch(0.52 0.08 250);
+  --chart-2: oklch(0.5 0.1 200);
+  --chart-3: oklch(0.55 0.1 170);
+  --chart-4: oklch(0.52 0.1 25);
+  --chart-5: oklch(0.5 0.09 300);
+  --chart-6: oklch(0.48 0.08 320);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --bg: oklch(0.16 0.02 250);
+    --surface: oklch(0.2 0.02 250);
+    --surface-raised: oklch(0.24 0.02 250);
+    --control: oklch(0.28 0.02 250);
+    --control-hover: oklch(0.32 0.02 250);
+
+    --ink: oklch(0.93 0.01 250);
+    --ink-muted: oklch(0.72 0.02 250);
+    --ink-faint: oklch(0.58 0.02 250);
+
+    --border: oklch(0.32 0.02 250);
+
+    --accent: oklch(0.72 0.08 250);
+    --accent-hover: oklch(0.78 0.08 250);
+    --on-accent: oklch(0.16 0.02 250);
+
+    --danger-bg: oklch(0.28 0.05 25);
+    --danger-ink: oklch(0.82 0.06 25);
+    --on-danger: oklch(0.16 0.02 250);
+
+    --success-bg: oklch(0.28 0.05 145);
+    --success-ink: oklch(0.82 0.08 145);
+
+    --warning-bg: oklch(0.3 0.06 85);
+    --warning-ink: oklch(0.85 0.1 85);
+
+    --chart-1: oklch(0.72 0.08 250);
+    --chart-2: oklch(0.7 0.1 200);
+    --chart-3: oklch(0.72 0.1 170);
+    --chart-4: oklch(0.7 0.1 25);
+    --chart-5: oklch(0.68 0.09 300);
+    --chart-6: oklch(0.66 0.08 320);
+  }
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: oklch(0.16 0.02 250);
+  --surface: oklch(0.2 0.02 250);
+  --surface-raised: oklch(0.24 0.02 250);
+  --control: oklch(0.28 0.02 250);
+  --control-hover: oklch(0.32 0.02 250);
+
+  --ink: oklch(0.93 0.01 250);
+  --ink-muted: oklch(0.72 0.02 250);
+  --ink-faint: oklch(0.58 0.02 250);
+
+  --border: oklch(0.32 0.02 250);
+
+  --accent: oklch(0.72 0.08 250);
+  --accent-hover: oklch(0.78 0.08 250);
+  --on-accent: oklch(0.16 0.02 250);
+
+  --danger-bg: oklch(0.28 0.05 25);
+  --danger-ink: oklch(0.82 0.06 25);
+  --on-danger: oklch(0.16 0.02 250);
+
+  --success-bg: oklch(0.28 0.05 145);
+  --success-ink: oklch(0.82 0.08 145);
+
+  --warning-bg: oklch(0.3 0.06 85);
+  --warning-ink: oklch(0.85 0.1 85);
+
+  --chart-1: oklch(0.72 0.08 250);
+  --chart-2: oklch(0.7 0.1 200);
+  --chart-3: oklch(0.72 0.1 170);
+  --chart-4: oklch(0.7 0.1 25);
+  --chart-5: oklch(0.68 0.09 300);
+  --chart-6: oklch(0.66 0.08 320);
+}
+
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-control: var(--control);
+  --color-control-hover: var(--control-hover);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--on-accent);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-ink: var(--danger-ink);
+  --color-on-danger: var(--on-danger);
+  --color-success-bg: var(--success-bg);
+  --color-success-ink: var(--success-ink);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-ink: var(--warning-ink);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-bg text-ink antialiased;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  .sr-only:focus {
+    position: fixed;
+    left: 1rem;
+    top: 1rem;
+    z-index: 50;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply rounded-lg bg-accent px-4 py-2 text-sm font-medium text-on-accent transition hover:bg-accent-hover disabled:opacity-50;
+  }
+
+  .btn-primary-sm {
+    @apply rounded-lg bg-accent px-4 py-1.5 text-xs font-medium text-on-accent transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply rounded-lg border border-border bg-surface-raised px-4 py-2 text-sm font-medium text-ink-muted transition hover:bg-control hover:text-ink disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-secondary-sm {
+    @apply rounded-lg bg-control px-4 py-1.5 text-xs font-medium text-ink-muted transition hover:bg-control-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .input-field {
+    @apply w-full rounded-lg border border-border bg-surface-raised px-4 py-2 text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent;
+  }
+
+  .input-field-sm {
+    @apply w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent;
+  }
+
+  .label-field {
+    @apply mb-1 block text-sm font-medium text-ink-muted;
+  }
+
+  .label-field-xs {
+    @apply mb-1 block text-xs font-medium text-ink-muted;
+  }
+
+  .panel {
+    @apply rounded-xl border border-border bg-surface p-6;
+  }
+
+  .panel-nested {
+    @apply rounded-lg border border-border bg-surface-raised/50 p-4;
+  }
+
+  .alert-danger {
+    @apply rounded-lg bg-danger-bg px-4 py-2 text-sm text-danger-ink;
+  }
+
+  .alert-success {
+    @apply rounded-lg bg-success-bg px-4 py-2 text-sm text-success-ink;
+  }
+
+  .alert-warning {
+    @apply rounded-lg border border-border bg-warning-bg px-4 py-2 text-sm text-warning-ink;
+  }
+
+  .badge-danger {
+    @apply rounded bg-danger-bg px-1.5 py-0.5 text-[10px] font-medium text-danger-ink;
+  }
+
+  .btn-danger-outline {
+    @apply rounded-lg border border-danger-ink bg-transparent px-3 py-1.5 text-xs font-medium text-danger-ink transition hover:bg-danger-bg disabled:opacity-40;
+  }
+
+  .btn-danger {
+    @apply rounded-lg bg-danger-ink px-3 py-1.5 text-xs font-medium text-on-danger transition hover:opacity-90 disabled:opacity-40;
+  }
+
+  .link-accent {
+    @apply text-accent hover:text-accent-hover;
+  }
+
+  .tab-bar {
+    @apply flex gap-1 rounded-lg bg-surface p-1;
+  }
+
+  .tab-active {
+    @apply rounded-md bg-surface-raised px-4 py-2 text-sm font-medium text-ink;
+  }
+
+  .tab-inactive {
+    @apply rounded-md px-4 py-2 text-sm font-medium text-ink-muted transition hover:bg-control hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent;
+  }
+
+  .tab-active-accent {
+    @apply rounded-md bg-accent px-4 py-2 text-sm font-medium text-on-accent;
+  }
+
+  .page-header {
+    @apply flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between;
+  }
+
+  .table-scroll {
+    @apply overflow-x-auto rounded-xl border border-border;
+  }
+
+  .table-scroll > table {
+    @apply w-full min-w-[40rem] text-sm;
+  }
+
+  .row-actions {
+    @apply flex flex-wrap items-center gap-2 sm:gap-3;
+  }
+
+  .action-chip {
+    @apply inline-flex min-h-11 items-center rounded-md px-3 text-xs font-medium;
+  }
+
+  .field-narrow {
+    @apply w-full max-w-full sm:max-w-xs;
+  }
+
+  .field-short {
+    @apply w-full max-w-full sm:w-32;
+  }
+
+  .section-header {
+    @apply mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between;
+  }
+
+  .editor-row {
+    @apply mb-2 flex flex-col gap-2 rounded-lg bg-surface-raised px-3 py-2 sm:flex-row sm:items-center sm:justify-between;
+  }
+
+  .form-actions {
+    @apply flex flex-wrap gap-2 pt-1;
+  }
+
+  .code-inline {
+    @apply rounded bg-control px-1 py-0.5 font-mono text-xs text-accent;
+  }
+
+  .config-tab-bar {
+    @apply -mx-1 mb-3 flex gap-1 overflow-x-auto border-b border-border px-1 pb-1;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .config-tab {
+    @apply shrink-0 rounded-md px-3 py-2 text-xs font-medium text-ink-muted transition hover:bg-control hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent;
+  }
+
+  .card-actions {
+    @apply flex w-full flex-col gap-2 sm:w-auto sm:shrink-0;
+  }
+
+  .card-actions-reorder {
+    @apply grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto;
+  }
+
+  .card-actions-primary {
+    @apply grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap;
+  }
+
+  .action-chip-equal {
+    @apply min-w-0 flex-1 justify-center sm:flex-none sm:justify-start;
+  }
+
+  .method-drag-hint {
+    @apply mt-0.5 shrink-0 text-ink-faint select-none;
+  }
+
+  .method-drag-hint-inline {
+    @apply inline;
+  }
+
+  .config-tab-active {
+    @apply bg-surface-raised text-ink;
+  }
+
+  .method-panel-focus {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg;
+  }
+}
+
+@layer base {
+  :where(code):not(pre code) {
+    @apply rounded bg-control px-1 py-0.5 font-mono text-[0.8125rem] text-accent;
+  }
+}
+
+@media (pointer: coarse) {
+  .nav-touch {
+    min-height: 2.75rem;
+    padding-inline: 0.875rem;
+  }
+
+  .action-chip {
+    min-height: 2.75rem;
+    padding-inline: 0.875rem;
+  }
+
+  .method-drag-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .form-actions .btn-primary,
+  .form-actions .btn-secondary {
+    @apply w-full justify-center;
+  }
+}

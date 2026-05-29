@@ -1,3 +1,5 @@
+import { useId } from 'react'
+
 interface Props {
   type: string
   text: string
@@ -7,16 +9,21 @@ interface Props {
 }
 
 export default function ResponseEditor({ type, text, fileId, caption, onChange }: Props) {
+  const typeId = useId()
+  const fileIdFieldId = useId()
+  const captionId = useId()
+  const textId = useId()
   const isPhoto = (type || 'text') === 'photo'
 
   return (
     <div className="space-y-3">
       <div>
-        <label className="mb-1 block text-xs font-medium text-gray-400">Response Type</label>
+        <label htmlFor={typeId} className="label-field-xs">Response type</label>
         <select
+          id={typeId}
           value={type || 'text'}
           onChange={(e) => onChange('response_type', e.target.value)}
-          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+          className="input-field-sm"
         >
           <option value="text">Text</option>
           <option value="photo">Photo</option>
@@ -26,22 +33,24 @@ export default function ResponseEditor({ type, text, fileId, caption, onChange }
       {isPhoto && (
         <>
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-400">Telegram File ID(s)</label>
+            <label htmlFor={fileIdFieldId} className="label-field-xs">Telegram file ID(s)</label>
             <textarea
+              id={fileIdFieldId}
               value={fileId || ''}
               onChange={(e) => onChange('response_file_id', e.target.value)}
               rows={2}
-              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+              className="input-field-sm min-h-[4.5rem] resize-y"
               placeholder="File ID from Telegram (comma-separated for multiple photos)"
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-400">Caption</label>
+            <label htmlFor={captionId} className="label-field-xs">Caption</label>
             <textarea
+              id={captionId}
               value={caption || ''}
               onChange={(e) => onChange('response_caption', e.target.value)}
               rows={2}
-              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+              className="input-field-sm min-h-[4.5rem] resize-y"
               placeholder="Photo caption (optional)"
             />
           </div>
@@ -49,19 +58,20 @@ export default function ResponseEditor({ type, text, fileId, caption, onChange }
       )}
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-gray-400">
-          {isPhoto ? 'Follow-up Text (sent after photo)' : 'Response Text'}
+        <label htmlFor={textId} className="label-field-xs">
+          {isPhoto ? 'Follow-up text (sent after photo)' : 'Response text'}
         </label>
         <textarea
+          id={textId}
           value={text || ''}
           onChange={(e) => onChange('response_text', e.target.value)}
           rows={4}
-          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
-          placeholder="Message the user will see..."
+          className="input-field-sm min-h-[6rem] resize-y"
+          placeholder="Message the player will see…"
         />
-        <p className="mt-1 text-xs text-gray-500">
-          Use <code className="rounded bg-gray-800 px-1 text-gray-400">---</code> on its own line to split into multiple messages.
-          {isPhoto && ' These text messages are sent after the photo.'}
+        <p className="mt-1 text-xs text-ink-muted">
+          Use <code className="code-inline">---</code> on its own line to split into multiple messages.
+          {isPhoto && ' Text sends after the photo.'}
         </p>
       </div>
     </div>

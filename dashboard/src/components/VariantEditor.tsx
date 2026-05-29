@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useId, useState, useEffect } from 'react'
 import {
   listVariants,
   createVariant,
@@ -9,12 +9,14 @@ import {
   type Variant,
 } from '../api/client'
 import ResponseEditor from './ResponseEditor'
+import { useConfirm } from './ConfirmProvider'
 
 interface Props {
   token: string
   methodId: number
   tierId?: number
   direction: 'deposit' | 'cashout'
+  embedded?: boolean
 }
 
 const variantFormDefaults: Partial<Variant> = {
@@ -23,7 +25,14 @@ const variantFormDefaults: Partial<Variant> = {
   hyperlink_text: 'PAY HERE',
 }
 
-export default function VariantEditor({ token, methodId, tierId, direction }: Props) {
+export default function VariantEditor({ token, methodId, tierId, direction, embedded = false }: Props) {
+  const askConfirm = useConfirm()
+  const variantLabelId = useId()
+  const variantWeightId = useId()
+  const variantMinId = useId()
+  const variantMaxId = useId()
+  const variantProviderId = useId()
+  const variantHyperlinkId = useId()
   const [variants, setVariants] = useState<Variant[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -82,7 +91,13 @@ export default function VariantEditor({ token, methodId, tierId, direction }: Pr
   }
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Delete this variant?')) return
+    const ok = await askConfirm({
+      title: 'Delete variant?',
+      message: 'This variant will be removed. Players will fall back to the default response.',
+      confirmLabel: 'Delete variant',
+      destructive: true,
+    })
+    if (!ok) return
     await deleteVariant(token, id)
     load()
   }
@@ -93,41 +108,42 @@ export default function VariantEditor({ token, methodId, tierId, direction }: Pr
   const groupLinkEnabled = Boolean(form.use_group_checkout_link)
   const provider = (form.group_checkout_provider || '').trim().toLowerCase()
 
+  const rootClass = tierId ? 'panel-nested mt-3' : embedded ? '' : 'panel-nested mt-3'
+
   return (
-    <div className="mt-3 rounded-lg border border-gray-700 bg-gray-800/50 p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <h4 className="text-sm font-medium text-gray-300">
-            Response Variants (Rotation){tierId ? ' — tier' : ' — method'}
-          </h4>
-          <p className="text-xs text-gray-500">
-            Add multiple responses that rotate based on weight. If no variants are added, the default response is always used.
-            {tierId
-              ? ' These apply when this tier’s amount band matches.'
-              : ' These apply when no response tier matches the deposit amount.'}
-          </p>
-        </div>
-        <button
-          onClick={openAddForm}
-          className="text-xs text-indigo-400 hover:text-indigo-300"
-        >
-          + Add Variant
+    <div className={rootClass}>
+      <div className={embedded && !tierId ? 'mb-3 flex justify-end' : 'section-header'}>
+        {!(embedded && !tierId) && (
+          <div>
+            <h4 className="text-sm font-medium text-ink">
+              {tierId ? 'Tier rotation variants' : 'Fallback rotation variants'}
+            </h4>
+            {!tierId && !embedded && (
+              <p className="text-xs text-ink-muted">Used only when no amount tier matches.</p>
+            )}
+            {tierId && (
+              <p className="text-xs text-ink-muted">Used when this tier&apos;s amount band matches.</p>
+            )}
+          </div>
+        )}
+        <button type="button" onClick={openAddForm} className="btn-primary-sm w-full sm:w-auto">
+          Add variant
         </button>
       </div>
 
       {variants.map((v) => (
-        <div key={v.id} className="mb-2 flex items-center justify-between rounded-lg bg-gray-800 px-3 py-2">
-          <div className="flex-1">
+        <div key={v.id} className="editor-row">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-white">{v.label}</span>
-              <span className="rounded bg-emerald-900/50 px-1.5 py-0.5 text-xs font-medium text-emerald-400">
+              <span className="text-sm font-medium text-ink">{v.label}</span>
+              <span className="rounded bg-success-bg px-1.5 py-0.5 text-xs font-medium text-success-ink">
                 {pct(v.weight)}% (weight: {v.weight})
               </span>
               {direction === 'deposit' && v.use_group_checkout_link && (
-                <span className="text-xs text-indigo-400">Stripe link</span>
+                <span className="text-xs text-accent">Stripe link</span>
               )}
               {direction === 'deposit' && (v.min_amount != null || v.max_amount != null) && (
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-ink-muted">
                   {v.min_amount != null && v.max_amount != null
                     ? `$${v.min_amount}–$${v.max_amount}`
                     : v.min_amount != null
@@ -137,28 +153,42 @@ export default function VariantEditor({ token, methodId, tierId, direction }: Pr
               )}
             </div>
             {v.response_type === 'text' && v.response_text && (
-              <p className="mt-0.5 max-w-md truncate text-xs text-gray-500">{v.response_text}</p>
+              <p className="mt-0.5 max-w-md truncate text-xs text-ink-muted">{v.response_text}</p>
             )}
             {v.response_type === 'photo' && (
-              <p className="mt-0.5 text-xs text-gray-500">Photo response</p>
+              <p className="mt-0.5 text-xs text-ink-muted">Photo response</p>
             )}
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => handleEdit(v)} className="text-xs text-gray-400 hover:text-white">Edit</button>
-            <button onClick={() => handleDelete(v.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+          <div className="row-actions sm:shrink-0">
+            <button
+              type="button"
+              onClick={() => handleEdit(v)}
+              aria-label={`Edit variant ${v.label}`}
+              className="action-chip text-ink-muted hover:bg-control hover:text-ink"
+            >
+              Edit variant
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDelete(v.id)}
+              aria-label={`Delete variant ${v.label}`}
+              className="action-chip text-danger-ink hover:bg-danger-bg"
+            >
+              Delete variant
+            </button>
           </div>
         </div>
       ))}
 
       {variants.length === 0 && !showAdd && (
-        <p className="py-2 text-center text-xs text-gray-600">No variants — the default response will always be used.</p>
+        <p className="py-2 text-center text-xs text-ink-faint">No variants — the default response will always be used.</p>
       )}
 
       {variants.length > 0 && (
         <div className="mt-2 mb-2">
-          <div className="flex h-2 overflow-hidden rounded-full bg-gray-700">
+          <div className="flex h-2 overflow-hidden rounded-full bg-control">
             {variants.map((v, i) => {
-              const colors = ['bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-cyan-500', 'bg-purple-500']
+              const colors = ['bg-chart-1', 'bg-chart-2', 'bg-chart-3', 'bg-chart-4', 'bg-chart-5', 'bg-chart-6']
               return (
                 <div
                   key={v.id}
@@ -169,9 +199,9 @@ export default function VariantEditor({ token, methodId, tierId, direction }: Pr
               )
             })}
           </div>
-          <div className="mt-1 flex flex-wrap gap-3 text-xs text-gray-400">
+          <div className="mt-1 flex flex-wrap gap-3 text-xs text-ink-muted">
             {variants.map((v, i) => {
-              const dots = ['text-indigo-400', 'text-emerald-400', 'text-amber-400', 'text-rose-400', 'text-cyan-400', 'text-purple-400']
+              const dots = ['text-accent', 'text-success-ink', 'text-chart-3', 'text-chart-4', 'text-chart-5', 'text-chart-6']
               return (
                 <span key={v.id} className="flex items-center gap-1">
                   <span className={`inline-block h-2 w-2 rounded-full ${dots[i % dots.length].replace('text-', 'bg-')}`} />
@@ -184,28 +214,30 @@ export default function VariantEditor({ token, methodId, tierId, direction }: Pr
       )}
 
       {showAdd && (
-        <div className="mt-3 space-y-3 rounded-lg border border-gray-700 bg-gray-900 p-4">
-          <div className="grid grid-cols-2 gap-3">
+        <div className="mt-3 space-y-3 rounded-lg border border-border bg-surface p-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-400">Label</label>
+              <label htmlFor={variantLabelId} className="label-field-xs">Label</label>
               <input
+                id={variantLabelId}
                 value={form.label || ''}
                 onChange={(e) => setForm({ ...form, label: e.target.value })}
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                className="input-field-sm"
                 placeholder='Example: "Venmo Account 1"'
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-400">Weight</label>
+              <label htmlFor={variantWeightId} className="label-field-xs">Weight</label>
               <input
+                id={variantWeightId}
                 type="number"
                 min={1}
                 value={form.weight ?? 1}
                 onChange={(e) => setForm({ ...form, weight: Math.max(1, Number(e.target.value) || 1) })}
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                className="input-field-sm"
                 placeholder="1"
               />
-              <p className="mt-1 text-xs text-gray-600">
+              <p className="mt-1 text-xs text-ink-faint">
                 Higher weight = selected more often. Example: weights 50 + 50 = 50/50 split; 70 + 30 = 70/30 split.
               </p>
             </div>
@@ -221,40 +253,42 @@ export default function VariantEditor({ token, methodId, tierId, direction }: Pr
 
           {direction === 'deposit' && (
             <>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-400">Min Amount ($)</label>
+                  <label htmlFor={variantMinId} className="label-field-xs">Min amount ($)</label>
                   <input
+                    id={variantMinId}
                     type="number"
                     value={form.min_amount ?? ''}
                     onChange={(e) => setForm({ ...form, min_amount: e.target.value ? Number(e.target.value) : null })}
-                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                    className="input-field-sm"
                     placeholder="Inherit from tier/method"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-400">Max Amount ($)</label>
+                  <label htmlFor={variantMaxId} className="label-field-xs">Max amount ($)</label>
                   <input
+                    id={variantMaxId}
                     type="number"
                     value={form.max_amount ?? ''}
                     onChange={(e) => setForm({ ...form, max_amount: e.target.value ? Number(e.target.value) : null })}
-                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                    className="input-field-sm"
                     placeholder="Inherit from tier/method"
                   />
                 </div>
               </div>
 
-              <div className="rounded-xl border border-indigo-900/40 bg-gray-950 p-4">
+              <div className="rounded-xl border border-accent/30 bg-bg p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-sm font-medium text-white">Use group specific link</div>
-                    <div className="mt-1 text-xs text-gray-500">
+                    <div className="text-sm font-medium text-ink">Use group specific link</div>
+                    <div className="mt-1 text-xs text-ink-muted">
                       {tierId
                         ? 'Unchecked = send only the response text above (static Cashapp, etc.). Checked = Stripe checkout for this variant only.'
                         : 'Per-variant Stripe checkout when enabled. Min/Max set checkout limits (otherwise inherit method).'}
                     </div>
                   </div>
-                  <label className="flex items-center gap-2 text-sm text-gray-300">
+                  <label className="flex items-center gap-2 text-sm text-ink">
                     <input
                       type="checkbox"
                       checked={form.use_group_checkout_link || false}
@@ -264,7 +298,7 @@ export default function VariantEditor({ token, methodId, tierId, direction }: Pr
                           use_group_checkout_link: e.target.checked,
                         })
                       }
-                      className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500 focus:ring-indigo-500"
+                      className="h-4 w-4 rounded border-border bg-control text-accent focus:ring-accent"
                     />
                     Enabled
                   </label>
@@ -273,41 +307,43 @@ export default function VariantEditor({ token, methodId, tierId, direction }: Pr
                 {groupLinkEnabled && (
                   <div className="mt-3 space-y-3">
                     <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-400">Provider</label>
+                      <label htmlFor={variantProviderId} className="label-field-xs">Provider</label>
                       <select
+                        id={variantProviderId}
                         value={form.group_checkout_provider ?? 'stripe'}
                         onChange={(e) => setForm({ ...form, group_checkout_provider: e.target.value })}
-                        className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                        className="input-field-sm"
                       >
                         <option value="stripe">Stripe</option>
                       </select>
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-400">Hyperlink text</label>
+                      <label htmlFor={variantHyperlinkId} className="label-field-xs">Hyperlink text</label>
                       <input
+                        id={variantHyperlinkId}
                         value={form.hyperlink_text ?? 'PAY HERE'}
                         onChange={(e) => setForm({ ...form, hyperlink_text: e.target.value })}
-                        className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                        className="input-field-sm"
                         placeholder='Example: "PAY HERE"'
                       />
-                      <p className="mt-1 text-xs text-gray-600">
-                        Put <span className="font-mono text-gray-400">{'{{hyperlink}}'}</span> in Response Text
+                      <p className="mt-1 text-xs text-ink-faint">
+                        Put <span className="font-mono text-ink-muted">{'{{hyperlink}}'}</span> in Response Text
                         where you want the pay link — the bot will not add it automatically.
                       </p>
                     </div>
                     {provider !== 'stripe' && (
-                      <p className="text-xs text-yellow-400">Only Stripe is supported right now.</p>
+                      <p className="text-xs text-warning-ink">Only Stripe is supported right now.</p>
                     )}
                   </div>
                 )}
               </div>
             </>
           )}
-          <div className="flex gap-2">
-            <button onClick={handleSave} className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-indigo-500">
-              {editId ? 'Update' : 'Add'}
+          <div className="form-actions">
+            <button type="button" onClick={handleSave} className="btn-primary-sm">
+              {editId ? 'Save changes' : 'Add variant'}
             </button>
-            <button onClick={resetForm} className="rounded-lg bg-gray-700 px-4 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-600">
+            <button type="button" onClick={resetForm} className="btn-secondary-sm">
               Cancel
             </button>
           </div>
