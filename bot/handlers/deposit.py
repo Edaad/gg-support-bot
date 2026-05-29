@@ -75,17 +75,32 @@ def _with_method_checkout_settings(
             if key not in merged or merged.get(key) is None:
                 merged[key] = method.get(key)
     if tier:
-        for key in _CHECKOUT_SETTING_KEYS:
-            if key in tier and tier.get(key) is not None:
-                merged[key] = tier.get(key)
-            elif key == "use_group_checkout_link":
-                merged[key] = bool(tier.get("use_group_checkout_link"))
+        merged["use_group_checkout_link"] = bool(tier.get("use_group_checkout_link", False))
+        if tier.get("group_checkout_provider"):
+            merged["group_checkout_provider"] = tier.get("group_checkout_provider")
+        elif merged["use_group_checkout_link"]:
+            merged["group_checkout_provider"] = "stripe"
+        if tier.get("hyperlink_text"):
+            merged["hyperlink_text"] = tier.get("hyperlink_text")
+        if tier.get("min_amount") is not None:
+            merged["min_amount"] = tier.get("min_amount")
+        if tier.get("max_amount") is not None:
+            merged["max_amount"] = tier.get("max_amount")
     return merged
 
 
 def _stripe_checkout_enabled(response_data: dict) -> bool:
-    provider = (response_data.get("group_checkout_provider") or "").strip().lower()
-    return bool(response_data.get("use_group_checkout_link")) and provider == "stripe"
+    if not response_data.get("use_group_checkout_link"):
+        return False
+    provider = (response_data.get("group_checkout_provider") or "stripe").strip().lower()
+    return provider == "stripe"
+
+
+def _response_has_hyperlink_placeholder(response_data: dict) -> bool:
+    for field in ("response_text", "response_caption"):
+        if "{{hyperlink}}" in (response_data.get(field) or ""):
+            return True
+    return False
 
 
 def _build_stripe_response_payload(response_data: dict, checkout_url: str) -> dict:
@@ -423,7 +438,12 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     parent_method_id = context.chat_data.get("deposit_method_id")
     parent = get_method_by_id(int(parent_method_id)) if parent_method_id else None
     parent_slug = (parent.get("slug") or "") if parent else ""
-    response_data = _with_method_checkout_settings(sub, parent)
+    tier = (
+        get_tier_for_amount(int(parent_method_id), amount)
+        if parent_method_id and isinstance(amount, Decimal)
+        else None
+    )
+    response_data = _with_method_checkout_settings(sub, parent, tier=tier)
     sub_slug = (sub.get("slug") or "").strip().lower()
     logger.info(
         "deposit_sub_chosen chat_id=%s sub_id=%s sub_slug=%r parent_slug=%r group_checkout=%s",
@@ -594,6 +614,16 @@ async def _send_deposit_method_response(
     """
     slug = (method_slug or "").strip().lower()
     use_stripe_checkout = _stripe_checkout_enabled(response_data)
+    if (
+        not use_stripe_checkout
+        and _response_has_hyperlink_placeholder(response_data)
+        and response_data.get("use_group_checkout_link")
+    ):
+        response_data = {
+            **response_data,
+            "group_checkout_provider": response_data.get("group_checkout_provider") or "stripe",
+        }
+        use_stripe_checkout = _stripe_checkout_enabled(response_data)
     chat_id = context.chat_data.get("deposit_chat_id") or (
         query.message.chat.id if query.message else None
     )
@@ -675,6 +705,23 @@ async def _send_deposit_method_response(
             )
             await query.edit_message_text(
                 "Card checkout failed to start. Please try again in a minute or contact support."
+            )
+            return False
+
+    if _response_has_hyperlink_placeholder(response_data):
+        logger.warning(
+            "deposit: {{hyperlink}} in response but Stripe checkout not used "
+            "chat_id=%s method_id=%s group_checkout=%s configured=%s",
+            chat_id,
+            method_id,
+            response_data.get("use_group_checkout_link"),
+            stripe_configured(),
+        )
+        if stripe_configured() and club_id is not None:
+            await query.edit_message_text(
+                "Checkout link could not be generated. Enable Use group specific link "
+                "on this tier in the dashboard, set STRIPE_SECRET_KEY on the worker, "
+                "and restart the bot."
             )
             return False
 

@@ -290,6 +290,10 @@ def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
                 continue
             if t.max_amount is not None and amount > t.max_amount:
                 continue
+            link = bool(getattr(t, "use_group_checkout_link", False))
+            provider = getattr(t, "group_checkout_provider", None)
+            if link and not provider:
+                provider = "stripe"
             return {
                 "id": t.id,
                 "label": t.label,
@@ -299,10 +303,8 @@ def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
                 "response_text": t.response_text,
                 "response_file_id": t.response_file_id,
                 "response_caption": t.response_caption,
-                "use_group_checkout_link": bool(
-                    getattr(t, "use_group_checkout_link", False)
-                ),
-                "group_checkout_provider": getattr(t, "group_checkout_provider", None),
+                "use_group_checkout_link": link,
+                "group_checkout_provider": provider,
                 "hyperlink_text": getattr(t, "hyperlink_text", None),
             }
     return None

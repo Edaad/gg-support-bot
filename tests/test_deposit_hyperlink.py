@@ -57,6 +57,46 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIn('<a href="https://checkout.stripe.com/test?x=1&amp;y=2">PAY HERE</a>', sent_text)
         self.assertEqual(chat.send_message.call_args.kwargs.get("parse_mode"), "HTML")
 
+    async def test_stripe_checkout_when_provider_missing_defaults_stripe(self):
+        chat = SimpleNamespace(send_message=AsyncMock())
+        message = SimpleNamespace(chat=chat)
+        query = SimpleNamespace(
+            message=message,
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
+
+        result = SimpleNamespace(
+            checkout_url="https://checkout.stripe.com/test",
+            session_id="cs_test",
+            customer_id="cus_test",
+        )
+
+        response_data = {
+            "response_type": "text",
+            "response_text": "{{hyperlink}}",
+            "use_group_checkout_link": True,
+            "group_checkout_provider": None,
+            "hyperlink_text": "PAY",
+        }
+
+        with (
+            patch.object(dep, "stripe_configured", return_value=True),
+            patch.object(dep, "create_stripe_checkout_session", return_value=result) as create_session,
+        ):
+            ok = await dep._send_deposit_method_response(
+                query,
+                context,
+                amount=dep.Decimal("50"),
+                display_name="Cashapp",
+                method_id=123,
+                method_slug="cashapp",
+                response_data=response_data,
+            )
+
+        self.assertTrue(ok)
+        create_session.assert_called_once()
+
     async def test_tier_group_checkout_overrides_method(self):
         chat = SimpleNamespace(send_message=AsyncMock())
         message = SimpleNamespace(chat=chat)
