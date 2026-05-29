@@ -343,6 +343,69 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(create_session.call_args.kwargs.get("checkout_min_usd"), 101)
         self.assertEqual(create_session.call_args.kwargs.get("checkout_max_usd"), 2000)
 
+    async def test_cashapp_below_100_ignores_placeholder_variant_text(self):
+        chat = SimpleNamespace(send_message=AsyncMock())
+        message = SimpleNamespace(chat=chat)
+        query = SimpleNamespace(
+            message=message,
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
+
+        result = SimpleNamespace(
+            checkout_url="https://checkout.stripe.com/cashapp",
+            session_id="cs_cashapp",
+            customer_id="cus_cashapp",
+        )
+
+        tier = {
+            "response_type": "text",
+            "response_text": "Use Stripe below $100\n\n{{hyperlink}}",
+            "use_group_checkout_link": True,
+            "group_checkout_provider": "stripe",
+            "hyperlink_text": "PAY HERE",
+            "min_amount": 20,
+            "max_amount": 100,
+        }
+        method = {
+            "response_type": "text",
+            "response_text": "Method fallback\n\n{{hyperlink}}",
+            "use_group_checkout_link": True,
+            "group_checkout_provider": "stripe",
+            "hyperlink_text": "PAY HERE",
+        }
+        variant = {
+            "response_type": "text",
+            "response_text": "long text",
+            "use_group_checkout_link": True,
+            "group_checkout_provider": "stripe",
+            "hyperlink_text": "PAY HERE",
+        }
+
+        with (
+            patch.object(dep, "stripe_configured", return_value=True),
+            patch.object(dep, "create_stripe_checkout_session", return_value=result) as create_session,
+            patch.object(dep, "send_response_messages", AsyncMock()) as send_response,
+        ):
+            ok = await dep._send_deposit_method_response(
+                query,
+                context,
+                amount=dep.Decimal("78"),
+                display_name="Cashapp",
+                method_id=4,
+                method_slug="cashapp",
+                response_data=variant,
+                method=method,
+                tier=tier,
+            )
+
+        self.assertTrue(ok)
+        create_session.assert_called_once()
+        sent = send_response.await_args.args[1]
+        self.assertIn("Use Stripe below $100", sent["response_text"])
+        self.assertNotIn("long text", sent["response_text"])
+        self.assertNotIn("_stripe_link_only_html", sent)
+
     async def test_cashapp_over_100_does_not_use_stripe_without_group_checkout(self):
         chat = SimpleNamespace(send_message=AsyncMock())
         message = SimpleNamespace(chat=chat)

@@ -101,6 +101,40 @@ def _with_method_checkout_settings(
 # Temporary until dashboard tier/variant Stripe flags are fully migrated.
 _STRIPE_HARDCODE_SLUGS = frozenset({"cashapp", "applepay"})
 _STRIPE_HARDCODE_MAX = Decimal("100")
+_STRIPE_HARDCODE_DEFAULT_TEXT = (
+    "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
+    "• Enter your deposit amount on the checkout page ($20 minimum, $100 maximum).\n\n"
+    "• Once sent, please inform us, and an agent will confirm the transaction "
+    "and add your chips within 2 minutes!\n\n"
+    "• Just post a screenshot of your transaction, and it will be credited to your account!\n\n"
+    "{{hyperlink}}"
+)
+_PLACEHOLDER_RESPONSE_TEXT = frozenset({"long text", "test", "placeholder", "todo"})
+
+
+def _is_usable_stripe_response_text(text: str | None) -> bool:
+    cleaned = (text or "").strip()
+    if len(cleaned) < 24:
+        return False
+    if cleaned.lower() in _PLACEHOLDER_RESPONSE_TEXT:
+        return False
+    return True
+
+
+def _stripe_response_text_from_layers(*layers: dict | None) -> str | None:
+    for layer in layers:
+        if not layer:
+            continue
+        candidate = (layer.get("response_text") or "").strip()
+        if _is_usable_stripe_response_text(candidate):
+            return candidate
+    return None
+
+
+def _ensure_hyperlink_placeholder(text: str) -> str:
+    if "{{hyperlink}}" in text:
+        return text
+    return f"{text.rstrip()}\n\n{{{{hyperlink}}}}"
 
 
 def _apply_hardcoded_stripe_below_100(
@@ -108,6 +142,8 @@ def _apply_hardcoded_stripe_below_100(
     *,
     method_slug: str,
     amount,
+    method: dict | None = None,
+    tier: dict | None = None,
 ) -> dict:
     """Force Stripe checkout for Cashapp / Apple Pay deposits up to $100."""
     slug = (method_slug or "").strip().lower()
@@ -119,6 +155,12 @@ def _apply_hardcoded_stripe_below_100(
     merged["use_group_checkout_link"] = True
     merged["group_checkout_provider"] = "stripe"
     merged.setdefault("hyperlink_text", "PAY HERE")
+
+    text = _stripe_response_text_from_layers(merged, tier, method)
+    if not text:
+        text = _STRIPE_HARDCODE_DEFAULT_TEXT
+    merged["response_text"] = _ensure_hyperlink_placeholder(text)
+    merged["response_type"] = "text"
     return merged
 
 
@@ -444,6 +486,8 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
         method_id=method_id,
         method_slug=method_slug,
         response_data=response_data,
+        method=method,
+        tier=tier,
     )
     if not ok:
         return ConversationHandler.END
@@ -648,6 +692,8 @@ async def _send_deposit_method_response(
     method_id: int | None,
     method_slug: str,
     response_data: dict,
+    method: dict | None = None,
+    tier: dict | None = None,
 ) -> bool:
     """When dashboard group Stripe checkout is enabled, create a per-group link from response text.
 
@@ -657,6 +703,8 @@ async def _send_deposit_method_response(
         response_data,
         method_slug=method_slug,
         amount=amount,
+        method=method,
+        tier=tier,
     )
     slug = (method_slug or "").strip().lower()
     use_stripe_checkout = _stripe_checkout_enabled(response_data)
