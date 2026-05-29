@@ -308,6 +308,11 @@ export interface Variant {
   response_text: string | null
   response_file_id: string | null
   response_caption: string | null
+  min_amount: number | null
+  max_amount: number | null
+  use_group_checkout_link: boolean | null
+  group_checkout_provider: string | null
+  hyperlink_text: string | null
   sort_order: number
 }
 

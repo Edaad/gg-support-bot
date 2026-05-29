@@ -310,6 +310,27 @@ def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
     return None
 
 
+def _variant_response_dict(v: MethodVariant) -> dict:
+    link = getattr(v, "use_group_checkout_link", None)
+    provider = getattr(v, "group_checkout_provider", None)
+    if link is True and not provider:
+        provider = "stripe"
+    data = {
+        "response_type": v.response_type,
+        "response_text": v.response_text,
+        "response_file_id": v.response_file_id,
+        "response_caption": v.response_caption,
+        "hyperlink_text": getattr(v, "hyperlink_text", None),
+        "min_amount": v.min_amount,
+        "max_amount": v.max_amount,
+    }
+    if link is not None:
+        data["use_group_checkout_link"] = bool(link)
+    if provider:
+        data["group_checkout_provider"] = provider
+    return data
+
+
 def pick_variant(method_id: int, tier_id: Optional[int] = None) -> Optional[dict]:
     """Pick a weighted-random variant for a method or tier.
 
@@ -329,12 +350,7 @@ def pick_variant(method_id: int, tier_id: Optional[int] = None) -> Optional[dict
             if variants:
                 weights = [v.weight for v in variants]
                 chosen = random.choices(variants, weights=weights, k=1)[0]
-                return {
-                    "response_type": chosen.response_type,
-                    "response_text": chosen.response_text,
-                    "response_file_id": chosen.response_file_id,
-                    "response_caption": chosen.response_caption,
-                }
+                return _variant_response_dict(chosen)
 
         variants = (
             session.query(MethodVariant)
@@ -345,12 +361,7 @@ def pick_variant(method_id: int, tier_id: Optional[int] = None) -> Optional[dict
             return None
         weights = [v.weight for v in variants]
         chosen = random.choices(variants, weights=weights, k=1)[0]
-        return {
-            "response_type": chosen.response_type,
-            "response_text": chosen.response_text,
-            "response_file_id": chosen.response_file_id,
-            "response_caption": chosen.response_caption,
-        }
+        return _variant_response_dict(chosen)
 
 
 def get_custom_command(club_id: int, command_name: str) -> Optional[dict]:

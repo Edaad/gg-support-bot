@@ -124,7 +124,7 @@ export default function TierEditor({
             </div>
           </div>
           {expandedVariant === t.id && (
-            <VariantEditor token={token} methodId={methodId} tierId={t.id} />
+            <VariantEditor token={token} methodId={methodId} tierId={t.id} direction={direction} />
           )}
         </div>
       ))}

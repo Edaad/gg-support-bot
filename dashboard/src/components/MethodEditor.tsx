@@ -226,7 +226,7 @@ export default function MethodEditor({ token, clubId, direction }: Props) {
                     {' '}→ Variants on each tier (e.g. Under $100 / Over $100). Method variants below apply only when no tier matches.
                   </p>
                 )}
-                <VariantEditor token={token} methodId={m.id} />
+                <VariantEditor token={token} methodId={m.id} direction={direction} />
               </>
             )}
           </div>

@@ -14,9 +14,16 @@ interface Props {
   token: string
   methodId: number
   tierId?: number
+  direction: 'deposit' | 'cashout'
 }
 
-export default function VariantEditor({ token, methodId, tierId }: Props) {
+const variantFormDefaults: Partial<Variant> = {
+  use_group_checkout_link: null,
+  group_checkout_provider: 'stripe',
+  hyperlink_text: 'PAY HERE',
+}
+
+export default function VariantEditor({ token, methodId, tierId, direction }: Props) {
   const [variants, setVariants] = useState<Variant[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -34,12 +41,23 @@ export default function VariantEditor({ token, methodId, tierId }: Props) {
     setEditId(null)
   }
 
+  const openAddForm = () => {
+    resetForm()
+    setForm({ ...variantFormDefaults })
+    setShowAdd(true)
+  }
+
   const handleSave = async () => {
     if (!form.label?.trim()) return
+    const payload = { ...form }
+    if (!payload.use_group_checkout_link) {
+      payload.group_checkout_provider = null
+      payload.hyperlink_text = null
+    }
     if (editId) {
-      await updateVariant(token, editId, form)
+      await updateVariant(token, editId, payload)
     } else {
-      const data = { ...form, weight: form.weight || 1 }
+      const data = { ...payload, weight: payload.weight || 1 }
       if (tierId) {
         await createTierVariant(token, tierId, data)
       } else {
@@ -52,7 +70,12 @@ export default function VariantEditor({ token, methodId, tierId }: Props) {
 
   const handleEdit = (v: Variant) => {
     setEditId(v.id)
-    setForm({ ...v })
+    setForm({
+      ...variantFormDefaults,
+      ...v,
+      group_checkout_provider: v.group_checkout_provider ?? 'stripe',
+      hyperlink_text: v.hyperlink_text ?? 'PAY HERE',
+    })
     setShowAdd(true)
   }
 
@@ -64,6 +87,9 @@ export default function VariantEditor({ token, methodId, tierId }: Props) {
 
   const totalWeight = variants.reduce((sum, v) => sum + v.weight, 0)
   const pct = (w: number) => totalWeight > 0 ? Math.round((w / totalWeight) * 100) : 0
+
+  const groupLinkEnabled = Boolean(form.use_group_checkout_link)
+  const provider = (form.group_checkout_provider || '').trim().toLowerCase()
 
   return (
     <div className="mt-3 rounded-lg border border-gray-700 bg-gray-800/50 p-4">
@@ -80,7 +106,7 @@ export default function VariantEditor({ token, methodId, tierId }: Props) {
           </p>
         </div>
         <button
-          onClick={() => { resetForm(); setShowAdd(true) }}
+          onClick={openAddForm}
           className="text-xs text-indigo-400 hover:text-indigo-300"
         >
           + Add Variant
@@ -95,6 +121,18 @@ export default function VariantEditor({ token, methodId, tierId }: Props) {
               <span className="rounded bg-emerald-900/50 px-1.5 py-0.5 text-xs font-medium text-emerald-400">
                 {pct(v.weight)}% (weight: {v.weight})
               </span>
+              {direction === 'deposit' && v.use_group_checkout_link && (
+                <span className="text-xs text-indigo-400">Stripe link</span>
+              )}
+              {direction === 'deposit' && (v.min_amount != null || v.max_amount != null) && (
+                <span className="text-xs text-gray-500">
+                  {v.min_amount != null && v.max_amount != null
+                    ? `$${v.min_amount}–$${v.max_amount}`
+                    : v.min_amount != null
+                      ? `$${v.min_amount}+`
+                      : `≤$${v.max_amount}`}
+                </span>
+              )}
             </div>
             {v.response_type === 'text' && v.response_text && (
               <p className="mt-0.5 max-w-md truncate text-xs text-gray-500">{v.response_text}</p>
@@ -170,6 +208,91 @@ export default function VariantEditor({ token, methodId, tierId }: Props) {
               </p>
             </div>
           </div>
+
+          {direction === 'deposit' && (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-400">Min Amount ($)</label>
+                  <input
+                    type="number"
+                    value={form.min_amount ?? ''}
+                    onChange={(e) => setForm({ ...form, min_amount: e.target.value ? Number(e.target.value) : null })}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                    placeholder="Inherit from tier/method"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-400">Max Amount ($)</label>
+                  <input
+                    type="number"
+                    value={form.max_amount ?? ''}
+                    onChange={(e) => setForm({ ...form, max_amount: e.target.value ? Number(e.target.value) : null })}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                    placeholder="Inherit from tier/method"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-indigo-900/40 bg-gray-950 p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium text-white">Use group specific link</div>
+                    <div className="mt-1 text-xs text-gray-500">
+                      Per-variant Stripe checkout. Min/Max above set checkout limits when enabled
+                      (otherwise inherits tier or method limits).
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={form.use_group_checkout_link || false}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          use_group_checkout_link: e.target.checked ? true : null,
+                        })
+                      }
+                      className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500 focus:ring-indigo-500"
+                    />
+                    Enabled
+                  </label>
+                </div>
+
+                {groupLinkEnabled && (
+                  <div className="mt-3 space-y-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-400">Provider</label>
+                      <select
+                        value={form.group_checkout_provider ?? 'stripe'}
+                        onChange={(e) => setForm({ ...form, group_checkout_provider: e.target.value })}
+                        className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                      >
+                        <option value="stripe">Stripe</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-400">Hyperlink text</label>
+                      <input
+                        value={form.hyperlink_text ?? 'PAY HERE'}
+                        onChange={(e) => setForm({ ...form, hyperlink_text: e.target.value })}
+                        className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                        placeholder='Example: "PAY HERE"'
+                      />
+                      <p className="mt-1 text-xs text-gray-600">
+                        In Response Text below, put <span className="font-mono text-gray-400">{'{{hyperlink}}'}</span>{' '}
+                        where the pay link should appear.
+                      </p>
+                    </div>
+                    {provider !== 'stripe' && (
+                      <p className="text-xs text-yellow-400">Only Stripe is supported right now.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
           <ResponseEditor
             type={form.response_type || 'text'}
             text={form.response_text || ''}
@@ -177,6 +300,12 @@ export default function VariantEditor({ token, methodId, tierId }: Props) {
             caption={form.response_caption || ''}
             onChange={(field, value) => setForm({ ...form, [field]: value })}
           />
+          {direction === 'deposit' && groupLinkEnabled && (
+            <p className="text-xs text-indigo-300/80">
+              Tip: include <span className="font-mono">{'{{hyperlink}}'}</span> in the response above — the bot
+              replaces it with the per-group Stripe checkout link.
+            </p>
+          )}
           <div className="flex gap-2">
             <button onClick={handleSave} className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-indigo-500">
               {editId ? 'Update' : 'Add'}

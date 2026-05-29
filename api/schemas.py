@@ -226,6 +226,11 @@ class VariantRead(BaseModel):
     response_text: Optional[str]
     response_file_id: Optional[str]
     response_caption: Optional[str]
+    min_amount: Optional[Decimal] = None
+    max_amount: Optional[Decimal] = None
+    use_group_checkout_link: Optional[bool] = None
+    group_checkout_provider: Optional[str] = None
+    hyperlink_text: Optional[str] = None
     sort_order: int
 
 
@@ -323,6 +328,11 @@ class VariantCreate(BaseModel):
     response_text: Optional[str] = None
     response_file_id: Optional[str] = None
     response_caption: Optional[str] = None
+    min_amount: Optional[Decimal] = None
+    max_amount: Optional[Decimal] = None
+    use_group_checkout_link: Optional[bool] = None
+    group_checkout_provider: Optional[str] = None
+    hyperlink_text: Optional[str] = None
     sort_order: int = 0
 
 
@@ -333,6 +343,11 @@ class VariantUpdate(BaseModel):
     response_text: Optional[str] = None
     response_file_id: Optional[str] = None
     response_caption: Optional[str] = None
+    min_amount: Optional[Decimal] = None
+    max_amount: Optional[Decimal] = None
+    use_group_checkout_link: Optional[bool] = None
+    group_checkout_provider: Optional[str] = None
+    hyperlink_text: Optional[str] = None
     sort_order: Optional[int] = None
 
 

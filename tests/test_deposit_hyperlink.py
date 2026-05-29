@@ -270,6 +270,62 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         create_session.assert_not_called()
         send_response.assert_awaited()
 
+    async def test_variant_group_checkout_overrides_tier(self):
+        chat = SimpleNamespace(send_message=AsyncMock())
+        message = SimpleNamespace(chat=chat)
+        query = SimpleNamespace(
+            message=message,
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
+
+        result = SimpleNamespace(
+            checkout_url="https://checkout.stripe.com/variant",
+            session_id="cs_variant",
+            customer_id="cus_variant",
+        )
+
+        variant = {
+            "response_type": "text",
+            "response_text": "Stripe variant\n\n{{hyperlink}}",
+            "use_group_checkout_link": True,
+            "group_checkout_provider": "stripe",
+            "hyperlink_text": "Pay now",
+            "min_amount": 101,
+            "max_amount": 2000,
+        }
+        method = {
+            "use_group_checkout_link": False,
+            "min_amount": 20,
+            "max_amount": 100,
+        }
+        tier = {
+            "use_group_checkout_link": False,
+            "min_amount": 20,
+            "max_amount": 100,
+        }
+
+        with (
+            patch.object(dep, "stripe_configured", return_value=True),
+            patch.object(dep, "create_stripe_checkout_session", return_value=result) as create_session,
+        ):
+            merged = dep._with_method_checkout_settings(variant, method, tier=tier)
+            ok = await dep._send_deposit_method_response(
+                query,
+                context,
+                amount=dep.Decimal("150"),
+                display_name="Cashapp",
+                method_id=123,
+                method_slug="cashapp",
+                response_data=merged,
+            )
+
+        self.assertTrue(ok)
+        self.assertTrue(dep._stripe_checkout_enabled(merged))
+        create_session.assert_called_once()
+        self.assertEqual(create_session.call_args.kwargs.get("checkout_min_usd"), 101)
+        self.assertEqual(create_session.call_args.kwargs.get("checkout_max_usd"), 2000)
+
     async def test_cashapp_over_100_does_not_use_stripe_without_group_checkout(self):
         chat = SimpleNamespace(send_message=AsyncMock())
         message = SimpleNamespace(chat=chat)

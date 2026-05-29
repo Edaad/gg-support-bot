@@ -62,30 +62,36 @@ _CHECKOUT_SETTING_KEYS = (
 )
 
 
+def _apply_checkout_layer(target: dict, source: dict | None) -> None:
+    """Overlay checkout fields from source onto target (method → tier → variant)."""
+    if not source:
+        return
+    if source.get("use_group_checkout_link") is not None:
+        target["use_group_checkout_link"] = bool(source["use_group_checkout_link"])
+    if source.get("group_checkout_provider"):
+        target["group_checkout_provider"] = source.get("group_checkout_provider")
+    elif target.get("use_group_checkout_link") and not target.get("group_checkout_provider"):
+        target["group_checkout_provider"] = "stripe"
+    if source.get("hyperlink_text"):
+        target["hyperlink_text"] = source.get("hyperlink_text")
+    if source.get("min_amount") is not None:
+        target["min_amount"] = source.get("min_amount")
+    if source.get("max_amount") is not None:
+        target["max_amount"] = source.get("max_amount")
+
+
 def _with_method_checkout_settings(
     response_data: dict,
     method: dict | None,
     *,
     tier: dict | None = None,
 ) -> dict:
-    """Merge checkout settings: method defaults, then tier overrides when present."""
+    """Merge checkout settings: method → tier → variant (response_data)."""
     merged = dict(response_data)
-    if method:
-        for key in _CHECKOUT_SETTING_KEYS:
-            if key not in merged or merged.get(key) is None:
-                merged[key] = method.get(key)
-    if tier:
-        merged["use_group_checkout_link"] = bool(tier.get("use_group_checkout_link", False))
-        if tier.get("group_checkout_provider"):
-            merged["group_checkout_provider"] = tier.get("group_checkout_provider")
-        elif merged["use_group_checkout_link"]:
-            merged["group_checkout_provider"] = "stripe"
-        if tier.get("hyperlink_text"):
-            merged["hyperlink_text"] = tier.get("hyperlink_text")
-        if tier.get("min_amount") is not None:
-            merged["min_amount"] = tier.get("min_amount")
-        if tier.get("max_amount") is not None:
-            merged["max_amount"] = tier.get("max_amount")
+    checkout: dict = {}
+    for layer in (method, tier, response_data):
+        _apply_checkout_layer(checkout, layer)
+    merged.update(checkout)
     return merged
 
 
