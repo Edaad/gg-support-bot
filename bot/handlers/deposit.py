@@ -764,6 +764,8 @@ async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 TIMEOUT_SECONDS = 600
 
+_DEPOSIT_CANCEL = CommandHandler("cancel", deposit_cancel)
+
 
 def get_deposit_handler() -> ConversationHandler:
     return ConversationHandler(
@@ -773,28 +775,33 @@ def get_deposit_handler() -> ConversationHandler:
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND, deposit_referral_received
                 ),
+                _DEPOSIT_CANCEL,
             ],
             DEPOSIT_AMOUNT: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND, deposit_amount_received
                 ),
+                _DEPOSIT_CANCEL,
             ],
             DEPOSIT_UNION: [
                 CallbackQueryHandler(
                     deposit_union_chosen, pattern=r"^depunion:(RT|AT)$"
                 ),
+                _DEPOSIT_CANCEL,
             ],
             DEPOSIT_CHOOSE: [
                 CallbackQueryHandler(deposit_method_chosen, pattern=r"^dep:\d+$"),
+                _DEPOSIT_CANCEL,
             ],
             DEPOSIT_SUB: [
                 CallbackQueryHandler(deposit_sub_chosen, pattern=r"^depsub:\d+$"),
+                _DEPOSIT_CANCEL,
             ],
             ConversationHandler.TIMEOUT: [
                 MessageHandler(filters.ALL, deposit_timeout),
             ],
         },
-        fallbacks=[CommandHandler("cancel", deposit_cancel)],
+        fallbacks=[_DEPOSIT_CANCEL],
         conversation_timeout=TIMEOUT_SECONDS,
         name="deposit_conv",
         per_chat=True,

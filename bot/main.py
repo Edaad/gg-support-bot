@@ -92,6 +92,7 @@ def run_bot(token: str | None = None):
     )
     from bot.handlers.deposit import get_deposit_handler
     from bot.handlers.cashout import get_cashout_handler
+    from bot.handlers.flow_cancel import flow_cancel_handler
     from bot.handlers.list_cmd import list_handler
     from bot.handlers.groups import (
         on_my_chat_member_updated,
@@ -142,6 +143,7 @@ def run_bot(token: str | None = None):
     app.add_handler(get_set_handler())
     app.add_handler(get_deposit_handler())
     app.add_handler(get_cashout_handler())
+    app.add_handler(CommandHandler("cancel", flow_cancel_handler))
     app.add_handler(get_gc_handler())
     app.add_handler(get_bonus_handler())
 

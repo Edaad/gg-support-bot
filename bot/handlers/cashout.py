@@ -491,6 +491,8 @@ async def cashout_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 TIMEOUT_SECONDS = 600
 
+_CASHOUT_CANCEL = CommandHandler("cancel", cashout_cancel)
+
 
 def get_cashout_handler() -> ConversationHandler:
     return ConversationHandler(
@@ -500,24 +502,28 @@ def get_cashout_handler() -> ConversationHandler:
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND, cashout_amount_received
                 ),
+                _CASHOUT_CANCEL,
             ],
             CASHOUT_SIMPLE_AMOUNT: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND, cashout_simple_amount_received
                 ),
+                _CASHOUT_CANCEL,
             ],
             CASHOUT_CHOOSE: [
                 CallbackQueryHandler(cashout_method_chosen, pattern=r"^co:\d+$"),
                 CallbackQueryHandler(cashout_method_chosen, pattern=r"^codone$"),
+                _CASHOUT_CANCEL,
             ],
             CASHOUT_SUB: [
                 CallbackQueryHandler(cashout_sub_chosen, pattern=r"^cosub:\d+$"),
+                _CASHOUT_CANCEL,
             ],
             ConversationHandler.TIMEOUT: [
                 MessageHandler(filters.ALL, cashout_timeout),
             ],
         },
-        fallbacks=[CommandHandler("cancel", cashout_cancel)],
+        fallbacks=[_CASHOUT_CANCEL],
         conversation_timeout=TIMEOUT_SECONDS,
         name="cashout_conv",
         per_chat=True,
