@@ -9,7 +9,12 @@ import {
   type ProcessedWeekSummary,
   type WeeklyPlayerRow,
 } from '../api/weeklyStats'
-import { getWeeklyPlayerChatIds, listClubs, sendWeeklyPlayerMessage } from '../api/client'
+import {
+  getWeeklyPlayerChatIds,
+  listClubs,
+  sendWeeklyPlayerMessage,
+  syncWeeklyPlayerNicknames,
+} from '../api/client'
 import Modal from '../components/Modal'
 import { LabeledSelect, LabeledTextarea } from '../components/Field'
 
@@ -61,6 +66,7 @@ function buildFilters(f: FilterState): PlayerFilters {
 export default function WeeklyStats({ token }: { token: string }) {
   const clubSelectId = useId()
   const weekSelectId = useId()
+  const searchId = useId()
   const [slug, setSlug] = useState<string | null>(null)
   const [weeks, setWeeks] = useState<ProcessedWeekSummary[]>([])
   const [weekId, setWeekId] = useState<string | null>(null)
@@ -73,6 +79,8 @@ export default function WeeklyStats({ token }: { token: string }) {
     maxRakeback: '',
   })
   const [appliedFilters, setAppliedFilters] = useState<PlayerFilters>({})
+  const [playerSearch, setPlayerSearch] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
   const [page, setPage] = useState(1)
   const pageSize = 50
   const [data, setData] = useState<{ total: number; players: WeeklyPlayerRow[] } | null>(null)
@@ -110,6 +118,8 @@ export default function WeeklyStats({ token }: { token: string }) {
     setData(null)
     setPage(1)
     setAppliedFilters({})
+    setPlayerSearch('')
+    setAppliedSearch('')
     setFilterInputs({
       minProfit: '',
       maxProfit: '',
@@ -129,6 +139,11 @@ export default function WeeklyStats({ token }: { token: string }) {
       setErr('')
       try {
         await processWeekSync(clubSlug)
+        try {
+          await syncWeeklyPlayerNicknames(token, clubSlug)
+        } catch {
+          /* nickname backfill is best-effort */
+        }
         const list = await getProcessedWeeks(clubSlug)
         setWeeks(list)
         const latest = pickLatestProcessedWeek(list)
@@ -143,7 +158,7 @@ export default function WeeklyStats({ token }: { token: string }) {
         setLoadingWeeks(false)
       }
     },
-    [resetFiltersAndPage],
+    [resetFiltersAndPage, token],
   )
 
   useEffect(() => {
@@ -183,6 +198,7 @@ export default function WeeklyStats({ token }: { token: string }) {
         weekId,
         page,
         pageSize,
+        q: appliedSearch || undefined,
         filters: appliedFilters,
       })
       setData({ total: res.total, players: res.players })
@@ -192,7 +208,7 @@ export default function WeeklyStats({ token }: { token: string }) {
     } finally {
       setLoadingPlayers(false)
     }
-  }, [slug, weekId, page, pageSize, appliedFilters])
+  }, [slug, weekId, page, pageSize, appliedFilters, appliedSearch])
 
   useEffect(() => {
     void loadPlayers()
@@ -203,7 +219,7 @@ export default function WeeklyStats({ token }: { token: string }) {
     setBulkModalOpen(false)
     setBulkModalText('')
     setBulkModalErr('')
-  }, [slug, weekId, page, appliedFilters])
+  }, [slug, weekId, page, appliedFilters, appliedSearch])
 
   const weekLabel = useMemo(() => {
     return (w: ProcessedWeekSummary) => {
@@ -341,6 +357,11 @@ export default function WeeklyStats({ token }: { token: string }) {
     setPage(1)
   }
 
+  const applyPlayerSearch = () => {
+    setAppliedSearch(playerSearch)
+    setPage(1)
+  }
+
   return (
     <div>
       <h1 className="mb-2 text-2xl font-bold">Weekly player stats</h1>
@@ -402,6 +423,21 @@ export default function WeeklyStats({ token }: { token: string }) {
 
       {weekId && (
         <>
+          <div className="mb-4 flex flex-wrap gap-2">
+            <input
+              id={searchId}
+              type="search"
+              value={playerSearch}
+              onChange={(e) => setPlayerSearch(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && applyPlayerSearch()}
+              placeholder="Search nickname, GG ID, agent…"
+              className="input-field-sm min-w-[16rem] flex-1"
+            />
+            <button type="button" onClick={applyPlayerSearch} className="btn-primary-sm">
+              Search
+            </button>
+          </div>
+
           <div className="mb-4">
             <button
               type="button"
@@ -455,9 +491,11 @@ export default function WeeklyStats({ token }: { token: string }) {
             )}
 
             <p className="mt-3 rounded-lg border border-border bg-surface/60 px-4 py-3 text-xs leading-relaxed text-ink-muted">
-              If <span className="font-medium text-ink">Send message</span> is greyed out, the player
-              likely does not have a group chat with us yet. If they do have a group chat with us but the
-              button is still greyed out, contact Jeehan.
+              <span className="font-medium text-ink">Send message</span> requires a{' '}
+              <span className="font-medium text-ink">GG ID</span> on the stats row (from gg-computer). The
+              nickname column is the in-game name, not the Telegram label on the support group (
+              e.g. <code className="text-ink">AT / 2066-5758 / Shannon</code>). If GG ID shows —, gg-computer
+              did not attach an id for that player this week — search by GG ID once it is populated.
             </p>
           </div>
 
@@ -468,7 +506,7 @@ export default function WeeklyStats({ token }: { token: string }) {
                   Total matching: <strong className="text-ink">{data.total}</strong>
                   {data.total === 0 && (
                     <span className="ml-2 text-chart-3/90">
-                      (Week may not be processed yet, or filters exclude everyone.)
+                      (Week may not be processed yet, or search/filters exclude everyone.)
                     </span>
                   )}
                 </>
@@ -506,6 +544,7 @@ export default function WeeklyStats({ token }: { token: string }) {
               <thead className="bg-surface text-ink-muted">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Nickname</th>
+                  <th className="px-3 py-2 text-left font-medium">GG ID</th>
                   <th className="px-3 py-2 text-right font-medium">Rake</th>
                   <th className="px-3 py-2 text-right font-medium">RB %</th>
                   <th className="px-3 py-2 text-right font-medium">Rakeback</th>
@@ -517,14 +556,14 @@ export default function WeeklyStats({ token }: { token: string }) {
               <tbody className="divide-y divide-border">
                 {loadingPlayers && (
                   <tr>
-                    <td colSpan={7} className="px-3 py-8 text-center text-ink-muted">
+                    <td colSpan={8} className="px-3 py-8 text-center text-ink-muted">
                       Loading players…
                     </td>
                   </tr>
                 )}
                 {!loadingPlayers && data && data.players.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-3 py-8 text-center text-ink-muted">
+                    <td colSpan={8} className="px-3 py-8 text-center text-ink-muted">
                       No data for this selection.
                     </td>
                   </tr>
@@ -533,6 +572,7 @@ export default function WeeklyStats({ token }: { token: string }) {
                   data?.players.map((row) => (
                     <tr key={`${row.nickname}-${row.gg_id ?? 'x'}`} className="bg-bg hover:bg-surface">
                       <td className="px-3 py-2 font-medium text-ink">{row.nickname}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-ink-muted">{row.gg_id ?? '—'}</td>
                       <td className="px-3 py-2 text-right tabular-nums">${fmtMoney(row.rake)}</td>
                       <td className="px-3 py-2 text-right">{rbPercent(row)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">${fmtMoney(row.rakeback)}</td>
@@ -548,7 +588,7 @@ export default function WeeklyStats({ token }: { token: string }) {
                           disabled={!row.gg_id}
                           title={
                             !row.gg_id
-                              ? 'No group chat linked — cannot message'
+                              ? 'GG ID missing on this stats row — cannot message until gg-computer includes it'
                               : 'Send to linked group chat'
                           }
                           onClick={() => void openSend(row)}
@@ -592,6 +632,12 @@ export default function WeeklyStats({ token }: { token: string }) {
             <p className="mb-4 text-sm text-ink-muted">
               Club: {displayLabelForSlug(slug ?? '')} (<code>{slug ?? ''}</code>) · Player:{' '}
               {typeof sendRow.nickname === 'string' ? sendRow.nickname : '—'}
+              {sendRow.gg_id ? (
+                <>
+                  {' '}
+                  · GG ID <code>{sendRow.gg_id}</code>
+                </>
+              ) : null}
             </p>
             {sendErr && (
               <div role="alert" className="alert-danger mb-3">

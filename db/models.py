@@ -426,6 +426,7 @@ class PlayerDetails(Base):
         server_default=text("'{}'::bigint[]"),
     )
     gg_player_id = Column(String(255), nullable=False)
+    gg_nickname = Column(String(255), nullable=True)
     club_id = Column(
         Integer,
         ForeignKey("clubs.id", ondelete="CASCADE"),

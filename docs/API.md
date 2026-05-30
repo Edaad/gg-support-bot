@@ -99,6 +99,36 @@ Used by the dashboard **Weekly stats** page to resolve a player’s linked Teleg
 
 **Errors:** `400` unknown slug or `chat_id` not allowed; `404` no matching `player_details` row; `500` if `TELEGRAM_BOT_TOKEN` is missing or Telegram API fails.
 
+### Sync nicknames from gg-computer (Postgres backfill)
+
+| | |
+|---|---|
+| **POST** | `/api/weekly-stats/sync-nicknames` |
+
+After gg-computer weekly sync has upserted Mongo `player_details`, copies nicknames into Postgres `player_details.gg_nickname` for every row in that club (batch `POST /player-details/batch` on gg-computer).
+
+**Query parameters**
+
+| Name | Required | Description |
+|------|----------|-------------|
+| `club_slug` | Yes | gg-computer club slug (e.g. `round-table`) |
+
+**Response** `200`:
+
+```json
+{
+  "updated": 42,
+  "missing": 3,
+  "skipped": 0,
+  "club_slug": "round-table",
+  "error": null
+}
+```
+
+`error` is set when `GG_COMPUTER_BASE_URL` is missing (`gg_computer_not_configured`) or slug cannot be resolved (`no_club_slug`). The dashboard **Weekly stats** page calls this automatically after `POST /process-week/sync` (best-effort; week load continues on failure).
+
+**Errors:** `400` unknown slug; `404` club not in Postgres.
+
 ---
 
 ## Dashboard: gg-computer (read-only) API
@@ -107,8 +137,144 @@ The **Weekly stats** UI loads processed weeks and player rows from the separate 
 
 - **Production (recommended):** leave `VITE_WEEKLY_STATS_BASE_URL` unset so the dashboard calls same-origin **`/weekly-stats`**. Set **`GG_COMPUTER_BASE_URL`** on the FastAPI server (Heroku config var) to the gg-computer base URL (no trailing slash), e.g. `https://your-gg-computer-host`. The API proxies `/weekly-stats/*` to gg-computer (see [`api/routes/weekly_stats_proxy.py`](../api/routes/weekly_stats_proxy.py)).
 - **Alternative:** set **`VITE_WEEKLY_STATS_BASE_URL`** at dashboard build time to call gg-computer directly from the browser (requires gg-computer CORS). If unset in dev, Vite proxies `/weekly-stats` to `http://127.0.0.1:3000` (see [`dashboard/vite.config.ts`](../dashboard/vite.config.ts)).
-- **Endpoints used:** `GET /processed-weeks?clubId=<slug>`, `GET /players?clubId=&weekId=&filters&page=&pageSize=`.
-- **Sync:** Opening **Weekly stats** (or changing club) calls `POST /process-week/sync` for that club, loads weeks, and selects the latest. Errors are shown in the UI; successful sync is silent.
+- **Endpoints used:** `GET /processed-weeks?clubId=<slug>`, `GET /players?clubId=&weekId=&q=&filters&page=&pageSize=` (`q` searches nickname, `gg_id`, and agent), `GET /player-details`, `POST /player-details/batch`.
+- **Sync:** Opening **Weekly stats** (or changing club) calls `POST /process-week/sync`, then **`POST /api/weekly-stats/sync-nicknames`** (Postgres `gg_nickname`), loads weeks, and selects the latest. Errors from week sync are shown in the UI; nickname backfill failures are silent.
+
+### Player profile lookup (Mongo `player_details`)
+
+Implemented on gg-computer; proxied at `/weekly-stats/player-details` and `/weekly-stats/player-details/batch`.
+
+**Goal:** Given a GG player id (`8190-5287`), return the canonical in-game **nickname** and **club** metadata for one club (or all clubs the player belongs to). Source of truth is MongoDB collection **`player_details`** (same identity as Postgres `player_details`: one document per `(gg_id, clubId)`).
+
+**GG id format:** `^[0-9]{1,48}-[0-9]{1,48}$` (same as gg-support-bot title parsing and CSV import).
+
+**Club id:** gg-computer **slug** string (e.g. `round-table`, `clubgto`) — same as `clubId` on existing routes. Not the numeric Postgres `clubs.id`.
+
+#### `GET /player-details`
+
+| Query param | Required | Description |
+|-------------|----------|-------------|
+| `ggId` | Yes | GG player id (alias `gg_id` accepted for consistency with `/players`) |
+| `clubId` | No | When set, return at most one club-scoped record. When omitted, return every club that has this player in Mongo. |
+
+**Response** `200` when `clubId` is set and a row exists:
+
+```json
+{
+  "gg_id": "8190-5287",
+  "nickname": "ThePirate343",
+  "club": {
+    "clubId": "round-table",
+    "name": "Round Table"
+  },
+  "agent": "SomeAgent",
+  "updated_at": "2026-05-30T12:00:00.000Z"
+}
+```
+
+**Response** `200` when `clubId` is omitted (multi-club):
+
+```json
+{
+  "gg_id": "8190-5287",
+  "clubs": [
+    {
+      "nickname": "ThePirate343",
+      "club": { "clubId": "round-table", "name": "Round Table" },
+      "agent": null,
+      "updated_at": "2026-05-30T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `gg_id` | string | Echo of query param, normalized trim |
+| `nickname` | string | In-game name from weekly processing / Mongo `player_details` |
+| `club.clubId` | string | Slug used everywhere in gg-computer |
+| `club.name` | string | Human-readable club name (display) |
+| `agent` | string \| null | Optional; omit or `null` if unknown |
+| `updated_at` | string (ISO 8601) | Last time nickname/club binding was refreshed in Mongo |
+
+**Errors**
+
+| Status | When |
+|--------|------|
+| `400` | Missing `ggId`, invalid format, or unknown `clubId` slug |
+| `404` | Valid request but no Mongo `player_details` for `(ggId, clubId)` |
+| `404` | `clubId` omitted and player unknown in all clubs (empty `clubs` is **not** used — prefer 404) |
+
+**Error body** (match existing gg-computer style):
+
+```json
+{ "error": "Player not found for club round-table" }
+```
+
+#### `POST /player-details/batch` (optional, for backfills)
+
+Resolve many ids in one round trip when gg-support-bot imports or backfills Postgres `player_details.gg_nickname`.
+
+**Request body**
+
+```json
+{
+  "clubId": "round-table",
+  "gg_ids": ["8190-5287", "2066-5758"]
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `clubId` | Yes | Club slug |
+| `gg_ids` | Yes | Array, max **200** ids per request |
+
+**Response** `200`:
+
+```json
+{
+  "clubId": "round-table",
+  "found": [
+    {
+      "gg_id": "8190-5287",
+      "nickname": "ThePirate343",
+      "agent": null,
+      "updated_at": "2026-05-30T12:00:00.000Z"
+    }
+  ],
+  "missing": ["9999-9999"]
+}
+```
+
+Unknown ids appear in `missing`; do not fail the whole request.
+
+#### Mongo `player_details` document (implementation note for gg-computer)
+
+Recommended shape (aligns with weekly `/players` rows and Postgres):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `gg_id` | string | Unique per club with `clubId` |
+| `clubId` | string | Slug |
+| `nickname` | string | Updated when `POST /process-week/sync` processes a week containing this player |
+| `agent` | string \| null | From weekly export if available |
+| `updated_at` | Date | Set on each nickname upsert from sync |
+
+**Upsert rule:** On weekly sync, for each player row in processed week data, upsert `(clubId, gg_id)` and set `nickname` (and `agent` if present). Latest sync wins for nickname.
+
+**Index:** unique compound `{ clubId: 1, gg_id: 1 }`.
+
+#### Consumer: gg-support-bot (Postgres)
+
+Column: `player_details.gg_nickname` (nullable `varchar(255)`). Migration: [`migrate_player_details_gg_nickname.py`](../migrate_player_details_gg_nickname.py).
+
+| Trigger | Action |
+|---------|--------|
+| Weekly stats page sync | `POST /api/weekly-stats/sync-nicknames` after `POST /process-week/sync` |
+| Bot bind (`/track`, title change, `/override`) | Best-effort `GET /player-details` → update one row |
+| Manual backfill | [`scripts/backfill_player_details_gg_nickname.py`](../scripts/backfill_player_details_gg_nickname.py) |
+
+Slug → Postgres `clubs.id`: [`api/club_slug.py`](../api/club_slug.py) (same mapping as [`dashboard/src/config/clubMap.ts`](../dashboard/src/config/clubMap.ts)).
 
 ---
 

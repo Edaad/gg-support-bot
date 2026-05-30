@@ -218,6 +218,9 @@ def bind_chat_from_title(*, chat_id: int, title: str | None) -> BindResult:
             error=conflict,
         )
     bind_chat_to_player(club_id=club_id, gg_player_id=gg_player_id, chat_id=chat_id)
+    from bot.services.player_details_nickname import try_refresh_nickname_after_bind
+
+    try_refresh_nickname_after_bind(club_id=club_id, gg_player_id=gg_player_id)
     return BindResult(ok=True, gg_player_id=gg_player_id, club_id=club_id)
 
 
@@ -262,6 +265,9 @@ def override_chat_for_player(*, club_id: int, gg_player_id: str, chat_id: int) -
             set_stmt,
             {"chat_id": cid, "gg_player_id": gg_player_id, "club_id": club},
         )
+    from bot.services.player_details_nickname import try_refresh_nickname_after_bind
+
+    try_refresh_nickname_after_bind(club_id=club, gg_player_id=gg_player_id)
     return OverrideResult(
         ok=True,
         gg_player_id=gg_player_id,

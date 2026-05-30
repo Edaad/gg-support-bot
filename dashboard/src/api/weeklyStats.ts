@@ -184,23 +184,26 @@ export async function getPlayers(params: {
   weekId: string
   page?: number
   pageSize?: number
+  q?: string
   filters?: PlayerFilters
 }): Promise<PlayersResponse> {
-  const { clubId, weekId, page = 1, pageSize = 50, filters = {} } = params
-  const q = new URLSearchParams({
+  const { clubId, weekId, page = 1, pageSize = 50, q, filters = {} } = params
+  const qs = new URLSearchParams({
     clubId,
     weekId,
     page: String(page),
     pageSize: String(pageSize),
   })
+  const trimmedQ = q?.trim()
+  if (trimmedQ) qs.set('q', trimmedQ)
   const f = filters
-  if (f.minProfit != null) q.set('minProfit', String(f.minProfit))
-  if (f.maxProfit != null) q.set('maxProfit', String(f.maxProfit))
-  if (f.minRake != null) q.set('minRake', String(f.minRake))
-  if (f.maxRake != null) q.set('maxRake', String(f.maxRake))
-  if (f.minRakeback != null) q.set('minRakeback', String(f.minRakeback))
-  if (f.maxRakeback != null) q.set('maxRakeback', String(f.maxRakeback))
-  const res = await weeklyFetch<PlayersResponse>(`/players?${q.toString()}`)
+  if (f.minProfit != null) qs.set('minProfit', String(f.minProfit))
+  if (f.maxProfit != null) qs.set('maxProfit', String(f.maxProfit))
+  if (f.minRake != null) qs.set('minRake', String(f.minRake))
+  if (f.maxRake != null) qs.set('maxRake', String(f.maxRake))
+  if (f.minRakeback != null) qs.set('minRakeback', String(f.minRakeback))
+  if (f.maxRakeback != null) qs.set('maxRakeback', String(f.maxRakeback))
+  const res = await weeklyFetch<PlayersResponse>(`/players?${qs.toString()}`)
   const players = Array.isArray(res.players) ? res.players.map((row) => normalizeWeeklyPlayer(row)) : []
   return { ...res, players }
 }

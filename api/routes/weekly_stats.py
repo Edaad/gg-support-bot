@@ -8,21 +8,14 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 from telegram import Bot
 
 from api.auth import get_current_admin
+from api.club_slug import resolve_club_id
+from bot.services.player_details_nickname import refresh_nicknames_for_club
 from db.connection import get_db_dependency
-from db.models import Club, PlayerDetails
-
-# Mirror dashboard/src/config/clubMap.ts — slug -> canonical clubs.name
-CLUB_SLUG_TO_NAME = {
-    "clubgto": "ClubGTO",
-    "round-table": "Round Table",
-    "aces-table": "Round Table",
-    "creator-club": "Creator Club",
-}
+from db.models import PlayerDetails
 
 router = APIRouter(
     prefix="/api/weekly-stats",
@@ -31,23 +24,29 @@ router = APIRouter(
 )
 
 
-def _resolve_club_id(db: Session, club_slug: str) -> int:
-    key = club_slug.strip().lower()
-    full_name = CLUB_SLUG_TO_NAME.get(key)
-    if not full_name:
-        raise HTTPException(400, f"Unknown club slug: {club_slug!r}")
-    club = (
-        db.query(Club)
-        .filter(text("lower(name) = lower(:n)"))
-        .params(n=full_name)
-        .first()
+class SyncNicknamesResponse(BaseModel):
+    updated: int
+    missing: int
+    skipped: int
+    club_slug: str | None = None
+    error: str | None = None
+
+
+@router.post("/sync-nicknames", response_model=SyncNicknamesResponse)
+def sync_player_nicknames_from_gg_computer(
+    club_slug: str = Query(..., alias="club_slug"),
+    db: Session = Depends(get_db_dependency),
+):
+    """After gg-computer weekly sync, copy Mongo nicknames into Postgres player_details.gg_nickname."""
+    club_id = resolve_club_id(db, club_slug)
+    result = refresh_nicknames_for_club(club_id=club_id, club_slug=club_slug.strip().lower())
+    return SyncNicknamesResponse(
+        updated=int(result.get("updated", 0)),
+        missing=int(result.get("missing", 0)),
+        skipped=int(result.get("skipped", 0)),
+        club_slug=result.get("club_slug"),
+        error=result.get("error"),
     )
-    if not club:
-        raise HTTPException(
-            404,
-            f"No club named {full_name!r} in database — check clubs.name matches mapping.",
-        )
-    return int(club.id)
 
 
 class PlayerChatsResponse(BaseModel):
@@ -61,7 +60,7 @@ def get_player_chats(
     db: Session = Depends(get_db_dependency),
 ):
     """Telegram group chat ids bound to this player for the club (from player_details)."""
-    club_id = _resolve_club_id(db, club_slug)
+    club_id = resolve_club_id(db, club_slug)
     row = (
         db.query(PlayerDetails)
         .filter_by(club_id=club_id, gg_player_id=gg_player_id.strip())
@@ -97,7 +96,7 @@ def send_weekly_player_message(
     body: WeeklyPlayerMessageBody,
     db: Session = Depends(get_db_dependency),
 ):
-    club_id = _resolve_club_id(db, body.club_slug)
+    club_id = resolve_club_id(db, body.club_slug)
     row = (
         db.query(PlayerDetails)
         .filter_by(club_id=club_id, gg_player_id=body.gg_player_id.strip())

@@ -100,6 +100,14 @@ export const sendWeeklyPlayerMessage = (
 ) =>
   request<{ ok: boolean }>(`/weekly-stats/message`, { method: 'POST', body: JSON.stringify(body) }, token)
 
+/** Copy Mongo nicknames into Postgres after gg-computer weekly sync. */
+export const syncWeeklyPlayerNicknames = (token: string, clubSlug: string) =>
+  request<{ updated: number; missing: number; skipped: number; club_slug?: string; error?: string }>(
+    `/weekly-stats/sync-nicknames?${new URLSearchParams({ club_slug: clubSlug }).toString()}`,
+    { method: 'POST' },
+    token,
+  )
+
 // `/gc` MTProto sessions (JWT; server must have TG_API_ID / TG_API_HASH)
 
 export interface GcMtProtoClub {
