@@ -244,7 +244,7 @@ export default function WeeklyStats({ token }: { token: string }) {
   }
 
   const handleSend = async () => {
-    if (!sendRow?.gg_id || sendChatId == null) return
+    if (!slug || !sendRow?.gg_id || sendChatId == null) return
     const body = sendText.trim()
     if (!body) {
       setSendErr('Enter a message to send.')
