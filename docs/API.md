@@ -108,7 +108,7 @@ The **Weekly stats** UI loads processed weeks and player rows from the separate 
 - **Production (recommended):** leave `VITE_WEEKLY_STATS_BASE_URL` unset so the dashboard calls same-origin **`/weekly-stats`**. Set **`GG_COMPUTER_BASE_URL`** on the FastAPI server (Heroku config var) to the gg-computer base URL (no trailing slash), e.g. `https://your-gg-computer-host`. The API proxies `/weekly-stats/*` to gg-computer (see [`api/routes/weekly_stats_proxy.py`](../api/routes/weekly_stats_proxy.py)).
 - **Alternative:** set **`VITE_WEEKLY_STATS_BASE_URL`** at dashboard build time to call gg-computer directly from the browser (requires gg-computer CORS). If unset in dev, Vite proxies `/weekly-stats` to `http://127.0.0.1:3000` (see [`dashboard/vite.config.ts`](../dashboard/vite.config.ts)).
 - **Endpoints used:** `GET /processed-weeks?clubId=<slug>`, `GET /players?clubId=&weekId=&filters&page=&pageSize=`.
-- **Sync (dashboard button):** `POST /process-week/sync` with optional JSON body `{ "clubId": "<slug>" }` to process missing `weekly_profits` rows for one club; omit `clubId` in the upstream API to scan all clubs (the dashboard button always sends the **currently selected** club slug).
+- **Sync:** Opening the **Weekly stats** page (or changing club) calls `POST /process-week/sync` for that club, then loads weeks and selects the latest. The **Sync missing weeks** button runs the same flow and shows the JSON response banner.
 
 ---
 

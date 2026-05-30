@@ -15,3 +15,10 @@ export function displayLabelForSlug(slug: string): string {
   const row = CLUB_OPTIONS.find((c) => c.slug === slug)
   return row?.label ?? slug
 }
+
+/** Map dashboard `clubs.name` to gg-computer slug (see api/routes/weekly_stats.py). */
+export function slugForClubName(name: string): string | null {
+  const n = name.trim().toLowerCase()
+  const row = CLUB_OPTIONS.find((c) => c.label.toLowerCase() === n)
+  return row?.slug ?? null
+}

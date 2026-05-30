@@ -22,6 +22,21 @@ export type ProcessedWeekSummary = {
   playerCount?: number
 }
 
+/** Most recent processed week for a club (by end/start date, then week number). */
+export function pickLatestProcessedWeek(weeks: ProcessedWeekSummary[]): ProcessedWeekSummary | null {
+  if (!weeks.length) return null
+  const sorted = [...weeks].sort((a, b) => {
+    const da = a.endDate || a.startDate || ''
+    const db = b.endDate || b.startDate || ''
+    if (da !== db) return db.localeCompare(da)
+    const na = a.weekNumber ?? 0
+    const nb = b.weekNumber ?? 0
+    if (nb !== na) return nb - na
+    return String(b.weekId).localeCompare(String(a.weekId))
+  })
+  return sorted[0] ?? null
+}
+
 export type WeeklyPlayerRow = {
   nickname: string
   gg_id: string | null

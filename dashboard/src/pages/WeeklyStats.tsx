@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
-import { CLUB_OPTIONS, displayLabelForSlug } from '../config/clubMap'
+import { CLUB_OPTIONS, displayLabelForSlug, slugForClubName } from '../config/clubMap'
 import {
   getProcessedWeeks,
   getPlayers,
+  pickLatestProcessedWeek,
   processWeekSync,
   type PlayerFilters,
   type ProcessedWeekSummary,
   type WeeklyPlayerRow,
 } from '../api/weeklyStats'
-import { getWeeklyPlayerChatIds, sendWeeklyPlayerMessage } from '../api/client'
+import { getWeeklyPlayerChatIds, listClubs, sendWeeklyPlayerMessage } from '../api/client'
 import Modal from '../components/Modal'
 import { LabeledSelect, LabeledTextarea } from '../components/Field'
 
@@ -60,7 +61,7 @@ function buildFilters(f: FilterState): PlayerFilters {
 export default function WeeklyStats({ token }: { token: string }) {
   const clubSelectId = useId()
   const weekSelectId = useId()
-  const [slug, setSlug] = useState(CLUB_OPTIONS[0]?.slug ?? 'round-table')
+  const [slug, setSlug] = useState<string | null>(null)
   const [weeks, setWeeks] = useState<ProcessedWeekSummary[]>([])
   const [weekId, setWeekId] = useState<string | null>(null)
   const [filterInputs, setFilterInputs] = useState<FilterState>({
@@ -108,42 +109,84 @@ export default function WeeklyStats({ token }: { token: string }) {
     [data],
   )
 
-  const loadWeeks = useCallback(async () => {
-    setLoadingWeeks(true)
-    setErr('')
-    try {
-      const list = await getProcessedWeeks(slug)
-      setWeeks(list)
-      setWeekId(null)
-      setData(null)
-      setPage(1)
-      setAppliedFilters({})
-      setFilterInputs({
-        minProfit: '',
-        maxProfit: '',
-        minRake: '',
-        maxRake: '',
-        minRakeback: '',
-        maxRakeback: '',
-      })
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to load weeks')
-      setWeeks([])
-    } finally {
-      setLoadingWeeks(false)
-    }
-  }, [slug])
+  const resetFiltersAndPage = useCallback(() => {
+    setData(null)
+    setPage(1)
+    setAppliedFilters({})
+    setFilterInputs({
+      minProfit: '',
+      maxProfit: '',
+      minRake: '',
+      maxRake: '',
+      minRakeback: '',
+      maxRakeback: '',
+    })
+  }, [])
+
+  const refreshClub = useCallback(
+    async (
+      clubSlug: string,
+      options?: { showSyncBanner?: boolean; selectLatestWeek?: boolean },
+    ) => {
+      setLoadingWeeks(true)
+      setSyncBusy(true)
+      setErr('')
+      if (!options?.showSyncBanner) setSyncBanner(null)
+      try {
+        const res = await processWeekSync(clubSlug)
+        if (options?.showSyncBanner) setSyncBanner(JSON.stringify(res, null, 2))
+        const list = await getProcessedWeeks(clubSlug)
+        setWeeks(list)
+        const latest = pickLatestProcessedWeek(list)
+        const selectLatest = options?.selectLatestWeek !== false
+        setWeekId((prev) => {
+          if (!selectLatest && prev && list.some((w) => w.weekId === prev)) return prev
+          return latest?.weekId ?? null
+        })
+        if (selectLatest) resetFiltersAndPage()
+      } catch (e: unknown) {
+        setErr(e instanceof Error ? e.message : 'Failed to sync or load weeks')
+        setWeeks([])
+        setWeekId(null)
+        setData(null)
+      } finally {
+        setLoadingWeeks(false)
+        setSyncBusy(false)
+      }
+    },
+    [resetFiltersAndPage],
+  )
 
   useEffect(() => {
-    void loadWeeks()
-  }, [loadWeeks])
+    let cancelled = false
+    listClubs(token)
+      .then((rows) => {
+        if (cancelled) return
+        const firstSlug =
+          (rows.length ? slugForClubName(rows[0].name) : null) ??
+          CLUB_OPTIONS[0]?.slug ??
+          'round-table'
+        setSlug(firstSlug)
+      })
+      .catch(() => {
+        if (!cancelled) setSlug(CLUB_OPTIONS[0]?.slug ?? 'round-table')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  useEffect(() => {
+    if (!slug) return
+    void refreshClub(slug)
+  }, [slug, refreshClub])
 
   useEffect(() => {
     setSyncBanner(null)
   }, [slug])
 
   const loadPlayers = useCallback(async () => {
-    if (!weekId) {
+    if (!slug || !weekId) {
       setData(null)
       return
     }
@@ -188,7 +231,7 @@ export default function WeeklyStats({ token }: { token: string }) {
   }, [])
 
   const openSend = async (row: WeeklyPlayerRow) => {
-    if (!row.gg_id) return
+    if (!slug || !row.gg_id) return
     setSendRow(row)
     setSendErr('')
     setSendChats([])
@@ -253,6 +296,7 @@ export default function WeeklyStats({ token }: { token: string }) {
 
   /** Sends the same user-authored message to each row on the current page (filters + pagination as in the table). */
   const runBulkSend = async () => {
+    if (!slug) return
     const rows = messageableOnPage
     const message = bulkModalText.trim()
     if (rows.length === 0) return
@@ -313,18 +357,8 @@ export default function WeeklyStats({ token }: { token: string }) {
   }
 
   const handleProcessWeekSync = async () => {
-    setSyncBusy(true)
-    setSyncBanner(null)
-    setErr('')
-    try {
-      const res = await processWeekSync(slug)
-      setSyncBanner(JSON.stringify(res, null, 2))
-      await loadWeeks()
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Sync failed')
-    } finally {
-      setSyncBusy(false)
-    }
+    if (!slug) return
+    await refreshClub(slug, { showSyncBanner: true, selectLatestWeek: false })
   }
 
   return (
@@ -352,8 +386,9 @@ export default function WeeklyStats({ token }: { token: string }) {
           </label>
           <select
             id={clubSelectId}
-            value={slug}
-            onChange={(e) => setSlug(e.target.value)}
+            value={slug ?? ''}
+            onChange={(e) => setSlug(e.target.value || null)}
+            disabled={!slug || syncBusy || loadingWeeks}
             className="input-field-sm"
           >
             {CLUB_OPTIONS.map((c) => (
@@ -367,7 +402,7 @@ export default function WeeklyStats({ token }: { token: string }) {
           <span className="text-xs font-medium text-ink-muted">gg-computer</span>
           <button
             type="button"
-            disabled={syncBusy}
+            disabled={!slug || syncBusy || loadingWeeks}
             title="POST /process-week/sync — fills missing weekly_profits for the selected club slug"
             onClick={() => void handleProcessWeekSync()}
             className="rounded-lg border border-border bg-surface-raised px-4 py-2 text-sm font-medium text-ink hover:bg-control-hover disabled:cursor-not-allowed disabled:opacity-50"
@@ -386,10 +421,12 @@ export default function WeeklyStats({ token }: { token: string }) {
               setWeekId(e.target.value || null)
               setPage(1)
             }}
-            disabled={loadingWeeks || weeks.length === 0}
+            disabled={!slug || loadingWeeks || syncBusy || weeks.length === 0}
             className="w-full min-w-0 rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink sm:min-w-[240px] sm:w-auto disabled:opacity-50"
           >
-            <option value="">{loadingWeeks ? 'Loading…' : 'Select week'}</option>
+            <option value="">
+              {!slug || loadingWeeks || syncBusy ? 'Loading…' : weeks.length === 0 ? 'No weeks' : 'Select week'}
+            </option>
             {weeks.map((w) => (
               <option key={w.weekId} value={w.weekId}>
                 {weekLabel(w)} — {w.playerCount ?? '?'} players
@@ -589,7 +626,7 @@ export default function WeeklyStats({ token }: { token: string }) {
         {sendRow && (
           <>
             <p className="mb-4 text-sm text-ink-muted">
-              Club: {displayLabelForSlug(slug)} (<code>{slug}</code>) · Player:{' '}
+              Club: {displayLabelForSlug(slug ?? '')} (<code>{slug ?? ''}</code>) · Player:{' '}
               {typeof sendRow.nickname === 'string' ? sendRow.nickname : '—'}
             </p>
             {sendErr && (
