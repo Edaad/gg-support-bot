@@ -489,14 +489,6 @@ export default function WeeklyStats({ token }: { token: string }) {
                 </div>
               </div>
             )}
-
-            <p className="mt-3 rounded-lg border border-border bg-surface/60 px-4 py-3 text-xs leading-relaxed text-ink-muted">
-              <span className="font-medium text-ink">Send message</span> requires a{' '}
-              <span className="font-medium text-ink">GG ID</span> on the stats row (from gg-computer). The
-              nickname column is the in-game name, not the Telegram label on the support group (
-              e.g. <code className="text-ink">AT / 2066-5758 / Shannon</code>). If GG ID shows —, gg-computer
-              did not attach an id for that player this week — search by GG ID once it is populated.
-            </p>
           </div>
 
           <div className="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm text-ink-muted">
