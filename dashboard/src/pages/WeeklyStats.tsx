@@ -80,9 +80,6 @@ export default function WeeklyStats({ token }: { token: string }) {
   const [loadingPlayers, setLoadingPlayers] = useState(false)
   const [err, setErr] = useState('')
 
-  const [syncBusy, setSyncBusy] = useState(false)
-  const [syncBanner, setSyncBanner] = useState<string | null>(null)
-
   const [sendOpen, setSendOpen] = useState(false)
   const [sendRow, setSendRow] = useState<WeeklyPlayerRow | null>(null)
   const [sendChats, setSendChats] = useState<number[]>([])
@@ -124,26 +121,19 @@ export default function WeeklyStats({ token }: { token: string }) {
   }, [])
 
   const refreshClub = useCallback(
-    async (
-      clubSlug: string,
-      options?: { showSyncBanner?: boolean; selectLatestWeek?: boolean },
-    ) => {
+    async (clubSlug: string) => {
       setLoadingWeeks(true)
-      setSyncBusy(true)
+      setWeekId(null)
+      setWeeks([])
+      setData(null)
       setErr('')
-      if (!options?.showSyncBanner) setSyncBanner(null)
       try {
-        const res = await processWeekSync(clubSlug)
-        if (options?.showSyncBanner) setSyncBanner(JSON.stringify(res, null, 2))
+        await processWeekSync(clubSlug)
         const list = await getProcessedWeeks(clubSlug)
         setWeeks(list)
         const latest = pickLatestProcessedWeek(list)
-        const selectLatest = options?.selectLatestWeek !== false
-        setWeekId((prev) => {
-          if (!selectLatest && prev && list.some((w) => w.weekId === prev)) return prev
-          return latest?.weekId ?? null
-        })
-        if (selectLatest) resetFiltersAndPage()
+        setWeekId(latest?.weekId ?? null)
+        resetFiltersAndPage()
       } catch (e: unknown) {
         setErr(e instanceof Error ? e.message : 'Failed to sync or load weeks')
         setWeeks([])
@@ -151,7 +141,6 @@ export default function WeeklyStats({ token }: { token: string }) {
         setData(null)
       } finally {
         setLoadingWeeks(false)
-        setSyncBusy(false)
       }
     },
     [resetFiltersAndPage],
@@ -180,10 +169,6 @@ export default function WeeklyStats({ token }: { token: string }) {
     if (!slug) return
     void refreshClub(slug)
   }, [slug, refreshClub])
-
-  useEffect(() => {
-    setSyncBanner(null)
-  }, [slug])
 
   const loadPlayers = useCallback(async () => {
     if (!slug || !weekId) {
@@ -356,11 +341,6 @@ export default function WeeklyStats({ token }: { token: string }) {
     setPage(1)
   }
 
-  const handleProcessWeekSync = async () => {
-    if (!slug) return
-    await refreshClub(slug, { showSyncBanner: true, selectLatestWeek: false })
-  }
-
   return (
     <div>
       <h1 className="mb-2 text-2xl font-bold">Weekly player stats</h1>
@@ -372,12 +352,6 @@ export default function WeeklyStats({ token }: { token: string }) {
       {err && (
         <div className="mb-4 rounded-lg bg-danger-bg px-4 py-2 text-sm text-danger-ink">{err}</div>
       )}
-      {syncBanner && (
-        <div className="alert-success mb-4" role="status">
-          <div className="mb-1 font-medium">Sync finished (gg-computer)</div>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-sm opacity-90">{syncBanner}</pre>
-        </div>
-      )}
 
       <div className="mb-6 flex flex-wrap items-end gap-4 rounded-xl border border-border bg-surface p-4">
         <div>
@@ -388,7 +362,7 @@ export default function WeeklyStats({ token }: { token: string }) {
             id={clubSelectId}
             value={slug ?? ''}
             onChange={(e) => setSlug(e.target.value || null)}
-            disabled={!slug || syncBusy || loadingWeeks}
+            disabled={!slug || loadingWeeks}
             className="input-field-sm"
           >
             {CLUB_OPTIONS.map((c) => (
@@ -397,18 +371,6 @@ export default function WeeklyStats({ token }: { token: string }) {
               </option>
             ))}
           </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-ink-muted">gg-computer</span>
-          <button
-            type="button"
-            disabled={!slug || syncBusy || loadingWeeks}
-            title="POST /process-week/sync — fills missing weekly_profits for the selected club slug"
-            onClick={() => void handleProcessWeekSync()}
-            className="rounded-lg border border-border bg-surface-raised px-4 py-2 text-sm font-medium text-ink hover:bg-control-hover disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {syncBusy ? 'Syncing…' : 'Sync missing weeks'}
-          </button>
         </div>
         <div>
           <label htmlFor={weekSelectId} className="mb-1 block text-xs font-medium text-ink-muted">
@@ -421,12 +383,14 @@ export default function WeeklyStats({ token }: { token: string }) {
               setWeekId(e.target.value || null)
               setPage(1)
             }}
-            disabled={!slug || loadingWeeks || syncBusy || weeks.length === 0}
+            disabled={!slug || loadingWeeks || weeks.length === 0}
             className="w-full min-w-0 rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink sm:min-w-[240px] sm:w-auto disabled:opacity-50"
           >
-            <option value="">
-              {!slug || loadingWeeks || syncBusy ? 'Loading…' : weeks.length === 0 ? 'No weeks' : 'Select week'}
-            </option>
+            {loadingWeeks ? (
+              <option value="">Loading…</option>
+            ) : weeks.length === 0 ? (
+              <option value="">No weeks</option>
+            ) : null}
             {weeks.map((w) => (
               <option key={w.weekId} value={w.weekId}>
                 {weekLabel(w)} — {w.playerCount ?? '?'} players
