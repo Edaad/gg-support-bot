@@ -17,6 +17,9 @@ from bot.services.club import (
     is_club_staff,
     record_activity_for_chat,
 )
+from bot.services.agent_debug_log import agent_debug_log
+from bot.services.mtproto_bot_fallback import telethon_missed_command_message
+from bot.services.mtproto_dm_gc_listener import _clients, get_dm_gc_listener_status
 from bot.services.mtproto_group_add import (
     format_add_confirmation,
     parse_add_command,
@@ -38,6 +41,73 @@ def _parse_from_args(args: list[str]) -> tuple[Decimal, Decimal | None, str | No
     if not args:
         return None
     return parse_add_command("/add " + " ".join(args))
+
+
+async def _add_bot_api_path(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    club_id: int,
+    amount: Decimal,
+    bonus: Decimal | None,
+    name: str | None,
+    command_already_deleted: bool = False,
+) -> None:
+    chat = update.effective_chat
+    assert chat is not None and update.message is not None
+
+    confirmation = format_add_confirmation(amount, bonus, name=name)
+
+    if not command_already_deleted:
+        try:
+            await context.bot.delete_message(
+                chat_id=chat.id, message_id=update.message.message_id
+            )
+        except Exception:
+            logger.warning(
+                "add: could not delete command message chat_id=%s message_id=%s",
+                chat.id,
+                update.message.message_id,
+                exc_info=True,
+            )
+
+    schedule_send_add_confirmation_from_club(
+        chat_id=chat.id,
+        club_id=club_id,
+        text=confirmation,
+    )
+
+
+async def _add_telethon_fallback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    club_id: int,
+    amount: Decimal,
+    bonus: Decimal | None,
+    name: str | None,
+) -> None:
+    chat = update.effective_chat
+    assert chat is not None and update.message is not None
+
+    missed = await telethon_missed_command_message(
+        context.bot,
+        chat_id=chat.id,
+        message_id=update.message.message_id,
+        command="/add",
+    )
+    if not missed:
+        return
+
+    await _add_bot_api_path(
+        update,
+        context,
+        club_id=club_id,
+        amount=amount,
+        bonus=bonus,
+        name=name,
+        command_already_deleted=True,
+    )
 
 
 async def _execute_add(
@@ -64,26 +134,45 @@ async def _execute_add(
         )
 
     if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
+        # #region agent log
+        _club_cfg = get_club_config_for_admin(admin_id)
+        _conn = {
+            getattr(c, "_gg_club_key", "?"): c.is_connected() for c in _clients
+        }
+        agent_debug_log(
+            hypothesis_id="B",
+            location="add.py:_execute_add",
+            message="bot_api_delegating_to_telethon_with_fallback",
+            data={
+                "admin_id": admin_id,
+                "club_id": club_id,
+                "chat_id": chat.id,
+                "club_key": getattr(_club_cfg, "club_key", None),
+                "listener_status": get_dm_gc_listener_status(),
+                "client_connected": _conn,
+            },
+        )
+        # #endregion
+        context.application.create_task(
+            _add_telethon_fallback(
+                update,
+                context,
+                club_id=club_id,
+                amount=amount,
+                bonus=bonus,
+                name=name,
+            ),
+            name=f"add-telethon-fallback-{chat.id}",
+        )
         return
 
-    confirmation = format_add_confirmation(amount, bonus, name=name)
-
-    try:
-        await context.bot.delete_message(
-            chat_id=chat.id, message_id=update.message.message_id
-        )
-    except Exception:
-        logger.warning(
-            "add: could not delete command message chat_id=%s message_id=%s",
-            chat.id,
-            update.message.message_id,
-            exc_info=True,
-        )
-
-    schedule_send_add_confirmation_from_club(
-        chat_id=chat.id,
+    await _add_bot_api_path(
+        update,
+        context,
         club_id=club_id,
-        text=confirmation,
+        amount=amount,
+        bonus=bonus,
+        name=name,
     )
 
 

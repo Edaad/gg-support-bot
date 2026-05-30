@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -35,6 +36,7 @@ from bot.services.player_support_dm_messages import (
     PLAYER_INVITE_FALLBACK_MESSAGE,
     PLAYER_RE_ADDED_MESSAGE,
 )
+from bot.services.agent_debug_log import agent_debug_log
 from bot.services.mtproto_group_add import handle_group_add_outgoing
 from bot.services.mtproto_group_cash import handle_group_cash_outgoing
 from bot.services.mtproto_group_delete import handle_group_delete_outgoing
@@ -876,12 +878,36 @@ async def _start_telethon_clients(
                 ptb_bot=ptb_bot,
             )
             started.append(client)
+            # #region agent log
+            agent_debug_log(
+                hypothesis_id="E",
+                location="mtproto_dm_gc_listener.py:_start_telethon_clients:started",
+                message="telethon_client_started",
+                data={
+                    "club_key": cfg.club_key,
+                    "listener_label": listener_label,
+                    "telegram_user_id": getattr(me_who, "id", None),
+                    "connected": client.is_connected(),
+                },
+            )
+            # #endregion
         except Exception as e:
             logger.exception(
                 "dm_gc failed to start client club_key=%s: %s",
                 cfg.club_key,
                 type(e).__name__,
             )
+            # #region agent log
+            agent_debug_log(
+                hypothesis_id="E",
+                location="mtproto_dm_gc_listener.py:_start_telethon_clients:failed",
+                message="telethon_client_start_failed",
+                data={
+                    "club_key": cfg.club_key,
+                    "error": type(e).__name__,
+                },
+            )
+            # #endregion
             try:
                 if client.is_connected():
                     await client.disconnect()
@@ -889,6 +915,49 @@ async def _start_telethon_clients(
                 pass
 
     return started
+
+
+async def _listener_health_watchdog(
+    started: list[TelegramClient],
+    *,
+    interval_sec: float = 90.0,
+) -> None:
+    """Ping Telethon sessions; force disconnect on stale connections to trigger supervised restart."""
+    while True:
+        await asyncio.sleep(interval_sec)
+        for client in list(started):
+            club_key = getattr(client, "_gg_club_key", "?")
+            connected = client.is_connected()
+            ping_ok = connected
+            ping_error: str | None = None
+            if connected:
+                try:
+                    await asyncio.wait_for(client.get_me(), timeout=15.0)
+                except Exception as e:
+                    ping_ok = False
+                    ping_error = type(e).__name__
+                    logger.warning(
+                        "dm_gc health ping failed club_key=%s err=%s — forcing reconnect",
+                        club_key,
+                        ping_error,
+                    )
+                    try:
+                        await client.disconnect()
+                    except Exception:
+                        pass
+            # #region agent log
+            agent_debug_log(
+                hypothesis_id="C",
+                location="mtproto_dm_gc_listener.py:_listener_health_watchdog",
+                message="telethon_health_heartbeat",
+                data={
+                    "club_key": club_key,
+                    "connected": connected,
+                    "ping_ok": ping_ok,
+                    "ping_error": ping_error,
+                },
+            )
+            # #endregion
 
 
 async def _teardown_listener_cycle(
@@ -954,6 +1023,10 @@ async def _run_listener_cycle(bot_token: str) -> str:
         return "no_telethon_clients_started"
 
     exit_reason = "unknown"
+    watchdog_task = asyncio.create_task(
+        _listener_health_watchdog(started),
+        name="dm-gc-health-watchdog",
+    )
     try:
         results = await asyncio.gather(
             *(c.run_until_disconnected() for c in started),
@@ -979,6 +1052,11 @@ async def _run_listener_cycle(bot_token: str) -> str:
                 parts.append(f"{club_key}=disconnected")
         exit_reason = "; ".join(parts) if parts else "all_clients_disconnected"
     finally:
+        watchdog_task.cancel()
+        try:
+            await watchdog_task
+        except asyncio.CancelledError:
+            pass
         await _teardown_listener_cycle(started, ptb_bot)
 
     return exit_reason
@@ -1032,6 +1110,22 @@ async def _async_main(bot_token: str) -> None:
             _listener_metrics["running"] = False
             _listener_metrics["last_exit_at"] = datetime.now(timezone.utc).isoformat()
             _listener_metrics["last_disconnect_reason"] = exit_reason
+            # #region agent log
+            agent_debug_log(
+                hypothesis_id="A",
+                location="mtproto_dm_gc_listener.py:_async_main:cycle_end",
+                message="listener_cycle_ended",
+                data={
+                    "cycle_num": cycle_num,
+                    "exit_reason": exit_reason,
+                    "restart_count": _listener_metrics.get("restart_count"),
+                    "connected_clients": sum(
+                        1 for c in _clients if c.is_connected()
+                    ),
+                    "total_clients": len(_clients),
+                },
+            )
+            # #endregion
 
         if _listener_stop.is_set() or not is_dm_gc_listener_enabled():
             logger.info("dm_gc supervised listener stopping (reason=%s)", exit_reason)
@@ -1077,18 +1171,46 @@ def start_listener_background(bot_token: str) -> None:
     )
 
     def runner():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        _loop_holder["loop"] = loop
-        try:
-            loop.run_until_complete(_async_main(bot_token))
-        except Exception:
-            logger.exception("dm_gc listener thread exited with error")
-        finally:
-            _listener_metrics["running"] = False
-            loop.close()
-            _loop_holder.pop("loop", None)
-            logger.info("dm_gc listener thread finished")
+        while not _listener_stop.is_set():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            _loop_holder["loop"] = loop
+            try:
+                loop.run_until_complete(_async_main(bot_token))
+            except Exception:
+                logger.exception("dm_gc listener thread exited with error")
+            finally:
+                _listener_metrics["running"] = False
+                loop.close()
+                _loop_holder.pop("loop", None)
+                # #region agent log
+                agent_debug_log(
+                    hypothesis_id="A",
+                    location="mtproto_dm_gc_listener.py:runner:thread_exit",
+                    message="listener_thread_finished",
+                    data={
+                        "restart_count": _listener_metrics.get("restart_count"),
+                        "last_disconnect_reason": _listener_metrics.get(
+                            "last_disconnect_reason"
+                        ),
+                    },
+                )
+                # #endregion
+                logger.info("dm_gc listener thread finished")
+
+            if _listener_stop.is_set() or not is_dm_gc_listener_enabled():
+                break
+
+            agent_debug_log(
+                hypothesis_id="A",
+                location="mtproto_dm_gc_listener.py:runner:respawn",
+                message="listener_thread_respawning",
+                data={},
+            )
+            logger.warning(
+                "dm_gc listener thread exited unexpectedly; respawning in 10s"
+            )
+            time.sleep(10.0)
 
     threading.Thread(target=runner, daemon=True, name="mtproto-dm-gc").start()
     logger.info("dm_gc supervised listener thread started")

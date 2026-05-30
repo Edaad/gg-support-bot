@@ -16,6 +16,7 @@ from bot.services.club import (
     invalidate_pending_one_time_bypasses,
     record_activity_for_chat,
 )
+from bot.services.agent_debug_log import agent_debug_log
 from bot.services.mtproto_group_create import (
     get_mtproto_lock,
     is_client_authorized,
@@ -173,6 +174,27 @@ async def handle_group_add_outgoing(
     listener_label: str,
 ) -> None:
     """Outgoing /add in a megagroup: delete command, send new message, record cooldown."""
+    _raw = (event.raw_text or "")[:120]
+    _stripped = _raw.lstrip().lower()
+    _is_add_candidate = _stripped.startswith("/add") or (
+        _stripped.startswith("/") and len(_stripped) > 1 and _stripped[1].isdigit()
+    )
+    if _is_add_candidate:
+        # #region agent log
+        agent_debug_log(
+            hypothesis_id="C",
+            location="mtproto_group_add.py:handle_group_add_outgoing:entry",
+            message="telethon_outgoing_add_candidate",
+            data={
+                "club_key": cfg.club_key,
+                "listener_label": listener_label,
+                "chat_id": event.chat_id,
+                "is_private": event.is_private,
+                "client_connected": event.client.is_connected(),
+                "raw_text": _raw,
+            },
+        )
+        # #endregion
     if event.is_private:
         return
 
@@ -183,6 +205,19 @@ async def handle_group_add_outgoing(
 
     club_id = await asyncio.to_thread(get_club_for_chat, event.chat_id)
     if club_id is None or int(club_id) != int(cfg.link_club_id):
+        # #region agent log
+        agent_debug_log(
+            hypothesis_id="D",
+            location="mtproto_group_add.py:handle_group_add_outgoing:club_mismatch",
+            message="telethon_add_filtered_club_id_mismatch",
+            data={
+                "club_key": cfg.club_key,
+                "event_chat_id": event.chat_id,
+                "resolved_club_id": club_id,
+                "cfg_link_club_id": cfg.link_club_id,
+            },
+        )
+        # #endregion
         return
 
     confirmation = format_add_confirmation(amount, bonus, name=name)
@@ -200,7 +235,31 @@ async def handle_group_add_outgoing(
 
     try:
         await event.client.send_message(event.chat_id, confirmation)
+        # #region agent log
+        agent_debug_log(
+            hypothesis_id="C",
+            location="mtproto_group_add.py:handle_group_add_outgoing:success",
+            message="telethon_add_confirmation_sent",
+            data={
+                "club_key": cfg.club_key,
+                "chat_id": event.chat_id,
+                "amount": str(amount),
+            },
+        )
+        # #endregion
     except Exception:
+        # #region agent log
+        agent_debug_log(
+            hypothesis_id="C",
+            location="mtproto_group_add.py:handle_group_add_outgoing:send_failed",
+            message="telethon_add_send_failed",
+            data={
+                "club_key": cfg.club_key,
+                "chat_id": event.chat_id,
+                "client_connected": event.client.is_connected(),
+            },
+        )
+        # #endregion
         logger.exception(
             "group_add: send failed club=%s chat_id=%s",
             cfg.club_key,
