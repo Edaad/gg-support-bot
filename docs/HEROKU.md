@@ -38,3 +38,17 @@ The **Python buildpack** still runs `pip install -r requirements.txt`. At runtim
 ## API-only boot
 
 If the frontend build fails or `dist/` is missing, the API still starts; static files are only mounted when `dist` is complete (see `api/app.py`).
+
+## Payments page (Stripe tables)
+
+After deploying the Payments dashboard feature, run migrations on production once:
+
+```bash
+heroku run python migrate_stripe_deposit_tracking.py -a YOUR_APP
+# or, if tables exist but Payments returns 500:
+heroku run python migrate_stripe_checkout_session_lifecycle.py -a YOUR_APP
+```
+
+`migrate_stripe_deposit_tracking.py` now includes lifecycle columns (`completed_at`, `updated_at`, `stripe_payment_intent_id`) when run on an existing install.
+
+Also set `STRIPE_WEBHOOK_SECRET` on the **web** dyno and register `https://YOUR_APP.herokuapp.com/api/stripe/webhook` in Stripe (event: `checkout.session.completed`). See [`docs/STRIPE_DEPOSIT.md`](STRIPE_DEPOSIT.md).

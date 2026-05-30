@@ -301,6 +301,8 @@ def create_stripe_checkout_session(
         "telegram_chat_id": str(cid),
         "club_id": str(club),
     }
+    if payment_method_id is not None:
+        session_metadata["payment_method_id"] = str(int(payment_method_id))
     if gg_player_id:
         session_metadata["gg_player_id"] = gg_player_id
     if effective_title:
@@ -334,27 +336,7 @@ def create_stripe_checkout_session(
     if not checkout_url:
         raise RuntimeError("Stripe Checkout Session returned no URL")
 
-    try:
-        with get_db() as session:
-            session.add(
-                StripeCheckoutSession(
-                    stripe_checkout_session_id=session_id,
-                    stripe_customer_id=stripe_customer_id,
-                    telegram_chat_id=cid,
-                    club_id=club,
-                    amount_cents=0,
-                    currency="usd",
-                    status="open",
-                    payment_method_id=int(payment_method_id) if payment_method_id else None,
-                )
-            )
-    except Exception as e:
-        logger.exception(
-            "stripe: DB insert stripe_checkout_sessions failed session_id=%s (checkout still valid)",
-            session_id,
-        )
-        raise RuntimeError(f"Failed to save checkout session to database: {type(e).__name__}") from e
-
+    # Paid deposits are recorded when Stripe sends checkout.session.completed (webhook).
     logger.info(
         "stripe checkout created chat_id=%s session_id=%s url_len=%s (custom $20-$100)",
         cid,
@@ -368,6 +350,127 @@ def create_stripe_checkout_session(
     )
 
 
+def _extract_payment_intent_id(value: Any) -> Optional[str]:
+    if not value:
+        return None
+    if isinstance(value, dict):
+        pid = value.get("id")
+        return str(pid) if pid else None
+    return str(value)
+
+
+def mark_checkout_session_paid(
+    row: StripeCheckoutSession,
+    *,
+    amount_total: Any = None,
+    payment_intent: Any = None,
+    when: datetime | None = None,
+) -> None:
+    """Set DB row to completed paid state."""
+    now = when or datetime.now(timezone.utc)
+    if amount_total is not None:
+        row.amount_cents = int(amount_total)
+    row.status = "complete"
+    row.completed_at = now
+    row.updated_at = now
+    pi = _extract_payment_intent_id(payment_intent)
+    if pi:
+        row.stripe_payment_intent_id = pi
+
+
+def _metadata_int(meta: dict[str, Any], key: str) -> Optional[int]:
+    raw = meta.get(key)
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def record_completed_checkout_payment(
+    checkout_obj: dict[str, Any],
+    *,
+    when: datetime | None = None,
+) -> bool:
+    """Insert a completed payment row from a Stripe Checkout Session object (webhook payload)."""
+    session_id = str(checkout_obj.get("id") or "").strip()
+    if not session_id:
+        return False
+
+    now = when or datetime.now(timezone.utc)
+    meta = checkout_obj.get("metadata") or {}
+    chat_id = _metadata_int(meta, "telegram_chat_id")
+    if chat_id is None and checkout_obj.get("client_reference_id"):
+        try:
+            chat_id = int(checkout_obj["client_reference_id"])
+        except (TypeError, ValueError):
+            chat_id = None
+    club_id = _metadata_int(meta, "club_id")
+    stripe_customer_id = str(checkout_obj.get("customer") or "").strip()
+
+    if chat_id is None or club_id is None or not stripe_customer_id:
+        logger.warning(
+            "stripe webhook: cannot record payment — missing chat_id=%s club_id=%s customer=%r session=%s",
+            chat_id,
+            club_id,
+            stripe_customer_id or None,
+            session_id,
+        )
+        return False
+
+    amount_total = checkout_obj.get("amount_total")
+    amount_cents = int(amount_total) if amount_total is not None else 0
+    payment_method_id = _metadata_int(meta, "payment_method_id")
+    pi = _extract_payment_intent_id(checkout_obj.get("payment_intent"))
+
+    with get_db() as db:
+        existing = (
+            db.query(StripeCheckoutSession)
+            .filter(StripeCheckoutSession.stripe_checkout_session_id == session_id)
+            .one_or_none()
+        )
+        if existing is not None:
+            if existing.status == "complete":
+                return False
+            mark_checkout_session_paid(
+                existing,
+                amount_total=amount_total,
+                payment_intent=checkout_obj.get("payment_intent"),
+                when=now,
+            )
+            db.flush()
+            return True
+
+        row = StripeCheckoutSession(
+            stripe_checkout_session_id=session_id,
+            stripe_customer_id=stripe_customer_id,
+            telegram_chat_id=chat_id,
+            club_id=club_id,
+            amount_cents=amount_cents,
+            currency=str(checkout_obj.get("currency") or "usd"),
+            status="complete",
+            payment_method_id=payment_method_id,
+            stripe_payment_intent_id=pi,
+            completed_at=now,
+            updated_at=now,
+        )
+        try:
+            db.add(row)
+            db.flush()
+        except IntegrityError:
+            logger.info("stripe webhook: duplicate insert for session %s (ignored)", session_id)
+            return False
+
+    logger.info(
+        "stripe webhook: recorded completed payment session=%s chat_id=%s amount_cents=%s",
+        session_id,
+        chat_id,
+        amount_cents,
+    )
+    return True
+
+
 def construct_stripe_webhook_event(payload: bytes, sig_header: str | None) -> dict[str, Any]:
     """Verify Stripe-Signature and return parsed webhook event."""
     secret = (os.getenv(STRIPE_WEBHOOK_SECRET_ENV) or "").strip()
@@ -379,63 +482,15 @@ def construct_stripe_webhook_event(payload: bytes, sig_header: str | None) -> di
 
 
 def apply_checkout_session_webhook_event(event: dict[str, Any]) -> bool:
-    """Update stripe_checkout_sessions from checkout.session.* webhook. Returns True if updated."""
+    """Record a completed Stripe deposit from checkout.session.completed webhook."""
     event_type = event.get("type") or ""
-    obj = (event.get("data") or {}).get("object") or {}
-    session_id = obj.get("id")
-    if not session_id:
+    if event_type not in (
+        "checkout.session.completed",
+        "checkout.session.async_payment_succeeded",
+    ):
         return False
-
-    now = datetime.now(timezone.utc)
-
-    with get_db() as db:
-        row = (
-            db.query(StripeCheckoutSession)
-            .filter(StripeCheckoutSession.stripe_checkout_session_id == str(session_id))
-            .one_or_none()
-        )
-        if row is None:
-            logger.warning(
-                "stripe webhook: no DB row for session_id=%s type=%s",
-                session_id,
-                event_type,
-            )
-            return False
-
-        if row.status in TERMINAL_CHECKOUT_STATUSES:
-            logger.info(
-                "stripe webhook: session %s already terminal (%s)",
-                session_id,
-                row.status,
-            )
-            return False
-
-        if event_type == "checkout.session.completed":
-            amount_total = obj.get("amount_total")
-            if amount_total is not None:
-                row.amount_cents = int(amount_total)
-            row.status = "complete"
-            row.completed_at = now
-            row.updated_at = now
-            payment_intent = obj.get("payment_intent")
-            if payment_intent:
-                row.stripe_payment_intent_id = str(payment_intent)
-            db.flush()
-            logger.info(
-                "stripe webhook: session %s marked complete amount_cents=%s",
-                session_id,
-                row.amount_cents,
-            )
-            return True
-
-        if event_type == "checkout.session.expired":
-            row.status = "expired"
-            row.updated_at = now
-            db.flush()
-            logger.info("stripe webhook: session %s marked expired", session_id)
-            return True
-
-    return False
+    obj = (event.get("data") or {}).get("object") or {}
+    return record_completed_checkout_payment(obj)
 
 
 def lookup_deposit_context_by_customer_id(

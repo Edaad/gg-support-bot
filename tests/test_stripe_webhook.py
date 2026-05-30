@@ -1,21 +1,23 @@
-"""Tests for Stripe checkout session webhook lifecycle updates."""
+"""Tests for Stripe checkout.session.completed webhook recording."""
 
 from __future__ import annotations
 
 import os
 import unittest
 from contextlib import contextmanager
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 
 from api.routes import stripe_deposit as stripe_routes
 from bot.services import stripe_deposit as sd
 from db.models import StripeCheckoutSession
 
 SESSION_ID = "cs_test_123"
+CHAT_ID = -1001234567890
+CLUB_ID = 2
 
 
 class FakeCheckoutQuery:
@@ -38,30 +40,38 @@ class FakeCheckoutQuery:
 
 
 class FakeCheckoutStore:
-    def __init__(self, row: StripeCheckoutSession | None = None):
+    def __init__(self):
         self.sessions: dict[str, StripeCheckoutSession] = {}
-        if row is not None:
-            self.sessions[row.stripe_checkout_session_id] = row
 
     def query(self, model):
         if model is StripeCheckoutSession:
             return FakeCheckoutQuery(self)
         raise AssertionError(f"unexpected model {model}")
 
+    def add(self, obj):
+        if isinstance(obj, StripeCheckoutSession):
+            if obj.stripe_checkout_session_id in self.sessions:
+                raise IntegrityError("", {}, Exception("duplicate"))
+            self.sessions[obj.stripe_checkout_session_id] = obj
+
     def flush(self):
         pass
 
 
-def _open_session() -> StripeCheckoutSession:
-    return StripeCheckoutSession(
-        stripe_checkout_session_id=SESSION_ID,
-        stripe_customer_id="cus_test",
-        telegram_chat_id=-1001234567890,
-        club_id=2,
-        amount_cents=0,
-        currency="usd",
-        status="open",
-    )
+def _completed_checkout_payload() -> dict:
+    return {
+        "id": SESSION_ID,
+        "customer": "cus_test",
+        "amount_total": 5000,
+        "currency": "usd",
+        "payment_intent": {"id": "pi_test"},
+        "client_reference_id": str(CHAT_ID),
+        "metadata": {
+            "telegram_chat_id": str(CHAT_ID),
+            "club_id": str(CLUB_ID),
+            "payment_method_id": "7",
+        },
+    }
 
 
 class StripeWebhookHandlerTestCase(unittest.TestCase):
@@ -74,17 +84,11 @@ class StripeWebhookHandlerTestCase(unittest.TestCase):
         with patch.object(sd, "get_db", fake_get_db):
             yield
 
-    def test_complete_updates_amount_and_status(self):
-        store = FakeCheckoutStore(_open_session())
+    def test_completed_inserts_payment_row(self):
+        store = FakeCheckoutStore()
         event = {
             "type": "checkout.session.completed",
-            "data": {
-                "object": {
-                    "id": SESSION_ID,
-                    "amount_total": 5000,
-                    "payment_intent": "pi_test",
-                }
-            },
+            "data": {"object": _completed_checkout_payload()},
         }
         with self._db(store):
             updated = sd.apply_checkout_session_webhook_event(event)
@@ -92,33 +96,27 @@ class StripeWebhookHandlerTestCase(unittest.TestCase):
         row = store.sessions[SESSION_ID]
         self.assertEqual(row.status, "complete")
         self.assertEqual(row.amount_cents, 5000)
+        self.assertEqual(row.telegram_chat_id, CHAT_ID)
+        self.assertEqual(row.payment_method_id, 7)
         self.assertEqual(row.stripe_payment_intent_id, "pi_test")
-        self.assertIsNotNone(row.completed_at)
 
-    def test_expired_updates_status(self):
-        store = FakeCheckoutStore(_open_session())
+    def test_expired_event_ignored(self):
+        store = FakeCheckoutStore()
         event = {
             "type": "checkout.session.expired",
             "data": {"object": {"id": SESSION_ID}},
         }
         with self._db(store):
             updated = sd.apply_checkout_session_webhook_event(event)
-        self.assertTrue(updated)
-        self.assertEqual(store.sessions[SESSION_ID].status, "expired")
+        self.assertFalse(updated)
+        self.assertEqual(len(store.sessions), 0)
 
     def test_idempotent_when_already_complete(self):
-        row = _open_session()
-        row.status = "complete"
-        row.amount_cents = 5000
-        store = FakeCheckoutStore(row)
-        event = {
-            "type": "checkout.session.completed",
-            "data": {"object": {"id": SESSION_ID, "amount_total": 9999}},
-        }
+        store = FakeCheckoutStore()
+        payload = _completed_checkout_payload()
         with self._db(store):
-            updated = sd.apply_checkout_session_webhook_event(event)
-        self.assertFalse(updated)
-        self.assertEqual(store.sessions[SESSION_ID].amount_cents, 5000)
+            self.assertTrue(sd.record_completed_checkout_payment(payload))
+            self.assertFalse(sd.record_completed_checkout_payment(payload))
 
 
 class StripeWebhookApiTestCase(unittest.TestCase):
@@ -146,7 +144,10 @@ class StripeWebhookApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
 
     def test_webhook_accepts_valid_event(self):
-        event = {"type": "checkout.session.completed", "data": {"object": {"id": SESSION_ID}}}
+        event = {
+            "type": "checkout.session.completed",
+            "data": {"object": {"id": SESSION_ID}},
+        }
         with (
             patch.object(stripe_routes, "construct_stripe_webhook_event", return_value=event),
             patch.object(stripe_routes, "apply_checkout_session_webhook_event", return_value=True) as apply_mock,

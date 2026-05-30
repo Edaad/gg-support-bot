@@ -18,7 +18,10 @@ LOOKUP_SECRET_ENV = "STRIPE_ZAPIER_LOOKUP_SECRET"
 LOOKUP_HEADER = "x-stripe-lookup-secret"
 
 _CHECKOUT_WEBHOOK_EVENTS = frozenset(
-    {"checkout.session.completed", "checkout.session.expired"}
+    {
+        "checkout.session.completed",
+        "checkout.session.async_payment_succeeded",
+    }
 )
 
 

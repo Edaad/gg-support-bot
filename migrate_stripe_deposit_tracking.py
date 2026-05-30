@@ -47,6 +47,30 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS ix_stripe_checkout_sessions_stripe_checkout_session_id ON stripe_checkout_sessions (stripe_checkout_session_id);",
 ]
 
+# Lifecycle columns for Payments dashboard + webhooks (idempotent).
+LIFECYCLE_ALTER = [
+    """
+    ALTER TABLE stripe_checkout_sessions
+    ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+    """,
+    """
+    ALTER TABLE stripe_checkout_sessions
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+    """,
+    """
+    ALTER TABLE stripe_checkout_sessions
+    ADD COLUMN IF NOT EXISTS stripe_payment_intent_id VARCHAR(255);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS ix_stripe_checkout_sessions_club_created
+    ON stripe_checkout_sessions (club_id, created_at DESC);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS ix_stripe_checkout_sessions_club_status
+    ON stripe_checkout_sessions (club_id, status);
+    """,
+]
+
 if __name__ == "__main__":
     engine = init_engine()
     with engine.connect() as conn:
@@ -54,5 +78,7 @@ if __name__ == "__main__":
         conn.execute(text(DDL_SESSIONS))
         for stmt in INDEXES:
             conn.execute(text(stmt))
+        for stmt in LIFECYCLE_ALTER:
+            conn.execute(text(stmt))
         conn.commit()
-        print("stripe_customers and stripe_checkout_sessions are ready.")
+        print("stripe_customers and stripe_checkout_sessions are ready (including lifecycle columns).")

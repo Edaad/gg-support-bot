@@ -131,17 +131,20 @@ def resolve_method_display(
     return row.name, row.slug
 
 
-def customer_session_counts(session: Session, club_id: int) -> dict[str, int]:
+def customer_total_deposited_cents(session: Session, club_id: int) -> dict[str, int]:
     rows = (
         session.query(
             StripeCheckoutSession.stripe_customer_id,
-            func.count(StripeCheckoutSession.id),
+            func.coalesce(func.sum(StripeCheckoutSession.amount_cents), 0),
         )
-        .filter(StripeCheckoutSession.club_id == club_id)
+        .filter(
+            StripeCheckoutSession.club_id == club_id,
+            StripeCheckoutSession.status == "complete",
+        )
         .group_by(StripeCheckoutSession.stripe_customer_id)
         .all()
     )
-    return {str(customer_id): int(count) for customer_id, count in rows}
+    return {str(customer_id): int(total or 0) for customer_id, total in rows}
 
 
 def apply_customer_search(query, q: str | None):

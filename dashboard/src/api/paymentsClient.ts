@@ -42,13 +42,12 @@ export type StripeCustomerRow = {
   id: number
   telegram_chat_id: number
   club_id: number
-  stripe_customer_id: string
   gg_player_id: string | null
   player_display_name: string | null
   group_title: string | null
-  session_count: number
+  total_deposited_cents: number
+  total_deposited_usd: number
   created_at: string
-  updated_at: string
 }
 
 export type StripeSessionRow = {
@@ -116,7 +115,8 @@ export function listStripeSessions(
   },
 ) {
   const q = new URLSearchParams({ club_id: String(params.clubId) })
-  if (params.status && params.status !== 'all') q.set('status', params.status)
+  const status = params.status ?? 'complete'
+  if (status !== 'all') q.set('status', status)
   if (params.methodId != null) q.set('method_id', String(params.methodId))
   if (params.manualOnly) q.set('manual_only', 'true')
   if (params.from) q.set('from', params.from)

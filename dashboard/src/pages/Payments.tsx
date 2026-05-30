@@ -10,17 +10,10 @@ import {
   type StripeSessionRow,
 } from '../api/paymentsClient'
 
-const TABS = ['Customers', 'Transactions'] as const
+const TABS = ['Payments', 'Customers'] as const
 type Tab = (typeof TABS)[number]
 
 const PAGE_SIZE = 50
-
-const STATUS_OPTIONS = [
-  { value: 'all', label: 'All statuses' },
-  { value: 'open', label: 'Open' },
-  { value: 'complete', label: 'Complete' },
-  { value: 'expired', label: 'Expired' },
-] as const
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—'
@@ -35,29 +28,17 @@ function fmtMoney(n: number): string {
   return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function statusBadgeClass(status: string): string {
-  switch (status) {
-    case 'complete':
-      return 'rounded bg-success-bg px-2 py-0.5 text-xs font-medium text-success-ink'
-    case 'expired':
-      return 'rounded bg-control px-2 py-0.5 text-xs font-medium text-ink-muted'
-    default:
-      return 'rounded bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning-ink'
-  }
-}
-
 type MethodFilter = 'all' | 'manual' | number
 
 export default function Payments({ token }: { token: string }) {
   const clubSelectId = useId()
   const providerSelectId = useId()
   const methodSelectId = useId()
-  const statusSelectId = useId()
   const searchId = useId()
   const fromDateId = useId()
   const toDateId = useId()
 
-  const [tab, setTab] = useState<Tab>('Transactions')
+  const [tab, setTab] = useState<Tab>('Payments')
   const [clubs, setClubs] = useState<Club[]>([])
   const [clubId, setClubId] = useState<number | null>(null)
   const [provider] = useState('stripe')
@@ -66,10 +47,8 @@ export default function Payments({ token }: { token: string }) {
 
   const [customerSearch, setCustomerSearch] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
-  const [appliedStatus, setAppliedStatus] = useState('all')
   const [appliedFrom, setAppliedFrom] = useState('')
   const [appliedTo, setAppliedTo] = useState('')
 
@@ -107,14 +86,14 @@ export default function Payments({ token }: { token: string }) {
       clubId: clubId!,
       limit: PAGE_SIZE,
       offset: sessionPage * PAGE_SIZE,
-      status: appliedStatus,
+      status: 'complete',
     }
     if (appliedFrom) base.from = `${appliedFrom}T00:00:00Z`
     if (appliedTo) base.to = `${appliedTo}T23:59:59Z`
     if (methodFilter === 'manual') base.manualOnly = true
     else if (typeof methodFilter === 'number') base.methodId = methodFilter
     return base
-  }, [clubId, sessionPage, appliedStatus, appliedFrom, appliedTo, methodFilter])
+  }, [clubId, sessionPage, appliedFrom, appliedTo, methodFilter])
 
   const loadCustomers = useCallback(() => {
     if (clubId == null) return
@@ -154,11 +133,10 @@ export default function Payments({ token }: { token: string }) {
   useEffect(() => {
     if (clubId == null) return
     if (tab === 'Customers') loadCustomers()
-    else loadSessions()
+    else loadSessions() // Payments tab
   }, [tab, clubId, loadCustomers, loadSessions])
 
-  const applyTransactionFilters = () => {
-    setAppliedStatus(statusFilter)
+  const applyDateFilters = () => {
     setAppliedFrom(fromDate)
     setAppliedTo(toDate)
     setSessionPage(0)
@@ -217,7 +195,7 @@ export default function Payments({ token }: { token: string }) {
               setSessionPage(0)
             }}
             className="input-field-sm min-w-[12rem]"
-            disabled={tab === 'Customers'}
+            disabled={tab !== 'Payments'}
           >
             <option value="all">All methods</option>
             <option value="manual">Manual (/stripe)</option>
@@ -257,105 +235,9 @@ export default function Payments({ token }: { token: string }) {
         </p>
       )}
 
-      {tab === 'Customers' && (
-        <div>
-          <div className="mb-4 flex flex-wrap gap-2">
-            <input
-              id={searchId}
-              type="search"
-              value={customerSearch}
-              onChange={(e) => setCustomerSearch(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && applyCustomerSearch()}
-              placeholder="Search customer, GG ID, player…"
-              className="input-field-sm min-w-[16rem] flex-1"
-            />
-            <button type="button" onClick={applyCustomerSearch} className="btn-primary-sm">
-              Search
-            </button>
-          </div>
-
-          {customers.length === 0 && !loading ? (
-            <p className="text-sm text-ink-muted">No Stripe customers for this club yet.</p>
-          ) : (
-            <div className="table-scroll">
-              <table className="min-w-[48rem] text-left">
-                <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
-                  <tr>
-                    <th className="px-4 py-3">Group</th>
-                    <th className="px-4 py-3">GG ID</th>
-                    <th className="px-4 py-3">Player</th>
-                    <th className="px-4 py-3">Stripe customer</th>
-                    <th className="px-4 py-3">Sessions</th>
-                    <th className="px-4 py-3">First seen</th>
-                    <th className="px-4 py-3">Updated</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border text-sm">
-                  {customers.map((row) => (
-                    <tr key={row.id} className="hover:bg-surface/80">
-                      <td className="px-4 py-3">{row.group_title || '—'}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{row.gg_player_id || '—'}</td>
-                      <td className="px-4 py-3">{row.player_display_name || '—'}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{row.stripe_customer_id}</td>
-                      <td className="px-4 py-3">{row.session_count}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{fmtDate(row.created_at)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{fmtDate(row.updated_at)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {customerTotal > PAGE_SIZE && (
-            <div className="mt-4 flex items-center justify-between text-sm text-ink-muted">
-              <span>
-                {customerPage * PAGE_SIZE + 1}–{Math.min((customerPage + 1) * PAGE_SIZE, customerTotal)} of{' '}
-                {customerTotal}
-              </span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={customerPage === 0}
-                  onClick={() => setCustomerPage((p) => p - 1)}
-                  className="btn-secondary-sm disabled:opacity-40"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  disabled={customerPage + 1 >= customerPages}
-                  onClick={() => setCustomerPage((p) => p + 1)}
-                  className="btn-secondary-sm disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {tab === 'Transactions' && (
+      {tab === 'Payments' && (
         <div>
           <div className="mb-4 flex flex-wrap items-end gap-3">
-            <div>
-              <label htmlFor={statusSelectId} className="label-field-xs">
-                Status
-              </label>
-              <select
-                id={statusSelectId}
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="input-field-sm"
-              >
-                {STATUS_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
             <div>
               <label htmlFor={fromDateId} className="label-field-xs">
                 From
@@ -380,13 +262,16 @@ export default function Payments({ token }: { token: string }) {
                 className="input-field-sm"
               />
             </div>
-            <button type="button" onClick={applyTransactionFilters} className="btn-primary-sm">
-              Apply filters
+            <button type="button" onClick={applyDateFilters} className="btn-primary-sm">
+              Apply dates
             </button>
           </div>
 
           {sessions.length === 0 && !loading ? (
-            <p className="text-sm text-ink-muted">No checkout sessions for this club yet.</p>
+            <p className="text-sm text-ink-muted">
+              No completed payments yet. Confirm the Stripe webhook is configured for live mode
+              and <code className="text-xs">STRIPE_WEBHOOK_SECRET</code> is set on the API.
+            </p>
           ) : (
             <div className="table-scroll">
               <table className="min-w-[56rem] text-left">
@@ -397,33 +282,33 @@ export default function Payments({ token }: { token: string }) {
                     <th className="px-4 py-3">Player</th>
                     <th className="px-4 py-3">Method</th>
                     <th className="px-4 py-3">Amount</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Session</th>
+                    <th className="px-4 py-3">Stripe</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border text-sm">
                   {sessions.map((row) => (
                     <tr key={row.id} className="hover:bg-surface/80">
-                      <td className="px-4 py-3 whitespace-nowrap">{fmtDate(row.created_at)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {fmtDate(row.completed_at || row.created_at)}
+                      </td>
                       <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                         {row.group_title || '—'}
                       </td>
                       <td className="px-4 py-3">{row.player_display_name || row.gg_player_id || '—'}</td>
                       <td className="px-4 py-3">{row.method_name || '—'}</td>
-                      <td className="px-4 py-3">
-                        {row.status === 'complete' ? `$${fmtMoney(row.amount_usd)}` : row.status === 'open' ? '—' : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={statusBadgeClass(row.status)}>{row.status}</span>
+                      <td className="px-4 py-3 font-medium">
+                        {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
                       </td>
                       <td className="px-4 py-3">
                         <a
-                          href={row.stripe_dashboard_url}
+                          href={row.stripe_payment_url || row.stripe_dashboard_url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="font-mono text-xs text-accent hover:underline"
                         >
-                          {row.stripe_checkout_session_id.slice(0, 14)}…
+                          {row.stripe_payment_intent_id
+                            ? `${row.stripe_payment_intent_id.slice(0, 14)}…`
+                            : `${row.stripe_checkout_session_id.slice(0, 14)}…`}
                         </a>
                       </td>
                     </tr>
@@ -452,6 +337,85 @@ export default function Payments({ token }: { token: string }) {
                   type="button"
                   disabled={sessionPage + 1 >= sessionPages}
                   onClick={() => setSessionPage((p) => p + 1)}
+                  className="btn-secondary-sm disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'Customers' && (
+        <div>
+          <div className="mb-4 flex flex-wrap gap-2">
+            <input
+              id={searchId}
+              type="search"
+              value={customerSearch}
+              onChange={(e) => setCustomerSearch(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && applyCustomerSearch()}
+              placeholder="Search customer, GG ID, player…"
+              className="input-field-sm min-w-[16rem] flex-1"
+            />
+            <button type="button" onClick={applyCustomerSearch} className="btn-primary-sm">
+              Search
+            </button>
+          </div>
+
+          {customers.length === 0 && !loading ? (
+            <p className="text-sm text-ink-muted">No Stripe customers for this club yet.</p>
+          ) : (
+            <div className="table-scroll">
+              <table className="min-w-[48rem] text-left">
+                <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
+                  <tr>
+                    <th className="px-4 py-3">Group</th>
+                    <th className="px-4 py-3">GG ID</th>
+                    <th className="px-4 py-3">Player</th>
+                    <th className="px-4 py-3">Total deposited</th>
+                    <th className="px-4 py-3">First seen</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border text-sm">
+                  {customers.map((row) => (
+                    <tr key={row.id} className="hover:bg-surface/80">
+                      <td className="px-4 py-3">{row.group_title || '—'}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{row.gg_player_id || '—'}</td>
+                      <td className="px-4 py-3">{row.player_display_name || '—'}</td>
+                      <td className="px-4 py-3">
+                        {row.total_deposited_cents > 0
+                          ? `$${fmtMoney(row.total_deposited_usd)}`
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">{fmtDate(row.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {customerTotal > PAGE_SIZE && (
+            <div className="mt-4 flex items-center justify-between text-sm text-ink-muted">
+              <span>
+                {customerPage * PAGE_SIZE + 1}–{Math.min((customerPage + 1) * PAGE_SIZE, customerTotal)} of{' '}
+                {customerTotal}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={customerPage === 0}
+                  onClick={() => setCustomerPage((p) => p - 1)}
+                  className="btn-secondary-sm disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  disabled={customerPage + 1 >= customerPages}
+                  onClick={() => setCustomerPage((p) => p + 1)}
                   className="btn-secondary-sm disabled:opacity-40"
                 >
                   Next

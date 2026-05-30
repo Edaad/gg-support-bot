@@ -30,13 +30,12 @@ class StripeCustomerRead(BaseModel):
     id: int
     telegram_chat_id: int
     club_id: int
-    stripe_customer_id: str
     gg_player_id: Optional[str] = None
     player_display_name: Optional[str] = None
     group_title: Optional[str] = None
-    session_count: int = 0
+    total_deposited_cents: int = 0
+    total_deposited_usd: Decimal
     created_at: datetime
-    updated_at: datetime
 
 
 class StripeCustomerListResponse(BaseModel):

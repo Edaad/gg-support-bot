@@ -246,7 +246,7 @@ class StripeDepositTestCase(unittest.TestCase):
         self.assertEqual(session_create.call_count, 2)
         for call in session_create.call_args_list:
             self.assertEqual(call.kwargs["customer"], "cus_new")
-        self.assertEqual(len(store.checkout_sessions), 2)
+        self.assertEqual(len(store.checkout_sessions), 0)
 
     def test_checkout_session_metadata_and_client_reference(self):
         """D: Session carries client_reference_id and metadata."""
@@ -278,6 +278,29 @@ class StripeDepositTestCase(unittest.TestCase):
         self.assertEqual(kwargs["metadata"]["telegram_chat_id"], str(CHAT_ID))
         self.assertEqual(kwargs["metadata"]["club_id"], str(CLUB_ID))
         self.assertEqual(kwargs["metadata"]["gg_player_id"], "6485-8168")
+
+    def test_checkout_metadata_includes_payment_method_id(self):
+        store = _make_store_with_customer("cus_existing")
+        product, price, customer, checkout = _stripe_mocks()
+
+        with (
+            self._db(store),
+            self._club_mocks(),
+            patch.object(sd.stripe.Customer, "create", return_value=customer),
+            patch.object(sd.stripe.Product, "create", return_value=product),
+            patch.object(sd.stripe.Price, "create", return_value=price),
+            patch.object(sd.stripe.checkout.Session, "create", return_value=checkout) as session_create,
+        ):
+            sd.create_stripe_checkout_session(
+                telegram_chat_id=CHAT_ID,
+                club_id=CLUB_ID,
+                payment_method_id=42,
+                group_title=GROUP_TITLE,
+            )
+
+        meta = session_create.call_args.kwargs["metadata"]
+        self.assertEqual(meta["payment_method_id"], "42")
+        self.assertEqual(len(store.checkout_sessions), 0)
 
     def test_integrity_error_reuses_existing_customer(self):
         """Race: duplicate insert returns existing cus_existing."""

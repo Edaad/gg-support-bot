@@ -15,7 +15,7 @@ Checkout links issued before this behavior was deployed may still be open; only 
 | Table | Purpose |
 |-------|---------|
 | `stripe_customers` | `telegram_chat_id` → `stripe_customer_id`, club, last-seen GG id / display name |
-| `stripe_checkout_sessions` | Each `/deposit` Stripe request: `cs_…`, amount, status, `completed_at`, `stripe_payment_intent_id` |
+| `stripe_checkout_sessions` | **Completed payments only** (inserted by webhook when player pays): amount, group via `telegram_chat_id`, `completed_at` |
 
 Live group title at confirm time comes from **`groups.name`** (or `support_group_chats.telegram_chat_title`), not from a snapshot on the session row.
 
@@ -102,26 +102,27 @@ Amount: {{amount from Stripe trigger}}
 Register a webhook in the [Stripe Dashboard](https://dashboard.stripe.com/webhooks):
 
 - **Endpoint URL:** `https://<your-app-host>/api/stripe/webhook`
-- **Events:** `checkout.session.completed`, `checkout.session.expired`
+- **Events:** `checkout.session.completed` (required). Optional: `checkout.session.async_payment_succeeded`, `checkout.session.expired`
 - Copy the **Signing secret** into `STRIPE_WEBHOOK_SECRET` on the API dyno
 
-When a player completes or abandons checkout, the webhook updates `stripe_checkout_sessions`:
+When a player **completes** checkout, the webhook **inserts** a row into `stripe_checkout_sessions` (checkout links are not stored). Metadata on the Stripe session (`telegram_chat_id`, `club_id`, `payment_method_id`) comes from the bot when the link was created.
 
 | Event | DB update |
 |-------|-----------|
-| `checkout.session.completed` | `status=complete`, `amount_cents` from Stripe, `completed_at`, `stripe_payment_intent_id` |
-| `checkout.session.expired` | `status=expired`, `updated_at` |
+| `checkout.session.completed` | New row: `status=complete`, `amount_cents`, `completed_at`, `stripe_payment_intent_id` |
 
-Updates are idempotent — sessions already `complete` or `expired` are not overwritten.
+Unpaid / expired checkouts are not stored. Idempotent — duplicate webhooks for the same `cs_…` are ignored.
+
+To remove legacy open rows: `python scripts/cleanup_stripe_open_sessions.py --apply`
 
 ## Dashboard: Payments page
 
 **Nav → Payments** (`/payments`) shows club-scoped Stripe data:
 
+- **Payments** — completed Stripe deposits only (group title, amount, method)
 - **Customers** — one row per Telegram group with a `stripe_customers` mapping
-- **Transactions** — checkout sessions with amount/status after webhook updates
 
-Filters: club, deposit method (or Manual `/stripe`), status, date range.
+Filters: club, deposit method (or Manual `/stripe`), date range.
 
 JWT-protected API:
 

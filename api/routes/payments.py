@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from api.auth import get_current_admin
@@ -13,7 +14,7 @@ from api.payments_helpers import (
     apply_customer_search,
     apply_session_filters,
     cents_to_usd,
-    customer_session_counts,
+    customer_total_deposited_cents,
     list_stripe_deposit_methods,
     resolve_group_title,
     resolve_method_display,
@@ -39,6 +40,11 @@ router = APIRouter(
 
 _DEFAULT_LIMIT = 50
 _MAX_LIMIT = 200
+
+_MIGRATION_HINT = (
+    "Run: python migrate_stripe_deposit_tracking.py && "
+    "python migrate_stripe_checkout_session_lifecycle.py (or heroku run … on the web dyno)"
+)
 
 
 def _parse_dt(value: str | None) -> datetime | None:
@@ -67,6 +73,18 @@ def _get_club_or_404(db: Session, club_id: int) -> Club:
     return club
 
 
+def _raise_db_schema_error(exc: ProgrammingError) -> None:
+    msg = str(exc.orig) if exc.orig else str(exc)
+    low = msg.lower()
+    if "stripe_checkout_sessions" in low or "stripe_customers" in low:
+        if "does not exist" in low or "undefinedcolumn" in low.replace(" ", ""):
+            raise HTTPException(
+                503,
+                f"Stripe payments tables or columns are missing. {_MIGRATION_HINT}",
+            ) from exc
+    raise HTTPException(503, f"Database schema error: {msg}") from exc
+
+
 @router.get("/providers", response_model=List[PaymentProviderRead])
 def list_providers():
     return [PaymentProviderRead(id="stripe", label="Stripe")]
@@ -93,16 +111,19 @@ def list_stripe_customers(
     limit = _clamp_limit(limit)
     offset = max(0, offset)
 
-    base = db.query(StripeCustomer).filter(StripeCustomer.club_id == club_id)
-    base = apply_customer_search(base, q)
-    total = base.count()
-    rows = (
-        base.order_by(StripeCustomer.updated_at.desc(), StripeCustomer.id.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-    counts = customer_session_counts(db, club_id)
+    try:
+        base = db.query(StripeCustomer).filter(StripeCustomer.club_id == club_id)
+        base = apply_customer_search(base, q)
+        total = base.count()
+        rows = (
+            base.order_by(StripeCustomer.updated_at.desc(), StripeCustomer.id.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+        totals = customer_total_deposited_cents(db, club_id)
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
 
     items: list[StripeCustomerRead] = []
     for row in rows:
@@ -112,18 +133,18 @@ def list_stripe_customers(
             fallback_gg_player_id=row.gg_player_id,
             fallback_player_display_name=row.player_display_name,
         )
+        deposited_cents = totals.get(row.stripe_customer_id, 0)
         items.append(
             StripeCustomerRead(
                 id=row.id,
                 telegram_chat_id=row.telegram_chat_id,
                 club_id=row.club_id,
-                stripe_customer_id=row.stripe_customer_id,
                 gg_player_id=gg_id,
                 player_display_name=player_name,
                 group_title=title,
-                session_count=counts.get(row.stripe_customer_id, 0),
+                total_deposited_cents=deposited_cents,
+                total_deposited_usd=cents_to_usd(deposited_cents),
                 created_at=row.created_at,
-                updated_at=row.updated_at,
             )
         )
 
@@ -133,7 +154,10 @@ def list_stripe_customers(
 @router.get("/stripe/sessions", response_model=StripeCheckoutSessionListResponse)
 def list_stripe_sessions(
     club_id: int = Query(...),
-    status: str | None = Query(None, description="open | complete | expired | all"),
+    status: str | None = Query(
+        "complete",
+        description="Completed payments only (open/unpaid are not stored).",
+    ),
     method_id: int | None = Query(None),
     manual_only: bool = Query(False, description="Sessions from /stripe (no payment_method_id)"),
     from_dt: str | None = Query(None, alias="from"),
@@ -146,23 +170,26 @@ def list_stripe_sessions(
     limit = _clamp_limit(limit)
     offset = max(0, offset)
 
-    base = db.query(StripeCheckoutSession)
-    base = apply_session_filters(
-        base,
-        club_id=club_id,
-        status=status,
-        method_id=method_id,
-        manual_only=manual_only,
-        from_dt=_parse_dt(from_dt),
-        to_dt=_parse_dt(to_dt),
-    )
-    total = base.count()
-    rows = (
-        base.order_by(StripeCheckoutSession.created_at.desc(), StripeCheckoutSession.id.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    try:
+        base = db.query(StripeCheckoutSession)
+        base = apply_session_filters(
+            base,
+            club_id=club_id,
+            status=status,
+            method_id=method_id,
+            manual_only=manual_only,
+            from_dt=_parse_dt(from_dt),
+            to_dt=_parse_dt(to_dt),
+        )
+        total = base.count()
+        rows = (
+            base.order_by(StripeCheckoutSession.created_at.desc(), StripeCheckoutSession.id.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
 
     customer_by_stripe_id: dict[str, StripeCustomer] = {}
     if rows:
