@@ -43,14 +43,9 @@ def resolve_group_title(
     session: Session,
     telegram_chat_id: int,
     *,
-    club_id: int | None = None,
     fallback_gg_player_id: str | None = None,
-    fallback_player_display_name: str | None = None,
-) -> tuple[str | None, str | None, str | None]:
-    """Return (group_title, gg_player_id, player_display_name) for a chat.
-
-    player_display_name prefers player_details.gg_nickname when club_id and gg_player_id are known.
-    """
+) -> tuple[str | None, str | None]:
+    """Return (group_title, gg_player_id) for a chat."""
     cid = int(telegram_chat_id)
     group = session.query(Group).filter(Group.chat_id == cid).first()
     title: str | None = None
@@ -67,23 +62,14 @@ def resolve_group_title(
             title = sgc.telegram_chat_title.strip()
 
     gg_player_id = fallback_gg_player_id
-    player_display_name = fallback_player_display_name
     if title:
         from bot.services.player_details import parse_group_title_parts
 
         parsed = parse_group_title_parts(title)
         if parsed:
             gg_player_id = parsed.gg_player_id or gg_player_id
-            tail = (parsed.tail or "").strip()
-            if tail:
-                player_display_name = tail
 
-    if club_id is not None:
-        nick = lookup_gg_nickname(session, club_id, gg_player_id)
-        if nick:
-            player_display_name = nick
-
-    return title, gg_player_id, player_display_name
+    return title, gg_player_id
 
 
 def stripe_dashboard_session_url(session_id: str) -> str:

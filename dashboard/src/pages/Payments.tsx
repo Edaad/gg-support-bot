@@ -32,6 +32,11 @@ function fmtMoney(n: number): string {
   return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function fmtGgNickname(nickname: string | null | undefined): string {
+  const s = nickname?.trim()
+  return s ? s : 'Not available'
+}
+
 type MethodFilter = 'all' | 'manual' | number
 
 export default function Payments({ token }: { token: string }) {
@@ -298,7 +303,7 @@ export default function Payments({ token }: { token: string }) {
                       <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                         {row.group_title || '—'}
                       </td>
-                      <td className="px-4 py-3">{row.player_display_name || '—'}</td>
+                      <td className="px-4 py-3">{fmtGgNickname(row.gg_nickname)}</td>
                       <td className="px-4 py-3">{row.method_name || '—'}</td>
                       <td className="px-4 py-3 font-medium">
                         {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
@@ -387,7 +392,7 @@ export default function Payments({ token }: { token: string }) {
                     <tr key={row.id} className="hover:bg-surface/80">
                       <td className="px-4 py-3">{row.group_title || '—'}</td>
                       <td className="px-4 py-3 font-mono text-xs">{row.gg_player_id || '—'}</td>
-                      <td className="px-4 py-3">{row.player_display_name || '—'}</td>
+                      <td className="px-4 py-3">{fmtGgNickname(row.gg_nickname)}</td>
                       <td className="px-4 py-3">
                         {row.total_deposited_cents > 0
                           ? `$${fmtMoney(row.total_deposited_usd)}`

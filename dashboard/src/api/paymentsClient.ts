@@ -43,7 +43,7 @@ export type StripeCustomerRow = {
   telegram_chat_id: number
   club_id: number
   gg_player_id: string | null
-  player_display_name: string | null
+  gg_nickname: string | null
   group_title: string | null
   total_deposited_cents: number
   total_deposited_usd: number
@@ -66,7 +66,7 @@ export type StripeSessionRow = {
   stripe_payment_intent_id: string | null
   group_title: string | null
   gg_player_id: string | null
-  player_display_name: string | null
+  gg_nickname: string | null
   stripe_dashboard_url: string
   stripe_payment_url: string | null
   created_at: string

@@ -31,7 +31,7 @@ class StripeCustomerRead(BaseModel):
     telegram_chat_id: int
     club_id: int
     gg_player_id: Optional[str] = None
-    player_display_name: Optional[str] = None
+    gg_nickname: Optional[str] = None
     group_title: Optional[str] = None
     total_deposited_cents: int = 0
     total_deposited_usd: Decimal
@@ -63,7 +63,7 @@ class StripeCheckoutSessionRead(BaseModel):
     stripe_payment_intent_id: Optional[str] = None
     group_title: Optional[str] = None
     gg_player_id: Optional[str] = None
-    player_display_name: Optional[str] = None
+    gg_nickname: Optional[str] = None
     stripe_dashboard_url: str
     stripe_payment_url: Optional[str] = None
     created_at: datetime

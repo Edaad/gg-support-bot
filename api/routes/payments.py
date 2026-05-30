@@ -16,6 +16,7 @@ from api.payments_helpers import (
     cents_to_usd,
     customer_total_deposited_cents,
     list_stripe_deposit_methods,
+    lookup_gg_nickname,
     resolve_group_title,
     resolve_method_display,
     stripe_dashboard_payment_url,
@@ -127,12 +128,10 @@ def list_stripe_customers(
 
     items: list[StripeCustomerRead] = []
     for row in rows:
-        title, gg_id, player_name = resolve_group_title(
+        title, gg_id = resolve_group_title(
             db,
             row.telegram_chat_id,
-            club_id=club_id,
             fallback_gg_player_id=row.gg_player_id,
-            fallback_player_display_name=row.player_display_name,
         )
         deposited_cents = totals.get(row.stripe_customer_id, 0)
         items.append(
@@ -141,7 +140,7 @@ def list_stripe_customers(
                 telegram_chat_id=row.telegram_chat_id,
                 club_id=row.club_id,
                 gg_player_id=gg_id,
-                player_display_name=player_name,
+                gg_nickname=lookup_gg_nickname(db, club_id, gg_id),
                 group_title=title,
                 total_deposited_cents=deposited_cents,
                 total_deposited_usd=cents_to_usd(deposited_cents),
@@ -208,12 +207,10 @@ def list_stripe_sessions(
     items: list[StripeCheckoutSessionRead] = []
     for row in rows:
         cust = customer_by_stripe_id.get(row.stripe_customer_id)
-        title, gg_id, player_name = resolve_group_title(
+        title, gg_id = resolve_group_title(
             db,
             row.telegram_chat_id,
-            club_id=club_id,
             fallback_gg_player_id=cust.gg_player_id if cust else None,
-            fallback_player_display_name=cust.player_display_name if cust else None,
         )
         method_name, method_slug = resolve_method_display(db, club_id, row.payment_method_id)
         items.append(
@@ -233,7 +230,7 @@ def list_stripe_sessions(
                 stripe_payment_intent_id=row.stripe_payment_intent_id,
                 group_title=title,
                 gg_player_id=gg_id,
-                player_display_name=player_name,
+                gg_nickname=lookup_gg_nickname(db, club_id, gg_id),
                 stripe_dashboard_url=stripe_dashboard_session_url(row.stripe_checkout_session_id),
                 stripe_payment_url=stripe_dashboard_payment_url(row.stripe_payment_intent_id),
                 created_at=row.created_at,
