@@ -15,8 +15,10 @@ from api.payment_v2_helpers import (
     ensure_legacy_tier_before_new_variant,
     method_needs_variants,
     strip_response_from_tier_payload,
+    sync_method_envelope_side_effects,
     tier_variant_count,
     validate_all_method_tiers,
+    validate_checkout_amount_bounds,
     validate_tier_amount_band,
 )
 from api.schemas_v2 import (
@@ -132,8 +134,11 @@ def update_method(method_id: int, body: ClubPaymentMethodUpdate, db: Session = D
     if method.min_amount is not None and method.max_amount is not None and method.min_amount > method.max_amount:
         raise HTTPException(400, "Method min amount cannot be greater than max amount.")
     db.flush()
-    method = _get_method(db, method_id)
     if {"min_amount", "max_amount"}.intersection(data.keys()):
+        method = _get_method(db, method_id)
+        sync_method_envelope_side_effects(method)
+        db.flush()
+        method = _get_method(db, method_id)
         validate_all_method_tiers(method)
     method = _get_method(db, method_id)
     return _read_method(method)
@@ -222,6 +227,10 @@ def update_tier(tier_id: int, body: ClubPaymentTierUpdate, db: Session = Depends
         exclude_tier_id=tier.id,
         tier_label=merged_label,
     )
+    merged_checkout_min = data.get("checkout_min_amount", tier.checkout_min_amount)
+    merged_checkout_max = data.get("checkout_max_amount", tier.checkout_max_amount)
+    if {"checkout_min_amount", "checkout_max_amount"}.intersection(data.keys()):
+        validate_checkout_amount_bounds(method, merged_checkout_min, merged_checkout_max)
     for field, value in data.items():
         setattr(tier, field, value)
     db.flush()
@@ -256,8 +265,10 @@ def list_tier_variants(tier_id: int, db: Session = Depends(get_db_dependency)):
 @router.post("/tiers/{tier_id}/variants", response_model=ClubPaymentTierVariantRead, status_code=201)
 def create_tier_variant(tier_id: int, body: ClubPaymentTierVariantCreate, db: Session = Depends(get_db_dependency)):
     tier = _get_tier(db, tier_id)
+    method = _get_method(db, tier.method_id)
     if body.weight < 1:
         raise HTTPException(400, "Weight must be at least 1")
+    validate_checkout_amount_bounds(method, body.checkout_min_amount, body.checkout_max_amount)
     ensure_legacy_tier_before_new_variant(db, tier)
     variant = ClubPaymentTierVariant(
         method_id=tier.method_id,
@@ -273,9 +284,14 @@ def create_tier_variant(tier_id: int, body: ClubPaymentTierVariantCreate, db: Se
 @router.put("/variants/{variant_id}", response_model=ClubPaymentTierVariantRead)
 def update_variant(variant_id: int, body: ClubPaymentTierVariantUpdate, db: Session = Depends(get_db_dependency)):
     variant = _get_variant(db, variant_id)
+    method = _get_method(db, variant.method_id)
     data = body.model_dump(exclude_unset=True)
     if "weight" in data and data["weight"] < 1:
         raise HTTPException(400, "Weight must be at least 1")
+    merged_checkout_min = data.get("checkout_min_amount", variant.checkout_min_amount)
+    merged_checkout_max = data.get("checkout_max_amount", variant.checkout_max_amount)
+    if {"checkout_min_amount", "checkout_max_amount"}.intersection(data.keys()):
+        validate_checkout_amount_bounds(method, merged_checkout_min, merged_checkout_max)
     if "tier_id" in data:
         new_tier_id = data["tier_id"]
         if new_tier_id is not None:

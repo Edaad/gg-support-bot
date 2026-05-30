@@ -14,7 +14,6 @@ import {
   deleteV2Method,
   reorderV2Methods,
   resetV2MethodAccumulated,
-  syncV2DefaultTier,
   type V2Method,
 } from '../api/v2Client'
 import V2TierEditor from './V2TierEditor'
@@ -426,12 +425,6 @@ export default function V2MethodEditor({ token, clubId, direction }: Props) {
       const payload = detailsPayload(form, direction)
       if (editId) {
         await updateV2Method(token, editId, payload)
-        await syncV2DefaultTier(
-          token,
-          editId,
-          payload.min_amount ?? null,
-          payload.max_amount ?? null,
-        )
         const list = await load()
         syncFormFromList(list, editId)
       } else {

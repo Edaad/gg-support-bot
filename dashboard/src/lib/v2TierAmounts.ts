@@ -74,3 +74,27 @@ export function methodEnvelopeLabel(
   if (absoluteMax != null) return `up to $${absoluteMax}`
   return 'any amount'
 }
+
+export function validateCheckoutAmountBounds(
+  absoluteMin: number | null | undefined,
+  absoluteMax: number | null | undefined,
+  checkoutMin: number | null | undefined,
+  checkoutMax: number | null | undefined,
+): string | null {
+  if (checkoutMin != null && checkoutMax != null && checkoutMin > checkoutMax) {
+    return 'Checkout min cannot be greater than checkout max.'
+  }
+  if (checkoutMin != null && absoluteMin != null && checkoutMin < absoluteMin) {
+    return `Checkout min $${checkoutMin} is below method absolute minimum $${absoluteMin}.`
+  }
+  if (checkoutMax != null && absoluteMax != null && checkoutMax > absoluteMax) {
+    return `Checkout max $${checkoutMax} is above method absolute maximum $${absoluteMax}.`
+  }
+  if (checkoutMin != null && absoluteMax != null && checkoutMin > absoluteMax) {
+    return `Checkout min $${checkoutMin} is above method absolute maximum $${absoluteMax}.`
+  }
+  if (checkoutMax != null && absoluteMin != null && checkoutMax < absoluteMin) {
+    return `Checkout max $${checkoutMax} is below method absolute minimum $${absoluteMin}.`
+  }
+  return null
+}

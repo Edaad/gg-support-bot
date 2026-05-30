@@ -343,7 +343,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(create_session.call_args.kwargs.get("checkout_min_usd"), 101)
         self.assertEqual(create_session.call_args.kwargs.get("checkout_max_usd"), 2000)
 
-    async def test_cashapp_below_100_ignores_placeholder_variant_text(self):
+    async def test_cashapp_below_100_uses_configured_variant_stripe(self):
         chat = SimpleNamespace(send_message=AsyncMock())
         message = SimpleNamespace(chat=chat)
         query = SimpleNamespace(
@@ -376,7 +376,11 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         }
         variant = {
             "response_type": "text",
-            "response_text": "long text",
+            "response_text": (
+                "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
+                "• Enter your deposit amount on the checkout page ($20 minimum, $100 maximum).\n\n"
+                "{{hyperlink}}"
+            ),
             "use_group_checkout_link": True,
             "group_checkout_provider": "stripe",
             "hyperlink_text": "PAY HERE",
@@ -387,6 +391,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
             patch.object(dep, "create_stripe_checkout_session", return_value=result) as create_session,
             patch.object(dep, "send_response_messages", AsyncMock()) as send_response,
         ):
+            merged = dep._with_method_checkout_settings(variant, method, tier=tier)
             ok = await dep._send_deposit_method_response(
                 query,
                 context,
@@ -394,7 +399,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
                 display_name="Cashapp",
                 method_id=4,
                 method_slug="cashapp",
-                response_data=variant,
+                response_data=merged,
                 method=method,
                 tier=tier,
             )
@@ -402,8 +407,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         create_session.assert_called_once()
         sent = send_response.await_args.args[1]
-        self.assertIn("Use Stripe below $100", sent["response_text"])
-        self.assertNotIn("long text", sent["response_text"])
+        self.assertIn("NO CREDIT CARDS", sent["response_text"])
         self.assertNotIn("_stripe_link_only_html", sent)
 
     async def test_cashapp_over_100_does_not_use_stripe_without_group_checkout(self):

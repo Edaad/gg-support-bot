@@ -4,7 +4,7 @@ import html
 import logging
 from decimal import Decimal, InvalidOperation
 
-from telegram import ForceReply, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationHandlerStop,
     ContextTypes,
@@ -103,8 +103,8 @@ def _with_method_checkout_settings(
     return merged
 
 
-# Temporary until dashboard tier/variant Stripe flags are fully migrated.
-_STRIPE_HARDCODE_SLUGS = frozenset({"cashapp", "applepay"})
+# Temporary until dashboard tier/variant Stripe flags are fully migrated (Apple Pay only).
+_STRIPE_HARDCODE_SLUGS = frozenset({"applepay"})
 _STRIPE_HARDCODE_MAX = Decimal("100")
 _STRIPE_HARDCODE_DEFAULT_TEXT = (
     "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
@@ -150,7 +150,7 @@ def _apply_hardcoded_stripe_below_100(
     method: dict | None = None,
     tier: dict | None = None,
 ) -> dict:
-    """Force Stripe checkout for Cashapp / Apple Pay deposits up to $100."""
+    """Force Stripe checkout for Apple Pay deposits up to $100."""
     slug = (method_slug or "").strip().lower()
     if slug not in _STRIPE_HARDCODE_SLUGS:
         return response_data
@@ -239,14 +239,7 @@ def _is_awaiting_amount(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> boo
 
 async def _ask_deposit_amount(message, context: ContextTypes.DEFAULT_TYPE) -> int:
     _mark_awaiting_amount(context)
-    # Groups with BotFather privacy mode ON only deliver commands, @mentions, and
-    # replies to the bot — plain "30" is never received. ForceReply ensures the
-    # amount is sent as a reply so Telegram forwards it to us.
-    await message.reply_text(
-        "How much would you like to deposit?\n\n"
-        "↩️ Reply to this message with the amount (e.g. 30).",
-        reply_markup=ForceReply(selective=True),
-    )
+    await message.reply_text("How much would you like to deposit?")
     return DEPOSIT_AMOUNT
 
 

@@ -288,6 +288,8 @@ export default function V2TierEditor({
                     token={token}
                     methodId={methodId}
                     tier={t}
+                    absoluteMin={absoluteMin}
+                    absoluteMax={absoluteMax}
                     onSaved={(updated) => {
                       setTiers((prev) => prev.map((row) => (row.id === updated.id ? updated : row)))
                     }}
@@ -297,7 +299,14 @@ export default function V2TierEditor({
                 {needsVariants && (
                   <div className="border-t border-border/60 px-3 py-3">
                     <h5 className="mb-2 text-xs font-medium text-ink-muted">Variants (required)</h5>
-                    <V2VariantEditor token={token} tierId={t.id} embedded requiresVariants />
+                    <V2VariantEditor
+                      token={token}
+                      tierId={t.id}
+                      embedded
+                      requiresVariants
+                      absoluteMin={absoluteMin}
+                      absoluteMax={absoluteMax}
+                    />
                   </div>
                 )}
               </div>

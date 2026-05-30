@@ -6,7 +6,13 @@ import unittest
 from decimal import Decimal
 from types import SimpleNamespace
 
-from api.payment_v2_helpers import amounts_overlap, validate_tier_amount_band
+from api.payment_v2_helpers import (
+    amounts_overlap,
+    clamp_checkout_amount_bounds,
+    sync_method_envelope_side_effects,
+    validate_checkout_amount_bounds,
+    validate_tier_amount_band,
+)
 from fastapi import HTTPException
 
 
@@ -62,6 +68,40 @@ class TierAmountBandTestCase(unittest.TestCase):
                 tier_label="Default",
             )
         self.assertIn("Default tier", str(ctx.exception.detail))
+
+
+class CheckoutAmountBoundsTestCase(unittest.TestCase):
+    def test_checkout_min_below_method_min_rejected(self):
+        method = _method(min_amount=Decimal("100"), max_amount=None)
+        with self.assertRaises(HTTPException) as ctx:
+            validate_checkout_amount_bounds(method, Decimal("50"), None)
+        self.assertIn("below method absolute minimum", str(ctx.exception.detail))
+
+    def test_clamp_raises_checkout_min_to_method_min(self):
+        method = _method(min_amount=Decimal("100"), max_amount=Decimal("500"))
+        lo, hi = clamp_checkout_amount_bounds(method, Decimal("20"), Decimal("600"))
+        self.assertEqual(lo, Decimal("100"))
+        self.assertEqual(hi, Decimal("500"))
+
+    def test_sync_default_tier_and_clamp_variants(self):
+        variant = SimpleNamespace(
+            checkout_min_amount=Decimal("20"),
+            checkout_max_amount=Decimal("2000"),
+        )
+        tier = SimpleNamespace(
+            label="Default",
+            min_amount=Decimal("50"),
+            max_amount=None,
+            checkout_min_amount=Decimal("20"),
+            checkout_max_amount=None,
+            variants=[variant],
+        )
+        method = SimpleNamespace(min_amount=Decimal("100"), max_amount=Decimal("500"), tiers=[tier])
+        sync_method_envelope_side_effects(method)
+        self.assertEqual(tier.min_amount, Decimal("100"))
+        self.assertEqual(tier.max_amount, Decimal("500"))
+        self.assertEqual(variant.checkout_min_amount, Decimal("100"))
+        self.assertEqual(variant.checkout_max_amount, Decimal("500"))
 
 
 if __name__ == "__main__":

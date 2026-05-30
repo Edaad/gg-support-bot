@@ -8,6 +8,7 @@ import {
 } from '../api/v2Client'
 import ResponseEditor from './ResponseEditor'
 import { useConfirm } from './ConfirmProvider'
+import { validateCheckoutAmountBounds } from '../lib/v2TierAmounts'
 
 function variantSavePayload(form: Partial<V2Variant>, overrideStripe: boolean): Partial<V2Variant> {
   const useLink = overrideStripe ? Boolean(form.use_group_checkout_link) : null
@@ -37,11 +38,15 @@ export default function V2VariantEditor({
   tierId,
   embedded = false,
   requiresVariants = false,
+  absoluteMin,
+  absoluteMax,
 }: {
   token: string
   tierId: number
   embedded?: boolean
   requiresVariants?: boolean
+  absoluteMin?: number | null
+  absoluteMax?: number | null
 }) {
   const askConfirm = useConfirm()
   const variantLabelId = useId()
@@ -82,6 +87,16 @@ export default function V2VariantEditor({
     if (!form.label?.trim()) return
     setSaveError('')
     const payload = variantSavePayload(form, overrideStripe)
+    const boundsError = validateCheckoutAmountBounds(
+      absoluteMin,
+      absoluteMax,
+      payload.checkout_min_amount,
+      payload.checkout_max_amount,
+    )
+    if (boundsError) {
+      setSaveError(boundsError)
+      return
+    }
     try {
       if (editId) {
         await updateV2Variant(token, editId, payload)
@@ -278,6 +293,8 @@ export default function V2VariantEditor({
                 }
                 className="input-field-sm"
                 placeholder="Inherit from tier"
+                min={absoluteMin ?? undefined}
+                max={absoluteMax ?? undefined}
               />
             </div>
             <div>
@@ -296,6 +313,8 @@ export default function V2VariantEditor({
                 }
                 className="input-field-sm"
                 placeholder="Inherit from tier"
+                min={absoluteMin ?? undefined}
+                max={absoluteMax ?? undefined}
               />
             </div>
           </div>

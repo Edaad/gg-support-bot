@@ -1,5 +1,6 @@
 import { useId, useState, useEffect } from 'react'
 import { listV2Tiers, updateV2Tier, type V2Tier } from '../api/v2Client'
+import { validateCheckoutAmountBounds } from '../lib/v2TierAmounts'
 
 function stripeSavePayload(form: Partial<V2Tier>): Partial<V2Tier> {
   const useLink = Boolean(form.use_group_checkout_link)
@@ -27,11 +28,15 @@ export default function V2TierStripePanel({
   methodId,
   tier,
   onSaved,
+  absoluteMin,
+  absoluteMax,
 }: {
   token: string
   methodId: number
   tier: V2Tier
   onSaved: (tier: V2Tier) => void
+  absoluteMin?: number | null
+  absoluteMax?: number | null
 }) {
   const providerFieldId = useId()
   const hyperlinkFieldId = useId()
@@ -59,8 +64,20 @@ export default function V2TierStripePanel({
   const handleSave = async () => {
     setSaving(true)
     setSaveError('')
+    const payload = stripeSavePayload(form)
+    const boundsError = validateCheckoutAmountBounds(
+      absoluteMin,
+      absoluteMax,
+      payload.checkout_min_amount,
+      payload.checkout_max_amount,
+    )
+    if (boundsError) {
+      setSaveError(boundsError)
+      setSaving(false)
+      return
+    }
     try {
-      await updateV2Tier(token, tier.id, stripeSavePayload(form))
+      await updateV2Tier(token, tier.id, payload)
       const fresh = await listV2Tiers(token, methodId)
       const updated = fresh.find((t) => t.id === tier.id)
       if (!updated) {
@@ -159,6 +176,8 @@ export default function V2TierStripePanel({
                   }
                   className="input-field-sm"
                   placeholder="Optional"
+                  min={absoluteMin ?? undefined}
+                  max={absoluteMax ?? undefined}
                 />
               </div>
               <div>
@@ -177,6 +196,8 @@ export default function V2TierStripePanel({
                   }
                   className="input-field-sm"
                   placeholder="Optional"
+                  min={absoluteMin ?? undefined}
+                  max={absoluteMax ?? undefined}
                 />
               </div>
             </div>

@@ -112,6 +112,83 @@ def validate_all_method_tiers(method: ClubPaymentMethod) -> None:
         )
 
 
+def validate_checkout_amount_bounds(
+    method: ClubPaymentMethod,
+    checkout_min: Optional[Decimal],
+    checkout_max: Optional[Decimal],
+) -> None:
+    """Ensure optional checkout min/max fit the method absolute envelope."""
+    if checkout_min is not None and checkout_max is not None and checkout_min > checkout_max:
+        raise HTTPException(400, "Checkout min cannot be greater than checkout max.")
+
+    if checkout_min is not None and method.min_amount is not None and checkout_min < method.min_amount:
+        raise HTTPException(
+            400,
+            f"Checkout min ${checkout_min} is below method absolute minimum ${method.min_amount}.",
+        )
+    if checkout_max is not None and method.max_amount is not None and checkout_max > method.max_amount:
+        raise HTTPException(
+            400,
+            f"Checkout max ${checkout_max} is above method absolute maximum ${method.max_amount}.",
+        )
+    if checkout_min is not None and method.max_amount is not None and checkout_min > method.max_amount:
+        raise HTTPException(
+            400,
+            f"Checkout min ${checkout_min} is above method absolute maximum ${method.max_amount}.",
+        )
+    if checkout_max is not None and method.min_amount is not None and checkout_max < method.min_amount:
+        raise HTTPException(
+            400,
+            f"Checkout max ${checkout_max} is below method absolute minimum ${method.min_amount}.",
+        )
+
+
+def clamp_checkout_amount_bounds(
+    method: ClubPaymentMethod,
+    checkout_min: Optional[Decimal],
+    checkout_max: Optional[Decimal],
+) -> tuple[Optional[Decimal], Optional[Decimal]]:
+    """Clamp checkout bounds into the method absolute envelope (null = inherit / unbounded)."""
+    lo = checkout_min
+    hi = checkout_max
+
+    if method.min_amount is not None:
+        if lo is not None and lo < method.min_amount:
+            lo = method.min_amount
+        if hi is not None and hi < method.min_amount:
+            hi = method.min_amount
+
+    if method.max_amount is not None:
+        if lo is not None and lo > method.max_amount:
+            lo = method.max_amount
+        if hi is not None and hi > method.max_amount:
+            hi = method.max_amount
+
+    if lo is not None and hi is not None and lo > hi:
+        hi = lo
+
+    return lo, hi
+
+
+def sync_method_envelope_side_effects(method: ClubPaymentMethod) -> None:
+    """Default tier follows method envelope; clamp tier/variant checkout bounds."""
+    for tier in method.tiers or []:
+        if (tier.label or "").strip() == DEFAULT_TIER_LABEL:
+            tier.min_amount = method.min_amount
+            tier.max_amount = method.max_amount
+        tier.checkout_min_amount, tier.checkout_max_amount = clamp_checkout_amount_bounds(
+            method,
+            tier.checkout_min_amount,
+            tier.checkout_max_amount,
+        )
+        for variant in tier.variants or []:
+            variant.checkout_min_amount, variant.checkout_max_amount = clamp_checkout_amount_bounds(
+                method,
+                variant.checkout_min_amount,
+                variant.checkout_max_amount,
+            )
+
+
 def method_needs_variants(method: ClubPaymentMethod) -> bool:
     return not method.has_sub_options
 
