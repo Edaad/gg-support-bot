@@ -32,6 +32,16 @@ _SUPPORT_GROUP_TITLE_MAX = 5000
 EST = ZoneInfo("America/New_York")
 
 
+def _payment_v2():
+    from bot.runtime_config import use_payment_v2
+
+    if not use_payment_v2():
+        return None
+    from bot.services import club_payment_v2
+
+    return club_payment_v2
+
+
 def _club_id_for_telegram_user(session: Session, telegram_user_id: int) -> Optional[int]:
     """Resolve club_id for a primary or linked Telegram user. None if inactive or unknown."""
     club = session.query(Club).filter_by(telegram_user_id=telegram_user_id).first()
@@ -135,6 +145,9 @@ def get_methods_for_amount(
     Each dict: {id, name, slug, min_amount, max_amount, has_sub_options,
                 response_type, response_text, response_file_id, response_caption}
     """
+    v2 = _payment_v2()
+    if v2:
+        return v2.get_methods_for_amount(club_id, direction, amount)
     with get_db() as session:
         q = (
             session.query(PaymentMethod)
@@ -172,6 +185,10 @@ def get_methods_for_amount(
 
 def record_method_deposit(method_id: int, amount: Decimal) -> None:
     """Atomically add deposit amount to a method's accumulated total."""
+    v2 = _payment_v2()
+    if v2:
+        v2.record_method_deposit(method_id, amount)
+        return
     with get_db() as session:
         m = session.query(PaymentMethod).get(method_id)
         if m:
@@ -179,6 +196,9 @@ def record_method_deposit(method_id: int, amount: Decimal) -> None:
 
 
 def get_method_by_id(method_id: int) -> Optional[dict]:
+    v2 = _payment_v2()
+    if v2:
+        return v2.get_method_by_id(method_id)
     with get_db() as session:
         m = session.query(PaymentMethod).get(method_id)
         if not m:
@@ -201,6 +221,9 @@ def get_method_by_id(method_id: int) -> Optional[dict]:
 
 
 def get_sub_options(method_id: int) -> List[dict]:
+    v2 = _payment_v2()
+    if v2:
+        return v2.get_sub_options(method_id)
     with get_db() as session:
         subs = (
             session.query(PaymentSubOption)
@@ -223,6 +246,9 @@ def get_sub_options(method_id: int) -> List[dict]:
 
 
 def get_sub_option_by_id(sub_id: int) -> Optional[dict]:
+    v2 = _payment_v2()
+    if v2:
+        return v2.get_sub_option_by_id(sub_id)
     with get_db() as session:
         s = session.query(PaymentSubOption).get(sub_id)
         if not s:
@@ -266,6 +292,9 @@ def get_club_list_content(club_id: int) -> Optional[dict]:
 
 def get_lowest_minimum(club_id: int, direction: str) -> Optional[Decimal]:
     """Return the smallest min_amount across all active methods, or None if none have a minimum."""
+    v2 = _payment_v2()
+    if v2:
+        return v2.get_lowest_minimum(club_id, direction)
     with get_db() as session:
         methods = (
             session.query(PaymentMethod)
@@ -278,6 +307,9 @@ def get_lowest_minimum(club_id: int, direction: str) -> Optional[Decimal]:
 
 def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
     """Return the response tier matching the amount, or None to use the method default."""
+    v2 = _payment_v2()
+    if v2:
+        return v2.get_tier_for_amount(method_id, amount)
     with get_db() as session:
         tiers = (
             session.query(PaymentMethodTier)
@@ -342,6 +374,9 @@ def pick_variant(method_id: int, tier_id: Optional[int] = None) -> Optional[dict
 
     Returns the chosen variant's response dict, or None if no variants exist.
     """
+    v2 = _payment_v2()
+    if v2:
+        return v2.pick_variant(method_id, tier_id=tier_id)
     with get_db() as session:
         if tier_id is not None:
             variants = (

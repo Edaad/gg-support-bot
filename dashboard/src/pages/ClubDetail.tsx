@@ -10,7 +10,7 @@ import {
   type Club, type Group as GroupT, type Command, type LinkedAccount,
   type BroadcastRequest, type BroadcastJob, type BroadcastGroupT,
 } from '../api/client'
-import MethodEditor from '../components/MethodEditor'
+import V2MethodEditor from '../components/V2MethodEditor'
 import ResponseEditor from '../components/ResponseEditor'
 import { useConfirm } from '../components/ConfirmProvider'
 
@@ -96,8 +96,8 @@ export default function ClubDetail({ token }: { token: string }) {
           }}
         />
       )}
-      {tab === 'Deposit Methods' && <MethodEditor token={token} clubId={clubId} direction="deposit" />}
-      {tab === 'Cashout Methods' && <MethodEditor token={token} clubId={clubId} direction="cashout" />}
+      {tab === 'Deposit Methods' && <V2MethodEditor token={token} clubId={clubId} direction="deposit" />}
+      {tab === 'Cashout Methods' && <V2MethodEditor token={token} clubId={clubId} direction="cashout" />}
       {tab === 'Custom Commands' && <CommandsTab token={token} clubId={clubId} />}
       {tab === 'Broadcast' && <BroadcastTab token={token} clubId={clubId} groupCount={club.group_count} />}
       {tab === 'Groups' && <GroupsTab token={token} clubId={clubId} />}

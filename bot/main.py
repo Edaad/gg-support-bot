@@ -51,10 +51,16 @@ def _configure_worker_logging() -> None:
     root.setLevel(level)
 
 
-async def _post_init_dm_gc_listener(app):
+async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
     from bot.services.mtproto_track_contact import set_contact_save_notify_bot
 
     set_contact_save_notify_bot(app.bot)
+
+    if test_mode:
+        logging.getLogger(__name__).info(
+            "Test bot: MTProto dm_gc listener disabled (use production worker for /gc auto-DM)."
+        )
+        return
 
     from club_gc_settings import is_dm_gc_listener_enabled
 
@@ -64,7 +70,10 @@ async def _post_init_dm_gc_listener(app):
         start_listener_background(app.bot.token)
 
 
-async def _post_shutdown_dm_gc_listener(app):
+async def _post_shutdown_dm_gc_listener(app, *, test_mode: bool = False):
+    if test_mode:
+        return
+
     from club_gc_settings import is_dm_gc_listener_enabled
 
     if is_dm_gc_listener_enabled():
@@ -73,10 +82,19 @@ async def _post_shutdown_dm_gc_listener(app):
         stop_listener_background()
 
 
-def run_bot(token: str | None = None):
-    token = token or os.getenv("TELEGRAM_BOT_TOKEN")
-    if not token:
-        raise SystemExit("Provide a token via TELEGRAM_BOT_TOKEN env var")
+def run_bot(token: str | None = None, *, test_mode: bool = False):
+    from bot.runtime_config import resolve_test_bot_token, use_payment_v2
+
+    if test_mode:
+        token = token or resolve_test_bot_token()
+        if not token:
+            raise SystemExit(
+                "Test bot: set TELEGRAM_TEST_BOT_TOKEN (or TEST_BOT_TOKEN) in .env"
+            )
+    else:
+        token = token or os.getenv("TELEGRAM_BOT_TOKEN")
+        if not token:
+            raise SystemExit("Provide a token via TELEGRAM_BOT_TOKEN env var")
 
     _configure_worker_logging()
 
@@ -117,8 +135,9 @@ def run_bot(token: str | None = None):
     app = (
         ApplicationBuilder()
         .token(token)
-        .post_init(_post_init_dm_gc_listener)
-        .post_shutdown(_post_shutdown_dm_gc_listener)
+        .concurrent_updates(False)
+        .post_init(lambda app: _post_init_dm_gc_listener(app, test_mode=test_mode))
+        .post_shutdown(lambda app: _post_shutdown_dm_gc_listener(app, test_mode=test_mode))
         .build()
     )
 
@@ -140,6 +159,17 @@ def run_bot(token: str | None = None):
     app.add_handler(CommandHandler("checkplayer", checkplayer_handler))
     app.add_handler(CommandHandler("stripe", stripe_handler))
     app.add_handler(CommandHandler("teststripe", teststripe_handler))
+
+    if test_mode:
+        from bot.handlers.deposit import deposit_amount_priority_handler
+
+        app.add_handler(
+            MessageHandler(
+                filters.ChatType.GROUPS & ~filters.COMMAND,
+                deposit_amount_priority_handler,
+                block=False,
+            )
+        )
 
     app.add_handler(get_set_handler())
     app.add_handler(get_deposit_handler())
@@ -173,5 +203,24 @@ def run_bot(token: str | None = None):
         group=1,
     )
 
-    print("Bot is running. Press Ctrl+C to stop.")
+    if test_mode:
+        from bot.runtime_config import is_test_bot_worker, use_payment_v2
+
+        print(
+            "Test bot is running (BOT_USE_PAYMENT_V2=%s, BOT_TEST_WORKER=%s). Press Ctrl+C to stop."
+            % ("on" if use_payment_v2() else "off", "on" if is_test_bot_worker() else "off")
+        )
+        print(
+            "Tip: after /deposit, use Reply on the bot message to enter the amount "
+            "(or disable privacy mode in @BotFather → /setprivacy → Disable)."
+        )
+        from bot.services.stripe_deposit import stripe_configured
+
+        if not stripe_configured():
+            print(
+                "Warning: Stripe not configured — Apple Pay / card checkout will fail. "
+                "Add STRIPE_TEST_SECRET_KEY=sk_test_... (or STRIPE_SECRET_KEY) to .env."
+            )
+    else:
+        print("Bot is running. Press Ctrl+C to stop.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)

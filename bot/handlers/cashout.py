@@ -343,7 +343,12 @@ async def cashout_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     amount = context.chat_data.get("cashout_amount", "?")
     tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
     if tier:
-        response_data = pick_variant(method_id, tier_id=tier["id"]) or tier
+        response_data = pick_variant(method_id, tier_id=tier["id"])
+        if not response_data:
+            await query.edit_message_text(
+                "This payment method is not configured yet. Please contact support."
+            )
+            return ConversationHandler.END
     else:
         response_data = pick_variant(method_id) or method
     await _send_response(query, response_data, amount, method["name"])

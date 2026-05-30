@@ -48,30 +48,6 @@ export const addLinkedAccount = (token: string, clubId: number, data: { telegram
 export const deleteLinkedAccount = (token: string, clubId: number, accountId: number) =>
   request<void>(`/clubs/${clubId}/linked-accounts/${accountId}`, { method: 'DELETE' }, token)
 
-// Methods
-export const listMethods = (token: string, clubId: number, direction?: string) =>
-  request<Method[]>(`/clubs/${clubId}/methods${direction ? `?direction=${direction}` : ''}`, {}, token)
-export const createMethod = (token: string, clubId: number, data: Partial<Method>) =>
-  request<Method>(`/clubs/${clubId}/methods`, { method: 'POST', body: JSON.stringify(data) }, token)
-export const updateMethod = (token: string, id: number, data: Partial<Method>) =>
-  request<Method>(`/methods/${id}`, { method: 'PUT', body: JSON.stringify(data) }, token)
-export const deleteMethod = (token: string, id: number) =>
-  request<void>(`/methods/${id}`, { method: 'DELETE' }, token)
-export const reorderMethods = (token: string, clubId: number, order: number[]) =>
-  request<void>(`/clubs/${clubId}/methods/reorder`, { method: 'PUT', body: JSON.stringify({ order }) }, token)
-export const resetMethodAccumulated = (token: string, methodId: number) =>
-  request<Method>(`/methods/${methodId}/reset-accumulated`, { method: 'POST' }, token)
-
-// Sub-options
-export const listSubOptions = (token: string, methodId: number) =>
-  request<SubOption[]>(`/methods/${methodId}/sub-options`, {}, token)
-export const createSubOption = (token: string, methodId: number, data: Partial<SubOption>) =>
-  request<SubOption>(`/methods/${methodId}/sub-options`, { method: 'POST', body: JSON.stringify(data) }, token)
-export const updateSubOption = (token: string, id: number, data: Partial<SubOption>) =>
-  request<SubOption>(`/sub-options/${id}`, { method: 'PUT', body: JSON.stringify(data) }, token)
-export const deleteSubOption = (token: string, id: number) =>
-  request<void>(`/sub-options/${id}`, { method: 'DELETE' }, token)
-
 // Custom commands
 export const listCommands = (token: string, clubId: number) =>
   request<Command[]>(`/clubs/${clubId}/commands`, {}, token)
@@ -81,32 +57,6 @@ export const updateCommand = (token: string, id: number, data: Partial<Command>)
   request<Command>(`/commands/${id}`, { method: 'PUT', body: JSON.stringify(data) }, token)
 export const deleteCommand = (token: string, id: number) =>
   request<void>(`/commands/${id}`, { method: 'DELETE' }, token)
-
-// Tiers
-export const listTiers = (token: string, methodId: number) =>
-  request<Tier[]>(`/methods/${methodId}/tiers`, {}, token)
-export const createTier = (token: string, methodId: number, data: Partial<Tier>) =>
-  request<Tier>(`/methods/${methodId}/tiers`, { method: 'POST', body: JSON.stringify(data) }, token)
-export const updateTier = (token: string, id: number, data: Partial<Tier>) =>
-  request<Tier>(`/tiers/${id}`, { method: 'PUT', body: JSON.stringify(data) }, token)
-export const deleteTier = (token: string, id: number) =>
-  request<void>(`/tiers/${id}`, { method: 'DELETE' }, token)
-
-// Variants (weighted rotation) — method-level
-export const listVariants = (token: string, methodId: number) =>
-  request<Variant[]>(`/methods/${methodId}/variants`, {}, token)
-export const createVariant = (token: string, methodId: number, data: Partial<Variant>) =>
-  request<Variant>(`/methods/${methodId}/variants`, { method: 'POST', body: JSON.stringify(data) }, token)
-export const updateVariant = (token: string, id: number, data: Partial<Variant>) =>
-  request<Variant>(`/variants/${id}`, { method: 'PUT', body: JSON.stringify(data) }, token)
-export const deleteVariant = (token: string, id: number) =>
-  request<void>(`/variants/${id}`, { method: 'DELETE' }, token)
-
-// Variants — tier-level
-export const listTierVariants = (token: string, tierId: number) =>
-  request<Variant[]>(`/tiers/${tierId}/variants`, {}, token)
-export const createTierVariant = (token: string, tierId: number, data: Partial<Variant>) =>
-  request<Variant>(`/tiers/${tierId}/variants`, { method: 'POST', body: JSON.stringify(data) }, token)
 
 // Groups
 export const listGroups = (token: string, clubId: number) =>
@@ -253,67 +203,6 @@ export interface LinkedAccount {
   club_id: number
   telegram_user_id: number
   created_at: string | null
-}
-
-export interface Method {
-  id: number
-  club_id: number
-  direction: string
-  name: string
-  slug: string
-  min_amount: number | null
-  max_amount: number | null
-  has_sub_options: boolean
-  response_type: string | null
-  response_text: string | null
-  response_file_id: string | null
-  response_caption: string | null
-  use_group_checkout_link: boolean
-  group_checkout_provider: string | null
-  hyperlink_text: string | null
-  is_active: boolean
-  sort_order: number
-  deposit_limit: number | null
-  accumulated_amount: number | null
-  created_at: string | null
-  sub_options: SubOption[]
-  tiers: Tier[]
-  variants: Variant[]
-}
-
-export interface Tier {
-  id: number
-  method_id: number
-  label: string
-  min_amount: number | null
-  max_amount: number | null
-  response_type: string | null
-  response_text: string | null
-  response_file_id: string | null
-  response_caption: string | null
-  use_group_checkout_link: boolean
-  group_checkout_provider: string | null
-  hyperlink_text: string | null
-  sort_order: number
-  variants: Variant[]
-}
-
-export interface Variant {
-  id: number
-  method_id: number
-  tier_id: number | null
-  label: string
-  weight: number
-  response_type: string | null
-  response_text: string | null
-  response_file_id: string | null
-  response_caption: string | null
-  min_amount: number | null
-  max_amount: number | null
-  use_group_checkout_link: boolean | null
-  group_checkout_provider: string | null
-  hyperlink_text: string | null
-  sort_order: number
 }
 
 export interface SubOption {

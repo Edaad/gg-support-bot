@@ -349,6 +349,7 @@ class VariantUpdate(BaseModel):
     group_checkout_provider: Optional[str] = None
     hyperlink_text: Optional[str] = None
     sort_order: Optional[int] = None
+    tier_id: Optional[int] = None
 
 
 # ── Payment Sub-Option ────────────────────────────────────────────────────────

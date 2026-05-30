@@ -45,30 +45,24 @@ def create_app() -> FastAPI:
 
     # ── Protected API routers ─────────────────────────────────────────────
     from api.routes.clubs import router as clubs_router
-    from api.routes.methods import router as methods_router
-    from api.routes.sub_options import router as sub_options_router
     from api.routes.commands import router as commands_router
-    from api.routes.tiers import router as tiers_router
     from api.routes.simulate import router as simulate_router
     from api.routes.broadcast import router as broadcast_router
-    from api.routes.variants import router as variants_router
     from api.routes.broadcast_groups import router as broadcast_groups_router
     from api.routes.weekly_stats import router as weekly_stats_router
     from api.routes.weekly_stats_proxy import router as weekly_stats_proxy_router
     from api.routes.gc_mtproto import router as gc_mtproto_router
     from api.routes.bonus import router as bonus_router
     from api.routes.stripe_deposit import router as stripe_deposit_router
+    from api.routes.v2_payment import router as v2_payment_router
 
     app.include_router(weekly_stats_proxy_router)
     app.include_router(stripe_deposit_router)
+    app.include_router(v2_payment_router)
     app.include_router(clubs_router)
-    app.include_router(methods_router)
-    app.include_router(sub_options_router)
-    app.include_router(tiers_router)
     app.include_router(commands_router)
     app.include_router(simulate_router)
     app.include_router(broadcast_router)
-    app.include_router(variants_router)
     app.include_router(broadcast_groups_router)
     app.include_router(weekly_stats_router)
     app.include_router(gc_mtproto_router)

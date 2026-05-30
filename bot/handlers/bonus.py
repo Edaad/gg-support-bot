@@ -319,6 +319,6 @@ def get_bonus_handler() -> ConversationHandler:
         fallbacks=[_BONUS_CANCEL],
         conversation_timeout=300,
         name="bonus_conv",
-        per_chat=False,
+        per_chat=True,
         per_user=True,
     )

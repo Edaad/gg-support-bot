@@ -19,6 +19,7 @@ from db.models import Club, StripeCheckoutSession, StripeCustomer
 logger = logging.getLogger(__name__)
 
 STRIPE_SECRET_KEY_ENV = "STRIPE_SECRET_KEY"
+STRIPE_TEST_SECRET_KEY_ENV = "STRIPE_TEST_SECRET_KEY"
 STRIPE_SUCCESS_URL_ENV = "STRIPE_CHECKOUT_SUCCESS_URL"
 STRIPE_CANCEL_URL_ENV = "STRIPE_CHECKOUT_CANCEL_URL"
 DEFAULT_SUCCESS_URL = "https://stripe.com/docs/payments/checkout"
@@ -48,14 +49,29 @@ class StripeDepositContext:
     stripe_customer_id: str
 
 
+def resolve_stripe_secret_key() -> str:
+    """Return Stripe secret key from env (STRIPE_TEST_SECRET_KEY on test worker, else STRIPE_SECRET_KEY)."""
+    from bot.runtime_config import is_test_bot_worker
+
+    if is_test_bot_worker():
+        for key in (STRIPE_TEST_SECRET_KEY_ENV, STRIPE_SECRET_KEY_ENV):
+            val = (os.getenv(key) or "").strip()
+            if val:
+                return val
+        return ""
+    return (os.getenv(STRIPE_SECRET_KEY_ENV) or "").strip()
+
+
 def stripe_configured() -> bool:
-    return bool((os.getenv(STRIPE_SECRET_KEY_ENV) or "").strip())
+    return bool(resolve_stripe_secret_key())
 
 
 def _stripe_client() -> None:
-    key = (os.getenv(STRIPE_SECRET_KEY_ENV) or "").strip()
+    key = resolve_stripe_secret_key()
     if not key:
-        raise RuntimeError(f"{STRIPE_SECRET_KEY_ENV} is not set")
+        raise RuntimeError(
+            f"{STRIPE_SECRET_KEY_ENV} (or {STRIPE_TEST_SECRET_KEY_ENV} on test bot) is not set"
+        )
     stripe.api_key = key
 
 

@@ -25,8 +25,8 @@ export default function Settings({ token: _token }: { token: string }) {
           <h2 className="mb-2 text-lg font-semibold text-ink">Test bot token</h2>
           <p className="mb-3 text-sm text-ink-muted">
             Optionally set a second Telegram bot token for testing. Create a test bot via @BotFather,
-            then paste its token below. Set it as the <code>TEST_BOT_TOKEN</code> environment variable on
-            your deployment.
+            then paste its token below. Set <code>TELEGRAM_TEST_BOT_TOKEN</code> in{' '}
+            <code>.env</code> and run <code>python run_test_bot.py</code>.
           </p>
           <label htmlFor={testTokenId} className="label-field">
             Token (reference only)
@@ -64,8 +64,9 @@ export default function Settings({ token: _token }: { token: string }) {
               preview deposit and cashout flows without Telegram.
             </li>
             <li>
-              For live Telegram testing, create a test bot via @BotFather and set{' '}
-              <code>TEST_BOT_TOKEN</code>.
+              For live Telegram testing, create a test bot via @BotFather, set{' '}
+              <code>TELEGRAM_TEST_BOT_TOKEN</code> in <code>.env</code>, and run{' '}
+              <code>python run_test_bot.py</code>.
             </li>
             <li>Add the test bot to a private group and run through /deposit and /cashout flows.</li>
             <li>Both bots (production and test) share the same database, so club configs apply to both.</li>

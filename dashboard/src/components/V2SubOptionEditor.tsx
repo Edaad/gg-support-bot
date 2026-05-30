@@ -1,54 +1,79 @@
 import { useId, useState, useEffect } from 'react'
 import {
-  listSubOptions,
-  createSubOption,
-  updateSubOption,
-  deleteSubOption,
-  type SubOption,
-} from '../api/client'
+  listV2SubOptions,
+  createV2SubOption,
+  updateV2SubOption,
+  deleteV2SubOption,
+  type V2SubOption,
+} from '../api/v2Client'
 import ResponseEditor from './ResponseEditor'
 import { useConfirm } from './ConfirmProvider'
 
-export default function SubOptionEditor({
+export default function V2SubOptionEditor({
   token,
   methodId,
   embedded = false,
+  onMutated,
 }: {
   token: string
   methodId: number
   embedded?: boolean
+  onMutated?: () => void
 }) {
   const askConfirm = useConfirm()
   const nameId = useId()
   const slugId = useId()
-  const [subs, setSubs] = useState<SubOption[]>([])
+  const [subs, setSubs] = useState<V2SubOption[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
-  const [form, setForm] = useState<Partial<SubOption>>({})
+  const [form, setForm] = useState<Partial<V2SubOption>>({})
+  const [error, setError] = useState('')
 
-  const load = () => listSubOptions(token, methodId).then(setSubs).catch(() => { })
-  useEffect(() => { load() }, [methodId])
+  const load = () =>
+    listV2SubOptions(token, methodId)
+      .then(setSubs)
+      .catch(() => setSubs([]))
+
+  useEffect(() => {
+    void load()
+  }, [methodId])
+
+  const notify = () => {
+    onMutated?.()
+  }
 
   const resetForm = () => {
     setForm({})
     setShowAdd(false)
     setEditId(null)
+    setError('')
   }
 
   const handleSave = async () => {
-    if (editId) {
-      await updateSubOption(token, editId, form)
-    } else {
-      await createSubOption(token, methodId, form)
+    setError('')
+    if (!form.name?.trim() || !form.slug?.trim()) {
+      setError('Enter a name and slug for this sub-option.')
+      return
     }
-    resetForm()
-    load()
+    try {
+      if (editId) {
+        await updateV2SubOption(token, editId, form)
+      } else {
+        await createV2SubOption(token, methodId, form)
+      }
+      resetForm()
+      await load()
+      notify()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not save sub-option.')
+    }
   }
 
-  const handleEdit = (s: SubOption) => {
+  const handleEdit = (s: V2SubOption) => {
     setEditId(s.id)
     setForm({ ...s })
     setShowAdd(true)
+    setError('')
   }
 
   const handleDelete = async (id: number) => {
@@ -59,12 +84,24 @@ export default function SubOptionEditor({
       destructive: true,
     })
     if (!ok) return
-    await deleteSubOption(token, id)
-    load()
+    await deleteV2SubOption(token, id)
+    await load()
+    notify()
   }
 
   return (
     <div className={embedded ? '' : 'panel-nested mt-3'}>
+      <p className="mb-3 text-xs text-ink-muted">
+        Shown after a player picks this method (e.g. Ethereum vs Bitcoin under Crypto). Enable{' '}
+        <strong className="font-medium">Uses sub-options</strong> on Details and save first.
+      </p>
+
+      {error && (
+        <div className="mb-3 rounded-lg bg-danger-bg px-4 py-2 text-sm text-danger-ink" role="alert">
+          {error}
+        </div>
+      )}
+
       <div className={embedded ? 'mb-3 flex justify-end' : 'section-header'}>
         {!embedded && <h4 className="text-sm font-medium text-ink">Sub-options</h4>}
         <button
@@ -78,6 +115,10 @@ export default function SubOptionEditor({
           Add sub-option
         </button>
       </div>
+
+      {subs.length === 0 && !showAdd && (
+        <p className="text-sm text-ink-muted">No sub-options yet.</p>
+      )}
 
       {subs.map((s) => (
         <div key={s.id} className="editor-row">
@@ -93,15 +134,15 @@ export default function SubOptionEditor({
               aria-label={`Edit sub-option ${s.name}`}
               className="action-chip text-ink-muted hover:bg-control hover:text-ink"
             >
-              Edit sub-option
+              Edit
             </button>
             <button
               type="button"
-              onClick={() => handleDelete(s.id)}
+              onClick={() => void handleDelete(s.id)}
               aria-label={`Delete sub-option ${s.name}`}
               className="action-chip text-danger-ink hover:bg-danger-bg"
             >
-              Delete sub-option
+              Delete
             </button>
           </div>
         </div>
@@ -135,6 +176,15 @@ export default function SubOptionEditor({
               />
             </div>
           </div>
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={form.is_active ?? true}
+              onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
+              className="h-4 w-4 rounded border-border bg-control text-accent focus:ring-accent"
+            />
+            Active (shown to players)
+          </label>
           <ResponseEditor
             type={form.response_type || 'text'}
             text={form.response_text || ''}
@@ -143,7 +193,7 @@ export default function SubOptionEditor({
             onChange={(field, value) => setForm({ ...form, [field]: value })}
           />
           <div className="form-actions">
-            <button type="button" onClick={handleSave} className="btn-primary-sm">
+            <button type="button" onClick={() => void handleSave()} className="btn-primary-sm">
               {editId ? 'Save changes' : 'Add sub-option'}
             </button>
             <button type="button" onClick={resetForm} className="btn-secondary-sm">

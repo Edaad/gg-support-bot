@@ -14,6 +14,7 @@ pip install -r requirements.txt
 # Run processes individually (load .env automatically)
 python run_api.py          # FastAPI on :8000, auto-reload
 python run_bot.py          # Support bot (long-polling)
+python run_test_bot.py     # Test bot (TELEGRAM_TEST_BOT_TOKEN; v2 payment config)
 python run_cashier.py      # GGCashier staff wizard bot
 
 # One-off DB migrations (run with DATABASE_URL set)

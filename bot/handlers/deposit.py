@@ -4,8 +4,9 @@ import html
 import logging
 from decimal import Decimal, InvalidOperation
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import ForceReply, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
+    ApplicationHandlerStop,
     ContextTypes,
     ConversationHandler,
     CommandHandler,
@@ -46,12 +47,16 @@ from bot.services.stripe_deposit import (
     create_stripe_checkout_session,
     stripe_configured,
 )
+from bot.runtime_config import is_test_bot_worker, use_payment_v2
 from db.connection import get_db
 from db.models import Club
 
 logger = logging.getLogger(__name__)
 
 DEPOSIT_REFERRAL, DEPOSIT_AMOUNT, DEPOSIT_UNION, DEPOSIT_CHOOSE, DEPOSIT_SUB = range(5)
+
+# Test-bot fallback when chat_data does not persist between updates (group chats).
+_DEPOSIT_AWAITING_CHATS: set[int] = set()
 
 _CHECKOUT_SETTING_KEYS = (
     "use_group_checkout_link",
@@ -214,6 +219,107 @@ def _build_stripe_response_payload(response_data: dict, checkout_url: str) -> di
     return payload
 
 
+def _mark_awaiting_amount(context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.chat_data["deposit_awaiting_amount"] = True
+    chat_id = context.chat_data.get("deposit_chat_id")
+    if chat_id is not None:
+        _DEPOSIT_AWAITING_CHATS.add(int(chat_id))
+
+
+def _clear_awaiting_amount(context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.chat_data.pop("deposit_awaiting_amount", None)
+    chat_id = context.chat_data.get("deposit_chat_id")
+    if chat_id is not None:
+        _DEPOSIT_AWAITING_CHATS.discard(int(chat_id))
+
+
+def _is_awaiting_amount(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> bool:
+    return bool(context.chat_data.get("deposit_awaiting_amount")) or chat_id in _DEPOSIT_AWAITING_CHATS
+
+
+async def _ask_deposit_amount(message, context: ContextTypes.DEFAULT_TYPE) -> int:
+    _mark_awaiting_amount(context)
+    # Groups with BotFather privacy mode ON only deliver commands, @mentions, and
+    # replies to the bot — plain "30" is never received. ForceReply ensures the
+    # amount is sent as a reply so Telegram forwards it to us.
+    await message.reply_text(
+        "How much would you like to deposit?\n\n"
+        "↩️ Reply to this message with the amount (e.g. 30).",
+        reply_markup=ForceReply(selective=True),
+    )
+    return DEPOSIT_AMOUNT
+
+
+def _sync_deposit_conv_state(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, new_state: object
+) -> None:
+    """Keep ConversationHandler state aligned when amount is handled via the test-bot safety net."""
+    if new_state is None:
+        return
+    app = context.application
+    for handlers in app.handlers.values():
+        for handler in handlers:
+            if getattr(handler, "name", None) != "deposit_conv":
+                continue
+            try:
+                key = handler._get_key(update)
+            except RuntimeError:
+                return
+            if new_state == ConversationHandler.END:
+                handler._conversations.pop(key, None)
+            else:
+                handler._update_state(new_state, key)
+            return
+
+
+async def deposit_amount_priority_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Test-bot: intercept amount replies before other ConversationHandlers can swallow them."""
+    if not is_test_bot_worker():
+        return
+    if not update.message or not update.effective_chat:
+        return
+    chat = update.effective_chat
+    if chat.type not in ("group", "supergroup"):
+        return
+    text = (update.message.text or "").strip()
+    if not text or text.startswith("/"):
+        return
+
+    chat_id = chat.id
+    if not _is_awaiting_amount(context, chat_id):
+        return
+    if context.chat_data.get("deposit_amount"):
+        return
+
+    logger.info(
+        "deposit_amount_priority chat_id=%s user_id=%s text=%r chat_data_keys=%s",
+        chat_id,
+        update.effective_user.id if update.effective_user else None,
+        text[:50],
+        sorted(context.chat_data.keys()),
+    )
+    new_state = await deposit_amount_received(update, context)
+    _sync_deposit_conv_state(update, context, new_state)
+    _clear_awaiting_amount(context)
+    raise ApplicationHandlerStop
+
+
+def _no_deposit_methods_message(club_id: int | None, amount: Decimal) -> str:
+    if club_id is None:
+        return f"No deposit methods available for ${amount}."
+    backend = "v2 club_payment_*" if use_payment_v2() else "legacy payment_methods"
+    lowest = get_lowest_minimum(club_id, "deposit")
+    if lowest is not None and amount < lowest:
+        return f"Sorry! The minimum deposit amount is ${lowest:,.2f}."
+    return (
+        f"No deposit methods available for ${amount}.\n"
+        f"(club_id={club_id}, backend={backend})\n"
+        "Add methods in the dashboard or run a v2 seed script."
+    )
+
+
 async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_chat or not update.effective_user:
         return ConversationHandler.END
@@ -233,7 +339,11 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     is_bot_admin = user_id in ADMIN_USER_IDS
 
-    if is_bot_admin:
+    if is_test_bot_worker():
+        context.chat_data.pop("deposit_admin_initiated", None)
+        context.chat_data.pop("deposit_admin_user_id", None)
+
+    if is_bot_admin and not is_test_bot_worker():
         if not get_club_allows_admin_commands(club_id):
             return ConversationHandler.END
         context.chat_data["deposit_club_id"] = club_id
@@ -248,8 +358,12 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
 
         mark_active_flow(context, "deposit")
-        await update.message.reply_text("How much would you like to deposit?")
-        return DEPOSIT_AMOUNT
+        logger.info(
+            "deposit_entry admin-initiated chat_id=%s admin_id=%s -> DEPOSIT_AMOUNT",
+            chat.id,
+            user_id,
+        )
+        return await _ask_deposit_amount(update.message, context)
 
     claimed = is_first_deposit_claimed(chat.id)
     first = False if claimed else is_first_deposit(club_id, user_id)
@@ -277,8 +391,13 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await _finish_simple_deposit(update.message, context)
 
     mark_active_flow(context, "deposit")
-    await update.message.reply_text("How much would you like to deposit?")
-    return DEPOSIT_AMOUNT
+    logger.info(
+        "deposit_entry chat_id=%s user_id=%s test=%s -> DEPOSIT_AMOUNT",
+        chat.id,
+        user_id,
+        is_test_bot_worker(),
+    )
+    return await _ask_deposit_amount(update.message, context)
 
 
 async def deposit_referral_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -289,8 +408,7 @@ async def deposit_referral_received(update: Update, context: ContextTypes.DEFAUL
     if simple:
         return await _finish_simple_deposit(update.message, context)
 
-    await update.message.reply_text("How much would you like to deposit?")
-    return DEPOSIT_AMOUNT
+    return await _ask_deposit_amount(update.message, context)
 
 
 async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -298,14 +416,35 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         return ConversationHandler.END
 
     admin_uid = context.chat_data.get("deposit_admin_user_id")
-    if admin_uid and update.effective_user and update.effective_user.id == admin_uid:
+    sender_id = update.effective_user.id if update.effective_user else None
+
+    logger.info(
+        "deposit_amount_received text=%r chat_id=%s user_id=%s awaiting=%s admin_uid=%s test=%s",
+        (update.message.text or "")[:30],
+        update.effective_chat.id,
+        sender_id,
+        context.chat_data.get("deposit_awaiting_amount"),
+        admin_uid,
+        is_test_bot_worker(),
+    )
+
+    # Production admin-initiated flow: ignore admin messages until a player replies.
+    if not is_test_bot_worker() and admin_uid and sender_id == admin_uid:
+        logger.debug("deposit_amount_received ignoring admin sender_id=%s", sender_id)
         return DEPOSIT_AMOUNT
 
+    _clear_awaiting_amount(context)
+
     if context.chat_data.get("deposit_admin_initiated") and update.effective_user:
+        context.chat_data["deposit_user_id"] = update.effective_user.id
+    elif update.effective_user and not context.chat_data.get("deposit_user_id"):
         context.chat_data["deposit_user_id"] = update.effective_user.id
 
     club_id = context.chat_data.get("deposit_club_id")
     if not club_id:
+        await update.message.reply_text(
+            "Deposit session expired or was not started. Use /deposit again."
+        )
         return ConversationHandler.END
 
     raw = (update.message.text or "").strip().replace("$", "").replace(",", "")
@@ -320,25 +459,51 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         return DEPOSIT_AMOUNT
 
     context.chat_data["deposit_amount"] = amount
-    methods = get_methods_for_amount(club_id, "deposit", amount)
-    if not methods:
-        lowest = get_lowest_minimum(club_id, "deposit")
-        if lowest is not None and amount < lowest:
-            await update.message.reply_text(
-                f"Sorry! The minimum deposit amount is ${lowest:,.2f}."
-            )
-        else:
-            await update.message.reply_text(
-                f"No deposit methods available for ${amount}. Please try a different amount."
-            )
+    try:
+        methods = get_methods_for_amount(club_id, "deposit", amount)
+    except Exception:
+        logger.exception(
+            "deposit_amount_received: failed loading methods club_id=%s amount=%s v2=%s",
+            club_id,
+            amount,
+            use_payment_v2(),
+        )
+        await update.message.reply_text(
+            "Could not load deposit methods. Check bot logs and DATABASE_URL."
+        )
         return ConversationHandler.END
 
-    if is_round_table_club(int(club_id)):
-        await _prompt_deposit_union(update.message, context)
-        return DEPOSIT_UNION
+    logger.info(
+        "deposit_amount_received chat_id=%s club_id=%s amount=%s methods=%s v2=%s test=%s",
+        update.effective_chat.id,
+        club_id,
+        amount,
+        [m.get("slug") for m in methods],
+        use_payment_v2(),
+        is_test_bot_worker(),
+    )
 
-    await _prompt_deposit_methods(update.message, context, amount=amount)
-    return DEPOSIT_CHOOSE
+    if not methods:
+        await update.message.reply_text(_no_deposit_methods_message(club_id, amount))
+        return ConversationHandler.END
+
+    try:
+        if is_round_table_club(int(club_id)):
+            await _prompt_deposit_union(update.message, context)
+            return DEPOSIT_UNION
+
+        await _prompt_deposit_methods(update.message, context, amount=amount)
+        return DEPOSIT_CHOOSE
+    except Exception:
+        logger.exception(
+            "deposit_amount_received: failed prompting methods club_id=%s amount=%s",
+            club_id,
+            amount,
+        )
+        await update.message.reply_text(
+            "Something went wrong showing deposit methods. Try /deposit again."
+        )
+        return ConversationHandler.END
 
 
 async def deposit_union_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -412,6 +577,13 @@ async def _prompt_deposit_methods(
 ) -> None:
     club_id = context.chat_data.get("deposit_club_id")
     methods = get_methods_for_amount(club_id, "deposit", amount)
+    if not methods:
+        text = _no_deposit_methods_message(club_id, amount)
+        if edit_message is not None:
+            await edit_message.edit_message_text(text)
+        else:
+            await message.reply_text(text)
+        return
     text = f"Deposit amount: ${amount}\nSelect your deposit method:"
     markup = InlineKeyboardMarkup(_deposit_method_buttons(methods))
     if edit_message is not None:
@@ -473,7 +645,19 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     amount = context.chat_data.get("deposit_amount", "?")
     tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
     if tier:
-        response_data = pick_variant(method_id, tier_id=tier["id"]) or tier
+        response_data = pick_variant(method_id, tier_id=tier["id"])
+        if not response_data:
+            logger.error(
+                "deposit_method_no_variants chat_id=%s method_id=%s tier_id=%s slug=%r",
+                query.message.chat.id if query.message else None,
+                method_id,
+                tier.get("id"),
+                method_slug,
+            )
+            await query.edit_message_text(
+                "This payment method is not configured yet. Please contact support."
+            )
+            return ConversationHandler.END
         response_data = _with_method_checkout_settings(response_data, method, tier=tier)
     else:
         response_data = pick_variant(method_id) or method
@@ -739,7 +923,7 @@ async def _send_deposit_method_response(
             await _notify_missing_stripe_secret(context, int(club_id))
         await query.edit_message_text(
             "Card checkout is not available right now (Stripe not configured on the bot). "
-            "Please contact support."
+            "Add STRIPE_SECRET_KEY or STRIPE_TEST_SECRET_KEY to .env and restart run_test_bot.py."
         )
         return False
 
@@ -978,6 +1162,9 @@ async def _send_simple_response(message, data):
 
 
 def _cleanup(context):
+    chat_id = context.chat_data.get("deposit_chat_id")
+    if chat_id is not None:
+        _DEPOSIT_AWAITING_CHATS.discard(int(chat_id))
     clear_active_flow(context)
     for key in (
         "deposit_club_id",
@@ -991,6 +1178,7 @@ def _cleanup(context):
         "deposit_simple_data",
         "deposit_admin_initiated",
         "deposit_admin_user_id",
+        "deposit_awaiting_amount",
         "deposit_union_shorthand",
         "deposit_union_label",
     ):
@@ -1026,6 +1214,8 @@ _DEPOSIT_CANCEL = CommandHandler("cancel", deposit_cancel)
 
 
 def get_deposit_handler() -> ConversationHandler:
+    # Test bot: per_user=True so the admin testing solo stays in the same conversation key.
+    per_user = is_test_bot_worker()
     return ConversationHandler(
         entry_points=[CommandHandler("deposit", deposit_entry)],
         states={
@@ -1063,5 +1253,5 @@ def get_deposit_handler() -> ConversationHandler:
         conversation_timeout=TIMEOUT_SECONDS,
         name="deposit_conv",
         per_chat=True,
-        per_user=False,
+        per_user=per_user,
     )

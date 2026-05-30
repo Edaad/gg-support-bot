@@ -246,6 +246,116 @@ Club-defined **slash commands** (without the leading slash in the column) with o
 
 ---
 
+## Payment config (v2)
+
+Dashboard **Deposit Methods** and **Cashout Methods** tabs edit `club_payment_*` via `/api/v2`. Legacy `/api/clubs/.../methods` CRUD routes are removed. The support bot reads v2 by default ([`bot/services/club_payment_v2.py`](../bot/services/club_payment_v2.py)); set `BOT_USE_PAYMENT_V2=0` to fall back to legacy `payment_*` tables.
+
+### Principles
+
+- **No legacy columns** — v2 tables have no `legacy_*` fields and no FKs to old payment tables.
+- **Greenfield data** — config is authored in the dashboard payment tabs, via `/api/v2`, or seed scripts; no auto-copy from legacy.
+- **UI-aligned model** — method = envelope; tier = amount band + default message + Stripe; variant = rotation inside a tier; sub-option = crypto branches.
+
+```mermaid
+flowchart LR
+  DepositTab["Deposit Methods tab"]
+  CashoutTab["Cashout Methods tab"]
+  V2API["/api/v2/..."]
+  V2Tables[club_payment_*]
+  Bot["Support bot (v2 default)"]
+  DepositTab --> V2API
+  CashoutTab --> V2API
+  V2API --> V2Tables --> Bot
+```
+
+### Tables
+
+#### `club_payment_methods`
+
+Method **envelope** only — no `response_*` or Stripe fields on the method row.
+
+| Column | Business meaning |
+|--------|------------------|
+| `club_id`, `direction`, `name`, `slug` | Identity; **unique `(club_id, direction, slug)`** |
+| `min_amount`, `max_amount` | Absolute amount envelope for the method |
+| `has_sub_options`, `is_active`, `sort_order` | Listing and crypto branching |
+| `deposit_limit`, `accumulated_amount` | Deposit cap tracking (deposit direction only) |
+| `created_at`, `updated_at` | Audit |
+
+#### `club_payment_tiers`
+
+Amount band + tier-level Stripe checkout defaults. **Player copy lives on variants**, not tiers (except legacy rows pending migration).
+
+| Column | Business meaning |
+|--------|------------------|
+| `method_id` | FK → `club_payment_methods` CASCADE |
+| `label`, `min_amount`, `max_amount`, `sort_order` | Band; **unique `(method_id, label)`** |
+| `response_*` | Deprecated for new config — leave empty; use variants |
+| `use_group_checkout_link`, `group_checkout_provider`, `hyperlink_text` | Per-group Stripe checkout defaults (variants inherit when override is null) |
+| `checkout_min_amount`, `checkout_max_amount` | Optional Stripe session bounds |
+
+Creating a method via API seeds a **Default** tier (band only) plus one empty **Default** variant when `has_sub_options=false`.
+
+Tier create/update validates that each band fits the method absolute min/max and does not overlap sibling tiers (API + dashboard).
+
+#### `club_payment_tier_variants`
+
+Weighted rotation **inside a tier** (`tier_id` NOT NULL). **Required:** every tier on non-sub-option methods must have ≥ 1 variant.
+
+| Column | Business meaning |
+|--------|------------------|
+| `method_id`, `tier_id` | FKs; variant is always tier-scoped |
+| `label`, `weight`, `sort_order` | Rotation; **unique `(tier_id, label)`**, `weight >= 1` |
+| `response_*` | Player message shown to users |
+| `use_group_checkout_link` | `NULL` = inherit tier; `true`/`false` = override |
+| `group_checkout_provider`, `hyperlink_text` | Stripe when override is enabled |
+| `checkout_min_amount`, `checkout_max_amount` | Optional checkout bounds |
+
+#### `club_payment_sub_options`
+
+Same pattern as legacy sub-options; FK to v2 method only. **Unique `(method_id, slug)`**.
+
+### V2 API (`/api/v2`)
+
+All payment-config routes require dashboard JWT. The flow simulator (`GET /api/clubs/{club_id}/simulate/{direction}`) also reads v2 tables.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/v2/clubs/{club_id}/methods?direction=deposit` | List methods with nested `tiers[].variants[]` |
+| POST | `/api/v2/clubs/{club_id}/methods` | Create method (+ Default tier) |
+| GET/PUT/DELETE | `/api/v2/methods/{id}` | Read / update / delete method |
+| POST | `/api/v2/methods/{id}/reset-accumulated` | Reset deposit cap counter |
+| PUT | `/api/v2/clubs/{club_id}/methods/reorder` | Body: `{ "order": [method_ids…] }` |
+| GET/POST | `/api/v2/methods/{method_id}/tiers` | List / create tiers |
+| PUT/DELETE | `/api/v2/tiers/{id}` | Update / delete tier (cannot delete last tier) |
+| GET/POST | `/api/v2/tiers/{tier_id}/variants` | List / create tier variants |
+| PUT/DELETE | `/api/v2/variants/{id}` | Update / delete variant |
+| GET/POST | `/api/v2/methods/{method_id}/sub-options` | List / create sub-options |
+| PUT/DELETE | `/api/v2/sub-options/{id}` | Update / delete sub-option |
+
+Pydantic schemas: [`api/schemas_v2.py`](../api/schemas_v2.py). Router: [`api/routes/v2_payment.py`](../api/routes/v2_payment.py).
+
+### Data-entry workflow
+
+1. Draft per-club config (methods, tiers, variants, copy, Stripe) — e.g. from ChatGPT prompts using CSV exports in `backups/` as human reference only.
+2. Enter data in dashboard **Deposit Methods** / **Cashout Methods**, call `/api/v2` directly, or run a one-shot seed script (e.g. `python scripts/seed_v2_round_table_crypto.py --apply` for Round Table deposit Crypto, `python scripts/seed_v2_creator_club_crypto.py --apply` for Creator Club deposit Crypto (11 sub-options),
+`python scripts/seed_v2_clubgto_crypto.py --apply` for ClubGTO deposit Crypto (12 sub-options — includes BEP20/BNB; no SOL-token variants), `python scripts/seed_v2_clubgto_zelle.py --apply` for ClubGTO deposit Zelle — 2 tiers (Under 399 / Over $400), 1 Default variant each (weight 100), `python scripts/seed_v2_clubgto_applepay.py --apply` for ClubGTO deposit Apple Pay — 1 Default tier with Stripe, 1 Default variant (weight 100), `python scripts/seed_v2_clubgto_debitcard.py --apply` for ClubGTO deposit Debit Card — same Stripe pattern, `python scripts/seed_v2_clubgto_cashapp.py --apply` for ClubGTO deposit Cashapp — 2 tiers and 3 variants (180/25 on Over), `python scripts/seed_v2_clubgto_venmo.py --apply` for ClubGTO deposit Venmo — 2 tiers and 5 photo variants (35/35/15/15 on Over), `python scripts/seed_v2_creator_club_zelle.py --apply` for Creator Club Zelle, `python scripts/seed_v2_creator_club_applepay.py --apply` for Creator Club Apple Pay, `python scripts/seed_v2_creator_club_debitcard.py --apply` for Creator Club Debit Card, `python scripts/seed_v2_creator_club_cashapp.py --apply` for Creator Club Cashapp — 2 tiers and 3 variants (80/20 on Over), `python scripts/seed_v2_creator_club_venmo.py --apply` for Creator Club Venmo — 1 Default tier and 4 weighted variants, `python scripts/seed_v2_round_table_zelle.py --apply` for Round Table Zelle, `python scripts/seed_v2_round_table_applepay.py --apply` for Round Table Apple Pay, `python scripts/seed_v2_round_table_debitcard.py --apply` for Round Table Debit Card, `python scripts/seed_v2_round_table_cashapp.py --apply` for Round Table Cashapp — 2 tiers and 3 variants, `python scripts/seed_v2_round_table_venmo.py --apply` for Round Table Venmo — 1 Default tier and 4 weighted variants, or `python scripts/seed_v2_round_table_cashout.py --apply` for Round Table cashout — Crypto (11 sub-options) + Cashapp/Zelle/Venmo (1 Default tier + variant each), `python scripts/seed_v2_creator_club_cashout.py --apply` for Creator Club cashout — same 4-method pattern, `python scripts/seed_v2_clubgto_cashout.py --apply` for ClubGTO cashout — Crypto (12 sub-options incl. BEP20) + Cashapp (min $13) / Zelle / Venmo (min $50)). Crypto methods store player copy on **sub-options**; non-sub-option methods store copy on **tier variants** (≥ 1 per tier), not on tier `response_*`.
+3. If upgrading existing v2 rows that still have tier-level copy, run `python scripts/migrate_v2_tier_response_to_variants.py --apply` once to move messages into Default variants.
+4. Save and reload to validate structure (Details + Amount tiers tabs).
+5. Bot worker uses v2 by default; set `BOT_USE_PAYMENT_V2=0` only if rolling back to legacy tables.
+
+### Migration script
+
+For existing PostgreSQL databases, run once:
+
+```bash
+DATABASE_URL=... python migrate_club_payment_v2.py
+```
+
+New deploys also get tables from `Base.metadata.create_all` once the models exist in [`db/models.py`](../db/models.py).
+
+---
+
 ## Constraints summary
 
 | Constraint | Table |

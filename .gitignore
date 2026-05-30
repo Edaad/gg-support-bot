@@ -15,3 +15,6 @@ sessions/
 # Dashboard
 dashboard/node_modules/
 dashboard/dist/
+
+# DB config snapshots (may contain prod copy)
+backups/

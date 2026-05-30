@@ -78,6 +78,9 @@ class Club(Base):
     player_details = relationship(
         "PlayerDetails", back_populates="club", cascade="all, delete-orphan"
     )
+    club_payment_methods = relationship(
+        "ClubPaymentMethod", back_populates="club", cascade="all, delete-orphan"
+    )
 
 
 class ClubLinkedAccount(Base):
@@ -215,6 +218,171 @@ class PaymentMethodTier(Base):
         "MethodVariant", back_populates="tier", cascade="all, delete-orphan",
         order_by="MethodVariant.sort_order",
     )
+
+
+# ── V2 payment config (greenfield; parallel to legacy payment_methods) ─────────
+
+
+class ClubPaymentMethod(Base):
+    """Method envelope only — player copy lives on tiers and tier variants."""
+
+    __tablename__ = "club_payment_methods"
+    __table_args__ = (
+        UniqueConstraint("club_id", "direction", "slug", name="uq_cpm_club_direction_slug"),
+        CheckConstraint("direction IN ('deposit', 'cashout')", name="ck_cpm_direction"),
+        CheckConstraint(
+            "min_amount IS NULL OR max_amount IS NULL OR min_amount <= max_amount",
+            name="ck_cpm_amount_range",
+        ),
+        Index("ix_cpm_club_direction_active", "club_id", "direction", "is_active", "sort_order"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    direction = Column(String(10), nullable=False)
+    name = Column(String(50), nullable=False)
+    slug = Column(String(50), nullable=False)
+    min_amount = Column(Numeric(12, 2), nullable=True)
+    max_amount = Column(Numeric(12, 2), nullable=True)
+    has_sub_options = Column(Boolean, nullable=False, default=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    deposit_limit = Column(Numeric(12, 2), nullable=True)
+    accumulated_amount = Column(Numeric(12, 2), nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    club = relationship("Club", back_populates="club_payment_methods")
+    tiers = relationship(
+        "ClubPaymentTier",
+        back_populates="method",
+        cascade="all, delete-orphan",
+        order_by="ClubPaymentTier.sort_order",
+    )
+    sub_options = relationship(
+        "ClubPaymentSubOption",
+        back_populates="method",
+        cascade="all, delete-orphan",
+        order_by="ClubPaymentSubOption.sort_order",
+    )
+    variants = relationship(
+        "ClubPaymentTierVariant",
+        back_populates="method",
+        cascade="all, delete-orphan",
+        order_by="ClubPaymentTierVariant.sort_order",
+    )
+
+
+class ClubPaymentTier(Base):
+    __tablename__ = "club_payment_tiers"
+    __table_args__ = (
+        UniqueConstraint("method_id", "label", name="uq_cpt_method_label"),
+        CheckConstraint(
+            "min_amount IS NULL OR max_amount IS NULL OR min_amount <= max_amount",
+            name="ck_cpt_amount_range",
+        ),
+        Index("ix_cpt_method_sort", "method_id", "sort_order", "id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    method_id = Column(
+        Integer, ForeignKey("club_payment_methods.id", ondelete="CASCADE"), nullable=False
+    )
+    label = Column(String(50), nullable=False)
+    min_amount = Column(Numeric(12, 2), nullable=True)
+    max_amount = Column(Numeric(12, 2), nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    response_type = Column(String(10), nullable=False, default="text")
+    response_text = Column(Text)
+    response_file_id = Column(Text)
+    response_caption = Column(Text)
+    use_group_checkout_link = Column(Boolean, nullable=False, default=False)
+    group_checkout_provider = Column(String(32), nullable=True)
+    hyperlink_text = Column(String(64), nullable=True)
+    checkout_min_amount = Column(Numeric(12, 2), nullable=True)
+    checkout_max_amount = Column(Numeric(12, 2), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    method = relationship("ClubPaymentMethod", back_populates="tiers")
+    variants = relationship(
+        "ClubPaymentTierVariant",
+        back_populates="tier",
+        cascade="all, delete-orphan",
+        order_by="ClubPaymentTierVariant.sort_order",
+    )
+
+
+class ClubPaymentTierVariant(Base):
+    __tablename__ = "club_payment_tier_variants"
+    __table_args__ = (
+        UniqueConstraint("tier_id", "label", name="uq_cptv_tier_label"),
+        CheckConstraint("weight >= 1", name="ck_cptv_weight"),
+        Index("ix_cptv_tier_sort", "tier_id", "sort_order", "id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    method_id = Column(
+        Integer, ForeignKey("club_payment_methods.id", ondelete="CASCADE"), nullable=False
+    )
+    tier_id = Column(
+        Integer, ForeignKey("club_payment_tiers.id", ondelete="CASCADE"), nullable=False
+    )
+    label = Column(String(100), nullable=False)
+    weight = Column(Integer, nullable=False, default=1)
+    sort_order = Column(Integer, nullable=False, default=0)
+    response_type = Column(String(10), nullable=False, default="text")
+    response_text = Column(Text)
+    response_file_id = Column(Text)
+    response_caption = Column(Text)
+    use_group_checkout_link = Column(Boolean, nullable=True)
+    group_checkout_provider = Column(String(32), nullable=True)
+    hyperlink_text = Column(String(64), nullable=True)
+    checkout_min_amount = Column(Numeric(12, 2), nullable=True)
+    checkout_max_amount = Column(Numeric(12, 2), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    method = relationship("ClubPaymentMethod", back_populates="variants")
+    tier = relationship("ClubPaymentTier", back_populates="variants")
+
+
+class ClubPaymentSubOption(Base):
+    __tablename__ = "club_payment_sub_options"
+    __table_args__ = (UniqueConstraint("method_id", "slug", name="uq_cpso_method_slug"),)
+
+    id = Column(Integer, primary_key=True)
+    method_id = Column(
+        Integer, ForeignKey("club_payment_methods.id", ondelete="CASCADE"), nullable=False
+    )
+    name = Column(String(50), nullable=False)
+    slug = Column(String(50), nullable=False)
+    response_type = Column(String(10), nullable=False, default="text")
+    response_text = Column(Text)
+    response_file_id = Column(Text)
+    response_caption = Column(Text)
+    is_active = Column(Boolean, nullable=False, default=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    method = relationship("ClubPaymentMethod", back_populates="sub_options")
 
 
 class Group(Base):
