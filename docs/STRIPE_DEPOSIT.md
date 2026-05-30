@@ -15,14 +15,15 @@ Checkout links issued before this behavior was deployed may still be open; only 
 | Table | Purpose |
 |-------|---------|
 | `stripe_customers` | `telegram_chat_id` → `stripe_customer_id`, club, last-seen GG id / display name |
-| `stripe_checkout_sessions` | Each `/deposit` Stripe request: `cs_…`, amount, status |
+| `stripe_checkout_sessions` | Each `/deposit` Stripe request: `cs_…`, amount, status, `completed_at`, `stripe_payment_intent_id` |
 
 Live group title at confirm time comes from **`groups.name`** (or `support_group_chats.telegram_chat_title`), not from a snapshot on the session row.
 
-Migration:
+Migrations:
 
 ```bash
 DATABASE_URL=... python migrate_stripe_deposit_tracking.py
+DATABASE_URL=... python migrate_stripe_checkout_session_lifecycle.py
 ```
 
 New installs also get tables from API startup `create_all`.
@@ -33,6 +34,7 @@ New installs also get tables from API startup `create_all`.
 |----------|----------|---------|
 | `STRIPE_SECRET_KEY` | Yes (for Stripe checkout) | Stripe API secret |
 | `STRIPE_ZAPIER_LOOKUP_SECRET` | Yes (for Zapier lookup) | Shared secret for lookup endpoint |
+| `STRIPE_WEBHOOK_SECRET` | Yes (for session lifecycle + Payments page) | Stripe webhook signing secret (`whsec_…`) |
 | `STRIPE_CHECKOUT_SUCCESS_URL` | No | Redirect after pay (default: Stripe docs URL) |
 | `STRIPE_CHECKOUT_CANCEL_URL` | No | Redirect on cancel |
 
@@ -95,8 +97,45 @@ Amount: {{amount from Stripe trigger}}
 
 **401** — wrong or missing `X-Stripe-Lookup-Secret`.
 
+## Stripe webhook (checkout session lifecycle)
+
+Register a webhook in the [Stripe Dashboard](https://dashboard.stripe.com/webhooks):
+
+- **Endpoint URL:** `https://<your-app-host>/api/stripe/webhook`
+- **Events:** `checkout.session.completed`, `checkout.session.expired`
+- Copy the **Signing secret** into `STRIPE_WEBHOOK_SECRET` on the API dyno
+
+When a player completes or abandons checkout, the webhook updates `stripe_checkout_sessions`:
+
+| Event | DB update |
+|-------|-----------|
+| `checkout.session.completed` | `status=complete`, `amount_cents` from Stripe, `completed_at`, `stripe_payment_intent_id` |
+| `checkout.session.expired` | `status=expired`, `updated_at` |
+
+Updates are idempotent — sessions already `complete` or `expired` are not overwritten.
+
+## Dashboard: Payments page
+
+**Nav → Payments** (`/payments`) shows club-scoped Stripe data:
+
+- **Customers** — one row per Telegram group with a `stripe_customers` mapping
+- **Transactions** — checkout sessions with amount/status after webhook updates
+
+Filters: club, deposit method (or Manual `/stripe`), status, date range.
+
+JWT-protected API:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/payments/providers` | Payment providers (Stripe only for now) |
+| `GET /api/payments/stripe/methods?club_id=` | Stripe-enabled deposit methods for filter dropdown |
+| `GET /api/payments/stripe/customers?club_id=` | Paginated customers |
+| `GET /api/payments/stripe/sessions?club_id=` | Paginated checkout sessions |
+
 ## Code references
 
-- [`bot/services/stripe_deposit.py`](../bot/services/stripe_deposit.py) — Stripe + DB
+- [`bot/services/stripe_deposit.py`](../bot/services/stripe_deposit.py) — Stripe + DB + webhook handler
 - [`bot/handlers/deposit.py`](../bot/handlers/deposit.py) — `/deposit` integration
-- [`api/routes/stripe_deposit.py`](../api/routes/stripe_deposit.py) — Zapier lookup route
+- [`api/routes/stripe_deposit.py`](../api/routes/stripe_deposit.py) — Zapier lookup + webhook
+- [`api/routes/payments.py`](../api/routes/payments.py) — Dashboard list API
+- [`dashboard/src/pages/Payments.tsx`](../dashboard/src/pages/Payments.tsx) — Payments UI

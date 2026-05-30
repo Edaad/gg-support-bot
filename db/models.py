@@ -721,6 +721,8 @@ class StripeCheckoutSession(Base):
             "ix_stripe_checkout_sessions_stripe_checkout_session_id",
             "stripe_checkout_session_id",
         ),
+        Index("ix_stripe_checkout_sessions_club_created", "club_id", "created_at"),
+        Index("ix_stripe_checkout_sessions_club_status", "club_id", "status"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -738,7 +740,10 @@ class StripeCheckoutSession(Base):
     currency = Column(String(10), nullable=False, default="usd")
     status = Column(String(20), nullable=False, default="open")
     payment_method_id = Column(Integer, nullable=True)
+    stripe_payment_intent_id = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=True)
 
     customer = relationship(
         "StripeCustomer",

@@ -8,6 +8,7 @@ import Settings from './pages/Settings'
 import WeeklyStats from './pages/WeeklyStats'
 import TelegramLogin from './pages/TelegramLogin'
 import BonusTypes from './pages/BonusTypes'
+import Payments from './pages/Payments'
 import Layout from './components/Layout'
 import { ConfirmProvider } from './components/ConfirmProvider'
 
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/settings" element={<Settings token={token} />} />
         <Route path="/telegram-login" element={<TelegramLogin token={token} />} />
         <Route path="/bonus-types" element={<BonusTypes token={token} />} />
+        <Route path="/payments" element={<Payments token={token} />} />
         <Route path="/weekly-stats" element={<WeeklyStats token={token} />} />
       </Routes>
         </Layout>

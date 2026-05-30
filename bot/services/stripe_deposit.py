@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 import stripe
 from sqlalchemy.exc import IntegrityError
@@ -22,8 +23,11 @@ STRIPE_SECRET_KEY_ENV = "STRIPE_SECRET_KEY"
 STRIPE_TEST_SECRET_KEY_ENV = "STRIPE_TEST_SECRET_KEY"
 STRIPE_SUCCESS_URL_ENV = "STRIPE_CHECKOUT_SUCCESS_URL"
 STRIPE_CANCEL_URL_ENV = "STRIPE_CHECKOUT_CANCEL_URL"
+STRIPE_WEBHOOK_SECRET_ENV = "STRIPE_WEBHOOK_SECRET"
 DEFAULT_SUCCESS_URL = "https://stripe.com/docs/payments/checkout"
 DEFAULT_CANCEL_URL = "https://stripe.com"
+
+TERMINAL_CHECKOUT_STATUSES = frozenset({"complete", "expired"})
 
 # Player chooses amount on the Stripe Checkout page (USD cents).
 STRIPE_CHECKOUT_MIN_CENTS = 2000  # $20
@@ -362,6 +366,76 @@ def create_stripe_checkout_session(
         session_id=session_id,
         customer_id=stripe_customer_id,
     )
+
+
+def construct_stripe_webhook_event(payload: bytes, sig_header: str | None) -> dict[str, Any]:
+    """Verify Stripe-Signature and return parsed webhook event."""
+    secret = (os.getenv(STRIPE_WEBHOOK_SECRET_ENV) or "").strip()
+    if not secret:
+        raise RuntimeError(f"{STRIPE_WEBHOOK_SECRET_ENV} is not configured")
+    if not sig_header:
+        raise ValueError("Missing Stripe-Signature header")
+    return stripe.Webhook.construct_event(payload, sig_header, secret)
+
+
+def apply_checkout_session_webhook_event(event: dict[str, Any]) -> bool:
+    """Update stripe_checkout_sessions from checkout.session.* webhook. Returns True if updated."""
+    event_type = event.get("type") or ""
+    obj = (event.get("data") or {}).get("object") or {}
+    session_id = obj.get("id")
+    if not session_id:
+        return False
+
+    now = datetime.now(timezone.utc)
+
+    with get_db() as db:
+        row = (
+            db.query(StripeCheckoutSession)
+            .filter(StripeCheckoutSession.stripe_checkout_session_id == str(session_id))
+            .one_or_none()
+        )
+        if row is None:
+            logger.warning(
+                "stripe webhook: no DB row for session_id=%s type=%s",
+                session_id,
+                event_type,
+            )
+            return False
+
+        if row.status in TERMINAL_CHECKOUT_STATUSES:
+            logger.info(
+                "stripe webhook: session %s already terminal (%s)",
+                session_id,
+                row.status,
+            )
+            return False
+
+        if event_type == "checkout.session.completed":
+            amount_total = obj.get("amount_total")
+            if amount_total is not None:
+                row.amount_cents = int(amount_total)
+            row.status = "complete"
+            row.completed_at = now
+            row.updated_at = now
+            payment_intent = obj.get("payment_intent")
+            if payment_intent:
+                row.stripe_payment_intent_id = str(payment_intent)
+            db.flush()
+            logger.info(
+                "stripe webhook: session %s marked complete amount_cents=%s",
+                session_id,
+                row.amount_cents,
+            )
+            return True
+
+        if event_type == "checkout.session.expired":
+            row.status = "expired"
+            row.updated_at = now
+            db.flush()
+            logger.info("stripe webhook: session %s marked expired", session_id)
+            return True
+
+    return False
 
 
 def lookup_deposit_context_by_customer_id(

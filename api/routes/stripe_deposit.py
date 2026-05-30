@@ -2,14 +2,24 @@
 
 import os
 
-from fastapi import APIRouter, Header, HTTPException, Query
+import stripe
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 
-from bot.services.stripe_deposit import lookup_deposit_context_by_customer_id
+from bot.services.stripe_deposit import (
+    STRIPE_WEBHOOK_SECRET_ENV,
+    apply_checkout_session_webhook_event,
+    construct_stripe_webhook_event,
+    lookup_deposit_context_by_customer_id,
+)
 
 router = APIRouter(prefix="/api/stripe", tags=["stripe"])
 
 LOOKUP_SECRET_ENV = "STRIPE_ZAPIER_LOOKUP_SECRET"
 LOOKUP_HEADER = "x-stripe-lookup-secret"
+
+_CHECKOUT_WEBHOOK_EVENTS = frozenset(
+    {"checkout.session.completed", "checkout.session.expired"}
+)
 
 
 def _verify_lookup_secret(x_stripe_lookup_secret: str | None) -> None:
@@ -42,3 +52,25 @@ def deposit_context(
         "player_display_name": ctx.player_display_name,
         "stripe_customer_id": ctx.stripe_customer_id,
     }
+
+
+@router.post("/webhook")
+async def stripe_webhook(request: Request):
+    """Stripe webhook: update checkout session amount/status on complete or expire."""
+    if not (os.getenv(STRIPE_WEBHOOK_SECRET_ENV) or "").strip():
+        raise HTTPException(503, f"{STRIPE_WEBHOOK_SECRET_ENV} is not configured on the server")
+
+    payload = await request.body()
+    sig_header = request.headers.get("Stripe-Signature")
+    try:
+        event = construct_stripe_webhook_event(payload, sig_header)
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except stripe.SignatureVerificationError as e:
+        raise HTTPException(400, "Invalid Stripe signature") from e
+
+    if event.get("type") in _CHECKOUT_WEBHOOK_EVENTS:
+        apply_checkout_session_webhook_event(event)
+    return {"received": True}
