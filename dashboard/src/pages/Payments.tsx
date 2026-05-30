@@ -18,7 +18,11 @@ const PAGE_SIZE = 50
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—'
   try {
-    return new Date(iso).toLocaleString()
+    const d = new Date(iso)
+    const day = d.getDate()
+    const month = d.toLocaleDateString('en-GB', { month: 'short' })
+    const year = d.getFullYear()
+    return `${day} ${month}, ${year}`
   } catch {
     return iso
   }
@@ -294,7 +298,7 @@ export default function Payments({ token }: { token: string }) {
                       <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                         {row.group_title || '—'}
                       </td>
-                      <td className="px-4 py-3">{row.player_display_name || row.gg_player_id || '—'}</td>
+                      <td className="px-4 py-3">{row.player_display_name || '—'}</td>
                       <td className="px-4 py-3">{row.method_name || '—'}</td>
                       <td className="px-4 py-3 font-medium">
                         {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
@@ -356,7 +360,7 @@ export default function Payments({ token }: { token: string }) {
               value={customerSearch}
               onChange={(e) => setCustomerSearch(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && applyCustomerSearch()}
-              placeholder="Search customer, GG ID, player…"
+              placeholder="Search customer, GG ID, nickname…"
               className="input-field-sm min-w-[16rem] flex-1"
             />
             <button type="button" onClick={applyCustomerSearch} className="btn-primary-sm">

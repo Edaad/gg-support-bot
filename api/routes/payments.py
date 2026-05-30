@@ -130,6 +130,7 @@ def list_stripe_customers(
         title, gg_id, player_name = resolve_group_title(
             db,
             row.telegram_chat_id,
+            club_id=club_id,
             fallback_gg_player_id=row.gg_player_id,
             fallback_player_display_name=row.player_display_name,
         )
@@ -210,6 +211,7 @@ def list_stripe_sessions(
         title, gg_id, player_name = resolve_group_title(
             db,
             row.telegram_chat_id,
+            club_id=club_id,
             fallback_gg_player_id=cust.gg_player_id if cust else None,
             fallback_player_display_name=cust.player_display_name if cust else None,
         )

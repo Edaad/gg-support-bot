@@ -13,20 +13,44 @@ from db.models import (
     ClubPaymentTier,
     ClubPaymentTierVariant,
     Group,
+    PlayerDetails,
     StripeCheckoutSession,
     StripeCustomer,
     SupportGroupChat,
 )
 
 
+def lookup_gg_nickname(
+    session: Session, club_id: int, gg_player_id: str | None
+) -> str | None:
+    if not gg_player_id or not str(gg_player_id).strip():
+        return None
+    row = (
+        session.query(PlayerDetails.gg_nickname)
+        .filter(
+            PlayerDetails.club_id == int(club_id),
+            PlayerDetails.gg_player_id == str(gg_player_id).strip(),
+        )
+        .first()
+    )
+    if not row or not row[0]:
+        return None
+    nick = str(row[0]).strip()
+    return nick or None
+
+
 def resolve_group_title(
     session: Session,
     telegram_chat_id: int,
     *,
+    club_id: int | None = None,
     fallback_gg_player_id: str | None = None,
     fallback_player_display_name: str | None = None,
 ) -> tuple[str | None, str | None, str | None]:
-    """Return (group_title, gg_player_id, player_display_name) for a chat."""
+    """Return (group_title, gg_player_id, player_display_name) for a chat.
+
+    player_display_name prefers player_details.gg_nickname when club_id and gg_player_id are known.
+    """
     cid = int(telegram_chat_id)
     group = session.query(Group).filter(Group.chat_id == cid).first()
     title: str | None = None
@@ -53,6 +77,11 @@ def resolve_group_title(
             tail = (parsed.tail or "").strip()
             if tail:
                 player_display_name = tail
+
+    if club_id is not None:
+        nick = lookup_gg_nickname(session, club_id, gg_player_id)
+        if nick:
+            player_display_name = nick
 
     return title, gg_player_id, player_display_name
 
