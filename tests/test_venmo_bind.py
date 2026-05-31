@@ -39,6 +39,18 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         self.assertIn("Moshe Toussoun", text)
         self.assertIn("$200.00", text)
 
+    def test_format_notification_test_banner(self):
+        payment = VenmoPayment(
+            payer_name="Moshe Toussoun",
+            amount_cents=20000,
+            venmo_handle="@godfather4444",
+            goods_or_services=False,
+            is_test=True,
+        )
+        text = vp.format_notification_text(payment)
+        self.assertTrue(text.startswith("TEST (Please ignore)\n\n"))
+        self.assertIn("Payment Notification", text)
+
     def test_format_notification_auto_bound(self):
         payment = VenmoPayment(
             payer_name="Moshe Toussoun",

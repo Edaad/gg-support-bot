@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS venmo_payments (
     notification_message_id BIGINT,
     bound_by_telegram_user_id BIGINT,
     auto_bound BOOLEAN NOT NULL DEFAULT FALSE,
+    is_test BOOLEAN NOT NULL DEFAULT FALSE,
     bound_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -66,12 +67,21 @@ INDEXES = [
     """,
 ]
 
+ALTER_COLUMNS = [
+    """
+    ALTER TABLE venmo_payments
+    ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT FALSE;
+    """,
+]
+
 if __name__ == "__main__":
     engine = init_engine()
     with engine.connect() as conn:
         conn.execute(text(DDL_PAYMENTS))
         conn.execute(text(DDL_BINDINGS))
         for stmt in INDEXES:
+            conn.execute(text(stmt))
+        for stmt in ALTER_COLUMNS:
             conn.execute(text(stmt))
         conn.commit()
         print("venmo_payments and venmo_payer_bindings are ready.")

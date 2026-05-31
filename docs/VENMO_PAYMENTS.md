@@ -44,9 +44,12 @@ Header: `X-Venmo-Webhook-Secret: <VENMO_ZAPIER_WEBHOOK_SECRET>`
   "venmo_handle": "@godfather4444",
   "goods_or_services": false,
   "paid_at": "Oct 31 2024, 02:15 PM",
-  "source_external_id": "optional-gmail-message-id"
+  "source_external_id": "optional-gmail-message-id",
+  "test": true
 }
 ```
+
+Set `"test": true` only on your **duplicate test Zap** — notifications will be prefixed with `TEST (Please ignore)`.
 
 Response:
 

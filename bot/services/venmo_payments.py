@@ -154,6 +154,9 @@ def _notification_bot_token() -> Optional[str]:
     return (os.getenv(NOTIFICATION_BOT_TOKEN_ENV) or "").strip() or None
 
 
+TEST_NOTIFICATION_BANNER = "TEST (Please ignore)"
+
+
 def format_notification_text(
     payment: VenmoPayment,
     *,
@@ -186,7 +189,10 @@ def format_notification_text(
             "Group Chat: Unbound — reply to this message with the group title to bind"
         )
 
-    return "\n".join(lines)
+    body = "\n".join(lines)
+    if getattr(payment, "is_test", False):
+        return f"{TEST_NOTIFICATION_BANNER}\n\n{body}"
+    return body
 
 
 async def _telegram_api(
@@ -312,6 +318,7 @@ async def ingest_venmo_payment(
     goods_or_services: bool = False,
     paid_at: Optional[str] = None,
     source_external_id: Optional[str] = None,
+    test: bool = False,
 ) -> IngestResult:
     """Create payment row, auto-bind if known payer, send Telegram notification."""
     payer = (payer_name or "").strip()
@@ -348,6 +355,7 @@ async def ingest_venmo_payment(
             goods_or_services=bool(goods_or_services),
             paid_at=(paid_at or "").strip() or None,
             source_external_id=(source_external_id or "").strip() or None,
+            is_test=bool(test),
         )
         session.add(payment)
         session.flush()

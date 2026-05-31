@@ -33,6 +33,7 @@ class VenmoPaymentIngestBody(BaseModel):
     goods_or_services: bool = False
     paid_at: str | None = None
     source_external_id: str | None = None
+    test: bool = False
 
 
 class VenmoPaymentIngestResponse(BaseModel):
@@ -57,6 +58,7 @@ async def ingest_payment(
             goods_or_services=body.goods_or_services,
             paid_at=body.paid_at,
             source_external_id=body.source_external_id,
+            test=body.test,
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e

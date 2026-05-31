@@ -779,6 +779,7 @@ class VenmoPayment(Base):
     notification_message_id = Column(BigInteger, nullable=True)
     bound_by_telegram_user_id = Column(BigInteger, nullable=True)
     auto_bound = Column(Boolean, nullable=False, default=False)
+    is_test = Column(Boolean, nullable=False, default=False)
     bound_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
