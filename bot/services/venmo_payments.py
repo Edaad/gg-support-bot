@@ -26,6 +26,7 @@ WEBHOOK_SECRET_ENV = "VENMO_ZAPIER_WEBHOOK_SECRET"
 from notification.constants import (
     NOTIFICATION_BOT_TOKEN_ENV,
     PAYMENT_NOTIFICATION_CHAT_ID_ENV,
+    debug_notification_enabled,
 )
 
 _AMOUNT_RE = re.compile(r"[^\d.]")
@@ -343,6 +344,13 @@ async def ingest_venmo_payment(
                 .one_or_none()
             )
             if existing is not None:
+                if debug_notification_enabled():
+                    logger.info(
+                        "venmo ingest: duplicate source_external_id=%r payment_id=%s "
+                        "(skipping telegram send)",
+                        source_external_id,
+                        existing.id,
+                    )
                 return IngestResult(
                     payment_id=int(existing.id),
                     status="bound" if existing.telegram_chat_id else "unbound",
@@ -393,7 +401,28 @@ async def ingest_venmo_payment(
             auto_bound=auto_bound,
         )
 
+    if debug_notification_enabled():
+        configured_chat = _notification_chat_id()
+        has_token = bool(_notification_bot_token())
+        logger.info(
+            "venmo ingest: sending telegram notification payment_id=%s "
+            "chat_id=%s token_configured=%s text_len=%s auto_bound=%s",
+            payment_id,
+            configured_chat,
+            has_token,
+            len(text),
+            auto_bound,
+        )
+
     notif_chat_id, notif_message_id = await send_telegram_notification(text)
+
+    if debug_notification_enabled():
+        logger.info(
+            "venmo ingest: telegram sent payment_id=%s chat_id=%s message_id=%s",
+            payment_id,
+            notif_chat_id,
+            notif_message_id,
+        )
 
     with get_db() as session:
         payment = session.query(VenmoPayment).filter_by(id=payment_id).one()

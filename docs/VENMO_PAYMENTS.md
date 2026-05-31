@@ -30,6 +30,7 @@ DATABASE_URL=... python migrate_venmo_payments.py
 | `VENMO_ZAPIER_WEBHOOK_SECRET` | Yes (web dyno) | Auth for Zapier POST |
 | `TELEGRAM_NOTIFICATION_BOT_TOKEN` | Yes (web + notification dynos) | @ggnotificationbot |
 | `PAYMENT_NOTIFICATION_CHAT_ID` | Yes (web + notification dynos) | Shared staff notification group (all payment types) |
+| `DEBUG_NOTIFICATION` | No | Set `true` for verbose ingest/Telegram logs on web dyno |
 
 ## API
 
