@@ -613,12 +613,9 @@ class CashierCashoutJob(Base):
     chat_id = Column(BigInteger, nullable=False)
     group_title = Column(String(255), nullable=False)
     amount = Column(Numeric(12, 2), nullable=False)
-    payment_method_id = Column(
-        Integer, ForeignKey("payment_methods.id", ondelete="SET NULL"), nullable=True
-    )
-    payment_sub_option_id = Column(
-        Integer, ForeignKey("payment_sub_options.id", ondelete="SET NULL"), nullable=True
-    )
+    # IDs from legacy payment_methods or v2 club_payment_methods (no FK — backend varies).
+    payment_method_id = Column(Integer, nullable=True)
+    payment_sub_option_id = Column(Integer, nullable=True)
     method_display_name = Column(String(100), nullable=True)
     payout_details = Column(Text, nullable=True)
     trade_record_checked = Column(Boolean, default=False)
@@ -630,8 +627,6 @@ class CashierCashoutJob(Base):
     completed_at = Column(DateTime, nullable=True)
 
     club = relationship("Club")
-    payment_method = relationship("PaymentMethod")
-    payment_sub_option = relationship("PaymentSubOption")
 
 
 class SupportGroupChat(Base):
