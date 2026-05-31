@@ -1,0 +1,72 @@
+"""Reply-to-bind handler for Venmo payment notifications."""
+
+from __future__ import annotations
+
+import logging
+import os
+
+from telegram import Update
+from telegram.ext import ContextTypes
+
+from bot.services.venmo_payments import bind_venmo_payment_from_reply
+from notification.constants import PAYMENT_NOTIFICATION_CHAT_ID_ENV
+
+logger = logging.getLogger(__name__)
+
+
+def _notification_chat_id() -> int | None:
+    raw = (os.getenv(PAYMENT_NOTIFICATION_CHAT_ID_ENV) or "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+async def venmo_bind_reply_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    if not update.message or not update.effective_chat or not update.effective_user:
+        return
+
+    expected_chat = _notification_chat_id()
+    if expected_chat is None:
+        logger.warning("payment bind: %s not set", PAYMENT_NOTIFICATION_CHAT_ID_ENV)
+        return
+
+    chat_id = int(update.effective_chat.id)
+    if chat_id != expected_chat:
+        return
+
+    reply = update.message.reply_to_message
+    if reply is None:
+        return
+
+    title = (update.message.text or "").strip()
+    if not title:
+        await update.message.reply_text("Send the group title as your reply text.")
+        return
+
+    result = await bind_venmo_payment_from_reply(
+        notification_chat_id=chat_id,
+        notification_message_id=int(reply.message_id),
+        group_title_input=title,
+        bound_by_telegram_user_id=int(update.effective_user.id),
+    )
+
+    if not result.ok or result.bound_group is None:
+        await update.message.reply_text(result.error or "Could not bind payment.")
+        return
+
+    group = result.bound_group
+    await update.message.reply_text(
+        f"Bound to {group.group_title} (chat_id {group.telegram_chat_id})"
+    )
+    logger.info(
+        "venmo payment bound chat_id=%s group=%r user_id=%s",
+        group.telegram_chat_id,
+        group.group_title,
+        update.effective_user.id,
+    )

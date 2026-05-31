@@ -1,0 +1,206 @@
+"""Unit tests for Venmo payment binding and notifications."""
+
+from __future__ import annotations
+
+import unittest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from bot.services import venmo_payments as vp
+from db.models import VenmoPayerBinding, VenmoPayment
+
+CHAT_ID = -1001234567890
+CLUB_ID = 2
+GROUP_TITLE = "RT / 6485-8168 / Angus Mcgoon"
+NOTIF_CHAT_ID = -1009999999999
+NOTIF_MSG_ID = 12345
+
+
+class VenmoPaymentsHelpersTestCase(unittest.TestCase):
+    def test_normalize_payer_name(self):
+        self.assertEqual(vp.normalize_payer_name("  Moshe   Toussoun "), "moshe toussoun")
+
+    def test_normalize_venmo_handle(self):
+        self.assertEqual(vp.normalize_venmo_handle("godfather4444"), "@godfather4444")
+        self.assertEqual(vp.normalize_venmo_handle("@Godfather4444"), "@godfather4444")
+
+    def test_parse_amount_cents(self):
+        self.assertEqual(vp.parse_amount_cents("200.00"), 20000)
+        self.assertEqual(vp.parse_amount_cents("$1,234.56"), 123456)
+
+    def test_format_notification_unbound(self):
+        payment = VenmoPayment(
+            payer_name="Moshe Toussoun",
+            amount_cents=20000,
+            venmo_handle="@godfather4444",
+            goods_or_services=False,
+        )
+        text = vp.format_notification_text(payment)
+        self.assertIn("Unbound", text)
+        self.assertIn("Moshe Toussoun", text)
+        self.assertIn("$200.00", text)
+
+    def test_format_notification_auto_bound(self):
+        payment = VenmoPayment(
+            payer_name="Moshe Toussoun",
+            amount_cents=20000,
+            venmo_handle="@godfather4444",
+            goods_or_services=False,
+        )
+        text = vp.format_notification_text(
+            payment,
+            group_title=GROUP_TITLE,
+            auto_bound=True,
+        )
+        self.assertIn(GROUP_TITLE, text)
+        self.assertIn("auto-bound", text)
+        self.assertIn("rebind", text)
+
+
+class ResolveBoundGroupTestCase(unittest.TestCase):
+    @patch("bot.services.venmo_payments.find_group_chat_id_by_name", return_value=CHAT_ID)
+    @patch("bot.services.venmo_payments.resolve_club_id_from_shorthand", return_value=CLUB_ID)
+    @patch("bot.services.venmo_payments.parse_tracking_title", return_value=("RT", "6485-8168"))
+    @patch(
+        "bot.services.venmo_payments.resolve_display_group_title",
+        return_value=GROUP_TITLE,
+    )
+    def test_resolve_bound_group_success(self, *_mocks):
+        result = vp.resolve_bound_group(GROUP_TITLE)
+        self.assertTrue(result.ok)
+        assert result.bound_group is not None
+        self.assertEqual(result.bound_group.telegram_chat_id, CHAT_ID)
+        self.assertEqual(result.bound_group.group_title, GROUP_TITLE)
+
+    @patch("bot.services.venmo_payments.find_group_chat_id_by_name", return_value=None)
+    @patch("bot.services.venmo_payments.resolve_club_id_from_shorthand", return_value=CLUB_ID)
+    @patch("bot.services.venmo_payments.parse_tracking_title", return_value=("RT", "6485-8168"))
+    def test_resolve_bound_group_not_found(self, *_mocks):
+        result = vp.resolve_bound_group(GROUP_TITLE)
+        self.assertFalse(result.ok)
+        self.assertIn("No linked group", result.error or "")
+
+
+class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
+    async def test_bind_updates_payment(self):
+        payment = VenmoPayment(
+            id=1,
+            payer_name="Moshe Toussoun",
+            amount_cents=20000,
+            venmo_handle="@godfather4444",
+            goods_or_services=False,
+            notification_chat_id=NOTIF_CHAT_ID,
+            notification_message_id=NOTIF_MSG_ID,
+        )
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter_by.return_value.one_or_none.return_value = payment
+        mock_session.query.return_value = mock_query
+
+        with (
+            patch("bot.services.venmo_payments.get_db") as mock_get_db,
+            patch(
+                "bot.services.venmo_payments.edit_telegram_notification",
+                new=AsyncMock(),
+            ),
+            patch(
+                "bot.services.venmo_payments.resolve_bound_group",
+                return_value=vp.BindResult(
+                    ok=True,
+                    bound_group=vp.BoundGroup(
+                        telegram_chat_id=CHAT_ID,
+                        club_id=CLUB_ID,
+                        group_title=GROUP_TITLE,
+                    ),
+                ),
+            ),
+            patch(
+                "bot.services.venmo_payments.resolve_display_group_title",
+                return_value=GROUP_TITLE,
+            ),
+        ):
+            mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = await vp.bind_venmo_payment_from_reply(
+                notification_chat_id=NOTIF_CHAT_ID,
+                notification_message_id=NOTIF_MSG_ID,
+                group_title_input=GROUP_TITLE,
+                bound_by_telegram_user_id=493310710,
+            )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(payment.telegram_chat_id, CHAT_ID)
+        self.assertEqual(payment.club_id, CLUB_ID)
+        self.assertFalse(payment.auto_bound)
+        self.assertIsNotNone(payment.bound_at)
+
+    async def test_ingest_auto_binds_known_payer(self):
+        binding = VenmoPayerBinding(
+            payer_name_normalized="moshe toussoun",
+            venmo_handle="@godfather4444",
+            telegram_chat_id=CHAT_ID,
+            club_id=CLUB_ID,
+        )
+
+        payment_obj = VenmoPayment(
+            id=99,
+            payer_name="Moshe Toussoun",
+            amount_cents=20000,
+            venmo_handle="@godfather4444",
+            goods_or_services=False,
+        )
+
+        def _query(model):
+            q = MagicMock()
+            if model is VenmoPayment:
+                q.filter_by.return_value.one_or_none.side_effect = [None, payment_obj]
+            elif model is VenmoPayerBinding:
+                q.filter_by.return_value.one_or_none.return_value = binding
+            return q
+
+        mock_session = MagicMock()
+        mock_session.query.side_effect = _query
+
+        def _add(obj):
+            if isinstance(obj, VenmoPayment) and obj.id is None:
+                obj.id = 99
+
+        mock_session.add.side_effect = _add
+        mock_session.flush = MagicMock()
+
+        with (
+            patch("bot.services.venmo_payments.get_db") as mock_get_db,
+            patch(
+                "bot.services.venmo_payments.send_telegram_notification",
+                new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
+            ),
+            patch(
+                "bot.services.venmo_payments.resolve_display_group_title",
+                return_value=GROUP_TITLE,
+            ),
+        ):
+            mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = await vp.ingest_venmo_payment(
+                payer_name="Moshe Toussoun",
+                amount="200.00",
+                venmo_handle="@godfather4444",
+            )
+
+        self.assertTrue(result.auto_bound)
+        self.assertEqual(result.status, "bound")
+
+
+class LiveTitleAfterRenameTestCase(unittest.TestCase):
+    @patch(
+        "bot.services.venmo_payments.get_group_title_for_chat",
+        return_value=("RT / 6485-8168 / Angus M", CLUB_ID),
+    )
+    def test_resolve_display_group_title_uses_live_name(self, _mock):
+        title = vp.resolve_display_group_title(CHAT_ID)
+        self.assertEqual(title, "RT / 6485-8168 / Angus M")
+
+
+if __name__ == "__main__":
+    unittest.main()

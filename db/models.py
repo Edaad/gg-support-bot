@@ -747,3 +747,71 @@ class StripeCheckoutSession(Base):
         foreign_keys=[stripe_customer_id],
     )
     club = relationship("Club")
+
+
+class VenmoPayment(Base):
+    """One Venmo deposit ingested from Zapier; optionally bound to a support group."""
+
+    __tablename__ = "venmo_payments"
+    __table_args__ = (
+        Index(
+            "ix_venmo_payments_notification_msg",
+            "notification_chat_id",
+            "notification_message_id",
+        ),
+        Index("ix_venmo_payments_telegram_chat_id", "telegram_chat_id"),
+        Index("ix_venmo_payments_created_at", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    payer_name = Column(String(255), nullable=False)
+    amount_cents = Column(Integer, nullable=False)
+    venmo_handle = Column(String(100), nullable=False)
+    goods_or_services = Column(Boolean, nullable=False, default=False)
+    paid_at = Column(String(255), nullable=True)
+    source_external_id = Column(String(255), unique=True, nullable=True)
+    telegram_chat_id = Column(BigInteger, nullable=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    bound_group_title_at_bind = Column(String(255), nullable=True)
+    notification_chat_id = Column(BigInteger, nullable=True)
+    notification_message_id = Column(BigInteger, nullable=True)
+    bound_by_telegram_user_id = Column(BigInteger, nullable=True)
+    auto_bound = Column(Boolean, nullable=False, default=False)
+    bound_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    club = relationship("Club")
+
+
+class VenmoPayerBinding(Base):
+    """Remember last manual bind: payer + Venmo handle -> support group chat."""
+
+    __tablename__ = "venmo_payer_bindings"
+    __table_args__ = (
+        UniqueConstraint(
+            "payer_name_normalized",
+            "venmo_handle",
+            name="uq_venmo_payer_bindings_payer_handle",
+        ),
+        Index("ix_venmo_payer_bindings_telegram_chat_id", "telegram_chat_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    payer_name_normalized = Column(String(255), nullable=False)
+    venmo_handle = Column(String(100), nullable=False)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    bound_group_title_at_bind = Column(String(255), nullable=True)
+    last_bound_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_bound_by_telegram_user_id = Column(BigInteger, nullable=True)
+
+    club = relationship("Club")

@@ -1,0 +1,4 @@
+"""Shared env keys for the payment notification bot (all payment types)."""
+
+NOTIFICATION_BOT_TOKEN_ENV = "TELEGRAM_NOTIFICATION_BOT_TOKEN"
+PAYMENT_NOTIFICATION_CHAT_ID_ENV = "PAYMENT_NOTIFICATION_CHAT_ID"
