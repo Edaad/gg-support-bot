@@ -62,7 +62,7 @@ def run_notification_bot(token: str | None = None) -> None:
 
     app.add_handler(
         MessageHandler(
-            filters.Chat(int(chat_raw)) & filters.REPLY & filters.TEXT & ~filters.COMMAND,
+            filters.REPLY & filters.TEXT & ~filters.COMMAND,
             venmo_bind_reply_handler,
         )
     )

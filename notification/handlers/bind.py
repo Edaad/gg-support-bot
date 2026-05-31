@@ -9,6 +9,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.services.venmo_payments import bind_venmo_payment_from_reply
+from notification.chat_id import telegram_chat_ids_match
 from notification.constants import PAYMENT_NOTIFICATION_CHAT_ID_ENV
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,12 @@ async def venmo_bind_reply_handler(
         return
 
     chat_id = int(update.effective_chat.id)
-    if chat_id != expected_chat:
+    if not telegram_chat_ids_match(chat_id, expected_chat):
+        logger.debug(
+            "payment bind: ignoring message chat_id=%s (expected %s)",
+            chat_id,
+            expected_chat,
+        )
         return
 
     reply = update.message.reply_to_message
@@ -49,12 +55,24 @@ async def venmo_bind_reply_handler(
         await update.message.reply_text("Send the group title as your reply text.")
         return
 
-    result = await bind_venmo_payment_from_reply(
-        notification_chat_id=chat_id,
-        notification_message_id=int(reply.message_id),
-        group_title_input=title,
-        bound_by_telegram_user_id=int(update.effective_user.id),
-    )
+    try:
+        result = await bind_venmo_payment_from_reply(
+            notification_chat_id=expected_chat,
+            notification_message_id=int(reply.message_id),
+            group_title_input=title,
+            bound_by_telegram_user_id=int(update.effective_user.id),
+        )
+    except Exception:
+        logger.exception(
+            "payment bind failed chat_id=%s reply_to=%s title=%r",
+            chat_id,
+            reply.message_id,
+            title,
+        )
+        await update.message.reply_text(
+            "Bind failed due to a server error. Check notification dyno logs."
+        )
+        return
 
     if not result.ok or result.bound_group is None:
         await update.message.reply_text(result.error or "Could not bind payment.")

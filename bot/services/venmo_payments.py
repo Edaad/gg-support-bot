@@ -228,7 +228,9 @@ async def send_telegram_notification(text: str) -> tuple[int, int]:
     )
     result = data.get("result") or {}
     message_id = int(result["message_id"])
-    return int(chat_id), message_id
+    chat_obj = result.get("chat") or {}
+    resolved_chat_id = int(chat_obj.get("id") or chat_id)
+    return resolved_chat_id, message_id
 
 
 async def edit_telegram_notification(

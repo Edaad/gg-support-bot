@@ -100,6 +100,14 @@ Anyone who can post in the notification group may bind or rebind.
 python run_notification_bot.py
 ```
 
+**Important:** Bind replies only work when the `notification` dyno is running. The `web` dyno sends alerts but does not handle replies.
+
+```bash
+heroku ps:scale notification=1 --app gg-support-bot-2025
+```
+
+Verify with `heroku ps` — you should see `notification.1: up`.
+
 ## Zapier changes
 
 For each **Confirm Venmo** Zap:
