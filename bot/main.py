@@ -125,6 +125,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     from bot.handlers.telemsg import telemsg_handler
     from bot.handlers.lookup import lookup_handler
     from bot.handlers.findgc import findgc_handler
+    from bot.handlers.refresh import refresh_handler
     from bot.handlers.checkplayer import checkplayer_handler
     from bot.handlers.group_create import get_gc_handler
     from bot.handlers.bonus import get_bonus_handler
@@ -156,6 +157,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(CommandHandler("telemsg", telemsg_handler))
     app.add_handler(CommandHandler("lookup", lookup_handler))
     app.add_handler(CommandHandler("findgc", findgc_handler))
+    app.add_handler(CommandHandler("refresh", refresh_handler))
     app.add_handler(CommandHandler("checkplayer", checkplayer_handler))
     app.add_handler(CommandHandler("stripe", stripe_handler))
     app.add_handler(CommandHandler("teststripe", teststripe_handler))
