@@ -162,7 +162,6 @@ def format_notification_text(
     payment: VenmoPayment,
     *,
     group_title: Optional[str] = None,
-    auto_bound: bool = False,
 ) -> str:
     gs = "True" if payment.goods_or_services else "False"
     method = payment.venmo_handle
@@ -172,23 +171,24 @@ def format_notification_text(
     lines = [
         "🔔 Payment Notification",
         "",
-        f"Name: {payment.payer_name}",
-        f"Amount: {format_amount_display(payment.amount_cents)}",
-        f"Method: Venmo ({method})",
-        f"Goods/Services: {gs}",
     ]
 
     if group_title:
-        suffix = " (auto-bound)" if auto_bound else ""
-        lines.append(f"Group Chat: {group_title}{suffix}")
-        if auto_bound:
-            lines.append(
-                "Reply to this message with a different group title to rebind"
-            )
+        lines.append(f"Group Chat: {group_title}")
     else:
         lines.append(
             "Group Chat: Unbound — reply to this message with the group title to bind"
         )
+
+    lines.extend(
+        [
+            "",
+            f"Name: {payment.payer_name}",
+            f"Amount: {format_amount_display(payment.amount_cents)}",
+            f"Method: {method}",
+            f"Goods/Services: {gs}",
+        ]
+    )
 
     body = "\n".join(lines)
     if getattr(payment, "is_test", False):
@@ -398,7 +398,6 @@ async def ingest_venmo_payment(
         text = format_notification_text(
             payment,
             group_title=group_title,
-            auto_bound=auto_bound,
         )
 
     if debug_notification_enabled():
@@ -489,7 +488,7 @@ async def bind_venmo_payment_from_reply(
         )
 
         live_title = resolve_display_group_title(group.telegram_chat_id) or group.group_title
-        text = format_notification_text(payment, group_title=live_title, auto_bound=False)
+        text = format_notification_text(payment, group_title=live_title)
         notif_chat_id = int(payment.notification_chat_id)
         notif_message_id = int(payment.notification_message_id)
 

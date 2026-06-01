@@ -38,6 +38,7 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         self.assertIn("Unbound", text)
         self.assertIn("Moshe Toussoun", text)
         self.assertIn("$200.00", text)
+        self.assertLess(text.index("Group Chat:"), text.index("Name:"))
 
     def test_format_notification_test_banner(self):
         payment = VenmoPayment(
@@ -51,7 +52,7 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         self.assertTrue(text.startswith("TEST (Please ignore)\n\n"))
         self.assertIn("Payment Notification", text)
 
-    def test_format_notification_auto_bound(self):
+    def test_format_notification_bound(self):
         payment = VenmoPayment(
             payer_name="Moshe Toussoun",
             amount_cents=20000,
@@ -61,11 +62,12 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         text = vp.format_notification_text(
             payment,
             group_title=GROUP_TITLE,
-            auto_bound=True,
         )
         self.assertIn(GROUP_TITLE, text)
-        self.assertIn("auto-bound", text)
-        self.assertIn("rebind", text)
+        self.assertIn("Method: @godfather4444", text)
+        self.assertNotIn("auto-bound", text)
+        self.assertNotIn("rebind", text)
+        self.assertLess(text.index("Group Chat:"), text.index("Name:"))
 
 
 class ResolveBoundGroupTestCase(unittest.TestCase):

@@ -70,18 +70,25 @@ Unbound:
 ```
 🔔 Payment Notification
 
+Group Chat: Unbound — reply to this message with the group title to bind
+
 Name: Moshe Toussoun
 Amount: $200.00
-Method: Venmo (@godfather4444)
+Method: @godfather4444
 Goods/Services: False
-Group Chat: Unbound — reply to this message with the group title to bind
 ```
 
 Auto-bound repeat payer:
 
 ```
-Group Chat: RT / 6485-8168 / Angus Mcgoon (auto-bound)
-Reply to this message with a different group title to rebind
+🔔 Payment Notification
+
+Group Chat: RT / 6485-8168 / Angus Mcgoon
+
+Name: Moshe Toussoun
+Amount: $200.00
+Method: @godfather4444
+Goods/Services: False
 ```
 
 ## Manual bind
