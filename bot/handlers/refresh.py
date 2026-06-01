@@ -45,7 +45,7 @@ async def refresh_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     await update.message.reply_text(
-        f"Restarting all Heroku dynos for {app_name}… (~1 min downtime)"
+        f"Restarting the bot (~1 min downtime)"
     )
 
     try:
