@@ -344,13 +344,18 @@ async def ingest_venmo_payment(
                 .one_or_none()
             )
             if existing is not None:
-                if debug_notification_enabled():
-                    logger.info(
-                        "venmo ingest: duplicate source_external_id=%r payment_id=%s "
-                        "(skipping telegram send)",
-                        source_external_id,
-                        existing.id,
-                    )
+                logger.info(
+                    "venmo ingest: idempotent reject source_external_id=%r "
+                    "existing_payment_id=%s existing_payer=%r incoming_payer=%r "
+                    "incoming_amount_cents=%s incoming_handle=%r "
+                    "(skipping create and telegram send)",
+                    source_external_id.strip(),
+                    existing.id,
+                    existing.payer_name,
+                    payer,
+                    amount_cents,
+                    handle,
+                )
                 return IngestResult(
                     payment_id=int(existing.id),
                     status="bound" if existing.telegram_chat_id else "unbound",

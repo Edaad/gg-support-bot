@@ -205,6 +205,52 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.auto_bound)
         self.assertEqual(result.status, "bound")
 
+    async def test_ingest_idempotent_reject_logs_and_skips_telegram(self):
+        existing = VenmoPayment(
+            id=5,
+            payer_name="Aravindh Soundararajan",
+            amount_cents=30000,
+            venmo_handle="@godfather4444",
+            goods_or_services=False,
+            source_external_id="1974050a62bcb581",
+            telegram_chat_id=CHAT_ID,
+        )
+
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter_by.return_value.one_or_none.return_value = existing
+        mock_session.query.return_value = mock_query
+
+        with (
+            patch("bot.services.venmo_payments.get_db") as mock_get_db,
+            patch(
+                "bot.services.venmo_payments.send_telegram_notification",
+                new=AsyncMock(),
+            ) as mock_send,
+            self.assertLogs("bot.services.venmo_payments", level="INFO") as logs,
+        ):
+            mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = await vp.ingest_venmo_payment(
+                payer_name="Jungwook Youn",
+                amount="300.00",
+                venmo_handle="@godfather4444",
+                source_external_id="1974050a62bcb581",
+            )
+
+        self.assertFalse(result.created)
+        self.assertEqual(result.payment_id, 5)
+        mock_send.assert_not_called()
+        self.assertTrue(
+            any("idempotent reject" in msg for msg in logs.output),
+            logs.output,
+        )
+        self.assertTrue(
+            any("Jungwook Youn" in msg and "Aravindh Soundararajan" in msg for msg in logs.output),
+            logs.output,
+        )
+
 
 class LiveTitleAfterRenameTestCase(unittest.TestCase):
     @patch(
