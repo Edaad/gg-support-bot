@@ -507,7 +507,7 @@ _CASHOUT_CANCEL = CommandHandler("cancel", cashout_cancel)
 
 def get_cashout_handler() -> ConversationHandler:
     return ConversationHandler(
-        entry_points=[CommandHandler("cashout", cashout_entry)],
+        entry_points=[CommandHandler(["cashout", "withdraw"], cashout_entry)],
         states={
             CASHOUT_AMOUNT: [
                 MessageHandler(
