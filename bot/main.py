@@ -205,6 +205,17 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         group=1,
     )
 
+    # Cancel deposit follow-up reminders when the depositing customer responds
+    from bot.handlers.deposit import cancel_deposit_reminder_on_customer_msg
+
+    app.add_handler(
+        MessageHandler(
+            filters.ChatType.GROUPS & filters.ALL,
+            cancel_deposit_reminder_on_customer_msg,
+        ),
+        group=2,
+    )
+
     if test_mode:
         from bot.runtime_config import is_test_bot_worker, use_payment_v2
 

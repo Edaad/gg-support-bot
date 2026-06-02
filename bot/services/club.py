@@ -183,6 +183,22 @@ def get_methods_for_amount(
         return result
 
 
+def get_deposit_method_names(club_id: int) -> list[str]:
+    """Return the names of all active deposit methods for a club."""
+    v2 = _payment_v2()
+    if v2:
+        methods = v2.get_methods_for_amount(club_id, "deposit", None)
+        return [m["name"] for m in methods]
+    with get_db() as session:
+        methods = (
+            session.query(PaymentMethod)
+            .filter_by(club_id=club_id, direction="deposit", is_active=True)
+            .order_by(PaymentMethod.sort_order)
+            .all()
+        )
+        return [m.name for m in methods]
+
+
 def record_method_deposit(method_id: int, amount: Decimal) -> None:
     """Atomically add deposit amount to a method's accumulated total."""
     v2 = _payment_v2()

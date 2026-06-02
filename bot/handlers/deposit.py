@@ -33,6 +33,7 @@ from bot.services.club import (
     get_first_deposit_settings,
     update_group_name,
     record_method_deposit,
+    get_deposit_method_names,
 )
 from bot.services.mtproto_group_rename import rename_support_group_title
 from bot.services.player_details import merge_union_prefix
@@ -115,6 +116,92 @@ _STRIPE_HARDCODE_DEFAULT_TEXT = (
     "{{hyperlink}}"
 )
 _PLACEHOLDER_RESPONSE_TEXT = frozenset({"long text", "test", "placeholder", "todo"})
+
+DEPOSIT_REMINDER_SECONDS = 600  # 10 minutes
+
+# Maps chat_id → customer user_id that we're waiting on for a deposit follow-up.
+_PENDING_DEPOSIT_REMINDERS: dict[int, int] = {}
+
+
+def _reminder_job_name(chat_id: int | str) -> str:
+    return f"deposit_reminder_{chat_id}"
+
+
+async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Job queue callback: nudge the customer if they haven't responded after depositing."""
+    chat_id = context.job.chat_id
+    club_id = context.job.data.get("club_id") if context.job.data else None
+    _PENDING_DEPOSIT_REMINDERS.pop(int(chat_id), None)
+
+    methods = get_deposit_method_names(club_id) if club_id else []
+    method_list = ", ".join(methods) if methods else ""
+
+    text = (
+        "Hey! Just checking in \u2014 if you haven\u2019t completed your deposit yet, "
+        "feel free to reach out and we\u2019ll help you get it done!\n\n"
+        "You can also start a new deposit anytime with /deposit."
+    )
+    if method_list:
+        text += f"\n\nWe offer: {method_list}."
+    text += "\n\nDeposits are available 24/7!"
+
+    try:
+        await context.bot.send_message(chat_id=chat_id, text=text)
+    except Exception:
+        logger.warning("Failed to send deposit reminder to chat_id=%s", chat_id, exc_info=True)
+
+
+def _schedule_deposit_reminder(
+    context: ContextTypes.DEFAULT_TYPE,
+    club_id: int | None,
+    chat_id: int | None,
+    user_id: int | None,
+) -> None:
+    """Schedule a follow-up reminder 10 minutes after a deposit completes."""
+    if not club_id or not chat_id:
+        return
+    try:
+        name = _reminder_job_name(chat_id)
+        for job in context.job_queue.get_jobs_by_name(name):
+            job.schedule_removal()
+        context.job_queue.run_once(
+            _deposit_reminder_callback,
+            when=DEPOSIT_REMINDER_SECONDS,
+            chat_id=int(chat_id),
+            data={"club_id": club_id},
+            name=name,
+        )
+        if user_id:
+            _PENDING_DEPOSIT_REMINDERS[int(chat_id)] = int(user_id)
+    except Exception:
+        logger.warning(
+            "Failed to schedule deposit reminder chat_id=%s", chat_id, exc_info=True
+        )
+
+
+def _cancel_deposit_reminder(context: ContextTypes.DEFAULT_TYPE, chat_id: int | str) -> None:
+    """Cancel any pending deposit follow-up reminder for a chat."""
+    _PENDING_DEPOSIT_REMINDERS.pop(int(chat_id), None)
+    try:
+        for job in context.job_queue.get_jobs_by_name(_reminder_job_name(chat_id)):
+            job.schedule_removal()
+    except Exception:
+        pass
+
+
+async def cancel_deposit_reminder_on_customer_msg(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Group handler (group=2): cancel the pending reminder when the depositing customer responds."""
+    if not update.message or not update.effective_chat or not update.effective_user:
+        return
+    chat_id = update.effective_chat.id
+    expected_user = _PENDING_DEPOSIT_REMINDERS.get(chat_id)
+    if expected_user is None:
+        return
+    if update.effective_user.id != expected_user:
+        return
+    _cancel_deposit_reminder(context, chat_id)
 
 
 def _is_usable_stripe_response_text(text: str | None) -> bool:
@@ -328,6 +415,7 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     update_group_name(chat.id, chat.title)
+    _cancel_deposit_reminder(context, chat.id)
 
     user_id = update.effective_user.id
     is_bot_admin = user_id in ADMIN_USER_IDS
@@ -347,6 +435,7 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         simple = get_club_simple_mode(club_id, "deposit")
         if simple:
             await _send_simple_response(update.message, simple)
+            _schedule_deposit_reminder(context, club_id, chat.id, user_id=None)
             _cleanup(context)
             return ConversationHandler.END
 
@@ -763,6 +852,7 @@ async def _finish_simple_deposit(message, context):
         except Exception:
             pass
 
+    _schedule_deposit_reminder(context, club_id, chat_id, user_id=user_id)
     _cleanup(context)
     return ConversationHandler.END
 
@@ -816,10 +906,14 @@ async def _maybe_rename_group_for_union(context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def _complete_deposit_flow(chat, context: ContextTypes.DEFAULT_TYPE):
+    club_id = context.chat_data.get("deposit_club_id")
+    chat_id = context.chat_data.get("deposit_chat_id")
+    customer_uid = context.chat_data.get("deposit_user_id")
     _record_deposit(context)
     await _send_union_chips_message(chat, context)
     await _maybe_rename_group_for_union(context)
     await _send_bonus_message(chat, context)
+    _schedule_deposit_reminder(context, club_id, chat_id, user_id=customer_uid)
     _cleanup(context)
     return ConversationHandler.END
 
@@ -1187,15 +1281,23 @@ async def deposit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.chat_data.get("deposit_chat_id")
+    club_id = context.chat_data.get("deposit_club_id")
     if chat_id:
+        methods = get_deposit_method_names(club_id) if club_id else []
+        method_list = ", ".join(methods) if methods else ""
+
+        text = (
+            "We didn\u2019t hear back from you so we are canceling your request. "
+            "No worries \u2014 whenever you\u2019re ready, just type /deposit to start again!"
+        )
+        if method_list:
+            text += f"\n\nWe offer: {method_list}."
+        text += (
+            "\n\nDeposits are available 24/7, so feel free to reach out anytime!"
+        )
+
         try:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=(
-                    "We didn't hear back from you so we are canceling your request! "
-                    "Please use /deposit to deposit again!"
-                ),
-            )
+            await context.bot.send_message(chat_id=chat_id, text=text)
         except Exception:
             pass
     _cleanup(context)
