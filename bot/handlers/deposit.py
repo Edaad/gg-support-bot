@@ -510,17 +510,16 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         is_test_bot_worker(),
     )
 
-    # Production admin-initiated flow: ignore admin messages until a player replies.
-    if not is_test_bot_worker() and admin_uid and sender_id == admin_uid:
-        logger.debug("deposit_amount_received ignoring admin sender_id=%s", sender_id)
-        return DEPOSIT_AMOUNT
-
     _clear_awaiting_amount(context)
 
-    if context.chat_data.get("deposit_admin_initiated") and update.effective_user:
-        context.chat_data["deposit_user_id"] = update.effective_user.id
-    elif update.effective_user and not context.chat_data.get("deposit_user_id"):
-        context.chat_data["deposit_user_id"] = update.effective_user.id
+    # In admin-initiated flows, only record a non-admin as the depositor.
+    if update.effective_user:
+        uid = update.effective_user.id
+        if context.chat_data.get("deposit_admin_initiated"):
+            if uid not in ADMIN_USER_IDS:
+                context.chat_data["deposit_user_id"] = uid
+        elif not context.chat_data.get("deposit_user_id"):
+            context.chat_data["deposit_user_id"] = uid
 
     club_id = context.chat_data.get("deposit_club_id")
     if not club_id:

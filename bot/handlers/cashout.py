@@ -127,22 +127,21 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
     if not update.message:
         return ConversationHandler.END
 
-    admin_uid = context.chat_data.get("cashout_admin_user_id")
-    if admin_uid and update.effective_user and update.effective_user.id == admin_uid:
-        return CASHOUT_AMOUNT
-
+    # In admin-initiated flows, only record a non-admin as the cashouter
+    # and only run cooldown checks when a customer responds.
     if context.chat_data.get("cashout_admin_initiated") and update.effective_user:
-        context.chat_data["cashout_user_id"] = update.effective_user.id
-        club_id = context.chat_data.get("cashout_club_id")
-        cashout_chat_id = context.chat_data.get("cashout_chat_id")
-        if club_id and cashout_chat_id:
-            cust_id = update.effective_user.id
-            if not is_club_staff(cust_id, club_id):
-                eligible, deny_msg = check_cashout_eligibility(club_id, cashout_chat_id)
-                if not eligible:
-                    await update.message.reply_text(deny_msg)
-                    _cleanup(context)
-                    return ConversationHandler.END
+        uid = update.effective_user.id
+        if uid not in ADMIN_USER_IDS:
+            context.chat_data["cashout_user_id"] = uid
+            club_id = context.chat_data.get("cashout_club_id")
+            cashout_chat_id = context.chat_data.get("cashout_chat_id")
+            if club_id and cashout_chat_id:
+                if not is_club_staff(uid, club_id):
+                    eligible, deny_msg = check_cashout_eligibility(club_id, cashout_chat_id)
+                    if not eligible:
+                        await update.message.reply_text(deny_msg)
+                        _cleanup(context)
+                        return ConversationHandler.END
 
     club_id = context.chat_data.get("cashout_club_id")
     if not club_id:
@@ -176,22 +175,19 @@ async def cashout_simple_amount_received(update: Update, context: ContextTypes.D
     if not update.message:
         return ConversationHandler.END
 
-    admin_uid = context.chat_data.get("cashout_admin_user_id")
-    if admin_uid and update.effective_user and update.effective_user.id == admin_uid:
-        return CASHOUT_SIMPLE_AMOUNT
-
     if context.chat_data.get("cashout_admin_initiated") and update.effective_user:
-        context.chat_data["cashout_user_id"] = update.effective_user.id
-        club_id = context.chat_data.get("cashout_club_id")
-        cashout_chat_id = context.chat_data.get("cashout_chat_id")
-        if club_id and cashout_chat_id:
-            cust_id = update.effective_user.id
-            if not is_club_staff(cust_id, club_id):
-                eligible, deny_msg = check_cashout_eligibility(club_id, cashout_chat_id)
-                if not eligible:
-                    await update.message.reply_text(deny_msg)
-                    _cleanup(context)
-                    return ConversationHandler.END
+        uid = update.effective_user.id
+        if uid not in ADMIN_USER_IDS:
+            context.chat_data["cashout_user_id"] = uid
+            club_id = context.chat_data.get("cashout_club_id")
+            cashout_chat_id = context.chat_data.get("cashout_chat_id")
+            if club_id and cashout_chat_id:
+                if not is_club_staff(uid, club_id):
+                    eligible, deny_msg = check_cashout_eligibility(club_id, cashout_chat_id)
+                    if not eligible:
+                        await update.message.reply_text(deny_msg)
+                        _cleanup(context)
+                        return ConversationHandler.END
 
     club_id = context.chat_data.get("cashout_club_id")
     if not club_id:
