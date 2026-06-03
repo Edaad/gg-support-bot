@@ -122,7 +122,7 @@ To remove legacy open rows: `python scripts/cleanup_stripe_open_sessions.py --ap
 - **Payments** — completed Stripe deposits only (group title, amount, method)
 - **Customers** — one row per Telegram group with a `stripe_customers` mapping
 
-Filters: club, deposit method (or Manual `/stripe`), date range.
+Filters: club, deposit method (or Manual `/stripe`), date range. **Export CSV** on each tab downloads all matching rows by paging the list endpoints below (no separate export URL).
 
 JWT-protected API:
 

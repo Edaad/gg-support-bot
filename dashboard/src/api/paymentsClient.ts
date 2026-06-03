@@ -125,3 +125,53 @@ export function listStripeSessions(
   if (params.offset != null) q.set('offset', String(params.offset))
   return request<Paginated<StripeSessionRow>>(`/stripe/sessions?${q}`, {}, token)
 }
+
+const EXPORT_PAGE_SIZE = 200
+
+export type StripeSessionListParams = {
+  clubId: number
+  status?: string
+  methodId?: number
+  manualOnly?: boolean
+  from?: string
+  to?: string
+}
+
+export async function fetchAllStripeSessions(
+  token: string,
+  params: StripeSessionListParams,
+): Promise<StripeSessionRow[]> {
+  const all: StripeSessionRow[] = []
+  let offset = 0
+  for (;;) {
+    const res = await listStripeSessions(token, {
+      ...params,
+      limit: EXPORT_PAGE_SIZE,
+      offset,
+    })
+    all.push(...res.items)
+    offset += res.items.length
+    if (offset >= res.total || res.items.length === 0) break
+  }
+  return all
+}
+
+export async function fetchAllStripeCustomers(
+  token: string,
+  params: { clubId: number; q?: string },
+): Promise<StripeCustomerRow[]> {
+  const all: StripeCustomerRow[] = []
+  let offset = 0
+  for (;;) {
+    const res = await listStripeCustomers(token, {
+      clubId: params.clubId,
+      q: params.q,
+      limit: EXPORT_PAGE_SIZE,
+      offset,
+    })
+    all.push(...res.items)
+    offset += res.items.length
+    if (offset >= res.total || res.items.length === 0) break
+  }
+  return all
+}

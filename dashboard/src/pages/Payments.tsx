@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useId, useState } from 'react'
 import { listClubs, type Club } from '../api/client'
 import {
+  fetchAllStripeCustomers,
+  fetchAllStripeSessions,
   listPaymentProviders,
   listStripeCustomers,
   listStripeMethods,
@@ -9,6 +11,7 @@ import {
   type StripeMethodOption,
   type StripeSessionRow,
 } from '../api/paymentsClient'
+import { downloadCsv } from '../lib/csv'
 
 const TABS = ['Payments', 'Customers'] as const
 type Tab = (typeof TABS)[number]
@@ -38,6 +41,11 @@ function fmtGgNickname(nickname: string | null | undefined): string {
 }
 
 type MethodFilter = 'all' | 'manual' | number
+
+function slugForFilename(name: string): string {
+  const s = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  return s || 'club'
+}
 
 export default function Payments({ token }: { token: string }) {
   const clubSelectId = useId()
@@ -70,6 +78,7 @@ export default function Payments({ token }: { token: string }) {
   const [sessionPage, setSessionPage] = useState(0)
 
   const [loading, setLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [err, setErr] = useState('')
 
   useEffect(() => {
@@ -103,6 +112,18 @@ export default function Payments({ token }: { token: string }) {
     else if (typeof methodFilter === 'number') base.methodId = methodFilter
     return base
   }, [clubId, sessionPage, appliedFrom, appliedTo, methodFilter])
+
+  const sessionExportParams = useCallback(() => {
+    const base: Parameters<typeof fetchAllStripeSessions>[1] = {
+      clubId: clubId!,
+      status: 'complete',
+    }
+    if (appliedFrom) base.from = `${appliedFrom}T00:00:00Z`
+    if (appliedTo) base.to = `${appliedTo}T23:59:59Z`
+    if (methodFilter === 'manual') base.manualOnly = true
+    else if (typeof methodFilter === 'number') base.methodId = methodFilter
+    return base
+  }, [clubId, appliedFrom, appliedTo, methodFilter])
 
   const loadCustomers = useCallback(() => {
     if (clubId == null) return
@@ -154,6 +175,84 @@ export default function Payments({ token }: { token: string }) {
   const applyCustomerSearch = () => {
     setAppliedSearch(customerSearch)
     setCustomerPage(0)
+  }
+
+  const clubName = clubs.find((c) => c.id === clubId)?.name ?? 'club'
+
+  const exportSessionsCsv = async () => {
+    if (clubId == null) return
+    setExporting(true)
+    setErr('')
+    try {
+      const rows = await fetchAllStripeSessions(token, sessionExportParams())
+      if (rows.length === 0) {
+        setErr('No payments to export for the selected filters.')
+        return
+      }
+      const parts = ['payments', slugForFilename(clubName)]
+      if (appliedFrom) parts.push(appliedFrom)
+      if (appliedTo) parts.push(appliedTo)
+      downloadCsv(
+        `${parts.join('-')}.csv`,
+        [
+          'completed_at',
+          'group_title',
+          'gg_nickname',
+          'gg_player_id',
+          'method_name',
+          'amount_usd',
+          'currency',
+          'stripe_payment_intent_id',
+          'stripe_checkout_session_id',
+        ],
+        rows.map((row) => [
+          row.completed_at || row.created_at || '',
+          row.group_title || '',
+          row.gg_nickname || '',
+          row.gg_player_id || '',
+          row.method_name || '',
+          String(row.amount_usd),
+          row.currency,
+          row.stripe_payment_intent_id || '',
+          row.stripe_checkout_session_id,
+        ]),
+      )
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Export failed.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const exportCustomersCsv = async () => {
+    if (clubId == null) return
+    setExporting(true)
+    setErr('')
+    try {
+      const rows = await fetchAllStripeCustomers(token, {
+        clubId,
+        q: appliedSearch || undefined,
+      })
+      if (rows.length === 0) {
+        setErr('No customers to export for the selected filters.')
+        return
+      }
+      downloadCsv(
+        `customers-${slugForFilename(clubName)}.csv`,
+        ['group_title', 'gg_player_id', 'gg_nickname', 'total_deposited_usd', 'created_at'],
+        rows.map((row) => [
+          row.group_title || '',
+          row.gg_player_id || '',
+          row.gg_nickname || '',
+          String(row.total_deposited_usd),
+          row.created_at,
+        ]),
+      )
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Export failed.')
+    } finally {
+      setExporting(false)
+    }
   }
 
   const customerPages = Math.max(1, Math.ceil(customerTotal / PAGE_SIZE))
@@ -274,6 +373,14 @@ export default function Payments({ token }: { token: string }) {
             <button type="button" onClick={applyDateFilters} className="btn-primary-sm">
               Apply dates
             </button>
+            <button
+              type="button"
+              disabled={clubId == null || loading || exporting}
+              onClick={() => void exportSessionsCsv()}
+              className="btn-secondary-sm disabled:opacity-40"
+            >
+              {exporting ? 'Exporting…' : 'Export CSV'}
+            </button>
           </div>
 
           {sessions.length === 0 && !loading ? (
@@ -370,6 +477,14 @@ export default function Payments({ token }: { token: string }) {
             />
             <button type="button" onClick={applyCustomerSearch} className="btn-primary-sm">
               Search
+            </button>
+            <button
+              type="button"
+              disabled={clubId == null || loading || exporting}
+              onClick={() => void exportCustomersCsv()}
+              className="btn-secondary-sm disabled:opacity-40"
+            >
+              {exporting ? 'Exporting…' : 'Export CSV'}
             </button>
           </div>
 
