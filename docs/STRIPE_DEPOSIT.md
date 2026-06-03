@@ -117,21 +117,30 @@ To remove legacy open rows: `python scripts/cleanup_stripe_open_sessions.py --ap
 
 ## Dashboard: Payments page
 
-**Nav → Payments** (`/payments`) shows club-scoped Stripe data:
+**Nav → Payments** (`/payments`) — choose **Stripe** or **Venmo** in the provider dropdown.
+
+**Stripe:**
 
 - **Payments** — completed Stripe deposits only (group title, amount, method)
 - **Customers** — one row per Telegram group with a `stripe_customers` mapping
 
-Filters: club, deposit method (or Manual `/stripe`), date range. **Export CSV** on each tab downloads all matching rows by paging the list endpoints below (no separate export URL).
+Filters: club, deposit method (or Manual `/stripe`), date range.
+
+**Venmo:** see [`docs/VENMO_PAYMENTS.md`](VENMO_PAYMENTS.md#dashboard-payments-page).
+
+**Export CSV** on each tab downloads all matching rows by paging the list endpoints below (no separate export URL).
 
 JWT-protected API:
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/payments/providers` | Payment providers (Stripe only for now) |
+| `GET /api/payments/providers` | Payment providers (Stripe, Venmo) |
 | `GET /api/payments/stripe/methods?club_id=` | Stripe-enabled deposit methods for filter dropdown |
-| `GET /api/payments/stripe/customers?club_id=` | Paginated customers |
-| `GET /api/payments/stripe/sessions?club_id=` | Paginated checkout sessions |
+| `GET /api/payments/stripe/customers?club_id=` | Paginated Stripe customers |
+| `GET /api/payments/stripe/sessions?club_id=` | Paginated Stripe checkout sessions |
+| `GET /api/payments/venmo/payments?club_id=` | Paginated Venmo payments |
+| `GET /api/payments/venmo/payers?club_id=` | Paginated Venmo payers |
+| `POST /api/payments/venmo/payments/{id}/bind` | Bind or rebind a Venmo payment |
 
 ## Code references
 

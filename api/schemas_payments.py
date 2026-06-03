@@ -76,3 +76,62 @@ class StripeCheckoutSessionListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class VenmoPaymentRead(BaseModel):
+    id: int
+    payer_name: str
+    venmo_handle: str
+    amount_cents: int
+    amount_usd: Decimal
+    goods_or_services: bool
+    paid_at: Optional[str] = None
+    group_title: Optional[str] = None
+    gg_player_id: Optional[str] = None
+    gg_nickname: Optional[str] = None
+    club_id: Optional[int] = None
+    telegram_chat_id: Optional[int] = None
+    status: str
+    auto_bound: bool
+    is_test: bool
+    created_at: datetime
+    bound_at: Optional[datetime] = None
+
+
+class VenmoPaymentListResponse(BaseModel):
+    items: list[VenmoPaymentRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class VenmoPayerRead(BaseModel):
+    payer_name: str
+    venmo_handle: str
+    group_title: Optional[str] = None
+    gg_player_id: Optional[str] = None
+    gg_nickname: Optional[str] = None
+    total_deposited_cents: int
+    total_deposited_usd: Decimal
+    payment_count: int
+    last_payment_at: Optional[datetime] = None
+
+
+class VenmoPayerListResponse(BaseModel):
+    items: list[VenmoPayerRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class VenmoBindRequest(BaseModel):
+    group_title: str
+
+
+class VenmoBindResponse(BaseModel):
+    ok: bool
+    error: Optional[str] = None
+    group_title: Optional[str] = None
+    telegram_chat_id: Optional[int] = None
+    club_id: Optional[int] = None
+    payment: Optional[VenmoPaymentRead] = None

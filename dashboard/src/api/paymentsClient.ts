@@ -175,3 +175,124 @@ export async function fetchAllStripeCustomers(
   }
   return all
 }
+
+export type VenmoPaymentRow = {
+  id: number
+  payer_name: string
+  venmo_handle: string
+  amount_cents: number
+  amount_usd: number
+  goods_or_services: boolean
+  paid_at: string | null
+  group_title: string | null
+  gg_player_id: string | null
+  gg_nickname: string | null
+  club_id: number | null
+  telegram_chat_id: number | null
+  status: 'bound' | 'unbound'
+  auto_bound: boolean
+  is_test: boolean
+  created_at: string
+  bound_at: string | null
+}
+
+export type VenmoPayerRow = {
+  payer_name: string
+  venmo_handle: string
+  group_title: string | null
+  gg_player_id: string | null
+  gg_nickname: string | null
+  total_deposited_cents: number
+  total_deposited_usd: number
+  payment_count: number
+  last_payment_at: string | null
+}
+
+export type VenmoBindResult = {
+  ok: boolean
+  error?: string | null
+  group_title?: string | null
+  telegram_chat_id?: number | null
+  club_id?: number | null
+  payment?: VenmoPaymentRow | null
+}
+
+export type VenmoPaymentListParams = {
+  clubId: number
+  status?: 'all' | 'bound' | 'unbound'
+  from?: string
+  to?: string
+  q?: string
+}
+
+export function listVenmoPayments(
+  token: string,
+  params: VenmoPaymentListParams & { limit?: number; offset?: number },
+) {
+  const q = new URLSearchParams({ club_id: String(params.clubId) })
+  if (params.status && params.status !== 'all') q.set('status', params.status)
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  if (params.q?.trim()) q.set('q', params.q.trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  return request<Paginated<VenmoPaymentRow>>(`/venmo/payments?${q}`, {}, token)
+}
+
+export function listVenmoPayers(
+  token: string,
+  params: { clubId: number; q?: string; limit?: number; offset?: number },
+) {
+  const q = new URLSearchParams({ club_id: String(params.clubId) })
+  if (params.q?.trim()) q.set('q', params.q.trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  return request<Paginated<VenmoPayerRow>>(`/venmo/payers?${q}`, {}, token)
+}
+
+export function bindVenmoPayment(token: string, paymentId: number, groupTitle: string) {
+  return request<VenmoBindResult>(
+    `/venmo/payments/${paymentId}/bind`,
+    { method: 'POST', body: JSON.stringify({ group_title: groupTitle }) },
+    token,
+  )
+}
+
+export async function fetchAllVenmoPayments(
+  token: string,
+  params: VenmoPaymentListParams,
+): Promise<VenmoPaymentRow[]> {
+  const all: VenmoPaymentRow[] = []
+  let offset = 0
+  for (;;) {
+    const res = await listVenmoPayments(token, {
+      ...params,
+      limit: EXPORT_PAGE_SIZE,
+      offset,
+    })
+    all.push(...res.items)
+    offset += res.items.length
+    if (offset >= res.total || res.items.length === 0) break
+  }
+  return all
+}
+
+export async function fetchAllVenmoPayers(
+  token: string,
+  params: { clubId: number; q?: string },
+): Promise<VenmoPayerRow[]> {
+  const all: VenmoPayerRow[] = []
+  let offset = 0
+  for (;;) {
+    const res = await listVenmoPayers(token, {
+      clubId: params.clubId,
+      q: params.q,
+      limit: EXPORT_PAGE_SIZE,
+      offset,
+    })
+    all.push(...res.items)
+    offset += res.items.length
+    if (offset >= res.total || res.items.length === 0) break
+  }
+  return all
+}

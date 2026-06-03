@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
@@ -13,9 +14,12 @@ from api.auth import get_current_admin
 from api.payments_helpers import (
     apply_customer_search,
     apply_session_filters,
+    apply_venmo_payment_filters,
+    build_venmo_payment_read,
     cents_to_usd,
     customer_total_deposited_cents,
     list_stripe_deposit_methods,
+    list_venmo_payer_aggregates,
     lookup_gg_nickname,
     resolve_group_title,
     resolve_method_display,
@@ -29,9 +33,16 @@ from api.schemas_payments import (
     StripeCustomerListResponse,
     StripeCustomerRead,
     StripeMethodOptionRead,
+    VenmoBindRequest,
+    VenmoBindResponse,
+    VenmoPayerListResponse,
+    VenmoPayerRead,
+    VenmoPaymentListResponse,
+    VenmoPaymentRead,
 )
+from bot.services.venmo_payments import bind_venmo_payment_by_id
 from db.connection import get_db_dependency
-from db.models import Club, StripeCheckoutSession, StripeCustomer
+from db.models import Club, StripeCheckoutSession, StripeCustomer, VenmoPayment
 
 router = APIRouter(
     prefix="/api/payments",
@@ -46,6 +57,7 @@ _MIGRATION_HINT = (
     "Run: python migrate_stripe_deposit_tracking.py && "
     "python migrate_stripe_checkout_session_lifecycle.py (or heroku run … on the web dyno)"
 )
+_VENMO_MIGRATION_HINT = "Run: python migrate_venmo_payments.py (or heroku run … on the web dyno)"
 
 
 def _parse_dt(value: str | None) -> datetime | None:
@@ -83,12 +95,21 @@ def _raise_db_schema_error(exc: ProgrammingError) -> None:
                 503,
                 f"Stripe payments tables or columns are missing. {_MIGRATION_HINT}",
             ) from exc
+    if "venmo_payments" in low or "venmo_payer_bindings" in low:
+        if "does not exist" in low or "undefinedcolumn" in low.replace(" ", ""):
+            raise HTTPException(
+                503,
+                f"Venmo payments tables or columns are missing. {_VENMO_MIGRATION_HINT}",
+            ) from exc
     raise HTTPException(503, f"Database schema error: {msg}") from exc
 
 
 @router.get("/providers", response_model=List[PaymentProviderRead])
 def list_providers():
-    return [PaymentProviderRead(id="stripe", label="Stripe")]
+    return [
+        PaymentProviderRead(id="stripe", label="Stripe"),
+        PaymentProviderRead(id="venmo", label="Venmo"),
+    ]
 
 
 @router.get("/stripe/methods", response_model=List[StripeMethodOptionRead])
@@ -240,3 +261,118 @@ def list_stripe_sessions(
         )
 
     return StripeCheckoutSessionListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/venmo/payments", response_model=VenmoPaymentListResponse)
+def list_venmo_payments(
+    club_id: int = Query(...),
+    status: str = Query("all", description="bound | unbound | all"),
+    from_dt: str | None = Query(None, alias="from"),
+    to_dt: str | None = Query(None, alias="to"),
+    q: str | None = Query(None),
+    include_test: bool = Query(False),
+    limit: int = Query(_DEFAULT_LIMIT),
+    offset: int = Query(0),
+    db: Session = Depends(get_db_dependency),
+):
+    _get_club_or_404(db, club_id)
+    limit = _clamp_limit(limit)
+    offset = max(0, offset)
+
+    try:
+        base = db.query(VenmoPayment)
+        base = apply_venmo_payment_filters(
+            base,
+            club_id=club_id,
+            status=status,
+            from_dt=_parse_dt(from_dt),
+            to_dt=_parse_dt(to_dt),
+            include_test=include_test,
+            q=q,
+        )
+        total = base.count()
+        rows = (
+            base.order_by(VenmoPayment.created_at.desc(), VenmoPayment.id.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
+
+    items = [VenmoPaymentRead.model_validate(build_venmo_payment_read(db, row)) for row in rows]
+    return VenmoPaymentListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/venmo/payers", response_model=VenmoPayerListResponse)
+def list_venmo_payers(
+    club_id: int = Query(...),
+    q: str | None = Query(None),
+    limit: int = Query(_DEFAULT_LIMIT),
+    offset: int = Query(0),
+    db: Session = Depends(get_db_dependency),
+):
+    _get_club_or_404(db, club_id)
+    limit = _clamp_limit(limit)
+    offset = max(0, offset)
+
+    try:
+        agg = list_venmo_payer_aggregates(db, club_id, q)
+        subq = agg.subquery()
+        total = db.query(func.count()).select_from(subq).scalar() or 0
+        rows = agg.offset(offset).limit(limit).all()
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
+
+    items: list[VenmoPayerRead] = []
+    for row in rows:
+        chat_id = int(row.telegram_chat_id) if row.telegram_chat_id else None
+        title, gg_id = resolve_group_title(db, chat_id) if chat_id else (None, None)
+        total_cents = int(row.total_cents or 0)
+        items.append(
+            VenmoPayerRead(
+                payer_name=row.payer_name,
+                venmo_handle=row.venmo_handle,
+                group_title=title,
+                gg_player_id=gg_id,
+                gg_nickname=lookup_gg_nickname(db, club_id, gg_id),
+                total_deposited_cents=total_cents,
+                total_deposited_usd=cents_to_usd(total_cents),
+                payment_count=int(row.payment_count or 0),
+                last_payment_at=row.last_payment_at,
+            )
+        )
+
+    return VenmoPayerListResponse(items=items, total=int(total), limit=limit, offset=offset)
+
+
+@router.post("/venmo/payments/{payment_id}/bind", response_model=VenmoBindResponse)
+async def bind_venmo_payment(
+    payment_id: int,
+    body: VenmoBindRequest,
+    db: Session = Depends(get_db_dependency),
+):
+    group_title = (body.group_title or "").strip()
+    if not group_title:
+        return VenmoBindResponse(ok=False, error="Group title is required.")
+
+    result = await bind_venmo_payment_by_id(
+        payment_id=payment_id,
+        group_title_input=group_title,
+    )
+    if not result.ok or result.bound_group is None:
+        return VenmoBindResponse(ok=False, error=result.error or "Could not bind payment.")
+
+    group = result.bound_group
+    payment = db.query(VenmoPayment).filter(VenmoPayment.id == payment_id).first()
+    payment_read = None
+    if payment is not None:
+        payment_read = VenmoPaymentRead.model_validate(build_venmo_payment_read(db, payment))
+
+    return VenmoBindResponse(
+        ok=True,
+        group_title=group.group_title,
+        telegram_chat_id=group.telegram_chat_id,
+        club_id=group.club_id,
+        payment=payment_read,
+    )

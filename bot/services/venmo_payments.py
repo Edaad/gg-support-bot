@@ -449,6 +449,66 @@ async def ingest_venmo_payment(
     )
 
 
+async def bind_venmo_payment_by_id(
+    *,
+    payment_id: int,
+    group_title_input: str,
+    bound_by_telegram_user_id: Optional[int] = None,
+) -> BindResult:
+    """Bind or rebind a payment to a support group by payment id."""
+    result = resolve_bound_group(group_title_input)
+    if not result.ok or result.bound_group is None:
+        return result
+
+    group = result.bound_group
+    notif_chat_id: Optional[int] = None
+    notif_message_id: Optional[int] = None
+    live_title = group.group_title
+
+    with get_db() as session:
+        payment = session.query(VenmoPayment).filter_by(id=int(payment_id)).one_or_none()
+        if payment is None:
+            return BindResult(ok=False, error="Payment not found.")
+
+        _apply_binding_to_payment(
+            payment,
+            telegram_chat_id=group.telegram_chat_id,
+            club_id=group.club_id,
+            bound_group_title_at_bind=group.group_title,
+            auto_bound=False,
+            bound_by_telegram_user_id=bound_by_telegram_user_id,
+        )
+        _upsert_payer_binding(
+            session,
+            payer_name=payment.payer_name,
+            venmo_handle=payment.venmo_handle,
+            telegram_chat_id=group.telegram_chat_id,
+            club_id=group.club_id,
+            bound_group_title_at_bind=group.group_title,
+            bound_by_telegram_user_id=bound_by_telegram_user_id,
+        )
+
+        live_title = resolve_display_group_title(group.telegram_chat_id) or group.group_title
+        if payment.notification_chat_id and payment.notification_message_id:
+            notif_chat_id = int(payment.notification_chat_id)
+            notif_message_id = int(payment.notification_message_id)
+            text = format_notification_text(payment, group_title=live_title)
+        else:
+            text = None
+
+    if notif_chat_id and notif_message_id and text:
+        await edit_telegram_notification(notif_chat_id, notif_message_id, text)
+
+    return BindResult(
+        ok=True,
+        bound_group=BoundGroup(
+            telegram_chat_id=group.telegram_chat_id,
+            club_id=group.club_id,
+            group_title=live_title,
+        ),
+    )
+
+
 async def bind_venmo_payment_from_reply(
     *,
     notification_chat_id: int,
@@ -457,11 +517,6 @@ async def bind_venmo_payment_from_reply(
     bound_by_telegram_user_id: int,
 ) -> BindResult:
     """Bind or rebind a payment from a reply in the notification group."""
-    result = resolve_bound_group(group_title_input)
-    if not result.ok or result.bound_group is None:
-        return result
-
-    group = result.bound_group
     with get_db() as session:
         payment = (
             session.query(VenmoPayment)
@@ -473,38 +528,10 @@ async def bind_venmo_payment_from_reply(
         )
         if payment is None:
             return BindResult(ok=False, error="No payment found for this notification.")
+        payment_id = int(payment.id)
 
-        _apply_binding_to_payment(
-            payment,
-            telegram_chat_id=group.telegram_chat_id,
-            club_id=group.club_id,
-            bound_group_title_at_bind=group.group_title,
-            auto_bound=False,
-            bound_by_telegram_user_id=int(bound_by_telegram_user_id),
-        )
-        _upsert_payer_binding(
-            session,
-            payer_name=payment.payer_name,
-            venmo_handle=payment.venmo_handle,
-            telegram_chat_id=group.telegram_chat_id,
-            club_id=group.club_id,
-            bound_group_title_at_bind=group.group_title,
-            bound_by_telegram_user_id=int(bound_by_telegram_user_id),
-        )
-
-        live_title = resolve_display_group_title(group.telegram_chat_id) or group.group_title
-        text = format_notification_text(payment, group_title=live_title)
-        notif_chat_id = int(payment.notification_chat_id)
-        notif_message_id = int(payment.notification_message_id)
-
-    if notif_chat_id and notif_message_id:
-        await edit_telegram_notification(notif_chat_id, notif_message_id, text)
-
-    return BindResult(
-        ok=True,
-        bound_group=BoundGroup(
-            telegram_chat_id=group.telegram_chat_id,
-            club_id=group.club_id,
-            group_title=live_title,
-        ),
+    return await bind_venmo_payment_by_id(
+        payment_id=payment_id,
+        group_title_input=group_title_input,
+        bound_by_telegram_user_id=int(bound_by_telegram_user_id),
     )

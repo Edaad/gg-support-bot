@@ -17,6 +17,7 @@ from db.models import (
     StripeCheckoutSession,
     StripeCustomer,
     SupportGroupChat,
+    VenmoPayment,
 )
 
 
@@ -201,3 +202,114 @@ def apply_session_filters(
 
 def cents_to_usd(amount_cents: int) -> Decimal:
     return (Decimal(amount_cents) / Decimal(100)).quantize(Decimal("0.01"))
+
+
+def venmo_payment_status(payment: VenmoPayment) -> str:
+    return "bound" if payment.telegram_chat_id is not None else "unbound"
+
+
+def apply_venmo_payment_filters(
+    query,
+    *,
+    club_id: int,
+    status: str | None,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+    include_test: bool,
+    q: str | None,
+):
+    if not include_test:
+        query = query.filter(VenmoPayment.is_test.is_(False))
+
+    status_norm = (status or "all").strip().lower()
+    if status_norm == "bound":
+        query = query.filter(
+            VenmoPayment.telegram_chat_id.isnot(None),
+            VenmoPayment.club_id == club_id,
+        )
+    elif status_norm == "unbound":
+        query = query.filter(VenmoPayment.telegram_chat_id.is_(None))
+    else:
+        query = query.filter(
+            or_(
+                VenmoPayment.telegram_chat_id.is_(None),
+                VenmoPayment.club_id == club_id,
+            )
+        )
+
+    if from_dt is not None:
+        query = query.filter(VenmoPayment.created_at >= from_dt)
+    if to_dt is not None:
+        query = query.filter(VenmoPayment.created_at <= to_dt)
+
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        query = query.filter(
+            or_(
+                VenmoPayment.payer_name.ilike(term),
+                VenmoPayment.venmo_handle.ilike(term),
+                VenmoPayment.bound_group_title_at_bind.ilike(term),
+            )
+        )
+    return query
+
+
+def apply_venmo_payer_search(query, q: str | None):
+    if not q or not q.strip():
+        return query
+    term = f"%{q.strip()}%"
+    return query.filter(
+        or_(
+            VenmoPayment.payer_name.ilike(term),
+            VenmoPayment.venmo_handle.ilike(term),
+        )
+    )
+
+
+def list_venmo_payer_aggregates(session: Session, club_id: int, q: str | None):
+    """Return grouped payer rows: payer_name, venmo_handle, totals, latest chat."""
+    base = (
+        session.query(
+            VenmoPayment.payer_name,
+            VenmoPayment.venmo_handle,
+            func.coalesce(func.sum(VenmoPayment.amount_cents), 0).label("total_cents"),
+            func.count(VenmoPayment.id).label("payment_count"),
+            func.max(VenmoPayment.created_at).label("last_payment_at"),
+            func.max(VenmoPayment.telegram_chat_id).label("telegram_chat_id"),
+        )
+        .filter(
+            VenmoPayment.club_id == club_id,
+            VenmoPayment.telegram_chat_id.isnot(None),
+            VenmoPayment.is_test.is_(False),
+        )
+        .group_by(VenmoPayment.payer_name, VenmoPayment.venmo_handle)
+    )
+    base = apply_venmo_payer_search(base, q)
+    return base.order_by(func.max(VenmoPayment.created_at).desc())
+
+
+def build_venmo_payment_read(session: Session, payment: VenmoPayment) -> dict:
+    title: str | None = None
+    gg_id: str | None = None
+    if payment.telegram_chat_id is not None:
+        title, gg_id = resolve_group_title(session, int(payment.telegram_chat_id))
+    club_id = payment.club_id
+    return {
+        "id": payment.id,
+        "payer_name": payment.payer_name,
+        "venmo_handle": payment.venmo_handle,
+        "amount_cents": payment.amount_cents,
+        "amount_usd": cents_to_usd(payment.amount_cents),
+        "goods_or_services": payment.goods_or_services,
+        "paid_at": payment.paid_at,
+        "group_title": title,
+        "gg_player_id": gg_id,
+        "gg_nickname": lookup_gg_nickname(session, club_id, gg_id) if club_id else None,
+        "club_id": club_id,
+        "telegram_chat_id": payment.telegram_chat_id,
+        "status": venmo_payment_status(payment),
+        "auto_bound": payment.auto_bound,
+        "is_test": payment.is_test,
+        "created_at": payment.created_at,
+        "bound_at": payment.bound_at,
+    }

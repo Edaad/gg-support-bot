@@ -97,6 +97,30 @@ Reply to the notification in the staff group with the full group title, e.g. `RT
 
 Anyone who can post in the notification group may bind or rebind.
 
+You can also bind or rebind from the dashboard (**Nav → Payments**, provider **Venmo**) — see [Dashboard](#dashboard-payments-page) below.
+
+## Dashboard: Payments page
+
+**Nav → Payments** (`/payments`), provider **Venmo**:
+
+- **Payments** — all ingested Venmo deposits (bound + unbound); filter by status, date range; **Bind / Rebind** opens a modal to enter the group title
+- **Payers** — aggregated totals per payer + Venmo handle for bound payments in the selected club
+
+Test payments (`test: true` on ingest) are excluded from the dashboard by default.
+
+Filters: club, status (All / Bound / Unbound), date range. **Export CSV** on each tab pages through the list endpoints below.
+
+JWT-protected API (same router as Stripe — [`api/routes/payments.py`](../api/routes/payments.py)):
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/payments/providers` | Includes `{ id: "venmo" }` |
+| `GET /api/payments/venmo/payments?club_id=&status=&from=&to=` | Paginated payments (`status`: `all`, `bound`, `unbound`) |
+| `GET /api/payments/venmo/payers?club_id=&q=` | Paginated payer aggregates |
+| `POST /api/payments/venmo/payments/{id}/bind` | Bind or rebind `{ "group_title": "RT / …" }` |
+
+Bind from the dashboard updates the Telegram notification message when one was sent on ingest (same as reply-to-bind).
+
 ## Processes
 
 | Process | Entrypoint | Role |
@@ -127,5 +151,7 @@ For each **Confirm Venmo** Zap:
 ## Code references
 
 - [`bot/services/venmo_payments.py`](../bot/services/venmo_payments.py) — ingest, notify, bind
-- [`api/routes/venmo_payments.py`](../api/routes/venmo_payments.py) — Zapier webhook
+- [`api/routes/venmo_payments.py`](../api/routes/venmo_payments.py) — Zapier ingest webhook
+- [`api/routes/payments.py`](../api/routes/payments.py) — dashboard list + bind API (shared with Stripe)
 - [`notification/handlers/bind.py`](../notification/handlers/bind.py) — reply-to-bind handler
+- [`dashboard/src/pages/Payments.tsx`](../dashboard/src/pages/Payments.tsx) — Payments UI
