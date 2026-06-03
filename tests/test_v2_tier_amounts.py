@@ -57,17 +57,29 @@ class TierAmountBandTestCase(unittest.TestCase):
             )
         self.assertIn("overlaps", str(ctx.exception.detail).lower())
 
-    def test_default_tier_must_match_method_envelope(self):
-        method = _method(min_amount=Decimal("50"), max_amount=None)
+    def test_default_tier_band_within_envelope_allowed(self):
+        method = _method(min_amount=Decimal("20"), max_amount=Decimal("2000"))
+        siblings = [_tier(2, "Over $500", Decimal("501"), Decimal("2000"))]
+        validate_tier_amount_band(
+            method,
+            Decimal("20"),
+            Decimal("500"),
+            siblings,
+            tier_label="Default",
+        )
+
+    def test_default_tier_overlap_rejected(self):
+        method = _method(min_amount=Decimal("20"), max_amount=Decimal("2000"))
+        siblings = [_tier(2, "Mid", Decimal("100"), Decimal("500"))]
         with self.assertRaises(HTTPException) as ctx:
             validate_tier_amount_band(
                 method,
-                Decimal("20"),
-                Decimal("100"),
-                [],
+                Decimal("50"),
+                Decimal("150"),
+                siblings,
                 tier_label="Default",
             )
-        self.assertIn("Default tier", str(ctx.exception.detail))
+        self.assertIn("overlaps", str(ctx.exception.detail).lower())
 
 
 class CheckoutAmountBoundsTestCase(unittest.TestCase):
@@ -83,7 +95,7 @@ class CheckoutAmountBoundsTestCase(unittest.TestCase):
         self.assertEqual(lo, Decimal("100"))
         self.assertEqual(hi, Decimal("500"))
 
-    def test_sync_default_tier_and_clamp_variants(self):
+    def test_sync_clamps_variant_checkout_bounds(self):
         variant = SimpleNamespace(
             checkout_min_amount=Decimal("20"),
             checkout_max_amount=Decimal("2000"),
@@ -91,15 +103,15 @@ class CheckoutAmountBoundsTestCase(unittest.TestCase):
         tier = SimpleNamespace(
             label="Default",
             min_amount=Decimal("50"),
-            max_amount=None,
+            max_amount=Decimal("400"),
             checkout_min_amount=Decimal("20"),
             checkout_max_amount=None,
             variants=[variant],
         )
         method = SimpleNamespace(min_amount=Decimal("100"), max_amount=Decimal("500"), tiers=[tier])
         sync_method_envelope_side_effects(method)
-        self.assertEqual(tier.min_amount, Decimal("100"))
-        self.assertEqual(tier.max_amount, Decimal("500"))
+        self.assertEqual(tier.min_amount, Decimal("50"))
+        self.assertEqual(tier.max_amount, Decimal("400"))
         self.assertEqual(variant.checkout_min_amount, Decimal("100"))
         self.assertEqual(variant.checkout_max_amount, Decimal("500"))
 

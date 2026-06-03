@@ -50,15 +50,6 @@ def validate_tier_amount_band(
     tier_label: Optional[str] = None,
 ) -> None:
     """Ensure tier band fits method envelope and does not overlap sibling tiers."""
-    label = (tier_label or "").strip()
-
-    if label == DEFAULT_TIER_LABEL:
-        if tier_min != method.min_amount or tier_max != method.max_amount:
-            raise HTTPException(
-                400,
-                "Default tier min/max must match the method absolute min/max from Details.",
-            )
-
     if tier_min is not None and tier_max is not None and tier_min > tier_max:
         raise HTTPException(400, "Tier min amount cannot be greater than max amount.")
 
@@ -171,11 +162,8 @@ def clamp_checkout_amount_bounds(
 
 
 def sync_method_envelope_side_effects(method: ClubPaymentMethod) -> None:
-    """Default tier follows method envelope; clamp tier/variant checkout bounds."""
+    """Clamp tier/variant checkout bounds when method absolute envelope changes."""
     for tier in method.tiers or []:
-        if (tier.label or "").strip() == DEFAULT_TIER_LABEL:
-            tier.min_amount = method.min_amount
-            tier.max_amount = method.max_amount
         tier.checkout_min_amount, tier.checkout_max_amount = clamp_checkout_amount_bounds(
             method,
             tier.checkout_min_amount,

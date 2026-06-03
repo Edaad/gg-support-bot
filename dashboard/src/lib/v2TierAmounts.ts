@@ -1,4 +1,4 @@
-import { DEFAULT_TIER_LABEL, type V2Tier } from '../api/v2Client'
+import type { V2Tier } from '../api/v2Client'
 
 const AMOUNT_LOW = -1_000_000_000
 const AMOUNT_HIGH = 1_000_000_000
@@ -28,14 +28,6 @@ export function validateTierAmountBand(
   siblings: V2Tier[],
   options?: { excludeTierId?: number; tierLabel?: string },
 ): string | null {
-  const label = (options?.tierLabel ?? '').trim()
-
-  if (label === DEFAULT_TIER_LABEL) {
-    if (tierMin !== (absoluteMin ?? null) || tierMax !== (absoluteMax ?? null)) {
-      return 'Default tier min/max must match the method absolute min/max from Details.'
-    }
-  }
-
   if (tierMin != null && tierMax != null && tierMin > tierMax) {
     return 'Tier min amount cannot be greater than max amount.'
   }

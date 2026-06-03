@@ -177,15 +177,3 @@ export function isPrimaryV2Tier(t: V2Tier, tiers: V2Tier[]): boolean {
   return primaryV2Tier(tiers)?.id === t.id
 }
 
-/** Keep the Default tier amount band aligned with method envelope after Details save. */
-export async function syncV2DefaultTier(
-  token: string,
-  methodId: number,
-  minAmount: number | null,
-  maxAmount: number | null,
-): Promise<void> {
-  const tiers = await listV2Tiers(token, methodId)
-  const def = primaryV2Tier(tiers)
-  if (!def) return
-  await updateV2Tier(token, def.id, { min_amount: minAmount, max_amount: maxAmount })
-}

@@ -115,11 +115,6 @@ export default function V2TierEditor({
     delete payload.response_text
     delete payload.response_file_id
     delete payload.response_caption
-    if (editId && editingPrimary) {
-      payload.min_amount = absoluteMin ?? null
-      payload.max_amount = absoluteMax ?? null
-    }
-
     const validationError = validateTierAmountBand(
       absoluteMin,
       absoluteMax,
@@ -189,7 +184,7 @@ export default function V2TierEditor({
           <p className="text-xs text-ink-muted sm:max-w-md">
             {needsVariants
               ? 'Each tier needs at least one variant. Bands must fit method limits and cannot overlap other tiers.'
-              : 'Default tier matches Details. Sub-options carry player messages for this method.'}
+              : 'Configure amount bands per tier. Sub-options carry player messages for this method.'}
           </p>
         )}
         <button type="button" onClick={openAddForm} className="btn-primary-sm w-full shrink-0 sm:w-auto">
@@ -199,7 +194,7 @@ export default function V2TierEditor({
 
       {displayTiers.map((t) => {
         const primary = isPrimaryV2Tier(t, tiers)
-        const range = primary ? amountLabel(absoluteMin, absoluteMax) : amountLabel(t.min_amount, t.max_amount)
+        const range = amountLabel(t.min_amount, t.max_amount)
         const variantCount = t.variants?.length ?? 0
         const expanded = expandedTierIds.has(t.id)
 
@@ -236,9 +231,6 @@ export default function V2TierEditor({
                       Needs variant
                     </span>
                   )}
-                  {primary && (
-                    <p className="mt-0.5 text-xs text-ink-faint">Amount range follows Details absolute min/max.</p>
-                  )}
                   {t.use_group_checkout_link && <span className="ml-2 text-xs text-accent">Stripe link</span>}
                   {needsVariants && variantCount > 0 && (
                     <span className="ml-2 text-xs text-ink-faint">
@@ -248,26 +240,14 @@ export default function V2TierEditor({
                 </div>
               </button>
               <div className="row-actions sm:shrink-0">
-                {!primary && (
-                  <button
-                    type="button"
-                    onClick={() => handleEdit(t)}
-                    aria-label={`Edit tier ${t.label}`}
-                    className="action-chip text-ink-muted hover:bg-control hover:text-ink"
-                  >
-                    Edit tier
-                  </button>
-                )}
-                {primary && (
-                  <button
-                    type="button"
-                    onClick={() => handleEdit(t)}
-                    aria-label={`Rename tier ${t.label}`}
-                    className="action-chip text-ink-muted hover:bg-control hover:text-ink"
-                  >
-                    Rename
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => handleEdit(t)}
+                  aria-label={`Edit tier ${t.label}`}
+                  className="action-chip text-ink-muted hover:bg-control hover:text-ink"
+                >
+                  Edit tier
+                </button>
                 {!primary && (
                   <button
                     type="button"
@@ -336,134 +316,115 @@ export default function V2TierEditor({
             />
           </div>
 
-          {editingPrimary ? (
-            <>
-              <div className="rounded-lg bg-bg px-3 py-2 text-xs text-ink-muted">
-                Amount range: {amountLabel(absoluteMin, absoluteMax)} (from Details absolute min/max).
-                {needsVariants && ' Add at least one variant after saving.'}
-              </div>
-              <div className="form-actions">
-                <button type="button" onClick={() => { void handleSave() }} className="btn-primary-sm">
-                  Save label
-                </button>
-                <button type="button" onClick={resetForm} className="btn-secondary-sm">
-                  Cancel
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="rounded-lg bg-bg px-3 py-2 text-xs text-ink-muted">
-                Method envelope: {methodEnvelopeLabel(absoluteMin, absoluteMax)} (from Details). Tier
-                min/max must stay within this range and cannot overlap existing tiers.
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <label htmlFor={tierMinId} className="label-field-xs">
-                    Min amount ($)
-                  </label>
-                  <input
-                    id={tierMinId}
-                    type="number"
-                    min={absoluteMin ?? undefined}
-                    max={absoluteMax ?? undefined}
-                    value={form.min_amount ?? ''}
-                    onChange={(e) =>
-                      setForm({ ...form, min_amount: e.target.value ? Number(e.target.value) : null })
-                    }
-                    className="input-field-sm"
-                    placeholder={absoluteMin != null ? `≥ ${absoluteMin}` : 'No minimum'}
-                  />
-                </div>
-                <div>
-                  <label htmlFor={tierMaxId} className="label-field-xs">
-                    Max amount ($)
-                  </label>
-                  <input
-                    id={tierMaxId}
-                    type="number"
-                    min={absoluteMin ?? undefined}
-                    max={absoluteMax ?? undefined}
-                    value={form.max_amount ?? ''}
-                    onChange={(e) =>
-                      setForm({ ...form, max_amount: e.target.value ? Number(e.target.value) : null })
-                    }
-                    className="input-field-sm"
-                    placeholder={absoluteMax != null ? `≤ ${absoluteMax}` : 'No maximum'}
-                  />
-                </div>
-              </div>
+          <div className="rounded-lg bg-bg px-3 py-2 text-xs text-ink-muted">
+            Method envelope: {methodEnvelopeLabel(absoluteMin, absoluteMax)} (from Details). Tier
+            min/max must stay within this range and cannot overlap existing tiers.
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label htmlFor={tierMinId} className="label-field-xs">
+                Min amount ($)
+              </label>
+              <input
+                id={tierMinId}
+                type="number"
+                min={absoluteMin ?? undefined}
+                max={absoluteMax ?? undefined}
+                value={form.min_amount ?? ''}
+                onChange={(e) =>
+                  setForm({ ...form, min_amount: e.target.value ? Number(e.target.value) : null })
+                }
+                className="input-field-sm"
+                placeholder={absoluteMin != null ? `≥ ${absoluteMin}` : 'No minimum'}
+              />
+            </div>
+            <div>
+              <label htmlFor={tierMaxId} className="label-field-xs">
+                Max amount ($)
+              </label>
+              <input
+                id={tierMaxId}
+                type="number"
+                min={absoluteMin ?? undefined}
+                max={absoluteMax ?? undefined}
+                value={form.max_amount ?? ''}
+                onChange={(e) =>
+                  setForm({ ...form, max_amount: e.target.value ? Number(e.target.value) : null })
+                }
+                className="input-field-sm"
+                placeholder={absoluteMax != null ? `≤ ${absoluteMax}` : 'No maximum'}
+              />
+            </div>
+          </div>
 
-              {saveError && (
-                <p className="text-xs text-danger-ink" role="alert">
-                  {saveError}
-                </p>
-              )}
+          {saveError && (
+            <p className="text-xs text-danger-ink" role="alert">
+              {saveError}
+            </p>
+          )}
 
-              {needsVariants && (
-                <div className="rounded-xl border border-accent/30 bg-bg p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-medium text-ink">Per-group Stripe checkout</div>
-                      <div className="mt-1 text-xs text-ink-muted">
-                        Configure player copy in variants after creating this tier.
-                      </div>
-                    </div>
-                    <label className="flex items-center gap-2 text-sm text-ink">
-                      <input
-                        type="checkbox"
-                        checked={form.use_group_checkout_link || false}
-                        onChange={(e) => setForm({ ...form, use_group_checkout_link: e.target.checked })}
-                        className="h-4 w-4 rounded border-border bg-control text-accent focus:ring-accent"
-                      />
-                      Enabled
-                    </label>
+          {needsVariants && (
+            <div className="rounded-xl border border-accent/30 bg-bg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-ink">Per-group Stripe checkout</div>
+                  <div className="mt-1 text-xs text-ink-muted">
+                    Configure player copy in variants after {editId ? 'saving' : 'creating'} this tier.
                   </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-ink">
+                  <input
+                    type="checkbox"
+                    checked={form.use_group_checkout_link || false}
+                    onChange={(e) => setForm({ ...form, use_group_checkout_link: e.target.checked })}
+                    className="h-4 w-4 rounded border-border bg-control text-accent focus:ring-accent"
+                  />
+                  Enabled
+                </label>
+              </div>
 
-                  {groupLinkEnabled && (
-                    <div className="mt-3 space-y-3">
-                      <div>
-                        <label htmlFor={tierProviderId} className="label-field-xs">
-                          Provider
-                        </label>
-                        <select
-                          id={tierProviderId}
-                          value={form.group_checkout_provider ?? 'stripe'}
-                          onChange={(e) => setForm({ ...form, group_checkout_provider: e.target.value })}
-                          className="input-field-sm"
-                        >
-                          <option value="stripe">Stripe</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label htmlFor={tierHyperlinkId} className="label-field-xs">
-                          Hyperlink text
-                        </label>
-                        <input
-                          id={tierHyperlinkId}
-                          value={form.hyperlink_text ?? 'PAY HERE'}
-                          onChange={(e) => setForm({ ...form, hyperlink_text: e.target.value })}
-                          className="input-field-sm"
-                        />
-                      </div>
-                      {provider !== 'stripe' && (
-                        <p className="text-xs text-warning-ink">Only Stripe is supported right now.</p>
-                      )}
-                    </div>
+              {groupLinkEnabled && (
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <label htmlFor={tierProviderId} className="label-field-xs">
+                      Provider
+                    </label>
+                    <select
+                      id={tierProviderId}
+                      value={form.group_checkout_provider ?? 'stripe'}
+                      onChange={(e) => setForm({ ...form, group_checkout_provider: e.target.value })}
+                      className="input-field-sm"
+                    >
+                      <option value="stripe">Stripe</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor={tierHyperlinkId} className="label-field-xs">
+                      Hyperlink text
+                    </label>
+                    <input
+                      id={tierHyperlinkId}
+                      value={form.hyperlink_text ?? 'PAY HERE'}
+                      onChange={(e) => setForm({ ...form, hyperlink_text: e.target.value })}
+                      className="input-field-sm"
+                    />
+                  </div>
+                  {provider !== 'stripe' && (
+                    <p className="text-xs text-warning-ink">Only Stripe is supported right now.</p>
                   )}
                 </div>
               )}
-
-              <div className="form-actions">
-                <button type="button" onClick={() => { void handleSave() }} className="btn-primary-sm">
-                  {editId ? 'Save changes' : 'Add tier'}
-                </button>
-                <button type="button" onClick={resetForm} className="btn-secondary-sm">
-                  Cancel
-                </button>
-              </div>
-            </>
+            </div>
           )}
+
+          <div className="form-actions">
+            <button type="button" onClick={() => { void handleSave() }} className="btn-primary-sm">
+              {editId ? 'Save changes' : 'Add tier'}
+            </button>
+            <button type="button" onClick={resetForm} className="btn-secondary-sm">
+              Cancel
+            </button>
+          </div>
         </div>
       )}
     </div>
