@@ -307,6 +307,48 @@ export function fetchBindingSummary(
   return request<BindingSummary>(`/bindings/summary?${q}`, {}, token)
 }
 
+export type GroupBindingRow = {
+  id: number
+  telegram_chat_id: number
+  club_id: number
+  club_name: string | null
+  payment_method_slug: string
+  variant_id: number | null
+  variant_label: string | null
+  venmo_handle: string | null
+  bound_via: string
+  bound_at: string
+  group_title: string | null
+  gg_player_id: string | null
+}
+
+export type GroupBindingList = {
+  items: GroupBindingRow[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export function listGroupBindings(
+  token: string,
+  params: { method?: string; clubId?: number; limit?: number; offset?: number },
+) {
+  const q = new URLSearchParams()
+  q.set('method', params.method ?? 'venmo')
+  if (params.clubId != null) q.set('club_id', String(params.clubId))
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  return request<GroupBindingList>(`/bindings?${q}`, {}, token)
+}
+
+export function unbindGroupBinding(token: string, bindingId: number) {
+  return request<{ ok: boolean; error?: string }>(
+    `/bindings/${bindingId}`,
+    { method: 'DELETE' },
+    token,
+  )
+}
+
 export async function fetchAllVenmoPayers(
   token: string,
   params: { clubId: number; q?: string },

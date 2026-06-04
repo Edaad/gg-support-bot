@@ -32,7 +32,10 @@ from api.schemas_payments import (
     BindingAttemptFunnel,
     BindingSummaryResponse,
     BindingViaCount,
+    GroupBindingListResponse,
+    GroupBindingRead,
     PaymentProviderRead,
+    UnbindResponse,
     StripeCheckoutSessionListResponse,
     StripeCheckoutSessionRead,
     StripeCustomerListResponse,
@@ -47,8 +50,10 @@ from api.schemas_payments import (
 )
 from bot.services.venmo_payments import bind_venmo_payment_by_id
 from db.connection import get_db_dependency
+from bot.services.payment_method_binding import unbind_by_id
 from db.models import (
     Club,
+    ClubPaymentTierVariant,
     GroupPaymentMethodBinding,
     PaymentMethodBindAttempt,
     StripeCheckoutSession,
@@ -397,6 +402,101 @@ async def bind_venmo_payment(
         club_id=group.club_id,
         payment=payment_read,
     )
+
+
+@router.get("/bindings", response_model=GroupBindingListResponse)
+def list_group_bindings(
+    method: str = Query("venmo", description="payment_method_slug"),
+    club_id: int | None = Query(None),
+    limit: int = Query(_DEFAULT_LIMIT),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db_dependency),
+):
+    slug = (method or "venmo").strip().lower()
+    if club_id is not None:
+        _get_club_or_404(db, club_id)
+    limit = _clamp_limit(limit)
+
+    try:
+        q = db.query(GroupPaymentMethodBinding).filter(
+            GroupPaymentMethodBinding.payment_method_slug == slug
+        )
+        if club_id is not None:
+            q = q.filter(GroupPaymentMethodBinding.club_id == club_id)
+        total = q.count()
+        rows = (
+            q.order_by(GroupPaymentMethodBinding.bound_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
+        raise
+
+    club_names: dict[int, str] = {}
+    variant_labels: dict[int, str] = {}
+    items: list[GroupBindingRead] = []
+    for row in rows:
+        cid = int(row.club_id)
+        if cid not in club_names:
+            club = db.query(Club).filter(Club.id == cid).first()
+            club_names[cid] = club.name if club else None
+        vid = int(row.variant_id) if row.variant_id else None
+        vlabel: str | None = None
+        if vid is not None and vid not in variant_labels:
+            variant = db.query(ClubPaymentTierVariant).filter(
+                ClubPaymentTierVariant.id == vid
+            ).first()
+            variant_labels[vid] = variant.label if variant else None
+        if vid is not None:
+            vlabel = variant_labels.get(vid)
+
+        title, gg_id = resolve_group_title(db, int(row.telegram_chat_id))
+        items.append(
+            GroupBindingRead(
+                id=int(row.id),
+                telegram_chat_id=int(row.telegram_chat_id),
+                club_id=cid,
+                club_name=club_names.get(cid),
+                payment_method_slug=str(row.payment_method_slug),
+                variant_id=vid,
+                variant_label=vlabel,
+                venmo_handle=row.venmo_handle,
+                bound_via=str(row.bound_via),
+                bound_at=row.bound_at,
+                group_title=title,
+                gg_player_id=gg_id,
+            )
+        )
+
+    return GroupBindingListResponse(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.delete("/bindings/{binding_id}", response_model=UnbindResponse)
+def delete_group_binding(
+    binding_id: int,
+    db: Session = Depends(get_db_dependency),
+):
+    try:
+        exists = (
+            db.query(GroupPaymentMethodBinding.id)
+            .filter_by(id=int(binding_id))
+            .one_or_none()
+        )
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
+        raise
+    if exists is None:
+        raise HTTPException(404, "Binding not found")
+    if not unbind_by_id(int(binding_id)):
+        return UnbindResponse(ok=False, error="Could not remove binding.")
+    return UnbindResponse(ok=True)
 
 
 @router.get("/bindings/summary", response_model=BindingSummaryResponse)

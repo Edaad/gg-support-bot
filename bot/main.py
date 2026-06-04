@@ -164,7 +164,9 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
 
     if test_mode:
         from bot.handlers.deposit import deposit_amount_priority_handler
+        from bot.handlers.unbind_method import unbindmethod_handler
 
+        app.add_handler(CommandHandler("unbindmethod", unbindmethod_handler))
         app.add_handler(
             MessageHandler(
                 filters.ChatType.GROUPS & ~filters.COMMAND,
@@ -227,6 +229,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
             "Tip: after /deposit, use Reply on the bot message to enter the amount "
             "(or disable privacy mode in @BotFather → /setprivacy → Disable)."
         )
+        print("Staff: /unbindmethod [venmo] in a group clears payment-method binding.")
         from bot.services.stripe_deposit import stripe_configured
 
         if not stripe_configured():

@@ -1,0 +1,12 @@
+---
+description: Never push to remotes unless the user explicitly asks
+alwaysApply: true
+---
+
+# Git push
+
+Do **not** run `git push`, `git push origin …`, `git push heroku …`, or any other push to a remote unless the user explicitly asks you to push in that message.
+
+Commits are fine when requested or clearly needed for local work; stop before push and tell the user the branch is ready to push.
+
+Deploy steps that require push (Heroku, GitHub) should be described as commands for the user to run, not executed by the agent unless push was explicitly requested.

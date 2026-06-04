@@ -1,23 +1,39 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from bot.runtime_config import is_test_bot_worker
+
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_user:
         return
-    await update.message.reply_text(
-        "Welcome to GG Support Bot!\n\n"
-        "In a group:\n"
-        "• /deposit — Make a deposit\n"
-        "• /stripe — Stripe checkout link (group chats only)\n"
-        "• /cashout — Request a cashout\n"
-        "• /list — View the club's list\n\n"
-        "Admins:\n"
-        "• /set — Create a custom command\n"
-        "• /mycmds — List your custom commands\n"
-        "• /delete <name> — Remove a custom command\n"
-        "• /whoami — Show your user ID"
+    lines = [
+        "Welcome to GG Support Bot!\n",
+        "In a group:",
+        "• /deposit — Make a deposit",
+        "• /stripe — Stripe checkout link (group chats only)",
+        "• /cashout — Request a cashout",
+        "• /list — View the club's list",
+    ]
+    if is_test_bot_worker():
+        lines.extend(
+            [
+                "",
+                "Test bot (staff):",
+                "• /unbindmethod [venmo] — Clear payment-method link for this group",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "Admins:",
+            "• /set — Create a custom command",
+            "• /mycmds — List your custom commands",
+            "• /delete <name> — Remove a custom command",
+            "• /whoami — Show your user ID",
+        ]
     )
+    await update.message.reply_text("\n".join(lines))
 
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -5,15 +5,18 @@ import {
   fetchBindingSummary,
   fetchAllStripeCustomers,
   type BindingSummary,
+  type GroupBindingRow,
   fetchAllStripeSessions,
   fetchAllVenmoPayers,
   fetchAllVenmoPayments,
+  listGroupBindings,
   listPaymentProviders,
   listStripeCustomers,
   listStripeMethods,
   listStripeSessions,
   listVenmoPayers,
   listVenmoPayments,
+  unbindGroupBinding,
   type StripeCustomerRow,
   type StripeMethodOption,
   type StripeSessionRow,
@@ -108,6 +111,9 @@ export default function Payments({ token }: { token: string }) {
   const [bindOpen, setBindOpen] = useState(false)
   const [bindRow, setBindRow] = useState<VenmoPaymentRow | null>(null)
   const [bindingSummary, setBindingSummary] = useState<BindingSummary | null>(null)
+  const [groupBindings, setGroupBindings] = useState<GroupBindingRow[]>([])
+  const [groupBindingsTotal, setGroupBindingsTotal] = useState(0)
+  const [unbindLoadingId, setUnbindLoadingId] = useState<number | null>(null)
   const [bindTitle, setBindTitle] = useState('')
   const [bindLoading, setBindLoading] = useState(false)
 
@@ -268,9 +274,50 @@ export default function Payments({ token }: { token: string }) {
       .catch(() => setBindingSummary(null))
   }, [token, clubId, provider, appliedFrom, appliedTo])
 
+  const loadGroupBindings = useCallback(() => {
+    if (provider !== 'venmo' || clubId == null) return
+    listGroupBindings(token, { method: 'venmo', clubId, limit: 200, offset: 0 })
+      .then((res) => {
+        setGroupBindings(res.items)
+        setGroupBindingsTotal(res.total)
+      })
+      .catch(() => {
+        setGroupBindings([])
+        setGroupBindingsTotal(0)
+      })
+  }, [token, clubId, provider])
+
   useEffect(() => {
     loadBindingSummary()
-  }, [loadBindingSummary])
+    loadGroupBindings()
+  }, [loadBindingSummary, loadGroupBindings])
+
+  const handleUnbind = async (row: GroupBindingRow) => {
+    const label = row.group_title?.trim() || `chat ${row.telegram_chat_id}`
+    if (
+      !window.confirm(
+        `Unbind Venmo for "${label}"? The group will need first-time setup again on the test bot.`,
+      )
+    ) {
+      return
+    }
+    setUnbindLoadingId(row.id)
+    setErr('')
+    try {
+      const result = await unbindGroupBinding(token, row.id)
+      if (!result.ok) {
+        setErr(result.error || 'Could not unbind group.')
+        return
+      }
+      setSuccessMsg(`Unbound Venmo for ${label}.`)
+      loadGroupBindings()
+      loadBindingSummary()
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Could not unbind group.')
+    } finally {
+      setUnbindLoadingId(null)
+    }
+  }
 
   useEffect(() => {
     if (clubId == null) return
@@ -298,6 +345,7 @@ export default function Payments({ token }: { token: string }) {
     setSessionPage(0)
     setVenmoPaymentPage(0)
     loadBindingSummary()
+    loadGroupBindings()
   }
 
   const applyCustomerSearch = () => {
@@ -342,6 +390,8 @@ export default function Payments({ token }: { token: string }) {
       setSuccessMsg(`Bound to ${result.group_title || title}.`)
       closeBindModal()
       loadVenmoPayments()
+      loadGroupBindings()
+      loadBindingSummary()
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Bind failed.')
     } finally {
@@ -563,6 +613,55 @@ export default function Payments({ token }: { token: string }) {
                 .join(', ')}
             </p>
           )}
+          <div className="mt-4 border-t border-slate-700 pt-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Linked group chats
+                {groupBindingsTotal > 0 ? ` (${groupBindingsTotal})` : ''}
+              </h3>
+            </div>
+            {groupBindings.length === 0 ? (
+              <p className="text-xs text-slate-500">No linked chats for this club.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="text-slate-400">
+                      <th className="pb-2 pr-3 font-medium">Group</th>
+                      <th className="pb-2 pr-3 font-medium">Handle</th>
+                      <th className="pb-2 pr-3 font-medium">Variant</th>
+                      <th className="pb-2 pr-3 font-medium">Source</th>
+                      <th className="pb-2 pr-3 font-medium">Linked</th>
+                      <th className="pb-2 font-medium" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groupBindings.map((row) => (
+                      <tr key={row.id} className="border-t border-slate-800 text-slate-200">
+                        <td className="py-2 pr-3 max-w-[14rem] truncate" title={row.group_title || ''}>
+                          {row.group_title || `chat ${row.telegram_chat_id}`}
+                        </td>
+                        <td className="py-2 pr-3">{row.venmo_handle || '—'}</td>
+                        <td className="py-2 pr-3">{row.variant_label || '—'}</td>
+                        <td className="py-2 pr-3">{row.bound_via}</td>
+                        <td className="py-2 pr-3 whitespace-nowrap">{fmtDate(row.bound_at)}</td>
+                        <td className="py-2 text-right">
+                          <button
+                            type="button"
+                            className="btn-secondary-sm text-red-300 hover:text-red-200"
+                            disabled={unbindLoadingId === row.id}
+                            onClick={() => handleUnbind(row)}
+                          >
+                            {unbindLoadingId === row.id ? '…' : 'Unbind'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </section>
       )}
 

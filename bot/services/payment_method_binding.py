@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -23,15 +22,17 @@ from db.models import (
 
 logger = logging.getLogger(__name__)
 
+# Deprecated: special-amount setup is gated by test bot worker only (see below).
 VENMO_SPECIAL_AMOUNT_BINDING_ENV = "VENMO_SPECIAL_AMOUNT_BINDING"
 
 BIND_ATTEMPT_TTL_SECONDS = 600
 
 
 def venmo_special_amount_binding_enabled() -> bool:
-    """True when VENMO_SPECIAL_AMOUNT_BINDING is 1, true, yes, or on. Default off."""
-    raw = (os.getenv(VENMO_SPECIAL_AMOUNT_BINDING_ENV) or "").strip().lower()
-    return raw in ("1", "true", "yes", "on")
+    """True only when running the local test bot (run_test_bot.py / BOT_TEST_WORKER=1)."""
+    from bot.runtime_config import is_test_bot_worker
+
+    return is_test_bot_worker()
 
 BOUND_VIA_SPECIAL_AMOUNT = "special_amount"
 BOUND_VIA_MANUAL_NOTIFICATION = "manual_notification"
@@ -171,6 +172,59 @@ def is_chat_method_bound(telegram_chat_id: int, payment_method_slug: str) -> boo
             .one_or_none()
         )
         return row is not None
+
+
+def unbind_chat_from_method(
+    telegram_chat_id: int,
+    payment_method_slug: str,
+) -> bool:
+    """Remove a group's payment-method link and cancel any pending setup attempts."""
+    slug = (payment_method_slug or "").strip().lower()
+    with get_db() as session:
+        row = (
+            session.query(GroupPaymentMethodBinding)
+            .filter_by(
+                telegram_chat_id=int(telegram_chat_id),
+                payment_method_slug=slug,
+            )
+            .one_or_none()
+        )
+        if row is None:
+            return False
+        session.delete(row)
+        cancel_pending_attempts_for_chat(
+            session,
+            telegram_chat_id=int(telegram_chat_id),
+            payment_method_slug=slug,
+        )
+    logger.info(
+        "group_binding removed chat_id=%s slug=%s",
+        telegram_chat_id,
+        slug,
+    )
+    return True
+
+
+def unbind_by_id(binding_id: int) -> bool:
+    """Remove a binding row by primary key."""
+    with get_db() as session:
+        row = (
+            session.query(GroupPaymentMethodBinding)
+            .filter_by(id=int(binding_id))
+            .one_or_none()
+        )
+        if row is None:
+            return False
+        chat_id = int(row.telegram_chat_id)
+        slug = str(row.payment_method_slug)
+        session.delete(row)
+        cancel_pending_attempts_for_chat(
+            session,
+            telegram_chat_id=chat_id,
+            payment_method_slug=slug,
+        )
+    logger.info("group_binding removed id=%s", binding_id)
+    return True
 
 
 def get_chat_binding(

@@ -1,32 +1,46 @@
 """Unit tests for payment method binding helpers."""
 
-import os
 import unittest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from bot.services.payment_method_binding import (
     ATTEMPT_STATUS_PENDING,
-    VENMO_SPECIAL_AMOUNT_BINDING_ENV,
     allocate_setup_amount_cents,
     effective_min_cents,
     extract_venmo_handle_from_text,
     extract_venmo_url,
     format_first_time_venmo_setup_message,
+    unbind_chat_from_method,
     venmo_special_amount_binding_enabled,
 )
 
 
-class TestVenmoSpecialAmountEnv(unittest.TestCase):
-    def test_default_off(self):
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop(VENMO_SPECIAL_AMOUNT_BINDING_ENV, None)
+class TestVenmoSpecialAmountGating(unittest.TestCase):
+    def test_off_on_production_worker(self):
+        with patch("bot.runtime_config.is_test_bot_worker", return_value=False):
             self.assertFalse(venmo_special_amount_binding_enabled())
 
-    def test_enabled_values(self):
-        for val in ("1", "true", "yes", "on"):
-            with patch.dict(os.environ, {VENMO_SPECIAL_AMOUNT_BINDING_ENV: val}):
-                self.assertTrue(venmo_special_amount_binding_enabled())
+    def test_on_test_bot_worker(self):
+        with patch("bot.runtime_config.is_test_bot_worker", return_value=True):
+            self.assertTrue(venmo_special_amount_binding_enabled())
+
+
+class TestUnbind(unittest.TestCase):
+    def test_unbind_delegates(self):
+        with patch(
+            "bot.services.payment_method_binding.get_db"
+        ) as mock_get_db:
+            session = MagicMock()
+            mock_get_db.return_value.__enter__.return_value = session
+            row = MagicMock()
+            row.telegram_chat_id = -1001
+            row.payment_method_slug = "venmo"
+            session.query.return_value.filter_by.return_value.one_or_none.return_value = (
+                row
+            )
+            self.assertTrue(unbind_chat_from_method(-1001, "venmo"))
+            session.delete.assert_called_once_with(row)
 
 
 class TestEffectiveMinCents(unittest.TestCase):

@@ -1,12 +1,8 @@
 # Venmo first-time group chat binding
 
-**Off by default.** Enable on the bot + web dynos:
+**Test bot only** (`python run_test_bot.py` / `BOT_TEST_WORKER=1`). Production `run_bot.py` does not run the special-amount first-time setup flow.
 
-```bash
-VENMO_SPECIAL_AMOUNT_BINDING=true
-```
-
-When enabled, before a support group can use **Venmo** in `/deposit`, the chat must be **linked** via a one-time setup payment at a special sub-minimum amount. After linking, deposits use the same Venmo variant account that was confirmed during setup.
+On the test bot, before a support group can use **Venmo** in `/deposit`, the chat must be **linked** via a one-time setup payment at a special sub-minimum amount. After linking, deposits use the same Venmo variant account that was confirmed during setup.
 
 ## Flow
 
@@ -17,6 +13,17 @@ When enabled, before a support group can use **Venmo** in `/deposit`, the chat m
 5. Future `/deposit` → Venmo uses the **sticky variant** and normal deposit copy.
 
 Repeat payers (`venmo_payer_bindings`) still auto-bind ingested payments when the chat is already linked or the payer was seen before.
+
+### Unbind (test bot)
+
+In a linked support group, club staff or global admins can run:
+
+```text
+/unbindmethod
+/unbindmethod venmo
+```
+
+Clears `group_payment_method_bindings` for that chat and cancels pending setup attempts. The command is registered only on `run_test_bot.py`.
 
 ## Database
 
@@ -49,6 +56,8 @@ JWT API:
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /api/payments/bindings/summary?method=venmo&club_id=&from=&to=` | Funnel + bindings by source |
+| `GET /api/payments/bindings?method=venmo&club_id=` | Paginated linked group chats |
+| `DELETE /api/payments/bindings/{id}` | Unbind a group from Venmo (clears pending setup attempts) |
 | `GET /api/payments/bind-attempts?method=venmo&status=&club_id=` | Paginated attempt rows |
 
 ## Code

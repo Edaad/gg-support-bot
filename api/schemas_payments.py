@@ -158,6 +158,33 @@ class BindingSummaryResponse(BaseModel):
     attempt_funnel: BindingAttemptFunnel
 
 
+class GroupBindingRead(BaseModel):
+    id: int
+    telegram_chat_id: int
+    club_id: int
+    club_name: Optional[str] = None
+    payment_method_slug: str
+    variant_id: Optional[int] = None
+    variant_label: Optional[str] = None
+    venmo_handle: Optional[str] = None
+    bound_via: str
+    bound_at: datetime
+    group_title: Optional[str] = None
+    gg_player_id: Optional[str] = None
+
+
+class GroupBindingListResponse(BaseModel):
+    items: list[GroupBindingRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class UnbindResponse(BaseModel):
+    ok: bool
+    error: Optional[str] = None
+
+
 class BindAttemptRead(BaseModel):
     id: int
     telegram_chat_id: int
