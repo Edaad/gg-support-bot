@@ -1,19 +1,46 @@
 """Unit tests for payment method binding helpers."""
 
+import os
 import unittest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from bot.services.payment_method_binding import (
     ATTEMPT_STATUS_PENDING,
+    BIND_KIND_MEMO_EMOJI,
+    BIND_KIND_SPECIAL_AMOUNT,
+    allocate_setup_emoji,
     allocate_setup_amount_cents,
+    bind_mode_for_method,
     effective_min_cents,
     extract_venmo_handle_from_text,
     extract_venmo_url,
+    extract_zelle_details,
+    format_first_time_memo_setup_message,
     format_first_time_venmo_setup_message,
+    match_pending_memo_setup_in_session,
     unbind_chat_from_method,
     venmo_special_amount_binding_enabled,
+    _memo_contains_emoji,
 )
+
+
+class TestBindModeForMethod(unittest.TestCase):
+    def test_zelle_memo_on_test_bot(self):
+        with patch("bot.runtime_config.is_test_bot_worker", return_value=True):
+            self.assertEqual(bind_mode_for_method("zelle"), BIND_KIND_MEMO_EMOJI)
+
+    def test_venmo_default_amount(self):
+        with patch("bot.runtime_config.is_test_bot_worker", return_value=True):
+            env = os.environ.copy()
+            env.pop("VENMO_BIND_MODE", None)
+            with patch.dict(os.environ, env, clear=True):
+                self.assertEqual(bind_mode_for_method("venmo"), BIND_KIND_SPECIAL_AMOUNT)
+
+    def test_venmo_memo_env(self):
+        with patch("bot.runtime_config.is_test_bot_worker", return_value=True):
+            with patch.dict("os.environ", {"VENMO_BIND_MODE": "memo_emoji"}):
+                self.assertEqual(bind_mode_for_method("venmo"), BIND_KIND_MEMO_EMOJI)
 
 
 class TestVenmoSpecialAmountGating(unittest.TestCase):
@@ -74,6 +101,54 @@ class TestVenmoExtract(unittest.TestCase):
         )
 
 
+class TestAllocateSetupEmoji(unittest.TestCase):
+    def test_picks_from_pool(self):
+        session = MagicMock()
+        session.query.return_value.filter_by.return_value.filter.return_value.all.return_value = []
+        emoji = allocate_setup_emoji(session, variant_id=1)
+        self.assertIn(emoji, ("💰", "🔥", "⭐", "🎯", "✅", "🌟", "💎", "🍀", "🎲", "🔑"))
+
+
+class TestMemoContainsEmoji(unittest.TestCase):
+    def test_finds_emoji_in_memo(self):
+        self.assertTrue(_memo_contains_emoji("Payment for chips 💰 thanks", "💰"))
+        self.assertFalse(_memo_contains_emoji("Payment thanks", "💰"))
+
+
+class TestZelleExtract(unittest.TestCase):
+    def test_email_and_name(self):
+        text = (
+            "Zelle Email: coachingg444@gmail.com\n"
+            "Zelle Name: CONCORD CONSULTING AGENCY, INC\n"
+        )
+        email, name = extract_zelle_details(text)
+        self.assertEqual(email, "coachingg444@gmail.com")
+        self.assertIn("CONCORD", name or "")
+
+
+class TestMemoSetupMessage(unittest.TestCase):
+    def test_venmo_memo_html(self):
+        text = format_first_time_memo_setup_message(
+            payment_method_slug="venmo",
+            setup_emoji="💰",
+            variant_response_text="Venmo: https://venmo.com/u/testuser",
+        )
+        self.assertIn("FIRST-TIME VENMO SETUP", text)
+        self.assertIn("<code>💰</code>", text)
+        self.assertIn("venmo.com/u/testuser", text)
+
+    def test_zelle_memo_html(self):
+        text = format_first_time_memo_setup_message(
+            payment_method_slug="zelle",
+            setup_emoji="💰",
+            variant_response_text=(
+                "Zelle Email: a@b.com\nZelle Name: ACME INC\n"
+            ),
+        )
+        self.assertIn("FIRST-TIME ZELLE SETUP", text)
+        self.assertIn("a@b.com", text)
+
+
 class TestAllocateSetupAmount(unittest.TestCase):
     def test_first_pending_gets_cent_below_min(self):
         session = MagicMock()
@@ -131,6 +206,7 @@ class TestMatchPendingInSession(unittest.TestCase):
             payment_method_slug="venmo",
             method_id=10,
             variant_id=3,
+            bind_kind=BIND_KIND_SPECIAL_AMOUNT,
             amount_cents=9999,
             status=ATTEMPT_STATUS_PENDING,
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
@@ -153,6 +229,78 @@ class TestMatchPendingInSession(unittest.TestCase):
             session, amount_cents=9999, venmo_handle="@club-round"
         )
         self.assertIs(found, attempt)
+
+
+class TestMatchMemoInSession(unittest.TestCase):
+    def test_match_finds_attempt_by_emoji_and_handle(self):
+        from datetime import datetime, timedelta, timezone
+
+        from db.models import PaymentMethodBindAttempt
+
+        attempt = PaymentMethodBindAttempt(
+            id=8,
+            telegram_chat_id=-1002,
+            club_id=2,
+            payment_method_slug="venmo",
+            method_id=10,
+            variant_id=3,
+            bind_kind=BIND_KIND_MEMO_EMOJI,
+            amount_cents=None,
+            setup_emoji="💰",
+            status=ATTEMPT_STATUS_PENDING,
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        )
+        variant = MagicMock()
+        variant.response_text = "Venmo: https://venmo.com/u/club-round"
+        variant.response_caption = None
+
+        session = MagicMock()
+        session.query.return_value.filter_by.return_value.filter.return_value.filter.return_value.order_by.return_value.all.return_value = [
+            attempt
+        ]
+        session.query.return_value.get.return_value = variant
+
+        found = match_pending_memo_setup_in_session(
+            session,
+            payment_method_slug="venmo",
+            venmo_handle="@club-round",
+            memo="Thanks 💰",
+        )
+        self.assertIs(found, attempt)
+
+    def test_wrong_emoji_no_match(self):
+        from datetime import datetime, timedelta, timezone
+
+        from db.models import PaymentMethodBindAttempt
+
+        attempt = PaymentMethodBindAttempt(
+            id=9,
+            telegram_chat_id=-1002,
+            club_id=2,
+            payment_method_slug="venmo",
+            method_id=10,
+            variant_id=3,
+            bind_kind=BIND_KIND_MEMO_EMOJI,
+            setup_emoji="🔥",
+            status=ATTEMPT_STATUS_PENDING,
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        )
+        variant = MagicMock()
+        variant.response_text = "Venmo: https://venmo.com/u/club-round"
+
+        session = MagicMock()
+        session.query.return_value.filter_by.return_value.filter.return_value.filter.return_value.order_by.return_value.all.return_value = [
+            attempt
+        ]
+        session.query.return_value.get.return_value = variant
+
+        found = match_pending_memo_setup_in_session(
+            session,
+            payment_method_slug="venmo",
+            venmo_handle="@club-round",
+            memo="Thanks 💰",
+        )
+        self.assertIsNone(found)
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ import {
 } from '../api/v2Client'
 import V2TierEditor from './V2TierEditor'
 import V2SubOptionEditor from './V2SubOptionEditor'
+import FirstTimeDepositLinkingSection from './FirstTimeDepositLinkingSection'
 import { useConfirm } from './ConfirmProvider'
 
 interface Props {
@@ -231,6 +232,10 @@ function MethodDetailsForm({
           </div>
         )}
       </div>
+
+      {direction === 'deposit' && (
+        <FirstTimeDepositLinkingSection methodSlug={form.slug} />
+      )}
 
       <div className="form-actions">
         <button type="button" onClick={onSave} disabled={saving} className="btn-primary">

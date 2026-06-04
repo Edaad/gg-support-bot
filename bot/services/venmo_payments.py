@@ -21,13 +21,15 @@ from db.connection import get_db
 from bot.services.payment_method_binding import (
     BOUND_VIA_MANUAL_DASHBOARD,
     BOUND_VIA_MANUAL_NOTIFICATION,
+    BOUND_VIA_MEMO_EMOJI,
     BOUND_VIA_SPECIAL_AMOUNT,
     cancel_pending_attempts_for_chat_in_session,
     complete_attempt_in_session,
+    first_time_binding_enabled,
     infer_variant_id_for_venmo_handle,
+    match_pending_memo_setup_in_session,
     match_pending_venmo_setup_in_session,
     record_group_binding_in_session,
-    venmo_special_amount_binding_enabled,
 )
 from db.models import VenmoPayerBinding, VenmoPayment
 
@@ -200,6 +202,9 @@ def format_notification_text(
             f"Goods/Services: {gs}",
         ]
     )
+    memo = (getattr(payment, "memo", None) or "").strip()
+    if memo:
+        lines.append(f"Memo: {memo}")
 
     body = "\n".join(lines)
     if getattr(payment, "is_test", False):
@@ -332,6 +337,7 @@ async def ingest_venmo_payment(
     goods_or_services: bool = False,
     paid_at: Optional[str] = None,
     source_external_id: Optional[str] = None,
+    memo: Optional[str] = None,
     test: bool = False,
 ) -> IngestResult:
     """Create payment row, auto-bind if known payer, send Telegram notification."""
@@ -381,18 +387,29 @@ async def ingest_venmo_payment(
             goods_or_services=bool(goods_or_services),
             paid_at=(paid_at or "").strip() or None,
             source_external_id=(source_external_id or "").strip() or None,
+            memo=(memo or "").strip() or None,
             is_test=bool(test),
         )
         session.add(payment)
         session.flush()
 
         setup_attempt = None
-        if venmo_special_amount_binding_enabled():
-            setup_attempt = match_pending_venmo_setup_in_session(
+        setup_bound_via = BOUND_VIA_SPECIAL_AMOUNT
+        if first_time_binding_enabled():
+            setup_attempt = match_pending_memo_setup_in_session(
                 session,
-                amount_cents=amount_cents,
+                payment_method_slug="venmo",
                 venmo_handle=handle,
+                memo=memo,
             )
+            if setup_attempt is not None:
+                setup_bound_via = BOUND_VIA_MEMO_EMOJI
+            else:
+                setup_attempt = match_pending_venmo_setup_in_session(
+                    session,
+                    amount_cents=amount_cents,
+                    venmo_handle=handle,
+                )
         if setup_attempt is not None:
             live_title = resolve_display_group_title(int(setup_attempt.telegram_chat_id))
             club_id_setup = int(setup_attempt.club_id)
@@ -425,16 +442,18 @@ async def ingest_venmo_payment(
                         telegram_chat_id=int(setup_attempt.telegram_chat_id),
                         club_id=club_id_setup,
                         payment_method_slug="venmo",
-                        bound_via=BOUND_VIA_SPECIAL_AMOUNT,
+                        bound_via=setup_bound_via,
                         variant_id=int(setup_attempt.variant_id),
                         venmo_handle=handle,
                         first_bind_attempt_id=int(setup_attempt.id),
                     )
                     logger.info(
-                        "venmo ingest: setup bind matched attempt_id=%s payment_id=%s chat_id=%s",
+                        "venmo ingest: setup bind matched attempt_id=%s payment_id=%s "
+                        "chat_id=%s via=%s",
                         setup_attempt.id,
                         payment.id,
                         setup_attempt.telegram_chat_id,
+                        setup_bound_via,
                     )
 
         if not auto_bound:

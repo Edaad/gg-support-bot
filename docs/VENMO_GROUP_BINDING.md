@@ -1,69 +1,71 @@
-# Venmo first-time group chat binding
+# First-time group chat binding (test bot)
 
-**Test bot only** (`python run_test_bot.py` / `BOT_TEST_WORKER=1`). Production `run_bot.py` does not run the special-amount first-time setup flow.
+**Test bot only** (`python run_test_bot.py` / `BOT_TEST_WORKER=1`). Production `run_bot.py` does not run first-time setup flows.
 
-On the test bot, before a support group can use **Venmo** in `/deposit`, the chat must be **linked** via a one-time setup payment at a special sub-minimum amount. After linking, deposits use the same Venmo variant account that was confirmed during setup.
+Before a support group can use a configured deposit method in `/deposit`, the chat may need a **one-time link** step. After linking, deposits use the sticky variant that was confirmed during setup.
 
-## Flow
+## Bind modes (per method)
 
-1. Player runs `/deposit` → enters amount → selects **Venmo**.
-2. If the chat is not linked, the bot assigns a **variant** (weighted, same as normal deposits) and an **exact setup amount** one cent below the configured minimum, minus one cent per other pending setup on that variant ($99.99, $99.98, …).
-3. Player sends that exact amount to the variant’s Venmo URL and posts a screenshot; staff still confirm chips manually.
-4. Zapier POSTs to `/api/venmo/payments`. Within **10 minutes**, if amount + handle match the pending attempt, the API binds the payment to the group, records payer binding, and marks the chat as Venmo-linked.
-5. Future `/deposit` → Venmo uses the **sticky variant** and normal deposit copy.
+| Method | Default mode (test bot) | Override |
+|--------|------------------------|----------|
+| `venmo` | `special_amount` — exact sub-minimum cent amount | `VENMO_BIND_MODE=memo_emoji` |
+| `zelle` | `memo_emoji` — random emoji in payment memo/caption | — |
 
-Repeat payers (`venmo_payer_bindings`) still auto-bind ingested payments when the chat is already linked or the payer was seen before.
+### Special amount (`special_amount`)
 
-### Unbind (test bot)
+1. Bot assigns a variant and an exact setup amount one cent below the configured minimum, minus one cent per other pending setup on that variant ($99.99, $99.98, …).
+2. Player sends that exact amount to the method’s payment destination and posts a screenshot.
+3. Zapier POSTs to `/api/venmo/payments` (Venmo). Within **10 minutes**, if **amount + Venmo handle** match the pending attempt, the payment auto-binds the group.
 
-In a linked support group, club staff or global admins can run:
+### Memo emoji (`memo_emoji`)
+
+1. Bot assigns a variant and a **random emoji** from a fixed pool (unique per pending setup on that variant).
+2. Player sends that **exact emoji** in the Venmo **caption** (or Zelle **caption** in instructions) with payment, then posts a screenshot.
+3. Zapier POSTs to `/api/venmo/payments` with optional **`memo`**. Within **10 minutes**, if **memo contains the emoji** and Venmo handle matches the variant, the payment auto-binds the group.
+
+Zelle uses deposit setup + DB attempts on the test bot; **Zelle Zapier ingest is not implemented yet** (manual bind still works).
+
+## Unbind (test bot)
 
 ```text
 /unbindmethod
 /unbindmethod venmo
+/unbindmethod zelle
 ```
 
-Clears `group_payment_method_bindings` for that chat and cancels pending setup attempts. The command is registered only on `run_test_bot.py`.
+Clears `group_payment_method_bindings` for that chat and cancels pending setup attempts. Registered only on `run_test_bot.py`.
 
 ## Database
 
 | Table | Purpose |
 |-------|---------|
 | `group_payment_method_bindings` | `telegram_chat_id` + `payment_method_slug` → linked variant / handle |
-| `payment_method_bind_attempts` | In-flight setup tickets (`pending` / `succeeded` / `expired` / `cancelled`) |
+| `payment_method_bind_attempts` | In-flight setup (`bind_kind`, `amount_cents` and/or `setup_emoji`) |
 
-Migration:
+Migrations:
 
 ```bash
 DATABASE_URL=... python migrate_payment_method_bindings.py
-```
-
-## Backfill (existing bound payments)
-
-Chats that already have bound `venmo_payments` skip first-time setup after backfill:
-
-```bash
-DATABASE_URL=... python scripts/backfill_venmo_group_bindings.py --dry-run
-DATABASE_URL=... python scripts/backfill_venmo_group_bindings.py --apply
+DATABASE_URL=... python migrate_payment_method_bind_memo.py
 ```
 
 ## Observability (dashboard + API)
 
-**Nav → Payments** → provider **Venmo** shows a **Venmo group bindings** panel: setup initiated, succeeded, expired, pending, success rate, and counts by `bound_via` (`special_amount`, `manual_notification`, `manual_dashboard`, `backfill`, `test`).
-
-JWT API:
+JWT API bind-attempt rows include `bind_kind`, `setup_emoji`, and optional `amount_cents`.
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/payments/bindings/summary?method=venmo&club_id=&from=&to=` | Funnel + bindings by source |
-| `GET /api/payments/bindings?method=venmo&club_id=` | Paginated linked group chats |
-| `DELETE /api/payments/bindings/{id}` | Unbind a group from Venmo (clears pending setup attempts) |
-| `GET /api/payments/bind-attempts?method=venmo&status=&club_id=` | Paginated attempt rows |
+| `GET /api/payments/bindings/summary?method=venmo&club_id=` | Funnel + bindings by source |
+| `GET /api/payments/bindings?method=venmo&club_id=` | Linked group chats |
+| `DELETE /api/payments/bindings/{id}` | Unbind |
+| `GET /api/payments/bind-attempts?method=venmo` | Attempt rows |
+
+`bound_via` values include `special_amount`, `memo_emoji`, `manual_notification`, `manual_dashboard`, `backfill`, `test`.
 
 ## Code
 
-- [`bot/services/payment_method_binding.py`](../bot/services/payment_method_binding.py) — allocation, attempts, group bindings
-- [`bot/handlers/deposit.py`](../bot/handlers/deposit.py) — first-time Venmo branch
-- [`bot/services/venmo_payments.py`](../bot/services/venmo_payments.py) — ingest match + manual bind updates
+- [`bot/services/payment_method_binding.py`](../bot/services/payment_method_binding.py)
+- [`bot/handlers/deposit.py`](../bot/handlers/deposit.py)
+- [`bot/services/venmo_payments.py`](../bot/services/venmo_payments.py)
 
-See also [`VENMO_PAYMENTS.md`](VENMO_PAYMENTS.md) for Zapier ingest and staff reply-to-bind.
+See [`VENMO_PAYMENTS.md`](VENMO_PAYMENTS.md) for Zapier ingest (`memo` field) and staff reply-to-bind.

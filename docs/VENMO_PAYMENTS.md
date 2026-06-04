@@ -48,9 +48,12 @@ Header: `X-Venmo-Webhook-Secret: <VENMO_ZAPIER_WEBHOOK_SECRET>`
   "goods_or_services": false,
   "paid_at": "Oct 31 2024, 02:15 PM",
   "source_external_id": "optional-gmail-message-id",
+  "memo": "optional payment memo/caption from email (for memo_emoji setup bind)",
   "test": true
 }
 ```
+
+When `memo` is present and the test bot has a pending `memo_emoji` setup attempt, ingest tries emoji match **before** special-amount match.
 
 Set `"test": true` only on your **duplicate test Zap** — notifications will be prefixed with `TEST (Please ignore)`.
 

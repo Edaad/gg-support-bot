@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import html as html_module
 import logging
+import os
+import random
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from sqlalchemy import func
 
@@ -23,19 +25,66 @@ from db.models import (
 
 logger = logging.getLogger(__name__)
 
-# Deprecated: special-amount setup is gated by test bot worker only (see below).
-VENMO_SPECIAL_AMOUNT_BINDING_ENV = "VENMO_SPECIAL_AMOUNT_BINDING"
-
+VENMO_BIND_MODE_ENV = "VENMO_BIND_MODE"
 BIND_ATTEMPT_TTL_SECONDS = 600
 
+BIND_KIND_SPECIAL_AMOUNT = "special_amount"
+BIND_KIND_MEMO_EMOJI = "memo_emoji"
 
-def venmo_special_amount_binding_enabled() -> bool:
+SETUP_EMOJI_POOL: tuple[str, ...] = (
+    "💰",
+    "🔥",
+    "⭐",
+    "🎯",
+    "✅",
+    "🌟",
+    "💎",
+    "🍀",
+    "🎲",
+    "🔑",
+)
+
+_ZELLE_EMAIL_RE = re.compile(
+    r"Zelle\s+Email:\s*(\S+@\S+)",
+    re.IGNORECASE,
+)
+_ZELLE_NAME_RE = re.compile(
+    r"Zelle\s+Name:\s*(.+?)(?:\n|$)",
+    re.IGNORECASE,
+)
+
+
+def first_time_binding_enabled() -> bool:
     """True only when running the local test bot (run_test_bot.py / BOT_TEST_WORKER=1)."""
     from bot.runtime_config import is_test_bot_worker
 
     return is_test_bot_worker()
 
+
+def venmo_special_amount_binding_enabled() -> bool:
+    """Alias for first_time_binding_enabled (legacy name)."""
+    return first_time_binding_enabled()
+
+
+def bind_mode_for_method(
+    slug: str,
+) -> Literal["special_amount", "memo_emoji"] | None:
+    """Per-method first-time bind mode on test bot; None if binding disabled."""
+    if not first_time_binding_enabled():
+        return None
+    method_slug = (slug or "").strip().lower()
+    if method_slug == "zelle":
+        return BIND_KIND_MEMO_EMOJI
+    if method_slug == "venmo":
+        raw = (os.getenv(VENMO_BIND_MODE_ENV) or BIND_KIND_SPECIAL_AMOUNT).strip().lower()
+        if raw in ("memo_emoji", "memo", "emoji"):
+            return BIND_KIND_MEMO_EMOJI
+        return BIND_KIND_SPECIAL_AMOUNT
+    return None
+
+
 BOUND_VIA_SPECIAL_AMOUNT = "special_amount"
+BOUND_VIA_MEMO_EMOJI = "memo_emoji"
 BOUND_VIA_MANUAL_NOTIFICATION = "manual_notification"
 BOUND_VIA_MANUAL_DASHBOARD = "manual_dashboard"
 BOUND_VIA_BACKFILL = "backfill"
@@ -85,7 +134,9 @@ class BindAttemptInfo:
     telegram_chat_id: int
     club_id: int
     variant_id: int
-    amount_cents: int
+    bind_kind: str
+    amount_cents: int | None
+    setup_emoji: str | None
     expires_at: datetime
 
 
@@ -267,6 +318,28 @@ def _expire_stale_pending_for_variant(session, variant_id: int) -> None:
     )
 
 
+def allocate_setup_emoji(session, *, variant_id: int) -> str:
+    """Pick a random emoji not used by other pending memo attempts on this variant."""
+    _expire_stale_pending_for_variant(session, variant_id)
+    used = {
+        row[0]
+        for row in session.query(PaymentMethodBindAttempt.setup_emoji)
+        .filter_by(
+            variant_id=int(variant_id),
+            bind_kind=BIND_KIND_MEMO_EMOJI,
+            status=ATTEMPT_STATUS_PENDING,
+        )
+        .filter(PaymentMethodBindAttempt.setup_emoji.isnot(None))
+        .all()
+    }
+    available = [e for e in SETUP_EMOJI_POOL if e not in used]
+    if not available:
+        raise ValueError(
+            "No available setup emojis for this variant (too many pending setups)"
+        )
+    return random.choice(available)
+
+
 def allocate_setup_amount_cents(
     session,
     *,
@@ -323,10 +396,12 @@ def start_bind_attempt(
     method_id: int,
     tier_id: int | None,
     variant_id: int,
-    effective_min_cents: int,
+    bind_kind: str,
+    effective_min_cents: int | None = None,
     initiated_by_telegram_user_id: int | None,
 ) -> BindAttemptInfo:
     slug = (payment_method_slug or "").strip().lower()
+    kind = (bind_kind or BIND_KIND_SPECIAL_AMOUNT).strip().lower()
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(seconds=BIND_ATTEMPT_TTL_SECONDS)
 
@@ -336,11 +411,22 @@ def start_bind_attempt(
             telegram_chat_id=int(telegram_chat_id),
             payment_method_slug=slug,
         )
-        amount_cents = allocate_setup_amount_cents(
-            session,
-            variant_id=int(variant_id),
-            effective_min_cents=int(effective_min_cents),
-        )
+        amount_cents: int | None = None
+        setup_emoji: str | None = None
+        bound_via = BOUND_VIA_SPECIAL_AMOUNT
+
+        if kind == BIND_KIND_MEMO_EMOJI:
+            setup_emoji = allocate_setup_emoji(session, variant_id=int(variant_id))
+            bound_via = BOUND_VIA_MEMO_EMOJI
+        else:
+            if effective_min_cents is None:
+                raise ValueError("effective_min_cents required for special_amount bind")
+            amount_cents = allocate_setup_amount_cents(
+                session,
+                variant_id=int(variant_id),
+                effective_min_cents=int(effective_min_cents),
+            )
+
         attempt = PaymentMethodBindAttempt(
             telegram_chat_id=int(telegram_chat_id),
             club_id=int(club_id),
@@ -348,9 +434,11 @@ def start_bind_attempt(
             method_id=int(method_id),
             tier_id=int(tier_id) if tier_id else None,
             variant_id=int(variant_id),
-            amount_cents=int(amount_cents),
+            bind_kind=kind,
+            amount_cents=amount_cents,
+            setup_emoji=setup_emoji,
             status=ATTEMPT_STATUS_PENDING,
-            bound_via=BOUND_VIA_SPECIAL_AMOUNT,
+            bound_via=bound_via,
             initiated_by_telegram_user_id=initiated_by_telegram_user_id,
             expires_at=expires_at,
         )
@@ -359,11 +447,14 @@ def start_bind_attempt(
         attempt_id = int(attempt.id)
 
     logger.info(
-        "bind_attempt started id=%s chat_id=%s variant_id=%s amount_cents=%s expires_at=%s",
+        "bind_attempt started id=%s chat_id=%s variant_id=%s bind_kind=%s "
+        "amount_cents=%s setup_emoji=%s expires_at=%s",
         attempt_id,
         telegram_chat_id,
         variant_id,
+        kind,
         amount_cents,
+        setup_emoji,
         expires_at.isoformat(),
     )
     return BindAttemptInfo(
@@ -371,7 +462,9 @@ def start_bind_attempt(
         telegram_chat_id=int(telegram_chat_id),
         club_id=int(club_id),
         variant_id=int(variant_id),
-        amount_cents=int(amount_cents),
+        bind_kind=kind,
+        amount_cents=amount_cents,
+        setup_emoji=setup_emoji,
         expires_at=expires_at,
     )
 
@@ -484,7 +577,11 @@ def complete_attempt_from_payment(
             telegram_chat_id=int(attempt.telegram_chat_id),
             club_id=int(attempt.club_id),
             variant_id=int(attempt.variant_id),
-            amount_cents=int(attempt.amount_cents),
+            bind_kind=str(attempt.bind_kind),
+            amount_cents=int(attempt.amount_cents)
+            if attempt.amount_cents is not None
+            else None,
+            setup_emoji=attempt.setup_emoji,
             expires_at=attempt.expires_at,
         )
 
@@ -513,6 +610,7 @@ def match_pending_venmo_setup_in_session(
         session.query(PaymentMethodBindAttempt)
         .filter_by(
             payment_method_slug="venmo",
+            bind_kind=BIND_KIND_SPECIAL_AMOUNT,
             status=ATTEMPT_STATUS_PENDING,
             amount_cents=int(amount_cents),
         )
@@ -529,6 +627,63 @@ def match_pending_venmo_setup_in_session(
             variant_handle = extract_venmo_handle_from_text(variant.response_caption)
         if variant_handle and variant_handle == handle:
             return attempt
+    return None
+
+
+def _memo_contains_emoji(memo: str, emoji: str) -> bool:
+    if not memo or not emoji:
+        return False
+    return emoji in memo
+
+
+def _variant_venmo_handle_matches(session, variant_id: int, venmo_handle: str) -> bool:
+    handle = _normalize_venmo_handle(venmo_handle)
+    if not handle:
+        return False
+    variant = session.query(ClubPaymentTierVariant).get(int(variant_id))
+    if not variant:
+        return False
+    variant_handle = extract_venmo_handle_from_text(variant.response_text)
+    if not variant_handle:
+        variant_handle = extract_venmo_handle_from_text(variant.response_caption)
+    return bool(variant_handle and variant_handle == handle)
+
+
+def match_pending_memo_setup_in_session(
+    session,
+    *,
+    payment_method_slug: str,
+    venmo_handle: str,
+    memo: str | None,
+) -> Optional[PaymentMethodBindAttempt]:
+    """Match pending memo_emoji setup by exact emoji in memo + Venmo handle on variant."""
+    if not (memo or "").strip():
+        return None
+    slug = (payment_method_slug or "").strip().lower()
+    now = datetime.now(timezone.utc)
+    _expire_stale_pending_global(session, now)
+    candidates = (
+        session.query(PaymentMethodBindAttempt)
+        .filter_by(
+            payment_method_slug=slug,
+            bind_kind=BIND_KIND_MEMO_EMOJI,
+            status=ATTEMPT_STATUS_PENDING,
+        )
+        .filter(PaymentMethodBindAttempt.expires_at >= now)
+        .filter(PaymentMethodBindAttempt.setup_emoji.isnot(None))
+        .order_by(PaymentMethodBindAttempt.created_at)
+        .all()
+    )
+    memo_text = memo.strip()
+    for attempt in candidates:
+        required = attempt.setup_emoji
+        if not required or not _memo_contains_emoji(memo_text, required):
+            continue
+        if slug == "venmo" and not _variant_venmo_handle_matches(
+            session, int(attempt.variant_id), venmo_handle
+        ):
+            continue
+        return attempt
     return None
 
 
@@ -650,6 +805,104 @@ def resolve_effective_min_cents_for_method(
         return cents, tier_id
 
 
+def extract_zelle_details(text: str | None) -> tuple[str | None, str | None]:
+    """Return (email, name) from variant response text."""
+    if not text:
+        return None, None
+    email_m = _ZELLE_EMAIL_RE.search(text)
+    name_m = _ZELLE_NAME_RE.search(text)
+    email = email_m.group(1).strip() if email_m else None
+    name = name_m.group(1).strip() if name_m else None
+    return email, name
+
+
+def format_setup_emoji_highlight(setup_emoji: str, *, use_html: bool = True) -> str:
+    """Short standalone message highlighting the required memo/caption emoji."""
+    emoji = (setup_emoji or "").strip()
+    if use_html:
+        safe = html_module.escape(emoji)
+        return f"<b>Send this emoji in the payment memo/caption:</b>\n<code>{safe}</code>"
+    return f"Send this emoji in the payment memo/caption:\n  {emoji}"
+
+
+def format_first_time_memo_setup_message(
+    *,
+    payment_method_slug: str,
+    setup_emoji: str,
+    variant_response_text: str | None,
+    use_html: bool = True,
+) -> str:
+    """First-time setup copy for memo/caption emoji binding (Venmo or Zelle)."""
+    slug = (payment_method_slug or "").strip().lower()
+    emoji = (setup_emoji or "").strip()
+    body_middle = (
+        "The exact emoji helps us match your payment to this chat faster. "
+        "This is a one-time setup step for this payment method. Future deposits "
+        "can be sent normally once your method is linked."
+    )
+
+    if slug == "zelle":
+        email, name = extract_zelle_details(variant_response_text)
+        email_line = email or "—"
+        name_line = name or "—"
+        if use_html:
+            safe_emoji = html_module.escape(emoji)
+            safe_email = html_module.escape(email_line)
+            safe_name = html_module.escape(name_line)
+            return (
+                "<b>FIRST-TIME ZELLE SETUP</b>\n"
+                "────────────────────\n\n"
+                f"<b>Send the emoji:</b> <code>{safe_emoji}</code>\n"
+                "<b>in the caption</b> to the Zelle info below.\n\n"
+                "<b>Do not use any other emoji.</b>\n\n"
+                f"{body_middle}\n\n"
+                f"<b>ZELLE EMAIL:</b> <code>{safe_email}</code>\n"
+                f"<b>Zelle Name:</b> {safe_name}\n\n"
+                "After sending, please post a screenshot here. An agent will confirm "
+                "the transaction and add your chips as soon as it comes through."
+            )
+        return (
+            "FIRST-TIME ZELLE SETUP\n"
+            "--------------------\n\n"
+            f"Send the emoji: {emoji}\n"
+            "in the caption to the Zelle info below.\n\n"
+            "Do not use any other emoji.\n\n"
+            f"{body_middle}\n\n"
+            f"ZELLE EMAIL: {email_line}\n"
+            f"Zelle Name: {name_line}\n\n"
+            "After sending, please post a screenshot here. An agent will confirm "
+            "the transaction and add your chips as soon as it comes through."
+        )
+
+    url = extract_venmo_url(variant_response_text) or "—"
+    caption_word = "caption"
+    if use_html:
+        safe_emoji = html_module.escape(emoji)
+        safe_url = html_module.escape(url, quote=True)
+        return (
+            "<b>FIRST-TIME VENMO SETUP</b>\n"
+            "────────────────────\n\n"
+            f"<b>Send the emoji:</b> <code>{safe_emoji}</code>\n"
+            f"<b>in the {caption_word}</b> to the Venmo info below.\n\n"
+            "<b>Do not use any other emoji.</b>\n\n"
+            f"{body_middle}\n\n"
+            f'<b>Venmo:</b> <a href="{safe_url}">{safe_url}</a>\n\n'
+            "After sending, please post a screenshot here. An agent will confirm "
+            "the transaction and add your chips as soon as it comes through."
+        )
+    return (
+        "FIRST-TIME VENMO SETUP\n"
+        "--------------------\n\n"
+        f"Send the emoji: {emoji}\n"
+        f"in the {caption_word} to the Venmo info below.\n\n"
+        "Do not use any other emoji.\n\n"
+        f"{body_middle}\n\n"
+        f"Venmo: {url}\n\n"
+        "After sending, please post a screenshot here. An agent will confirm "
+        "the transaction and add your chips as soon as it comes through."
+    )
+
+
 def format_setup_amount_highlight(amount_cents: int, *, use_html: bool = True) -> str:
     """Short standalone message highlighting the exact setup amount."""
     display = _format_amount_display(int(amount_cents))
@@ -681,9 +934,10 @@ def format_first_time_venmo_setup_message(
             "────────────────────\n\n"
             "<b>Pay this exact amount only:</b>\n"
             f"<code>{safe_setup}</code>\n\n"
-            f"<b>Do not send {safe_min}</b> (no rounding).\n\n"
-            "Send that amount to the Venmo below to link this group. One-time setup; "
-            "normal deposits work after linking.\n\n"
+            f"<b>Please do not send {safe_min}</b> (no rounding).\n\n"
+            "The exact amount helps us match your payment to this chat faster. "
+            "This is a one-time setup step for this payment method. Future deposits "
+            "can be sent normally once your method is linked.\n\n"
             f'<b>Venmo:</b> <a href="{safe_url}">{safe_url}</a>\n\n'
             "Post a screenshot when done. An agent will confirm and add your chips."
         )
@@ -694,8 +948,9 @@ def format_first_time_venmo_setup_message(
         "PAY THIS EXACT AMOUNT ONLY:\n"
         f"  {setup_display}\n\n"
         f"Do NOT send {min_display} (no rounding).\n\n"
-        "Send that amount to the Venmo below to link this group. One-time setup; "
-        "normal deposits work after linking.\n\n"
+        "The exact amount helps us match your payment to this chat faster. "
+        "This is a one-time setup step for this payment method. Future deposits "
+        "can be sent normally once your method is linked.\n\n"
         f"Venmo: {url}\n\n"
         "Post a screenshot when done. An agent will confirm and add your chips."
     )

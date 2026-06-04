@@ -781,6 +781,7 @@ class VenmoPayment(Base):
     auto_bound = Column(Boolean, nullable=False, default=False)
     is_test = Column(Boolean, nullable=False, default=False)
     bound_at = Column(DateTime(timezone=True), nullable=True)
+    memo = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),
@@ -819,7 +820,7 @@ class VenmoPayerBinding(Base):
 
 
 class PaymentMethodBindAttempt(Base):
-    """In-flight first-time payment method setup (special sub-minimum amount)."""
+    """In-flight first-time payment method setup (special amount or memo emoji)."""
 
     __tablename__ = "payment_method_bind_attempts"
     __table_args__ = (
@@ -836,7 +837,20 @@ class PaymentMethodBindAttempt(Base):
             "variant_id",
             "amount_cents",
             unique=True,
-            postgresql_where=text("status = 'pending'"),
+            postgresql_where=text(
+                "status = 'pending' AND bind_kind = 'special_amount' "
+                "AND amount_cents IS NOT NULL"
+            ),
+        ),
+        Index(
+            "uq_pmba_pending_variant_emoji",
+            "variant_id",
+            "setup_emoji",
+            unique=True,
+            postgresql_where=text(
+                "status = 'pending' AND bind_kind = 'memo_emoji' "
+                "AND setup_emoji IS NOT NULL"
+            ),
         ),
     )
 
@@ -855,7 +869,9 @@ class PaymentMethodBindAttempt(Base):
         ForeignKey("club_payment_tier_variants.id", ondelete="CASCADE"),
         nullable=False,
     )
-    amount_cents = Column(Integer, nullable=False)
+    bind_kind = Column(String(32), nullable=False, default="special_amount")
+    amount_cents = Column(Integer, nullable=True)
+    setup_emoji = Column(String(32), nullable=True)
     status = Column(String(20), nullable=False, default="pending")
     bound_via = Column(String(32), nullable=False, default="special_amount")
     initiated_by_telegram_user_id = Column(BigInteger, nullable=True)

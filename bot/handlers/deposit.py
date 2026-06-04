@@ -50,13 +50,17 @@ from bot.services.stripe_deposit import (
 )
 from bot.services.payment_method_binding import (
     BIND_ATTEMPT_TTL_SECONDS,
+    BIND_KIND_MEMO_EMOJI,
+    BIND_KIND_SPECIAL_AMOUNT,
+    bind_mode_for_method,
+    format_first_time_memo_setup_message,
     format_first_time_venmo_setup_message,
     format_setup_amount_highlight,
+    format_setup_emoji_highlight,
     get_chat_binding,
     is_chat_method_bound,
     resolve_effective_min_cents_for_method,
     start_bind_attempt,
-    venmo_special_amount_binding_enabled,
 )
 from bot.services.payment_method_binding import expire_attempt as expire_bind_attempt
 from bot.runtime_config import is_test_bot_worker, use_payment_v2
@@ -224,66 +228,121 @@ def _pick_deposit_variant_response(
     return _with_method_checkout_settings(method, method), None
 
 
-async def _send_venmo_first_time_setup(
+async def _send_first_time_method_setup(
     query,
     context: ContextTypes.DEFAULT_TYPE,
     *,
     method_id: int,
     method: dict,
+    method_slug: str,
     amount: Decimal,
     tier: dict | None,
     response_data: dict,
+    bind_kind: str,
 ) -> bool:
     chat_id = context.chat_data.get("deposit_chat_id") or (
         query.message.chat.id if query.message else None
     )
     club_id = context.chat_data.get("deposit_club_id")
     user_id = context.chat_data.get("deposit_user_id")
+    slug = (method_slug or "").strip().lower()
+    method_name = method.get("name") or slug
+
     if chat_id is None or club_id is None:
         await query.edit_message_text(
-            "This group is not linked to a club. Venmo setup cannot be started."
+            f"This group is not linked to a club. {method_name} setup cannot be started."
         )
         return False
 
     variant_id = response_data.get("variant_id")
     if not variant_id:
         await query.edit_message_text(
-            "Venmo is not configured for this club. Please contact support."
+            f"{method_name} is not configured for this club. Please contact support."
         )
         return False
 
+    tier_id = int(tier["id"]) if tier else None
+    min_cents: int | None = None
+    if bind_kind == BIND_KIND_SPECIAL_AMOUNT:
+        try:
+            min_cents, resolved_tier_id = resolve_effective_min_cents_for_method(
+                int(method_id),
+                deposit_amount=amount,
+            )
+        except ValueError as e:
+            await query.edit_message_text(str(e))
+            return False
+        tier_id = resolved_tier_id or tier_id
+
     try:
-        min_cents, tier_id = resolve_effective_min_cents_for_method(
-            int(method_id),
-            deposit_amount=amount,
+        attempt = start_bind_attempt(
+            telegram_chat_id=int(chat_id),
+            club_id=int(club_id),
+            payment_method_slug=slug,
+            method_id=int(method_id),
+            tier_id=tier_id,
+            variant_id=int(variant_id),
+            bind_kind=bind_kind,
+            effective_min_cents=min_cents,
+            initiated_by_telegram_user_id=int(user_id) if user_id else None,
         )
     except ValueError as e:
         await query.edit_message_text(str(e))
         return False
 
-    tier_id = tier_id or (int(tier["id"]) if tier else None)
-    attempt = start_bind_attempt(
-        telegram_chat_id=int(chat_id),
-        club_id=int(club_id),
-        payment_method_slug="venmo",
-        method_id=int(method_id),
-        tier_id=tier_id,
-        variant_id=int(variant_id),
-        effective_min_cents=min_cents,
-        initiated_by_telegram_user_id=int(user_id) if user_id else None,
-    )
     _schedule_bind_attempt_expiry(context, attempt.id)
+
+    variant_text = response_data.get("response_text") or response_data.get(
+        "response_caption"
+    )
+    await query.edit_message_text(
+        f"Deposit via {method_name} — one-time setup"
+    )
+
+    if bind_kind == BIND_KIND_MEMO_EMOJI and attempt.setup_emoji:
+        highlight_html = format_setup_emoji_highlight(
+            attempt.setup_emoji, use_html=True
+        )
+        body_html = format_first_time_memo_setup_message(
+            payment_method_slug=slug,
+            setup_emoji=attempt.setup_emoji,
+            variant_response_text=variant_text,
+            use_html=True,
+        )
+        try:
+            await query.message.chat.send_message(highlight_html, parse_mode="HTML")
+        except Exception:
+            await query.message.chat.send_message(
+                format_setup_emoji_highlight(attempt.setup_emoji, use_html=False)
+            )
+        try:
+            await query.message.chat.send_message(
+                body_html,
+                parse_mode="HTML",
+                disable_web_page_preview=False,
+            )
+        except Exception:
+            logger.warning(
+                "memo_setup: HTML message failed, retrying plain chat_id=%s slug=%s",
+                chat_id,
+                slug,
+                exc_info=True,
+            )
+            await query.message.chat.send_message(
+                format_first_time_memo_setup_message(
+                    payment_method_slug=slug,
+                    setup_emoji=attempt.setup_emoji,
+                    variant_response_text=variant_text,
+                    use_html=False,
+                )
+            )
+        return True
 
     setup_kwargs = dict(
         setup_amount_cents=attempt.amount_cents,
         min_display_cents=min_cents,
-        variant_response_text=response_data.get("response_text")
-        or response_data.get("response_caption"),
+        variant_response_text=variant_text,
     )
-    await query.edit_message_text(
-        f"Deposit via {method.get('name', 'Venmo')} — one-time setup"
-    )
-    text_html = format_first_time_venmo_setup_message(**setup_kwargs, use_html=True)
     try:
         await query.message.chat.send_message(
             format_setup_amount_highlight(attempt.amount_cents, use_html=True),
@@ -295,13 +354,13 @@ async def _send_venmo_first_time_setup(
         )
     try:
         await query.message.chat.send_message(
-            text_html,
+            format_first_time_venmo_setup_message(**setup_kwargs, use_html=True),
             parse_mode="HTML",
             disable_web_page_preview=False,
         )
     except Exception:
         logger.warning(
-            "venmo_setup: HTML message failed, retrying plain chat_id=%s",
+            "amount_setup: HTML message failed, retrying plain chat_id=%s",
             chat_id,
             exc_info=True,
         )
@@ -914,11 +973,11 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     amount = context.chat_data.get("deposit_amount", "?")
     chat_id = query.message.chat.id if query.message else None
 
+    bind_kind = bind_mode_for_method(method_slug) if chat_id is not None else None
     if (
-        venmo_special_amount_binding_enabled()
-        and method_slug == "venmo"
+        bind_kind
         and chat_id is not None
-        and not is_chat_method_bound(int(chat_id), "venmo")
+        and not is_chat_method_bound(int(chat_id), method_slug)
     ):
         if not isinstance(amount, Decimal):
             await query.edit_message_text("Deposit session expired. Use /deposit again.")
@@ -932,22 +991,25 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
         )
         if not response_data:
             logger.error(
-                "deposit_method_no_variants chat_id=%s method_id=%s slug=venmo setup",
+                "deposit_method_no_variants chat_id=%s method_id=%s slug=%r setup",
                 chat_id,
                 method_id,
+                method_slug,
             )
             await query.edit_message_text(
                 "This payment method is not configured yet. Please contact support."
             )
             return ConversationHandler.END
-        ok = await _send_venmo_first_time_setup(
+        ok = await _send_first_time_method_setup(
             query,
             context,
             method_id=method_id,
             method=method,
+            method_slug=method_slug,
             amount=amount,
             tier=tier,
             response_data=response_data,
+            bind_kind=bind_kind,
         )
         if not ok:
             return ConversationHandler.END

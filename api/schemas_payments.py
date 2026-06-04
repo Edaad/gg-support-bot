@@ -191,8 +191,10 @@ class BindAttemptRead(BaseModel):
     club_id: int
     payment_method_slug: str
     variant_id: int
-    amount_cents: int
-    amount_usd: Decimal
+    bind_kind: str
+    amount_cents: Optional[int] = None
+    amount_usd: Optional[Decimal] = None
+    setup_emoji: Optional[str] = None
     status: str
     bound_via: str
     venmo_payment_id: Optional[int] = None

@@ -614,6 +614,7 @@ def list_bind_attempts(
     items: list[BindAttemptRead] = []
     for row in rows:
         title, _gg = resolve_group_title(db, int(row.telegram_chat_id))
+        amount_cents = int(row.amount_cents) if row.amount_cents is not None else None
         items.append(
             BindAttemptRead(
                 id=int(row.id),
@@ -621,8 +622,10 @@ def list_bind_attempts(
                 club_id=int(row.club_id),
                 payment_method_slug=str(row.payment_method_slug),
                 variant_id=int(row.variant_id),
-                amount_cents=int(row.amount_cents),
-                amount_usd=cents_to_usd(int(row.amount_cents)),
+                bind_kind=str(getattr(row, "bind_kind", None) or row.bound_via),
+                amount_cents=amount_cents,
+                amount_usd=cents_to_usd(amount_cents) if amount_cents is not None else None,
+                setup_emoji=getattr(row, "setup_emoji", None),
                 status=str(row.status),
                 bound_via=str(row.bound_via),
                 venmo_payment_id=int(row.venmo_payment_id)
