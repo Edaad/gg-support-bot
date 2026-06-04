@@ -115,6 +115,28 @@ def _with_method_checkout_settings(
     for layer in (method, tier, response_data):
         _apply_checkout_layer(checkout, layer)
     merged.update(checkout)
+
+    if merged.get("use_group_checkout_link"):
+        if tier:
+            if merged.get("checkout_min_amount") is None:
+                if tier.get("checkout_min_amount") is not None:
+                    merged["checkout_min_amount"] = tier["checkout_min_amount"]
+                elif tier.get("min_amount") is not None:
+                    merged["checkout_min_amount"] = tier["min_amount"]
+            if merged.get("checkout_max_amount") is None:
+                if tier.get("checkout_max_amount") is not None:
+                    merged["checkout_max_amount"] = tier["checkout_max_amount"]
+                elif tier.get("max_amount") is not None:
+                    merged["checkout_max_amount"] = tier["max_amount"]
+        if merged.get("checkout_max_amount") is None and method:
+            if method.get("max_amount") is not None:
+                merged["checkout_max_amount"] = method["max_amount"]
+        # Open-ended "Over $100" tiers often have no checkout_max in DB; variant enables Stripe only.
+        if merged.get("checkout_max_amount") is None:
+            lo = merged.get("checkout_min_amount")
+            if isinstance(lo, Decimal) and lo >= Decimal("101"):
+                merged["checkout_max_amount"] = Decimal("2000")
+
     return merged
 
 
