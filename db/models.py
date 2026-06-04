@@ -816,3 +816,105 @@ class VenmoPayerBinding(Base):
     last_bound_by_telegram_user_id = Column(BigInteger, nullable=True)
 
     club = relationship("Club")
+
+
+class PaymentMethodBindAttempt(Base):
+    """In-flight first-time payment method setup (special sub-minimum amount)."""
+
+    __tablename__ = "payment_method_bind_attempts"
+    __table_args__ = (
+        Index("ix_pmba_variant_status", "variant_id", "status"),
+        Index(
+            "ix_pmba_chat_method_status",
+            "telegram_chat_id",
+            "payment_method_slug",
+            "status",
+        ),
+        Index("ix_pmba_created_at", "created_at"),
+        Index(
+            "uq_pmba_pending_variant_amount",
+            "variant_id",
+            "amount_cents",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    payment_method_slug = Column(String(32), nullable=False)
+    method_id = Column(Integer, nullable=False)
+    tier_id = Column(
+        Integer, ForeignKey("club_payment_tiers.id", ondelete="SET NULL"), nullable=True
+    )
+    variant_id = Column(
+        Integer,
+        ForeignKey("club_payment_tier_variants.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    amount_cents = Column(Integer, nullable=False)
+    status = Column(String(20), nullable=False, default="pending")
+    bound_via = Column(String(32), nullable=False, default="special_amount")
+    initiated_by_telegram_user_id = Column(BigInteger, nullable=True)
+    venmo_payment_id = Column(
+        Integer,
+        ForeignKey("venmo_payments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    club = relationship("Club")
+    variant = relationship("ClubPaymentTierVariant")
+    venmo_payment = relationship("VenmoPayment")
+
+
+class GroupPaymentMethodBinding(Base):
+    """Per-group-chat link to a deposit payment method (e.g. Venmo variant)."""
+
+    __tablename__ = "group_payment_method_bindings"
+    __table_args__ = (
+        UniqueConstraint(
+            "telegram_chat_id",
+            "payment_method_slug",
+            name="uq_gpm_bindings_chat_method",
+        ),
+        Index("ix_gpm_bindings_telegram_chat_id", "telegram_chat_id"),
+        Index("ix_gpm_bindings_club_slug", "club_id", "payment_method_slug"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    payment_method_slug = Column(String(32), nullable=False)
+    variant_id = Column(
+        Integer,
+        ForeignKey("club_payment_tier_variants.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    venmo_handle = Column(String(100), nullable=True)
+    bound_via = Column(String(32), nullable=False)
+    bound_at = Column(DateTime(timezone=True), server_default=func.now())
+    bound_by_telegram_user_id = Column(BigInteger, nullable=True)
+    first_bind_attempt_id = Column(
+        Integer,
+        ForeignKey(
+            "payment_method_bind_attempts.id",
+            ondelete="SET NULL",
+            name="fk_gpm_bindings_first_bind_attempt",
+        ),
+        nullable=True,
+    )
+
+    club = relationship("Club")
+    variant = relationship("ClubPaymentTierVariant")
+    first_bind_attempt = relationship(
+        "PaymentMethodBindAttempt",
+        foreign_keys=[first_bind_attempt_id],
+    )

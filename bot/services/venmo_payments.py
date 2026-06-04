@@ -18,6 +18,16 @@ from bot.services.player_details import (
     resolve_club_id_from_shorthand,
 )
 from db.connection import get_db
+from bot.services.payment_method_binding import (
+    BOUND_VIA_MANUAL_DASHBOARD,
+    BOUND_VIA_MANUAL_NOTIFICATION,
+    BOUND_VIA_SPECIAL_AMOUNT,
+    cancel_pending_attempts_for_chat_in_session,
+    complete_attempt_in_session,
+    infer_variant_id_for_venmo_handle,
+    match_pending_venmo_setup_in_session,
+    record_group_binding_in_session,
+)
 from db.models import VenmoPayerBinding, VenmoPayment
 
 logger = logging.getLogger(__name__)
@@ -375,14 +385,67 @@ async def ingest_venmo_payment(
         session.add(payment)
         session.flush()
 
-        binding = (
-            session.query(VenmoPayerBinding)
-            .filter_by(
-                payer_name_normalized=normalize_payer_name(payer),
-                venmo_handle=handle,
-            )
-            .one_or_none()
+        setup_attempt = match_pending_venmo_setup_in_session(
+            session,
+            amount_cents=amount_cents,
+            venmo_handle=handle,
         )
+        if setup_attempt is not None:
+            live_title = resolve_display_group_title(int(setup_attempt.telegram_chat_id))
+            club_id_setup = int(setup_attempt.club_id)
+            if live_title:
+                if complete_attempt_in_session(
+                    session,
+                    setup_attempt,
+                    venmo_payment_id=int(payment.id),
+                ):
+                    auto_bound = True
+                    group_title = live_title
+                    _apply_binding_to_payment(
+                        payment,
+                        telegram_chat_id=int(setup_attempt.telegram_chat_id),
+                        club_id=club_id_setup,
+                        bound_group_title_at_bind=live_title,
+                        auto_bound=True,
+                    )
+                    _upsert_payer_binding(
+                        session,
+                        payer_name=payment.payer_name,
+                        venmo_handle=payment.venmo_handle,
+                        telegram_chat_id=int(setup_attempt.telegram_chat_id),
+                        club_id=club_id_setup,
+                        bound_group_title_at_bind=live_title,
+                        bound_by_telegram_user_id=None,
+                    )
+                    record_group_binding_in_session(
+                        session,
+                        telegram_chat_id=int(setup_attempt.telegram_chat_id),
+                        club_id=club_id_setup,
+                        payment_method_slug="venmo",
+                        bound_via=BOUND_VIA_SPECIAL_AMOUNT,
+                        variant_id=int(setup_attempt.variant_id),
+                        venmo_handle=handle,
+                        first_bind_attempt_id=int(setup_attempt.id),
+                    )
+                    logger.info(
+                        "venmo ingest: setup bind matched attempt_id=%s payment_id=%s chat_id=%s",
+                        setup_attempt.id,
+                        payment.id,
+                        setup_attempt.telegram_chat_id,
+                    )
+
+        if not auto_bound:
+            binding = (
+                session.query(VenmoPayerBinding)
+                .filter_by(
+                    payer_name_normalized=normalize_payer_name(payer),
+                    venmo_handle=handle,
+                )
+                .one_or_none()
+            )
+        else:
+            binding = None
+
         if binding is not None:
             live_title = resolve_display_group_title(int(binding.telegram_chat_id))
             club_id = binding.club_id
@@ -454,6 +517,7 @@ async def bind_venmo_payment_by_id(
     payment_id: int,
     group_title_input: str,
     bound_by_telegram_user_id: Optional[int] = None,
+    bound_via: str = BOUND_VIA_MANUAL_DASHBOARD,
 ) -> BindResult:
     """Bind or rebind a payment to a support group by payment id."""
     result = resolve_bound_group(group_title_input)
@@ -485,6 +549,26 @@ async def bind_venmo_payment_by_id(
             telegram_chat_id=group.telegram_chat_id,
             club_id=group.club_id,
             bound_group_title_at_bind=group.group_title,
+            bound_by_telegram_user_id=bound_by_telegram_user_id,
+        )
+
+        variant_id = infer_variant_id_for_venmo_handle(
+            int(group.club_id),
+            payment.venmo_handle,
+        )
+        cancel_pending_attempts_for_chat_in_session(
+            session,
+            telegram_chat_id=int(group.telegram_chat_id),
+            payment_method_slug="venmo",
+        )
+        record_group_binding_in_session(
+            session,
+            telegram_chat_id=int(group.telegram_chat_id),
+            club_id=int(group.club_id),
+            payment_method_slug="venmo",
+            bound_via=bound_via,
+            variant_id=variant_id,
+            venmo_handle=payment.venmo_handle,
             bound_by_telegram_user_id=bound_by_telegram_user_id,
         )
 
@@ -534,4 +618,5 @@ async def bind_venmo_payment_from_reply(
         payment_id=payment_id,
         group_title_input=group_title_input,
         bound_by_telegram_user_id=int(bound_by_telegram_user_id),
+        bound_via=BOUND_VIA_MANUAL_NOTIFICATION,
     )

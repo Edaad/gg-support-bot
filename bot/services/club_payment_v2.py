@@ -57,7 +57,7 @@ def _tier_dict(t: ClubPaymentTier) -> dict:
     }
 
 
-def _variant_response_dict(v: ClubPaymentTierVariant) -> dict:
+def _variant_response_dict(v: ClubPaymentTierVariant, *, include_ids: bool = False) -> dict:
     link = v.use_group_checkout_link
     provider = v.group_checkout_provider
     if link is True and not provider:
@@ -75,6 +75,11 @@ def _variant_response_dict(v: ClubPaymentTierVariant) -> dict:
         data["use_group_checkout_link"] = bool(link)
     if provider and data.get("use_group_checkout_link"):
         data["group_checkout_provider"] = provider
+    if include_ids:
+        data["variant_id"] = int(v.id)
+        data["variant_label"] = v.label
+        data["tier_id"] = int(v.tier_id) if v.tier_id else None
+        data["method_id"] = int(v.method_id)
     return data
 
 
@@ -176,8 +181,19 @@ def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
     return None
 
 
-def pick_variant(method_id: int, tier_id: Optional[int] = None) -> Optional[dict]:
+def pick_variant(
+    method_id: int,
+    tier_id: Optional[int] = None,
+    *,
+    variant_id: Optional[int] = None,
+) -> Optional[dict]:
     with get_db() as session:
+        if variant_id is not None:
+            chosen = session.query(ClubPaymentTierVariant).get(int(variant_id))
+            if chosen is None or int(chosen.method_id) != int(method_id):
+                return None
+            return _variant_response_dict(chosen, include_ids=True)
+
         if tier_id is not None:
             variants = (
                 session.query(ClubPaymentTierVariant)
@@ -188,7 +204,7 @@ def pick_variant(method_id: int, tier_id: Optional[int] = None) -> Optional[dict
             if variants:
                 weights = [v.weight for v in variants]
                 chosen = random.choices(variants, weights=weights, k=1)[0]
-                return _variant_response_dict(chosen)
+                return _variant_response_dict(chosen, include_ids=True)
         return None
 
 

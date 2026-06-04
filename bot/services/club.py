@@ -358,7 +358,9 @@ def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
     return None
 
 
-def _variant_response_dict(v: MethodVariant, *, tier_scoped: bool = False) -> dict:
+def _variant_response_dict(
+    v: MethodVariant, *, tier_scoped: bool = False, include_ids: bool = False
+) -> dict:
     link = getattr(v, "use_group_checkout_link", None)
     if tier_scoped and link is None:
         link = False
@@ -378,10 +380,20 @@ def _variant_response_dict(v: MethodVariant, *, tier_scoped: bool = False) -> di
         data["use_group_checkout_link"] = bool(link)
     if provider and data.get("use_group_checkout_link"):
         data["group_checkout_provider"] = provider
+    if include_ids:
+        data["variant_id"] = int(v.id)
+        data["variant_label"] = v.label
+        data["tier_id"] = int(v.tier_id) if v.tier_id else None
+        data["method_id"] = int(v.method_id)
     return data
 
 
-def pick_variant(method_id: int, tier_id: Optional[int] = None) -> Optional[dict]:
+def pick_variant(
+    method_id: int,
+    tier_id: Optional[int] = None,
+    *,
+    variant_id: Optional[int] = None,
+) -> Optional[dict]:
     """Pick a weighted-random variant for a method or tier.
 
     If tier_id is given, looks for tier-level variants first.
@@ -392,8 +404,14 @@ def pick_variant(method_id: int, tier_id: Optional[int] = None) -> Optional[dict
     """
     v2 = _payment_v2()
     if v2:
-        return v2.pick_variant(method_id, tier_id=tier_id)
+        return v2.pick_variant(method_id, tier_id=tier_id, variant_id=variant_id)
     with get_db() as session:
+        if variant_id is not None:
+            chosen = session.query(MethodVariant).get(int(variant_id))
+            if chosen is None or int(chosen.method_id) != int(method_id):
+                return None
+            return _variant_response_dict(chosen, tier_scoped=bool(chosen.tier_id), include_ids=True)
+
         if tier_id is not None:
             variants = (
                 session.query(MethodVariant)
@@ -403,7 +421,7 @@ def pick_variant(method_id: int, tier_id: Optional[int] = None) -> Optional[dict
             if variants:
                 weights = [v.weight for v in variants]
                 chosen = random.choices(variants, weights=weights, k=1)[0]
-                return _variant_response_dict(chosen, tier_scoped=True)
+                return _variant_response_dict(chosen, tier_scoped=True, include_ids=True)
 
         variants = (
             session.query(MethodVariant)
@@ -414,7 +432,7 @@ def pick_variant(method_id: int, tier_id: Optional[int] = None) -> Optional[dict
             return None
         weights = [v.weight for v in variants]
         chosen = random.choices(variants, weights=weights, k=1)[0]
-        return _variant_response_dict(chosen, tier_scoped=False)
+        return _variant_response_dict(chosen, tier_scoped=False, include_ids=True)
 
 
 def get_custom_command(club_id: int, command_name: str) -> Optional[dict]:
