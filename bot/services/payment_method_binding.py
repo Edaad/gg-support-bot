@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -22,7 +23,15 @@ from db.models import (
 
 logger = logging.getLogger(__name__)
 
+VENMO_SPECIAL_AMOUNT_BINDING_ENV = "VENMO_SPECIAL_AMOUNT_BINDING"
+
 BIND_ATTEMPT_TTL_SECONDS = 600
+
+
+def venmo_special_amount_binding_enabled() -> bool:
+    """True when VENMO_SPECIAL_AMOUNT_BINDING is 1, true, yes, or on. Default off."""
+    raw = (os.getenv(VENMO_SPECIAL_AMOUNT_BINDING_ENV) or "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
 
 BOUND_VIA_SPECIAL_AMOUNT = "special_amount"
 BOUND_VIA_MANUAL_NOTIFICATION = "manual_notification"

@@ -55,6 +55,7 @@ from bot.services.payment_method_binding import (
     is_chat_method_bound,
     resolve_effective_min_cents_for_method,
     start_bind_attempt,
+    venmo_special_amount_binding_enabled,
 )
 from bot.services.payment_method_binding import expire_attempt as expire_bind_attempt
 from bot.runtime_config import is_test_bot_worker, use_payment_v2
@@ -862,8 +863,11 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     amount = context.chat_data.get("deposit_amount", "?")
     chat_id = query.message.chat.id if query.message else None
 
-    if method_slug == "venmo" and chat_id is not None and not is_chat_method_bound(
-        int(chat_id), "venmo"
+    if (
+        venmo_special_amount_binding_enabled()
+        and method_slug == "venmo"
+        and chat_id is not None
+        and not is_chat_method_bound(int(chat_id), "venmo")
     ):
         if not isinstance(amount, Decimal):
             await query.edit_message_text("Deposit session expired. Use /deposit again.")

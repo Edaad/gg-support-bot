@@ -27,6 +27,7 @@ from bot.services.payment_method_binding import (
     infer_variant_id_for_venmo_handle,
     match_pending_venmo_setup_in_session,
     record_group_binding_in_session,
+    venmo_special_amount_binding_enabled,
 )
 from db.models import VenmoPayerBinding, VenmoPayment
 
@@ -385,11 +386,13 @@ async def ingest_venmo_payment(
         session.add(payment)
         session.flush()
 
-        setup_attempt = match_pending_venmo_setup_in_session(
-            session,
-            amount_cents=amount_cents,
-            venmo_handle=handle,
-        )
+        setup_attempt = None
+        if venmo_special_amount_binding_enabled():
+            setup_attempt = match_pending_venmo_setup_in_session(
+                session,
+                amount_cents=amount_cents,
+                venmo_handle=handle,
+            )
         if setup_attempt is not None:
             live_title = resolve_display_group_title(int(setup_attempt.telegram_chat_id))
             club_id_setup = int(setup_attempt.club_id)

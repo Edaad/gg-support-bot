@@ -1,17 +1,32 @@
 """Unit tests for payment method binding helpers."""
 
+import os
 import unittest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from bot.services.payment_method_binding import (
     ATTEMPT_STATUS_PENDING,
+    VENMO_SPECIAL_AMOUNT_BINDING_ENV,
     allocate_setup_amount_cents,
     effective_min_cents,
     extract_venmo_handle_from_text,
     extract_venmo_url,
     format_first_time_venmo_setup_message,
+    venmo_special_amount_binding_enabled,
 )
+
+
+class TestVenmoSpecialAmountEnv(unittest.TestCase):
+    def test_default_off(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(VENMO_SPECIAL_AMOUNT_BINDING_ENV, None)
+            self.assertFalse(venmo_special_amount_binding_enabled())
+
+    def test_enabled_values(self):
+        for val in ("1", "true", "yes", "on"):
+            with patch.dict(os.environ, {VENMO_SPECIAL_AMOUNT_BINDING_ENV: val}):
+                self.assertTrue(venmo_special_amount_binding_enabled())
 
 
 class TestEffectiveMinCents(unittest.TestCase):

@@ -1,6 +1,12 @@
 # Venmo first-time group chat binding
 
-Before a support group can use **Venmo** in `/deposit`, the chat must be **linked** via a one-time setup payment at a special sub-minimum amount. After linking, deposits use the same Venmo variant account that was confirmed during setup.
+**Off by default.** Enable on the bot + web dynos:
+
+```bash
+VENMO_SPECIAL_AMOUNT_BINDING=true
+```
+
+When enabled, before a support group can use **Venmo** in `/deposit`, the chat must be **linked** via a one-time setup payment at a special sub-minimum amount. After linking, deposits use the same Venmo variant account that was confirmed during setup.
 
 ## Flow
 
