@@ -47,6 +47,8 @@ def _tier_dict(t: ClubPaymentTier) -> dict:
         "label": t.label,
         "min_amount": t.min_amount,
         "max_amount": t.max_amount,
+        "checkout_min_amount": t.checkout_min_amount,
+        "checkout_max_amount": t.checkout_max_amount,
         "response_type": t.response_type,
         "response_text": t.response_text,
         "response_file_id": t.response_file_id,
@@ -68,8 +70,8 @@ def _variant_response_dict(v: ClubPaymentTierVariant, *, include_ids: bool = Fal
         "response_file_id": v.response_file_id,
         "response_caption": v.response_caption,
         "hyperlink_text": v.hyperlink_text,
-        "min_amount": v.checkout_min_amount,
-        "max_amount": v.checkout_max_amount,
+        "checkout_min_amount": v.checkout_min_amount,
+        "checkout_max_amount": v.checkout_max_amount,
     }
     if link is not None:
         data["use_group_checkout_link"] = bool(link)

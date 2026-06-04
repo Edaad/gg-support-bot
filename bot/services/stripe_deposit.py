@@ -119,7 +119,7 @@ def resolve_checkout_amount_cents(
     if max_c is None:
         max_c = STRIPE_CHECKOUT_MAX_CENTS
     if min_c > max_c:
-        min_c, max_c = max_c, min_c
+        max_c = min_c
     if min_usd is None and max_usd is None:
         preset = STRIPE_CHECKOUT_PRESET_CENTS
     else:

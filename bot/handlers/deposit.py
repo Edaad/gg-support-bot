@@ -73,13 +73,17 @@ _CHECKOUT_SETTING_KEYS = (
     "use_group_checkout_link",
     "group_checkout_provider",
     "hyperlink_text",
-    "min_amount",
-    "max_amount",
+    "checkout_min_amount",
+    "checkout_max_amount",
 )
 
 
 def _apply_checkout_layer(target: dict, source: dict | None) -> None:
-    """Overlay checkout fields from source onto target (method → tier → variant)."""
+    """Overlay checkout fields from source onto target (method → tier → variant).
+
+    Stripe min/max use checkout_min_amount / checkout_max_amount only — never tier
+    deposit-band min_amount / max_amount ($101–$2000), which are separate limits.
+    """
     if not source:
         return
     if source.get("use_group_checkout_link") is not None:
@@ -93,10 +97,10 @@ def _apply_checkout_layer(target: dict, source: dict | None) -> None:
         target["group_checkout_provider"] = "stripe"
     if source.get("hyperlink_text"):
         target["hyperlink_text"] = source.get("hyperlink_text")
-    if source.get("min_amount") is not None:
-        target["min_amount"] = source.get("min_amount")
-    if source.get("max_amount") is not None:
-        target["max_amount"] = source.get("max_amount")
+    if source.get("checkout_min_amount") is not None:
+        target["checkout_min_amount"] = source.get("checkout_min_amount")
+    if source.get("checkout_max_amount") is not None:
+        target["checkout_max_amount"] = source.get("checkout_max_amount")
 
 
 def _with_method_checkout_settings(
@@ -1206,8 +1210,8 @@ async def _send_deposit_method_response(
                 club_id=int(club_id),
                 payment_method_id=method_id,
                 group_title=group_title,
-                checkout_min_usd=response_data.get("min_amount"),
-                checkout_max_usd=response_data.get("max_amount"),
+                checkout_min_usd=response_data.get("checkout_min_amount"),
+                checkout_max_usd=response_data.get("checkout_max_amount"),
             )
             await query.edit_message_text(f"Deposit via {display_name}")
 
@@ -1256,8 +1260,8 @@ async def _send_deposit_method_response(
                 method_id,
                 slug,
                 amount,
-                response_data.get("min_amount"),
-                response_data.get("max_amount"),
+                response_data.get("checkout_min_amount"),
+                response_data.get("checkout_max_amount"),
                 display_name,
                 err_detail,
             )
@@ -1271,8 +1275,8 @@ async def _send_deposit_method_response(
                     method_slug=slug,
                     display_name=display_name,
                     amount=amount,
-                    checkout_min_usd=response_data.get("min_amount"),
-                    checkout_max_usd=response_data.get("max_amount"),
+                    checkout_min_usd=response_data.get("checkout_min_amount"),
+                    checkout_max_usd=response_data.get("checkout_max_amount"),
                     error_detail=err_detail,
                 )
             await query.edit_message_text(
