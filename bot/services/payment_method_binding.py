@@ -650,6 +650,16 @@ def resolve_effective_min_cents_for_method(
         return cents, tier_id
 
 
+def format_setup_amount_highlight(amount_cents: int, *, use_html: bool = True) -> str:
+    """Short standalone message highlighting the exact setup amount."""
+    display = _format_amount_display(int(amount_cents))
+    if use_html:
+        return (
+            f"<b>Send exactly</b>\n<code>{html_module.escape(display)}</code>"
+        )
+    return f"Send exactly:\n  {display}"
+
+
 def format_first_time_venmo_setup_message(
     *,
     setup_amount_cents: int,
@@ -667,23 +677,27 @@ def format_first_time_venmo_setup_message(
         safe_min = html_module.escape(min_display)
         safe_url = html_module.escape(url, quote=True)
         return (
-            "<b>FIRST-TIME VENMO SETUP</b>\n\n"
-            f"<b>Send exactly: {safe_setup}</b>\n"
-            f"<b>Do not send {safe_min}</b> or round the amount.\n\n"
-            "Pay that exact amount to the Venmo below so we can link this group chat. "
-            "This is a one-time step; later deposits work normally once linked.\n\n"
+            "<b>FIRST-TIME VENMO SETUP</b>\n"
+            "────────────────────\n\n"
+            "<b>Pay this exact amount only:</b>\n"
+            f"<code>{safe_setup}</code>\n\n"
+            f"<b>Do not send {safe_min}</b> (no rounding).\n\n"
+            "Send that amount to the Venmo below to link this group. One-time setup; "
+            "normal deposits work after linking.\n\n"
             f'<b>Venmo:</b> <a href="{safe_url}">{safe_url}</a>\n\n'
-            "After sending, post a screenshot here. An agent will confirm and add your chips."
+            "Post a screenshot when done. An agent will confirm and add your chips."
         )
 
     return (
-        "FIRST-TIME VENMO SETUP\n\n"
-        f">>> SEND EXACTLY: {setup_display} <<<\n"
-        f"(Do NOT send {min_display} or round the amount.)\n\n"
-        "Pay that exact amount to the Venmo below so we can link this group chat. "
-        "This is a one-time step; later deposits work normally once linked.\n\n"
+        "FIRST-TIME VENMO SETUP\n"
+        "--------------------\n\n"
+        "PAY THIS EXACT AMOUNT ONLY:\n"
+        f"  {setup_display}\n\n"
+        f"Do NOT send {min_display} (no rounding).\n\n"
+        "Send that amount to the Venmo below to link this group. One-time setup; "
+        "normal deposits work after linking.\n\n"
         f"Venmo: {url}\n\n"
-        "After sending, post a screenshot here. An agent will confirm and add your chips."
+        "Post a screenshot when done. An agent will confirm and add your chips."
     )
 
 

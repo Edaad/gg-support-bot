@@ -51,6 +51,7 @@ from bot.services.stripe_deposit import (
 from bot.services.payment_method_binding import (
     BIND_ATTEMPT_TTL_SECONDS,
     format_first_time_venmo_setup_message,
+    format_setup_amount_highlight,
     get_chat_binding,
     is_chat_method_bound,
     resolve_effective_min_cents_for_method,
@@ -283,6 +284,15 @@ async def _send_venmo_first_time_setup(
         f"Deposit via {method.get('name', 'Venmo')} — one-time setup"
     )
     text_html = format_first_time_venmo_setup_message(**setup_kwargs, use_html=True)
+    try:
+        await query.message.chat.send_message(
+            format_setup_amount_highlight(attempt.amount_cents, use_html=True),
+            parse_mode="HTML",
+        )
+    except Exception:
+        await query.message.chat.send_message(
+            format_setup_amount_highlight(attempt.amount_cents, use_html=False)
+        )
     try:
         await query.message.chat.send_message(
             text_html,

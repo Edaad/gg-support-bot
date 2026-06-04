@@ -101,7 +101,8 @@ class TestSetupMessage(unittest.TestCase):
         )
         self.assertIn("$99.99", text)
         self.assertIn("$100.00", text)
-        self.assertIn("<b>Send exactly:", text)
+        self.assertIn("<code>$99.99</code>", text)
+        self.assertIn("Pay this exact amount only", text)
         self.assertIn("FIRST-TIME VENMO SETUP", text)
         self.assertIn("venmo.com/u/club-round", text)
 
@@ -112,7 +113,8 @@ class TestSetupMessage(unittest.TestCase):
             variant_response_text="Venmo: https://venmo.com/u/club-round",
             use_html=False,
         )
-        self.assertIn(">>> SEND EXACTLY: $99.99 <<<", text)
+        self.assertIn("PAY THIS EXACT AMOUNT ONLY", text)
+        self.assertIn("$99.99", text)
         self.assertNotIn("<b>", text)
 
 
