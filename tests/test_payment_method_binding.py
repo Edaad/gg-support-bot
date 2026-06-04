@@ -93,7 +93,7 @@ class TestAllocateSetupAmount(unittest.TestCase):
 
 
 class TestSetupMessage(unittest.TestCase):
-    def test_includes_amounts(self):
+    def test_includes_amounts_html(self):
         text = format_first_time_venmo_setup_message(
             setup_amount_cents=9999,
             min_display_cents=10000,
@@ -101,8 +101,19 @@ class TestSetupMessage(unittest.TestCase):
         )
         self.assertIn("$99.99", text)
         self.assertIn("$100.00", text)
+        self.assertIn("<b>Send exactly:", text)
         self.assertIn("FIRST-TIME VENMO SETUP", text)
         self.assertIn("venmo.com/u/club-round", text)
+
+    def test_plain_fallback_emphasizes_exact_amount(self):
+        text = format_first_time_venmo_setup_message(
+            setup_amount_cents=9999,
+            min_display_cents=10000,
+            variant_response_text="Venmo: https://venmo.com/u/club-round",
+            use_html=False,
+        )
+        self.assertIn(">>> SEND EXACTLY: $99.99 <<<", text)
+        self.assertNotIn("<b>", text)
 
 
 class TestMatchPendingInSession(unittest.TestCase):

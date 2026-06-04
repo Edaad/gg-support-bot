@@ -273,7 +273,7 @@ async def _send_venmo_first_time_setup(
     )
     _schedule_bind_attempt_expiry(context, attempt.id)
 
-    text = format_first_time_venmo_setup_message(
+    setup_kwargs = dict(
         setup_amount_cents=attempt.amount_cents,
         min_display_cents=min_cents,
         variant_response_text=response_data.get("response_text")
@@ -282,7 +282,22 @@ async def _send_venmo_first_time_setup(
     await query.edit_message_text(
         f"Deposit via {method.get('name', 'Venmo')} — one-time setup"
     )
-    await query.message.chat.send_message(text)
+    text_html = format_first_time_venmo_setup_message(**setup_kwargs, use_html=True)
+    try:
+        await query.message.chat.send_message(
+            text_html,
+            parse_mode="HTML",
+            disable_web_page_preview=False,
+        )
+    except Exception:
+        logger.warning(
+            "venmo_setup: HTML message failed, retrying plain chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+        await query.message.chat.send_message(
+            format_first_time_venmo_setup_message(**setup_kwargs, use_html=False)
+        )
     return True
 
 

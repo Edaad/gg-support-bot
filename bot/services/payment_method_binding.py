@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html as html_module
 import logging
 import re
 from dataclasses import dataclass
@@ -654,23 +655,35 @@ def format_first_time_venmo_setup_message(
     setup_amount_cents: int,
     min_display_cents: int,
     variant_response_text: str | None,
+    use_html: bool = True,
 ) -> str:
+    """Build first-time Venmo setup copy. Default is Telegram HTML (parse_mode=HTML)."""
     setup_display = _format_amount_display(int(setup_amount_cents))
     min_display = _format_amount_display(int(min_display_cents))
     url = extract_venmo_url(variant_response_text) or "—"
-    venmo_line = f"Venmo: {url}"
+
+    if use_html:
+        safe_setup = html_module.escape(setup_display)
+        safe_min = html_module.escape(min_display)
+        safe_url = html_module.escape(url, quote=True)
+        return (
+            "<b>FIRST-TIME VENMO SETUP</b>\n\n"
+            f"<b>Send exactly: {safe_setup}</b>\n"
+            f"<b>Do not send {safe_min}</b> or round the amount.\n\n"
+            "Pay that exact amount to the Venmo below so we can link this group chat. "
+            "This is a one-time step; later deposits work normally once linked.\n\n"
+            f'<b>Venmo:</b> <a href="{safe_url}">{safe_url}</a>\n\n'
+            "After sending, post a screenshot here. An agent will confirm and add your chips."
+        )
 
     return (
-        "FIRST-TIME VENMO SETUP:\n\n"
-        f"To link your payment method to this group chat, please send EXACTLY "
-        f"{setup_display} to the VENMO info below.\n\n"
-        f"IMPORTANT: Do NOT round the amount to {min_display}. The exact amount helps "
-        f"us match your payment to this chat faster. This is a one-time setup step for "
-        f"this payment method. Future deposits can be sent normally once your method is "
-        f"linked.\n\n"
-        f"{venmo_line}\n\n"
-        "After sending, please post a screenshot here. An agent will confirm the "
-        "transaction and add your chips as soon as it comes through."
+        "FIRST-TIME VENMO SETUP\n\n"
+        f">>> SEND EXACTLY: {setup_display} <<<\n"
+        f"(Do NOT send {min_display} or round the amount.)\n\n"
+        "Pay that exact amount to the Venmo below so we can link this group chat. "
+        "This is a one-time step; later deposits work normally once linked.\n\n"
+        f"Venmo: {url}\n\n"
+        "After sending, post a screenshot here. An agent will confirm and add your chips."
     )
 
 
