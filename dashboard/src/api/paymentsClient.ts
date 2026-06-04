@@ -277,6 +277,36 @@ export async function fetchAllVenmoPayments(
   return all
 }
 
+export type BindingViaCount = { bound_via: string; count: number }
+
+export type BindingAttemptFunnel = {
+  initiated: number
+  succeeded: number
+  expired: number
+  cancelled: number
+  pending: number
+  success_rate: number | null
+}
+
+export type BindingSummary = {
+  payment_method_slug: string
+  club_id: number | null
+  bindings_by_via: BindingViaCount[]
+  attempt_funnel: BindingAttemptFunnel
+}
+
+export function fetchBindingSummary(
+  token: string,
+  params: { method?: string; clubId?: number; from?: string; to?: string },
+) {
+  const q = new URLSearchParams()
+  q.set('method', params.method ?? 'venmo')
+  if (params.clubId != null) q.set('club_id', String(params.clubId))
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  return request<BindingSummary>(`/bindings/summary?${q}`, {}, token)
+}
+
 export async function fetchAllVenmoPayers(
   token: string,
   params: { clubId: number; q?: string },

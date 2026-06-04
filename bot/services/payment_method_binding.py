@@ -11,7 +11,6 @@ from typing import Optional
 
 from sqlalchemy import func
 
-from bot.services.venmo_payments import format_amount_display, normalize_venmo_handle
 from db.connection import get_db
 from db.models import (
     ClubPaymentMethod,
@@ -40,6 +39,22 @@ _VENMO_URL_RE = re.compile(
     r"https?://(?:www\.)?venmo\.com/u/([a-zA-Z0-9_-]+)",
     re.IGNORECASE,
 )
+
+
+def _normalize_venmo_handle(handle: str) -> str:
+    raw = (handle or "").strip()
+    if not raw:
+        return raw
+    if not raw.startswith("@"):
+        raw = f"@{raw}"
+    return raw.lower()
+
+
+def _format_amount_display(amount_cents: int) -> str:
+    dollars = Decimal(amount_cents) / Decimal(100)
+    if dollars == dollars.to_integral_value():
+        return f"${int(dollars):,}.00"
+    return f"${dollars:,.2f}"
 
 
 @dataclass(frozen=True)
@@ -104,7 +119,7 @@ def extract_venmo_handle_from_text(text: str | None) -> Optional[str]:
     m = _VENMO_URL_RE.search(text)
     if not m:
         return None
-    return normalize_venmo_handle(m.group(1))
+    return _normalize_venmo_handle(m.group(1))
 
 
 def variant_venmo_handle(variant_id: int) -> Optional[str]:
@@ -326,7 +341,7 @@ def record_group_binding(
     first_bind_attempt_id: int | None = None,
 ) -> int:
     slug = (payment_method_slug or "").strip().lower()
-    handle = normalize_venmo_handle(venmo_handle) if venmo_handle else None
+    handle = _normalize_venmo_handle(venmo_handle) if venmo_handle else None
     now = datetime.now(timezone.utc)
 
     with get_db() as session:
@@ -425,7 +440,7 @@ def match_pending_venmo_setup_in_session(
     venmo_handle: str,
 ) -> Optional[PaymentMethodBindAttempt]:
     """Return a pending bind attempt matching ingest amount + variant handle."""
-    handle = normalize_venmo_handle(venmo_handle)
+    handle = _normalize_venmo_handle(venmo_handle)
     if not handle:
         return None
     now = datetime.now(timezone.utc)
@@ -484,7 +499,7 @@ def record_group_binding_in_session(
     first_bind_attempt_id: int | None = None,
 ) -> int:
     slug = (payment_method_slug or "").strip().lower()
-    handle = normalize_venmo_handle(venmo_handle) if venmo_handle else None
+    handle = _normalize_venmo_handle(venmo_handle) if venmo_handle else None
     now = datetime.now(timezone.utc)
     row = (
         session.query(GroupPaymentMethodBinding)
@@ -577,8 +592,8 @@ def format_first_time_venmo_setup_message(
     min_display_cents: int,
     variant_response_text: str | None,
 ) -> str:
-    setup_display = format_amount_display(int(setup_amount_cents))
-    min_display = format_amount_display(int(min_display_cents))
+    setup_display = _format_amount_display(int(setup_amount_cents))
+    min_display = _format_amount_display(int(min_display_cents))
     url = extract_venmo_url(variant_response_text) or "—"
     venmo_line = f"Venmo: {url}"
 
@@ -601,7 +616,7 @@ def infer_variant_id_for_venmo_handle(
     venmo_handle: str,
 ) -> Optional[int]:
     """Match handle to a club Venmo variant response text."""
-    handle = normalize_venmo_handle(venmo_handle)
+    handle = _normalize_venmo_handle(venmo_handle)
     if not handle:
         return None
     needle = handle.lstrip("@").lower()

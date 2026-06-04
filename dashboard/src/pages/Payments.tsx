@@ -2,7 +2,9 @@ import { useCallback, useEffect, useId, useState } from 'react'
 import { listClubs, type Club } from '../api/client'
 import {
   bindVenmoPayment,
+  fetchBindingSummary,
   fetchAllStripeCustomers,
+  type BindingSummary,
   fetchAllStripeSessions,
   fetchAllVenmoPayers,
   fetchAllVenmoPayments,
@@ -105,6 +107,7 @@ export default function Payments({ token }: { token: string }) {
 
   const [bindOpen, setBindOpen] = useState(false)
   const [bindRow, setBindRow] = useState<VenmoPaymentRow | null>(null)
+  const [bindingSummary, setBindingSummary] = useState<BindingSummary | null>(null)
   const [bindTitle, setBindTitle] = useState('')
   const [bindLoading, setBindLoading] = useState(false)
 
@@ -253,6 +256,22 @@ export default function Payments({ token }: { token: string }) {
       .finally(() => setLoading(false))
   }, [token, clubId, appliedSearch, venmoPayerPage])
 
+  const loadBindingSummary = useCallback(() => {
+    if (provider !== 'venmo') return
+    fetchBindingSummary(token, {
+      method: 'venmo',
+      clubId: clubId ?? undefined,
+      from: appliedFrom || undefined,
+      to: appliedTo || undefined,
+    })
+      .then(setBindingSummary)
+      .catch(() => setBindingSummary(null))
+  }, [token, clubId, provider, appliedFrom, appliedTo])
+
+  useEffect(() => {
+    loadBindingSummary()
+  }, [loadBindingSummary])
+
   useEffect(() => {
     if (clubId == null) return
     if (provider === 'stripe') {
@@ -278,6 +297,7 @@ export default function Payments({ token }: { token: string }) {
     setAppliedTo(toDate)
     setSessionPage(0)
     setVenmoPaymentPage(0)
+    loadBindingSummary()
   }
 
   const applyCustomerSearch = () => {
@@ -500,9 +520,51 @@ export default function Payments({ token }: { token: string }) {
   const venmoPaymentPages = Math.max(1, Math.ceil(venmoPaymentTotal / PAGE_SIZE))
   const venmoPayerPages = Math.max(1, Math.ceil(venmoPayerTotal / PAGE_SIZE))
 
+  const funnel = bindingSummary?.attempt_funnel
+
   return (
     <div>
       <h1 className="mb-6 text-2xl font-bold">Payments</h1>
+
+      {provider === 'venmo' && bindingSummary && funnel && (
+        <section className="mb-6 rounded-lg border border-slate-700 bg-slate-900/50 p-4">
+          <h2 className="mb-3 text-sm font-semibold text-slate-200">Venmo group bindings</h2>
+          <div className="flex flex-wrap gap-6 text-sm">
+            <div>
+              <p className="text-slate-400">Setup initiated</p>
+              <p className="text-lg font-medium">{funnel.initiated}</p>
+            </div>
+            <div>
+              <p className="text-slate-400">Succeeded</p>
+              <p className="text-lg font-medium text-emerald-400">{funnel.succeeded}</p>
+            </div>
+            <div>
+              <p className="text-slate-400">Expired</p>
+              <p className="text-lg font-medium">{funnel.expired}</p>
+            </div>
+            <div>
+              <p className="text-slate-400">Pending</p>
+              <p className="text-lg font-medium">{funnel.pending}</p>
+            </div>
+            <div>
+              <p className="text-slate-400">Success rate</p>
+              <p className="text-lg font-medium">
+                {funnel.success_rate != null
+                  ? `${(funnel.success_rate * 100).toFixed(1)}%`
+                  : '—'}
+              </p>
+            </div>
+          </div>
+          {bindingSummary.bindings_by_via.length > 0 && (
+            <p className="mt-3 text-xs text-slate-400">
+              Linked chats by source:{' '}
+              {bindingSummary.bindings_by_via
+                .map((b) => `${b.bound_via} (${b.count})`)
+                .join(', ')}
+            </p>
+          )}
+        </section>
+      )}
 
       <div className="mb-6 flex flex-wrap items-end gap-4">
         <div>

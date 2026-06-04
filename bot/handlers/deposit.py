@@ -48,6 +48,15 @@ from bot.services.stripe_deposit import (
     create_stripe_checkout_session,
     stripe_configured,
 )
+from bot.services.payment_method_binding import (
+    BIND_ATTEMPT_TTL_SECONDS,
+    format_first_time_venmo_setup_message,
+    get_chat_binding,
+    is_chat_method_bound,
+    resolve_effective_min_cents_for_method,
+    start_bind_attempt,
+)
+from bot.services.payment_method_binding import expire_attempt as expire_bind_attempt
 from bot.runtime_config import is_test_bot_worker, use_payment_v2
 from db.connection import get_db
 from db.models import Club
@@ -121,6 +130,133 @@ DEPOSIT_REMINDER_SECONDS = 600  # 10 minutes
 
 # Maps chat_id → customer user_id that we're waiting on for a deposit follow-up.
 _PENDING_DEPOSIT_REMINDERS: dict[int, int] = {}
+
+
+def _bind_attempt_job_name(attempt_id: int) -> str:
+    return f"bind_attempt_expire_{attempt_id}"
+
+
+async def _bind_attempt_expire_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
+    attempt_id = context.job.data.get("attempt_id") if context.job.data else None
+    if attempt_id is not None:
+        expire_bind_attempt(int(attempt_id))
+
+
+def _schedule_bind_attempt_expiry(
+    context: ContextTypes.DEFAULT_TYPE,
+    attempt_id: int,
+) -> None:
+    try:
+        name = _bind_attempt_job_name(attempt_id)
+        for job in context.job_queue.get_jobs_by_name(name):
+            job.schedule_removal()
+        context.job_queue.run_once(
+            _bind_attempt_expire_callback,
+            when=BIND_ATTEMPT_TTL_SECONDS,
+            data={"attempt_id": int(attempt_id)},
+            name=name,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to schedule bind attempt expiry attempt_id=%s",
+            attempt_id,
+            exc_info=True,
+        )
+
+
+def _pick_deposit_variant_response(
+    method_id: int,
+    method: dict,
+    amount,
+    *,
+    chat_id: int | None = None,
+    method_slug: str = "",
+) -> tuple[dict | None, dict | None]:
+    """Return (response_data, tier) for a deposit method selection."""
+    tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
+    sticky_variant_id: int | None = None
+    if (method_slug or "").strip().lower() == "venmo" and chat_id is not None:
+        binding = get_chat_binding(int(chat_id), "venmo")
+        if binding and binding.variant_id:
+            sticky_variant_id = binding.variant_id
+
+    if tier:
+        response_data = pick_variant(
+            method_id,
+            tier_id=tier["id"],
+            variant_id=sticky_variant_id,
+        )
+        if not response_data:
+            return None, tier
+        return _with_method_checkout_settings(response_data, method, tier=tier), tier
+
+    response_data = pick_variant(method_id, variant_id=sticky_variant_id)
+    if response_data:
+        return _with_method_checkout_settings(response_data, method), None
+    return _with_method_checkout_settings(method, method), None
+
+
+async def _send_venmo_first_time_setup(
+    query,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    method_id: int,
+    method: dict,
+    amount: Decimal,
+    tier: dict | None,
+    response_data: dict,
+) -> bool:
+    chat_id = context.chat_data.get("deposit_chat_id") or (
+        query.message.chat.id if query.message else None
+    )
+    club_id = context.chat_data.get("deposit_club_id")
+    user_id = context.chat_data.get("deposit_user_id")
+    if chat_id is None or club_id is None:
+        await query.edit_message_text(
+            "This group is not linked to a club. Venmo setup cannot be started."
+        )
+        return False
+
+    variant_id = response_data.get("variant_id")
+    if not variant_id:
+        await query.edit_message_text(
+            "Venmo is not configured for this club. Please contact support."
+        )
+        return False
+
+    try:
+        min_cents, tier_id = resolve_effective_min_cents_for_method(
+            int(method_id),
+            deposit_amount=amount,
+        )
+    except ValueError as e:
+        await query.edit_message_text(str(e))
+        return False
+
+    tier_id = tier_id or (int(tier["id"]) if tier else None)
+    attempt = start_bind_attempt(
+        telegram_chat_id=int(chat_id),
+        club_id=int(club_id),
+        payment_method_slug="venmo",
+        method_id=int(method_id),
+        tier_id=tier_id,
+        variant_id=int(variant_id),
+        effective_min_cents=min_cents,
+        initiated_by_telegram_user_id=int(user_id) if user_id else None,
+    )
+    _schedule_bind_attempt_expiry(context, attempt.id)
+
+    text = format_first_time_venmo_setup_message(
+        setup_amount_cents=attempt.amount_cents,
+        min_display_cents=min_cents,
+        variant_response_text=response_data.get("response_text")
+        or response_data.get("response_caption"),
+    )
+    await query.edit_message_text(
+        f"Deposit via {method.get('name', 'Venmo')} — one-time setup"
+    )
+    await query.message.chat.send_message(text)
+    return True
 
 
 def _reminder_job_name(chat_id: int | str) -> str:
@@ -724,25 +860,63 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
             return DEPOSIT_SUB
 
     amount = context.chat_data.get("deposit_amount", "?")
-    tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
-    if tier:
-        response_data = pick_variant(method_id, tier_id=tier["id"])
+    chat_id = query.message.chat.id if query.message else None
+
+    if method_slug == "venmo" and chat_id is not None and not is_chat_method_bound(
+        int(chat_id), "venmo"
+    ):
+        if not isinstance(amount, Decimal):
+            await query.edit_message_text("Deposit session expired. Use /deposit again.")
+            return ConversationHandler.END
+        response_data, tier = _pick_deposit_variant_response(
+            method_id,
+            method,
+            amount,
+            chat_id=int(chat_id),
+            method_slug=method_slug,
+        )
         if not response_data:
             logger.error(
-                "deposit_method_no_variants chat_id=%s method_id=%s tier_id=%s slug=%r",
-                query.message.chat.id if query.message else None,
+                "deposit_method_no_variants chat_id=%s method_id=%s slug=venmo setup",
+                chat_id,
                 method_id,
-                tier.get("id"),
-                method_slug,
             )
             await query.edit_message_text(
                 "This payment method is not configured yet. Please contact support."
             )
             return ConversationHandler.END
-        response_data = _with_method_checkout_settings(response_data, method, tier=tier)
-    else:
-        response_data = pick_variant(method_id) or method
-        response_data = _with_method_checkout_settings(response_data, method)
+        ok = await _send_venmo_first_time_setup(
+            query,
+            context,
+            method_id=method_id,
+            method=method,
+            amount=amount,
+            tier=tier,
+            response_data=response_data,
+        )
+        if not ok:
+            return ConversationHandler.END
+        return await _complete_deposit_flow(query.message.chat, context)
+
+    response_data, tier = _pick_deposit_variant_response(
+        method_id,
+        method,
+        amount,
+        chat_id=chat_id,
+        method_slug=method_slug,
+    )
+    if not response_data and tier:
+        logger.error(
+            "deposit_method_no_variants chat_id=%s method_id=%s tier_id=%s slug=%r",
+            chat_id,
+            method_id,
+            tier.get("id"),
+            method_slug,
+        )
+        await query.edit_message_text(
+            "This payment method is not configured yet. Please contact support."
+        )
+        return ConversationHandler.END
     ok = await _send_deposit_method_response(
         query,
         context,

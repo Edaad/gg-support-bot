@@ -131,6 +131,10 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
                 "bot.services.venmo_payments.resolve_display_group_title",
                 return_value=GROUP_TITLE,
             ),
+            patch(
+                "bot.services.venmo_payments.infer_variant_id_for_venmo_handle",
+                return_value=None,
+            ),
         ):
             mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
             mock_get_db.return_value.__exit__ = MagicMock(return_value=False)

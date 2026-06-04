@@ -135,3 +135,48 @@ class VenmoBindResponse(BaseModel):
     telegram_chat_id: Optional[int] = None
     club_id: Optional[int] = None
     payment: Optional[VenmoPaymentRead] = None
+
+
+class BindingViaCount(BaseModel):
+    bound_via: str
+    count: int
+
+
+class BindingAttemptFunnel(BaseModel):
+    initiated: int
+    succeeded: int
+    expired: int
+    cancelled: int
+    pending: int
+    success_rate: Optional[float] = None
+
+
+class BindingSummaryResponse(BaseModel):
+    payment_method_slug: str
+    club_id: Optional[int] = None
+    bindings_by_via: list[BindingViaCount]
+    attempt_funnel: BindingAttemptFunnel
+
+
+class BindAttemptRead(BaseModel):
+    id: int
+    telegram_chat_id: int
+    club_id: int
+    payment_method_slug: str
+    variant_id: int
+    amount_cents: int
+    amount_usd: Decimal
+    status: str
+    bound_via: str
+    venmo_payment_id: Optional[int] = None
+    group_title: Optional[str] = None
+    created_at: datetime
+    expires_at: datetime
+    completed_at: Optional[datetime] = None
+
+
+class BindAttemptListResponse(BaseModel):
+    items: list[BindAttemptRead]
+    total: int
+    limit: int
+    offset: int

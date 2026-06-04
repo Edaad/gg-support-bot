@@ -27,6 +27,11 @@ from api.payments_helpers import (
     stripe_dashboard_session_url,
 )
 from api.schemas_payments import (
+    BindAttemptListResponse,
+    BindAttemptRead,
+    BindingAttemptFunnel,
+    BindingSummaryResponse,
+    BindingViaCount,
     PaymentProviderRead,
     StripeCheckoutSessionListResponse,
     StripeCheckoutSessionRead,
@@ -42,7 +47,14 @@ from api.schemas_payments import (
 )
 from bot.services.venmo_payments import bind_venmo_payment_by_id
 from db.connection import get_db_dependency
-from db.models import Club, StripeCheckoutSession, StripeCustomer, VenmoPayment
+from db.models import (
+    Club,
+    GroupPaymentMethodBinding,
+    PaymentMethodBindAttempt,
+    StripeCheckoutSession,
+    StripeCustomer,
+    VenmoPayment,
+)
 
 router = APIRouter(
     prefix="/api/payments",
@@ -58,6 +70,9 @@ _MIGRATION_HINT = (
     "python migrate_stripe_checkout_session_lifecycle.py (or heroku run … on the web dyno)"
 )
 _VENMO_MIGRATION_HINT = "Run: python migrate_venmo_payments.py (or heroku run … on the web dyno)"
+_BINDINGS_MIGRATION_HINT = (
+    "Run: python migrate_payment_method_bindings.py (or heroku run … on the web dyno)"
+)
 
 
 def _parse_dt(value: str | None) -> datetime | None:
@@ -100,6 +115,12 @@ def _raise_db_schema_error(exc: ProgrammingError) -> None:
             raise HTTPException(
                 503,
                 f"Venmo payments tables or columns are missing. {_VENMO_MIGRATION_HINT}",
+            ) from exc
+    if "group_payment_method_bindings" in low or "payment_method_bind_attempts" in low:
+        if "does not exist" in low or "undefinedcolumn" in low.replace(" ", ""):
+            raise HTTPException(
+                503,
+                f"Payment method binding tables are missing. {_BINDINGS_MIGRATION_HINT}",
             ) from exc
     raise HTTPException(503, f"Database schema error: {msg}") from exc
 
@@ -375,4 +396,145 @@ async def bind_venmo_payment(
         telegram_chat_id=group.telegram_chat_id,
         club_id=group.club_id,
         payment=payment_read,
+    )
+
+
+@router.get("/bindings/summary", response_model=BindingSummaryResponse)
+def bindings_summary(
+    method: str = Query("venmo", description="payment_method_slug"),
+    club_id: int | None = Query(None),
+    from_dt: str | None = Query(None, alias="from"),
+    to_dt: str | None = Query(None, alias="to"),
+    db: Session = Depends(get_db_dependency),
+):
+    slug = (method or "venmo").strip().lower()
+    if club_id is not None:
+        _get_club_or_404(db, club_id)
+
+    dt_from = _parse_dt(from_dt)
+    dt_to = _parse_dt(to_dt)
+
+    try:
+        binding_q = db.query(
+            GroupPaymentMethodBinding.bound_via,
+            func.count(GroupPaymentMethodBinding.id),
+        ).filter(GroupPaymentMethodBinding.payment_method_slug == slug)
+        if club_id is not None:
+            binding_q = binding_q.filter(GroupPaymentMethodBinding.club_id == club_id)
+        if dt_from is not None:
+            binding_q = binding_q.filter(GroupPaymentMethodBinding.bound_at >= dt_from)
+        if dt_to is not None:
+            binding_q = binding_q.filter(GroupPaymentMethodBinding.bound_at <= dt_to)
+        binding_q = binding_q.group_by(GroupPaymentMethodBinding.bound_via)
+
+        attempt_q = db.query(PaymentMethodBindAttempt).filter(
+            PaymentMethodBindAttempt.payment_method_slug == slug
+        )
+        if club_id is not None:
+            attempt_q = attempt_q.filter(PaymentMethodBindAttempt.club_id == club_id)
+        if dt_from is not None:
+            attempt_q = attempt_q.filter(PaymentMethodBindAttempt.created_at >= dt_from)
+        if dt_to is not None:
+            attempt_q = attempt_q.filter(PaymentMethodBindAttempt.created_at <= dt_to)
+
+        attempts = attempt_q.all()
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
+        raise
+
+    bindings_by_via = [
+        BindingViaCount(bound_via=str(row[0]), count=int(row[1])) for row in binding_q.all()
+    ]
+
+    initiated = len(attempts)
+    succeeded = sum(1 for a in attempts if a.status == "succeeded")
+    expired = sum(1 for a in attempts if a.status == "expired")
+    cancelled = sum(1 for a in attempts if a.status == "cancelled")
+    pending = sum(1 for a in attempts if a.status == "pending")
+    success_rate = (succeeded / initiated) if initiated else None
+
+    return BindingSummaryResponse(
+        payment_method_slug=slug,
+        club_id=club_id,
+        bindings_by_via=bindings_by_via,
+        attempt_funnel=BindingAttemptFunnel(
+            initiated=initiated,
+            succeeded=succeeded,
+            expired=expired,
+            cancelled=cancelled,
+            pending=pending,
+            success_rate=success_rate,
+        ),
+    )
+
+
+@router.get("/bind-attempts", response_model=BindAttemptListResponse)
+def list_bind_attempts(
+    method: str = Query("venmo"),
+    club_id: int | None = Query(None),
+    status: str | None = Query(None),
+    from_dt: str | None = Query(None, alias="from"),
+    to_dt: str | None = Query(None, alias="to"),
+    limit: int = Query(_DEFAULT_LIMIT),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db_dependency),
+):
+    slug = (method or "venmo").strip().lower()
+    if club_id is not None:
+        _get_club_or_404(db, club_id)
+
+    dt_from = _parse_dt(from_dt)
+    dt_to = _parse_dt(to_dt)
+    limit = _clamp_limit(limit)
+
+    try:
+        q = db.query(PaymentMethodBindAttempt).filter(
+            PaymentMethodBindAttempt.payment_method_slug == slug
+        )
+        if club_id is not None:
+            q = q.filter(PaymentMethodBindAttempt.club_id == club_id)
+        if status and status.strip().lower() != "all":
+            q = q.filter(PaymentMethodBindAttempt.status == status.strip().lower())
+        if dt_from is not None:
+            q = q.filter(PaymentMethodBindAttempt.created_at >= dt_from)
+        if dt_to is not None:
+            q = q.filter(PaymentMethodBindAttempt.created_at <= dt_to)
+
+        total = q.count()
+        rows = (
+            q.order_by(PaymentMethodBindAttempt.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
+        raise
+
+    items: list[BindAttemptRead] = []
+    for row in rows:
+        title, _gg = resolve_group_title(db, int(row.telegram_chat_id))
+        items.append(
+            BindAttemptRead(
+                id=int(row.id),
+                telegram_chat_id=int(row.telegram_chat_id),
+                club_id=int(row.club_id),
+                payment_method_slug=str(row.payment_method_slug),
+                variant_id=int(row.variant_id),
+                amount_cents=int(row.amount_cents),
+                amount_usd=cents_to_usd(int(row.amount_cents)),
+                status=str(row.status),
+                bound_via=str(row.bound_via),
+                venmo_payment_id=int(row.venmo_payment_id)
+                if row.venmo_payment_id
+                else None,
+                group_title=title,
+                created_at=row.created_at,
+                expires_at=row.expires_at,
+                completed_at=row.completed_at,
+            )
+        )
+
+    return BindAttemptListResponse(
+        items=items, total=int(total), limit=limit, offset=offset
     )

@@ -67,6 +67,9 @@ class VenmoBindByIdTestCase(unittest.IsolatedAsyncioTestCase):
                     return_value="RT / 1234 / Alice",
                 ):
                     with patch(
+                        "bot.services.venmo_payments.infer_variant_id_for_venmo_handle",
+                        return_value=None,
+                    ), patch(
                         "bot.services.venmo_payments.edit_telegram_notification",
                         new=AsyncMock(),
                     ) as mock_edit:

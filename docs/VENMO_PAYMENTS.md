@@ -1,5 +1,7 @@
 # Venmo payment notifications + manual group binding
 
+For **first-time linking** of Venmo to a support group (special setup amount + `/deposit` gate), see [`VENMO_GROUP_BINDING.md`](VENMO_GROUP_BINDING.md).
+
 Venmo Confirm Zaps POST payment details to this API. The **notification bot** (`@ggnotificationbot`) posts alerts to a shared staff Telegram group. Staff **reply** to a notification with a support group title to bind (or rebind) the payment.
 
 ## Flow
