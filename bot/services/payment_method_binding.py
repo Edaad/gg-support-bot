@@ -166,6 +166,11 @@ def effective_min_cents(
     return int((effective * 100).to_integral_value())
 
 
+def deposit_amount_to_cents(amount: Decimal) -> int:
+    """Convert the /deposit amount the player entered to integer cents."""
+    return int((amount * 100).quantize(Decimal("1")))
+
+
 def extract_venmo_url(text: str | None) -> Optional[str]:
     if not text:
         return None
@@ -344,14 +349,21 @@ def allocate_setup_amount_cents(
     session,
     *,
     variant_id: int,
-    effective_min_cents: int,
+    deposit_amount_cents: int,
 ) -> int:
-    """Assign base_min - 1 cent minus count of pending attempts on this variant."""
+    """Assign one cent below chosen deposit amount, minus pending special_amount setups."""
+    deposit_cents = int(deposit_amount_cents)
+    if deposit_cents < 2:
+        raise ValueError("Deposit amount is too small for setup binding")
     _expire_stale_pending_for_variant(session, variant_id)
-    base_cents = int(effective_min_cents) - 1
+    base_cents = deposit_cents - 1
     pending_count = (
         session.query(func.count(PaymentMethodBindAttempt.id))
-        .filter_by(variant_id=int(variant_id), status=ATTEMPT_STATUS_PENDING)
+        .filter_by(
+            variant_id=int(variant_id),
+            status=ATTEMPT_STATUS_PENDING,
+            bind_kind=BIND_KIND_SPECIAL_AMOUNT,
+        )
         .scalar()
     )
     n = int(pending_count or 0)
@@ -397,7 +409,7 @@ def start_bind_attempt(
     tier_id: int | None,
     variant_id: int,
     bind_kind: str,
-    effective_min_cents: int | None = None,
+    deposit_amount_cents: int | None = None,
     initiated_by_telegram_user_id: int | None,
 ) -> BindAttemptInfo:
     slug = (payment_method_slug or "").strip().lower()
@@ -419,12 +431,12 @@ def start_bind_attempt(
             setup_emoji = allocate_setup_emoji(session, variant_id=int(variant_id))
             bound_via = BOUND_VIA_MEMO_EMOJI
         else:
-            if effective_min_cents is None:
-                raise ValueError("effective_min_cents required for special_amount bind")
+            if deposit_amount_cents is None:
+                raise ValueError("deposit_amount_cents required for special_amount bind")
             amount_cents = allocate_setup_amount_cents(
                 session,
                 variant_id=int(variant_id),
-                effective_min_cents=int(effective_min_cents),
+                deposit_amount_cents=int(deposit_amount_cents),
             )
 
         attempt = PaymentMethodBindAttempt(
@@ -786,7 +798,7 @@ def resolve_effective_min_cents_for_method(
     *,
     deposit_amount: Decimal | None = None,
 ) -> tuple[int, int | None]:
-    """Return (effective_min_cents, tier_id) for setup amount allocation."""
+    """Return (effective_min_cents, tier_id) from method/tier mins (tier pick helper)."""
     from bot.services.club import get_tier_for_amount
 
     with get_db() as session:
@@ -916,25 +928,25 @@ def format_setup_amount_highlight(amount_cents: int, *, use_html: bool = True) -
 def format_first_time_venmo_setup_message(
     *,
     setup_amount_cents: int,
-    min_display_cents: int,
+    chosen_amount_cents: int,
     variant_response_text: str | None,
     use_html: bool = True,
 ) -> str:
     """Build first-time Venmo setup copy. Default is Telegram HTML (parse_mode=HTML)."""
     setup_display = _format_amount_display(int(setup_amount_cents))
-    min_display = _format_amount_display(int(min_display_cents))
+    chosen_display = _format_amount_display(int(chosen_amount_cents))
     url = extract_venmo_url(variant_response_text) or "—"
 
     if use_html:
         safe_setup = html_module.escape(setup_display)
-        safe_min = html_module.escape(min_display)
+        safe_chosen = html_module.escape(chosen_display)
         safe_url = html_module.escape(url, quote=True)
         return (
             "<b>FIRST-TIME VENMO SETUP</b>\n"
             "────────────────────\n\n"
             "<b>Pay this exact amount only:</b>\n"
             f"<code>{safe_setup}</code>\n\n"
-            f"<b>Please do not send {safe_min}</b> (no rounding).\n\n"
+            f"<b>Please do not send {safe_chosen}</b> (no rounding).\n\n"
             "The exact amount helps us match your payment to this chat faster. "
             "This is a one-time setup step for this payment method. Future deposits "
             "can be sent normally once your method is linked.\n\n"
@@ -947,7 +959,7 @@ def format_first_time_venmo_setup_message(
         "--------------------\n\n"
         "PAY THIS EXACT AMOUNT ONLY:\n"
         f"  {setup_display}\n\n"
-        f"Do NOT send {min_display} (no rounding).\n\n"
+        f"Do NOT send {chosen_display} (no rounding).\n\n"
         "The exact amount helps us match your payment to this chat faster. "
         "This is a one-time setup step for this payment method. Future deposits "
         "can be sent normally once your method is linked.\n\n"

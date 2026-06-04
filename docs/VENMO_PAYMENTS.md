@@ -79,9 +79,12 @@ Group Chat: Unbound — reply to this message with the group title to bind
 
 Name: Moshe Toussoun
 Amount: $200.00
+Memo: 🍕
 Method: @godfather4444
 Goods/Services: False
 ```
+
+(`Memo` is omitted when Zapier does not send `memo` or the payment has no caption.)
 
 Auto-bound repeat payer:
 
@@ -145,13 +148,57 @@ heroku ps:scale notification=1 --app gg-support-bot-2025
 
 Verify with `heroku ps` — you should see `notification.1: up`.
 
-## Zapier changes
+## Zapier: Confirm Venmo parse + webhook
 
-For each **Confirm Venmo** Zap:
+Use your **existing** Confirm Venmo Zap (Gmail → parse → Glide → POST). Replace the parse-step instructions with the prompt below, and include `memo` in the webhook JSON.
 
-1. Keep trigger, formatters, Glide steps
-2. **Remove** Telegram send step
-3. **Add** Webhooks by Zapier — POST to `https://<host>/api/venmo/payments` with secret header
+### Parser prompt (full)
+
+Use the Gmail email body as input. Map each output field into the same Webhooks POST you already use.
+
+```text
+Parse this Venmo "you received a payment" email and return these fields:
+
+payer_name — Full name of the person who paid, from text like "Daniel Cushing paid you". Do not include "paid you".
+
+amount — Dollar amount as a number string with two decimals, no dollar sign (example: 200.00).
+
+venmo_handle — The recipient's Venmo username with @ prefix if it appears in the email; otherwise leave empty.
+
+goods_or_services — true only if the email clearly says the payment was for goods or services; otherwise false.
+
+paid_at — Date or date/time from the email if present (example: Nov 26, 2025 or Nov 26 2025, 7:45 AM); otherwise empty.
+
+memo — Payment memo or caption from the main white transaction card: the line between the large dollar amount (example $200.00) and the blue "See transaction" button. Often a single emoji (example 🍕) or short text. Return exact characters including emoji. Empty if that line is missing. Do not use Transaction details (date, transaction ID, Sent to, footer).
+
+source_external_id — Gmail message ID if available from the trigger; otherwise empty.
+```
+
+### Webhook POST body
+
+Header: `X-Venmo-Webhook-Secret: <VENMO_ZAPIER_WEBHOOK_SECRET>`
+
+```json
+{
+  "payer_name": "<parse: payer_name>",
+  "amount": "<parse: amount>",
+  "venmo_handle": "<parse: venmo_handle>",
+  "goods_or_services": <parse: goods_or_services>,
+  "paid_at": "<parse: paid_at>",
+  "source_external_id": "<parse: source_external_id or Gmail message id>",
+  "memo": "<parse: memo>"
+}
+```
+
+Add `"test": true` only on your duplicate test Zap.
+
+### What gg-support-bot does with `memo`
+
+- Saves it on `venmo_payments.memo`
+- Shows **Memo:** in the staff Telegram notification (after Amount)
+- On the test bot, uses it for **memo emoji** first-time group binding when the memo contains the setup emoji from `/deposit`
+
+Run `python migrate_payment_method_bind_memo.py` once if `venmo_payments.memo` is not on your database yet.
 
 ## Code references
 

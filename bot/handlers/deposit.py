@@ -59,7 +59,7 @@ from bot.services.payment_method_binding import (
     format_setup_emoji_highlight,
     get_chat_binding,
     is_chat_method_bound,
-    resolve_effective_min_cents_for_method,
+    deposit_amount_to_cents,
     start_bind_attempt,
 )
 from bot.services.payment_method_binding import expire_attempt as expire_bind_attempt
@@ -262,17 +262,9 @@ async def _send_first_time_method_setup(
         return False
 
     tier_id = int(tier["id"]) if tier else None
-    min_cents: int | None = None
+    deposit_amount_cents: int | None = None
     if bind_kind == BIND_KIND_SPECIAL_AMOUNT:
-        try:
-            min_cents, resolved_tier_id = resolve_effective_min_cents_for_method(
-                int(method_id),
-                deposit_amount=amount,
-            )
-        except ValueError as e:
-            await query.edit_message_text(str(e))
-            return False
-        tier_id = resolved_tier_id or tier_id
+        deposit_amount_cents = deposit_amount_to_cents(amount)
 
     try:
         attempt = start_bind_attempt(
@@ -283,7 +275,7 @@ async def _send_first_time_method_setup(
             tier_id=tier_id,
             variant_id=int(variant_id),
             bind_kind=bind_kind,
-            effective_min_cents=min_cents,
+            deposit_amount_cents=deposit_amount_cents,
             initiated_by_telegram_user_id=int(user_id) if user_id else None,
         )
     except ValueError as e:
@@ -340,7 +332,7 @@ async def _send_first_time_method_setup(
 
     setup_kwargs = dict(
         setup_amount_cents=attempt.amount_cents,
-        min_display_cents=min_cents,
+        chosen_amount_cents=deposit_amount_cents,
         variant_response_text=variant_text,
     )
     try:

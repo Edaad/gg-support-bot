@@ -66,12 +66,13 @@ async def ingest_payment(
     if debug_notification_enabled():
         logger.info(
             "venmo ingest: request received payer=%r amount=%r handle=%r "
-            "goods_or_services=%s paid_at=%r test=%s source_external_id=%r",
+            "goods_or_services=%s paid_at=%r memo=%r test=%s source_external_id=%r",
             body.payer_name,
             body.amount,
             body.venmo_handle,
             body.goods_or_services,
             body.paid_at,
+            body.memo,
             body.test,
             body.source_external_id,
         )

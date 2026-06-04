@@ -69,6 +69,19 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         self.assertNotIn("rebind", text)
         self.assertLess(text.index("Group Chat:"), text.index("Name:"))
 
+    def test_format_notification_includes_memo(self):
+        payment = VenmoPayment(
+            payer_name="Daniel Cushing",
+            amount_cents=20000,
+            venmo_handle="@danielcushing",
+            goods_or_services=False,
+            memo="🍕",
+        )
+        text = vp.format_notification_text(payment)
+        self.assertIn("Memo: 🍕", text)
+        self.assertLess(text.index("Amount:"), text.index("Memo:"))
+        self.assertLess(text.index("Memo:"), text.index("Method:"))
+
 
 class ResolveBoundGroupTestCase(unittest.TestCase):
     @patch("bot.services.venmo_payments.find_group_chat_id_by_name", return_value=CHAT_ID)

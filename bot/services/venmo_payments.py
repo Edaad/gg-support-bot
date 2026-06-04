@@ -198,13 +198,17 @@ def format_notification_text(
             "",
             f"Name: {payment.payer_name}",
             f"Amount: {format_amount_display(payment.amount_cents)}",
-            f"Method: {method}",
-            f"Goods/Services: {gs}",
         ]
     )
     memo = (getattr(payment, "memo", None) or "").strip()
     if memo:
         lines.append(f"Memo: {memo}")
+    lines.extend(
+        [
+            f"Method: {method}",
+            f"Goods/Services: {gs}",
+        ]
+    )
 
     body = "\n".join(lines)
     if getattr(payment, "is_test", False):

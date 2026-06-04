@@ -150,46 +150,53 @@ class TestMemoSetupMessage(unittest.TestCase):
 
 
 class TestAllocateSetupAmount(unittest.TestCase):
-    def test_first_pending_gets_cent_below_min(self):
+    def test_first_pending_gets_cent_below_chosen_deposit(self):
         session = MagicMock()
         session.query.return_value.filter_by.return_value.scalar.return_value = 0
         cents = allocate_setup_amount_cents(
-            session, variant_id=1, effective_min_cents=10000
+            session, variant_id=1, deposit_amount_cents=9000
         )
-        self.assertEqual(cents, 9999)
+        self.assertEqual(cents, 8999)
 
     def test_second_pending_decrements(self):
         session = MagicMock()
         session.query.return_value.filter_by.return_value.scalar.return_value = 1
         cents = allocate_setup_amount_cents(
-            session, variant_id=1, effective_min_cents=10000
+            session, variant_id=1, deposit_amount_cents=9000
         )
-        self.assertEqual(cents, 9998)
+        self.assertEqual(cents, 8998)
+
+    def test_deposit_too_small_raises(self):
+        session = MagicMock()
+        with self.assertRaises(ValueError):
+            allocate_setup_amount_cents(
+                session, variant_id=1, deposit_amount_cents=1
+            )
 
 
 class TestSetupMessage(unittest.TestCase):
     def test_includes_amounts_html(self):
         text = format_first_time_venmo_setup_message(
-            setup_amount_cents=9999,
-            min_display_cents=10000,
+            setup_amount_cents=8999,
+            chosen_amount_cents=9000,
             variant_response_text="Venmo: https://venmo.com/u/club-round",
         )
-        self.assertIn("$99.99", text)
-        self.assertIn("$100.00", text)
-        self.assertIn("<code>$99.99</code>", text)
+        self.assertIn("$89.99", text)
+        self.assertIn("$90.00", text)
+        self.assertIn("<code>$89.99</code>", text)
         self.assertIn("Pay this exact amount only", text)
         self.assertIn("FIRST-TIME VENMO SETUP", text)
         self.assertIn("venmo.com/u/club-round", text)
 
     def test_plain_fallback_emphasizes_exact_amount(self):
         text = format_first_time_venmo_setup_message(
-            setup_amount_cents=9999,
-            min_display_cents=10000,
+            setup_amount_cents=8999,
+            chosen_amount_cents=9000,
             variant_response_text="Venmo: https://venmo.com/u/club-round",
             use_html=False,
         )
         self.assertIn("PAY THIS EXACT AMOUNT ONLY", text)
-        self.assertIn("$99.99", text)
+        self.assertIn("$89.99", text)
         self.assertNotIn("<b>", text)
 
 

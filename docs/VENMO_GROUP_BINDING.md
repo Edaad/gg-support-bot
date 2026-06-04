@@ -8,12 +8,12 @@ Before a support group can use a configured deposit method in `/deposit`, the ch
 
 | Method | Default mode (test bot) | Override |
 |--------|------------------------|----------|
-| `venmo` | `special_amount` — exact sub-minimum cent amount | `VENMO_BIND_MODE=memo_emoji` |
+| `venmo` | `special_amount` — exact cent amount (one below chosen /deposit amount) | `VENMO_BIND_MODE=memo_emoji` |
 | `zelle` | `memo_emoji` — random emoji in payment memo/caption | — |
 
 ### Special amount (`special_amount`)
 
-1. Bot assigns a variant and an exact setup amount one cent below the configured minimum, minus one cent per other pending setup on that variant ($99.99, $99.98, …).
+1. Bot assigns a variant and an exact setup amount one cent below the amount the player entered in `/deposit`, minus one cent per other pending `special_amount` setup on that variant (e.g. $90.00 chosen → $89.99, then $89.98, …).
 2. Player sends that exact amount to the method’s payment destination and posts a screenshot.
 3. Zapier POSTs to `/api/venmo/payments` (Venmo). Within **10 minutes**, if **amount + Venmo handle** match the pending attempt, the payment auto-binds the group.
 

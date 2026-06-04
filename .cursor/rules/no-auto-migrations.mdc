@@ -1,0 +1,22 @@
+---
+description: Never run database migrations unless the user explicitly asks
+alwaysApply: true
+---
+
+# Database migrations
+
+Do **not** run migration scripts unless the user explicitly asks you to run them in that message.
+
+This includes:
+
+- Local: `python migrate_*.py`, `DATABASE_URL=... python migrate_*.py`
+- Remote: `heroku run python migrate_*.py`, `heroku run … migrate`, or any hosted one-off migration command
+- Applying schema changes directly via SQL against production or shared databases
+
+When schema changes are part of a task:
+
+- Add or update the migration script in the repo as needed
+- Document the command in docs (e.g. `docs/HEROKU.md`, feature docs) for the user to run
+- Tell the user which migration(s) to run and why; do not execute them yourself
+
+If ingest or deploy errors are likely due to a missing migration, diagnose from logs, explain the fix, and give the exact command for the user to run.
