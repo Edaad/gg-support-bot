@@ -66,7 +66,7 @@ from bot.services.payment_method_binding import (
     start_bind_attempt,
 )
 from bot.services.payment_method_binding import expire_attempt as expire_bind_attempt
-from bot.runtime_config import is_test_bot_worker, use_payment_v2, zelle_first_time_linking_enabled
+from bot.runtime_config import is_test_bot_worker, use_payment_v2
 from db.connection import get_db
 from db.models import Club
 
@@ -1097,7 +1097,6 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
         bind_kind
         and chat_id is not None
         and not is_chat_method_bound(int(chat_id), method_slug)
-        and (method_slug != "zelle" or zelle_first_time_linking_enabled())
     ):
         if not isinstance(amount, Decimal):
             await query.edit_message_text("Deposit session expired. Use /deposit again.")

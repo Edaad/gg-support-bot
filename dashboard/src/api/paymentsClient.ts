@@ -325,6 +325,43 @@ export type ZellePaymentListParams = {
   q?: string
 }
 
+export type ZellePaymentSummaryByClub = {
+  club_id: number | null
+  club_name: string | null
+  count: number
+  amount_cents: number
+  amount_usd: number
+}
+
+export type ZellePaymentSummary = {
+  club_id: number | null
+  total_payments: number
+  bound_count: number
+  unbound_count: number
+  auto_bound_count: number
+  total_amount_cents: number
+  total_amount_usd: number
+  by_club: ZellePaymentSummaryByClub[]
+}
+
+export function fetchZellePaymentSummary(
+  token: string,
+  params: {
+    clubId?: number
+    from?: string
+    to?: string
+    includeTest?: boolean
+  },
+) {
+  const q = new URLSearchParams()
+  if (params.clubId != null) q.set('club_id', String(params.clubId))
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  if (params.includeTest) q.set('include_test', 'true')
+  const qs = q.toString()
+  return request<ZellePaymentSummary>(`/zelle/summary${qs ? `?${qs}` : ''}`, {}, token)
+}
+
 export function listZellePayments(
   token: string,
   params: ZellePaymentListParams & { limit?: number; offset?: number },

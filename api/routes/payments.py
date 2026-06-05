@@ -19,6 +19,7 @@ from api.payments_helpers import (
     build_venmo_payment_read,
     build_zelle_payment_read,
     cents_to_usd,
+    compute_zelle_payment_summary,
     customer_total_deposited_cents,
     list_stripe_deposit_methods,
     list_venmo_payer_aggregates,
@@ -57,6 +58,8 @@ from api.schemas_payments import (
     ZellePayerRead,
     ZellePaymentListResponse,
     ZellePaymentRead,
+    ZellePaymentSummaryByClub,
+    ZellePaymentSummaryResponse,
 )
 from bot.services.venmo_payments import bind_venmo_payment_by_id
 from bot.services.zelle_payments import bind_zelle_payment_by_id
@@ -530,6 +533,63 @@ def list_zelle_payers(
         )
 
     return ZellePayerListResponse(items=items, total=int(total), limit=limit, offset=offset)
+
+
+@router.get("/zelle/summary", response_model=ZellePaymentSummaryResponse)
+def zelle_payment_summary(
+    club_id: int | None = Query(None),
+    from_dt: str | None = Query(None, alias="from"),
+    to_dt: str | None = Query(None, alias="to"),
+    include_test: bool = Query(False),
+    db: Session = Depends(get_db_dependency),
+):
+    if club_id is not None:
+        _get_club_or_404(db, club_id)
+
+    try:
+        raw = compute_zelle_payment_summary(
+            db,
+            club_id=club_id,
+            from_dt=_parse_dt(from_dt),
+            to_dt=_parse_dt(to_dt),
+            include_test=include_test,
+        )
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
+        raise
+
+    club_names: dict[int, str] = {}
+    by_club: list[ZellePaymentSummaryByClub] = []
+    for row in raw["by_club"]:
+        cid = row["club_id"]
+        cname: str | None = None
+        if cid is not None:
+            if cid not in club_names:
+                club = db.query(Club).filter(Club.id == cid).first()
+                club_names[cid] = club.name if club else None
+            cname = club_names.get(cid)
+        amount_cents = int(row["amount_cents"])
+        by_club.append(
+            ZellePaymentSummaryByClub(
+                club_id=cid,
+                club_name=cname,
+                count=int(row["count"]),
+                amount_cents=amount_cents,
+                amount_usd=cents_to_usd(amount_cents),
+            )
+        )
+
+    total_cents = int(raw["total_amount_cents"])
+    return ZellePaymentSummaryResponse(
+        club_id=club_id,
+        total_payments=int(raw["total_payments"]),
+        bound_count=int(raw["bound_count"]),
+        unbound_count=int(raw["unbound_count"]),
+        auto_bound_count=int(raw["auto_bound_count"]),
+        total_amount_cents=total_cents,
+        total_amount_usd=cents_to_usd(total_cents),
+        by_club=by_club,
+    )
 
 
 @router.post("/zelle/payments/{payment_id}/bind", response_model=ZelleBindResponse)

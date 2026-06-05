@@ -325,7 +325,7 @@ export default function Payments({ token }: { token: string }) {
     const methodName = row.payment_method_slug === 'zelle' ? 'Zelle' : 'Venmo'
     if (
       !window.confirm(
-        `Unbind ${methodName} for "${label}"? The group will need first-time setup again on the test bot.`,
+        `Unbind ${methodName} for "${label}"? The group will need first-time setup again on the next /deposit.`,
       )
     ) {
       return
@@ -634,7 +634,7 @@ export default function Payments({ token }: { token: string }) {
 
       {isManualProvider && bindingSummary && funnel && (
         <section className="mb-6 rounded-lg border border-slate-700 bg-slate-900/50 p-4">
-          <h2 className="mb-3 text-sm font-semibold text-slate-200">Venmo group bindings</h2>
+          <h2 className="mb-3 text-sm font-semibold text-slate-200">{manualLabel} group bindings</h2>
           <div className="flex flex-wrap gap-6 text-sm">
             <div>
               <p className="text-slate-400">Setup initiated</p>
@@ -684,7 +684,7 @@ export default function Payments({ token }: { token: string }) {
                   <thead>
                     <tr className="text-slate-400">
                       <th className="pb-2 pr-3 font-medium">Group</th>
-                      <th className="pb-2 pr-3 font-medium">Handle</th>
+                      <th className="pb-2 pr-3 font-medium">{manualProvider === 'zelle' ? 'Recipient' : 'Handle'}</th>
                       <th className="pb-2 pr-3 font-medium">Variant</th>
                       <th className="pb-2 pr-3 font-medium">Source</th>
                       <th className="pb-2 pr-3 font-medium">Linked</th>
@@ -1181,7 +1181,11 @@ export default function Payments({ token }: { token: string }) {
               value={customerSearch}
               onChange={(e) => setCustomerSearch(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && applyCustomerSearch()}
-              placeholder="Search payer name or Venmo handle…"
+              placeholder={
+                manualProvider === 'zelle'
+                  ? 'Search payer name or Zelle recipient…'
+                  : 'Search payer name or Venmo handle…'
+              }
               className="input-field-sm min-w-[16rem] flex-1"
             />
             <button type="button" onClick={applyCustomerSearch} className="btn-primary-sm">
@@ -1198,14 +1202,16 @@ export default function Payments({ token }: { token: string }) {
           </div>
 
           {venmoPayers.length === 0 && !loading ? (
-            <p className="text-sm text-ink-muted">No bound Venmo payers for this club yet.</p>
+            <p className="text-sm text-ink-muted">
+              No bound {manualLabel} payers for this club yet.
+            </p>
           ) : (
             <div className="table-scroll">
               <table className="min-w-[52rem] text-left">
                 <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
                   <tr>
                     <th className="px-4 py-3">Payer</th>
-                    <th className="px-4 py-3">Handle</th>
+                    <th className="px-4 py-3">{manualProvider === 'zelle' ? 'Recipient' : 'Handle'}</th>
                     <th className="px-4 py-3">Group</th>
                     <th className="px-4 py-3">Player</th>
                     <th className="px-4 py-3">Total deposited</th>

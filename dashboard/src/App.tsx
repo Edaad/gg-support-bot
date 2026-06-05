@@ -10,6 +10,7 @@ import TelegramLogin from './pages/TelegramLogin'
 import BonusTypes from './pages/BonusTypes'
 import Payments from './pages/Payments'
 import Analytics from './pages/Analytics'
+import ZelleAnalytics from './pages/ZelleAnalytics'
 import Layout from './components/Layout'
 import { ConfirmProvider } from './components/ConfirmProvider'
 
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/bonus-types" element={<BonusTypes token={token} />} />
         <Route path="/payments" element={<Payments token={token} />} />
         <Route path="/analytics" element={<Analytics token={token} />} />
+        <Route path="/analytics/zelle" element={<ZelleAnalytics token={token} />} />
         <Route path="/weekly-stats" element={<WeeklyStats token={token} />} />
       </Routes>
         </Layout>

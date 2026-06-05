@@ -225,6 +225,52 @@ class PaymentsApiTestCase(unittest.TestCase):
         self.assertEqual(data["attempt_funnel"]["initiated"], 2)
         self.assertEqual(data["attempt_funnel"]["succeeded"], 2)
 
+    def test_zelle_summary_counts(self):
+        with patch(
+            "api.routes.payments.compute_zelle_payment_summary",
+            return_value={
+                "club_id": None,
+                "total_payments": 10,
+                "bound_count": 7,
+                "unbound_count": 3,
+                "auto_bound_count": 5,
+                "total_amount_cents": 150000,
+                "by_club": [
+                    {"club_id": 1, "count": 6, "amount_cents": 90000},
+                    {"club_id": None, "count": 4, "amount_cents": 60000},
+                ],
+            },
+        ):
+            mock_db = MagicMock()
+            mock_club = MagicMock()
+            mock_club.name = "Round Table"
+            mock_db.query.return_value.filter.return_value.first.return_value = mock_club
+
+            app = FastAPI()
+            app.include_router(router)
+            app.dependency_overrides[get_current_admin] = lambda: "admin"
+
+            def override_db():
+                yield mock_db
+
+            app.dependency_overrides[get_db_dependency] = override_db
+            client = TestClient(app)
+
+            response = client.get(
+                "/api/payments/zelle/summary",
+                headers={"Authorization": f"Bearer {TOKEN}"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["total_payments"], 10)
+        self.assertEqual(data["bound_count"], 7)
+        self.assertEqual(data["unbound_count"], 3)
+        self.assertEqual(data["auto_bound_count"], 5)
+        self.assertEqual(data["total_amount_cents"], 150000)
+        self.assertEqual(len(data["by_club"]), 2)
+        self.assertEqual(data["by_club"][0]["club_name"], "Round Table")
+
     def test_customers_club_not_found(self):
         mock_db = MagicMock()
         mock_db.query.return_value.filter.return_value.first.return_value = None

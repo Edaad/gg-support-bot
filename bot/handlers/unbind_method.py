@@ -83,7 +83,7 @@ async def unbindmethod_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             f"{'' if attempts_cancelled == 1 else 's'}."
         )
     lines.append(
-        "The next /deposit with venmo (or zelle on the test bot) will require linking again."
+        "The next /deposit with a linked method (venmo or zelle) will require setup again."
     )
 
     logger.info(

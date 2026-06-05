@@ -400,6 +400,92 @@ def list_zelle_payer_aggregates(session: Session, club_id: int, q: str | None):
     return base.order_by(func.max(ZellePayment.created_at).desc())
 
 
+def apply_zelle_summary_filters(
+    query,
+    *,
+    club_id: int | None,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+    include_test: bool,
+):
+    """Base filters for Zelle aggregate summaries (mirrors list ``status=all`` club scope)."""
+    if not include_test:
+        query = query.filter(ZellePayment.is_test.is_(False))
+    if club_id is not None:
+        query = query.filter(
+            or_(
+                ZellePayment.telegram_chat_id.is_(None),
+                ZellePayment.club_id == club_id,
+            )
+        )
+    if from_dt is not None:
+        query = query.filter(ZellePayment.created_at >= from_dt)
+    if to_dt is not None:
+        query = query.filter(ZellePayment.created_at <= to_dt)
+    return query
+
+
+def compute_zelle_payment_summary(
+    session: Session,
+    *,
+    club_id: int | None,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+    include_test: bool,
+) -> dict:
+    base = apply_zelle_summary_filters(
+        session.query(ZellePayment),
+        club_id=club_id,
+        from_dt=from_dt,
+        to_dt=to_dt,
+        include_test=include_test,
+    )
+
+    total_payments = int(base.count())
+    bound_count = int(
+        base.filter(ZellePayment.telegram_chat_id.isnot(None)).count()
+    )
+    unbound_count = int(
+        base.filter(ZellePayment.telegram_chat_id.is_(None)).count()
+    )
+    auto_bound_count = int(base.filter(ZellePayment.auto_bound.is_(True)).count())
+    total_amount_cents = int(
+        base.with_entities(func.coalesce(func.sum(ZellePayment.amount_cents), 0)).scalar()
+        or 0
+    )
+
+    by_club: list[dict] = []
+    if club_id is None:
+        rows = (
+            base.with_entities(
+                ZellePayment.club_id,
+                func.count(ZellePayment.id),
+                func.coalesce(func.sum(ZellePayment.amount_cents), 0),
+            )
+            .group_by(ZellePayment.club_id)
+            .order_by(func.count(ZellePayment.id).desc())
+            .all()
+        )
+        for row_club_id, count, amount_cents in rows:
+            by_club.append(
+                {
+                    "club_id": int(row_club_id) if row_club_id is not None else None,
+                    "count": int(count),
+                    "amount_cents": int(amount_cents or 0),
+                }
+            )
+
+    return {
+        "club_id": club_id,
+        "total_payments": total_payments,
+        "bound_count": bound_count,
+        "unbound_count": unbound_count,
+        "auto_bound_count": auto_bound_count,
+        "total_amount_cents": total_amount_cents,
+        "by_club": by_club,
+    }
+
+
 def build_zelle_payment_read(session: Session, payment: ZellePayment) -> dict:
     title: str | None = None
     gg_id: str | None = None

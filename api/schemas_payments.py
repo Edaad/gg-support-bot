@@ -195,6 +195,25 @@ class ZelleBindResponse(BaseModel):
     payment: Optional[ZellePaymentRead] = None
 
 
+class ZellePaymentSummaryByClub(BaseModel):
+    club_id: Optional[int] = None
+    club_name: Optional[str] = None
+    count: int
+    amount_cents: int
+    amount_usd: Decimal
+
+
+class ZellePaymentSummaryResponse(BaseModel):
+    club_id: Optional[int] = None
+    total_payments: int
+    bound_count: int
+    unbound_count: int
+    auto_bound_count: int
+    total_amount_cents: int
+    total_amount_usd: Decimal
+    by_club: list[ZellePaymentSummaryByClub] = []
+
+
 class BindingViaCount(BaseModel):
     bound_via: str
     count: int

@@ -22,11 +22,11 @@ Same ingest order as Venmo (see [`VENMO_FLOW.md`](VENMO_FLOW.md)):
 3. Telegram notification (bound or unbound)
 4. Manual bind via staff reply or dashboard if still unbound
 
-## Test bot only (first-time linking)
+## First-time deposit linking
 
-Zelle **first-time deposit linking** (setup amount / memo code flow, `/unbindmethod` reset → setup again) runs only on the **test bot** (`python run_test_bot.py`, `BOT_TEST_WORKER=1`). On the production support bot, `/deposit` + Zelle uses normal deposit instructions with no one-time setup step.
+Zelle **first-time deposit linking** (setup amount / memo code flow, `/unbindmethod` reset → setup again) uses the same infrastructure as Venmo. Enable it per club in the dashboard (**Club → Deposit methods → Zelle → First-time deposit linking**). When enabled, the production support bot runs the one-time setup step before sticky `/deposit` instructions apply.
 
-Zapier ingest, payment tracking, staff notifications, and dashboard bind still work on production infrastructure.
+Zapier ingest, payment tracking, staff notifications, and dashboard bind work on production infrastructure regardless of linking settings.
 
 ---
 
