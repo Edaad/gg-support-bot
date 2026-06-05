@@ -1,6 +1,5 @@
 """Unit tests for payment method binding helpers."""
 
-import os
 import unittest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
@@ -26,21 +25,38 @@ from bot.services.payment_method_binding import (
 
 
 class TestBindModeForMethod(unittest.TestCase):
-    def test_zelle_memo_on_test_bot(self):
+    def test_creator_club_special_amount(self):
         with patch("bot.runtime_config.is_test_bot_worker", return_value=True):
-            self.assertEqual(bind_mode_for_method("zelle"), BIND_KIND_MEMO_EMOJI)
+            self.assertEqual(
+                bind_mode_for_method("venmo", club_name="Creator Club"),
+                BIND_KIND_SPECIAL_AMOUNT,
+            )
+            self.assertEqual(
+                bind_mode_for_method("zelle", club_name="Creator Club"),
+                BIND_KIND_SPECIAL_AMOUNT,
+            )
 
-    def test_venmo_default_amount(self):
+    def test_round_table_memo_emoji(self):
         with patch("bot.runtime_config.is_test_bot_worker", return_value=True):
-            env = os.environ.copy()
-            env.pop("VENMO_BIND_MODE", None)
-            with patch.dict(os.environ, env, clear=True):
-                self.assertEqual(bind_mode_for_method("venmo"), BIND_KIND_SPECIAL_AMOUNT)
+            self.assertEqual(
+                bind_mode_for_method("venmo", club_name="Round Table"),
+                BIND_KIND_MEMO_EMOJI,
+            )
+            self.assertEqual(
+                bind_mode_for_method("zelle", club_name="Round Table"),
+                BIND_KIND_MEMO_EMOJI,
+            )
 
-    def test_venmo_memo_env(self):
+    def test_unconfigured_club_disabled(self):
         with patch("bot.runtime_config.is_test_bot_worker", return_value=True):
-            with patch.dict("os.environ", {"VENMO_BIND_MODE": "memo_emoji"}):
-                self.assertEqual(bind_mode_for_method("venmo"), BIND_KIND_MEMO_EMOJI)
+            self.assertIsNone(bind_mode_for_method("venmo", club_name="ClubGTO"))
+            self.assertIsNone(bind_mode_for_method("venmo"))
+
+    def test_production_disabled(self):
+        with patch("bot.runtime_config.is_test_bot_worker", return_value=False):
+            self.assertIsNone(
+                bind_mode_for_method("venmo", club_name="Creator Club")
+            )
 
 
 class TestVenmoSpecialAmountGating(unittest.TestCase):
@@ -130,17 +146,15 @@ class TestMemoSetupMessage(unittest.TestCase):
     def test_venmo_memo_html(self):
         text = format_first_time_memo_setup_message(
             payment_method_slug="venmo",
-            setup_emoji="💰",
             variant_response_text="Venmo: https://venmo.com/u/testuser",
         )
         self.assertIn("FIRST-TIME VENMO SETUP", text)
-        self.assertIn("<code>💰</code>", text)
+        self.assertIn("Copy and paste the emoji above", text)
         self.assertIn("venmo.com/u/testuser", text)
 
     def test_zelle_memo_html(self):
         text = format_first_time_memo_setup_message(
             payment_method_slug="zelle",
-            setup_emoji="💰",
             variant_response_text=(
                 "Zelle Email: a@b.com\nZelle Name: ACME INC\n"
             ),

@@ -162,6 +162,44 @@ DEPOSIT_REMINDER_SECONDS = 600  # 10 minutes
 
 # Maps chat_id → customer user_id that we're waiting on for a deposit follow-up.
 _PENDING_DEPOSIT_REMINDERS: dict[int, int] = {}
+# Maps chat_id → deposit instruction message ids to delete after the reminder fires.
+_DEPOSIT_INFO_MESSAGE_IDS: dict[int, list[int]] = {}
+
+
+def _reset_deposit_info_messages(chat_id: int) -> None:
+    _DEPOSIT_INFO_MESSAGE_IDS[int(chat_id)] = []
+
+
+def _track_deposit_info_message(chat_id: int, message_id: int | None) -> None:
+    if message_id is None:
+        return
+    tracked = _DEPOSIT_INFO_MESSAGE_IDS.setdefault(int(chat_id), [])
+    tracked.append(int(message_id))
+
+
+def _track_deposit_info_messages(chat_id: int, message_ids: list[int]) -> None:
+    for message_id in message_ids:
+        _track_deposit_info_message(chat_id, message_id)
+
+
+async def _delete_deposit_info_messages(bot, chat_id: int) -> None:
+    message_ids = _DEPOSIT_INFO_MESSAGE_IDS.pop(int(chat_id), [])
+    for message_id in message_ids:
+        try:
+            await bot.delete_message(chat_id=int(chat_id), message_id=int(message_id))
+        except Exception:
+            logger.debug(
+                "Could not delete deposit info message chat_id=%s message_id=%s",
+                chat_id,
+                message_id,
+                exc_info=True,
+            )
+
+
+async def _deposit_send_message(chat, chat_id: int, **kwargs):
+    sent = await chat.send_message(**kwargs)
+    _track_deposit_info_message(chat_id, sent.message_id)
+    return sent
 
 
 def _bind_attempt_job_name(attempt_id: int) -> str:
@@ -287,29 +325,37 @@ async def _send_first_time_method_setup(
     variant_text = response_data.get("response_text") or response_data.get(
         "response_caption"
     )
+    _reset_deposit_info_messages(int(chat_id))
     await query.edit_message_text(
         f"Deposit via {method_name} — one-time setup"
     )
+    if query.message:
+        _track_deposit_info_message(int(chat_id), query.message.message_id)
 
+    chat = query.message.chat
     if bind_kind == BIND_KIND_MEMO_EMOJI and attempt.setup_emoji:
-        highlight_html = format_setup_emoji_highlight(
-            attempt.setup_emoji, use_html=True
-        )
+        highlight_html = format_setup_emoji_highlight(use_html=True)
         body_html = format_first_time_memo_setup_message(
             payment_method_slug=slug,
-            setup_emoji=attempt.setup_emoji,
             variant_response_text=variant_text,
             use_html=True,
         )
         try:
-            await query.message.chat.send_message(highlight_html, parse_mode="HTML")
-        except Exception:
-            await query.message.chat.send_message(
-                format_setup_emoji_highlight(attempt.setup_emoji, use_html=False)
+            await _deposit_send_message(
+                chat, int(chat_id), text=highlight_html, parse_mode="HTML"
             )
+        except Exception:
+            await _deposit_send_message(
+                chat,
+                int(chat_id),
+                text=format_setup_emoji_highlight(use_html=False),
+            )
+        await _deposit_send_message(chat, int(chat_id), text=attempt.setup_emoji)
         try:
-            await query.message.chat.send_message(
-                body_html,
+            await _deposit_send_message(
+                chat,
+                int(chat_id),
+                text=body_html,
                 parse_mode="HTML",
                 disable_web_page_preview=False,
             )
@@ -320,13 +366,14 @@ async def _send_first_time_method_setup(
                 slug,
                 exc_info=True,
             )
-            await query.message.chat.send_message(
-                format_first_time_memo_setup_message(
+            await _deposit_send_message(
+                chat,
+                int(chat_id),
+                text=format_first_time_memo_setup_message(
                     payment_method_slug=slug,
-                    setup_emoji=attempt.setup_emoji,
                     variant_response_text=variant_text,
                     use_html=False,
-                )
+                ),
             )
         return True
 
@@ -336,17 +383,23 @@ async def _send_first_time_method_setup(
         variant_response_text=variant_text,
     )
     try:
-        await query.message.chat.send_message(
-            format_setup_amount_highlight(attempt.amount_cents, use_html=True),
+        await _deposit_send_message(
+            chat,
+            int(chat_id),
+            text=format_setup_amount_highlight(attempt.amount_cents, use_html=True),
             parse_mode="HTML",
         )
     except Exception:
-        await query.message.chat.send_message(
-            format_setup_amount_highlight(attempt.amount_cents, use_html=False)
+        await _deposit_send_message(
+            chat,
+            int(chat_id),
+            text=format_setup_amount_highlight(attempt.amount_cents, use_html=False),
         )
     try:
-        await query.message.chat.send_message(
-            format_first_time_venmo_setup_message(**setup_kwargs, use_html=True),
+        await _deposit_send_message(
+            chat,
+            int(chat_id),
+            text=format_first_time_venmo_setup_message(**setup_kwargs, use_html=True),
             parse_mode="HTML",
             disable_web_page_preview=False,
         )
@@ -356,8 +409,10 @@ async def _send_first_time_method_setup(
             chat_id,
             exc_info=True,
         )
-        await query.message.chat.send_message(
-            format_first_time_venmo_setup_message(**setup_kwargs, use_html=False)
+        await _deposit_send_message(
+            chat,
+            int(chat_id),
+            text=format_first_time_venmo_setup_message(**setup_kwargs, use_html=False),
         )
     return True
 
@@ -367,10 +422,18 @@ def _reminder_job_name(chat_id: int | str) -> str:
 
 
 async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Job queue callback: nudge the customer if they haven't responded after depositing."""
+    """Job queue callback: delete deposit instructions and nudge the customer."""
     chat_id = context.job.chat_id
     club_id = context.job.data.get("club_id") if context.job.data else None
     _PENDING_DEPOSIT_REMINDERS.pop(int(chat_id), None)
+
+    tracked_count = len(_DEPOSIT_INFO_MESSAGE_IDS.get(int(chat_id), []))
+    logger.info(
+        "deposit_reminder firing chat_id=%s tracked_messages=%s",
+        chat_id,
+        tracked_count,
+    )
+    await _delete_deposit_info_messages(context.bot, int(chat_id))
 
     methods = get_deposit_method_names(club_id) if club_id else []
     method_list = ", ".join(methods) if methods else ""
@@ -412,6 +475,12 @@ def _schedule_deposit_reminder(
         )
         if user_id:
             _PENDING_DEPOSIT_REMINDERS[int(chat_id)] = int(user_id)
+        logger.info(
+            "deposit_reminder scheduled chat_id=%s in %ss tracked_messages=%s",
+            chat_id,
+            DEPOSIT_REMINDER_SECONDS,
+            len(_DEPOSIT_INFO_MESSAGE_IDS.get(int(chat_id), [])),
+        )
     except Exception:
         logger.warning(
             "Failed to schedule deposit reminder chat_id=%s", chat_id, exc_info=True
@@ -421,6 +490,7 @@ def _schedule_deposit_reminder(
 def _cancel_deposit_reminder(context: ContextTypes.DEFAULT_TYPE, chat_id: int | str) -> None:
     """Cancel any pending deposit follow-up reminder for a chat."""
     _PENDING_DEPOSIT_REMINDERS.pop(int(chat_id), None)
+    _DEPOSIT_INFO_MESSAGE_IDS.pop(int(chat_id), None)
     try:
         for job in context.job_queue.get_jobs_by_name(_reminder_job_name(chat_id)):
             job.schedule_removal()
@@ -965,7 +1035,12 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     amount = context.chat_data.get("deposit_amount", "?")
     chat_id = query.message.chat.id if query.message else None
 
-    bind_kind = bind_mode_for_method(method_slug) if chat_id is not None else None
+    club_id = context.chat_data.get("deposit_club_id")
+    bind_kind = (
+        bind_mode_for_method(method_slug, club_id=club_id)
+        if chat_id is not None
+        else None
+    )
     if (
         bind_kind
         and chat_id is not None
@@ -1314,18 +1389,27 @@ async def _send_deposit_method_response(
                 checkout_min_usd=response_data.get("checkout_min_amount"),
                 checkout_max_usd=response_data.get("checkout_max_amount"),
             )
+            _reset_deposit_info_messages(int(chat_id))
             await query.edit_message_text(f"Deposit via {display_name}")
+            if query.message:
+                _track_deposit_info_message(int(chat_id), query.message.message_id)
 
             payload = _build_stripe_response_payload(response_data, result.checkout_url)
             plain_field = payload.pop("_stripe_plain_field", "response_text")
             plain_fallback = payload.pop("_stripe_plain_fallback", None)
             link_only_html = payload.pop("_stripe_link_only_html", None)
             link_only_plain = payload.pop("_stripe_link_only_plain", None)
+            chat = query.message.chat
             try:
-                await send_response_messages(query.message.chat, payload)
+                _track_deposit_info_messages(
+                    int(chat_id),
+                    await send_response_messages(chat, payload),
+                )
                 if link_only_html:
-                    await query.message.chat.send_message(
-                        link_only_html,
+                    await _deposit_send_message(
+                        chat,
+                        int(chat_id),
+                        text=link_only_html,
                         parse_mode="HTML",
                         disable_web_page_preview=True,
                     )
@@ -1340,10 +1424,16 @@ async def _send_deposit_method_response(
                     fallback[plain_field] = plain_fallback
                     fallback["parse_mode"] = None
                     fallback["disable_web_page_preview"] = True
-                    await send_response_messages(query.message.chat, fallback)
+                    _track_deposit_info_messages(
+                        int(chat_id),
+                        await send_response_messages(chat, fallback),
+                    )
                 elif link_only_plain:
-                    await send_response_messages(query.message.chat, payload)
-                    await query.message.chat.send_message(link_only_plain)
+                    _track_deposit_info_messages(
+                        int(chat_id),
+                        await send_response_messages(chat, payload),
+                    )
+                    await _deposit_send_message(chat, int(chat_id), text=link_only_plain)
             logger.info(
                 "deposit: stripe checkout sent chat_id=%s session_id=%s customer_id=%s",
                 chat_id,
@@ -1520,14 +1610,25 @@ async def _notify_missing_stripe_secret(context, club_id: int) -> None:
 
 async def _send_response(query, data, amount, display_name):
     """Edit the keyboard message to the announcement, then send instructions as a new message below."""
+    chat_id = query.message.chat.id
+    _reset_deposit_info_messages(chat_id)
     announcement = f"Deposit request for ${amount} via {display_name}"
     await query.edit_message_text(announcement)
-    await send_response_messages(query.message.chat, data)
+    _track_deposit_info_message(chat_id, query.message.message_id)
+    _track_deposit_info_messages(
+        chat_id,
+        await send_response_messages(query.message.chat, data),
+    )
 
 
 async def _send_simple_response(message, data):
     """Send the simple-mode response (text or photo) directly."""
-    await send_response_messages(message, data)
+    chat_id = message.chat.id
+    _reset_deposit_info_messages(chat_id)
+    _track_deposit_info_messages(
+        chat_id,
+        await send_response_messages(message, data),
+    )
 
 
 def _cleanup(context):

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import html as html_module
 import logging
-import os
 import random
 import re
 from dataclasses import dataclass
@@ -16,6 +15,7 @@ from sqlalchemy import func
 
 from db.connection import get_db
 from db.models import (
+    Club,
     ClubPaymentMethod,
     ClubPaymentTier,
     ClubPaymentTierVariant,
@@ -25,11 +25,17 @@ from db.models import (
 
 logger = logging.getLogger(__name__)
 
-VENMO_BIND_MODE_ENV = "VENMO_BIND_MODE"
 BIND_ATTEMPT_TTL_SECONDS = 600
 
 BIND_KIND_SPECIAL_AMOUNT = "special_amount"
 BIND_KIND_MEMO_EMOJI = "memo_emoji"
+
+# Test bot: first-time bind mode per dashboard club (venmo + zelle only).
+TEST_BOT_CLUB_BIND_MODES: dict[str, Literal["special_amount", "memo_emoji"]] = {
+    "creator club": BIND_KIND_SPECIAL_AMOUNT,
+    "round table": BIND_KIND_MEMO_EMOJI,
+}
+_BINDABLE_METHOD_SLUGS = frozenset({"venmo", "zelle"})
 
 SETUP_EMOJI_POOL: tuple[str, ...] = (
     "💰",
@@ -66,21 +72,43 @@ def venmo_special_amount_binding_enabled() -> bool:
     return first_time_binding_enabled()
 
 
+def _normalize_club_name_key(name: str | None) -> str:
+    return " ".join((name or "").strip().lower().split())
+
+
+def _club_name_for_bind_mode(
+    *,
+    club_id: int | None = None,
+    club_name: str | None = None,
+) -> str | None:
+    if club_name:
+        key = _normalize_club_name_key(club_name)
+        return key or None
+    if club_id is None:
+        return None
+    with get_db() as session:
+        club = session.query(Club).get(int(club_id))
+        if not club or not club.name:
+            return None
+        return _normalize_club_name_key(club.name)
+
+
 def bind_mode_for_method(
     slug: str,
+    *,
+    club_id: int | None = None,
+    club_name: str | None = None,
 ) -> Literal["special_amount", "memo_emoji"] | None:
-    """Per-method first-time bind mode on test bot; None if binding disabled."""
+    """Per-method first-time bind mode on test bot for configured clubs only."""
     if not first_time_binding_enabled():
         return None
     method_slug = (slug or "").strip().lower()
-    if method_slug == "zelle":
-        return BIND_KIND_MEMO_EMOJI
-    if method_slug == "venmo":
-        raw = (os.getenv(VENMO_BIND_MODE_ENV) or BIND_KIND_SPECIAL_AMOUNT).strip().lower()
-        if raw in ("memo_emoji", "memo", "emoji"):
-            return BIND_KIND_MEMO_EMOJI
-        return BIND_KIND_SPECIAL_AMOUNT
-    return None
+    if method_slug not in _BINDABLE_METHOD_SLUGS:
+        return None
+    club_key = _club_name_for_bind_mode(club_id=club_id, club_name=club_name)
+    if not club_key:
+        return None
+    return TEST_BOT_CLUB_BIND_MODES.get(club_key)
 
 
 BOUND_VIA_SPECIAL_AMOUNT = "special_amount"
@@ -828,25 +856,24 @@ def extract_zelle_details(text: str | None) -> tuple[str | None, str | None]:
     return email, name
 
 
-def format_setup_emoji_highlight(setup_emoji: str, *, use_html: bool = True) -> str:
-    """Short standalone message highlighting the required memo/caption emoji."""
-    emoji = (setup_emoji or "").strip()
+def format_setup_emoji_highlight(*, use_html: bool = True) -> str:
+    """Instruction before a separate message that contains only the setup emoji."""
     if use_html:
-        safe = html_module.escape(emoji)
-        return f"<b>Send this emoji in the payment memo/caption:</b>\n<code>{safe}</code>"
-    return f"Send this emoji in the payment memo/caption:\n  {emoji}"
+        return (
+            "<b>Copy and paste the emoji in the next message</b> "
+            "into your payment memo/caption."
+        )
+    return "Copy and paste the emoji in the next message into your payment memo/caption."
 
 
 def format_first_time_memo_setup_message(
     *,
     payment_method_slug: str,
-    setup_emoji: str,
     variant_response_text: str | None,
     use_html: bool = True,
 ) -> str:
     """First-time setup copy for memo/caption emoji binding (Venmo or Zelle)."""
     slug = (payment_method_slug or "").strip().lower()
-    emoji = (setup_emoji or "").strip()
     body_middle = (
         "The exact emoji helps us match your payment to this chat faster. "
         "This is a one-time setup step for this payment method. Future deposits "
@@ -858,14 +885,13 @@ def format_first_time_memo_setup_message(
         email_line = email or "—"
         name_line = name or "—"
         if use_html:
-            safe_emoji = html_module.escape(emoji)
             safe_email = html_module.escape(email_line)
             safe_name = html_module.escape(name_line)
             return (
                 "<b>FIRST-TIME ZELLE SETUP</b>\n"
                 "────────────────────\n\n"
-                f"<b>Send the emoji:</b> <code>{safe_emoji}</code>\n"
-                "<b>in the caption</b> to the Zelle info below.\n\n"
+                "<b>Copy and paste the emoji above</b> into the caption "
+                "when you send to the Zelle info below.\n\n"
                 "<b>Do not use any other emoji.</b>\n\n"
                 f"{body_middle}\n\n"
                 f"<b>ZELLE EMAIL:</b> <code>{safe_email}</code>\n"
@@ -876,8 +902,8 @@ def format_first_time_memo_setup_message(
         return (
             "FIRST-TIME ZELLE SETUP\n"
             "--------------------\n\n"
-            f"Send the emoji: {emoji}\n"
-            "in the caption to the Zelle info below.\n\n"
+            "Copy and paste the emoji above into the caption "
+            "when you send to the Zelle info below.\n\n"
             "Do not use any other emoji.\n\n"
             f"{body_middle}\n\n"
             f"ZELLE EMAIL: {email_line}\n"
@@ -889,13 +915,12 @@ def format_first_time_memo_setup_message(
     url = extract_venmo_url(variant_response_text) or "—"
     caption_word = "caption"
     if use_html:
-        safe_emoji = html_module.escape(emoji)
         safe_url = html_module.escape(url, quote=True)
         return (
             "<b>FIRST-TIME VENMO SETUP</b>\n"
             "────────────────────\n\n"
-            f"<b>Send the emoji:</b> <code>{safe_emoji}</code>\n"
-            f"<b>in the {caption_word}</b> to the Venmo info below.\n\n"
+            f"<b>Copy and paste the emoji above</b> into the {caption_word} "
+            "when you send to the Venmo info below.\n\n"
             "<b>Do not use any other emoji.</b>\n\n"
             f"{body_middle}\n\n"
             f'<b>Venmo:</b> <a href="{safe_url}">{safe_url}</a>\n\n'
@@ -905,8 +930,8 @@ def format_first_time_memo_setup_message(
     return (
         "FIRST-TIME VENMO SETUP\n"
         "--------------------\n\n"
-        f"Send the emoji: {emoji}\n"
-        f"in the {caption_word} to the Venmo info below.\n\n"
+        f"Copy and paste the emoji above into the {caption_word} "
+        "when you send to the Venmo info below.\n\n"
         "Do not use any other emoji.\n\n"
         f"{body_middle}\n\n"
         f"Venmo: {url}\n\n"

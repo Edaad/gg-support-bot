@@ -6,10 +6,12 @@ Before a support group can use a configured deposit method in `/deposit`, the ch
 
 ## Bind modes (per method)
 
-| Method | Default mode (test bot) | Override |
-|--------|------------------------|----------|
-| `venmo` | `special_amount` — exact cent amount (one below chosen /deposit amount) | `VENMO_BIND_MODE=memo_emoji` |
-| `zelle` | `memo_emoji` — random emoji in payment memo/caption | — |
+| Club (test bot) | `venmo` + `zelle` bind mode |
+|-----------------|---------------------------|
+| Creator Club | `special_amount` — exact cent amount (one below chosen /deposit amount) |
+| Round Table | `memo_emoji` — random emoji in payment memo/caption |
+
+Other clubs: no first-time binding on the test bot. Production `run_bot.py`: disabled for all clubs.
 
 ### Special amount (`special_amount`)
 
@@ -22,6 +24,8 @@ Before a support group can use a configured deposit method in `/deposit`, the ch
 1. Bot assigns a variant and a **random emoji** from a fixed pool (unique per pending setup on that variant).
 2. Player sends that **exact emoji** in the Venmo **caption** (or Zelle **caption** in instructions) with payment, then posts a screenshot.
 3. Zapier POSTs to `/api/venmo/payments` with optional **`memo`**. Within **10 minutes**, if **memo contains the emoji** and Venmo handle matches the variant, the payment auto-binds the group.
+
+**Local dev:** `run_api.py` (or Heroku `web`) must use the same `DATABASE_URL` as `run_test_bot.py`. Setup matching runs on ingest in the API process — it does **not** require `BOT_TEST_WORKER` on the web dyno.
 
 Zelle uses deposit setup + DB attempts on the test bot; **Zelle Zapier ingest is not implemented yet** (manual bind still works).
 

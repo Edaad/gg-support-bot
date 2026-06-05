@@ -11,7 +11,7 @@ def _split_text(text: str) -> list[str]:
     return [p for p in parts if p]
 
 
-async def send_response_messages(target, data):
+async def send_response_messages(target, data) -> list[int]:
     """Send a configured response as one or more messages.
 
     Args:
@@ -24,7 +24,11 @@ async def send_response_messages(target, data):
           segment becomes its own Telegram message.
         - The first message is sent as a reply when *target* is a Message; subsequent
           messages are plain sends to the same chat.
+
+    Returns:
+        Telegram message ids for every message sent.
     """
+    message_ids: list[int] = []
     is_reply = hasattr(target, "reply_text")
     chat = target.chat if is_reply else target
     rtype = data.get("response_type", "text")
@@ -36,18 +40,20 @@ async def send_response_messages(target, data):
         caption = data.get("response_caption") or None
         if len(file_ids) == 1:
             if is_reply:
-                await target.reply_photo(photo=file_ids[0], caption=caption)
+                sent = await target.reply_photo(photo=file_ids[0], caption=caption)
             else:
-                await chat.send_photo(photo=file_ids[0], caption=caption)
+                sent = await chat.send_photo(photo=file_ids[0], caption=caption)
+            message_ids.append(sent.message_id)
         else:
             media = [
                 InputMediaPhoto(media=fid, caption=caption if i == 0 else None)
                 for i, fid in enumerate(file_ids)
             ]
             if is_reply:
-                await target.reply_media_group(media=media)
+                sent_group = await target.reply_media_group(media=media)
             else:
-                await chat.send_media_group(media=media)
+                sent_group = await chat.send_media_group(media=media)
+            message_ids.extend(msg.message_id for msg in sent_group)
         is_reply = False  # follow-up text goes as plain messages
 
     text = data.get("response_text") or ""
@@ -55,15 +61,17 @@ async def send_response_messages(target, data):
         parts = _split_text(text)
         for part in parts:
             if is_reply:
-                await target.reply_text(
+                sent = await target.reply_text(
                     part,
                     parse_mode=parse_mode,
                     disable_web_page_preview=disable_web_page_preview,
                 )
                 is_reply = False
             else:
-                await chat.send_message(
+                sent = await chat.send_message(
                     part,
                     parse_mode=parse_mode,
                     disable_web_page_preview=disable_web_page_preview,
                 )
+            message_ids.append(sent.message_id)
+    return message_ids

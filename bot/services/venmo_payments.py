@@ -25,7 +25,6 @@ from bot.services.payment_method_binding import (
     BOUND_VIA_SPECIAL_AMOUNT,
     cancel_pending_attempts_for_chat_in_session,
     complete_attempt_in_session,
-    first_time_binding_enabled,
     infer_variant_id_for_venmo_handle,
     match_pending_memo_setup_in_session,
     match_pending_venmo_setup_in_session,
@@ -400,24 +399,35 @@ async def ingest_venmo_payment(
 
         setup_attempt = None
         setup_bound_via = BOUND_VIA_SPECIAL_AMOUNT
-        if first_time_binding_enabled():
-            setup_attempt = match_pending_memo_setup_in_session(
+        # Match pending first-time setup attempts whenever they exist (created by
+        # run_test_bot.py). Ingest runs on the API/web process, not the bot worker.
+        setup_attempt = match_pending_memo_setup_in_session(
+            session,
+            payment_method_slug="venmo",
+            venmo_handle=handle,
+            memo=memo,
+        )
+        if setup_attempt is not None:
+            setup_bound_via = BOUND_VIA_MEMO_EMOJI
+        else:
+            setup_attempt = match_pending_venmo_setup_in_session(
                 session,
-                payment_method_slug="venmo",
+                amount_cents=amount_cents,
                 venmo_handle=handle,
-                memo=memo,
             )
-            if setup_attempt is not None:
-                setup_bound_via = BOUND_VIA_MEMO_EMOJI
-            else:
-                setup_attempt = match_pending_venmo_setup_in_session(
-                    session,
-                    amount_cents=amount_cents,
-                    venmo_handle=handle,
-                )
         if setup_attempt is not None:
             live_title = resolve_display_group_title(int(setup_attempt.telegram_chat_id))
             club_id_setup = int(setup_attempt.club_id)
+            if not live_title:
+                logger.warning(
+                    "venmo ingest: setup attempt matched but group title missing "
+                    "attempt_id=%s chat_id=%s payment_id=%s handle=%r memo=%r",
+                    setup_attempt.id,
+                    setup_attempt.telegram_chat_id,
+                    payment.id,
+                    handle,
+                    memo,
+                )
             if live_title:
                 if complete_attempt_in_session(
                     session,
