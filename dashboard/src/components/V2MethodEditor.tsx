@@ -69,10 +69,13 @@ function detailsPayload(form: Partial<V2Method>, direction: string): Partial<V2M
   }
   if (direction === 'deposit') {
     payload.deposit_limit = form.deposit_limit ?? null
-    payload.first_time_linking_enabled = form.first_time_linking_enabled ?? false
-    payload.first_time_bind_mode = form.first_time_linking_enabled
-      ? (form.first_time_bind_mode ?? 'special_amount')
-      : null
+    const slug = (form.slug || '').trim().toLowerCase()
+    if (slug === 'venmo') {
+      payload.first_time_linking_enabled = form.first_time_linking_enabled ?? false
+      payload.first_time_bind_mode = form.first_time_linking_enabled
+        ? (form.first_time_bind_mode ?? 'special_amount')
+        : null
+    }
   }
   payload.is_active = form.is_active ?? true
   payload.has_sub_options = form.has_sub_options ?? false
