@@ -793,14 +793,13 @@ class VenmoPayment(Base):
 
 
 class VenmoPayerBinding(Base):
-    """Remember last manual bind: payer + Venmo handle -> support group chat."""
+    """Remember last bind: normalized payer name -> support group (any shared Venmo)."""
 
     __tablename__ = "venmo_payer_bindings"
     __table_args__ = (
         UniqueConstraint(
             "payer_name_normalized",
-            "venmo_handle",
-            name="uq_venmo_payer_bindings_payer_handle",
+            name="uq_venmo_payer_bindings_payer_name",
         ),
         Index("ix_venmo_payer_bindings_telegram_chat_id", "telegram_chat_id"),
     )

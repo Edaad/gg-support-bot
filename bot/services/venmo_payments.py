@@ -302,7 +302,7 @@ def _upsert_payer_binding(
     now = datetime.now(timezone.utc)
     row = (
         session.query(VenmoPayerBinding)
-        .filter_by(payer_name_normalized=normalized, venmo_handle=handle)
+        .filter_by(payer_name_normalized=normalized)
         .one_or_none()
     )
     if row is None:
@@ -311,6 +311,7 @@ def _upsert_payer_binding(
             venmo_handle=handle,
         )
         session.add(row)
+    row.venmo_handle = handle
     row.telegram_chat_id = int(telegram_chat_id)
     row.club_id = int(club_id)
     row.bound_group_title_at_bind = bound_group_title_at_bind[:255]
@@ -463,10 +464,7 @@ async def ingest_venmo_payment(
         if not auto_bound:
             binding = (
                 session.query(VenmoPayerBinding)
-                .filter_by(
-                    payer_name_normalized=normalize_payer_name(payer),
-                    venmo_handle=handle,
-                )
+                .filter_by(payer_name_normalized=normalize_payer_name(payer))
                 .one_or_none()
             )
         else:

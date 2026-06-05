@@ -222,6 +222,63 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.auto_bound)
         self.assertEqual(result.status, "bound")
 
+    async def test_ingest_auto_binds_known_payer_different_recipient_handle(self):
+        binding = VenmoPayerBinding(
+            payer_name_normalized="moshe toussoun",
+            venmo_handle="@godfather4444",
+            telegram_chat_id=CHAT_ID,
+            club_id=CLUB_ID,
+        )
+
+        payment_obj = VenmoPayment(
+            id=100,
+            payer_name="Moshe Toussoun",
+            amount_cents=15000,
+            venmo_handle="@other-venmo",
+            goods_or_services=False,
+        )
+
+        def _query(model):
+            q = MagicMock()
+            if model is VenmoPayment:
+                q.filter_by.return_value.one_or_none.side_effect = [None, payment_obj]
+            elif model is VenmoPayerBinding:
+                q.filter_by.return_value.one_or_none.return_value = binding
+            return q
+
+        mock_session = MagicMock()
+        mock_session.query.side_effect = _query
+
+        def _add(obj):
+            if isinstance(obj, VenmoPayment) and obj.id is None:
+                obj.id = 100
+
+        mock_session.add.side_effect = _add
+        mock_session.flush = MagicMock()
+
+        with (
+            patch("bot.services.venmo_payments.get_db") as mock_get_db,
+            patch(
+                "bot.services.venmo_payments.send_telegram_notification",
+                new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
+            ),
+            patch(
+                "bot.services.venmo_payments.resolve_display_group_title",
+                return_value=GROUP_TITLE,
+            ),
+        ):
+            mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = await vp.ingest_venmo_payment(
+                payer_name="Moshe Toussoun",
+                amount="150.00",
+                venmo_handle="@other-venmo",
+            )
+
+        self.assertTrue(result.auto_bound)
+        self.assertEqual(result.status, "bound")
+
     async def test_ingest_idempotent_reject_logs_and_skips_telegram(self):
         existing = VenmoPayment(
             id=5,

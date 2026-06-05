@@ -10,20 +10,23 @@ Venmo Confirm Zaps POST payment details to this API. The **notification bot** (`
 2. **API** — insert `venmo_payments`, auto-bind repeat payers, send Telegram notification
 3. **Notification bot** — staff reply with group title → bind + edit notification
 
-Repeat payers (`venmo_payer_bindings`) auto-bind to their last group. Display always uses the **live** group title from `groups.name` via `get_group_title_for_chat`.
+Repeat payers (`venmo_payer_bindings`) auto-bind to their last group by **normalized payer name** (shared Venmo accounts rotate across clubs, so recipient `@handle` is not part of the lookup). Display always uses the **live** group title from `groups.name` via `get_group_title_for_chat`.
 
 ## Database tables
 
 | Table | Purpose |
 |-------|---------|
 | `venmo_payments` | One row per Venmo payment; binding keyed by `telegram_chat_id` |
-| `venmo_payer_bindings` | Payer name + Venmo handle → last bound support group |
+| `venmo_payer_bindings` | Normalized payer name → last bound support group (`venmo_handle` = last seen recipient) |
 
 Migration:
 
 ```bash
 DATABASE_URL=... python migrate_venmo_payments.py
+DATABASE_URL=... python migrate_venmo_payer_name_only.py
 ```
+
+`migrate_venmo_payer_name_only.py` dedupes payer rows and switches repeat-payer lookup to name-only (run once after deploy).
 
 ## Environment
 
