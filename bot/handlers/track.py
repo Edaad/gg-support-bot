@@ -78,7 +78,9 @@ async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             and context.bot
             and update.effective_chat
         ):
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=res.error)
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id, text=res.error, parse_mode="HTML"
+            )
         return
     if context.bot and update.effective_chat and res.gg_player_id:
         chat = update.effective_chat
@@ -176,7 +178,7 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
     else:
         if res.error and is_same_club_player_conflict_message(res.error):
-            await update.message.reply_text(res.error)
+            await update.message.reply_text(res.error, parse_mode="HTML")
         else:
             await update.message.reply_text(f"Invalid group name format. {_EXPECTED}")
 

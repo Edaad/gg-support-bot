@@ -127,7 +127,9 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
                     ),
                 )
             elif res.error and is_same_club_player_conflict_message(res.error):
-                await context.bot.send_message(chat_id=chat_id, text=res.error)
+                await context.bot.send_message(
+                    chat_id=chat_id, text=res.error, parse_mode="HTML"
+                )
         except Exception:
             pass
 
@@ -251,7 +253,7 @@ async def send_post_gc_intro_bundle(bot, chat_id: int, club_id: int, chat_title:
                 ),
             )
         elif res.error and is_same_club_player_conflict_message(res.error):
-            await bot.send_message(chat_id=chat_id, text=res.error)
+            await bot.send_message(chat_id=chat_id, text=res.error, parse_mode="HTML")
     except Exception:
         pass
 

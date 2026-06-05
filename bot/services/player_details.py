@@ -10,6 +10,7 @@ Example:
 from __future__ import annotations
 
 from dataclasses import dataclass
+import html as html_module
 import re
 from typing import Optional, Tuple, List, Set
 
@@ -21,6 +22,12 @@ from db.connection import get_db
 from db.models import Club
 
 _GG_RE = re.compile(r"^[0-9]{1,48}-[0-9]{1,48}$")
+
+SAME_CLUB_PLAYER_CONFLICT_PREFIX = "Oops! Seems like the player with PLAYER ID:"
+SAME_CLUB_PLAYER_CONFLICT_ADMIN_NOTICE = (
+    "<b>IMPORTANT — An admin will delete this group chat.</b>\n"
+    "Please use your <b>existing</b> support group for this player.\n\n"
+)
 
 
 @dataclass(frozen=True)
@@ -179,22 +186,25 @@ def check_same_club_player_conflict(
     others = [c for c in existing if int(c) != int(chat_id)]
     if not others:
         return None
-    conflict_prefix = "Oops! Seems like the player with PLAYER ID:"
+    safe_id = html_module.escape(gg_player_id)
     if len(others) == 1:
-        return (
-            f"{conflict_prefix} {gg_player_id} already has another group chat for this club."
+        detail = (
+            f"{SAME_CLUB_PLAYER_CONFLICT_PREFIX} <code>{safe_id}</code> "
+            "already has another group chat for this club."
         )
-    return (
-        f"{conflict_prefix} {gg_player_id} already has other group chats "
-        f"for this club ({len(others)} linked chats)."
-    )
+    else:
+        detail = (
+            f"{SAME_CLUB_PLAYER_CONFLICT_PREFIX} <code>{safe_id}</code> "
+            f"already has other group chats for this club ({len(others)} linked chats)."
+        )
+    return SAME_CLUB_PLAYER_CONFLICT_ADMIN_NOTICE + detail
 
 
 def is_same_club_player_conflict_message(msg: Optional[str]) -> bool:
     """True if error text was produced by check_same_club_player_conflict (for handler routing)."""
     if not msg:
         return False
-    return msg.startswith("Oops! Seems like the player with PLAYER ID:")
+    return SAME_CLUB_PLAYER_CONFLICT_PREFIX in msg
 
 
 def bind_chat_from_title(*, chat_id: int, title: str | None) -> BindResult:
