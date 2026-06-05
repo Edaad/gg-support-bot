@@ -70,7 +70,7 @@ function detailsPayload(form: Partial<V2Method>, direction: string): Partial<V2M
   if (direction === 'deposit') {
     payload.deposit_limit = form.deposit_limit ?? null
     const slug = (form.slug || '').trim().toLowerCase()
-    if (slug === 'venmo') {
+    if (slug === 'venmo' || slug === 'zelle') {
       payload.first_time_linking_enabled = form.first_time_linking_enabled ?? false
       payload.first_time_bind_mode = form.first_time_linking_enabled
         ? (form.first_time_bind_mode ?? 'special_amount')

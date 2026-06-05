@@ -820,6 +820,74 @@ class VenmoPayerBinding(Base):
     club = relationship("Club")
 
 
+class ZellePayment(Base):
+    """One Zelle deposit ingested from Zapier; optionally bound to a support group."""
+
+    __tablename__ = "zelle_payments"
+    __table_args__ = (
+        Index(
+            "ix_zelle_payments_notification_msg",
+            "notification_chat_id",
+            "notification_message_id",
+        ),
+        Index("ix_zelle_payments_telegram_chat_id", "telegram_chat_id"),
+        Index("ix_zelle_payments_created_at", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    payer_name = Column(String(255), nullable=False)
+    amount_cents = Column(Integer, nullable=False)
+    zelle_recipient = Column(String(100), nullable=False)
+    paid_at = Column(String(255), nullable=True)
+    source_external_id = Column(String(255), unique=True, nullable=True)
+    telegram_chat_id = Column(BigInteger, nullable=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    bound_group_title_at_bind = Column(String(255), nullable=True)
+    notification_chat_id = Column(BigInteger, nullable=True)
+    notification_message_id = Column(BigInteger, nullable=True)
+    bound_by_telegram_user_id = Column(BigInteger, nullable=True)
+    auto_bound = Column(Boolean, nullable=False, default=False)
+    is_test = Column(Boolean, nullable=False, default=False)
+    bound_at = Column(DateTime(timezone=True), nullable=True)
+    memo = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    club = relationship("Club")
+
+
+class ZellePayerBinding(Base):
+    """Remember last bind: normalized payer name -> support group (any shared Zelle)."""
+
+    __tablename__ = "zelle_payer_bindings"
+    __table_args__ = (
+        UniqueConstraint(
+            "payer_name_normalized",
+            name="uq_zelle_payer_bindings_payer_name",
+        ),
+        Index("ix_zelle_payer_bindings_telegram_chat_id", "telegram_chat_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    payer_name_normalized = Column(String(255), nullable=False)
+    zelle_recipient = Column(String(100), nullable=False)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    bound_group_title_at_bind = Column(String(255), nullable=True)
+    last_bound_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_bound_by_telegram_user_id = Column(BigInteger, nullable=True)
+
+    club = relationship("Club")
+
+
 class PaymentMethodBindAttempt(Base):
     """In-flight first-time payment method setup (special amount or memo emoji)."""
 
@@ -881,6 +949,11 @@ class PaymentMethodBindAttempt(Base):
         ForeignKey("venmo_payments.id", ondelete="SET NULL"),
         nullable=True,
     )
+    zelle_payment_id = Column(
+        Integer,
+        ForeignKey("zelle_payments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
@@ -888,6 +961,7 @@ class PaymentMethodBindAttempt(Base):
     club = relationship("Club")
     variant = relationship("ClubPaymentTierVariant")
     venmo_payment = relationship("VenmoPayment")
+    zelle_payment = relationship("ZellePayment")
 
 
 class GroupPaymentMethodBinding(Base):

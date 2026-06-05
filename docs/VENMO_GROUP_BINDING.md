@@ -1,5 +1,7 @@
 # First-time group chat binding
 
+For the **full Venmo flow** (payment tracking, manual bind, and how setup connects to Zapier ingest), see [`VENMO_FLOW.md`](VENMO_FLOW.md).
+
 Before a support group can use a configured deposit method in `/deposit`, the chat may need a **one-time link** step. After linking, deposits use the sticky variant that was confirmed during setup.
 
 Configure per deposit method in the dashboard (**Club → Deposit methods → Venmo/Zelle → First-time deposit linking**).
@@ -17,7 +19,7 @@ Only **Venmo** and **Zelle** deposit methods support first-time linking.
 
 1. Bot assigns a variant and an exact setup amount one cent below the amount the player entered in `/deposit`, minus one cent per other pending `special_amount` setup on that variant (e.g. $90.00 chosen → $89.99, then $89.98, …).
 2. Player sends that exact amount to the method’s payment destination and posts a screenshot.
-3. Zapier POSTs to `/api/venmo/payments` (Venmo). Within **10 minutes**, if **amount + Venmo handle** match the pending attempt, the payment auto-binds the group.
+3. Zapier POSTs to `/api/venmo/payments` (Venmo) or `/api/zelle/payments` (Zelle). Within **10 minutes**, if **amount + account** match the pending attempt, the payment auto-binds the group.
 
 If the payer or setup chat is **already linked**, ingest sends a staff warning (existing group + last bound deposit time), cancels the setup attempt, and leaves the payment **unbound** for manual rebinding.
 
@@ -25,13 +27,13 @@ If the payer or setup chat is **already linked**, ingest sends a staff warning (
 
 1. Bot assigns a variant and a **setup code cycled left-to-right** through a fixed pool (up to 10 concurrent pending setups per variant).
 2. Player sends that **exact code** in the Venmo **caption** (or Zelle **caption** in instructions) with payment, then posts a screenshot.
-3. Zapier POSTs to `/api/venmo/payments` with optional **`memo`**. Within **10 minutes**, if **memo contains the code** and Venmo handle matches the variant, the payment auto-binds the group.
+3. Zapier POSTs to `/api/venmo/payments` or `/api/zelle/payments` with optional **`memo`**. Within **10 minutes**, if **memo contains the code** and the payment account matches the variant, the payment auto-binds the group.
 
 Same **already-linked** warning behavior as special amount (payment stays unbound).
 
 **Local dev:** `run_api.py` (or Heroku `web`) must use the same `DATABASE_URL` as `run_test_bot.py`. Setup matching runs on ingest in the API process — it does **not** require `BOT_TEST_WORKER` on the web dyno.
 
-Zelle uses deposit setup + DB attempts on the test bot; **Zelle Zapier ingest is not implemented yet** (manual bind still works).
+Zelle uses the same deposit setup + DB attempts as Venmo; ingest is via `/api/zelle/payments` — see [`ZELLE_FLOW.md`](ZELLE_FLOW.md) and [`ZELLE_PAYMENTS.md`](ZELLE_PAYMENTS.md).
 
 ## Unbind (test bot)
 

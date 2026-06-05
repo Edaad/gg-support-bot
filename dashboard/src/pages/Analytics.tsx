@@ -52,12 +52,14 @@ function boundViaLabel(via: string): string {
 
 export default function Analytics({ token }: { token: string }) {
   const clubSelectId = useId()
+  const methodSelectId = useId()
   const sourceSelectId = useId()
   const fromDateId = useId()
   const toDateId = useId()
 
   const [clubs, setClubs] = useState<Club[]>([])
   const [clubId, setClubId] = useState<number | 'all'>('all')
+  const [method, setMethod] = useState<'venmo' | 'zelle'>('venmo')
   const [sourceFilter, setSourceFilter] = useState<BoundViaFilter>('all')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
@@ -82,7 +84,7 @@ export default function Analytics({ token }: { token: string }) {
 
   const loadSummary = useCallback(() => {
     fetchBindingSummary(token, {
-      method: 'venmo',
+      method,
       clubId: queryClubId,
       boundVia: appliedSource,
       from: appliedFrom ? `${appliedFrom}T00:00:00Z` : undefined,
@@ -93,11 +95,11 @@ export default function Analytics({ token }: { token: string }) {
         setSummary(null)
         setErr(e instanceof Error ? e.message : 'Could not load summary.')
       })
-  }, [token, queryClubId, appliedSource, appliedFrom, appliedTo])
+  }, [token, queryClubId, appliedSource, appliedFrom, appliedTo, method])
 
   const loadBindings = useCallback(() => {
     listGroupBindings(token, {
-      method: 'venmo',
+      method,
       clubId: queryClubId,
       boundVia: appliedSource,
       limit: PAGE_SIZE,
@@ -111,7 +113,7 @@ export default function Analytics({ token }: { token: string }) {
         setBindings([])
         setBindingsTotal(0)
       })
-  }, [token, queryClubId, appliedSource, page])
+  }, [token, queryClubId, appliedSource, page, method, appliedFrom, appliedTo])
 
   useEffect(() => {
     loadSummary()
@@ -134,7 +136,7 @@ export default function Analytics({ token }: { token: string }) {
     <div>
       <h1 className="mb-2 text-2xl font-bold">Analytics</h1>
       <p className="mb-6 text-sm text-slate-400">
-        Venmo group-chat linking statistics across support groups.
+        Venmo and Zelle group-chat linking statistics across support groups.
       </p>
 
       <div className="mb-6 flex flex-wrap items-end gap-4">
@@ -157,6 +159,21 @@ export default function Analytics({ token }: { token: string }) {
                 {c.name}
               </option>
             ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor={methodSelectId} className="mb-1 block text-xs text-slate-400">
+            Method
+          </label>
+          <select
+            id={methodSelectId}
+            className="input min-w-[8rem]"
+            value={method}
+            onChange={(e) => setMethod(e.target.value as 'venmo' | 'zelle')}
+          >
+            <option value="venmo">Venmo</option>
+            <option value="zelle">Zelle</option>
           </select>
         </div>
 

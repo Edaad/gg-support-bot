@@ -22,6 +22,8 @@ from db.models import (
     PaymentMethodBindAttempt,
     VenmoPayerBinding,
     VenmoPayment,
+    ZellePayerBinding,
+    ZellePayment,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,6 +55,10 @@ _ZELLE_EMAIL_RE = re.compile(
 )
 _ZELLE_NAME_RE = re.compile(
     r"Zelle\s+Name:\s*(.+?)(?:\n|$)",
+    re.IGNORECASE,
+)
+_ZELLE_PHONE_RE = re.compile(
+    r"Zelle:\s*([\d\-()+ \.]+)",
     re.IGNORECASE,
 )
 
@@ -138,6 +144,25 @@ def _normalize_venmo_handle(handle: str) -> str:
     if not raw.startswith("@"):
         raw = f"@{raw}"
     return raw.lower()
+
+
+def normalize_zelle_recipient(recipient: str) -> str:
+    """Normalize Zelle email (lowercase) or phone (digits only) for comparison."""
+    raw = (recipient or "").strip()
+    if not raw:
+        return raw
+    if "@" in raw:
+        return raw.lower()
+    digits = re.sub(r"\D", "", raw)
+    return digits if digits else raw.lower()
+
+
+def _normalize_binding_recipient(slug: str, recipient: str | None) -> str | None:
+    if not recipient:
+        return None
+    if (slug or "").strip().lower() == "zelle":
+        return normalize_zelle_recipient(recipient)
+    return _normalize_venmo_handle(recipient)
 
 
 def _format_amount_display(amount_cents: int) -> str:
@@ -621,7 +646,7 @@ def record_group_binding(
     first_bind_attempt_id: int | None = None,
 ) -> int:
     slug = (payment_method_slug or "").strip().lower()
-    handle = _normalize_venmo_handle(venmo_handle) if venmo_handle else None
+    handle = _normalize_binding_recipient(slug, venmo_handle)
     now = datetime.now(timezone.utc)
 
     with get_db() as session:
@@ -753,6 +778,39 @@ def match_pending_venmo_setup_in_session(
     return None
 
 
+def match_pending_zelle_setup_in_session(
+    session,
+    *,
+    amount_cents: int,
+    zelle_recipient: str,
+) -> Optional[PaymentMethodBindAttempt]:
+    """Return a pending Zelle bind attempt matching ingest amount + variant recipient."""
+    recipient = normalize_zelle_recipient(zelle_recipient)
+    if not recipient:
+        return None
+    now = datetime.now(timezone.utc)
+    _expire_stale_pending_global(session, now)
+    candidates = (
+        session.query(PaymentMethodBindAttempt)
+        .filter_by(
+            payment_method_slug="zelle",
+            bind_kind=BIND_KIND_SPECIAL_AMOUNT,
+            status=ATTEMPT_STATUS_PENDING,
+            amount_cents=int(amount_cents),
+        )
+        .filter(PaymentMethodBindAttempt.expires_at >= now)
+        .order_by(PaymentMethodBindAttempt.created_at)
+        .all()
+    )
+    for attempt in candidates:
+        if not _variant_zelle_recipient_matches(
+            session, int(attempt.variant_id), zelle_recipient
+        ):
+            continue
+        return attempt
+    return None
+
+
 def _memo_contains_code(memo: str, code: str) -> bool:
     if not memo or not code:
         return False
@@ -772,14 +830,31 @@ def _variant_venmo_handle_matches(session, variant_id: int, venmo_handle: str) -
     return bool(variant_handle and variant_handle == handle)
 
 
+def _variant_zelle_recipient_matches(
+    session, variant_id: int, zelle_recipient: str
+) -> bool:
+    recipient = normalize_zelle_recipient(zelle_recipient)
+    if not recipient:
+        return False
+    variant = session.query(ClubPaymentTierVariant).get(int(variant_id))
+    if not variant:
+        return False
+    for field in (variant.response_text, variant.response_caption):
+        variant_recipient = extract_zelle_recipient_from_text(field)
+        if variant_recipient and variant_recipient == recipient:
+            return True
+    return False
+
+
 def match_pending_memo_setup_in_session(
     session,
     *,
     payment_method_slug: str,
-    venmo_handle: str,
+    venmo_handle: str = "",
+    zelle_recipient: str = "",
     memo: str | None,
 ) -> Optional[PaymentMethodBindAttempt]:
-    """Match pending memo_emoji setup by setup code in memo + Venmo handle on variant."""
+    """Match pending memo_emoji setup by setup code in memo + account on variant."""
     if not (memo or "").strip():
         return None
     slug = (payment_method_slug or "").strip().lower()
@@ -804,6 +879,10 @@ def match_pending_memo_setup_in_session(
             continue
         if slug == "venmo" and not _variant_venmo_handle_matches(
             session, int(attempt.variant_id), venmo_handle
+        ):
+            continue
+        if slug == "zelle" and not _variant_zelle_recipient_matches(
+            session, int(attempt.variant_id), zelle_recipient
         ):
             continue
         return attempt
@@ -845,6 +924,41 @@ def find_existing_venmo_link_for_setup(
     return None
 
 
+def find_existing_zelle_link_for_setup(
+    session,
+    *,
+    payer_name: str,
+    setup_chat_id: int,
+) -> Optional[ExistingVenmoLink]:
+    """Return an existing Zelle link for payer or setup chat, if any."""
+    normalized = _normalize_payer_name(payer_name)
+    payer_row = (
+        session.query(ZellePayerBinding)
+        .filter_by(payer_name_normalized=normalized)
+        .one_or_none()
+    )
+    if payer_row is not None:
+        return ExistingVenmoLink(
+            linked_chat_id=int(payer_row.telegram_chat_id),
+            via="payer_binding",
+        )
+
+    group_row = (
+        session.query(GroupPaymentMethodBinding)
+        .filter_by(
+            telegram_chat_id=int(setup_chat_id),
+            payment_method_slug="zelle",
+        )
+        .one_or_none()
+    )
+    if group_row is not None:
+        return ExistingVenmoLink(
+            linked_chat_id=int(setup_chat_id),
+            via="group_binding",
+        )
+    return None
+
+
 def get_last_bound_deposit_at(
     session,
     *,
@@ -861,6 +975,31 @@ def get_last_bound_deposit_at(
             VenmoPayment.id != int(exclude_payment_id),
         )
         .order_by(VenmoPayment.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    for row in rows:
+        if _normalize_payer_name(row.payer_name) == normalized:
+            return row.created_at
+    return None
+
+
+def get_last_bound_zelle_deposit_at(
+    session,
+    *,
+    payer_name: str,
+    telegram_chat_id: int,
+    exclude_payment_id: int,
+) -> Optional[datetime]:
+    """Most recent bound ZellePayment created_at for payer in chat, or None."""
+    normalized = _normalize_payer_name(payer_name)
+    rows = (
+        session.query(ZellePayment)
+        .filter(
+            ZellePayment.telegram_chat_id == int(telegram_chat_id),
+            ZellePayment.id != int(exclude_payment_id),
+        )
+        .order_by(ZellePayment.created_at.desc())
         .limit(50)
         .all()
     )
@@ -887,7 +1026,8 @@ def complete_attempt_in_session(
     session,
     attempt: PaymentMethodBindAttempt,
     *,
-    venmo_payment_id: int,
+    venmo_payment_id: int | None = None,
+    zelle_payment_id: int | None = None,
 ) -> bool:
     now = datetime.now(timezone.utc)
     if attempt.status != ATTEMPT_STATUS_PENDING or attempt.expires_at < now:
@@ -896,7 +1036,11 @@ def complete_attempt_in_session(
             attempt.completed_at = now
         return False
     attempt.status = ATTEMPT_STATUS_SUCCEEDED
-    attempt.venmo_payment_id = int(venmo_payment_id)
+    slug = (attempt.payment_method_slug or "").strip().lower()
+    if slug == "zelle":
+        attempt.zelle_payment_id = int(zelle_payment_id) if zelle_payment_id else None
+    else:
+        attempt.venmo_payment_id = int(venmo_payment_id) if venmo_payment_id else None
     attempt.completed_at = now
     return True
 
@@ -914,7 +1058,7 @@ def record_group_binding_in_session(
     first_bind_attempt_id: int | None = None,
 ) -> int:
     slug = (payment_method_slug or "").strip().lower()
-    handle = _normalize_venmo_handle(venmo_handle) if venmo_handle else None
+    handle = _normalize_binding_recipient(slug, venmo_handle)
     now = datetime.now(timezone.utc)
     row = (
         session.query(GroupPaymentMethodBinding)
@@ -1010,6 +1154,19 @@ def extract_zelle_details(text: str | None) -> tuple[str | None, str | None]:
     email = email_m.group(1).strip() if email_m else None
     name = name_m.group(1).strip() if name_m else None
     return email, name
+
+
+def extract_zelle_recipient_from_text(text: str | None) -> str | None:
+    """Return normalized Zelle email or phone from variant response text."""
+    if not text or not isinstance(text, str):
+        return None
+    email, _name = extract_zelle_details(text)
+    if email:
+        return normalize_zelle_recipient(email)
+    phone_m = _ZELLE_PHONE_RE.search(text)
+    if phone_m:
+        return normalize_zelle_recipient(phone_m.group(1))
+    return None
 
 
 def format_setup_memo_code_highlight(*, use_html: bool = True) -> str:
@@ -1157,6 +1314,58 @@ def format_first_time_venmo_setup_message(
     )
 
 
+def format_first_time_zelle_setup_message(
+    *,
+    setup_amount_cents: int,
+    chosen_amount_cents: int,
+    variant_response_text: str | None,
+    use_html: bool = True,
+) -> str:
+    """Build first-time Zelle setup copy. Default is Telegram HTML (parse_mode=HTML)."""
+    setup_display = _format_amount_display(int(setup_amount_cents))
+    chosen_display = _format_amount_display(int(chosen_amount_cents))
+    email, name = extract_zelle_details(variant_response_text)
+    phone_recipient = extract_zelle_recipient_from_text(variant_response_text)
+    if email:
+        recipient_line = f"ZELLE EMAIL: {email}"
+        if name:
+            recipient_line += f"\nZelle Name: {name}"
+    elif phone_recipient and "@" not in (variant_response_text or ""):
+        recipient_line = f"Zelle: {phone_recipient}"
+    else:
+        recipient_line = "Zelle: —"
+
+    if use_html:
+        safe_setup = html_module.escape(setup_display)
+        safe_chosen = html_module.escape(chosen_display)
+        safe_recipient = html_module.escape(recipient_line)
+        return (
+            "<b>FIRST-TIME ZELLE SETUP</b>\n"
+            "────────────────────\n\n"
+            "<b>Pay this exact amount only:</b>\n"
+            f"<code>{safe_setup}</code>\n\n"
+            f"<b>Please do not send {safe_chosen}</b> (no rounding).\n\n"
+            "The exact amount helps us match your payment to this chat faster. "
+            "This is a one-time setup step for this payment method. Future deposits "
+            "can be sent normally once your method is linked.\n\n"
+            f"{safe_recipient}\n\n"
+            "Post a screenshot when done. An agent will confirm and add your chips."
+        )
+
+    return (
+        "FIRST-TIME ZELLE SETUP\n"
+        "--------------------\n\n"
+        "PAY THIS EXACT AMOUNT ONLY:\n"
+        f"  {setup_display}\n\n"
+        f"Do NOT send {chosen_display} (no rounding).\n\n"
+        "The exact amount helps us match your payment to this chat faster. "
+        "This is a one-time setup step for this payment method. Future deposits "
+        "can be sent normally once your method is linked.\n\n"
+        f"{recipient_line}\n\n"
+        "Post a screenshot when done. An agent will confirm and add your chips."
+    )
+
+
 def infer_variant_id_for_venmo_handle(
     club_id: int,
     venmo_handle: str,
@@ -1184,5 +1393,35 @@ def infer_variant_id_for_venmo_handle(
             for field in (v.response_text, v.response_caption):
                 h = extract_venmo_handle_from_text(field)
                 if h and h.lstrip("@").lower() == needle:
+                    return int(v.id)
+    return None
+
+
+def infer_variant_id_for_zelle_recipient(
+    club_id: int,
+    zelle_recipient: str,
+) -> Optional[int]:
+    """Match recipient to a club Zelle variant response text."""
+    recipient = normalize_zelle_recipient(zelle_recipient)
+    if not recipient:
+        return None
+
+    with get_db() as session:
+        method = (
+            session.query(ClubPaymentMethod)
+            .filter_by(club_id=int(club_id), direction="deposit", slug="zelle")
+            .one_or_none()
+        )
+        if not method:
+            return None
+        variants = (
+            session.query(ClubPaymentTierVariant)
+            .filter_by(method_id=int(method.id))
+            .all()
+        )
+        for v in variants:
+            for field in (v.response_text, v.response_caption):
+                variant_recipient = extract_zelle_recipient_from_text(field)
+                if variant_recipient and variant_recipient == recipient:
                     return int(v.id)
     return None

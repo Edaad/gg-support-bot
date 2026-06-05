@@ -277,6 +277,125 @@ export async function fetchAllVenmoPayments(
   return all
 }
 
+export type ZellePaymentRow = {
+  id: number
+  payer_name: string
+  zelle_recipient: string
+  amount_cents: number
+  amount_usd: number
+  paid_at: string | null
+  group_title: string | null
+  gg_player_id: string | null
+  gg_nickname: string | null
+  club_id: number | null
+  telegram_chat_id: number | null
+  status: 'bound' | 'unbound'
+  auto_bound: boolean
+  is_test: boolean
+  created_at: string
+  bound_at: string | null
+}
+
+export type ZellePayerRow = {
+  payer_name: string
+  zelle_recipient: string
+  group_title: string | null
+  gg_player_id: string | null
+  gg_nickname: string | null
+  total_deposited_cents: number
+  total_deposited_usd: number
+  payment_count: number
+  last_payment_at: string | null
+}
+
+export type ZelleBindResult = {
+  ok: boolean
+  error?: string | null
+  group_title?: string | null
+  telegram_chat_id?: number | null
+  club_id?: number | null
+  payment?: ZellePaymentRow | null
+}
+
+export type ZellePaymentListParams = {
+  clubId: number
+  status?: 'all' | 'bound' | 'unbound'
+  from?: string
+  to?: string
+  q?: string
+}
+
+export function listZellePayments(
+  token: string,
+  params: ZellePaymentListParams & { limit?: number; offset?: number },
+) {
+  const q = new URLSearchParams({ club_id: String(params.clubId) })
+  if (params.status && params.status !== 'all') q.set('status', params.status)
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  if (params.q?.trim()) q.set('q', params.q.trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  return request<Paginated<ZellePaymentRow>>(`/zelle/payments?${q}`, {}, token)
+}
+
+export function listZellePayers(
+  token: string,
+  params: { clubId: number; q?: string; limit?: number; offset?: number },
+) {
+  const q = new URLSearchParams({ club_id: String(params.clubId) })
+  if (params.q?.trim()) q.set('q', params.q.trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  return request<Paginated<ZellePayerRow>>(`/zelle/payers?${q}`, {}, token)
+}
+
+export function bindZellePayment(token: string, paymentId: number, groupTitle: string) {
+  return request<ZelleBindResult>(
+    `/zelle/payments/${paymentId}/bind`,
+    { method: 'POST', body: JSON.stringify({ group_title: groupTitle }) },
+    token,
+  )
+}
+
+export async function fetchAllZellePayments(
+  token: string,
+  params: ZellePaymentListParams,
+): Promise<ZellePaymentRow[]> {
+  const all: ZellePaymentRow[] = []
+  let offset = 0
+  for (;;) {
+    const res = await listZellePayments(token, {
+      ...params,
+      limit: EXPORT_PAGE_SIZE,
+      offset,
+    })
+    all.push(...res.items)
+    offset += res.items.length
+    if (offset >= res.total || res.items.length === 0) break
+  }
+  return all
+}
+
+export async function fetchAllZellePayers(
+  token: string,
+  params: { clubId: number; q?: string },
+): Promise<ZellePayerRow[]> {
+  const all: ZellePayerRow[] = []
+  let offset = 0
+  for (;;) {
+    const res = await listZellePayers(token, {
+      ...params,
+      limit: EXPORT_PAGE_SIZE,
+      offset,
+    })
+    all.push(...res.items)
+    offset += res.items.length
+    if (offset >= res.total || res.items.length === 0) break
+  }
+  return all
+}
+
 export type BoundViaFilter =
   | 'all'
   | 'special_amount'

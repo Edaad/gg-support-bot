@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useState } from 'react'
 import { listClubs, type Club } from '../api/client'
 import {
   bindVenmoPayment,
+  bindZellePayment,
   fetchBindingSummary,
   fetchAllStripeCustomers,
   type BindingSummary,
@@ -9,6 +10,8 @@ import {
   fetchAllStripeSessions,
   fetchAllVenmoPayers,
   fetchAllVenmoPayments,
+  fetchAllZellePayers,
+  fetchAllZellePayments,
   listGroupBindings,
   listPaymentProviders,
   listStripeCustomers,
@@ -16,19 +19,25 @@ import {
   listStripeSessions,
   listVenmoPayers,
   listVenmoPayments,
+  listZellePayers,
+  listZellePayments,
   unbindGroupBinding,
   type StripeCustomerRow,
   type StripeMethodOption,
   type StripeSessionRow,
   type VenmoPayerRow,
   type VenmoPaymentRow,
+  type ZellePayerRow,
+  type ZellePaymentRow,
 } from '../api/paymentsClient'
 import Modal from '../components/Modal'
 import { downloadCsv } from '../lib/csv'
 
 const TABS = ['Payments', 'Customers'] as const
 type Tab = (typeof TABS)[number]
-type Provider = 'stripe' | 'venmo'
+type Provider = 'stripe' | 'venmo' | 'zelle'
+type ManualPaymentRow = VenmoPaymentRow | ZellePaymentRow
+type ManualPayerRow = VenmoPayerRow | ZellePayerRow
 type VenmoStatus = 'all' | 'bound' | 'unbound'
 
 const PAGE_SIZE = 50
@@ -109,13 +118,23 @@ export default function Payments({ token }: { token: string }) {
   const [successMsg, setSuccessMsg] = useState('')
 
   const [bindOpen, setBindOpen] = useState(false)
-  const [bindRow, setBindRow] = useState<VenmoPaymentRow | null>(null)
+  const [bindRow, setBindRow] = useState<ManualPaymentRow | null>(null)
   const [bindingSummary, setBindingSummary] = useState<BindingSummary | null>(null)
   const [groupBindings, setGroupBindings] = useState<GroupBindingRow[]>([])
   const [groupBindingsTotal, setGroupBindingsTotal] = useState(0)
   const [unbindLoadingId, setUnbindLoadingId] = useState<number | null>(null)
   const [bindTitle, setBindTitle] = useState('')
   const [bindLoading, setBindLoading] = useState(false)
+
+  const manualProvider = provider === 'zelle' ? 'zelle' : provider === 'venmo' ? 'venmo' : null
+  const isManualProvider = manualProvider !== null
+  const manualLabel = manualProvider === 'zelle' ? 'Zelle' : 'Venmo'
+
+  const paymentAccount = (row: ManualPaymentRow) =>
+    'zelle_recipient' in row ? row.zelle_recipient : row.venmo_handle
+
+  const payerAccount = (row: ManualPayerRow) =>
+    'zelle_recipient' in row ? row.zelle_recipient : row.venmo_handle
 
   useEffect(() => {
     listClubs(token)
@@ -227,56 +246,65 @@ export default function Payments({ token }: { token: string }) {
       .finally(() => setLoading(false))
   }, [token, sessionQueryParams])
 
-  const loadVenmoPayments = useCallback(() => {
-    if (clubId == null) return
+  const loadManualPayments = useCallback(() => {
+    if (clubId == null || !manualProvider) return
     setLoading(true)
     setErr('')
-    listVenmoPayments(token, venmoPaymentQueryParams())
+    const loader =
+      manualProvider === 'zelle'
+        ? listZellePayments(token, venmoPaymentQueryParams())
+        : listVenmoPayments(token, venmoPaymentQueryParams())
+    loader
       .then((res) => {
-        setVenmoPayments(res.items)
+        setVenmoPayments(res.items as VenmoPaymentRow[])
         setVenmoPaymentTotal(res.total)
       })
       .catch((e: unknown) => {
-        setErr(e instanceof Error ? e.message : 'Could not load Venmo payments.')
+        setErr(e instanceof Error ? e.message : `Could not load ${manualLabel} payments.`)
       })
       .finally(() => setLoading(false))
-  }, [token, venmoPaymentQueryParams])
+  }, [token, venmoPaymentQueryParams, manualProvider, manualLabel, clubId])
 
-  const loadVenmoPayers = useCallback(() => {
-    if (clubId == null) return
+  const loadManualPayers = useCallback(() => {
+    if (clubId == null || !manualProvider) return
     setLoading(true)
     setErr('')
-    listVenmoPayers(token, {
+    const params = {
       clubId,
       q: appliedSearch || undefined,
       limit: PAGE_SIZE,
       offset: venmoPayerPage * PAGE_SIZE,
-    })
+    }
+    const loader =
+      manualProvider === 'zelle'
+        ? listZellePayers(token, params)
+        : listVenmoPayers(token, params)
+    loader
       .then((res) => {
-        setVenmoPayers(res.items)
+        setVenmoPayers(res.items as VenmoPayerRow[])
         setVenmoPayerTotal(res.total)
       })
       .catch((e: unknown) => {
         setErr(e instanceof Error ? e.message : 'Could not load payers.')
       })
       .finally(() => setLoading(false))
-  }, [token, clubId, appliedSearch, venmoPayerPage])
+  }, [token, clubId, appliedSearch, venmoPayerPage, manualProvider])
 
   const loadBindingSummary = useCallback(() => {
-    if (provider !== 'venmo') return
+    if (!manualProvider) return
     fetchBindingSummary(token, {
-      method: 'venmo',
+      method: manualProvider,
       clubId: clubId ?? undefined,
       from: appliedFrom || undefined,
       to: appliedTo || undefined,
     })
       .then(setBindingSummary)
       .catch(() => setBindingSummary(null))
-  }, [token, clubId, provider, appliedFrom, appliedTo])
+  }, [token, clubId, manualProvider, appliedFrom, appliedTo])
 
   const loadGroupBindings = useCallback(() => {
-    if (provider !== 'venmo' || clubId == null) return
-    listGroupBindings(token, { method: 'venmo', clubId, limit: 200, offset: 0 })
+    if (!manualProvider || clubId == null) return
+    listGroupBindings(token, { method: manualProvider, clubId, limit: 200, offset: 0 })
       .then((res) => {
         setGroupBindings(res.items)
         setGroupBindingsTotal(res.total)
@@ -285,7 +313,7 @@ export default function Payments({ token }: { token: string }) {
         setGroupBindings([])
         setGroupBindingsTotal(0)
       })
-  }, [token, clubId, provider])
+  }, [token, clubId, manualProvider])
 
   useEffect(() => {
     loadBindingSummary()
@@ -294,9 +322,10 @@ export default function Payments({ token }: { token: string }) {
 
   const handleUnbind = async (row: GroupBindingRow) => {
     const label = row.group_title?.trim() || `chat ${row.telegram_chat_id}`
+    const methodName = row.payment_method_slug === 'zelle' ? 'Zelle' : 'Venmo'
     if (
       !window.confirm(
-        `Unbind Venmo for "${label}"? The group will need first-time setup again on the test bot.`,
+        `Unbind ${methodName} for "${label}"? The group will need first-time setup again on the test bot.`,
       )
     ) {
       return
@@ -309,7 +338,7 @@ export default function Payments({ token }: { token: string }) {
         setErr(result.error || 'Could not unbind group.')
         return
       }
-      setSuccessMsg(`Unbound Venmo for ${label}.`)
+      setSuccessMsg(`Unbound ${methodName} for ${label}.`)
       loadGroupBindings()
       loadBindingSummary()
     } catch (e: unknown) {
@@ -324,19 +353,19 @@ export default function Payments({ token }: { token: string }) {
     if (provider === 'stripe') {
       if (tab === 'Customers') loadCustomers()
       else loadSessions()
-    } else if (tab === 'Customers') {
-      loadVenmoPayers()
-    } else {
-      loadVenmoPayments()
+    } else if (isManualProvider) {
+      if (tab === 'Customers') loadManualPayers()
+      else loadManualPayments()
     }
   }, [
     tab,
     clubId,
     provider,
+    isManualProvider,
     loadCustomers,
     loadSessions,
-    loadVenmoPayments,
-    loadVenmoPayers,
+    loadManualPayments,
+    loadManualPayers,
   ])
 
   const applyDateFilters = () => {
@@ -355,9 +384,9 @@ export default function Payments({ token }: { token: string }) {
   }
 
   const clubName = clubs.find((c) => c.id === clubId)?.name ?? 'club'
-  const secondaryTabLabel = provider === 'venmo' ? 'Payers' : 'Customers'
+  const secondaryTabLabel = isManualProvider ? 'Payers' : 'Customers'
 
-  const openBindModal = (row: VenmoPaymentRow) => {
+  const openBindModal = (row: ManualPaymentRow) => {
     setBindRow(row)
     setBindTitle(row.group_title || '')
     setBindOpen(true)
@@ -382,14 +411,17 @@ export default function Payments({ token }: { token: string }) {
     setErr('')
     setSuccessMsg('')
     try {
-      const result = await bindVenmoPayment(token, bindRow.id, title)
+      const result =
+        manualProvider === 'zelle'
+          ? await bindZellePayment(token, bindRow.id, title)
+          : await bindVenmoPayment(token, bindRow.id, title)
       if (!result.ok) {
         setErr(result.error || 'Could not bind payment.')
         return
       }
       setSuccessMsg(`Bound to ${result.group_title || title}.`)
       closeBindModal()
-      loadVenmoPayments()
+      loadManualPayments()
       loadGroupBindings()
       loadBindingSummary()
     } catch (e: unknown) {
@@ -444,45 +476,68 @@ export default function Payments({ token }: { token: string }) {
     }
   }
 
-  const exportVenmoPaymentsCsv = async () => {
-    if (clubId == null) return
+  const exportManualPaymentsCsv = async () => {
+    if (clubId == null || !manualProvider) return
     setExporting(true)
     setErr('')
     try {
-      const rows = await fetchAllVenmoPayments(token, venmoPaymentExportParams())
+      const rows =
+        manualProvider === 'zelle'
+          ? await fetchAllZellePayments(token, venmoPaymentExportParams())
+          : await fetchAllVenmoPayments(token, venmoPaymentExportParams())
       if (rows.length === 0) {
         setErr('No payments to export for the selected filters.')
         return
       }
-      const parts = ['venmo-payments', slugForFilename(clubName)]
+      const accountKey = manualProvider === 'zelle' ? 'zelle_recipient' : 'venmo_handle'
+      const parts = [`${manualProvider}-payments`, slugForFilename(clubName)]
       if (appliedFrom) parts.push(appliedFrom)
       if (appliedTo) parts.push(appliedTo)
+      const headers =
+        manualProvider === 'zelle'
+          ? [
+              'created_at',
+              'payer_name',
+              'zelle_recipient',
+              'group_title',
+              'gg_nickname',
+              'gg_player_id',
+              'amount_usd',
+              'status',
+              'auto_bound',
+            ]
+          : [
+              'created_at',
+              'payer_name',
+              'venmo_handle',
+              'group_title',
+              'gg_nickname',
+              'gg_player_id',
+              'amount_usd',
+              'status',
+              'auto_bound',
+              'goods_or_services',
+            ]
       downloadCsv(
         `${parts.join('-')}.csv`,
-        [
-          'created_at',
-          'payer_name',
-          'venmo_handle',
-          'group_title',
-          'gg_nickname',
-          'gg_player_id',
-          'amount_usd',
-          'status',
-          'auto_bound',
-          'goods_or_services',
-        ],
-        rows.map((row) => [
-          row.created_at,
-          row.payer_name,
-          row.venmo_handle,
-          row.group_title || '',
-          row.gg_nickname || '',
-          row.gg_player_id || '',
-          String(row.amount_usd),
-          row.status,
-          String(row.auto_bound),
-          String(row.goods_or_services),
-        ]),
+        headers,
+        rows.map((row) => {
+          const base = [
+            row.created_at,
+            row.payer_name,
+            String((row as Record<string, unknown>)[accountKey] ?? ''),
+            row.group_title || '',
+            row.gg_nickname || '',
+            row.gg_player_id || '',
+            String(row.amount_usd),
+            row.status,
+            String(row.auto_bound),
+          ]
+          if (manualProvider === 'venmo') {
+            base.push(String((row as VenmoPaymentRow).goods_or_services))
+          }
+          return base
+        }),
       )
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Export failed.')
@@ -522,24 +577,25 @@ export default function Payments({ token }: { token: string }) {
     }
   }
 
-  const exportVenmoPayersCsv = async () => {
-    if (clubId == null) return
+  const exportManualPayersCsv = async () => {
+    if (clubId == null || !manualProvider) return
     setExporting(true)
     setErr('')
     try {
-      const rows = await fetchAllVenmoPayers(token, {
-        clubId,
-        q: appliedSearch || undefined,
-      })
+      const rows =
+        manualProvider === 'zelle'
+          ? await fetchAllZellePayers(token, { clubId, q: appliedSearch || undefined })
+          : await fetchAllVenmoPayers(token, { clubId, q: appliedSearch || undefined })
       if (rows.length === 0) {
         setErr('No payers to export for the selected filters.')
         return
       }
+      const accountKey = manualProvider === 'zelle' ? 'zelle_recipient' : 'venmo_handle'
       downloadCsv(
-        `venmo-payers-${slugForFilename(clubName)}.csv`,
+        `${manualProvider}-payers-${slugForFilename(clubName)}.csv`,
         [
           'payer_name',
-          'venmo_handle',
+          accountKey,
           'group_title',
           'gg_player_id',
           'gg_nickname',
@@ -549,7 +605,7 @@ export default function Payments({ token }: { token: string }) {
         ],
         rows.map((row) => [
           row.payer_name,
-          row.venmo_handle,
+          String((row as Record<string, unknown>)[accountKey] ?? ''),
           row.group_title || '',
           row.gg_player_id || '',
           row.gg_nickname || '',
@@ -576,7 +632,7 @@ export default function Payments({ token }: { token: string }) {
     <div>
       <h1 className="mb-6 text-2xl font-bold">Payments</h1>
 
-      {provider === 'venmo' && bindingSummary && funnel && (
+      {isManualProvider && bindingSummary && funnel && (
         <section className="mb-6 rounded-lg border border-slate-700 bg-slate-900/50 p-4">
           <h2 className="mb-3 text-sm font-semibold text-slate-200">Venmo group bindings</h2>
           <div className="flex flex-wrap gap-6 text-sm">
@@ -675,7 +731,7 @@ export default function Payments({ token }: { token: string }) {
             value={clubId ?? ''}
             onChange={(e) => setClubId(Number(e.target.value))}
             className="input-field-sm min-w-[12rem]"
-            disabled={provider === 'venmo' && venmoStatus === 'unbound'}
+            disabled={isManualProvider && venmoStatus === 'unbound'}
           >
             {clubs.map((c) => (
               <option key={c.id} value={c.id}>
@@ -696,6 +752,7 @@ export default function Payments({ token }: { token: string }) {
           >
             <option value="stripe">Stripe</option>
             <option value="venmo">Venmo</option>
+            <option value="zelle">Zelle</option>
           </select>
         </div>
         {provider === 'stripe' && (
@@ -726,7 +783,7 @@ export default function Payments({ token }: { token: string }) {
             </select>
           </div>
         )}
-        {provider === 'venmo' && tab === 'Payments' && (
+        {isManualProvider && tab === 'Payments' && (
           <div>
             <label htmlFor={statusSelectId} className="label-field-xs">
               Status
@@ -901,7 +958,7 @@ export default function Payments({ token }: { token: string }) {
         </div>
       )}
 
-      {provider === 'venmo' && tab === 'Payments' && (
+      {isManualProvider && tab === 'Payments' && (
         <div>
           <div className="mb-4 flex flex-wrap items-end gap-3">
             <div>
@@ -934,7 +991,7 @@ export default function Payments({ token }: { token: string }) {
             <button
               type="button"
               disabled={clubId == null || loading || exporting}
-              onClick={() => void exportVenmoPaymentsCsv()}
+              onClick={() => void exportManualPaymentsCsv()}
               className="btn-secondary-sm disabled:opacity-40"
             >
               {exporting ? 'Exporting…' : 'Export CSV'}
@@ -943,9 +1000,9 @@ export default function Payments({ token }: { token: string }) {
 
           {venmoPayments.length === 0 && !loading ? (
             <p className="text-sm text-ink-muted">
-              No Venmo payments yet. Confirm Confirm Venmo Zaps POST to{' '}
-              <code className="text-xs">/api/venmo/payments</code> with{' '}
-              <code className="text-xs">VENMO_ZAPIER_WEBHOOK_SECRET</code> set on the API.
+              No {manualLabel} payments yet. Confirm Zaps POST to{' '}
+              <code className="text-xs">/api/{manualProvider}/payments</code> with webhook secret set
+              on the API.
             </p>
           ) : (
             <div className="table-scroll">
@@ -954,7 +1011,7 @@ export default function Payments({ token }: { token: string }) {
                   <tr>
                     <th className="px-4 py-3">Date</th>
                     <th className="px-4 py-3">Payer</th>
-                    <th className="px-4 py-3">Handle</th>
+                    <th className="px-4 py-3">{manualProvider === 'zelle' ? 'Recipient' : 'Handle'}</th>
                     <th className="px-4 py-3">Group</th>
                     <th className="px-4 py-3">Player</th>
                     <th className="px-4 py-3">Amount</th>
@@ -967,7 +1024,7 @@ export default function Payments({ token }: { token: string }) {
                     <tr key={row.id} className="hover:bg-surface/80">
                       <td className="px-4 py-3 whitespace-nowrap">{fmtDate(row.created_at)}</td>
                       <td className="px-4 py-3">{row.payer_name}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{row.venmo_handle}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{paymentAccount(row)}</td>
                       <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                         {row.status === 'unbound' ? (
                           <span className="text-warning-ink">Unbound</span>
@@ -1115,7 +1172,7 @@ export default function Payments({ token }: { token: string }) {
         </div>
       )}
 
-      {provider === 'venmo' && tab === 'Customers' && (
+      {isManualProvider && tab === 'Customers' && (
         <div>
           <div className="mb-4 flex flex-wrap gap-2">
             <input
@@ -1133,7 +1190,7 @@ export default function Payments({ token }: { token: string }) {
             <button
               type="button"
               disabled={clubId == null || loading || exporting}
-              onClick={() => void exportVenmoPayersCsv()}
+              onClick={() => void exportManualPayersCsv()}
               className="btn-secondary-sm disabled:opacity-40"
             >
               {exporting ? 'Exporting…' : 'Export CSV'}
@@ -1158,11 +1215,11 @@ export default function Payments({ token }: { token: string }) {
                 <tbody className="divide-y divide-border text-sm">
                   {venmoPayers.map((row) => (
                     <tr
-                      key={`${row.payer_name}-${row.venmo_handle}`}
+                      key={`${row.payer_name}-${payerAccount(row as ManualPayerRow)}`}
                       className="hover:bg-surface/80"
                     >
                       <td className="px-4 py-3">{row.payer_name}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{row.venmo_handle}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{payerAccount(row as ManualPayerRow)}</td>
                       <td className="px-4 py-3">{row.group_title || '—'}</td>
                       <td className="px-4 py-3">{fmtGgNickname(row.gg_nickname)}</td>
                       <td className="px-4 py-3">
@@ -1220,7 +1277,7 @@ export default function Payments({ token }: { token: string }) {
         </p>
         {bindRow && (
           <p className="mb-3 text-sm text-ink">
-            {bindRow.payer_name} · ${fmtMoney(bindRow.amount_usd)} · {bindRow.venmo_handle}
+            {bindRow.payer_name} · ${fmtMoney(bindRow.amount_usd)} · {paymentAccount(bindRow)}
           </p>
         )}
         <label htmlFor={bindTitleId} className="label-field-xs">

@@ -56,6 +56,7 @@ from bot.services.payment_method_binding import (
     bind_mode_for_method,
     format_first_time_memo_setup_message,
     format_first_time_venmo_setup_message,
+    format_first_time_zelle_setup_message,
     format_setup_amount_highlight,
     format_setup_memo_code_highlight,
     format_setup_memo_code_message,
@@ -65,7 +66,7 @@ from bot.services.payment_method_binding import (
     start_bind_attempt,
 )
 from bot.services.payment_method_binding import expire_attempt as expire_bind_attempt
-from bot.runtime_config import is_test_bot_worker, use_payment_v2
+from bot.runtime_config import is_test_bot_worker, use_payment_v2, zelle_first_time_linking_enabled
 from db.connection import get_db
 from db.models import Club
 
@@ -274,8 +275,9 @@ def _pick_deposit_variant_response(
     """Return (response_data, tier) for a deposit method selection."""
     tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
     sticky_variant_id: int | None = None
-    if (method_slug or "").strip().lower() == "venmo" and chat_id is not None:
-        binding = get_chat_binding(int(chat_id), "venmo")
+    slug_norm = (method_slug or "").strip().lower()
+    if slug_norm in ("venmo", "zelle") and chat_id is not None:
+        binding = get_chat_binding(int(chat_id), slug_norm)
         if binding and binding.variant_id:
             sticky_variant_id = binding.variant_id
 
@@ -427,6 +429,11 @@ async def _send_first_time_method_setup(
         chosen_amount_cents=deposit_amount_cents,
         variant_response_text=variant_text,
     )
+    setup_message_fn = (
+        format_first_time_zelle_setup_message
+        if slug == "zelle"
+        else format_first_time_venmo_setup_message
+    )
     try:
         await _deposit_send_message(
             chat,
@@ -444,7 +451,7 @@ async def _send_first_time_method_setup(
         await _deposit_send_message(
             chat,
             int(chat_id),
-            text=format_first_time_venmo_setup_message(**setup_kwargs, use_html=True),
+            text=setup_message_fn(**setup_kwargs, use_html=True),
             parse_mode="HTML",
             disable_web_page_preview=False,
         )
@@ -457,7 +464,7 @@ async def _send_first_time_method_setup(
         await _deposit_send_message(
             chat,
             int(chat_id),
-            text=format_first_time_venmo_setup_message(**setup_kwargs, use_html=False),
+            text=setup_message_fn(**setup_kwargs, use_html=False),
         )
     return True
 
@@ -1090,6 +1097,7 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
         bind_kind
         and chat_id is not None
         and not is_chat_method_bound(int(chat_id), method_slug)
+        and (method_slug != "zelle" or zelle_first_time_linking_enabled())
     ):
         if not isinstance(amount, Decimal):
             await query.edit_message_text("Deposit session expired. Use /deposit again.")

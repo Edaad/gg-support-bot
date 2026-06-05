@@ -18,7 +18,7 @@ from notification.constants import (
     NOTIFICATION_BOT_TOKEN_ENV,
     PAYMENT_NOTIFICATION_CHAT_ID_ENV,
 )
-from notification.handlers.bind import venmo_bind_reply_handler
+from notification.handlers.bind import payment_bind_reply_handler
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def run_notification_bot(token: str | None = None) -> None:
     app.add_handler(
         MessageHandler(
             filters.REPLY & filters.TEXT & ~filters.COMMAND,
-            venmo_bind_reply_handler,
+            payment_bind_reply_handler,
         )
     )
 

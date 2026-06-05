@@ -24,3 +24,8 @@ def resolve_test_bot_token() -> str | None:
 def is_test_bot_worker() -> bool:
     """True when running via run_test_bot.py (local TestGGSupportBot worker)."""
     return os.getenv("BOT_TEST_WORKER", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def zelle_first_time_linking_enabled() -> bool:
+    """Zelle first-time /deposit linking (setup flow) is test-bot-only for now."""
+    return is_test_bot_worker()

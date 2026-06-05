@@ -460,5 +460,68 @@ class TestMatchMemoInSession(unittest.TestCase):
         self.assertIsNone(found)
 
 
+class TestZelleRecipientHelpers(unittest.TestCase):
+    def test_extract_zelle_details_email(self):
+        text = "Zelle Email: pay@example.com\nZelle Name: ACME LLC"
+        email, name = extract_zelle_details(text)
+        self.assertEqual(email, "pay@example.com")
+        self.assertEqual(name, "ACME LLC")
+
+    def test_extract_zelle_recipient_phone(self):
+        from bot.services.payment_method_binding import (
+            extract_zelle_recipient_from_text,
+            normalize_zelle_recipient,
+        )
+
+        text = "Zelle: 310-567-0961"
+        self.assertEqual(extract_zelle_recipient_from_text(text), "3105670961")
+        self.assertEqual(normalize_zelle_recipient("310-567-0961"), "3105670961")
+        self.assertEqual(normalize_zelle_recipient("Pay@Example.com"), "pay@example.com")
+
+    def test_zelle_memo_setup_requires_recipient_match(self):
+        from datetime import datetime, timedelta, timezone
+
+        from bot.services.payment_method_binding import match_pending_memo_setup_in_session
+        from db.models import PaymentMethodBindAttempt
+
+        attempt = PaymentMethodBindAttempt(
+            id=11,
+            telegram_chat_id=-1003,
+            club_id=2,
+            payment_method_slug="zelle",
+            method_id=10,
+            variant_id=4,
+            bind_kind=BIND_KIND_MEMO_EMOJI,
+            setup_emoji="RIVER",
+            status=ATTEMPT_STATUS_PENDING,
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        )
+        variant = MagicMock()
+        variant.response_text = "Zelle Email: pay@example.com\nZelle Name: ACME"
+        variant.response_caption = None
+
+        session = MagicMock()
+        session.query.return_value.filter_by.return_value.filter.return_value.filter.return_value.order_by.return_value.all.return_value = [
+            attempt
+        ]
+        session.query.return_value.get.return_value = variant
+
+        found = match_pending_memo_setup_in_session(
+            session,
+            payment_method_slug="zelle",
+            zelle_recipient="pay@example.com",
+            memo="RIVER setup",
+        )
+        self.assertIs(found, attempt)
+
+        wrong_recipient = match_pending_memo_setup_in_session(
+            session,
+            payment_method_slug="zelle",
+            zelle_recipient="other@example.com",
+            memo="RIVER setup",
+        )
+        self.assertIsNone(wrong_recipient)
+
+
 if __name__ == "__main__":
     unittest.main()

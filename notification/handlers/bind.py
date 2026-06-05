@@ -1,4 +1,4 @@
-"""Reply-to-bind handler for Venmo payment notifications."""
+"""Reply-to-bind handler for payment notifications (Venmo and Zelle)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.services.venmo_payments import bind_venmo_payment_from_reply
+from bot.services.zelle_payments import bind_zelle_payment_from_reply
 from notification.chat_id import telegram_chat_ids_match
 from notification.constants import PAYMENT_NOTIFICATION_CHAT_ID_ENV
 
@@ -25,7 +26,7 @@ def _notification_chat_id() -> int | None:
         return None
 
 
-async def venmo_bind_reply_handler(
+async def payment_bind_reply_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
@@ -55,13 +56,17 @@ async def venmo_bind_reply_handler(
         await update.message.reply_text("Send the group title as your reply text.")
         return
 
+    bind_kwargs = dict(
+        notification_chat_id=expected_chat,
+        notification_message_id=int(reply.message_id),
+        group_title_input=title,
+        bound_by_telegram_user_id=int(update.effective_user.id),
+    )
+
     try:
-        result = await bind_venmo_payment_from_reply(
-            notification_chat_id=expected_chat,
-            notification_message_id=int(reply.message_id),
-            group_title_input=title,
-            bound_by_telegram_user_id=int(update.effective_user.id),
-        )
+        result = await bind_zelle_payment_from_reply(**bind_kwargs)
+        if not result.ok:
+            result = await bind_venmo_payment_from_reply(**bind_kwargs)
     except Exception:
         logger.exception(
             "payment bind failed chat_id=%s reply_to=%s title=%r",
@@ -83,8 +88,16 @@ async def venmo_bind_reply_handler(
         f"Bound to {group.group_title} (chat_id {group.telegram_chat_id})"
     )
     logger.info(
-        "venmo payment bound chat_id=%s group=%r user_id=%s",
+        "payment bound chat_id=%s group=%r user_id=%s",
         group.telegram_chat_id,
         group.group_title,
         update.effective_user.id,
     )
+
+
+async def venmo_bind_reply_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    """Backward-compatible alias for payment_bind_reply_handler."""
+    await payment_bind_reply_handler(update, context)

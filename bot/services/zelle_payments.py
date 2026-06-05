@@ -1,0 +1,488 @@
+"""Zelle payment ingest, Telegram notifications, and manual group binding."""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Optional
+
+from bot.services.club import get_group_title_for_chat
+from bot.services.payment_method_binding import (
+    BOUND_VIA_MANUAL_DASHBOARD,
+    BOUND_VIA_MANUAL_NOTIFICATION,
+    BOUND_VIA_MEMO_EMOJI,
+    BOUND_VIA_SPECIAL_AMOUNT,
+    cancel_pending_attempts_for_chat_in_session,
+    cancel_setup_attempt_in_session,
+    complete_attempt_in_session,
+    find_existing_zelle_link_for_setup,
+    get_last_bound_zelle_deposit_at,
+    infer_variant_id_for_zelle_recipient,
+    match_pending_memo_setup_in_session,
+    match_pending_zelle_setup_in_session,
+    normalize_zelle_recipient,
+    record_group_binding_in_session,
+)
+from bot.services.venmo_payments import (
+    BindResult,
+    BoundGroup,
+    IngestResult,
+    format_amount_display,
+    normalize_payer_name,
+    parse_amount_cents,
+    resolve_bound_group,
+    resolve_display_group_title,
+    send_telegram_notification,
+    edit_telegram_notification,
+    TEST_NOTIFICATION_BANNER,
+    _format_deposit_timestamp,
+)
+from db.connection import get_db
+from db.models import ZellePayerBinding, ZellePayment
+
+logger = logging.getLogger(__name__)
+
+WEBHOOK_SECRET_ENV = "ZELLE_ZAPIER_WEBHOOK_SECRET"
+
+
+def _apply_binding_to_payment(
+    payment: ZellePayment,
+    *,
+    telegram_chat_id: int,
+    club_id: int,
+    bound_group_title_at_bind: str,
+    auto_bound: bool,
+    bound_by_telegram_user_id: Optional[int] = None,
+) -> None:
+    now = datetime.now(timezone.utc)
+    payment.telegram_chat_id = int(telegram_chat_id)
+    payment.club_id = int(club_id)
+    payment.bound_group_title_at_bind = bound_group_title_at_bind[:255]
+    payment.auto_bound = auto_bound
+    payment.bound_at = now
+    payment.bound_by_telegram_user_id = bound_by_telegram_user_id
+
+
+def format_setup_already_linked_warning(
+    payment: ZellePayment,
+    *,
+    already_bound_group_title: str,
+    last_deposit_at: Optional[datetime],
+    setup_chat_title: str,
+) -> str:
+    """Staff warning when a first-time setup payment matches an already-linked payer/group."""
+    last_deposit_line = (
+        f"Last deposit: {_format_deposit_timestamp(last_deposit_at)}"
+        if last_deposit_at is not None
+        else "Last deposit: No prior bound deposits found"
+    )
+
+    lines = [
+        "⚠️ First-time Zelle setup warning",
+        "",
+        f"Already bound: {already_bound_group_title}",
+        last_deposit_line,
+        "",
+        "Incoming setup payment matched but was left unbound for manual review.",
+        f"Name: {payment.payer_name}",
+        f"Amount: {format_amount_display(payment.amount_cents)}",
+    ]
+    memo = (getattr(payment, "memo", None) or "").strip()
+    if memo:
+        lines.append(f"Memo: {memo}")
+    lines.extend(
+        [
+            f"Method: {payment.zelle_recipient}",
+            f"Setup chat: {setup_chat_title}",
+        ]
+    )
+
+    body = "\n".join(lines)
+    if getattr(payment, "is_test", False):
+        return f"{TEST_NOTIFICATION_BANNER}\n\n{body}"
+    return body
+
+
+def format_notification_text(
+    payment: ZellePayment,
+    *,
+    group_title: Optional[str] = None,
+) -> str:
+    lines = [
+        "🔔 Zelle Payment Notification",
+        "",
+    ]
+
+    if group_title:
+        lines.append(f"Group Chat: {group_title}")
+    else:
+        lines.append(
+            "Group Chat: Unbound — reply to this message with the group title to bind"
+        )
+
+    lines.extend(
+        [
+            "",
+            f"Name: {payment.payer_name}",
+            f"Amount: {format_amount_display(payment.amount_cents)}",
+        ]
+    )
+    memo = (getattr(payment, "memo", None) or "").strip()
+    if memo:
+        lines.append(f"Memo: {memo}")
+    lines.append(f"Method: {payment.zelle_recipient}")
+
+    body = "\n".join(lines)
+    if getattr(payment, "is_test", False):
+        return f"{TEST_NOTIFICATION_BANNER}\n\n{body}"
+    return body
+
+
+def _upsert_payer_binding(
+    session,
+    *,
+    payer_name: str,
+    zelle_recipient: str,
+    telegram_chat_id: int,
+    club_id: int,
+    bound_group_title_at_bind: str,
+    bound_by_telegram_user_id: Optional[int],
+) -> None:
+    normalized = normalize_payer_name(payer_name)
+    recipient = normalize_zelle_recipient(zelle_recipient)
+    now = datetime.now(timezone.utc)
+    row = (
+        session.query(ZellePayerBinding)
+        .filter_by(payer_name_normalized=normalized)
+        .one_or_none()
+    )
+    if row is None:
+        row = ZellePayerBinding(
+            payer_name_normalized=normalized,
+            zelle_recipient=recipient,
+        )
+        session.add(row)
+    row.zelle_recipient = recipient
+    row.telegram_chat_id = int(telegram_chat_id)
+    row.club_id = int(club_id)
+    row.bound_group_title_at_bind = bound_group_title_at_bind[:255]
+    row.last_bound_at = now
+    row.last_bound_by_telegram_user_id = bound_by_telegram_user_id
+
+
+def find_zelle_payment_by_notification_message(
+    notification_chat_id: int,
+    notification_message_id: int,
+) -> Optional[ZellePayment]:
+    with get_db() as session:
+        return (
+            session.query(ZellePayment)
+            .filter_by(
+                notification_chat_id=int(notification_chat_id),
+                notification_message_id=int(notification_message_id),
+            )
+            .one_or_none()
+        )
+
+
+async def ingest_zelle_payment(
+    *,
+    payer_name: str,
+    amount: str | int | float | Decimal,
+    zelle_recipient: str,
+    paid_at: Optional[str] = None,
+    source_external_id: Optional[str] = None,
+    memo: Optional[str] = None,
+    test: bool = False,
+) -> IngestResult:
+    """Create payment row, auto-bind if known payer, send Telegram notification."""
+    payer = (payer_name or "").strip()
+    if not payer:
+        raise ValueError("payer_name is required")
+    recipient = normalize_zelle_recipient(zelle_recipient)
+    if not recipient:
+        raise ValueError("zelle_recipient is required")
+    amount_cents = parse_amount_cents(amount)
+
+    created = True
+    auto_bound = False
+    group_title: Optional[str] = None
+    setup_warning_text: Optional[str] = None
+    setup_blocked_already_linked = False
+
+    with get_db() as session:
+        if source_external_id:
+            existing = (
+                session.query(ZellePayment)
+                .filter_by(source_external_id=source_external_id.strip())
+                .one_or_none()
+            )
+            if existing is not None:
+                logger.info(
+                    "zelle ingest: idempotent reject source_external_id=%r "
+                    "existing_payment_id=%s",
+                    source_external_id.strip(),
+                    existing.id,
+                )
+                return IngestResult(
+                    payment_id=int(existing.id),
+                    status="bound" if existing.telegram_chat_id else "unbound",
+                    auto_bound=bool(existing.auto_bound),
+                    created=False,
+                )
+
+        payment = ZellePayment(
+            payer_name=payer,
+            amount_cents=amount_cents,
+            zelle_recipient=recipient,
+            paid_at=(paid_at or "").strip() or None,
+            source_external_id=(source_external_id or "").strip() or None,
+            memo=(memo or "").strip() or None,
+            is_test=bool(test),
+        )
+        session.add(payment)
+        session.flush()
+
+        setup_attempt = match_pending_memo_setup_in_session(
+            session,
+            payment_method_slug="zelle",
+            zelle_recipient=recipient,
+            memo=memo,
+        )
+        setup_bound_via = BOUND_VIA_MEMO_EMOJI if setup_attempt else BOUND_VIA_SPECIAL_AMOUNT
+        if setup_attempt is None:
+            setup_attempt = match_pending_zelle_setup_in_session(
+                session,
+                amount_cents=amount_cents,
+                zelle_recipient=recipient,
+            )
+        if setup_attempt is not None:
+            live_title = resolve_display_group_title(int(setup_attempt.telegram_chat_id))
+            club_id_setup = int(setup_attempt.club_id)
+            if live_title:
+                existing_link = find_existing_zelle_link_for_setup(
+                    session,
+                    payer_name=payer,
+                    setup_chat_id=int(setup_attempt.telegram_chat_id),
+                )
+                if existing_link is not None:
+                    linked_title = (
+                        resolve_display_group_title(int(existing_link.linked_chat_id))
+                        or "—"
+                    )
+                    last_deposit_at = get_last_bound_zelle_deposit_at(
+                        session,
+                        payer_name=payer,
+                        telegram_chat_id=int(existing_link.linked_chat_id),
+                        exclude_payment_id=int(payment.id),
+                    )
+                    cancel_setup_attempt_in_session(session, setup_attempt)
+                    setup_blocked_already_linked = True
+                    setup_warning_text = format_setup_already_linked_warning(
+                        payment,
+                        already_bound_group_title=linked_title,
+                        last_deposit_at=last_deposit_at,
+                        setup_chat_title=live_title,
+                    )
+                elif complete_attempt_in_session(
+                    session,
+                    setup_attempt,
+                    zelle_payment_id=int(payment.id),
+                ):
+                    auto_bound = True
+                    group_title = live_title
+                    _apply_binding_to_payment(
+                        payment,
+                        telegram_chat_id=int(setup_attempt.telegram_chat_id),
+                        club_id=club_id_setup,
+                        bound_group_title_at_bind=live_title,
+                        auto_bound=True,
+                    )
+                    _upsert_payer_binding(
+                        session,
+                        payer_name=payment.payer_name,
+                        zelle_recipient=payment.zelle_recipient,
+                        telegram_chat_id=int(setup_attempt.telegram_chat_id),
+                        club_id=club_id_setup,
+                        bound_group_title_at_bind=live_title,
+                        bound_by_telegram_user_id=None,
+                    )
+                    record_group_binding_in_session(
+                        session,
+                        telegram_chat_id=int(setup_attempt.telegram_chat_id),
+                        club_id=club_id_setup,
+                        payment_method_slug="zelle",
+                        bound_via=setup_bound_via,
+                        variant_id=int(setup_attempt.variant_id),
+                        venmo_handle=recipient,
+                        first_bind_attempt_id=int(setup_attempt.id),
+                    )
+                    logger.info(
+                        "zelle ingest: setup bind matched attempt_id=%s payment_id=%s",
+                        setup_attempt.id,
+                        payment.id,
+                    )
+
+        if not auto_bound and not setup_blocked_already_linked:
+            binding = (
+                session.query(ZellePayerBinding)
+                .filter_by(payer_name_normalized=normalize_payer_name(payer))
+                .one_or_none()
+            )
+        else:
+            binding = None
+
+        if binding is not None:
+            live_title = resolve_display_group_title(int(binding.telegram_chat_id))
+            club_id = binding.club_id
+            if club_id is None:
+                _t, club_id = get_group_title_for_chat(int(binding.telegram_chat_id))
+            if live_title and club_id is not None:
+                auto_bound = True
+                group_title = live_title
+                _apply_binding_to_payment(
+                    payment,
+                    telegram_chat_id=int(binding.telegram_chat_id),
+                    club_id=int(club_id),
+                    bound_group_title_at_bind=live_title,
+                    auto_bound=True,
+                )
+
+        payment_id = int(payment.id)
+        text = format_notification_text(payment, group_title=group_title)
+
+    if setup_warning_text:
+        await send_telegram_notification(setup_warning_text)
+
+    notif_chat_id, notif_message_id = await send_telegram_notification(text)
+
+    with get_db() as session:
+        payment = session.query(ZellePayment).filter_by(id=payment_id).one()
+        payment.notification_chat_id = notif_chat_id
+        payment.notification_message_id = notif_message_id
+
+    status = "bound" if auto_bound else "unbound"
+    logger.info(
+        "zelle payment ingested id=%s payer=%r amount_cents=%s auto_bound=%s",
+        payment_id,
+        payer,
+        amount_cents,
+        auto_bound,
+    )
+    return IngestResult(
+        payment_id=payment_id,
+        status=status,
+        auto_bound=auto_bound,
+        created=created,
+    )
+
+
+async def bind_zelle_payment_by_id(
+    *,
+    payment_id: int,
+    group_title_input: str,
+    bound_by_telegram_user_id: Optional[int] = None,
+    bound_via: str = BOUND_VIA_MANUAL_DASHBOARD,
+) -> BindResult:
+    """Bind or rebind a payment to a support group by payment id."""
+    result = resolve_bound_group(group_title_input)
+    if not result.ok or result.bound_group is None:
+        return result
+
+    group = result.bound_group
+    notif_chat_id: Optional[int] = None
+    notif_message_id: Optional[int] = None
+    live_title = group.group_title
+
+    with get_db() as session:
+        payment = session.query(ZellePayment).filter_by(id=int(payment_id)).one_or_none()
+        if payment is None:
+            return BindResult(ok=False, error="Payment not found.")
+
+        _apply_binding_to_payment(
+            payment,
+            telegram_chat_id=group.telegram_chat_id,
+            club_id=group.club_id,
+            bound_group_title_at_bind=group.group_title,
+            auto_bound=False,
+            bound_by_telegram_user_id=bound_by_telegram_user_id,
+        )
+        _upsert_payer_binding(
+            session,
+            payer_name=payment.payer_name,
+            zelle_recipient=payment.zelle_recipient,
+            telegram_chat_id=group.telegram_chat_id,
+            club_id=group.club_id,
+            bound_group_title_at_bind=group.group_title,
+            bound_by_telegram_user_id=bound_by_telegram_user_id,
+        )
+
+        variant_id = infer_variant_id_for_zelle_recipient(
+            int(group.club_id),
+            payment.zelle_recipient,
+        )
+        cancel_pending_attempts_for_chat_in_session(
+            session,
+            telegram_chat_id=int(group.telegram_chat_id),
+            payment_method_slug="zelle",
+        )
+        record_group_binding_in_session(
+            session,
+            telegram_chat_id=int(group.telegram_chat_id),
+            club_id=int(group.club_id),
+            payment_method_slug="zelle",
+            bound_via=bound_via,
+            variant_id=variant_id,
+            venmo_handle=payment.zelle_recipient,
+            bound_by_telegram_user_id=bound_by_telegram_user_id,
+        )
+
+        live_title = resolve_display_group_title(group.telegram_chat_id) or group.group_title
+        if payment.notification_chat_id and payment.notification_message_id:
+            notif_chat_id = int(payment.notification_chat_id)
+            notif_message_id = int(payment.notification_message_id)
+            text = format_notification_text(payment, group_title=live_title)
+        else:
+            text = None
+
+    if notif_chat_id and notif_message_id and text:
+        await edit_telegram_notification(notif_chat_id, notif_message_id, text)
+
+    return BindResult(
+        ok=True,
+        bound_group=BoundGroup(
+            telegram_chat_id=group.telegram_chat_id,
+            club_id=group.club_id,
+            group_title=live_title,
+        ),
+    )
+
+
+async def bind_zelle_payment_from_reply(
+    *,
+    notification_chat_id: int,
+    notification_message_id: int,
+    group_title_input: str,
+    bound_by_telegram_user_id: int,
+) -> BindResult:
+    """Bind or rebind a payment from a reply in the notification group."""
+    with get_db() as session:
+        payment = (
+            session.query(ZellePayment)
+            .filter_by(
+                notification_chat_id=int(notification_chat_id),
+                notification_message_id=int(notification_message_id),
+            )
+            .one_or_none()
+        )
+        if payment is None:
+            return BindResult(ok=False, error="No payment found for this notification.")
+        payment_id = int(payment.id)
+
+    return await bind_zelle_payment_by_id(
+        payment_id=payment_id,
+        group_title_input=group_title_input,
+        bound_by_telegram_user_id=int(bound_by_telegram_user_id),
+        bound_via=BOUND_VIA_MANUAL_NOTIFICATION,
+    )

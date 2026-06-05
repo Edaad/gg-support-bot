@@ -137,6 +137,64 @@ class VenmoBindResponse(BaseModel):
     payment: Optional[VenmoPaymentRead] = None
 
 
+class ZellePaymentRead(BaseModel):
+    id: int
+    payer_name: str
+    zelle_recipient: str
+    amount_cents: int
+    amount_usd: Decimal
+    paid_at: Optional[str] = None
+    group_title: Optional[str] = None
+    gg_player_id: Optional[str] = None
+    gg_nickname: Optional[str] = None
+    club_id: Optional[int] = None
+    telegram_chat_id: Optional[int] = None
+    status: str
+    auto_bound: bool
+    is_test: bool
+    created_at: datetime
+    bound_at: Optional[datetime] = None
+
+
+class ZellePaymentListResponse(BaseModel):
+    items: list[ZellePaymentRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class ZellePayerRead(BaseModel):
+    payer_name: str
+    zelle_recipient: str
+    group_title: Optional[str] = None
+    gg_player_id: Optional[str] = None
+    gg_nickname: Optional[str] = None
+    total_deposited_cents: int
+    total_deposited_usd: Decimal
+    payment_count: int
+    last_payment_at: Optional[datetime] = None
+
+
+class ZellePayerListResponse(BaseModel):
+    items: list[ZellePayerRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class ZelleBindRequest(BaseModel):
+    group_title: str
+
+
+class ZelleBindResponse(BaseModel):
+    ok: bool
+    error: Optional[str] = None
+    group_title: Optional[str] = None
+    telegram_chat_id: Optional[int] = None
+    club_id: Optional[int] = None
+    payment: Optional[ZellePaymentRead] = None
+
+
 class BindingViaCount(BaseModel):
     bound_via: str
     count: int
@@ -205,6 +263,7 @@ class BindAttemptRead(BaseModel):
     status: str
     bound_via: str
     venmo_payment_id: Optional[int] = None
+    zelle_payment_id: Optional[int] = None
     group_title: Optional[str] = None
     created_at: datetime
     expires_at: datetime
