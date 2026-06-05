@@ -84,6 +84,8 @@ export interface V2SubOption {
   sort_order: number
 }
 
+export type FirstTimeBindMode = 'special_amount' | 'memo_emoji'
+
 export interface V2Method {
   id: number
   club_id: number
@@ -97,6 +99,8 @@ export interface V2Method {
   sort_order: number
   deposit_limit: number | null
   accumulated_amount: number | null
+  first_time_linking_enabled: boolean
+  first_time_bind_mode: FirstTimeBindMode | null
   created_at: string | null
   updated_at: string | null
   sub_options: V2SubOption[]

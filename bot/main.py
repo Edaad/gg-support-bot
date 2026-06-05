@@ -162,11 +162,13 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(CommandHandler("stripe", stripe_handler))
     app.add_handler(CommandHandler("teststripe", teststripe_handler))
 
+    from bot.handlers.unbind_method import unbindmethod_handler
+
+    app.add_handler(CommandHandler("unbindmethod", unbindmethod_handler))
+
     if test_mode:
         from bot.handlers.deposit import deposit_amount_priority_handler
-        from bot.handlers.unbind_method import unbindmethod_handler
 
-        app.add_handler(CommandHandler("unbindmethod", unbindmethod_handler))
         app.add_handler(
             MessageHandler(
                 filters.ChatType.GROUPS & ~filters.COMMAND,
@@ -218,9 +220,9 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         group=2,
     )
 
-    if test_mode:
-        from bot.runtime_config import is_test_bot_worker, use_payment_v2
+    from bot.runtime_config import is_test_bot_worker, use_payment_v2
 
+    if test_mode:
         print(
             "Test bot is running (BOT_USE_PAYMENT_V2=%s, BOT_TEST_WORKER=%s). Press Ctrl+C to stop."
             % ("on" if use_payment_v2() else "off", "on" if is_test_bot_worker() else "off")
@@ -229,7 +231,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
             "Tip: after /deposit, use Reply on the bot message to enter the amount "
             "(or disable privacy mode in @BotFather → /setprivacy → Disable)."
         )
-        print("Staff: /unbindmethod in a group clears all payment-method bindings.")
+    print("Staff: /unbindmethod in a group clears all payment-method bindings.")
         from bot.services.stripe_deposit import stripe_configured
 
         if not stripe_configured():

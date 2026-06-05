@@ -249,6 +249,8 @@ class ClubPaymentMethod(Base):
     sort_order = Column(Integer, nullable=False, default=0)
     deposit_limit = Column(Numeric(12, 2), nullable=True)
     accumulated_amount = Column(Numeric(12, 2), nullable=False, default=0)
+    first_time_linking_enabled = Column(Boolean, nullable=False, default=False)
+    first_time_bind_mode = Column(String(32), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),

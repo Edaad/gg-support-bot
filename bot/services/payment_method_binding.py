@@ -31,11 +31,6 @@ BIND_ATTEMPT_TTL_SECONDS = 600
 BIND_KIND_SPECIAL_AMOUNT = "special_amount"
 BIND_KIND_MEMO_EMOJI = "memo_emoji"
 
-# Test bot: first-time bind mode per dashboard club (venmo + zelle only).
-TEST_BOT_CLUB_BIND_MODES: dict[str, Literal["special_amount", "memo_emoji"]] = {
-    "creator club": BIND_KIND_SPECIAL_AMOUNT,
-    "round table": BIND_KIND_MEMO_EMOJI,
-}
 _BINDABLE_METHOD_SLUGS = frozenset({"venmo", "zelle"})
 
 # Memo/caption setup codes (cycled per pending attempt on a variant).
@@ -62,37 +57,27 @@ _ZELLE_NAME_RE = re.compile(
 )
 
 
-def first_time_binding_enabled() -> bool:
-    """True only when running the local test bot (run_test_bot.py / BOT_TEST_WORKER=1)."""
-    from bot.runtime_config import is_test_bot_worker
-
-    return is_test_bot_worker()
-
-
-def venmo_special_amount_binding_enabled() -> bool:
-    """Alias for first_time_binding_enabled (legacy name)."""
-    return first_time_binding_enabled()
-
-
 def _normalize_club_name_key(name: str | None) -> str:
     return " ".join((name or "").strip().lower().split())
 
 
-def _club_name_for_bind_mode(
+def _resolve_club_id(
     *,
     club_id: int | None = None,
     club_name: str | None = None,
-) -> str | None:
-    if club_name:
-        key = _normalize_club_name_key(club_name)
-        return key or None
-    if club_id is None:
+) -> int | None:
+    if club_id is not None:
+        return int(club_id)
+    if not club_name:
+        return None
+    target_key = _normalize_club_name_key(club_name)
+    if not target_key:
         return None
     with get_db() as session:
-        club = session.query(Club).get(int(club_id))
-        if not club or not club.name:
-            return None
-        return _normalize_club_name_key(club.name)
+        for club in session.query(Club).all():
+            if _normalize_club_name_key(club.name) == target_key:
+                return int(club.id)
+    return None
 
 
 def bind_mode_for_method(
@@ -101,16 +86,31 @@ def bind_mode_for_method(
     club_id: int | None = None,
     club_name: str | None = None,
 ) -> Literal["special_amount", "memo_emoji"] | None:
-    """Per-method first-time bind mode on test bot for configured clubs only."""
-    if not first_time_binding_enabled():
-        return None
+    """Per-method first-time bind mode from dashboard club_payment_methods config."""
     method_slug = (slug or "").strip().lower()
     if method_slug not in _BINDABLE_METHOD_SLUGS:
         return None
-    club_key = _club_name_for_bind_mode(club_id=club_id, club_name=club_name)
-    if not club_key:
+    resolved_club_id = _resolve_club_id(club_id=club_id, club_name=club_name)
+    if resolved_club_id is None:
         return None
-    return TEST_BOT_CLUB_BIND_MODES.get(club_key)
+    with get_db() as session:
+        row = (
+            session.query(ClubPaymentMethod)
+            .filter_by(
+                club_id=int(resolved_club_id),
+                direction="deposit",
+                slug=method_slug,
+            )
+            .one_or_none()
+        )
+        if not row or not getattr(row, "first_time_linking_enabled", False):
+            return None
+        mode = (getattr(row, "first_time_bind_mode", None) or "").strip().lower()
+        if mode == BIND_KIND_SPECIAL_AMOUNT:
+            return BIND_KIND_SPECIAL_AMOUNT
+        if mode == BIND_KIND_MEMO_EMOJI:
+            return BIND_KIND_MEMO_EMOJI
+    return None
 
 
 BOUND_VIA_SPECIAL_AMOUNT = "special_amount"

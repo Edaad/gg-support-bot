@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -150,6 +150,9 @@ class ClubPaymentTierRead(BaseModel):
     variants: List[ClubPaymentTierVariantRead] = []
 
 
+FirstTimeBindMode = Literal["special_amount", "memo_emoji"]
+
+
 class ClubPaymentMethodCreate(BaseModel):
     direction: str
     name: str
@@ -160,6 +163,8 @@ class ClubPaymentMethodCreate(BaseModel):
     is_active: bool = True
     sort_order: int = 0
     deposit_limit: Optional[Decimal] = None
+    first_time_linking_enabled: bool = False
+    first_time_bind_mode: Optional[FirstTimeBindMode] = None
 
 
 class ClubPaymentMethodUpdate(BaseModel):
@@ -172,6 +177,8 @@ class ClubPaymentMethodUpdate(BaseModel):
     is_active: Optional[bool] = None
     sort_order: Optional[int] = None
     deposit_limit: Optional[Decimal] = None
+    first_time_linking_enabled: Optional[bool] = None
+    first_time_bind_mode: Optional[FirstTimeBindMode] = None
 
 
 class ClubPaymentMethodRead(BaseModel):
@@ -189,6 +196,8 @@ class ClubPaymentMethodRead(BaseModel):
     sort_order: int
     deposit_limit: Optional[Decimal] = None
     accumulated_amount: Optional[Decimal] = None
+    first_time_linking_enabled: bool = False
+    first_time_bind_mode: Optional[FirstTimeBindMode] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     sub_options: List[ClubPaymentSubOptionRead] = []

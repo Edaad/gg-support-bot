@@ -1,17 +1,17 @@
-# First-time group chat binding (test bot)
-
-**Test bot only** (`python run_test_bot.py` / `BOT_TEST_WORKER=1`). Production `run_bot.py` does not run first-time setup flows.
+# First-time group chat binding
 
 Before a support group can use a configured deposit method in `/deposit`, the chat may need a **one-time link** step. After linking, deposits use the sticky variant that was confirmed during setup.
 
+Configure per deposit method in the dashboard (**Club → Deposit methods → Venmo/Zelle → First-time deposit linking**).
+
 ## Bind modes (per method)
 
-| Club (test bot) | `venmo` + `zelle` bind mode |
-|-----------------|---------------------------|
-| Creator Club | `special_amount` — exact cent amount (one below chosen /deposit amount) |
-| Round Table | `memo_emoji` — cycled setup code in payment memo/caption |
+| Mode | Behavior |
+|------|----------|
+| `special_amount` | Exact cent amount (one below chosen /deposit amount) |
+| `memo_emoji` | Cycled setup code in payment memo/caption |
 
-Other clubs: no first-time binding on the test bot. Production `run_bot.py`: disabled for all clubs.
+Only **Venmo** and **Zelle** deposit methods support first-time linking.
 
 ### Special amount (`special_amount`)
 
@@ -39,7 +39,7 @@ Zelle uses deposit setup + DB attempts on the test bot; **Zelle Zapier ingest is
 /unbindmethod
 ```
 
-Clears **all** `group_payment_method_bindings` for that chat (venmo, zelle, etc.) and cancels **all** pending setup attempts. Registered only on `run_test_bot.py`. Staff only.
+Clears **all** `group_payment_method_bindings` for that chat (venmo, zelle, etc.) and cancels **all** pending setup attempts. Available on production and test bots. Staff only.
 
 ## Database
 
@@ -53,6 +53,7 @@ Migrations:
 ```bash
 DATABASE_URL=... python migrate_payment_method_bindings.py
 DATABASE_URL=... python migrate_payment_method_bind_memo.py
+DATABASE_URL=... python migrate_club_payment_first_time_linking.py
 ```
 
 ## Observability (dashboard + API)

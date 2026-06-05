@@ -1,4 +1,4 @@
-"""Test-bot group command: /unbindmethod — clear all payment-method links for this chat."""
+"""Group command: /unbindmethod — clear all payment-method links for this chat."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from config import ADMIN_USER_IDS
-from bot.runtime_config import is_test_bot_worker
 from bot.services.club import get_club_for_chat, is_club_staff, update_group_name
 from bot.services.payment_method_binding import (
     list_chat_method_bindings,
@@ -33,8 +32,6 @@ def _format_binding_summary(bindings) -> str:
 
 
 async def unbindmethod_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_test_bot_worker():
-        return
     if not update.message or not update.effective_chat or not update.effective_user:
         return
 

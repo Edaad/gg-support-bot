@@ -16,6 +16,7 @@ from api.payment_v2_helpers import (
     method_needs_variants,
     strip_response_from_tier_payload,
     sync_method_envelope_side_effects,
+    validate_first_time_linking,
     tier_variant_count,
     validate_all_method_tiers,
     validate_checkout_amount_bounds,
@@ -102,6 +103,10 @@ def create_method(club_id: int, body: ClubPaymentMethodCreate, db: Session = Dep
     if body.direction not in ("deposit", "cashout"):
         raise HTTPException(400, "direction must be 'deposit' or 'cashout'")
     method = ClubPaymentMethod(club_id=club_id, **body.model_dump())
+    try:
+        validate_first_time_linking(method)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     db.add(method)
     db.flush()
     tier = ClubPaymentTier(
@@ -133,6 +138,12 @@ def update_method(method_id: int, body: ClubPaymentMethodUpdate, db: Session = D
         setattr(method, field, value)
     if method.min_amount is not None and method.max_amount is not None and method.min_amount > method.max_amount:
         raise HTTPException(400, "Method min amount cannot be greater than max amount.")
+    try:
+        validate_first_time_linking(method)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    if not method.first_time_linking_enabled:
+        method.first_time_bind_mode = None
     db.flush()
     if {"min_amount", "max_amount"}.intersection(data.keys()):
         method = _get_method(db, method_id)

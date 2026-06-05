@@ -22,54 +22,44 @@ from bot.services.payment_method_binding import (
     match_pending_memo_setup_in_session,
     unbind_chat_from_all_methods,
     unbind_chat_from_method,
-    venmo_special_amount_binding_enabled,
     _memo_contains_code,
 )
 
 
+def _mock_method_row(*, enabled: bool, mode: str | None):
+    row = MagicMock()
+    row.first_time_linking_enabled = enabled
+    row.first_time_bind_mode = mode
+    return row
+
+
 class TestBindModeForMethod(unittest.TestCase):
-    def test_creator_club_special_amount(self):
-        with patch("bot.runtime_config.is_test_bot_worker", return_value=True):
-            self.assertEqual(
-                bind_mode_for_method("venmo", club_name="Creator Club"),
-                BIND_KIND_SPECIAL_AMOUNT,
+    def test_returns_mode_when_enabled_on_method(self):
+        with patch("bot.services.payment_method_binding.get_db") as mock_get_db:
+            session = MagicMock()
+            mock_get_db.return_value.__enter__.return_value = session
+            session.query.return_value.filter_by.return_value.one_or_none.return_value = (
+                _mock_method_row(enabled=True, mode=BIND_KIND_MEMO_EMOJI)
             )
             self.assertEqual(
-                bind_mode_for_method("zelle", club_name="Creator Club"),
-                BIND_KIND_SPECIAL_AMOUNT,
-            )
-
-    def test_round_table_memo_emoji(self):
-        with patch("bot.runtime_config.is_test_bot_worker", return_value=True):
-            self.assertEqual(
-                bind_mode_for_method("venmo", club_name="Round Table"),
-                BIND_KIND_MEMO_EMOJI,
-            )
-            self.assertEqual(
-                bind_mode_for_method("zelle", club_name="Round Table"),
+                bind_mode_for_method("venmo", club_id=2),
                 BIND_KIND_MEMO_EMOJI,
             )
 
-    def test_unconfigured_club_disabled(self):
-        with patch("bot.runtime_config.is_test_bot_worker", return_value=True):
-            self.assertIsNone(bind_mode_for_method("venmo", club_name="ClubGTO"))
-            self.assertIsNone(bind_mode_for_method("venmo"))
-
-    def test_production_disabled(self):
-        with patch("bot.runtime_config.is_test_bot_worker", return_value=False):
-            self.assertIsNone(
-                bind_mode_for_method("venmo", club_name="Creator Club")
+    def test_disabled_method_returns_none(self):
+        with patch("bot.services.payment_method_binding.get_db") as mock_get_db:
+            session = MagicMock()
+            mock_get_db.return_value.__enter__.return_value = session
+            session.query.return_value.filter_by.return_value.one_or_none.return_value = (
+                _mock_method_row(enabled=False, mode=BIND_KIND_SPECIAL_AMOUNT)
             )
+            self.assertIsNone(bind_mode_for_method("venmo", club_id=2))
 
+    def test_unsupported_slug_returns_none(self):
+        self.assertIsNone(bind_mode_for_method("crypto", club_id=2))
 
-class TestVenmoSpecialAmountGating(unittest.TestCase):
-    def test_off_on_production_worker(self):
-        with patch("bot.runtime_config.is_test_bot_worker", return_value=False):
-            self.assertFalse(venmo_special_amount_binding_enabled())
-
-    def test_on_test_bot_worker(self):
-        with patch("bot.runtime_config.is_test_bot_worker", return_value=True):
-            self.assertTrue(venmo_special_amount_binding_enabled())
+    def test_missing_club_id_returns_none(self):
+        self.assertIsNone(bind_mode_for_method("venmo"))
 
 
 class TestUnbind(unittest.TestCase):

@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.runtime_config import is_test_bot_worker
+from bot.runtime_config import use_payment_v2
 
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -15,11 +15,11 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /cashout — Request a cashout",
         "• /list — View the club's list",
     ]
-    if is_test_bot_worker():
+    if use_payment_v2():
         lines.extend(
             [
                 "",
-                "Test bot (staff):",
+                "Staff:",
                 "• /unbindmethod — Clear all payment-method links for this group",
             ]
         )

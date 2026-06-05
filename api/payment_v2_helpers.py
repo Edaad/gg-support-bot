@@ -177,6 +177,25 @@ def sync_method_envelope_side_effects(method: ClubPaymentMethod) -> None:
             )
 
 
+_FIRST_TIME_BIND_SLUGS = frozenset({"venmo", "zelle"})
+_FIRST_TIME_BIND_MODES = frozenset({"special_amount", "memo_emoji"})
+
+
+def validate_first_time_linking(method: ClubPaymentMethod) -> None:
+    """Raise ValueError when first-time linking settings are inconsistent."""
+    slug = (method.slug or "").strip().lower()
+    enabled = bool(getattr(method, "first_time_linking_enabled", False))
+    mode = (getattr(method, "first_time_bind_mode", None) or "").strip().lower() or None
+    if not enabled:
+        return
+    if method.direction != "deposit":
+        raise ValueError("First-time linking applies to deposit methods only.")
+    if slug not in _FIRST_TIME_BIND_SLUGS:
+        raise ValueError("First-time linking is only supported for venmo and zelle.")
+    if mode not in _FIRST_TIME_BIND_MODES:
+        raise ValueError("Select a verification method when first-time linking is enabled.")
+
+
 def method_needs_variants(method: ClubPaymentMethod) -> bool:
     return not method.has_sub_options
 

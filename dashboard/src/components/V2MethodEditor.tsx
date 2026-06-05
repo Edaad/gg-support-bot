@@ -18,7 +18,9 @@ import {
 } from '../api/v2Client'
 import V2TierEditor from './V2TierEditor'
 import V2SubOptionEditor from './V2SubOptionEditor'
-import FirstTimeDepositLinkingSection from './FirstTimeDepositLinkingSection'
+import FirstTimeDepositLinkingSection, {
+  type FirstTimeBindMode,
+} from './FirstTimeDepositLinkingSection'
 import { useConfirm } from './ConfirmProvider'
 
 interface Props {
@@ -37,6 +39,8 @@ const EMPTY: Partial<V2Method> = {
   deposit_limit: null,
   is_active: true,
   has_sub_options: false,
+  first_time_linking_enabled: false,
+  first_time_bind_mode: null,
 }
 
 const DETAILS_SNAPSHOT_KEYS: (keyof V2Method)[] = [
@@ -47,6 +51,8 @@ const DETAILS_SNAPSHOT_KEYS: (keyof V2Method)[] = [
   'deposit_limit',
   'is_active',
   'has_sub_options',
+  'first_time_linking_enabled',
+  'first_time_bind_mode',
 ]
 
 function countAllVariants(m: V2Method): number {
@@ -63,6 +69,10 @@ function detailsPayload(form: Partial<V2Method>, direction: string): Partial<V2M
   }
   if (direction === 'deposit') {
     payload.deposit_limit = form.deposit_limit ?? null
+    payload.first_time_linking_enabled = form.first_time_linking_enabled ?? false
+    payload.first_time_bind_mode = form.first_time_linking_enabled
+      ? (form.first_time_bind_mode ?? 'special_amount')
+      : null
   }
   payload.is_active = form.is_active ?? true
   payload.has_sub_options = form.has_sub_options ?? false
@@ -234,7 +244,21 @@ function MethodDetailsForm({
       </div>
 
       {direction === 'deposit' && (
-        <FirstTimeDepositLinkingSection methodSlug={form.slug} />
+        <FirstTimeDepositLinkingSection
+          methodSlug={form.slug}
+          enabled={form.first_time_linking_enabled ?? false}
+          bindMode={(form.first_time_bind_mode as FirstTimeBindMode) ?? 'special_amount'}
+          onEnabledChange={(enabled) => {
+            setField('first_time_linking_enabled', enabled)
+            if (enabled && !form.first_time_bind_mode) {
+              setField('first_time_bind_mode', 'special_amount')
+            }
+            if (!enabled) {
+              setField('first_time_bind_mode', null)
+            }
+          }}
+          onBindModeChange={(mode) => setField('first_time_bind_mode', mode)}
+        />
       )}
 
       <div className="form-actions">
