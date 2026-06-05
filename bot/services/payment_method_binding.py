@@ -271,11 +271,35 @@ def is_chat_method_bound(telegram_chat_id: int, payment_method_slug: str) -> boo
         return row is not None
 
 
+def list_chat_method_bindings(
+    telegram_chat_id: int,
+) -> list[ChatMethodBinding]:
+    with get_db() as session:
+        rows = (
+            session.query(GroupPaymentMethodBinding)
+            .filter_by(telegram_chat_id=int(telegram_chat_id))
+            .order_by(GroupPaymentMethodBinding.payment_method_slug)
+            .all()
+        )
+        return [
+            ChatMethodBinding(
+                id=int(row.id),
+                telegram_chat_id=int(row.telegram_chat_id),
+                club_id=int(row.club_id),
+                payment_method_slug=str(row.payment_method_slug),
+                variant_id=int(row.variant_id) if row.variant_id else None,
+                venmo_handle=row.venmo_handle,
+                bound_via=str(row.bound_via),
+            )
+            for row in rows
+        ]
+
+
 def unbind_chat_from_method(
     telegram_chat_id: int,
     payment_method_slug: str,
 ) -> bool:
-    """Remove a group's payment-method link and cancel any pending setup attempts."""
+    """Remove a group's payment-method link and cancel pending setup for that slug."""
     slug = (payment_method_slug or "").strip().lower()
     with get_db() as session:
         row = (
@@ -300,6 +324,34 @@ def unbind_chat_from_method(
         slug,
     )
     return True
+
+
+def unbind_chat_from_all_methods(telegram_chat_id: int) -> tuple[int, int]:
+    """Remove all payment-method links and cancel all pending setup attempts for a chat.
+
+    Returns (bindings_removed, attempts_cancelled).
+    """
+    with get_db() as session:
+        rows = (
+            session.query(GroupPaymentMethodBinding)
+            .filter_by(telegram_chat_id=int(telegram_chat_id))
+            .all()
+        )
+        bindings_removed = len(rows)
+        for row in rows:
+            session.delete(row)
+        attempts_cancelled = cancel_all_pending_attempts_for_chat(
+            session,
+            telegram_chat_id=int(telegram_chat_id),
+        )
+    if bindings_removed or attempts_cancelled:
+        logger.info(
+            "group_bindings cleared chat_id=%s bindings_removed=%s attempts_cancelled=%s",
+            telegram_chat_id,
+            bindings_removed,
+            attempts_cancelled,
+        )
+    return bindings_removed, attempts_cancelled
 
 
 def unbind_by_id(binding_id: int) -> bool:
@@ -409,6 +461,27 @@ def allocate_setup_amount_cents(
     if amount_cents < 1:
         raise ValueError("No available setup amounts for this variant (too many pending)")
     return amount_cents
+
+
+def cancel_all_pending_attempts_for_chat(
+    session,
+    *,
+    telegram_chat_id: int,
+) -> int:
+    now = datetime.now(timezone.utc)
+    q = session.query(PaymentMethodBindAttempt).filter_by(
+        telegram_chat_id=int(telegram_chat_id),
+        status=ATTEMPT_STATUS_PENDING,
+    )
+    count = q.count()
+    q.update(
+        {
+            PaymentMethodBindAttempt.status: ATTEMPT_STATUS_CANCELLED,
+            PaymentMethodBindAttempt.completed_at: now,
+        },
+        synchronize_session=False,
+    )
+    return count
 
 
 def cancel_pending_attempts_for_chat(

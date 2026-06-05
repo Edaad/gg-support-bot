@@ -20,6 +20,7 @@ from bot.services.payment_method_binding import (
     format_first_time_venmo_setup_message,
     get_last_bound_deposit_at,
     match_pending_memo_setup_in_session,
+    unbind_chat_from_all_methods,
     unbind_chat_from_method,
     venmo_special_amount_binding_enabled,
     _memo_contains_code,
@@ -86,6 +87,30 @@ class TestUnbind(unittest.TestCase):
             )
             self.assertTrue(unbind_chat_from_method(-1001, "venmo"))
             session.delete.assert_called_once_with(row)
+
+    def test_unbind_all_clears_bindings_and_pending(self):
+        venmo_row = MagicMock()
+        zelle_row = MagicMock()
+        with (
+            patch("bot.services.payment_method_binding.get_db") as mock_get_db,
+            patch(
+                "bot.services.payment_method_binding.cancel_all_pending_attempts_for_chat",
+                return_value=1,
+            ) as cancel_all_mock,
+        ):
+            session = MagicMock()
+            mock_get_db.return_value.__enter__.return_value = session
+            session.query.return_value.filter_by.return_value.all.return_value = [
+                venmo_row,
+                zelle_row,
+            ]
+
+            removed, cancelled = unbind_chat_from_all_methods(-1001)
+
+        self.assertEqual(removed, 2)
+        self.assertEqual(cancelled, 1)
+        self.assertEqual(session.delete.call_count, 2)
+        cancel_all_mock.assert_called_once()
 
 
 class TestEffectiveMinCents(unittest.TestCase):

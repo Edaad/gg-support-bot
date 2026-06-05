@@ -1,9 +1,8 @@
-"""Test-bot group command: /unbindmethod — clear a payment-method link for this chat."""
+"""Test-bot group command: /unbindmethod — clear all payment-method links for this chat."""
 
 from __future__ import annotations
 
 import logging
-import re
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -12,14 +11,25 @@ from config import ADMIN_USER_IDS
 from bot.runtime_config import is_test_bot_worker
 from bot.services.club import get_club_for_chat, is_club_staff, update_group_name
 from bot.services.payment_method_binding import (
-    get_chat_binding,
-    is_chat_method_bound,
-    unbind_chat_from_method,
+    list_chat_method_bindings,
+    unbind_chat_from_all_methods,
 )
 
 logger = logging.getLogger(__name__)
 
-_SLUG_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
+
+def _format_binding_summary(bindings) -> str:
+    if not bindings:
+        return ""
+    parts = []
+    for row in bindings:
+        slug = row.payment_method_slug
+        handle = (row.venmo_handle or "").strip()
+        if handle:
+            parts.append(f"{slug} ({handle})")
+        else:
+            parts.append(slug)
+    return ", ".join(parts)
 
 
 async def unbindmethod_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -38,44 +48,54 @@ async def unbindmethod_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if user_id not in ADMIN_USER_IDS and (
         club_id is None or not is_club_staff(user_id, club_id)
     ):
+        await update.message.reply_text(
+            "Only club staff can run /unbindmethod in this group."
+        )
         return
 
     if club_id is None:
         await update.message.reply_text("This group isn't linked to a club.")
         return
 
-    slug = (context.args[0] if context.args else "venmo").strip().lower()
-    if not _SLUG_RE.match(slug):
+    if context.args:
         await update.message.reply_text(
-            "Usage: /unbindmethod [method]\n"
-            "Example: /unbindmethod venmo"
+            "/unbindmethod clears all payment-method links for this group "
+            "(venmo, zelle, etc.). No method argument is needed."
         )
         return
 
     update_group_name(chat.id, chat.title)
 
-    if not is_chat_method_bound(chat.id, slug):
+    bindings_before = list_chat_method_bindings(chat.id)
+    bindings_removed, attempts_cancelled = unbind_chat_from_all_methods(chat.id)
+
+    if bindings_removed == 0 and attempts_cancelled == 0:
         await update.message.reply_text(
-            f"This group is not linked to {slug}. Nothing to unbind."
+            "This group has no payment-method links or pending setup attempts. "
+            "Nothing to unbind."
         )
         return
 
-    binding = get_chat_binding(chat.id, slug)
-    if not unbind_chat_from_method(chat.id, slug):
-        await update.message.reply_text("Could not unbind. Please try again.")
-        return
+    cleared = _format_binding_summary(bindings_before)
+    lines = ["Unbound all payment methods for this group."]
+    if cleared:
+        lines.append(f"Cleared: {cleared}")
+    if attempts_cancelled:
+        lines.append(
+            f"Cancelled {attempts_cancelled} pending setup attempt"
+            f"{'' if attempts_cancelled == 1 else 's'}."
+        )
+    lines.append(
+        "The next /deposit with venmo or zelle will require linking again."
+    )
 
-    handle = binding.venmo_handle if binding else None
-    extra = f" ({handle})" if handle else ""
     logger.info(
-        "unbindmethod ok chat_id=%s club_id=%s slug=%s user_id=%s",
+        "unbindmethod ok chat_id=%s club_id=%s user_id=%s bindings_removed=%s "
+        "attempts_cancelled=%s",
         chat.id,
         club_id,
-        slug,
         user_id,
+        bindings_removed,
+        attempts_cancelled,
     )
-    await update.message.reply_text(
-        f"Unbound {slug}{extra} for this group.\n"
-        "Pending setup attempts were cancelled. "
-        "The next /deposit with this method will require linking again."
-    )
+    await update.message.reply_text("\n".join(lines))

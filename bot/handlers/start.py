@@ -20,7 +20,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [
                 "",
                 "Test bot (staff):",
-                "• /unbindmethod [venmo] — Clear payment-method link for this group",
+                "• /unbindmethod — Clear all payment-method links for this group",
             ]
         )
     lines.extend(

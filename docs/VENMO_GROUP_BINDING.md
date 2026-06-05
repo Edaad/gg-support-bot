@@ -37,11 +37,9 @@ Zelle uses deposit setup + DB attempts on the test bot; **Zelle Zapier ingest is
 
 ```text
 /unbindmethod
-/unbindmethod venmo
-/unbindmethod zelle
 ```
 
-Clears `group_payment_method_bindings` for that chat and cancels pending setup attempts. Registered only on `run_test_bot.py`.
+Clears **all** `group_payment_method_bindings` for that chat (venmo, zelle, etc.) and cancels **all** pending setup attempts. Registered only on `run_test_bot.py`. Staff only.
 
 ## Database
 
