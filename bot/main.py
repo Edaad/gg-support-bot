@@ -231,7 +231,6 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
             "Tip: after /deposit, use Reply on the bot message to enter the amount "
             "(or disable privacy mode in @BotFather → /setprivacy → Disable)."
         )
-    print("Staff: /unbindmethod in a group clears all payment-method bindings.")
         from bot.services.stripe_deposit import stripe_configured
 
         if not stripe_configured():
@@ -241,4 +240,5 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
             )
     else:
         print("Bot is running. Press Ctrl+C to stop.")
+    print("Staff: /unbindmethod in a group clears all payment-method bindings.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
