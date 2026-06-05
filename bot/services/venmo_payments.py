@@ -24,7 +24,10 @@ from bot.services.payment_method_binding import (
     BOUND_VIA_MEMO_EMOJI,
     BOUND_VIA_SPECIAL_AMOUNT,
     cancel_pending_attempts_for_chat_in_session,
+    cancel_setup_attempt_in_session,
     complete_attempt_in_session,
+    find_existing_venmo_link_for_setup,
+    get_last_bound_deposit_at,
     infer_variant_id_for_venmo_handle,
     match_pending_memo_setup_in_session,
     match_pending_venmo_setup_in_session,
@@ -171,6 +174,58 @@ def _notification_bot_token() -> Optional[str]:
 
 
 TEST_NOTIFICATION_BANNER = "TEST (Please ignore)"
+
+
+def _format_deposit_timestamp(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.strftime("%b %d, %Y %I:%M %p UTC")
+
+
+def format_setup_already_linked_warning(
+    payment: VenmoPayment,
+    *,
+    already_bound_group_title: str,
+    last_deposit_at: Optional[datetime],
+    setup_chat_title: str,
+) -> str:
+    """Staff warning when a first-time setup payment matches an already-linked payer/group."""
+    method = payment.venmo_handle
+    if not method.startswith("@"):
+        method = f"@{method.lstrip('@')}"
+
+    last_deposit_line = (
+        f"Last deposit: {_format_deposit_timestamp(last_deposit_at)}"
+        if last_deposit_at is not None
+        else "Last deposit: No prior bound deposits found"
+    )
+
+    lines = [
+        "⚠️ First-time setup warning",
+        "",
+        f"Already bound: {already_bound_group_title}",
+        last_deposit_line,
+        "",
+        "Incoming setup payment matched but was left unbound for manual review.",
+        f"Name: {payment.payer_name}",
+        f"Amount: {format_amount_display(payment.amount_cents)}",
+    ]
+    memo = (getattr(payment, "memo", None) or "").strip()
+    if memo:
+        lines.append(f"Memo: {memo}")
+    lines.extend(
+        [
+            f"Method: {method}",
+            f"Setup chat: {setup_chat_title}",
+        ]
+    )
+
+    body = "\n".join(lines)
+    if getattr(payment, "is_test", False):
+        return f"{TEST_NOTIFICATION_BANNER}\n\n{body}"
+    return body
 
 
 def format_notification_text(
@@ -359,6 +414,8 @@ async def ingest_venmo_payment(
     created = True
     auto_bound = False
     group_title: Optional[str] = None
+    setup_warning_text: Optional[str] = None
+    setup_blocked_already_linked = False
 
     with get_db() as session:
         if source_external_id:
@@ -432,7 +489,39 @@ async def ingest_venmo_payment(
                     memo,
                 )
             if live_title:
-                if complete_attempt_in_session(
+                existing_link = find_existing_venmo_link_for_setup(
+                    session,
+                    payer_name=payer,
+                    setup_chat_id=int(setup_attempt.telegram_chat_id),
+                )
+                if existing_link is not None:
+                    linked_title = (
+                        resolve_display_group_title(int(existing_link.linked_chat_id))
+                        or "—"
+                    )
+                    last_deposit_at = get_last_bound_deposit_at(
+                        session,
+                        payer_name=payer,
+                        telegram_chat_id=int(existing_link.linked_chat_id),
+                        exclude_payment_id=int(payment.id),
+                    )
+                    cancel_setup_attempt_in_session(session, setup_attempt)
+                    setup_blocked_already_linked = True
+                    setup_warning_text = format_setup_already_linked_warning(
+                        payment,
+                        already_bound_group_title=linked_title,
+                        last_deposit_at=last_deposit_at,
+                        setup_chat_title=live_title,
+                    )
+                    logger.warning(
+                        "venmo ingest: setup match blocked — already linked "
+                        "attempt_id=%s payment_id=%s linked_chat_id=%s via=%s",
+                        setup_attempt.id,
+                        payment.id,
+                        existing_link.linked_chat_id,
+                        existing_link.via,
+                    )
+                elif complete_attempt_in_session(
                     session,
                     setup_attempt,
                     venmo_payment_id=int(payment.id),
@@ -474,7 +563,7 @@ async def ingest_venmo_payment(
                         setup_bound_via,
                     )
 
-        if not auto_bound:
+        if not auto_bound and not setup_blocked_already_linked:
             binding = (
                 session.query(VenmoPayerBinding)
                 .filter_by(payer_name_normalized=normalize_payer_name(payer))
@@ -517,6 +606,9 @@ async def ingest_venmo_payment(
             len(text),
             auto_bound,
         )
+
+    if setup_warning_text:
+        await send_telegram_notification(setup_warning_text)
 
     notif_chat_id, notif_message_id = await send_telegram_notification(text)
 

@@ -88,6 +88,147 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         self.assertLess(text.index("Amount:"), text.index("Memo:"))
         self.assertLess(text.index("Memo:"), text.index("Method:"))
 
+    def test_format_setup_already_linked_warning(self):
+        from datetime import datetime, timezone
+
+        payment = VenmoPayment(
+            payer_name="Vito Corleone",
+            amount_cents=500,
+            venmo_handle="@michaelc4444",
+            goods_or_services=False,
+            memo="GG-FLOP",
+        )
+        last_at = datetime(2026, 6, 4, 23, 27, tzinfo=timezone.utc)
+        text = vp.format_setup_already_linked_warning(
+            payment,
+            already_bound_group_title=GROUP_TITLE,
+            last_deposit_at=last_at,
+            setup_chat_title="RT / 9999-0000 / New Setup",
+        )
+        self.assertIn("First-time setup warning", text)
+        self.assertIn(f"Already bound: {GROUP_TITLE}", text)
+        self.assertIn("Last deposit: Jun 04, 2026 11:27 PM UTC", text)
+        self.assertIn("left unbound for manual review", text)
+        self.assertIn("Memo: GG-FLOP", text)
+        self.assertIn("Setup chat: RT / 9999-0000 / New Setup", text)
+
+    def test_format_setup_already_linked_warning_no_prior_deposit(self):
+        payment = VenmoPayment(
+            payer_name="Vito Corleone",
+            amount_cents=500,
+            venmo_handle="@michaelc4444",
+            goods_or_services=False,
+        )
+        text = vp.format_setup_already_linked_warning(
+            payment,
+            already_bound_group_title=GROUP_TITLE,
+            last_deposit_at=None,
+            setup_chat_title=GROUP_TITLE,
+        )
+        self.assertIn("No prior bound deposits found", text)
+
+
+class SetupAlreadyLinkedIngestTestCase(unittest.IsolatedAsyncioTestCase):
+    async def test_ingest_setup_match_already_linked_leaves_unbound(self):
+        from datetime import datetime, timezone
+
+        from bot.services.payment_method_binding import ExistingVenmoLink
+
+        attempt = MagicMock()
+        attempt.id = 12
+        attempt.telegram_chat_id = -1002000
+        attempt.club_id = CLUB_ID
+        attempt.variant_id = 3
+
+        payment_obj = VenmoPayment(
+            id=101,
+            payer_name="Moshe Toussoun",
+            amount_cents=500,
+            venmo_handle="@godfather4444",
+            goods_or_services=False,
+            memo="GG-FLOP",
+        )
+
+        def _query(model):
+            q = MagicMock()
+            if model is VenmoPayment:
+                q.filter_by.return_value.one_or_none.side_effect = [None, payment_obj]
+            return q
+
+        mock_session = MagicMock()
+        mock_session.query.side_effect = _query
+
+        def _add(obj):
+            if isinstance(obj, VenmoPayment) and obj.id is None:
+                obj.id = 101
+
+        mock_session.add.side_effect = _add
+        mock_session.flush = MagicMock()
+
+        send_mock = AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID))
+
+        with (
+            patch("bot.services.venmo_payments.get_db") as mock_get_db,
+            patch(
+                "bot.services.venmo_payments.send_telegram_notification",
+                new=send_mock,
+            ),
+            patch(
+                "bot.services.venmo_payments.match_pending_memo_setup_in_session",
+                return_value=attempt,
+            ),
+            patch(
+                "bot.services.venmo_payments.match_pending_venmo_setup_in_session",
+                return_value=None,
+            ),
+            patch(
+                "bot.services.venmo_payments.resolve_display_group_title",
+                side_effect=lambda cid: (
+                    GROUP_TITLE
+                    if cid == CHAT_ID
+                    else "RT / 9999-0000 / New Setup"
+                ),
+            ),
+            patch(
+                "bot.services.venmo_payments.find_existing_venmo_link_for_setup",
+                return_value=ExistingVenmoLink(
+                    linked_chat_id=CHAT_ID,
+                    via="payer_binding",
+                ),
+            ),
+            patch(
+                "bot.services.venmo_payments.get_last_bound_deposit_at",
+                return_value=datetime(2026, 6, 4, 23, 27, tzinfo=timezone.utc),
+            ),
+            patch(
+                "bot.services.venmo_payments.cancel_setup_attempt_in_session",
+                return_value=True,
+            ) as cancel_mock,
+            patch(
+                "bot.services.venmo_payments.complete_attempt_in_session",
+            ) as complete_mock,
+        ):
+            mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = await vp.ingest_venmo_payment(
+                payer_name="Moshe Toussoun",
+                amount="5.00",
+                venmo_handle="@godfather4444",
+                memo="GG-FLOP",
+            )
+
+        self.assertFalse(result.auto_bound)
+        self.assertEqual(result.status, "unbound")
+        complete_mock.assert_not_called()
+        cancel_mock.assert_called_once()
+        self.assertEqual(send_mock.await_count, 2)
+        warning_text = send_mock.await_args_list[0].args[0]
+        self.assertIn("First-time setup warning", warning_text)
+        self.assertIn(GROUP_TITLE, warning_text)
+        payment_text = send_mock.await_args_list[1].args[0]
+        self.assertIn("Unbound", payment_text)
+
 
 class ResolveBoundGroupTestCase(unittest.TestCase):
     @patch("bot.services.venmo_payments.find_group_chat_id_by_name", return_value=CHAT_ID)

@@ -20,6 +20,8 @@ from db.models import (
     ClubPaymentTierVariant,
     GroupPaymentMethodBinding,
     PaymentMethodBindAttempt,
+    VenmoPayerBinding,
+    VenmoPayment,
 )
 
 logger = logging.getLogger(__name__)
@@ -175,6 +177,16 @@ class SetupMatchResult:
     club_id: int
     variant_id: int
     group_title: str
+
+
+@dataclass(frozen=True)
+class ExistingVenmoLink:
+    linked_chat_id: int
+    via: Literal["payer_binding", "group_binding"]
+
+
+def _normalize_payer_name(name: str) -> str:
+    return " ".join((name or "").strip().lower().split())
 
 
 def effective_min_cents(
@@ -723,6 +735,79 @@ def match_pending_memo_setup_in_session(
             continue
         return attempt
     return None
+
+
+def find_existing_venmo_link_for_setup(
+    session,
+    *,
+    payer_name: str,
+    setup_chat_id: int,
+) -> Optional[ExistingVenmoLink]:
+    """Return an existing Venmo link for payer or setup chat, if any."""
+    normalized = _normalize_payer_name(payer_name)
+    payer_row = (
+        session.query(VenmoPayerBinding)
+        .filter_by(payer_name_normalized=normalized)
+        .one_or_none()
+    )
+    if payer_row is not None:
+        return ExistingVenmoLink(
+            linked_chat_id=int(payer_row.telegram_chat_id),
+            via="payer_binding",
+        )
+
+    group_row = (
+        session.query(GroupPaymentMethodBinding)
+        .filter_by(
+            telegram_chat_id=int(setup_chat_id),
+            payment_method_slug="venmo",
+        )
+        .one_or_none()
+    )
+    if group_row is not None:
+        return ExistingVenmoLink(
+            linked_chat_id=int(setup_chat_id),
+            via="group_binding",
+        )
+    return None
+
+
+def get_last_bound_deposit_at(
+    session,
+    *,
+    payer_name: str,
+    telegram_chat_id: int,
+    exclude_payment_id: int,
+) -> Optional[datetime]:
+    """Most recent bound VenmoPayment created_at for payer in chat, or None."""
+    normalized = _normalize_payer_name(payer_name)
+    rows = (
+        session.query(VenmoPayment)
+        .filter(
+            VenmoPayment.telegram_chat_id == int(telegram_chat_id),
+            VenmoPayment.id != int(exclude_payment_id),
+        )
+        .order_by(VenmoPayment.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    for row in rows:
+        if _normalize_payer_name(row.payer_name) == normalized:
+            return row.created_at
+    return None
+
+
+def cancel_setup_attempt_in_session(
+    session,
+    attempt: PaymentMethodBindAttempt,
+) -> bool:
+    """Cancel a pending setup attempt without completing bind."""
+    now = datetime.now(timezone.utc)
+    if attempt.status != ATTEMPT_STATUS_PENDING:
+        return False
+    attempt.status = ATTEMPT_STATUS_CANCELLED
+    attempt.completed_at = now
+    return True
 
 
 def complete_attempt_in_session(

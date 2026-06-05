@@ -15,8 +15,10 @@ from bot.services.payment_method_binding import (
     extract_venmo_handle_from_text,
     extract_venmo_url,
     extract_zelle_details,
+    find_existing_venmo_link_for_setup,
     format_first_time_memo_setup_message,
     format_first_time_venmo_setup_message,
+    get_last_bound_deposit_at,
     match_pending_memo_setup_in_session,
     unbind_chat_from_method,
     venmo_special_amount_binding_enabled,
@@ -135,6 +137,112 @@ class TestAllocateSetupMemoCode(unittest.TestCase):
         session.query.return_value.filter_by.return_value.scalar.return_value = 10
         with self.assertRaises(ValueError):
             allocate_setup_memo_code(session, variant_id=1)
+
+
+class TestExistingVenmoLink(unittest.TestCase):
+    def test_finds_payer_binding_first(self):
+        from db.models import GroupPaymentMethodBinding, VenmoPayerBinding
+
+        payer_row = VenmoPayerBinding(
+            payer_name_normalized="moshe toussoun",
+            venmo_handle="@godfather4444",
+            telegram_chat_id=-1001,
+            club_id=2,
+        )
+
+        session = MagicMock()
+
+        def _query(model):
+            q = MagicMock()
+            if model is VenmoPayerBinding:
+                q.filter_by.return_value.one_or_none.return_value = payer_row
+            elif model is GroupPaymentMethodBinding:
+                q.filter_by.return_value.one_or_none.return_value = None
+            return q
+
+        session.query.side_effect = _query
+
+        found = find_existing_venmo_link_for_setup(
+            session,
+            payer_name="Moshe Toussoun",
+            setup_chat_id=-1002,
+        )
+        self.assertIsNotNone(found)
+        assert found is not None
+        self.assertEqual(found.linked_chat_id, -1001)
+        self.assertEqual(found.via, "payer_binding")
+
+    def test_falls_back_to_group_binding(self):
+        from db.models import GroupPaymentMethodBinding, VenmoPayerBinding
+
+        group_row = GroupPaymentMethodBinding(
+            telegram_chat_id=-1002,
+            club_id=2,
+            payment_method_slug="venmo",
+            bound_via="memo_emoji",
+        )
+
+        session = MagicMock()
+
+        def _query(model):
+            q = MagicMock()
+            if model is VenmoPayerBinding:
+                q.filter_by.return_value.one_or_none.return_value = None
+            elif model is GroupPaymentMethodBinding:
+                q.filter_by.return_value.one_or_none.return_value = group_row
+            return q
+
+        session.query.side_effect = _query
+
+        found = find_existing_venmo_link_for_setup(
+            session,
+            payer_name="New Player",
+            setup_chat_id=-1002,
+        )
+        self.assertIsNotNone(found)
+        assert found is not None
+        self.assertEqual(found.linked_chat_id, -1002)
+        self.assertEqual(found.via, "group_binding")
+
+
+class TestLastBoundDeposit(unittest.TestCase):
+    def test_returns_latest_matching_payment(self):
+        from datetime import datetime, timezone
+
+        from db.models import VenmoPayment
+
+        older = VenmoPayment(
+            id=1,
+            payer_name="Moshe Toussoun",
+            amount_cents=10000,
+            venmo_handle="@godfather4444",
+            goods_or_services=False,
+            telegram_chat_id=-1001,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        newer = VenmoPayment(
+            id=2,
+            payer_name="Moshe Toussoun",
+            amount_cents=20000,
+            venmo_handle="@godfather4444",
+            goods_or_services=False,
+            telegram_chat_id=-1001,
+            created_at=datetime(2026, 6, 4, tzinfo=timezone.utc),
+        )
+
+        session = MagicMock()
+        session.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [
+            newer,
+            older,
+        ]
+
+        found = get_last_bound_deposit_at(
+            session,
+            payer_name="Moshe Toussoun",
+            telegram_chat_id=-1001,
+            exclude_payment_id=99,
+        )
+        self.assertEqual(found, newer.created_at)
 
 
 class TestMemoContainsCode(unittest.TestCase):

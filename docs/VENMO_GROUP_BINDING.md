@@ -19,11 +19,15 @@ Other clubs: no first-time binding on the test bot. Production `run_bot.py`: dis
 2. Player sends that exact amount to the method’s payment destination and posts a screenshot.
 3. Zapier POSTs to `/api/venmo/payments` (Venmo). Within **10 minutes**, if **amount + Venmo handle** match the pending attempt, the payment auto-binds the group.
 
+If the payer or setup chat is **already linked**, ingest sends a staff warning (existing group + last bound deposit time), cancels the setup attempt, and leaves the payment **unbound** for manual rebinding.
+
 ### Memo code (`memo_emoji`)
 
 1. Bot assigns a variant and a **setup code cycled left-to-right** through a fixed pool (up to 10 concurrent pending setups per variant).
 2. Player sends that **exact code** in the Venmo **caption** (or Zelle **caption** in instructions) with payment, then posts a screenshot.
 3. Zapier POSTs to `/api/venmo/payments` with optional **`memo`**. Within **10 minutes**, if **memo contains the code** and Venmo handle matches the variant, the payment auto-binds the group.
+
+Same **already-linked** warning behavior as special amount (payment stays unbound).
 
 **Local dev:** `run_api.py` (or Heroku `web`) must use the same `DATABASE_URL` as `run_test_bot.py`. Setup matching runs on ingest in the API process — it does **not** require `BOT_TEST_WORKER` on the web dyno.
 
