@@ -118,11 +118,23 @@ class TestVenmoExtract(unittest.TestCase):
 
 
 class TestAllocateSetupEmoji(unittest.TestCase):
-    def test_picks_from_pool(self):
+    def test_first_pending_gets_first_emoji(self):
         session = MagicMock()
-        session.query.return_value.filter_by.return_value.filter.return_value.all.return_value = []
+        session.query.return_value.filter_by.return_value.scalar.return_value = 0
         emoji = allocate_setup_emoji(session, variant_id=1)
-        self.assertIn(emoji, ("💰", "🔥", "⭐", "🎯", "✅", "🌟", "💎", "🍀", "🎲", "🔑"))
+        self.assertEqual(emoji, "🏠")
+
+    def test_second_pending_gets_second_emoji(self):
+        session = MagicMock()
+        session.query.return_value.filter_by.return_value.scalar.return_value = 1
+        emoji = allocate_setup_emoji(session, variant_id=1)
+        self.assertEqual(emoji, "⛽")
+
+    def test_exhausted_pool_raises(self):
+        session = MagicMock()
+        session.query.return_value.filter_by.return_value.scalar.return_value = 7
+        with self.assertRaises(ValueError):
+            allocate_setup_emoji(session, variant_id=1)
 
 
 class TestMemoContainsEmoji(unittest.TestCase):

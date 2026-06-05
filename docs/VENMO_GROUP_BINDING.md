@@ -9,7 +9,7 @@ Before a support group can use a configured deposit method in `/deposit`, the ch
 | Club (test bot) | `venmo` + `zelle` bind mode |
 |-----------------|---------------------------|
 | Creator Club | `special_amount` — exact cent amount (one below chosen /deposit amount) |
-| Round Table | `memo_emoji` — random emoji in payment memo/caption |
+| Round Table | `memo_emoji` — cycled emoji in payment memo/caption (Venmo picker order) |
 
 Other clubs: no first-time binding on the test bot. Production `run_bot.py`: disabled for all clubs.
 
@@ -21,7 +21,7 @@ Other clubs: no first-time binding on the test bot. Production `run_bot.py`: dis
 
 ### Memo emoji (`memo_emoji`)
 
-1. Bot assigns a variant and a **random emoji** from a fixed pool (unique per pending setup on that variant).
+1. Bot assigns a variant and an **emoji cycled left-to-right** through a fixed pool (up to 7 concurrent pending setups per variant).
 2. Player sends that **exact emoji** in the Venmo **caption** (or Zelle **caption** in instructions) with payment, then posts a screenshot.
 3. Zapier POSTs to `/api/venmo/payments` with optional **`memo`**. Within **10 minutes**, if **memo contains the emoji** and Venmo handle matches the variant, the payment auto-binds the group.
 

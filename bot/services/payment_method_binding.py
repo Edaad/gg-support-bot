@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import html as html_module
 import logging
-import random
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -37,17 +36,15 @@ TEST_BOT_CLUB_BIND_MODES: dict[str, Literal["special_amount", "memo_emoji"]] = {
 }
 _BINDABLE_METHOD_SLUGS = frozenset({"venmo", "zelle"})
 
+# Venmo payment-caption picker order (dollar bill excluded).
 SETUP_EMOJI_POOL: tuple[str, ...] = (
-    "💰",
-    "🔥",
-    "⭐",
-    "🎯",
-    "✅",
-    "🌟",
-    "💎",
-    "🍀",
-    "🎲",
-    "🔑",
+    "🏠",
+    "⛽",
+    "🍕",
+    "☕",
+    "🎁",
+    "🎉",
+    "🎫",
 )
 
 _ZELLE_EMAIL_RE = re.compile(
@@ -352,25 +349,23 @@ def _expire_stale_pending_for_variant(session, variant_id: int) -> None:
 
 
 def allocate_setup_emoji(session, *, variant_id: int) -> str:
-    """Pick a random emoji not used by other pending memo attempts on this variant."""
+    """Cycle left-to-right through SETUP_EMOJI_POOL by pending memo attempt count."""
     _expire_stale_pending_for_variant(session, variant_id)
-    used = {
-        row[0]
-        for row in session.query(PaymentMethodBindAttempt.setup_emoji)
+    pending_count = (
+        session.query(func.count(PaymentMethodBindAttempt.id))
         .filter_by(
             variant_id=int(variant_id),
-            bind_kind=BIND_KIND_MEMO_EMOJI,
             status=ATTEMPT_STATUS_PENDING,
+            bind_kind=BIND_KIND_MEMO_EMOJI,
         )
-        .filter(PaymentMethodBindAttempt.setup_emoji.isnot(None))
-        .all()
-    }
-    available = [e for e in SETUP_EMOJI_POOL if e not in used]
-    if not available:
+        .scalar()
+    )
+    index = int(pending_count or 0)
+    if index >= len(SETUP_EMOJI_POOL):
         raise ValueError(
             "No available setup emojis for this variant (too many pending setups)"
         )
-    return random.choice(available)
+    return SETUP_EMOJI_POOL[index]
 
 
 def allocate_setup_amount_cents(
