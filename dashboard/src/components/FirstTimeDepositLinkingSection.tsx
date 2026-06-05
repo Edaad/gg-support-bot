@@ -40,7 +40,9 @@ export default function FirstTimeDepositLinkingSection({
 }: Props) {
   const radioGroupName = useId()
   const slug = (methodSlug || '').trim().toLowerCase()
-  const supported = SUPPORTED_SLUGS.has(slug)
+  if (!SUPPORTED_SLUGS.has(slug)) {
+    return null
+  }
 
   return (
     <div className="rounded-xl border border-border bg-surface-raised/40 p-4 sm:col-span-2">
@@ -49,57 +51,53 @@ export default function FirstTimeDepositLinkingSection({
       </div>
       <p className="mb-4 text-xs text-ink-muted">
         Require a one-time setup payment before this method appears in /deposit for a new support
-        group. Configure per method for Venmo and Zelle.
+        group.
       </p>
 
-      {!supported ? (
-        <p className="text-xs text-ink-faint">
-          Available for Venmo and Zelle deposit methods only.
-        </p>
-      ) : (
-        <fieldset className="space-y-4">
-          <label className="flex items-center gap-2 text-sm text-ink">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => onEnabledChange(e.target.checked)}
-              className="h-4 w-4 rounded border-border bg-control text-accent focus:ring-accent"
-            />
-            Enable first-time deposit linking
-          </label>
+      <fieldset className="space-y-4">
+        <label className="flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => onEnabledChange(e.target.checked)}
+            className="h-4 w-4 rounded border-border bg-control text-accent focus:ring-accent"
+          />
+          Enable first-time deposit linking
+        </label>
 
-          {enabled && (
-            <div className="ml-6 space-y-3">
-              <p className="text-xs font-medium text-ink-muted">Verification method</p>
-              <div className="space-y-3" role="radiogroup" aria-label="Verification method">
-                {BIND_VERIFICATION_OPTIONS.map((opt) => (
-                  <label
-                    key={opt.value}
-                    className="flex cursor-pointer items-start gap-2 text-sm text-ink"
-                  >
-                    <input
-                      type="radio"
-                      name={radioGroupName}
-                      value={opt.value}
-                      checked={bindMode === opt.value}
-                      onChange={() => onBindModeChange(opt.value)}
-                      className="mt-0.5 h-4 w-4 border-border bg-control text-accent focus:ring-accent"
-                    />
-                    <span>
-                      <span className="font-medium">{opt.label}</span>
-                      <span className="mt-0.5 block text-xs text-ink-muted">{opt.description}</span>
-                    </span>
-                  </label>
-                ))}
-              </div>
+        {enabled && (
+          <div className="ml-6 space-y-3">
+            <p className="text-xs font-medium text-ink-muted">Verification method</p>
+            <div className="space-y-3" role="radiogroup" aria-label="Verification method">
+              {BIND_VERIFICATION_OPTIONS.map((opt) => (
+                <label
+                  key={opt.value}
+                  className="flex cursor-pointer items-start gap-2 text-sm text-ink"
+                >
+                  <input
+                    type="radio"
+                    name={radioGroupName}
+                    value={opt.value}
+                    checked={bindMode === opt.value}
+                    onChange={() => onBindModeChange(opt.value)}
+                    className="mt-0.5 h-4 w-4 border-border bg-control text-accent focus:ring-accent"
+                  />
+                  <span>
+                    <span className="font-medium">{opt.label}</span>
+                    <span className="mt-0.5 block text-xs text-ink-muted">{opt.description}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {slug === 'venmo' && (
               <p className="text-xs text-ink-faint">
-                Memo/code mode on Venmo requires Zapier to send{' '}
+                Memo/code mode requires Zapier to send{' '}
                 <code className="text-ink-muted">memo</code> on ingest. See docs/VENMO_GROUP_BINDING.md.
               </p>
-            </div>
-          )}
-        </fieldset>
-      )}
+            )}
+          </div>
+        )}
+      </fieldset>
     </div>
   )
 }
