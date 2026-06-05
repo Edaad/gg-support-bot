@@ -1173,10 +1173,13 @@ def format_setup_memo_code_highlight(*, use_html: bool = True) -> str:
     """Instruction before a separate message that contains only the setup code."""
     if use_html:
         return (
-            "<b>Copy and paste the code in the next message</b> "
+            "<b>Tap or click the next message</b> to auto-copy the code "
             "into your payment memo/caption."
         )
-    return "Copy and paste the code in the next message into your payment memo/caption."
+    return (
+        "Tap or click the next message to auto-copy the code "
+        "into your payment memo/caption."
+    )
 
 
 def format_setup_memo_code_message(setup_code: str, *, use_html: bool = True) -> str:
