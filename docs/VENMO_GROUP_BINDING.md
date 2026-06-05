@@ -62,12 +62,12 @@ JWT API bind-attempt rows include `bind_kind`, `setup_emoji`, and optional `amou
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/payments/bindings/summary?method=venmo&club_id=` | Funnel + bindings by source |
-| `GET /api/payments/bindings?method=venmo&club_id=` | Linked group chats |
+| `GET /api/payments/bindings/summary?method=venmo&club_id=&bound_via=` | Funnel + bindings by source (`bound_via`: `special_amount`, `memo_emoji`, `manual`, `backfill`, `test`, or omit for all) |
+| `GET /api/payments/bindings?method=venmo&club_id=&bound_via=` | Linked group chats (same `bound_via` filter) |
 | `DELETE /api/payments/bindings/{id}` | Unbind |
 | `GET /api/payments/bind-attempts?method=venmo` | Attempt rows |
 
-`bound_via` values include `special_amount`, `memo_emoji`, `manual_notification`, `manual_dashboard`, `backfill`, `test`.
+`bound_via` values include `special_amount`, `memo_emoji`, `manual_notification`, `manual_dashboard`, `backfill`, `test`. Dashboard **Analytics** (`/analytics`) shows bound GC counts, source breakdown, setup funnel, and a filterable table (club, linking source, date range).
 
 ## Code
 

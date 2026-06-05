@@ -277,7 +277,17 @@ export async function fetchAllVenmoPayments(
   return all
 }
 
+export type BoundViaFilter =
+  | 'all'
+  | 'special_amount'
+  | 'memo_emoji'
+  | 'manual'
+  | 'backfill'
+  | 'test'
+
 export type BindingViaCount = { bound_via: string; count: number }
+
+export type BindKindCount = { bind_kind: string; count: number }
 
 export type BindingAttemptFunnel = {
   initiated: number
@@ -291,17 +301,26 @@ export type BindingAttemptFunnel = {
 export type BindingSummary = {
   payment_method_slug: string
   club_id: number | null
+  total_bound: number
   bindings_by_via: BindingViaCount[]
+  attempts_by_bind_kind: BindKindCount[]
   attempt_funnel: BindingAttemptFunnel
 }
 
 export function fetchBindingSummary(
   token: string,
-  params: { method?: string; clubId?: number; from?: string; to?: string },
+  params: {
+    method?: string
+    clubId?: number
+    boundVia?: BoundViaFilter
+    from?: string
+    to?: string
+  },
 ) {
   const q = new URLSearchParams()
   q.set('method', params.method ?? 'venmo')
   if (params.clubId != null) q.set('club_id', String(params.clubId))
+  if (params.boundVia && params.boundVia !== 'all') q.set('bound_via', params.boundVia)
   if (params.from) q.set('from', params.from)
   if (params.to) q.set('to', params.to)
   return request<BindingSummary>(`/bindings/summary?${q}`, {}, token)
@@ -331,11 +350,18 @@ export type GroupBindingList = {
 
 export function listGroupBindings(
   token: string,
-  params: { method?: string; clubId?: number; limit?: number; offset?: number },
+  params: {
+    method?: string
+    clubId?: number
+    boundVia?: BoundViaFilter
+    limit?: number
+    offset?: number
+  },
 ) {
   const q = new URLSearchParams()
   q.set('method', params.method ?? 'venmo')
   if (params.clubId != null) q.set('club_id', String(params.clubId))
+  if (params.boundVia && params.boundVia !== 'all') q.set('bound_via', params.boundVia)
   if (params.limit != null) q.set('limit', String(params.limit))
   if (params.offset != null) q.set('offset', String(params.offset))
   return request<GroupBindingList>(`/bindings?${q}`, {}, token)

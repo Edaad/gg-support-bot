@@ -142,6 +142,11 @@ class BindingViaCount(BaseModel):
     count: int
 
 
+class BindKindCount(BaseModel):
+    bind_kind: str
+    count: int
+
+
 class BindingAttemptFunnel(BaseModel):
     initiated: int
     succeeded: int
@@ -154,7 +159,9 @@ class BindingAttemptFunnel(BaseModel):
 class BindingSummaryResponse(BaseModel):
     payment_method_slug: str
     club_id: Optional[int] = None
+    total_bound: int
     bindings_by_via: list[BindingViaCount]
+    attempts_by_bind_kind: list[BindKindCount]
     attempt_funnel: BindingAttemptFunnel
 
 

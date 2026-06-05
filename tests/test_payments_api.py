@@ -10,8 +10,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.auth import create_token, get_current_admin
-from api.routes.payments import router
+from api.routes.payments import (
+    BOUND_VIA_FILTER_ALIASES,
+    _resolve_bound_via_filter,
+    router,
+)
 from db.connection import get_db_dependency
+from db.models import PaymentMethodBindAttempt
 
 TOKEN = create_token()
 
@@ -152,6 +157,73 @@ class PaymentsApiTestCase(unittest.TestCase):
         data = response.json()
         self.assertTrue(data["ok"])
         self.assertEqual(data["group_title"], "RT / 1234-5678 / Test")
+
+    def test_resolve_bound_via_filter_manual_alias(self):
+        self.assertEqual(
+            _resolve_bound_via_filter("manual"),
+            BOUND_VIA_FILTER_ALIASES["manual"],
+        )
+
+    def test_resolve_bound_via_filter_single_value(self):
+        self.assertEqual(_resolve_bound_via_filter("special_amount"), ("special_amount",))
+
+    def test_resolve_bound_via_filter_all_ignored(self):
+        self.assertIsNone(_resolve_bound_via_filter(None))
+        self.assertIsNone(_resolve_bound_via_filter("all"))
+        self.assertIsNone(_resolve_bound_via_filter("  "))
+
+    def test_bindings_summary_total_bound(self):
+        binding_rows = [("backfill", 3), ("special_amount", 2)]
+        bind_kind_rows = [("special_amount", 4), ("memo_emoji", 1)]
+
+        mock_binding_q = MagicMock()
+        mock_binding_q.filter.return_value = mock_binding_q
+        mock_binding_q.group_by.return_value.all.return_value = binding_rows
+
+        mock_bind_kind_q = MagicMock()
+        mock_bind_kind_q.filter.return_value = mock_bind_kind_q
+        mock_bind_kind_q.group_by.return_value.all.return_value = bind_kind_rows
+
+        mock_attempt = MagicMock()
+        mock_attempt.status = "succeeded"
+        mock_attempt_q = MagicMock()
+        mock_attempt_q.filter.return_value = mock_attempt_q
+        mock_attempt_q.all.return_value = [mock_attempt, mock_attempt]
+
+        mock_db = MagicMock()
+
+        def query_side_effect(*args):
+            if len(args) == 1 and args[0] is PaymentMethodBindAttempt:
+                return mock_attempt_q
+            if len(args) >= 2:
+                col_keys = {getattr(a, "key", None) for a in args}
+                if "bind_kind" in col_keys:
+                    return mock_bind_kind_q
+            return mock_binding_q
+
+        mock_db.query.side_effect = query_side_effect
+
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_current_admin] = lambda: "admin"
+
+        def override_db():
+            yield mock_db
+
+        app.dependency_overrides[get_db_dependency] = override_db
+        client = TestClient(app)
+
+        response = client.get(
+            "/api/payments/bindings/summary?method=venmo",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["total_bound"], 5)
+        self.assertEqual(len(data["bindings_by_via"]), 2)
+        self.assertEqual(len(data["attempts_by_bind_kind"]), 2)
+        self.assertEqual(data["attempt_funnel"]["initiated"], 2)
+        self.assertEqual(data["attempt_funnel"]["succeeded"], 2)
 
     def test_customers_club_not_found(self):
         mock_db = MagicMock()

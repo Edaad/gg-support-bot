@@ -29,6 +29,7 @@ from api.payments_helpers import (
 from api.schemas_payments import (
     BindAttemptListResponse,
     BindAttemptRead,
+    BindKindCount,
     BindingAttemptFunnel,
     BindingSummaryResponse,
     BindingViaCount,
@@ -78,6 +79,31 @@ _VENMO_MIGRATION_HINT = "Run: python migrate_venmo_payments.py (or heroku run â€
 _BINDINGS_MIGRATION_HINT = (
     "Run: python migrate_payment_method_bindings.py (or heroku run â€¦ on the web dyno)"
 )
+
+BOUND_VIA_FILTER_ALIASES: dict[str, tuple[str, ...]] = {
+    "manual": ("manual_notification", "manual_dashboard"),
+}
+
+_FIRST_TIME_BOUND_VIA = frozenset({"special_amount", "memo_emoji"})
+
+
+def _resolve_bound_via_filter(bound_via: str | None) -> tuple[str, ...] | None:
+    """Return concrete bound_via values for a filter param, or None for no filter."""
+    raw = (bound_via or "").strip().lower()
+    if not raw or raw == "all":
+        return None
+    if raw in BOUND_VIA_FILTER_ALIASES:
+        return BOUND_VIA_FILTER_ALIASES[raw]
+    return (raw,)
+
+
+def _apply_bound_via_filter(q, column, bound_via: str | None):
+    values = _resolve_bound_via_filter(bound_via)
+    if values is None:
+        return q
+    if len(values) == 1:
+        return q.filter(column == values[0])
+    return q.filter(column.in_(values))
 
 
 def _parse_dt(value: str | None) -> datetime | None:
@@ -408,6 +434,10 @@ async def bind_venmo_payment(
 def list_group_bindings(
     method: str = Query("venmo", description="payment_method_slug"),
     club_id: int | None = Query(None),
+    bound_via: str | None = Query(
+        None,
+        description="Filter by bound_via or alias (e.g. manual)",
+    ),
     limit: int = Query(_DEFAULT_LIMIT),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db_dependency),
@@ -423,6 +453,7 @@ def list_group_bindings(
         )
         if club_id is not None:
             q = q.filter(GroupPaymentMethodBinding.club_id == club_id)
+        q = _apply_bound_via_filter(q, GroupPaymentMethodBinding.bound_via, bound_via)
         total = q.count()
         rows = (
             q.order_by(GroupPaymentMethodBinding.bound_at.desc())
@@ -503,6 +534,10 @@ def delete_group_binding(
 def bindings_summary(
     method: str = Query("venmo", description="payment_method_slug"),
     club_id: int | None = Query(None),
+    bound_via: str | None = Query(
+        None,
+        description="Filter by bound_via or alias (e.g. manual)",
+    ),
     from_dt: str | None = Query(None, alias="from"),
     to_dt: str | None = Query(None, alias="to"),
     db: Session = Depends(get_db_dependency),
@@ -513,6 +548,7 @@ def bindings_summary(
 
     dt_from = _parse_dt(from_dt)
     dt_to = _parse_dt(to_dt)
+    bound_via_values = _resolve_bound_via_filter(bound_via)
 
     try:
         binding_q = db.query(
@@ -525,6 +561,9 @@ def bindings_summary(
             binding_q = binding_q.filter(GroupPaymentMethodBinding.bound_at >= dt_from)
         if dt_to is not None:
             binding_q = binding_q.filter(GroupPaymentMethodBinding.bound_at <= dt_to)
+        binding_q = _apply_bound_via_filter(
+            binding_q, GroupPaymentMethodBinding.bound_via, bound_via
+        )
         binding_q = binding_q.group_by(GroupPaymentMethodBinding.bound_via)
 
         attempt_q = db.query(PaymentMethodBindAttempt).filter(
@@ -536,14 +575,37 @@ def bindings_summary(
             attempt_q = attempt_q.filter(PaymentMethodBindAttempt.created_at >= dt_from)
         if dt_to is not None:
             attempt_q = attempt_q.filter(PaymentMethodBindAttempt.created_at <= dt_to)
+        if bound_via_values and len(bound_via_values) == 1:
+            only = bound_via_values[0]
+            if only in _FIRST_TIME_BOUND_VIA:
+                attempt_q = attempt_q.filter(PaymentMethodBindAttempt.bind_kind == only)
 
         attempts = attempt_q.all()
+
+        bind_kind_q = db.query(
+            PaymentMethodBindAttempt.bind_kind,
+            func.count(PaymentMethodBindAttempt.id),
+        ).filter(PaymentMethodBindAttempt.payment_method_slug == slug)
+        if club_id is not None:
+            bind_kind_q = bind_kind_q.filter(PaymentMethodBindAttempt.club_id == club_id)
+        if dt_from is not None:
+            bind_kind_q = bind_kind_q.filter(
+                PaymentMethodBindAttempt.created_at >= dt_from
+            )
+        if dt_to is not None:
+            bind_kind_q = bind_kind_q.filter(PaymentMethodBindAttempt.created_at <= dt_to)
+        bind_kind_q = bind_kind_q.group_by(PaymentMethodBindAttempt.bind_kind)
     except ProgrammingError as exc:
         _raise_db_schema_error(exc)
         raise
 
     bindings_by_via = [
         BindingViaCount(bound_via=str(row[0]), count=int(row[1])) for row in binding_q.all()
+    ]
+    total_bound = sum(row.count for row in bindings_by_via)
+    attempts_by_bind_kind = [
+        BindKindCount(bind_kind=str(row[0]), count=int(row[1]))
+        for row in bind_kind_q.all()
     ]
 
     initiated = len(attempts)
@@ -556,7 +618,9 @@ def bindings_summary(
     return BindingSummaryResponse(
         payment_method_slug=slug,
         club_id=club_id,
+        total_bound=total_bound,
         bindings_by_via=bindings_by_via,
+        attempts_by_bind_kind=attempts_by_bind_kind,
         attempt_funnel=BindingAttemptFunnel(
             initiated=initiated,
             succeeded=succeeded,
