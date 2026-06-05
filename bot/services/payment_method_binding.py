@@ -35,16 +35,16 @@ _BINDABLE_METHOD_SLUGS = frozenset({"venmo", "zelle"})
 
 # Memo/caption setup codes (cycled per pending attempt on a variant).
 SETUP_MEMO_CODE_POOL: tuple[str, ...] = (
-    "GG-FLOP",
-    "GG-TURN",
-    "GG-RIVER",
-    "GG-BLIND",
-    "GG-RAISE",
-    "GG-CALL",
-    "GG-FOLD",
-    "GG-ACES",
-    "GG-KINGS",
-    "GG-QUADS",
+    "JIGGITIES",
+    "QUEENS",
+    "RIVER",
+    "FLUSH",
+    "RAISE",
+    "NUTS",
+    "ALLIN",
+    "ACES",
+    "KINGS",
+    "QUADS",
 )
 
 _ZELLE_EMAIL_RE = re.compile(

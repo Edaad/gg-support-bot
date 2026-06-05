@@ -139,13 +139,13 @@ class TestAllocateSetupMemoCode(unittest.TestCase):
         session = MagicMock()
         session.query.return_value.filter_by.return_value.scalar.return_value = 0
         code = allocate_setup_memo_code(session, variant_id=1)
-        self.assertEqual(code, "GG-FLOP")
+        self.assertEqual(code, "FLOP")
 
     def test_second_pending_gets_second_code(self):
         session = MagicMock()
         session.query.return_value.filter_by.return_value.scalar.return_value = 1
         code = allocate_setup_memo_code(session, variant_id=1)
-        self.assertEqual(code, "GG-TURN")
+        self.assertEqual(code, "TURN")
 
     def test_exhausted_pool_raises(self):
         session = MagicMock()
@@ -262,9 +262,9 @@ class TestLastBoundDeposit(unittest.TestCase):
 
 class TestMemoContainsCode(unittest.TestCase):
     def test_finds_code_in_memo(self):
-        self.assertTrue(_memo_contains_code("Payment GG-FLOP thanks", "GG-FLOP"))
-        self.assertTrue(_memo_contains_code("payment gg-flop", "GG-FLOP"))
-        self.assertFalse(_memo_contains_code("Payment thanks", "GG-FLOP"))
+        self.assertTrue(_memo_contains_code("Payment FLOP thanks", "FLOP"))
+        self.assertTrue(_memo_contains_code("payment flop", "FLOP"))
+        self.assertFalse(_memo_contains_code("Payment thanks", "FLOP"))
 
 
 class TestZelleExtract(unittest.TestCase):
@@ -403,7 +403,7 @@ class TestMatchMemoInSession(unittest.TestCase):
             variant_id=3,
             bind_kind=BIND_KIND_MEMO_EMOJI,
             amount_cents=None,
-            setup_emoji="GG-FLOP",
+            setup_emoji="FLOP",
             status=ATTEMPT_STATUS_PENDING,
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         )
@@ -421,7 +421,7 @@ class TestMatchMemoInSession(unittest.TestCase):
             session,
             payment_method_slug="venmo",
             venmo_handle="@club-round",
-            memo="Thanks GG-FLOP",
+            memo="Thanks FLOP",
         )
         self.assertIs(found, attempt)
 
@@ -438,7 +438,7 @@ class TestMatchMemoInSession(unittest.TestCase):
             method_id=10,
             variant_id=3,
             bind_kind=BIND_KIND_MEMO_EMOJI,
-            setup_emoji="GG-TURN",
+            setup_emoji="TURN",
             status=ATTEMPT_STATUS_PENDING,
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         )
@@ -455,7 +455,7 @@ class TestMatchMemoInSession(unittest.TestCase):
             session,
             payment_method_slug="venmo",
             venmo_handle="@club-round",
-            memo="Thanks GG-FLOP",
+            memo="Thanks FLOP",
         )
         self.assertIsNone(found)
 

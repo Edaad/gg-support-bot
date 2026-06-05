@@ -96,7 +96,7 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
             amount_cents=500,
             venmo_handle="@michaelc4444",
             goods_or_services=False,
-            memo="GG-FLOP",
+            memo="FLOP",
         )
         last_at = datetime(2026, 6, 4, 23, 27, tzinfo=timezone.utc)
         text = vp.format_setup_already_linked_warning(
@@ -109,7 +109,7 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         self.assertIn(f"Already bound: {GROUP_TITLE}", text)
         self.assertIn("Last deposit: Jun 04, 2026 11:27 PM UTC", text)
         self.assertIn("left unbound for manual review", text)
-        self.assertIn("Memo: GG-FLOP", text)
+        self.assertIn("Memo: FLOP", text)
         self.assertIn("Setup chat: RT / 9999-0000 / New Setup", text)
 
     def test_format_setup_already_linked_warning_no_prior_deposit(self):
@@ -146,7 +146,7 @@ class SetupAlreadyLinkedIngestTestCase(unittest.IsolatedAsyncioTestCase):
             amount_cents=500,
             venmo_handle="@godfather4444",
             goods_or_services=False,
-            memo="GG-FLOP",
+            memo="FLOP",
         )
 
         def _query(model):
@@ -215,7 +215,7 @@ class SetupAlreadyLinkedIngestTestCase(unittest.IsolatedAsyncioTestCase):
                 payer_name="Moshe Toussoun",
                 amount="5.00",
                 venmo_handle="@godfather4444",
-                memo="GG-FLOP",
+                memo="FLOP",
             )
 
         self.assertFalse(result.auto_bound)
