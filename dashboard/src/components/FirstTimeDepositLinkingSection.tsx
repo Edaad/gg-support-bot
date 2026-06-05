@@ -9,9 +9,9 @@ const BIND_VERIFICATION_OPTIONS = [
   },
   {
     value: 'memo_emoji',
-    label: 'Emoji in memo or caption',
+    label: 'Code in memo or caption',
     description:
-      'Bot assigns an emoji; player must include it in the payment memo or caption.',
+      'Bot assigns a short code; player must include it in the payment memo or caption.',
   },
 ] as const
 

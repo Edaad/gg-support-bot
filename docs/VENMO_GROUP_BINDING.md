@@ -9,7 +9,7 @@ Before a support group can use a configured deposit method in `/deposit`, the ch
 | Club (test bot) | `venmo` + `zelle` bind mode |
 |-----------------|---------------------------|
 | Creator Club | `special_amount` — exact cent amount (one below chosen /deposit amount) |
-| Round Table | `memo_emoji` — cycled emoji in payment memo/caption (Venmo picker order) |
+| Round Table | `memo_emoji` — cycled setup code in payment memo/caption |
 
 Other clubs: no first-time binding on the test bot. Production `run_bot.py`: disabled for all clubs.
 
@@ -19,11 +19,11 @@ Other clubs: no first-time binding on the test bot. Production `run_bot.py`: dis
 2. Player sends that exact amount to the method’s payment destination and posts a screenshot.
 3. Zapier POSTs to `/api/venmo/payments` (Venmo). Within **10 minutes**, if **amount + Venmo handle** match the pending attempt, the payment auto-binds the group.
 
-### Memo emoji (`memo_emoji`)
+### Memo code (`memo_emoji`)
 
-1. Bot assigns a variant and an **emoji cycled left-to-right** through a fixed pool (up to 7 concurrent pending setups per variant).
-2. Player sends that **exact emoji** in the Venmo **caption** (or Zelle **caption** in instructions) with payment, then posts a screenshot.
-3. Zapier POSTs to `/api/venmo/payments` with optional **`memo`**. Within **10 minutes**, if **memo contains the emoji** and Venmo handle matches the variant, the payment auto-binds the group.
+1. Bot assigns a variant and a **setup code cycled left-to-right** through a fixed pool (up to 10 concurrent pending setups per variant).
+2. Player sends that **exact code** in the Venmo **caption** (or Zelle **caption** in instructions) with payment, then posts a screenshot.
+3. Zapier POSTs to `/api/venmo/payments` with optional **`memo`**. Within **10 minutes**, if **memo contains the code** and Venmo handle matches the variant, the payment auto-binds the group.
 
 **Local dev:** `run_api.py` (or Heroku `web`) must use the same `DATABASE_URL` as `run_test_bot.py`. Setup matching runs on ingest in the API process — it does **not** require `BOT_TEST_WORKER` on the web dyno.
 

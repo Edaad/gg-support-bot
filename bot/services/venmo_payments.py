@@ -7,7 +7,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Optional
 
 import httpx
@@ -100,10 +100,13 @@ def parse_amount_cents(amount: str | int | float | Decimal) -> int:
 
 
 def format_amount_display(amount_cents: int) -> str:
-    dollars = Decimal(amount_cents) / Decimal(100)
-    if dollars == dollars.to_integral_value():
-        return f"${int(dollars):,}.00"
-    return f"${dollars:,.2f}"
+    dollars = int(
+        (Decimal(amount_cents) / Decimal(100)).quantize(
+            Decimal("1"),
+            rounding=ROUND_HALF_UP,
+        )
+    )
+    return f"${dollars:,}"
 
 
 def resolve_display_group_title(chat_id: int) -> Optional[str]:

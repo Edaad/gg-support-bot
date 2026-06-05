@@ -51,12 +51,12 @@ Header: `X-Venmo-Webhook-Secret: <VENMO_ZAPIER_WEBHOOK_SECRET>`
   "goods_or_services": false,
   "paid_at": "Oct 31 2024, 02:15 PM",
   "source_external_id": "optional-gmail-message-id",
-  "memo": "optional payment memo/caption from email (for memo_emoji setup bind)",
+  "memo": "optional payment memo/caption from email (for memo_emoji setup-code bind)",
   "test": true
 }
 ```
 
-When `memo` is present and the test bot has a pending `memo_emoji` setup attempt, ingest tries emoji match **before** special-amount match.
+When `memo` is present and the test bot has a pending `memo_emoji` setup attempt, ingest tries setup-code match **before** special-amount match.
 
 Set `"test": true` only on your **duplicate test Zap** — notifications will be prefixed with `TEST (Please ignore)`.
 
@@ -199,7 +199,7 @@ Add `"test": true` only on your duplicate test Zap.
 
 - Saves it on `venmo_payments.memo`
 - Shows **Memo:** in the staff Telegram notification (after Amount)
-- On the test bot, uses it for **memo emoji** first-time group binding when the memo contains the setup emoji from `/deposit`
+- On the test bot, uses it for **memo code** first-time group binding when the memo contains the setup code from `/deposit`
 
 Run `python migrate_payment_method_bind_memo.py` once if `venmo_payments.memo` is not on your database yet.
 

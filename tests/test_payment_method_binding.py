@@ -8,7 +8,7 @@ from bot.services.payment_method_binding import (
     ATTEMPT_STATUS_PENDING,
     BIND_KIND_MEMO_EMOJI,
     BIND_KIND_SPECIAL_AMOUNT,
-    allocate_setup_emoji,
+    allocate_setup_memo_code,
     allocate_setup_amount_cents,
     bind_mode_for_method,
     effective_min_cents,
@@ -20,7 +20,7 @@ from bot.services.payment_method_binding import (
     match_pending_memo_setup_in_session,
     unbind_chat_from_method,
     venmo_special_amount_binding_enabled,
-    _memo_contains_emoji,
+    _memo_contains_code,
 )
 
 
@@ -117,30 +117,31 @@ class TestVenmoExtract(unittest.TestCase):
         )
 
 
-class TestAllocateSetupEmoji(unittest.TestCase):
-    def test_first_pending_gets_first_emoji(self):
+class TestAllocateSetupMemoCode(unittest.TestCase):
+    def test_first_pending_gets_first_code(self):
         session = MagicMock()
         session.query.return_value.filter_by.return_value.scalar.return_value = 0
-        emoji = allocate_setup_emoji(session, variant_id=1)
-        self.assertEqual(emoji, "🏠")
+        code = allocate_setup_memo_code(session, variant_id=1)
+        self.assertEqual(code, "GG-FLOP")
 
-    def test_second_pending_gets_second_emoji(self):
+    def test_second_pending_gets_second_code(self):
         session = MagicMock()
         session.query.return_value.filter_by.return_value.scalar.return_value = 1
-        emoji = allocate_setup_emoji(session, variant_id=1)
-        self.assertEqual(emoji, "⛽")
+        code = allocate_setup_memo_code(session, variant_id=1)
+        self.assertEqual(code, "GG-TURN")
 
     def test_exhausted_pool_raises(self):
         session = MagicMock()
-        session.query.return_value.filter_by.return_value.scalar.return_value = 7
+        session.query.return_value.filter_by.return_value.scalar.return_value = 10
         with self.assertRaises(ValueError):
-            allocate_setup_emoji(session, variant_id=1)
+            allocate_setup_memo_code(session, variant_id=1)
 
 
-class TestMemoContainsEmoji(unittest.TestCase):
-    def test_finds_emoji_in_memo(self):
-        self.assertTrue(_memo_contains_emoji("Payment for chips 💰 thanks", "💰"))
-        self.assertFalse(_memo_contains_emoji("Payment thanks", "💰"))
+class TestMemoContainsCode(unittest.TestCase):
+    def test_finds_code_in_memo(self):
+        self.assertTrue(_memo_contains_code("Payment GG-FLOP thanks", "GG-FLOP"))
+        self.assertTrue(_memo_contains_code("payment gg-flop", "GG-FLOP"))
+        self.assertFalse(_memo_contains_code("Payment thanks", "GG-FLOP"))
 
 
 class TestZelleExtract(unittest.TestCase):
@@ -161,7 +162,7 @@ class TestMemoSetupMessage(unittest.TestCase):
             variant_response_text="Venmo: https://venmo.com/u/testuser",
         )
         self.assertIn("FIRST-TIME VENMO SETUP", text)
-        self.assertIn("Copy and paste the emoji above", text)
+        self.assertIn("Copy and paste the code above", text)
         self.assertIn("venmo.com/u/testuser", text)
 
     def test_zelle_memo_html(self):
@@ -265,7 +266,7 @@ class TestMatchPendingInSession(unittest.TestCase):
 
 
 class TestMatchMemoInSession(unittest.TestCase):
-    def test_match_finds_attempt_by_emoji_and_handle(self):
+    def test_match_finds_attempt_by_code_and_handle(self):
         from datetime import datetime, timedelta, timezone
 
         from db.models import PaymentMethodBindAttempt
@@ -279,7 +280,7 @@ class TestMatchMemoInSession(unittest.TestCase):
             variant_id=3,
             bind_kind=BIND_KIND_MEMO_EMOJI,
             amount_cents=None,
-            setup_emoji="💰",
+            setup_emoji="GG-FLOP",
             status=ATTEMPT_STATUS_PENDING,
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         )
@@ -297,11 +298,11 @@ class TestMatchMemoInSession(unittest.TestCase):
             session,
             payment_method_slug="venmo",
             venmo_handle="@club-round",
-            memo="Thanks 💰",
+            memo="Thanks GG-FLOP",
         )
         self.assertIs(found, attempt)
 
-    def test_wrong_emoji_no_match(self):
+    def test_wrong_code_no_match(self):
         from datetime import datetime, timedelta, timezone
 
         from db.models import PaymentMethodBindAttempt
@@ -314,7 +315,7 @@ class TestMatchMemoInSession(unittest.TestCase):
             method_id=10,
             variant_id=3,
             bind_kind=BIND_KIND_MEMO_EMOJI,
-            setup_emoji="🔥",
+            setup_emoji="GG-TURN",
             status=ATTEMPT_STATUS_PENDING,
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         )
@@ -331,7 +332,7 @@ class TestMatchMemoInSession(unittest.TestCase):
             session,
             payment_method_slug="venmo",
             venmo_handle="@club-round",
-            memo="Thanks 💰",
+            memo="Thanks GG-FLOP",
         )
         self.assertIsNone(found)
 

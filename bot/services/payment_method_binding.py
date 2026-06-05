@@ -36,15 +36,18 @@ TEST_BOT_CLUB_BIND_MODES: dict[str, Literal["special_amount", "memo_emoji"]] = {
 }
 _BINDABLE_METHOD_SLUGS = frozenset({"venmo", "zelle"})
 
-# Venmo payment-caption picker order (dollar bill excluded).
-SETUP_EMOJI_POOL: tuple[str, ...] = (
-    "🏠",
-    "⛽",
-    "🍕",
-    "☕",
-    "🎁",
-    "🎉",
-    "🎫",
+# Memo/caption setup codes (cycled per pending attempt on a variant).
+SETUP_MEMO_CODE_POOL: tuple[str, ...] = (
+    "GG-FLOP",
+    "GG-TURN",
+    "GG-RIVER",
+    "GG-BLIND",
+    "GG-RAISE",
+    "GG-CALL",
+    "GG-FOLD",
+    "GG-ACES",
+    "GG-KINGS",
+    "GG-QUADS",
 )
 
 _ZELLE_EMAIL_RE = re.compile(
@@ -348,8 +351,8 @@ def _expire_stale_pending_for_variant(session, variant_id: int) -> None:
     )
 
 
-def allocate_setup_emoji(session, *, variant_id: int) -> str:
-    """Cycle left-to-right through SETUP_EMOJI_POOL by pending memo attempt count."""
+def allocate_setup_memo_code(session, *, variant_id: int) -> str:
+    """Cycle left-to-right through SETUP_MEMO_CODE_POOL by pending memo attempt count."""
     _expire_stale_pending_for_variant(session, variant_id)
     pending_count = (
         session.query(func.count(PaymentMethodBindAttempt.id))
@@ -361,11 +364,11 @@ def allocate_setup_emoji(session, *, variant_id: int) -> str:
         .scalar()
     )
     index = int(pending_count or 0)
-    if index >= len(SETUP_EMOJI_POOL):
+    if index >= len(SETUP_MEMO_CODE_POOL):
         raise ValueError(
-            "No available setup emojis for this variant (too many pending setups)"
+            "No available setup codes for this variant (too many pending setups)"
         )
-    return SETUP_EMOJI_POOL[index]
+    return SETUP_MEMO_CODE_POOL[index]
 
 
 def allocate_setup_amount_cents(
@@ -451,7 +454,7 @@ def start_bind_attempt(
         bound_via = BOUND_VIA_SPECIAL_AMOUNT
 
         if kind == BIND_KIND_MEMO_EMOJI:
-            setup_emoji = allocate_setup_emoji(session, variant_id=int(variant_id))
+            setup_emoji = allocate_setup_memo_code(session, variant_id=int(variant_id))
             bound_via = BOUND_VIA_MEMO_EMOJI
         else:
             if deposit_amount_cents is None:
@@ -665,10 +668,10 @@ def match_pending_venmo_setup_in_session(
     return None
 
 
-def _memo_contains_emoji(memo: str, emoji: str) -> bool:
-    if not memo or not emoji:
+def _memo_contains_code(memo: str, code: str) -> bool:
+    if not memo or not code:
         return False
-    return emoji in memo
+    return code.strip().upper() in memo.strip().upper()
 
 
 def _variant_venmo_handle_matches(session, variant_id: int, venmo_handle: str) -> bool:
@@ -691,7 +694,7 @@ def match_pending_memo_setup_in_session(
     venmo_handle: str,
     memo: str | None,
 ) -> Optional[PaymentMethodBindAttempt]:
-    """Match pending memo_emoji setup by exact emoji in memo + Venmo handle on variant."""
+    """Match pending memo_emoji setup by setup code in memo + Venmo handle on variant."""
     if not (memo or "").strip():
         return None
     slug = (payment_method_slug or "").strip().lower()
@@ -712,7 +715,7 @@ def match_pending_memo_setup_in_session(
     memo_text = memo.strip()
     for attempt in candidates:
         required = attempt.setup_emoji
-        if not required or not _memo_contains_emoji(memo_text, required):
+        if not required or not _memo_contains_code(memo_text, required):
             continue
         if slug == "venmo" and not _variant_venmo_handle_matches(
             session, int(attempt.variant_id), venmo_handle
@@ -851,14 +854,22 @@ def extract_zelle_details(text: str | None) -> tuple[str | None, str | None]:
     return email, name
 
 
-def format_setup_emoji_highlight(*, use_html: bool = True) -> str:
-    """Instruction before a separate message that contains only the setup emoji."""
+def format_setup_memo_code_highlight(*, use_html: bool = True) -> str:
+    """Instruction before a separate message that contains only the setup code."""
     if use_html:
         return (
-            "<b>Copy and paste the emoji in the next message</b> "
+            "<b>Copy and paste the code in the next message</b> "
             "into your payment memo/caption."
         )
-    return "Copy and paste the emoji in the next message into your payment memo/caption."
+    return "Copy and paste the code in the next message into your payment memo/caption."
+
+
+def format_setup_memo_code_message(setup_code: str, *, use_html: bool = True) -> str:
+    """Standalone copy-paste message for the required memo/caption code."""
+    code = (setup_code or "").strip()
+    if use_html:
+        return f"<code>{html_module.escape(code)}</code>"
+    return code
 
 
 def format_first_time_memo_setup_message(
@@ -867,10 +878,10 @@ def format_first_time_memo_setup_message(
     variant_response_text: str | None,
     use_html: bool = True,
 ) -> str:
-    """First-time setup copy for memo/caption emoji binding (Venmo or Zelle)."""
+    """First-time setup copy for memo/caption code binding (Venmo or Zelle)."""
     slug = (payment_method_slug or "").strip().lower()
     body_middle = (
-        "The exact emoji helps us match your payment to this chat faster. "
+        "The exact code helps us match your payment to this chat faster. "
         "This is a one-time setup step for this payment method. Future deposits "
         "can be sent normally once your method is linked."
     )
@@ -885,9 +896,9 @@ def format_first_time_memo_setup_message(
             return (
                 "<b>FIRST-TIME ZELLE SETUP</b>\n"
                 "────────────────────\n\n"
-                "<b>Copy and paste the emoji above</b> into the caption "
+                "<b>Copy and paste the code above</b> into the caption "
                 "when you send to the Zelle info below.\n\n"
-                "<b>Do not use any other emoji.</b>\n\n"
+                "<b>Use this code exactly.</b>\n\n"
                 f"{body_middle}\n\n"
                 f"<b>ZELLE EMAIL:</b> <code>{safe_email}</code>\n"
                 f"<b>Zelle Name:</b> {safe_name}\n\n"
@@ -897,9 +908,9 @@ def format_first_time_memo_setup_message(
         return (
             "FIRST-TIME ZELLE SETUP\n"
             "--------------------\n\n"
-            "Copy and paste the emoji above into the caption "
+            "Copy and paste the code above into the caption "
             "when you send to the Zelle info below.\n\n"
-            "Do not use any other emoji.\n\n"
+            "Use this code exactly.\n\n"
             f"{body_middle}\n\n"
             f"ZELLE EMAIL: {email_line}\n"
             f"Zelle Name: {name_line}\n\n"
@@ -914,9 +925,9 @@ def format_first_time_memo_setup_message(
         return (
             "<b>FIRST-TIME VENMO SETUP</b>\n"
             "────────────────────\n\n"
-            f"<b>Copy and paste the emoji above</b> into the {caption_word} "
+            f"<b>Copy and paste the code above</b> into the {caption_word} "
             "when you send to the Venmo info below.\n\n"
-            "<b>Do not use any other emoji.</b>\n\n"
+            "<b>Use this code exactly.</b>\n\n"
             f"{body_middle}\n\n"
             f'<b>Venmo:</b> <a href="{safe_url}">{safe_url}</a>\n\n'
             "After sending, please post a screenshot here. An agent will confirm "
@@ -925,9 +936,9 @@ def format_first_time_memo_setup_message(
     return (
         "FIRST-TIME VENMO SETUP\n"
         "--------------------\n\n"
-        f"Copy and paste the emoji above into the {caption_word} "
+        f"Copy and paste the code above into the {caption_word} "
         "when you send to the Venmo info below.\n\n"
-        "Do not use any other emoji.\n\n"
+        "Use this code exactly.\n\n"
         f"{body_middle}\n\n"
         f"Venmo: {url}\n\n"
         "After sending, please post a screenshot here. An agent will confirm "

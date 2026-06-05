@@ -56,7 +56,8 @@ from bot.services.payment_method_binding import (
     format_first_time_memo_setup_message,
     format_first_time_venmo_setup_message,
     format_setup_amount_highlight,
-    format_setup_emoji_highlight,
+    format_setup_memo_code_highlight,
+    format_setup_memo_code_message,
     get_chat_binding,
     is_chat_method_bound,
     deposit_amount_to_cents,
@@ -334,7 +335,7 @@ async def _send_first_time_method_setup(
 
     chat = query.message.chat
     if bind_kind == BIND_KIND_MEMO_EMOJI and attempt.setup_emoji:
-        highlight_html = format_setup_emoji_highlight(use_html=True)
+        highlight_html = format_setup_memo_code_highlight(use_html=True)
         body_html = format_first_time_memo_setup_message(
             payment_method_slug=slug,
             variant_response_text=variant_text,
@@ -348,9 +349,25 @@ async def _send_first_time_method_setup(
             await _deposit_send_message(
                 chat,
                 int(chat_id),
-                text=format_setup_emoji_highlight(use_html=False),
+                text=format_setup_memo_code_highlight(use_html=False),
             )
-        await _deposit_send_message(chat, int(chat_id), text=attempt.setup_emoji)
+        try:
+            await _deposit_send_message(
+                chat,
+                int(chat_id),
+                text=format_setup_memo_code_message(
+                    attempt.setup_emoji, use_html=True
+                ),
+                parse_mode="HTML",
+            )
+        except Exception:
+            await _deposit_send_message(
+                chat,
+                int(chat_id),
+                text=format_setup_memo_code_message(
+                    attempt.setup_emoji, use_html=False
+                ),
+            )
         try:
             await _deposit_send_message(
                 chat,
