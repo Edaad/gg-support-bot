@@ -2,6 +2,7 @@
 
 import html
 import logging
+import re
 from decimal import Decimal, InvalidOperation
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -82,6 +83,33 @@ _CHECKOUT_SETTING_KEYS = (
     "checkout_min_amount",
     "checkout_max_amount",
 )
+
+_LEGACY_RANDOM_EMOJI_RE = re.compile(
+    r"\n?\s*•\s*Please put a random emoji in the payment caption when (?:you )?sending\s*",
+    re.IGNORECASE,
+)
+
+
+def _strip_legacy_random_emoji_instruction(
+    data: dict,
+    method_slug: str,
+) -> dict:
+    """Remove seeded copy that asked for a random emoji on every deposit."""
+    slug = (method_slug or "").strip().lower()
+    if slug not in ("venmo", "zelle", "cashapp"):
+        return data
+    out = dict(data)
+    changed = False
+    for field in ("response_text", "response_caption"):
+        text = out.get(field)
+        if not text or not isinstance(text, str):
+            continue
+        cleaned = _LEGACY_RANDOM_EMOJI_RE.sub("\n", text)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+        if cleaned != text:
+            out[field] = cleaned
+            changed = True
+    return out if changed else data
 
 
 def _apply_checkout_layer(target: dict, source: dict | None) -> None:
@@ -1351,6 +1379,7 @@ async def _send_deposit_method_response(
         method=method,
         tier=tier,
     )
+    response_data = _strip_legacy_random_emoji_instruction(response_data, method_slug)
     slug = (method_slug or "").strip().lower()
     use_stripe_checkout = _stripe_checkout_enabled(response_data)
     if (
