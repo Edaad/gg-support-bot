@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, Query, joinedload
 
 from db.models import (
     ClubPaymentMethod,
@@ -72,6 +72,56 @@ def resolve_group_title(
             gg_player_id = parsed.gg_player_id or gg_player_id
 
     return title, gg_player_id
+
+
+def is_analytics_excluded_group_title(title: str | None) -> bool:
+    """True for staging/test support groups excluded from dashboard analytics."""
+    if not title:
+        return False
+    t = str(title).strip()
+    if not t:
+        return False
+    return t.endswith("/ TEST") or "@jz034" in t.lower()
+
+
+def _analytics_excluded_title_sql(column):
+    return or_(
+        column.ilike("%/ TEST"),
+        column.ilike("%@jz034%"),
+    )
+
+
+def analytics_excluded_chat_ids_query(session: Session) -> Query:
+    """Chat IDs whose resolved title matches analytics test/staging patterns."""
+    from_groups = session.query(Group.chat_id).filter(
+        _analytics_excluded_title_sql(Group.name)
+    )
+    from_sgc = (
+        session.query(SupportGroupChat.telegram_chat_id)
+        .outerjoin(Group, Group.chat_id == SupportGroupChat.telegram_chat_id)
+        .filter(
+            or_(Group.name.is_(None), func.trim(Group.name) == ""),
+            _analytics_excluded_title_sql(SupportGroupChat.telegram_chat_title),
+        )
+    )
+    return from_groups.union(from_sgc)
+
+
+def apply_analytics_chat_exclusion(session: Session, query, chat_id_column):
+    """Exclude bindings/attempts for test/staging support group chats."""
+    excluded = analytics_excluded_chat_ids_query(session)
+    return query.filter(~chat_id_column.in_(excluded))
+
+
+def apply_analytics_payment_exclusion(session: Session, query, chat_id_column):
+    """Exclude bound payments tied to test/staging support group chats."""
+    excluded = analytics_excluded_chat_ids_query(session)
+    return query.filter(
+        or_(
+            chat_id_column.is_(None),
+            ~chat_id_column.in_(excluded),
+        )
+    )
 
 
 def stripe_dashboard_session_url(session_id: str) -> str:
@@ -403,14 +453,20 @@ def list_zelle_payer_aggregates(session: Session, club_id: int, q: str | None):
 def apply_zelle_summary_filters(
     query,
     *,
+    session: Session,
     club_id: int | None,
     from_dt: datetime | None,
     to_dt: datetime | None,
     include_test: bool,
+    exclude_test_chats: bool = False,
 ):
     """Base filters for Zelle aggregate summaries (mirrors list ``status=all`` club scope)."""
     if not include_test:
         query = query.filter(ZellePayment.is_test.is_(False))
+    if exclude_test_chats:
+        query = apply_analytics_payment_exclusion(
+            session, query, ZellePayment.telegram_chat_id
+        )
     if club_id is not None:
         query = query.filter(
             or_(
@@ -432,13 +488,16 @@ def compute_zelle_payment_summary(
     from_dt: datetime | None,
     to_dt: datetime | None,
     include_test: bool,
+    exclude_test_chats: bool = False,
 ) -> dict:
     base = apply_zelle_summary_filters(
         session.query(ZellePayment),
+        session=session,
         club_id=club_id,
         from_dt=from_dt,
         to_dt=to_dt,
         include_test=include_test,
+        exclude_test_chats=exclude_test_chats,
     )
 
     total_payments = int(base.count())

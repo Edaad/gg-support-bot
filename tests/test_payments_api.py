@@ -15,6 +15,7 @@ from api.routes.payments import (
     _resolve_bound_via_filter,
     router,
 )
+from api.payments_helpers import is_analytics_excluded_group_title
 from db.connection import get_db_dependency
 from db.models import PaymentMethodBindAttempt
 
@@ -171,6 +172,15 @@ class PaymentsApiTestCase(unittest.TestCase):
         self.assertIsNone(_resolve_bound_via_filter(None))
         self.assertIsNone(_resolve_bound_via_filter("all"))
         self.assertIsNone(_resolve_bound_via_filter("  "))
+
+    def test_is_analytics_excluded_group_title(self):
+        self.assertTrue(is_analytics_excluded_group_title("RT / 9090-9999 / TEST"))
+        self.assertTrue(is_analytics_excluded_group_title("CC / 8834-2222/ @jz034"))
+        self.assertTrue(is_analytics_excluded_group_title("RT AT / 3333-3333 / @JZ034"))
+        self.assertFalse(is_analytics_excluded_group_title("RT / 1234-5678 / @realplayer"))
+        self.assertFalse(is_analytics_excluded_group_title("RT / 1234-5678 / Player"))
+        self.assertFalse(is_analytics_excluded_group_title(None))
+        self.assertFalse(is_analytics_excluded_group_title(""))
 
     def test_bindings_summary_total_bound(self):
         binding_rows = [("backfill", 3), ("special_amount", 2)]

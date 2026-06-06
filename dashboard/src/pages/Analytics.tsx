@@ -60,6 +60,7 @@ export default function Analytics({ token }: { token: string }) {
         clubId: qClubId,
         from: params.from ? `${params.from}T00:00:00Z` : undefined,
         to: params.to ? `${params.to}T23:59:59Z` : undefined,
+        excludeTestChats: true,
       })
         .then(setPaymentSummary)
         .catch((e: unknown) => {
@@ -276,6 +277,7 @@ export default function Analytics({ token }: { token: string }) {
         token={token}
         method={appliedMethod}
         showFilterBar={false}
+        excludeTestChats
         externalFilters={{
           appliedClubId,
           appliedSource,

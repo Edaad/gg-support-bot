@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from api.auth import get_current_admin
 from api.payments_helpers import (
+    apply_analytics_chat_exclusion,
     apply_customer_search,
     apply_session_filters,
     apply_venmo_payment_filters,
@@ -541,6 +542,7 @@ def zelle_payment_summary(
     from_dt: str | None = Query(None, alias="from"),
     to_dt: str | None = Query(None, alias="to"),
     include_test: bool = Query(False),
+    exclude_test_chats: bool = Query(False),
     db: Session = Depends(get_db_dependency),
 ):
     if club_id is not None:
@@ -553,6 +555,7 @@ def zelle_payment_summary(
             from_dt=_parse_dt(from_dt),
             to_dt=_parse_dt(to_dt),
             include_test=include_test,
+            exclude_test_chats=exclude_test_chats,
         )
     except ProgrammingError as exc:
         _raise_db_schema_error(exc)
@@ -636,6 +639,7 @@ def list_group_bindings(
     to_dt: str | None = Query(None, alias="to"),
     limit: int = Query(_DEFAULT_LIMIT),
     offset: int = Query(0, ge=0),
+    exclude_test_chats: bool = Query(False),
     db: Session = Depends(get_db_dependency),
 ):
     slug = (method or "venmo").strip().lower()
@@ -656,6 +660,10 @@ def list_group_bindings(
         if dt_to is not None:
             q = q.filter(GroupPaymentMethodBinding.bound_at <= dt_to)
         q = _apply_bound_via_filter(q, GroupPaymentMethodBinding.bound_via, bound_via)
+        if exclude_test_chats:
+            q = apply_analytics_chat_exclusion(
+                db, q, GroupPaymentMethodBinding.telegram_chat_id
+            )
         total = q.count()
         rows = (
             q.order_by(GroupPaymentMethodBinding.bound_at.desc())
@@ -742,6 +750,7 @@ def bindings_summary(
     ),
     from_dt: str | None = Query(None, alias="from"),
     to_dt: str | None = Query(None, alias="to"),
+    exclude_test_chats: bool = Query(False),
     db: Session = Depends(get_db_dependency),
 ):
     slug = (method or "venmo").strip().lower()
@@ -766,6 +775,10 @@ def bindings_summary(
         binding_q = _apply_bound_via_filter(
             binding_q, GroupPaymentMethodBinding.bound_via, bound_via
         )
+        if exclude_test_chats:
+            binding_q = apply_analytics_chat_exclusion(
+                db, binding_q, GroupPaymentMethodBinding.telegram_chat_id
+            )
         binding_q = binding_q.group_by(GroupPaymentMethodBinding.bound_via)
 
         attempt_q = db.query(PaymentMethodBindAttempt).filter(
@@ -781,6 +794,10 @@ def bindings_summary(
             only = bound_via_values[0]
             if only in _FIRST_TIME_BOUND_VIA:
                 attempt_q = attempt_q.filter(PaymentMethodBindAttempt.bind_kind == only)
+        if exclude_test_chats:
+            attempt_q = apply_analytics_chat_exclusion(
+                db, attempt_q, PaymentMethodBindAttempt.telegram_chat_id
+            )
 
         attempts = attempt_q.all()
 
@@ -796,6 +813,10 @@ def bindings_summary(
             )
         if dt_to is not None:
             bind_kind_q = bind_kind_q.filter(PaymentMethodBindAttempt.created_at <= dt_to)
+        if exclude_test_chats:
+            bind_kind_q = apply_analytics_chat_exclusion(
+                db, bind_kind_q, PaymentMethodBindAttempt.telegram_chat_id
+            )
         bind_kind_q = bind_kind_q.group_by(PaymentMethodBindAttempt.bind_kind)
     except ProgrammingError as exc:
         _raise_db_schema_error(exc)

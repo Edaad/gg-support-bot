@@ -67,6 +67,7 @@ type Props = {
   token: string
   method: 'venmo' | 'zelle'
   showFilterBar?: boolean
+  excludeTestChats?: boolean
   externalFilters?: ExternalFilters
   onError?: (message: string) => void
 }
@@ -75,6 +76,7 @@ export default function PaymentMethodLinkingAnalytics({
   token,
   method,
   showFilterBar = true,
+  excludeTestChats = false,
   externalFilters,
   onError,
 }: Props) {
@@ -124,6 +126,7 @@ export default function PaymentMethodLinkingAnalytics({
       boundVia: activeSource,
       from: activeFrom ? `${activeFrom}T00:00:00Z` : undefined,
       to: activeTo ? `${activeTo}T23:59:59Z` : undefined,
+      excludeTestChats,
     })
       .then(setSummary)
       .catch((e: unknown) => {
@@ -132,7 +135,7 @@ export default function PaymentMethodLinkingAnalytics({
         if (showFilterBar) setErr(msg)
         onError?.(msg)
       })
-  }, [token, queryClubId, activeSource, activeFrom, activeTo, method, onError, showFilterBar])
+  }, [token, queryClubId, activeSource, activeFrom, activeTo, method, onError, showFilterBar, excludeTestChats])
 
   const loadBindings = useCallback(() => {
     listGroupBindings(token, {
@@ -143,6 +146,7 @@ export default function PaymentMethodLinkingAnalytics({
       to: activeTo ? `${activeTo}T23:59:59Z` : undefined,
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
+      excludeTestChats,
     })
       .then((res) => {
         setBindings(res.items)
@@ -152,7 +156,7 @@ export default function PaymentMethodLinkingAnalytics({
         setBindings([])
         setBindingsTotal(0)
       })
-  }, [token, queryClubId, activeSource, activeFrom, activeTo, page, method])
+  }, [token, queryClubId, activeSource, activeFrom, activeTo, page, method, excludeTestChats])
 
   useEffect(() => {
     loadSummary()

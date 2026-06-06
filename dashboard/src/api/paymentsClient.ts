@@ -351,6 +351,7 @@ export function fetchZellePaymentSummary(
     from?: string
     to?: string
     includeTest?: boolean
+    excludeTestChats?: boolean
   },
 ) {
   const q = new URLSearchParams()
@@ -358,6 +359,7 @@ export function fetchZellePaymentSummary(
   if (params.from) q.set('from', params.from)
   if (params.to) q.set('to', params.to)
   if (params.includeTest) q.set('include_test', 'true')
+  if (params.excludeTestChats) q.set('exclude_test_chats', 'true')
   const qs = q.toString()
   return request<ZellePaymentSummary>(`/zelle/summary${qs ? `?${qs}` : ''}`, {}, token)
 }
@@ -471,6 +473,7 @@ export function fetchBindingSummary(
     boundVia?: BoundViaFilter
     from?: string
     to?: string
+    excludeTestChats?: boolean
   },
 ) {
   const q = new URLSearchParams()
@@ -479,6 +482,7 @@ export function fetchBindingSummary(
   if (params.boundVia && params.boundVia !== 'all') q.set('bound_via', params.boundVia)
   if (params.from) q.set('from', params.from)
   if (params.to) q.set('to', params.to)
+  if (params.excludeTestChats) q.set('exclude_test_chats', 'true')
   return request<BindingSummary>(`/bindings/summary?${q}`, {}, token)
 }
 
@@ -514,6 +518,7 @@ export function listGroupBindings(
     to?: string
     limit?: number
     offset?: number
+    excludeTestChats?: boolean
   },
 ) {
   const q = new URLSearchParams()
@@ -524,6 +529,7 @@ export function listGroupBindings(
   if (params.to) q.set('to', params.to)
   if (params.limit != null) q.set('limit', String(params.limit))
   if (params.offset != null) q.set('offset', String(params.offset))
+  if (params.excludeTestChats) q.set('exclude_test_chats', 'true')
   return request<GroupBindingList>(`/bindings?${q}`, {}, token)
 }
 
