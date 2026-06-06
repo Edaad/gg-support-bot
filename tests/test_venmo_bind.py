@@ -56,7 +56,7 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         )
         text = vp.format_notification_text(payment)
         self.assertTrue(text.startswith("TEST (Please ignore)\n\n"))
-        self.assertIn("Payment Notification", text)
+        self.assertIn("Venmo Payment Notification", text)
 
     def test_format_notification_bound(self):
         payment = VenmoPayment(

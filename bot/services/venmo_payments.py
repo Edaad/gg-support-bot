@@ -239,7 +239,7 @@ def format_notification_text(
         method = f"@{method.lstrip('@')}"
 
     lines = [
-        "🔔 Payment Notification",
+        "🔔 Venmo Payment Notification",
         "",
     ]
 
