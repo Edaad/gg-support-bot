@@ -1,5 +1,8 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 
+const focusRing =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
+
 type ModalProps = {
   open: boolean
   onClose: () => void
@@ -51,9 +54,18 @@ export default function Modal({ open, onClose, title, children, wide = false }: 
         className={`max-h-[90vh] w-full overflow-auto rounded-xl border border-border bg-surface p-6 shadow-xl ${wide ? 'max-w-3xl' : 'max-w-lg'}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id={titleId} className="mb-4 text-lg font-semibold text-ink text-balance">
-          {title}
-        </h2>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <h2 id={titleId} className="text-lg font-semibold text-ink text-balance">
+            {title}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className={`btn-secondary-sm shrink-0 ${focusRing}`}
+          >
+            Close
+          </button>
+        </div>
         {children}
       </div>
     </dialog>

@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { lazy, Suspense, useState, useEffect } from 'react'
 import Login from './pages/Login'
 import Clubs from './pages/Clubs'
 import ClubDetail from './pages/ClubDetail'
@@ -9,9 +9,10 @@ import WeeklyStats from './pages/WeeklyStats'
 import TelegramLogin from './pages/TelegramLogin'
 import BonusTypes from './pages/BonusTypes'
 import Payments from './pages/Payments'
-import Analytics from './pages/Analytics'
 import Layout from './components/Layout'
 import { ConfirmProvider } from './components/ConfirmProvider'
+
+const Analytics = lazy(() => import('./pages/Analytics'))
 
 export default function App() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'))
@@ -36,7 +37,14 @@ export default function App() {
         <Route path="/telegram-login" element={<TelegramLogin token={token} />} />
         <Route path="/bonus-types" element={<BonusTypes token={token} />} />
         <Route path="/payments" element={<Payments token={token} />} />
-        <Route path="/analytics" element={<Analytics token={token} />} />
+        <Route
+          path="/analytics"
+          element={
+            <Suspense fallback={<p className="p-6 text-sm text-ink-muted">Loading analytics…</p>}>
+              <Analytics token={token} />
+            </Suspense>
+          }
+        />
         <Route path="/weekly-stats" element={<WeeklyStats token={token} />} />
       </Routes>
         </Layout>

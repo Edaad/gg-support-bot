@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { listClubs, type Club } from '../api/client'
 import {
   fetchZellePaymentSummary,
@@ -41,6 +41,7 @@ export default function Analytics({ token }: { token: string }) {
   const [appliedTo, setAppliedTo] = useState('')
 
   const [paymentSummary, setPaymentSummary] = useState<ZellePaymentSummary | null>(null)
+  const [paymentLoading, setPaymentLoading] = useState(false)
   const [err, setErr] = useState('')
 
   useEffect(() => {
@@ -49,64 +50,96 @@ export default function Analytics({ token }: { token: string }) {
       .catch(() => setErr('Could not load clubs.'))
   }, [token])
 
-  const loadPaymentSummary = useCallback(
-    (params: {
-      clubId: number | 'all'
-      from: string
-      to: string
-    }) => {
-      const qClubId = params.clubId === 'all' ? undefined : params.clubId
-      fetchZellePaymentSummary(token, {
-        clubId: qClubId,
-        from: params.from ? `${params.from}T00:00:00Z` : undefined,
-        to: params.to ? `${params.to}T23:59:59Z` : undefined,
-        excludeTestChats: true,
-      })
-        .then(setPaymentSummary)
-        .catch((e: unknown) => {
-          setPaymentSummary(null)
-          setErr(e instanceof Error ? e.message : 'Could not load payment summary.')
-        })
-    },
-    [token],
-  )
+  useEffect(() => {
+    if (appliedMethod !== 'zelle') {
+      setPaymentLoading(false)
+      return
+    }
 
-  const applyFilters = () => {
+    let cancelled = false
+    setPaymentLoading(true)
+    const qClubId = appliedClubId === 'all' ? undefined : appliedClubId
+
+    fetchZellePaymentSummary(token, {
+      clubId: qClubId,
+      from: appliedFrom ? `${appliedFrom}T00:00:00Z` : undefined,
+      to: appliedTo ? `${appliedTo}T23:59:59Z` : undefined,
+      excludeTestChats: true,
+    })
+      .then((data) => {
+        if (!cancelled) setPaymentSummary(data)
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return
+        setPaymentSummary(null)
+        setErr(e instanceof Error ? e.message : 'Could not load payment summary.')
+      })
+      .finally(() => {
+        if (!cancelled) setPaymentLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [token, appliedMethod, appliedClubId, appliedFrom, appliedTo])
+
+  const applyFilters = useCallback(() => {
     setErr('')
     setAppliedMethod(method)
     setAppliedClubId(clubId)
     setAppliedSource(sourceFilter)
     setAppliedFrom(fromDate)
     setAppliedTo(toDate)
-    if (method === 'zelle') {
-      loadPaymentSummary({ clubId, from: fromDate, to: toDate })
-    } else {
+    if (method !== 'zelle') {
       setPaymentSummary(null)
+      setPaymentLoading(false)
     }
-  }
+  }, [method, clubId, sourceFilter, fromDate, toDate])
 
-  const autoBoundRate =
-    paymentSummary && paymentSummary.total_payments > 0
-      ? (paymentSummary.auto_bound_count / paymentSummary.total_payments) * 100
-      : null
+  const autoBoundRate = useMemo(() => {
+    if (!paymentSummary || paymentSummary.total_payments <= 0) return null
+    return (paymentSummary.auto_bound_count / paymentSummary.total_payments) * 100
+  }, [paymentSummary])
 
-  const filterKey = `${appliedMethod}-${appliedClubId}-${appliedSource}-${appliedFrom}-${appliedTo}`
+  const appliedFilters = useMemo(
+    () => ({
+      appliedClubId,
+      appliedSource,
+      appliedFrom,
+      appliedTo,
+    }),
+    [appliedClubId, appliedSource, appliedFrom, appliedTo],
+  )
+
+  const filtersDirty =
+    method !== appliedMethod ||
+    clubId !== appliedClubId ||
+    sourceFilter !== appliedSource ||
+    fromDate !== appliedFrom ||
+    toDate !== appliedTo
+
+  const handleLinkingError = useCallback((message: string) => {
+    setErr(message)
+  }, [])
 
   return (
     <div>
-      <h1 className="mb-2 text-2xl font-bold">Analytics</h1>
-      <p className="mb-6 text-sm text-slate-400">
-        Payment tracking and group-chat linking statistics across support groups.
-      </p>
+      <h1 className="mb-6 text-2xl font-bold text-ink text-balance">Analytics</h1>
 
-      <div className="mb-6 flex flex-wrap items-end gap-4">
+      <form
+        className="mb-6 flex flex-wrap items-end gap-4"
+        onSubmit={(e) => {
+          e.preventDefault()
+          applyFilters()
+        }}
+      >
         <div>
-          <label htmlFor={clubSelectId} className="mb-1 block text-xs text-slate-400">
+          <label htmlFor={clubSelectId} className="label-field-xs">
             Club
           </label>
           <select
             id={clubSelectId}
-            className="input min-w-[10rem]"
+            className="input-field-sm min-w-[10rem]"
             value={clubId === 'all' ? 'all' : String(clubId)}
             onChange={(e) => {
               const v = e.target.value
@@ -123,12 +156,12 @@ export default function Analytics({ token }: { token: string }) {
         </div>
 
         <div>
-          <label htmlFor={methodSelectId} className="mb-1 block text-xs text-slate-400">
+          <label htmlFor={methodSelectId} className="label-field-xs">
             Method
           </label>
           <select
             id={methodSelectId}
-            className="input min-w-[8rem]"
+            className="input-field-sm min-w-[8rem]"
             value={method}
             onChange={(e) => setMethod(e.target.value as 'venmo' | 'zelle')}
           >
@@ -138,12 +171,12 @@ export default function Analytics({ token }: { token: string }) {
         </div>
 
         <div>
-          <label htmlFor={sourceSelectId} className="mb-1 block text-xs text-slate-400">
+          <label htmlFor={sourceSelectId} className="label-field-xs">
             Linking source
           </label>
           <select
             id={sourceSelectId}
-            className="input min-w-[12rem]"
+            className="input-field-sm min-w-[12rem]"
             value={sourceFilter}
             onChange={(e) => setSourceFilter(e.target.value as BoundViaFilter)}
           >
@@ -156,136 +189,154 @@ export default function Analytics({ token }: { token: string }) {
         </div>
 
         <div>
-          <label htmlFor={fromDateId} className="mb-1 block text-xs text-slate-400">
+          <label htmlFor={fromDateId} className="label-field-xs">
             From
           </label>
           <input
             id={fromDateId}
             type="date"
-            className="input"
+            className="input-field-sm"
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
           />
         </div>
 
         <div>
-          <label htmlFor={toDateId} className="mb-1 block text-xs text-slate-400">
+          <label htmlFor={toDateId} className="label-field-xs">
             To
           </label>
           <input
             id={toDateId}
             type="date"
-            className="input"
+            className="input-field-sm"
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
           />
         </div>
 
-        <button type="button" className="btn-primary" onClick={applyFilters}>
-          Apply
+        <button type="submit" className="btn-primary min-h-11">
+          Apply filters
         </button>
-      </div>
+      </form>
 
-      {err && <p className="mb-4 text-sm text-red-400">{err}</p>}
-
-      {appliedMethod === 'zelle' && (
-        <section className="mb-6 rounded-lg border border-slate-700 bg-slate-900/50 p-4">
-          <h2 className="mb-4 text-sm font-semibold text-slate-200">Payment tracking</h2>
-
-          {paymentSummary ? (
-            <>
-              <div className="mb-6 flex flex-wrap gap-6">
-                <KpiStat
-                  label="Total deposits"
-                  tip="Count of Zelle payments received in the selected date range and club filter."
-                  size="lg"
-                >
-                  {paymentSummary.total_payments}
-                </KpiStat>
-                <KpiStat
-                  label="Total volume"
-                  tip="Sum of all Zelle deposit amounts (USD) in the selected filters."
-                >
-                  ${fmtMoney(paymentSummary.total_amount_usd)}
-                </KpiStat>
-                <KpiStat
-                  label="Bound"
-                  tip="Deposits linked to a support group chat."
-                  valueClassName="text-emerald-400"
-                >
-                  {paymentSummary.bound_count}
-                </KpiStat>
-                <KpiStat
-                  label="Unbound"
-                  tip="Deposits not yet linked to any support group chat."
-                >
-                  {paymentSummary.unbound_count}
-                </KpiStat>
-                <KpiStat
-                  label="Auto-bound"
-                  tip="Deposits linked automatically via first-time setup (special amount or memo code), without manual staff action."
-                >
-                  {paymentSummary.auto_bound_count}
-                </KpiStat>
-                <KpiStat
-                  label="Auto-bind rate"
-                  tip="Share of deposits that were auto-bound: auto-bound ÷ total deposits."
-                >
-                  {autoBoundRate != null ? `${autoBoundRate.toFixed(1)}%` : '—'}
-                </KpiStat>
-              </div>
-
-              {paymentSummary.by_club.length > 0 && (
-                <div>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    By club
-                  </p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="text-slate-400">
-                          <th className="pb-2 pr-3 font-medium">Club</th>
-                          <th className="pb-2 pr-3 font-medium">Deposits</th>
-                          <th className="pb-2 font-medium">Volume</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paymentSummary.by_club.map((row) => (
-                          <tr
-                            key={row.club_id ?? 'unbound'}
-                            className="border-t border-slate-800 text-slate-200"
-                          >
-                            <td className="py-2 pr-3">{row.club_name ?? 'Unbound'}</td>
-                            <td className="py-2 pr-3">{row.count}</td>
-                            <td className="py-2">${fmtMoney(row.amount_usd)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-slate-500">No payment data available.</p>
-          )}
-        </section>
+      {filtersDirty && (
+        <p className="alert-warning mb-4" role="status">
+          Filters changed. Apply filters to update results.
+        </p>
       )}
 
-      <PaymentMethodLinkingAnalytics
-        key={filterKey}
-        token={token}
-        method={appliedMethod}
-        showFilterBar={false}
-        excludeTestChats
-        externalFilters={{
-          appliedClubId,
-          appliedSource,
-          appliedFrom,
-          appliedTo,
-        }}
-        onError={setErr}
-      />
+      {err && (
+        <p className="alert-danger mb-4" role="alert">
+          {err}
+        </p>
+      )}
+
+      <div
+        className={`panel transition-opacity ${filtersDirty ? 'opacity-80' : ''}`}
+        aria-busy={paymentLoading || undefined}
+      >
+        {appliedMethod === 'zelle' && (
+          <section aria-busy={paymentLoading || undefined}>
+            <h2 className="section-label">Payment tracking</h2>
+
+            {paymentLoading ? (
+              <p className="status-muted" aria-live="polite">
+                Loading payment stats…
+              </p>
+            ) : paymentSummary ? (
+              <>
+                <div className="kpi-grid mb-4">
+                  <KpiStat
+                    label="Total deposits"
+                    tip="Count of Zelle payments received in the selected date range and club filter."
+                    tone="accent"
+                  >
+                    {paymentSummary.total_payments}
+                  </KpiStat>
+                  <KpiStat
+                    label="Total volume"
+                    tip="Sum of all Zelle deposit amounts (USD) in the selected filters."
+                  >
+                    ${fmtMoney(paymentSummary.total_amount_usd)}
+                  </KpiStat>
+                  <KpiStat
+                    label="Bound"
+                    tip="Deposits linked to a support group chat."
+                    tone="success"
+                  >
+                    {paymentSummary.bound_count}
+                  </KpiStat>
+                  <KpiStat
+                    label="Unbound"
+                    tip="Deposits not yet linked to any support group chat."
+                    tone={paymentSummary.unbound_count > 0 ? 'warning' : 'muted'}
+                  >
+                    {paymentSummary.unbound_count}
+                  </KpiStat>
+                  <KpiStat
+                    label="Auto-bound"
+                    tip="Deposits linked automatically via first-time setup (special amount or memo code), without manual staff action."
+                    tone="accent"
+                  >
+                    {paymentSummary.auto_bound_count}
+                  </KpiStat>
+                  <KpiStat
+                    label="Auto-bind rate"
+                    tip="Share of deposits that were auto-bound: auto-bound ÷ total deposits."
+                    tone="muted"
+                  >
+                    {autoBoundRate != null ? `${autoBoundRate.toFixed(1)}%` : '—'}
+                  </KpiStat>
+                </div>
+
+                {paymentSummary.by_club.length > 0 && (
+                  <div>
+                    <h3 className="section-label">By club</h3>
+                    <div className="table-scroll">
+                      <table>
+                        <thead>
+                          <tr className="text-ink-muted">
+                            <th scope="col" className="px-3 pb-2 text-left font-medium">
+                              Club
+                            </th>
+                            <th scope="col" className="table-num px-3 pb-2 font-medium">
+                              Deposits
+                            </th>
+                            <th scope="col" className="table-num px-3 pb-2 font-medium">
+                              Volume
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paymentSummary.by_club.map((row) => (
+                            <tr key={row.club_id ?? 'unbound'} className="table-row-hover">
+                              <td className="px-3 py-2">{row.club_name ?? 'Unbound'}</td>
+                              <td className="table-num px-3 py-2">{row.count}</td>
+                              <td className="table-num px-3 py-2">${fmtMoney(row.amount_usd)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-ink-faint">No Zelle payments match these filters.</p>
+            )}
+          </section>
+        )}
+
+        <PaymentMethodLinkingAnalytics
+          token={token}
+          method={appliedMethod}
+          excludeTestChats
+          embedded
+          dividerTop={appliedMethod === 'zelle'}
+          filters={appliedFilters}
+          onError={handleLinkingError}
+        />
+      </div>
     </div>
   )
 }

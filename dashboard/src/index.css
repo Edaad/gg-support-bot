@@ -233,6 +233,27 @@
     @apply rounded-lg border border-border bg-surface-raised/50 p-4;
   }
 
+  .kpi-grid {
+    @apply grid gap-x-6 gap-y-4;
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  }
+
+  .section-label {
+    @apply mb-3 text-xs font-medium text-ink-muted;
+  }
+
+  .status-muted {
+    @apply text-sm text-ink-muted;
+  }
+
+  .table-row-hover {
+    @apply border-t border-border text-ink transition-colors hover:bg-control/40;
+  }
+
+  .table-num {
+    @apply tabular-nums text-right;
+  }
+
   .alert-danger {
     @apply rounded-lg bg-danger-bg px-4 py-2 text-sm text-danger-ink;
   }
@@ -247,6 +268,22 @@
 
   .badge-danger {
     @apply rounded bg-danger-bg px-1.5 py-0.5 text-[10px] font-medium text-danger-ink;
+  }
+
+  .chip-neutral {
+    @apply rounded-md border border-border bg-control px-3 py-1 text-xs text-ink-muted;
+  }
+
+  .chip-accent {
+    @apply rounded-md border border-accent/30 bg-control px-3 py-1 text-xs font-medium text-accent;
+  }
+
+  .chip-success {
+    @apply rounded-md border border-border bg-success-bg px-3 py-1 text-xs font-medium text-success-ink;
+  }
+
+  .chip-warning {
+    @apply rounded-md border border-border bg-warning-bg px-3 py-1 text-xs font-medium text-warning-ink;
   }
 
   .btn-danger-outline {
