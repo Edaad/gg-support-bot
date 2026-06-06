@@ -76,8 +76,8 @@ export default memo(function KpiStat({
   }, [tipOpen])
 
   const interactiveClass = canInteract
-    ? 'mt-0.5 min-h-11 min-w-0 rounded-md px-1 -mx-1 text-left underline decoration-dotted decoration-accent/35 underline-offset-4 transition hover:bg-control hover:text-accent active:bg-control-hover'
-    : 'mt-0.5 min-w-0'
+    ? 'min-h-11 min-w-0 rounded-md px-1 -mx-1 text-left underline decoration-dotted decoration-accent/35 underline-offset-4 transition hover:bg-control hover:text-accent active:bg-control-hover'
+    : 'min-w-0'
 
   const describedBy = tipOpen ? tipId : undefined
 
@@ -87,11 +87,11 @@ export default memo(function KpiStat({
       role="group"
       aria-labelledby={labelId}
       aria-describedby={describedBy}
-      className="min-w-0 max-w-full"
+      className="kpi-stat"
       onMouseEnter={openTip}
       onMouseLeave={closeTip}
     >
-      <div className="relative inline-flex max-w-full min-w-0 flex-wrap items-center gap-1 text-sm text-ink-muted">
+      <div className="kpi-stat__label-row">
         <span id={labelId} className="min-w-0 break-words">
           {label}
         </span>
@@ -100,7 +100,7 @@ export default memo(function KpiStat({
             <button
               ref={helpRef}
               type="button"
-              className={`inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full border border-border text-xs leading-none text-ink-faint transition hover:border-accent/40 hover:bg-control hover:text-accent ${focusRing}`}
+              className={`kpi-stat__help ${focusRing}`}
               aria-label={`About ${label}`}
               aria-expanded={tipOpen}
               aria-controls={tipId}
@@ -116,7 +116,7 @@ export default memo(function KpiStat({
               id={tipId}
               role="tooltip"
               aria-hidden={!tipOpen}
-              className={`pointer-events-none absolute bottom-full left-0 z-20 mb-1.5 w-56 max-w-[min(14rem,calc(100vw-2rem))] rounded-md border border-border bg-surface-raised px-2.5 py-1.5 text-xs font-normal normal-case tracking-normal text-ink shadow-lg transition-opacity ${tipOpen ? 'opacity-100' : 'opacity-0'}`}
+              className={`kpi-stat__tip ${tipOpen ? 'opacity-100' : 'opacity-0'}`}
             >
               <span className="block break-words">{tip}</span>
             </span>
@@ -128,13 +128,13 @@ export default memo(function KpiStat({
           type="button"
           onClick={onClick}
           aria-label={actionLabel ?? `View ${label}`}
-          className={`${valueSize} ${resolvedValueClass} tabular-nums ${interactiveClass} ${focusRing}`.trim()}
+          className={`kpi-stat__value block ${valueSize} ${resolvedValueClass} tabular-nums ${interactiveClass} ${focusRing}`.trim()}
         >
           <span className="block min-w-0 truncate">{children}</span>
         </button>
       ) : (
         <p
-          className={`${valueSize} ${resolvedValueClass} mt-0.5 tabular-nums ${onClick && interactiveDisabled ? 'text-ink-faint' : ''}`.trim()}
+          className={`kpi-stat__value ${valueSize} ${resolvedValueClass} tabular-nums ${onClick && interactiveDisabled ? 'text-ink-faint' : ''}`.trim()}
           aria-disabled={onClick && interactiveDisabled ? true : undefined}
         >
           <span className="block min-w-0 truncate">{children}</span>

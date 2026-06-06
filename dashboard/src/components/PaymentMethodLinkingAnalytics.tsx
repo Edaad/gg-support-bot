@@ -67,7 +67,7 @@ const LinkingKpiPanel = memo(function LinkingKpiPanel({ method, summary, onDrill
 
   return (
     <>
-      <div className="kpi-grid mb-4">
+      <div className="kpi-grid-linking mb-5">
         <KpiStat
           label="Bound GCs"
           tip={`Support group chats linked to a ${method === 'venmo' ? 'Venmo handle' : 'Zelle recipient'} in the selected filters.`}
@@ -131,10 +131,10 @@ const LinkingKpiPanel = memo(function LinkingKpiPanel({ method, summary, onDrill
       </div>
 
       {hasBreakdown && (
-        <div className="flex flex-wrap gap-x-8 gap-y-3">
+        <div className="grid gap-x-10 gap-y-4 sm:grid-cols-2">
           {summary.bindings_by_via.length > 0 && (
-            <div>
-              <p className="mb-1.5 text-xs text-ink-faint">Bound by source</p>
+            <div className="min-w-0">
+              <p className="mb-2 text-xs font-medium text-ink-faint">Bound by source</p>
               <div className="flex flex-wrap gap-2">
                 {summary.bindings_by_via.map((row) => (
                   <span key={row.bound_via} className={boundViaChipClass(row.bound_via)}>
@@ -145,8 +145,8 @@ const LinkingKpiPanel = memo(function LinkingKpiPanel({ method, summary, onDrill
             </div>
           )}
           {summary.attempts_by_bind_kind.length > 0 && (
-            <div>
-              <p className="mb-1.5 text-xs text-ink-faint">Setup by method</p>
+            <div className="min-w-0">
+              <p className="mb-2 text-xs font-medium text-ink-faint">Setup by method</p>
               <div className="flex flex-wrap gap-2">
                 {summary.attempts_by_bind_kind.map((row) => (
                   <span key={row.bind_kind} className={bindKindChipClass(row.bind_kind)}>
