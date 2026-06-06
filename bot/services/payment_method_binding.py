@@ -639,6 +639,35 @@ def expire_attempt(attempt_id: int) -> bool:
     return True
 
 
+def get_pending_bind_attempt(attempt_id: int) -> BindAttemptInfo | None:
+    """Return pending bind attempt info, or None if missing/expired."""
+    now = datetime.now(timezone.utc)
+    with get_db() as session:
+        attempt = (
+            session.query(PaymentMethodBindAttempt)
+            .filter_by(id=int(attempt_id), status=ATTEMPT_STATUS_PENDING)
+            .one_or_none()
+        )
+        if attempt is None:
+            return None
+        if attempt.expires_at < now:
+            attempt.status = ATTEMPT_STATUS_EXPIRED
+            attempt.completed_at = now
+            return None
+        return BindAttemptInfo(
+            id=int(attempt.id),
+            telegram_chat_id=int(attempt.telegram_chat_id),
+            club_id=int(attempt.club_id),
+            variant_id=int(attempt.variant_id),
+            bind_kind=str(attempt.bind_kind),
+            amount_cents=int(attempt.amount_cents)
+            if attempt.amount_cents is not None
+            else None,
+            setup_emoji=attempt.setup_emoji,
+            expires_at=attempt.expires_at,
+        )
+
+
 def record_group_binding(
     *,
     telegram_chat_id: int,
@@ -1195,6 +1224,116 @@ def format_setup_memo_code_message(setup_code: str, *, use_html: bool = True) ->
     if use_html:
         return f"<code>{html_module.escape(code)}</code>"
     return code
+
+
+def format_first_time_memo_instructions_message(
+    *,
+    payment_method_slug: str,
+    use_html: bool = True,
+) -> str:
+    """Pre-ack instructions for memo/caption code binding (no code or payment destination)."""
+    slug = (payment_method_slug or "").strip().lower()
+    body_middle = (
+        "The exact code helps us match your payment to this chat faster. "
+        "This is a one-time setup step for this payment method. Future deposits "
+        "can be sent normally once your method is linked."
+    )
+    caption_word = "caption"
+    header = "FIRST-TIME ZELLE SETUP" if slug == "zelle" else "FIRST-TIME VENMO SETUP"
+    divider = "────────────────────" if use_html else "--------------------"
+
+    if use_html:
+        return (
+            f"<b>{header}</b>\n"
+            f"{divider}\n\n"
+            f"<b>Include the setup code below</b> in your payment {caption_word} "
+            "when you send.\n\n"
+            "<b>Use this code exactly.</b>\n\n"
+            f"{body_middle}\n\n"
+            "After sending, please post a screenshot here. An agent will confirm "
+            "the transaction and add your chips as soon as it comes through."
+        )
+    return (
+        f"{header}\n"
+        f"{divider}\n\n"
+        f"Include the setup code below in your payment {caption_word} when you send.\n\n"
+        "Use this code exactly.\n\n"
+        f"{body_middle}\n\n"
+        "After sending, please post a screenshot here. An agent will confirm "
+        "the transaction and add your chips as soon as it comes through."
+    )
+
+
+def format_first_time_amount_instructions_message(
+    *,
+    payment_method_slug: str,
+    chosen_amount_cents: int,
+    use_html: bool = True,
+) -> str:
+    """Pre-ack instructions for special-amount binding (no setup amount or destination)."""
+    slug = (payment_method_slug or "").strip().lower()
+    chosen_display = _format_amount_display(int(chosen_amount_cents))
+    body_middle = (
+        "The exact amount helps us match your payment to this chat faster. "
+        "This is a one-time setup step for this payment method. Future deposits "
+        "can be sent normally once your method is linked."
+    )
+    header = "FIRST-TIME ZELLE SETUP" if slug == "zelle" else "FIRST-TIME VENMO SETUP"
+    divider = "────────────────────" if use_html else "--------------------"
+
+    if use_html:
+        safe_chosen = html_module.escape(chosen_display)
+        return (
+            f"<b>{header}</b>\n"
+            f"{divider}\n\n"
+            "<b>Send the exact amount shown below</b> — not your full deposit amount.\n\n"
+            f"<b>Please do not send {safe_chosen}</b> (no rounding).\n\n"
+            f"{body_middle}\n\n"
+            "Post a screenshot when done. An agent will confirm and add your chips."
+        )
+    return (
+        f"{header}\n"
+        f"{divider}\n\n"
+        "Send the exact amount shown below — not your full deposit amount.\n\n"
+        f"Please do not send {chosen_display} (no rounding).\n\n"
+        f"{body_middle}\n\n"
+        "Post a screenshot when done. An agent will confirm and add your chips."
+    )
+
+
+def format_first_time_payment_destination_message(
+    *,
+    payment_method_slug: str,
+    variant_response_text: str | None,
+    use_html: bool = True,
+) -> str:
+    """Post-ack payment destination only (Venmo link or Zelle recipient)."""
+    slug = (payment_method_slug or "").strip().lower()
+
+    if slug == "zelle":
+        email, name = extract_zelle_details(variant_response_text)
+        email_line = email or "—"
+        name_line = name or "—"
+        phone_recipient = extract_zelle_recipient_from_text(variant_response_text)
+        if email:
+            if use_html:
+                safe_email = html_module.escape(email_line)
+                safe_name = html_module.escape(name_line)
+                return (
+                    f"<b>ZELLE EMAIL:</b> <code>{safe_email}</code>\n"
+                    f"<b>Zelle Name:</b> {safe_name}"
+                )
+            return f"ZELLE EMAIL: {email_line}\nZelle Name: {name_line}"
+        recipient = phone_recipient or "—"
+        if use_html:
+            return f"<b>Zelle:</b> {html_module.escape(recipient)}"
+        return f"Zelle: {recipient}"
+
+    url = extract_venmo_url(variant_response_text) or "—"
+    if use_html:
+        safe_url = html_module.escape(url, quote=True)
+        return f'<b>Venmo:</b> <a href="{safe_url}">{safe_url}</a>'
+    return f"Venmo: {url}"
 
 
 def format_first_time_memo_setup_message(

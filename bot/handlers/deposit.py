@@ -54,13 +54,14 @@ from bot.services.payment_method_binding import (
     BIND_KIND_MEMO_EMOJI,
     BIND_KIND_SPECIAL_AMOUNT,
     bind_mode_for_method,
-    format_first_time_memo_setup_message,
-    format_first_time_venmo_setup_message,
-    format_first_time_zelle_setup_message,
+    format_first_time_amount_instructions_message,
+    format_first_time_memo_instructions_message,
+    format_first_time_payment_destination_message,
     format_setup_amount_highlight,
     format_setup_memo_code_highlight,
     format_setup_memo_code_message,
     get_chat_binding,
+    get_pending_bind_attempt,
     is_chat_method_bound,
     deposit_amount_to_cents,
     start_bind_attempt,
@@ -72,7 +73,7 @@ from db.models import Club
 
 logger = logging.getLogger(__name__)
 
-DEPOSIT_REFERRAL, DEPOSIT_AMOUNT, DEPOSIT_UNION, DEPOSIT_CHOOSE, DEPOSIT_SUB = range(5)
+DEPOSIT_REFERRAL, DEPOSIT_AMOUNT, DEPOSIT_UNION, DEPOSIT_CHOOSE, DEPOSIT_SUB, DEPOSIT_SETUP_ACK = range(6)
 
 # Test-bot fallback when chat_data does not persist between updates (group chats).
 _DEPOSIT_AWAITING_CHATS: set[int] = set()
@@ -297,6 +298,83 @@ def _pick_deposit_variant_response(
     return _with_method_checkout_settings(method, method), None
 
 
+async def _deposit_send_html_or_plain(
+    chat,
+    chat_id: int,
+    *,
+    html_text: str,
+    plain_text: str,
+    log_label: str,
+    disable_web_page_preview: bool | None = None,
+):
+    kwargs: dict = {"text": html_text, "parse_mode": "HTML"}
+    if disable_web_page_preview is not None:
+        kwargs["disable_web_page_preview"] = disable_web_page_preview
+    try:
+        return await _deposit_send_message(chat, int(chat_id), **kwargs)
+    except Exception:
+        logger.warning(
+            "%s: HTML message failed, retrying plain chat_id=%s",
+            log_label,
+            chat_id,
+            exc_info=True,
+        )
+        return await _deposit_send_message(chat, int(chat_id), text=plain_text)
+
+
+async def _send_first_time_setup_ack_button(
+    chat,
+    chat_id: int,
+    *,
+    attempt_id: int,
+) -> None:
+    markup = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "I have read the instructions above",
+                    callback_data=f"depft:{attempt_id}",
+                )
+            ]
+        ]
+    )
+    await _deposit_send_message(
+        chat,
+        int(chat_id),
+        text="Tap below when you are ready for the payment info.",
+        reply_markup=markup,
+    )
+
+
+async def _send_first_time_payment_destination(
+    chat,
+    chat_id: int,
+    *,
+    payment_method_slug: str,
+    variant_response_text: str | None,
+) -> bool:
+    slug = (payment_method_slug or "").strip().lower()
+    html_text = format_first_time_payment_destination_message(
+        payment_method_slug=slug,
+        variant_response_text=variant_response_text,
+        use_html=True,
+    )
+    plain_text = format_first_time_payment_destination_message(
+        payment_method_slug=slug,
+        variant_response_text=variant_response_text,
+        use_html=False,
+    )
+    await _deposit_send_html_or_plain(
+        chat,
+        int(chat_id),
+        html_text=html_text,
+        plain_text=plain_text,
+        log_label="first_time_destination",
+        disable_web_page_preview=False,
+    )
+    return True
+
+
 async def _send_first_time_method_setup(
     query,
     context: ContextTypes.DEFAULT_TYPE,
@@ -308,7 +386,7 @@ async def _send_first_time_method_setup(
     tier: dict | None,
     response_data: dict,
     bind_kind: str,
-) -> bool:
+) -> bool | str:
     chat_id = context.chat_data.get("deposit_chat_id") or (
         query.message.chat.id if query.message else None
     )
@@ -363,110 +441,69 @@ async def _send_first_time_method_setup(
     if query.message:
         _track_deposit_info_message(int(chat_id), query.message.message_id)
 
+    context.chat_data["deposit_setup_attempt_id"] = attempt.id
+    context.chat_data["deposit_setup_variant_text"] = variant_text
+    context.chat_data["deposit_setup_slug"] = slug
+
     chat = query.message.chat
     if bind_kind == BIND_KIND_MEMO_EMOJI and attempt.setup_emoji:
-        highlight_html = format_setup_memo_code_highlight(use_html=True)
-        body_html = format_first_time_memo_setup_message(
-            payment_method_slug=slug,
-            variant_response_text=variant_text,
-            use_html=True,
+        await _deposit_send_html_or_plain(
+            chat,
+            int(chat_id),
+            html_text=format_first_time_memo_instructions_message(
+                payment_method_slug=slug, use_html=True
+            ),
+            plain_text=format_first_time_memo_instructions_message(
+                payment_method_slug=slug, use_html=False
+            ),
+            log_label="memo_setup_instructions",
         )
-        try:
-            await _deposit_send_message(
-                chat, int(chat_id), text=highlight_html, parse_mode="HTML"
-            )
-        except Exception:
-            await _deposit_send_message(
-                chat,
-                int(chat_id),
-                text=format_setup_memo_code_highlight(use_html=False),
-            )
-        try:
-            await _deposit_send_message(
-                chat,
-                int(chat_id),
-                text=format_setup_memo_code_message(
-                    attempt.setup_emoji, use_html=True
-                ),
-                parse_mode="HTML",
-            )
-        except Exception:
-            await _deposit_send_message(
-                chat,
-                int(chat_id),
-                text=format_setup_memo_code_message(
-                    attempt.setup_emoji, use_html=False
-                ),
-            )
-        try:
-            await _deposit_send_message(
-                chat,
-                int(chat_id),
-                text=body_html,
-                parse_mode="HTML",
-                disable_web_page_preview=False,
-            )
-        except Exception:
-            logger.warning(
-                "memo_setup: HTML message failed, retrying plain chat_id=%s slug=%s",
-                chat_id,
-                slug,
-                exc_info=True,
-            )
-            await _deposit_send_message(
-                chat,
-                int(chat_id),
-                text=format_first_time_memo_setup_message(
-                    payment_method_slug=slug,
-                    variant_response_text=variant_text,
-                    use_html=False,
-                ),
-            )
-        return True
+        await _deposit_send_html_or_plain(
+            chat,
+            int(chat_id),
+            html_text=format_setup_memo_code_highlight(use_html=True),
+            plain_text=format_setup_memo_code_highlight(use_html=False),
+            log_label="memo_setup_highlight",
+        )
+        await _deposit_send_html_or_plain(
+            chat,
+            int(chat_id),
+            html_text=format_setup_memo_code_message(
+                attempt.setup_emoji, use_html=True
+            ),
+            plain_text=format_setup_memo_code_message(
+                attempt.setup_emoji, use_html=False
+            ),
+            log_label="memo_setup_code",
+        )
+        await _send_first_time_setup_ack_button(chat, int(chat_id), attempt_id=attempt.id)
+        return "await_ack"
 
-    setup_kwargs = dict(
-        setup_amount_cents=attempt.amount_cents,
-        chosen_amount_cents=deposit_amount_cents,
-        variant_response_text=variant_text,
+    assert deposit_amount_cents is not None and attempt.amount_cents is not None
+    await _deposit_send_html_or_plain(
+        chat,
+        int(chat_id),
+        html_text=format_first_time_amount_instructions_message(
+            payment_method_slug=slug,
+            chosen_amount_cents=deposit_amount_cents,
+            use_html=True,
+        ),
+        plain_text=format_first_time_amount_instructions_message(
+            payment_method_slug=slug,
+            chosen_amount_cents=deposit_amount_cents,
+            use_html=False,
+        ),
+        log_label="amount_setup_instructions",
     )
-    setup_message_fn = (
-        format_first_time_zelle_setup_message
-        if slug == "zelle"
-        else format_first_time_venmo_setup_message
+    await _deposit_send_html_or_plain(
+        chat,
+        int(chat_id),
+        html_text=format_setup_amount_highlight(attempt.amount_cents, use_html=True),
+        plain_text=format_setup_amount_highlight(attempt.amount_cents, use_html=False),
+        log_label="amount_setup_highlight",
     )
-    try:
-        await _deposit_send_message(
-            chat,
-            int(chat_id),
-            text=format_setup_amount_highlight(attempt.amount_cents, use_html=True),
-            parse_mode="HTML",
-        )
-    except Exception:
-        await _deposit_send_message(
-            chat,
-            int(chat_id),
-            text=format_setup_amount_highlight(attempt.amount_cents, use_html=False),
-        )
-    try:
-        await _deposit_send_message(
-            chat,
-            int(chat_id),
-            text=setup_message_fn(**setup_kwargs, use_html=True),
-            parse_mode="HTML",
-            disable_web_page_preview=False,
-        )
-    except Exception:
-        logger.warning(
-            "amount_setup: HTML message failed, retrying plain chat_id=%s",
-            chat_id,
-            exc_info=True,
-        )
-        await _deposit_send_message(
-            chat,
-            int(chat_id),
-            text=setup_message_fn(**setup_kwargs, use_html=False),
-        )
-    return True
+    await _send_first_time_setup_ack_button(chat, int(chat_id), attempt_id=attempt.id)
+    return "await_ack"
 
 
 def _reminder_job_name(chat_id: int | str) -> str:
@@ -1119,7 +1156,7 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
                 "This payment method is not configured yet. Please contact support."
             )
             return ConversationHandler.END
-        ok = await _send_first_time_method_setup(
+        result = await _send_first_time_method_setup(
             query,
             context,
             method_id=method_id,
@@ -1130,7 +1167,9 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
             response_data=response_data,
             bind_kind=bind_kind,
         )
-        if not ok:
+        if result == "await_ack":
+            return DEPOSIT_SETUP_ACK
+        if not result:
             return ConversationHandler.END
         return await _complete_deposit_flow(query.message.chat, context)
 
@@ -1171,6 +1210,68 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
             record_method_deposit(method_id, amount)
         except Exception:
             pass
+    return await _complete_deposit_flow(query.message.chat, context)
+
+
+async def deposit_setup_ack(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.callback_query:
+        return ConversationHandler.END
+    query = update.callback_query
+    data = query.data or ""
+    if not data.startswith("depft:"):
+        return ConversationHandler.END
+
+    expected_user = context.chat_data.get("deposit_user_id")
+    if expected_user is not None and query.from_user.id != int(expected_user):
+        await query.answer(
+            "Only the player who started this deposit can continue.",
+            show_alert=True,
+        )
+        return DEPOSIT_SETUP_ACK
+
+    try:
+        attempt_id = int(data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        return ConversationHandler.END
+
+    chat_id = context.chat_data.get("deposit_chat_id") or (
+        query.message.chat.id if query.message else None
+    )
+    attempt = get_pending_bind_attempt(attempt_id)
+    if (
+        attempt is None
+        or chat_id is None
+        or int(attempt.telegram_chat_id) != int(chat_id)
+    ):
+        await query.answer()
+        if query.message:
+            try:
+                await query.edit_message_text(
+                    "This setup expired. Use /deposit to start again."
+                )
+            except Exception:
+                pass
+        _cleanup(context)
+        return ConversationHandler.END
+
+    await query.answer()
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    slug = context.chat_data.get("deposit_setup_slug") or ""
+    variant_text = context.chat_data.get("deposit_setup_variant_text")
+    if not query.message:
+        _cleanup(context)
+        return ConversationHandler.END
+
+    await _send_first_time_payment_destination(
+        query.message.chat,
+        int(chat_id),
+        payment_method_slug=str(slug),
+        variant_response_text=variant_text,
+    )
     return await _complete_deposit_flow(query.message.chat, context)
 
 
@@ -1704,6 +1805,9 @@ def _cleanup(context):
         "deposit_awaiting_amount",
         "deposit_union_shorthand",
         "deposit_union_label",
+        "deposit_setup_attempt_id",
+        "deposit_setup_variant_text",
+        "deposit_setup_slug",
     ):
         context.chat_data.pop(key, None)
 
@@ -1774,6 +1878,10 @@ def get_deposit_handler() -> ConversationHandler:
             ],
             DEPOSIT_SUB: [
                 CallbackQueryHandler(deposit_sub_chosen, pattern=r"^depsub:\d+$"),
+                _DEPOSIT_CANCEL,
+            ],
+            DEPOSIT_SETUP_ACK: [
+                CallbackQueryHandler(deposit_setup_ack, pattern=r"^depft:\d+$"),
                 _DEPOSIT_CANCEL,
             ],
             ConversationHandler.TIMEOUT: [

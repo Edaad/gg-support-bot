@@ -6,6 +6,8 @@ Before a support group can use a configured deposit method in `/deposit`, the ch
 
 Configure per deposit method in the dashboard (**Club → Deposit methods → Venmo/Zelle → First-time deposit linking**).
 
+During setup, the bot shows instructions and the setup code or exact amount first. The player taps **I have read the instructions above** before the payment link or Zelle email is sent.
+
 ## Bind modes (per method)
 
 | Mode | Behavior |

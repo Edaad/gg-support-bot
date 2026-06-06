@@ -17,7 +17,11 @@ from bot.services.payment_method_binding import (
     extract_zelle_details,
     find_existing_venmo_link_for_setup,
     format_first_time_memo_setup_message,
+    format_first_time_memo_instructions_message,
+    format_first_time_amount_instructions_message,
+    format_first_time_payment_destination_message,
     format_first_time_venmo_setup_message,
+    get_pending_bind_attempt,
     get_last_bound_deposit_at,
     match_pending_memo_setup_in_session,
     unbind_chat_from_all_methods,
@@ -288,7 +292,36 @@ class TestZelleExtract(unittest.TestCase):
 
 
 class TestMemoSetupMessage(unittest.TestCase):
-    def test_venmo_memo_html(self):
+    def test_venmo_memo_instructions_no_destination(self):
+        text = format_first_time_memo_instructions_message(payment_method_slug="venmo")
+        self.assertIn("FIRST-TIME VENMO SETUP", text)
+        self.assertIn("setup code below", text)
+        self.assertNotIn("venmo.com", text)
+
+    def test_zelle_memo_instructions_no_destination(self):
+        text = format_first_time_memo_instructions_message(payment_method_slug="zelle")
+        self.assertIn("FIRST-TIME ZELLE SETUP", text)
+        self.assertNotIn("@", text)
+
+    def test_venmo_payment_destination(self):
+        text = format_first_time_payment_destination_message(
+            payment_method_slug="venmo",
+            variant_response_text="Venmo: https://venmo.com/u/testuser",
+        )
+        self.assertIn("venmo.com/u/testuser", text)
+        self.assertNotIn("FIRST-TIME", text)
+
+    def test_zelle_payment_destination(self):
+        text = format_first_time_payment_destination_message(
+            payment_method_slug="zelle",
+            variant_response_text=(
+                "Zelle Email: a@b.com\nZelle Name: ACME INC\n"
+            ),
+        )
+        self.assertIn("a@b.com", text)
+        self.assertIn("ACME", text)
+
+    def test_venmo_memo_html_legacy_combined(self):
         text = format_first_time_memo_setup_message(
             payment_method_slug="venmo",
             variant_response_text="Venmo: https://venmo.com/u/testuser",
@@ -297,7 +330,7 @@ class TestMemoSetupMessage(unittest.TestCase):
         self.assertIn("Copy and paste the code above", text)
         self.assertIn("venmo.com/u/testuser", text)
 
-    def test_zelle_memo_html(self):
+    def test_zelle_memo_html_legacy_combined(self):
         text = format_first_time_memo_setup_message(
             payment_method_slug="zelle",
             variant_response_text=(
@@ -306,6 +339,18 @@ class TestMemoSetupMessage(unittest.TestCase):
         )
         self.assertIn("FIRST-TIME ZELLE SETUP", text)
         self.assertIn("a@b.com", text)
+
+
+class TestAmountInstructionsMessage(unittest.TestCase):
+    def test_instructions_no_setup_amount_or_link(self):
+        text = format_first_time_amount_instructions_message(
+            payment_method_slug="venmo",
+            chosen_amount_cents=9000,
+        )
+        self.assertIn("FIRST-TIME VENMO SETUP", text)
+        self.assertIn("$90.00", text)
+        self.assertNotIn("$89.99", text)
+        self.assertNotIn("venmo.com", text)
 
 
 class TestAllocateSetupAmount(unittest.TestCase):
