@@ -510,6 +510,8 @@ export function listGroupBindings(
     method?: string
     clubId?: number
     boundVia?: BoundViaFilter
+    from?: string
+    to?: string
     limit?: number
     offset?: number
   },
@@ -518,6 +520,8 @@ export function listGroupBindings(
   q.set('method', params.method ?? 'venmo')
   if (params.clubId != null) q.set('club_id', String(params.clubId))
   if (params.boundVia && params.boundVia !== 'all') q.set('bound_via', params.boundVia)
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
   if (params.limit != null) q.set('limit', String(params.limit))
   if (params.offset != null) q.set('offset', String(params.offset))
   return request<GroupBindingList>(`/bindings?${q}`, {}, token)

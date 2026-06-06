@@ -632,6 +632,8 @@ def list_group_bindings(
         None,
         description="Filter by bound_via or alias (e.g. manual)",
     ),
+    from_dt: str | None = Query(None, alias="from"),
+    to_dt: str | None = Query(None, alias="to"),
     limit: int = Query(_DEFAULT_LIMIT),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db_dependency),
@@ -640,6 +642,8 @@ def list_group_bindings(
     if club_id is not None:
         _get_club_or_404(db, club_id)
     limit = _clamp_limit(limit)
+    dt_from = _parse_dt(from_dt)
+    dt_to = _parse_dt(to_dt)
 
     try:
         q = db.query(GroupPaymentMethodBinding).filter(
@@ -647,6 +651,10 @@ def list_group_bindings(
         )
         if club_id is not None:
             q = q.filter(GroupPaymentMethodBinding.club_id == club_id)
+        if dt_from is not None:
+            q = q.filter(GroupPaymentMethodBinding.bound_at >= dt_from)
+        if dt_to is not None:
+            q = q.filter(GroupPaymentMethodBinding.bound_at <= dt_to)
         q = _apply_bound_via_filter(q, GroupPaymentMethodBinding.bound_via, bound_via)
         total = q.count()
         rows = (

@@ -138,6 +138,8 @@ export default function PaymentMethodLinkingAnalytics({
       method,
       clubId: queryClubId,
       boundVia: activeSource,
+      from: activeFrom ? `${activeFrom}T00:00:00Z` : undefined,
+      to: activeTo ? `${activeTo}T23:59:59Z` : undefined,
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
     })
@@ -149,7 +151,7 @@ export default function PaymentMethodLinkingAnalytics({
         setBindings([])
         setBindingsTotal(0)
       })
-  }, [token, queryClubId, activeSource, page, method])
+  }, [token, queryClubId, activeSource, activeFrom, activeTo, page, method])
 
   useEffect(() => {
     loadSummary()
