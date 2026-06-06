@@ -7,6 +7,7 @@ import {
   type BoundViaFilter,
   type GroupBindingRow,
 } from '../api/paymentsClient'
+import KpiStat from './KpiStat'
 
 const PAGE_SIZE = 50
 
@@ -254,36 +255,48 @@ export default function PaymentMethodLinkingAnalytics({
       {summary ? (
         <>
           <div className="mb-6 flex flex-wrap gap-6">
-            <div>
-              <p className="text-slate-400 text-sm">Bound GCs</p>
-              <p className="text-3xl font-semibold">{summary.total_bound}</p>
-            </div>
+            <KpiStat
+              label="Bound GCs"
+              tip={`Support group chats linked to a ${method === 'venmo' ? 'Venmo handle' : 'Zelle recipient'} in the selected filters.`}
+              size="lg"
+            >
+              {summary.total_bound}
+            </KpiStat>
             {funnel && (
               <>
-                <div>
-                  <p className="text-slate-400 text-sm">Setup initiated</p>
-                  <p className="text-lg font-medium">{funnel.initiated}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-sm">Succeeded</p>
-                  <p className="text-lg font-medium text-emerald-400">{funnel.succeeded}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-sm">Expired</p>
-                  <p className="text-lg font-medium">{funnel.expired}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-sm">Pending</p>
-                  <p className="text-lg font-medium">{funnel.pending}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-sm">Success rate</p>
-                  <p className="text-lg font-medium">
-                    {funnel.success_rate != null
-                      ? `${(funnel.success_rate * 100).toFixed(1)}%`
-                      : '—'}
-                  </p>
-                </div>
+                <KpiStat
+                  label="Setup initiated"
+                  tip="First-time linking attempts started when a player sends the special deposit amount or memo code."
+                >
+                  {funnel.initiated}
+                </KpiStat>
+                <KpiStat
+                  label="Succeeded"
+                  tip="Attempts that completed successfully and linked the group chat to the payment account."
+                  valueClassName="text-emerald-400"
+                >
+                  {funnel.succeeded}
+                </KpiStat>
+                <KpiStat
+                  label="Expired"
+                  tip="Attempts that timed out before a matching payment arrived."
+                >
+                  {funnel.expired}
+                </KpiStat>
+                <KpiStat
+                  label="Pending"
+                  tip="Attempts still waiting for a matching payment to complete the link."
+                >
+                  {funnel.pending}
+                </KpiStat>
+                <KpiStat
+                  label="Success rate"
+                  tip="Share of initiated setup attempts that succeeded: succeeded ÷ setup initiated."
+                >
+                  {funnel.success_rate != null
+                    ? `${(funnel.success_rate * 100).toFixed(1)}%`
+                    : '—'}
+                </KpiStat>
               </>
             )}
           </div>

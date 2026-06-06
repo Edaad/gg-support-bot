@@ -5,6 +5,7 @@ import {
   type BoundViaFilter,
   type ZellePaymentSummary,
 } from '../api/paymentsClient'
+import KpiStat from '../components/KpiStat'
 import PaymentMethodLinkingAnalytics from '../components/PaymentMethodLinkingAnalytics'
 
 const SOURCE_FILTER_OPTIONS: { value: BoundViaFilter; label: string }[] = [
@@ -193,32 +194,44 @@ export default function Analytics({ token }: { token: string }) {
           {paymentSummary ? (
             <>
               <div className="mb-6 flex flex-wrap gap-6">
-                <div>
-                  <p className="text-slate-400 text-sm">Total deposits</p>
-                  <p className="text-3xl font-semibold">{paymentSummary.total_payments}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-sm">Total volume</p>
-                  <p className="text-lg font-medium">${fmtMoney(paymentSummary.total_amount_usd)}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-sm">Bound</p>
-                  <p className="text-lg font-medium text-emerald-400">{paymentSummary.bound_count}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-sm">Unbound</p>
-                  <p className="text-lg font-medium">{paymentSummary.unbound_count}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-sm">Auto-bound</p>
-                  <p className="text-lg font-medium">{paymentSummary.auto_bound_count}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-sm">Auto-bind rate</p>
-                  <p className="text-lg font-medium">
-                    {autoBoundRate != null ? `${autoBoundRate.toFixed(1)}%` : '—'}
-                  </p>
-                </div>
+                <KpiStat
+                  label="Total deposits"
+                  tip="Count of Zelle payments received in the selected date range and club filter."
+                  size="lg"
+                >
+                  {paymentSummary.total_payments}
+                </KpiStat>
+                <KpiStat
+                  label="Total volume"
+                  tip="Sum of all Zelle deposit amounts (USD) in the selected filters."
+                >
+                  ${fmtMoney(paymentSummary.total_amount_usd)}
+                </KpiStat>
+                <KpiStat
+                  label="Bound"
+                  tip="Deposits linked to a support group chat."
+                  valueClassName="text-emerald-400"
+                >
+                  {paymentSummary.bound_count}
+                </KpiStat>
+                <KpiStat
+                  label="Unbound"
+                  tip="Deposits not yet linked to any support group chat."
+                >
+                  {paymentSummary.unbound_count}
+                </KpiStat>
+                <KpiStat
+                  label="Auto-bound"
+                  tip="Deposits linked automatically via first-time setup (special amount or memo code), without manual staff action."
+                >
+                  {paymentSummary.auto_bound_count}
+                </KpiStat>
+                <KpiStat
+                  label="Auto-bind rate"
+                  tip="Share of deposits that were auto-bound: auto-bound ÷ total deposits."
+                >
+                  {autoBoundRate != null ? `${autoBoundRate.toFixed(1)}%` : '—'}
+                </KpiStat>
               </div>
 
               {paymentSummary.by_club.length > 0 && (
