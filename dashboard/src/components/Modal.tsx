@@ -5,9 +5,10 @@ type ModalProps = {
   onClose: () => void
   title: string
   children: ReactNode
+  wide?: boolean
 }
 
-export default function Modal({ open, onClose, title, children }: ModalProps) {
+export default function Modal({ open, onClose, title, children, wide = false }: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const titleId = useId()
 
@@ -47,7 +48,7 @@ export default function Modal({ open, onClose, title, children }: ModalProps) {
       }}
     >
       <div
-        className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-xl border border-border bg-surface p-6 shadow-xl"
+        className={`max-h-[90vh] w-full overflow-auto rounded-xl border border-border bg-surface p-6 shadow-xl ${wide ? 'max-w-3xl' : 'max-w-lg'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id={titleId} className="mb-4 text-lg font-semibold text-ink text-balance">

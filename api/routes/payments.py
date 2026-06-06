@@ -860,10 +860,15 @@ def list_bind_attempts(
     method: str = Query("venmo"),
     club_id: int | None = Query(None),
     status: str | None = Query(None),
+    bound_via: str | None = Query(
+        None,
+        description="Filter by bound_via or alias (e.g. manual)",
+    ),
     from_dt: str | None = Query(None, alias="from"),
     to_dt: str | None = Query(None, alias="to"),
     limit: int = Query(_DEFAULT_LIMIT),
     offset: int = Query(0, ge=0),
+    exclude_test_chats: bool = Query(False),
     db: Session = Depends(get_db_dependency),
 ):
     slug = (method or "venmo").strip().lower()
@@ -872,6 +877,7 @@ def list_bind_attempts(
 
     dt_from = _parse_dt(from_dt)
     dt_to = _parse_dt(to_dt)
+    bound_via_values = _resolve_bound_via_filter(bound_via)
     limit = _clamp_limit(limit)
 
     try:
@@ -886,6 +892,14 @@ def list_bind_attempts(
             q = q.filter(PaymentMethodBindAttempt.created_at >= dt_from)
         if dt_to is not None:
             q = q.filter(PaymentMethodBindAttempt.created_at <= dt_to)
+        if bound_via_values and len(bound_via_values) == 1:
+            only = bound_via_values[0]
+            if only in _FIRST_TIME_BOUND_VIA:
+                q = q.filter(PaymentMethodBindAttempt.bind_kind == only)
+        if exclude_test_chats:
+            q = apply_analytics_chat_exclusion(
+                db, q, PaymentMethodBindAttempt.telegram_chat_id
+            )
 
         total = q.count()
         rows = (
@@ -898,15 +912,21 @@ def list_bind_attempts(
         _raise_db_schema_error(exc)
         raise
 
+    club_names: dict[int, str] = {}
     items: list[BindAttemptRead] = []
     for row in rows:
+        cid = int(row.club_id)
+        if cid not in club_names:
+            club = db.query(Club).filter(Club.id == cid).first()
+            club_names[cid] = club.name if club else None
         title, _gg = resolve_group_title(db, int(row.telegram_chat_id))
         amount_cents = int(row.amount_cents) if row.amount_cents is not None else None
         items.append(
             BindAttemptRead(
                 id=int(row.id),
                 telegram_chat_id=int(row.telegram_chat_id),
-                club_id=int(row.club_id),
+                club_id=cid,
+                club_name=club_names.get(cid),
                 payment_method_slug=str(row.payment_method_slug),
                 variant_id=int(row.variant_id),
                 bind_kind=str(getattr(row, "bind_kind", None) or row.bound_via),

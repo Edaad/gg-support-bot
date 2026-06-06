@@ -541,6 +541,61 @@ export function unbindGroupBinding(token: string, bindingId: number) {
   )
 }
 
+export type BindAttemptRow = {
+  id: number
+  telegram_chat_id: number
+  club_id: number
+  club_name: string | null
+  payment_method_slug: string
+  variant_id: number
+  bind_kind: string
+  amount_cents: number | null
+  amount_usd: number | null
+  setup_emoji: string | null
+  status: string
+  bound_via: string
+  venmo_payment_id: number | null
+  zelle_payment_id: number | null
+  group_title: string | null
+  created_at: string
+  expires_at: string
+  completed_at: string | null
+}
+
+export type BindAttemptList = {
+  items: BindAttemptRow[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export function listBindAttempts(
+  token: string,
+  params: {
+    method?: string
+    clubId?: number
+    status?: string
+    boundVia?: BoundViaFilter
+    from?: string
+    to?: string
+    limit?: number
+    offset?: number
+    excludeTestChats?: boolean
+  },
+) {
+  const q = new URLSearchParams()
+  q.set('method', params.method ?? 'venmo')
+  if (params.clubId != null) q.set('club_id', String(params.clubId))
+  if (params.status) q.set('status', params.status)
+  if (params.boundVia && params.boundVia !== 'all') q.set('bound_via', params.boundVia)
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  if (params.excludeTestChats) q.set('exclude_test_chats', 'true')
+  return request<BindAttemptList>(`/bind-attempts?${q}`, {}, token)
+}
+
 export async function fetchAllVenmoPayers(
   token: string,
   params: { clubId: number; q?: string },

@@ -6,6 +6,7 @@ type Props = {
   children: ReactNode
   valueClassName?: string
   size?: 'md' | 'lg'
+  onClick?: () => void
 }
 
 export default function KpiStat({
@@ -14,6 +15,7 @@ export default function KpiStat({
   children,
   valueClassName = '',
   size = 'md',
+  onClick,
 }: Props) {
   const valueSize = size === 'lg' ? 'text-3xl font-semibold' : 'text-lg font-medium'
 
@@ -36,7 +38,17 @@ export default function KpiStat({
           </span>
         </span>
       </p>
-      <p className={`${valueSize} ${valueClassName}`.trim()}>{children}</p>
+      {onClick ? (
+        <button
+          type="button"
+          onClick={onClick}
+          className={`${valueSize} ${valueClassName} rounded px-1 -mx-1 text-left transition-colors hover:bg-slate-800/60 hover:text-slate-100`.trim()}
+        >
+          {children}
+        </button>
+      ) : (
+        <p className={`${valueSize} ${valueClassName}`.trim()}>{children}</p>
+      )}
     </div>
   )
 }

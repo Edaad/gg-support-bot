@@ -273,6 +273,7 @@ class BindAttemptRead(BaseModel):
     id: int
     telegram_chat_id: int
     club_id: int
+    club_name: Optional[str] = None
     payment_method_slug: str
     variant_id: int
     bind_kind: str

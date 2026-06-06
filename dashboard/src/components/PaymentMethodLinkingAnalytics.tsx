@@ -2,14 +2,28 @@ import { useCallback, useEffect, useId, useState } from 'react'
 import { listClubs, type Club } from '../api/client'
 import {
   fetchBindingSummary,
+  listBindAttempts,
   listGroupBindings,
+  type BindAttemptRow,
   type BindingSummary,
   type BoundViaFilter,
   type GroupBindingRow,
 } from '../api/paymentsClient'
 import KpiStat from './KpiStat'
+import Modal from './Modal'
 
 const PAGE_SIZE = 50
+const DRILLDOWN_PAGE_SIZE = 50
+
+type LinkingKpiCategory = 'bound' | 'initiated' | 'succeeded' | 'expired' | 'pending'
+
+const KPI_DRILLDOWN_TITLES: Record<LinkingKpiCategory, string> = {
+  bound: 'Bound group chats',
+  initiated: 'Setup initiated',
+  succeeded: 'Succeeded',
+  expired: 'Expired',
+  pending: 'Pending',
+}
 
 const BOUND_VIA_LABELS: Record<string, string> = {
   special_amount: 'First-time (amount)',
@@ -101,6 +115,14 @@ export default function PaymentMethodLinkingAnalytics({
   const [page, setPage] = useState(0)
   const [err, setErr] = useState('')
 
+  const [drilldown, setDrilldown] = useState<LinkingKpiCategory | null>(null)
+  const [drilldownBindings, setDrilldownBindings] = useState<GroupBindingRow[]>([])
+  const [drilldownAttempts, setDrilldownAttempts] = useState<BindAttemptRow[]>([])
+  const [drilldownTotal, setDrilldownTotal] = useState(0)
+  const [drilldownPage, setDrilldownPage] = useState(0)
+  const [drilldownLoading, setDrilldownLoading] = useState(false)
+  const [drilldownErr, setDrilldownErr] = useState('')
+
   const activeClubId = showFilterBar ? appliedClubId : (externalFilters?.appliedClubId ?? 'all')
   const activeSource = showFilterBar ? appliedSource : (externalFilters?.appliedSource ?? 'all')
   const activeFrom = showFilterBar ? appliedFrom : (externalFilters?.appliedFrom ?? '')
@@ -163,6 +185,76 @@ export default function PaymentMethodLinkingAnalytics({
     loadBindings()
   }, [loadSummary, loadBindings])
 
+  const sharedListParams = {
+    method,
+    clubId: queryClubId,
+    boundVia: activeSource,
+    from: activeFrom ? `${activeFrom}T00:00:00Z` : undefined,
+    to: activeTo ? `${activeTo}T23:59:59Z` : undefined,
+    excludeTestChats,
+  }
+
+  const openDrilldown = (category: LinkingKpiCategory) => {
+    setDrilldown(category)
+    setDrilldownPage(0)
+    setDrilldownErr('')
+  }
+
+  const closeDrilldown = () => {
+    setDrilldown(null)
+    setDrilldownBindings([])
+    setDrilldownAttempts([])
+    setDrilldownTotal(0)
+    setDrilldownPage(0)
+    setDrilldownErr('')
+  }
+
+  useEffect(() => {
+    if (!drilldown) return
+
+    let cancelled = false
+    setDrilldownLoading(true)
+    setDrilldownErr('')
+
+    const load =
+      drilldown === 'bound'
+        ? listGroupBindings(token, {
+            ...sharedListParams,
+            limit: DRILLDOWN_PAGE_SIZE,
+            offset: drilldownPage * DRILLDOWN_PAGE_SIZE,
+          }).then((res) => {
+            if (cancelled) return
+            setDrilldownBindings(res.items)
+            setDrilldownAttempts([])
+            setDrilldownTotal(res.total)
+          })
+        : listBindAttempts(token, {
+            ...sharedListParams,
+            status: drilldown === 'initiated' ? undefined : drilldown,
+            limit: DRILLDOWN_PAGE_SIZE,
+            offset: drilldownPage * DRILLDOWN_PAGE_SIZE,
+          }).then((res) => {
+            if (cancelled) return
+            setDrilldownAttempts(res.items)
+            setDrilldownBindings([])
+            setDrilldownTotal(res.total)
+          })
+
+    load.catch((e: unknown) => {
+      if (cancelled) return
+      setDrilldownBindings([])
+      setDrilldownAttempts([])
+      setDrilldownTotal(0)
+      setDrilldownErr(e instanceof Error ? e.message : 'Could not load group chats.')
+    }).finally(() => {
+      if (!cancelled) setDrilldownLoading(false)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [drilldown, drilldownPage, token, method, queryClubId, activeSource, activeFrom, activeTo, excludeTestChats])
+
   const applyFilters = () => {
     if (showFilterBar) setErr('')
     setAppliedClubId(clubId)
@@ -174,7 +266,14 @@ export default function PaymentMethodLinkingAnalytics({
 
   const funnel = summary?.attempt_funnel
   const totalPages = Math.max(1, Math.ceil(bindingsTotal / PAGE_SIZE))
+  const drilldownPages = Math.max(1, Math.ceil(drilldownTotal / DRILLDOWN_PAGE_SIZE))
   const labels = METHOD_LABELS[method]
+
+  function attemptDetail(row: BindAttemptRow): string {
+    if (row.bind_kind === 'memo_emoji' && row.setup_emoji) return row.setup_emoji
+    if (row.amount_usd != null) return `$${row.amount_usd}`
+    return '—'
+  }
 
   return (
     <section className="mb-6 rounded-lg border border-slate-700 bg-slate-900/50 p-4">
@@ -263,6 +362,7 @@ export default function PaymentMethodLinkingAnalytics({
               label="Bound GCs"
               tip={`Support group chats linked to a ${method === 'venmo' ? 'Venmo handle' : 'Zelle recipient'} in the selected filters.`}
               size="lg"
+              onClick={() => openDrilldown('bound')}
             >
               {summary.total_bound}
             </KpiStat>
@@ -271,6 +371,7 @@ export default function PaymentMethodLinkingAnalytics({
                 <KpiStat
                   label="Setup initiated"
                   tip="First-time linking attempts started when a player sends the special deposit amount or memo code."
+                  onClick={() => openDrilldown('initiated')}
                 >
                   {funnel.initiated}
                 </KpiStat>
@@ -278,18 +379,21 @@ export default function PaymentMethodLinkingAnalytics({
                   label="Succeeded"
                   tip="Attempts that completed successfully and linked the group chat to the payment account."
                   valueClassName="text-emerald-400"
+                  onClick={() => openDrilldown('succeeded')}
                 >
                   {funnel.succeeded}
                 </KpiStat>
                 <KpiStat
                   label="Expired"
                   tip="Attempts that timed out before a matching payment arrived."
+                  onClick={() => openDrilldown('expired')}
                 >
                   {funnel.expired}
                 </KpiStat>
                 <KpiStat
                   label="Pending"
                   tip="Attempts still waiting for a matching payment to complete the link."
+                  onClick={() => openDrilldown('pending')}
                 >
                   {funnel.pending}
                 </KpiStat>
@@ -412,6 +516,103 @@ export default function PaymentMethodLinkingAnalytics({
           </div>
         )}
       </div>
+
+      <Modal
+        open={drilldown != null}
+        onClose={closeDrilldown}
+        title={drilldown ? KPI_DRILLDOWN_TITLES[drilldown] : ''}
+        wide
+      >
+        {drilldownLoading ? (
+          <p className="text-sm text-slate-400">Loading…</p>
+        ) : drilldownErr ? (
+          <p className="text-sm text-red-400">{drilldownErr}</p>
+        ) : drilldownTotal === 0 ? (
+          <p className="text-sm text-slate-500">No group chats in this category.</p>
+        ) : drilldown === 'bound' ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="text-slate-400">
+                  <th className="pb-2 pr-3 font-medium">Group</th>
+                  <th className="pb-2 pr-3 font-medium">Club</th>
+                  <th className="pb-2 pr-3 font-medium">{labels.accountColumn}</th>
+                  <th className="pb-2 pr-3 font-medium">Source</th>
+                  <th className="pb-2 font-medium">Linked</th>
+                </tr>
+              </thead>
+              <tbody>
+                {drilldownBindings.map((row) => (
+                  <tr key={row.id} className="border-t border-slate-800 text-slate-200">
+                    <td className="py-2 pr-3 max-w-[14rem] truncate" title={row.group_title || ''}>
+                      {row.group_title || `chat ${row.telegram_chat_id}`}
+                    </td>
+                    <td className="py-2 pr-3">{row.club_name || '—'}</td>
+                    <td className="py-2 pr-3">{row.venmo_handle || '—'}</td>
+                    <td className="py-2 pr-3">{boundViaLabel(row.bound_via)}</td>
+                    <td className="py-2 whitespace-nowrap">{fmtDate(row.bound_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="text-slate-400">
+                  <th className="pb-2 pr-3 font-medium">Group</th>
+                  <th className="pb-2 pr-3 font-medium">Club</th>
+                  <th className="pb-2 pr-3 font-medium">Method</th>
+                  <th className="pb-2 pr-3 font-medium">Detail</th>
+                  <th className="pb-2 pr-3 font-medium">Status</th>
+                  <th className="pb-2 font-medium">Started</th>
+                </tr>
+              </thead>
+              <tbody>
+                {drilldownAttempts.map((row) => (
+                  <tr key={row.id} className="border-t border-slate-800 text-slate-200">
+                    <td className="py-2 pr-3 max-w-[14rem] truncate" title={row.group_title || ''}>
+                      {row.group_title || `chat ${row.telegram_chat_id}`}
+                    </td>
+                    <td className="py-2 pr-3">{row.club_name || '—'}</td>
+                    <td className="py-2 pr-3">
+                      {BIND_KIND_LABELS[row.bind_kind] ?? row.bind_kind}
+                    </td>
+                    <td className="py-2 pr-3">{attemptDetail(row)}</td>
+                    <td className="py-2 pr-3 capitalize">{row.status}</td>
+                    <td className="py-2 whitespace-nowrap">{fmtDate(row.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {drilldownTotal > DRILLDOWN_PAGE_SIZE && !drilldownLoading && !drilldownErr && (
+          <div className="mt-4 flex items-center justify-end gap-2 text-xs text-slate-400">
+            <button
+              type="button"
+              className="btn-secondary-sm"
+              disabled={drilldownPage === 0}
+              onClick={() => setDrilldownPage((p) => Math.max(0, p - 1))}
+            >
+              Prev
+            </button>
+            <span>
+              Page {drilldownPage + 1} / {drilldownPages} ({drilldownTotal} total)
+            </span>
+            <button
+              type="button"
+              className="btn-secondary-sm"
+              disabled={drilldownPage + 1 >= drilldownPages}
+              onClick={() => setDrilldownPage((p) => p + 1)}
+            >
+              Next
+            </button>
+          </div>
+        )}
+      </Modal>
     </section>
   )
 }
