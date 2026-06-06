@@ -58,8 +58,6 @@ from bot.services.payment_method_binding import (
     format_first_time_memo_instructions_message,
     format_first_time_payment_destination_message,
     format_setup_amount_highlight,
-    format_setup_memo_code_highlight,
-    format_setup_memo_code_message,
     get_chat_binding,
     get_pending_bind_attempt,
     is_chat_method_bound,
@@ -451,30 +449,16 @@ async def _send_first_time_method_setup(
             chat,
             int(chat_id),
             html_text=format_first_time_memo_instructions_message(
-                payment_method_slug=slug, use_html=True
+                payment_method_slug=slug,
+                setup_code=attempt.setup_emoji,
+                use_html=True,
             ),
             plain_text=format_first_time_memo_instructions_message(
-                payment_method_slug=slug, use_html=False
+                payment_method_slug=slug,
+                setup_code=attempt.setup_emoji,
+                use_html=False,
             ),
             log_label="memo_setup_instructions",
-        )
-        await _deposit_send_html_or_plain(
-            chat,
-            int(chat_id),
-            html_text=format_setup_memo_code_highlight(use_html=True),
-            plain_text=format_setup_memo_code_highlight(use_html=False),
-            log_label="memo_setup_highlight",
-        )
-        await _deposit_send_html_or_plain(
-            chat,
-            int(chat_id),
-            html_text=format_setup_memo_code_message(
-                attempt.setup_emoji, use_html=True
-            ),
-            plain_text=format_setup_memo_code_message(
-                attempt.setup_emoji, use_html=False
-            ),
-            log_label="memo_setup_code",
         )
         await _send_first_time_setup_ack_button(chat, int(chat_id), attempt_id=attempt.id)
         return "await_ack"

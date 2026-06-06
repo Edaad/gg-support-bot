@@ -1229,38 +1229,37 @@ def format_setup_memo_code_message(setup_code: str, *, use_html: bool = True) ->
 def format_first_time_memo_instructions_message(
     *,
     payment_method_slug: str,
+    setup_code: str,
     use_html: bool = True,
 ) -> str:
-    """Pre-ack instructions for memo/caption code binding (no code or payment destination)."""
+    """Pre-ack memo setup: instructions + tap-to-copy code (no payment destination)."""
     slug = (payment_method_slug or "").strip().lower()
-    body_middle = (
-        "The exact code helps us match your payment to this chat faster. "
-        "This is a one-time setup step for this payment method. Future deposits "
-        "can be sent normally once your method is linked."
+    code = (setup_code or "").strip()
+    method_label = "Zelle" if slug == "zelle" else "Venmo"
+    future_line = (
+        "This one-time step links your payment method so future deposits "
+        "go through faster."
     )
-    caption_word = "caption"
-    header = "FIRST-TIME ZELLE SETUP" if slug == "zelle" else "FIRST-TIME VENMO SETUP"
-    divider = "────────────────────" if use_html else "--------------------"
+    closing = (
+        "Send your payment, then post a screenshot here — "
+        "we'll confirm and add your chips. Thanks!"
+    )
 
     if use_html:
+        safe_code = html_module.escape(code)
         return (
-            f"<b>{header}</b>\n"
-            f"{divider}\n\n"
-            f"<b>Include the setup code below</b> in your payment {caption_word} "
-            "when you send.\n\n"
-            "<b>Use this code exactly.</b>\n\n"
-            f"{body_middle}\n\n"
-            "After sending, please post a screenshot here. An agent will confirm "
-            "the transaction and add your chips as soon as it comes through."
+            f"<b>One-time {method_label} setup</b>\n\n\n"
+            "Tap the code below to copy it into your payment caption:\n\n\n"
+            f"<code>{safe_code}</code>\n\n\n"
+            f"{future_line}\n\n"
+            f"{closing}"
         )
     return (
-        f"{header}\n"
-        f"{divider}\n\n"
-        f"Include the setup code below in your payment {caption_word} when you send.\n\n"
-        "Use this code exactly.\n\n"
-        f"{body_middle}\n\n"
-        "After sending, please post a screenshot here. An agent will confirm "
-        "the transaction and add your chips as soon as it comes through."
+        f"One-time {method_label} setup\n\n\n"
+        "Tap the code below to copy it into your payment caption:\n\n\n"
+        f"{code}\n\n\n"
+        f"{future_line}\n\n"
+        f"{closing}"
     )
 
 

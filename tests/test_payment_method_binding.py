@@ -292,15 +292,24 @@ class TestZelleExtract(unittest.TestCase):
 
 
 class TestMemoSetupMessage(unittest.TestCase):
-    def test_venmo_memo_instructions_no_destination(self):
-        text = format_first_time_memo_instructions_message(payment_method_slug="venmo")
-        self.assertIn("FIRST-TIME VENMO SETUP", text)
-        self.assertIn("setup code below", text)
+    def test_venmo_memo_instructions_embeds_code(self):
+        text = format_first_time_memo_instructions_message(
+            payment_method_slug="venmo",
+            setup_code="FLOP",
+        )
+        self.assertIn("One-time Venmo setup", text)
+        self.assertIn("Tap the code below", text)
+        self.assertIn("<code>FLOP</code>", text)
+        self.assertIn("future deposits", text)
         self.assertNotIn("venmo.com", text)
 
-    def test_zelle_memo_instructions_no_destination(self):
-        text = format_first_time_memo_instructions_message(payment_method_slug="zelle")
-        self.assertIn("FIRST-TIME ZELLE SETUP", text)
+    def test_zelle_memo_instructions_embeds_code(self):
+        text = format_first_time_memo_instructions_message(
+            payment_method_slug="zelle",
+            setup_code="TURN",
+        )
+        self.assertIn("One-time Zelle setup", text)
+        self.assertIn("<code>TURN</code>", text)
         self.assertNotIn("@", text)
 
     def test_venmo_payment_destination(self):
