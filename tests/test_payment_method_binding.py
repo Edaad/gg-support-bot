@@ -103,16 +103,17 @@ class TestUnbind(unittest.TestCase):
         ):
             session = MagicMock()
             mock_get_db.return_value.__enter__.return_value = session
-            session.query.return_value.filter_by.return_value.all.return_value = [
-                venmo_row,
-                zelle_row,
-            ]
+            binding_q = MagicMock()
+            binding_q.all.return_value = [venmo_row, zelle_row]
+            binding_q.delete.return_value = 0
+            session.query.return_value.filter_by.return_value = binding_q
 
             removed, cancelled = unbind_chat_from_all_methods(-1001)
 
         self.assertEqual(removed, 2)
         self.assertEqual(cancelled, 1)
         self.assertEqual(session.delete.call_count, 2)
+        self.assertEqual(binding_q.delete.call_count, 3)
         cancel_all_mock.assert_called_once()
 
 
@@ -168,8 +169,8 @@ class TestAllocateSetupMemoCode(unittest.TestCase):
 
 
 class TestExistingVenmoLink(unittest.TestCase):
-    def test_finds_payer_binding_first(self):
-        from db.models import GroupPaymentMethodBinding, VenmoPayerBinding
+    def test_finds_payer_binding_on_any_chat(self):
+        from db.models import VenmoPayerBinding
 
         payer_row = VenmoPayerBinding(
             payer_name_normalized="moshe toussoun",
@@ -179,16 +180,9 @@ class TestExistingVenmoLink(unittest.TestCase):
         )
 
         session = MagicMock()
-
-        def _query(model):
-            q = MagicMock()
-            if model is VenmoPayerBinding:
-                q.filter_by.return_value.one_or_none.return_value = payer_row
-            elif model is GroupPaymentMethodBinding:
-                q.filter_by.return_value.one_or_none.return_value = None
-            return q
-
-        session.query.side_effect = _query
+        session.query.return_value.filter_by.return_value.one_or_none.return_value = (
+            payer_row
+        )
 
         found = find_existing_venmo_link_for_setup(
             session,
@@ -200,37 +194,16 @@ class TestExistingVenmoLink(unittest.TestCase):
         self.assertEqual(found.linked_chat_id, -1001)
         self.assertEqual(found.via, "payer_binding")
 
-    def test_falls_back_to_group_binding(self):
-        from db.models import GroupPaymentMethodBinding, VenmoPayerBinding
-
-        group_row = GroupPaymentMethodBinding(
-            telegram_chat_id=-1002,
-            club_id=2,
-            payment_method_slug="venmo",
-            bound_via="memo_emoji",
-        )
-
+    def test_new_payer_allowed_when_group_already_bound(self):
         session = MagicMock()
-
-        def _query(model):
-            q = MagicMock()
-            if model is VenmoPayerBinding:
-                q.filter_by.return_value.one_or_none.return_value = None
-            elif model is GroupPaymentMethodBinding:
-                q.filter_by.return_value.one_or_none.return_value = group_row
-            return q
-
-        session.query.side_effect = _query
+        session.query.return_value.filter_by.return_value.one_or_none.return_value = None
 
         found = find_existing_venmo_link_for_setup(
             session,
             payer_name="New Player",
             setup_chat_id=-1002,
         )
-        self.assertIsNotNone(found)
-        assert found is not None
-        self.assertEqual(found.linked_chat_id, -1002)
-        self.assertEqual(found.via, "group_binding")
+        self.assertIsNone(found)
 
 
 class TestLastBoundDeposit(unittest.TestCase):
@@ -301,6 +274,7 @@ class TestMemoSetupMessage(unittest.TestCase):
         self.assertIn("Tap the code below", text)
         self.assertIn("<code>FLOP</code>", text)
         self.assertIn("future deposits", text)
+        self.assertNotIn("screenshot", text.lower())
         self.assertNotIn("venmo.com", text)
 
     def test_zelle_memo_instructions_embeds_code(self):
@@ -310,6 +284,7 @@ class TestMemoSetupMessage(unittest.TestCase):
         )
         self.assertIn("One-time Zelle setup", text)
         self.assertIn("<code>TURN</code>", text)
+        self.assertNotIn("screenshot", text.lower())
         self.assertNotIn("@", text)
 
     def test_venmo_payment_destination(self):
@@ -318,6 +293,7 @@ class TestMemoSetupMessage(unittest.TestCase):
             variant_response_text="Venmo: https://venmo.com/u/testuser",
         )
         self.assertIn("venmo.com/u/testuser", text)
+        self.assertIn("screenshot", text.lower())
         self.assertNotIn("FIRST-TIME", text)
 
     def test_zelle_payment_destination(self):
@@ -329,6 +305,7 @@ class TestMemoSetupMessage(unittest.TestCase):
         )
         self.assertIn("a@b.com", text)
         self.assertIn("ACME", text)
+        self.assertIn("screenshot", text.lower())
 
     def test_venmo_memo_html_legacy_combined(self):
         text = format_first_time_memo_setup_message(
@@ -356,10 +333,11 @@ class TestAmountInstructionsMessage(unittest.TestCase):
             payment_method_slug="venmo",
             chosen_amount_cents=9000,
         )
-        self.assertIn("FIRST-TIME VENMO SETUP", text)
+        self.assertIn("One-time Venmo setup", text)
         self.assertIn("$90.00", text)
         self.assertNotIn("$89.99", text)
         self.assertNotIn("venmo.com", text)
+        self.assertNotIn("screenshot", text.lower())
 
 
 class TestAllocateSetupAmount(unittest.TestCase):

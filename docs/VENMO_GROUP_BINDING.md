@@ -4,6 +4,14 @@ For the **full Venmo flow** (payment tracking, manual bind, and how setup connec
 
 Before a support group can use a configured deposit method in `/deposit`, the chat may need a **one-time link** step. After linking, deposits use the sticky variant that was confirmed during setup.
 
+**Multiple accounts per group:** One player may use more than one Venmo or Zelle account with the same support group. Each payer name is remembered separately for auto-bind on future payments. The group keeps one sticky deposit variant after the first successful link.
+
+- **First account on an unbound group:** `/deposit` → Venmo/Zelle runs first-time setup automatically.
+- **Already linked:** `/deposit` → Venmo/Zelle shows normal deposit instructions.
+- **Another Venmo/Zelle account:** payment arrives unbound; staff bind it manually (same as any other unbound payment). No separate customer setup flow.
+
+A payer name can only be linked to one support group at a time. If that name is already linked elsewhere, setup is blocked and staff get a warning.
+
 Configure per deposit method in the dashboard (**Club → Deposit methods → Venmo/Zelle → First-time deposit linking**).
 
 During setup, the bot shows instructions and the setup code or exact amount first. The player taps **I have read the instructions above** before the payment link or Zelle email is sent.
@@ -43,7 +51,7 @@ Zelle uses the same deposit setup + DB attempts as Venmo; ingest is via `/api/ze
 /unbindmethod
 ```
 
-Clears **all** `group_payment_method_bindings` for that chat (venmo, zelle, etc.) and cancels **all** pending setup attempts. Available on production and test bots. Staff only.
+Clears **all** `group_payment_method_bindings` for that chat, **all** `venmo_payer_bindings` / `zelle_payer_bindings` for that chat, bind-attempt history, and cancels **all** pending setup attempts. Available on production and test bots. Staff only.
 
 ## Database
 

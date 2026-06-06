@@ -59,8 +59,8 @@ from bot.services.payment_method_binding import (
     format_first_time_payment_destination_message,
     format_setup_amount_highlight,
     get_chat_binding,
-    get_pending_bind_attempt,
     is_chat_method_bound,
+    get_pending_bind_attempt,
     deposit_amount_to_cents,
     start_bind_attempt,
 )
@@ -1055,6 +1055,106 @@ async def _prompt_deposit_methods(
         await message.reply_text(text, reply_markup=markup)
 
 
+async def _run_first_time_method_setup_from_choice(
+    query,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    method_id: int,
+    method: dict,
+    method_slug: str,
+    bind_kind: str,
+) -> int | str:
+    amount = context.chat_data.get("deposit_amount", "?")
+    chat_id = query.message.chat.id if query.message else None
+    if not isinstance(amount, Decimal):
+        await query.edit_message_text("Deposit session expired. Use /deposit again.")
+        return ConversationHandler.END
+    response_data, tier = _pick_deposit_variant_response(
+        method_id,
+        method,
+        amount,
+        chat_id=int(chat_id) if chat_id is not None else None,
+        method_slug=method_slug,
+    )
+    if not response_data:
+        logger.error(
+            "deposit_method_no_variants chat_id=%s method_id=%s slug=%r setup",
+            chat_id,
+            method_id,
+            method_slug,
+        )
+        await query.edit_message_text(
+            "This payment method is not configured yet. Please contact support."
+        )
+        return ConversationHandler.END
+    result = await _send_first_time_method_setup(
+        query,
+        context,
+        method_id=method_id,
+        method=method,
+        method_slug=method_slug,
+        amount=amount,
+        tier=tier,
+        response_data=response_data,
+        bind_kind=bind_kind,
+    )
+    if result == "await_ack":
+        return DEPOSIT_SETUP_ACK
+    if not result:
+        return ConversationHandler.END
+    return await _complete_deposit_flow(query.message.chat, context)
+
+
+async def _run_normal_deposit_from_choice(
+    query,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    method_id: int,
+    method: dict,
+    method_slug: str,
+) -> int | str:
+    amount = context.chat_data.get("deposit_amount", "?")
+    chat_id = query.message.chat.id if query.message else None
+    response_data, tier = _pick_deposit_variant_response(
+        method_id,
+        method,
+        amount,
+        chat_id=chat_id,
+        method_slug=method_slug,
+    )
+    if not response_data and tier:
+        logger.error(
+            "deposit_method_no_variants chat_id=%s method_id=%s tier_id=%s slug=%r",
+            chat_id,
+            method_id,
+            tier.get("id"),
+            method_slug,
+        )
+        await query.edit_message_text(
+            "This payment method is not configured yet. Please contact support."
+        )
+        return ConversationHandler.END
+    ok = await _send_deposit_method_response(
+        query,
+        context,
+        amount=amount,
+        display_name=method["name"],
+        method_id=method_id,
+        method_slug=method_slug,
+        response_data=response_data,
+        method=method,
+        tier=tier,
+    )
+    if not ok:
+        return ConversationHandler.END
+    if isinstance(amount, Decimal):
+        try:
+            record_method_deposit(method_id, amount)
+        except Exception:
+            pass
+    return await _complete_deposit_flow(query.message.chat, context)
+
+
 async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.callback_query:
         return ConversationHandler.END
@@ -1114,87 +1214,29 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
         if chat_id is not None
         else None
     )
-    if (
-        bind_kind
-        and chat_id is not None
-        and not is_chat_method_bound(int(chat_id), method_slug)
-    ):
-        if not isinstance(amount, Decimal):
-            await query.edit_message_text("Deposit session expired. Use /deposit again.")
-            return ConversationHandler.END
-        response_data, tier = _pick_deposit_variant_response(
-            method_id,
-            method,
-            amount,
-            chat_id=int(chat_id),
-            method_slug=method_slug,
-        )
-        if not response_data:
-            logger.error(
-                "deposit_method_no_variants chat_id=%s method_id=%s slug=%r setup",
-                chat_id,
-                method_id,
-                method_slug,
-            )
-            await query.edit_message_text(
-                "This payment method is not configured yet. Please contact support."
-            )
-            return ConversationHandler.END
-        result = await _send_first_time_method_setup(
+    chat_bound = (
+        is_chat_method_bound(int(chat_id), method_slug)
+        if chat_id is not None
+        else False
+    )
+
+    if bind_kind and chat_id is not None and not chat_bound:
+        return await _run_first_time_method_setup_from_choice(
             query,
             context,
             method_id=method_id,
             method=method,
             method_slug=method_slug,
-            amount=amount,
-            tier=tier,
-            response_data=response_data,
             bind_kind=bind_kind,
         )
-        if result == "await_ack":
-            return DEPOSIT_SETUP_ACK
-        if not result:
-            return ConversationHandler.END
-        return await _complete_deposit_flow(query.message.chat, context)
 
-    response_data, tier = _pick_deposit_variant_response(
-        method_id,
-        method,
-        amount,
-        chat_id=chat_id,
-        method_slug=method_slug,
-    )
-    if not response_data and tier:
-        logger.error(
-            "deposit_method_no_variants chat_id=%s method_id=%s tier_id=%s slug=%r",
-            chat_id,
-            method_id,
-            tier.get("id"),
-            method_slug,
-        )
-        await query.edit_message_text(
-            "This payment method is not configured yet. Please contact support."
-        )
-        return ConversationHandler.END
-    ok = await _send_deposit_method_response(
+    return await _run_normal_deposit_from_choice(
         query,
         context,
-        amount=amount,
-        display_name=method["name"],
         method_id=method_id,
-        method_slug=method_slug,
-        response_data=response_data,
         method=method,
-        tier=tier,
+        method_slug=method_slug,
     )
-    if not ok:
-        return ConversationHandler.END
-    if isinstance(amount, Decimal):
-        try:
-            record_method_deposit(method_id, amount)
-        except Exception:
-            pass
-    return await _complete_deposit_flow(query.message.chat, context)
 
 
 async def deposit_setup_ack(update: Update, context: ContextTypes.DEFAULT_TYPE):

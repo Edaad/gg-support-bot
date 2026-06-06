@@ -359,12 +359,16 @@ def unbind_chat_from_method(
 def unbind_chat_from_all_methods(telegram_chat_id: int) -> tuple[int, int]:
     """Remove all payment-method links and cancel all pending setup attempts for a chat.
 
+    Also clears payer-name bindings and bind-attempt history for the chat so every
+    member can run first-time setup again.
+
     Returns (bindings_removed, attempts_cancelled).
     """
+    chat_id = int(telegram_chat_id)
     with get_db() as session:
         rows = (
             session.query(GroupPaymentMethodBinding)
-            .filter_by(telegram_chat_id=int(telegram_chat_id))
+            .filter_by(telegram_chat_id=chat_id)
             .all()
         )
         bindings_removed = len(rows)
@@ -372,8 +376,17 @@ def unbind_chat_from_all_methods(telegram_chat_id: int) -> tuple[int, int]:
             session.delete(row)
         attempts_cancelled = cancel_all_pending_attempts_for_chat(
             session,
-            telegram_chat_id=int(telegram_chat_id),
+            telegram_chat_id=chat_id,
         )
+        session.query(VenmoPayerBinding).filter_by(telegram_chat_id=chat_id).delete(
+            synchronize_session=False
+        )
+        session.query(ZellePayerBinding).filter_by(telegram_chat_id=chat_id).delete(
+            synchronize_session=False
+        )
+        session.query(PaymentMethodBindAttempt).filter_by(
+            telegram_chat_id=chat_id,
+        ).delete(synchronize_session=False)
     if bindings_removed or attempts_cancelled:
         logger.info(
             "group_bindings cleared chat_id=%s bindings_removed=%s attempts_cancelled=%s",
@@ -931,7 +944,7 @@ def find_existing_venmo_link_for_setup(
     payer_name: str,
     setup_chat_id: int,
 ) -> Optional[ExistingVenmoLink]:
-    """Return an existing Venmo link for payer or setup chat, if any."""
+    """Return an existing Venmo link that should block setup (payer bound elsewhere)."""
     normalized = _normalize_payer_name(payer_name)
     payer_row = (
         session.query(VenmoPayerBinding)
@@ -939,23 +952,10 @@ def find_existing_venmo_link_for_setup(
         .one_or_none()
     )
     if payer_row is not None:
+        linked_chat_id = int(payer_row.telegram_chat_id)
         return ExistingVenmoLink(
-            linked_chat_id=int(payer_row.telegram_chat_id),
+            linked_chat_id=linked_chat_id,
             via="payer_binding",
-        )
-
-    group_row = (
-        session.query(GroupPaymentMethodBinding)
-        .filter_by(
-            telegram_chat_id=int(setup_chat_id),
-            payment_method_slug="venmo",
-        )
-        .one_or_none()
-    )
-    if group_row is not None:
-        return ExistingVenmoLink(
-            linked_chat_id=int(setup_chat_id),
-            via="group_binding",
         )
     return None
 
@@ -966,7 +966,7 @@ def find_existing_zelle_link_for_setup(
     payer_name: str,
     setup_chat_id: int,
 ) -> Optional[ExistingVenmoLink]:
-    """Return an existing Zelle link for payer or setup chat, if any."""
+    """Return an existing Zelle link that should block setup (payer bound elsewhere)."""
     normalized = _normalize_payer_name(payer_name)
     payer_row = (
         session.query(ZellePayerBinding)
@@ -974,23 +974,10 @@ def find_existing_zelle_link_for_setup(
         .one_or_none()
     )
     if payer_row is not None:
+        linked_chat_id = int(payer_row.telegram_chat_id)
         return ExistingVenmoLink(
-            linked_chat_id=int(payer_row.telegram_chat_id),
+            linked_chat_id=linked_chat_id,
             via="payer_binding",
-        )
-
-    group_row = (
-        session.query(GroupPaymentMethodBinding)
-        .filter_by(
-            telegram_chat_id=int(setup_chat_id),
-            payment_method_slug="zelle",
-        )
-        .one_or_none()
-    )
-    if group_row is not None:
-        return ExistingVenmoLink(
-            linked_chat_id=int(setup_chat_id),
-            via="group_binding",
         )
     return None
 
@@ -1240,10 +1227,6 @@ def format_first_time_memo_instructions_message(
         "This one-time step links your payment method so future deposits "
         "go through faster."
     )
-    closing = (
-        "Send your payment, then post a screenshot here — "
-        "we'll confirm and add your chips. Thanks!"
-    )
 
     if use_html:
         safe_code = html_module.escape(code)
@@ -1251,15 +1234,13 @@ def format_first_time_memo_instructions_message(
             f"<b>One-time {method_label} setup</b>\n\n\n"
             "Tap the code below to copy it into your payment caption:\n\n\n"
             f"<code>{safe_code}</code>\n\n\n"
-            f"{future_line}\n\n"
-            f"{closing}"
+            f"{future_line}"
         )
     return (
         f"One-time {method_label} setup\n\n\n"
         "Tap the code below to copy it into your payment caption:\n\n\n"
         f"{code}\n\n\n"
-        f"{future_line}\n\n"
-        f"{closing}"
+        f"{future_line}"
     )
 
 
@@ -1272,31 +1253,32 @@ def format_first_time_amount_instructions_message(
     """Pre-ack instructions for special-amount binding (no setup amount or destination)."""
     slug = (payment_method_slug or "").strip().lower()
     chosen_display = _format_amount_display(int(chosen_amount_cents))
-    body_middle = (
-        "The exact amount helps us match your payment to this chat faster. "
-        "This is a one-time setup step for this payment method. Future deposits "
-        "can be sent normally once your method is linked."
+    method_label = "Zelle" if slug == "zelle" else "Venmo"
+    future_line = (
+        "This one-time step links your payment method so future deposits "
+        "go through faster."
     )
-    header = "FIRST-TIME ZELLE SETUP" if slug == "zelle" else "FIRST-TIME VENMO SETUP"
-    divider = "────────────────────" if use_html else "--------------------"
 
     if use_html:
         safe_chosen = html_module.escape(chosen_display)
         return (
-            f"<b>{header}</b>\n"
-            f"{divider}\n\n"
-            "<b>Send the exact amount shown below</b> — not your full deposit amount.\n\n"
-            f"<b>Please do not send {safe_chosen}</b> (no rounding).\n\n"
-            f"{body_middle}\n\n"
-            "Post a screenshot when done. An agent will confirm and add your chips."
+            f"<b>One-time {method_label} setup</b>\n\n\n"
+            "Send the exact amount shown below — not your full deposit amount.\n\n\n"
+            f"<b>Please do not send {safe_chosen}</b> (no rounding).\n\n\n"
+            f"{future_line}"
         )
     return (
-        f"{header}\n"
-        f"{divider}\n\n"
-        "Send the exact amount shown below — not your full deposit amount.\n\n"
-        f"Please do not send {chosen_display} (no rounding).\n\n"
-        f"{body_middle}\n\n"
-        "Post a screenshot when done. An agent will confirm and add your chips."
+        f"One-time {method_label} setup\n\n\n"
+        "Send the exact amount shown below — not your full deposit amount.\n\n\n"
+        f"Please do not send {chosen_display} (no rounding).\n\n\n"
+        f"{future_line}"
+    )
+
+
+def _first_time_payment_closing(*, use_html: bool = True) -> str:
+    return (
+        "Send your payment, then post a screenshot here — "
+        "we'll confirm and add your chips. Thanks!"
     )
 
 
@@ -1306,8 +1288,9 @@ def format_first_time_payment_destination_message(
     variant_response_text: str | None,
     use_html: bool = True,
 ) -> str:
-    """Post-ack payment destination only (Venmo link or Zelle recipient)."""
+    """Post-ack payment destination + send/screenshot reminder."""
     slug = (payment_method_slug or "").strip().lower()
+    closing = _first_time_payment_closing(use_html=use_html)
 
     if slug == "zelle":
         email, name = extract_zelle_details(variant_response_text)
@@ -1318,21 +1301,27 @@ def format_first_time_payment_destination_message(
             if use_html:
                 safe_email = html_module.escape(email_line)
                 safe_name = html_module.escape(name_line)
-                return (
+                destination = (
                     f"<b>ZELLE EMAIL:</b> <code>{safe_email}</code>\n"
                     f"<b>Zelle Name:</b> {safe_name}"
                 )
-            return f"ZELLE EMAIL: {email_line}\nZelle Name: {name_line}"
-        recipient = phone_recipient or "—"
-        if use_html:
-            return f"<b>Zelle:</b> {html_module.escape(recipient)}"
-        return f"Zelle: {recipient}"
+            else:
+                destination = f"ZELLE EMAIL: {email_line}\nZelle Name: {name_line}"
+        else:
+            recipient = phone_recipient or "—"
+            if use_html:
+                destination = f"<b>Zelle:</b> {html_module.escape(recipient)}"
+            else:
+                destination = f"Zelle: {recipient}"
+        return f"{destination}\n\n\n{closing}"
 
     url = extract_venmo_url(variant_response_text) or "—"
     if use_html:
         safe_url = html_module.escape(url, quote=True)
-        return f'<b>Venmo:</b> <a href="{safe_url}">{safe_url}</a>'
-    return f"Venmo: {url}"
+        destination = f'<b>Venmo:</b> <a href="{safe_url}">{safe_url}</a>'
+    else:
+        destination = f"Venmo: {url}"
+    return f"{destination}\n\n\n{closing}"
 
 
 def format_first_time_memo_setup_message(
