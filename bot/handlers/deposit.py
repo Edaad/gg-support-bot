@@ -304,10 +304,13 @@ async def _deposit_send_html_or_plain(
     plain_text: str,
     log_label: str,
     disable_web_page_preview: bool | None = None,
+    reply_markup=None,
 ):
     kwargs: dict = {"text": html_text, "parse_mode": "HTML"}
     if disable_web_page_preview is not None:
         kwargs["disable_web_page_preview"] = disable_web_page_preview
+    if reply_markup is not None:
+        kwargs["reply_markup"] = reply_markup
     try:
         return await _deposit_send_message(chat, int(chat_id), **kwargs)
     except Exception:
@@ -317,16 +320,14 @@ async def _deposit_send_html_or_plain(
             chat_id,
             exc_info=True,
         )
-        return await _deposit_send_message(chat, int(chat_id), text=plain_text)
+        plain_kwargs: dict = {"text": plain_text}
+        if reply_markup is not None:
+            plain_kwargs["reply_markup"] = reply_markup
+        return await _deposit_send_message(chat, int(chat_id), **plain_kwargs)
 
 
-async def _send_first_time_setup_ack_button(
-    chat,
-    chat_id: int,
-    *,
-    attempt_id: int,
-) -> None:
-    markup = InlineKeyboardMarkup(
+def _first_time_setup_ack_markup(*, attempt_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton(
@@ -335,12 +336,6 @@ async def _send_first_time_setup_ack_button(
                 )
             ]
         ]
-    )
-    await _deposit_send_message(
-        chat,
-        int(chat_id),
-        text="Tap below when you are ready for the payment info.",
-        reply_markup=markup,
     )
 
 
@@ -459,8 +454,8 @@ async def _send_first_time_method_setup(
                 use_html=False,
             ),
             log_label="memo_setup_instructions",
+            reply_markup=_first_time_setup_ack_markup(attempt_id=attempt.id),
         )
-        await _send_first_time_setup_ack_button(chat, int(chat_id), attempt_id=attempt.id)
         return "await_ack"
 
     assert deposit_amount_cents is not None and attempt.amount_cents is not None
@@ -485,8 +480,8 @@ async def _send_first_time_method_setup(
         html_text=format_setup_amount_highlight(attempt.amount_cents, use_html=True),
         plain_text=format_setup_amount_highlight(attempt.amount_cents, use_html=False),
         log_label="amount_setup_highlight",
+        reply_markup=_first_time_setup_ack_markup(attempt_id=attempt.id),
     )
-    await _send_first_time_setup_ack_button(chat, int(chat_id), attempt_id=attempt.id)
     return "await_ack"
 
 

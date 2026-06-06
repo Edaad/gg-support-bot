@@ -271,9 +271,11 @@ class TestMemoSetupMessage(unittest.TestCase):
             setup_code="FLOP",
         )
         self.assertIn("One-time Venmo setup", text)
-        self.assertIn("Tap the code below", text)
+        self.assertIn("Tap the code below to copy it", text)
+        self.assertIn("paste it into the payment caption in your Venmo app", text)
         self.assertIn("<code>FLOP</code>", text)
         self.assertIn("future deposits", text)
+        self.assertIn("Tap below when you are ready for the payment info.", text)
         self.assertNotIn("screenshot", text.lower())
         self.assertNotIn("venmo.com", text)
 

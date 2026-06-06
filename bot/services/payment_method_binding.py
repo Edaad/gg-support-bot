@@ -1213,6 +1213,10 @@ def format_setup_memo_code_message(setup_code: str, *, use_html: bool = True) ->
     return code
 
 
+def _first_time_ack_prompt(*, use_html: bool = True) -> str:
+    return "Tap below when you are ready for the payment info."
+
+
 def format_first_time_memo_instructions_message(
     *,
     payment_method_slug: str,
@@ -1223,24 +1227,32 @@ def format_first_time_memo_instructions_message(
     slug = (payment_method_slug or "").strip().lower()
     code = (setup_code or "").strip()
     method_label = "Zelle" if slug == "zelle" else "Venmo"
+    app_label = "Zelle app" if slug == "zelle" else "Venmo app"
     future_line = (
         "This one-time step links your payment method so future deposits "
         "go through faster."
     )
+    copy_line = (
+        f"Tap the code below to copy it, then paste it into the payment "
+        f"caption in your {app_label}:"
+    )
+    ack_line = _first_time_ack_prompt(use_html=use_html)
 
     if use_html:
         safe_code = html_module.escape(code)
         return (
-            f"<b>One-time {method_label} setup</b>\n\n\n"
-            "Tap the code below to copy it into your payment caption:\n\n\n"
-            f"<code>{safe_code}</code>\n\n\n"
-            f"{future_line}"
+            f"<b>One-time {method_label} setup</b>\n\n"
+            f"{copy_line}\n\n"
+            f"<code>{safe_code}</code>\n\n"
+            f"{future_line}\n\n"
+            f"{ack_line}"
         )
     return (
-        f"One-time {method_label} setup\n\n\n"
-        "Tap the code below to copy it into your payment caption:\n\n\n"
-        f"{code}\n\n\n"
-        f"{future_line}"
+        f"One-time {method_label} setup\n\n"
+        f"{copy_line}\n\n"
+        f"{code}\n\n"
+        f"{future_line}\n\n"
+        f"{ack_line}"
     )
 
 
@@ -1262,15 +1274,15 @@ def format_first_time_amount_instructions_message(
     if use_html:
         safe_chosen = html_module.escape(chosen_display)
         return (
-            f"<b>One-time {method_label} setup</b>\n\n\n"
-            "Send the exact amount shown below — not your full deposit amount.\n\n\n"
-            f"<b>Please do not send {safe_chosen}</b> (no rounding).\n\n\n"
+            f"<b>One-time {method_label} setup</b>\n\n"
+            "Send the exact amount shown below — not your full deposit amount.\n\n"
+            f"<b>Please do not send {safe_chosen}</b> (no rounding).\n\n"
             f"{future_line}"
         )
     return (
-        f"One-time {method_label} setup\n\n\n"
-        "Send the exact amount shown below — not your full deposit amount.\n\n\n"
-        f"Please do not send {chosen_display} (no rounding).\n\n\n"
+        f"One-time {method_label} setup\n\n"
+        "Send the exact amount shown below — not your full deposit amount.\n\n"
+        f"Please do not send {chosen_display} (no rounding).\n\n"
         f"{future_line}"
     )
 
@@ -1313,7 +1325,7 @@ def format_first_time_payment_destination_message(
                 destination = f"<b>Zelle:</b> {html_module.escape(recipient)}"
             else:
                 destination = f"Zelle: {recipient}"
-        return f"{destination}\n\n\n{closing}"
+        return f"{destination}\n\n{closing}"
 
     url = extract_venmo_url(variant_response_text) or "—"
     if use_html:
@@ -1321,7 +1333,7 @@ def format_first_time_payment_destination_message(
         destination = f'<b>Venmo:</b> <a href="{safe_url}">{safe_url}</a>'
     else:
         destination = f"Venmo: {url}"
-    return f"{destination}\n\n\n{closing}"
+    return f"{destination}\n\n{closing}"
 
 
 def format_first_time_memo_setup_message(
@@ -1401,11 +1413,13 @@ def format_first_time_memo_setup_message(
 def format_setup_amount_highlight(amount_cents: int, *, use_html: bool = True) -> str:
     """Short standalone message highlighting the exact setup amount."""
     display = _format_amount_display(int(amount_cents))
+    ack_line = _first_time_ack_prompt(use_html=use_html)
     if use_html:
         return (
             f"<b>Send exactly</b>\n<code>{html_module.escape(display)}</code>"
+            f"\n\n{ack_line}"
         )
-    return f"Send exactly:\n  {display}"
+    return f"Send exactly:\n  {display}\n\n{ack_line}"
 
 
 def format_first_time_venmo_setup_message(
