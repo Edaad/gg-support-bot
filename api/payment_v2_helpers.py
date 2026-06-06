@@ -192,6 +192,8 @@ def validate_first_time_linking(method: ClubPaymentMethod) -> None:
         raise ValueError("First-time linking applies to deposit methods only.")
     if slug not in _FIRST_TIME_BIND_SLUGS:
         raise ValueError("First-time linking is only supported for venmo and zelle.")
+    if slug == "zelle" and mode == "memo_emoji":
+        raise ValueError("Memo first-time linking is not supported for Zelle.")
     if mode not in _FIRST_TIME_BIND_MODES:
         raise ValueError("Select a verification method when first-time linking is enabled.")
 

@@ -48,6 +48,11 @@ export default function FirstTimeDepositLinkingSection({
   const docLink =
     slug === 'zelle' ? 'docs/ZELLE_PAYMENTS.md' : 'docs/VENMO_GROUP_BINDING.md'
 
+  const bindVerificationOptions =
+    slug === 'zelle'
+      ? BIND_VERIFICATION_OPTIONS.filter((opt) => opt.value !== 'memo_emoji')
+      : BIND_VERIFICATION_OPTIONS
+
   return (
     <div className="rounded-xl border border-border bg-surface-raised/40 p-4 sm:col-span-2">
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -72,8 +77,8 @@ export default function FirstTimeDepositLinkingSection({
         {enabled && (
           <div className="ml-6 space-y-3">
             <p className="text-xs font-medium text-ink-muted">Verification method</p>
-            <div className="space-y-3" role="radiogroup" aria-label="Verification method">
-              {BIND_VERIFICATION_OPTIONS.map((opt) => (
+              <div className="space-y-3" role="radiogroup" aria-label="Verification method">
+                {bindVerificationOptions.map((opt) => (
                 <label
                   key={opt.value}
                   className="flex cursor-pointer items-start gap-2 text-sm text-ink"
@@ -94,8 +99,14 @@ export default function FirstTimeDepositLinkingSection({
               ))}
             </div>
             <p className="text-xs text-ink-faint">
-              Memo/code mode requires Zapier to send{' '}
-              <code className="text-ink-muted">memo</code> on ingest. See {docLink}.
+              {slug === 'zelle' ? (
+                <>Zelle first-time linking uses exact setup amount only. See {docLink}.</>
+              ) : (
+                <>
+                  Memo/code mode requires Zapier to send{' '}
+                  <code className="text-ink-muted">memo</code> on ingest. See {docLink}.
+                </>
+              )}
             </p>
           </div>
         )}

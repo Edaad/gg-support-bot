@@ -11,7 +11,6 @@ from bot.services.club import get_group_title_for_chat
 from bot.services.payment_method_binding import (
     BOUND_VIA_MANUAL_DASHBOARD,
     BOUND_VIA_MANUAL_NOTIFICATION,
-    BOUND_VIA_MEMO_EMOJI,
     BOUND_VIA_SPECIAL_AMOUNT,
     cancel_pending_attempts_for_chat_in_session,
     cancel_setup_attempt_in_session,
@@ -19,7 +18,6 @@ from bot.services.payment_method_binding import (
     find_existing_zelle_link_for_setup,
     get_last_bound_zelle_deposit_at,
     infer_variant_id_for_zelle_recipient,
-    match_pending_memo_setup_in_session,
     match_pending_zelle_setup_in_session,
     normalize_zelle_recipient,
     record_group_binding_in_session,
@@ -244,19 +242,12 @@ async def ingest_zelle_payment(
         session.add(payment)
         session.flush()
 
-        setup_attempt = match_pending_memo_setup_in_session(
+        setup_attempt = match_pending_zelle_setup_in_session(
             session,
-            payment_method_slug="zelle",
+            amount_cents=amount_cents,
             zelle_recipient=recipient,
-            memo=memo,
         )
-        setup_bound_via = BOUND_VIA_MEMO_EMOJI if setup_attempt else BOUND_VIA_SPECIAL_AMOUNT
-        if setup_attempt is None:
-            setup_attempt = match_pending_zelle_setup_in_session(
-                session,
-                amount_cents=amount_cents,
-                zelle_recipient=recipient,
-            )
+        setup_bound_via = BOUND_VIA_SPECIAL_AMOUNT
         if setup_attempt is not None:
             live_title = resolve_display_group_title(int(setup_attempt.telegram_chat_id))
             club_id_setup = int(setup_attempt.club_id)

@@ -61,6 +61,15 @@ class TestBindModeForMethod(unittest.TestCase):
     def test_missing_club_id_returns_none(self):
         self.assertIsNone(bind_mode_for_method("venmo"))
 
+    def test_zelle_memo_mode_disabled(self):
+        with patch("bot.services.payment_method_binding.get_db") as mock_get_db:
+            session = MagicMock()
+            mock_get_db.return_value.__enter__.return_value = session
+            session.query.return_value.filter_by.return_value.one_or_none.return_value = (
+                _mock_method_row(enabled=True, mode=BIND_KIND_MEMO_EMOJI)
+            )
+            self.assertIsNone(bind_mode_for_method("zelle", club_id=2))
+
 
 class TestUnbind(unittest.TestCase):
     def test_unbind_delegates(self):
@@ -512,7 +521,7 @@ class TestZelleRecipientHelpers(unittest.TestCase):
             zelle_recipient="pay@example.com",
             memo="RIVER setup",
         )
-        self.assertIs(found, attempt)
+        self.assertIsNone(found)
 
         wrong_recipient = match_pending_memo_setup_in_session(
             session,

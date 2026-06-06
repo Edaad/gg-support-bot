@@ -35,6 +35,9 @@ BIND_KIND_MEMO_EMOJI = "memo_emoji"
 
 _BINDABLE_METHOD_SLUGS = frozenset({"venmo", "zelle"})
 
+# Zelle first-time linking uses exact setup amount only (no memo/caption code matching).
+_ZELLE_MEMO_FIRST_TIME_BINDING_ENABLED = False
+
 # Memo/caption setup codes (cycled per pending attempt on a variant).
 SETUP_MEMO_CODE_POOL: tuple[str, ...] = (
     "JIGGITIES",
@@ -115,6 +118,8 @@ def bind_mode_for_method(
         if mode == BIND_KIND_SPECIAL_AMOUNT:
             return BIND_KIND_SPECIAL_AMOUNT
         if mode == BIND_KIND_MEMO_EMOJI:
+            if method_slug == "zelle" and not _ZELLE_MEMO_FIRST_TIME_BINDING_ENABLED:
+                return None
             return BIND_KIND_MEMO_EMOJI
     return None
 
@@ -858,6 +863,8 @@ def match_pending_memo_setup_in_session(
     if not (memo or "").strip():
         return None
     slug = (payment_method_slug or "").strip().lower()
+    if slug == "zelle" and not _ZELLE_MEMO_FIRST_TIME_BINDING_ENABLED:
+        return None
     now = datetime.now(timezone.utc)
     _expire_stale_pending_global(session, now)
     candidates = (
