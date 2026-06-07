@@ -447,6 +447,85 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         send_response.assert_awaited()
 
 
+class DepositResponseContentTestCase(unittest.TestCase):
+    def test_strip_legacy_emoji_does_not_wipe_entire_message(self):
+        only_emoji = "• Please put a random emoji in the payment caption when sending"
+        result = dep._strip_legacy_random_emoji_instruction(
+            {"response_type": "text", "response_text": only_emoji},
+            "zelle",
+        )
+        self.assertEqual(result["response_text"], only_emoji)
+
+    def test_merge_response_layers_falls_back_to_tier(self):
+        variant = {"response_type": "text", "response_text": None}
+        tier = {
+            "response_type": "text",
+            "response_text": "Zelle: 310-567-0961\n\nSend screenshot when done.",
+        }
+        merged = dep._merge_response_layers(variant, tier)
+        self.assertIn("310-567-0961", merged["response_text"])
+
+    def test_prepare_deposit_response_data_uses_tier_copy(self):
+        prepared = dep._prepare_deposit_response_data(
+            {"response_type": "text", "response_text": None},
+            method_slug="zelle",
+            tier={
+                "response_type": "text",
+                "response_text": "Zelle: pay@example.com\nZelle Name: ACME",
+            },
+        )
+        self.assertIn("pay@example.com", prepared["response_text"])
+
+    def test_normalize_photo_type_with_text_only(self):
+        normalized = dep._normalize_misconfigured_response_type(
+            {
+                "response_type": "photo",
+                "response_text": "Zelle: 555-1234",
+                "response_file_id": None,
+            }
+        )
+        self.assertEqual(normalized["response_type"], "text")
+        self.assertTrue(dep._response_data_has_content(normalized))
+
+
+class DepositResponseContentAsyncTestCase(unittest.IsolatedAsyncioTestCase):
+    async def test_zelle_sends_instructions_when_variant_empty_tier_has_copy(self):
+        chat = SimpleNamespace(id=-100123, send_message=AsyncMock())
+        message = SimpleNamespace(chat=chat, message_id=42)
+        query = SimpleNamespace(
+            message=message,
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(
+            chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2},
+            bot_data={},
+        )
+
+        response_data = {"response_type": "text", "response_text": None}
+        tier = {
+            "id": 7,
+            "response_type": "text",
+            "response_text": "Zelle: 310-567-0961\n\nPost a screenshot when done.",
+        }
+
+        with patch.object(dep, "send_response_messages", AsyncMock(return_value=[99])) as send_response:
+            ok = await dep._send_deposit_method_response(
+                query,
+                context,
+                amount=dep.Decimal("49"),
+                display_name="Zelle",
+                method_id=123,
+                method_slug="zelle",
+                response_data=response_data,
+                tier=tier,
+            )
+
+        self.assertTrue(ok)
+        send_response.assert_awaited_once()
+        payload = send_response.await_args.args[1]
+        self.assertIn("310-567-0961", payload["response_text"])
+
+
 if __name__ == "__main__":
     unittest.main()
 

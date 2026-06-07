@@ -106,10 +106,84 @@ def _strip_legacy_random_emoji_instruction(
             continue
         cleaned = _LEGACY_RANDOM_EMOJI_RE.sub("\n", text)
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
-        if cleaned != text:
+        if cleaned != text and cleaned:
             out[field] = cleaned
             changed = True
     return out if changed else data
+
+
+def _response_data_has_content(data: dict | None) -> bool:
+    if not data:
+        return False
+    rtype = (data.get("response_type") or "text").strip().lower()
+    if rtype == "photo":
+        if (data.get("response_file_id") or "").strip():
+            return True
+        return bool((data.get("response_caption") or "").strip())
+    return bool((data.get("response_text") or "").strip())
+
+
+def _merge_response_layers(response_data: dict, *fallback_layers: dict | None) -> dict:
+    """Fill missing variant copy from tier/method when v2 stores text on the parent layer."""
+    merged = dict(response_data)
+    if _response_data_has_content(merged):
+        return merged
+    for layer in fallback_layers:
+        if not layer:
+            continue
+        candidate = dict(merged)
+        for field in ("response_type", "response_text", "response_file_id", "response_caption"):
+            value = layer.get(field)
+            if value is not None:
+                candidate[field] = value
+        if _response_data_has_content(candidate):
+            return candidate
+    return merged
+
+
+def _normalize_misconfigured_response_type(data: dict) -> dict:
+    """Treat text-only rows as text when response_type says photo but file_id is missing."""
+    out = dict(data)
+    rtype = (out.get("response_type") or "text").strip().lower()
+    has_photo = rtype == "photo" and bool((out.get("response_file_id") or "").strip())
+    has_text = bool((out.get("response_text") or "").strip())
+    if rtype == "photo" and not has_photo and has_text:
+        out["response_type"] = "text"
+    return out
+
+
+def _zelle_venmo_destination_fallback(response_data: dict, method_slug: str) -> dict | None:
+    slug = (method_slug or "").strip().lower()
+    if slug not in ("zelle", "venmo"):
+        return None
+    raw = (response_data.get("response_text") or response_data.get("response_caption") or "").strip()
+    if not raw:
+        return None
+    text = format_first_time_payment_destination_message(
+        payment_method_slug=slug,
+        variant_response_text=raw,
+        use_html=False,
+    )
+    if not text.strip():
+        return None
+    return {"response_type": "text", "response_text": text}
+
+
+def _prepare_deposit_response_data(
+    response_data: dict,
+    *,
+    method_slug: str,
+    method: dict | None = None,
+    tier: dict | None = None,
+) -> dict:
+    data = _strip_legacy_random_emoji_instruction(response_data, method_slug)
+    data = _merge_response_layers(data, tier, method)
+    data = _normalize_misconfigured_response_type(data)
+    if not _response_data_has_content(data):
+        fallback = _zelle_venmo_destination_fallback(data, method_slug)
+        if fallback:
+            data = {**data, **fallback}
+    return data
 
 
 def _apply_checkout_layer(target: dict, source: dict | None) -> None:
@@ -288,12 +362,15 @@ def _pick_deposit_variant_response(
         )
         if not response_data:
             return None, tier
+        response_data = _merge_response_layers(response_data, tier, method)
         return _with_method_checkout_settings(response_data, method, tier=tier), tier
 
     response_data = pick_variant(method_id, variant_id=sticky_variant_id)
     if response_data:
+        response_data = _merge_response_layers(response_data, method)
         return _with_method_checkout_settings(response_data, method), None
-    return _with_method_checkout_settings(method, method), None
+    merged = _merge_response_layers(method, method)
+    return _with_method_checkout_settings(merged, method), None
 
 
 async def _deposit_send_html_or_plain(
@@ -1509,7 +1586,12 @@ async def _send_deposit_method_response(
         method=method,
         tier=tier,
     )
-    response_data = _strip_legacy_random_emoji_instruction(response_data, method_slug)
+    response_data = _prepare_deposit_response_data(
+        response_data,
+        method_slug=method_slug,
+        method=method,
+        tier=tier,
+    )
     slug = (method_slug or "").strip().lower()
     use_stripe_checkout = _stripe_checkout_enabled(response_data)
     if (
@@ -1667,6 +1749,19 @@ async def _send_deposit_method_response(
                 "and restart the bot."
             )
             return False
+
+    if not _response_data_has_content(response_data):
+        logger.error(
+            "deposit: empty response after prepare chat_id=%s method_id=%s slug=%r tier_id=%s",
+            chat_id,
+            method_id,
+            slug,
+            tier.get("id") if tier else None,
+        )
+        await query.edit_message_text(
+            "This payment method is not configured yet. Please contact support."
+        )
+        return False
 
     await _send_response(query, response_data, amount, display_name)
     return True
