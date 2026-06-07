@@ -7,9 +7,8 @@ const STRIPE_CHECKOUT_METHOD_SLUGS = new Set(['applepay', 'debitcard', 'stripe']
 
 export function showVariantCheckoutBounds(
   methodSlug: string | undefined,
-  options?: { overrideStripe?: boolean; tierStripeEnabled?: boolean },
+  options?: { tierStripeEnabled?: boolean },
 ): boolean {
-  if (options?.overrideStripe) return true
   if (options?.tierStripeEnabled) return true
   const slug = (methodSlug || '').trim().toLowerCase()
   return STRIPE_CHECKOUT_METHOD_SLUGS.has(slug)

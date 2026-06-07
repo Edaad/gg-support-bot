@@ -9,6 +9,8 @@ from types import SimpleNamespace
 from api.payment_v2_helpers import (
     amounts_overlap,
     clamp_checkout_amount_bounds,
+    sync_tier_checkout_bounds_from_band,
+    sync_tier_checkout_bounds_to_variants,
     sync_method_envelope_side_effects,
     validate_checkout_amount_bounds,
     validate_tier_amount_band,
@@ -114,6 +116,72 @@ class CheckoutAmountBoundsTestCase(unittest.TestCase):
         self.assertEqual(tier.max_amount, Decimal("400"))
         self.assertEqual(variant.checkout_min_amount, Decimal("100"))
         self.assertEqual(variant.checkout_max_amount, Decimal("500"))
+
+
+class TierCheckoutSyncTestCase(unittest.TestCase):
+    def test_tier_max_change_updates_inheriting_variant_max(self):
+        variant = SimpleNamespace(
+            checkout_min_amount=Decimal("20"),
+            checkout_max_amount=Decimal("50"),
+        )
+        tier = SimpleNamespace(
+            min_amount=Decimal("20"),
+            max_amount=Decimal("100"),
+            checkout_min_amount=Decimal("20"),
+            checkout_max_amount=None,
+            variants=[variant],
+        )
+        method = SimpleNamespace(min_amount=Decimal("20"), max_amount=Decimal("10000"), tiers=[tier])
+        sync_tier_checkout_bounds_to_variants(
+            tier,
+            method,
+            prior_min=Decimal("20"),
+            prior_max=Decimal("50"),
+            prior_checkout_min=Decimal("20"),
+            prior_checkout_max=None,
+        )
+        self.assertEqual(variant.checkout_min_amount, Decimal("20"))
+        self.assertEqual(variant.checkout_max_amount, Decimal("100"))
+
+    def test_custom_variant_max_not_overwritten(self):
+        variant = SimpleNamespace(
+            checkout_min_amount=Decimal("20"),
+            checkout_max_amount=Decimal("500"),
+        )
+        tier = SimpleNamespace(
+            min_amount=Decimal("20"),
+            max_amount=Decimal("100"),
+            checkout_min_amount=Decimal("20"),
+            checkout_max_amount=None,
+            variants=[variant],
+        )
+        method = SimpleNamespace(min_amount=Decimal("20"), max_amount=Decimal("10000"), tiers=[tier])
+        sync_tier_checkout_bounds_to_variants(
+            tier,
+            method,
+            prior_min=Decimal("20"),
+            prior_max=Decimal("50"),
+            prior_checkout_min=Decimal("20"),
+            prior_checkout_max=None,
+        )
+        self.assertEqual(variant.checkout_max_amount, Decimal("500"))
+
+    def test_tier_checkout_from_band_updates_null_max(self):
+        tier = SimpleNamespace(
+            min_amount=Decimal("20"),
+            max_amount=Decimal("100"),
+            checkout_min_amount=Decimal("20"),
+            checkout_max_amount=Decimal("50"),
+            variants=[],
+        )
+        sync_tier_checkout_bounds_from_band(
+            tier,
+            prior_min=Decimal("20"),
+            prior_max=Decimal("50"),
+            prior_checkout_min=Decimal("20"),
+            prior_checkout_max=Decimal("50"),
+        )
+        self.assertEqual(tier.checkout_max_amount, Decimal("100"))
 
 
 if __name__ == "__main__":

@@ -1,3 +1,5 @@
+import { apiUrl } from './apiBase'
+
 const BASE = '/api/payments'
 
 async function request<T>(path: string, opts: RequestInit = {}, token?: string): Promise<T> {
@@ -7,7 +9,7 @@ async function request<T>(path: string, opts: RequestInit = {}, token?: string):
   }
   if (token) headers['Authorization'] = `Bearer ${token}`
 
-  const res = await fetch(`${BASE}${path}`, { ...opts, headers })
+  const res = await fetch(apiUrl(`${BASE}${path}`), { ...opts, headers })
 
   if (res.status === 401) {
     localStorage.removeItem('token')

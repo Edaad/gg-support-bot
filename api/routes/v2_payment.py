@@ -12,10 +12,13 @@ from api.payment_v2_helpers import (
     DEFAULT_TIER_LABEL,
     RESPONSE_UPDATE_FIELDS,
     create_empty_default_variant,
+    clamp_checkout_amount_bounds,
     ensure_legacy_tier_before_new_variant,
     is_primary_tier,
     method_needs_variants,
     strip_response_from_tier_payload,
+    sync_tier_checkout_bounds_from_band,
+    sync_tier_checkout_bounds_to_variants,
     sync_method_envelope_side_effects,
     validate_first_time_linking,
     tier_variant_count,
@@ -68,7 +71,12 @@ def _get_method(db: Session, method_id: int) -> ClubPaymentMethod:
 
 
 def _get_tier(db: Session, tier_id: int) -> ClubPaymentTier:
-    tier = db.query(ClubPaymentTier).get(tier_id)
+    tier = (
+        db.query(ClubPaymentTier)
+        .options(joinedload(ClubPaymentTier.variants))
+        .filter(ClubPaymentTier.id == tier_id)
+        .first()
+    )
     if not tier:
         raise HTTPException(404, "Tier not found")
     return tier
@@ -247,8 +255,41 @@ def update_tier(tier_id: int, body: ClubPaymentTierUpdate, db: Session = Depends
     merged_checkout_max = data.get("checkout_max_amount", tier.checkout_max_amount)
     if {"checkout_min_amount", "checkout_max_amount"}.intersection(data.keys()):
         validate_checkout_amount_bounds(method, merged_checkout_min, merged_checkout_max)
+
+    prior_min = tier.min_amount
+    prior_max = tier.max_amount
+    prior_checkout_min = tier.checkout_min_amount
+    prior_checkout_max = tier.checkout_max_amount
+    primary = is_primary_tier(tier, siblings)
+    amount_fields = {"min_amount", "max_amount", "checkout_min_amount", "checkout_max_amount"}
+
     for field, value in data.items():
         setattr(tier, field, value)
+
+    if amount_fields.intersection(data.keys()):
+        sync_tier_checkout_bounds_from_band(
+            tier,
+            prior_min=prior_min,
+            prior_max=prior_max,
+            prior_checkout_min=prior_checkout_min,
+            prior_checkout_max=prior_checkout_max,
+            lock_checkout_min=primary,
+        )
+        sync_tier_checkout_bounds_to_variants(
+            tier,
+            method,
+            prior_min=prior_min,
+            prior_max=prior_max,
+            prior_checkout_min=prior_checkout_min,
+            prior_checkout_max=prior_checkout_max,
+            lock_variant_checkout_min=primary,
+        )
+        tier.checkout_min_amount, tier.checkout_max_amount = clamp_checkout_amount_bounds(
+            method,
+            tier.checkout_min_amount,
+            tier.checkout_max_amount,
+        )
+
     db.flush()
     db.refresh(tier)
     return ClubPaymentTierRead.model_validate(tier)

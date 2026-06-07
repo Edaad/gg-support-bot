@@ -8,10 +8,14 @@ import {
 } from '../api/v2Client'
 import ResponseEditor from './ResponseEditor'
 import { useConfirm } from './ConfirmProvider'
-import { validateCheckoutAmountBounds, PRIMARY_TIER_MIN_TIP, showVariantCheckoutBounds, formatLockedAmountValue } from '../lib/v2TierAmounts'
+import {
+  validateCheckoutAmountBounds,
+  PRIMARY_TIER_MIN_TIP,
+  showVariantCheckoutBounds,
+  formatLockedAmountValue,
+} from '../lib/v2TierAmounts'
 
-function variantSavePayload(form: Partial<V2Variant>, overrideStripe: boolean): Partial<V2Variant> {
-  const useLink = overrideStripe ? Boolean(form.use_group_checkout_link) : null
+function variantSavePayload(form: Partial<V2Variant>): Partial<V2Variant> {
   return {
     label: form.label?.trim(),
     weight: form.weight ?? 1,
@@ -21,16 +25,10 @@ function variantSavePayload(form: Partial<V2Variant>, overrideStripe: boolean): 
     response_caption: form.response_caption ?? '',
     checkout_min_amount: form.checkout_min_amount ?? null,
     checkout_max_amount: form.checkout_max_amount ?? null,
-    use_group_checkout_link: useLink,
-    group_checkout_provider: useLink ? (form.group_checkout_provider ?? 'stripe') : null,
-    hyperlink_text: useLink ? (form.hyperlink_text ?? 'PAY HERE') : null,
+    use_group_checkout_link: null,
+    group_checkout_provider: null,
+    hyperlink_text: null,
   }
-}
-
-const variantFormDefaults: Partial<V2Variant> = {
-  use_group_checkout_link: true,
-  group_checkout_provider: 'stripe',
-  hyperlink_text: 'PAY HERE',
 }
 
 export default function V2VariantEditor({
@@ -43,6 +41,7 @@ export default function V2VariantEditor({
   methodSlug,
   tierStripeEnabled = false,
   isPrimaryTier = false,
+  refreshKey = 0,
 }: {
   token: string
   tierId: number
@@ -53,46 +52,50 @@ export default function V2VariantEditor({
   methodSlug?: string
   tierStripeEnabled?: boolean
   isPrimaryTier?: boolean
+  refreshKey?: number
 }) {
   const askConfirm = useConfirm()
   const variantLabelId = useId()
   const variantWeightId = useId()
   const variantMinId = useId()
   const variantMaxId = useId()
-  const variantProviderId = useId()
-  const variantHyperlinkId = useId()
   const [variants, setVariants] = useState<V2Variant[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [form, setForm] = useState<Partial<V2Variant>>({})
-  const [overrideStripe, setOverrideStripe] = useState(false)
   const [saveError, setSaveError] = useState('')
 
-  const load = () => listV2TierVariants(token, tierId).then(setVariants).catch(() => {})
+  const load = async () => {
+    const rows = await listV2TierVariants(token, tierId).catch(() => [] as V2Variant[])
+    setVariants(rows)
+    if (editId != null) {
+      const current = rows.find((v) => v.id === editId)
+      if (current) {
+        setForm({ ...current })
+      }
+    }
+    return rows
+  }
   useEffect(() => {
-    load()
-  }, [tierId])
+    void load()
+  }, [tierId, refreshKey])
 
   const resetForm = () => {
     setForm({})
-    setOverrideStripe(false)
     setShowAdd(false)
     setEditId(null)
   }
 
   const openAddForm = () => {
     resetForm()
-    setForm({
-      ...variantFormDefaults,
-      ...(requiresVariants && variants.length === 0 ? { label: 'Default' } : {}),
-    })
+    setForm(requiresVariants && variants.length === 0 ? { label: 'Default' } : {})
     setShowAdd(true)
   }
 
   const handleSave = async () => {
     if (!form.label?.trim()) return
     setSaveError('')
-    const payload = variantSavePayload(form, overrideStripe)
+    const payload = variantSavePayload(form)
     if (isPrimaryTier) {
       const existing = editId ? variants.find((v) => v.id === editId) : null
       payload.checkout_min_amount = existing?.checkout_min_amount ?? null
@@ -122,15 +125,7 @@ export default function V2VariantEditor({
 
   const handleEdit = (v: V2Variant) => {
     setEditId(v.id)
-    const hasOverride = v.use_group_checkout_link != null
-    setOverrideStripe(hasOverride)
-    setForm({
-      ...variantFormDefaults,
-      ...v,
-      use_group_checkout_link: v.use_group_checkout_link === true,
-      group_checkout_provider: v.group_checkout_provider ?? 'stripe',
-      hyperlink_text: v.hyperlink_text ?? 'PAY HERE',
-    })
+    setForm({ ...v })
     setSaveError('')
     setShowAdd(true)
   }
@@ -157,12 +152,8 @@ export default function V2VariantEditor({
   const totalWeight = variants.reduce((sum, v) => sum + v.weight, 0)
   const pct = (w: number) => (totalWeight > 0 ? Math.round((w / totalWeight) * 100) : 0)
 
-  const groupLinkEnabled = overrideStripe && Boolean(form.use_group_checkout_link)
-  const provider = (form.group_checkout_provider || '').trim().toLowerCase()
-  const showCheckoutBounds = showVariantCheckoutBounds(methodSlug, {
-    overrideStripe,
-    tierStripeEnabled,
-  })
+  const showCheckoutBounds =
+    isPrimaryTier || showVariantCheckoutBounds(methodSlug, { tierStripeEnabled })
 
   return (
     <div className={embedded ? '' : 'panel-nested mt-3'}>
@@ -185,10 +176,6 @@ export default function V2VariantEditor({
               <span className="rounded bg-success-bg px-1.5 py-0.5 text-xs font-medium text-success-ink">
                 {pct(v.weight)}% (weight: {v.weight})
               </span>
-              {v.use_group_checkout_link === true && <span className="text-xs text-accent">Stripe link</span>}
-              {v.use_group_checkout_link == null && (
-                <span className="text-xs text-ink-muted">Inherits tier Stripe</span>
-              )}
               {(v.checkout_min_amount != null || v.checkout_max_amount != null) && (
                 <span className="text-xs text-ink-muted">
                   {v.checkout_min_amount != null && v.checkout_max_amount != null
@@ -298,7 +285,7 @@ export default function V2VariantEditor({
                 </label>
                 {isPrimaryTier ? (
                   <>
-                    <div className="rounded-lg border border-border bg-control/40 px-3 py-2 text-sm text-ink">
+                    <div className="rounded-lg border border-border bg-control/40 px-3 py-2 text-sm text-ink-muted">
                       {formatLockedAmountValue(form.checkout_min_amount, 'Inherit from tier')}
                     </div>
                     <p className="mt-1 text-xs text-ink-muted">{PRIMARY_TIER_MIN_TIP}</p>
@@ -343,68 +330,6 @@ export default function V2VariantEditor({
               </div>
             </div>
           )}
-
-          <div className="rounded-xl border border-accent/30 bg-bg p-4">
-            <label className="flex items-center gap-2 text-sm text-ink">
-              <input
-                type="checkbox"
-                checked={overrideStripe}
-                onChange={(e) => setOverrideStripe(e.target.checked)}
-                className="h-4 w-4 rounded border-border bg-control text-accent focus:ring-accent"
-              />
-              Override tier Stripe setting
-            </label>
-            {overrideStripe && (
-              <div className="mt-3 space-y-3">
-                <label className="flex items-center gap-2 text-sm text-ink">
-                  <input
-                    type="checkbox"
-                    checked={form.use_group_checkout_link || false}
-                    onChange={(e) => setForm({ ...form, use_group_checkout_link: e.target.checked })}
-                    className="h-4 w-4 rounded border-border bg-control text-accent focus:ring-accent"
-                  />
-                  Stripe checkout enabled
-                </label>
-                {groupLinkEnabled && (
-                  <>
-                    <div>
-                      <label htmlFor={variantProviderId} className="label-field-xs">
-                        Provider
-                      </label>
-                      <select
-                        id={variantProviderId}
-                        value={form.group_checkout_provider ?? 'stripe'}
-                        onChange={(e) => setForm({ ...form, group_checkout_provider: e.target.value })}
-                        className="input-field-sm"
-                      >
-                        <option value="stripe">Stripe</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label htmlFor={variantHyperlinkId} className="label-field-xs">
-                        Hyperlink text
-                      </label>
-                      <input
-                        id={variantHyperlinkId}
-                        value={form.hyperlink_text ?? 'PAY HERE'}
-                        onChange={(e) => setForm({ ...form, hyperlink_text: e.target.value })}
-                        className="input-field-sm"
-                      />
-                      <p className="mt-1 text-xs text-ink-faint">
-                        Put <span className="font-mono text-ink-muted">{'{{hyperlink}}'}</span> in Response Text.
-                      </p>
-                    </div>
-                    {provider !== 'stripe' && (
-                      <p className="text-xs text-warning-ink">Only Stripe is supported right now.</p>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-            {!overrideStripe && (
-              <p className="mt-2 text-xs text-ink-muted">Uses the tier&apos;s Stripe checkout setting.</p>
-            )}
-          </div>
 
           {saveError && (
             <p className="text-xs text-danger-ink" role="alert">

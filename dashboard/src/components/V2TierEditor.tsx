@@ -56,6 +56,9 @@ export default function V2TierEditor({
   const [form, setForm] = useState<Partial<V2Tier>>({})
   const [saveError, setSaveError] = useState('')
   const [expandedTierIds, setExpandedTierIds] = useState<Set<number>>(() => new Set())
+  const [variantRefreshKey, setVariantRefreshKey] = useState(0)
+
+  const bumpVariantEditors = () => setVariantRefreshKey((k) => k + 1)
 
   const tierFormDefaults: Partial<V2Tier> = {
     use_group_checkout_link: false,
@@ -146,7 +149,8 @@ export default function V2TierEditor({
         await createV2Tier(token, methodId, payload)
       }
       resetForm()
-      load()
+      await load()
+      bumpVariantEditors()
     } catch (err: unknown) {
       setSaveError(err instanceof Error ? err.message : 'Could not save tier.')
     }
@@ -284,6 +288,7 @@ export default function V2TierEditor({
                     isPrimaryTier={primary}
                     onSaved={(updated) => {
                       setTiers((prev) => prev.map((row) => (row.id === updated.id ? updated : row)))
+                      bumpVariantEditors()
                     }}
                   />
                 )}
@@ -301,6 +306,7 @@ export default function V2TierEditor({
                       absoluteMin={absoluteMin}
                       absoluteMax={absoluteMax}
                       isPrimaryTier={primary}
+                      refreshKey={variantRefreshKey}
                     />
                   </div>
                 )}

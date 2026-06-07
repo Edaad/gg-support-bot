@@ -173,6 +173,80 @@ def clamp_checkout_amount_bounds(
     return lo, hi
 
 
+def effective_tier_checkout_min(tier: ClubPaymentTier) -> Optional[Decimal]:
+    if tier.checkout_min_amount is not None:
+        return tier.checkout_min_amount
+    return tier.min_amount
+
+
+def effective_tier_checkout_max(tier: ClubPaymentTier) -> Optional[Decimal]:
+    if tier.checkout_max_amount is not None:
+        return tier.checkout_max_amount
+    return tier.max_amount
+
+
+def _inherited_checkout_value(
+    current: Optional[Decimal],
+    prior_effective: Optional[Decimal],
+) -> bool:
+    """True when a checkout bound was unset or matched the tier's previous effective value."""
+    if current is None:
+        return True
+    if prior_effective is not None and current == prior_effective:
+        return True
+    return False
+
+
+def sync_tier_checkout_bounds_from_band(
+    tier: ClubPaymentTier,
+    *,
+    prior_min: Optional[Decimal],
+    prior_max: Optional[Decimal],
+    prior_checkout_min: Optional[Decimal],
+    prior_checkout_max: Optional[Decimal],
+    lock_checkout_min: bool = False,
+) -> None:
+    """Align tier checkout defaults when deposit band or checkout fields change."""
+    prior_eff_min = prior_checkout_min if prior_checkout_min is not None else prior_min
+    prior_eff_max = prior_checkout_max if prior_checkout_max is not None else prior_max
+
+    if not lock_checkout_min:
+        if _inherited_checkout_value(tier.checkout_min_amount, prior_eff_min):
+            tier.checkout_min_amount = tier.min_amount
+    if _inherited_checkout_value(tier.checkout_max_amount, prior_eff_max):
+        tier.checkout_max_amount = tier.max_amount
+
+
+def sync_tier_checkout_bounds_to_variants(
+    tier: ClubPaymentTier,
+    method: ClubPaymentMethod,
+    *,
+    prior_min: Optional[Decimal],
+    prior_max: Optional[Decimal],
+    prior_checkout_min: Optional[Decimal],
+    prior_checkout_max: Optional[Decimal],
+    lock_variant_checkout_min: bool = False,
+) -> None:
+    """Push tier checkout envelope to variants that inherited prior tier values."""
+    prior_eff_min = prior_checkout_min if prior_checkout_min is not None else prior_min
+    prior_eff_max = prior_checkout_max if prior_checkout_max is not None else prior_max
+    new_eff_min = effective_tier_checkout_min(tier)
+    new_eff_max = effective_tier_checkout_max(tier)
+
+    for variant in tier.variants or []:
+        if not lock_variant_checkout_min:
+            if _inherited_checkout_value(variant.checkout_min_amount, prior_eff_min):
+                variant.checkout_min_amount = new_eff_min
+        if _inherited_checkout_value(variant.checkout_max_amount, prior_eff_max):
+            variant.checkout_max_amount = new_eff_max
+
+        variant.checkout_min_amount, variant.checkout_max_amount = clamp_checkout_amount_bounds(
+            method,
+            variant.checkout_min_amount,
+            variant.checkout_max_amount,
+        )
+
+
 def sync_method_envelope_side_effects(method: ClubPaymentMethod) -> None:
     """Clamp tier/variant checkout bounds when method absolute envelope changes."""
     for tier in method.tiers or []:
