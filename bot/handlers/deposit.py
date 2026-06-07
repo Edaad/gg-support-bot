@@ -456,32 +456,33 @@ async def _send_first_time_method_setup(
             log_label="memo_setup_instructions",
             reply_markup=_first_time_setup_ack_markup(attempt_id=attempt.id),
         )
-        return "await_ack"
+    else:
+        assert deposit_amount_cents is not None and attempt.amount_cents is not None
+        await _deposit_send_html_or_plain(
+            chat,
+            int(chat_id),
+            html_text=format_first_time_amount_instructions_message(
+                payment_method_slug=slug,
+                chosen_amount_cents=deposit_amount_cents,
+                use_html=True,
+            ),
+            plain_text=format_first_time_amount_instructions_message(
+                payment_method_slug=slug,
+                chosen_amount_cents=deposit_amount_cents,
+                use_html=False,
+            ),
+            log_label="amount_setup_instructions",
+        )
+        await _deposit_send_html_or_plain(
+            chat,
+            int(chat_id),
+            html_text=format_setup_amount_highlight(attempt.amount_cents, use_html=True),
+            plain_text=format_setup_amount_highlight(attempt.amount_cents, use_html=False),
+            log_label="amount_setup_highlight",
+            reply_markup=_first_time_setup_ack_markup(attempt_id=attempt.id),
+        )
 
-    assert deposit_amount_cents is not None and attempt.amount_cents is not None
-    await _deposit_send_html_or_plain(
-        chat,
-        int(chat_id),
-        html_text=format_first_time_amount_instructions_message(
-            payment_method_slug=slug,
-            chosen_amount_cents=deposit_amount_cents,
-            use_html=True,
-        ),
-        plain_text=format_first_time_amount_instructions_message(
-            payment_method_slug=slug,
-            chosen_amount_cents=deposit_amount_cents,
-            use_html=False,
-        ),
-        log_label="amount_setup_instructions",
-    )
-    await _deposit_send_html_or_plain(
-        chat,
-        int(chat_id),
-        html_text=format_setup_amount_highlight(attempt.amount_cents, use_html=True),
-        plain_text=format_setup_amount_highlight(attempt.amount_cents, use_html=False),
-        log_label="amount_setup_highlight",
-        reply_markup=_first_time_setup_ack_markup(attempt_id=attempt.id),
-    )
+    _schedule_deposit_reminder(context, club_id, int(chat_id), user_id)
     return "await_ack"
 
 
