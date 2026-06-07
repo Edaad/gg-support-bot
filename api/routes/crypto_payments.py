@@ -3,8 +3,10 @@
 import logging
 import os
 
+import httpx
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 
 from bot.services.crypto_payments import (
     WEBHOOK_SECRET_ENV,
@@ -105,9 +107,21 @@ async def ingest_payment(
             logger.warning("crypto ingest: rejected bad request — %s", e)
         raise HTTPException(400, str(e)) from e
     except RuntimeError as e:
-        if debug_notification_enabled():
-            logger.error("crypto ingest: failed — %s", e)
+        logger.error("crypto ingest: failed — %s", e)
         raise HTTPException(503, str(e)) from e
+    except httpx.HTTPStatusError as e:
+        logger.error(
+            "crypto ingest: telegram HTTP error status=%s body=%r",
+            e.response.status_code,
+            e.response.text[:500],
+        )
+        raise HTTPException(503, "Telegram notification failed") from e
+    except SQLAlchemyError as e:
+        logger.exception("crypto ingest: database error")
+        raise HTTPException(400, "Invalid payment data for database storage") from e
+    except Exception:
+        logger.exception("crypto ingest: unhandled error")
+        raise HTTPException(500, "Internal Server Error") from None
 
     return CryptoPaymentIngestResponse(
         payment_id=result.payment_id,
