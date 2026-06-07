@@ -130,6 +130,9 @@ export default function V2TierEditor({
 
     try {
       if (editId) {
+        if (editingPrimary) {
+          payload.min_amount = editingTier?.min_amount ?? null
+        }
         await updateV2Tier(token, editId, payload)
       } else {
         await createV2Tier(token, methodId, payload)
@@ -334,9 +337,16 @@ export default function V2TierEditor({
                 onChange={(e) =>
                   setForm({ ...form, min_amount: e.target.value ? Number(e.target.value) : null })
                 }
-                className="input-field-sm"
+                disabled={editingPrimary}
+                className="input-field-sm disabled:cursor-not-allowed disabled:opacity-60"
                 placeholder={absoluteMin != null ? `≥ ${absoluteMin}` : 'No minimum'}
               />
+              {editingPrimary && (
+                <p className="mt-1 text-xs text-ink-muted">
+                  The default tier minimum cannot be changed here. To use a higher minimum, add a new
+                  amount tier.
+                </p>
+              )}
             </div>
             <div>
               <label htmlFor={tierMaxId} className="label-field-xs">
