@@ -13,7 +13,11 @@ import {
 import V2TierStripePanel from './V2TierStripePanel'
 import V2VariantEditor from './V2VariantEditor'
 import { useConfirm } from './ConfirmProvider'
-import { methodEnvelopeLabel, validateTierAmountBand } from '../lib/v2TierAmounts'
+import {
+  methodEnvelopeLabel,
+  PRIMARY_TIER_MIN_TIP,
+  validateTierAmountBand,
+} from '../lib/v2TierAmounts'
 
 function amountLabel(min: number | null | undefined, max: number | null | undefined): string {
   if (min != null && max != null) return `$${min} – $${max}`
@@ -273,6 +277,7 @@ export default function V2TierEditor({
                     tier={t}
                     absoluteMin={absoluteMin}
                     absoluteMax={absoluteMax}
+                    isPrimaryTier={primary}
                     onSaved={(updated) => {
                       setTiers((prev) => prev.map((row) => (row.id === updated.id ? updated : row)))
                     }}
@@ -289,6 +294,7 @@ export default function V2TierEditor({
                       requiresVariants
                       absoluteMin={absoluteMin}
                       absoluteMax={absoluteMax}
+                      isPrimaryTier={primary}
                     />
                   </div>
                 )}
@@ -338,14 +344,12 @@ export default function V2TierEditor({
                   setForm({ ...form, min_amount: e.target.value ? Number(e.target.value) : null })
                 }
                 disabled={editingPrimary}
+                readOnly={editingPrimary}
                 className="input-field-sm disabled:cursor-not-allowed disabled:opacity-60"
                 placeholder={absoluteMin != null ? `≥ ${absoluteMin}` : 'No minimum'}
               />
               {editingPrimary && (
-                <p className="mt-1 text-xs text-ink-muted">
-                  The default tier minimum cannot be changed here. To use a higher minimum, add a new
-                  amount tier.
-                </p>
+                <p className="mt-1 text-xs text-ink-muted">{PRIMARY_TIER_MIN_TIP}</p>
               )}
             </div>
             <div>

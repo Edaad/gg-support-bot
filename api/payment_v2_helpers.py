@@ -40,6 +40,18 @@ def amounts_overlap(
     return _bound_low(min_a) <= _bound_high(max_b) and _bound_low(min_b) <= _bound_high(max_a)
 
 
+def primary_tier_for_method(siblings: Sequence[ClubPaymentTier]) -> Optional[ClubPaymentTier]:
+    ordered = sorted(siblings, key=lambda t: (t.sort_order, t.id))
+    if not ordered:
+        return None
+    return next((t for t in ordered if t.label == DEFAULT_TIER_LABEL), ordered[0])
+
+
+def is_primary_tier(tier: ClubPaymentTier, siblings: Sequence[ClubPaymentTier]) -> bool:
+    primary = primary_tier_for_method(siblings)
+    return primary is not None and int(tier.id) == int(primary.id)
+
+
 def validate_tier_amount_band(
     method: ClubPaymentMethod,
     tier_min: Optional[Decimal],

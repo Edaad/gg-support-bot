@@ -1213,8 +1213,13 @@ def format_setup_memo_code_message(setup_code: str, *, use_html: bool = True) ->
     return code
 
 
+def _caps(text: str) -> str:
+    """Uppercase player-facing first-time linking instruction copy."""
+    return text.upper()
+
+
 def _first_time_ack_prompt(*, use_html: bool = True) -> str:
-    return "Tap below when you are ready for the payment info."
+    return _caps("Tap below when you are ready for the payment info.")
 
 
 def format_first_time_memo_instructions_message(
@@ -1226,29 +1231,30 @@ def format_first_time_memo_instructions_message(
     """Pre-ack memo setup: instructions + tap-to-copy code (no payment destination)."""
     slug = (payment_method_slug or "").strip().lower()
     code = (setup_code or "").strip()
-    method_label = "Zelle" if slug == "zelle" else "Venmo"
-    app_label = "Zelle app" if slug == "zelle" else "Venmo app"
-    future_line = (
+    method_label = "ZELLE" if slug == "zelle" else "VENMO"
+    app_label = "ZELLE APP" if slug == "zelle" else "VENMO APP"
+    future_line = _caps(
         "This one-time step links your payment method so future deposits "
         "go through faster."
     )
-    copy_line = (
+    copy_line = _caps(
         f"Tap the code below to copy it, then paste it into the payment "
         f"caption in your {app_label}:"
     )
     ack_line = _first_time_ack_prompt(use_html=use_html)
+    title = _caps(f"One-time {method_label} setup")
 
     if use_html:
         safe_code = html_module.escape(code)
         return (
-            f"<b>One-time {method_label} setup</b>\n\n"
+            f"<b>{title}</b>\n\n"
             f"{copy_line}\n\n"
             f"<code>{safe_code}</code>\n\n"
             f"{future_line}\n\n"
             f"{ack_line}"
         )
     return (
-        f"One-time {method_label} setup\n\n"
+        f"{title}\n\n"
         f"{copy_line}\n\n"
         f"{code}\n\n"
         f"{future_line}\n\n"
@@ -1265,30 +1271,33 @@ def format_first_time_amount_instructions_message(
     """Pre-ack instructions for special-amount binding (no setup amount or destination)."""
     slug = (payment_method_slug or "").strip().lower()
     chosen_display = _format_amount_display(int(chosen_amount_cents))
-    method_label = "Zelle" if slug == "zelle" else "Venmo"
-    future_line = (
+    method_label = "ZELLE" if slug == "zelle" else "VENMO"
+    future_line = _caps(
         "This one-time step links your payment method so future deposits "
         "go through faster."
     )
+    title = _caps(f"One-time {method_label} setup")
+    amount_line = _caps("Send the exact amount shown below — not your full deposit amount.")
+    do_not_send = _caps(f"Please do not send {chosen_display} (no rounding).")
 
     if use_html:
         safe_chosen = html_module.escape(chosen_display)
         return (
-            f"<b>One-time {method_label} setup</b>\n\n"
-            "Send the exact amount shown below — not your full deposit amount.\n\n"
-            f"<b>Please do not send {safe_chosen}</b> (no rounding).\n\n"
+            f"<b>{title}</b>\n\n"
+            f"{amount_line}\n\n"
+            f"<b>{_caps(f'Please do not send {safe_chosen} (no rounding).')}</b>\n\n"
             f"{future_line}"
         )
     return (
-        f"One-time {method_label} setup\n\n"
-        "Send the exact amount shown below — not your full deposit amount.\n\n"
-        f"Please do not send {chosen_display} (no rounding).\n\n"
+        f"{title}\n\n"
+        f"{amount_line}\n\n"
+        f"{do_not_send}\n\n"
         f"{future_line}"
     )
 
 
 def _first_time_payment_closing(*, use_html: bool = True) -> str:
-    return (
+    return _caps(
         "Send your payment, then post a screenshot here — "
         "we'll confirm and add your chips. Thanks!"
     )
@@ -1314,25 +1323,25 @@ def format_first_time_payment_destination_message(
                 safe_email = html_module.escape(email_line)
                 safe_name = html_module.escape(name_line)
                 destination = (
-                    f"<b>ZELLE EMAIL:</b> <code>{safe_email}</code>\n"
-                    f"<b>Zelle Name:</b> {safe_name}"
+                    f"<b>{_caps('Zelle email:')}</b> <code>{safe_email}</code>\n"
+                    f"<b>{_caps('Zelle name:')}</b> {safe_name}"
                 )
             else:
-                destination = f"ZELLE EMAIL: {email_line}\nZelle Name: {name_line}"
+                destination = f"{_caps('Zelle email:')} {email_line}\n{_caps('Zelle name:')} {name_line}"
         else:
             recipient = phone_recipient or "—"
             if use_html:
-                destination = f"<b>Zelle:</b> {html_module.escape(recipient)}"
+                destination = f"<b>{_caps('Zelle:')}</b> {html_module.escape(recipient)}"
             else:
-                destination = f"Zelle: {recipient}"
+                destination = f"{_caps('Zelle:')} {recipient}"
         return f"{destination}\n\n{closing}"
 
     url = extract_venmo_url(variant_response_text) or "—"
     if use_html:
         safe_url = html_module.escape(url, quote=True)
-        destination = f'<b>Venmo:</b> <a href="{safe_url}">{safe_url}</a>'
+        destination = f'<b>{_caps("Venmo:")}</b> <a href="{safe_url}">{safe_url}</a>'
     else:
-        destination = f"Venmo: {url}"
+        destination = f"{_caps('Venmo:')} {url}"
     return f"{destination}\n\n{closing}"
 
 
@@ -1344,10 +1353,14 @@ def format_first_time_memo_setup_message(
 ) -> str:
     """First-time setup copy for memo/caption code binding (Venmo or Zelle)."""
     slug = (payment_method_slug or "").strip().lower()
-    body_middle = (
+    body_middle = _caps(
         "The exact code helps us match your payment to this chat faster. "
         "This is a one-time setup step for this payment method. Future deposits "
         "can be sent normally once your method is linked."
+    )
+    after_send = _caps(
+        "After sending, please post a screenshot here. An agent will confirm "
+        "the transaction and add your chips as soon as it comes through."
     )
 
     if slug == "zelle":
@@ -1360,53 +1373,46 @@ def format_first_time_memo_setup_message(
             return (
                 "<b>FIRST-TIME ZELLE SETUP</b>\n"
                 "────────────────────\n\n"
-                "<b>Copy and paste the code above</b> into the caption "
-                "when you send to the Zelle info below.\n\n"
-                "<b>Use this code exactly.</b>\n\n"
+                f"<b>{_caps('Copy and paste the code above')}</b> "
+                f"{_caps('into the caption when you send to the Zelle info below.')}\n\n"
+                f"<b>{_caps('Use this code exactly.')}</b>\n\n"
                 f"{body_middle}\n\n"
-                f"<b>ZELLE EMAIL:</b> <code>{safe_email}</code>\n"
-                f"<b>Zelle Name:</b> {safe_name}\n\n"
-                "After sending, please post a screenshot here. An agent will confirm "
-                "the transaction and add your chips as soon as it comes through."
+                f"<b>{_caps('Zelle email:')}</b> <code>{safe_email}</code>\n"
+                f"<b>{_caps('Zelle name:')}</b> {safe_name}\n\n"
+                f"{after_send}"
             )
         return (
             "FIRST-TIME ZELLE SETUP\n"
             "--------------------\n\n"
-            "Copy and paste the code above into the caption "
-            "when you send to the Zelle info below.\n\n"
-            "Use this code exactly.\n\n"
+            f"{_caps('Copy and paste the code above into the caption when you send to the Zelle info below.')}\n\n"
+            f"{_caps('Use this code exactly.')}\n\n"
             f"{body_middle}\n\n"
-            f"ZELLE EMAIL: {email_line}\n"
-            f"Zelle Name: {name_line}\n\n"
-            "After sending, please post a screenshot here. An agent will confirm "
-            "the transaction and add your chips as soon as it comes through."
+            f"{_caps('Zelle email:')} {email_line}\n"
+            f"{_caps('Zelle name:')} {name_line}\n\n"
+            f"{after_send}"
         )
 
     url = extract_venmo_url(variant_response_text) or "—"
-    caption_word = "caption"
     if use_html:
         safe_url = html_module.escape(url, quote=True)
         return (
             "<b>FIRST-TIME VENMO SETUP</b>\n"
             "────────────────────\n\n"
-            f"<b>Copy and paste the code above</b> into the {caption_word} "
-            "when you send to the Venmo info below.\n\n"
-            "<b>Use this code exactly.</b>\n\n"
+            f"<b>{_caps('Copy and paste the code above')}</b> "
+            f"{_caps('into the caption when you send to the Venmo info below.')}\n\n"
+            f"<b>{_caps('Use this code exactly.')}</b>\n\n"
             f"{body_middle}\n\n"
-            f'<b>Venmo:</b> <a href="{safe_url}">{safe_url}</a>\n\n'
-            "After sending, please post a screenshot here. An agent will confirm "
-            "the transaction and add your chips as soon as it comes through."
+            f'<b>{_caps("Venmo:")}</b> <a href="{safe_url}">{safe_url}</a>\n\n'
+            f"{after_send}"
         )
     return (
         "FIRST-TIME VENMO SETUP\n"
         "--------------------\n\n"
-        f"Copy and paste the code above into the {caption_word} "
-        "when you send to the Venmo info below.\n\n"
-        "Use this code exactly.\n\n"
+        f"{_caps('Copy and paste the code above into the caption when you send to the Venmo info below.')}\n\n"
+        f"{_caps('Use this code exactly.')}\n\n"
         f"{body_middle}\n\n"
-        f"Venmo: {url}\n\n"
-        "After sending, please post a screenshot here. An agent will confirm "
-        "the transaction and add your chips as soon as it comes through."
+        f"{_caps('Venmo:')} {url}\n\n"
+        f"{after_send}"
     )
 
 
@@ -1414,12 +1420,13 @@ def format_setup_amount_highlight(amount_cents: int, *, use_html: bool = True) -
     """Short standalone message highlighting the exact setup amount."""
     display = _format_amount_display(int(amount_cents))
     ack_line = _first_time_ack_prompt(use_html=use_html)
+    send_exactly = _caps("Send exactly")
     if use_html:
         return (
-            f"<b>Send exactly</b>\n<code>{html_module.escape(display)}</code>"
+            f"<b>{send_exactly}</b>\n<code>{html_module.escape(display)}</code>"
             f"\n\n{ack_line}"
         )
-    return f"Send exactly:\n  {display}\n\n{ack_line}"
+    return f"{send_exactly}:\n  {display}\n\n{ack_line}"
 
 
 def format_first_time_venmo_setup_message(
@@ -1433,6 +1440,12 @@ def format_first_time_venmo_setup_message(
     setup_display = _format_amount_display(int(setup_amount_cents))
     chosen_display = _format_amount_display(int(chosen_amount_cents))
     url = extract_venmo_url(variant_response_text) or "—"
+    body_middle = _caps(
+        "The exact amount helps us match your payment to this chat faster. "
+        "This is a one-time setup step for this payment method. Future deposits "
+        "can be sent normally once your method is linked."
+    )
+    post_screenshot = _caps("Post a screenshot when done. An agent will confirm and add your chips.")
 
     if use_html:
         safe_setup = html_module.escape(setup_display)
@@ -1441,27 +1454,23 @@ def format_first_time_venmo_setup_message(
         return (
             "<b>FIRST-TIME VENMO SETUP</b>\n"
             "────────────────────\n\n"
-            "<b>Pay this exact amount only:</b>\n"
+            f"<b>{_caps('Pay this exact amount only:')}</b>\n"
             f"<code>{safe_setup}</code>\n\n"
-            f"<b>Please do not send {safe_chosen}</b> (no rounding).\n\n"
-            "The exact amount helps us match your payment to this chat faster. "
-            "This is a one-time setup step for this payment method. Future deposits "
-            "can be sent normally once your method is linked.\n\n"
-            f'<b>Venmo:</b> <a href="{safe_url}">{safe_url}</a>\n\n'
-            "Post a screenshot when done. An agent will confirm and add your chips."
+            f"<b>{_caps(f'Please do not send {safe_chosen} (no rounding).')}</b>\n\n"
+            f"{body_middle}\n\n"
+            f'<b>{_caps("Venmo:")}</b> <a href="{safe_url}">{safe_url}</a>\n\n'
+            f"{post_screenshot}"
         )
 
     return (
         "FIRST-TIME VENMO SETUP\n"
         "--------------------\n\n"
-        "PAY THIS EXACT AMOUNT ONLY:\n"
+        f"{_caps('Pay this exact amount only:')}\n"
         f"  {setup_display}\n\n"
-        f"Do NOT send {chosen_display} (no rounding).\n\n"
-        "The exact amount helps us match your payment to this chat faster. "
-        "This is a one-time setup step for this payment method. Future deposits "
-        "can be sent normally once your method is linked.\n\n"
-        f"Venmo: {url}\n\n"
-        "Post a screenshot when done. An agent will confirm and add your chips."
+        f"{_caps(f'Please do not send {chosen_display} (no rounding).')}\n\n"
+        f"{body_middle}\n\n"
+        f"{_caps('Venmo:')} {url}\n\n"
+        f"{post_screenshot}"
     )
 
 
@@ -1478,13 +1487,20 @@ def format_first_time_zelle_setup_message(
     email, name = extract_zelle_details(variant_response_text)
     phone_recipient = extract_zelle_recipient_from_text(variant_response_text)
     if email:
-        recipient_line = f"ZELLE EMAIL: {email}"
+        recipient_line = f"{_caps('Zelle email:')} {email}"
         if name:
-            recipient_line += f"\nZelle Name: {name}"
+            recipient_line += f"\n{_caps('Zelle name:')} {name}"
     elif phone_recipient and "@" not in (variant_response_text or ""):
-        recipient_line = f"Zelle: {phone_recipient}"
+        recipient_line = f"{_caps('Zelle:')} {phone_recipient}"
     else:
-        recipient_line = "Zelle: —"
+        recipient_line = f"{_caps('Zelle:')} —"
+
+    body_middle = _caps(
+        "The exact amount helps us match your payment to this chat faster. "
+        "This is a one-time setup step for this payment method. Future deposits "
+        "can be sent normally once your method is linked."
+    )
+    post_screenshot = _caps("Post a screenshot when done. An agent will confirm and add your chips.")
 
     if use_html:
         safe_setup = html_module.escape(setup_display)
@@ -1493,27 +1509,23 @@ def format_first_time_zelle_setup_message(
         return (
             "<b>FIRST-TIME ZELLE SETUP</b>\n"
             "────────────────────\n\n"
-            "<b>Pay this exact amount only:</b>\n"
+            f"<b>{_caps('Pay this exact amount only:')}</b>\n"
             f"<code>{safe_setup}</code>\n\n"
-            f"<b>Please do not send {safe_chosen}</b> (no rounding).\n\n"
-            "The exact amount helps us match your payment to this chat faster. "
-            "This is a one-time setup step for this payment method. Future deposits "
-            "can be sent normally once your method is linked.\n\n"
+            f"<b>{_caps(f'Please do not send {safe_chosen} (no rounding).')}</b>\n\n"
+            f"{body_middle}\n\n"
             f"{safe_recipient}\n\n"
-            "Post a screenshot when done. An agent will confirm and add your chips."
+            f"{post_screenshot}"
         )
 
     return (
         "FIRST-TIME ZELLE SETUP\n"
         "--------------------\n\n"
-        "PAY THIS EXACT AMOUNT ONLY:\n"
+        f"{_caps('Pay this exact amount only:')}\n"
         f"  {setup_display}\n\n"
-        f"Do NOT send {chosen_display} (no rounding).\n\n"
-        "The exact amount helps us match your payment to this chat faster. "
-        "This is a one-time setup step for this payment method. Future deposits "
-        "can be sent normally once your method is linked.\n\n"
+        f"{_caps(f'Please do not send {chosen_display} (no rounding).')}\n\n"
+        f"{body_middle}\n\n"
         f"{recipient_line}\n\n"
-        "Post a screenshot when done. An agent will confirm and add your chips."
+        f"{post_screenshot}"
     )
 
 

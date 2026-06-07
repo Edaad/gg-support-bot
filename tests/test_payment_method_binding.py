@@ -270,12 +270,12 @@ class TestMemoSetupMessage(unittest.TestCase):
             payment_method_slug="venmo",
             setup_code="FLOP",
         )
-        self.assertIn("One-time Venmo setup", text)
-        self.assertIn("Tap the code below to copy it", text)
-        self.assertIn("paste it into the payment caption in your Venmo app", text)
+        self.assertIn("ONE-TIME VENMO SETUP", text)
+        self.assertIn("TAP THE CODE BELOW TO COPY IT", text)
+        self.assertIn("PASTE IT INTO THE PAYMENT CAPTION IN YOUR VENMO APP", text)
         self.assertIn("<code>FLOP</code>", text)
-        self.assertIn("future deposits", text)
-        self.assertIn("Tap below when you are ready for the payment info.", text)
+        self.assertIn("FUTURE DEPOSITS", text)
+        self.assertIn("TAP BELOW WHEN YOU ARE READY FOR THE PAYMENT INFO.", text)
         self.assertNotIn("screenshot", text.lower())
         self.assertNotIn("venmo.com", text)
 
@@ -284,7 +284,7 @@ class TestMemoSetupMessage(unittest.TestCase):
             payment_method_slug="zelle",
             setup_code="TURN",
         )
-        self.assertIn("One-time Zelle setup", text)
+        self.assertIn("ONE-TIME ZELLE SETUP", text)
         self.assertIn("<code>TURN</code>", text)
         self.assertNotIn("screenshot", text.lower())
         self.assertNotIn("@", text)
@@ -295,7 +295,7 @@ class TestMemoSetupMessage(unittest.TestCase):
             variant_response_text="Venmo: https://venmo.com/u/testuser",
         )
         self.assertIn("venmo.com/u/testuser", text)
-        self.assertIn("screenshot", text.lower())
+        self.assertIn("SCREENSHOT", text)
         self.assertNotIn("FIRST-TIME", text)
 
     def test_zelle_payment_destination(self):
@@ -307,7 +307,7 @@ class TestMemoSetupMessage(unittest.TestCase):
         )
         self.assertIn("a@b.com", text)
         self.assertIn("ACME", text)
-        self.assertIn("screenshot", text.lower())
+        self.assertIn("SCREENSHOT", text)
 
     def test_venmo_memo_html_legacy_combined(self):
         text = format_first_time_memo_setup_message(
@@ -315,7 +315,7 @@ class TestMemoSetupMessage(unittest.TestCase):
             variant_response_text="Venmo: https://venmo.com/u/testuser",
         )
         self.assertIn("FIRST-TIME VENMO SETUP", text)
-        self.assertIn("Copy and paste the code above", text)
+        self.assertIn("COPY AND PASTE THE CODE ABOVE", text)
         self.assertIn("venmo.com/u/testuser", text)
 
     def test_zelle_memo_html_legacy_combined(self):
@@ -335,7 +335,7 @@ class TestAmountInstructionsMessage(unittest.TestCase):
             payment_method_slug="venmo",
             chosen_amount_cents=9000,
         )
-        self.assertIn("One-time Venmo setup", text)
+        self.assertIn("ONE-TIME VENMO SETUP", text)
         self.assertIn("$90.00", text)
         self.assertNotIn("$89.99", text)
         self.assertNotIn("venmo.com", text)
@@ -377,7 +377,7 @@ class TestSetupMessage(unittest.TestCase):
         self.assertIn("$89.99", text)
         self.assertIn("$90.00", text)
         self.assertIn("<code>$89.99</code>", text)
-        self.assertIn("Pay this exact amount only", text)
+        self.assertIn("PAY THIS EXACT AMOUNT ONLY", text)
         self.assertIn("FIRST-TIME VENMO SETUP", text)
         self.assertIn("venmo.com/u/club-round", text)
 

@@ -1,6 +1,6 @@
 import { useId, useState, useEffect } from 'react'
 import { listV2Tiers, updateV2Tier, type V2Tier } from '../api/v2Client'
-import { validateCheckoutAmountBounds } from '../lib/v2TierAmounts'
+import { validateCheckoutAmountBounds, PRIMARY_TIER_MIN_TIP } from '../lib/v2TierAmounts'
 
 function stripeSavePayload(form: Partial<V2Tier>): Partial<V2Tier> {
   const useLink = Boolean(form.use_group_checkout_link)
@@ -30,6 +30,7 @@ export default function V2TierStripePanel({
   onSaved,
   absoluteMin,
   absoluteMax,
+  isPrimaryTier = false,
 }: {
   token: string
   methodId: number
@@ -37,6 +38,7 @@ export default function V2TierStripePanel({
   onSaved: (tier: V2Tier) => void
   absoluteMin?: number | null
   absoluteMax?: number | null
+  isPrimaryTier?: boolean
 }) {
   const providerFieldId = useId()
   const hyperlinkFieldId = useId()
@@ -65,6 +67,9 @@ export default function V2TierStripePanel({
     setSaving(true)
     setSaveError('')
     const payload = stripeSavePayload(form)
+    if (isPrimaryTier) {
+      payload.checkout_min_amount = tier.checkout_min_amount ?? null
+    }
     const boundsError = validateCheckoutAmountBounds(
       absoluteMin,
       absoluteMax,
@@ -174,11 +179,16 @@ export default function V2TierStripePanel({
                       checkout_min_amount: e.target.value ? Number(e.target.value) : null,
                     }))
                   }
-                  className="input-field-sm"
+                  disabled={isPrimaryTier}
+                  readOnly={isPrimaryTier}
+                  className="input-field-sm disabled:cursor-not-allowed disabled:opacity-60"
                   placeholder="Optional"
                   min={absoluteMin ?? undefined}
                   max={absoluteMax ?? undefined}
                 />
+                {isPrimaryTier && (
+                  <p className="mt-1 text-xs text-ink-muted">{PRIMARY_TIER_MIN_TIP}</p>
+                )}
               </div>
               <div>
                 <label htmlFor={checkoutMaxId} className="label-field-xs">

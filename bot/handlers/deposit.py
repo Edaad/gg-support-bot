@@ -175,14 +175,16 @@ def _prepare_deposit_response_data(
     method_slug: str,
     method: dict | None = None,
     tier: dict | None = None,
+    allow_destination_fallback: bool = True,
 ) -> dict:
     data = _strip_legacy_random_emoji_instruction(response_data, method_slug)
     data = _merge_response_layers(data, tier, method)
     data = _normalize_misconfigured_response_type(data)
     if not _response_data_has_content(data):
-        fallback = _zelle_venmo_destination_fallback(data, method_slug)
-        if fallback:
-            data = {**data, **fallback}
+        if allow_destination_fallback:
+            fallback = _zelle_venmo_destination_fallback(data, method_slug)
+            if fallback:
+                data = {**data, **fallback}
     return data
 
 
@@ -408,7 +410,7 @@ def _first_time_setup_ack_markup(*, attempt_id: int) -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton(
-                    "I have read the instructions above",
+                    "I HAVE READ THE INSTRUCTIONS ABOVE",
                     callback_data=f"depft:{attempt_id}",
                 )
             ]
@@ -420,27 +422,17 @@ async def _send_first_time_payment_destination(
     chat,
     chat_id: int,
     *,
-    payment_method_slug: str,
-    variant_response_text: str | None,
+    response_data: dict,
 ) -> bool:
-    slug = (payment_method_slug or "").strip().lower()
-    html_text = format_first_time_payment_destination_message(
-        payment_method_slug=slug,
-        variant_response_text=variant_response_text,
-        use_html=True,
-    )
-    plain_text = format_first_time_payment_destination_message(
-        payment_method_slug=slug,
-        variant_response_text=variant_response_text,
-        use_html=False,
-    )
-    await _deposit_send_html_or_plain(
-        chat,
+    if not _response_data_has_content(response_data):
+        logger.warning(
+            "first_time_destination: empty dashboard response chat_id=%s",
+            chat_id,
+        )
+        return False
+    _track_deposit_info_messages(
         int(chat_id),
-        html_text=html_text,
-        plain_text=plain_text,
-        log_label="first_time_destination",
-        disable_web_page_preview=False,
+        await send_response_messages(chat, response_data),
     )
     return True
 
@@ -501,9 +493,6 @@ async def _send_first_time_method_setup(
 
     _schedule_bind_attempt_expiry(context, attempt.id)
 
-    variant_text = response_data.get("response_text") or response_data.get(
-        "response_caption"
-    )
     _reset_deposit_info_messages(int(chat_id))
     await query.edit_message_text(
         f"Deposit via {method_name} — one-time setup"
@@ -512,8 +501,13 @@ async def _send_first_time_method_setup(
         _track_deposit_info_message(int(chat_id), query.message.message_id)
 
     context.chat_data["deposit_setup_attempt_id"] = attempt.id
-    context.chat_data["deposit_setup_variant_text"] = variant_text
-    context.chat_data["deposit_setup_slug"] = slug
+    context.chat_data["deposit_setup_response_data"] = _prepare_deposit_response_data(
+        response_data,
+        method_slug=slug,
+        method=method,
+        tier=tier,
+        allow_destination_fallback=False,
+    )
 
     chat = query.message.chat
     if bind_kind == BIND_KIND_MEMO_EMOJI and attempt.setup_emoji:
@@ -1359,8 +1353,7 @@ async def deposit_setup_ack(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-    slug = context.chat_data.get("deposit_setup_slug") or ""
-    variant_text = context.chat_data.get("deposit_setup_variant_text")
+    response_data = context.chat_data.get("deposit_setup_response_data") or {}
     if not query.message:
         _cleanup(context)
         return ConversationHandler.END
@@ -1368,8 +1361,7 @@ async def deposit_setup_ack(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _send_first_time_payment_destination(
         query.message.chat,
         int(chat_id),
-        payment_method_slug=str(slug),
-        variant_response_text=variant_text,
+        response_data=response_data,
     )
     return await _complete_deposit_flow(query.message.chat, context)
 
@@ -1923,8 +1915,7 @@ def _cleanup(context):
         "deposit_union_shorthand",
         "deposit_union_label",
         "deposit_setup_attempt_id",
-        "deposit_setup_variant_text",
-        "deposit_setup_slug",
+        "deposit_setup_response_data",
     ):
         context.chat_data.pop(key, None)
 

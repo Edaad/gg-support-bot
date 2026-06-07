@@ -13,6 +13,7 @@ from api.payment_v2_helpers import (
     RESPONSE_UPDATE_FIELDS,
     create_empty_default_variant,
     ensure_legacy_tier_before_new_variant,
+    is_primary_tier,
     method_needs_variants,
     strip_response_from_tier_payload,
     sync_method_envelope_side_effects,
@@ -220,6 +221,10 @@ def update_tier(tier_id: int, body: ClubPaymentTierUpdate, db: Session = Depends
     tier = _get_tier(db, tier_id)
     method = _get_method(db, tier.method_id)
     data = body.model_dump(exclude_unset=True)
+    siblings = list(method.tiers or [])
+    if is_primary_tier(tier, siblings):
+        data.pop("min_amount", None)
+        data.pop("checkout_min_amount", None)
     if method_needs_variants(method):
         blocked = RESPONSE_UPDATE_FIELDS.intersection(data.keys())
         if blocked:
@@ -279,12 +284,15 @@ def create_tier_variant(tier_id: int, body: ClubPaymentTierVariantCreate, db: Se
     method = _get_method(db, tier.method_id)
     if body.weight < 1:
         raise HTTPException(400, "Weight must be at least 1")
-    validate_checkout_amount_bounds(method, body.checkout_min_amount, body.checkout_max_amount)
+    variant_data = body.model_dump()
+    if is_primary_tier(tier, list(method.tiers or [])):
+        variant_data["checkout_min_amount"] = None
+    validate_checkout_amount_bounds(method, variant_data["checkout_min_amount"], variant_data["checkout_max_amount"])
     ensure_legacy_tier_before_new_variant(db, tier)
     variant = ClubPaymentTierVariant(
         method_id=tier.method_id,
         tier_id=tier_id,
-        **body.model_dump(),
+        **variant_data,
     )
     db.add(variant)
     db.flush()
@@ -296,7 +304,10 @@ def create_tier_variant(tier_id: int, body: ClubPaymentTierVariantCreate, db: Se
 def update_variant(variant_id: int, body: ClubPaymentTierVariantUpdate, db: Session = Depends(get_db_dependency)):
     variant = _get_variant(db, variant_id)
     method = _get_method(db, variant.method_id)
+    tier = _get_tier(db, variant.tier_id)
     data = body.model_dump(exclude_unset=True)
+    if is_primary_tier(tier, list(method.tiers or [])):
+        data.pop("checkout_min_amount", None)
     if "weight" in data and data["weight"] < 1:
         raise HTTPException(400, "Weight must be at least 1")
     merged_checkout_min = data.get("checkout_min_amount", variant.checkout_min_amount)

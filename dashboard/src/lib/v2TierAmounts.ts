@@ -1,5 +1,8 @@
 import type { V2Tier } from '../api/v2Client'
 
+export const PRIMARY_TIER_MIN_TIP =
+  'The default tier minimum cannot be changed here. To use a higher minimum, add a new amount tier.'
+
 const AMOUNT_LOW = -1_000_000_000
 const AMOUNT_HIGH = 1_000_000_000
 

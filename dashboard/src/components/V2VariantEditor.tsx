@@ -8,7 +8,7 @@ import {
 } from '../api/v2Client'
 import ResponseEditor from './ResponseEditor'
 import { useConfirm } from './ConfirmProvider'
-import { validateCheckoutAmountBounds } from '../lib/v2TierAmounts'
+import { validateCheckoutAmountBounds, PRIMARY_TIER_MIN_TIP } from '../lib/v2TierAmounts'
 
 function variantSavePayload(form: Partial<V2Variant>, overrideStripe: boolean): Partial<V2Variant> {
   const useLink = overrideStripe ? Boolean(form.use_group_checkout_link) : null
@@ -40,6 +40,7 @@ export default function V2VariantEditor({
   requiresVariants = false,
   absoluteMin,
   absoluteMax,
+  isPrimaryTier = false,
 }: {
   token: string
   tierId: number
@@ -47,6 +48,7 @@ export default function V2VariantEditor({
   requiresVariants?: boolean
   absoluteMin?: number | null
   absoluteMax?: number | null
+  isPrimaryTier?: boolean
 }) {
   const askConfirm = useConfirm()
   const variantLabelId = useId()
@@ -87,6 +89,12 @@ export default function V2VariantEditor({
     if (!form.label?.trim()) return
     setSaveError('')
     const payload = variantSavePayload(form, overrideStripe)
+    if (isPrimaryTier && editId) {
+      const existing = variants.find((v) => v.id === editId)
+      if (existing) {
+        payload.checkout_min_amount = existing.checkout_min_amount ?? null
+      }
+    }
     const boundsError = validateCheckoutAmountBounds(
       absoluteMin,
       absoluteMax,
@@ -291,11 +299,16 @@ export default function V2VariantEditor({
                     checkout_min_amount: e.target.value ? Number(e.target.value) : null,
                   })
                 }
-                className="input-field-sm"
+                disabled={isPrimaryTier}
+                readOnly={isPrimaryTier}
+                className="input-field-sm disabled:cursor-not-allowed disabled:opacity-60"
                 placeholder="Inherit from tier"
                 min={absoluteMin ?? undefined}
                 max={absoluteMax ?? undefined}
               />
+              {isPrimaryTier && (
+                <p className="mt-1 text-xs text-ink-muted">{PRIMARY_TIER_MIN_TIP}</p>
+              )}
             </div>
             <div>
               <label htmlFor={variantMaxId} className="label-field-xs">
