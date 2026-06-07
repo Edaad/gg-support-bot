@@ -27,7 +27,10 @@ from bot.services.venmo_payments import (
 )
 from db.connection import get_db
 from db.models import Club, CryptoPayment
-from notification.chat_id import format_linked_chat_footer, resolve_notification_linked_chat_id
+from notification.formatting import (
+    format_group_chat_line,
+    resolve_notification_linked_chat_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +51,6 @@ CLUB_NAME_TO_ALERT_SCOPE: dict[str, str] = {
     "ClubGTO": ALERT_SCOPE_CLUBGTO,
     "Round Table": ALERT_SCOPE_RT_AT_CC,
     "Creator Club": ALERT_SCOPE_RT_AT_CC,
-}
-
-ALERT_SCOPE_LABELS: dict[str, str] = {
-    ALERT_SCOPE_CLUBGTO: "ClubGTO",
-    ALERT_SCOPE_RT_AT_CC: "RT/AT/CC",
 }
 
 
@@ -141,42 +139,26 @@ def format_notification_text(
     amount_line = (
         f"{format_amount_display(payment.amount_cents, bold=True)} {token}".strip()
     )
-    scope_label = escape_notification_html(
-        ALERT_SCOPE_LABELS.get(payment.alert_scope or "", payment.alert_scope or "")
-    )
 
     lines = [
         "🔔 Crypto Payment Notification",
         "",
+        format_group_chat_line(
+            group_title=group_title,
+            telegram_chat_id=resolve_notification_linked_chat_id(
+                payment,
+                telegram_chat_id=telegram_chat_id,
+            ),
+        ),
+        "",
+        f"Amount: {amount_line}",
+        f"Chain: {chain}",
+        f"From: {escape_notification_html(format_from_label(payment))}",
     ]
-    if group_title:
-        lines.append(f"Group Chat: {escape_notification_html(group_title)}")
-    else:
-        lines.append(
-            "Group Chat: Unbound — reply to this message with the group title to bind"
-        )
-
-    lines.extend(
-        [
-            "",
-            f"Alert: {scope_label}",
-            f"Amount: {amount_line}",
-            f"Chain: {chain}",
-            f"From: {escape_notification_html(format_from_label(payment))}",
-        ]
-    )
     if payment.paid_at:
         lines.append(f"Paid: {escape_notification_html(format_paid_at_display(payment.paid_at))}")
 
     body = "\n".join(lines)
-    footer = format_linked_chat_footer(
-        resolve_notification_linked_chat_id(
-            payment,
-            telegram_chat_id=telegram_chat_id,
-        )
-    )
-    if footer:
-        body = f"{body}{footer}"
     if getattr(payment, "is_test", False):
         return f"{TEST_NOTIFICATION_BANNER}\n\n{body}"
     return body

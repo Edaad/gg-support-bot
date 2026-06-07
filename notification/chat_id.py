@@ -38,24 +38,3 @@ def telegram_supergroup_chat_url(chat_id: int) -> str | None:
     if not internal.isdigit():
         return None
     return f"https://t.me/c/{internal}"
-
-
-def format_linked_chat_footer(telegram_chat_id: int | None) -> str:
-    """HTML footer linking to a bound support group chat, or empty when not linked."""
-    if telegram_chat_id is None:
-        return ""
-    url = telegram_supergroup_chat_url(int(telegram_chat_id))
-    if not url:
-        return ""
-    return f'\n<a href="{url}">Open group chat</a>'
-
-
-def resolve_notification_linked_chat_id(
-    payment: object,
-    *,
-    telegram_chat_id: int | None = None,
-) -> int | None:
-    if telegram_chat_id is not None:
-        return int(telegram_chat_id)
-    raw = getattr(payment, "telegram_chat_id", None)
-    return int(raw) if raw is not None else None

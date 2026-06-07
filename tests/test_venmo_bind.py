@@ -54,8 +54,12 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
             group_title=GROUP_TITLE,
         )
         self.assertIn(GROUP_TITLE, text)
-        self.assertIn('href="https://t.me/c/1234567890">Open group chat</a>', text)
-        self.assertLess(text.index("Method:"), text.index("Open group chat"))
+        self.assertIn(
+            'Group Chat: <a href="https://t.me/c/1234567890">RT / 6485-8168 / Angus Mcgoon</a>',
+            text,
+        )
+        self.assertNotIn("Open group chat", text)
+        self.assertLess(text.index("Group Chat:"), text.index("Name:"))
 
     def test_format_amount_display_rounds_to_whole_dollars(self):
         self.assertEqual(vp.format_amount_display(500), "$5")

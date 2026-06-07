@@ -34,7 +34,10 @@ class TestZelleNotificationFormat(unittest.TestCase):
         text = format_notification_text(payment, group_title="RT / 1234 / Player")
         self.assertIn("RT / 1234 / Player", text)
         self.assertNotIn("Unbound", text)
-        self.assertIn('href="https://t.me/c/1234567890">Open group chat</a>', text)
+        self.assertIn(
+            'Group Chat: <a href="https://t.me/c/1234567890">RT / 1234 / Player</a>',
+            text,
+        )
 
 
 if __name__ == "__main__":
