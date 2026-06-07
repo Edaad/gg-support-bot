@@ -437,6 +437,92 @@ export async function fetchAllZellePayers(
   return all
 }
 
+export type CryptoPaymentRow = {
+  id: number
+  from_label: string
+  from_address: string
+  from_entity_name: string | null
+  to_address: string
+  transaction_hash: string
+  token_symbol: string
+  token_name: string | null
+  chain: string
+  amount_cents: number
+  amount_usd: number
+  paid_at: string | null
+  alert_name: string | null
+  alert_scope: string
+  alert_scope_label: string
+  group_title: string | null
+  gg_player_id: string | null
+  gg_nickname: string | null
+  club_id: number | null
+  telegram_chat_id: number | null
+  status: 'bound' | 'unbound'
+  auto_bound: boolean
+  is_test: boolean
+  created_at: string
+  bound_at: string | null
+}
+
+export type CryptoBindResult = {
+  ok: boolean
+  error?: string | null
+  group_title?: string | null
+  telegram_chat_id?: number | null
+  club_id?: number | null
+  payment?: CryptoPaymentRow | null
+}
+
+export type CryptoPaymentListParams = {
+  clubId: number
+  status?: 'all' | 'bound' | 'unbound'
+  from?: string
+  to?: string
+  q?: string
+}
+
+export function listCryptoPayments(
+  token: string,
+  params: CryptoPaymentListParams & { limit?: number; offset?: number },
+) {
+  const q = new URLSearchParams({ club_id: String(params.clubId) })
+  if (params.status && params.status !== 'all') q.set('status', params.status)
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  if (params.q?.trim()) q.set('q', params.q.trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  return request<Paginated<CryptoPaymentRow>>(`/crypto/payments?${q}`, {}, token)
+}
+
+export function bindCryptoPayment(token: string, paymentId: number, groupTitle: string) {
+  return request<CryptoBindResult>(
+    `/crypto/payments/${paymentId}/bind`,
+    { method: 'POST', body: JSON.stringify({ group_title: groupTitle }) },
+    token,
+  )
+}
+
+export async function fetchAllCryptoPayments(
+  token: string,
+  params: CryptoPaymentListParams,
+): Promise<CryptoPaymentRow[]> {
+  const all: CryptoPaymentRow[] = []
+  let offset = 0
+  for (;;) {
+    const res = await listCryptoPayments(token, {
+      ...params,
+      limit: EXPORT_PAGE_SIZE,
+      offset,
+    })
+    all.push(...res.items)
+    offset += res.items.length
+    if (offset >= res.total || res.items.length === 0) break
+  }
+  return all
+}
+
 export type BoundViaFilter =
   | 'all'
   | 'special_amount'

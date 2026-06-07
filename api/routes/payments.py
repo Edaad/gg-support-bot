@@ -17,8 +17,10 @@ from api.payments_helpers import (
     apply_session_filters,
     apply_venmo_payment_filters,
     apply_zelle_payment_filters,
+    apply_crypto_payment_filters,
     build_venmo_payment_read,
     build_zelle_payment_read,
+    build_crypto_payment_read,
     cents_to_usd,
     compute_zelle_payment_summary,
     customer_total_deposited_cents,
@@ -61,9 +63,14 @@ from api.schemas_payments import (
     ZellePaymentRead,
     ZellePaymentSummaryByClub,
     ZellePaymentSummaryResponse,
+    CryptoBindRequest,
+    CryptoBindResponse,
+    CryptoPaymentListResponse,
+    CryptoPaymentRead,
 )
 from bot.services.venmo_payments import bind_venmo_payment_by_id
 from bot.services.zelle_payments import bind_zelle_payment_by_id
+from bot.services.crypto_payments import bind_crypto_payment_by_id
 from db.connection import get_db_dependency
 from bot.services.payment_method_binding import unbind_by_id
 from db.models import (
@@ -75,6 +82,7 @@ from db.models import (
     StripeCustomer,
     VenmoPayment,
     ZellePayment,
+    CryptoPayment,
 )
 
 router = APIRouter(
@@ -92,6 +100,7 @@ _MIGRATION_HINT = (
 )
 _VENMO_MIGRATION_HINT = "Run: python migrate_venmo_payments.py (or heroku run … on the web dyno)"
 _ZELLE_MIGRATION_HINT = "Run: python migrate_zelle_payments.py (or heroku run … on the web dyno)"
+_CRYPTO_MIGRATION_HINT = "Run: python migrate_crypto_payments.py (or heroku run … on the web dyno)"
 _BINDINGS_MIGRATION_HINT = (
     "Run: python migrate_payment_method_bindings.py (or heroku run … on the web dyno)"
 )
@@ -169,6 +178,12 @@ def _raise_db_schema_error(exc: ProgrammingError) -> None:
                 503,
                 f"Zelle payments tables or columns are missing. {_ZELLE_MIGRATION_HINT}",
             ) from exc
+    if "crypto_payments" in low:
+        if "does not exist" in low or "undefinedcolumn" in low.replace(" ", ""):
+            raise HTTPException(
+                503,
+                f"Crypto payments table is missing. {_CRYPTO_MIGRATION_HINT}",
+            ) from exc
     if "group_payment_method_bindings" in low or "payment_method_bind_attempts" in low:
         if "does not exist" in low or "undefinedcolumn" in low.replace(" ", ""):
             raise HTTPException(
@@ -184,6 +199,7 @@ def list_providers():
         PaymentProviderRead(id="stripe", label="Stripe"),
         PaymentProviderRead(id="venmo", label="Venmo"),
         PaymentProviderRead(id="zelle", label="Zelle"),
+        PaymentProviderRead(id="crypto", label="Crypto"),
     ]
 
 
@@ -619,6 +635,80 @@ async def bind_zelle_payment(
         payment_read = ZellePaymentRead.model_validate(build_zelle_payment_read(db, payment))
 
     return ZelleBindResponse(
+        ok=True,
+        group_title=group.group_title,
+        telegram_chat_id=group.telegram_chat_id,
+        club_id=group.club_id,
+        payment=payment_read,
+    )
+
+
+@router.get("/crypto/payments", response_model=CryptoPaymentListResponse)
+def list_crypto_payments(
+    club_id: int = Query(...),
+    status: str = Query("all", description="bound | unbound | all"),
+    from_dt: str | None = Query(None, alias="from"),
+    to_dt: str | None = Query(None, alias="to"),
+    q: str | None = Query(None),
+    include_test: bool = Query(False),
+    limit: int = Query(_DEFAULT_LIMIT),
+    offset: int = Query(0),
+    db: Session = Depends(get_db_dependency),
+):
+    _get_club_or_404(db, club_id)
+    limit = _clamp_limit(limit)
+    offset = max(0, offset)
+
+    try:
+        base = db.query(CryptoPayment)
+        base = apply_crypto_payment_filters(
+            base,
+            session=db,
+            club_id=club_id,
+            status=status,
+            from_dt=_parse_dt(from_dt),
+            to_dt=_parse_dt(to_dt),
+            include_test=include_test,
+            q=q,
+        )
+        total = base.count()
+        rows = (
+            base.order_by(CryptoPayment.created_at.desc(), CryptoPayment.id.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
+
+    items = [CryptoPaymentRead.model_validate(build_crypto_payment_read(db, row)) for row in rows]
+    return CryptoPaymentListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.post("/crypto/payments/{payment_id}/bind", response_model=CryptoBindResponse)
+async def bind_crypto_payment(
+    payment_id: int,
+    body: CryptoBindRequest,
+    db: Session = Depends(get_db_dependency),
+):
+    group_title = (body.group_title or "").strip()
+    if not group_title:
+        return CryptoBindResponse(ok=False, error="Group title is required.")
+
+    result = await bind_crypto_payment_by_id(
+        payment_id=payment_id,
+        group_title_input=group_title,
+    )
+    if not result.ok or result.bound_group is None:
+        return CryptoBindResponse(ok=False, error=result.error or "Could not bind payment.")
+
+    group = result.bound_group
+    payment = db.query(CryptoPayment).filter(CryptoPayment.id == payment_id).first()
+    payment_read = None
+    if payment is not None:
+        payment_read = CryptoPaymentRead.model_validate(build_crypto_payment_read(db, payment))
+
+    return CryptoBindResponse(
         ok=True,
         group_title=group.group_title,
         telegram_chat_id=group.telegram_chat_id,

@@ -862,6 +862,54 @@ class ZellePayment(Base):
     club = relationship("Club")
 
 
+class CryptoPayment(Base):
+    """One on-chain deposit ingested from Arkham/Zapier; manually bound to a support group."""
+
+    __tablename__ = "crypto_payments"
+    __table_args__ = (
+        Index(
+            "ix_crypto_payments_notification_msg",
+            "notification_chat_id",
+            "notification_message_id",
+        ),
+        Index("ix_crypto_payments_telegram_chat_id", "telegram_chat_id"),
+        Index("ix_crypto_payments_created_at", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    amount_cents = Column(Integer, nullable=False)
+    token_symbol = Column(String(32), nullable=False)
+    token_name = Column(String(100), nullable=True)
+    chain = Column(String(32), nullable=False)
+    from_address = Column(String(66), nullable=False)
+    from_entity_name = Column(String(255), nullable=True)
+    to_address = Column(String(66), nullable=False)
+    transaction_hash = Column(String(66), nullable=False)
+    paid_at = Column(String(255), nullable=True)
+    source_external_id = Column(String(255), unique=True, nullable=True)
+    alert_name = Column(String(255), nullable=True)
+    alert_scope = Column(String(32), nullable=False)
+    telegram_chat_id = Column(BigInteger, nullable=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    bound_group_title_at_bind = Column(String(255), nullable=True)
+    notification_chat_id = Column(BigInteger, nullable=True)
+    notification_message_id = Column(BigInteger, nullable=True)
+    bound_by_telegram_user_id = Column(BigInteger, nullable=True)
+    auto_bound = Column(Boolean, nullable=False, default=False)
+    is_test = Column(Boolean, nullable=False, default=False)
+    bound_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    club = relationship("Club")
+
+
 class ZellePayerBinding(Base):
     """Remember last bind: normalized payer name -> support group (any shared Zelle)."""
 

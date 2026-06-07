@@ -17,8 +17,10 @@ from db.models import (
     StripeCheckoutSession,
     StripeCustomer,
     SupportGroupChat,
+    Club,
     VenmoPayment,
     ZellePayment,
+    CryptoPayment,
 )
 
 
@@ -564,6 +566,110 @@ def build_zelle_payment_read(session: Session, payment: ZellePayment) -> dict:
         "club_id": club_id,
         "telegram_chat_id": payment.telegram_chat_id,
         "status": zelle_payment_status(payment),
+        "auto_bound": payment.auto_bound,
+        "is_test": payment.is_test,
+        "created_at": payment.created_at,
+        "bound_at": payment.bound_at,
+    }
+
+
+def crypto_payment_status(payment: CryptoPayment) -> str:
+    return "bound" if payment.telegram_chat_id is not None else "unbound"
+
+
+def apply_crypto_payment_filters(
+    query,
+    *,
+    session: Session,
+    club_id: int,
+    status: str | None,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+    include_test: bool,
+    q: str | None,
+):
+    from bot.services.crypto_payments import alert_scope_for_club_name
+
+    club = session.query(Club).filter(Club.id == int(club_id)).first()
+    if club is None:
+        return query.filter(CryptoPayment.id.is_(None))
+
+    alert_scope = alert_scope_for_club_name(club.name)
+    if alert_scope is None:
+        return query.filter(CryptoPayment.id.is_(None))
+
+    query = query.filter(CryptoPayment.alert_scope == alert_scope)
+
+    if not include_test:
+        query = query.filter(CryptoPayment.is_test.is_(False))
+
+    status_norm = (status or "all").strip().lower()
+    if status_norm == "bound":
+        query = query.filter(
+            CryptoPayment.telegram_chat_id.isnot(None),
+            CryptoPayment.club_id == club_id,
+        )
+    elif status_norm == "unbound":
+        query = query.filter(CryptoPayment.telegram_chat_id.is_(None))
+    else:
+        query = query.filter(
+            or_(
+                CryptoPayment.telegram_chat_id.is_(None),
+                CryptoPayment.club_id == club_id,
+            )
+        )
+
+    if from_dt is not None:
+        query = query.filter(CryptoPayment.created_at >= from_dt)
+    if to_dt is not None:
+        query = query.filter(CryptoPayment.created_at <= to_dt)
+
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        query = query.filter(
+            or_(
+                CryptoPayment.from_address.ilike(term),
+                CryptoPayment.from_entity_name.ilike(term),
+                CryptoPayment.to_address.ilike(term),
+                CryptoPayment.transaction_hash.ilike(term),
+                CryptoPayment.token_symbol.ilike(term),
+                CryptoPayment.bound_group_title_at_bind.ilike(term),
+            )
+        )
+    return query
+
+
+def build_crypto_payment_read(session: Session, payment: CryptoPayment) -> dict:
+    from bot.services.crypto_payments import ALERT_SCOPE_LABELS, format_from_label
+
+    title: str | None = None
+    gg_id: str | None = None
+    if payment.telegram_chat_id is not None:
+        title, gg_id = resolve_group_title(session, int(payment.telegram_chat_id))
+    club_id = payment.club_id
+    scope = payment.alert_scope or ""
+    return {
+        "id": payment.id,
+        "from_label": format_from_label(payment),
+        "from_address": payment.from_address,
+        "from_entity_name": payment.from_entity_name,
+        "to_address": payment.to_address,
+        "transaction_hash": payment.transaction_hash,
+        "token_symbol": payment.token_symbol,
+        "token_name": payment.token_name,
+        "chain": payment.chain,
+        "amount_cents": payment.amount_cents,
+        "amount_usd": cents_to_usd(payment.amount_cents),
+        "paid_at": payment.paid_at,
+        "alert_name": payment.alert_name,
+        "alert_scope": scope,
+        "alert_scope_label": ALERT_SCOPE_LABELS.get(scope, scope),
+        "group_title": title,
+        "gg_player_id": gg_id,
+        "gg_nickname": lookup_gg_nickname(session, club_id, gg_id) if club_id else None,
+        "club_id": club_id,
+        "telegram_chat_id": payment.telegram_chat_id,
+        "status": crypto_payment_status(payment),
         "auto_bound": payment.auto_bound,
         "is_test": payment.is_test,
         "created_at": payment.created_at,

@@ -3,6 +3,7 @@ import { listClubs, type Club } from '../api/client'
 import {
   bindVenmoPayment,
   bindZellePayment,
+  bindCryptoPayment,
   fetchBindingSummary,
   fetchAllStripeCustomers,
   type BindingSummary,
@@ -12,6 +13,7 @@ import {
   fetchAllVenmoPayments,
   fetchAllZellePayers,
   fetchAllZellePayments,
+  fetchAllCryptoPayments,
   listGroupBindings,
   listPaymentProviders,
   listStripeCustomers,
@@ -21,6 +23,7 @@ import {
   listVenmoPayments,
   listZellePayers,
   listZellePayments,
+  listCryptoPayments,
   unbindGroupBinding,
   type StripeCustomerRow,
   type StripeMethodOption,
@@ -29,14 +32,15 @@ import {
   type VenmoPaymentRow,
   type ZellePayerRow,
   type ZellePaymentRow,
+  type CryptoPaymentRow,
 } from '../api/paymentsClient'
 import Modal from '../components/Modal'
 import { downloadCsv } from '../lib/csv'
 
 const TABS = ['Payments', 'Customers'] as const
 type Tab = (typeof TABS)[number]
-type Provider = 'stripe' | 'venmo' | 'zelle'
-type ManualPaymentRow = VenmoPaymentRow | ZellePaymentRow
+type Provider = 'stripe' | 'venmo' | 'zelle' | 'crypto'
+type ManualPaymentRow = VenmoPaymentRow | ZellePaymentRow | CryptoPaymentRow
 type ManualPayerRow = VenmoPayerRow | ZellePayerRow
 type VenmoStatus = 'all' | 'bound' | 'unbound'
 
@@ -126,11 +130,21 @@ export default function Payments({ token }: { token: string }) {
   const [bindTitle, setBindTitle] = useState('')
   const [bindLoading, setBindLoading] = useState(false)
 
-  const manualProvider = provider === 'zelle' ? 'zelle' : provider === 'venmo' ? 'venmo' : null
+  const manualProvider =
+    provider === 'zelle'
+      ? 'zelle'
+      : provider === 'venmo'
+        ? 'venmo'
+        : provider === 'crypto'
+          ? 'crypto'
+          : null
   const isManualProvider = manualProvider !== null
-  const manualLabel = manualProvider === 'zelle' ? 'Zelle' : 'Venmo'
+  const hasDepositLinking = manualProvider === 'venmo' || manualProvider === 'zelle'
+  const manualLabel =
+    manualProvider === 'zelle' ? 'Zelle' : manualProvider === 'crypto' ? 'Crypto' : 'Venmo'
+  const isCryptoProvider = manualProvider === 'crypto'
 
-  const paymentAccount = (row: ManualPaymentRow) =>
+  const paymentAccount = (row: VenmoPaymentRow | ZellePaymentRow) =>
     'zelle_recipient' in row ? row.zelle_recipient : row.venmo_handle
 
   const payerAccount = (row: ManualPayerRow) =>
@@ -253,10 +267,12 @@ export default function Payments({ token }: { token: string }) {
     const loader =
       manualProvider === 'zelle'
         ? listZellePayments(token, venmoPaymentQueryParams())
-        : listVenmoPayments(token, venmoPaymentQueryParams())
+        : manualProvider === 'crypto'
+          ? listCryptoPayments(token, venmoPaymentQueryParams())
+          : listVenmoPayments(token, venmoPaymentQueryParams())
     loader
       .then((res) => {
-        setVenmoPayments(res.items as VenmoPaymentRow[])
+        setVenmoPayments(res.items as ManualPaymentRow[])
         setVenmoPaymentTotal(res.total)
       })
       .catch((e: unknown) => {
@@ -291,7 +307,7 @@ export default function Payments({ token }: { token: string }) {
   }, [token, clubId, appliedSearch, venmoPayerPage, manualProvider])
 
   const loadBindingSummary = useCallback(() => {
-    if (!manualProvider) return
+    if (!hasDepositLinking || !manualProvider) return
     fetchBindingSummary(token, {
       method: manualProvider,
       clubId: clubId ?? undefined,
@@ -300,10 +316,10 @@ export default function Payments({ token }: { token: string }) {
     })
       .then(setBindingSummary)
       .catch(() => setBindingSummary(null))
-  }, [token, clubId, manualProvider, appliedFrom, appliedTo])
+  }, [token, clubId, manualProvider, hasDepositLinking, appliedFrom, appliedTo])
 
   const loadGroupBindings = useCallback(() => {
-    if (!manualProvider || clubId == null) return
+    if (!hasDepositLinking || !manualProvider || clubId == null) return
     listGroupBindings(token, { method: manualProvider, clubId, limit: 200, offset: 0 })
       .then((res) => {
         setGroupBindings(res.items)
@@ -313,7 +329,11 @@ export default function Payments({ token }: { token: string }) {
         setGroupBindings([])
         setGroupBindingsTotal(0)
       })
-  }, [token, clubId, manualProvider])
+  }, [token, clubId, manualProvider, hasDepositLinking])
+
+  useEffect(() => {
+    if (isCryptoProvider && tab === 'Customers') setTab('Payments')
+  }, [isCryptoProvider, tab])
 
   useEffect(() => {
     loadBindingSummary()
@@ -354,14 +374,15 @@ export default function Payments({ token }: { token: string }) {
       if (tab === 'Customers') loadCustomers()
       else loadSessions()
     } else if (isManualProvider) {
-      if (tab === 'Customers') loadManualPayers()
-      else loadManualPayments()
+      if (tab === 'Customers' && hasDepositLinking) loadManualPayers()
+      else if (tab === 'Payments') loadManualPayments()
     }
   }, [
     tab,
     clubId,
     provider,
     isManualProvider,
+    hasDepositLinking,
     loadCustomers,
     loadSessions,
     loadManualPayments,
@@ -384,7 +405,8 @@ export default function Payments({ token }: { token: string }) {
   }
 
   const clubName = clubs.find((c) => c.id === clubId)?.name ?? 'club'
-  const secondaryTabLabel = isManualProvider ? 'Payers' : 'Customers'
+  const secondaryTabLabel = hasDepositLinking ? 'Payers' : 'Customers'
+  const visibleTabs = isCryptoProvider ? (['Payments'] as const) : TABS
 
   const openBindModal = (row: ManualPaymentRow) => {
     setBindRow(row)
@@ -414,7 +436,9 @@ export default function Payments({ token }: { token: string }) {
       const result =
         manualProvider === 'zelle'
           ? await bindZellePayment(token, bindRow.id, title)
-          : await bindVenmoPayment(token, bindRow.id, title)
+          : manualProvider === 'crypto'
+            ? await bindCryptoPayment(token, bindRow.id, title)
+            : await bindVenmoPayment(token, bindRow.id, title)
       if (!result.ok) {
         setErr(result.error || 'Could not bind payment.')
         return
@@ -422,8 +446,10 @@ export default function Payments({ token }: { token: string }) {
       setSuccessMsg(`Bound to ${result.group_title || title}.`)
       closeBindModal()
       loadManualPayments()
-      loadGroupBindings()
-      loadBindingSummary()
+      if (hasDepositLinking) {
+        loadGroupBindings()
+        loadBindingSummary()
+      }
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Bind failed.')
     } finally {
@@ -484,13 +510,49 @@ export default function Payments({ token }: { token: string }) {
       const rows =
         manualProvider === 'zelle'
           ? await fetchAllZellePayments(token, venmoPaymentExportParams())
-          : await fetchAllVenmoPayments(token, venmoPaymentExportParams())
+          : manualProvider === 'crypto'
+            ? await fetchAllCryptoPayments(token, venmoPaymentExportParams())
+            : await fetchAllVenmoPayments(token, venmoPaymentExportParams())
       if (rows.length === 0) {
         setErr('No payments to export for the selected filters.')
         return
       }
-      const accountKey = manualProvider === 'zelle' ? 'zelle_recipient' : 'venmo_handle'
       const parts = [`${manualProvider}-payments`, slugForFilename(clubName)]
+      if (appliedFrom) parts.push(appliedFrom)
+      if (appliedTo) parts.push(appliedTo)
+      if (manualProvider === 'crypto') {
+        downloadCsv(
+          `${parts.join('-')}.csv`,
+          [
+            'created_at',
+            'from_label',
+            'chain',
+            'token_symbol',
+            'to_address',
+            'transaction_hash',
+            'group_title',
+            'gg_nickname',
+            'gg_player_id',
+            'amount_usd',
+            'status',
+          ],
+          (rows as CryptoPaymentRow[]).map((row) => [
+            row.created_at,
+            row.from_label,
+            row.chain,
+            row.token_symbol,
+            row.to_address,
+            row.transaction_hash,
+            row.group_title || '',
+            row.gg_nickname || '',
+            row.gg_player_id || '',
+            String(row.amount_usd),
+            row.status,
+          ]),
+        )
+        return
+      }
+      const accountKey = manualProvider === 'zelle' ? 'zelle_recipient' : 'venmo_handle'
       if (appliedFrom) parts.push(appliedFrom)
       if (appliedTo) parts.push(appliedTo)
       const headers =
@@ -632,7 +694,7 @@ export default function Payments({ token }: { token: string }) {
     <div>
       <h1 className="mb-6 text-2xl font-bold">Payments</h1>
 
-      {isManualProvider && bindingSummary && funnel && (
+      {hasDepositLinking && bindingSummary && funnel && (
         <section className="mb-6 rounded-lg border border-slate-700 bg-slate-900/50 p-4">
           <h2 className="mb-3 text-sm font-semibold text-slate-200">{manualLabel} group bindings</h2>
           <div className="flex flex-wrap gap-6 text-sm">
@@ -753,6 +815,7 @@ export default function Payments({ token }: { token: string }) {
             <option value="stripe">Stripe</option>
             <option value="venmo">Venmo</option>
             <option value="zelle">Zelle</option>
+            <option value="crypto">Crypto</option>
           </select>
         </div>
         {provider === 'stripe' && (
@@ -810,7 +873,7 @@ export default function Payments({ token }: { token: string }) {
         aria-label="Payments data"
         className="mb-6 flex gap-1 overflow-x-auto rounded-lg bg-surface p-1"
       >
-        {TABS.map((t) => (
+        {TABS.filter((t) => visibleTabs.includes(t)).map((t) => (
           <button
             key={t}
             type="button"
@@ -1008,49 +1071,114 @@ export default function Payments({ token }: { token: string }) {
             <div className="table-scroll">
               <table className="min-w-[64rem] text-left">
                 <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
-                  <tr>
-                    <th className="px-4 py-3">Date</th>
-                    <th className="px-4 py-3">Payer</th>
-                    <th className="px-4 py-3">{manualProvider === 'zelle' ? 'Recipient' : 'Handle'}</th>
-                    <th className="px-4 py-3">Group</th>
-                    <th className="px-4 py-3">Player</th>
-                    <th className="px-4 py-3">Amount</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Actions</th>
-                  </tr>
+                  {isCryptoProvider ? (
+                    <tr>
+                      <th className="px-4 py-3">Date</th>
+                      <th className="px-4 py-3">Alert</th>
+                      <th className="px-4 py-3">From</th>
+                      <th className="px-4 py-3">Chain</th>
+                      <th className="px-4 py-3">Token</th>
+                      <th className="px-4 py-3">To</th>
+                      <th className="px-4 py-3">Tx</th>
+                      <th className="px-4 py-3">Group</th>
+                      <th className="px-4 py-3">Player</th>
+                      <th className="px-4 py-3">Amount</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Actions</th>
+                    </tr>
+                  ) : (
+                    <tr>
+                      <th className="px-4 py-3">Date</th>
+                      <th className="px-4 py-3">Payer</th>
+                      <th className="px-4 py-3">{manualProvider === 'zelle' ? 'Recipient' : 'Handle'}</th>
+                      <th className="px-4 py-3">Group</th>
+                      <th className="px-4 py-3">Player</th>
+                      <th className="px-4 py-3">Amount</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Actions</th>
+                    </tr>
+                  )}
                 </thead>
                 <tbody className="divide-y divide-border text-sm">
-                  {venmoPayments.map((row) => (
-                    <tr key={row.id} className="hover:bg-surface/80">
-                      <td className="px-4 py-3 whitespace-nowrap">{fmtDate(row.created_at)}</td>
-                      <td className="px-4 py-3">{row.payer_name}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{paymentAccount(row)}</td>
-                      <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
-                        {row.status === 'unbound' ? (
-                          <span className="text-warning-ink">Unbound</span>
-                        ) : (
-                          row.group_title || '—'
-                        )}
-                      </td>
-                      <td className="px-4 py-3">{fmtGgNickname(row.gg_nickname)}</td>
-                      <td className="px-4 py-3 font-medium">${fmtMoney(row.amount_usd)}</td>
-                      <td className="px-4 py-3 capitalize">
-                        {row.status}
-                        {row.auto_bound && row.status === 'bound' && (
-                          <span className="ml-1 text-xs text-ink-muted">(auto)</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => openBindModal(row)}
-                          className="action-chip text-ink-muted hover:bg-control hover:text-ink"
-                        >
-                          {row.status === 'unbound' ? 'Bind' : 'Rebind'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {venmoPayments.map((row) =>
+                    isCryptoProvider ? (
+                      <tr key={row.id} className="hover:bg-surface/80">
+                        {(() => {
+                          const crypto = row as CryptoPaymentRow
+                          return (
+                            <>
+                              <td className="px-4 py-3 whitespace-nowrap">{fmtDate(crypto.created_at)}</td>
+                              <td className="px-4 py-3">{crypto.alert_scope_label}</td>
+                              <td className="px-4 py-3 max-w-[12rem] truncate" title={crypto.from_label}>
+                                {crypto.from_label}
+                              </td>
+                              <td className="px-4 py-3 uppercase">{crypto.chain}</td>
+                              <td className="px-4 py-3">{crypto.token_symbol}</td>
+                              <td className="px-4 py-3 font-mono text-xs max-w-[10rem] truncate" title={crypto.to_address}>
+                                {crypto.to_address}
+                              </td>
+                              <td className="px-4 py-3 font-mono text-xs max-w-[10rem] truncate" title={crypto.transaction_hash}>
+                                {crypto.transaction_hash}
+                              </td>
+                              <td className="px-4 py-3 max-w-[14rem] truncate" title={crypto.group_title || undefined}>
+                                {crypto.status === 'unbound' ? (
+                                  <span className="text-warning-ink">Unbound</span>
+                                ) : (
+                                  crypto.group_title || '—'
+                                )}
+                              </td>
+                              <td className="px-4 py-3">{fmtGgNickname(crypto.gg_nickname)}</td>
+                              <td className="px-4 py-3 font-medium">
+                                ${fmtMoney(crypto.amount_usd)} {crypto.token_symbol}
+                              </td>
+                              <td className="px-4 py-3 capitalize">{crypto.status}</td>
+                              <td className="px-4 py-3">
+                                <button
+                                  type="button"
+                                  onClick={() => openBindModal(crypto)}
+                                  className="action-chip text-ink-muted hover:bg-control hover:text-ink"
+                                >
+                                  {crypto.status === 'unbound' ? 'Bind' : 'Rebind'}
+                                </button>
+                              </td>
+                            </>
+                          )
+                        })()}
+                      </tr>
+                    ) : (
+                      <tr key={row.id} className="hover:bg-surface/80">
+                        <td className="px-4 py-3 whitespace-nowrap">{fmtDate(row.created_at)}</td>
+                        <td className="px-4 py-3">{(row as VenmoPaymentRow | ZellePaymentRow).payer_name}</td>
+                        <td className="px-4 py-3 font-mono text-xs">
+                          {paymentAccount(row as VenmoPaymentRow | ZellePaymentRow)}
+                        </td>
+                        <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
+                          {row.status === 'unbound' ? (
+                            <span className="text-warning-ink">Unbound</span>
+                          ) : (
+                            row.group_title || '—'
+                          )}
+                        </td>
+                        <td className="px-4 py-3">{fmtGgNickname(row.gg_nickname)}</td>
+                        <td className="px-4 py-3 font-medium">${fmtMoney(row.amount_usd)}</td>
+                        <td className="px-4 py-3 capitalize">
+                          {row.status}
+                          {row.auto_bound && row.status === 'bound' && (
+                            <span className="ml-1 text-xs text-ink-muted">(auto)</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            type="button"
+                            onClick={() => openBindModal(row)}
+                            className="action-chip text-ink-muted hover:bg-control hover:text-ink"
+                          >
+                            {row.status === 'unbound' ? 'Bind' : 'Rebind'}
+                          </button>
+                        </td>
+                      </tr>
+                    ),
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1172,7 +1300,7 @@ export default function Payments({ token }: { token: string }) {
         </div>
       )}
 
-      {isManualProvider && tab === 'Customers' && (
+      {hasDepositLinking && tab === 'Customers' && (
         <div>
           <div className="mb-4 flex flex-wrap gap-2">
             <input

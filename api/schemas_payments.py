@@ -214,6 +214,54 @@ class ZellePaymentSummaryResponse(BaseModel):
     by_club: list[ZellePaymentSummaryByClub] = []
 
 
+class CryptoPaymentRead(BaseModel):
+    id: int
+    from_label: str
+    from_address: str
+    from_entity_name: Optional[str] = None
+    to_address: str
+    transaction_hash: str
+    token_symbol: str
+    token_name: Optional[str] = None
+    chain: str
+    amount_cents: int
+    amount_usd: Decimal
+    paid_at: Optional[str] = None
+    alert_name: Optional[str] = None
+    alert_scope: str
+    alert_scope_label: str
+    group_title: Optional[str] = None
+    gg_player_id: Optional[str] = None
+    gg_nickname: Optional[str] = None
+    club_id: Optional[int] = None
+    telegram_chat_id: Optional[int] = None
+    status: str
+    auto_bound: bool
+    is_test: bool
+    created_at: datetime
+    bound_at: Optional[datetime] = None
+
+
+class CryptoPaymentListResponse(BaseModel):
+    items: list[CryptoPaymentRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class CryptoBindRequest(BaseModel):
+    group_title: str
+
+
+class CryptoBindResponse(BaseModel):
+    ok: bool
+    error: Optional[str] = None
+    group_title: Optional[str] = None
+    telegram_chat_id: Optional[int] = None
+    club_id: Optional[int] = None
+    payment: Optional[CryptoPaymentRead] = None
+
+
 class BindingViaCount(BaseModel):
     bound_via: str
     count: int
