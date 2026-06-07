@@ -177,6 +177,11 @@ def _format_amount_display(amount_cents: int) -> str:
     return f"${dollars:,.2f}"
 
 
+def _format_amount_plain(amount_cents: int) -> str:
+    """Dollar amount without a leading $ (e.g. 74.99)."""
+    return _format_amount_display(amount_cents).lstrip("$")
+
+
 @dataclass(frozen=True)
 class ChatMethodBinding:
     id: int
@@ -1293,6 +1298,45 @@ def format_first_time_amount_instructions_message(
         f"{amount_line}\n\n"
         f"{do_not_send}\n\n"
         f"{future_line}"
+    )
+
+
+def format_first_time_zelle_amount_setup_message(
+    *,
+    setup_amount_cents: int,
+    chosen_amount_cents: int,
+    use_html: bool = True,
+) -> str:
+    """Pre-ack Zelle amount setup: instructions, amount, and ack prompt in one message."""
+    setup_display = _format_amount_plain(int(setup_amount_cents))
+    chosen_display = _format_amount_display(int(chosen_amount_cents))
+    title = _caps("One-time Zelle setup")
+    amount_line = _caps("Send the exact amount shown below — not your full deposit amount.")
+    do_not_send = _caps(f"Please do not send {chosen_display} (no rounding).")
+    future_line = (
+        "This one-time step links your payment method so future deposits "
+        "go through faster."
+    )
+    ack_line = _first_time_ack_prompt(use_html=use_html)
+
+    if use_html:
+        safe_setup = html_module.escape(setup_display)
+        safe_chosen = html_module.escape(chosen_display)
+        return (
+            f"<b>{title}</b>\n\n"
+            f"{amount_line}\n\n"
+            f"<code>{safe_setup}</code>\n\n"
+            f"<b>{_caps(f'Please do not send {safe_chosen} (no rounding).')}</b>\n\n"
+            f"{future_line}\n\n"
+            f"{ack_line}"
+        )
+    return (
+        f"{title}\n\n"
+        f"{amount_line}\n\n"
+        f"{setup_display}\n\n"
+        f"{do_not_send}\n\n"
+        f"{future_line}\n\n"
+        f"{ack_line}"
     )
 
 

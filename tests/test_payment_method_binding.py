@@ -19,6 +19,7 @@ from bot.services.payment_method_binding import (
     format_first_time_memo_setup_message,
     format_first_time_memo_instructions_message,
     format_first_time_amount_instructions_message,
+    format_first_time_zelle_amount_setup_message,
     format_first_time_payment_destination_message,
     format_first_time_venmo_setup_message,
     get_pending_bind_attempt,
@@ -340,6 +341,23 @@ class TestAmountInstructionsMessage(unittest.TestCase):
         self.assertNotIn("$89.99", text)
         self.assertNotIn("venmo.com", text)
         self.assertNotIn("screenshot", text.lower())
+
+    def test_zelle_combined_amount_setup_message(self):
+        text = format_first_time_zelle_amount_setup_message(
+            setup_amount_cents=7499,
+            chosen_amount_cents=7500,
+        )
+        self.assertIn("ONE-TIME ZELLE SETUP", text)
+        self.assertIn("SEND THE EXACT AMOUNT SHOWN BELOW", text)
+        self.assertIn("<code>74.99</code>", text)
+        self.assertIn("PLEASE DO NOT SEND $75.00 (NO ROUNDING).", text)
+        self.assertIn(
+            "This one-time step links your payment method so future deposits "
+            "go through faster.",
+            text,
+        )
+        self.assertIn("TAP BELOW WHEN YOU ARE READY FOR THE PAYMENT INFO.", text)
+        self.assertNotIn("SEND EXACTLY", text)
 
 
 class TestAllocateSetupAmount(unittest.TestCase):

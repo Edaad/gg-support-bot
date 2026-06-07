@@ -57,6 +57,7 @@ from bot.services.payment_method_binding import (
     format_first_time_amount_instructions_message,
     format_first_time_memo_instructions_message,
     format_first_time_payment_destination_message,
+    format_first_time_zelle_amount_setup_message,
     format_setup_amount_highlight,
     get_chat_binding,
     is_chat_method_bound,
@@ -529,29 +530,47 @@ async def _send_first_time_method_setup(
         )
     else:
         assert deposit_amount_cents is not None and attempt.amount_cents is not None
-        await _deposit_send_html_or_plain(
-            chat,
-            int(chat_id),
-            html_text=format_first_time_amount_instructions_message(
-                payment_method_slug=slug,
-                chosen_amount_cents=deposit_amount_cents,
-                use_html=True,
-            ),
-            plain_text=format_first_time_amount_instructions_message(
-                payment_method_slug=slug,
-                chosen_amount_cents=deposit_amount_cents,
-                use_html=False,
-            ),
-            log_label="amount_setup_instructions",
-        )
-        await _deposit_send_html_or_plain(
-            chat,
-            int(chat_id),
-            html_text=format_setup_amount_highlight(attempt.amount_cents, use_html=True),
-            plain_text=format_setup_amount_highlight(attempt.amount_cents, use_html=False),
-            log_label="amount_setup_highlight",
-            reply_markup=_first_time_setup_ack_markup(attempt_id=attempt.id),
-        )
+        if slug == "zelle":
+            await _deposit_send_html_or_plain(
+                chat,
+                int(chat_id),
+                html_text=format_first_time_zelle_amount_setup_message(
+                    setup_amount_cents=attempt.amount_cents,
+                    chosen_amount_cents=deposit_amount_cents,
+                    use_html=True,
+                ),
+                plain_text=format_first_time_zelle_amount_setup_message(
+                    setup_amount_cents=attempt.amount_cents,
+                    chosen_amount_cents=deposit_amount_cents,
+                    use_html=False,
+                ),
+                log_label="zelle_amount_setup",
+                reply_markup=_first_time_setup_ack_markup(attempt_id=attempt.id),
+            )
+        else:
+            await _deposit_send_html_or_plain(
+                chat,
+                int(chat_id),
+                html_text=format_first_time_amount_instructions_message(
+                    payment_method_slug=slug,
+                    chosen_amount_cents=deposit_amount_cents,
+                    use_html=True,
+                ),
+                plain_text=format_first_time_amount_instructions_message(
+                    payment_method_slug=slug,
+                    chosen_amount_cents=deposit_amount_cents,
+                    use_html=False,
+                ),
+                log_label="amount_setup_instructions",
+            )
+            await _deposit_send_html_or_plain(
+                chat,
+                int(chat_id),
+                html_text=format_setup_amount_highlight(attempt.amount_cents, use_html=True),
+                plain_text=format_setup_amount_highlight(attempt.amount_cents, use_html=False),
+                log_label="amount_setup_highlight",
+                reply_markup=_first_time_setup_ack_markup(attempt_id=attempt.id),
+            )
 
     _schedule_deposit_reminder(context, club_id, int(chat_id), user_id)
     return "await_ack"
