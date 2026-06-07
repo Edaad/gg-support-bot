@@ -19,6 +19,7 @@ class TestZelleNotificationFormat(unittest.TestCase):
         self.assertIn("Unbound", text)
         self.assertIn("Jane Doe", text)
         self.assertIn("pay@example.com", text)
+        self.assertIn("<b>$200</b>", text)
         self.assertNotIn("Goods/Services", text)
 
     def test_bound_notification(self):

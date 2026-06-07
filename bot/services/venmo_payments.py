@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 import os
 import re
@@ -102,14 +103,22 @@ def parse_amount_cents(amount: str | int | float | Decimal) -> int:
     return int((dollars * 100).quantize(Decimal("1")))
 
 
-def format_amount_display(amount_cents: int) -> str:
+def escape_notification_html(text: str | None) -> str:
+    """Escape dynamic text for Telegram HTML parse_mode notifications."""
+    return html.escape(text or "", quote=False)
+
+
+def format_amount_display(amount_cents: int, *, bold: bool = False) -> str:
     dollars = int(
         (Decimal(amount_cents) / Decimal(100)).quantize(
             Decimal("1"),
             rounding=ROUND_HALF_UP,
         )
     )
-    return f"${dollars:,}"
+    display = f"${dollars:,}"
+    if bold:
+        return f"<b>{display}</b>"
+    return display
 
 
 def resolve_display_group_title(chat_id: int) -> Optional[str]:
@@ -218,20 +227,20 @@ def format_setup_already_linked_warning(
     lines = [
         "⚠️ First-time setup warning",
         "",
-        f"Already bound: {already_bound_group_title}",
+        f"Already bound: {escape_notification_html(already_bound_group_title)}",
         last_deposit_line,
         "",
         "Incoming setup payment matched but was left unbound for manual review.",
-        f"Name: {payment.payer_name}",
-        f"Amount: {format_amount_display(payment.amount_cents)}",
+        f"Name: {escape_notification_html(payment.payer_name)}",
+        f"Amount: {format_amount_display(payment.amount_cents, bold=True)}",
     ]
     memo = (getattr(payment, "memo", None) or "").strip()
     if memo:
-        lines.append(f"Memo: {memo}")
+        lines.append(f"Memo: {escape_notification_html(memo)}")
     lines.extend(
         [
-            f"Method: {method}",
-            f"Setup chat: {setup_chat_title}",
+            f"Method: {escape_notification_html(method)}",
+            f"Setup chat: {escape_notification_html(setup_chat_title)}",
         ]
     )
 
@@ -257,7 +266,7 @@ def format_notification_text(
     ]
 
     if group_title:
-        lines.append(f"Group Chat: {group_title}")
+        lines.append(f"Group Chat: {escape_notification_html(group_title)}")
     else:
         lines.append(
             "Group Chat: Unbound — reply to this message with the group title to bind"
@@ -266,16 +275,16 @@ def format_notification_text(
     lines.extend(
         [
             "",
-            f"Name: {payment.payer_name}",
-            f"Amount: {format_amount_display(payment.amount_cents)}",
+            f"Name: {escape_notification_html(payment.payer_name)}",
+            f"Amount: {format_amount_display(payment.amount_cents, bold=True)}",
         ]
     )
     memo = (getattr(payment, "memo", None) or "").strip()
     if memo:
-        lines.append(f"Memo: {memo}")
+        lines.append(f"Memo: {escape_notification_html(memo)}")
     lines.extend(
         [
-            f"Method: {method}",
+            f"Method: {escape_notification_html(method)}",
             f"Goods/Services: {gs}",
         ]
     )
@@ -314,7 +323,7 @@ async def send_telegram_notification(text: str) -> tuple[int, int]:
 
     data = await _telegram_api(
         "sendMessage",
-        {"chat_id": chat_id, "text": text},
+        {"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
         token=token,
     )
     result = data.get("result") or {}
@@ -334,7 +343,7 @@ async def edit_telegram_notification(
         raise RuntimeError(f"{NOTIFICATION_BOT_TOKEN_ENV} is not set")
     await _telegram_api(
         "editMessageText",
-        {"chat_id": chat_id, "message_id": message_id, "text": text},
+        {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": "HTML"},
         token=token,
     )
 

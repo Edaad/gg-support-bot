@@ -16,6 +16,7 @@ from bot.services.venmo_payments import (
     BoundGroup,
     IngestResult,
     edit_telegram_notification,
+    escape_notification_html,
     format_amount_display,
     format_paid_at_display,
     parse_amount_cents,
@@ -133,17 +134,21 @@ def format_notification_text(
     *,
     group_title: Optional[str] = None,
 ) -> str:
-    token = (payment.token_symbol or "").strip().upper()
-    chain = (payment.chain or "").strip().upper()
-    amount_line = f"{format_amount_display(payment.amount_cents)} {token}".strip()
-    scope_label = ALERT_SCOPE_LABELS.get(payment.alert_scope or "", payment.alert_scope or "")
+    token = escape_notification_html((payment.token_symbol or "").strip().upper())
+    chain = escape_notification_html((payment.chain or "").strip().upper())
+    amount_line = (
+        f"{format_amount_display(payment.amount_cents, bold=True)} {token}".strip()
+    )
+    scope_label = escape_notification_html(
+        ALERT_SCOPE_LABELS.get(payment.alert_scope or "", payment.alert_scope or "")
+    )
 
     lines = [
         "🔔 Crypto Payment Notification",
         "",
     ]
     if group_title:
-        lines.append(f"Group Chat: {group_title}")
+        lines.append(f"Group Chat: {escape_notification_html(group_title)}")
     else:
         lines.append(
             "Group Chat: Unbound — reply to this message with the group title to bind"
@@ -155,13 +160,11 @@ def format_notification_text(
             f"Alert: {scope_label}",
             f"Amount: {amount_line}",
             f"Chain: {chain}",
-            f"From: {format_from_label(payment)}",
-            f"To: {payment.to_address}",
-            f"Tx: {payment.transaction_hash}",
+            f"From: {escape_notification_html(format_from_label(payment))}",
         ]
     )
     if payment.paid_at:
-        lines.append(f"Paid: {format_paid_at_display(payment.paid_at)}")
+        lines.append(f"Paid: {escape_notification_html(format_paid_at_display(payment.paid_at))}")
 
     body = "\n".join(lines)
     if getattr(payment, "is_test", False):

@@ -1,5 +1,6 @@
 """Stripe deposit context lookup for Zapier (Glide) Confirm Stripe Payments."""
 
+import logging
 import os
 
 import stripe
@@ -10,9 +11,11 @@ from bot.services.stripe_deposit import (
     apply_checkout_session_webhook_event,
     construct_stripe_webhook_event,
     lookup_deposit_context_by_customer_id,
+    notify_stripe_payment_completed,
 )
 
 router = APIRouter(prefix="/api/stripe", tags=["stripe"])
+logger = logging.getLogger(__name__)
 
 LOOKUP_SECRET_ENV = "STRIPE_ZAPIER_LOOKUP_SECRET"
 LOOKUP_HEADER = "x-stripe-lookup-secret"
@@ -75,5 +78,11 @@ async def stripe_webhook(request: Request):
         raise HTTPException(400, "Invalid Stripe signature") from e
 
     if event.get("type") in _CHECKOUT_WEBHOOK_EVENTS:
-        apply_checkout_session_webhook_event(event)
+        obj = (event.get("data") or {}).get("object") or {}
+        recorded = apply_checkout_session_webhook_event(event)
+        if recorded:
+            try:
+                await notify_stripe_payment_completed(obj)
+            except RuntimeError as e:
+                logger.error("stripe webhook: notification failed — %s", e)
     return {"received": True}

@@ -14,8 +14,13 @@ from sqlalchemy.exc import IntegrityError
 
 from bot.services.club import get_group_title_for_chat, update_group_name
 from bot.services.player_details import parse_group_title_parts
+from bot.services.venmo_payments import (
+    escape_notification_html,
+    format_amount_display,
+    send_telegram_notification,
+)
 from db.connection import get_db
-from db.models import Club, StripeCheckoutSession, StripeCustomer
+from db.models import Club, ClubPaymentMethod, StripeCheckoutSession, StripeCustomer
 
 logger = logging.getLogger(__name__)
 
@@ -469,6 +474,90 @@ def record_completed_checkout_payment(
         amount_cents,
     )
     return True
+
+
+def format_stripe_method_label(method_name: str | None) -> str:
+    """Display label for Stripe deposit notifications (e.g. Stripe Cashapp)."""
+    raw = (method_name or "").strip()
+    if not raw:
+        return "Stripe"
+    if raw.lower().startswith("stripe"):
+        return raw
+    return f"Stripe {raw}"
+
+
+def _resolve_stripe_method_label(club_id: int, payment_method_id: int | None) -> str:
+    if payment_method_id is None:
+        return "Stripe"
+    with get_db() as session:
+        row = (
+            session.query(ClubPaymentMethod)
+            .filter_by(id=int(payment_method_id), club_id=int(club_id))
+            .one_or_none()
+        )
+        if row is None:
+            return "Stripe"
+        return format_stripe_method_label(row.name)
+
+
+def format_stripe_payment_notification_text(
+    *,
+    club_name: str,
+    group_title: str,
+    amount_cents: int,
+    method_label: str,
+) -> str:
+    return "\n".join(
+        [
+            f"🔔 {escape_notification_html(club_name)} Payment Notification",
+            f"Group: {escape_notification_html(group_title)}",
+            f"Amount: {format_amount_display(amount_cents, bold=True)}",
+            f"Method: {escape_notification_html(method_label)}",
+        ]
+    )
+
+
+async def notify_stripe_payment_completed(checkout_obj: dict[str, Any]) -> None:
+    """Post staff Telegram notification for a completed Stripe checkout."""
+    meta = checkout_obj.get("metadata") or {}
+    chat_id = _metadata_int(meta, "telegram_chat_id")
+    if chat_id is None and checkout_obj.get("client_reference_id"):
+        try:
+            chat_id = int(checkout_obj["client_reference_id"])
+        except (TypeError, ValueError):
+            chat_id = None
+    club_id = _metadata_int(meta, "club_id")
+    if chat_id is None or club_id is None:
+        return
+
+    amount_total = checkout_obj.get("amount_total")
+    amount_cents = int(amount_total) if amount_total is not None else 0
+    payment_method_id = _metadata_int(meta, "payment_method_id")
+
+    group_title, _ = get_group_title_for_chat(int(chat_id))
+    group_title = (group_title or meta.get("group_title_snapshot") or "").strip()
+    if not group_title:
+        group_title = f"chat {chat_id}"
+
+    with get_db() as session:
+        club = session.query(Club).filter_by(id=int(club_id)).one_or_none()
+        club_name = (club.name if club else "").strip() or "Club"
+
+    method_label = _resolve_stripe_method_label(int(club_id), payment_method_id)
+    text = format_stripe_payment_notification_text(
+        club_name=club_name,
+        group_title=group_title,
+        amount_cents=amount_cents,
+        method_label=method_label,
+    )
+    await send_telegram_notification(text)
+    logger.info(
+        "stripe webhook: notification sent chat_id=%s club_id=%s amount_cents=%s method=%r",
+        chat_id,
+        club_id,
+        amount_cents,
+        method_label,
+    )
 
 
 def construct_stripe_webhook_event(payload: bytes, sig_header: str | None) -> dict[str, Any]:

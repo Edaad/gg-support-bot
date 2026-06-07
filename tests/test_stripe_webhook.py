@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import unittest
 from contextlib import contextmanager
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -119,6 +119,26 @@ class StripeWebhookHandlerTestCase(unittest.TestCase):
             self.assertFalse(sd.record_completed_checkout_payment(payload))
 
 
+class StripeNotificationFormatTestCase(unittest.TestCase):
+    def test_format_stripe_method_label(self):
+        self.assertEqual(sd.format_stripe_method_label("Cashapp"), "Stripe Cashapp")
+        self.assertEqual(sd.format_stripe_method_label("Debitcard"), "Stripe Debitcard")
+        self.assertEqual(sd.format_stripe_method_label(None), "Stripe")
+
+    def test_format_notification_text(self):
+        text = sd.format_stripe_payment_notification_text(
+            club_name="Creator Club",
+            group_title="CC / 8948-5707 / Alex Wilsoj",
+            amount_cents=5000,
+            method_label="Stripe Cashapp",
+        )
+        self.assertIn("🔔 Creator Club Payment Notification", text)
+        self.assertIn("Group: CC / 8948-5707 / Alex Wilsoj", text)
+        self.assertIn("Amount: <b>$50</b>", text)
+        self.assertIn("Method: Stripe Cashapp", text)
+        self.assertNotIn("Player ID", text)
+
+
 class StripeWebhookApiTestCase(unittest.TestCase):
     def setUp(self):
         self.env_patch = patch.dict(
@@ -144,13 +164,19 @@ class StripeWebhookApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
 
     def test_webhook_accepts_valid_event(self):
+        checkout_obj = _completed_checkout_payload()
         event = {
             "type": "checkout.session.completed",
-            "data": {"object": {"id": SESSION_ID}},
+            "data": {"object": checkout_obj},
         }
         with (
             patch.object(stripe_routes, "construct_stripe_webhook_event", return_value=event),
             patch.object(stripe_routes, "apply_checkout_session_webhook_event", return_value=True) as apply_mock,
+            patch.object(
+                stripe_routes,
+                "notify_stripe_payment_completed",
+                new=AsyncMock(),
+            ) as notify_mock,
         ):
             response = self.client.post(
                 "/api/stripe/webhook",
@@ -160,6 +186,7 @@ class StripeWebhookApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"received": True})
         apply_mock.assert_called_once_with(event)
+        notify_mock.assert_awaited_once_with(checkout_obj)
 
 
 if __name__ == "__main__":

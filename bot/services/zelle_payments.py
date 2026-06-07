@@ -26,13 +26,14 @@ from bot.services.venmo_payments import (
     BindResult,
     BoundGroup,
     IngestResult,
+    edit_telegram_notification,
+    escape_notification_html,
     format_amount_display,
     normalize_payer_name,
     parse_amount_cents,
     resolve_bound_group,
     resolve_display_group_title,
     send_telegram_notification,
-    edit_telegram_notification,
     TEST_NOTIFICATION_BANNER,
     _format_deposit_timestamp,
 )
@@ -79,20 +80,20 @@ def format_setup_already_linked_warning(
     lines = [
         "⚠️ First-time Zelle setup warning",
         "",
-        f"Already bound: {already_bound_group_title}",
+        f"Already bound: {escape_notification_html(already_bound_group_title)}",
         last_deposit_line,
         "",
         "Incoming setup payment matched but was left unbound for manual review.",
-        f"Name: {payment.payer_name}",
-        f"Amount: {format_amount_display(payment.amount_cents)}",
+        f"Name: {escape_notification_html(payment.payer_name)}",
+        f"Amount: {format_amount_display(payment.amount_cents, bold=True)}",
     ]
     memo = (getattr(payment, "memo", None) or "").strip()
     if memo:
-        lines.append(f"Memo: {memo}")
+        lines.append(f"Memo: {escape_notification_html(memo)}")
     lines.extend(
         [
-            f"Method: {payment.zelle_recipient}",
-            f"Setup chat: {setup_chat_title}",
+            f"Method: {escape_notification_html(payment.zelle_recipient)}",
+            f"Setup chat: {escape_notification_html(setup_chat_title)}",
         ]
     )
 
@@ -113,7 +114,7 @@ def format_notification_text(
     ]
 
     if group_title:
-        lines.append(f"Group Chat: {group_title}")
+        lines.append(f"Group Chat: {escape_notification_html(group_title)}")
     else:
         lines.append(
             "Group Chat: Unbound — reply to this message with the group title to bind"
@@ -122,14 +123,14 @@ def format_notification_text(
     lines.extend(
         [
             "",
-            f"Name: {payment.payer_name}",
-            f"Amount: {format_amount_display(payment.amount_cents)}",
+            f"Name: {escape_notification_html(payment.payer_name)}",
+            f"Amount: {format_amount_display(payment.amount_cents, bold=True)}",
         ]
     )
     memo = (getattr(payment, "memo", None) or "").strip()
     if memo:
-        lines.append(f"Memo: {memo}")
-    lines.append(f"Method: {payment.zelle_recipient}")
+        lines.append(f"Memo: {escape_notification_html(memo)}")
+    lines.append(f"Method: {escape_notification_html(payment.zelle_recipient)}")
 
     body = "\n".join(lines)
     if getattr(payment, "is_test", False):

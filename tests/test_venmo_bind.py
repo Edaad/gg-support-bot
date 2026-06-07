@@ -37,7 +37,7 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         text = vp.format_notification_text(payment)
         self.assertIn("Unbound", text)
         self.assertIn("Moshe Toussoun", text)
-        self.assertIn("Amount: $200", text)
+        self.assertIn("Amount: <b>$200</b>", text)
         self.assertLess(text.index("Group Chat:"), text.index("Name:"))
 
     def test_format_amount_display_rounds_to_whole_dollars(self):
@@ -45,6 +45,7 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         self.assertEqual(vp.format_amount_display(8999), "$90")
         self.assertEqual(vp.format_amount_display(8950), "$90")
         self.assertEqual(vp.format_amount_display(20000), "$200")
+        self.assertEqual(vp.format_amount_display(20000, bold=True), "<b>$200</b>")
 
     def test_format_notification_test_banner(self):
         payment = VenmoPayment(
