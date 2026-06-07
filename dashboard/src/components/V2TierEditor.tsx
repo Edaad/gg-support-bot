@@ -16,6 +16,7 @@ import { useConfirm } from './ConfirmProvider'
 import {
   methodEnvelopeLabel,
   PRIMARY_TIER_MIN_TIP,
+  formatLockedAmountValue,
   validateTierAmountBand,
 } from '../lib/v2TierAmounts'
 
@@ -29,6 +30,7 @@ function amountLabel(min: number | null | undefined, max: number | null | undefi
 export default function V2TierEditor({
   token,
   methodId,
+  methodSlug,
   absoluteMin,
   absoluteMax,
   hasSubOptions = false,
@@ -36,6 +38,7 @@ export default function V2TierEditor({
 }: {
   token: string
   methodId: number
+  methodSlug?: string
   absoluteMin?: number | null
   absoluteMax?: number | null
   hasSubOptions?: boolean
@@ -91,6 +94,7 @@ export default function V2TierEditor({
 
   const sorted = sortV2Tiers(tiers)
   const defaultTier = primaryV2Tier(sorted)
+  const primaryTierId = defaultTier?.id ?? null
   const displayTiers = defaultTier
     ? [defaultTier, ...sorted.filter((t) => t.id !== defaultTier.id)]
     : sorted
@@ -200,7 +204,7 @@ export default function V2TierEditor({
       </div>
 
       {displayTiers.map((t) => {
-        const primary = isPrimaryV2Tier(t, tiers)
+        const primary = primaryTierId != null && t.id === primaryTierId
         const range = amountLabel(t.min_amount, t.max_amount)
         const variantCount = t.variants?.length ?? 0
         const expanded = expandedTierIds.has(t.id)
@@ -292,6 +296,8 @@ export default function V2TierEditor({
                       tierId={t.id}
                       embedded
                       requiresVariants
+                      methodSlug={methodSlug}
+                      tierStripeEnabled={Boolean(t.use_group_checkout_link)}
                       absoluteMin={absoluteMin}
                       absoluteMax={absoluteMax}
                       isPrimaryTier={primary}
@@ -334,22 +340,29 @@ export default function V2TierEditor({
               <label htmlFor={tierMinId} className="label-field-xs">
                 Min amount ($)
               </label>
-              <input
-                id={tierMinId}
-                type="number"
-                min={absoluteMin ?? undefined}
-                max={absoluteMax ?? undefined}
-                value={form.min_amount ?? ''}
-                onChange={(e) =>
-                  setForm({ ...form, min_amount: e.target.value ? Number(e.target.value) : null })
-                }
-                disabled={editingPrimary}
-                readOnly={editingPrimary}
-                className="input-field-sm disabled:cursor-not-allowed disabled:opacity-60"
-                placeholder={absoluteMin != null ? `≥ ${absoluteMin}` : 'No minimum'}
-              />
-              {editingPrimary && (
-                <p className="mt-1 text-xs text-ink-muted">{PRIMARY_TIER_MIN_TIP}</p>
+              {editingPrimary ? (
+                <>
+                  <div className="rounded-lg border border-border bg-control/40 px-3 py-2 text-sm text-ink">
+                    {formatLockedAmountValue(
+                      form.min_amount,
+                      absoluteMin != null ? `$${absoluteMin} (method minimum)` : 'No minimum',
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-ink-muted">{PRIMARY_TIER_MIN_TIP}</p>
+                </>
+              ) : (
+                <input
+                  id={tierMinId}
+                  type="number"
+                  min={absoluteMin ?? undefined}
+                  max={absoluteMax ?? undefined}
+                  value={form.min_amount ?? ''}
+                  onChange={(e) =>
+                    setForm({ ...form, min_amount: e.target.value ? Number(e.target.value) : null })
+                  }
+                  className="input-field-sm"
+                  placeholder={absoluteMin != null ? `≥ ${absoluteMin}` : 'No minimum'}
+                />
               )}
             </div>
             <div>

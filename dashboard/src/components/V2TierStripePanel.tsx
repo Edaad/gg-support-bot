@@ -1,6 +1,6 @@
 import { useId, useState, useEffect } from 'react'
 import { listV2Tiers, updateV2Tier, type V2Tier } from '../api/v2Client'
-import { validateCheckoutAmountBounds, PRIMARY_TIER_MIN_TIP } from '../lib/v2TierAmounts'
+import { validateCheckoutAmountBounds, PRIMARY_TIER_MIN_TIP, formatLockedAmountValue } from '../lib/v2TierAmounts'
 
 function stripeSavePayload(form: Partial<V2Tier>): Partial<V2Tier> {
   const useLink = Boolean(form.use_group_checkout_link)
@@ -169,25 +169,29 @@ export default function V2TierStripePanel({
                 <label htmlFor={checkoutMinId} className="label-field-xs">
                   Checkout min ($)
                 </label>
-                <input
-                  id={checkoutMinId}
-                  type="number"
-                  value={form.checkout_min_amount ?? ''}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      checkout_min_amount: e.target.value ? Number(e.target.value) : null,
-                    }))
-                  }
-                  disabled={isPrimaryTier}
-                  readOnly={isPrimaryTier}
-                  className="input-field-sm disabled:cursor-not-allowed disabled:opacity-60"
-                  placeholder="Optional"
-                  min={absoluteMin ?? undefined}
-                  max={absoluteMax ?? undefined}
-                />
-                {isPrimaryTier && (
-                  <p className="mt-1 text-xs text-ink-muted">{PRIMARY_TIER_MIN_TIP}</p>
+                {isPrimaryTier ? (
+                  <>
+                    <div className="rounded-lg border border-border bg-control/40 px-3 py-2 text-sm text-ink">
+                      {formatLockedAmountValue(form.checkout_min_amount, 'Optional')}
+                    </div>
+                    <p className="mt-1 text-xs text-ink-muted">{PRIMARY_TIER_MIN_TIP}</p>
+                  </>
+                ) : (
+                  <input
+                    id={checkoutMinId}
+                    type="number"
+                    value={form.checkout_min_amount ?? ''}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        checkout_min_amount: e.target.value ? Number(e.target.value) : null,
+                      }))
+                    }
+                    className="input-field-sm"
+                    placeholder="Optional"
+                    min={absoluteMin ?? undefined}
+                    max={absoluteMax ?? undefined}
+                  />
                 )}
               </div>
               <div>

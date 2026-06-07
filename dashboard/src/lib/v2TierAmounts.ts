@@ -3,6 +3,22 @@ import type { V2Tier } from '../api/v2Client'
 export const PRIMARY_TIER_MIN_TIP =
   'The default tier minimum cannot be changed here. To use a higher minimum, add a new amount tier.'
 
+const STRIPE_CHECKOUT_METHOD_SLUGS = new Set(['applepay', 'debitcard', 'stripe'])
+
+export function showVariantCheckoutBounds(
+  methodSlug: string | undefined,
+  options?: { overrideStripe?: boolean; tierStripeEnabled?: boolean },
+): boolean {
+  if (options?.overrideStripe) return true
+  if (options?.tierStripeEnabled) return true
+  const slug = (methodSlug || '').trim().toLowerCase()
+  return STRIPE_CHECKOUT_METHOD_SLUGS.has(slug)
+}
+
+export function formatLockedAmountValue(value: number | null | undefined, placeholder: string): string {
+  return value != null ? `$${value}` : placeholder
+}
+
 const AMOUNT_LOW = -1_000_000_000
 const AMOUNT_HIGH = 1_000_000_000
 

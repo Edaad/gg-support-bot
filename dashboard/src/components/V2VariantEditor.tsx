@@ -8,7 +8,7 @@ import {
 } from '../api/v2Client'
 import ResponseEditor from './ResponseEditor'
 import { useConfirm } from './ConfirmProvider'
-import { validateCheckoutAmountBounds, PRIMARY_TIER_MIN_TIP } from '../lib/v2TierAmounts'
+import { validateCheckoutAmountBounds, PRIMARY_TIER_MIN_TIP, showVariantCheckoutBounds, formatLockedAmountValue } from '../lib/v2TierAmounts'
 
 function variantSavePayload(form: Partial<V2Variant>, overrideStripe: boolean): Partial<V2Variant> {
   const useLink = overrideStripe ? Boolean(form.use_group_checkout_link) : null
@@ -40,6 +40,8 @@ export default function V2VariantEditor({
   requiresVariants = false,
   absoluteMin,
   absoluteMax,
+  methodSlug,
+  tierStripeEnabled = false,
   isPrimaryTier = false,
 }: {
   token: string
@@ -48,6 +50,8 @@ export default function V2VariantEditor({
   requiresVariants?: boolean
   absoluteMin?: number | null
   absoluteMax?: number | null
+  methodSlug?: string
+  tierStripeEnabled?: boolean
   isPrimaryTier?: boolean
 }) {
   const askConfirm = useConfirm()
@@ -89,11 +93,9 @@ export default function V2VariantEditor({
     if (!form.label?.trim()) return
     setSaveError('')
     const payload = variantSavePayload(form, overrideStripe)
-    if (isPrimaryTier && editId) {
-      const existing = variants.find((v) => v.id === editId)
-      if (existing) {
-        payload.checkout_min_amount = existing.checkout_min_amount ?? null
-      }
+    if (isPrimaryTier) {
+      const existing = editId ? variants.find((v) => v.id === editId) : null
+      payload.checkout_min_amount = existing?.checkout_min_amount ?? null
     }
     const boundsError = validateCheckoutAmountBounds(
       absoluteMin,
@@ -157,6 +159,10 @@ export default function V2VariantEditor({
 
   const groupLinkEnabled = overrideStripe && Boolean(form.use_group_checkout_link)
   const provider = (form.group_checkout_provider || '').trim().toLowerCase()
+  const showCheckoutBounds = showVariantCheckoutBounds(methodSlug, {
+    overrideStripe,
+    tierStripeEnabled,
+  })
 
   return (
     <div className={embedded ? '' : 'panel-nested mt-3'}>
@@ -284,53 +290,59 @@ export default function V2VariantEditor({
             onChange={(field, value) => setForm({ ...form, [field]: value })}
           />
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label htmlFor={variantMinId} className="label-field-xs">
-                Checkout min ($)
-              </label>
-              <input
-                id={variantMinId}
-                type="number"
-                value={form.checkout_min_amount ?? ''}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    checkout_min_amount: e.target.value ? Number(e.target.value) : null,
-                  })
-                }
-                disabled={isPrimaryTier}
-                readOnly={isPrimaryTier}
-                className="input-field-sm disabled:cursor-not-allowed disabled:opacity-60"
-                placeholder="Inherit from tier"
-                min={absoluteMin ?? undefined}
-                max={absoluteMax ?? undefined}
-              />
-              {isPrimaryTier && (
-                <p className="mt-1 text-xs text-ink-muted">{PRIMARY_TIER_MIN_TIP}</p>
-              )}
+          {showCheckoutBounds && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor={variantMinId} className="label-field-xs">
+                  Checkout min ($)
+                </label>
+                {isPrimaryTier ? (
+                  <>
+                    <div className="rounded-lg border border-border bg-control/40 px-3 py-2 text-sm text-ink">
+                      {formatLockedAmountValue(form.checkout_min_amount, 'Inherit from tier')}
+                    </div>
+                    <p className="mt-1 text-xs text-ink-muted">{PRIMARY_TIER_MIN_TIP}</p>
+                  </>
+                ) : (
+                  <input
+                    id={variantMinId}
+                    type="number"
+                    value={form.checkout_min_amount ?? ''}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        checkout_min_amount: e.target.value ? Number(e.target.value) : null,
+                      })
+                    }
+                    className="input-field-sm"
+                    placeholder="Inherit from tier"
+                    min={absoluteMin ?? undefined}
+                    max={absoluteMax ?? undefined}
+                  />
+                )}
+              </div>
+              <div>
+                <label htmlFor={variantMaxId} className="label-field-xs">
+                  Checkout max ($)
+                </label>
+                <input
+                  id={variantMaxId}
+                  type="number"
+                  value={form.checkout_max_amount ?? ''}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      checkout_max_amount: e.target.value ? Number(e.target.value) : null,
+                    })
+                  }
+                  className="input-field-sm"
+                  placeholder="Inherit from tier"
+                  min={absoluteMin ?? undefined}
+                  max={absoluteMax ?? undefined}
+                />
+              </div>
             </div>
-            <div>
-              <label htmlFor={variantMaxId} className="label-field-xs">
-                Checkout max ($)
-              </label>
-              <input
-                id={variantMaxId}
-                type="number"
-                value={form.checkout_max_amount ?? ''}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    checkout_max_amount: e.target.value ? Number(e.target.value) : null,
-                  })
-                }
-                className="input-field-sm"
-                placeholder="Inherit from tier"
-                min={absoluteMin ?? undefined}
-                max={absoluteMax ?? undefined}
-              />
-            </div>
-          </div>
+          )}
 
           <div className="rounded-xl border border-accent/30 bg-bg p-4">
             <label className="flex items-center gap-2 text-sm text-ink">

@@ -570,6 +570,7 @@ export default function V2MethodEditor({ token, clubId, direction }: Props) {
           key={`tiers-${m.id}`}
           token={token}
           methodId={m.id}
+          methodSlug={m.slug}
           absoluteMin={absoluteMin}
           absoluteMax={absoluteMax}
           hasSubOptions={showSubOptionsFor(m)}
