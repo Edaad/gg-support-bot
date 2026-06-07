@@ -184,6 +184,19 @@ def _format_deposit_timestamp(dt: datetime) -> str:
     return dt.strftime("%b %d, %Y %I:%M %p UTC")
 
 
+def format_paid_at_display(paid_at: str) -> str:
+    """Format an ISO-8601 paid_at string for Telegram notifications."""
+    raw = (paid_at or "").strip()
+    if not raw:
+        return raw
+    try:
+        normalized = raw.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+        return _format_deposit_timestamp(dt)
+    except ValueError:
+        return raw
+
+
 def format_setup_already_linked_warning(
     payment: VenmoPayment,
     *,

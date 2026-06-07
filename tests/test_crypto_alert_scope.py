@@ -68,5 +68,20 @@ class CryptoAlertScopeTestCase(unittest.TestCase):
         self.assertIsNone(result)
 
 
+class FormatPaidAtDisplayTestCase(unittest.TestCase):
+    def test_iso_z_suffix(self):
+        from bot.services.venmo_payments import format_paid_at_display
+
+        self.assertEqual(
+            format_paid_at_display("2026-06-06T21:21:35Z"),
+            "Jun 06, 2026 09:21 PM UTC",
+        )
+
+    def test_unparseable_passthrough(self):
+        from bot.services.venmo_payments import format_paid_at_display
+
+        self.assertEqual(format_paid_at_display("not-a-date"), "not-a-date")
+
+
 if __name__ == "__main__":
     unittest.main()

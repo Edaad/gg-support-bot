@@ -17,6 +17,7 @@ from bot.services.venmo_payments import (
     IngestResult,
     edit_telegram_notification,
     format_amount_display,
+    format_paid_at_display,
     parse_amount_cents,
     resolve_bound_group,
     resolve_display_group_title,
@@ -160,7 +161,7 @@ def format_notification_text(
         ]
     )
     if payment.paid_at:
-        lines.append(f"Paid: {payment.paid_at}")
+        lines.append(f"Paid: {format_paid_at_display(payment.paid_at)}")
 
     body = "\n".join(lines)
     if getattr(payment, "is_test", False):
@@ -243,14 +244,25 @@ async def ingest_crypto_payment(
                 .one_or_none()
             )
             if existing is not None:
+                payment_id = int(existing.id)
+                needs_notification = existing.notification_message_id is None
+                if needs_notification:
+                    text = format_notification_text(existing)
                 logger.info(
                     "crypto ingest: idempotent reject source_external_id=%r "
-                    "existing_payment_id=%s",
+                    "existing_payment_id=%s needs_notification=%s",
                     source_external_id.strip(),
-                    existing.id,
+                    payment_id,
+                    needs_notification,
                 )
+                if needs_notification:
+                    notif_chat_id, notif_message_id = await send_telegram_notification(
+                        text
+                    )
+                    existing.notification_chat_id = notif_chat_id
+                    existing.notification_message_id = notif_message_id
                 return IngestResult(
-                    payment_id=int(existing.id),
+                    payment_id=payment_id,
                     status="bound" if existing.telegram_chat_id else "unbound",
                     auto_bound=False,
                     created=False,
@@ -274,8 +286,8 @@ async def ingest_crypto_payment(
         session.add(payment)
         session.flush()
         payment_id = int(payment.id)
+        text = format_notification_text(payment)
 
-    text = format_notification_text(payment)
     notif_chat_id, notif_message_id = await send_telegram_notification(text)
 
     with get_db() as session:
