@@ -10,6 +10,9 @@ UNBOUND_GROUP_CHAT_LINE = (
     "Group Chat: Unbound — reply to this message with the group title to bind"
 )
 
+# Set True to hyperlink bound group titles to t.me/c/… in payment notifications.
+LINKED_GROUP_CHAT_HYPERLINKS_ENABLED = True
+
 
 def format_group_chat_line(
     *,
@@ -21,7 +24,10 @@ def format_group_chat_line(
     if not title:
         return UNBOUND_GROUP_CHAT_LINE
     safe_title = html.escape(title, quote=False)
-    if telegram_chat_id is not None:
+    if (
+        LINKED_GROUP_CHAT_HYPERLINKS_ENABLED
+        and telegram_chat_id is not None
+    ):
         url = telegram_supergroup_chat_url(int(telegram_chat_id))
         if url:
             return f'Group Chat: <a href="{url}">{safe_title}</a>'
