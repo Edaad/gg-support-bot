@@ -93,6 +93,12 @@ def create_app() -> FastAPI:
 
         @app.get("/{full_path:path}")
         def serve_spa(full_path: str):
+            # Do not treat /api/* as SPA routes — otherwise POSTs to unknown API paths
+            # return 405 (GET exists) instead of 404/ hitting the real handler.
+            if full_path == "api" or full_path.startswith("api/"):
+                from fastapi import HTTPException
+
+                raise HTTPException(404, "Not Found")
             file = dist_dir / full_path
             if file.is_file():
                 return FileResponse(str(file))
