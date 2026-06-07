@@ -24,17 +24,18 @@ def telegram_chat_ids_match(a: int, b: int) -> bool:
 
 
 def telegram_supergroup_chat_url(chat_id: int) -> str | None:
-    """Build a ``t.me/c/…`` URL for a Telegram supergroup or legacy group chat id."""
+    """Build a ``t.me/c/…`` URL for a Telegram supergroup or channel chat id.
+
+    Basic groups (Bot API ``type=group``, id like ``-5287778428``) do not support
+    ``t.me/c/…`` links — only supergroups/channels (id ``-100…``) do.
+    """
     cid = int(chat_id)
     if cid >= 0:
         return None
     s = str(cid)
-    if s.startswith("-100") and len(s) > 4:
-        internal = s[4:]
-    elif s.startswith("-"):
-        internal = s[1:]
-    else:
+    if not (s.startswith("-100") and len(s) > 4):
         return None
+    internal = s[4:]
     if not internal.isdigit():
         return None
     return f"https://t.me/c/{internal}"

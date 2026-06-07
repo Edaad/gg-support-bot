@@ -10,8 +10,21 @@ UNBOUND_GROUP_CHAT_LINE = (
     "Group Chat: Unbound — reply to this message with the group title to bind"
 )
 
-# Set True to hyperlink bound group titles to t.me/c/… in payment notifications.
+# Set True to hyperlink bound group titles in payment notifications.
 LINKED_GROUP_CHAT_HYPERLINKS_ENABLED = True
+
+
+def _invite_link_for_chat(telegram_chat_id: int) -> str | None:
+    """Return a stored megagroup invite link when ``t.me/c/…`` is not available."""
+    from bot.services.support_group_chats import fetch_support_group_chat_by_telegram_chat_id
+
+    row = fetch_support_group_chat_by_telegram_chat_id(int(telegram_chat_id))
+    if row is None:
+        return None
+    link = (row.invite_link or "").strip()
+    if link.startswith("http://") or link.startswith("https://"):
+        return link
+    return None
 
 
 def format_group_chat_line(
@@ -28,9 +41,11 @@ def format_group_chat_line(
         LINKED_GROUP_CHAT_HYPERLINKS_ENABLED
         and telegram_chat_id is not None
     ):
-        url = telegram_supergroup_chat_url(int(telegram_chat_id))
+        cid = int(telegram_chat_id)
+        url = telegram_supergroup_chat_url(cid) or _invite_link_for_chat(cid)
         if url:
-            return f'Group Chat: <a href="{url}">{safe_title}</a>'
+            safe_url = html.escape(url, quote=True)
+            return f'Group Chat: <a href="{safe_url}">{safe_title}</a>'
     return f"Group Chat: {safe_title}"
 
 
