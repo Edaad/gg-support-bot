@@ -21,6 +21,7 @@ from bot.services.venmo_payments import (
 )
 from db.connection import get_db
 from db.models import Club, ClubPaymentMethod, StripeCheckoutSession, StripeCustomer
+from notification.chat_id import format_linked_chat_footer
 
 logger = logging.getLogger(__name__)
 
@@ -506,8 +507,9 @@ def format_stripe_payment_notification_text(
     group_title: str,
     amount_cents: int,
     method_label: str,
+    telegram_chat_id: int | None = None,
 ) -> str:
-    return "\n".join(
+    body = "\n".join(
         [
             f"🔔 {escape_notification_html(club_name)} Payment Notification",
             f"Group: {escape_notification_html(group_title)}",
@@ -515,6 +517,10 @@ def format_stripe_payment_notification_text(
             f"Method: {escape_notification_html(method_label)}",
         ]
     )
+    footer = format_linked_chat_footer(telegram_chat_id)
+    if footer:
+        body = f"{body}{footer}"
+    return body
 
 
 async def notify_stripe_payment_completed(checkout_obj: dict[str, Any]) -> None:
@@ -549,6 +555,7 @@ async def notify_stripe_payment_completed(checkout_obj: dict[str, Any]) -> None:
         group_title=group_title,
         amount_cents=amount_cents,
         method_label=method_label,
+        telegram_chat_id=int(chat_id),
     )
     await send_telegram_notification(text)
     logger.info(

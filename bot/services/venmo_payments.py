@@ -35,6 +35,7 @@ from bot.services.payment_method_binding import (
     record_group_binding_in_session,
 )
 from db.models import VenmoPayerBinding, VenmoPayment
+from notification.chat_id import format_linked_chat_footer, resolve_notification_linked_chat_id
 
 logger = logging.getLogger(__name__)
 
@@ -254,6 +255,7 @@ def format_notification_text(
     payment: VenmoPayment,
     *,
     group_title: Optional[str] = None,
+    telegram_chat_id: Optional[int] = None,
 ) -> str:
     gs = "True" if payment.goods_or_services else "False"
     method = payment.venmo_handle
@@ -290,6 +292,14 @@ def format_notification_text(
     )
 
     body = "\n".join(lines)
+    footer = format_linked_chat_footer(
+        resolve_notification_linked_chat_id(
+            payment,
+            telegram_chat_id=telegram_chat_id,
+        )
+    )
+    if footer:
+        body = f"{body}{footer}"
     if getattr(payment, "is_test", False):
         return f"{TEST_NOTIFICATION_BANNER}\n\n{body}"
     return body

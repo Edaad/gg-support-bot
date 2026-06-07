@@ -39,6 +39,23 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         self.assertIn("Moshe Toussoun", text)
         self.assertIn("Amount: <b>$200</b>", text)
         self.assertLess(text.index("Group Chat:"), text.index("Name:"))
+        self.assertNotIn("Open group chat", text)
+
+    def test_format_notification_bound_includes_linked_chat_link(self):
+        payment = VenmoPayment(
+            payer_name="Moshe Toussoun",
+            amount_cents=20000,
+            venmo_handle="@godfather4444",
+            goods_or_services=False,
+            telegram_chat_id=CHAT_ID,
+        )
+        text = vp.format_notification_text(
+            payment,
+            group_title=GROUP_TITLE,
+        )
+        self.assertIn(GROUP_TITLE, text)
+        self.assertIn('href="https://t.me/c/1234567890">Open group chat</a>', text)
+        self.assertLess(text.index("Method:"), text.index("Open group chat"))
 
     def test_format_amount_display_rounds_to_whole_dollars(self):
         self.assertEqual(vp.format_amount_display(500), "$5")
@@ -112,6 +129,7 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         self.assertIn("left unbound for manual review", text)
         self.assertIn("Memo: FLOP", text)
         self.assertIn("Setup chat: RT / 9999-0000 / New Setup", text)
+        self.assertNotIn("Open group chat", text)
 
     def test_format_setup_already_linked_warning_no_prior_deposit(self):
         payment = VenmoPayment(

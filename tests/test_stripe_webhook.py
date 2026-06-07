@@ -131,11 +131,13 @@ class StripeNotificationFormatTestCase(unittest.TestCase):
             group_title="CC / 8948-5707 / Alex Wilsoj",
             amount_cents=5000,
             method_label="Stripe Cashapp",
+            telegram_chat_id=CHAT_ID,
         )
         self.assertIn("🔔 Creator Club Payment Notification", text)
         self.assertIn("Group: CC / 8948-5707 / Alex Wilsoj", text)
         self.assertIn("Amount: <b>$50</b>", text)
         self.assertIn("Method: Stripe Cashapp", text)
+        self.assertIn('href="https://t.me/c/1234567890">Open group chat</a>', text)
         self.assertNotIn("Player ID", text)
 
 

@@ -39,6 +39,7 @@ from bot.services.venmo_payments import (
 )
 from db.connection import get_db
 from db.models import ZellePayerBinding, ZellePayment
+from notification.chat_id import format_linked_chat_footer, resolve_notification_linked_chat_id
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,7 @@ def format_notification_text(
     payment: ZellePayment,
     *,
     group_title: Optional[str] = None,
+    telegram_chat_id: Optional[int] = None,
 ) -> str:
     lines = [
         "🔔 Zelle Payment Notification",
@@ -133,6 +135,14 @@ def format_notification_text(
     lines.append(f"Method: {escape_notification_html(payment.zelle_recipient)}")
 
     body = "\n".join(lines)
+    footer = format_linked_chat_footer(
+        resolve_notification_linked_chat_id(
+            payment,
+            telegram_chat_id=telegram_chat_id,
+        )
+    )
+    if footer:
+        body = f"{body}{footer}"
     if getattr(payment, "is_test", False):
         return f"{TEST_NOTIFICATION_BANNER}\n\n{body}"
     return body
