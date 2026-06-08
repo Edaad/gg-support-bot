@@ -57,6 +57,7 @@ def create_app() -> FastAPI:
     from api.routes.stripe_deposit import router as stripe_deposit_router
     from api.routes.venmo_payments import router as venmo_payments_router
     from api.routes.zelle_payments import router as zelle_payments_router
+    from api.routes.cashapp_payments import router as cashapp_payments_router
     from api.routes.crypto_payments import router as crypto_payments_router
     from api.routes.v2_payment import router as v2_payment_router
 
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(stripe_deposit_router)
     app.include_router(venmo_payments_router)
     app.include_router(zelle_payments_router)
+    app.include_router(cashapp_payments_router)
     app.include_router(crypto_payments_router)
     app.include_router(v2_payment_router)
     app.include_router(clubs_router)

@@ -352,7 +352,7 @@ def _pick_deposit_variant_response(
     tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
     sticky_variant_id: int | None = None
     slug_norm = (method_slug or "").strip().lower()
-    if slug_norm in ("venmo", "zelle") and chat_id is not None:
+    if slug_norm in ("venmo", "zelle", "cashapp") and chat_id is not None:
         binding = get_chat_binding(int(chat_id), slug_norm)
         if binding and binding.variant_id:
             sticky_variant_id = binding.variant_id

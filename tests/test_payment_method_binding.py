@@ -14,6 +14,9 @@ from bot.services.payment_method_binding import (
     effective_min_cents,
     extract_venmo_handle_from_text,
     extract_venmo_url,
+    extract_cashapp_handle_from_text,
+    extract_cashapp_url,
+    _normalize_cashapp_handle,
     extract_zelle_details,
     find_existing_venmo_link_for_setup,
     format_first_time_memo_setup_message,
@@ -74,6 +77,18 @@ class TestBindModeForMethod(unittest.TestCase):
                 _mock_method_row(enabled=True, mode=BIND_KIND_MEMO_EMOJI)
             )
             self.assertIsNone(bind_mode_for_method("zelle", club_id=2))
+
+    def test_cashapp_memo_mode_when_enabled(self):
+        with patch("bot.services.payment_method_binding.get_db") as mock_get_db:
+            session = MagicMock()
+            mock_get_db.return_value.__enter__.return_value = session
+            session.query.return_value.filter_by.return_value.one_or_none.return_value = (
+                _mock_method_row(enabled=True, mode=BIND_KIND_MEMO_EMOJI)
+            )
+            self.assertEqual(
+                bind_mode_for_method("cashapp", club_id=2),
+                BIND_KIND_MEMO_EMOJI,
+            )
 
 
 class TestUnbind(unittest.TestCase):
@@ -147,6 +162,30 @@ class TestVenmoExtract(unittest.TestCase):
             extract_venmo_handle_from_text(text),
             "@godfather4444",
         )
+
+
+class TestCashAppExtract(unittest.TestCase):
+    def test_url_and_handle(self):
+        text = "Cashapp: https://cash.app/$eduardok4444\n• screenshot"
+        self.assertEqual(
+            extract_cashapp_url(text),
+            "https://cash.app/$eduardok4444",
+        )
+        self.assertEqual(
+            extract_cashapp_handle_from_text(text),
+            "$eduardok4444",
+        )
+
+    def test_bare_cashtag(self):
+        text = "Send to $michaelc4444 when ready"
+        self.assertEqual(
+            extract_cashapp_handle_from_text(text),
+            "$michaelc4444",
+        )
+
+    def test_normalize_handle(self):
+        self.assertEqual(_normalize_cashapp_handle("EduardoK4444"), "$eduardok4444")
+        self.assertEqual(_normalize_cashapp_handle("$michaelc4444"), "$michaelc4444")
 
 
 class TestAllocateSetupMemoCode(unittest.TestCase):

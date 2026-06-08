@@ -17,9 +17,11 @@ from api.payments_helpers import (
     apply_session_filters,
     apply_venmo_payment_filters,
     apply_zelle_payment_filters,
+    apply_cashapp_payment_filters,
     apply_crypto_payment_filters,
     build_venmo_payment_read,
     build_zelle_payment_read,
+    build_cashapp_payment_read,
     build_crypto_payment_read,
     cents_to_usd,
     compute_zelle_payment_summary,
@@ -27,6 +29,7 @@ from api.payments_helpers import (
     list_stripe_deposit_methods,
     list_venmo_payer_aggregates,
     list_zelle_payer_aggregates,
+    list_cashapp_payer_aggregates,
     lookup_gg_nickname,
     resolve_group_title,
     resolve_method_display,
@@ -63,6 +66,12 @@ from api.schemas_payments import (
     ZellePaymentRead,
     ZellePaymentSummaryByClub,
     ZellePaymentSummaryResponse,
+    CashAppBindRequest,
+    CashAppBindResponse,
+    CashAppPayerListResponse,
+    CashAppPayerRead,
+    CashAppPaymentListResponse,
+    CashAppPaymentRead,
     CryptoBindRequest,
     CryptoBindResponse,
     CryptoPaymentListResponse,
@@ -70,6 +79,7 @@ from api.schemas_payments import (
 )
 from bot.services.venmo_payments import bind_venmo_payment_by_id
 from bot.services.zelle_payments import bind_zelle_payment_by_id
+from bot.services.cashapp_payments import bind_cashapp_payment_by_id
 from bot.services.crypto_payments import bind_crypto_payment_by_id
 from db.connection import get_db_dependency
 from bot.services.payment_method_binding import unbind_by_id
@@ -82,6 +92,7 @@ from db.models import (
     StripeCustomer,
     VenmoPayment,
     ZellePayment,
+    CashAppPayment,
     CryptoPayment,
 )
 
@@ -100,6 +111,7 @@ _MIGRATION_HINT = (
 )
 _VENMO_MIGRATION_HINT = "Run: python migrate_venmo_payments.py (or heroku run … on the web dyno)"
 _ZELLE_MIGRATION_HINT = "Run: python migrate_zelle_payments.py (or heroku run … on the web dyno)"
+_CASHAPP_MIGRATION_HINT = "Run: python migrate_cashapp_payments.py (or heroku run … on the web dyno)"
 _CRYPTO_MIGRATION_HINT = "Run: python migrate_crypto_payments.py (or heroku run … on the web dyno)"
 _BINDINGS_MIGRATION_HINT = (
     "Run: python migrate_payment_method_bindings.py (or heroku run … on the web dyno)"
@@ -178,6 +190,12 @@ def _raise_db_schema_error(exc: ProgrammingError) -> None:
                 503,
                 f"Zelle payments tables or columns are missing. {_ZELLE_MIGRATION_HINT}",
             ) from exc
+    if "cashapp_payments" in low or "cashapp_payer_bindings" in low:
+        if "does not exist" in low or "undefinedcolumn" in low.replace(" ", ""):
+            raise HTTPException(
+                503,
+                f"Cash App payments tables or columns are missing. {_CASHAPP_MIGRATION_HINT}",
+            ) from exc
     if "crypto_payments" in low:
         if "does not exist" in low or "undefinedcolumn" in low.replace(" ", ""):
             raise HTTPException(
@@ -199,6 +217,7 @@ def list_providers():
         PaymentProviderRead(id="stripe", label="Stripe"),
         PaymentProviderRead(id="venmo", label="Venmo"),
         PaymentProviderRead(id="zelle", label="Zelle"),
+        PaymentProviderRead(id="cashapp", label="Cash App"),
         PaymentProviderRead(id="crypto", label="Crypto"),
     ]
 
@@ -643,6 +662,125 @@ async def bind_zelle_payment(
     )
 
 
+@router.get("/cashapp/payments", response_model=CashAppPaymentListResponse)
+def list_cashapp_payments(
+    club_id: int = Query(...),
+    status: str = Query("all", description="bound | unbound | all"),
+    from_dt: str | None = Query(None, alias="from"),
+    to_dt: str | None = Query(None, alias="to"),
+    q: str | None = Query(None),
+    include_test: bool = Query(False),
+    limit: int = Query(_DEFAULT_LIMIT),
+    offset: int = Query(0),
+    db: Session = Depends(get_db_dependency),
+):
+    _get_club_or_404(db, club_id)
+    limit = _clamp_limit(limit)
+    offset = max(0, offset)
+
+    try:
+        base = db.query(CashAppPayment)
+        base = apply_cashapp_payment_filters(
+            base,
+            club_id=club_id,
+            status=status,
+            from_dt=_parse_dt(from_dt),
+            to_dt=_parse_dt(to_dt),
+            include_test=include_test,
+            q=q,
+        )
+        total = base.count()
+        rows = (
+            base.order_by(CashAppPayment.created_at.desc(), CashAppPayment.id.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
+
+    items = [
+        CashAppPaymentRead.model_validate(build_cashapp_payment_read(db, row)) for row in rows
+    ]
+    return CashAppPaymentListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/cashapp/payers", response_model=CashAppPayerListResponse)
+def list_cashapp_payers(
+    club_id: int = Query(...),
+    q: str | None = Query(None),
+    limit: int = Query(_DEFAULT_LIMIT),
+    offset: int = Query(0),
+    db: Session = Depends(get_db_dependency),
+):
+    _get_club_or_404(db, club_id)
+    limit = _clamp_limit(limit)
+    offset = max(0, offset)
+
+    try:
+        agg = list_cashapp_payer_aggregates(db, club_id, q)
+        subq = agg.subquery()
+        total = db.query(func.count()).select_from(subq).scalar() or 0
+        rows = agg.offset(offset).limit(limit).all()
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
+
+    items: list[CashAppPayerRead] = []
+    for row in rows:
+        chat_id = int(row.telegram_chat_id) if row.telegram_chat_id else None
+        title, gg_id = resolve_group_title(db, chat_id) if chat_id else (None, None)
+        total_cents = int(row.total_cents or 0)
+        items.append(
+            CashAppPayerRead(
+                payer_name=row.payer_name,
+                cashapp_handle=row.cashapp_handle,
+                group_title=title,
+                gg_player_id=gg_id,
+                gg_nickname=lookup_gg_nickname(db, club_id, gg_id),
+                total_deposited_cents=total_cents,
+                total_deposited_usd=cents_to_usd(total_cents),
+                payment_count=int(row.payment_count or 0),
+                last_payment_at=row.last_payment_at,
+            )
+        )
+
+    return CashAppPayerListResponse(items=items, total=int(total), limit=limit, offset=offset)
+
+
+@router.post("/cashapp/payments/{payment_id}/bind", response_model=CashAppBindResponse)
+async def bind_cashapp_payment(
+    payment_id: int,
+    body: CashAppBindRequest,
+    db: Session = Depends(get_db_dependency),
+):
+    group_title = (body.group_title or "").strip()
+    if not group_title:
+        return CashAppBindResponse(ok=False, error="Group title is required.")
+
+    result = await bind_cashapp_payment_by_id(
+        payment_id=payment_id,
+        group_title_input=group_title,
+    )
+    if not result.ok or result.bound_group is None:
+        return CashAppBindResponse(ok=False, error=result.error or "Could not bind payment.")
+
+    group = result.bound_group
+    payment = db.query(CashAppPayment).filter(CashAppPayment.id == payment_id).first()
+    payment_read = None
+    if payment is not None:
+        payment_read = CashAppPaymentRead.model_validate(
+            build_cashapp_payment_read(db, payment)
+        )
+
+    return CashAppBindResponse(
+        ok=True,
+        group_title=group.group_title,
+        telegram_chat_id=group.telegram_chat_id,
+        club_id=group.club_id,
+        payment=payment_read,
+    )
+
+
 @router.get("/crypto/payments", response_model=CryptoPaymentListResponse)
 def list_crypto_payments(
     club_id: int = Query(...),
@@ -1030,6 +1168,9 @@ def list_bind_attempts(
                 else None,
                 zelle_payment_id=int(row.zelle_payment_id)
                 if row.zelle_payment_id
+                else None,
+                cashapp_payment_id=int(row.cashapp_payment_id)
+                if row.cashapp_payment_id
                 else None,
                 group_title=title,
                 created_at=row.created_at,

@@ -14,6 +14,8 @@ from sqlalchemy import func
 
 from db.connection import get_db
 from db.models import (
+    CashAppPayerBinding,
+    CashAppPayment,
     Club,
     ClubPaymentMethod,
     ClubPaymentTier,
@@ -33,7 +35,7 @@ BIND_ATTEMPT_TTL_SECONDS = 600
 BIND_KIND_SPECIAL_AMOUNT = "special_amount"
 BIND_KIND_MEMO_EMOJI = "memo_emoji"
 
-_BINDABLE_METHOD_SLUGS = frozenset({"venmo", "zelle"})
+_BINDABLE_METHOD_SLUGS = frozenset({"venmo", "zelle", "cashapp"})
 
 # Zelle first-time linking uses exact setup amount only (no memo/caption code matching).
 _ZELLE_MEMO_FIRST_TIME_BINDING_ENABLED = False
@@ -140,6 +142,13 @@ _VENMO_URL_RE = re.compile(
     r"https?://(?:www\.)?venmo\.com/u/([a-zA-Z0-9_-]+)",
     re.IGNORECASE,
 )
+_CASHAPP_URL_RE = re.compile(
+    r"https?://(?:www\.)?cash\.app/\$?([a-zA-Z0-9_-]+)",
+    re.IGNORECASE,
+)
+_CASHAPP_BARE_RE = re.compile(
+    r"(?<![a-zA-Z0-9])\$([a-zA-Z0-9_-]{1,30})(?![a-zA-Z0-9])",
+)
 
 
 def _normalize_venmo_handle(handle: str) -> str:
@@ -162,11 +171,23 @@ def normalize_zelle_recipient(recipient: str) -> str:
     return digits if digits else raw.lower()
 
 
+def _normalize_cashapp_handle(handle: str) -> str:
+    raw = (handle or "").strip()
+    if not raw:
+        return raw
+    if raw.startswith("$"):
+        raw = raw[1:]
+    return f"${raw.lower()}"
+
+
 def _normalize_binding_recipient(slug: str, recipient: str | None) -> str | None:
     if not recipient:
         return None
-    if (slug or "").strip().lower() == "zelle":
+    slug_norm = (slug or "").strip().lower()
+    if slug_norm == "zelle":
         return normalize_zelle_recipient(recipient)
+    if slug_norm == "cashapp":
+        return _normalize_cashapp_handle(recipient)
     return _normalize_venmo_handle(recipient)
 
 
@@ -262,6 +283,27 @@ def extract_venmo_handle_from_text(text: str | None) -> Optional[str]:
     if not m:
         return None
     return _normalize_venmo_handle(m.group(1))
+
+
+def extract_cashapp_handle_from_text(text: str | None) -> Optional[str]:
+    if not text:
+        return None
+    m = _CASHAPP_URL_RE.search(text)
+    if m:
+        return _normalize_cashapp_handle(m.group(1))
+    m = _CASHAPP_BARE_RE.search(text)
+    if m:
+        return _normalize_cashapp_handle(m.group(1))
+    return None
+
+
+def extract_cashapp_url(text: str | None) -> Optional[str]:
+    if not text:
+        return None
+    handle = extract_cashapp_handle_from_text(text)
+    if not handle:
+        return None
+    return f"https://cash.app/{handle}"
 
 
 def variant_venmo_handle(variant_id: int) -> Optional[str]:
@@ -830,6 +872,39 @@ def match_pending_venmo_setup_in_session(
     return None
 
 
+def match_pending_cashapp_setup_in_session(
+    session,
+    *,
+    amount_cents: int,
+    cashapp_handle: str,
+) -> Optional[PaymentMethodBindAttempt]:
+    """Return a pending bind attempt matching ingest amount + variant handle."""
+    handle = _normalize_cashapp_handle(cashapp_handle)
+    if not handle:
+        return None
+    now = datetime.now(timezone.utc)
+    _expire_stale_pending_global(session, now)
+    candidates = (
+        session.query(PaymentMethodBindAttempt)
+        .filter_by(
+            payment_method_slug="cashapp",
+            bind_kind=BIND_KIND_SPECIAL_AMOUNT,
+            status=ATTEMPT_STATUS_PENDING,
+            amount_cents=int(amount_cents),
+        )
+        .filter(PaymentMethodBindAttempt.expires_at >= now)
+        .order_by(PaymentMethodBindAttempt.created_at)
+        .all()
+    )
+    for attempt in candidates:
+        if not _variant_cashapp_handle_matches(
+            session, int(attempt.variant_id), cashapp_handle
+        ):
+            continue
+        return attempt
+    return None
+
+
 def match_pending_zelle_setup_in_session(
     session,
     *,
@@ -898,12 +973,29 @@ def _variant_zelle_recipient_matches(
     return False
 
 
+def _variant_cashapp_handle_matches(
+    session, variant_id: int, cashapp_handle: str
+) -> bool:
+    handle = _normalize_cashapp_handle(cashapp_handle)
+    if not handle:
+        return False
+    variant = session.query(ClubPaymentTierVariant).get(int(variant_id))
+    if not variant:
+        return False
+    for field in (variant.response_text, variant.response_caption):
+        variant_handle = extract_cashapp_handle_from_text(field)
+        if variant_handle and variant_handle == handle:
+            return True
+    return False
+
+
 def match_pending_memo_setup_in_session(
     session,
     *,
     payment_method_slug: str,
     venmo_handle: str = "",
     zelle_recipient: str = "",
+    cashapp_handle: str = "",
     memo: str | None,
 ) -> Optional[PaymentMethodBindAttempt]:
     """Match pending memo_emoji setup by setup code in memo + account on variant."""
@@ -937,6 +1029,10 @@ def match_pending_memo_setup_in_session(
             continue
         if slug == "zelle" and not _variant_zelle_recipient_matches(
             session, int(attempt.variant_id), zelle_recipient
+        ):
+            continue
+        if slug == "cashapp" and not _variant_cashapp_handle_matches(
+            session, int(attempt.variant_id), cashapp_handle
         ):
             continue
         return attempt
@@ -975,6 +1071,28 @@ def find_existing_zelle_link_for_setup(
     normalized = _normalize_payer_name(payer_name)
     payer_row = (
         session.query(ZellePayerBinding)
+        .filter_by(payer_name_normalized=normalized)
+        .one_or_none()
+    )
+    if payer_row is not None:
+        linked_chat_id = int(payer_row.telegram_chat_id)
+        return ExistingVenmoLink(
+            linked_chat_id=linked_chat_id,
+            via="payer_binding",
+        )
+    return None
+
+
+def find_existing_cashapp_link_for_setup(
+    session,
+    *,
+    payer_name: str,
+    setup_chat_id: int,
+) -> Optional[ExistingVenmoLink]:
+    """Return an existing Cash App link that should block setup (payer bound elsewhere)."""
+    normalized = _normalize_payer_name(payer_name)
+    payer_row = (
+        session.query(CashAppPayerBinding)
         .filter_by(payer_name_normalized=normalized)
         .one_or_none()
     )
@@ -1037,6 +1155,31 @@ def get_last_bound_zelle_deposit_at(
     return None
 
 
+def get_last_bound_cashapp_deposit_at(
+    session,
+    *,
+    payer_name: str,
+    telegram_chat_id: int,
+    exclude_payment_id: int,
+) -> Optional[datetime]:
+    """Most recent bound CashAppPayment created_at for payer in chat, or None."""
+    normalized = _normalize_payer_name(payer_name)
+    rows = (
+        session.query(CashAppPayment)
+        .filter(
+            CashAppPayment.telegram_chat_id == int(telegram_chat_id),
+            CashAppPayment.id != int(exclude_payment_id),
+        )
+        .order_by(CashAppPayment.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    for row in rows:
+        if _normalize_payer_name(row.payer_name) == normalized:
+            return row.created_at
+    return None
+
+
 def cancel_setup_attempt_in_session(
     session,
     attempt: PaymentMethodBindAttempt,
@@ -1056,6 +1199,7 @@ def complete_attempt_in_session(
     *,
     venmo_payment_id: int | None = None,
     zelle_payment_id: int | None = None,
+    cashapp_payment_id: int | None = None,
 ) -> bool:
     now = datetime.now(timezone.utc)
     if attempt.status != ATTEMPT_STATUS_PENDING or attempt.expires_at < now:
@@ -1067,6 +1211,10 @@ def complete_attempt_in_session(
     slug = (attempt.payment_method_slug or "").strip().lower()
     if slug == "zelle":
         attempt.zelle_payment_id = int(zelle_payment_id) if zelle_payment_id else None
+    elif slug == "cashapp":
+        attempt.cashapp_payment_id = (
+            int(cashapp_payment_id) if cashapp_payment_id else None
+        )
     else:
         attempt.venmo_payment_id = int(venmo_payment_id) if venmo_payment_id else None
     attempt.completed_at = now
@@ -1236,8 +1384,7 @@ def format_first_time_memo_instructions_message(
     """Pre-ack memo setup: instructions + tap-to-copy code (no payment destination)."""
     slug = (payment_method_slug or "").strip().lower()
     code = (setup_code or "").strip()
-    method_label = "ZELLE" if slug == "zelle" else "VENMO"
-    app_label = "ZELLE APP" if slug == "zelle" else "VENMO APP"
+    method_label, app_label = _method_display_labels(slug)
     future_line = _caps(
         "This one-time step links your payment method so future deposits "
         "go through faster."
@@ -1276,7 +1423,7 @@ def format_first_time_amount_instructions_message(
     """Pre-ack instructions for special-amount binding (no setup amount or destination)."""
     slug = (payment_method_slug or "").strip().lower()
     chosen_display = _format_amount_display(int(chosen_amount_cents))
-    method_label = "ZELLE" if slug == "zelle" else "VENMO"
+    method_label, _app_label = _method_display_labels(slug)
     future_line = _caps(
         "This one-time step links your payment method so future deposits "
         "go through faster."
@@ -1380,6 +1527,15 @@ def format_first_time_payment_destination_message(
                 destination = f"{_caps('Zelle:')} {recipient}"
         return f"{destination}\n\n{closing}"
 
+    if slug == "cashapp":
+        url = extract_cashapp_url(variant_response_text) or "—"
+        if use_html:
+            safe_url = html_module.escape(url, quote=True)
+            destination = f'<b>{_caps("Cashapp:")}</b> <a href="{safe_url}">{safe_url}</a>'
+        else:
+            destination = f"{_caps('Cashapp:')} {url}"
+        return f"{destination}\n\n{closing}"
+
     url = extract_venmo_url(variant_response_text) or "—"
     if use_html:
         safe_url = html_module.escape(url, quote=True)
@@ -1433,6 +1589,30 @@ def format_first_time_memo_setup_message(
             f"{body_middle}\n\n"
             f"{_caps('Zelle email:')} {email_line}\n"
             f"{_caps('Zelle name:')} {name_line}\n\n"
+            f"{after_send}"
+        )
+
+    if slug == "cashapp":
+        url = extract_cashapp_url(variant_response_text) or "—"
+        if use_html:
+            safe_url = html_module.escape(url, quote=True)
+            return (
+                "<b>FIRST-TIME CASH APP SETUP</b>\n"
+                "────────────────────\n\n"
+                f"<b>{_caps('Copy and paste the code above')}</b> "
+                f"{_caps('into the note when you send to the Cash App info below.')}\n\n"
+                f"<b>{_caps('Use this code exactly.')}</b>\n\n"
+                f"{body_middle}\n\n"
+                f'<b>{_caps("Cashapp:")}</b> <a href="{safe_url}">{safe_url}</a>\n\n'
+                f"{after_send}"
+            )
+        return (
+            "FIRST-TIME CASH APP SETUP\n"
+            "--------------------\n\n"
+            f"{_caps('Copy and paste the code above into the note when you send to the Cash App info below.')}\n\n"
+            f"{_caps('Use this code exactly.')}\n\n"
+            f"{body_middle}\n\n"
+            f"{_caps('Cashapp:')} {url}\n\n"
             f"{after_send}"
         )
 
@@ -1632,3 +1812,42 @@ def infer_variant_id_for_zelle_recipient(
                 if variant_recipient and variant_recipient == recipient:
                     return int(v.id)
     return None
+
+
+def infer_variant_id_for_cashapp_handle(
+    club_id: int,
+    cashapp_handle: str,
+) -> Optional[int]:
+    """Match handle to a club Cash App variant response text."""
+    handle = _normalize_cashapp_handle(cashapp_handle)
+    if not handle:
+        return None
+    needle = handle.lstrip("$").lower()
+
+    with get_db() as session:
+        method = (
+            session.query(ClubPaymentMethod)
+            .filter_by(club_id=int(club_id), direction="deposit", slug="cashapp")
+            .one_or_none()
+        )
+        if not method:
+            return None
+        variants = (
+            session.query(ClubPaymentTierVariant)
+            .filter_by(method_id=int(method.id))
+            .all()
+        )
+        for v in variants:
+            for field in (v.response_text, v.response_caption):
+                h = extract_cashapp_handle_from_text(field)
+                if h and h.lstrip("$").lower() == needle:
+                    return int(v.id)
+    return None
+
+
+def _method_display_labels(slug: str) -> tuple[str, str]:
+    if slug == "zelle":
+        return "ZELLE", "ZELLE APP"
+    if slug == "cashapp":
+        return "CASH APP", "CASH APP"
+    return "VENMO", "VENMO APP"

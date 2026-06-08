@@ -418,6 +418,125 @@ export async function fetchAllZellePayments(
   return all
 }
 
+export type CashAppPaymentRow = {
+  id: number
+  payer_name: string
+  cashapp_handle: string
+  amount_cents: number
+  amount_usd: number
+  paid_at: string | null
+  group_title: string | null
+  gg_player_id: string | null
+  gg_nickname: string | null
+  club_id: number | null
+  telegram_chat_id: number | null
+  status: 'bound' | 'unbound'
+  auto_bound: boolean
+  is_test: boolean
+  created_at: string
+  bound_at: string | null
+}
+
+export type CashAppPayerRow = {
+  payer_name: string
+  cashapp_handle: string
+  group_title: string | null
+  gg_player_id: string | null
+  gg_nickname: string | null
+  total_deposited_cents: number
+  total_deposited_usd: number
+  payment_count: number
+  last_payment_at: string | null
+}
+
+export type CashAppBindResult = {
+  ok: boolean
+  error?: string | null
+  group_title?: string | null
+  telegram_chat_id?: number | null
+  club_id?: number | null
+  payment?: CashAppPaymentRow | null
+}
+
+export type CashAppPaymentListParams = {
+  clubId: number
+  status?: 'all' | 'bound' | 'unbound'
+  from?: string
+  to?: string
+  q?: string
+}
+
+export function listCashAppPayments(
+  token: string,
+  params: CashAppPaymentListParams & { limit?: number; offset?: number },
+) {
+  const q = new URLSearchParams({ club_id: String(params.clubId) })
+  if (params.status && params.status !== 'all') q.set('status', params.status)
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  if (params.q?.trim()) q.set('q', params.q.trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  return request<Paginated<CashAppPaymentRow>>(`/cashapp/payments?${q}`, {}, token)
+}
+
+export function listCashAppPayers(
+  token: string,
+  params: { clubId: number; q?: string; limit?: number; offset?: number },
+) {
+  const q = new URLSearchParams({ club_id: String(params.clubId) })
+  if (params.q?.trim()) q.set('q', params.q.trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  return request<Paginated<CashAppPayerRow>>(`/cashapp/payers?${q}`, {}, token)
+}
+
+export function bindCashAppPayment(token: string, paymentId: number, groupTitle: string) {
+  return request<CashAppBindResult>(
+    `/cashapp/payments/${paymentId}/bind`,
+    { method: 'POST', body: JSON.stringify({ group_title: groupTitle }) },
+    token,
+  )
+}
+
+export async function fetchAllCashAppPayments(
+  token: string,
+  params: CashAppPaymentListParams,
+): Promise<CashAppPaymentRow[]> {
+  const all: CashAppPaymentRow[] = []
+  let offset = 0
+  for (;;) {
+    const res = await listCashAppPayments(token, {
+      ...params,
+      limit: EXPORT_PAGE_SIZE,
+      offset,
+    })
+    all.push(...res.items)
+    offset += res.items.length
+    if (offset >= res.total || res.items.length === 0) break
+  }
+  return all
+}
+
+export async function fetchAllCashAppPayers(
+  token: string,
+  params: { clubId: number; q?: string },
+): Promise<CashAppPayerRow[]> {
+  const all: CashAppPayerRow[] = []
+  let offset = 0
+  for (;;) {
+    const res = await listCashAppPayers(token, {
+      ...params,
+      limit: EXPORT_PAGE_SIZE,
+      offset,
+    })
+    all.push(...res.items)
+    offset += res.items.length
+    if (offset >= res.total || res.items.length === 0) break
+  }
+  return all
+}
+
 export async function fetchAllZellePayers(
   token: string,
   params: { clubId: number; q?: string },
@@ -644,6 +763,7 @@ export type BindAttemptRow = {
   bound_via: string
   venmo_payment_id: number | null
   zelle_payment_id: number | null
+  cashapp_payment_id: number | null
   group_title: string | null
   created_at: string
   expires_at: string

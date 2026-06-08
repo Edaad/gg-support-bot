@@ -5,7 +5,9 @@ alwaysApply: true
 
 # Coding behavior
 
-These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+
+Tradeoff: These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
 ## 1. Think before coding
 
@@ -27,7 +29,7 @@ Minimum code that solves the problem. Nothing speculative.
 - No "flexibility" or "configurability" that wasn't requested.
 - No error handling for impossible scenarios.
 - If you write 200 lines and it could be 50, rewrite it.
-- Ask: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+- Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
 ## 3. Surgical changes
 
@@ -61,5 +63,8 @@ For multi-step tasks, state a brief plan:
 
 1. [Step] → verify: [check]
 2. [Step] → verify: [check]
+3. [Step] → verify: [check]
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

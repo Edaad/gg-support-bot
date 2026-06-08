@@ -14,25 +14,14 @@ UNBOUND_GROUP_CHAT_LINE = (
 LINKED_GROUP_CHAT_HYPERLINKS_ENABLED = True
 
 
-def _invite_link_for_chat(telegram_chat_id: int) -> str | None:
-    """Return a stored megagroup invite link when ``t.me/c/…`` is not available."""
-    from bot.services.support_group_chats import fetch_support_group_chat_by_telegram_chat_id
-
-    row = fetch_support_group_chat_by_telegram_chat_id(int(telegram_chat_id))
-    if row is None:
-        return None
-    link = (row.invite_link or "").strip()
-    if link.startswith("http://") or link.startswith("https://"):
-        return link
-    return None
-
-
 def format_group_chat_line(
     *,
     group_title: str | None,
     telegram_chat_id: int | None,
 ) -> str:
     """Format the Group Chat line; hyperlinks the title when a linked chat id is known."""
+    from bot.services.support_group_chats import fetch_invite_link_for_chat
+
     title = (group_title or "").strip()
     if not title:
         return UNBOUND_GROUP_CHAT_LINE
@@ -42,7 +31,10 @@ def format_group_chat_line(
         and telegram_chat_id is not None
     ):
         cid = int(telegram_chat_id)
-        url = telegram_supergroup_chat_url(cid) or _invite_link_for_chat(cid)
+        url = telegram_supergroup_chat_url(cid) or fetch_invite_link_for_chat(
+            cid,
+            group_title=title,
+        )
         if url:
             safe_url = html.escape(url, quote=True)
             return f'Group Chat: <a href="{safe_url}">{safe_title}</a>'

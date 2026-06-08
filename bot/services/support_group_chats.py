@@ -27,6 +27,13 @@ def fetch_player_telegram_user_id_for_chat(telegram_chat_id: int) -> int | None:
         return int(row[0])
 
 
+def _normalize_invite_link(link: str | None) -> str | None:
+    raw = (link or "").strip()
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return raw
+    return None
+
+
 def fetch_support_group_chat_by_telegram_chat_id(
     telegram_chat_id: int,
 ) -> SupportGroupChat | None:
@@ -41,6 +48,118 @@ def fetch_support_group_chat_by_telegram_chat_id(
         if row is not None:
             session.expunge(row)
         return row
+
+
+def fetch_support_group_chat_row_for_chat(
+    telegram_chat_id: int,
+    *,
+    group_title: str | None = None,
+    club_key: str | None = None,
+) -> SupportGroupChat | None:
+    """Latest ``support_group_chats`` row for a chat id variant or exact title."""
+    from notification.chat_id import telegram_chat_id_variants
+
+    with get_db() as session:
+        for cid in telegram_chat_id_variants(int(telegram_chat_id)):
+            q = session.query(SupportGroupChat).filter(
+                SupportGroupChat.telegram_chat_id == int(cid)
+            )
+            if club_key:
+                q = q.filter(SupportGroupChat.club_key == club_key)
+            row = q.order_by(SupportGroupChat.created_at.desc()).first()
+            if row is not None:
+                session.expunge(row)
+                return row
+
+        title = (group_title or "").strip()
+        if title:
+            q = session.query(SupportGroupChat).filter(
+                SupportGroupChat.telegram_chat_title == title
+            )
+            if club_key:
+                q = q.filter(SupportGroupChat.club_key == club_key)
+            row = q.order_by(SupportGroupChat.created_at.desc()).first()
+            if row is not None:
+                session.expunge(row)
+                return row
+    return None
+
+
+def fetch_invite_link_for_chat(
+    telegram_chat_id: int,
+    *,
+    group_title: str | None = None,
+) -> str | None:
+    """Return a stored invite link for a support group chat, if known.
+
+    Tries equivalent Bot API chat id forms (``-100…`` vs legacy ``-…``), then
+    falls back to an exact ``telegram_chat_title`` match.
+    """
+    row = fetch_support_group_chat_row_for_chat(
+        telegram_chat_id,
+        group_title=group_title,
+    )
+    if row is None:
+        return None
+    return _normalize_invite_link(row.invite_link)
+
+
+def upsert_support_group_invite_link(
+    *,
+    club_key: str,
+    club_display_name: str,
+    telegram_chat_id: int,
+    telegram_chat_title: str,
+    invite_link: str,
+    mtproto_session_name: str | None = None,
+) -> tuple[str, int | None]:
+    """Insert or update ``support_group_chats.invite_link`` for a linked group.
+
+    Returns ``(status, row_id)`` where status is ``updated``, ``inserted``,
+    ``unchanged``, or ``error``.
+    """
+    link = _normalize_invite_link(invite_link)
+    if not link:
+        return ("error", None)
+
+    title = (telegram_chat_title or "")[:5000]
+    cid = int(telegram_chat_id)
+    existing = fetch_support_group_chat_row_for_chat(
+        cid,
+        group_title=title,
+        club_key=club_key,
+    )
+    if existing is not None:
+        if _normalize_invite_link(existing.invite_link) == link:
+            return ("unchanged", existing.id)
+        ok, err = update_support_group_chat_row(
+            existing.id,
+            invite_link=link,
+            telegram_chat_title=title,
+            player_dm_status="backfill_invite_link",
+        )
+        if not ok:
+            return ("error", existing.id if err != "not_found" else None)
+        return ("updated", existing.id)
+
+    pk, err = persist_support_group_chat_row(
+        club_key=club_key,
+        club_display_name=club_display_name,
+        telegram_chat_id=cid,
+        telegram_chat_title=title,
+        invite_link=link,
+        created_by_telegram_user_id=None,
+        mtproto_session_name=mtproto_session_name,
+        added_users=[],
+        failed_users=[],
+        group_photo_path=None,
+        initial_group_message_sent=False,
+        last_error_message=None,
+        player_dm_status="backfill_invite_link",
+    )
+    if pk is None:
+        return ("error", None)
+    return ("inserted", pk)
 
 
 def fetch_support_group_chat_by_club_player(

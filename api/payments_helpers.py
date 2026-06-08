@@ -20,6 +20,7 @@ from db.models import (
     Club,
     VenmoPayment,
     ZellePayment,
+    CashAppPayment,
     CryptoPayment,
 )
 
@@ -544,6 +545,116 @@ def compute_zelle_payment_summary(
         "auto_bound_count": auto_bound_count,
         "total_amount_cents": total_amount_cents,
         "by_club": by_club,
+    }
+
+
+def cashapp_payment_status(payment: CashAppPayment) -> str:
+    return "bound" if payment.telegram_chat_id is not None else "unbound"
+
+
+def apply_cashapp_payment_filters(
+    query,
+    *,
+    club_id: int,
+    status: str | None,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+    include_test: bool,
+    q: str | None,
+):
+    if not include_test:
+        query = query.filter(CashAppPayment.is_test.is_(False))
+
+    status_norm = (status or "all").strip().lower()
+    if status_norm == "bound":
+        query = query.filter(
+            CashAppPayment.telegram_chat_id.isnot(None),
+            CashAppPayment.club_id == club_id,
+        )
+    elif status_norm == "unbound":
+        query = query.filter(CashAppPayment.telegram_chat_id.is_(None))
+    else:
+        query = query.filter(
+            or_(
+                CashAppPayment.telegram_chat_id.is_(None),
+                CashAppPayment.club_id == club_id,
+            )
+        )
+
+    if from_dt is not None:
+        query = query.filter(CashAppPayment.created_at >= from_dt)
+    if to_dt is not None:
+        query = query.filter(CashAppPayment.created_at <= to_dt)
+
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        query = query.filter(
+            or_(
+                CashAppPayment.payer_name.ilike(term),
+                CashAppPayment.cashapp_handle.ilike(term),
+                CashAppPayment.bound_group_title_at_bind.ilike(term),
+            )
+        )
+    return query
+
+
+def apply_cashapp_payer_search(query, q: str | None):
+    if not q or not q.strip():
+        return query
+    term = f"%{q.strip()}%"
+    return query.filter(
+        or_(
+            CashAppPayment.payer_name.ilike(term),
+            CashAppPayment.cashapp_handle.ilike(term),
+        )
+    )
+
+
+def list_cashapp_payer_aggregates(session: Session, club_id: int, q: str | None):
+    """Return grouped payer rows: payer_name, cashapp_handle, totals, latest chat."""
+    base = (
+        session.query(
+            CashAppPayment.payer_name,
+            CashAppPayment.cashapp_handle,
+            func.coalesce(func.sum(CashAppPayment.amount_cents), 0).label("total_cents"),
+            func.count(CashAppPayment.id).label("payment_count"),
+            func.max(CashAppPayment.created_at).label("last_payment_at"),
+            func.max(CashAppPayment.telegram_chat_id).label("telegram_chat_id"),
+        )
+        .filter(
+            CashAppPayment.club_id == club_id,
+            CashAppPayment.telegram_chat_id.isnot(None),
+            CashAppPayment.is_test.is_(False),
+        )
+        .group_by(CashAppPayment.payer_name, CashAppPayment.cashapp_handle)
+    )
+    base = apply_cashapp_payer_search(base, q)
+    return base.order_by(func.max(CashAppPayment.created_at).desc())
+
+
+def build_cashapp_payment_read(session: Session, payment: CashAppPayment) -> dict:
+    title: str | None = None
+    gg_id: str | None = None
+    if payment.telegram_chat_id is not None:
+        title, gg_id = resolve_group_title(session, int(payment.telegram_chat_id))
+    club_id = payment.club_id
+    return {
+        "id": payment.id,
+        "payer_name": payment.payer_name,
+        "cashapp_handle": payment.cashapp_handle,
+        "amount_cents": payment.amount_cents,
+        "amount_usd": cents_to_usd(payment.amount_cents),
+        "paid_at": payment.paid_at,
+        "group_title": title,
+        "gg_player_id": gg_id,
+        "gg_nickname": lookup_gg_nickname(session, club_id, gg_id) if club_id else None,
+        "club_id": club_id,
+        "telegram_chat_id": payment.telegram_chat_id,
+        "status": cashapp_payment_status(payment),
+        "auto_bound": payment.auto_bound,
+        "is_test": payment.is_test,
+        "created_at": payment.created_at,
+        "bound_at": payment.bound_at,
     }
 
 
