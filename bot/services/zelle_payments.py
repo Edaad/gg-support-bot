@@ -345,6 +345,7 @@ async def ingest_zelle_payment(
                 )
 
         payment_id = int(payment.id)
+        session.flush()
         session.expunge(payment)
 
     group_chat_url = await resolve_group_chat_url_for_payment(
@@ -448,6 +449,7 @@ async def bind_zelle_payment_by_id(
         if payment.notification_chat_id and payment.notification_message_id:
             notif_chat_id = int(payment.notification_chat_id)
             notif_message_id = int(payment.notification_message_id)
+        session.flush()
         session.expunge(payment)
 
     if notif_chat_id and notif_message_id:

@@ -5,10 +5,7 @@ import {
   bindZellePayment,
   bindCashAppPayment,
   bindCryptoPayment,
-  fetchBindingSummary,
   fetchAllStripeCustomers,
-  type BindingSummary,
-  type GroupBindingRow,
   fetchAllStripeSessions,
   fetchAllVenmoPayers,
   fetchAllVenmoPayments,
@@ -17,7 +14,6 @@ import {
   fetchAllCashAppPayers,
   fetchAllCashAppPayments,
   fetchAllCryptoPayments,
-  listGroupBindings,
   listPaymentProviders,
   listStripeCustomers,
   listStripeMethods,
@@ -29,7 +25,6 @@ import {
   listCashAppPayers,
   listCashAppPayments,
   listCryptoPayments,
-  unbindGroupBinding,
   type StripeCustomerRow,
   type StripeMethodOption,
   type StripeSessionRow,
@@ -154,10 +149,6 @@ export default function Payments({ token }: { token: string }) {
 
   const [bindOpen, setBindOpen] = useState(false)
   const [bindRow, setBindRow] = useState<ManualPaymentRow | null>(null)
-  const [bindingSummary, setBindingSummary] = useState<BindingSummary | null>(null)
-  const [groupBindings, setGroupBindings] = useState<GroupBindingRow[]>([])
-  const [groupBindingsTotal, setGroupBindingsTotal] = useState(0)
-  const [unbindLoadingId, setUnbindLoadingId] = useState<number | null>(null)
   const [bindTitle, setBindTitle] = useState('')
   const [bindLoading, setBindLoading] = useState(false)
 
@@ -358,72 +349,9 @@ export default function Payments({ token }: { token: string }) {
       .finally(() => setLoading(false))
   }, [token, clubId, appliedSearch, venmoPayerPage, manualProvider])
 
-  const loadBindingSummary = useCallback(() => {
-    if (!hasDepositLinking || !manualProvider) return
-    fetchBindingSummary(token, {
-      method: manualProvider,
-      clubId: clubId ?? undefined,
-      from: appliedFrom || undefined,
-      to: appliedTo || undefined,
-    })
-      .then(setBindingSummary)
-      .catch(() => setBindingSummary(null))
-  }, [token, clubId, manualProvider, hasDepositLinking, appliedFrom, appliedTo])
-
-  const loadGroupBindings = useCallback(() => {
-    if (!hasDepositLinking || !manualProvider || clubId == null) return
-    listGroupBindings(token, { method: manualProvider, clubId, limit: 200, offset: 0 })
-      .then((res) => {
-        setGroupBindings(res.items)
-        setGroupBindingsTotal(res.total)
-      })
-      .catch(() => {
-        setGroupBindings([])
-        setGroupBindingsTotal(0)
-      })
-  }, [token, clubId, manualProvider, hasDepositLinking])
-
   useEffect(() => {
     if (isCryptoProvider && tab === 'Customers') setTab('Payments')
   }, [isCryptoProvider, tab])
-
-  useEffect(() => {
-    loadBindingSummary()
-    loadGroupBindings()
-  }, [loadBindingSummary, loadGroupBindings])
-
-  const handleUnbind = async (row: GroupBindingRow) => {
-    const label = row.group_title?.trim() || `chat ${row.telegram_chat_id}`
-    const methodName =
-      row.payment_method_slug === 'zelle'
-        ? 'Zelle'
-        : row.payment_method_slug === 'cashapp'
-          ? 'Cash App'
-          : 'Venmo'
-    if (
-      !window.confirm(
-        `Unbind ${methodName} for "${label}"? The group will need first-time setup again on the next /deposit.`,
-      )
-    ) {
-      return
-    }
-    setUnbindLoadingId(row.id)
-    setErr('')
-    try {
-      const result = await unbindGroupBinding(token, row.id)
-      if (!result.ok) {
-        setErr(result.error || 'Could not unbind group.')
-        return
-      }
-      setSuccessMsg(`Unbound ${methodName} for ${label}.`)
-      loadGroupBindings()
-      loadBindingSummary()
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Could not unbind group.')
-    } finally {
-      setUnbindLoadingId(null)
-    }
-  }
 
   useEffect(() => {
     if (clubId == null) return
@@ -451,8 +379,6 @@ export default function Payments({ token }: { token: string }) {
     setAppliedTo(toDate)
     setSessionPage(0)
     setVenmoPaymentPage(0)
-    loadBindingSummary()
-    loadGroupBindings()
   }
 
   const applyCustomerSearch = () => {
@@ -505,10 +431,6 @@ export default function Payments({ token }: { token: string }) {
       setSuccessMsg(`Bound to ${result.group_title || title}.`)
       closeBindModal()
       loadManualPayments()
-      if (hasDepositLinking) {
-        loadGroupBindings()
-        loadBindingSummary()
-      }
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Bind failed.')
     } finally {
@@ -754,100 +676,9 @@ export default function Payments({ token }: { token: string }) {
   const venmoPaymentPages = Math.max(1, Math.ceil(venmoPaymentTotal / PAGE_SIZE))
   const venmoPayerPages = Math.max(1, Math.ceil(venmoPayerTotal / PAGE_SIZE))
 
-  const funnel = bindingSummary?.attempt_funnel
-
   return (
     <div>
       <h1 className="mb-6 text-2xl font-bold">Payments</h1>
-
-      {hasDepositLinking && bindingSummary && funnel && (
-        <section className="mb-6 rounded-lg border border-slate-700 bg-slate-900/50 p-4">
-          <h2 className="mb-3 text-sm font-semibold text-slate-200">{manualLabel} group bindings</h2>
-          <div className="flex flex-wrap gap-6 text-sm">
-            <div>
-              <p className="text-slate-400">Setup initiated</p>
-              <p className="text-lg font-medium">{funnel.initiated}</p>
-            </div>
-            <div>
-              <p className="text-slate-400">Succeeded</p>
-              <p className="text-lg font-medium text-emerald-400">{funnel.succeeded}</p>
-            </div>
-            <div>
-              <p className="text-slate-400">Expired</p>
-              <p className="text-lg font-medium">{funnel.expired}</p>
-            </div>
-            <div>
-              <p className="text-slate-400">Pending</p>
-              <p className="text-lg font-medium">{funnel.pending}</p>
-            </div>
-            <div>
-              <p className="text-slate-400">Success rate</p>
-              <p className="text-lg font-medium">
-                {funnel.success_rate != null
-                  ? `${(funnel.success_rate * 100).toFixed(1)}%`
-                  : '—'}
-              </p>
-            </div>
-          </div>
-          {bindingSummary.bindings_by_via.length > 0 && (
-            <p className="mt-3 text-xs text-slate-400">
-              Linked chats by source:{' '}
-              {bindingSummary.bindings_by_via
-                .map((b) => `${b.bound_via} (${b.count})`)
-                .join(', ')}
-            </p>
-          )}
-          <div className="mt-4 border-t border-slate-700 pt-4">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Linked group chats
-                {groupBindingsTotal > 0 ? ` (${groupBindingsTotal})` : ''}
-              </h3>
-            </div>
-            {groupBindings.length === 0 ? (
-              <p className="text-xs text-slate-500">No linked chats for this club.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="text-slate-400">
-                      <th className="pb-2 pr-3 font-medium">Group</th>
-                      <th className="pb-2 pr-3 font-medium">{manualAccountColumnLabel(manualProvider)}</th>
-                      <th className="pb-2 pr-3 font-medium">Variant</th>
-                      <th className="pb-2 pr-3 font-medium">Source</th>
-                      <th className="pb-2 pr-3 font-medium">Linked</th>
-                      <th className="pb-2 font-medium" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {groupBindings.map((row) => (
-                      <tr key={row.id} className="border-t border-slate-800 text-slate-200">
-                        <td className="py-2 pr-3 max-w-[14rem] truncate" title={row.group_title || ''}>
-                          {row.group_title || `chat ${row.telegram_chat_id}`}
-                        </td>
-                        <td className="py-2 pr-3">{row.venmo_handle || '—'}</td>
-                        <td className="py-2 pr-3">{row.variant_label || '—'}</td>
-                        <td className="py-2 pr-3">{row.bound_via}</td>
-                        <td className="py-2 pr-3 whitespace-nowrap">{fmtDate(row.bound_at)}</td>
-                        <td className="py-2 text-right">
-                          <button
-                            type="button"
-                            className="btn-secondary-sm text-red-300 hover:text-red-200"
-                            disabled={unbindLoadingId === row.id}
-                            onClick={() => handleUnbind(row)}
-                          >
-                            {unbindLoadingId === row.id ? '…' : 'Unbind'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </section>
-      )}
 
       <div className="mb-6 flex flex-wrap items-end gap-4">
         <div>
