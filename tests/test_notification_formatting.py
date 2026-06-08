@@ -5,10 +5,21 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from notification import formatting as nf
 from notification.formatting import format_group_chat_line
 
 
 class FormatGroupChatLineTestCase(unittest.TestCase):
+    def test_disabled_by_default_stays_plain_text(self):
+        text = format_group_chat_line(
+            group_title="RT / 1234 / Player",
+            telegram_chat_id=-1001234567890,
+            group_chat_url="https://t.me/c/1234567890",
+        )
+        self.assertEqual(text, "Group Chat: RT / 1234 / Player")
+        self.assertFalse(nf.LINKED_GROUP_CHAT_HYPERLINKS_ENABLED)
+
+    @patch.object(nf, "LINKED_GROUP_CHAT_HYPERLINKS_ENABLED", True)
     def test_supergroup_gets_t_me_c_link(self):
         text = format_group_chat_line(
             group_title="RT / 1234 / Player",
@@ -19,6 +30,7 @@ class FormatGroupChatLineTestCase(unittest.TestCase):
             'Group Chat: <a href="https://t.me/c/1234567890">RT / 1234 / Player</a>',
         )
 
+    @patch.object(nf, "LINKED_GROUP_CHAT_HYPERLINKS_ENABLED", True)
     def test_preresolved_group_chat_url(self):
         text = format_group_chat_line(
             group_title="GTO / 5155 / Player",
@@ -30,6 +42,7 @@ class FormatGroupChatLineTestCase(unittest.TestCase):
             'Group Chat: <a href="https://t.me/+InviteHash">GTO / 5155 / Player</a>',
         )
 
+    @patch.object(nf, "LINKED_GROUP_CHAT_HYPERLINKS_ENABLED", True)
     @patch(
         "bot.services.support_group_chats.fetch_invite_link_for_chat",
         return_value="https://t.me/+InviteHash",
@@ -48,6 +61,7 @@ class FormatGroupChatLineTestCase(unittest.TestCase):
             group_title="GTO / 5155-8843 / Over80vpip",
         )
 
+    @patch.object(nf, "LINKED_GROUP_CHAT_HYPERLINKS_ENABLED", True)
     @patch(
         "bot.services.support_group_chats.fetch_invite_link_for_chat",
         return_value=None,

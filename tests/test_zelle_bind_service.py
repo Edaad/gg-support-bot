@@ -32,10 +32,8 @@ class TestZelleNotificationFormat(unittest.TestCase):
             telegram_chat_id=-1001234567890,
         )
         text = format_notification_text(payment, group_title="RT / 1234 / Player")
-        self.assertIn(
-            'Group Chat: <a href="https://t.me/c/1234567890">RT / 1234 / Player</a>',
-            text,
-        )
+        self.assertIn("Group Chat: RT / 1234 / Player", text)
+        self.assertNotIn("<a href=", text)
         self.assertNotIn("Unbound", text)
 
 

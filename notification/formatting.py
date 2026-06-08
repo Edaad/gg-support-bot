@@ -11,7 +11,7 @@ UNBOUND_GROUP_CHAT_LINE = (
 )
 
 # Set True to hyperlink bound group titles in payment notifications.
-LINKED_GROUP_CHAT_HYPERLINKS_ENABLED = True
+LINKED_GROUP_CHAT_HYPERLINKS_ENABLED = False
 
 
 def format_group_chat_line(

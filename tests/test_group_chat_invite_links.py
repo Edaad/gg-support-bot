@@ -89,13 +89,14 @@ class ResolveGroupChatNotificationUrlTestCase(unittest.IsolatedAsyncioTestCase):
 
 
 class FormatGroupChatLinePreresolvedUrlTestCase(unittest.TestCase):
-    def test_preresolved_invite_url_used(self):
+    def test_preresolved_invite_url_ignored_when_hyperlinks_disabled(self):
         text = format_group_chat_line(
             group_title="GTO / 5155 / Player",
             telegram_chat_id=-5287778428,
             group_chat_url="https://t.me/+OnDemand",
         )
-        self.assertIn('href="https://t.me/+OnDemand"', text)
+        self.assertEqual(text, "Group Chat: GTO / 5155 / Player")
+        self.assertNotIn("<a href=", text)
 
     def test_bot_failure_stays_plain_without_preresolved_url(self):
         with patch(

@@ -53,10 +53,8 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
             payment,
             group_title=GROUP_TITLE,
         )
-        self.assertIn(
-            f'Group Chat: <a href="https://t.me/c/1234567890">{GROUP_TITLE}</a>',
-            text,
-        )
+        self.assertIn(f"Group Chat: {GROUP_TITLE}", text)
+        self.assertNotIn("<a href=", text)
         self.assertNotIn("Open group chat", text)
         self.assertLess(text.index("Group Chat:"), text.index("Name:"))
 

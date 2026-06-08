@@ -12,6 +12,10 @@ Usage:
   python scripts/backfill_support_group_invite_links.py --apply
   python scripts/backfill_support_group_invite_links.py --apply --club-key round_table --json
   python scripts/backfill_support_group_invite_links.py --chat-id -1001234567890 --apply
+
+Telegram rate-limits bulk ExportChatInvite. This script sleeps through FloodWait
+and pauses between exports (see --export-delay). Re-run safely: groups that
+already have invite_link are skipped.
 """
 
 from __future__ import annotations
@@ -162,15 +166,42 @@ async def _list_admin_group_dialogs(cfg) -> list[tuple[int, str]]:
     return dialogs
 
 
+async def _export_invite_link_backfill(client, peer) -> str | None:
+    """Export invite link; sleep through Telegram FloodWait (no interactive cap)."""
+    from telethon.errors import FloodWaitError
+
+    from bot.services.mtproto_group_create import normalize_invite_link
+
+    while True:
+        try:
+            export_fn = getattr(client, "export_chat_invite_link", None)
+            if callable(export_fn):
+                raw = await export_fn(peer)
+            else:
+                from telethon.tl import functions
+
+                inp = await client.get_input_entity(peer)
+                inv = await client(functions.messages.ExportChatInviteRequest(peer=inp))
+                raw = inv.link
+            return normalize_invite_link(raw)
+        except FloodWaitError as e:
+            logger.warning(
+                "Telegram rate limit: sleeping %ss before retrying export",
+                e.seconds,
+            )
+            await asyncio.sleep(float(e.seconds) + 2.0)
+        except Exception as e:
+            logger.warning("export invite failed: %s", type(e).__name__)
+            return None
+
+
 async def _export_invite_links_for_dialogs(
     cfg,
     dialog_chat_ids: list[int],
+    *,
+    export_delay_seconds: float,
 ) -> dict[int, str | None]:
-    from bot.services.mtproto_group_create import (
-        export_invite_link_for_peer,
-        get_mtproto_lock,
-        make_client,
-    )
+    from bot.services.mtproto_group_create import get_mtproto_lock, make_client
 
     out: dict[int, str | None] = {}
     if not dialog_chat_ids:
@@ -180,11 +211,13 @@ async def _export_invite_links_for_dialogs(
         client = make_client(cfg)
         await client.connect()
         try:
-            for dialog_chat_id in dialog_chat_ids:
+            for i, dialog_chat_id in enumerate(dialog_chat_ids):
                 cid = int(dialog_chat_id)
+                if i > 0 and export_delay_seconds > 0:
+                    await asyncio.sleep(export_delay_seconds)
                 try:
                     entity = await client.get_entity(cid)
-                    out[cid] = await export_invite_link_for_peer(client, entity)
+                    out[cid] = await _export_invite_link_backfill(client, entity)
                 except Exception as e:
                     logger.warning(
                         "export invite failed chat_id=%s: %s",
@@ -202,6 +235,7 @@ async def _backfill(
     club_key_filter: str | None,
     chat_id_filter: int | None,
     apply: bool,
+    export_delay_seconds: float,
 ) -> tuple[BackfillSummary, list[dict[str, Any]]]:
     from club_gc_settings import CLUB_GC_CONFIG, get_club_gc_config_by_link_club_id
     from bot.services.support_group_chats import (
@@ -330,7 +364,11 @@ async def _backfill(
             len(export_ids),
             cfg.club_key,
         )
-        exported = await _export_invite_links_for_dialogs(cfg, export_ids)
+        exported = await _export_invite_links_for_dialogs(
+            cfg,
+            export_ids,
+            export_delay_seconds=export_delay_seconds,
+        )
 
         for g, dialog_chat_id, title_out in pending:
             invite_link = exported.get(int(dialog_chat_id))
@@ -464,6 +502,13 @@ def main() -> None:
         action="store_true",
         help="Only warnings/errors on stderr (no per-group progress).",
     )
+    parser.add_argument(
+        "--export-delay",
+        type=float,
+        default=3.0,
+        metavar="SECONDS",
+        help="Pause between ExportChatInvite calls (default: 3). Use 5+ for large runs.",
+    )
     args = parser.parse_args()
 
     if not args.json:
@@ -474,6 +519,7 @@ def main() -> None:
             club_key_filter=args.club_key,
             chat_id_filter=args.chat_id,
             apply=args.apply,
+            export_delay_seconds=max(0.0, float(args.export_delay)),
         )
     )
 
