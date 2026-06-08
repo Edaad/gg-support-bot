@@ -57,8 +57,18 @@ async def _telegram_bot_api(
     return data
 
 
+async def _invite_link_from_get_chat(chat_id: int, *, token: str) -> str | None:
+    """Return primary invite link from getChat when the bot is a member."""
+    try:
+        data = await _telegram_bot_api("getChat", {"chat_id": int(chat_id)}, token=token)
+    except RuntimeError:
+        return None
+    result = data.get("result") or {}
+    return _normalize_invite_link(result.get("invite_link"))
+
+
 async def export_invite_link_via_bot_api(chat_id: int) -> tuple[str | None, str | None]:
-    """Export primary invite link via support bot. Returns (link, failure_reason)."""
+    """Resolve invite link via Bot API (getChat, then export). Returns (link, failure_reason)."""
     token = _support_bot_token()
     if not token:
         logger.warning("group_chat_invite: %s not set", SUPPORT_BOT_TOKEN_ENV)
@@ -67,6 +77,10 @@ async def export_invite_link_via_bot_api(chat_id: int) -> tuple[str | None, str 
     variants = sorted(telegram_chat_id_variants(int(chat_id)), key=lambda x: (0 if str(x).startswith("-100") else 1, x))
     last_reason = "export_failed"
     for cid in variants:
+        cached = await _invite_link_from_get_chat(int(cid), token=token)
+        if cached:
+            return cached, None
+
         try:
             data = await _telegram_bot_api(
                 "exportChatInviteLink",
@@ -75,7 +89,7 @@ async def export_invite_link_via_bot_api(chat_id: int) -> tuple[str | None, str 
             )
         except RuntimeError as e:
             last_reason = str(e)
-            logger.info(
+            logger.warning(
                 "group_chat_invite: exportChatInviteLink failed chat_id=%s: %s",
                 cid,
                 last_reason,
@@ -112,8 +126,10 @@ async def resolve_group_chat_notification_url(
 
     link, reason = await export_invite_link_via_bot_api(cid)
     if not link:
-        logger.info(
-            "group_chat_invite: on-demand export skipped chat_id=%s title=%r reason=%s",
+        logger.warning(
+            "group_chat_invite: no hyperlink url chat_id=%s title=%r reason=%s "
+            "(backfill: scripts/backfill_support_group_invite_links.py --apply, "
+            "or grant support bot admin + invite-link rights)",
             cid,
             title[:80],
             reason or "unknown",

@@ -4,6 +4,7 @@ import unittest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
+from api.payment_v2_helpers import validate_first_time_linking
 from bot.services.payment_method_binding import (
     ATTEMPT_STATUS_PENDING,
     BIND_KIND_MEMO_EMOJI,
@@ -39,6 +40,36 @@ def _mock_method_row(*, enabled: bool, mode: str | None):
     row.first_time_linking_enabled = enabled
     row.first_time_bind_mode = mode
     return row
+
+
+def _mock_club_payment_method(
+    *,
+    slug: str,
+    enabled: bool = True,
+    mode: str = BIND_KIND_SPECIAL_AMOUNT,
+    direction: str = "deposit",
+):
+    row = MagicMock()
+    row.slug = slug
+    row.direction = direction
+    row.first_time_linking_enabled = enabled
+    row.first_time_bind_mode = mode
+    return row
+
+
+class TestValidateFirstTimeLinking(unittest.TestCase):
+    def test_cashapp_special_amount_allowed(self):
+        validate_first_time_linking(_mock_club_payment_method(slug="cashapp"))
+
+    def test_cashapp_memo_allowed(self):
+        validate_first_time_linking(
+            _mock_club_payment_method(slug="cashapp", mode=BIND_KIND_MEMO_EMOJI)
+        )
+
+    def test_crypto_rejected(self):
+        with self.assertRaises(ValueError) as ctx:
+            validate_first_time_linking(_mock_club_payment_method(slug="crypto"))
+        self.assertIn("cashapp", str(ctx.exception).lower())
 
 
 class TestBindModeForMethod(unittest.TestCase):
