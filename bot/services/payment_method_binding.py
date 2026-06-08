@@ -1448,16 +1448,19 @@ def format_first_time_amount_instructions_message(
     )
 
 
-def format_first_time_zelle_amount_setup_message(
+def format_first_time_special_amount_setup_message(
     *,
+    payment_method_slug: str,
     setup_amount_cents: int,
     chosen_amount_cents: int,
     use_html: bool = True,
 ) -> str:
-    """Pre-ack Zelle amount setup: instructions, amount, and ack prompt in one message."""
+    """Pre-ack special-amount setup: instructions, amount, and ack prompt in one message."""
+    slug = (payment_method_slug or "").strip().lower()
+    method_label, _app_label = _method_display_labels(slug)
     setup_display = _format_amount_plain(int(setup_amount_cents))
     chosen_display = _format_amount_display(int(chosen_amount_cents))
-    title = _caps("One-time Zelle setup")
+    title = _caps(f"One-time {method_label} setup")
     amount_line = _caps("Send the exact amount shown below — not your full deposit amount.")
     do_not_send = _caps(f"Please do not send {chosen_display} (no rounding).")
     future_line = (
@@ -1484,6 +1487,21 @@ def format_first_time_zelle_amount_setup_message(
         f"{do_not_send}\n\n"
         f"{future_line}\n\n"
         f"{ack_line}"
+    )
+
+
+def format_first_time_zelle_amount_setup_message(
+    *,
+    setup_amount_cents: int,
+    chosen_amount_cents: int,
+    use_html: bool = True,
+) -> str:
+    """Pre-ack Zelle amount setup: instructions, amount, and ack prompt in one message."""
+    return format_first_time_special_amount_setup_message(
+        payment_method_slug="zelle",
+        setup_amount_cents=setup_amount_cents,
+        chosen_amount_cents=chosen_amount_cents,
+        use_html=use_html,
     )
 
 
