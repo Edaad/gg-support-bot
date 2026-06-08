@@ -53,7 +53,7 @@ class VenmoBindByIdTestCase(unittest.IsolatedAsyncioTestCase):
             mock_resolve.return_value = BindResult(
                 ok=True,
                 bound_group=MagicMock(
-                    telegram_chat_id=-200,
+                    telegram_chat_id=-1001234567890,
                     club_id=1,
                     group_title="RT / 1234 / Alice",
                 ),
@@ -69,6 +69,9 @@ class VenmoBindByIdTestCase(unittest.IsolatedAsyncioTestCase):
                     with patch(
                         "bot.services.venmo_payments.infer_variant_id_for_venmo_handle",
                         return_value=None,
+                    ), patch(
+                        "bot.services.venmo_payments.resolve_group_chat_url_for_payment",
+                        new=AsyncMock(return_value=None),
                     ), patch(
                         "bot.services.venmo_payments.edit_telegram_notification",
                         new=AsyncMock(),
