@@ -1,4 +1,6 @@
+import logging
 import os
+import sys
 from pathlib import Path
 
 try:
@@ -9,6 +11,34 @@ except ImportError:
     pass
 
 from fastapi import FastAPI
+
+
+def _configure_api_logging() -> None:
+    """Send application logging to stderr on the web dyno (Heroku shows only uvicorn otherwise)."""
+
+    root = logging.getLogger()
+    level_name = (os.getenv("LOG_LEVEL") or "INFO").strip().upper()
+    level = getattr(logging, level_name, logging.INFO)
+
+    if root.handlers:
+        root.setLevel(level)
+        for handler in root.handlers:
+            try:
+                handler.setLevel(level)
+            except Exception:
+                pass
+        return
+
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setLevel(level)
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    root.addHandler(handler)
+    root.setLevel(level)
+
+
+_configure_api_logging()
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse

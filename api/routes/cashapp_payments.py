@@ -3,8 +3,8 @@
 import logging
 import os
 
-from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Header, HTTPException, Request
+from pydantic import BaseModel, Field, ValidationError
 
 from bot.services.cashapp_payments import (
     WEBHOOK_SECRET_ENV,
@@ -16,6 +16,11 @@ router = APIRouter(prefix="/api/cashapp", tags=["cashapp"])
 logger = logging.getLogger(__name__)
 
 LOOKUP_HEADER = "x-cashapp-webhook-secret"
+
+
+def _nested_data_dict(payload: dict) -> dict:
+    data = payload.get("data")
+    return data if isinstance(data, dict) else {}
 
 
 def _verify_webhook_secret(x_cashapp_webhook_secret: str | None) -> None:
@@ -58,22 +63,60 @@ class CashAppPaymentIngestResponse(BaseModel):
 
 @router.post("/payments", response_model=CashAppPaymentIngestResponse)
 async def ingest_payment(
-    body: CashAppPaymentIngestBody,
+    request: Request,
     x_cashapp_webhook_secret: str | None = Header(None, alias=LOOKUP_HEADER),
 ):
     """Ingest a Cash App payment from Zapier; notify staff Telegram group."""
-    if debug_notification_enabled():
-        logger.info(
-            "cashapp ingest: request received payer=%r amount=%r handle=%r "
-            "paid_at=%r memo=%r test=%s source_external_id=%r",
-            body.payer_name,
-            body.amount,
-            body.cashapp_handle,
-            body.paid_at,
-            body.memo,
-            body.test,
-            body.source_external_id,
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        logger.warning("cashapp ingest: invalid JSON — %s", exc)
+        raise HTTPException(400, "Invalid JSON body") from exc
+
+    if not isinstance(payload, dict):
+        logger.warning(
+            "cashapp ingest: JSON body must be an object, got %s",
+            type(payload).__name__,
         )
+        raise HTTPException(400, "JSON body must be an object")
+
+    nested = _nested_data_dict(payload)
+    logger.info(
+        "cashapp ingest: request received top_keys=%s memo_root=%r memo_in_data=%r "
+        "test_root=%s test_in_data=%s source_external_id_root=%r "
+        "source_external_id_in_data=%r payer_root=%r payer_in_data=%r",
+        sorted(payload.keys()),
+        payload.get("memo"),
+        nested.get("memo"),
+        payload.get("test"),
+        nested.get("test"),
+        payload.get("source_external_id"),
+        nested.get("source_external_id"),
+        payload.get("payer_name"),
+        nested.get("payer_name"),
+    )
+
+    try:
+        body = CashAppPaymentIngestBody.model_validate(payload)
+    except ValidationError as exc:
+        logger.warning(
+            "cashapp ingest: validation failed top_keys=%s errors=%s",
+            sorted(payload.keys()),
+            exc.errors(),
+        )
+        raise HTTPException(422, detail=exc.errors()) from exc
+
+    logger.info(
+        "cashapp ingest: parsed body payer=%r amount=%r handle=%r paid_at=%r "
+        "memo=%r test=%s source_external_id=%r",
+        body.payer_name,
+        body.amount,
+        body.cashapp_handle,
+        body.paid_at,
+        body.memo,
+        body.test,
+        body.source_external_id,
+    )
 
     _verify_webhook_secret(x_cashapp_webhook_secret)
 
@@ -88,13 +131,19 @@ async def ingest_payment(
             test=body.test,
         )
     except ValueError as e:
-        if debug_notification_enabled():
-            logger.warning("cashapp ingest: rejected bad request — %s", e)
+        logger.warning("cashapp ingest: rejected bad request — %s", e)
         raise HTTPException(400, str(e)) from e
     except RuntimeError as e:
-        if debug_notification_enabled():
-            logger.error("cashapp ingest: failed — %s", e)
+        logger.error("cashapp ingest: failed — %s", e)
         raise HTTPException(503, str(e)) from e
+
+    logger.info(
+        "cashapp ingest: completed payment_id=%s status=%s auto_bound=%s created=%s",
+        result.payment_id,
+        result.status,
+        result.auto_bound,
+        result.created,
+    )
 
     return CashAppPaymentIngestResponse(
         payment_id=result.payment_id,

@@ -13,6 +13,7 @@ import stripe
 from sqlalchemy.exc import IntegrityError
 
 from bot.services.club import get_group_title_for_chat, update_group_name
+from bot.services.group_chat_invite_links import resolve_group_chat_notification_url
 from bot.services.player_details import parse_group_title_parts
 from bot.services.venmo_payments import (
     escape_notification_html,
@@ -508,6 +509,7 @@ def format_stripe_payment_notification_text(
     amount_cents: int,
     method_label: str,
     telegram_chat_id: int | None = None,
+    group_chat_url: str | None = None,
 ) -> str:
     return "\n".join(
         [
@@ -516,6 +518,7 @@ def format_stripe_payment_notification_text(
             format_group_chat_line(
                 group_title=group_title,
                 telegram_chat_id=telegram_chat_id,
+                group_chat_url=group_chat_url,
             ),
             "",
             f"Amount: {format_amount_display(amount_cents, bold=True)}",
@@ -551,12 +554,18 @@ async def notify_stripe_payment_completed(checkout_obj: dict[str, Any]) -> None:
         club_name = (club.name if club else "").strip() or "Club"
 
     method_label = _resolve_stripe_method_label(int(club_id), payment_method_id)
+    group_chat_url = await resolve_group_chat_notification_url(
+        telegram_chat_id=int(chat_id),
+        group_title=group_title,
+        club_id=int(club_id),
+    )
     text = format_stripe_payment_notification_text(
         club_name=club_name,
         group_title=group_title,
         amount_cents=amount_cents,
         method_label=method_label,
         telegram_chat_id=int(chat_id),
+        group_chat_url=group_chat_url,
     )
     await send_telegram_notification(text)
     logger.info(

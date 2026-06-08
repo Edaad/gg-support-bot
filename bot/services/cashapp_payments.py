@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Optional
 
 from bot.services.club import get_group_title_for_chat
+from bot.services.group_chat_invite_links import resolve_group_chat_url_for_payment
 from bot.services.payment_method_binding import (
     BOUND_VIA_MANUAL_DASHBOARD,
     BOUND_VIA_MANUAL_NOTIFICATION,
@@ -122,6 +123,7 @@ def format_notification_text(
     *,
     group_title: Optional[str] = None,
     telegram_chat_id: Optional[int] = None,
+    group_chat_url: Optional[str] = None,
 ) -> str:
     handle = payment.cashapp_handle
     if not handle.startswith("$"):
@@ -136,6 +138,7 @@ def format_notification_text(
                 payment,
                 telegram_chat_id=telegram_chat_id,
             ),
+            group_chat_url=group_chat_url,
         ),
         "",
         f"Name: {escape_notification_html(payment.payer_name)}",
@@ -202,6 +205,20 @@ async def ingest_cashapp_payment(
     if not handle:
         raise ValueError("cashapp_handle is required")
     amount_cents = parse_amount_cents(amount)
+    memo_normalized = (memo or "").strip() or None
+    source_id = (source_external_id or "").strip() or None
+
+    logger.info(
+        "cashapp ingest: processing payer=%r amount_cents=%s handle=%r "
+        "memo_raw=%r memo_normalized=%r test=%s source_external_id=%r",
+        payer,
+        amount_cents,
+        handle,
+        memo,
+        memo_normalized,
+        test,
+        source_id,
+    )
 
     created = True
     auto_bound = False
@@ -210,18 +227,24 @@ async def ingest_cashapp_payment(
     setup_blocked_already_linked = False
 
     with get_db() as session:
-        if source_external_id:
+        if source_id:
             existing = (
                 session.query(CashAppPayment)
-                .filter_by(source_external_id=source_external_id.strip())
+                .filter_by(source_external_id=source_id)
                 .one_or_none()
             )
             if existing is not None:
+                existing_memo = (existing.memo or "").strip() or None
                 logger.info(
-                    "cashapp ingest: idempotent reject source_external_id=%r "
-                    "existing_payment_id=%s",
-                    source_external_id.strip(),
+                    "cashapp ingest: dedup skip (no notification) source_external_id=%r "
+                    "existing_payment_id=%s incoming_memo=%r stored_memo=%r "
+                    "incoming_test=%s stored_is_test=%s",
+                    source_id,
                     existing.id,
+                    memo_normalized,
+                    existing_memo,
+                    test,
+                    bool(existing.is_test),
                 )
                 return IngestResult(
                     payment_id=int(existing.id),
@@ -235,12 +258,18 @@ async def ingest_cashapp_payment(
             amount_cents=amount_cents,
             cashapp_handle=handle,
             paid_at=(paid_at or "").strip() or None,
-            source_external_id=(source_external_id or "").strip() or None,
-            memo=(memo or "").strip() or None,
+            source_external_id=source_id,
+            memo=memo_normalized,
             is_test=bool(test),
         )
         session.add(payment)
         session.flush()
+        logger.info(
+            "cashapp ingest: row created payment_id=%s stored_memo=%r is_test=%s",
+            payment.id,
+            payment.memo,
+            payment.is_test,
+        )
 
         setup_attempt = match_pending_memo_setup_in_session(
             session,
@@ -362,7 +391,16 @@ async def ingest_cashapp_payment(
                 )
 
         payment_id = int(payment.id)
-        text = format_notification_text(payment, group_title=group_title)
+
+    group_chat_url = await resolve_group_chat_url_for_payment(
+        payment,
+        group_title=group_title,
+    )
+    text = format_notification_text(
+        payment,
+        group_title=group_title,
+        group_chat_url=group_chat_url,
+    )
 
     if setup_warning_text:
         await send_telegram_notification(setup_warning_text)
@@ -375,12 +413,16 @@ async def ingest_cashapp_payment(
         payment.notification_message_id = notif_message_id
 
     status = "bound" if auto_bound else "unbound"
+    memo_in_notification = "Memo:" in text
     logger.info(
-        "cashapp payment ingested id=%s payer=%r amount_cents=%s auto_bound=%s",
+        "cashapp ingest: notification sent payment_id=%s payer=%r amount_cents=%s "
+        "auto_bound=%s memo_in_notification=%s notification_chat_id=%s",
         payment_id,
         payer,
         amount_cents,
         auto_bound,
+        memo_in_notification,
+        notif_chat_id,
     )
     return IngestResult(
         payment_id=payment_id,
@@ -405,6 +447,7 @@ async def bind_cashapp_payment_by_id(
     group = result.bound_group
     notif_chat_id: Optional[int] = None
     notif_message_id: Optional[int] = None
+    text: Optional[str] = None
     live_title = group.group_title
 
     with get_db() as session:
@@ -456,9 +499,17 @@ async def bind_cashapp_payment_by_id(
         if payment.notification_chat_id and payment.notification_message_id:
             notif_chat_id = int(payment.notification_chat_id)
             notif_message_id = int(payment.notification_message_id)
-            text = format_notification_text(payment, group_title=live_title)
-        else:
-            text = None
+
+    if notif_chat_id and notif_message_id:
+        group_chat_url = await resolve_group_chat_url_for_payment(
+            payment,
+            group_title=live_title,
+        )
+        text = format_notification_text(
+            payment,
+            group_title=live_title,
+            group_chat_url=group_chat_url,
+        )
 
     if notif_chat_id and notif_message_id and text:
         await edit_telegram_notification(notif_chat_id, notif_message_id, text)

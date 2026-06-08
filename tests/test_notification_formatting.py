@@ -19,6 +19,17 @@ class FormatGroupChatLineTestCase(unittest.TestCase):
             'Group Chat: <a href="https://t.me/c/1234567890">RT / 1234 / Player</a>',
         )
 
+    def test_preresolved_group_chat_url(self):
+        text = format_group_chat_line(
+            group_title="GTO / 5155 / Player",
+            telegram_chat_id=-5287778428,
+            group_chat_url="https://t.me/+InviteHash",
+        )
+        self.assertEqual(
+            text,
+            'Group Chat: <a href="https://t.me/+InviteHash">GTO / 5155 / Player</a>',
+        )
+
     @patch(
         "bot.services.support_group_chats.fetch_invite_link_for_chat",
         return_value="https://t.me/+InviteHash",

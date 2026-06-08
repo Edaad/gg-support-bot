@@ -18,6 +18,7 @@ def format_group_chat_line(
     *,
     group_title: str | None,
     telegram_chat_id: int | None,
+    group_chat_url: str | None = None,
 ) -> str:
     """Format the Group Chat line; hyperlinks the title when a linked chat id is known."""
     from bot.services.support_group_chats import fetch_invite_link_for_chat
@@ -26,19 +27,42 @@ def format_group_chat_line(
     if not title:
         return UNBOUND_GROUP_CHAT_LINE
     safe_title = html.escape(title, quote=False)
-    if (
-        LINKED_GROUP_CHAT_HYPERLINKS_ENABLED
-        and telegram_chat_id is not None
-    ):
-        cid = int(telegram_chat_id)
-        url = telegram_supergroup_chat_url(cid) or fetch_invite_link_for_chat(
-            cid,
-            group_title=title,
-        )
+    if LINKED_GROUP_CHAT_HYPERLINKS_ENABLED and telegram_chat_id is not None:
+        url = (group_chat_url or "").strip() or None
+        if url is None:
+            cid = int(telegram_chat_id)
+            url = telegram_supergroup_chat_url(cid) or fetch_invite_link_for_chat(
+                cid,
+                group_title=title,
+            )
         if url:
             safe_url = html.escape(url, quote=True)
             return f'Group Chat: <a href="{safe_url}">{safe_title}</a>'
     return f"Group Chat: {safe_title}"
+
+
+async def resolve_and_format_group_chat_line(
+    *,
+    group_title: str | None,
+    telegram_chat_id: int | None,
+    club_id: int | None = None,
+) -> str:
+    """Resolve group chat URL on-demand, then format the Group Chat line."""
+    from bot.services.group_chat_invite_links import resolve_group_chat_notification_url
+
+    title = (group_title or "").strip()
+    group_chat_url: str | None = None
+    if title and telegram_chat_id is not None:
+        group_chat_url = await resolve_group_chat_notification_url(
+            telegram_chat_id=int(telegram_chat_id),
+            group_title=title,
+            club_id=club_id,
+        )
+    return format_group_chat_line(
+        group_title=group_title,
+        telegram_chat_id=telegram_chat_id,
+        group_chat_url=group_chat_url,
+    )
 
 
 def resolve_notification_linked_chat_id(

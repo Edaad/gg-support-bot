@@ -15,6 +15,7 @@ from typing import Any, Optional
 import httpx
 
 from bot.services.club import find_group_chat_id_by_name, get_group_title_for_chat
+from bot.services.group_chat_invite_links import resolve_group_chat_url_for_payment
 from bot.services.player_details import (
     parse_tracking_title,
     resolve_club_id_from_shorthand,
@@ -263,6 +264,7 @@ def format_notification_text(
     *,
     group_title: Optional[str] = None,
     telegram_chat_id: Optional[int] = None,
+    group_chat_url: Optional[str] = None,
 ) -> str:
     gs = "True" if payment.goods_or_services else "False"
     method = payment.venmo_handle
@@ -278,6 +280,7 @@ def format_notification_text(
                 payment,
                 telegram_chat_id=telegram_chat_id,
             ),
+            group_chat_url=group_chat_url,
         ),
         "",
         f"Name: {escape_notification_html(payment.payer_name)}",
@@ -615,10 +618,16 @@ async def ingest_venmo_payment(
                 )
 
         payment_id = int(payment.id)
-        text = format_notification_text(
-            payment,
-            group_title=group_title,
-        )
+
+    group_chat_url = await resolve_group_chat_url_for_payment(
+        payment,
+        group_title=group_title,
+    )
+    text = format_notification_text(
+        payment,
+        group_title=group_title,
+        group_chat_url=group_chat_url,
+    )
 
     if debug_notification_enabled():
         configured_chat = _notification_chat_id()
@@ -682,6 +691,7 @@ async def bind_venmo_payment_by_id(
     group = result.bound_group
     notif_chat_id: Optional[int] = None
     notif_message_id: Optional[int] = None
+    text: Optional[str] = None
     live_title = group.group_title
 
     with get_db() as session:
@@ -731,9 +741,17 @@ async def bind_venmo_payment_by_id(
         if payment.notification_chat_id and payment.notification_message_id:
             notif_chat_id = int(payment.notification_chat_id)
             notif_message_id = int(payment.notification_message_id)
-            text = format_notification_text(payment, group_title=live_title)
-        else:
-            text = None
+
+    if notif_chat_id and notif_message_id:
+        group_chat_url = await resolve_group_chat_url_for_payment(
+            payment,
+            group_title=live_title,
+        )
+        text = format_notification_text(
+            payment,
+            group_title=live_title,
+            group_chat_url=group_chat_url,
+        )
 
     if notif_chat_id and notif_message_id and text:
         await edit_telegram_notification(notif_chat_id, notif_message_id, text)
