@@ -23,6 +23,12 @@ const BIND_VERIFICATION_OPTIONS: {
 
 const BINDABLE_DEPOSIT_SLUGS = new Set(['venmo', 'zelle', 'cashapp'])
 
+const DOC_LINK_BY_SLUG: Record<string, string> = {
+  zelle: 'docs/ZELLE_PAYMENTS.md',
+  cashapp: 'docs/CASHAPP_PAYMENTS.md',
+  venmo: 'docs/VENMO_GROUP_BINDING.md',
+}
+
 interface Props {
   methodSlug?: string
   enabled: boolean
@@ -45,18 +51,12 @@ export default function FirstTimeDepositLinkingSection({
     return null
   }
 
-  const docLink = docLinkBySlug[slug] ?? 'docs/VENMO_GROUP_BINDING.md'
+  const docLink = DOC_LINK_BY_SLUG[slug] ?? 'docs/VENMO_GROUP_BINDING.md'
 
   const bindVerificationOptions =
     slug === 'zelle'
       ? BIND_VERIFICATION_OPTIONS.filter((opt) => opt.value !== 'memo_emoji')
       : BIND_VERIFICATION_OPTIONS
-
-  const docLinkBySlug: Record<string, string> = {
-    zelle: 'docs/ZELLE_PAYMENTS.md',
-    cashapp: 'docs/CASHAPP_PAYMENTS.md',
-    venmo: 'docs/VENMO_GROUP_BINDING.md',
-  }
 
   return (
     <div className="rounded-xl border border-border bg-surface-raised/40 p-4 sm:col-span-2">
