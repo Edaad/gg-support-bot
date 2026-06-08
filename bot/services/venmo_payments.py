@@ -8,6 +8,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Optional
 
@@ -188,13 +189,16 @@ def _notification_bot_token() -> Optional[str]:
 
 TEST_NOTIFICATION_BANNER = "TEST (Please ignore)"
 
+_EASTERN = ZoneInfo("America/New_York")
+
 
 def _format_deposit_timestamp(dt: datetime) -> str:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     else:
         dt = dt.astimezone(timezone.utc)
-    return dt.strftime("%b %d, %Y %I:%M %p UTC")
+    dt = dt.astimezone(_EASTERN)
+    return dt.strftime("%b %d, %Y %I:%M %p EST")
 
 
 def format_paid_at_display(paid_at: str) -> str:

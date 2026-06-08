@@ -25,6 +25,8 @@ from bot.services.venmo_payments import (
     send_telegram_notification,
     TEST_NOTIFICATION_BANNER,
 )
+from sqlalchemy.exc import IntegrityError
+
 from db.connection import get_db
 from db.models import Club, CryptoPayment
 from notification.formatting import (
@@ -231,33 +233,24 @@ async def ingest_crypto_payment(
     alert = (alert_name or "").strip()
     alert_scope = resolve_alert_scope(alert)
 
+    ext_id = (source_external_id or "").strip() or None
+
     with get_db() as session:
-        if source_external_id:
+        if ext_id:
             existing = (
                 session.query(CryptoPayment)
-                .filter_by(source_external_id=source_external_id.strip())
+                .filter_by(source_external_id=ext_id)
                 .one_or_none()
             )
             if existing is not None:
-                payment_id = int(existing.id)
-                needs_notification = existing.notification_message_id is None
-                if needs_notification:
-                    text = format_notification_text(existing)
                 logger.info(
                     "crypto ingest: idempotent reject source_external_id=%r "
-                    "existing_payment_id=%s needs_notification=%s",
-                    source_external_id.strip(),
-                    payment_id,
-                    needs_notification,
+                    "existing_payment_id=%s (skipping create and telegram send)",
+                    ext_id,
+                    existing.id,
                 )
-                if needs_notification:
-                    notif_chat_id, notif_message_id = await send_telegram_notification(
-                        text
-                    )
-                    existing.notification_chat_id = notif_chat_id
-                    existing.notification_message_id = notif_message_id
                 return IngestResult(
-                    payment_id=payment_id,
+                    payment_id=int(existing.id),
                     status="bound" if existing.telegram_chat_id else "unbound",
                     auto_bound=False,
                     created=False,
@@ -273,13 +266,34 @@ async def ingest_crypto_payment(
             to_address=to_addr,
             transaction_hash=tx_hash,
             paid_at=(paid_at or "").strip() or None,
-            source_external_id=(source_external_id or "").strip() or None,
+            source_external_id=ext_id,
             alert_name=alert,
             alert_scope=alert_scope,
             is_test=bool(test),
         )
         session.add(payment)
-        session.flush()
+        try:
+            session.flush()
+        except IntegrityError:
+            if not ext_id:
+                raise
+            logger.info(
+                "crypto ingest: duplicate insert race source_external_id=%r",
+                ext_id,
+            )
+            existing = (
+                session.query(CryptoPayment)
+                .filter_by(source_external_id=ext_id)
+                .one_or_none()
+            )
+            if existing is None:
+                raise
+            return IngestResult(
+                payment_id=int(existing.id),
+                status="bound" if existing.telegram_chat_id else "unbound",
+                auto_bound=False,
+                created=False,
+            )
         payment_id = int(payment.id)
         text = format_notification_text(payment)
 

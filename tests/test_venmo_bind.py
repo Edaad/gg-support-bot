@@ -126,7 +126,7 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         )
         self.assertIn("First-time setup warning", text)
         self.assertIn(f"Already bound: {GROUP_TITLE}", text)
-        self.assertIn("Last deposit: Jun 04, 2026 11:27 PM UTC", text)
+        self.assertIn("Last deposit: Jun 04, 2026 07:27 PM EST", text)
         self.assertIn("left unbound for manual review", text)
         self.assertIn("Memo: FLOP", text)
         self.assertIn("Setup chat: RT / 9999-0000 / New Setup", text)
