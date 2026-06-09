@@ -1080,8 +1080,8 @@
     "semantic_hash": "431bae6da271385e216582d3f820cf85"
   },
   "bot/services/crypto_payments.py": {
-    "mtime": 1781010183.2087107,
-    "ast_hash": "83e76364f4c40de2ceba865f1a85a97b",
+    "mtime": 1781012426.9981027,
+    "ast_hash": "5a7ad7a2d30f9bb4e27da6e77df00e5e",
     "semantic_hash": ""
   },
   "bot/services/gc_phone.py": {
@@ -1515,9 +1515,9 @@
     "semantic_hash": "732aa7320d47a0c264a749f02a801507"
   },
   "db/connection.py": {
-    "mtime": 1775781975.5312142,
-    "ast_hash": "7948b68c306b32ad07b485f76f4b897b",
-    "semantic_hash": "7948b68c306b32ad07b485f76f4b897b"
+    "mtime": 1781010428.7348266,
+    "ast_hash": "98d32b8abb11e250e9aca787bd68ac4f",
+    "semantic_hash": ""
   },
   "db/migrate.py": {
     "mtime": 1775781975.5315394,
@@ -1700,14 +1700,14 @@
     "semantic_hash": "f5b7c0142b0e71d0c4c5c4f34b851ce1"
   },
   "notification/constants.py": {
-    "mtime": 1780245893.667951,
-    "ast_hash": "2dfffc738423cf57486ff30d2f98cd84",
-    "semantic_hash": "2dfffc738423cf57486ff30d2f98cd84"
+    "mtime": 1781014858.3631701,
+    "ast_hash": "27e6553c64f841023dc1574835434a56",
+    "semantic_hash": ""
   },
   "notification/formatting.py": {
-    "mtime": 1780887561.8641787,
-    "ast_hash": "f197463fc82448a02190e09df0583fd0",
-    "semantic_hash": "f197463fc82448a02190e09df0583fd0"
+    "mtime": 1781014862.25573,
+    "ast_hash": "e7f45dc035fe4ea2b3da278c9890772f",
+    "semantic_hash": ""
   },
   "notification/handlers/__init__.py": {
     "mtime": 1780243969.8204708,
@@ -1950,8 +1950,8 @@
     "semantic_hash": "3fb91494340ffcbef6926ae3bc71ce71"
   },
   "tests/test_crypto_alert_scope.py": {
-    "mtime": 1781010272.5119152,
-    "ast_hash": "96db4116b903448176be7a4321e0acdf",
+    "mtime": 1781012437.1570349,
+    "ast_hash": "e7b89a4b5360a24dfdf26a37909163ad",
     "semantic_hash": ""
   },
   "tests/test_crypto_payments_api.py": {
@@ -1985,9 +1985,9 @@
     "semantic_hash": "5097751478861a9e3bdd6e9d498ec2bc"
   },
   "tests/test_notification_formatting.py": {
-    "mtime": 1780887567.9913762,
-    "ast_hash": "75cc80a78407de0746a95acdefc6815c",
-    "semantic_hash": "75cc80a78407de0746a95acdefc6815c"
+    "mtime": 1781014920.7482617,
+    "ast_hash": "a94f6e2c80c3572000949313afe5744b",
+    "semantic_hash": ""
   },
   "tests/test_payment_method_binding.py": {
     "mtime": 1781010298.6727934,
@@ -2670,13 +2670,18 @@
     "semantic_hash": ""
   },
   "migrate_crypto_wallet_bindings.py": {
-    "mtime": 1781010347.9525917,
-    "ast_hash": "69b3498cbbda613bacb87045e5355036",
+    "mtime": 1781010472.0784824,
+    "ast_hash": "7976684253a28dd2a1dff9cdb7c08f42",
     "semantic_hash": ""
   },
   "scripts/query_crypto_duplicate_addresses.py": {
     "mtime": 1781009743.4144554,
     "ast_hash": "41d8d2191b33b7f33253ec08c103571d",
+    "semantic_hash": ""
+  },
+  "scripts/backfill_crypto_wallet_bindings.sql": {
+    "mtime": 1781010588.1256065,
+    "ast_hash": "d0774424b80a2611ab95afeba26f1ab0",
     "semantic_hash": ""
   }
 }

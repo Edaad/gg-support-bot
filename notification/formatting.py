@@ -5,13 +5,11 @@ from __future__ import annotations
 import html
 
 from notification.chat_id import telegram_supergroup_chat_url
+from notification.constants import linked_group_chat_hyperlinks_enabled
 
 UNBOUND_GROUP_CHAT_LINE = (
     "Group Chat: Unbound — reply to this message with the group title to bind"
 )
-
-# Set True to hyperlink bound group titles in payment notifications.
-LINKED_GROUP_CHAT_HYPERLINKS_ENABLED = False
 
 
 def format_group_chat_line(
@@ -27,7 +25,7 @@ def format_group_chat_line(
     if not title:
         return UNBOUND_GROUP_CHAT_LINE
     safe_title = html.escape(title, quote=False)
-    if LINKED_GROUP_CHAT_HYPERLINKS_ENABLED and telegram_chat_id is not None:
+    if linked_group_chat_hyperlinks_enabled() and telegram_chat_id is not None:
         url = (group_chat_url or "").strip() or None
         if url is None:
             cid = int(telegram_chat_id)
