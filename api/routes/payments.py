@@ -112,7 +112,10 @@ _MIGRATION_HINT = (
 _VENMO_MIGRATION_HINT = "Run: python migrate_venmo_payments.py (or heroku run … on the web dyno)"
 _ZELLE_MIGRATION_HINT = "Run: python migrate_zelle_payments.py (or heroku run … on the web dyno)"
 _CASHAPP_MIGRATION_HINT = "Run: python migrate_cashapp_payments.py (or heroku run … on the web dyno)"
-_CRYPTO_MIGRATION_HINT = "Run: python migrate_crypto_payments.py (or heroku run … on the web dyno)"
+_CRYPTO_MIGRATION_HINT = (
+    "Run: python migrate_crypto_payments.py and migrate_crypto_wallet_bindings.py "
+    "(or heroku run … on the web dyno)"
+)
 _BINDINGS_MIGRATION_HINT = (
     "Run: python migrate_payment_method_bindings.py (or heroku run … on the web dyno)"
 )
@@ -196,11 +199,11 @@ def _raise_db_schema_error(exc: ProgrammingError) -> None:
                 503,
                 f"Cash App payments tables or columns are missing. {_CASHAPP_MIGRATION_HINT}",
             ) from exc
-    if "crypto_payments" in low:
+    if "crypto_payments" in low or "crypto_wallet_bindings" in low:
         if "does not exist" in low or "undefinedcolumn" in low.replace(" ", ""):
             raise HTTPException(
                 503,
-                f"Crypto payments table is missing. {_CRYPTO_MIGRATION_HINT}",
+                f"Crypto payments tables are missing. {_CRYPTO_MIGRATION_HINT}",
             ) from exc
     if "group_payment_method_bindings" in low or "payment_method_bind_attempts" in low:
         if "does not exist" in low or "undefinedcolumn" in low.replace(" ", ""):

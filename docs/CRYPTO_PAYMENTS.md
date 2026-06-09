@@ -2,7 +2,7 @@
 
 Arkham (ARKM) alerts fire to Zapier; Zapier extracts transfer fields and POSTs to this API. The **notification bot** posts alerts to the shared staff Telegram group. Staff **reply** with a support group title to bind each payment.
 
-There is **no auto-bind** and no `/deposit` setup-code linking for crypto — every payment is manually linked.
+Repeat wallets (`crypto_wallet_bindings`) auto-bind to their last group by **`from_address` + `alert_scope`**. Manual bind (reply or dashboard) updates that mapping. There is no `/deposit` first-time setup flow for crypto.
 
 ## Alert scopes (two buckets)
 
@@ -21,20 +21,24 @@ Unknown `alert_name` values are rejected at ingest with HTTP 400.
 
 1. **Arkham** — alert webhook to Zapier when a transfer hits a monitored deposit address
 2. **Zapier** — parse nested JSON + **POST** to `/api/crypto/payments`
-3. **API** — insert `crypto_payments`, send Telegram notification (always unbound)
-4. **Notification bot** — staff reply with group title → bind + edit notification
+3. **API** — insert `crypto_payments`, auto-bind if wallet+scope known, send Telegram notification
+4. **Notification bot** — staff reply with group title → bind + edit notification (updates wallet binding)
 
 ## Database
 
 | Table | Purpose |
 |-------|---------|
 | `crypto_payments` | One row per on-chain deposit; binding keyed by `telegram_chat_id` |
+| `crypto_wallet_bindings` | Normalized `from_address` + `alert_scope` → last bound support group |
 
-Migration:
+Migrations:
 
 ```bash
 DATABASE_URL=... python migrate_crypto_payments.py
+DATABASE_URL=... python migrate_crypto_wallet_bindings.py
 ```
+
+The wallet-bindings migration backfills from existing bound `crypto_payments` rows (most recent bind per address+scope).
 
 ## Environment
 
@@ -88,12 +92,13 @@ Response:
 
 ## Notification format
 
+Unbound example:
+
 ```
 🔔 Crypto Payment Notification
 
 Group Chat: Unbound — reply to this message with the group title to bind
 
-Alert: ClubGTO
 Amount: $122 USDC
 Chain: BSC
 From: Binance (0x8894…D4E3)
@@ -101,6 +106,8 @@ To: 0x7063760294b901CF56b34BEB6275A641B5178CDa
 Tx: 0xa64ed1c7ecf9dbd350f2738f9d8f0699625ee957e42a4bd6dc165c619936f6d3
 Paid: 2026-05-06T23:56:53Z
 ```
+
+When auto-bound from a known wallet, `Group Chat:` shows the support group title instead of "Unbound".
 
 ## Manual bind
 
@@ -112,6 +119,8 @@ Reply in the staff group with the full group title:
 Binding a payment to the wrong club bucket is rejected (e.g. GTO group on an RT/AT/CC payment).
 
 Dashboard: **Nav → Payments**, provider **Crypto** — **Bind / Rebind** on payment rows.
+
+`/unbindmethod` in a support group clears `crypto_wallet_bindings` for that chat (along with Venmo/Zelle payer bindings), so repeat deposits from those wallets will show as unbound until staff bind again.
 
 ## Dashboard API
 

@@ -20,6 +20,7 @@ from db.models import (
     ClubPaymentMethod,
     ClubPaymentTier,
     ClubPaymentTierVariant,
+    CryptoWalletBinding,
     GroupPaymentMethodBinding,
     PaymentMethodBindAttempt,
     VenmoPayerBinding,
@@ -429,6 +430,9 @@ def unbind_chat_from_all_methods(telegram_chat_id: int) -> tuple[int, int]:
             synchronize_session=False
         )
         session.query(ZellePayerBinding).filter_by(telegram_chat_id=chat_id).delete(
+            synchronize_session=False
+        )
+        session.query(CryptoWalletBinding).filter_by(telegram_chat_id=chat_id).delete(
             synchronize_session=False
         )
         session.query(PaymentMethodBindAttempt).filter_by(

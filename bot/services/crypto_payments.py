@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
+from bot.services.club import get_group_title_for_chat
 from bot.services.group_chat_invite_links import resolve_group_chat_url_for_payment
 from bot.services.payment_method_binding import (
     BOUND_VIA_MANUAL_DASHBOARD,
@@ -29,7 +30,7 @@ from bot.services.venmo_payments import (
 from sqlalchemy.exc import IntegrityError
 
 from db.connection import get_db
-from db.models import Club, CryptoPayment
+from db.models import Club, CryptoPayment, CryptoWalletBinding
 from notification.formatting import (
     format_group_chat_line,
     resolve_notification_linked_chat_id,
@@ -116,6 +117,11 @@ def validate_bind_alert_scope(
     )
 
 
+def normalize_from_address(address: str) -> str:
+    """Normalize wallet address for binding lookup (EVM addresses are case-insensitive)."""
+    return (address or "").strip().lower()
+
+
 def shorten_address(address: str) -> str:
     raw = (address or "").strip()
     if len(raw) <= 12:
@@ -172,15 +178,47 @@ def _apply_binding_to_payment(
     telegram_chat_id: int,
     club_id: int,
     bound_group_title_at_bind: str,
+    auto_bound: bool,
     bound_by_telegram_user_id: Optional[int] = None,
 ) -> None:
     now = datetime.now(timezone.utc)
     payment.telegram_chat_id = int(telegram_chat_id)
     payment.club_id = int(club_id)
     payment.bound_group_title_at_bind = bound_group_title_at_bind[:255]
-    payment.auto_bound = False
+    payment.auto_bound = auto_bound
     payment.bound_at = now
     payment.bound_by_telegram_user_id = bound_by_telegram_user_id
+
+
+def _upsert_wallet_binding(
+    session,
+    *,
+    from_address: str,
+    alert_scope: str,
+    telegram_chat_id: int,
+    club_id: int,
+    bound_group_title_at_bind: str,
+    bound_by_telegram_user_id: Optional[int],
+) -> None:
+    normalized = normalize_from_address(from_address)
+    scope = (alert_scope or "").strip()
+    now = datetime.now(timezone.utc)
+    row = (
+        session.query(CryptoWalletBinding)
+        .filter_by(from_address_normalized=normalized, alert_scope=scope)
+        .one_or_none()
+    )
+    if row is None:
+        row = CryptoWalletBinding(
+            from_address_normalized=normalized,
+            alert_scope=scope,
+        )
+        session.add(row)
+    row.telegram_chat_id = int(telegram_chat_id)
+    row.club_id = int(club_id)
+    row.bound_group_title_at_bind = bound_group_title_at_bind[:255]
+    row.last_bound_at = now
+    row.last_bound_by_telegram_user_id = bound_by_telegram_user_id
 
 
 def find_crypto_payment_by_notification_message(
@@ -213,7 +251,7 @@ async def ingest_crypto_payment(
     source_external_id: Optional[str] = None,
     test: bool = False,
 ) -> IngestResult:
-    """Create payment row (always unbound) and send Telegram notification."""
+    """Create payment row, auto-bind known wallet+scope, send Telegram notification."""
     symbol = (token_symbol or "").strip().upper()
     if not symbol:
         raise ValueError("token_symbol is required")
@@ -234,6 +272,8 @@ async def ingest_crypto_payment(
     alert_scope = resolve_alert_scope(alert)
 
     ext_id = (source_external_id or "").strip() or None
+    auto_bound = False
+    group_title: Optional[str] = None
 
     with get_db() as session:
         if ext_id:
@@ -249,12 +289,12 @@ async def ingest_crypto_payment(
                     ext_id,
                     existing.id,
                 )
-                return IngestResult(
-                    payment_id=int(existing.id),
-                    status="bound" if existing.telegram_chat_id else "unbound",
-                    auto_bound=False,
-                    created=False,
-                )
+            return IngestResult(
+                payment_id=int(existing.id),
+                status="bound" if existing.telegram_chat_id else "unbound",
+                auto_bound=bool(existing.auto_bound),
+                created=False,
+            )
 
         payment = CryptoPayment(
             amount_cents=amount_cents,
@@ -291,11 +331,47 @@ async def ingest_crypto_payment(
             return IngestResult(
                 payment_id=int(existing.id),
                 status="bound" if existing.telegram_chat_id else "unbound",
-                auto_bound=False,
+                auto_bound=bool(existing.auto_bound),
                 created=False,
             )
+
+        binding = (
+            session.query(CryptoWalletBinding)
+            .filter_by(
+                from_address_normalized=normalize_from_address(from_addr),
+                alert_scope=alert_scope,
+            )
+            .one_or_none()
+        )
+        if binding is not None:
+            live_title = resolve_display_group_title(int(binding.telegram_chat_id))
+            club_id = binding.club_id
+            if club_id is None:
+                _t, club_id = get_group_title_for_chat(int(binding.telegram_chat_id))
+            if live_title and club_id is not None:
+                auto_bound = True
+                group_title = live_title
+                _apply_binding_to_payment(
+                    payment,
+                    telegram_chat_id=int(binding.telegram_chat_id),
+                    club_id=int(club_id),
+                    bound_group_title_at_bind=live_title,
+                    auto_bound=True,
+                )
+
         payment_id = int(payment.id)
-        text = format_notification_text(payment)
+        session.flush()
+        session.expunge(payment)
+
+    group_chat_url = await resolve_group_chat_url_for_payment(
+        payment,
+        group_title=group_title,
+    )
+    text = format_notification_text(
+        payment,
+        group_title=group_title,
+        group_chat_url=group_chat_url,
+    )
 
     notif_chat_id, notif_message_id = await send_telegram_notification(text)
 
@@ -304,18 +380,21 @@ async def ingest_crypto_payment(
         payment.notification_chat_id = notif_chat_id
         payment.notification_message_id = notif_message_id
 
+    status = "bound" if auto_bound else "unbound"
     logger.info(
-        "crypto payment ingested id=%s amount_cents=%s token=%s chain=%s alert_scope=%s",
+        "crypto payment ingested id=%s amount_cents=%s token=%s chain=%s "
+        "alert_scope=%s auto_bound=%s",
         payment_id,
         amount_cents,
         symbol,
         chain_norm,
         alert_scope,
+        auto_bound,
     )
     return IngestResult(
         payment_id=payment_id,
-        status="unbound",
-        auto_bound=False,
+        status=status,
+        auto_bound=auto_bound,
         created=True,
     )
 
@@ -355,6 +434,16 @@ async def bind_crypto_payment_by_id(
 
         _apply_binding_to_payment(
             payment,
+            telegram_chat_id=group.telegram_chat_id,
+            club_id=group.club_id,
+            bound_group_title_at_bind=group.group_title,
+            auto_bound=False,
+            bound_by_telegram_user_id=bound_by_telegram_user_id,
+        )
+        _upsert_wallet_binding(
+            session,
+            from_address=payment.from_address,
+            alert_scope=payment.alert_scope,
             telegram_chat_id=group.telegram_chat_id,
             club_id=group.club_id,
             bound_group_title_at_bind=group.group_title,

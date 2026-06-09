@@ -104,7 +104,7 @@ Method: @godfather4444
 Goods/Services: False
 ```
 
-When bound, the **Group Chat** title is a hyperlink when a URL resolves: supergroups use `t.me/c/…`, legacy groups use a cached `support_group_chats.invite_link`, or on ingest the **web** dyno calls Bot API `exportChatInviteLink` (`TELEGRAM_BOT_TOKEN`, bot must be admin in the group) and caches the result. If all three fail, the title stays plain text. Optional offline backfill: `python scripts/backfill_support_group_invite_links.py`.
+When bound, the **Group Chat** title is a hyperlink when a URL resolves: supergroups use `t.me/c/…`, legacy groups use a cached `support_group_chats.invite_link`, or on ingest the **web** dyno calls Bot API `exportChatInviteLink` (`TELEGRAM_BOT_TOKEN`, bot must be admin in the group) and caches the result. If all three fail, the title stays plain text. Optional offline backfill: [`scripts/backfill_support_group_invite_links.py`](../scripts/backfill_support_group_invite_links.py) (see [Heroku MTProto / backfill](HEROKU.md#invite-link-backfill-support_group_chatsinvite_link)).
 
 ## Manual bind
 

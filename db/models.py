@@ -931,7 +931,7 @@ class ZellePayment(Base):
 
 
 class CryptoPayment(Base):
-    """One on-chain deposit ingested from Arkham/Zapier; manually bound to a support group."""
+    """One on-chain deposit ingested from Arkham/Zapier; bound to a support group."""
 
     __tablename__ = "crypto_payments"
     __table_args__ = (
@@ -974,6 +974,33 @@ class CryptoPayment(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+    club = relationship("Club")
+
+
+class CryptoWalletBinding(Base):
+    """Remember last bind: wallet address + alert scope -> support group."""
+
+    __tablename__ = "crypto_wallet_bindings"
+    __table_args__ = (
+        UniqueConstraint(
+            "from_address_normalized",
+            "alert_scope",
+            name="uq_crypto_wallet_bindings_address_scope",
+        ),
+        Index("ix_crypto_wallet_bindings_telegram_chat_id", "telegram_chat_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    from_address_normalized = Column(String(255), nullable=False)
+    alert_scope = Column(String(32), nullable=False)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    bound_group_title_at_bind = Column(String(255), nullable=True)
+    last_bound_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_bound_by_telegram_user_id = Column(BigInteger, nullable=True)
 
     club = relationship("Club")
 

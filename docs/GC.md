@@ -92,7 +92,7 @@ They are **shared across clubs** and used only for Telethon sessions.
 
 Per-club overrides are supported via `GC_*` variables (see [`.env.example`](../.env.example)).
 
-- **`GC_MTPROTO_ENABLED`** — omit or leave empty for **on**; set `false` / `0` / `no` / `off` to disable **all** worker Telethon (listener + contact save). Use on Heroku while running local MTProto scripts against production (see [`docs/HEROKU.md`](HEROKU.md)).
+- **`GC_MTPROTO_ENABLED`** — omit or leave empty for **on**; set `false` / `0` / `no` / `off` to disable **all** worker Telethon (listener + contact save). Use on Heroku before [`scripts/backfill_support_group_invite_links.py`](../scripts/backfill_support_group_invite_links.py) or other MTProto scripts (see [`docs/HEROKU.md`](HEROKU.md#mtproto-scripts-vs-worker)).
 - **`GC_DM_GC_LISTENER_ENABLED`** — omit or leave empty for **on**; set `false` / `0` / `no` / `off` to disable outgoing-DM `/gc` listeners only (also off when `GC_MTPROTO_ENABLED` is false).
 - **`GC_DM_GC_VERBOSE_LOGS`** — set `true` / `1` / `yes` to emit extra **INFO** lines for outgoing-DM `/gc` (`dm_capture`, `/gc_match`, bootstrap). Omit for **quiet** INFO (warnings and errors still log).
 

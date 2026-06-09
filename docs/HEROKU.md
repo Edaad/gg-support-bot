@@ -27,16 +27,16 @@ The **Python buildpack** still runs `pip install -r requirements.txt`. At runtim
 
 ## MTProto scripts vs worker
 
-Telegram allows **one live connection per MTProto session**. If the **worker** dyno is connected (dm_gc listener) and you run a local script such as `scripts/backfill_support_group_invite_links.py` against production, Telegram may invalidate the session (`AuthKeyDuplicatedError`) and exports fail with `ConnectionError`.
+Telegram allows **one live connection per MTProto session**. If the **worker** dyno is connected (dm_gc listener) and you also run an MTProto script against production, Telegram may invalidate the session (`AuthKeyDuplicatedError`) and exports fail with `ConnectionError`.
 
-**Before a local backfill:**
+**Before any invite-link backfill** (local or `heroku run`):
 
 ```bash
 heroku config:set GC_MTPROTO_ENABLED=false -a YOUR_APP
 heroku restart worker -a YOUR_APP
 ```
 
-Run your script locally, then turn MTProto back on:
+When finished, turn MTProto back on:
 
 ```bash
 heroku config:unset GC_MTPROTO_ENABLED -a YOUR_APP   # or set true
@@ -44,6 +44,40 @@ heroku restart worker -a YOUR_APP
 ```
 
 `GC_MTPROTO_ENABLED=false` disables the dm_gc listener and MTProto contact save on the worker. Finer control: `GC_DM_GC_LISTENER_ENABLED=false` only (when `GC_MTPROTO_ENABLED` is still on). See [`docs/GC.md`](GC.md).
+
+### Invite link backfill (`support_group_chats.invite_link`)
+
+Caches invite links for legacy groups so payment notifications can hyperlink group titles. Script: [`scripts/backfill_support_group_invite_links.py`](../scripts/backfill_support_group_invite_links.py). Re-run is safe (skips chats that already have a link).
+
+**Local (recommended for large runs)** — set `DATABASE_URL`, `TG_API_ID`, and `TG_API_HASH` in `.env` or the shell:
+
+```bash
+python scripts/backfill_support_group_invite_links.py --apply --club-key clubgto --export-delay 5
+```
+
+**On Heroku** — use a one-off dyno. Always pass **`-a YOUR_APP`**. Put **`--`** before the script so Heroku does not treat `--apply`, `--club-key`, etc. as CLI flags:
+
+```bash
+heroku run -a YOUR_APP -- python scripts/backfill_support_group_invite_links.py --apply --club-key clubgto --export-delay 5
+```
+
+Quoted form (same effect):
+
+```bash
+heroku run -a YOUR_APP 'python scripts/backfill_support_group_invite_links.py --apply --club-key clubgto --export-delay 5'
+```
+
+**Do not close the terminal** while `heroku run` is attached — Heroku kills the one-off dyno when the SSH session drops (`Process exited with status 128`). For long runs, use **detached** mode and tail logs separately:
+
+```bash
+heroku run:detached -a YOUR_APP -- python scripts/backfill_support_group_invite_links.py --apply --club-key clubgto --export-delay 5
+# prints: run.1234
+heroku logs -a YOUR_APP --dyno run.1234 --tail
+```
+
+Filter recent one-off output: `heroku logs -a YOUR_APP --tail | rg 'run\\.|backfill|Exporting invite|Upsert'`
+
+`club-key` choices: `round_table`, `creator_club`, `clubgto`. Omit `--club-key` to process all three. Dry-run: drop `--apply`.
 
 ## Files involved
 
@@ -64,9 +98,9 @@ If the frontend build fails or `dist/` is missing, the API still starts; static 
 After deploying the Payments dashboard feature, run migrations on production once:
 
 ```bash
-heroku run python migrate_stripe_deposit_tracking.py -a YOUR_APP
+heroku run -a YOUR_APP -- python migrate_stripe_deposit_tracking.py
 # or, if tables exist but Payments returns 500:
-heroku run python migrate_stripe_checkout_session_lifecycle.py -a YOUR_APP
+heroku run -a YOUR_APP -- python migrate_stripe_checkout_session_lifecycle.py
 ```
 
 `migrate_stripe_deposit_tracking.py` now includes lifecycle columns (`completed_at`, `updated_at`, `stripe_payment_intent_id`) when run on an existing install.

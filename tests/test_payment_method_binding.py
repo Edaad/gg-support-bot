@@ -161,7 +161,7 @@ class TestUnbind(unittest.TestCase):
         self.assertEqual(removed, 2)
         self.assertEqual(cancelled, 1)
         self.assertEqual(session.delete.call_count, 2)
-        self.assertEqual(binding_q.delete.call_count, 3)
+        self.assertEqual(binding_q.delete.call_count, 4)
         cancel_all_mock.assert_called_once()
 
 
