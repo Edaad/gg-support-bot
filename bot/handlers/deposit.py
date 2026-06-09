@@ -2,6 +2,7 @@
 
 import html
 import logging
+import random
 import re
 from decimal import Decimal, InvalidOperation
 
@@ -28,6 +29,7 @@ from bot.services.club import (
     get_tier_for_amount,
     get_lowest_minimum,
     record_activity,
+    list_tier_variants,
     pick_variant,
     is_first_deposit,
     is_first_deposit_claimed,
@@ -338,6 +340,53 @@ def _schedule_bind_attempt_expiry(
         )
 
 
+def _merged_deposit_variant_response(
+    variant_data: dict,
+    method: dict,
+    *,
+    tier: dict | None = None,
+) -> dict:
+    merged = _merge_response_layers(variant_data, tier, method) if tier else _merge_response_layers(variant_data, method)
+    return _with_method_checkout_settings(merged, method, tier=tier)
+
+
+def _variant_is_linkable_for_deposit(
+    variant_data: dict,
+    method: dict,
+    *,
+    tier: dict | None = None,
+) -> bool:
+    return not _stripe_checkout_enabled(_merged_deposit_variant_response(variant_data, method, tier=tier))
+
+
+def _pick_linkable_tier_variant(
+    method_id: int,
+    method: dict,
+    tier: dict,
+    *,
+    sticky_variant_id: int | None = None,
+) -> dict | None:
+    if sticky_variant_id is not None:
+        sticky = pick_variant(
+            method_id,
+            tier_id=tier["id"],
+            variant_id=sticky_variant_id,
+        )
+        if sticky and _variant_is_linkable_for_deposit(sticky, method, tier=tier):
+            return sticky
+
+    linkable: list[dict] = []
+    weights: list[int] = []
+    for candidate in list_tier_variants(method_id, int(tier["id"])):
+        if _variant_is_linkable_for_deposit(candidate, method, tier=tier):
+            linkable.append(candidate)
+            weights.append(int(candidate.get("weight") or 1))
+    if not linkable:
+        return None
+    chosen = random.choices(linkable, weights=weights, k=1)[0]
+    return {k: v for k, v in chosen.items() if k != "weight"}
+
+
 def _pick_deposit_variant_response(
     method_id: int,
     method: dict,
@@ -345,6 +394,7 @@ def _pick_deposit_variant_response(
     *,
     chat_id: int | None = None,
     method_slug: str = "",
+    linkable_only: bool = False,
 ) -> tuple[dict | None, dict | None]:
     """Return (response_data, tier) for a deposit method selection."""
     tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
@@ -356,6 +406,17 @@ def _pick_deposit_variant_response(
             sticky_variant_id = binding.variant_id
 
     if tier:
+        if linkable_only:
+            response_data = _pick_linkable_tier_variant(
+                method_id,
+                method,
+                tier,
+                sticky_variant_id=sticky_variant_id,
+            )
+            if not response_data:
+                return None, tier
+            return _merged_deposit_variant_response(response_data, method, tier=tier), tier
+
         response_data = pick_variant(
             method_id,
             tier_id=tier["id"],
@@ -363,13 +424,14 @@ def _pick_deposit_variant_response(
         )
         if not response_data:
             return None, tier
-        response_data = _merge_response_layers(response_data, tier, method)
-        return _with_method_checkout_settings(response_data, method, tier=tier), tier
+        return _merged_deposit_variant_response(response_data, method, tier=tier), tier
+
+    if linkable_only:
+        return None, None
 
     response_data = pick_variant(method_id, variant_id=sticky_variant_id)
     if response_data:
-        response_data = _merge_response_layers(response_data, method)
-        return _with_method_checkout_settings(response_data, method), None
+        return _merged_deposit_variant_response(response_data, method), None
     merged = _merge_response_layers(method, method)
     return _with_method_checkout_settings(merged, method), None
 
@@ -1136,18 +1198,16 @@ async def _run_first_time_method_setup_from_choice(
         amount,
         chat_id=int(chat_id) if chat_id is not None else None,
         method_slug=method_slug,
+        linkable_only=True,
     )
     if not response_data:
-        logger.error(
-            "deposit_method_no_variants chat_id=%s method_id=%s slug=%r setup",
-            chat_id,
-            method_id,
-            method_slug,
+        return await _run_normal_deposit_from_choice(
+            query,
+            context,
+            method_id=method_id,
+            method=method,
+            method_slug=method_slug,
         )
-        await query.edit_message_text(
-            "This payment method is not configured yet. Please contact support."
-        )
-        return ConversationHandler.END
     result = await _send_first_time_method_setup(
         query,
         context,

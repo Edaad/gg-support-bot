@@ -183,6 +183,23 @@ def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
     return None
 
 
+def list_tier_variants(method_id: int, tier_id: int) -> list[dict]:
+    """Return tier variants as response dicts with weight, ordered like pick_variant."""
+    with get_db() as session:
+        variants = (
+            session.query(ClubPaymentTierVariant)
+            .filter_by(method_id=int(method_id), tier_id=int(tier_id))
+            .order_by(ClubPaymentTierVariant.sort_order, ClubPaymentTierVariant.id)
+            .all()
+        )
+        out: list[dict] = []
+        for variant in variants:
+            data = _variant_response_dict(variant, include_ids=True)
+            data["weight"] = int(variant.weight or 1)
+            out.append(data)
+        return out
+
+
 def pick_variant(
     method_id: int,
     tier_id: Optional[int] = None,

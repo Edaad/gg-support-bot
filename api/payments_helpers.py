@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import func, or_
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session, Query, joinedload
 
 from db.models import (
@@ -262,6 +262,51 @@ def venmo_payment_status(payment: VenmoPayment) -> str:
     return "bound" if payment.telegram_chat_id is not None else "unbound"
 
 
+def _resolve_payment_club_id(
+    session: Session,
+    payment: VenmoPayment | ZellePayment | CashAppPayment | CryptoPayment,
+) -> int | None:
+    """Dashboard club_id: prefer payment row, else linked ``groups`` row."""
+    if payment.club_id is not None:
+        return int(payment.club_id)
+    chat_id = getattr(payment, "telegram_chat_id", None)
+    if chat_id is None:
+        return None
+    group = session.query(Group).filter(Group.chat_id == int(chat_id)).first()
+    return int(group.club_id) if group else None
+
+
+def _payment_linked_to_club(payment_cls, club_id: int):
+    """Bound payment belongs to a club via ``payment.club_id`` or ``groups`` link."""
+    cid = int(club_id)
+    return or_(
+        payment_cls.club_id == cid,
+        exists(
+            select(1).where(
+                Group.chat_id == payment_cls.telegram_chat_id,
+                Group.club_id == cid,
+            )
+        ),
+    )
+
+
+def _apply_manual_payment_club_filters(query, payment_cls, *, club_id: int, status: str | None):
+    status_norm = (status or "all").strip().lower()
+    if status_norm == "bound":
+        return query.filter(
+            payment_cls.telegram_chat_id.isnot(None),
+            _payment_linked_to_club(payment_cls, club_id),
+        )
+    if status_norm == "unbound":
+        return query.filter(payment_cls.telegram_chat_id.is_(None))
+    return query.filter(
+        or_(
+            payment_cls.telegram_chat_id.is_(None),
+            _payment_linked_to_club(payment_cls, club_id),
+        )
+    )
+
+
 def apply_venmo_payment_filters(
     query,
     *,
@@ -275,21 +320,9 @@ def apply_venmo_payment_filters(
     if not include_test:
         query = query.filter(VenmoPayment.is_test.is_(False))
 
-    status_norm = (status or "all").strip().lower()
-    if status_norm == "bound":
-        query = query.filter(
-            VenmoPayment.telegram_chat_id.isnot(None),
-            VenmoPayment.club_id == club_id,
-        )
-    elif status_norm == "unbound":
-        query = query.filter(VenmoPayment.telegram_chat_id.is_(None))
-    else:
-        query = query.filter(
-            or_(
-                VenmoPayment.telegram_chat_id.is_(None),
-                VenmoPayment.club_id == club_id,
-            )
-        )
+    query = _apply_manual_payment_club_filters(
+        query, VenmoPayment, club_id=club_id, status=status
+    )
 
     if from_dt is not None:
         query = query.filter(VenmoPayment.created_at >= from_dt)
@@ -347,7 +380,7 @@ def build_venmo_payment_read(session: Session, payment: VenmoPayment) -> dict:
     gg_id: str | None = None
     if payment.telegram_chat_id is not None:
         title, gg_id = resolve_group_title(session, int(payment.telegram_chat_id))
-    club_id = payment.club_id
+    club_id = _resolve_payment_club_id(session, payment)
     return {
         "id": payment.id,
         "payer_name": payment.payer_name,
@@ -386,21 +419,9 @@ def apply_zelle_payment_filters(
     if not include_test:
         query = query.filter(ZellePayment.is_test.is_(False))
 
-    status_norm = (status or "all").strip().lower()
-    if status_norm == "bound":
-        query = query.filter(
-            ZellePayment.telegram_chat_id.isnot(None),
-            ZellePayment.club_id == club_id,
-        )
-    elif status_norm == "unbound":
-        query = query.filter(ZellePayment.telegram_chat_id.is_(None))
-    else:
-        query = query.filter(
-            or_(
-                ZellePayment.telegram_chat_id.is_(None),
-                ZellePayment.club_id == club_id,
-            )
-        )
+    query = _apply_manual_payment_club_filters(
+        query, ZellePayment, club_id=club_id, status=status
+    )
 
     if from_dt is not None:
         query = query.filter(ZellePayment.created_at >= from_dt)
@@ -471,11 +492,8 @@ def apply_zelle_summary_filters(
             session, query, ZellePayment.telegram_chat_id
         )
     if club_id is not None:
-        query = query.filter(
-            or_(
-                ZellePayment.telegram_chat_id.is_(None),
-                ZellePayment.club_id == club_id,
-            )
+        query = _apply_manual_payment_club_filters(
+            query, ZellePayment, club_id=club_id, status="all"
         )
     if from_dt is not None:
         query = query.filter(ZellePayment.created_at >= from_dt)
@@ -565,21 +583,9 @@ def apply_cashapp_payment_filters(
     if not include_test:
         query = query.filter(CashAppPayment.is_test.is_(False))
 
-    status_norm = (status or "all").strip().lower()
-    if status_norm == "bound":
-        query = query.filter(
-            CashAppPayment.telegram_chat_id.isnot(None),
-            CashAppPayment.club_id == club_id,
-        )
-    elif status_norm == "unbound":
-        query = query.filter(CashAppPayment.telegram_chat_id.is_(None))
-    else:
-        query = query.filter(
-            or_(
-                CashAppPayment.telegram_chat_id.is_(None),
-                CashAppPayment.club_id == club_id,
-            )
-        )
+    query = _apply_manual_payment_club_filters(
+        query, CashAppPayment, club_id=club_id, status=status
+    )
 
     if from_dt is not None:
         query = query.filter(CashAppPayment.created_at >= from_dt)
@@ -637,7 +643,7 @@ def build_cashapp_payment_read(session: Session, payment: CashAppPayment) -> dic
     gg_id: str | None = None
     if payment.telegram_chat_id is not None:
         title, gg_id = resolve_group_title(session, int(payment.telegram_chat_id))
-    club_id = payment.club_id
+    club_id = _resolve_payment_club_id(session, payment)
     return {
         "id": payment.id,
         "payer_name": payment.payer_name,
@@ -663,7 +669,7 @@ def build_zelle_payment_read(session: Session, payment: ZellePayment) -> dict:
     gg_id: str | None = None
     if payment.telegram_chat_id is not None:
         title, gg_id = resolve_group_title(session, int(payment.telegram_chat_id))
-    club_id = payment.club_id
+    club_id = _resolve_payment_club_id(session, payment)
     return {
         "id": payment.id,
         "payer_name": payment.payer_name,
@@ -714,21 +720,9 @@ def apply_crypto_payment_filters(
     if not include_test:
         query = query.filter(CryptoPayment.is_test.is_(False))
 
-    status_norm = (status or "all").strip().lower()
-    if status_norm == "bound":
-        query = query.filter(
-            CryptoPayment.telegram_chat_id.isnot(None),
-            CryptoPayment.club_id == club_id,
-        )
-    elif status_norm == "unbound":
-        query = query.filter(CryptoPayment.telegram_chat_id.is_(None))
-    else:
-        query = query.filter(
-            or_(
-                CryptoPayment.telegram_chat_id.is_(None),
-                CryptoPayment.club_id == club_id,
-            )
-        )
+    query = _apply_manual_payment_club_filters(
+        query, CryptoPayment, club_id=club_id, status=status
+    )
 
     if from_dt is not None:
         query = query.filter(CryptoPayment.created_at >= from_dt)
@@ -757,7 +751,7 @@ def build_crypto_payment_read(session: Session, payment: CryptoPayment) -> dict:
     gg_id: str | None = None
     if payment.telegram_chat_id is not None:
         title, gg_id = resolve_group_title(session, int(payment.telegram_chat_id))
-    club_id = payment.club_id
+    club_id = _resolve_payment_club_id(session, payment)
     scope = payment.alert_scope or ""
     return {
         "id": payment.id,

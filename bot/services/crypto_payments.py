@@ -138,11 +138,8 @@ def format_notification_text(
     telegram_chat_id: Optional[int] = None,
     group_chat_url: Optional[str] = None,
 ) -> str:
-    token = escape_notification_html((payment.token_symbol or "").strip().upper())
     chain = escape_notification_html((payment.chain or "").strip().upper())
-    amount_line = (
-        f"{format_amount_display(payment.amount_cents, bold=True)} {token}".strip()
-    )
+    amount_line = format_amount_display(payment.amount_cents, bold=True)
 
     lines = [
         "🔔 Crypto Payment Notification",

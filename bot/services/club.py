@@ -388,6 +388,26 @@ def _variant_response_dict(
     return data
 
 
+def list_tier_variants(method_id: int, tier_id: int) -> list[dict]:
+    """Return tier variants as response dicts with weight."""
+    v2 = _payment_v2()
+    if v2:
+        return v2.list_tier_variants(method_id, tier_id)
+    with get_db() as session:
+        variants = (
+            session.query(MethodVariant)
+            .filter_by(method_id=int(method_id), tier_id=int(tier_id))
+            .order_by(MethodVariant.sort_order, MethodVariant.id)
+            .all()
+        )
+        out: list[dict] = []
+        for variant in variants:
+            data = _variant_response_dict(variant, tier_scoped=True, include_ids=True)
+            data["weight"] = int(variant.weight or 1)
+            out.append(data)
+        return out
+
+
 def pick_variant(
     method_id: int,
     tier_id: Optional[int] = None,
