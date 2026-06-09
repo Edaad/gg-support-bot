@@ -16,5 +16,8 @@ sessions/
 dashboard/node_modules/
 dashboard/dist/
 
+# Graphify (local cost log only; commit graphify-out/ for team sharing)
+graphify-out/cost.json
+
 # DB config snapshots (may contain prod copy)
 backups/

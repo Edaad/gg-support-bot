@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { listClubs, type Club } from '../api/client'
-import { type BoundViaFilter } from '../api/paymentsClient'
+import {
+  LINKING_METHOD_OPTIONS,
+  type BoundViaFilter,
+  type LinkingMethodSlug,
+} from '../api/paymentsClient'
 import PaymentMethodLinkingAnalytics from '../components/PaymentMethodLinkingAnalytics'
 
 const SOURCE_FILTER_OPTIONS: { value: BoundViaFilter; label: string }[] = [
@@ -20,12 +24,12 @@ export default function Analytics({ token }: { token: string }) {
   const toDateId = useId()
 
   const [clubs, setClubs] = useState<Club[]>([])
-  const [method, setMethod] = useState<'venmo' | 'zelle'>('venmo')
+  const [method, setMethod] = useState<LinkingMethodSlug>('venmo')
   const [clubId, setClubId] = useState<number | 'all'>('all')
   const [sourceFilter, setSourceFilter] = useState<BoundViaFilter>('all')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
-  const [appliedMethod, setAppliedMethod] = useState<'venmo' | 'zelle'>('venmo')
+  const [appliedMethod, setAppliedMethod] = useState<LinkingMethodSlug>('venmo')
   const [appliedSource, setAppliedSource] = useState<BoundViaFilter>('all')
   const [appliedClubId, setAppliedClubId] = useState<number | 'all'>('all')
   const [appliedFrom, setAppliedFrom] = useState('')
@@ -109,10 +113,13 @@ export default function Analytics({ token }: { token: string }) {
             id={methodSelectId}
             className="input-field-sm min-w-[8rem]"
             value={method}
-            onChange={(e) => setMethod(e.target.value as 'venmo' | 'zelle')}
+            onChange={(e) => setMethod(e.target.value as LinkingMethodSlug)}
           >
-            <option value="venmo">Venmo</option>
-            <option value="zelle">Zelle</option>
+            {LINKING_METHOD_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
           </select>
         </div>
 

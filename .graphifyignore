@@ -1,0 +1,7 @@
+.venv/
+dashboard/node_modules/
+dashboard/dist/
+sessions/
+*.session
+backups/
+graphify-out/cache/

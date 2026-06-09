@@ -5,6 +5,7 @@ import {
   type BindAttemptRow,
   type BoundViaFilter,
   type GroupBindingRow,
+  type LinkingMethodSlug,
 } from '../api/paymentsClient'
 import Modal from './Modal'
 
@@ -35,7 +36,7 @@ const BIND_KIND_LABELS: Record<string, string> = {
 }
 
 export type LinkingListParams = {
-  method: 'venmo' | 'zelle'
+  method: LinkingMethodSlug
   clubId?: number
   boundVia: BoundViaFilter
   from?: string

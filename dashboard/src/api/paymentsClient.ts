@@ -642,6 +642,14 @@ export async function fetchAllCryptoPayments(
   return all
 }
 
+export type LinkingMethodSlug = 'venmo' | 'zelle' | 'cashapp'
+
+export const LINKING_METHOD_OPTIONS: { value: LinkingMethodSlug; label: string }[] = [
+  { value: 'venmo', label: 'Venmo' },
+  { value: 'zelle', label: 'Zelle' },
+  { value: 'cashapp', label: 'Cash App' },
+]
+
 export type BoundViaFilter =
   | 'all'
   | 'special_amount'

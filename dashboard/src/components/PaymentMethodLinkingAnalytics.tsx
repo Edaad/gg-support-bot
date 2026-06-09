@@ -1,5 +1,10 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchBindingSummary, type BindingSummary, type BoundViaFilter } from '../api/paymentsClient'
+import {
+  fetchBindingSummary,
+  type BindingSummary,
+  type BoundViaFilter,
+  type LinkingMethodSlug,
+} from '../api/paymentsClient'
 import KpiStat from './KpiStat'
 import LinkingDrilldownModal, { type LinkingKpiCategory, type LinkingListParams } from './LinkingDrilldownModal'
 
@@ -17,9 +22,17 @@ const BIND_KIND_LABELS: Record<string, string> = {
   memo_emoji: 'Memo code',
 }
 
-const METHOD_LABELS: Record<'venmo' | 'zelle', { section: string; accountColumn: string }> = {
-  venmo: { section: 'Venmo group linking', accountColumn: 'Handle' },
-  zelle: { section: 'Zelle group linking', accountColumn: 'Recipient' },
+const METHOD_LABELS: Record<
+  LinkingMethodSlug,
+  { section: string; accountColumn: string; accountLabel: string }
+> = {
+  venmo: { section: 'Venmo group linking', accountColumn: 'Handle', accountLabel: 'Venmo handle' },
+  zelle: { section: 'Zelle group linking', accountColumn: 'Recipient', accountLabel: 'Zelle recipient' },
+  cashapp: {
+    section: 'Cash App group linking',
+    accountColumn: 'Handle',
+    accountLabel: 'Cash App handle',
+  },
 }
 
 function boundViaLabel(via: string): string {
@@ -46,7 +59,7 @@ type Filters = {
 
 type Props = {
   token: string
-  method: 'venmo' | 'zelle'
+  method: LinkingMethodSlug
   excludeTestChats?: boolean
   filters: Filters
   onError?: (message: string) => void
@@ -55,7 +68,7 @@ type Props = {
 }
 
 type KpiPanelProps = {
-  method: 'venmo' | 'zelle'
+  method: LinkingMethodSlug
   summary: BindingSummary
   onDrilldown: (category: LinkingKpiCategory) => void
 }
@@ -70,7 +83,7 @@ const LinkingKpiPanel = memo(function LinkingKpiPanel({ method, summary, onDrill
       <div className="kpi-grid-linking mb-5">
         <KpiStat
           label="Bound GCs"
-          tip={`Support group chats linked to a ${method === 'venmo' ? 'Venmo handle' : 'Zelle recipient'} in the selected filters.`}
+          tip={`Support group chats linked to a ${METHOD_LABELS[method].accountLabel} in the selected filters.`}
           tone="accent"
           actionLabel={`View ${summary.total_bound} bound group chats`}
           interactiveDisabled={summary.total_bound === 0}
