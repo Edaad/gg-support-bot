@@ -1,10 +1,16 @@
-"""Backfill support_group_chats.invite_link for linked groups (groups table).
+"""Backfill support_group_chats.invite_link for groups tracked by the support bot.
 
-Only writes when the club MTProto admin account is still in the group (the chat
-appears in that club's Telethon dialog list). Dry-run by default; pass --apply
-to write Postgres.
+Candidates are unioned from ``groups`` (bot-linked club chats) and
+``player_details.chat_ids`` (player-bound chats), scoped to clubs with MTProto
+``/gc`` config. Only writes when the club MTProto admin is still in the group
+(the chat appears in that club's Telethon dialog list). Dry-run by default;
+pass --apply to write Postgres.
 
 Environment: DATABASE_URL, TG_API_ID, TG_API_HASH (same as other MTProto scripts).
+
+Operational: Do not run while the Heroku bot worker holds the same club Telethon
+session. Set ``GC_MTPROTO_ENABLED=false`` on the worker (or ``GC_DM_GC_LISTENER_ENABLED=false``)
+and restart before backfilling; re-enable after the run.
 
 Usage:
   python scripts/backfill_support_group_invite_links.py
@@ -88,6 +94,11 @@ def _is_group_dialog(dialog) -> bool:
     return False
 
 
+def _gc_display_name(title: str, chat_id: int) -> str:
+    name = (title or "").strip()
+    return name if name else f"chat {chat_id}"
+
+
 def _configure_logging(*, quiet: bool) -> None:
     level = logging.WARNING if quiet else logging.INFO
     logging.basicConfig(
@@ -98,28 +109,75 @@ def _configure_logging(*, quiet: bool) -> None:
     )
 
 
-def _load_linked_groups(
+def _resolve_stored_group_title(session, chat_id: int) -> str:
+    from db.models import Group, SupportGroupChat
+
+    cid = int(chat_id)
+    group = session.query(Group).filter(Group.chat_id == cid).first()
+    if group and (group.name or "").strip():
+        return group.name.strip()
+    sgc = (
+        session.query(SupportGroupChat.telegram_chat_title)
+        .filter(SupportGroupChat.telegram_chat_id == cid)
+        .order_by(SupportGroupChat.created_at.desc())
+        .first()
+    )
+    if sgc and (sgc[0] or "").strip():
+        return str(sgc[0]).strip()
+    return ""
+
+
+def _load_tracked_groups(
     *,
     club_id: int | None,
     chat_id: int | None,
+    mtproto_club_ids: frozenset[int],
 ) -> list[LinkedGroupRow]:
+    """Union bot-linked ``groups`` rows and ``player_details.chat_ids`` for MTProto clubs."""
     from db.connection import get_db
-    from db.models import Group
+    from db.models import Group, PlayerDetails
+
+    if club_id is not None and int(club_id) not in mtproto_club_ids:
+        return []
+
+    by_chat: dict[int, int] = {}
 
     with get_db() as session:
-        q = session.query(Group.chat_id, Group.club_id, Group.name)
+        groups_q = session.query(Group.chat_id, Group.club_id)
         if club_id is not None:
-            q = q.filter(Group.club_id == int(club_id))
+            groups_q = groups_q.filter(Group.club_id == int(club_id))
+        else:
+            groups_q = groups_q.filter(Group.club_id.in_(mtproto_club_ids))
         if chat_id is not None:
-            q = q.filter(Group.chat_id == int(chat_id))
-        rows = q.order_by(Group.club_id, Group.chat_id).all()
+            groups_q = groups_q.filter(Group.chat_id == int(chat_id))
+        for cid, club in groups_q.all():
+            by_chat[int(cid)] = int(club)
 
-    out: list[LinkedGroupRow] = []
-    for cid, club, name in rows:
-        title = (name or "").strip()
-        if not title:
-            continue
-        out.append(LinkedGroupRow(chat_id=int(cid), club_id=int(club), title=title))
+        pd_q = session.query(PlayerDetails.club_id, PlayerDetails.chat_ids)
+        if club_id is not None:
+            pd_q = pd_q.filter(PlayerDetails.club_id == int(club_id))
+        else:
+            pd_q = pd_q.filter(PlayerDetails.club_id.in_(mtproto_club_ids))
+        for club, chat_ids in pd_q.all():
+            if not chat_ids:
+                continue
+            club_int = int(club)
+            for raw_cid in chat_ids:
+                cid = int(raw_cid)
+                if chat_id is not None and cid != int(chat_id):
+                    continue
+                if cid not in by_chat:
+                    by_chat[cid] = club_int
+
+        out: list[LinkedGroupRow] = []
+        for cid in sorted(by_chat):
+            out.append(
+                LinkedGroupRow(
+                    chat_id=cid,
+                    club_id=by_chat[cid],
+                    title=_resolve_stored_group_title(session, cid),
+                )
+            )
     return out
 
 
@@ -200,6 +258,7 @@ async def _export_invite_links_for_dialogs(
     dialog_chat_ids: list[int],
     *,
     export_delay_seconds: float,
+    dialog_titles: dict[int, str] | None = None,
 ) -> dict[int, str | None]:
     from bot.services.mtproto_group_create import get_mtproto_lock, make_client
 
@@ -213,14 +272,25 @@ async def _export_invite_links_for_dialogs(
         try:
             for i, dialog_chat_id in enumerate(dialog_chat_ids):
                 cid = int(dialog_chat_id)
+                gc_name = (dialog_titles or {}).get(cid) or f"chat {cid}"
                 if i > 0 and export_delay_seconds > 0:
                     await asyncio.sleep(export_delay_seconds)
+                logger.info("Exporting invite link: %s (chat_id=%s)", gc_name, cid)
                 try:
                     entity = await client.get_entity(cid)
                     out[cid] = await _export_invite_link_backfill(client, entity)
+                    if out[cid]:
+                        logger.info("Exported invite link: %s (chat_id=%s)", gc_name, cid)
+                    else:
+                        logger.warning(
+                            "Export invite failed: %s (chat_id=%s)",
+                            gc_name,
+                            cid,
+                        )
                 except Exception as e:
                     logger.warning(
-                        "export invite failed chat_id=%s: %s",
+                        "Export invite failed: %s (chat_id=%s): %s",
+                        gc_name,
                         cid,
                         type(e).__name__,
                     )
@@ -253,7 +323,15 @@ async def _backfill(
             raise SystemExit(f"Unknown club_key: {club_key_filter!r}")
         club_id_filter = int(cfg.link_club_id)
 
-    groups = _load_linked_groups(club_id=club_id_filter, chat_id=chat_id_filter)
+    mtproto_club_ids = frozenset(
+        int(cfg.link_club_id) for cfg in CLUB_GC_CONFIG.values()
+    )
+    groups = _load_tracked_groups(
+        club_id=club_id_filter,
+        chat_id=chat_id_filter,
+        mtproto_club_ids=mtproto_club_ids,
+    )
+    logger.info("Loaded %s tracked group chats for backfill", len(groups))
     by_club: dict[int, list[LinkedGroupRow]] = {}
     for row in groups:
         by_club.setdefault(row.club_id, []).append(row)
@@ -324,6 +402,11 @@ async def _backfill(
         pending: list[tuple[LinkedGroupRow, int, str]] = []
         for g in club_groups:
             if fetch_invite_link_for_chat(g.chat_id, group_title=g.title):
+                logger.info(
+                    "Skip (already linked): %s (chat_id=%s)",
+                    _gc_display_name(g.title, g.chat_id),
+                    g.chat_id,
+                )
                 results.append(
                     BackfillRow(
                         groups_chat_id=g.chat_id,
@@ -340,6 +423,11 @@ async def _backfill(
 
             match = _find_dialog_for_group(g.chat_id, dialogs)
             if match is None:
+                logger.info(
+                    "Skip (admin not in group): %s (chat_id=%s)",
+                    _gc_display_name(g.title, g.chat_id),
+                    g.chat_id,
+                )
                 results.append(
                     BackfillRow(
                         groups_chat_id=g.chat_id,
@@ -359,6 +447,10 @@ async def _backfill(
             pending.append((g, dialog_chat_id, title_out))
 
         export_ids = sorted({dialog_chat_id for _, dialog_chat_id, _ in pending})
+        dialog_titles = {
+            int(dialog_chat_id): title_out
+            for _, dialog_chat_id, title_out in pending
+        }
         logger.info(
             "Exporting invite links for %s matched groups (club_key=%s)",
             len(export_ids),
@@ -368,11 +460,17 @@ async def _backfill(
             cfg,
             export_ids,
             export_delay_seconds=export_delay_seconds,
+            dialog_titles=dialog_titles,
         )
 
         for g, dialog_chat_id, title_out in pending:
             invite_link = exported.get(int(dialog_chat_id))
             if not invite_link:
+                logger.warning(
+                    "Export failed (no link): %s (chat_id=%s)",
+                    _gc_display_name(title_out, dialog_chat_id),
+                    dialog_chat_id,
+                )
                 results.append(
                     BackfillRow(
                         groups_chat_id=g.chat_id,
@@ -408,6 +506,19 @@ async def _backfill(
                     unchanged += 1
                 else:
                     errors += 1
+                logger.info(
+                    "Upsert %s: %s (chat_id=%s)%s",
+                    upsert_status,
+                    _gc_display_name(title_out, dialog_chat_id),
+                    dialog_chat_id,
+                    f" row_id={row_id}" if row_id else "",
+                )
+            else:
+                logger.info(
+                    "Would upsert: %s (chat_id=%s)",
+                    _gc_display_name(title_out, dialog_chat_id),
+                    dialog_chat_id,
+                )
 
             results.append(
                 BackfillRow(
@@ -489,7 +600,7 @@ def main() -> None:
     parser.add_argument(
         "--chat-id",
         type=int,
-        help="Limit to one groups.chat_id (still requires admin membership).",
+        help="Limit to one tracked chat id (still requires admin membership).",
     )
     parser.add_argument(
         "--apply",

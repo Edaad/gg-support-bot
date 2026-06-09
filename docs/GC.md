@@ -6,7 +6,7 @@ Key point: **the group is created by a club’s Telegram user account via MTProt
 
 ## Incoming player DMs + outgoing `/gc` in admin → player DMs (optional)
 
-**On by default** on the bot worker (set **`GC_DM_GC_LISTENER_ENABLED=false`** to disable). Use **one** process only — the same Telethon session must not connect twice:
+**On by default** on the bot worker. Disable with **`GC_MTPROTO_ENABLED=false`** (all Telethon on the worker) or **`GC_DM_GC_LISTENER_ENABLED=false`** (listener only). Use **one** process only — the same Telethon session must not connect twice:
 
 - Each configured club starts a Telethon client using that club’s session (file and/or Postgres `StringSession`).
 - **Incoming:** When anyone **DMs the club MTProto account** (private chat, non-bot), the handler creates or reuses the support megagroup for `(club_key, player_telegram_user_id)` and DMs the player (same flow as `/gc`).
@@ -92,7 +92,8 @@ They are **shared across clubs** and used only for Telethon sessions.
 
 Per-club overrides are supported via `GC_*` variables (see [`.env.example`](../.env.example)).
 
-- **`GC_DM_GC_LISTENER_ENABLED`** — omit or leave empty for **on**; set `false` / `0` / `no` / `off` to disable outgoing-DM `/gc` listeners.
+- **`GC_MTPROTO_ENABLED`** — omit or leave empty for **on**; set `false` / `0` / `no` / `off` to disable **all** worker Telethon (listener + contact save). Use on Heroku while running local MTProto scripts against production (see [`docs/HEROKU.md`](HEROKU.md)).
+- **`GC_DM_GC_LISTENER_ENABLED`** — omit or leave empty for **on**; set `false` / `0` / `no` / `off` to disable outgoing-DM `/gc` listeners only (also off when `GC_MTPROTO_ENABLED` is false).
 - **`GC_DM_GC_VERBOSE_LOGS`** — set `true` / `1` / `yes` to emit extra **INFO** lines for outgoing-DM `/gc` (`dm_capture`, `/gc_match`, bootstrap). Omit for **quiet** INFO (warnings and errors still log).
 
 ### Bot account invite behavior

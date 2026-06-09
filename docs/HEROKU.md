@@ -25,6 +25,26 @@ The **Python buildpack** still runs `pip install -r requirements.txt`. At runtim
 
 3. **Deploy**: `git push heroku main` — compile runs `npm install` at the repo root, then **`heroku-postbuild`**, then Python.
 
+## MTProto scripts vs worker
+
+Telegram allows **one live connection per MTProto session**. If the **worker** dyno is connected (dm_gc listener) and you run a local script such as `scripts/backfill_support_group_invite_links.py` against production, Telegram may invalidate the session (`AuthKeyDuplicatedError`) and exports fail with `ConnectionError`.
+
+**Before a local backfill:**
+
+```bash
+heroku config:set GC_MTPROTO_ENABLED=false -a YOUR_APP
+heroku restart worker -a YOUR_APP
+```
+
+Run your script locally, then turn MTProto back on:
+
+```bash
+heroku config:unset GC_MTPROTO_ENABLED -a YOUR_APP   # or set true
+heroku restart worker -a YOUR_APP
+```
+
+`GC_MTPROTO_ENABLED=false` disables the dm_gc listener and MTProto contact save on the worker. Finer control: `GC_DM_GC_LISTENER_ENABLED=false` only (when `GC_MTPROTO_ENABLED` is still on). See [`docs/GC.md`](GC.md).
+
 ## Files involved
 
 | File | Role |

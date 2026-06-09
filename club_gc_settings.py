@@ -237,12 +237,29 @@ def get_tg_mtproto_credentials() -> tuple[int, str]:
     return api_id, api_hash
 
 
+def is_mtproto_enabled() -> bool:
+    """Master switch for Telethon on the bot worker (listener + contact save).
+
+    Default **on**. Set ``GC_MTPROTO_ENABLED`` to ``false``, ``0``, ``no``, or ``off`` on
+    Heroku (or locally) while running MTProto scripts against production — e.g.
+    ``scripts/backfill_support_group_invite_links.py`` — so the worker does not hold
+    the same session (``AuthKeyDuplicatedError``).
+    """
+    raw = os.getenv("GC_MTPROTO_ENABLED")
+    if raw is None or not str(raw).strip():
+        return True
+    return str(raw).strip().lower() not in ("0", "false", "no", "off")
+
+
 def is_dm_gc_listener_enabled() -> bool:
     """Telethon listens for outgoing /gc in admin→player DMs unless explicitly disabled.
 
     Default **on**. Set ``GC_DM_GC_LISTENER_ENABLED`` to ``false``, ``0``, ``no``, or ``off`` to turn off.
-    Use a single bot worker when enabled (same MTProto session must not connect twice).
+    Also off when ``GC_MTPROTO_ENABLED`` is false. Use a single bot worker when enabled
+    (same MTProto session must not connect twice).
     """
+    if not is_mtproto_enabled():
+        return False
     raw = os.getenv("GC_DM_GC_LISTENER_ENABLED")
     if raw is None or not str(raw).strip():
         return True
@@ -252,6 +269,8 @@ def is_dm_gc_listener_enabled() -> bool:
 def is_contact_save_enabled() -> bool:
     """Telethon saves player contacts from title change, /track, and /info unless explicitly disabled."""
 
+    if not is_mtproto_enabled():
+        return False
     raw = os.getenv("GC_CONTACT_SAVE_ENABLED")
     if raw is None or not str(raw).strip():
         return True

@@ -1084,7 +1084,12 @@ async def _async_main(bot_token: str) -> None:
 
     while not _listener_stop.is_set():
         if not is_dm_gc_listener_enabled():
-            logger.info("dm_gc listener disabled via GC_DM_GC_LISTENER_ENABLED")
+            from club_gc_settings import is_mtproto_enabled
+
+            if not is_mtproto_enabled():
+                logger.info("dm_gc listener disabled via GC_MTPROTO_ENABLED")
+            else:
+                logger.info("dm_gc listener disabled via GC_DM_GC_LISTENER_ENABLED")
             break
 
         _listener_metrics["cycle"] = int(_listener_metrics.get("cycle") or 0) + 1

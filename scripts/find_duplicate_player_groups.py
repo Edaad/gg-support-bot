@@ -12,8 +12,9 @@ Environment:
   GC_MTPROTO_DB_SESSIONS — when true (default), loads Telethon StringSession from Postgres
 
 Operational:
-  Do not run while the bot worker holds the same club Telethon session
-  (``GC_DM_GC_LISTENER_ENABLED`` + matching ``--club-key``); only one connection per session.
+  Do not run while the bot worker holds the same club Telethon session; only one
+  connection per session. On Heroku set ``GC_MTPROTO_ENABLED=false`` (or
+  ``GC_DM_GC_LISTENER_ENABLED=false``) and restart the worker before running locally.
 
 Requires Python 3.10+ (see repo ``.python-version``). Prefer ``python3.11`` if ``.venv`` was built with 3.9.
 
@@ -262,7 +263,7 @@ def main() -> None:
         elif "AuthKeyDuplicated" in type(e).__name__ or "AuthKeyDuplicated" in msg:
             print(
                 "ERROR: The MTProto session is already in use by the bot worker.\n"
-                "Stop the bot worker first, or rerun with GC_DM_GC_LISTENER_ENABLED=false.",
+                "Stop the bot worker first, or set GC_MTPROTO_ENABLED=false on Heroku and restart.",
                 file=sys.stderr,
             )
         raise SystemExit(msg) from e
