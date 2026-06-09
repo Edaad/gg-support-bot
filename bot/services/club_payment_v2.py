@@ -211,7 +211,8 @@ def pick_variant(
             chosen = session.query(ClubPaymentTierVariant).get(int(variant_id))
             if chosen is None or int(chosen.method_id) != int(method_id):
                 return None
-            return _variant_response_dict(chosen, include_ids=True)
+            if tier_id is None or int(chosen.tier_id) == int(tier_id):
+                return _variant_response_dict(chosen, include_ids=True)
 
         if tier_id is not None:
             variants = (

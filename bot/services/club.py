@@ -430,7 +430,12 @@ def pick_variant(
             chosen = session.query(MethodVariant).get(int(variant_id))
             if chosen is None or int(chosen.method_id) != int(method_id):
                 return None
-            return _variant_response_dict(chosen, tier_scoped=bool(chosen.tier_id), include_ids=True)
+            if tier_id is None or (
+                chosen.tier_id is not None and int(chosen.tier_id) == int(tier_id)
+            ):
+                return _variant_response_dict(
+                    chosen, tier_scoped=bool(chosen.tier_id), include_ids=True
+                )
 
         if tier_id is not None:
             variants = (

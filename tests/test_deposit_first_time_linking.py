@@ -71,54 +71,26 @@ ACCOUNT_VARIANT = {
 }
 
 
-class PickLinkableDepositVariantTestCase(unittest.TestCase):
-    def test_under_100_stripe_only_returns_none(self):
-        with (
-            patch.object(dep, "get_tier_for_amount", return_value=UNDER_TIER),
-            patch.object(
-                dep,
-                "list_tier_variants",
-                return_value=[STRIPE_UNDER_VARIANT],
-            ),
-        ):
-            response_data, tier = dep._pick_deposit_variant_response(
-                4,
-                METHOD,
-                Decimal("50"),
-                method_slug="cashapp",
-                linkable_only=True,
-            )
+def _merged_stripe_over():
+    return dep._merged_deposit_variant_response(
+        dict(STRIPE_OVER_VARIANT), METHOD, tier=OVER_TIER
+    )
 
-        self.assertIsNone(response_data)
-        self.assertEqual(tier, UNDER_TIER)
 
-    def test_over_100_picks_manual_account_variant(self):
-        with (
-            patch.object(dep, "get_tier_for_amount", return_value=OVER_TIER),
-            patch.object(
-                dep,
-                "list_tier_variants",
-                return_value=[STRIPE_OVER_VARIANT, ACCOUNT_VARIANT],
-            ),
-            patch.object(dep.random, "choices", return_value=[ACCOUNT_VARIANT]) as choices_mock,
-        ):
-            response_data, tier = dep._pick_deposit_variant_response(
-                4,
-                METHOD,
-                Decimal("150"),
-                method_slug="cashapp",
-                linkable_only=True,
-            )
+def _merged_account_over():
+    return dep._merged_deposit_variant_response(
+        dict(ACCOUNT_VARIANT), METHOD, tier=OVER_TIER
+    )
 
-        choices_mock.assert_called_once()
-        self.assertEqual(choices_mock.call_args.args[0], [ACCOUNT_VARIANT])
-        self.assertEqual(choices_mock.call_args.kwargs["weights"], [18])
-        self.assertIsNotNone(response_data)
-        self.assertFalse(dep._stripe_checkout_enabled(response_data))
-        self.assertIn("cash.app/$michaelc4444", response_data["response_text"])
-        self.assertEqual(tier, OVER_TIER)
 
-    def test_linkable_only_false_uses_weighted_pick(self):
+def _merged_stripe_under():
+    return dep._merged_deposit_variant_response(
+        dict(STRIPE_UNDER_VARIANT), METHOD, tier=UNDER_TIER
+    )
+
+
+class PickDepositVariantTestCase(unittest.TestCase):
+    def test_weighted_pick_can_return_stripe_variant(self):
         with (
             patch.object(dep, "get_tier_for_amount", return_value=OVER_TIER),
             patch.object(
@@ -132,32 +104,71 @@ class PickLinkableDepositVariantTestCase(unittest.TestCase):
                 METHOD,
                 Decimal("150"),
                 method_slug="cashapp",
-                linkable_only=False,
             )
 
         pick_mock.assert_called_once()
         self.assertTrue(dep._stripe_checkout_enabled(response_data))
         self.assertEqual(tier, OVER_TIER)
 
+    def test_cashapp_normal_flow_ignores_sticky_binding(self):
+        binding = SimpleNamespace(variant_id=21)
+        with (
+            patch.object(dep, "get_tier_for_amount", return_value=OVER_TIER),
+            patch.object(dep, "get_chat_binding", return_value=binding),
+            patch.object(
+                dep,
+                "pick_variant",
+                return_value=dict(STRIPE_OVER_VARIANT),
+            ) as pick_mock,
+        ):
+            dep._pick_deposit_variant_response(
+                4,
+                METHOD,
+                Decimal("150"),
+                chat_id=-100123,
+                method_slug="cashapp",
+            )
 
-class FirstTimeSetupFallthroughTestCase(unittest.IsolatedAsyncioTestCase):
-    async def test_falls_through_to_normal_deposit_when_only_stripe(self):
+        pick_mock.assert_called_once_with(4, tier_id=OVER_TIER["id"], variant_id=None)
+
+    def test_venmo_still_uses_sticky_binding(self):
+        binding = SimpleNamespace(variant_id=99)
+        venmo_method = {**METHOD, "slug": "venmo", "name": "Venmo"}
+        with (
+            patch.object(dep, "get_tier_for_amount", return_value=OVER_TIER),
+            patch.object(dep, "get_chat_binding", return_value=binding),
+            patch.object(dep, "pick_variant", return_value={"variant_id": 99}) as pick_mock,
+        ):
+            dep._pick_deposit_variant_response(
+                4,
+                venmo_method,
+                Decimal("150"),
+                chat_id=-100123,
+                method_slug="venmo",
+            )
+
+        pick_mock.assert_called_once_with(4, tier_id=OVER_TIER["id"], variant_id=99)
+
+
+class FirstTimeSetupFromChoiceTestCase(unittest.IsolatedAsyncioTestCase):
+    async def test_stripe_weighted_pick_skips_linking(self):
         query = SimpleNamespace(
             message=SimpleNamespace(chat=SimpleNamespace(id=-100123)),
             edit_message_text=AsyncMock(),
         )
         context = SimpleNamespace(
             chat_data={
-                "deposit_amount": Decimal("50"),
+                "deposit_amount": Decimal("150"),
                 "deposit_club_id": 2,
             }
         )
+        merged = _merged_stripe_over()
 
         with (
             patch.object(
                 dep,
                 "_pick_deposit_variant_response",
-                return_value=(None, UNDER_TIER),
+                return_value=(merged, OVER_TIER),
             ),
             patch.object(
                 dep,
@@ -176,6 +187,96 @@ class FirstTimeSetupFallthroughTestCase(unittest.IsolatedAsyncioTestCase):
                 bind_kind=dep.BIND_KIND_SPECIAL_AMOUNT,
             )
 
-        normal_mock.assert_awaited_once()
+        normal_mock.assert_awaited_once_with(
+            query,
+            context,
+            method_id=4,
+            method=METHOD,
+            method_slug="cashapp",
+            picked=(merged, OVER_TIER),
+        )
         setup_mock.assert_not_awaited()
         self.assertEqual(result, dep.ConversationHandler.END)
+
+    async def test_manual_weighted_pick_runs_linking(self):
+        query = SimpleNamespace(
+            message=SimpleNamespace(chat=SimpleNamespace(id=-100123)),
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(
+            chat_data={
+                "deposit_amount": Decimal("150"),
+                "deposit_club_id": 2,
+            }
+        )
+        merged = _merged_account_over()
+
+        with (
+            patch.object(
+                dep,
+                "_pick_deposit_variant_response",
+                return_value=(merged, OVER_TIER),
+            ),
+            patch.object(
+                dep,
+                "_run_normal_deposit_from_choice",
+                new_callable=AsyncMock,
+            ) as normal_mock,
+            patch.object(
+                dep,
+                "_send_first_time_method_setup",
+                new_callable=AsyncMock,
+                return_value="await_ack",
+            ) as setup_mock,
+        ):
+            result = await dep._run_first_time_method_setup_from_choice(
+                query,
+                context,
+                method_id=4,
+                method=METHOD,
+                method_slug="cashapp",
+                bind_kind=dep.BIND_KIND_SPECIAL_AMOUNT,
+            )
+
+        setup_mock.assert_awaited_once()
+        normal_mock.assert_not_awaited()
+        self.assertEqual(result, dep.DEPOSIT_SETUP_ACK)
+
+    async def test_under_100_stripe_pick_skips_linking(self):
+        query = SimpleNamespace(
+            message=SimpleNamespace(chat=SimpleNamespace(id=-100123)),
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(
+            chat_data={
+                "deposit_amount": Decimal("50"),
+                "deposit_club_id": 2,
+            }
+        )
+        merged = _merged_stripe_under()
+
+        with (
+            patch.object(
+                dep,
+                "_pick_deposit_variant_response",
+                return_value=(merged, UNDER_TIER),
+            ),
+            patch.object(
+                dep,
+                "_run_normal_deposit_from_choice",
+                new_callable=AsyncMock,
+                return_value=dep.ConversationHandler.END,
+            ) as normal_mock,
+            patch.object(dep, "_send_first_time_method_setup", new_callable=AsyncMock) as setup_mock,
+        ):
+            await dep._run_first_time_method_setup_from_choice(
+                query,
+                context,
+                method_id=4,
+                method=METHOD,
+                method_slug="cashapp",
+                bind_kind=dep.BIND_KIND_SPECIAL_AMOUNT,
+            )
+
+        normal_mock.assert_awaited_once()
+        setup_mock.assert_not_awaited()
