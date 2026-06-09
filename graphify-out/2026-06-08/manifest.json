@@ -1120,9 +1120,9 @@
     "semantic_hash": "563bb7e4bf87c4a7e0a2622d3109b5b4"
   },
   "bot/services/mtproto_dm_gc_listener.py": {
-    "mtime": 1780183388.1822395,
-    "ast_hash": "1a9367aa9aa09606be2c5cd681c39214",
-    "semantic_hash": "1a9367aa9aa09606be2c5cd681c39214"
+    "mtime": 1780976242.7710328,
+    "ast_hash": "35bdacb45a829903c393fad9d8ba1e58",
+    "semantic_hash": ""
   },
   "bot/services/mtproto_group_add.py": {
     "mtime": 1780183388.9845803,
@@ -1280,9 +1280,9 @@
     "semantic_hash": "9d2f1e12ab88efc39fc25326e4308c37"
   },
   "club_gc_settings.py": {
-    "mtime": 1779813047.2265813,
-    "ast_hash": "267551bd1e3e96414b8a637e10a57622",
-    "semantic_hash": "267551bd1e3e96414b8a637e10a57622"
+    "mtime": 1780976242.205983,
+    "ast_hash": "b1e292daaad2e762dec6896a0c508d81",
+    "semantic_hash": ""
   },
   "config.py": {
     "mtime": 1779811862.215009,
@@ -1775,8 +1775,8 @@
     "semantic_hash": "ea2032846fc3cde61139b316e8eb517a"
   },
   "scripts/backfill_support_group_invite_links.py": {
-    "mtime": 1780973822.0005224,
-    "ast_hash": "15b261a217e141215b58432bf127bf96",
+    "mtime": 1780976243.8488417,
+    "ast_hash": "7d8b596aa0faddbb3a75772d0ba17063",
     "semantic_hash": ""
   },
   "scripts/backfill_venmo_group_bindings.py": {
@@ -1790,9 +1790,9 @@
     "semantic_hash": "1d3c48fdbd1a23d283c0c94904138926"
   },
   "scripts/find_duplicate_player_groups.py": {
-    "mtime": 1779806812.547613,
-    "ast_hash": "df4627e6bf4acb7159f57e18934f12d6",
-    "semantic_hash": "df4627e6bf4acb7159f57e18934f12d6"
+    "mtime": 1780976251.045572,
+    "ast_hash": "7c0a16af47f427d75c486e04fa844b66",
+    "semantic_hash": ""
   },
   "scripts/import_player_details_csv.py": {
     "mtime": 1776271110.5878944,
@@ -2535,13 +2535,13 @@
     "semantic_hash": ""
   },
   "docs/GC.md": {
-    "mtime": 1779810764.0198367,
-    "ast_hash": "02f4ed25cbafe593131689c013186df0",
+    "mtime": 1780976247.3171546,
+    "ast_hash": "5b50795f56454a3530184f7c2f45c07c",
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1780158166.7790575,
-    "ast_hash": "59dff8fe5c0eaa89587eb843b6c5aa71",
+    "mtime": 1780976245.7094526,
+    "ast_hash": "b4b9cd221b5797e434050f35bfbbffc6",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {

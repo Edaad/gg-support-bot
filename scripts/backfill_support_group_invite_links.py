@@ -20,8 +20,9 @@ Usage:
   python scripts/backfill_support_group_invite_links.py --chat-id -1001234567890 --apply
 
 Telegram rate-limits bulk ExportChatInvite. This script sleeps through FloodWait
-and pauses between exports (see --export-delay). Re-run safely: groups that
-already have invite_link are skipped.
+and pauses between exports (see --export-delay). Long export batches can idle
+the Postgres pool (RDS/Heroku); upserts refresh the pool and retry on disconnect.
+Re-run safely: groups that already have invite_link are skipped.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ import asyncio
 import json
 import logging
 import sys
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -107,6 +109,56 @@ def _configure_logging(*, quiet: bool) -> None:
         stream=sys.stderr,
         force=True,
     )
+
+
+def _refresh_db_pool() -> None:
+    """Drop pooled connections after long Telethon export gaps (RDS idle timeout)."""
+    from db.connection import get_engine
+
+    try:
+        get_engine().dispose()
+    except Exception:
+        pass
+
+
+def _upsert_invite_link_with_retry(
+    *,
+    club_key: str,
+    club_display_name: str,
+    telegram_chat_id: int,
+    telegram_chat_title: str,
+    invite_link: str,
+    mtproto_session_name: str | None,
+    max_attempts: int = 3,
+) -> tuple[str, int | None]:
+    from sqlalchemy.exc import OperationalError
+
+    from bot.services.support_group_chats import upsert_support_group_invite_link
+
+    last_err: Exception | None = None
+    for attempt in range(max_attempts):
+        try:
+            return upsert_support_group_invite_link(
+                club_key=club_key,
+                club_display_name=club_display_name,
+                telegram_chat_id=telegram_chat_id,
+                telegram_chat_title=telegram_chat_title,
+                invite_link=invite_link,
+                mtproto_session_name=mtproto_session_name,
+            )
+        except OperationalError as e:
+            last_err = e
+            if attempt + 1 >= max_attempts:
+                break
+            logger.warning(
+                "DB connection lost on upsert (attempt %s/%s), retrying…",
+                attempt + 1,
+                max_attempts,
+            )
+            _refresh_db_pool()
+            time.sleep(float(attempt + 1))
+    assert last_err is not None
+    raise last_err
 
 
 def _resolve_stored_group_title(session, chat_id: int) -> str:
@@ -463,6 +515,9 @@ async def _backfill(
             dialog_titles=dialog_titles,
         )
 
+        if apply and pending:
+            _refresh_db_pool()
+
         for g, dialog_chat_id, title_out in pending:
             invite_link = exported.get(int(dialog_chat_id))
             if not invite_link:
@@ -488,15 +543,36 @@ async def _backfill(
             status = "would_upsert"
             row_id: int | None = None
             if apply:
-                upsert_status, row_id = await asyncio.to_thread(
-                    upsert_support_group_invite_link,
-                    club_key=cfg.club_key,
-                    club_display_name=cfg.club_display_name,
-                    telegram_chat_id=dialog_chat_id,
-                    telegram_chat_title=title_out,
-                    invite_link=invite_link,
-                    mtproto_session_name=cfg.mtproto_session,
-                )
+                try:
+                    upsert_status, row_id = await asyncio.to_thread(
+                        _upsert_invite_link_with_retry,
+                        club_key=cfg.club_key,
+                        club_display_name=cfg.club_display_name,
+                        telegram_chat_id=dialog_chat_id,
+                        telegram_chat_title=title_out,
+                        invite_link=invite_link,
+                        mtproto_session_name=cfg.mtproto_session,
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Upsert failed: %s (chat_id=%s): %s",
+                        _gc_display_name(title_out, dialog_chat_id),
+                        dialog_chat_id,
+                        type(e).__name__,
+                    )
+                    errors += 1
+                    results.append(
+                        BackfillRow(
+                            groups_chat_id=g.chat_id,
+                            club_id=g.club_id,
+                            club_key=cfg.club_key,
+                            title=title_out,
+                            dialog_chat_id=dialog_chat_id,
+                            invite_link=invite_link,
+                            status=f"upsert_error:{type(e).__name__}",
+                        )
+                    )
+                    continue
                 status = upsert_status
                 if upsert_status == "inserted":
                     inserted += 1
