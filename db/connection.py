@@ -12,6 +12,10 @@ def _database_url() -> str:
     url = os.getenv("DATABASE_URL", "")
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
+    # Heroku Postgres (RDS) requires SSL for connections outside the platform.
+    if url and "sslmode=" not in url and "amazonaws.com" in url:
+        sep = "&" if "?" in url else "?"
+        url = f"{url}{sep}sslmode=require"
     return url
 
 

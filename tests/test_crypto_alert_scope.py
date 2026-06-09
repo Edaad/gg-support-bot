@@ -121,6 +121,49 @@ class CryptoIngestIdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.payment_id, 5)
         send_mock.assert_not_called()
 
+    async def test_new_source_external_id_creates_payment(self):
+        """Regression: ext_id present but no row yet must not hit idempotent return."""
+        session = MagicMock()
+        query = MagicMock()
+        query.filter_by.return_value.one_or_none.return_value = None
+        session.query.return_value = query
+
+        def _add(obj):
+            if isinstance(obj, CryptoPayment) and obj.id is None:
+                obj.id = 42
+
+        session.add.side_effect = _add
+        session.flush = MagicMock()
+
+        with (
+            patch("bot.services.crypto_payments.get_db") as get_db_mock,
+            patch(
+                "bot.services.crypto_payments.send_telegram_notification",
+                new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
+            ) as send_mock,
+            patch(
+                "bot.services.crypto_payments.resolve_group_chat_url_for_payment",
+                new=AsyncMock(return_value=None),
+            ),
+        ):
+            get_db_mock.return_value.__enter__.return_value = session
+            get_db_mock.return_value.__exit__.return_value = False
+
+            result = await ingest_crypto_payment(
+                amount="1000.00",
+                token_symbol="USDT",
+                chain="tron",
+                from_address="TSuuhfxbM5LsS9oC5rijShNNsupn7VcTa5",
+                to_address="TZ9LgB7MQjvSmnPqGY1NYNbMh4fYbCdBtD",
+                transaction_hash="0xtx",
+                alert_name=ALERT_NAME_CLUBGTO,
+                source_external_id="tx_0",
+            )
+
+        self.assertTrue(result.created)
+        self.assertEqual(result.payment_id, 42)
+        send_mock.assert_called_once()
+
 
 class CryptoWalletBindingTestCase(unittest.TestCase):
     def test_normalize_from_address_lowercases(self):

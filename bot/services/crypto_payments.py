@@ -289,12 +289,12 @@ async def ingest_crypto_payment(
                     ext_id,
                     existing.id,
                 )
-            return IngestResult(
-                payment_id=int(existing.id),
-                status="bound" if existing.telegram_chat_id else "unbound",
-                auto_bound=bool(existing.auto_bound),
-                created=False,
-            )
+                return IngestResult(
+                    payment_id=int(existing.id),
+                    status="bound" if existing.telegram_chat_id else "unbound",
+                    auto_bound=bool(existing.auto_bound),
+                    created=False,
+                )
 
         payment = CryptoPayment(
             amount_cents=amount_cents,

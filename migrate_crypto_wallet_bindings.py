@@ -6,9 +6,12 @@ Usage:
 Idempotent: safe to run multiple times (IF NOT EXISTS). Backfill uses ON CONFLICT DO NOTHING.
 """
 
+from dotenv import load_dotenv
 from sqlalchemy import text
 
 from db.connection import init_engine
+
+load_dotenv()
 
 DDL_BINDINGS = """
 CREATE TABLE IF NOT EXISTS crypto_wallet_bindings (

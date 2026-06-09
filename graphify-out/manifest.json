@@ -1990,9 +1990,9 @@
     "semantic_hash": "75cc80a78407de0746a95acdefc6815c"
   },
   "tests/test_payment_method_binding.py": {
-    "mtime": 1780890591.9289885,
-    "ast_hash": "71946a5a575ab92c7debfeb1ae281ece",
-    "semantic_hash": "71946a5a575ab92c7debfeb1ae281ece"
+    "mtime": 1781010298.6727934,
+    "ast_hash": "33e5db8e4e4a91dba32243a11110e9cf",
+    "semantic_hash": ""
   },
   "tests/test_payments_api.py": {
     "mtime": 1780711866.0358808,
@@ -2525,8 +2525,8 @@
     "semantic_hash": ""
   },
   "docs/CRYPTO_PAYMENTS.md": {
-    "mtime": 1781010259.9470987,
-    "ast_hash": "eca8c23dc41468407e7be79fd59c431e",
+    "mtime": 1781010306.0721238,
+    "ast_hash": "ae3ec347b61ed52242ba4a4001eb3235",
     "semantic_hash": ""
   },
   "docs/DATABASE.md": {
@@ -2670,8 +2670,8 @@
     "semantic_hash": ""
   },
   "migrate_crypto_wallet_bindings.py": {
-    "mtime": 1781010150.3319786,
-    "ast_hash": "455a5afd015981c968ac27d76d587435",
+    "mtime": 1781010347.9525917,
+    "ast_hash": "69b3498cbbda613bacb87045e5355036",
     "semantic_hash": ""
   },
   "scripts/query_crypto_duplicate_addresses.py": {
