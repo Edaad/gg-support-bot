@@ -990,9 +990,9 @@
     "semantic_hash": "6e9d0dbd28c98c7f1ed724d021ef6865"
   },
   "bot/handlers/groups.py": {
-    "mtime": 1780624278.15103,
-    "ast_hash": "80d820c53fe8cd42264f9d3b99d66a08",
-    "semantic_hash": "80d820c53fe8cd42264f9d3b99d66a08"
+    "mtime": 1781062585.596515,
+    "ast_hash": "21c520f4155d6bebd29c2562e79cfa66",
+    "semantic_hash": ""
   },
   "bot/handlers/list_cmd.py": {
     "mtime": 1775781975.522034,
@@ -1045,9 +1045,9 @@
     "semantic_hash": "79c6fe14be16e88a1c87f51a4407ab76"
   },
   "bot/main.py": {
-    "mtime": 1780634363.293149,
-    "ast_hash": "216896e7179f38fedbc1e1ca10bcdd7e",
-    "semantic_hash": "216896e7179f38fedbc1e1ca10bcdd7e"
+    "mtime": 1781062587.1218772,
+    "ast_hash": "1b636d1b54c44a0b25031c9ebde42c2b",
+    "semantic_hash": ""
   },
   "bot/runtime_config.py": {
     "mtime": 1780686969.7616694,
@@ -2685,8 +2685,13 @@
     "semantic_hash": ""
   },
   "scripts/upgrade_groups_to_supergroup.py": {
-    "mtime": 1781060456.14745,
-    "ast_hash": "da9521110aea9d89986ce731e168b7ae",
+    "mtime": 1781062598.6878073,
+    "ast_hash": "ecb3427595e96e280fc69a3ac9a472ff",
+    "semantic_hash": ""
+  },
+  "bot/services/chat_id_remap.py": {
+    "mtime": 1781062572.9238138,
+    "ast_hash": "3171c3e114c80225d6b7830757db8a68",
     "semantic_hash": ""
   }
 }

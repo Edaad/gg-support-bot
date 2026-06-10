@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from notification import formatting as nf
-from notification.formatting import format_group_chat_line
+from notification.formatting import format_group_chat_line, format_player_id_line
 
 
 class FormatGroupChatLineTestCase(unittest.TestCase):
@@ -78,6 +78,19 @@ class FormatGroupChatLineTestCase(unittest.TestCase):
             text,
             'Group Chat: <a href="https://t.me/c/1234567890">RT / 1234 / Player</a>',
         )
+
+
+class FormatPlayerIdLineTestCase(unittest.TestCase):
+    def test_parses_from_group_title(self):
+        line = format_player_id_line("RT / 6485-8168 / Angus Mcgoon")
+        self.assertEqual(line, "Player ID: <code>6485-8168</code>")
+
+    def test_missing_title_returns_none(self):
+        self.assertIsNone(format_player_id_line(None))
+        self.assertIsNone(format_player_id_line(""))
+
+    def test_unparseable_title_returns_none(self):
+        self.assertIsNone(format_player_id_line("CC / / John"))
 
 
 if __name__ == "__main__":

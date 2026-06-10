@@ -49,6 +49,7 @@ class CashAppPaymentsHelpersTestCase(unittest.TestCase):
         )
         text = cp.format_notification_text(payment, group_title=GROUP_TITLE)
         self.assertIn(GROUP_TITLE, text)
+        self.assertIn("Player ID: <code>6485-8168</code>", text)
 
 
 class CashAppIngestMemoSetupTestCase(unittest.IsolatedAsyncioTestCase):

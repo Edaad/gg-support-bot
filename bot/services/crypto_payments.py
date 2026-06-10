@@ -33,6 +33,7 @@ from db.connection import get_db
 from db.models import Club, CryptoPayment, CryptoWalletBinding
 from notification.formatting import (
     format_group_chat_line,
+    format_player_id_line,
     resolve_notification_linked_chat_id,
 )
 
@@ -158,11 +159,18 @@ def format_notification_text(
             ),
             group_chat_url=group_chat_url,
         ),
-        "",
-        f"Amount: {amount_line}",
-        f"Chain: {chain}",
-        f"From: {escape_notification_html(format_from_label(payment))}",
     ]
+    player_line = format_player_id_line(group_title)
+    if player_line:
+        lines.append(player_line)
+    lines.extend(
+        [
+            "",
+            f"Amount: {amount_line}",
+        f"Chain: {chain}",
+            f"From: {escape_notification_html(format_from_label(payment))}",
+        ]
+    )
     if payment.paid_at:
         lines.append(f"Paid: {escape_notification_html(format_paid_at_display(payment.paid_at))}")
 

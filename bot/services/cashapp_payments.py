@@ -44,6 +44,7 @@ from db.connection import get_db
 from db.models import CashAppPayerBinding, CashAppPayment
 from notification.formatting import (
     format_group_chat_line,
+    format_player_id_line,
     resolve_notification_linked_chat_id,
 )
 
@@ -96,12 +97,19 @@ def format_setup_already_linked_warning(
         "⚠️ First-time Cash App setup warning",
         "",
         f"Already bound: {escape_notification_html(already_bound_group_title)}",
-        last_deposit_line,
-        "",
-        "Incoming setup payment matched but was left unbound for manual review.",
-        f"Name: {escape_notification_html(payment.payer_name)}",
-        f"Amount: {format_amount_display(payment.amount_cents, bold=True)}",
     ]
+    player_line = format_player_id_line(already_bound_group_title)
+    if player_line:
+        lines.append(player_line)
+    lines.extend(
+        [
+            last_deposit_line,
+        "",
+            "Incoming setup payment matched but was left unbound for manual review.",
+            f"Name: {escape_notification_html(payment.payer_name)}",
+            f"Amount: {format_amount_display(payment.amount_cents, bold=True)}",
+        ]
+    )
     memo = (getattr(payment, "memo", None) or "").strip()
     if memo:
         lines.append(f"Memo: {escape_notification_html(memo)}")
@@ -140,10 +148,17 @@ def format_notification_text(
             ),
             group_chat_url=group_chat_url,
         ),
-        "",
-        f"Name: {escape_notification_html(payment.payer_name)}",
-        f"Amount: {format_amount_display(payment.amount_cents, bold=True)}",
     ]
+    player_line = format_player_id_line(group_title)
+    if player_line:
+        lines.append(player_line)
+    lines.extend(
+        [
+            "",
+            f"Name: {escape_notification_html(payment.payer_name)}",
+            f"Amount: {format_amount_display(payment.amount_cents, bold=True)}",
+        ]
+    )
     memo = (getattr(payment, "memo", None) or "").strip()
     if memo:
         lines.append(f"Memo: {escape_notification_html(memo)}")

@@ -15,6 +15,17 @@ UNBOUND_GROUP_CHAT_LINE = (
 )
 
 
+def format_player_id_line(group_title: str | None) -> str | None:
+    """Tap-to-copy Player ID line for HTML payment notifications."""
+    from bot.services.player_details import gg_player_id_from_title
+
+    player_id = gg_player_id_from_title(group_title)
+    if not player_id:
+        return None
+    safe_id = html.escape(player_id, quote=False)
+    return f"Player ID: <code>{safe_id}</code>"
+
+
 def format_group_chat_line(
     *,
     group_title: str | None,

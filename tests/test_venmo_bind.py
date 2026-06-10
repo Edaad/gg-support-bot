@@ -53,8 +53,9 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
             payment,
             group_title=GROUP_TITLE,
         )
-        self.assertIn(f"Group Chat: {GROUP_TITLE}", text)
-        self.assertNotIn("<a href=", text)
+        self.assertIn(GROUP_TITLE, text)
+        self.assertIn("Player ID: <code>6485-8168</code>", text)
+        self.assertIn('<a href="https://t.me/c/1234567890">', text)
         self.assertNotIn("Open group chat", text)
         self.assertLess(text.index("Group Chat:"), text.index("Name:"))
 
@@ -89,6 +90,7 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
             group_title=GROUP_TITLE,
         )
         self.assertIn(GROUP_TITLE, text)
+        self.assertIn("Player ID: <code>6485-8168</code>", text)
         self.assertIn("Method: @godfather4444", text)
         self.assertNotIn("auto-bound", text)
         self.assertNotIn("rebind", text)
@@ -126,6 +128,7 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         )
         self.assertIn("First-time setup warning", text)
         self.assertIn(f"Already bound: {GROUP_TITLE}", text)
+        self.assertIn("Player ID: <code>6485-8168</code>", text)
         self.assertIn("Last deposit: Jun 04, 2026 07:27 PM EST", text)
         self.assertIn("left unbound for manual review", text)
         self.assertIn("Memo: FLOP", text)
