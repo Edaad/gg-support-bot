@@ -113,6 +113,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     from bot.handlers.flow_cancel import flow_cancel_handler
     from bot.handlers.list_cmd import list_handler
     from bot.handlers.groups import (
+        on_chat_migrate_from,
         on_my_chat_member_updated,
         on_new_chat_members,
         on_other_chat_member_join,
@@ -184,6 +185,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(get_gc_handler())
     app.add_handler(get_bonus_handler())
 
+    app.add_handler(MessageHandler(filters.StatusUpdate.MIGRATE, on_chat_migrate_from))
     app.add_handler(
         ChatMemberHandler(on_my_chat_member_updated, ChatMemberHandler.MY_CHAT_MEMBER)
     )

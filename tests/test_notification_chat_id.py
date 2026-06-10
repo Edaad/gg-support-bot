@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import unittest
 
-from notification.chat_id import telegram_chat_id_variants, telegram_supergroup_chat_url
+from notification.chat_id import (
+    is_joinable_invite_url,
+    notification_group_chat_url,
+    telegram_chat_id_variants,
+    telegram_supergroup_chat_url,
+)
 
 
 class TelegramSupergroupChatUrlTestCase(unittest.TestCase):
@@ -21,6 +26,40 @@ class TelegramSupergroupChatUrlTestCase(unittest.TestCase):
 
     def test_positive_id_returns_none(self):
         self.assertIsNone(telegram_supergroup_chat_url(12345))
+
+
+class IsJoinableInviteUrlTestCase(unittest.TestCase):
+    def test_t_me_plus_is_joinable(self):
+        self.assertTrue(is_joinable_invite_url("https://t.me/+AbCdEf"))
+
+    def test_joinchat_is_joinable(self):
+        self.assertTrue(is_joinable_invite_url("https://t.me/joinchat/AAAA"))
+
+    def test_t_me_c_is_not_joinable(self):
+        self.assertFalse(is_joinable_invite_url("https://t.me/c/1234567890"))
+
+
+class NotificationGroupChatUrlTestCase(unittest.TestCase):
+    def test_supergroup_id(self):
+        self.assertEqual(
+            notification_group_chat_url(-1003959356975),
+            "https://t.me/c/3959356975",
+        )
+
+    def test_legacy_basic_id_uses_supergroup_variant(self):
+        self.assertEqual(
+            notification_group_chat_url(-1234567890),
+            "https://t.me/c/1234567890",
+        )
+
+    def test_legacy_basic_id_resolves_via_supergroup_variant(self):
+        self.assertEqual(
+            notification_group_chat_url(-5287778428),
+            "https://t.me/c/5287778428",
+        )
+
+    def test_positive_id_returns_none(self):
+        self.assertIsNone(notification_group_chat_url(12345))
 
 
 class TelegramChatIdVariantsTestCase(unittest.TestCase):

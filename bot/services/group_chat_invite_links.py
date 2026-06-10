@@ -1,4 +1,4 @@
-"""Resolve group-chat URLs for payment notifications (t.me/c, DB, Bot API on-demand)."""
+"""Resolve group-chat URLs for payment notifications (member-only t.me/c deep links)."""
 
 from __future__ import annotations
 
@@ -8,16 +8,9 @@ from typing import Any
 
 import httpx
 
-from club_gc_settings import get_club_gc_config_by_link_club_id
-from db.connection import get_db
-from db.models import Club
-from notification.chat_id import telegram_chat_id_variants, telegram_supergroup_chat_url
+from notification.chat_id import notification_group_chat_url, telegram_chat_id_variants
 from notification.formatting import resolve_notification_linked_chat_id
-from bot.services.support_group_chats import (
-    _normalize_invite_link,
-    fetch_invite_link_for_chat,
-    upsert_support_group_invite_link,
-)
+from bot.services.support_group_chats import _normalize_invite_link
 
 logger = logging.getLogger(__name__)
 
@@ -27,18 +20,6 @@ SUPPORT_BOT_TOKEN_ENV = "TELEGRAM_BOT_TOKEN"
 def _support_bot_token() -> str | None:
     raw = (os.getenv(SUPPORT_BOT_TOKEN_ENV) or "").strip()
     return raw or None
-
-
-def _club_upsert_metadata(club_id: int | None) -> tuple[str, str]:
-    if club_id is not None:
-        cfg = get_club_gc_config_by_link_club_id(int(club_id))
-        if cfg is not None:
-            return cfg.club_key, cfg.club_display_name
-        with get_db() as session:
-            club = session.query(Club).filter_by(id=int(club_id)).one_or_none()
-            if club and (club.name or "").strip():
-                return f"club_{int(club_id)}", club.name.strip()
-    return "unknown", "Unknown club"
 
 
 async def _telegram_bot_api(
@@ -110,49 +91,12 @@ async def resolve_group_chat_notification_url(
     group_title: str,
     club_id: int | None = None,
 ) -> str | None:
-    """Resolve a hyperlink URL for a bound support group chat."""
-    cid = int(telegram_chat_id)
+    """Resolve a member-only hyperlink URL for a bound support group chat."""
+    del club_id  # invite links are not used in staff notifications
     title = (group_title or "").strip()
     if not title:
         return None
-
-    url = telegram_supergroup_chat_url(cid)
-    if url:
-        return url
-
-    cached = fetch_invite_link_for_chat(cid, group_title=title)
-    if cached:
-        return cached
-
-    link, reason = await export_invite_link_via_bot_api(cid)
-    if not link:
-        logger.warning(
-            "group_chat_invite: no hyperlink url chat_id=%s title=%r reason=%s "
-            "(backfill: scripts/backfill_support_group_invite_links.py --apply, "
-            "or grant support bot admin + invite-link rights)",
-            cid,
-            title[:80],
-            reason or "unknown",
-        )
-        return None
-
-    if club_id is not None:
-        club_key, club_display_name = _club_upsert_metadata(int(club_id))
-        status, row_id = upsert_support_group_invite_link(
-            club_key=club_key,
-            club_display_name=club_display_name,
-            telegram_chat_id=cid,
-            telegram_chat_title=title,
-            invite_link=link,
-        )
-        logger.info(
-            "group_chat_invite: cached on-demand link chat_id=%s status=%s row_id=%s",
-            cid,
-            status,
-            row_id,
-        )
-
-    return link
+    return notification_group_chat_url(int(telegram_chat_id))
 
 
 async def resolve_group_chat_url_for_payment(

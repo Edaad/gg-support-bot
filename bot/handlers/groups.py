@@ -12,11 +12,16 @@ from telegram import Update
 from telegram.constants import ChatMemberStatus as CMS
 from telegram.ext import ContextTypes
 
+from bot.services.chat_id_remap import (
+    find_legacy_group_chat_id,
+    try_silent_supergroup_remap,
+)
 from bot.services.club import (
     set_group_club,
     get_club_welcome,
     get_club_for_chat,
     get_club_by_id,
+    get_club_by_telegram_id,
     is_group_linked,
     try_link_group_by_admin,
     update_group_name,
@@ -68,6 +73,28 @@ def _bot_was_added(update: Update) -> bool:
     return new == "member" and old in ("left", "kicked")
 
 
+async def on_chat_migrate_from(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Basic group upgraded to supergroup — remap DB only, no welcome bundle."""
+
+    msg = update.effective_message
+    chat = update.effective_chat
+    if not msg or not chat or not msg.migrate_from_chat_id:
+        return
+
+    old_id = int(msg.migrate_from_chat_id)
+    new_id = int(chat.id)
+    _mark_post_gc_bundle_window(new_id)
+    try:
+        try_silent_supergroup_remap(old_id, new_id, chat_title=chat.title)
+    except Exception:
+        logger.exception(
+            "chat migrate_from remap failed %s -> %s title=%r",
+            old_id,
+            new_id,
+            chat.title,
+        )
+
+
 async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_chat or not update.effective_user:
         return
@@ -77,13 +104,45 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
         return
 
     chat_id = update.effective_chat.id
+    chat_title = update.effective_chat.title
     adder_uid = update.effective_user.id
-    club_id = set_group_club(chat_id, adder_uid, chat_title=update.effective_chat.title)
 
     _auto_link_attempted.discard(chat_id)
 
+    if update.effective_chat.type == "supergroup":
+        club = get_club_by_telegram_id(adder_uid)
+        legacy_id = find_legacy_group_chat_id(
+            new_chat_id=chat_id,
+            title=chat_title,
+            club_id=club.id if club else None,
+        )
+        if legacy_id is not None:
+            _mark_post_gc_bundle_window(chat_id)
+            try:
+                try_silent_supergroup_remap(
+                    legacy_id, chat_id, chat_title=chat_title
+                )
+            except Exception:
+                logger.exception(
+                    "silent supergroup remap failed %s -> %s title=%r",
+                    legacy_id,
+                    chat_id,
+                    chat_title,
+                )
+            return
+
+    already_linked = is_group_linked(chat_id)
+    club_id = set_group_club(chat_id, adder_uid, chat_title=chat_title)
+
     if club_id is None:
         print(f"User {adder_uid} added bot to group {chat_id} but has no club")
+        return
+
+    if already_linked:
+        logger.info(
+            "Skipping welcome (group already linked, likely supergroup migration) chat_id=%s",
+            chat_id,
+        )
         return
 
     if _suppress_post_gc_redundant_recently(chat_id):

@@ -109,6 +109,8 @@ Paid: 2026-05-06T23:56:53Z
 
 When auto-bound from a known wallet, `Group Chat:` shows the support group title instead of "Unbound".
 
+Bound group titles may be hyperlinked with member-only `https://t.me/c/…` deep links. Joinable invite links (`t.me/+…`) are never embedded in staff payment notifications.
+
 ## Manual bind
 
 Reply in the staff group with the full group title:

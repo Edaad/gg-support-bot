@@ -39,3 +39,27 @@ def telegram_supergroup_chat_url(chat_id: int) -> str | None:
     if not internal.isdigit():
         return None
     return f"https://t.me/c/{internal}"
+
+
+def is_joinable_invite_url(url: str | None) -> bool:
+    """True when URL is a Telegram invite link that lets non-members join."""
+    raw = (url or "").strip().lower()
+    if not raw:
+        return False
+    if "joinchat/" in raw:
+        return True
+    return "t.me/+" in raw or "telegram.me/+" in raw
+
+
+def notification_group_chat_url(chat_id: int) -> str | None:
+    """Member-only deep link for notifications; never a joinable invite link."""
+    cid = int(chat_id)
+    variants = sorted(
+        telegram_chat_id_variants(cid),
+        key=lambda x: (0 if str(x).startswith("-100") else 1, x),
+    )
+    for variant in variants:
+        url = telegram_supergroup_chat_url(variant)
+        if url:
+            return url
+    return None

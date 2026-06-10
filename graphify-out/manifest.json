@@ -990,9 +990,9 @@
     "semantic_hash": "6e9d0dbd28c98c7f1ed724d021ef6865"
   },
   "bot/handlers/groups.py": {
-    "mtime": 1780624278.15103,
-    "ast_hash": "80d820c53fe8cd42264f9d3b99d66a08",
-    "semantic_hash": "80d820c53fe8cd42264f9d3b99d66a08"
+    "mtime": 1781062585.596515,
+    "ast_hash": "21c520f4155d6bebd29c2562e79cfa66",
+    "semantic_hash": ""
   },
   "bot/handlers/list_cmd.py": {
     "mtime": 1775781975.522034,
@@ -1045,9 +1045,9 @@
     "semantic_hash": "79c6fe14be16e88a1c87f51a4407ab76"
   },
   "bot/main.py": {
-    "mtime": 1780634363.293149,
-    "ast_hash": "216896e7179f38fedbc1e1ca10bcdd7e",
-    "semantic_hash": "216896e7179f38fedbc1e1ca10bcdd7e"
+    "mtime": 1781062587.1218772,
+    "ast_hash": "1b636d1b54c44a0b25031c9ebde42c2b",
+    "semantic_hash": ""
   },
   "bot/runtime_config.py": {
     "mtime": 1780686969.7616694,
@@ -1095,9 +1095,9 @@
     "semantic_hash": "02cfe943fc87ccd2346730f83242fd92"
   },
   "bot/services/group_chat_invite_links.py": {
-    "mtime": 1780884680.2121298,
-    "ast_hash": "cdb23ade6233895c9e893825f11f9740",
-    "semantic_hash": "cdb23ade6233895c9e893825f11f9740"
+    "mtime": 1781060150.720882,
+    "ast_hash": "b228584ed169b7a157a036a9efe28460",
+    "semantic_hash": ""
   },
   "bot/services/heroku_restart.py": {
     "mtime": 1780286864.1109586,
@@ -1695,9 +1695,9 @@
     "semantic_hash": "b2ab430792d9e27b39826543a7ec93eb"
   },
   "notification/chat_id.py": {
-    "mtime": 1780876350.6343098,
-    "ast_hash": "f5b7c0142b0e71d0c4c5c4f34b851ce1",
-    "semantic_hash": "f5b7c0142b0e71d0c4c5c4f34b851ce1"
+    "mtime": 1781060127.7920105,
+    "ast_hash": "2555ad7f29110ed12eac7340eaef68ef",
+    "semantic_hash": ""
   },
   "notification/constants.py": {
     "mtime": 1781014858.3631701,
@@ -1705,8 +1705,8 @@
     "semantic_hash": ""
   },
   "notification/formatting.py": {
-    "mtime": 1781014862.25573,
-    "ast_hash": "e7f45dc035fe4ea2b3da278c9890772f",
+    "mtime": 1781060129.8165898,
+    "ast_hash": "2124f536d5dfea0f80fe47b00af65a39",
     "semantic_hash": ""
   },
   "notification/handlers/__init__.py": {
@@ -1975,18 +1975,18 @@
     "semantic_hash": ""
   },
   "tests/test_group_chat_invite_links.py": {
-    "mtime": 1780887569.7193444,
-    "ast_hash": "d09728fb09cccd3ea67ae9ef00ccb63b",
-    "semantic_hash": "d09728fb09cccd3ea67ae9ef00ccb63b"
+    "mtime": 1781060191.8982413,
+    "ast_hash": "c64de117164e76c71d1ebce7d7f0e49a",
+    "semantic_hash": ""
   },
   "tests/test_notification_chat_id.py": {
-    "mtime": 1780876357.8920183,
-    "ast_hash": "5097751478861a9e3bdd6e9d498ec2bc",
-    "semantic_hash": "5097751478861a9e3bdd6e9d498ec2bc"
+    "mtime": 1781060185.9806185,
+    "ast_hash": "a23fc57c6dc6c98326a9a8d1cdb56573",
+    "semantic_hash": ""
   },
   "tests/test_notification_formatting.py": {
-    "mtime": 1781014920.7482617,
-    "ast_hash": "a94f6e2c80c3572000949313afe5744b",
+    "mtime": 1781060182.5257583,
+    "ast_hash": "54e8158246292ad264765ad5fe4ebf6d",
     "semantic_hash": ""
   },
   "tests/test_payment_method_binding.py": {
@@ -2525,8 +2525,8 @@
     "semantic_hash": ""
   },
   "docs/CRYPTO_PAYMENTS.md": {
-    "mtime": 1781010306.0721238,
-    "ast_hash": "ae3ec347b61ed52242ba4a4001eb3235",
+    "mtime": 1781060166.0226355,
+    "ast_hash": "ea78c13fda91119e50deb8662ce70e1a",
     "semantic_hash": ""
   },
   "docs/DATABASE.md": {
@@ -2682,6 +2682,16 @@
   "scripts/backfill_crypto_wallet_bindings.sql": {
     "mtime": 1781010588.1256065,
     "ast_hash": "d0774424b80a2611ab95afeba26f1ab0",
+    "semantic_hash": ""
+  },
+  "scripts/upgrade_groups_to_supergroup.py": {
+    "mtime": 1781062598.6878073,
+    "ast_hash": "ecb3427595e96e280fc69a3ac9a472ff",
+    "semantic_hash": ""
+  },
+  "bot/services/chat_id_remap.py": {
+    "mtime": 1781062572.9238138,
+    "ast_hash": "3171c3e114c80225d6b7830757db8a68",
     "semantic_hash": ""
   }
 }

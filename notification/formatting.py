@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import html
 
-from notification.chat_id import telegram_supergroup_chat_url
+from notification.chat_id import (
+    is_joinable_invite_url,
+    notification_group_chat_url,
+)
 from notification.constants import linked_group_chat_hyperlinks_enabled
 
 UNBOUND_GROUP_CHAT_LINE = (
@@ -18,21 +21,17 @@ def format_group_chat_line(
     telegram_chat_id: int | None,
     group_chat_url: str | None = None,
 ) -> str:
-    """Format the Group Chat line; hyperlinks the title when a linked chat id is known."""
-    from bot.services.support_group_chats import fetch_invite_link_for_chat
-
+    """Format the Group Chat line; hyperlinks the title when a safe member-only URL exists."""
     title = (group_title or "").strip()
     if not title:
         return UNBOUND_GROUP_CHAT_LINE
     safe_title = html.escape(title, quote=False)
     if linked_group_chat_hyperlinks_enabled() and telegram_chat_id is not None:
         url = (group_chat_url or "").strip() or None
+        if url and is_joinable_invite_url(url):
+            url = None
         if url is None:
-            cid = int(telegram_chat_id)
-            url = telegram_supergroup_chat_url(cid) or fetch_invite_link_for_chat(
-                cid,
-                group_title=title,
-            )
+            url = notification_group_chat_url(int(telegram_chat_id))
         if url:
             safe_url = html.escape(url, quote=True)
             return f'Group Chat: <a href="{safe_url}">{safe_title}</a>'
