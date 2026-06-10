@@ -72,6 +72,15 @@ def _dm_gc_verbose_info(msg: str, *args) -> None:
         logger.info(msg, *args)
 
 
+def get_listener_client(club_key: str) -> TelegramClient | None:
+    """Return the live dm_gc Telethon client for a club, if connected."""
+
+    for client in _clients:
+        if getattr(client, "_gg_club_key", None) == club_key and client.is_connected():
+            return client
+    return None
+
+
 def get_dm_gc_listener_status() -> dict[str, Any]:
     """Public snapshot of the background Telethon listener thread."""
     loop = _loop_holder.get("loop")

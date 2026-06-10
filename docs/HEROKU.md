@@ -93,6 +93,46 @@ Filter recent one-off output: `heroku logs -a YOUR_APP --tail | rg 'run\\.|backf
 
 If the frontend build fails or `dist/` is missing, the API still starts; static files are only mounted when `dist` is complete (see `api/app.py`).
 
+## Migrated supergroup recovery (direct-add cron on worker)
+
+After a basic-group → supergroup upgrade drops members, the worker can drain a Postgres queue in batches (default 5 groups every 5 minutes) using the **same** dm_gc Telethon sessions (no extra `heroku run` needed).
+
+**One-time setup** (run against production Postgres):
+
+```bash
+heroku run -a YOUR_APP -- python migrate_migrated_group_recovery.py
+heroku run -a YOUR_APP -- python scripts/seed_migrated_group_recovery.py
+```
+
+Seed needs a pre-migration dump under `backups/upgrade_supergroup_*/` in the slug, or pass `--affected-csv` from a local export. Re-seed is safe (`ON CONFLICT DO NOTHING`).
+
+**Enable** on the worker dyno:
+
+```bash
+heroku config:set GC_MIGRATION_RECOVERY_ENABLED=true -a YOUR_APP
+heroku restart worker -a YOUR_APP
+```
+
+Optional knobs: `GC_MIGRATION_RECOVERY_INTERVAL_SEC` (default `300`), `GC_MIGRATION_RECOVERY_BATCH_SIZE` (default `5`), `GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC` (default `2`).
+
+Requires `GC_DM_GC_LISTENER_ENABLED` (default on). Recovery adds the mapped player plus per-club support accounts from `GC_USERS_TO_INVITE` / `GC_USERS_*`, checking membership before each invite. Each group is attempted **once**; no automatic retries.
+
+**Monitor** (SQL or local):
+
+```bash
+python scripts/seed_migrated_group_recovery.py --status
+```
+
+```sql
+SELECT club_key, group_title, priority_tier, readd_status, readd_attempted_at, last_error
+FROM migrated_group_recovery
+ORDER BY priority_tier, priority_rank;
+```
+
+Tail worker logs: `heroku logs -a YOUR_APP --dyno worker --tail | rg migration_recovery`
+
+When `pending` is 0, disable: `heroku config:unset GC_MIGRATION_RECOVERY_ENABLED -a YOUR_APP`
+
 ## Payments page (Stripe tables)
 
 After deploying the Payments dashboard feature, run migrations on production once:

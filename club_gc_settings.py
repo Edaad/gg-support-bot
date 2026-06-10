@@ -325,6 +325,26 @@ def get_mtproto_telethon_client_kwargs() -> dict[str, int | float | bool]:
     }
 
 
+def is_migration_recovery_enabled() -> bool:
+    """Background batch re-add for migrated supergroups (worker job_queue)."""
+
+    if not is_dm_gc_listener_enabled():
+        return False
+    return _env_bool("GC_MIGRATION_RECOVERY_ENABLED", default=False)
+
+
+def get_migration_recovery_interval_sec() -> int:
+    return max(60, _env_int("GC_MIGRATION_RECOVERY_INTERVAL_SEC", 300))
+
+
+def get_migration_recovery_batch_size() -> int:
+    return max(1, min(_env_int("GC_MIGRATION_RECOVERY_BATCH_SIZE", 5), 20))
+
+
+def get_migration_recovery_invite_delay_sec() -> float:
+    return max(0.0, _env_float("GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC", 2.0))
+
+
 def get_dm_gc_listener_restart_config() -> tuple[float, float, float]:
     """``(initial_delay_sec, max_delay_sec, backoff_multiplier)`` for listener supervision."""
 

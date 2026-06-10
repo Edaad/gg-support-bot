@@ -675,6 +675,41 @@ class SupportGroupChat(Base):
     )
 
 
+class MigratedGroupRecovery(Base):
+    """Queue for one-shot direct-add recovery after basic-group → supergroup migration."""
+
+    __tablename__ = "migrated_group_recovery"
+    __table_args__ = (
+        Index("ix_migrated_group_recovery_claim", "readd_status", "priority_tier", "priority_rank"),
+        Index("ix_migrated_group_recovery_club_key", "club_key"),
+        UniqueConstraint("telegram_chat_id", name="uq_migrated_group_recovery_telegram_chat_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    club_key = Column(String(64), nullable=False)
+    club_id = Column(Integer, nullable=False)
+    group_title = Column(Text, nullable=False)
+    old_chat_id = Column(BigInteger, nullable=False)
+    player_telegram_user_id = Column(BigInteger, nullable=True)
+    player_username = Column(Text, nullable=True)
+    player_display_name = Column(Text, nullable=True)
+    priority_tier = Column(Integer, nullable=False)
+    priority_rank = Column(BigInteger, nullable=False, default=0)
+    readd_status = Column(String(32), nullable=False, default="pending")
+    readd_result = Column(JSONB, nullable=True)
+    invite_link = Column(Text, nullable=True)
+    last_error = Column(Text, nullable=True)
+    readd_attempted_at = Column(DateTime(timezone=True), nullable=True)
+    readd_completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class StripeCustomer(Base):
     """Maps a support group chat to a stable Stripe Customer for debit-card deposits."""
 

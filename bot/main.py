@@ -69,6 +69,14 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
 
         start_listener_background(app.bot.token)
 
+    if not test_mode:
+        from club_gc_settings import is_migration_recovery_enabled
+
+        if is_migration_recovery_enabled():
+            from bot.services.migration_recovery import schedule_migration_recovery_job
+
+            schedule_migration_recovery_job(app)
+
 
 async def _post_shutdown_dm_gc_listener(app, *, test_mode: bool = False):
     if test_mode:
