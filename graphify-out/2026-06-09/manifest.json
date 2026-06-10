@@ -930,9 +930,9 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "bot/handlers/add.py": {
-    "mtime": 1780183354.7093048,
-    "ast_hash": "b90598d01a515146e97567e606264eae",
-    "semantic_hash": "b90598d01a515146e97567e606264eae"
+    "mtime": 1781049444.5343106,
+    "ast_hash": "034e5ac990c37500c57e176302bfe3a7",
+    "semantic_hash": ""
   },
   "bot/handlers/bonus.py": {
     "mtime": 1780104838.4836173,
@@ -965,9 +965,9 @@
     "semantic_hash": "bae976dc2d18c16e872f216ba1a36f0c"
   },
   "bot/handlers/deposit.py": {
-    "mtime": 1780964234.9841502,
-    "ast_hash": "0e9e5e28e1d1f62051717c10737c1730",
-    "semantic_hash": "0e9e5e28e1d1f62051717c10737c1730"
+    "mtime": 1781049444.0768106,
+    "ast_hash": "42b994a61fc208a985f1c67245ffe94c",
+    "semantic_hash": ""
   },
   "bot/handlers/findgc.py": {
     "mtime": 1779810845.6908689,
@@ -1700,14 +1700,14 @@
     "semantic_hash": "f5b7c0142b0e71d0c4c5c4f34b851ce1"
   },
   "notification/constants.py": {
-    "mtime": 1780245893.667951,
-    "ast_hash": "2dfffc738423cf57486ff30d2f98cd84",
-    "semantic_hash": "2dfffc738423cf57486ff30d2f98cd84"
+    "mtime": 1781014858.3631701,
+    "ast_hash": "27e6553c64f841023dc1574835434a56",
+    "semantic_hash": ""
   },
   "notification/formatting.py": {
-    "mtime": 1780887561.8641787,
-    "ast_hash": "f197463fc82448a02190e09df0583fd0",
-    "semantic_hash": "f197463fc82448a02190e09df0583fd0"
+    "mtime": 1781014862.25573,
+    "ast_hash": "e7f45dc035fe4ea2b3da278c9890772f",
+    "semantic_hash": ""
   },
   "notification/handlers/__init__.py": {
     "mtime": 1780243969.8204708,
@@ -1970,9 +1970,9 @@
     "semantic_hash": "1595d8e5990753380d029dabfcc8a20b"
   },
   "tests/test_deposit_reminder.py": {
-    "mtime": 1780631110.235447,
-    "ast_hash": "248901aad55ae563432a44c70e544690",
-    "semantic_hash": "248901aad55ae563432a44c70e544690"
+    "mtime": 1781049453.464621,
+    "ast_hash": "810af5a130d30e42a64a396e77bcc835",
+    "semantic_hash": ""
   },
   "tests/test_group_chat_invite_links.py": {
     "mtime": 1780887569.7193444,
@@ -1985,9 +1985,9 @@
     "semantic_hash": "5097751478861a9e3bdd6e9d498ec2bc"
   },
   "tests/test_notification_formatting.py": {
-    "mtime": 1780887567.9913762,
-    "ast_hash": "75cc80a78407de0746a95acdefc6815c",
-    "semantic_hash": "75cc80a78407de0746a95acdefc6815c"
+    "mtime": 1781014920.7482617,
+    "ast_hash": "a94f6e2c80c3572000949313afe5744b",
+    "semantic_hash": ""
   },
   "tests/test_payment_method_binding.py": {
     "mtime": 1781010298.6727934,

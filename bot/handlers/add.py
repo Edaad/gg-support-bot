@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 
 from config import ADMIN_USER_IDS
 from club_gc_settings import get_club_config_for_admin, is_dm_gc_listener_enabled
+from bot.handlers.deposit import cancel_deposit_reminder
 from bot.services.club import (
     get_club_allows_admin_commands,
     get_club_for_chat,
@@ -122,6 +123,8 @@ async def _execute_add(
     chat = update.effective_chat
     admin_id = update.effective_user.id
     assert chat is not None and update.message is not None
+
+    cancel_deposit_reminder(context, chat.id)
 
     try:
         record_activity_for_chat(club_id, chat.id, "deposit")

@@ -642,6 +642,11 @@ def _cancel_deposit_reminder(context: ContextTypes.DEFAULT_TYPE, chat_id: int | 
         pass
 
 
+def cancel_deposit_reminder(context: ContextTypes.DEFAULT_TYPE, chat_id: int | str) -> None:
+    """Public entry: cancel pending deposit follow-up reminder for a chat."""
+    _cancel_deposit_reminder(context, chat_id)
+
+
 async def cancel_deposit_reminder_on_customer_msg(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:

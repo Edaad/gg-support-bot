@@ -930,9 +930,9 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "bot/handlers/add.py": {
-    "mtime": 1780183354.7093048,
-    "ast_hash": "b90598d01a515146e97567e606264eae",
-    "semantic_hash": "b90598d01a515146e97567e606264eae"
+    "mtime": 1781049444.5343106,
+    "ast_hash": "034e5ac990c37500c57e176302bfe3a7",
+    "semantic_hash": ""
   },
   "bot/handlers/bonus.py": {
     "mtime": 1780104838.4836173,
@@ -965,9 +965,9 @@
     "semantic_hash": "bae976dc2d18c16e872f216ba1a36f0c"
   },
   "bot/handlers/deposit.py": {
-    "mtime": 1780964234.9841502,
-    "ast_hash": "0e9e5e28e1d1f62051717c10737c1730",
-    "semantic_hash": "0e9e5e28e1d1f62051717c10737c1730"
+    "mtime": 1781049444.0768106,
+    "ast_hash": "42b994a61fc208a985f1c67245ffe94c",
+    "semantic_hash": ""
   },
   "bot/handlers/findgc.py": {
     "mtime": 1779810845.6908689,
@@ -1970,9 +1970,9 @@
     "semantic_hash": "1595d8e5990753380d029dabfcc8a20b"
   },
   "tests/test_deposit_reminder.py": {
-    "mtime": 1780631110.235447,
-    "ast_hash": "248901aad55ae563432a44c70e544690",
-    "semantic_hash": "248901aad55ae563432a44c70e544690"
+    "mtime": 1781049453.464621,
+    "ast_hash": "810af5a130d30e42a64a396e77bcc835",
+    "semantic_hash": ""
   },
   "tests/test_group_chat_invite_links.py": {
     "mtime": 1780887569.7193444,
