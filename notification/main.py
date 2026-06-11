@@ -19,6 +19,7 @@ from notification.constants import (
     PAYMENT_NOTIFICATION_CHAT_ID_ENV,
 )
 from notification.handlers.bind import payment_bind_reply_handler
+from notification.handlers.report import get_report_handler
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,7 @@ def run_notification_bot(token: str | None = None) -> None:
         .build()
     )
 
+    app.add_handler(get_report_handler())
     app.add_handler(
         MessageHandler(
             filters.REPLY & filters.TEXT & ~filters.COMMAND,

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -14,18 +13,9 @@ from bot.services.venmo_payments import bind_venmo_payment_from_reply
 from bot.services.zelle_payments import bind_zelle_payment_from_reply
 from notification.chat_id import telegram_chat_ids_match
 from notification.constants import PAYMENT_NOTIFICATION_CHAT_ID_ENV
+from notification.handlers._chat import notification_chat_id
 
 logger = logging.getLogger(__name__)
-
-
-def _notification_chat_id() -> int | None:
-    raw = (os.getenv(PAYMENT_NOTIFICATION_CHAT_ID_ENV) or "").strip()
-    if not raw:
-        return None
-    try:
-        return int(raw)
-    except ValueError:
-        return None
 
 
 async def payment_bind_reply_handler(
@@ -35,7 +25,7 @@ async def payment_bind_reply_handler(
     if not update.message or not update.effective_chat or not update.effective_user:
         return
 
-    expected_chat = _notification_chat_id()
+    expected_chat = notification_chat_id()
     if expected_chat is None:
         logger.warning("payment bind: %s not set", PAYMENT_NOTIFICATION_CHAT_ID_ENV)
         return
