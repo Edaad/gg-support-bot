@@ -115,9 +115,17 @@ heroku config:set GC_MIGRATION_RECOVERY_SKIP_WELCOME=true -a YOUR_APP
 heroku restart worker -a YOUR_APP
 ```
 
-Optional knobs: `GC_MIGRATION_RECOVERY_INTERVAL_SEC` (default `300`), `GC_MIGRATION_RECOVERY_BATCH_SIZE` (default `5`, **per club**), `GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC` (default `2`), `GC_MIGRATION_RECOVERY_SKIP_WELCOME` (default `false`).
+**Pause one club** while keeping recovery on for others (e.g. skip Round Table, run Creator Club + GTO):
 
-With `GC_MIGRATION_RECOVERY_BATCH_SIZE=1`, each tick claims up to **one GC per club** (Round Table, Creator Club, ClubGTO) — up to three groups per tick.
+```bash
+heroku config:set GC_MIGRATION_RECOVERY_DISABLED_CLUBS=round_table -a YOUR_APP
+# or: heroku config:set GC_MIGRATION_RECOVERY_ROUND_TABLE=false -a YOUR_APP
+heroku restart worker -a YOUR_APP
+```
+
+Optional knobs: `GC_MIGRATION_RECOVERY_INTERVAL_SEC` (default `300`), `GC_MIGRATION_RECOVERY_BATCH_SIZE` (default `5`, **per active club**), `GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC` (default `2`), `GC_MIGRATION_RECOVERY_SKIP_WELCOME` (default `false`).
+
+With `GC_MIGRATION_RECOVERY_BATCH_SIZE=1`, each tick claims up to **one GC per active club** — up to three groups per tick when all clubs are enabled.
 
 Requires `GC_DM_GC_LISTENER_ENABLED` (default on). Recovery adds the mapped player plus per-club support accounts from `GC_USERS_TO_INVITE` / `GC_USERS_*`, checking membership before each invite. Each group is attempted **once**; no automatic retries.
 
@@ -127,7 +135,7 @@ After each attempt, the **GG Support bot** DMs that club's GC admin with a tappa
 
 **Queue visibility:** Send `/whosnext` in a private DM with the bot (admin accounts only) to see the global top-10 pending rows, plus auto-add / auto-disable status.
 
-**Auto-disable:** When **any** club's queue (pending + processing) hits zero, the worker stops the cron job, persists a flag in `migration_recovery_control`, and DMs the RT admin. This happens even if other clubs still have pending rows — review and re-enable manually if you want to continue those clubs. Rate limits also trigger auto-disable (see above).
+**Auto-disable:** When **any active club's** queue (pending + processing) hits zero, the worker stops the cron job, persists a flag in `migration_recovery_control`, and DMs the RT admin. Disabled clubs (e.g. `GC_MIGRATION_RECOVERY_DISABLED_CLUBS`) are ignored for exhaustion. This can still happen while other active clubs have pending rows — review and re-enable manually if you want to continue those clubs. Rate limits also trigger auto-disable (see above).
 
 **Monitor** (SQL or local):
 

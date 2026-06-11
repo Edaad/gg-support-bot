@@ -10,10 +10,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from club_gc_settings import (
+    MIGRATION_RECOVERY_CLUB_KEYS,
     get_club_gc_config_by_link_club_id,
     get_migration_recovery_batch_size,
+    get_migration_recovery_disabled_clubs,
     get_migration_recovery_invite_delay_sec,
     is_migration_recovery_enabled,
+    migration_recovery_active_club_keys,
 )
 from bot.services.migration_group_readd import (
     FloodWaitAbortError,
@@ -27,7 +30,7 @@ from scripts.backfill_support_group_invite_links import LinkedGroupRow
 
 logger = logging.getLogger(__name__)
 
-RECOVERY_CLUB_KEYS = ("round_table", "creator_club", "clubgto")
+RECOVERY_CLUB_KEYS = MIGRATION_RECOVERY_CLUB_KEYS
 
 TERMINAL_STATUSES = frozenset(
     {"complete", "privacy_blocked", "failed", "skipped"}
@@ -436,12 +439,16 @@ async def auto_disable_migration_recovery(
 
 
 async def _maybe_auto_disable_after_tick() -> None:
+    active_clubs = migration_recovery_active_club_keys()
+    if not active_clubs:
+        return
+
     counts = pending_count_by_club(include_processing=True)
-    exhausted = [k for k in RECOVERY_CLUB_KEYS if counts.get(k, 0) == 0]
+    exhausted = [k for k in active_clubs if counts.get(k, 0) == 0]
     if not exhausted:
         return
 
-    other_pending = sum(counts.get(k, 0) for k in RECOVERY_CLUB_KEYS if k not in exhausted)
+    other_pending = sum(counts.get(k, 0) for k in active_clubs if k not in exhausted)
     reason = "all_clubs_drained" if other_pending == 0 else "club_exhausted"
     await auto_disable_migration_recovery(
         reason=reason,
@@ -460,8 +467,12 @@ def claim_pending_batch(limit: int | None = None) -> list[RecoveryRow]:
     now = datetime.now(timezone.utc)
     all_ids: list[int] = []
 
+    active_clubs = migration_recovery_active_club_keys()
+    if not active_clubs:
+        return []
+
     with get_db() as session:
-        for club_key in RECOVERY_CLUB_KEYS:
+        for club_key in active_clubs:
             ids = list(
                 session.execute(
                     select(MigratedGroupRecovery.id)
@@ -560,11 +571,14 @@ def format_whosnext_message(rows: list[RecoveryRow]) -> str:
                 f"{index}. [{row.club_key}] {row.group_title}\n"
                 f"   chat_id={row.telegram_chat_id}  player={player}"
             )
+    disabled = sorted(get_migration_recovery_disabled_clubs())
     lines.extend(
         [
             "",
             f"Auto-add enabled: {'yes' if is_migration_recovery_enabled() else 'no'}",
             f"Auto-disabled (DB): {'yes' if is_migration_recovery_auto_disabled() else 'no'}",
+            f"Active clubs: {', '.join(migration_recovery_active_club_keys()) or '(none)'}",
+            f"Disabled clubs: {', '.join(disabled) if disabled else '(none)'}",
             f"Batch size per club: {get_migration_recovery_batch_size()}",
         ]
     )
@@ -974,10 +988,11 @@ def schedule_migration_recovery_job(app) -> None:
         name="migration_recovery",
     )
     logger.info(
-        "migration_recovery job scheduled interval_sec=%s batch_size_per_club=%s clubs=%s",
+        "migration_recovery job scheduled interval_sec=%s batch_size_per_club=%s active_clubs=%s disabled=%s",
         interval_sec,
         get_migration_recovery_batch_size(),
-        ",".join(RECOVERY_CLUB_KEYS),
+        ",".join(migration_recovery_active_club_keys()),
+        ",".join(sorted(get_migration_recovery_disabled_clubs())) or "(none)",
     )
 
 

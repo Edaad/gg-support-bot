@@ -337,6 +337,54 @@ def get_mtproto_telethon_client_kwargs() -> dict[str, int | float | bool]:
     }
 
 
+_MIGRATION_RECOVERY_CLUB_ENV: dict[str, str] = {
+    "round_table": "GC_MIGRATION_RECOVERY_ROUND_TABLE",
+    "creator_club": "GC_MIGRATION_RECOVERY_CREATOR_CLUB",
+    "clubgto": "GC_MIGRATION_RECOVERY_CLUB_GTO",
+}
+
+MIGRATION_RECOVERY_CLUB_KEYS: tuple[str, ...] = (
+    "round_table",
+    "creator_club",
+    "clubgto",
+)
+
+
+def get_migration_recovery_disabled_clubs() -> frozenset[str]:
+    """Club keys excluded from the migration recovery cron (env list + per-club false)."""
+
+    disabled: set[str] = set()
+    raw = (os.getenv("GC_MIGRATION_RECOVERY_DISABLED_CLUBS") or "").strip()
+    if raw:
+        for part in raw.split(","):
+            key = part.strip().lower()
+            if key:
+                disabled.add(key)
+    for club_key, env_var in _MIGRATION_RECOVERY_CLUB_ENV.items():
+        env_raw = os.getenv(env_var)
+        if env_raw is not None and str(env_raw).strip().lower() in (
+            "0",
+            "false",
+            "no",
+            "off",
+        ):
+            disabled.add(club_key)
+    return frozenset(disabled)
+
+
+def migration_recovery_active_club_keys() -> tuple[str, ...]:
+    """Clubs processed when ``GC_MIGRATION_RECOVERY_ENABLED`` is on."""
+
+    disabled = get_migration_recovery_disabled_clubs()
+    return tuple(k for k in MIGRATION_RECOVERY_CLUB_KEYS if k not in disabled)
+
+
+def is_migration_recovery_enabled_for_club(club_key: str) -> bool:
+    if club_key in get_migration_recovery_disabled_clubs():
+        return False
+    return is_migration_recovery_enabled()
+
+
 def is_migration_recovery_enabled() -> bool:
     """Background batch re-add for migrated supergroups (worker job_queue)."""
 
@@ -346,7 +394,9 @@ def is_migration_recovery_enabled() -> bool:
         return False
     from bot.services.migration_recovery import is_migration_recovery_auto_disabled
 
-    return not is_migration_recovery_auto_disabled()
+    if is_migration_recovery_auto_disabled():
+        return False
+    return bool(migration_recovery_active_club_keys())
 
 
 def get_migration_recovery_interval_sec() -> int:

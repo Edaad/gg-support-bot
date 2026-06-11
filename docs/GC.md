@@ -31,7 +31,9 @@ When an authorized club operator sends `/gc` in a **private chat** with the bot:
 - **Identifies club** by matching the sender’s Telegram user id against per-club config (`command_admin_user_id`).
 - **Loads the club’s MTProto session** (Telethon `*.session` file).
 - If the session is **not authenticated**, `/gc` tells you it **expired or is missing**, and directs you to **Dashboard → Telegram login** to complete SMS / Telegram code + optional 2FA (no OTP in Telegram bot DMs anymore).
-- When the session is authorized, **`/gc` creates a new megagroup** titled **`{RT|CC|GTO} / / {player label}`**: club prefix (`RT`, `CC`, or `GTO`), then literal **` / / `**, then player identity in order **`@username` → `First Last` → `First` → `New Player`** (bot-only `/gc` uses `New Player` as the label). Telegram has a ~255-character title cap; extra-long labels are truncated.
+- When the session is authorized, **`/gc` creates a new megagroup** titled **`{RT|CC|GTO} / / {player label}`**: club prefix (`RT`, `CC`, or `GTO`), then literal **` / / `**, then player identity in order **`@username` → `First Last` → `First` → `New Player`**.
+  - **GG Support bot (private DM):** `/gc @username` or `/gc <telegram_user_id>` — player-bound group (stored on `support_group_chats`, player DM sent). Plain `/gc` — generic group (`New Player` label, no player row). Not affected by `GC_DM_GC_NEW_GROUPS_ENABLED` (that flag is auto-dm listener only).
+  - Telegram has a ~255-character title cap; extra-long labels are truncated.
 - Adds members best-effort:
   - configured `users_to_add` (usernames like `@name`, phone contacts if resolvable, etc.)
   - the **bot account** (if it can be resolved as a username)

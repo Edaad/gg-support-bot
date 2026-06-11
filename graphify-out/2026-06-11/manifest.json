@@ -985,9 +985,9 @@
     "semantic_hash": "d0b88fcd554ad3bcec77a1a6dc8f5b63"
   },
   "bot/handlers/group_create.py": {
-    "mtime": 1778285067.7304187,
-    "ast_hash": "6e9d0dbd28c98c7f1ed724d021ef6865",
-    "semantic_hash": "6e9d0dbd28c98c7f1ed724d021ef6865"
+    "mtime": 1781152815.1919637,
+    "ast_hash": "3ac65570f9d8c583ebdae26c69b6e9cc",
+    "semantic_hash": ""
   },
   "bot/handlers/groups.py": {
     "mtime": 1781151121.5101604,
@@ -1120,8 +1120,8 @@
     "semantic_hash": "563bb7e4bf87c4a7e0a2622d3109b5b4"
   },
   "bot/services/mtproto_dm_gc_listener.py": {
-    "mtime": 1781089033.5618036,
-    "ast_hash": "a0f07e64a35ae0df2bd0f9a4aee67bc5",
+    "mtime": 1781152533.8171434,
+    "ast_hash": "f134c2813da40a7400be68dc8f605a28",
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_add.py": {
@@ -1135,9 +1135,9 @@
     "semantic_hash": "1bc1e5ba5a1a984c0c4c86bac76207a8"
   },
   "bot/services/mtproto_group_create.py": {
-    "mtime": 1779811900.5436223,
-    "ast_hash": "9eaf883097e671ee7448d4774b79842b",
-    "semantic_hash": "9eaf883097e671ee7448d4774b79842b"
+    "mtime": 1781152822.8740494,
+    "ast_hash": "4c7c20dbe824e7b72668b8ac7b0d0d51",
+    "semantic_hash": ""
   },
   "bot/services/mtproto_group_delete.py": {
     "mtime": 1779769145.7566564,
@@ -1280,8 +1280,8 @@
     "semantic_hash": "9d2f1e12ab88efc39fc25326e4308c37"
   },
   "club_gc_settings.py": {
-    "mtime": 1781151121.1600654,
-    "ast_hash": "f130014fdc42f0975f190736678928b6",
+    "mtime": 1781152531.5822806,
+    "ast_hash": "af712f0e957d9d096cd220fad409be87",
     "semantic_hash": ""
   },
   "config.py": {
@@ -2500,8 +2500,8 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1779662115.6396933,
-    "ast_hash": "6545516b5a0b63304cb216fa49b9209f",
+    "mtime": 1781152821.276454,
+    "ast_hash": "ef8348dfed39eac590349e18811f4e51",
     "semantic_hash": ""
   },
   "dashboard/README.md": {
@@ -2535,13 +2535,13 @@
     "semantic_hash": ""
   },
   "docs/GC.md": {
-    "mtime": 1781005357.961887,
-    "ast_hash": "a804526166cf85522ac819c13cfd4185",
+    "mtime": 1781152820.9411268,
+    "ast_hash": "8490a30a82c2fe36833e4b1bdf58ea05",
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1781151126.0114224,
-    "ast_hash": "9989bde7834d0b66b405bc02455d26c8",
+    "mtime": 1781152546.3908944,
+    "ast_hash": "f3482fe20d6babbe35cca6e9fcf519a3",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2827,6 +2827,16 @@
   "tests/test_groups_member_join.py": {
     "mtime": 1781151123.1613207,
     "ast_hash": "e8c049c08e7e85c214183c4c2d4bed75",
+    "semantic_hash": ""
+  },
+  "tests/test_dm_gc_new_groups_flag.py": {
+    "mtime": 1781152542.9356122,
+    "ast_hash": "4cd2fdc14f5a195ee570ecc513507a72",
+    "semantic_hash": ""
+  },
+  "tests/test_group_create.py": {
+    "mtime": 1781152826.858936,
+    "ast_hash": "f1a172e940a27c33a5445d037f8589b2",
     "semantic_hash": ""
   }
 }
