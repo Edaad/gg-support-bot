@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from telegram import Update
+from telegram import ForceReply, Update
 from telegram.ext import (
     CommandHandler,
     ContextTypes,
@@ -92,7 +92,10 @@ async def report_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     context.user_data[_REPORT_MSG_TEXT_KEY] = _message_body(reply)
     context.user_data[_REPORT_CHAT_ID_KEY] = int(update.effective_chat.id)
 
-    await update.message.reply_text("What was wrong with this notification?")
+    await update.message.reply_text(
+        "Reply to this message with what was wrong.",
+        reply_markup=ForceReply(selective=True),
+    )
     return REPORT_REASON
 
 

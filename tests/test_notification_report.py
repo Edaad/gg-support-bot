@@ -6,6 +6,7 @@ import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from telegram import ForceReply
 from telegram.ext import ConversationHandler
 
 from notification.constants import DEFAULT_NOTIFICATION_REPORT_TO_USER_ID
@@ -102,7 +103,8 @@ class TestReportEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.user_data["report_notification_message_id"], 42)
         self.assertIn("Payment Notification", context.user_data["report_notification_text"])
         update.message.reply_text.assert_awaited_once_with(
-            "What was wrong with this notification?"
+            "Reply to this message with what was wrong.",
+            reply_markup=ForceReply(selective=True),
         )
 
     @patch.dict(os.environ, {"PAYMENT_NOTIFICATION_CHAT_ID": "-1000000000001"})

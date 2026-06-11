@@ -18,6 +18,18 @@ from notification.handlers._chat import notification_chat_id
 logger = logging.getLogger(__name__)
 
 
+def _message_body(message) -> str:
+    text = (getattr(message, "text", None) or "").strip()
+    if text:
+        return text
+    return (getattr(message, "caption", None) or "").strip()
+
+
+def _reply_targets_payment_notification(reply) -> bool:
+    """Only bind when staff replied to an actual payment notification post."""
+    return "Payment Notification" in _message_body(reply)
+
+
 async def payment_bind_reply_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -41,6 +53,9 @@ async def payment_bind_reply_handler(
 
     reply = update.message.reply_to_message
     if reply is None:
+        return
+
+    if not _reply_targets_payment_notification(reply):
         return
 
     title = (update.message.text or "").strip()
