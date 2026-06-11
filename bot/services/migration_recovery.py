@@ -494,15 +494,15 @@ def claim_pending_batch(limit: int | None = None) -> list[RecoveryRow]:
             .all()
         )
 
-    club_order = {key: index for index, key in enumerate(RECOVERY_CLUB_KEYS)}
-    detail_rows.sort(
-        key=lambda row: (
-            club_order.get(str(row.club_key), len(RECOVERY_CLUB_KEYS)),
-            int(row.priority_tier),
-            int(row.priority_rank),
+        club_order = {key: index for index, key in enumerate(RECOVERY_CLUB_KEYS)}
+        detail_rows.sort(
+            key=lambda row: (
+                club_order.get(str(row.club_key), len(RECOVERY_CLUB_KEYS)),
+                int(row.priority_tier),
+                int(row.priority_rank),
+            )
         )
-    )
-    return [_recovery_row_from_model(row) for row in detail_rows]
+        return [_recovery_row_from_model(row) for row in detail_rows]
 
 
 def peek_next_recovery_rows(limit: int = 10) -> list[RecoveryRow]:
@@ -522,7 +522,7 @@ def peek_next_recovery_rows(limit: int = 10) -> list[RecoveryRow]:
             .limit(max(1, int(limit)))
             .all()
         )
-    return [_recovery_row_from_model(row) for row in detail_rows]
+        return [_recovery_row_from_model(row) for row in detail_rows]
 
 
 def format_whosnext_message(rows: list[RecoveryRow]) -> str:

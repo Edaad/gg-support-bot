@@ -149,6 +149,14 @@ heroku config:unset GC_MIGRATION_RECOVERY_ENABLED -a YOUR_APP
 
 To resume after auto-disable: clear the DB flag (`--clear-auto-disable`), set the env var again, and restart the worker.
 
+## Notification bot (`notification` dyno)
+
+Separate bot for payment notification bind replies (`TELEGRAM_NOTIFICATION_BOT_TOKEN`, `PAYMENT_NOTIFICATION_CHAT_ID`).
+
+**Report a buggy notification:** In the payment notification chat, **reply** to the notification message with `/report`. The bot asks what was wrong; send a short description. On success it confirms in chat and DMs the ticket to `@jz034` (default user id `493310710`, override with `NOTIFICATION_REPORT_TO_USER_ID`). `@jz034` must `/start` the **notification bot** (not GG Support) to receive DMs. Send `/cancel` to abort mid-flow.
+
+Restart after deploy: `heroku restart notification -a YOUR_APP`
+
 ## Payment binding audit log
 
 After deploying binding-event tracking, run once on production Postgres:
