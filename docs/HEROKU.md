@@ -43,7 +43,7 @@ heroku config:unset GC_MTPROTO_ENABLED -a YOUR_APP   # or set true
 heroku restart worker -a YOUR_APP
 ```
 
-`GC_MTPROTO_ENABLED=false` disables the dm_gc listener and MTProto contact save on the worker. Finer control: `GC_DM_GC_LISTENER_ENABLED=false` only (when `GC_MTPROTO_ENABLED` is still on). See [`docs/GC.md`](GC.md).
+`GC_MTPROTO_ENABLED=false` disables the dm_gc listener and MTProto contact save on the worker. Finer control: `GC_DM_GC_LISTENER_ENABLED=false` only (when `GC_MTPROTO_ENABLED` is still on). To pause **new** auto `/gc` megagroups while still re-adding bound players: `GC_DM_GC_NEW_GROUPS_ENABLED=false`. See [`docs/GC.md`](GC.md).
 
 ### Invite link backfill (`support_group_chats.invite_link`)
 
@@ -111,16 +111,17 @@ Seed needs a pre-migration dump under `backups/upgrade_supergroup_*/` in the slu
 
 ```bash
 heroku config:set GC_MIGRATION_RECOVERY_ENABLED=true -a YOUR_APP
+heroku config:set GC_MIGRATION_RECOVERY_SKIP_WELCOME=true -a YOUR_APP
 heroku restart worker -a YOUR_APP
 ```
 
-Optional knobs: `GC_MIGRATION_RECOVERY_INTERVAL_SEC` (default `300`), `GC_MIGRATION_RECOVERY_BATCH_SIZE` (default `5`, **per club**), `GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC` (default `2`).
+Optional knobs: `GC_MIGRATION_RECOVERY_INTERVAL_SEC` (default `300`), `GC_MIGRATION_RECOVERY_BATCH_SIZE` (default `5`, **per club**), `GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC` (default `2`), `GC_MIGRATION_RECOVERY_SKIP_WELCOME` (default `false`).
 
 With `GC_MIGRATION_RECOVERY_BATCH_SIZE=1`, each tick claims up to **one GC per club** (Round Table, Creator Club, ClubGTO) — up to three groups per tick.
 
 Requires `GC_DM_GC_LISTENER_ENABLED` (default on). Recovery adds the mapped player plus per-club support accounts from `GC_USERS_TO_INVITE` / `GC_USERS_*`, checking membership before each invite. Each group is attempted **once**; no automatic retries.
 
-While `GC_MIGRATION_RECOVERY_ENABLED=true`, member-join preamble/TOS is suppressed for chats in `migrated_group_recovery` so mass re-adds do not spam welcome messages. Normal welcomes resume when recovery is turned off.
+Set `GC_MIGRATION_RECOVERY_SKIP_WELCOME=true` to suppress member-join preamble/TOS for chats in `migrated_group_recovery` during mass re-adds (independent of the recovery cron switch). Unset or set `false` to restore normal welcomes.
 
 After each attempt, the **GG Support bot** DMs that club's GC admin with a tappable GC title (supergroup `t.me/c/…` link when available), result status, and which accounts were added. **Rate limits (FloodWait)** halt recovery immediately, auto-disable the cron, and DM **all three club GC admins**. Other failures also DM the Round Table GC admin (`GC_ADMIN_USER_ROUND_TABLE`) for central ops visibility. Errors also post to **Slack** when `SLACK_OPS_BOT_TOKEN` + `SLACK_OPS_CHANNEL_ID` (or webhook) are set (see Slack ops below). Admins must have `/start`ed the bot.
 

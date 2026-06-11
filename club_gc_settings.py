@@ -266,6 +266,18 @@ def is_dm_gc_listener_enabled() -> bool:
     return str(raw).strip().lower() not in ("0", "false", "no", "off", "")
 
 
+def is_dm_gc_new_groups_enabled() -> bool:
+    """Auto /gc may create new megagroups for unbound players unless explicitly disabled.
+
+    Default **on**. Set ``GC_DM_GC_NEW_GROUPS_ENABLED`` to ``false``, ``0``, ``no``, or ``off`` to
+    skip ``CreateChannel`` for players with no ``support_group_chats`` row; existing bindings
+    still run re-add + invite DM via the dm_gc listener.
+    """
+    if not is_dm_gc_listener_enabled():
+        return False
+    return _env_bool("GC_DM_GC_NEW_GROUPS_ENABLED", default=True)
+
+
 def is_contact_save_enabled() -> bool:
     """Telethon saves player contacts from title change, /track, and /info unless explicitly disabled."""
 
@@ -347,6 +359,12 @@ def get_migration_recovery_batch_size() -> int:
 
 def get_migration_recovery_invite_delay_sec() -> float:
     return max(0.0, _env_float("GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC", 2.0))
+
+
+def is_migration_recovery_skip_welcome_enabled() -> bool:
+    """Skip member-join preamble/TOS for chats in ``migrated_group_recovery``."""
+
+    return _env_bool("GC_MIGRATION_RECOVERY_SKIP_WELCOME", default=False)
 
 
 def get_dm_gc_listener_restart_config() -> tuple[float, float, float]:

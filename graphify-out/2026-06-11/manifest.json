@@ -990,8 +990,8 @@
     "semantic_hash": "6e9d0dbd28c98c7f1ed724d021ef6865"
   },
   "bot/handlers/groups.py": {
-    "mtime": 1781062585.596515,
-    "ast_hash": "21c520f4155d6bebd29c2562e79cfa66",
+    "mtime": 1781151121.5101604,
+    "ast_hash": "3ec8a850fe887a95da0120a969580d8d",
     "semantic_hash": ""
   },
   "bot/handlers/list_cmd.py": {
@@ -1280,8 +1280,8 @@
     "semantic_hash": "9d2f1e12ab88efc39fc25326e4308c37"
   },
   "club_gc_settings.py": {
-    "mtime": 1781146910.6379287,
-    "ast_hash": "d0cec7bf6edeee0d668288f796e364e2",
+    "mtime": 1781151121.1600654,
+    "ast_hash": "f130014fdc42f0975f190736678928b6",
     "semantic_hash": ""
   },
   "config.py": {
@@ -1700,8 +1700,8 @@
     "semantic_hash": ""
   },
   "notification/constants.py": {
-    "mtime": 1781148587.7356393,
-    "ast_hash": "91e1166fd4c0448a5ce2a283435adf63",
+    "mtime": 1781150602.395506,
+    "ast_hash": "27e6553c64f841023dc1574835434a56",
     "semantic_hash": ""
   },
   "notification/formatting.py": {
@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1781150445.6240797,
-    "ast_hash": "167733f19e50aa77d3e8a45042082a51",
+    "mtime": 1781151126.0114224,
+    "ast_hash": "9989bde7834d0b66b405bc02455d26c8",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2740,8 +2740,8 @@
     "semantic_hash": ""
   },
   "bot/services/migration_recovery.py": {
-    "mtime": 1781150154.2890391,
-    "ast_hash": "ab9fa4d3beebb5a254a5b6f64a0786bd",
+    "mtime": 1781150627.553234,
+    "ast_hash": "89d825714452719220a19639fe6a5d2f",
     "semantic_hash": ""
   },
   "migrate_migrated_group_recovery.py": {
@@ -2805,13 +2805,13 @@
     "semantic_hash": ""
   },
   "notification/handlers/report.py": {
-    "mtime": 1781150155.1626072,
-    "ast_hash": "34a22f7f4dd18392b6d0330a1f0b0337",
+    "mtime": 1781150601.4922109,
+    "ast_hash": "a386bd77f7a272f21352ef02af98a24b",
     "semantic_hash": ""
   },
   "tests/test_notification_report.py": {
-    "mtime": 1781150163.5950036,
-    "ast_hash": "9f51aad9bcefa0a3ceb37b84bc3412fb",
+    "mtime": 1781150608.1803074,
+    "ast_hash": "7440b2106560ae535224649dc92fb98a",
     "semantic_hash": ""
   },
   "bot/services/slack_ops_notify.py": {
@@ -2822,6 +2822,11 @@
   "tests/test_slack_ops_notify.py": {
     "mtime": 1781150451.545708,
     "ast_hash": "b120ef6d321bc48f7deec2e132b4101e",
+    "semantic_hash": ""
+  },
+  "tests/test_groups_member_join.py": {
+    "mtime": 1781151123.1613207,
+    "ast_hash": "e8c049c08e7e85c214183c4c2d4bed75",
     "semantic_hash": ""
   }
 }

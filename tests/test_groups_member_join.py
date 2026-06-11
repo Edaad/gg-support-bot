@@ -32,12 +32,12 @@ class TestMaybeSendMemberJoinIntro(unittest.IsolatedAsyncioTestCase):
 
     @patch("bot.handlers.groups._deliver_member_join_intro_messages", new_callable=AsyncMock)
     @patch("bot.services.migration_recovery.is_migrated_recovery_chat", return_value=True)
-    @patch("club_gc_settings.is_migration_recovery_enabled", return_value=True)
+    @patch("club_gc_settings.is_migration_recovery_skip_welcome_enabled", return_value=True)
     @patch("bot.handlers.groups.get_club_for_chat", return_value=4)
-    async def test_skips_when_recovery_on_and_chat_in_table(
+    async def test_skips_when_skip_welcome_on_and_chat_in_table(
         self,
         _mock_club: MagicMock,
-        _mock_recovery_on: MagicMock,
+        _mock_skip_on: MagicMock,
         _mock_in_table: MagicMock,
         mock_deliver: AsyncMock,
     ) -> None:
@@ -49,12 +49,12 @@ class TestMaybeSendMemberJoinIntro(unittest.IsolatedAsyncioTestCase):
 
     @patch("bot.handlers.groups._deliver_member_join_intro_messages", new_callable=AsyncMock)
     @patch("bot.services.migration_recovery.is_migrated_recovery_chat", return_value=True)
-    @patch("club_gc_settings.is_migration_recovery_enabled", return_value=False)
+    @patch("club_gc_settings.is_migration_recovery_skip_welcome_enabled", return_value=False)
     @patch("bot.handlers.groups.get_club_for_chat", return_value=4)
-    async def test_sends_when_recovery_off_even_if_chat_in_table(
+    async def test_sends_when_skip_welcome_off_even_if_chat_in_table(
         self,
         _mock_club: MagicMock,
-        _mock_recovery_on: MagicMock,
+        _mock_skip_on: MagicMock,
         _mock_in_table: MagicMock,
         mock_deliver: AsyncMock,
     ) -> None:
@@ -66,12 +66,12 @@ class TestMaybeSendMemberJoinIntro(unittest.IsolatedAsyncioTestCase):
 
     @patch("bot.handlers.groups._deliver_member_join_intro_messages", new_callable=AsyncMock)
     @patch("bot.services.migration_recovery.is_migrated_recovery_chat", return_value=False)
-    @patch("club_gc_settings.is_migration_recovery_enabled", return_value=True)
+    @patch("club_gc_settings.is_migration_recovery_skip_welcome_enabled", return_value=True)
     @patch("bot.handlers.groups.get_club_for_chat", return_value=4)
-    async def test_sends_when_recovery_on_but_chat_not_in_table(
+    async def test_sends_when_skip_welcome_on_but_chat_not_in_table(
         self,
         _mock_club: MagicMock,
-        _mock_recovery_on: MagicMock,
+        _mock_skip_on: MagicMock,
         _mock_in_table: MagicMock,
         mock_deliver: AsyncMock,
     ) -> None:

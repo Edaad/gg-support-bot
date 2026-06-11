@@ -9,7 +9,7 @@ Key point: **the group is created by a club’s Telegram user account via MTProt
 **On by default** on the bot worker. Disable with **`GC_MTPROTO_ENABLED=false`** (all Telethon on the worker) or **`GC_DM_GC_LISTENER_ENABLED=false`** (listener only). Use **one** process only — the same Telethon session must not connect twice:
 
 - Each configured club starts a Telethon client using that club’s session (file and/or Postgres `StringSession`).
-- **Incoming:** When anyone **DMs the club MTProto account** (private chat, non-bot), the handler creates or reuses the support megagroup for `(club_key, player_telegram_user_id)` and DMs the player (same flow as `/gc`).
+- **Incoming:** When anyone **DMs the club MTProto account** (private chat, non-bot), the handler creates or reuses the support megagroup for `(club_key, player_telegram_user_id)` and DMs the player (same flow as `/gc`). Disable per club with **`GC_DM_GC_AUTO_DISABLED_CLUBS=round_table`** or **`GC_DM_GC_AUTO_ROUND_TABLE=false`**; disable all clubs with **`GC_DM_GC_AUTO_ENABLED=false`**. Staff outgoing `/gc` is unchanged.
 - **Outgoing:** If an outgoing private message text is **exactly** `/gc`, the handler deletes that message, resolves the **player** from the DM peer, and runs the same create/reuse flow.
 - The player receives a **global** DM template (see [`bot/services/player_support_dm_messages.py`](../bot/services/player_support_dm_messages.py)).
 - Metadata is written to **`support_group_chats`** (run [`migrate_support_group_chats_player_dm.py`](../migrate_support_group_chats_player_dm.py) on existing DBs).
@@ -93,7 +93,10 @@ They are **shared across clubs** and used only for Telethon sessions.
 Per-club overrides are supported via `GC_*` variables (see [`.env.example`](../.env.example)).
 
 - **`GC_MTPROTO_ENABLED`** — omit or leave empty for **on**; set `false` / `0` / `no` / `off` to disable **all** worker Telethon (listener + contact save). Use on Heroku before [`scripts/backfill_support_group_invite_links.py`](../scripts/backfill_support_group_invite_links.py) or other MTProto scripts (see [`docs/HEROKU.md`](HEROKU.md#mtproto-scripts-vs-worker)).
-- **`GC_DM_GC_LISTENER_ENABLED`** — omit or leave empty for **on**; set `false` / `0` / `no` / `off` to disable outgoing-DM `/gc` listeners only (also off when `GC_MTPROTO_ENABLED` is false).
+- **`GC_DM_GC_LISTENER_ENABLED`** — omit or leave empty for **on**; set `false` / `0` / `no` / `off` to disable the Telethon listener entirely (also off when `GC_MTPROTO_ENABLED` is false).
+- **`GC_DM_GC_NEW_GROUPS_ENABLED`** — omit or leave empty for **on**; set `false` to stop **new** megagroup creation for players with no `support_group_chats` row. Players already bound (prior `/gc` or `/bind`) still get re-add + invite DM. Use when the MTProto account hits Telegram's group limit (`ChannelsTooMuchError`).
+- **`GC_DM_GC_AUTO_ENABLED`** — omit for **on**; set `false` to stop **incoming** player-DM auto `/gc` for all clubs. Staff outgoing `/gc`, `/add`, and `/cash` unchanged.
+- **`GC_DM_GC_AUTO_DISABLED_CLUBS`** — comma-separated club keys (e.g. `round_table`) to disable incoming auto `/gc` per club. Or per-club: `GC_DM_GC_AUTO_ROUND_TABLE=false`, `GC_DM_GC_AUTO_CREATOR_CLUB=false`, `GC_DM_GC_AUTO_CLUB_GTO=false`.
 - **`GC_DM_GC_VERBOSE_LOGS`** — set `true` / `1` / `yes` to emit extra **INFO** lines for outgoing-DM `/gc` (`dm_capture`, `/gc_match`, bootstrap). Omit for **quiet** INFO (warnings and errors still log).
 
 ### Bot account invite behavior

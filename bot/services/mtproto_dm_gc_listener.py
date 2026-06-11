@@ -17,6 +17,7 @@ from club_gc_settings import (
     get_dm_gc_listener_restart_config,
     get_tg_mtproto_credentials,
     is_dm_gc_listener_enabled,
+    is_dm_gc_new_groups_enabled,
     is_dm_gc_verbose_logging,
 )
 from bot.handlers.groups import send_post_gc_intro_bundle
@@ -87,6 +88,7 @@ def get_dm_gc_listener_status() -> dict[str, Any]:
     connected = sum(1 for c in _clients if c.is_connected())
     return {
         "enabled": is_dm_gc_listener_enabled(),
+        "new_groups_enabled": is_dm_gc_new_groups_enabled(),
         "loop_running": loop is not None and loop.is_running(),
         "connected_clients": connected,
         "total_clients": len(_clients),
@@ -397,7 +399,7 @@ async def _run_gc_flow_for_player(
             await _flow_existing_group(
                 client, cfg, existing, player, listener_label=listener_label
             )
-        else:
+        elif is_dm_gc_new_groups_enabled():
             await _flow_new_group(
                 client,
                 cfg,
@@ -405,6 +407,16 @@ async def _run_gc_flow_for_player(
                 bot_dm_username,
                 ptb_bot,
                 listener_label=listener_label,
+            )
+        else:
+            logger.warning(
+                "dm_gc /gc skipped: new_groups_disabled club_key=%s listener=%s player=%s "
+                "trigger=%s (no support_group_chats row; set GC_DM_GC_NEW_GROUPS_ENABLED=true "
+                "or /bind an existing group)",
+                cfg.club_key,
+                listener_label,
+                player_label,
+                trigger,
             )
     except Exception as e:
         logger.exception(

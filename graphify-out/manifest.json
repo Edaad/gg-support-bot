@@ -990,8 +990,8 @@
     "semantic_hash": "6e9d0dbd28c98c7f1ed724d021ef6865"
   },
   "bot/handlers/groups.py": {
-    "mtime": 1781150627.9438996,
-    "ast_hash": "211dd206647f68fa8961e53fcdbd8b55",
+    "mtime": 1781151121.5101604,
+    "ast_hash": "3ec8a850fe887a95da0120a969580d8d",
     "semantic_hash": ""
   },
   "bot/handlers/list_cmd.py": {
@@ -1120,8 +1120,8 @@
     "semantic_hash": "563bb7e4bf87c4a7e0a2622d3109b5b4"
   },
   "bot/services/mtproto_dm_gc_listener.py": {
-    "mtime": 1781089033.5618036,
-    "ast_hash": "a0f07e64a35ae0df2bd0f9a4aee67bc5",
+    "mtime": 1781152533.8171434,
+    "ast_hash": "f134c2813da40a7400be68dc8f605a28",
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_add.py": {
@@ -1280,8 +1280,8 @@
     "semantic_hash": "9d2f1e12ab88efc39fc25326e4308c37"
   },
   "club_gc_settings.py": {
-    "mtime": 1781146910.6379287,
-    "ast_hash": "d0cec7bf6edeee0d668288f796e364e2",
+    "mtime": 1781152531.5822806,
+    "ast_hash": "af712f0e957d9d096cd220fad409be87",
     "semantic_hash": ""
   },
   "config.py": {
@@ -2535,13 +2535,13 @@
     "semantic_hash": ""
   },
   "docs/GC.md": {
-    "mtime": 1781005357.961887,
-    "ast_hash": "a804526166cf85522ac819c13cfd4185",
+    "mtime": 1781152539.2714272,
+    "ast_hash": "bf420f26f80b822192c5a576909ad154",
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1781150637.0973911,
-    "ast_hash": "a0d0c148188ecb818cce7f80af4cc0f5",
+    "mtime": 1781152546.3908944,
+    "ast_hash": "f3482fe20d6babbe35cca6e9fcf519a3",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2825,8 +2825,13 @@
     "semantic_hash": ""
   },
   "tests/test_groups_member_join.py": {
-    "mtime": 1781150636.500932,
-    "ast_hash": "b0a7616a065283e9bb4f2201443f9e10",
+    "mtime": 1781151123.1613207,
+    "ast_hash": "e8c049c08e7e85c214183c4c2d4bed75",
+    "semantic_hash": ""
+  },
+  "tests/test_dm_gc_new_groups_flag.py": {
+    "mtime": 1781152542.9356122,
+    "ast_hash": "4cd2fdc14f5a195ee570ecc513507a72",
     "semantic_hash": ""
   }
 }
