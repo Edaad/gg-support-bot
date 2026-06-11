@@ -1045,8 +1045,8 @@
     "semantic_hash": "79c6fe14be16e88a1c87f51a4407ab76"
   },
   "bot/main.py": {
-    "mtime": 1781062587.1218772,
-    "ast_hash": "1b636d1b54c44a0b25031c9ebde42c2b",
+    "mtime": 1781089034.3892703,
+    "ast_hash": "fa8e27e040155fe2594257e5deed88e0",
     "semantic_hash": ""
   },
   "bot/runtime_config.py": {
@@ -1120,8 +1120,8 @@
     "semantic_hash": "563bb7e4bf87c4a7e0a2622d3109b5b4"
   },
   "bot/services/mtproto_dm_gc_listener.py": {
-    "mtime": 1780976242.7710328,
-    "ast_hash": "35bdacb45a829903c393fad9d8ba1e58",
+    "mtime": 1781089033.5618036,
+    "ast_hash": "a0f07e64a35ae0df2bd0f9a4aee67bc5",
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_add.py": {
@@ -1165,9 +1165,9 @@
     "semantic_hash": "2cf7128cf7782e27fee9e1eb809a9f05"
   },
   "bot/services/mtproto_track_contact.py": {
-    "mtime": 1779862211.133601,
-    "ast_hash": "b9df61dfabb1ca066be90165e42b4f30",
-    "semantic_hash": "b9df61dfabb1ca066be90165e42b4f30"
+    "mtime": 1781144988.8815966,
+    "ast_hash": "e00d4acac1f61244bf1e5edda1580006",
+    "semantic_hash": ""
   },
   "bot/services/payment_method_binding.py": {
     "mtime": 1781010201.2328923,
@@ -1280,8 +1280,8 @@
     "semantic_hash": "9d2f1e12ab88efc39fc25326e4308c37"
   },
   "club_gc_settings.py": {
-    "mtime": 1780976242.205983,
-    "ast_hash": "b1e292daaad2e762dec6896a0c508d81",
+    "mtime": 1781089033.0841088,
+    "ast_hash": "e2d4c6da4f505b021b56ec4fb1e05ec2",
     "semantic_hash": ""
   },
   "config.py": {
@@ -1525,8 +1525,8 @@
     "semantic_hash": "f815b05a6bbf7c0237e414e0d04ee055"
   },
   "db/models.py": {
-    "mtime": 1781010193.380039,
-    "ast_hash": "250d14811fba0aba5c1ee71e50ed12ae",
+    "mtime": 1781088921.9633658,
+    "ast_hash": "a6eb870d5c57158004785694eb0dbc61",
     "semantic_hash": ""
   },
   "export_payment_config_backup.py": {
@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1781009628.2132442,
-    "ast_hash": "4703df01dac92f3a1e3f389df6e116fc",
+    "mtime": 1781145016.8246083,
+    "ast_hash": "72c4c7a79e789e9cb171ce9dd73d1a0d",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2695,8 +2695,8 @@
     "semantic_hash": ""
   },
   "scripts/readd_migrated_group_members.py": {
-    "mtime": 1781087277.8580103,
-    "ast_hash": "9a29f65ab202edd5abd6d47cb1c45b7b",
+    "mtime": 1781089054.6865628,
+    "ast_hash": "e60b59b5332694de920a446525401aa8",
     "semantic_hash": ""
   },
   "scripts/backup_groups_reader.py": {
@@ -2715,8 +2715,8 @@
     "semantic_hash": ""
   },
   "scripts/migrated_groups_activity_report.py": {
-    "mtime": 1781087277.858024,
-    "ast_hash": "5efc37378a754f704da3be3d1dc2c5c3",
+    "mtime": 1781089035.020115,
+    "ast_hash": "210fcee0f35185122be57336e96e4f37",
     "semantic_hash": ""
   },
   "scripts/dm_readd_failed_invite.py": {
@@ -2732,6 +2732,31 @@
   "scripts/dm_affected_gap_invite.py": {
     "mtime": 1781088364.9277012,
     "ast_hash": "6fbb29405ff875ce3967ed33eeb95822",
+    "semantic_hash": ""
+  },
+  "bot/services/migration_group_readd.py": {
+    "mtime": 1781088947.5854566,
+    "ast_hash": "1cf6efb0ac2007f3376318a3e7454c4a",
+    "semantic_hash": ""
+  },
+  "bot/services/migration_recovery.py": {
+    "mtime": 1781145010.1614785,
+    "ast_hash": "b38a80e52eff1b57f3a2fa2d771e018b",
+    "semantic_hash": ""
+  },
+  "migrate_migrated_group_recovery.py": {
+    "mtime": 1781088917.668671,
+    "ast_hash": "5db0795a9d82d051a5a61523e29c03a2",
+    "semantic_hash": ""
+  },
+  "scripts/seed_migrated_group_recovery.py": {
+    "mtime": 1781089104.1578937,
+    "ast_hash": "1d4b34548afb5bd8cef077a762638ebe",
+    "semantic_hash": ""
+  },
+  "tests/test_migration_recovery.py": {
+    "mtime": 1781145012.817091,
+    "ast_hash": "d7920b277b365041f63bc6d76ed03074",
     "semantic_hash": ""
   }
 }

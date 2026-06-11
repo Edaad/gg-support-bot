@@ -3,13 +3,18 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from bot.services.migration_group_readd import ReaddGroupResult
-from bot.services.migration_recovery import (
-    build_readd_result_payload,
+from bot.services.migration_recovery_priority import (
     classify_priority_tier,
     compute_priority_rank,
-    map_readd_status,
 )
+from bot.services.migration_recovery import (
+    build_readd_result_payload,
+    format_readd_admin_notification,
+    map_readd_status,
+    should_notify_rt_ops,
+)
+from bot.services.migration_group_readd import ReaddGroupResult
+from bot.services.migration_recovery import RecoveryRow
 from scripts.seed_migrated_group_recovery import build_seed_candidates
 from scripts.migrated_groups_activity_report import GroupAgg, MigratedGroupRow
 
@@ -121,6 +126,76 @@ class TestMapReaddStatus(unittest.TestCase):
         payload = build_readd_result_payload(result)
         self.assertEqual(payload["inner_status"], "ok")
         self.assertEqual(payload["added"], ["player:1"])
+
+
+class TestShouldNotifyRtOps(unittest.TestCase):
+    def _result(self, **kwargs) -> ReaddGroupResult:
+        defaults = dict(
+            chat_id=-1001,
+            club_id=2,
+            club_key="round_table",
+            title="RT / / player",
+            member_count_before=0,
+            member_count_after=None,
+            status="error",
+        )
+        defaults.update(kwargs)
+        return ReaddGroupResult(**defaults)
+
+    def test_failed_status_notifies(self) -> None:
+        result = self._result(status="error", error="listener_not_connected")
+        self.assertTrue(should_notify_rt_ops("failed", result))
+
+    def test_complete_does_not_notify(self) -> None:
+        result = self._result(status="ok", added=["player:1"])
+        self.assertFalse(should_notify_rt_ops("complete", result))
+
+    def test_rate_limit_marker_in_error_blob(self) -> None:
+        result = self._result(status="ok")
+        self.assertTrue(
+            should_notify_rt_ops(
+                "complete",
+                result,
+                pre_error="FloodWaitError: wait 90 seconds",
+            )
+        )
+
+
+class TestFormatReaddAdminNotification(unittest.TestCase):
+    def test_includes_gc_and_added_accounts(self) -> None:
+        row = RecoveryRow(
+            id=1,
+            telegram_chat_id=-100123,
+            club_key="round_table",
+            club_id=2,
+            group_title="RT / / @player1",
+            old_chat_id=-456,
+            player_telegram_user_id=111,
+            player_username="player1",
+        )
+        result = ReaddGroupResult(
+            chat_id=-100123,
+            club_id=2,
+            club_key="round_table",
+            title="RT / / @player1",
+            member_count_before=2,
+            member_count_after=4,
+            status="ok",
+            added=["player:@player1", "staff:@RoundTableSupport3"],
+            already_member=["bot:@YTranslateBot"],
+        )
+        text = format_readd_admin_notification(
+            row=row,
+            result=result,
+            terminal_status="complete",
+            club_display_name="Round Table",
+        )
+        self.assertIn("RT / / @player1", text)
+        self.assertIn("chat_id=-100123", text)
+        self.assertIn("@player1", text)
+        self.assertIn("@RoundTableSupport3", text)
+        self.assertIn("@YTranslateBot", text)
+        self.assertIn("Result: complete", text)
 
 
 class TestBuildSeedCandidates(unittest.TestCase):

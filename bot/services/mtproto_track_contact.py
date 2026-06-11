@@ -85,22 +85,47 @@ def schedule_save_player_contact_named_group(
     loop.create_task(_run_wrapped(), name=f"contact-save-{chat_id}")
 
 
-async def _notify_club_gc_admin_dm(
-    cfg: ClubGcConfig, chat_id: int, reason: str
-) -> None:
+async def notify_club_gc_admin_dm(cfg: ClubGcConfig, text: str) -> None:
+    """DM the club GC admin via the GG Support bot (admin must have /start'd the bot)."""
+
     bot = _notify_bot
     if not bot:
         return
-    text = f"[{cfg.club_display_name}] Chat {chat_id}: {reason}"[:4096]
+    body = (text or "").strip()
+    if not body:
+        return
     try:
-        await bot.send_message(chat_id=cfg.command_admin_user_id, text=text)
+        await bot.send_message(chat_id=cfg.command_admin_user_id, text=body[:4096])
     except Exception:
         logger.debug(
-            "contact_save: DM notify failed club=%s admin_user_id=%s",
+            "gc_admin_dm: notify failed club=%s admin_user_id=%s",
             cfg.club_key,
             cfg.command_admin_user_id,
             exc_info=True,
         )
+
+
+async def notify_rt_support_admin_dm(text: str) -> None:
+    """DM the Round Table GC admin (central ops) via the GG Support bot."""
+
+    from club_gc_settings import CLUB_GC_CONFIG
+
+    cfg = CLUB_GC_CONFIG.get("round_table")
+    if cfg is None:
+        return
+    prefix = "[Migration recovery ops]"
+    body = (text or "").strip()
+    if not body:
+        return
+    await notify_club_gc_admin_dm(cfg, f"{prefix}\n{body}")
+
+
+async def _notify_club_gc_admin_dm(
+    cfg: ClubGcConfig, chat_id: int, reason: str
+) -> None:
+    await notify_club_gc_admin_dm(
+        cfg, f"[{cfg.club_display_name}] Chat {chat_id}: {reason}"
+    )
 
 
 def _truncate_first_name(raw: str) -> str:

@@ -14,7 +14,15 @@ from club_gc_settings import (
     get_migration_recovery_invite_delay_sec,
     is_migration_recovery_enabled,
 )
-from bot.services.migration_group_readd import ReaddGroupResult, readd_group
+from bot.services.migration_group_readd import (
+    ReaddGroupResult,
+    set_flood_wait_observer,
+    readd_group,
+)
+from bot.services.migration_recovery_priority import (
+    classify_priority_tier,
+    compute_priority_rank,
+)
 from scripts.backfill_support_group_invite_links import LinkedGroupRow
 
 logger = logging.getLogger(__name__)
@@ -34,38 +42,6 @@ class RecoveryRow:
     old_chat_id: int
     player_telegram_user_id: int | None
     player_username: str | None
-
-
-def classify_priority_tier(
-    *,
-    deposit_cents: int,
-    active_in_past_30_days: bool,
-) -> int:
-    """Return priority tier: 1=deposits, 2=active, 3=rest."""
-    if int(deposit_cents) > 0:
-        return 1
-    if active_in_past_30_days:
-        return 2
-    return 3
-
-
-def compute_priority_rank(
-    *,
-    priority_tier: int,
-    deposit_cents: int,
-    last_activity_epoch: int,
-    telegram_chat_id: int,
-    sequence: int,
-) -> int:
-    """Lower rank = higher priority within global ordering (tier ASC, rank ASC)."""
-    tier_base = int(priority_tier) * 10_000_000_000
-    if priority_tier == 1:
-        deposit_key = min(int(deposit_cents), 9_999_999_999)
-        return tier_base + (9_999_999_999 - deposit_key) * 10 + int(sequence)
-    if priority_tier == 2:
-        activity_key = min(max(int(last_activity_epoch), 0), 9_999_999_999)
-        return tier_base + (9_999_999_999 - activity_key) * 10 + int(sequence)
-    return tier_base + abs(int(telegram_chat_id)) % 9_999_999_999 + int(sequence)
 
 
 def map_readd_status(result: ReaddGroupResult) -> tuple[str, str | None]:
@@ -94,6 +70,153 @@ def build_readd_result_payload(result: ReaddGroupResult) -> dict[str, Any]:
         "member_count_after": result.member_count_after,
         "error": result.error,
     }
+
+
+def _format_account_lines(entries: list[str]) -> list[str]:
+    lines: list[str] = []
+    for entry in entries:
+        label = entry
+        if label.startswith("would_add:"):
+            label = label[len("would_add:") :]
+        if ":" in label:
+            _kind, _, marker = label.partition(":")
+            lines.append(marker.strip() or label)
+        else:
+            lines.append(label)
+    return lines
+
+
+def format_readd_admin_notification(
+    *,
+    row: RecoveryRow,
+    result: ReaddGroupResult,
+    terminal_status: str,
+    club_display_name: str,
+) -> str:
+    """Human-readable DM for the club GC admin after a migration re-add attempt."""
+
+    added = _format_account_lines(result.added)
+    already = _format_account_lines(result.already_member)
+    privacy = _format_account_lines(result.privacy_blocked)
+    failed = _format_account_lines(result.failed)
+
+    def _section(title: str, items: list[str]) -> str:
+        if not items:
+            return f"{title}: (none)"
+        return title + ":\n" + "\n".join(f"  • {item}" for item in items)
+
+    parts = [
+        f"[{club_display_name}] Migration re-add attempted",
+        f"GC: {row.group_title}",
+        f"chat_id={row.telegram_chat_id}",
+        f"Result: {terminal_status}",
+        _section("Added", added),
+        _section("Already in group", already),
+        _section("Privacy blocked", privacy),
+        _section("Failed", failed),
+    ]
+    if result.error:
+        parts.append(f"Error: {result.error}")
+    if result.invite_link:
+        parts.append(f"Invite link: {result.invite_link}")
+    return "\n".join(parts)
+
+
+async def notify_readd_admin_dm(
+    cfg,
+    *,
+    row: RecoveryRow,
+    result: ReaddGroupResult,
+    terminal_status: str,
+) -> None:
+    from bot.services.mtproto_track_contact import notify_club_gc_admin_dm
+
+    text = format_readd_admin_notification(
+        row=row,
+        result=result,
+        terminal_status=terminal_status,
+        club_display_name=cfg.club_display_name,
+    )
+    await notify_club_gc_admin_dm(cfg, text)
+
+
+def should_notify_rt_ops(
+    terminal_status: str,
+    result: ReaddGroupResult,
+    *,
+    pre_error: str | None = None,
+) -> bool:
+    if terminal_status == "failed":
+        return True
+    err_blob = " ".join(
+        filter(
+            None,
+            [pre_error, result.error, "; ".join(result.failed[:5])],
+        )
+    ).lower()
+    rate_markers = ("floodwait", "flood wait", "retryafter", "rate limit", "too many requests")
+    return any(marker in err_blob for marker in rate_markers)
+
+
+def format_rt_ops_notification(
+    *,
+    issue_kind: str,
+    detail: str,
+    row: RecoveryRow | None = None,
+) -> str:
+    lines = [f"Issue: {issue_kind}", detail]
+    if row is not None:
+        lines.extend(
+            [
+                f"GC: {row.group_title}",
+                f"chat_id={row.telegram_chat_id}",
+                f"club={row.club_key}",
+            ]
+        )
+    return "\n".join(lines)
+
+
+async def notify_rt_ops_issue(
+    issue_kind: str,
+    detail: str,
+    *,
+    row: RecoveryRow | None = None,
+) -> None:
+    from bot.services.mtproto_track_contact import notify_rt_support_admin_dm
+
+    text = format_rt_ops_notification(
+        issue_kind=issue_kind,
+        detail=detail,
+        row=row,
+    )
+    await notify_rt_support_admin_dm(text)
+
+
+async def _notify_rt_ops_if_needed(
+    *,
+    row: RecoveryRow,
+    result: ReaddGroupResult,
+    terminal_status: str,
+    pre_error: str | None = None,
+) -> None:
+    if not should_notify_rt_ops(terminal_status, result, pre_error=pre_error):
+        return
+    detail = pre_error or result.error or terminal_status
+    if result.failed:
+        detail = f"{detail}\nFailures: {'; '.join(result.failed[:5])}"
+    try:
+        await notify_rt_ops_issue(
+            issue_kind=terminal_status,
+            detail=detail,
+            row=row,
+        )
+    except Exception:
+        logger.warning(
+            "migration_recovery: RT ops DM failed row_id=%s chat_id=%s",
+            row.id,
+            row.telegram_chat_id,
+            exc_info=True,
+        )
 
 
 def claim_pending_batch(limit: int | None = None) -> list[RecoveryRow]:
@@ -202,9 +325,51 @@ async def _process_row(row: RecoveryRow) -> str:
     from bot.services.mtproto_dm_gc_listener import get_listener_client
 
     cfg = get_club_gc_config_by_link_club_id(int(row.club_id))
-    if cfg is None:
-        finalize_row(
+
+    async def _finish(
+        result: ReaddGroupResult,
+        *,
+        pre_status: str | None = None,
+        pre_error: str | None = None,
+    ) -> str:
+        status = finalize_row(
             row.id,
+            result,
+            pre_status=pre_status,
+            pre_error=pre_error,
+        )
+        if cfg is not None:
+            try:
+                await notify_readd_admin_dm(
+                    cfg,
+                    row=row,
+                    result=result,
+                    terminal_status=status,
+                )
+            except Exception:
+                logger.warning(
+                    "migration_recovery: admin DM failed row_id=%s chat_id=%s",
+                    row.id,
+                    row.telegram_chat_id,
+                    exc_info=True,
+                )
+            await _notify_rt_ops_if_needed(
+                row=row,
+                result=result,
+                terminal_status=status,
+                pre_error=pre_error,
+            )
+        elif pre_error or status == "failed":
+            await _notify_rt_ops_if_needed(
+                row=row,
+                result=result,
+                terminal_status=status,
+                pre_error=pre_error,
+            )
+        return status
+
+    if cfg is None:
+        return await _finish(
             ReaddGroupResult(
                 chat_id=row.telegram_chat_id,
                 club_id=row.club_id,
@@ -216,12 +381,10 @@ async def _process_row(row: RecoveryRow) -> str:
                 error="no_mtproto_config",
             ),
         )
-        return "failed"
 
     client = get_listener_client(cfg.club_key)
     if client is None or not client.is_connected():
-        finalize_row(
-            row.id,
+        return await _finish(
             ReaddGroupResult(
                 chat_id=row.telegram_chat_id,
                 club_id=row.club_id,
@@ -234,7 +397,6 @@ async def _process_row(row: RecoveryRow) -> str:
             pre_status="failed",
             pre_error="listener_not_connected",
         )
-        return "failed"
 
     listener_user_id: int | None = None
     try:
@@ -261,7 +423,7 @@ async def _process_row(row: RecoveryRow) -> str:
         invite_staff=True,
         listener_user_id=listener_user_id,
     )
-    return finalize_row(row.id, result)
+    return await _finish(result)
 
 
 async def tick_async() -> dict[str, int]:
@@ -281,21 +443,31 @@ async def tick_async() -> dict[str, int]:
         "skipped": 0,
     }
     delay = get_migration_recovery_invite_delay_sec()
+    current_row: RecoveryRow | None = None
 
-    for i, row in enumerate(rows):
-        if i > 0 and delay > 0:
-            await asyncio.sleep(delay)
-        try:
-            status = await _process_row(row)
-        except Exception:
-            logger.exception(
-                "migration_recovery: tick failed row_id=%s chat_id=%s",
-                row.id,
-                row.telegram_chat_id,
-            )
-            finalize_row(
-                row.id,
-                ReaddGroupResult(
+    async def _on_flood_wait(label: str, wait_s: int) -> None:
+        detail = f"Telegram rate limit (FloodWait): waiting {wait_s}s during {label}"
+        await notify_rt_ops_issue(
+            issue_kind="rate_limit",
+            detail=detail,
+            row=current_row,
+        )
+
+    set_flood_wait_observer(_on_flood_wait)
+    try:
+        for i, row in enumerate(rows):
+            if i > 0 and delay > 0:
+                await asyncio.sleep(delay)
+            current_row = row
+            try:
+                status = await _process_row(row)
+            except Exception:
+                logger.exception(
+                    "migration_recovery: tick failed row_id=%s chat_id=%s",
+                    row.id,
+                    row.telegram_chat_id,
+                )
+                err_result = ReaddGroupResult(
                     chat_id=row.telegram_chat_id,
                     club_id=row.club_id,
                     club_key=row.club_key,
@@ -304,13 +476,37 @@ async def tick_async() -> dict[str, int]:
                     member_count_after=None,
                     status="error",
                     error="tick_exception",
-                ),
-            )
-            status = "failed"
-        if status in summary:
-            summary[status] += 1
-        else:
-            summary["failed"] += 1
+                )
+                status = finalize_row(row.id, err_result)
+                cfg = get_club_gc_config_by_link_club_id(int(row.club_id))
+                if cfg is not None:
+                    try:
+                        await notify_readd_admin_dm(
+                            cfg,
+                            row=row,
+                            result=err_result,
+                            terminal_status=status,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "migration_recovery: admin DM failed row_id=%s chat_id=%s",
+                            row.id,
+                            row.telegram_chat_id,
+                            exc_info=True,
+                        )
+                await _notify_rt_ops_if_needed(
+                    row=row,
+                    result=err_result,
+                    terminal_status=status,
+                    pre_error="tick_exception",
+                )
+            if status in summary:
+                summary[status] += 1
+            else:
+                summary["failed"] += 1
+            current_row = None
+    finally:
+        set_flood_wait_observer(None)
 
     logger.info(
         "migration_recovery tick: claimed=%s complete=%s privacy=%s failed=%s skipped=%s",
@@ -329,6 +525,21 @@ def schedule_migration_recovery_tick() -> None:
     loop = _loop_holder.get("loop")
     if loop is None or not loop.is_running():
         logger.warning("migration_recovery: listener loop not running; skipping tick")
+        try:
+            main_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            main_loop = None
+        if main_loop is not None:
+            main_loop.create_task(
+                notify_rt_ops_issue(
+                    issue_kind="listener_not_ready",
+                    detail=(
+                        "Migration recovery tick skipped: dm_gc Telethon listener "
+                        "loop is not running."
+                    ),
+                ),
+                name="migration-recovery-listener-down",
+            )
         return
     asyncio.run_coroutine_threadsafe(tick_async(), loop)
 

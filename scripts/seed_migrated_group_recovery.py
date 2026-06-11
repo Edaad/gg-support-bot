@@ -31,10 +31,9 @@ try:
 except ImportError:
     pass
 
-from bot.services.migration_recovery import (  # noqa: E402
+from bot.services.migration_recovery_priority import (  # noqa: E402
     classify_priority_tier,
     compute_priority_rank,
-    recovery_status_counts,
 )
 from bot.services.migration_group_readd import (  # noqa: E402
     load_player_display_names_by_chat,
@@ -293,6 +292,8 @@ def run_seed(
 
 
 def print_status() -> None:
+    from bot.services.migration_recovery import recovery_status_counts
+
     counts = recovery_status_counts()
     print("migrated_group_recovery status")
     print("By readd_status:")

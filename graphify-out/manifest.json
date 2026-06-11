@@ -1165,9 +1165,9 @@
     "semantic_hash": "2cf7128cf7782e27fee9e1eb809a9f05"
   },
   "bot/services/mtproto_track_contact.py": {
-    "mtime": 1779862211.133601,
-    "ast_hash": "b9df61dfabb1ca066be90165e42b4f30",
-    "semantic_hash": "b9df61dfabb1ca066be90165e42b4f30"
+    "mtime": 1781145331.8534453,
+    "ast_hash": "b9001114c753a163e2b66bb0e1f93191",
+    "semantic_hash": ""
   },
   "bot/services/payment_method_binding.py": {
     "mtime": 1781010201.2328923,
@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1781089080.476621,
-    "ast_hash": "734e001890e6c3f1e3ad598523a9bb58",
+    "mtime": 1781145362.1981013,
+    "ast_hash": "c8200a30a3179846db8d2e5777d2f723",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2735,13 +2735,13 @@
     "semantic_hash": ""
   },
   "bot/services/migration_group_readd.py": {
-    "mtime": 1781088947.5854566,
-    "ast_hash": "1cf6efb0ac2007f3376318a3e7454c4a",
+    "mtime": 1781145342.3176873,
+    "ast_hash": "98acf576ff7f33c392c729c5924cda1f",
     "semantic_hash": ""
   },
   "bot/services/migration_recovery.py": {
-    "mtime": 1781089074.0671463,
-    "ast_hash": "7fa2e4b2a93fc3ea52a5b0b905555fa8",
+    "mtime": 1781145355.363891,
+    "ast_hash": "a363a4213e82af5f39fc07c7058664ac",
     "semantic_hash": ""
   },
   "migrate_migrated_group_recovery.py": {
@@ -2755,8 +2755,8 @@
     "semantic_hash": ""
   },
   "tests/test_migration_recovery.py": {
-    "mtime": 1781089111.736467,
-    "ast_hash": "daeabea1d3698321b8658b6f86210edd",
+    "mtime": 1781145368.0383492,
+    "ast_hash": "acb4361b5a2cc26b5e3bfd0829f364f6",
     "semantic_hash": ""
   }
 }

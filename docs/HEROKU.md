@@ -117,6 +117,8 @@ Optional knobs: `GC_MIGRATION_RECOVERY_INTERVAL_SEC` (default `300`), `GC_MIGRAT
 
 Requires `GC_DM_GC_LISTENER_ENABLED` (default on). Recovery adds the mapped player plus per-club support accounts from `GC_USERS_TO_INVITE` / `GC_USERS_*`, checking membership before each invite. Each group is attempted **once**; no automatic retries.
 
+After each attempt, the **GG Support bot** DMs that club's GC admin with the GC title, result status, and which accounts were added. **Rate limits (FloodWait) and other failures** also DM the Round Table GC admin (`GC_ADMIN_USER_ROUND_TABLE`) for central ops visibility. Admins must have `/start`ed the bot.
+
 **Monitor** (SQL or local):
 
 ```bash

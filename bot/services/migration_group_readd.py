@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -12,6 +13,9 @@ from scripts.backfill_support_group_invite_links import LinkedGroupRow, _gc_disp
 logger = logging.getLogger(__name__)
 
 UserKind = Literal["player", "staff", "bot"]
+
+FloodWaitObserver = Callable[[str, int], Awaitable[None]]
+_flood_wait_observer: FloodWaitObserver | None = None
 
 
 @dataclass(frozen=True)
@@ -38,6 +42,11 @@ class ReaddGroupResult:
     error: str | None = None
 
 
+def set_flood_wait_observer(observer: FloodWaitObserver | None) -> None:
+    global _flood_wait_observer
+    _flood_wait_observer = observer
+
+
 async def _sleep_flood_wait(exc: BaseException, *, label: str) -> None:
     from telethon.errors import FloodWaitError
 
@@ -45,6 +54,16 @@ async def _sleep_flood_wait(exc: BaseException, *, label: str) -> None:
         raise exc
     wait_s = int(getattr(exc, "seconds", 0) or 0)
     logger.info("Telegram FloodWait %ss (%s); sleeping…", wait_s, label)
+    observer = _flood_wait_observer
+    if observer is not None:
+        try:
+            await observer(label, wait_s)
+        except Exception:
+            logger.warning(
+                "migration_group_readd: flood_wait observer failed label=%s",
+                label,
+                exc_info=True,
+            )
     await asyncio.sleep(float(wait_s) + 1.0)
 
 
