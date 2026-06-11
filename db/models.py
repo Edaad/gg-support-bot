@@ -710,6 +710,18 @@ class MigratedGroupRecovery(Base):
     )
 
 
+class MigrationRecoveryControl(Base):
+    """Singleton row: auto-disable state for migration recovery worker cron."""
+
+    __tablename__ = "migration_recovery_control"
+
+    id = Column(Integer, primary_key=True, default=1)
+    auto_disabled_at = Column(DateTime(timezone=True), nullable=True)
+    auto_disabled_reason = Column(Text, nullable=True)
+    exhausted_club_key = Column(String(64), nullable=True)
+    pending_snapshot = Column(JSONB, nullable=True)
+
+
 class StripeCustomer(Base):
     """Maps a support group chat to a stable Stripe Customer for debit-card deposits."""
 
@@ -1193,3 +1205,55 @@ class GroupPaymentMethodBinding(Base):
         "PaymentMethodBindAttempt",
         foreign_keys=[first_bind_attempt_id],
     )
+
+
+class PaymentBindingEvent(Base):
+    """Append-only audit log for payment/group binding and notification sync."""
+
+    __tablename__ = "payment_binding_events"
+    __table_args__ = (
+        Index(
+            "ix_pbe_method_payment",
+            "payment_method_slug",
+            "payment_id",
+        ),
+        Index(
+            "ix_pbe_notification_msg",
+            "notification_chat_id",
+            "notification_message_id",
+        ),
+        Index("ix_pbe_event_type_created", "event_type", "created_at"),
+        Index("ix_pbe_telegram_chat_id", "telegram_chat_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    event_type = Column(String(32), nullable=False)
+    payment_method_slug = Column(String(32), nullable=False)
+    payment_id = Column(Integer, nullable=True)
+    bind_attempt_id = Column(
+        Integer,
+        ForeignKey("payment_method_bind_attempts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    group_binding_id = Column(
+        Integer,
+        ForeignKey("group_payment_method_bindings.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    telegram_chat_id = Column(BigInteger, nullable=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    bound_group_title = Column(String(255), nullable=True)
+    bound_via = Column(String(32), nullable=True)
+    auto_bound = Column(Boolean, nullable=True)
+    actor_telegram_user_id = Column(BigInteger, nullable=True)
+    notification_chat_id = Column(BigInteger, nullable=True)
+    notification_message_id = Column(BigInteger, nullable=True)
+    previous_telegram_chat_id = Column(BigInteger, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    club = relationship("Club")
+    bind_attempt = relationship("PaymentMethodBindAttempt")
+    group_binding = relationship("GroupPaymentMethodBinding")

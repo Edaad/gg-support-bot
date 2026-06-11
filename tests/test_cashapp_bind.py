@@ -117,6 +117,9 @@ class CashAppIngestMemoSetupTestCase(unittest.IsolatedAsyncioTestCase):
             patch(
                 "bot.services.cashapp_payments.record_group_binding_in_session",
             ),
+            patch(
+                "bot.services.cashapp_payments.track_ingest_notification",
+            ),
         ):
             mock_get_db.return_value.__enter__.return_value = mock_session
             result = await cp.ingest_cashapp_payment(

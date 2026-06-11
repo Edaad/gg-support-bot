@@ -1,17 +1,22 @@
 """Tests for migrated supergroup recovery queue classification and finalize."""
 
+import asyncio
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.services.migration_recovery_priority import (
     classify_priority_tier,
     compute_priority_rank,
 )
 from bot.services.migration_recovery import (
+    RECOVERY_CLUB_KEYS,
     build_readd_result_payload,
+    claim_pending_batch,
+    format_auto_disable_notification,
     format_readd_admin_notification,
     map_readd_status,
     should_notify_rt_ops,
+    _maybe_auto_disable_after_tick,
 )
 from bot.services.migration_group_readd import ReaddGroupResult
 from bot.services.migration_recovery import RecoveryRow
@@ -248,6 +253,201 @@ class TestBuildSeedCandidates(unittest.TestCase):
         self.assertEqual(candidates[2].telegram_chat_id, -1001)
         self.assertLess(candidates[0].priority_tier, candidates[1].priority_tier)
         self.assertLess(candidates[1].priority_tier, candidates[2].priority_tier)
+
+
+class TestFormatAutoDisableNotification(unittest.TestCase):
+    def test_club_exhausted_message(self) -> None:
+        text = format_auto_disable_notification(
+            reason="club_exhausted",
+            exhausted_club_key="clubgto",
+            pending_snapshot={
+                "round_table": 1200,
+                "creator_club": 400,
+                "clubgto": 0,
+            },
+        )
+        self.assertIn("club_exhausted", text)
+        self.assertIn("clubgto", text)
+        self.assertIn("round_table: 1200", text)
+        self.assertIn("GC_MIGRATION_RECOVERY_ENABLED", text)
+
+    def test_all_clubs_drained_message(self) -> None:
+        text = format_auto_disable_notification(
+            reason="all_clubs_drained",
+            exhausted_club_key="round_table",
+            pending_snapshot={
+                "round_table": 0,
+                "creator_club": 0,
+                "clubgto": 0,
+            },
+        )
+        self.assertIn("All clubs drained", text)
+
+
+class TestMaybeAutoDisableAfterTick(unittest.TestCase):
+    def test_triggers_when_one_club_empty(self) -> None:
+        with patch(
+            "bot.services.migration_recovery.pending_count_by_club",
+            return_value={
+                "round_table": 10,
+                "creator_club": 0,
+                "clubgto": 5,
+            },
+        ), patch(
+            "bot.services.migration_recovery.auto_disable_migration_recovery",
+            new_callable=AsyncMock,
+        ) as mock_disable:
+            asyncio.run(_maybe_auto_disable_after_tick())
+        mock_disable.assert_awaited_once_with(
+            reason="club_exhausted",
+            exhausted_club_key="creator_club",
+            pending_snapshot={
+                "round_table": 10,
+                "creator_club": 0,
+                "clubgto": 5,
+            },
+        )
+
+    def test_all_drained_reason(self) -> None:
+        with patch(
+            "bot.services.migration_recovery.pending_count_by_club",
+            return_value={
+                "round_table": 0,
+                "creator_club": 0,
+                "clubgto": 0,
+            },
+        ), patch(
+            "bot.services.migration_recovery.auto_disable_migration_recovery",
+            new_callable=AsyncMock,
+        ) as mock_disable:
+            asyncio.run(_maybe_auto_disable_after_tick())
+        mock_disable.assert_awaited_once_with(
+            reason="all_clubs_drained",
+            exhausted_club_key="round_table",
+            pending_snapshot={
+                "round_table": 0,
+                "creator_club": 0,
+                "clubgto": 0,
+            },
+        )
+
+    def test_no_trigger_when_all_clubs_have_queue(self) -> None:
+        with patch(
+            "bot.services.migration_recovery.pending_count_by_club",
+            return_value={
+                "round_table": 1,
+                "creator_club": 2,
+                "clubgto": 3,
+            },
+        ), patch(
+            "bot.services.migration_recovery.auto_disable_migration_recovery",
+            new_callable=AsyncMock,
+        ) as mock_disable:
+            asyncio.run(_maybe_auto_disable_after_tick())
+        mock_disable.assert_not_awaited()
+
+
+class TestClaimPendingBatchPerClub(unittest.TestCase):
+    def _make_db_row(self, **kwargs):
+        row = MagicMock()
+        defaults = {
+            "id": 1,
+            "telegram_chat_id": -1001,
+            "club_key": "round_table",
+            "club_id": 2,
+            "group_title": "RT test",
+            "old_chat_id": -501,
+            "player_telegram_user_id": None,
+            "player_username": None,
+            "priority_tier": 1,
+            "priority_rank": 10,
+        }
+        defaults.update(kwargs)
+        for key, value in defaults.items():
+            setattr(row, key, value)
+        return row
+
+    @patch("bot.services.migration_recovery.get_migration_recovery_batch_size", return_value=1)
+    @patch("db.connection.get_db")
+    def test_claims_up_to_batch_size_per_club(
+        self, mock_get_db: MagicMock, _mock_batch_size: MagicMock
+    ) -> None:
+        rt_row = self._make_db_row(id=1, club_key="round_table", priority_rank=1)
+        cc_row = self._make_db_row(
+            id=2, club_key="creator_club", club_id=3, priority_rank=2
+        )
+        gto_row = self._make_db_row(
+            id=3, club_key="clubgto", club_id=4, priority_rank=3
+        )
+
+        session = MagicMock()
+        mock_get_db.return_value.__enter__.return_value = session
+
+        execute_results = {
+            "round_table": MagicMock(scalars=MagicMock(return_value=MagicMock(all=lambda: [1]))),
+            "creator_club": MagicMock(scalars=MagicMock(return_value=MagicMock(all=lambda: [2]))),
+            "clubgto": MagicMock(scalars=MagicMock(return_value=MagicMock(all=lambda: [3]))),
+        }
+
+        def fake_execute(stmt):
+            club_key = None
+            for club in RECOVERY_CLUB_KEYS:
+                if club in str(stmt):
+                    club_key = club
+                    break
+            return execute_results[club_key or "round_table"]
+
+        session.execute.side_effect = fake_execute
+        session.get.side_effect = lambda _model, row_id: {
+            1: rt_row,
+            2: cc_row,
+            3: gto_row,
+        }[int(row_id)]
+
+        query = MagicMock()
+        session.query.return_value = query
+        query.filter.return_value = query
+        query.all.return_value = [gto_row, cc_row, rt_row]
+
+        rows = claim_pending_batch()
+
+        self.assertEqual(len(rows), 3)
+        self.assertEqual([r.club_key for r in rows], list(RECOVERY_CLUB_KEYS))
+        self.assertEqual(session.execute.call_count, len(RECOVERY_CLUB_KEYS))
+
+
+class TestIsMigrationRecoveryEnabledWithDbFlag(unittest.TestCase):
+    @patch("club_gc_settings.is_dm_gc_listener_enabled", return_value=True)
+    @patch("club_gc_settings._env_bool", return_value=True)
+    @patch(
+        "bot.services.migration_recovery.is_migration_recovery_auto_disabled",
+        return_value=True,
+    )
+    def test_disabled_when_db_flag_set(
+        self,
+        _mock_auto_disabled: MagicMock,
+        _mock_env: MagicMock,
+        _mock_listener: MagicMock,
+    ) -> None:
+        from club_gc_settings import is_migration_recovery_enabled
+
+        self.assertFalse(is_migration_recovery_enabled())
+
+    @patch("club_gc_settings.is_dm_gc_listener_enabled", return_value=True)
+    @patch("club_gc_settings._env_bool", return_value=True)
+    @patch(
+        "bot.services.migration_recovery.is_migration_recovery_auto_disabled",
+        return_value=False,
+    )
+    def test_enabled_when_env_on_and_no_db_flag(
+        self,
+        _mock_auto_disabled: MagicMock,
+        _mock_env: MagicMock,
+        _mock_listener: MagicMock,
+    ) -> None:
+        from club_gc_settings import is_migration_recovery_enabled
+
+        self.assertTrue(is_migration_recovery_enabled())
 
 
 if __name__ == "__main__":

@@ -101,6 +101,7 @@ After a basic-group → supergroup upgrade drops members, the worker can drain a
 
 ```bash
 heroku run -a YOUR_APP -- python migrate_migrated_group_recovery.py
+heroku run -a YOUR_APP -- python migrate_migration_recovery_control.py
 heroku run -a YOUR_APP -- python scripts/seed_migrated_group_recovery.py
 ```
 
@@ -113,16 +114,21 @@ heroku config:set GC_MIGRATION_RECOVERY_ENABLED=true -a YOUR_APP
 heroku restart worker -a YOUR_APP
 ```
 
-Optional knobs: `GC_MIGRATION_RECOVERY_INTERVAL_SEC` (default `300`), `GC_MIGRATION_RECOVERY_BATCH_SIZE` (default `5`), `GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC` (default `2`).
+Optional knobs: `GC_MIGRATION_RECOVERY_INTERVAL_SEC` (default `300`), `GC_MIGRATION_RECOVERY_BATCH_SIZE` (default `5`, **per club**), `GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC` (default `2`).
+
+With `GC_MIGRATION_RECOVERY_BATCH_SIZE=1`, each tick claims up to **one GC per club** (Round Table, Creator Club, ClubGTO) — up to three groups per tick.
 
 Requires `GC_DM_GC_LISTENER_ENABLED` (default on). Recovery adds the mapped player plus per-club support accounts from `GC_USERS_TO_INVITE` / `GC_USERS_*`, checking membership before each invite. Each group is attempted **once**; no automatic retries.
 
 After each attempt, the **GG Support bot** DMs that club's GC admin with the GC title, result status, and which accounts were added. **Rate limits (FloodWait) and other failures** also DM the Round Table GC admin (`GC_ADMIN_USER_ROUND_TABLE`) for central ops visibility. Admins must have `/start`ed the bot.
 
+**Auto-disable:** When **any** club's queue (pending + processing) hits zero, the worker stops the cron job, persists a flag in `migration_recovery_control`, and DMs the RT admin. This happens even if other clubs still have pending rows — review and re-enable manually if you want to continue those clubs.
+
 **Monitor** (SQL or local):
 
 ```bash
 python scripts/seed_migrated_group_recovery.py --status
+python scripts/seed_migrated_group_recovery.py --clear-auto-disable
 ```
 
 ```sql
@@ -133,7 +139,27 @@ ORDER BY priority_tier, priority_rank;
 
 Tail worker logs: `heroku logs -a YOUR_APP --dyno worker --tail | rg migration_recovery`
 
-When `pending` is 0, disable: `heroku config:unset GC_MIGRATION_RECOVERY_ENABLED -a YOUR_APP`
+When recovery finishes (or auto-disables), unset the env var:
+
+```bash
+heroku config:unset GC_MIGRATION_RECOVERY_ENABLED -a YOUR_APP
+```
+
+To resume after auto-disable: clear the DB flag (`--clear-auto-disable`), set the env var again, and restart the worker.
+
+## Payment binding audit log
+
+After deploying binding-event tracking, run once on production Postgres:
+
+```bash
+heroku run -a YOUR_APP -- python migrate_payment_binding_events.py
+```
+
+This creates `payment_binding_events`, an append-only log of binds, group-link updates, notification sends, and notification edit outcomes. Find payments whose Telegram message may be stale:
+
+```bash
+heroku run -a YOUR_APP -- python scripts/audit_payment_notification_sync.py --method zelle
+```
 
 ## Payments page (Stripe tables)
 

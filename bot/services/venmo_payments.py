@@ -21,6 +21,11 @@ from bot.services.player_details import (
     resolve_club_id_from_shorthand,
 )
 from db.connection import get_db
+from bot.services.payment_binding_events import (
+    record_payment_bound,
+    sync_payment_notification_edit,
+    track_ingest_notification,
+)
 from bot.services.payment_method_binding import (
     BOUND_VIA_MANUAL_DASHBOARD,
     BOUND_VIA_MANUAL_NOTIFICATION,
@@ -460,6 +465,8 @@ async def ingest_venmo_payment(
     group_title: Optional[str] = None
     setup_warning_text: Optional[str] = None
     setup_blocked_already_linked = False
+    setup_attempt_id: Optional[int] = None
+    setup_bound_via: Optional[str] = None
 
     with get_db() as session:
         if source_external_id:
@@ -520,6 +527,7 @@ async def ingest_venmo_payment(
                 venmo_handle=handle,
             )
         if setup_attempt is not None:
+            setup_attempt_id = int(setup_attempt.id)
             live_title = resolve_display_group_title(int(setup_attempt.telegram_chat_id))
             club_id_setup = int(setup_attempt.club_id)
             if not live_title:
@@ -676,6 +684,22 @@ async def ingest_venmo_payment(
         payment = session.query(VenmoPayment).filter_by(id=payment_id).one()
         payment.notification_chat_id = notif_chat_id
         payment.notification_message_id = notif_message_id
+        bound_chat_id = payment.telegram_chat_id
+        bound_club_id = payment.club_id
+        bound_title = payment.bound_group_title_at_bind
+
+    track_ingest_notification(
+        payment_method_slug="venmo",
+        payment_id=payment_id,
+        notification_chat_id=notif_chat_id,
+        notification_message_id=notif_message_id,
+        telegram_chat_id=int(bound_chat_id) if bound_chat_id is not None else None,
+        club_id=int(bound_club_id) if bound_club_id is not None else None,
+        bound_group_title=bound_title or group_title,
+        auto_bound=auto_bound,
+        bound_via=setup_bound_via,
+        bind_attempt_id=setup_attempt_id,
+    )
 
     status = "bound" if auto_bound else "unbound"
     logger.info(
@@ -710,11 +734,14 @@ async def bind_venmo_payment_by_id(
     notif_message_id: Optional[int] = None
     text: Optional[str] = None
     live_title = group.group_title
+    previous_telegram_chat_id: Optional[int] = None
 
     with get_db() as session:
         payment = session.query(VenmoPayment).filter_by(id=int(payment_id)).one_or_none()
         if payment is None:
             return BindResult(ok=False, error="Payment not found.")
+
+        previous_telegram_chat_id = payment.telegram_chat_id
 
         _apply_binding_to_payment(
             payment,
@@ -772,9 +799,37 @@ async def bind_venmo_payment_by_id(
             group_chat_url=group_chat_url,
         )
 
+    record_payment_bound(
+        payment_method_slug="venmo",
+        payment_id=payment_id,
+        telegram_chat_id=group.telegram_chat_id,
+        club_id=group.club_id,
+        bound_group_title=live_title,
+        bound_via=bound_via,
+        auto_bound=False,
+        actor_telegram_user_id=bound_by_telegram_user_id,
+        notification_chat_id=notif_chat_id,
+        notification_message_id=notif_message_id,
+        previous_telegram_chat_id=int(previous_telegram_chat_id)
+        if previous_telegram_chat_id is not None
+        else None,
+    )
+
     if notif_chat_id and notif_message_id and text:
         try:
-            await edit_telegram_notification(notif_chat_id, notif_message_id, text)
+            await sync_payment_notification_edit(
+                payment_method_slug="venmo",
+                payment_id=payment_id,
+                notification_chat_id=notif_chat_id,
+                notification_message_id=notif_message_id,
+                text=text,
+                bound_via=bound_via,
+                actor_telegram_user_id=bound_by_telegram_user_id,
+                telegram_chat_id=group.telegram_chat_id,
+                club_id=group.club_id,
+                bound_group_title=live_title,
+                auto_bound=False,
+            )
         except Exception:
             logger.exception(
                 "venmo bind: notification edit failed payment_id=%s chat_id=%s message_id=%s",

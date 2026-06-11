@@ -13,6 +13,11 @@ from typing import Literal, Optional
 from sqlalchemy import func
 
 from db.connection import get_db
+from bot.services.payment_binding_events import (
+    BindingEventRecord,
+    EVENT_GROUP_BINDING_UPDATED,
+    record_binding_event_in_session,
+)
 from db.models import (
     CashAppPayerBinding,
     CashAppPayment,
@@ -1273,7 +1278,21 @@ def record_group_binding_in_session(
             row.bound_by_telegram_user_id = bound_by_telegram_user_id
         if first_bind_attempt_id is not None:
             row.first_bind_attempt_id = first_bind_attempt_id
-    return int(row.id)
+    binding_id = int(row.id)
+    record_binding_event_in_session(
+        session,
+        BindingEventRecord(
+            event_type=EVENT_GROUP_BINDING_UPDATED,
+            payment_method_slug=slug,
+            group_binding_id=binding_id,
+            telegram_chat_id=int(telegram_chat_id),
+            club_id=int(club_id),
+            bound_via=bound_via,
+            actor_telegram_user_id=bound_by_telegram_user_id,
+            bind_attempt_id=first_bind_attempt_id,
+        ),
+    )
+    return binding_id
 
 
 def cancel_pending_attempts_for_chat_in_session(

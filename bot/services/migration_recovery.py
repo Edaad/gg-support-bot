@@ -27,6 +27,8 @@ from scripts.backfill_support_group_invite_links import LinkedGroupRow
 
 logger = logging.getLogger(__name__)
 
+RECOVERY_CLUB_KEYS = ("round_table", "creator_club", "clubgto")
+
 TERMINAL_STATUSES = frozenset(
     {"complete", "privacy_blocked", "failed", "skipped"}
 )
@@ -219,6 +221,196 @@ async def _notify_rt_ops_if_needed(
         )
 
 
+_recovery_app: Any | None = None
+
+
+def _recovery_row_from_model(row) -> RecoveryRow:
+    return RecoveryRow(
+        id=int(row.id),
+        telegram_chat_id=int(row.telegram_chat_id),
+        club_key=str(row.club_key),
+        club_id=int(row.club_id),
+        group_title=str(row.group_title),
+        old_chat_id=int(row.old_chat_id),
+        player_telegram_user_id=(
+            int(row.player_telegram_user_id)
+            if row.player_telegram_user_id is not None
+            else None
+        ),
+        player_username=(row.player_username or None),
+    )
+
+
+def pending_count_by_club(*, include_processing: bool = False) -> dict[str, int]:
+    """Count queue rows per club (pending, optionally including processing)."""
+
+    from sqlalchemy import func
+
+    from db.connection import get_db
+    from db.models import MigratedGroupRecovery
+
+    statuses = ["pending"]
+    if include_processing:
+        statuses.append("processing")
+
+    with get_db() as session:
+        rows = (
+            session.query(MigratedGroupRecovery.club_key, func.count())
+            .filter(MigratedGroupRecovery.readd_status.in_(statuses))
+            .group_by(MigratedGroupRecovery.club_key)
+            .all()
+        )
+    return {str(club_key): int(count) for club_key, count in rows}
+
+
+def is_migration_recovery_auto_disabled() -> bool:
+    try:
+        from db.connection import get_db
+        from db.models import MigrationRecoveryControl
+
+        with get_db() as session:
+            row = session.get(MigrationRecoveryControl, 1)
+            return row is not None and row.auto_disabled_at is not None
+    except Exception:
+        return False
+
+
+def clear_migration_recovery_auto_disable() -> bool:
+    """Clear DB auto-disable flag. Returns True if a flag was cleared."""
+
+    from db.connection import get_db
+    from db.models import MigrationRecoveryControl
+
+    with get_db() as session:
+        row = session.get(MigrationRecoveryControl, 1)
+        if row is None or row.auto_disabled_at is None:
+            return False
+        row.auto_disabled_at = None
+        row.auto_disabled_reason = None
+        row.exhausted_club_key = None
+        row.pending_snapshot = None
+        session.commit()
+    return True
+
+
+def format_auto_disable_notification(
+    *,
+    reason: str,
+    exhausted_club_key: str,
+    pending_snapshot: dict[str, int],
+) -> str:
+    club_lines = [
+        f"  {club_key}: {pending_snapshot.get(club_key, 0)} in queue"
+        for club_key in RECOVERY_CLUB_KEYS
+    ]
+    lines = [
+        "Migration recovery auto-disabled.",
+        f"Reason: {reason}",
+        f"Exhausted club: {exhausted_club_key}",
+        "Queue counts (pending + processing):",
+        *club_lines,
+    ]
+    if reason == "club_exhausted":
+        lines.append(
+            "One club finished before others. Review remaining queues, then clear "
+            "the DB flag and re-enable if you want to continue other clubs."
+        )
+    else:
+        lines.append("All clubs drained. Recovery complete.")
+    lines.append(
+        "Operator: heroku config:unset GC_MIGRATION_RECOVERY_ENABLED -a YOUR_APP"
+    )
+    return "\n".join(lines)
+
+
+def remove_migration_recovery_job() -> None:
+    global _recovery_app
+
+    if _recovery_app is None:
+        return
+    job_queue = getattr(_recovery_app, "job_queue", None)
+    if job_queue is None:
+        return
+    for job in job_queue.get_jobs_by_name("migration_recovery"):
+        job.schedule_removal()
+
+
+def persist_auto_disable_flag(
+    *,
+    reason: str,
+    exhausted_club_key: str,
+    pending_snapshot: dict[str, int],
+) -> None:
+    from db.connection import get_db
+    from db.models import MigrationRecoveryControl
+
+    now = datetime.now(timezone.utc)
+    with get_db() as session:
+        row = session.get(MigrationRecoveryControl, 1)
+        if row is None:
+            row = MigrationRecoveryControl(id=1)
+            session.add(row)
+        row.auto_disabled_at = now
+        row.auto_disabled_reason = reason
+        row.exhausted_club_key = exhausted_club_key
+        row.pending_snapshot = dict(pending_snapshot)
+        session.commit()
+
+
+async def auto_disable_migration_recovery(
+    *,
+    reason: str,
+    exhausted_club_key: str,
+    pending_snapshot: dict[str, int],
+) -> None:
+    if is_migration_recovery_auto_disabled():
+        return
+
+    persist_auto_disable_flag(
+        reason=reason,
+        exhausted_club_key=exhausted_club_key,
+        pending_snapshot=pending_snapshot,
+    )
+    remove_migration_recovery_job()
+
+    text = format_auto_disable_notification(
+        reason=reason,
+        exhausted_club_key=exhausted_club_key,
+        pending_snapshot=pending_snapshot,
+    )
+    try:
+        await notify_rt_ops_issue(issue_kind=reason, detail=text)
+    except Exception:
+        logger.warning(
+            "migration_recovery: auto-disable RT ops DM failed club=%s",
+            exhausted_club_key,
+            exc_info=True,
+        )
+
+    logger.info(
+        "migration_recovery auto-disabled reason=%s exhausted_club=%s snapshot=%s "
+        "(unset GC_MIGRATION_RECOVERY_ENABLED on Heroku)",
+        reason,
+        exhausted_club_key,
+        pending_snapshot,
+    )
+
+
+async def _maybe_auto_disable_after_tick() -> None:
+    counts = pending_count_by_club(include_processing=True)
+    exhausted = [k for k in RECOVERY_CLUB_KEYS if counts.get(k, 0) == 0]
+    if not exhausted:
+        return
+
+    other_pending = sum(counts.get(k, 0) for k in RECOVERY_CLUB_KEYS if k not in exhausted)
+    reason = "all_clubs_drained" if other_pending == 0 else "club_exhausted"
+    await auto_disable_migration_recovery(
+        reason=reason,
+        exhausted_club_key=exhausted[0],
+        pending_snapshot=counts,
+    )
+
+
 def claim_pending_batch(limit: int | None = None) -> list[RecoveryRow]:
     from sqlalchemy import select
 
@@ -227,63 +419,54 @@ def claim_pending_batch(limit: int | None = None) -> list[RecoveryRow]:
 
     batch_size = int(limit or get_migration_recovery_batch_size())
     now = datetime.now(timezone.utc)
-    rows: list[RecoveryRow] = []
+    all_ids: list[int] = []
 
     with get_db() as session:
-        ids = list(
-            session.execute(
-                select(MigratedGroupRecovery.id)
-                .where(MigratedGroupRecovery.readd_status == "pending")
-                .order_by(
-                    MigratedGroupRecovery.priority_tier.asc(),
-                    MigratedGroupRecovery.priority_rank.asc(),
+        for club_key in RECOVERY_CLUB_KEYS:
+            ids = list(
+                session.execute(
+                    select(MigratedGroupRecovery.id)
+                    .where(MigratedGroupRecovery.readd_status == "pending")
+                    .where(MigratedGroupRecovery.club_key == club_key)
+                    .order_by(
+                        MigratedGroupRecovery.priority_tier.asc(),
+                        MigratedGroupRecovery.priority_rank.asc(),
+                    )
+                    .with_for_update(skip_locked=True)
+                    .limit(batch_size)
                 )
-                .with_for_update(skip_locked=True)
-                .limit(batch_size)
+                .scalars()
+                .all()
             )
-            .scalars()
-            .all()
-        )
-        if not ids:
+            for row_id in ids:
+                row = session.get(MigratedGroupRecovery, int(row_id))
+                if row is None:
+                    continue
+                row.readd_status = "processing"
+                row.readd_attempted_at = now
+                row.updated_at = now
+            all_ids.extend(int(i) for i in ids)
+
+        if not all_ids:
             return []
 
-        for row_id in ids:
-            row = session.get(MigratedGroupRecovery, int(row_id))
-            if row is None:
-                continue
-            row.readd_status = "processing"
-            row.readd_attempted_at = now
-            row.updated_at = now
         session.commit()
 
         detail_rows = (
             session.query(MigratedGroupRecovery)
-            .filter(MigratedGroupRecovery.id.in_(ids))
-            .order_by(
-                MigratedGroupRecovery.priority_tier.asc(),
-                MigratedGroupRecovery.priority_rank.asc(),
-            )
+            .filter(MigratedGroupRecovery.id.in_(all_ids))
             .all()
         )
 
-    for row in detail_rows:
-        rows.append(
-            RecoveryRow(
-                id=int(row.id),
-                telegram_chat_id=int(row.telegram_chat_id),
-                club_key=str(row.club_key),
-                club_id=int(row.club_id),
-                group_title=str(row.group_title),
-                old_chat_id=int(row.old_chat_id),
-                player_telegram_user_id=(
-                    int(row.player_telegram_user_id)
-                    if row.player_telegram_user_id is not None
-                    else None
-                ),
-                player_username=(row.player_username or None),
-            )
+    club_order = {key: index for index, key in enumerate(RECOVERY_CLUB_KEYS)}
+    detail_rows.sort(
+        key=lambda row: (
+            club_order.get(str(row.club_key), len(RECOVERY_CLUB_KEYS)),
+            int(row.priority_tier),
+            int(row.priority_rank),
         )
-    return rows
+    )
+    return [_recovery_row_from_model(row) for row in detail_rows]
 
 
 def finalize_row(
@@ -431,17 +614,19 @@ async def tick_async() -> dict[str, int]:
         return {"claimed": 0}
 
     rows = claim_pending_batch()
-    if not rows:
-        logger.info("migration_recovery: no pending rows")
-        return {"claimed": 0}
-
-    summary = {
+    summary: dict[str, int] = {
         "claimed": len(rows),
         "complete": 0,
         "privacy_blocked": 0,
         "failed": 0,
         "skipped": 0,
     }
+
+    if not rows:
+        logger.info("migration_recovery: no pending rows to claim this tick")
+        await _maybe_auto_disable_after_tick()
+        return summary
+
     delay = get_migration_recovery_invite_delay_sec()
     current_row: RecoveryRow | None = None
 
@@ -516,6 +701,7 @@ async def tick_async() -> dict[str, int]:
         summary["failed"],
         summary["skipped"],
     )
+    await _maybe_auto_disable_after_tick()
     return summary
 
 
@@ -549,10 +735,13 @@ def migration_recovery_job_callback(context) -> None:
 
 
 def schedule_migration_recovery_job(app) -> None:
+    global _recovery_app
+
     from datetime import timedelta
 
     from club_gc_settings import get_migration_recovery_interval_sec
 
+    _recovery_app = app
     interval_sec = get_migration_recovery_interval_sec()
     app.job_queue.run_repeating(
         migration_recovery_job_callback,
@@ -561,9 +750,10 @@ def schedule_migration_recovery_job(app) -> None:
         name="migration_recovery",
     )
     logger.info(
-        "migration_recovery job scheduled interval_sec=%s batch_size=%s",
+        "migration_recovery job scheduled interval_sec=%s batch_size_per_club=%s clubs=%s",
         interval_sec,
         get_migration_recovery_batch_size(),
+        ",".join(RECOVERY_CLUB_KEYS),
     )
 
 

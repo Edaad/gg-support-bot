@@ -330,7 +330,11 @@ def is_migration_recovery_enabled() -> bool:
 
     if not is_dm_gc_listener_enabled():
         return False
-    return _env_bool("GC_MIGRATION_RECOVERY_ENABLED", default=False)
+    if not _env_bool("GC_MIGRATION_RECOVERY_ENABLED", default=False):
+        return False
+    from bot.services.migration_recovery import is_migration_recovery_auto_disabled
+
+    return not is_migration_recovery_auto_disabled()
 
 
 def get_migration_recovery_interval_sec() -> int:

@@ -9,6 +9,11 @@ from typing import Optional
 
 from bot.services.club import get_group_title_for_chat
 from bot.services.group_chat_invite_links import resolve_group_chat_url_for_payment
+from bot.services.payment_binding_events import (
+    record_payment_bound,
+    sync_payment_notification_edit,
+    track_ingest_notification,
+)
 from bot.services.payment_method_binding import (
     BOUND_VIA_MANUAL_DASHBOARD,
     BOUND_VIA_MANUAL_NOTIFICATION,
@@ -17,7 +22,6 @@ from bot.services.venmo_payments import (
     BindResult,
     BoundGroup,
     IngestResult,
-    edit_telegram_notification,
     escape_notification_html,
     format_amount_display,
     format_paid_at_display,
@@ -387,6 +391,20 @@ async def ingest_crypto_payment(
         payment = session.query(CryptoPayment).filter_by(id=payment_id).one()
         payment.notification_chat_id = notif_chat_id
         payment.notification_message_id = notif_message_id
+        bound_chat_id = payment.telegram_chat_id
+        bound_club_id = payment.club_id
+        bound_title = payment.bound_group_title_at_bind
+
+    track_ingest_notification(
+        payment_method_slug="crypto",
+        payment_id=payment_id,
+        notification_chat_id=notif_chat_id,
+        notification_message_id=notif_message_id,
+        telegram_chat_id=int(bound_chat_id) if bound_chat_id is not None else None,
+        club_id=int(bound_club_id) if bound_club_id is not None else None,
+        bound_group_title=bound_title or group_title,
+        auto_bound=auto_bound,
+    )
 
     status = "bound" if auto_bound else "unbound"
     logger.info(
@@ -415,7 +433,6 @@ async def bind_crypto_payment_by_id(
     bound_via: str = BOUND_VIA_MANUAL_DASHBOARD,
 ) -> BindResult:
     """Bind or rebind a crypto payment to a support group."""
-    del bound_via  # crypto has no group_payment_method_bindings row
     result = resolve_bound_group(group_title_input)
     if not result.ok or result.bound_group is None:
         return result
@@ -425,6 +442,7 @@ async def bind_crypto_payment_by_id(
     notif_message_id: Optional[int] = None
     text: Optional[str] = None
     live_title = group.group_title
+    previous_telegram_chat_id: Optional[int] = None
 
     with get_db() as session:
         payment = (
@@ -432,6 +450,8 @@ async def bind_crypto_payment_by_id(
         )
         if payment is None:
             return BindResult(ok=False, error="Payment not found.")
+
+        previous_telegram_chat_id = payment.telegram_chat_id
 
         scope_err = validate_bind_alert_scope(
             payment,
@@ -476,9 +496,37 @@ async def bind_crypto_payment_by_id(
             group_chat_url=group_chat_url,
         )
 
+    record_payment_bound(
+        payment_method_slug="crypto",
+        payment_id=payment_id,
+        telegram_chat_id=group.telegram_chat_id,
+        club_id=group.club_id,
+        bound_group_title=live_title,
+        bound_via=bound_via,
+        auto_bound=False,
+        actor_telegram_user_id=bound_by_telegram_user_id,
+        notification_chat_id=notif_chat_id,
+        notification_message_id=notif_message_id,
+        previous_telegram_chat_id=int(previous_telegram_chat_id)
+        if previous_telegram_chat_id is not None
+        else None,
+    )
+
     if notif_chat_id and notif_message_id and text:
         try:
-            await edit_telegram_notification(notif_chat_id, notif_message_id, text)
+            await sync_payment_notification_edit(
+                payment_method_slug="crypto",
+                payment_id=payment_id,
+                notification_chat_id=notif_chat_id,
+                notification_message_id=notif_message_id,
+                text=text,
+                bound_via=bound_via,
+                actor_telegram_user_id=bound_by_telegram_user_id,
+                telegram_chat_id=group.telegram_chat_id,
+                club_id=group.club_id,
+                bound_group_title=live_title,
+                auto_bound=False,
+            )
         except Exception:
             logger.exception(
                 "crypto bind: notification edit failed payment_id=%s chat_id=%s message_id=%s",

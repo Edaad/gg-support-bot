@@ -292,7 +292,11 @@ def run_seed(
 
 
 def print_status() -> None:
-    from bot.services.migration_recovery import recovery_status_counts
+    from bot.services.migration_recovery import (
+        is_migration_recovery_auto_disabled,
+        pending_count_by_club,
+        recovery_status_counts,
+    )
 
     counts = recovery_status_counts()
     print("migrated_group_recovery status")
@@ -302,6 +306,14 @@ def print_status() -> None:
     print("By priority_tier:")
     for key in sorted(counts["by_tier"]):
         print(f"  tier {key}: {counts['by_tier'][key]}")
+    queue_by_club = pending_count_by_club(include_processing=True)
+    print("Queue by club (pending + processing):")
+    for club_key in ("round_table", "creator_club", "clubgto"):
+        print(f"  {club_key}: {queue_by_club.get(club_key, 0)}")
+    if is_migration_recovery_auto_disabled():
+        print("Auto-disable: SET (recovery cron will not run until cleared)")
+    else:
+        print("Auto-disable: not set")
 
 
 def main() -> None:
@@ -318,7 +330,21 @@ def main() -> None:
     parser.add_argument("--days", type=int, default=30, help="Activity window for tier 2.")
     parser.add_argument("--club-key", choices=["round_table", "creator_club", "clubgto"])
     parser.add_argument("--status", action="store_true", help="Print table counts and exit.")
+    parser.add_argument(
+        "--clear-auto-disable",
+        action="store_true",
+        help="Clear migration_recovery_control auto-disable flag and exit.",
+    )
     args = parser.parse_args()
+
+    if args.clear_auto_disable:
+        from bot.services.migration_recovery import clear_migration_recovery_auto_disable
+
+        if clear_migration_recovery_auto_disable():
+            print("Cleared migration recovery auto-disable flag.")
+        else:
+            print("Auto-disable flag was not set.")
+        return
 
     if args.status:
         print_status()
