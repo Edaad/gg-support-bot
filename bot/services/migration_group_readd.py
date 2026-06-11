@@ -353,6 +353,60 @@ async def readd_group(
             lambda: client.get_entity(int(dialog_chat_id)),
             label=f"get_entity:{dialog_chat_id}",
         )
+
+        if not invite_staff:
+            if player_id is None:
+                result.status = "no_targets"
+                return result
+
+            marker = f"@{player_username}" if player_username else str(player_id)
+            label = f"player:{marker}"
+            status, reason = await invite_user_id(
+                client,
+                entity,
+                int(player_id),
+                apply=apply,
+            )
+            needs_invite_export = False
+            if status == "added":
+                result.added.append(label)
+            elif status == "already_member":
+                result.already_member.append(label)
+            elif status == "privacy":
+                result.privacy_blocked.append(label)
+                needs_invite_export = True
+            elif status == "dry_run":
+                result.added.append(f"would_add:{label}")
+            else:
+                result.failed.append(f"{label}:{reason or 'unknown'}")
+                if is_privacy_error(reason):
+                    needs_invite_export = True
+
+            if needs_invite_export and apply:
+                invite_link = await export_invite_link(client, entity)
+                result.invite_link = invite_link
+                if invite_link and update_invite_links:
+                    from bot.services.support_group_chats import upsert_support_group_invite_link
+
+                    upsert_support_group_invite_link(
+                        club_key=cfg.club_key,
+                        club_display_name=cfg.club_display_name,
+                        telegram_chat_id=int(group.chat_id),
+                        telegram_chat_title=title,
+                        invite_link=invite_link,
+                        mtproto_session_name=cfg.mtproto_session,
+                    )
+
+            if result.privacy_blocked:
+                result.status = "privacy_fallback"
+            elif result.failed:
+                result.status = "partial"
+            elif result.added or result.already_member:
+                result.status = "ok" if apply else "would_readd"
+            else:
+                result.status = "no_targets"
+            return result
+
         member_ids = await participant_user_ids(client, entity)
         result.member_count_before = len(member_ids)
 

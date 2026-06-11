@@ -818,7 +818,7 @@ async def _process_row(row: RecoveryRow) -> str:
         player_username=row.player_username,
         apply=True,
         update_invite_links=True,
-        invite_staff=True,
+        invite_staff=False,
         listener_user_id=listener_user_id,
     )
     return await _finish(result)

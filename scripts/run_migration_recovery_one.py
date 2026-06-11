@@ -136,7 +136,7 @@ async def _process_with_client(row, *, apply: bool) -> str:
                 player_username=row.player_username,
                 apply=apply,
                 update_invite_links=apply,
-                invite_staff=True,
+                invite_staff=False,
                 listener_user_id=listener_user_id,
             )
             if not apply:

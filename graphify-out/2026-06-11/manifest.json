@@ -985,7 +985,7 @@
     "semantic_hash": "d0b88fcd554ad3bcec77a1a6dc8f5b63"
   },
   "bot/handlers/group_create.py": {
-    "mtime": 1781152815.1919637,
+    "mtime": 1781153712.9780483,
     "ast_hash": "3ac65570f9d8c583ebdae26c69b6e9cc",
     "semantic_hash": ""
   },
@@ -1120,7 +1120,7 @@
     "semantic_hash": "563bb7e4bf87c4a7e0a2622d3109b5b4"
   },
   "bot/services/mtproto_dm_gc_listener.py": {
-    "mtime": 1781152533.8171434,
+    "mtime": 1781153712.7141087,
     "ast_hash": "f134c2813da40a7400be68dc8f605a28",
     "semantic_hash": ""
   },
@@ -1135,7 +1135,7 @@
     "semantic_hash": "1bc1e5ba5a1a984c0c4c86bac76207a8"
   },
   "bot/services/mtproto_group_create.py": {
-    "mtime": 1781152822.8740494,
+    "mtime": 1781153712.9470766,
     "ast_hash": "4c7c20dbe824e7b72668b8ac7b0d0d51",
     "semantic_hash": ""
   },
@@ -1280,8 +1280,8 @@
     "semantic_hash": "9d2f1e12ab88efc39fc25326e4308c37"
   },
   "club_gc_settings.py": {
-    "mtime": 1781152531.5822806,
-    "ast_hash": "af712f0e957d9d096cd220fad409be87",
+    "mtime": 1781153739.2324166,
+    "ast_hash": "7785d51ab1ca65a4a2e42abefa88fc5b",
     "semantic_hash": ""
   },
   "config.py": {
@@ -2500,7 +2500,7 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1781152821.276454,
+    "mtime": 1781153713.0335436,
     "ast_hash": "ef8348dfed39eac590349e18811f4e51",
     "semantic_hash": ""
   },
@@ -2535,13 +2535,13 @@
     "semantic_hash": ""
   },
   "docs/GC.md": {
-    "mtime": 1781152820.9411268,
+    "mtime": 1781153712.921112,
     "ast_hash": "8490a30a82c2fe36833e4b1bdf58ea05",
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1781152546.3908944,
-    "ast_hash": "f3482fe20d6babbe35cca6e9fcf519a3",
+    "mtime": 1781153750.6932468,
+    "ast_hash": "7e2c160ee889146adf6f38e1b4b3d7e5",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2740,8 +2740,8 @@
     "semantic_hash": ""
   },
   "bot/services/migration_recovery.py": {
-    "mtime": 1781150627.553234,
-    "ast_hash": "89d825714452719220a19639fe6a5d2f",
+    "mtime": 1781153742.1892538,
+    "ast_hash": "79a8fac18b69290aa848b4c496c5a773",
     "semantic_hash": ""
   },
   "migrate_migrated_group_recovery.py": {
@@ -2755,8 +2755,8 @@
     "semantic_hash": ""
   },
   "tests/test_migration_recovery.py": {
-    "mtime": 1781150190.114671,
-    "ast_hash": "18f1c3ad4d82deaa70f5feb60ddd00f1",
+    "mtime": 1781153768.9074416,
+    "ast_hash": "fa8c3ea3f661c3965e195c6c4125d520",
     "semantic_hash": ""
   },
   "bot/services/migration_recovery_priority.py": {
@@ -2830,12 +2830,12 @@
     "semantic_hash": ""
   },
   "tests/test_dm_gc_new_groups_flag.py": {
-    "mtime": 1781152542.9356122,
+    "mtime": 1781153712.8963006,
     "ast_hash": "4cd2fdc14f5a195ee570ecc513507a72",
     "semantic_hash": ""
   },
   "tests/test_group_create.py": {
-    "mtime": 1781152826.858936,
+    "mtime": 1781153713.003374,
     "ast_hash": "f1a172e940a27c33a5445d037f8589b2",
     "semantic_hash": ""
   }

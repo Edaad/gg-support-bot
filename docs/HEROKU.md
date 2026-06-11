@@ -127,7 +127,7 @@ Optional knobs: `GC_MIGRATION_RECOVERY_INTERVAL_SEC` (default `300`), `GC_MIGRAT
 
 With `GC_MIGRATION_RECOVERY_BATCH_SIZE=1`, each tick claims up to **one GC per active club** — up to three groups per tick when all clubs are enabled.
 
-Requires `GC_DM_GC_LISTENER_ENABLED` (default on). Recovery adds the mapped player plus per-club support accounts from `GC_USERS_TO_INVITE` / `GC_USERS_*`, checking membership before each invite. Each group is attempted **once**; no automatic retries.
+Requires `GC_DM_GC_LISTENER_ENABLED` (default on). Recovery direct-adds **only the mapped player** (not staff/bot accounts from `GC_USERS_*`); staff can join via invite link or manual add. Membership is checked with `GetParticipantRequest` before any invite. Each group is attempted **once**; no automatic retries. For one-off staff re-adds, use [`scripts/readd_migrated_group_members.py`](../scripts/readd_migrated_group_members.py) with `--invite-staff`.
 
 Set `GC_MIGRATION_RECOVERY_SKIP_WELCOME=true` to suppress member-join preamble/TOS for chats in `migrated_group_recovery` during mass re-adds (independent of the recovery cron switch). Unset or set `false` to restore normal welcomes.
 
