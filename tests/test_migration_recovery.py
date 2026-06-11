@@ -569,7 +569,10 @@ class TestHandleRateLimitAbort(unittest.TestCase):
         ) as mock_disable, patch(
             "bot.services.mtproto_track_contact.notify_all_gc_admins_dm",
             new_callable=AsyncMock,
-        ) as mock_notify:
+        ) as mock_notify, patch(
+            "bot.services.slack_ops_notify.notify_slack_ops",
+            new_callable=AsyncMock,
+        ) as mock_slack:
             asyncio.run(
                 _handle_rate_limit_abort(
                     exc=FloodWaitAbortError(90, "InviteToChannelRequest"),
@@ -580,6 +583,8 @@ class TestHandleRateLimitAbort(unittest.TestCase):
         mock_finalize.assert_called_once()
         mock_release.assert_called_once_with([6, 7])
         mock_notify.assert_awaited_once()
+        mock_slack.assert_awaited_once()
+        self.assertEqual(mock_slack.await_args.kwargs["source"], "migration_recovery")
         mock_disable.assert_awaited_once_with(
             reason="rate_limit",
             exhausted_club_key="clubgto",

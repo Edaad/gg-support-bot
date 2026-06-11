@@ -125,6 +125,10 @@ async def report_reason(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         reason=reason,
     )
 
+    from bot.services.slack_ops_notify import notify_slack_ops
+
+    await notify_slack_ops(ticket, source="notification_report")
+
     dm_ok = True
     try:
         await context.bot.send_message(

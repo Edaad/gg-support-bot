@@ -126,7 +126,13 @@ class TestReportReason(unittest.IsolatedAsyncioTestCase):
             "NOTIFICATION_REPORT_TO_USER_ID": str(REPORT_TO_USER_ID),
         },
     )
-    async def test_happy_path_sends_dm_and_success(self) -> None:
+    @patch(
+        "bot.services.slack_ops_notify.notify_slack_ops",
+        new_callable=AsyncMock,
+    )
+    async def test_happy_path_sends_dm_and_success(
+        self, mock_slack: AsyncMock
+    ) -> None:
         update = _make_update(text="Wrong group title")
         context = _make_context()
         context.user_data.update(
@@ -146,6 +152,8 @@ class TestReportReason(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Wrong group title", kwargs["text"])
         update.message.reply_text.assert_awaited_once_with("Report submitted. Thanks!")
         self.assertNotIn("report_notification_message_id", context.user_data)
+        mock_slack.assert_awaited_once()
+        self.assertEqual(mock_slack.await_args.kwargs["source"], "notification_report")
 
     @patch.dict(
         os.environ,
@@ -154,7 +162,13 @@ class TestReportReason(unittest.IsolatedAsyncioTestCase):
             "NOTIFICATION_REPORT_TO_USER_ID": str(REPORT_TO_USER_ID),
         },
     )
-    async def test_dm_failure_still_acknowledges_reporter(self) -> None:
+    @patch(
+        "bot.services.slack_ops_notify.notify_slack_ops",
+        new_callable=AsyncMock,
+    )
+    async def test_dm_failure_still_acknowledges_reporter(
+        self, mock_slack: AsyncMock
+    ) -> None:
         update = _make_update(text="Bad memo")
         context = _make_context()
         context.user_data.update(
@@ -171,6 +185,7 @@ class TestReportReason(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state, ConversationHandler.END)
         update.message.reply_text.assert_awaited_once()
         self.assertIn("@jz034", update.message.reply_text.await_args.args[0])
+        mock_slack.assert_awaited_once()
 
     @patch.dict(os.environ, {"PAYMENT_NOTIFICATION_CHAT_ID": str(NOTIF_CHAT_ID)})
     async def test_empty_reason_reprompts(self) -> None:

@@ -120,7 +120,7 @@ With `GC_MIGRATION_RECOVERY_BATCH_SIZE=1`, each tick claims up to **one GC per c
 
 Requires `GC_DM_GC_LISTENER_ENABLED` (default on). Recovery adds the mapped player plus per-club support accounts from `GC_USERS_TO_INVITE` / `GC_USERS_*`, checking membership before each invite. Each group is attempted **once**; no automatic retries.
 
-After each attempt, the **GG Support bot** DMs that club's GC admin with a tappable GC title (supergroup `t.me/c/…` link when available), result status, and which accounts were added. **Rate limits (FloodWait)** halt recovery immediately, auto-disable the cron, and DM **all three club GC admins**. Other failures also DM the Round Table GC admin (`GC_ADMIN_USER_ROUND_TABLE`) for central ops visibility. Admins must have `/start`ed the bot.
+After each attempt, the **GG Support bot** DMs that club's GC admin with a tappable GC title (supergroup `t.me/c/…` link when available), result status, and which accounts were added. **Rate limits (FloodWait)** halt recovery immediately, auto-disable the cron, and DM **all three club GC admins**. Other failures also DM the Round Table GC admin (`GC_ADMIN_USER_ROUND_TABLE`) for central ops visibility. Errors also post to **Slack** when `SLACK_OPS_BOT_TOKEN` + `SLACK_OPS_CHANNEL_ID` (or webhook) are set (see Slack ops below). Admins must have `/start`ed the bot.
 
 **Queue visibility:** Send `/whosnext` in a private DM with the bot (admin accounts only) to see the global top-10 pending rows, plus auto-add / auto-disable status.
 
@@ -153,9 +153,31 @@ To resume after auto-disable: clear the DB flag (`--clear-auto-disable`), set th
 
 Separate bot for payment notification bind replies (`TELEGRAM_NOTIFICATION_BOT_TOKEN`, `PAYMENT_NOTIFICATION_CHAT_ID`).
 
-**Report a buggy notification:** In the payment notification chat, **reply** to the notification message with `/report`. The bot asks what was wrong; send a short description. On success it confirms in chat and DMs the ticket to `@jz034` (default user id `493310710`, override with `NOTIFICATION_REPORT_TO_USER_ID`). `@jz034` must `/start` the **notification bot** (not GG Support) to receive DMs. Send `/cancel` to abort mid-flow.
+**Report a buggy notification:** In the payment notification chat, **reply** to the notification message with `/report`. The bot asks what was wrong; send a short description. On success it confirms in chat, DMs the ticket to `@jz034` (default user id `493310710`, override with `NOTIFICATION_REPORT_TO_USER_ID`), and posts to Slack when Slack ops env is configured. `@jz034` must `/start` the **notification bot** (not GG Support) to receive DMs. Send `/cancel` to abort mid-flow.
 
 Restart after deploy: `heroku restart notification -a YOUR_APP`
+
+## Slack ops (Engineer noti service / custom app)
+
+Migration re-add **errors** (failed rows, rate limits, auto-disable) and notification **`/report`** tickets post to Slack when configured. Telegram DMs are unchanged; Slack is additive.
+
+**Preferred: custom Slack app** ([`chat.postMessage`](https://docs.slack.dev/reference/methods/chat.postMessage)) — e.g. **Engineer noti service**:
+
+1. At [api.slack.com/apps](https://api.slack.com/apps), open your app → **OAuth & Permissions**.
+2. Bot Token Scopes: `chat:write` (and `chat:write.public` if the bot is not invited to the channel).
+3. **Install to workspace** → copy **Bot User OAuth Token** (`xoxb-…`).
+4. Invite the app to your ops channel (or rely on `chat:write.public` for public channels).
+5. Channel ID: open the channel in Slack → channel name → **View channel details** → copy ID (`C…`), or right-click channel → Copy link (ID is in the URL).
+
+```bash
+heroku config:set SLACK_OPS_BOT_TOKEN=xoxb-... -a YOUR_APP
+heroku config:set SLACK_OPS_CHANNEL_ID=C0123456789 -a YOUR_APP
+heroku config:set SLACK_OPS_MENTION='<@UYOUR_SLACK_USER_ID>' -a YOUR_APP   # optional @JZ ping
+```
+
+**Optional fallback:** Incoming Webhook (`SLACK_OPS_WEBHOOK_URL`) if bot post fails or you have not set bot token yet.
+
+Set app-wide (worker + notification dynos). Restart after deploy: `heroku restart worker notification -a YOUR_APP`
 
 ## Payment binding audit log
 

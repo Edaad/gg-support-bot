@@ -224,6 +224,9 @@ async def notify_rt_ops_issue(
         row=row,
     )
     await notify_rt_support_admin_dm(text)
+    from bot.services.slack_ops_notify import notify_slack_ops
+
+    await notify_slack_ops(text, source="migration_recovery")
 
 
 async def _notify_rt_ops_if_needed(
@@ -639,6 +642,10 @@ async def _handle_rate_limit_abort(
             row.id,
             exc_info=True,
         )
+
+    from bot.services.slack_ops_notify import notify_slack_ops
+
+    await notify_slack_ops(detail, source="migration_recovery")
 
     counts = pending_count_by_club(include_processing=True)
     await auto_disable_migration_recovery(
