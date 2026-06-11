@@ -1,16 +1,16 @@
 # Graph Report - gg-support-bot  (2026-06-11)
 
 ## Corpus Check
-- 561 files · ~815,395 words
+- 562 files · ~815,972 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 10202 nodes · 24467 edges · 630 communities (573 shown, 57 thin omitted)
-- Extraction: 89% EXTRACTED · 11% INFERRED · 0% AMBIGUOUS · INFERRED: 2774 edges (avg confidence: 0.5)
+- 10217 nodes · 24505 edges · 631 communities (574 shown, 57 thin omitted)
+- Extraction: 89% EXTRACTED · 11% INFERRED · 0% AMBIGUOUS · INFERRED: 2778 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `e9e5d32a`
+- Built from commit: `1e4a7010`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -622,6 +622,7 @@
 - [[_COMMUNITY_Community 627|Community 627]]
 - [[_COMMUNITY_Community 628|Community 628]]
 - [[_COMMUNITY_Community 629|Community 629]]
+- [[_COMMUNITY_Community 630|Community 630]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `Club` - 283 edges
@@ -636,23 +637,18 @@
 10. `ClubPaymentSubOption` - 71 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `Lock` --uses--> `ClubGcConfig`  [INFERRED]
-  bot/services/mtproto_group_create.py → club_gc_settings.py
-- `Path` --uses--> `ClubGcConfig`  [INFERRED]
-  bot/services/mtproto_group_create.py → club_gc_settings.py
-- `Any` --uses--> `ClubGcConfig`  [INFERRED]
-  bot/services/mtproto_group_create.py → club_gc_settings.py
+- `ConversationHandler` --uses--> `CustomCommand`  [INFERRED]
+  bot/handlers/commands.py → db/models.py
+- `BaseException` --uses--> `Club`  [INFERRED]
+  bot/handlers/deposit.py → db/models.py
+- `ConversationHandler` --uses--> `Club`  [INFERRED]
+  bot/handlers/deposit.py → db/models.py
 - `ClubGcConfig` --uses--> `ClubGcConfig`  [INFERRED]
   bot/services/mtproto_check_player.py → club_gc_settings.py
-- `Any` --uses--> `ClubGcConfig`  [INFERRED]
-  bot/services/mtproto_latest_message.py → club_gc_settings.py
+- `Event` --uses--> `ClubGcConfig`  [INFERRED]
+  bot/services/mtproto_group_add.py → club_gc_settings.py
 
 ## Import Cycles
-- 1-file cycle: `bot/handlers/add.py -> bot/handlers/add.py`
-- 1-file cycle: `bot/handlers/cash.py -> bot/handlers/cash.py`
-- 1-file cycle: `bot/services/mtproto_group_add.py -> bot/services/mtproto_group_add.py`
-- 1-file cycle: `bot/services/mtproto_group_cash.py -> bot/services/mtproto_group_cash.py`
-- 1-file cycle: `scripts/migrated_groups_activity_report.py -> scripts/migrated_groups_activity_report.py`
 - 1-file cycle: `api/app.py -> api/app.py`
 - 1-file cycle: `api/routes/payments.py -> api/routes/payments.py`
 - 1-file cycle: `tests/test_payments_api.py -> tests/test_payments_api.py`
@@ -660,28 +656,33 @@
 - 1-file cycle: `scripts/seed_v2_clubgto_cashout.py -> scripts/seed_v2_clubgto_cashout.py`
 - 1-file cycle: `scripts/seed_v2_round_table_cashapp.py -> scripts/seed_v2_round_table_cashapp.py`
 - 1-file cycle: `api/payments_helpers.py -> api/payments_helpers.py`
+- 1-file cycle: `bot/handlers/add.py -> bot/handlers/add.py`
+- 1-file cycle: `bot/handlers/cash.py -> bot/handlers/cash.py`
 - 1-file cycle: `bot/handlers/deposit.py -> bot/handlers/deposit.py`
 - 1-file cycle: `bot/services/cashapp_payments.py -> bot/services/cashapp_payments.py`
 - 1-file cycle: `bot/services/club.py -> bot/services/club.py`
 - 1-file cycle: `bot/services/club_payment_v2.py -> bot/services/club_payment_v2.py`
 - 1-file cycle: `bot/services/crypto_payments.py -> bot/services/crypto_payments.py`
 - 1-file cycle: `bot/services/method_resolution.py -> bot/services/method_resolution.py`
+- 1-file cycle: `bot/services/mtproto_group_add.py -> bot/services/mtproto_group_add.py`
+- 1-file cycle: `bot/services/mtproto_group_cash.py -> bot/services/mtproto_group_cash.py`
 - 1-file cycle: `bot/services/payment_method_binding.py -> bot/services/payment_method_binding.py`
 - 1-file cycle: `bot/services/stripe_deposit.py -> bot/services/stripe_deposit.py`
+- 1-file cycle: `bot/services/venmo_payments.py -> bot/services/venmo_payments.py`
 
-## Communities (630 total, 57 thin omitted)
+## Communities (631 total, 57 thin omitted)
 
 ### Community 0 - "Community 0"
-Cohesion: 0.04
-Nodes (105): BaseException, DEFAULT_TYPE, Update, DEFAULT_TYPE, Update, _apply_checkout_layer(), _apply_hardcoded_stripe_below_100(), _ask_deposit_amount() (+97 more)
+Cohesion: 0.03
+Nodes (133): BaseException, Decimal, DEFAULT_TYPE, InlineKeyboardMarkup, Update, DEFAULT_TYPE, Update, DEFAULT_TYPE (+125 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.04
 Nodes (66): addManualContextText(), averageRgb01(), buildAnnotationsForCapture(), buildPinElement(), canRestoreManualEditElement(), captureElementToBlob(), clampPlaceholderSize(), clearSteerFocusRecoverTimer() (+58 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.17
-Nodes (29): _ClubClientPool, DepositGroupTarget, DmTracker, _load_targets_from_db(), _send_player_dm(), _count_toward_send_limit(), _default_failed_csv(), _default_input_csv() (+21 more)
+Cohesion: 0.08
+Nodes (70): _ClubClientPool, DepositGroupTarget, DmTracker, _configure_logging(), _gc_display_name(), _default_failed_csv(), _default_input_paths(), _default_results_csv() (+62 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.04
@@ -692,24 +693,24 @@ Cohesion: 0.04
 Nodes (66): applyPlaceholderSizingStyles(), averageRgb01(), buildAnnotationsForCapture(), buildPinElement(), captureElementToBlob(), clampPlaceholderSize(), clearSteerFocusRecoverTimer(), collectEditableTextRows() (+58 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.03
-Nodes (84): BindAttemptList, BindAttemptRow, bindCashAppPayment(), bindCryptoPayment(), BindingAttemptFunnel, BindingSummary, BindingViaCount, BindKindCount (+76 more)
+Cohesion: 0.05
+Nodes (64): BindAttemptList, bindCashAppPayment(), bindCryptoPayment(), BindingAttemptFunnel, BindingViaCount, BindKindCount, bindVenmoPayment(), bindZellePayment() (+56 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.08
-Nodes (55): ClubGcConfig, Decimal, Event, Any, ClubGcConfig, Decimal, Event, Any (+47 more)
+Cohesion: 0.09
+Nodes (49): Decimal, Any, ClubGcConfig, Decimal, Event, Any, ClubGcConfig, Event (+41 more)
 
 ### Community 7 - "Community 7"
 Cohesion: 0.06
 Nodes (78): _bot_was_added_to_chat(), cashout_amount_received(), cashout_cancel(), cashout_entry(), cashout_method_chosen(), _cashout_method_keyboard(), command_router(), delete_handler() (+70 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.09
-Nodes (46): BaseException, DEFAULT_TYPE, Update, Send user-visible messages and errors in the chat where GGCashier was invoked., Show an error in chat (callback alert + message when possible)., Log and show a user-safe error in chat., Store chat id so timeout handler can message the user., Map an exception to a safe message for Telegram chat. (+38 more)
+Cohesion: 0.07
+Nodes (85): BaseException, DEFAULT_TYPE, Update, Send user-visible messages and errors in the chat where GGCashier was invoked., Show an error in chat (callback alert + message when possible)., Log and show a user-safe error in chat., Store chat id so timeout handler can message the user., Map an exception to a safe message for Telegram chat. (+77 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.07
-Nodes (48): createV2Method(), createV2SubOption(), createV2Tier(), deleteV2Method(), deleteV2SubOption(), deleteV2Tier(), deleteV2Variant(), FirstTimeBindMode (+40 more)
+Cohesion: 0.09
+Nodes (37): apiUrl(), getApiOrigin(), createV2Method(), createV2SubOption(), createV2Tier(), deleteV2Method(), deleteV2SubOption(), deleteV2Tier() (+29 more)
 
 ### Community 10 - "Community 10"
 Cohesion: 0.10
@@ -720,20 +721,20 @@ Cohesion: 0.15
 Nodes (18): applyPlaceholderDimensions(), clearHandled(), cycleVariant(), ensureInsertPlaceholder(), findInsertAnchorInDom(), isInsertGeneratingSession(), isSessionHandled(), loadSession() (+10 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.08
-Nodes (39): apiUrl(), getApiOrigin(), addBroadcastGroupMember(), BroadcastGroupMember, BroadcastGroupT, BroadcastJob, BroadcastRequest, Club (+31 more)
+Cohesion: 0.06
+Nodes (48): addBroadcastGroupMember(), BroadcastGroupMember, BroadcastGroupT, BroadcastJob, BroadcastRequest, Club, Command, createClub() (+40 more)
 
 ### Community 13 - "Community 13"
 Cohesion: 0.10
-Nodes (54): clear_tier_response(), upsert_default_variant_for_tier(), ClubPaymentTier, main(), find_clubgto_club(), main(), Club, ClubPaymentMethod (+46 more)
+Nodes (48): create_app(), FastAPI, create_token(), LoginRequest, TokenResponse, get_session(), Session, main() (+40 more)
 
 ### Community 14 - "Community 14"
-Cohesion: 0.05
-Nodes (61): Decimal, DEFAULT_TYPE, Update, DEFAULT_TYPE, Update, Decimal, DEFAULT_TYPE, Update (+53 more)
+Cohesion: 0.08
+Nodes (40): Decimal, DEFAULT_TYPE, Update, Decimal, DEFAULT_TYPE, Update, Any, get_club_config_for_admin() (+32 more)
 
 ### Community 15 - "Community 15"
 Cohesion: 0.03
-Nodes (38): backfill(), init_engine(), Create cashapp_payments and cashapp_payer_bindings tables; add cashapp_payment_i, main(), Drop legacy payment_method FKs on cashier_cashout_jobs (v2 method IDs).  After B, One-time migration: create cashier_cashout_jobs table for GGCashier.  Usage:, main(), Add per-method first-time deposit linking settings to club_payment_methods.  Run (+30 more)
+Nodes (55): Bot, init_engine(), get_report_handler(), Create cashapp_payments and cashapp_payer_bindings tables; add cashapp_payment_i, main(), Drop legacy payment_method FKs on cashier_cashout_jobs (v2 method IDs).  After B, One-time migration: create cashier_cashout_jobs table for GGCashier.  Usage:, main() (+47 more)
 
 ### Community 16 - "Community 16"
 Cohesion: 0.29
@@ -756,20 +757,20 @@ Cohesion: 0.09
 Nodes (31): addManualContextText(), applyEditing(), buildLocatorForLeaf(), canRestoreManualEditElement(), collectManualContextPieces(), contextElementForManualEdit(), copyEditContainerContext(), copyEditLeafContext() (+23 more)
 
 ### Community 21 - "Community 21"
-Cohesion: 0.07
-Nodes (38): build_club_gc_config(), _env_bool(), _env_csv_tuple(), _env_float(), _env_int(), _env_optional(), _env_optional_int(), _env_str() (+30 more)
+Cohesion: 0.06
+Nodes (33): DEFAULT_TYPE, Update, DEFAULT_TYPE, Update, DEFAULT_TYPE, Update, Any, gc_mtproto_operator_telegram_user_ids() (+25 more)
 
 ### Community 22 - "Community 22"
 Cohesion: 0.08
-Nodes (48): DEFAULT_TYPE, Update, auto_link_group(), _bot_was_added(), _deliver_member_join_intro_messages(), _mark_member_join_bundle_cooldown(), _mark_post_gc_bundle_window(), _maybe_send_member_join_intro() (+40 more)
+Nodes (45): DEFAULT_TYPE, Update, is_migration_recovery_skip_welcome_enabled(), Skip member-join preamble/TOS for chats in ``migrated_group_recovery``., auto_link_group(), _bot_was_added(), _deliver_member_join_intro_messages(), _mark_member_join_bundle_cooldown() (+37 more)
 
 ### Community 23 - "Community 23"
 Cohesion: 0.06
 Nodes (27): applyStaticDeclaration(), buildBorderOverrideMap(), collectStaticCssText(), compareStaticPriority(), cssPropToCamel(), expandStaticBoxValues(), expandStaticDeclaration(), extractStaticColor() (+19 more)
 
 ### Community 24 - "Community 24"
-Cohesion: 0.07
-Nodes (56): amounts_overlap(), _bound_high(), _bound_low(), clamp_checkout_amount_bounds(), create_default_variant_from_tier(), effective_tier_checkout_max(), effective_tier_checkout_min(), ensure_legacy_tier_before_new_variant() (+48 more)
+Cohesion: 0.09
+Nodes (49): amounts_overlap(), _bound_high(), _bound_low(), clamp_checkout_amount_bounds(), clear_tier_response(), create_default_variant_from_tier(), create_empty_default_variant(), effective_tier_checkout_max() (+41 more)
 
 ### Community 25 - "Community 25"
 Cohesion: 0.10
@@ -780,12 +781,12 @@ Cohesion: 0.09
 Nodes (52): _(), ae(), be(), bt(), Ce(), Ct(), de(), dt() (+44 more)
 
 ### Community 27 - "Community 27"
-Cohesion: 0.19
-Nodes (52): create_empty_default_variant(), strip_response_from_tier_payload(), ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant, Session, ClubPaymentMethodCreate, ClubPaymentMethodRead (+44 more)
+Cohesion: 0.17
+Nodes (58): is_primary_tier(), method_needs_variants(), Ensure optional checkout min/max fit the method absolute envelope., Raise ValueError when first-time linking settings are inconsistent., strip_response_from_tier_payload(), validate_checkout_amount_bounds(), validate_first_time_linking(), ClubPaymentMethod (+50 more)
 
 ### Community 28 - "Community 28"
-Cohesion: 0.09
-Nodes (33): ConversationHandler, ConversationHandler, ConversationHandler, DEFAULT_TYPE, Update, DEFAULT_TYPE, Update, _configure_worker_logging() (+25 more)
+Cohesion: 0.11
+Nodes (30): ConversationHandler, ConversationHandler, ConversationHandler, DEFAULT_TYPE, Update, _configure_worker_logging(), _post_init_dm_gc_listener(), _post_shutdown_dm_gc_listener() (+22 more)
 
 ### Community 29 - "Community 29"
 Cohesion: 0.09
@@ -796,20 +797,20 @@ Cohesion: 0.09
 Nodes (52): _(), ae(), be(), bt(), Ce(), Ct(), de(), dt() (+44 more)
 
 ### Community 31 - "Community 31"
-Cohesion: 0.14
-Nodes (20): Any, ClubGcConfig, DEFAULT_TYPE, _compose_status_text(), _finish_gc_creation(), gc_command(), parse_gc_player_args(), _persist_row() (+12 more)
+Cohesion: 0.12
+Nodes (26): Any, ClubGcConfig, DEFAULT_TYPE, Update, get_tg_mtproto_credentials(), Telegram developer API credentials (shared across club MTProto sessions)., _compose_status_text(), _finish_gc_creation() (+18 more)
 
 ### Community 32 - "Community 32"
 Cohesion: 0.07
-Nodes (54): _configure_api_logging(), Send application logging to stderr on the web dyno (Heroku shows only uvicorn ot, Any, ClubGcConfig, get_gc_users_to_add(), Resolve staff invite list at runtime (env + defaults).      Prefer this over ``c, Path, _configure_logging() (+46 more)
+Nodes (57): ClubGcConfig, Any, ClubGcConfig, Path, TelegramClient, ClubGcConfig, ClubGcConfig, Lock (+49 more)
 
 ### Community 33 - "Community 33"
 Cohesion: 0.17
 Nodes (21): sendWeeklyPlayerMessage(), resolve_club_id(), Request, Session, Response, get_player_chats(), PlayerChatsResponse, _gg_computer_base() (+13 more)
 
 ### Community 34 - "Community 34"
-Cohesion: 0.09
-Nodes (53): Any, TelegramClient, Any, is_dm_gc_verbose_logging(), Extra ``INFO`` logs for outgoing-DM ``/gc`` (captures, bootstrap, success). Defa, ensure_group_chat_linked(), Force-link chat_id to dashboard club_id (ignores who added the bot).      Used a, _dm_gc_verbose_info() (+45 more)
+Cohesion: 0.08
+Nodes (58): Any, TelegramClient, Event, Any, get_dm_gc_listener_restart_config(), is_dm_gc_verbose_logging(), Extra ``INFO`` logs for outgoing-DM ``/gc`` (captures, bootstrap, success). Defa, ``(initial_delay_sec, max_delay_sec, backoff_multiplier)`` for listener supervis (+50 more)
 
 ### Community 35 - "Community 35"
 Cohesion: 0.06
@@ -836,24 +837,24 @@ Cohesion: 0.17
 Nodes (14): Extract Flow, Step 1: Discover the Design System, Step 2: Identify Patterns, Step 3: Plan Extraction, Step 4: Extract & Enrich, Step 5: Migrate, Step 6: Document, Extract Flow (+6 more)
 
 ### Community 41 - "Community 41"
-Cohesion: 0.26
-Nodes (61): CashAppPayerRow, CashAppPaymentRow, GroupBindingRow, VenmoPayerRow, VenmoPaymentRow, ZellePayerRow, ZellePaymentRow, Club (+53 more)
+Cohesion: 0.27
+Nodes (58): CashAppPayerRow, CashAppPaymentRow, GroupBindingRow, VenmoPayerRow, VenmoPaymentRow, ZellePayerRow, ZellePaymentRow, Club (+50 more)
 
 ### Community 42 - "Community 42"
-Cohesion: 0.12
-Nodes (38): ClubPaymentMethod, ClubPaymentTier, Session, SimulateMethodOut, SimulateResponse, SubOptionRead, ClubPaymentMethod, _default_tier() (+30 more)
+Cohesion: 0.09
+Nodes (55): ClubPaymentTierVariant, ClubPaymentMethod, ClubPaymentSubOption, find_clubgto_club(), main(), Club, ClubPaymentMethod, ClubPaymentSubOption (+47 more)
 
 ### Community 43 - "Community 43"
-Cohesion: 0.08
-Nodes (64): gcMtprotoDeleteSession(), gcMtprotoSendCode(), ClubGcConfig, GcMtProtoClubRead, MtProtoClubKeyBody, MtProtoPasswordRequest, MtProtoSendCodeRequest, MtProtoSendCodeResponse (+56 more)
+Cohesion: 0.11
+Nodes (45): gcMtprotoDeleteSession(), gcMtprotoSendCode(), ClubGcConfig, GcMtProtoClubRead, MethodCreate, MethodRead, MethodUpdate, MtProtoClubKeyBody (+37 more)
 
 ### Community 44 - "Community 44"
 Cohesion: 0.14
 Nodes (40): cancelEditing(), cancelEditingToPicking(), cancelInsertConfigure(), cleanup(), clearAnnotations(), clearInsertPicking(), clearScrollY(), clearSession() (+32 more)
 
 ### Community 45 - "Community 45"
-Cohesion: 0.08
-Nodes (88): CashAppPayment, ClubPaymentTier, ClubPaymentTierVariant, CryptoPayment, Decimal, VenmoPayment, ZellePayment, One-time script: backfill group names for all linked groups using the Telegram B (+80 more)
+Cohesion: 0.26
+Nodes (18): Club, datetime, MethodVariant, Session, CooldownBypass, CustomCommand, PaymentMethod, PaymentMethodTier (+10 more)
 
 ### Community 46 - "Community 46"
 Cohesion: 0.05
@@ -873,11 +874,11 @@ Nodes (41): 1. Read the screenshot (if present), 2. Wrap the element, 3. Load th
 
 ### Community 50 - "Community 50"
 Cohesion: 0.06
-Nodes (76): datetime, Decimal, VenmoPayment, BindResult, datetime, Decimal, IngestResult, ZellePayment (+68 more)
+Nodes (118): BindResult, CashAppPayment, datetime, Decimal, IngestResult, BindResult, CryptoPayment, Decimal (+110 more)
 
 ### Community 51 - "Community 51"
-Cohesion: 0.50
-Nodes (3): KpiTone, Props, TONE_VALUE_CLASS
+Cohesion: 0.05
+Nodes (26): BindAttemptRow, BindingSummary, BoundViaFilter, fetchBindingSummary(), LINKING_METHOD_OPTIONS, LinkingMethodSlug, listBindAttempts(), listGroupBindings() (+18 more)
 
 ### Community 52 - "Community 52"
 Cohesion: 0.06
@@ -888,20 +889,20 @@ Cohesion: 0.06
 Nodes (39): Assess Current Layout, Break Card Grid Monotony, Choose the Right Layout Tool, Create Visual Rhythm, Establish a Spacing System, Improve Layout Systematically, Live-mode signature params, Manage Depth & Elevation (+31 more)
 
 ### Community 54 - "Community 54"
-Cohesion: 0.08
-Nodes (59): create_app(), FastAPI, create_token(), LoginRequest, TokenResponse, ClubPaymentSubOption, find_clubgto_club(), main() (+51 more)
+Cohesion: 0.24
+Nodes (17): _clear_tier_stripe_fields(), find_creator_club(), _is_null_or_zero_accumulated(), main(), Club, ClubPaymentMethod, ClubPaymentSubOption, ClubPaymentTier (+9 more)
 
 ### Community 55 - "Community 55"
 Cohesion: 0.08
 Nodes (30): borderWidthsFromStyle(), buildSelectorSegment(), checkBorders(), checkElementBorders(), checkElementBordersDOM(), checkElementGptBorderShadow(), checkElementGptBorderShadowDOM(), checkElementItalicSerif() (+22 more)
 
 ### Community 56 - "Community 56"
-Cohesion: 0.09
-Nodes (15): _make_app(), FastAPI, API tests for Stripe deposit-context lookup (Zapier)., StripeDepositApiTestCase, FakeQuery, FakeSessionStore, _make_store_with_customer(), Unit tests for Stripe deposit customer + checkout session attachment. (+7 more)
+Cohesion: 0.08
+Nodes (44): Request, Any, datetime, Decimal, deposit_context(), Stripe deposit context lookup for Zapier (Glide) Confirm Stripe Payments., Return current group title and player fields for a Stripe customer (Zapier)., Stripe webhook: update checkout session amount/status on complete or expire. (+36 more)
 
 ### Community 57 - "Community 57"
-Cohesion: 0.02
-Nodes (109): datetime, One Venmo deposit ingested from Zapier; optionally bound to a support group., Remember last bind: normalized payer name -> support group (any shared Venmo)., VenmoPayerBinding, VenmoPayment, main(), DmSummary, allocate_setup_amount_cents() (+101 more)
+Cohesion: 0.08
+Nodes (14): Remember last bind: normalized payer name -> support group (any shared Venmo)., VenmoPayerBinding, ExistingVenmoLink, find_existing_venmo_link_for_setup(), Return an existing Venmo link that should block setup (payer bound elsewhere)., _mock_club_payment_method(), TestExistingVenmoLink, TestValidateFirstTimeLinking (+6 more)
 
 ### Community 58 - "Community 58"
 Cohesion: 0.07
@@ -912,7 +913,7 @@ Cohesion: 0.08
 Nodes (30): borderWidthsFromStyle(), buildSelectorSegment(), checkBorders(), checkElementBorders(), checkElementBordersDOM(), checkElementGptBorderShadow(), checkElementGptBorderShadowDOM(), checkElementItalicSerif() (+22 more)
 
 ### Community 60 - "Community 60"
-Cohesion: 0.06
+Cohesion: 0.05
 Nodes (37): Any, Any, is_joinable_invite_url(), notification_group_chat_url(), Telegram chat id equivalence (supergroup -100… vs legacy forms)., Build a ``t.me/c/…`` URL for a Telegram supergroup or channel chat id.      Basi, True when URL is a Telegram invite link that lets non-members join., Member-only deep link for notifications; never a joinable invite link.      Only (+29 more)
 
 ### Community 61 - "Community 61"
@@ -952,8 +953,8 @@ Cohesion: 0.14
 Nodes (23): beginEditPin(), buildInsertPlaceholderSnapshotFromDom(), cancelEditingPin(), captureAndEmit(), checkpointPayload(), finalizeEditingPin(), handleGo(), handleInsertCreate() (+15 more)
 
 ### Community 70 - "Community 70"
-Cohesion: 0.14
-Nodes (40): _payment_v2(), Decimal, Decimal, DEFAULT_TYPE, Update, amount_received(), cashout_dm_entry(), _cleanup_user_data() (+32 more)
+Cohesion: 0.03
+Nodes (118): get_db(), Context manager that yields a SQLAlchemy session with auto-commit/rollback., _find_tier(), main(), Move rotation variants (Cashapp Stripe, Cashapp Account 1) from Under to Over am, main(), list_tier_variants(), pick_variant() (+110 more)
 
 ### Community 71 - "Community 71"
 Cohesion: 0.06
@@ -1012,8 +1013,8 @@ Cohesion: 0.26
 Nodes (9): cli(), COMMON_DEV_PORTS, devServerSignals(), gatherSignals(), gitSignals(), hasCode(), SCANNABLE_EXT, scanTargets() (+1 more)
 
 ### Community 85 - "Community 85"
-Cohesion: 0.16
-Nodes (19): PaymentBindingEvent, Append-only audit log for payment/group binding and notification sync., IsolatedAsyncioTestCase, BindingEventRecord, Persisted audit log for payment binding and notification sync., Record auto-bind (if any) and initial notification delivery for ingest., Edit a payment notification and persist the outcome. Returns True on success., record_binding_event() (+11 more)
+Cohesion: 0.17
+Nodes (13): PaymentBindingEvent, Append-only audit log for payment/group binding and notification sync., IsolatedAsyncioTestCase, BindingEventRecord, Persisted audit log for payment binding and notification sync., record_binding_event(), record_binding_event_in_session(), record_group_binding_event() (+5 more)
 
 ### Community 86 - "Community 86"
 Cohesion: 0.10
@@ -1029,11 +1030,11 @@ Nodes (29): clearStoredManualApplyState(), copyToClipboard(), fetchPendingCount(
 
 ### Community 89 - "Community 89"
 Cohesion: 0.09
-Nodes (43): Return known equivalent ids for the same Telegram chat., telegram_chat_id_variants(), BackupGroupRow, basic_groups_from_backup(), find_earliest_upgrade_backup(), _is_supergroup_chat_id(), parse_groups_table_from_dump(), Path (+35 more)
+Nodes (15): StripeDepositContext, _make_app(), FastAPI, API tests for Stripe deposit-context lookup (Zapier)., StripeDepositApiTestCase, FakeQuery, FakeSessionStore, _make_store_with_customer() (+7 more)
 
 ### Community 90 - "Community 90"
-Cohesion: 0.04
-Nodes (88): DEFAULT_TYPE, Update, ClubGcConfig, Any, ClubGcConfig, Bot, ClubGcConfig, get_club_gc_config_by_link_club_id() (+80 more)
+Cohesion: 0.08
+Nodes (51): _database_url(), get_engine(), Return known equivalent ids for the same Telegram chat., telegram_chat_id_variants(), telegram_chat_ids_match(), _backfill(), BackfillSummary, _export_invite_link_backfill() (+43 more)
 
 ### Community 91 - "Community 91"
 Cohesion: 0.15
@@ -1064,8 +1065,8 @@ Cohesion: 0.12
 Nodes (14): DEFAULT_TYPE, Update, Admin /refresh: restart all Heroku dynos (DM only)., refresh_handler(), get_heroku_app_name(), _heroku_api_key(), heroku_restart_configured(), Restart Heroku dynos via Platform API (admin /refresh). (+6 more)
 
 ### Community 98 - "Community 98"
-Cohesion: 0.12
-Nodes (7): _completed_checkout_payload(), FakeCheckoutQuery, FakeCheckoutStore, Tests for Stripe checkout.session.completed webhook recording., StripeNotificationFormatTestCase, StripeWebhookApiTestCase, StripeWebhookHandlerTestCase
+Cohesion: 0.09
+Nodes (8): CashAppPaymentsHelpersTestCase, _completed_checkout_payload(), FakeCheckoutQuery, FakeCheckoutStore, Tests for Stripe checkout.session.completed webhook recording., StripeNotificationFormatTestCase, StripeWebhookApiTestCase, StripeWebhookHandlerTestCase
 
 ### Community 99 - "Community 99"
 Cohesion: 0.16
@@ -1076,12 +1077,12 @@ Cohesion: 0.16
 Nodes (26): acceptCli(), argVal(), deindentContent(), detectCommentSyntax(), escapeRegExp(), expandReplaceRange(), EXTENSIONS, extractCss() (+18 more)
 
 ### Community 101 - "Community 101"
-Cohesion: 0.09
-Nodes (30): get_migration_recovery_batch_size(), get_migration_recovery_disabled_clubs(), is_migration_recovery_enabled(), is_migration_recovery_enabled_for_club(), migration_recovery_active_club_keys(), Club keys excluded from the migration recovery cron (env list + per-club false)., Clubs processed when ``GC_MIGRATION_RECOVERY_ENABLED`` is on., Background batch re-add for migrated supergroups (worker job_queue). (+22 more)
+Cohesion: 0.08
+Nodes (33): DEFAULT_TYPE, Update, build_club_gc_config(), _env_bool(), _env_csv_tuple(), _env_float(), _env_int(), _env_optional() (+25 more)
 
 ### Community 102 - "Community 102"
-Cohesion: 0.23
-Nodes (13): Request, deposit_context(), Stripe deposit context lookup for Zapier (Glide) Confirm Stripe Payments., Return current group title and player fields for a Stripe customer (Zapier)., Stripe webhook: update checkout session amount/status on complete or expire., stripe_webhook(), _verify_lookup_secret(), apply_checkout_session_webhook_event() (+5 more)
+Cohesion: 0.16
+Nodes (21): ClubGcConfig, Any, ClubGcConfig, get_gc_users_to_add(), Resolve staff invite list at runtime (env + defaults).      Prefer this over ``c, check_players_in_group(), CheckPlayerResult, format_check_player_result() (+13 more)
 
 ### Community 103 - "Community 103"
 Cohesion: 0.12
@@ -1096,8 +1097,8 @@ Cohesion: 0.15
 Nodes (26): applyBufferedManualEditToLines(), argVal(), buildCssAuthoring(), buildCssSelectorPrefixExamples(), buildSearchQueries(), countOccurrences(), detectCommentSyntax(), detectStyleMode() (+18 more)
 
 ### Community 106 - "Community 106"
-Cohesion: 0.14
-Nodes (30): Any, ReaddGroupResult, MigratedGroupRecovery, MigrationRecoveryControl, FloodWaitAbortError, _load_row(), main(), _process_with_client() (+22 more)
+Cohesion: 0.08
+Nodes (41): get_migration_recovery_invite_delay_sec(), MigrationRecoveryControl, Singleton row: auto-disable state for migration recovery worker cron., FloodWaitObserver, FloodWaitPolicy, ReaddGroupResult, _process_with_client(), set_flood_wait_observer() (+33 more)
 
 ### Community 107 - "Community 107"
 Cohesion: 0.12
@@ -1124,8 +1125,8 @@ Cohesion: 0.15
 Nodes (26): applyBufferedManualEditToLines(), argVal(), buildCssAuthoring(), buildCssSelectorPrefixExamples(), buildSearchQueries(), countOccurrences(), detectCommentSyntax(), detectStyleMode() (+18 more)
 
 ### Community 113 - "Community 113"
-Cohesion: 0.27
-Nodes (22): LinkedGroupRow, _affected_groups_from_backup(), _default_affected_csv_path(), _default_csv_path(), list_affected_groups(), main(), _migrated_linked_rows(), _print_human() (+14 more)
+Cohesion: 0.10
+Nodes (47): LinkedGroupRow, AffectedMigratedGroup, BackupGroupRow, basic_groups_from_backup(), _is_supergroup_chat_id(), parse_groups_table_from_dump(), Path, Read ``groups`` rows from a local ``pg_dump`` custom-format backup (no live DB w (+39 more)
 
 ### Community 114 - "Community 114"
 Cohesion: 0.11
@@ -1156,24 +1157,24 @@ Cohesion: 0.07
 Nodes (27): `broadcast_jobs`, `club_linked_accounts`, `club_payment_methods`, `club_payment_sub_options`, `club_payment_tier_variants`, `club_payment_tiers`, `clubs`, Constraints summary (+19 more)
 
 ### Community 121 - "Community 121"
-Cohesion: 0.17
-Nodes (13): _gc_display_name(), _ClubClientPool, DepositGroupTarget, DmTracker, _precheck_target(), _process_target_apply(), _process_target_dry(), Append-only log of who was DM'd, in send order. (+5 more)
+Cohesion: 0.14
+Nodes (24): DEFAULT_TYPE, Update, lookup_handler(), _parse_title_args(), Admin /lookup: resolve Telegram group chat id from stored group title., _resolve_club_id_for_lookup(), _resolve_group_to_ids(), _club_name_for_id() (+16 more)
 
 ### Community 122 - "Community 122"
 Cohesion: 0.11
 Nodes (21): checkBorders(), checkElementBorders(), checkElementBordersDOM(), checkElementGlow(), checkElementGlowDOM(), checkElementItalicSerif(), checkElementItalicSerifDOM(), checkElementMotion() (+13 more)
 
 ### Community 123 - "Community 123"
-Cohesion: 0.18
-Nodes (16): ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant, Decimal, get_lowest_minimum(), get_method_by_id(), get_methods_for_amount(), get_tier_for_amount() (+8 more)
+Cohesion: 0.19
+Nodes (23): Club, find_creator_club(), main(), Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant, Session (+15 more)
 
 ### Community 124 - "Community 124"
 Cohesion: 0.08
 Nodes (24): Component translation rules, Narrative mapping, Pitfalls, Scan mode (approach C: auto-extract, then confirm descriptive language), Schema, Seed mode, Step 1: Confirm seed mode, Step 1: Find the design assets (+16 more)
 
 ### Community 125 - "Community 125"
-Cohesion: 0.25
-Nodes (26): addLinkedAccount(), deleteLinkedAccount(), Club, Session, ClubCreate, ClubRead, ClubUpdate, GroupRead (+18 more)
+Cohesion: 0.24
+Nodes (27): addLinkedAccount(), deleteLinkedAccount(), listLinkedAccounts(), Club, Session, ClubCreate, ClubRead, ClubUpdate (+19 more)
 
 ### Community 126 - "Community 126"
 Cohesion: 0.15
@@ -1260,8 +1261,8 @@ Cohesion: 0.20
 Nodes (20): augmentEventWithAcceptHandling(), buildAcceptScriptArgs(), buildPollReplyPayload(), EVENT_TYPES_NEEDING_AGENT_REPLY, fetchNextEvent(), fetchServerStatus(), handlePollError(), isEventPending() (+12 more)
 
 ### Community 147 - "Community 147"
-Cohesion: 0.16
-Nodes (21): Decimal, _checkout_product_data(), _create_custom_amount_price_id(), create_stripe_checkout_session(), format_stripe_method_label(), get_or_create_stripe_customer(), lookup_deposit_context_by_customer_id(), Stripe Checkout for per-request debit-card deposits (one customer per group chat (+13 more)
+Cohesion: 0.11
+Nodes (23): applyPlaceholderDimensions(), applyPlaceholderSizingStyles(), clearHandled(), createInsertPlaceholder(), cycleVariant(), detectInsertAxis(), detectInsertAxisFromStyle(), ensureInsertPlaceholder() (+15 more)
 
 ### Community 148 - "Community 148"
 Cohesion: 0.18
@@ -1300,8 +1301,8 @@ Cohesion: 0.18
 Nodes (17): buildUpdateDirective(), cli(), compareSemver(), computeUpdateDirective(), DESIGN_NAMES, extractRegister(), FALLBACK_DIRS, fetchLatestSkillVersion() (+9 more)
 
 ### Community 157 - "Community 157"
-Cohesion: 0.18
-Nodes (22): DEFAULT_TYPE, Update, DEFAULT_TYPE, Update, _can_use_non_customer_custom_command(), command_router(), delete_handler(), _is_admin() (+14 more)
+Cohesion: 0.11
+Nodes (34): DEFAULT_TYPE, Update, DEFAULT_TYPE, Update, DEFAULT_TYPE, Update, bypass_handler(), bypass_permanent_handler() (+26 more)
 
 ### Community 158 - "Community 158"
 Cohesion: 0.18
@@ -1340,8 +1341,8 @@ Cohesion: 0.19
 Nodes (27): get_current_admin(), _get_secret(), verify_password(), createBroadcastGroup(), deleteBroadcastGroup(), listBroadcastGroups(), Session, BroadcastGroup (+19 more)
 
 ### Community 167 - "Community 167"
-Cohesion: 0.13
-Nodes (8): is_analytics_excluded_group_title(), True for staging/test support groups excluded from dashboard analytics., Return concrete bound_via values for a filter param, or None for no filter., _resolve_bound_via_filter(), _make_app(), PaymentsApiTestCase, FastAPI, API tests for payments dashboard routes.
+Cohesion: 0.17
+Nodes (5): is_analytics_excluded_group_title(), True for staging/test support groups excluded from dashboard analytics., _make_app(), PaymentsApiTestCase, FastAPI
 
 ### Community 168 - "Community 168"
 Cohesion: 0.18
@@ -1352,8 +1353,8 @@ Cohesion: 0.18
 Nodes (15): appendOriginToDirective(), buildTagBlock(), commentClose(), commentOpen(), CONFIG_PATH, __dirname, findCspMetaTags(), getAttr() (+7 more)
 
 ### Community 170 - "Community 170"
-Cohesion: 0.13
-Nodes (36): get_session(), Session, Create greenfield v2 payment config tables (club_payment_*).  Run once with DATA, _assert_no_buy_link(), find_clubgto_club(), main(), Club, ClubPaymentMethod (+28 more)
+Cohesion: 0.29
+Nodes (18): MethodVariant, Weighted response variants for a payment method or tier (load-balancing / rotati, build_rows(), _cell(), _has_response(), main(), _method_row(), _preview() (+10 more)
 
 ### Community 171 - "Community 171"
 Cohesion: 0.16
@@ -1480,20 +1481,20 @@ Cohesion: 0.50
 Nodes (4): List group chat ids for a player, Send a message to a group chat, Sync nicknames from gg-computer (Postgres backfill), Weekly stats (Telegram messaging)
 
 ### Community 202 - "Community 202"
-Cohesion: 0.09
-Nodes (47): Request, BindResult, CashAppPayment, datetime, Decimal, IngestResult, Decimal, CashAppPayerBinding (+39 more)
+Cohesion: 0.06
+Nodes (99): analytics_excluded_chat_ids_query(), _analytics_excluded_title_sql(), apply_analytics_payment_exclusion(), apply_cashapp_payer_search(), apply_venmo_payer_search(), apply_zelle_payer_search(), apply_zelle_summary_filters(), build_crypto_payment_read() (+91 more)
 
 ### Community 203 - "Community 203"
 Cohesion: 0.17
 Nodes (8): CSS_IN_JS_EXTENSIONS, detectText(), extractCSSinJS(), extractStyleBlocks(), REGEX_ANALYZERS, REGEX_MATCHERS, runRegexMatchers(), TEXT_CONTENT_ANALYZER_IDS
 
 ### Community 204 - "Community 204"
-Cohesion: 0.19
-Nodes (27): ClubPaymentTierVariant, find_round_table_club(), main(), Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant, Decimal (+19 more)
+Cohesion: 0.20
+Nodes (26): ClubPaymentTierVariant, find_clubgto_club(), Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant, Session, seed() (+18 more)
 
 ### Community 205 - "Community 205"
-Cohesion: 0.11
-Nodes (23): applyPlaceholderDimensions(), applyPlaceholderSizingStyles(), clearHandled(), createInsertPlaceholder(), cycleVariant(), detectInsertAxis(), detectInsertAxisFromStyle(), ensureInsertPlaceholder() (+15 more)
+Cohesion: 0.16
+Nodes (20): ClubGcConfig, Path, TelegramClient, MtProtoSessionCredential, Portable Telethon StringSession payloads for MTProto (/gc); shared by web + work, _db_sessions_enabled(), delete_session_for_club(), export_authorization_string() (+12 more)
 
 ### Community 206 - "Community 206"
 Cohesion: 0.20
@@ -1556,8 +1557,8 @@ Cohesion: 0.23
 Nodes (9): applyEvent(), baseSnapshot(), COMPLETED_PHASES, getJournalPath(), getSnapshotPath(), rebuildSnapshotFromJournal(), safeSessionId(), toPendingEvent() (+1 more)
 
 ### Community 222 - "Community 222"
-Cohesion: 0.09
-Nodes (48): DEFAULT_TYPE, Update, cashout_amount_received(), cashout_cancel(), cashout_entry(), cashout_method_chosen(), cashout_simple_amount_received(), cashout_sub_chosen() (+40 more)
+Cohesion: 0.06
+Nodes (72): DEFAULT_TYPE, Update, Decimal, _payment_v2(), Decimal, Any, cashout_amount_received(), cashout_cancel() (+64 more)
 
 ### Community 223 - "Community 223"
 Cohesion: 0.19
@@ -1600,8 +1601,8 @@ Cohesion: 0.32
 Nodes (10): kebab(), listSnapshotsForSlug(), main(), nowFilenameStamp(), parseFrontmatter(), readLatestSnapshot(), readTrend(), serializeFrontmatter() (+2 more)
 
 ### Community 233 - "Community 233"
-Cohesion: 0.33
-Nodes (11): find_round_table_club(), main(), Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant, Session, seed() (+3 more)
+Cohesion: 0.27
+Nodes (19): _copy_method_variants(), _copy_response_to_tier(), _ensure_default_tier(), _is_rotation_variant_label(), _labels_on_tier(), main(), _method_has_response(), migrate_method() (+11 more)
 
 ### Community 234 - "Community 234"
 Cohesion: 0.17
@@ -1648,8 +1649,8 @@ Cohesion: 0.32
 Nodes (10): kebab(), listSnapshotsForSlug(), main(), nowFilenameStamp(), parseFrontmatter(), readLatestSnapshot(), readTrend(), serializeFrontmatter() (+2 more)
 
 ### Community 245 - "Community 245"
-Cohesion: 0.20
-Nodes (20): BaseException, LinkedGroupRow, FloodWaitObserver, FloodWaitPolicy, call_with_flood_retry(), error_label(), export_invite_link(), invite_marker() (+12 more)
+Cohesion: 0.15
+Nodes (19): BaseException, LinkedGroupRow, call_with_flood_retry(), error_label(), export_invite_link(), invite_marker(), invite_user_id(), is_privacy_error() (+11 more)
 
 ### Community 246 - "Community 246"
 Cohesion: 0.67
@@ -1664,12 +1665,12 @@ Cohesion: 0.33
 Nodes (5): Commands, Dashboard (React + Vite), graphify, Python (backend), Tests (Stripe deposit)
 
 ### Community 249 - "Community 249"
-Cohesion: 0.12
-Nodes (22): DEFAULT_TYPE, Update, DEFAULT_TYPE, Update, Any, ClubGcConfig, gc_mtproto_operator_telegram_user_ids(), Club MTProto `/gc` admin Telegram user IDs (Round Table / Creator Club / ClubGTO (+14 more)
+Cohesion: 0.26
+Nodes (17): cancelBroadcast(), getBroadcastStatus(), Bot, Session, BroadcastJob, BroadcastJob, broadcast(), BroadcastJobRead (+9 more)
 
 ### Community 250 - "Community 250"
-Cohesion: 0.18
-Nodes (17): Decimal, InlineKeyboardMarkup, Return True unless BOT_USE_PAYMENT_V2 is explicitly disabled (0/false/no/off)., use_payment_v2(), deposit_amount_received(), _deposit_method_buttons(), deposit_method_chosen(), _first_time_setup_ack_markup() (+9 more)
+Cohesion: 0.28
+Nodes (14): _chat_id_variants_from_rows(), _club_name_by_key(), crossref_gap(), _default_deposits_migrated_csv(), _gap_rows_for_club(), _is_excluded(), _load_affected(), _load_csv_rows() (+6 more)
 
 ### Community 251 - "Community 251"
 Cohesion: 0.23
@@ -1736,8 +1737,8 @@ Cohesion: 0.25
 Nodes (9): __dirname, findHarnessDirs(), generatePinnedSkill(), HARNESS_DIRS, loadCommandMetadata(), pin(), root, unpin() (+1 more)
 
 ### Community 267 - "Community 267"
-Cohesion: 0.08
-Nodes (71): analytics_excluded_chat_ids_query(), _analytics_excluded_title_sql(), apply_analytics_chat_exclusion(), apply_analytics_payment_exclusion(), apply_cashapp_payer_search(), apply_cashapp_payment_filters(), apply_crypto_payment_filters(), apply_customer_search() (+63 more)
+Cohesion: 0.13
+Nodes (43): apply_analytics_chat_exclusion(), apply_cashapp_payment_filters(), apply_customer_search(), _apply_manual_payment_club_filters(), apply_session_filters(), apply_venmo_payment_filters(), apply_zelle_payment_filters(), build_cashapp_payment_read() (+35 more)
 
 ### Community 268 - "Community 268"
 Cohesion: 0.18
@@ -1864,8 +1865,8 @@ Cohesion: 0.22
 Nodes (6): buildImportGraph(), FRAMEWORK_CONFIGS, HTML_EXTENSIONS, resolveImport(), SCANNABLE_EXTENSIONS, SKIP_DIRS
 
 ### Community 299 - "Community 299"
-Cohesion: 0.16
-Nodes (18): _message_body(), payment_bind_reply_handler(), Reply-to-bind handler for payment notifications (Cash App, Venmo, Zelle, Crypto), Backward-compatible alias for payment_bind_reply_handler., Only bind when staff replied to an actual payment notification post., _reply_targets_payment_notification(), venmo_bind_reply_handler(), debug_notification_enabled() (+10 more)
+Cohesion: 0.13
+Nodes (23): Request, debug_notification_enabled(), Shared env keys for the payment notification bot (all payment types)., True when DEBUG_NOTIFICATION is 1, true, yes, or on., CashAppPaymentIngestBody, CashAppPaymentIngestResponse, ingest_payment(), _nested_data_dict() (+15 more)
 
 ### Community 300 - "Community 300"
 Cohesion: 0.44
@@ -1876,8 +1877,8 @@ Cohesion: 0.27
 Nodes (10): acknowledgePendingEvent(), agentPollingConnected(), broadcastAgentPollingIfChanged(), enqueueEvent(), findAvailablePendingEvent(), flushPendingPolls(), handlePollGet(), leaseEvent() (+2 more)
 
 ### Community 302 - "Community 302"
-Cohesion: 0.11
-Nodes (28): Decimal, Any, Decimal, Decimal, Any, CashierCashoutJob, complete_cashout_job(), Complete a cashier cashout job: Zapier, owed pin/ASAP, cooldown. (+20 more)
+Cohesion: 0.25
+Nodes (14): _configure_api_logging(), Send application logging to stderr on the web dyno (Heroku shows only uvicorn ot, _configure_logging(), _eligible_labels_from_result(), GroupScanRow, _is_group_dialog(), main(), _player_labels() (+6 more)
 
 ### Community 303 - "Community 303"
 Cohesion: 1.00
@@ -1900,8 +1901,8 @@ Cohesion: 0.20
 Nodes (9): Color, Components, Layout, Motion, Product bans (on top of the shared absolute bans), Product permissions, Product register, The product slop test (+1 more)
 
 ### Community 308 - "Community 308"
-Cohesion: 0.35
-Nodes (14): _count_toward_send_limit(), _default_failed_csv(), _default_input_csv(), _default_results_csv(), _default_tracker_csv(), DmResult, _failed_dm_results(), _load_targets_from_csv() (+6 more)
+Cohesion: 0.19
+Nodes (14): configureVoiceContext(), finishVoiceSession(), isEmbeddedPreviewBrowser(), releaseVoiceEngine(), startVoice(), steerSpeechRecognitionCtor(), steerVoiceContext(), steerVoiceErrorMessage() (+6 more)
 
 ### Community 309 - "Community 309"
 Cohesion: 0.22
@@ -1964,12 +1965,12 @@ Cohesion: 0.20
 Nodes (10): API, Code references, Dashboard: Payments page, Database tables, Environment, Flow, Manual bind, Notification format (+2 more)
 
 ### Community 324 - "Community 324"
-Cohesion: 0.19
-Nodes (14): configureVoiceContext(), finishVoiceSession(), isEmbeddedPreviewBrowser(), releaseVoiceEngine(), startVoice(), steerSpeechRecognitionCtor(), steerVoiceContext(), steerVoiceErrorMessage() (+6 more)
+Cohesion: 0.23
+Nodes (11): Decimal, Decimal, initiate_group_cash_job(), Initiate a group /cash cashout job (shared by support bot and MTProto)., Create job and notify staff. Returns job id., _format_amount(), notify_staff_cashout_job(), Notify staff via GGCashier bot DM after /cash in a support group. (+3 more)
 
 ### Community 325 - "Community 325"
-Cohesion: 0.09
-Nodes (67): CashierCashoutJob, GroupPaymentMethodBinding, PaymentMethodBindAttempt, PlayerActivity, In-flight first-time payment method setup (special amount or memo emoji)., Per-group-chat link to a deposit payment method (e.g. Venmo variant)., Tracks completed deposits and cashouts per player per club for cooldown logic., Staff cashout wizard jobs (GGCashier bot). (+59 more)
+Cohesion: 0.14
+Nodes (31): _as_utc(), _build_chat_maps(), _build_invite_target_rows(), _build_summary_rows(), _build_user_rows(), _check_player_membership(), _collect_activity(), _configure_logging() (+23 more)
 
 ### Community 326 - "Community 326"
 Cohesion: 0.24
@@ -2040,8 +2041,8 @@ Cohesion: 0.20
 Nodes (10): 1. Ingest, 2. Staff notification, 3. Manual bind (staff), 4. Repeat payers, Part 1 — Venmo payment tracking (manual workflow), Ingest, Manual bind, Part 1 — Zelle payment tracking (+2 more)
 
 ### Community 343 - "Community 343"
-Cohesion: 0.33
-Nodes (13): _default_failed_csv(), _default_input_paths(), _default_results_csv(), _default_tracker_csv(), _failed_row_dict(), _gap_csv_path(), _load_failed_csv(), _load_gap_targets() (+5 more)
+Cohesion: 0.35
+Nodes (12): find_round_table_club(), main(), Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant, Session, seed() (+4 more)
 
 ### Community 344 - "Community 344"
 Cohesion: 0.28
@@ -2304,16 +2305,16 @@ Cohesion: 0.40
 Nodes (6): checkRepeatedSectionKickers(), checkRepeatedSectionKickersDOM(), checkRepeatedSectionKickersFromDoc(), cleanInlineText(), collectRepeatedSectionKickerCandidates(), isRepeatedKickerCandidate()
 
 ### Community 409 - "Community 409"
-Cohesion: 0.67
-Nodes (3): audit, argumentHint, description
+Cohesion: 0.35
+Nodes (12): _cell(), _default_output_dir(), export_all(), _export_club_messages(), main(), _model_columns(), Path, Session (+4 more)
 
 ### Community 410 - "Community 410"
 Cohesion: 0.17
 Nodes (11): API-only boot, Files involved, Heroku: API + React dashboard on one dyno, Invite link backfill (`support_group_chats.invite_link`), Migrated supergroup recovery (direct-add cron on worker), MTProto scripts vs worker, Notification bot (`notification` dyno), One-time setup (+3 more)
 
 ### Community 411 - "Community 411"
-Cohesion: 0.26
-Nodes (17): cancelBroadcast(), getBroadcastStatus(), Bot, Session, BroadcastJob, BroadcastJob, broadcast(), BroadcastJobRead (+9 more)
+Cohesion: 0.21
+Nodes (7): allocate_setup_amount_cents(), allocate_setup_memo_code(), _expire_stale_pending_for_variant(), Cycle left-to-right through SETUP_MEMO_CODE_POOL by pending memo attempt count., Assign one cent below chosen deposit amount, minus pending special_amount setups, TestAllocateSetupAmount, TestAllocateSetupMemoCode
 
 ### Community 412 - "Community 412"
 Cohesion: 0.33
@@ -2440,24 +2441,24 @@ Cohesion: 0.70
 Nodes (4): fetchServerStatus(), findPendingManualApply(), readServerInfo(), statusCli()
 
 ### Community 445 - "Community 445"
-Cohesion: 0.33
-Nodes (11): find_round_table_club(), main(), Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant, Session, seed() (+3 more)
+Cohesion: 0.31
+Nodes (13): find_clubgto_club(), main(), Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant, Session, seed() (+5 more)
 
 ### Community 446 - "Community 446"
-Cohesion: 0.10
-Nodes (26): get_db(), Context manager that yields a SQLAlchemy session with auto-commit/rollback., _has_column(), main(), Add PaymentMethod hyperlink settings for Stripe checkout placeholders.  Adds: -, _has_column(), main(), Add per-tier Stripe group-checkout settings (same as payment_methods).  Adds to (+18 more)
+Cohesion: 0.22
+Nodes (13): ClubPaymentMethod, ClubPaymentTier, Decimal, get_lowest_minimum(), get_method_by_id(), get_methods_for_amount(), get_sub_option_by_id(), get_sub_options() (+5 more)
 
 ### Community 447 - "Community 447"
-Cohesion: 0.24
-Nodes (7): _format_account_lines(), format_readd_admin_notification(), HTML DM for the club GC admin after a migration re-add attempt., should_notify_rt_ops(), ReaddGroupResult, TestFormatReaddAdminNotification, TestShouldNotifyRtOps
+Cohesion: 0.31
+Nodes (9): _message_body(), payment_bind_reply_handler(), Reply-to-bind handler for payment notifications (Cash App, Venmo, Zelle, Crypto), Backward-compatible alias for payment_bind_reply_handler., Only bind when staff replied to an actual payment notification post., _reply_targets_payment_notification(), venmo_bind_reply_handler(), DEFAULT_TYPE (+1 more)
 
 ### Community 448 - "Community 448"
 Cohesion: 0.50
 Nodes (4): Heuristics Scoring Guide, Issue Severity (P0–P3), Reference Material, Score Summary
 
 ### Community 449 - "Community 449"
-Cohesion: 0.12
-Nodes (26): createCommand(), deleteCommand(), listCommands(), updateCommand(), Session, CommandCreate, CommandRead, CommandUpdate (+18 more)
+Cohesion: 0.30
+Nodes (14): createCommand(), deleteCommand(), listCommands(), updateCommand(), Session, CommandCreate, CommandRead, CommandUpdate (+6 more)
 
 ### Community 450 - "Community 450"
 Cohesion: 0.50
@@ -2476,8 +2477,8 @@ Cohesion: 0.50
 Nodes (3): buildpacks, description, name
 
 ### Community 455 - "Community 455"
-Cohesion: 0.24
-Nodes (15): Any, datetime, Queue for one-shot direct-add recovery after basic-group → supergroup migration., Singleton row: auto-disable state for migration recovery worker cron., Maps a support group chat to a stable Stripe Customer for debit-card deposits., One Stripe Checkout Session per /deposit Stripe request., StripeCheckoutSession, StripeCustomer (+7 more)
+Cohesion: 0.27
+Nodes (9): _has_column(), main(), Add PaymentMethod hyperlink settings for Stripe checkout placeholders.  Adds: -, _has_column(), main(), Add per-tier Stripe group-checkout settings (same as payment_methods).  Adds to, _has_column(), main() (+1 more)
 
 ### Community 456 - "Community 456"
 Cohesion: 0.50
@@ -2520,12 +2521,12 @@ Cohesion: 0.50
 Nodes (3): Expanding the ESLint configuration, React Compiler, React + TypeScript + Vite
 
 ### Community 468 - "Community 468"
-Cohesion: 0.33
-Nodes (11): find_round_table_club(), main(), Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant, Session, seed() (+3 more)
+Cohesion: 0.15
+Nodes (29): ClubPaymentMethod, ClubPaymentTier, Session, SimulateMethodOut, SimulateResponse, SubOptionRead, ClubPaymentMethodRead, Method envelope only — player copy lives on tiers and tier variants. (+21 more)
 
 ### Community 469 - "Community 469"
-Cohesion: 0.16
-Nodes (26): Backfill from Stripe + linked CSV, Missing payments on the dashboard, already_recorded(), backfill_from_stripe_range(), backfill_one(), enrich_checkout_dict(), fetch_checkout_for_payment_intent(), fetch_checkout_session() (+18 more)
+Cohesion: 0.09
+Nodes (38): 1. Keep Stripe trigger, 2. Add lookup step (before Glide / Telegram), 3. Use lookup fields in later steps, 4. Lookup API response shape, Backfill from Stripe + linked CSV, Bot flow, Code references, Dashboard: Payments page (+30 more)
 
 ### Community 470 - "Community 470"
 Cohesion: 0.50
@@ -2540,12 +2541,12 @@ Cohesion: 0.67
 Nodes (3): Keyboard Navigation Patterns, Roving Tabindex, Skip Links
 
 ### Community 476 - "Community 476"
-Cohesion: 0.44
-Nodes (3): map_readd_status(), Map ReaddGroupResult to (readd_status, last_error)., TestMapReaddStatus
+Cohesion: 0.11
+Nodes (32): Any, FloodWaitAbortError, GroupAgg, MigratedGroupRow, AffectedMigratedGroup, FloodWaitAbortError, Raised when flood-wait policy is abort (migration recovery halt)., ReaddGroupResult (+24 more)
 
 ### Community 481 - "Community 481"
-Cohesion: 0.08
-Nodes (52): BindResult, CryptoPayment, Decimal, IngestResult, CryptoPayment, CryptoWalletBinding, Remember last bind: wallet address + alert scope -> support group., One on-chain deposit ingested from Arkham/Zapier; bound to a support group. (+44 more)
+Cohesion: 0.11
+Nodes (17): apply_crypto_payment_filters(), alert_scope_for_club_id(), alert_scope_for_club_name(), normalize_from_address(), Normalize wallet address for binding lookup (EVM addresses are case-insensitive), Map Arkham alert name to clubgto or rt_at_cc bucket., Return BindResult error when group club does not match payment alert scope., resolve_alert_scope() (+9 more)
 
 ### Community 482 - "Community 482"
 Cohesion: 0.67
@@ -2576,12 +2577,12 @@ Cohesion: 0.67
 Nodes (3): colorize, argumentHint, description
 
 ### Community 549 - "Community 549"
-Cohesion: 0.05
-Nodes (72): DEFAULT_TYPE, Update, BindResult, DEFAULT_TYPE, Update, GG player id scoped to a club; Telegram group chats stored as bigint array (no F, lookup_handler(), _parse_title_args() (+64 more)
+Cohesion: 0.08
+Nodes (43): BindResult, DEFAULT_TYPE, Update, DEFAULT_TYPE, Update, Bot, _bind_from_title(), _bind_result() (+35 more)
 
 ### Community 550 - "Community 550"
-Cohesion: 0.29
-Nodes (6): API, Behavior, Changing the primary ID, Configuration, Database / deployment, Linked Telegram accounts (multi-account clubs)
+Cohesion: 0.33
+Nodes (11): find_clubgto_club(), main(), Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant, Session, seed() (+3 more)
 
 ### Community 551 - "Community 551"
 Cohesion: 0.29
@@ -2600,8 +2601,8 @@ Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
 ### Community 555 - "Community 555"
-Cohesion: 0.15
-Nodes (13): 1. Keep Stripe trigger, 2. Add lookup step (before Glide / Telegram), 3. Use lookup fields in later steps, 4. Lookup API response shape, Bot flow, Code references, Dashboard: Payments page, Database tables (+5 more)
+Cohesion: 0.33
+Nodes (11): find_clubgto_club(), main(), Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant, Session, seed() (+3 more)
 
 ### Community 556 - "Community 556"
 Cohesion: 0.50
@@ -2749,7 +2750,7 @@ Nodes (3): clarify, argumentHint, description
 
 ### Community 594 - "Community 594"
 Cohesion: 0.09
-Nodes (19): FloodWaitAbortError, Raised when flood-wait policy is abort (migration recovery halt)., format_auto_disable_notification(), classify_priority_tier(), compute_priority_rank(), Priority tier/rank helpers for migrated_group_recovery (no Telethon deps)., Lower rank = higher priority within global ordering (tier ASC, rank ASC)., Return priority tier: 1=deposits, 2=active, 3=rest. (+11 more)
+Nodes (31): MigratedGroupRecovery, Queue for one-shot direct-add recovery after basic-group → supergroup migration., GroupAgg, MigratedGroupRow, find_earliest_upgrade_backup(), Return ``backups/upgrade_supergroup_<ts>/database.dump`` with earliest timestamp, _activity_epoch(), build_seed_candidates() (+23 more)
 
 ### Community 595 - "Community 595"
 Cohesion: 0.26
@@ -2804,12 +2805,12 @@ Cohesion: 0.67
 Nodes (3): typeset, argumentHint, description
 
 ### Community 608 - "Community 608"
-Cohesion: 0.13
-Nodes (31): ClubPaymentMethodRead, Method envelope only — player copy lives on tiers and tier variants., Create method, Delete method, Get method by ID, List methods for a club, Payment methods, Reorder methods within a club (+23 more)
+Cohesion: 0.33
+Nodes (11): find_creator_club(), main(), Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant, Session, seed() (+3 more)
 
 ### Community 613 - "Community 613"
-Cohesion: 0.29
-Nodes (5): BIND_VERIFICATION_OPTIONS, BINDABLE_DEPOSIT_SLUGS, DOC_LINK_BY_SLUG, FirstTimeBindMode, Props
+Cohesion: 0.11
+Nodes (15): V2Method, BIND_VERIFICATION_OPTIONS, BINDABLE_DEPOSIT_SLUGS, DOC_LINK_BY_SLUG, FirstTimeBindMode, Props, countAllVariants(), DETAILS_SNAPSHOT_KEYS (+7 more)
 
 ### Community 614 - "Community 614"
 Cohesion: 0.67
@@ -2835,6 +2836,10 @@ Nodes (4): Assess Current Typography, Live-mode signature params, Register, Veri
 Cohesion: 0.67
 Nodes (3): distill, argumentHint, description
 
+### Community 620 - "Community 620"
+Cohesion: 0.33
+Nodes (11): find_round_table_club(), main(), Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant, Session, seed() (+3 more)
+
 ### Community 621 - "Community 621"
 Cohesion: 0.67
 Nodes (3): clarify, argumentHint, description
@@ -2848,43 +2853,43 @@ Cohesion: 0.29
 Nodes (6): adapt, argumentHint, description, bolder, argumentHint, description
 
 ### Community 624 - "Community 624"
-Cohesion: 0.43
-Nodes (5): get_report_handler(), ConversationHandler, _configure_worker_logging(), GG Notifications bot — payment notification bind replies., run_notification_bot()
+Cohesion: 0.38
+Nodes (11): find_creator_club(), Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant, Session, seed(), upsert_method() (+3 more)
 
 ### Community 625 - "Community 625"
-Cohesion: 0.38
-Nodes (6): get_club_by_id(), is_round_table_club(), Round Table deposit unions (TMT / Massiv) and club detection., RoundTableUnion, union_label_for_shorthand(), TypedDict
+Cohesion: 0.53
+Nodes (5): _legacy_connection(), _make_payment_method(), migrate(), One-time migration from old schema (user_commands / group_club) to new structure, _read_legacy_data()
 
 ### Community 626 - "Community 626"
 Cohesion: 0.67
 Nodes (3): critique, argumentHint, description
 
 ### Community 627 - "Community 627"
-Cohesion: 0.40
-Nodes (5): main(), _payment_ids_with_notification_sync(), payments_missing_notification_sync(), Payment ids whose Telegram notification is known to show a bound group., Return bound payments with no persisted proof the Telegram message shows binding
+Cohesion: 0.33
+Nodes (6): _club_id_for_telegram_user(), Link a group to the club owned by telegram_user_id (primary or linked). Returns, Resolve club_id for a primary or linked Telegram user. None if inactive or unkno, Try to link a group to a club by matching any of the provided admin user IDs., set_group_club(), try_link_group_by_admin()
 
 ### Community 628 - "Community 628"
 Cohesion: 0.50
-Nodes (3): Shared helper for sending bot responses that may contain multiple messages., Split text on '---' line delimiter, returning non-empty stripped parts., _split_text()
+Nodes (4): check_same_club_player_conflict(), get_existing_chat_ids(), Return chat_ids array for an existing (club_id, gg_player_id) row, or None if no, If gg_player_id is already tracked by other chat(s) in the same club, return an
 
-### Community 629 - "Community 629"
+### Community 630 - "Community 630"
 Cohesion: 0.67
-Nodes (3): delete_group_binding(), Remove a binding row by primary key., unbind_by_id()
+Nodes (3): audit, argumentHint, description
 
 ## Knowledge Gaps
-- **2106 isolated node(s):** `Architecture`, `Requirements`, `Environment variables`, `1. Python dependencies`, `2. Database` (+2101 more)
+- **2106 isolated node(s):** `One-time setup`, `Invite link backfill (`support_group_chats.invite_link`)`, `Files involved`, `API-only boot`, `Migrated supergroup recovery (direct-add cron on worker)` (+2101 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **57 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `get_db()` connect `Community 446` to `Community 0`, `Community 2`, `Community 14`, `Community 15`, `Community 147`, `Community 22`, `Community 411`, `Community 157`, `Community 34`, `Community 549`, `Community 170`, `Community 43`, `Community 45`, `Community 302`, `Community 50`, `Community 308`, `Community 57`, `Community 60`, `Community 325`, `Community 70`, `Community 455`, `Community 202`, `Community 79`, `Community 594`, `Community 469`, `Community 85`, `Community 89`, `Community 90`, `Community 222`, `Community 481`, `Community 101`, `Community 102`, `Community 106`, `Community 113`, `Community 625`, `Community 627`, `Community 115`, `Community 245`, `Community 629`, `Community 250`, `Community 123`?**
+- **Why does `Club` connect `Community 123` to `Community 0`, `Community 2`, `Community 8`, `Community 267`, `Community 13`, `Community 16`, `Community 409`, `Community 27`, `Community 28`, `Community 34`, `Community 549`, `Community 166`, `Community 550`, `Community 41`, `Community 170`, `Community 42`, `Community 555`, `Community 45`, `Community 50`, `Community 54`, `Community 56`, `Community 57`, `Community 443`, `Community 60`, `Community 445`, `Community 449`, `Community 580`, `Community 325`, `Community 70`, `Community 202`, `Community 204`, `Community 79`, `Community 596`, `Community 468`, `Community 343`, `Community 89`, `Community 476`, `Community 222`, `Community 608`, `Community 620`, `Community 624`, `Community 625`, `Community 249`, `Community 125`, `Community 126`?**
   _High betweenness centrality (0.023) - this node is a cross-community bridge._
-- **Why does `Club` connect `Community 45` to `Community 0`, `Community 267`, `Community 13`, `Community 16`, `Community 147`, `Community 27`, `Community 411`, `Community 28`, `Community 34`, `Community 549`, `Community 166`, `Community 41`, `Community 42`, `Community 299`, `Community 170`, `Community 50`, `Community 308`, `Community 54`, `Community 57`, `Community 443`, `Community 60`, `Community 445`, `Community 446`, `Community 449`, `Community 580`, `Community 325`, `Community 455`, `Community 202`, `Community 204`, `Community 79`, `Community 596`, `Community 468`, `Community 222`, `Community 608`, `Community 481`, `Community 233`, `Community 121`, `Community 250`, `Community 125`, `Community 126`?**
-  _High betweenness centrality (0.017) - this node is a cross-community bridge._
-- **Why does `ClubPaymentMethodRead` connect `Community 608` to `Community 267`, `Community 140`, `Community 13`, `Community 16`, `Community 147`, `Community 24`, `Community 27`, `Community 42`, `Community 299`, `Community 170`, `Community 45`, `Community 50`, `Community 54`, `Community 57`, `Community 443`, `Community 445`, `Community 446`, `Community 580`, `Community 455`, `Community 202`, `Community 204`, `Community 468`, `Community 222`, `Community 481`, `Community 233`, `Community 120`, `Community 123`?**
-  _High betweenness centrality (0.010) - this node is a cross-community bridge._
+- **Why does `get_db()` connect `Community 70` to `Community 0`, `Community 2`, `Community 8`, `Community 13`, `Community 14`, `Community 15`, `Community 22`, `Community 409`, `Community 157`, `Community 31`, `Community 34`, `Community 549`, `Community 170`, `Community 45`, `Community 50`, `Community 56`, `Community 60`, `Community 446`, `Community 325`, `Community 455`, `Community 202`, `Community 205`, `Community 79`, `Community 594`, `Community 469`, `Community 85`, `Community 90`, `Community 222`, `Community 121`, `Community 481`, `Community 233`, `Community 106`, `Community 625`, `Community 113`, `Community 115`, `Community 627`, `Community 245`, `Community 628`, `Community 249`?**
+  _High betweenness centrality (0.016) - this node is a cross-community bridge._
+- **Why does `ClubPaymentMethodRead` connect `Community 468` to `Community 140`, `Community 13`, `Community 16`, `Community 24`, `Community 409`, `Community 27`, `Community 550`, `Community 42`, `Community 170`, `Community 555`, `Community 45`, `Community 54`, `Community 56`, `Community 57`, `Community 443`, `Community 445`, `Community 446`, `Community 580`, `Community 70`, `Community 202`, `Community 204`, `Community 343`, `Community 89`, `Community 222`, `Community 608`, `Community 233`, `Community 620`, `Community 624`, `Community 625`, `Community 120`, `Community 123`?**
+  _High betweenness centrality (0.011) - this node is a cross-community bridge._
 - **Are the 234 inferred relationships involving `Club` (e.g. with `Session` and `CashAppPayment`) actually correct?**
   _`Club` has 234 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 191 inferred relationships involving `ClubPaymentMethodRead` (e.g. with `Decimal` and `Session`) actually correct?**

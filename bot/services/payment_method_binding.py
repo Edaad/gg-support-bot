@@ -21,6 +21,8 @@ from bot.services.payment_binding_events import (
 from db.models import (
     CashAppPayerBinding,
     CashAppPayment,
+    PayPalPayerBinding,
+    PayPalPayment,
     Club,
     ClubPaymentMethod,
     ClubPaymentTier,
@@ -41,7 +43,7 @@ BIND_ATTEMPT_TTL_SECONDS = 600
 BIND_KIND_SPECIAL_AMOUNT = "special_amount"
 BIND_KIND_MEMO_EMOJI = "memo_emoji"
 
-_BINDABLE_METHOD_SLUGS = frozenset({"venmo", "zelle", "cashapp"})
+_BINDABLE_METHOD_SLUGS = frozenset({"venmo", "zelle", "cashapp", "paypal"})
 
 # Zelle first-time linking uses exact setup amount only (no memo/caption code matching).
 _ZELLE_MEMO_FIRST_TIME_BINDING_ENABLED = False
@@ -155,6 +157,10 @@ _CASHAPP_URL_RE = re.compile(
 _CASHAPP_BARE_RE = re.compile(
     r"(?<![a-zA-Z0-9])\$([a-zA-Z0-9_-]{1,30})(?![a-zA-Z0-9])",
 )
+_PAYPAL_EMAIL_RE = re.compile(
+    r"PayPal(?:\s+Email)?:\s*(\S+@\S+)",
+    re.IGNORECASE,
+)
 
 
 def _normalize_venmo_handle(handle: str) -> str:
@@ -186,6 +192,11 @@ def _normalize_cashapp_handle(handle: str) -> str:
     return f"${raw.lower()}"
 
 
+def normalize_paypal_email(email: str) -> str:
+    """Normalize PayPal business email for comparison."""
+    return (email or "").strip().lower()
+
+
 def _normalize_binding_recipient(slug: str, recipient: str | None) -> str | None:
     if not recipient:
         return None
@@ -194,6 +205,8 @@ def _normalize_binding_recipient(slug: str, recipient: str | None) -> str | None
         return normalize_zelle_recipient(recipient)
     if slug_norm == "cashapp":
         return _normalize_cashapp_handle(recipient)
+    if slug_norm == "paypal":
+        return normalize_paypal_email(recipient)
     return _normalize_venmo_handle(recipient)
 
 
@@ -300,6 +313,19 @@ def extract_cashapp_handle_from_text(text: str | None) -> Optional[str]:
     m = _CASHAPP_BARE_RE.search(text)
     if m:
         return _normalize_cashapp_handle(m.group(1))
+    return None
+
+
+def extract_paypal_email_from_text(text: str | None) -> Optional[str]:
+    if not text:
+        return None
+    m = _PAYPAL_EMAIL_RE.search(text)
+    if m:
+        return normalize_paypal_email(m.group(1))
+    if "paypal" in text.lower() and "@" in text:
+        for token in re.findall(r"\S+@\S+", text):
+            if "@" in token:
+                return normalize_paypal_email(token.rstrip(".,;"))
     return None
 
 
@@ -881,6 +907,39 @@ def match_pending_venmo_setup_in_session(
     return None
 
 
+def match_pending_paypal_setup_in_session(
+    session,
+    *,
+    amount_cents: int,
+    paypal_email: str,
+) -> Optional[PaymentMethodBindAttempt]:
+    """Return a pending bind attempt matching ingest amount + variant PayPal email."""
+    email = normalize_paypal_email(paypal_email)
+    if not email:
+        return None
+    now = datetime.now(timezone.utc)
+    _expire_stale_pending_global(session, now)
+    candidates = (
+        session.query(PaymentMethodBindAttempt)
+        .filter_by(
+            payment_method_slug="paypal",
+            bind_kind=BIND_KIND_SPECIAL_AMOUNT,
+            status=ATTEMPT_STATUS_PENDING,
+            amount_cents=int(amount_cents),
+        )
+        .filter(PaymentMethodBindAttempt.expires_at >= now)
+        .order_by(PaymentMethodBindAttempt.created_at)
+        .all()
+    )
+    for attempt in candidates:
+        if not _variant_paypal_email_matches(
+            session, int(attempt.variant_id), paypal_email
+        ):
+            continue
+        return attempt
+    return None
+
+
 def match_pending_cashapp_setup_in_session(
     session,
     *,
@@ -982,6 +1041,22 @@ def _variant_zelle_recipient_matches(
     return False
 
 
+def _variant_paypal_email_matches(
+    session, variant_id: int, paypal_email: str
+) -> bool:
+    email = normalize_paypal_email(paypal_email)
+    if not email:
+        return False
+    variant = session.query(ClubPaymentTierVariant).get(int(variant_id))
+    if not variant:
+        return False
+    for field in (variant.response_text, variant.response_caption):
+        variant_email = extract_paypal_email_from_text(field)
+        if variant_email and variant_email == email:
+            return True
+    return False
+
+
 def _variant_cashapp_handle_matches(
     session, variant_id: int, cashapp_handle: str
 ) -> bool:
@@ -1005,6 +1080,7 @@ def match_pending_memo_setup_in_session(
     venmo_handle: str = "",
     zelle_recipient: str = "",
     cashapp_handle: str = "",
+    paypal_email: str = "",
     memo: str | None,
 ) -> Optional[PaymentMethodBindAttempt]:
     """Match pending memo_emoji setup by setup code in memo + account on variant."""
@@ -1042,6 +1118,10 @@ def match_pending_memo_setup_in_session(
             continue
         if slug == "cashapp" and not _variant_cashapp_handle_matches(
             session, int(attempt.variant_id), cashapp_handle
+        ):
+            continue
+        if slug == "paypal" and not _variant_paypal_email_matches(
+            session, int(attempt.variant_id), paypal_email
         ):
             continue
         return attempt
@@ -1102,6 +1182,28 @@ def find_existing_cashapp_link_for_setup(
     normalized = _normalize_payer_name(payer_name)
     payer_row = (
         session.query(CashAppPayerBinding)
+        .filter_by(payer_name_normalized=normalized)
+        .one_or_none()
+    )
+    if payer_row is not None:
+        linked_chat_id = int(payer_row.telegram_chat_id)
+        return ExistingVenmoLink(
+            linked_chat_id=linked_chat_id,
+            via="payer_binding",
+        )
+    return None
+
+
+def find_existing_paypal_link_for_setup(
+    session,
+    *,
+    payer_name: str,
+    setup_chat_id: int,
+) -> Optional[ExistingVenmoLink]:
+    """Return an existing PayPal link that should block setup (payer bound elsewhere)."""
+    normalized = _normalize_payer_name(payer_name)
+    payer_row = (
+        session.query(PayPalPayerBinding)
         .filter_by(payer_name_normalized=normalized)
         .one_or_none()
     )
@@ -1189,6 +1291,31 @@ def get_last_bound_cashapp_deposit_at(
     return None
 
 
+def get_last_bound_paypal_deposit_at(
+    session,
+    *,
+    payer_name: str,
+    telegram_chat_id: int,
+    exclude_payment_id: int,
+) -> Optional[datetime]:
+    """Most recent bound PayPalPayment created_at for payer in chat, or None."""
+    normalized = _normalize_payer_name(payer_name)
+    rows = (
+        session.query(PayPalPayment)
+        .filter(
+            PayPalPayment.telegram_chat_id == int(telegram_chat_id),
+            PayPalPayment.id != int(exclude_payment_id),
+        )
+        .order_by(PayPalPayment.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    for row in rows:
+        if _normalize_payer_name(row.payer_name) == normalized:
+            return row.created_at
+    return None
+
+
 def cancel_setup_attempt_in_session(
     session,
     attempt: PaymentMethodBindAttempt,
@@ -1209,6 +1336,7 @@ def complete_attempt_in_session(
     venmo_payment_id: int | None = None,
     zelle_payment_id: int | None = None,
     cashapp_payment_id: int | None = None,
+    paypal_payment_id: int | None = None,
 ) -> bool:
     now = datetime.now(timezone.utc)
     if attempt.status != ATTEMPT_STATUS_PENDING or attempt.expires_at < now:
@@ -1223,6 +1351,10 @@ def complete_attempt_in_session(
     elif slug == "cashapp":
         attempt.cashapp_payment_id = (
             int(cashapp_payment_id) if cashapp_payment_id else None
+        )
+    elif slug == "paypal":
+        attempt.paypal_payment_id = (
+            int(paypal_payment_id) if paypal_payment_id else None
         )
     else:
         attempt.venmo_payment_id = int(venmo_payment_id) if venmo_payment_id else None
@@ -1577,6 +1709,15 @@ def format_first_time_payment_destination_message(
             destination = f"{_caps('Cashapp:')} {url}"
         return f"{destination}\n\n{closing}"
 
+    if slug == "paypal":
+        email = extract_paypal_email_from_text(variant_response_text) or "—"
+        if use_html:
+            safe_email = html_module.escape(email)
+            destination = f"<b>{_caps('PayPal email:')}</b> <code>{safe_email}</code>"
+        else:
+            destination = f"{_caps('PayPal email:')} {email}"
+        return f"{destination}\n\n{closing}"
+
     url = extract_venmo_url(variant_response_text) or "—"
     if use_html:
         safe_url = html_module.escape(url, quote=True)
@@ -1654,6 +1795,30 @@ def format_first_time_memo_setup_message(
             f"{_caps('Use this code exactly.')}\n\n"
             f"{body_middle}\n\n"
             f"{_caps('Cashapp:')} {url}\n\n"
+            f"{after_send}"
+        )
+
+    if slug == "paypal":
+        email = extract_paypal_email_from_text(variant_response_text) or "—"
+        if use_html:
+            safe_email = html_module.escape(email)
+            return (
+                "<b>FIRST-TIME PAYPAL SETUP</b>\n"
+                "────────────────────\n\n"
+                f"<b>{_caps('Copy and paste the code above')}</b> "
+                f"{_caps('into the note when you send to the PayPal email below.')}\n\n"
+                f"<b>{_caps('Use this code exactly.')}</b>\n\n"
+                f"{body_middle}\n\n"
+                f"<b>{_caps('PayPal email:')}</b> <code>{safe_email}</code>\n\n"
+                f"{after_send}"
+            )
+        return (
+            "FIRST-TIME PAYPAL SETUP\n"
+            "--------------------\n\n"
+            f"{_caps('Copy and paste the code above into the note when you send to the PayPal email below.')}\n\n"
+            f"{_caps('Use this code exactly.')}\n\n"
+            f"{body_middle}\n\n"
+            f"{_caps('PayPal email:')} {email}\n\n"
             f"{after_send}"
         )
 
@@ -1855,6 +2020,36 @@ def infer_variant_id_for_zelle_recipient(
     return None
 
 
+def infer_variant_id_for_paypal_email(
+    club_id: int,
+    paypal_email: str,
+) -> Optional[int]:
+    """Match email to a club PayPal variant response text."""
+    email = normalize_paypal_email(paypal_email)
+    if not email:
+        return None
+
+    with get_db() as session:
+        method = (
+            session.query(ClubPaymentMethod)
+            .filter_by(club_id=int(club_id), direction="deposit", slug="paypal")
+            .one_or_none()
+        )
+        if not method:
+            return None
+        variants = (
+            session.query(ClubPaymentTierVariant)
+            .filter_by(method_id=int(method.id))
+            .all()
+        )
+        for v in variants:
+            for field in (v.response_text, v.response_caption):
+                variant_email = extract_paypal_email_from_text(field)
+                if variant_email and variant_email == email:
+                    return int(v.id)
+    return None
+
+
 def infer_variant_id_for_cashapp_handle(
     club_id: int,
     cashapp_handle: str,
@@ -1891,4 +2086,6 @@ def _method_display_labels(slug: str) -> tuple[str, str]:
         return "ZELLE", "ZELLE APP"
     if slug == "cashapp":
         return "CASH APP", "CASH APP"
+    if slug == "paypal":
+        return "PAYPAL", "PAYPAL"
     return "VENMO", "VENMO APP"

@@ -4,6 +4,7 @@ import {
   bindVenmoPayment,
   bindZellePayment,
   bindCashAppPayment,
+  bindPayPalPayment,
   bindCryptoPayment,
   fetchAllStripeCustomers,
   fetchAllStripeSessions,
@@ -13,6 +14,8 @@ import {
   fetchAllZellePayments,
   fetchAllCashAppPayers,
   fetchAllCashAppPayments,
+  fetchAllPayPalPayers,
+  fetchAllPayPalPayments,
   fetchAllCryptoPayments,
   listPaymentProviders,
   listStripeCustomers,
@@ -24,6 +27,8 @@ import {
   listZellePayments,
   listCashAppPayers,
   listCashAppPayments,
+  listPayPalPayers,
+  listPayPalPayments,
   listCryptoPayments,
   type StripeCustomerRow,
   type StripeMethodOption,
@@ -34,6 +39,8 @@ import {
   type ZellePaymentRow,
   type CashAppPayerRow,
   type CashAppPaymentRow,
+  type PayPalPayerRow,
+  type PayPalPaymentRow,
   type CryptoPaymentRow,
 } from '../api/paymentsClient'
 import Modal from '../components/Modal'
@@ -41,13 +48,14 @@ import { downloadCsv } from '../lib/csv'
 
 const TABS = ['Payments', 'Customers'] as const
 type Tab = (typeof TABS)[number]
-type Provider = 'stripe' | 'venmo' | 'zelle' | 'cashapp' | 'crypto'
+type Provider = 'stripe' | 'venmo' | 'zelle' | 'cashapp' | 'paypal' | 'crypto'
 type ManualPaymentRow =
   | VenmoPaymentRow
   | ZellePaymentRow
   | CashAppPaymentRow
+  | PayPalPaymentRow
   | CryptoPaymentRow
-type ManualPayerRow = VenmoPayerRow | ZellePayerRow | CashAppPayerRow
+type ManualPayerRow = VenmoPayerRow | ZellePayerRow | CashAppPayerRow | PayPalPayerRow
 type VenmoStatus = 'all' | 'bound' | 'unbound'
 
 function isCryptoPaymentRow(row: ManualPaymentRow): row is CryptoPaymentRow {
@@ -56,18 +64,21 @@ function isCryptoPaymentRow(row: ManualPaymentRow): row is CryptoPaymentRow {
 
 function isVenmoOrZelleRow(
   row: ManualPaymentRow,
-): row is VenmoPaymentRow | ZellePaymentRow | CashAppPaymentRow {
+): row is VenmoPaymentRow | ZellePaymentRow | CashAppPaymentRow | PayPalPaymentRow {
   return 'payer_name' in row
 }
 
 function manualAccountKey(provider: string): string {
   if (provider === 'zelle') return 'zelle_recipient'
   if (provider === 'cashapp') return 'cashapp_handle'
+  if (provider === 'paypal') return 'paypal_email'
   return 'venmo_handle'
 }
 
 function manualAccountColumnLabel(provider: string): string {
-  return provider === 'zelle' ? 'Recipient' : 'Handle'
+  if (provider === 'zelle') return 'Recipient'
+  if (provider === 'paypal') return 'Email'
+  return 'Handle'
 }
 
 const PAGE_SIZE = 50
@@ -159,33 +170,42 @@ export default function Payments({ token }: { token: string }) {
         ? 'venmo'
         : provider === 'cashapp'
           ? 'cashapp'
-          : provider === 'crypto'
-            ? 'crypto'
-            : null
+          : provider === 'paypal'
+            ? 'paypal'
+            : provider === 'crypto'
+              ? 'crypto'
+              : null
   const isManualProvider = manualProvider !== null
   const hasDepositLinking =
     manualProvider === 'venmo' ||
     manualProvider === 'zelle' ||
-    manualProvider === 'cashapp'
+    manualProvider === 'cashapp' ||
+    manualProvider === 'paypal'
   const manualLabel =
     manualProvider === 'zelle'
       ? 'Zelle'
       : manualProvider === 'cashapp'
         ? 'Cash App'
-        : manualProvider === 'crypto'
-          ? 'Crypto'
-          : 'Venmo'
+        : manualProvider === 'paypal'
+          ? 'PayPal'
+          : manualProvider === 'crypto'
+            ? 'Crypto'
+            : 'Venmo'
   const isCryptoProvider = manualProvider === 'crypto'
 
-  const paymentAccount = (row: VenmoPaymentRow | ZellePaymentRow | CashAppPaymentRow) => {
+  const paymentAccount = (
+    row: VenmoPaymentRow | ZellePaymentRow | CashAppPaymentRow | PayPalPaymentRow,
+  ) => {
     if ('zelle_recipient' in row) return row.zelle_recipient
     if ('cashapp_handle' in row) return row.cashapp_handle
+    if ('paypal_email' in row) return row.paypal_email
     return row.venmo_handle
   }
 
   const payerAccount = (row: ManualPayerRow) => {
     if ('zelle_recipient' in row) return row.zelle_recipient
     if ('cashapp_handle' in row) return row.cashapp_handle
+    if ('paypal_email' in row) return row.paypal_email
     return row.venmo_handle
   }
 
@@ -308,9 +328,11 @@ export default function Payments({ token }: { token: string }) {
         ? listZellePayments(token, venmoPaymentQueryParams())
         : manualProvider === 'cashapp'
           ? listCashAppPayments(token, venmoPaymentQueryParams())
-          : manualProvider === 'crypto'
-            ? listCryptoPayments(token, venmoPaymentQueryParams())
-            : listVenmoPayments(token, venmoPaymentQueryParams())
+          : manualProvider === 'paypal'
+            ? listPayPalPayments(token, venmoPaymentQueryParams())
+            : manualProvider === 'crypto'
+              ? listCryptoPayments(token, venmoPaymentQueryParams())
+              : listVenmoPayments(token, venmoPaymentQueryParams())
     loader
       .then((res) => {
         setManualPayments(res.items)
@@ -337,7 +359,9 @@ export default function Payments({ token }: { token: string }) {
         ? listZellePayers(token, params)
         : manualProvider === 'cashapp'
           ? listCashAppPayers(token, params)
-          : listVenmoPayers(token, params)
+          : manualProvider === 'paypal'
+            ? listPayPalPayers(token, params)
+            : listVenmoPayers(token, params)
     loader
       .then((res) => {
         setVenmoPayers(res.items as VenmoPayerRow[])
@@ -421,9 +445,11 @@ export default function Payments({ token }: { token: string }) {
           ? await bindZellePayment(token, bindRow.id, title)
           : manualProvider === 'cashapp'
             ? await bindCashAppPayment(token, bindRow.id, title)
-            : manualProvider === 'crypto'
-              ? await bindCryptoPayment(token, bindRow.id, title)
-              : await bindVenmoPayment(token, bindRow.id, title)
+            : manualProvider === 'paypal'
+              ? await bindPayPalPayment(token, bindRow.id, title)
+              : manualProvider === 'crypto'
+                ? await bindCryptoPayment(token, bindRow.id, title)
+                : await bindVenmoPayment(token, bindRow.id, title)
       if (!result.ok) {
         setErr(result.error || 'Could not bind payment.')
         return
@@ -493,9 +519,11 @@ export default function Payments({ token }: { token: string }) {
           ? await fetchAllZellePayments(token, venmoPaymentExportParams())
           : manualProvider === 'cashapp'
             ? await fetchAllCashAppPayments(token, venmoPaymentExportParams())
-            : manualProvider === 'crypto'
-              ? await fetchAllCryptoPayments(token, venmoPaymentExportParams())
-              : await fetchAllVenmoPayments(token, venmoPaymentExportParams())
+            : manualProvider === 'paypal'
+              ? await fetchAllPayPalPayments(token, venmoPaymentExportParams())
+              : manualProvider === 'crypto'
+                ? await fetchAllCryptoPayments(token, venmoPaymentExportParams())
+                : await fetchAllVenmoPayments(token, venmoPaymentExportParams())
       if (rows.length === 0) {
         setErr('No payments to export for the selected filters.')
         return
@@ -635,7 +663,9 @@ export default function Payments({ token }: { token: string }) {
           ? await fetchAllZellePayers(token, { clubId, q: appliedSearch || undefined })
           : manualProvider === 'cashapp'
             ? await fetchAllCashAppPayers(token, { clubId, q: appliedSearch || undefined })
-            : await fetchAllVenmoPayers(token, { clubId, q: appliedSearch || undefined })
+            : manualProvider === 'paypal'
+              ? await fetchAllPayPalPayers(token, { clubId, q: appliedSearch || undefined })
+              : await fetchAllVenmoPayers(token, { clubId, q: appliedSearch || undefined })
       if (rows.length === 0) {
         setErr('No payers to export for the selected filters.')
         return
@@ -713,6 +743,7 @@ export default function Payments({ token }: { token: string }) {
             <option value="venmo">Venmo</option>
             <option value="zelle">Zelle</option>
             <option value="cashapp">Cash App</option>
+            <option value="paypal">PayPal</option>
             <option value="crypto">Crypto</option>
           </select>
         </div>
@@ -1203,7 +1234,9 @@ export default function Payments({ token }: { token: string }) {
                   ? 'Search payer name or Zelle recipient…'
                   : manualProvider === 'cashapp'
                     ? 'Search payer name or Cash App handle…'
-                    : 'Search payer name or Venmo handle…'
+                    : manualProvider === 'paypal'
+                      ? 'Search payer name or PayPal email…'
+                      : 'Search payer name or Venmo handle…'
               }
               className="input-field-sm min-w-[16rem] flex-1"
             />

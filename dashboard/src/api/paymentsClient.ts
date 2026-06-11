@@ -537,6 +537,125 @@ export async function fetchAllCashAppPayers(
   return all
 }
 
+export type PayPalPaymentRow = {
+  id: number
+  payer_name: string
+  paypal_email: string
+  amount_cents: number
+  amount_usd: number
+  paid_at: string | null
+  group_title: string | null
+  gg_player_id: string | null
+  gg_nickname: string | null
+  club_id: number | null
+  telegram_chat_id: number | null
+  status: 'bound' | 'unbound'
+  auto_bound: boolean
+  is_test: boolean
+  created_at: string
+  bound_at: string | null
+}
+
+export type PayPalPayerRow = {
+  payer_name: string
+  paypal_email: string
+  group_title: string | null
+  gg_player_id: string | null
+  gg_nickname: string | null
+  total_deposited_cents: number
+  total_deposited_usd: number
+  payment_count: number
+  last_payment_at: string | null
+}
+
+export type PayPalBindResult = {
+  ok: boolean
+  error?: string | null
+  group_title?: string | null
+  telegram_chat_id?: number | null
+  club_id?: number | null
+  payment?: PayPalPaymentRow | null
+}
+
+export type PayPalPaymentListParams = {
+  clubId: number
+  status?: 'all' | 'bound' | 'unbound'
+  from?: string
+  to?: string
+  q?: string
+}
+
+export function listPayPalPayments(
+  token: string,
+  params: PayPalPaymentListParams & { limit?: number; offset?: number },
+) {
+  const q = new URLSearchParams({ club_id: String(params.clubId) })
+  if (params.status && params.status !== 'all') q.set('status', params.status)
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  if (params.q?.trim()) q.set('q', params.q.trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  return request<Paginated<PayPalPaymentRow>>(`/paypal/payments?${q}`, {}, token)
+}
+
+export function listPayPalPayers(
+  token: string,
+  params: { clubId: number; q?: string; limit?: number; offset?: number },
+) {
+  const q = new URLSearchParams({ club_id: String(params.clubId) })
+  if (params.q?.trim()) q.set('q', params.q.trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  return request<Paginated<PayPalPayerRow>>(`/paypal/payers?${q}`, {}, token)
+}
+
+export function bindPayPalPayment(token: string, paymentId: number, groupTitle: string) {
+  return request<PayPalBindResult>(
+    `/paypal/payments/${paymentId}/bind`,
+    { method: 'POST', body: JSON.stringify({ group_title: groupTitle }) },
+    token,
+  )
+}
+
+export async function fetchAllPayPalPayments(
+  token: string,
+  params: PayPalPaymentListParams,
+): Promise<PayPalPaymentRow[]> {
+  const all: PayPalPaymentRow[] = []
+  let offset = 0
+  for (;;) {
+    const res = await listPayPalPayments(token, {
+      ...params,
+      limit: EXPORT_PAGE_SIZE,
+      offset,
+    })
+    all.push(...res.items)
+    offset += res.items.length
+    if (offset >= res.total || res.items.length === 0) break
+  }
+  return all
+}
+
+export async function fetchAllPayPalPayers(
+  token: string,
+  params: { clubId: number; q?: string },
+): Promise<PayPalPayerRow[]> {
+  const all: PayPalPayerRow[] = []
+  let offset = 0
+  for (;;) {
+    const res = await listPayPalPayers(token, {
+      ...params,
+      limit: EXPORT_PAGE_SIZE,
+      offset,
+    })
+    all.push(...res.items)
+    offset += res.items.length
+    if (offset >= res.total || res.items.length === 0) break
+  }
+  return all
+}
+
 export async function fetchAllZellePayers(
   token: string,
   params: { clubId: number; q?: string },
@@ -642,12 +761,13 @@ export async function fetchAllCryptoPayments(
   return all
 }
 
-export type LinkingMethodSlug = 'venmo' | 'zelle' | 'cashapp'
+export type LinkingMethodSlug = 'venmo' | 'zelle' | 'cashapp' | 'paypal'
 
 export const LINKING_METHOD_OPTIONS: { value: LinkingMethodSlug; label: string }[] = [
   { value: 'venmo', label: 'Venmo' },
   { value: 'zelle', label: 'Zelle' },
   { value: 'cashapp', label: 'Cash App' },
+  { value: 'paypal', label: 'PayPal' },
 ]
 
 export type BoundViaFilter =
@@ -772,6 +892,7 @@ export type BindAttemptRow = {
   venmo_payment_id: number | null
   zelle_payment_id: number | null
   cashapp_payment_id: number | null
+  paypal_payment_id: number | null
   group_title: string | null
   created_at: string
   expires_at: string

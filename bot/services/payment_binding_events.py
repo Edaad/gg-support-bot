@@ -326,13 +326,14 @@ def payments_missing_notification_sync(
     limit: int = 100,
 ) -> list[dict]:
     """Return bound payments with no persisted proof the Telegram message shows binding."""
-    from db.models import CashAppPayment, CryptoPayment, VenmoPayment, ZellePayment
+    from db.models import CashAppPayment, CryptoPayment, PayPalPayment, VenmoPayment, ZellePayment
 
     slug = (payment_method_slug or "").strip().lower()
     model_map = {
         "venmo": VenmoPayment,
         "zelle": ZellePayment,
         "cashapp": CashAppPayment,
+        "paypal": PayPalPayment,
         "crypto": CryptoPayment,
     }
     model = model_map.get(slug)

@@ -95,7 +95,7 @@ def _strip_legacy_random_emoji_instruction(
 ) -> dict:
     """Remove seeded copy that asked for a random emoji on every deposit."""
     slug = (method_slug or "").strip().lower()
-    if slug not in ("venmo", "zelle", "cashapp"):
+    if slug not in ("venmo", "zelle", "cashapp", "paypal"):
         return data
     out = dict(data)
     changed = False
@@ -360,7 +360,7 @@ def _pick_deposit_variant_response(
     tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
     sticky_variant_id: int | None = None
     slug_norm = (method_slug or "").strip().lower()
-    if slug_norm in ("venmo", "zelle", "cashapp") and chat_id is not None:
+    if slug_norm in ("venmo", "zelle", "cashapp", "paypal") and chat_id is not None:
         binding = get_chat_binding(int(chat_id), slug_norm)
         if binding and binding.variant_id:
             sticky_variant_id = binding.variant_id

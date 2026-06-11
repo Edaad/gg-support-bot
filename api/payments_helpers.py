@@ -21,6 +21,7 @@ from db.models import (
     VenmoPayment,
     ZellePayment,
     CashAppPayment,
+    PayPalPayment,
     CryptoPayment,
 )
 
@@ -657,6 +658,104 @@ def build_cashapp_payment_read(session: Session, payment: CashAppPayment) -> dic
         "club_id": club_id,
         "telegram_chat_id": payment.telegram_chat_id,
         "status": cashapp_payment_status(payment),
+        "auto_bound": payment.auto_bound,
+        "is_test": payment.is_test,
+        "created_at": payment.created_at,
+        "bound_at": payment.bound_at,
+    }
+
+
+def paypal_payment_status(payment: PayPalPayment) -> str:
+    return "bound" if payment.telegram_chat_id is not None else "unbound"
+
+
+def apply_paypal_payment_filters(
+    query,
+    *,
+    club_id: int,
+    status: str | None,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+    include_test: bool,
+    q: str | None,
+):
+    if not include_test:
+        query = query.filter(PayPalPayment.is_test.is_(False))
+
+    query = _apply_manual_payment_club_filters(
+        query, PayPalPayment, club_id=club_id, status=status
+    )
+
+    if from_dt is not None:
+        query = query.filter(PayPalPayment.created_at >= from_dt)
+    if to_dt is not None:
+        query = query.filter(PayPalPayment.created_at <= to_dt)
+
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        query = query.filter(
+            or_(
+                PayPalPayment.payer_name.ilike(term),
+                PayPalPayment.paypal_email.ilike(term),
+                PayPalPayment.bound_group_title_at_bind.ilike(term),
+            )
+        )
+    return query
+
+
+def apply_paypal_payer_search(query, q: str | None):
+    if not q or not q.strip():
+        return query
+    term = f"%{q.strip()}%"
+    return query.filter(
+        or_(
+            PayPalPayment.payer_name.ilike(term),
+            PayPalPayment.paypal_email.ilike(term),
+        )
+    )
+
+
+def list_paypal_payer_aggregates(session: Session, club_id: int, q: str | None):
+    """Return grouped payer rows: payer_name, paypal_email, totals, latest chat."""
+    base = (
+        session.query(
+            PayPalPayment.payer_name,
+            PayPalPayment.paypal_email,
+            func.coalesce(func.sum(PayPalPayment.amount_cents), 0).label("total_cents"),
+            func.count(PayPalPayment.id).label("payment_count"),
+            func.max(PayPalPayment.created_at).label("last_payment_at"),
+            func.max(PayPalPayment.telegram_chat_id).label("telegram_chat_id"),
+        )
+        .filter(
+            PayPalPayment.club_id == club_id,
+            PayPalPayment.telegram_chat_id.isnot(None),
+            PayPalPayment.is_test.is_(False),
+        )
+        .group_by(PayPalPayment.payer_name, PayPalPayment.paypal_email)
+    )
+    base = apply_paypal_payer_search(base, q)
+    return base.order_by(func.max(PayPalPayment.created_at).desc())
+
+
+def build_paypal_payment_read(session: Session, payment: PayPalPayment) -> dict:
+    title: str | None = None
+    gg_id: str | None = None
+    if payment.telegram_chat_id is not None:
+        title, gg_id = resolve_group_title(session, int(payment.telegram_chat_id))
+    club_id = _resolve_payment_club_id(session, payment)
+    return {
+        "id": payment.id,
+        "payer_name": payment.payer_name,
+        "paypal_email": payment.paypal_email,
+        "amount_cents": payment.amount_cents,
+        "amount_usd": cents_to_usd(payment.amount_cents),
+        "paid_at": payment.paid_at,
+        "group_title": title,
+        "gg_player_id": gg_id,
+        "gg_nickname": lookup_gg_nickname(session, club_id, gg_id) if club_id else None,
+        "club_id": club_id,
+        "telegram_chat_id": payment.telegram_chat_id,
+        "status": paypal_payment_status(payment),
         "auto_bound": payment.auto_bound,
         "is_test": payment.is_test,
         "created_at": payment.created_at,

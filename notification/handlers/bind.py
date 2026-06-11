@@ -1,4 +1,4 @@
-"""Reply-to-bind handler for payment notifications (Cash App, Venmo, Zelle, Crypto)."""
+"""Reply-to-bind handler for payment notifications (Cash App, PayPal, Venmo, Zelle, Crypto)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.services.cashapp_payments import bind_cashapp_payment_from_reply
+from bot.services.paypal_payments import bind_paypal_payment_from_reply
 from bot.services.crypto_payments import bind_crypto_payment_from_reply
 from bot.services.venmo_payments import bind_venmo_payment_from_reply
 from bot.services.zelle_payments import bind_zelle_payment_from_reply
@@ -72,6 +73,8 @@ async def payment_bind_reply_handler(
 
     try:
         result = await bind_crypto_payment_from_reply(**bind_kwargs)
+        if not result.ok:
+            result = await bind_paypal_payment_from_reply(**bind_kwargs)
         if not result.ok:
             result = await bind_cashapp_payment_from_reply(**bind_kwargs)
         if not result.ok:

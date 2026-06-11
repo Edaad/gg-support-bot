@@ -117,6 +117,8 @@ def remap_chat_id_in_db(old_id: int, new_id: int) -> dict[str, int]:
             ("venmo_payer_bindings", ("telegram_chat_id",)),
             ("cashapp_payments", ("telegram_chat_id", "notification_chat_id")),
             ("cashapp_payer_bindings", ("telegram_chat_id",)),
+            ("paypal_payments", ("telegram_chat_id", "notification_chat_id")),
+            ("paypal_payer_bindings", ("telegram_chat_id",)),
             ("zelle_payments", ("telegram_chat_id", "notification_chat_id")),
             ("zelle_payer_bindings", ("telegram_chat_id",)),
             ("crypto_payments", ("telegram_chat_id", "notification_chat_id")),
