@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from telegram import ForceReply
 from telegram.ext import ConversationHandler
 
-from notification.constants import DEFAULT_NOTIFICATION_REPORT_TO_USER_ID
 from notification.handlers.report import (
     REPORT_REASON,
     format_report_ticket,
@@ -19,7 +18,6 @@ from notification.handlers.report import (
 )
 
 NOTIF_CHAT_ID = -1009999999999
-REPORT_TO_USER_ID = DEFAULT_NOTIFICATION_REPORT_TO_USER_ID
 
 
 def _make_update(
@@ -119,20 +117,13 @@ class TestReportEntry(unittest.IsolatedAsyncioTestCase):
 
 
 class TestReportReason(unittest.IsolatedAsyncioTestCase):
-    @patch.dict(
-        os.environ,
-        {
-            "PAYMENT_NOTIFICATION_CHAT_ID": str(NOTIF_CHAT_ID),
-            "NOTIFICATION_REPORT_TO_USER_ID": str(REPORT_TO_USER_ID),
-        },
-    )
+    @patch.dict(os.environ, {"PAYMENT_NOTIFICATION_CHAT_ID": str(NOTIF_CHAT_ID)})
     @patch(
         "bot.services.slack_ops_notify.notify_slack_ops",
         new_callable=AsyncMock,
+        return_value=True,
     )
-    async def test_happy_path_sends_dm_and_success(
-        self, mock_slack: AsyncMock
-    ) -> None:
+    async def test_happy_path_posts_to_slack(self, mock_slack: AsyncMock) -> None:
         update = _make_update(text="Wrong group title")
         context = _make_context()
         context.user_data.update(
@@ -146,29 +137,20 @@ class TestReportReason(unittest.IsolatedAsyncioTestCase):
         state = await report_reason(update, context)
 
         self.assertEqual(state, ConversationHandler.END)
-        context.bot.send_message.assert_awaited_once()
-        kwargs = context.bot.send_message.await_args.kwargs
-        self.assertEqual(kwargs["chat_id"], REPORT_TO_USER_ID)
-        self.assertIn("Wrong group title", kwargs["text"])
+        context.bot.send_message.assert_not_awaited()
         update.message.reply_text.assert_awaited_once_with("Report submitted. Thanks!")
         self.assertNotIn("report_notification_message_id", context.user_data)
         mock_slack.assert_awaited_once()
         self.assertEqual(mock_slack.await_args.kwargs["source"], "notification_report")
+        self.assertIn("Wrong group title", mock_slack.await_args.args[0])
 
-    @patch.dict(
-        os.environ,
-        {
-            "PAYMENT_NOTIFICATION_CHAT_ID": str(NOTIF_CHAT_ID),
-            "NOTIFICATION_REPORT_TO_USER_ID": str(REPORT_TO_USER_ID),
-        },
-    )
+    @patch.dict(os.environ, {"PAYMENT_NOTIFICATION_CHAT_ID": str(NOTIF_CHAT_ID)})
     @patch(
         "bot.services.slack_ops_notify.notify_slack_ops",
         new_callable=AsyncMock,
+        return_value=False,
     )
-    async def test_dm_failure_still_acknowledges_reporter(
-        self, mock_slack: AsyncMock
-    ) -> None:
+    async def test_slack_failure_informs_reporter(self, mock_slack: AsyncMock) -> None:
         update = _make_update(text="Bad memo")
         context = _make_context()
         context.user_data.update(
@@ -178,13 +160,12 @@ class TestReportReason(unittest.IsolatedAsyncioTestCase):
                 "report_notification_chat_id": NOTIF_CHAT_ID,
             }
         )
-        context.bot.send_message = AsyncMock(side_effect=Exception("blocked"))
 
         state = await report_reason(update, context)
 
         self.assertEqual(state, ConversationHandler.END)
         update.message.reply_text.assert_awaited_once()
-        self.assertIn("@jz034", update.message.reply_text.await_args.args[0])
+        self.assertIn("Slack", update.message.reply_text.await_args.args[0])
         mock_slack.assert_awaited_once()
 
     @patch.dict(os.environ, {"PAYMENT_NOTIFICATION_CHAT_ID": str(NOTIF_CHAT_ID)})

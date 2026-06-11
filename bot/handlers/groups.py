@@ -327,6 +327,16 @@ async def _maybe_send_member_join_intro(context: ContextTypes.DEFAULT_TYPE, chat
     if not club_id:
         return
 
+    from club_gc_settings import is_migration_recovery_enabled
+    from bot.services.migration_recovery import is_migrated_recovery_chat
+
+    if is_migration_recovery_enabled() and is_migrated_recovery_chat(chat_id):
+        logger.info(
+            "Skipping member join intro (migration recovery active) chat_id=%s",
+            chat_id,
+        )
+        return
+
     if _suppress_post_gc_redundant_recently(chat_id):
         return
 

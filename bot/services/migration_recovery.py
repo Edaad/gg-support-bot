@@ -528,6 +528,21 @@ def peek_next_recovery_rows(limit: int = 10) -> list[RecoveryRow]:
         return [_recovery_row_from_model(row) for row in detail_rows]
 
 
+def is_migrated_recovery_chat(chat_id: int) -> bool:
+    """True when chat is in the seeded migration-affected supergroup queue."""
+
+    from db.connection import get_db
+    from db.models import MigratedGroupRecovery
+
+    with get_db() as session:
+        return (
+            session.query(MigratedGroupRecovery.id)
+            .filter_by(telegram_chat_id=int(chat_id))
+            .first()
+            is not None
+        )
+
+
 def format_whosnext_message(rows: list[RecoveryRow]) -> str:
     lines = ["Migration recovery — next 10 in queue", ""]
     if not rows:

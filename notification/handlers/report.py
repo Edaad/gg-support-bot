@@ -14,10 +14,6 @@ from telegram.ext import (
 )
 
 from notification.chat_id import telegram_chat_ids_match
-from notification.constants import (
-    PAYMENT_NOTIFICATION_CHAT_ID_ENV,
-    notification_report_to_user_id,
-)
 from notification.handlers._chat import notification_chat_id
 
 logger = logging.getLogger(__name__)
@@ -127,31 +123,23 @@ async def report_reason(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     from bot.services.slack_ops_notify import notify_slack_ops
 
-    await notify_slack_ops(ticket, source="notification_report")
-
-    dm_ok = True
-    try:
-        await context.bot.send_message(
-            chat_id=notification_report_to_user_id(),
-            text=ticket[:4096],
-        )
-    except Exception:
-        dm_ok = False
+    slack_ok = await notify_slack_ops(ticket, source="notification_report")
+    if not slack_ok:
         logger.warning(
-            "notification report: DM to report recipient failed reporter_id=%s msg_id=%s",
+            "notification report: Slack post failed reporter_id=%s msg_id=%s",
             user.id,
             msg_id,
-            exc_info=True,
         )
 
     for key in (_REPORT_MSG_ID_KEY, _REPORT_MSG_TEXT_KEY, _REPORT_CHAT_ID_KEY):
         context.user_data.pop(key, None)
 
-    if dm_ok:
+    if slack_ok:
         await update.message.reply_text("Report submitted. Thanks!")
     else:
         await update.message.reply_text(
-            "Report recorded but could not DM @jz034 — they may need to /start this bot."
+            "Report could not be sent — Slack ops is not configured or failed. "
+            "Try again later."
         )
     return ConversationHandler.END
 
