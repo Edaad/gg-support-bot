@@ -120,9 +120,11 @@ With `GC_MIGRATION_RECOVERY_BATCH_SIZE=1`, each tick claims up to **one GC per c
 
 Requires `GC_DM_GC_LISTENER_ENABLED` (default on). Recovery adds the mapped player plus per-club support accounts from `GC_USERS_TO_INVITE` / `GC_USERS_*`, checking membership before each invite. Each group is attempted **once**; no automatic retries.
 
-After each attempt, the **GG Support bot** DMs that club's GC admin with the GC title, result status, and which accounts were added. **Rate limits (FloodWait) and other failures** also DM the Round Table GC admin (`GC_ADMIN_USER_ROUND_TABLE`) for central ops visibility. Admins must have `/start`ed the bot.
+After each attempt, the **GG Support bot** DMs that club's GC admin with a tappable GC title (supergroup `t.me/c/…` link when available), result status, and which accounts were added. **Rate limits (FloodWait)** halt recovery immediately, auto-disable the cron, and DM **all three club GC admins**. Other failures also DM the Round Table GC admin (`GC_ADMIN_USER_ROUND_TABLE`) for central ops visibility. Admins must have `/start`ed the bot.
 
-**Auto-disable:** When **any** club's queue (pending + processing) hits zero, the worker stops the cron job, persists a flag in `migration_recovery_control`, and DMs the RT admin. This happens even if other clubs still have pending rows — review and re-enable manually if you want to continue those clubs.
+**Queue visibility:** Send `/whosnext` in a private DM with the bot (admin accounts only) to see the global top-10 pending rows, plus auto-add / auto-disable status.
+
+**Auto-disable:** When **any** club's queue (pending + processing) hits zero, the worker stops the cron job, persists a flag in `migration_recovery_control`, and DMs the RT admin. This happens even if other clubs still have pending rows — review and re-enable manually if you want to continue those clubs. Rate limits also trigger auto-disable (see above).
 
 **Monitor** (SQL or local):
 

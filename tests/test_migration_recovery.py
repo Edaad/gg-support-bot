@@ -14,11 +14,16 @@ from bot.services.migration_recovery import (
     claim_pending_batch,
     format_auto_disable_notification,
     format_readd_admin_notification,
+    format_rate_limit_admin_notification,
     map_readd_status,
+    peek_next_recovery_rows,
+    release_processing_rows,
     should_notify_rt_ops,
+    _handle_rate_limit_abort,
     _maybe_auto_disable_after_tick,
 )
-from bot.services.migration_group_readd import ReaddGroupResult
+from bot.services.migration_group_readd import FloodWaitAbortError, ReaddGroupResult
+from notification.formatting import format_group_chat_line
 from bot.services.migration_recovery import RecoveryRow
 from scripts.seed_migrated_group_recovery import build_seed_candidates
 from scripts.migrated_groups_activity_report import GroupAgg, MigratedGroupRow
@@ -194,13 +199,48 @@ class TestFormatReaddAdminNotification(unittest.TestCase):
             result=result,
             terminal_status="complete",
             club_display_name="Round Table",
+            gc_line=format_group_chat_line(
+                group_title=row.group_title,
+                telegram_chat_id=row.telegram_chat_id,
+            ),
         )
+        self.assertIn('<a href="https://t.me/c/123">', text)
         self.assertIn("RT / / @player1", text)
         self.assertIn("chat_id=-100123", text)
         self.assertIn("@player1", text)
         self.assertIn("@RoundTableSupport3", text)
         self.assertIn("@YTranslateBot", text)
         self.assertIn("Result: complete", text)
+
+    def test_escapes_special_chars_in_title(self) -> None:
+        row = RecoveryRow(
+            id=1,
+            telegram_chat_id=-100123,
+            club_key="round_table",
+            club_id=2,
+            group_title="RT & <test>",
+            old_chat_id=-456,
+            player_telegram_user_id=None,
+            player_username=None,
+        )
+        result = ReaddGroupResult(
+            chat_id=-100123,
+            club_id=2,
+            club_key="round_table",
+            title="RT & <test>",
+            member_count_before=0,
+            member_count_after=None,
+            status="ok",
+        )
+        text = format_readd_admin_notification(
+            row=row,
+            result=result,
+            terminal_status="complete",
+            club_display_name="Round Table",
+            gc_line='Group Chat: <a href="https://t.me/c/123">RT &amp; &lt;test&gt;</a>',
+        )
+        self.assertIn("RT &amp; &lt;test&gt;", text)
+        self.assertNotIn("RT & <test>", text)
 
 
 class TestBuildSeedCandidates(unittest.TestCase):
@@ -448,6 +488,123 @@ class TestIsMigrationRecoveryEnabledWithDbFlag(unittest.TestCase):
         from club_gc_settings import is_migration_recovery_enabled
 
         self.assertTrue(is_migration_recovery_enabled())
+
+
+class TestPeekNextRecoveryRows(unittest.TestCase):
+    def _make_db_row(self, **kwargs):
+        row = MagicMock()
+        defaults = {
+            "id": 1,
+            "telegram_chat_id": -1001,
+            "club_key": "round_table",
+            "club_id": 2,
+            "group_title": "RT test",
+            "old_chat_id": -501,
+            "player_telegram_user_id": None,
+            "player_username": None,
+        }
+        defaults.update(kwargs)
+        for key, value in defaults.items():
+            setattr(row, key, value)
+        return row
+
+    @patch("db.connection.get_db")
+    def test_peek_returns_pending_in_order(self, mock_get_db: MagicMock) -> None:
+        high = self._make_db_row(id=1, priority_tier=1, priority_rank=1)
+        low = self._make_db_row(id=2, priority_tier=2, priority_rank=1)
+        session = MagicMock()
+        mock_get_db.return_value.__enter__.return_value = session
+        query = MagicMock()
+        session.query.return_value = query
+        query.filter.return_value = query
+        query.order_by.return_value = query
+        query.limit.return_value = query
+        query.all.return_value = [high, low]
+
+        rows = peek_next_recovery_rows(limit=10)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0].id, 1)
+        query.limit.assert_called_with(10)
+
+
+class TestReleaseProcessingRows(unittest.TestCase):
+    @patch("db.connection.get_db")
+    def test_releases_processing_rows(self, mock_get_db: MagicMock) -> None:
+        row = MagicMock()
+        row.readd_status = "processing"
+        session = MagicMock()
+        mock_get_db.return_value.__enter__.return_value = session
+        session.get.return_value = row
+
+        released = release_processing_rows([42])
+        self.assertEqual(released, 1)
+        self.assertEqual(row.readd_status, "pending")
+        self.assertIsNone(row.readd_attempted_at)
+
+
+class TestHandleRateLimitAbort(unittest.TestCase):
+    def test_rate_limit_triggers_auto_disable(self) -> None:
+        row = RecoveryRow(
+            id=5,
+            telegram_chat_id=-100999,
+            club_key="clubgto",
+            club_id=4,
+            group_title="GTO test",
+            old_chat_id=-1,
+            player_telegram_user_id=None,
+            player_username=None,
+        )
+        with patch(
+            "bot.services.migration_recovery.finalize_row",
+            return_value="failed",
+        ) as mock_finalize, patch(
+            "bot.services.migration_recovery.release_processing_rows",
+            return_value=1,
+        ) as mock_release, patch(
+            "bot.services.migration_recovery.pending_count_by_club",
+            return_value={"round_table": 1, "creator_club": 2, "clubgto": 3},
+        ), patch(
+            "bot.services.migration_recovery.auto_disable_migration_recovery",
+            new_callable=AsyncMock,
+        ) as mock_disable, patch(
+            "bot.services.mtproto_track_contact.notify_all_gc_admins_dm",
+            new_callable=AsyncMock,
+        ) as mock_notify:
+            asyncio.run(
+                _handle_rate_limit_abort(
+                    exc=FloodWaitAbortError(90, "InviteToChannelRequest"),
+                    row=row,
+                    remaining_row_ids=[6, 7],
+                )
+            )
+        mock_finalize.assert_called_once()
+        mock_release.assert_called_once_with([6, 7])
+        mock_notify.assert_awaited_once()
+        mock_disable.assert_awaited_once_with(
+            reason="rate_limit",
+            exhausted_club_key="clubgto",
+            pending_snapshot={"round_table": 1, "creator_club": 2, "clubgto": 3},
+        )
+
+    def test_rate_limit_notification_includes_gc(self) -> None:
+        row = RecoveryRow(
+            id=1,
+            telegram_chat_id=-1001,
+            club_key="round_table",
+            club_id=2,
+            group_title="RT / test",
+            old_chat_id=-1,
+            player_telegram_user_id=None,
+            player_username=None,
+        )
+        text = format_rate_limit_admin_notification(
+            wait_s=60,
+            label="get_participants",
+            row=row,
+        )
+        self.assertIn("FloodWait", text)
+        self.assertIn("RT / test", text)
+        self.assertIn("round_table", text)
 
 
 if __name__ == "__main__":

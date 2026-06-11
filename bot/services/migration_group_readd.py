@@ -13,9 +13,25 @@ from scripts.backfill_support_group_invite_links import LinkedGroupRow, _gc_disp
 logger = logging.getLogger(__name__)
 
 UserKind = Literal["player", "staff", "bot"]
+FloodWaitPolicy = Literal["retry", "abort"]
 
 FloodWaitObserver = Callable[[str, int], Awaitable[None]]
 _flood_wait_observer: FloodWaitObserver | None = None
+_flood_wait_policy: FloodWaitPolicy = "retry"
+
+
+class FloodWaitAbortError(Exception):
+    """Raised when flood-wait policy is abort (migration recovery halt)."""
+
+    def __init__(self, wait_s: int, label: str) -> None:
+        self.wait_s = int(wait_s)
+        self.label = str(label)
+        super().__init__(f"FloodWait {wait_s}s during {label}")
+
+
+def set_flood_wait_policy(policy: FloodWaitPolicy) -> None:
+    global _flood_wait_policy
+    _flood_wait_policy = policy
 
 
 @dataclass(frozen=True)
@@ -64,6 +80,8 @@ async def _sleep_flood_wait(exc: BaseException, *, label: str) -> None:
                 label,
                 exc_info=True,
             )
+    if _flood_wait_policy == "abort":
+        raise FloodWaitAbortError(wait_s, label)
     await asyncio.sleep(float(wait_s) + 1.0)
 
 

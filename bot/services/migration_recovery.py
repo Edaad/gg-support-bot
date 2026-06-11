@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -15,14 +16,13 @@ from club_gc_settings import (
     is_migration_recovery_enabled,
 )
 from bot.services.migration_group_readd import (
+    FloodWaitAbortError,
     ReaddGroupResult,
     set_flood_wait_observer,
+    set_flood_wait_policy,
     readd_group,
 )
-from bot.services.migration_recovery_priority import (
-    classify_priority_tier,
-    compute_priority_rank,
-)
+from notification.formatting import resolve_and_format_group_chat_line
 from scripts.backfill_support_group_invite_links import LinkedGroupRow
 
 logger = logging.getLogger(__name__)
@@ -94,8 +94,9 @@ def format_readd_admin_notification(
     result: ReaddGroupResult,
     terminal_status: str,
     club_display_name: str,
+    gc_line: str,
 ) -> str:
-    """Human-readable DM for the club GC admin after a migration re-add attempt."""
+    """HTML DM for the club GC admin after a migration re-add attempt."""
 
     added = _format_account_lines(result.added)
     already = _format_account_lines(result.already_member)
@@ -104,24 +105,55 @@ def format_readd_admin_notification(
 
     def _section(title: str, items: list[str]) -> str:
         if not items:
-            return f"{title}: (none)"
-        return title + ":\n" + "\n".join(f"  • {item}" for item in items)
+            return f"{html.escape(title)}: (none)"
+        bullets = "\n".join(
+            f"  • {html.escape(item)}" for item in items
+        )
+        return f"{html.escape(title)}:\n{bullets}"
+
+    safe_club = html.escape(club_display_name, quote=False)
+    safe_status = html.escape(terminal_status, quote=False)
+    safe_chat_id = html.escape(str(row.telegram_chat_id), quote=False)
 
     parts = [
-        f"[{club_display_name}] Migration re-add attempted",
-        f"GC: {row.group_title}",
-        f"chat_id={row.telegram_chat_id}",
-        f"Result: {terminal_status}",
+        f"[{safe_club}] Migration re-add attempted",
+        gc_line,
+        f"chat_id={safe_chat_id}",
+        f"Result: {safe_status}",
         _section("Added", added),
         _section("Already in group", already),
         _section("Privacy blocked", privacy),
         _section("Failed", failed),
     ]
     if result.error:
-        parts.append(f"Error: {result.error}")
+        parts.append(f"Error: {html.escape(result.error, quote=False)}")
     if result.invite_link:
-        parts.append(f"Invite link: {result.invite_link}")
+        safe_link = html.escape(result.invite_link, quote=True)
+        parts.append(f'Invite link: <a href="{safe_link}">{safe_link}</a>')
     return "\n".join(parts)
+
+
+async def build_readd_admin_notification(
+    *,
+    row: RecoveryRow,
+    result: ReaddGroupResult,
+    terminal_status: str,
+    club_display_name: str,
+) -> str:
+    gc_line = await resolve_and_format_group_chat_line(
+        group_title=row.group_title,
+        telegram_chat_id=row.telegram_chat_id,
+        club_id=row.club_id,
+    )
+    if not gc_line.startswith("Group Chat:"):
+        gc_line = f"GC: {gc_line}"
+    return format_readd_admin_notification(
+        row=row,
+        result=result,
+        terminal_status=terminal_status,
+        club_display_name=club_display_name,
+        gc_line=gc_line,
+    )
 
 
 async def notify_readd_admin_dm(
@@ -133,13 +165,13 @@ async def notify_readd_admin_dm(
 ) -> None:
     from bot.services.mtproto_track_contact import notify_club_gc_admin_dm
 
-    text = format_readd_admin_notification(
+    text = await build_readd_admin_notification(
         row=row,
         result=result,
         terminal_status=terminal_status,
         club_display_name=cfg.club_display_name,
     )
-    await notify_club_gc_admin_dm(cfg, text)
+    await notify_club_gc_admin_dm(cfg, text, parse_mode="HTML")
 
 
 def should_notify_rt_ops(
@@ -315,6 +347,10 @@ def format_auto_disable_notification(
             "One club finished before others. Review remaining queues, then clear "
             "the DB flag and re-enable if you want to continue other clubs."
         )
+    elif reason == "rate_limit":
+        lines.append(
+            "Telegram rate limit hit. Clear the DB flag and re-enable after the wait."
+        )
     else:
         lines.append("All clubs drained. Recovery complete.")
     lines.append(
@@ -467,6 +503,149 @@ def claim_pending_batch(limit: int | None = None) -> list[RecoveryRow]:
         )
     )
     return [_recovery_row_from_model(row) for row in detail_rows]
+
+
+def peek_next_recovery_rows(limit: int = 10) -> list[RecoveryRow]:
+    """Read-only view of top pending rows (global priority order)."""
+
+    from db.connection import get_db
+    from db.models import MigratedGroupRecovery
+
+    with get_db() as session:
+        detail_rows = (
+            session.query(MigratedGroupRecovery)
+            .filter(MigratedGroupRecovery.readd_status == "pending")
+            .order_by(
+                MigratedGroupRecovery.priority_tier.asc(),
+                MigratedGroupRecovery.priority_rank.asc(),
+            )
+            .limit(max(1, int(limit)))
+            .all()
+        )
+    return [_recovery_row_from_model(row) for row in detail_rows]
+
+
+def format_whosnext_message(rows: list[RecoveryRow]) -> str:
+    lines = ["Migration recovery — next 10 in queue", ""]
+    if not rows:
+        lines.append("(no pending rows)")
+    else:
+        for index, row in enumerate(rows, start=1):
+            player = row.player_username or (
+                str(row.player_telegram_user_id)
+                if row.player_telegram_user_id is not None
+                else "(unknown)"
+            )
+            if player and not str(player).startswith("@"):
+                player = f"@{player}" if row.player_username else player
+            lines.append(
+                f"{index}. [{row.club_key}] {row.group_title}\n"
+                f"   chat_id={row.telegram_chat_id}  player={player}"
+            )
+    lines.extend(
+        [
+            "",
+            f"Auto-add enabled: {'yes' if is_migration_recovery_enabled() else 'no'}",
+            f"Auto-disabled (DB): {'yes' if is_migration_recovery_auto_disabled() else 'no'}",
+            f"Batch size per club: {get_migration_recovery_batch_size()}",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def release_processing_rows(row_ids: list[int]) -> int:
+    """Reset claimed-but-unprocessed rows back to pending."""
+
+    if not row_ids:
+        return 0
+    from db.connection import get_db
+    from db.models import MigratedGroupRecovery
+
+    now = datetime.now(timezone.utc)
+    released = 0
+    with get_db() as session:
+        for row_id in row_ids:
+            row = session.get(MigratedGroupRecovery, int(row_id))
+            if row is None or row.readd_status != "processing":
+                continue
+            row.readd_status = "pending"
+            row.readd_attempted_at = None
+            row.updated_at = now
+            released += 1
+        session.commit()
+    return released
+
+
+def format_rate_limit_admin_notification(
+    *,
+    wait_s: int,
+    label: str,
+    row: RecoveryRow | None,
+) -> str:
+    lines = [
+        "[Migration recovery ops]",
+        f"Telegram rate limit (FloodWait): {wait_s}s during {label}",
+    ]
+    if row is not None:
+        lines.extend(
+            [
+                f"GC: {row.group_title}",
+                f"club={row.club_key}",
+                f"chat_id={row.telegram_chat_id}",
+            ]
+        )
+    lines.append(
+        "Recovery auto-disabled. Clear DB flag and re-enable env to resume."
+    )
+    return "\n".join(lines)
+
+
+async def _handle_rate_limit_abort(
+    *,
+    exc: FloodWaitAbortError,
+    row: RecoveryRow,
+    remaining_row_ids: list[int],
+) -> None:
+    err_result = ReaddGroupResult(
+        chat_id=row.telegram_chat_id,
+        club_id=row.club_id,
+        club_key=row.club_key,
+        title=row.group_title,
+        member_count_before=0,
+        member_count_after=None,
+        status="error",
+        error=f"flood_wait:{exc.label}:{exc.wait_s}s",
+    )
+    finalize_row(
+        row.id,
+        err_result,
+        pre_status="failed",
+        pre_error=f"flood_wait:{exc.label}:{exc.wait_s}s",
+    )
+    release_processing_rows(remaining_row_ids)
+
+    detail = format_rate_limit_admin_notification(
+        wait_s=exc.wait_s,
+        label=exc.label,
+        row=row,
+    )
+    from bot.services.mtproto_track_contact import notify_all_gc_admins_dm
+
+    try:
+        await notify_all_gc_admins_dm(detail)
+    except Exception:
+        logger.warning(
+            "migration_recovery: rate-limit broadcast DM failed row_id=%s",
+            row.id,
+            exc_info=True,
+        )
+
+    counts = pending_count_by_club(include_processing=True)
+    await auto_disable_migration_recovery(
+        reason="rate_limit",
+        exhausted_club_key=row.club_key,
+        pending_snapshot=counts,
+    )
 
 
 def finalize_row(
@@ -629,15 +808,26 @@ async def tick_async() -> dict[str, int]:
 
     delay = get_migration_recovery_invite_delay_sec()
     current_row: RecoveryRow | None = None
+    batch_row_ids = [row.id for row in rows]
 
     async def _on_flood_wait(label: str, wait_s: int) -> None:
-        detail = f"Telegram rate limit (FloodWait): waiting {wait_s}s during {label}"
-        await notify_rt_ops_issue(
-            issue_kind="rate_limit",
-            detail=detail,
+        detail = format_rate_limit_admin_notification(
+            wait_s=wait_s,
+            label=label,
             row=current_row,
         )
+        from bot.services.mtproto_track_contact import notify_all_gc_admins_dm
 
+        try:
+            await notify_all_gc_admins_dm(detail)
+        except Exception:
+            logger.warning(
+                "migration_recovery: rate-limit notify failed label=%s",
+                label,
+                exc_info=True,
+            )
+
+    set_flood_wait_policy("abort")
     set_flood_wait_observer(_on_flood_wait)
     try:
         for i, row in enumerate(rows):
@@ -646,6 +836,17 @@ async def tick_async() -> dict[str, int]:
             current_row = row
             try:
                 status = await _process_row(row)
+            except FloodWaitAbortError as exc:
+                remaining = [
+                    rid for rid in batch_row_ids[batch_row_ids.index(row.id) + 1 :]
+                ]
+                await _handle_rate_limit_abort(
+                    exc=exc,
+                    row=row,
+                    remaining_row_ids=remaining,
+                )
+                summary["failed"] += 1
+                break
             except Exception:
                 logger.exception(
                     "migration_recovery: tick failed row_id=%s chat_id=%s",
@@ -692,6 +893,7 @@ async def tick_async() -> dict[str, int]:
             current_row = None
     finally:
         set_flood_wait_observer(None)
+        set_flood_wait_policy("retry")
 
     logger.info(
         "migration_recovery tick: claimed=%s complete=%s privacy=%s failed=%s skipped=%s",

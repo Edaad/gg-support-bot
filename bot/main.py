@@ -154,6 +154,11 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("help", help_handler))
     app.add_handler(CommandHandler("whoami", whoami_handler))
+    from bot.handlers.whosnext import whosnext_handler
+
+    app.add_handler(
+        CommandHandler("whosnext", whosnext_handler, filters=filters.ChatType.PRIVATE)
+    )
     app.add_handler(CommandHandler("mycmds", mycmds_handler))
     app.add_handler(CommandHandler("delete", delete_handler))
     app.add_handler(CommandHandler("bypass", bypass_handler))

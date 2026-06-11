@@ -1280,8 +1280,8 @@
     "semantic_hash": "9d2f1e12ab88efc39fc25326e4308c37"
   },
   "club_gc_settings.py": {
-    "mtime": 1781089033.0841088,
-    "ast_hash": "e2d4c6da4f505b021b56ec4fb1e05ec2",
+    "mtime": 1781146910.6379287,
+    "ast_hash": "d0cec7bf6edeee0d668288f796e364e2",
     "semantic_hash": ""
   },
   "config.py": {
@@ -1525,8 +1525,8 @@
     "semantic_hash": "f815b05a6bbf7c0237e414e0d04ee055"
   },
   "db/models.py": {
-    "mtime": 1781146557.6524508,
-    "ast_hash": "879c4267a3274ab55909d8aada3f302a",
+    "mtime": 1781146908.137369,
+    "ast_hash": "277b28da3bab000d4ee4a34366f66b74",
     "semantic_hash": ""
   },
   "export_payment_config_backup.py": {
@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1781146706.0202417,
-    "ast_hash": "3212fab3c300481013ba38a1f5666029",
+    "mtime": 1781146940.9558086,
+    "ast_hash": "2e6ae9dee18eba942057bd01d3a73d1f",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2740,8 +2740,8 @@
     "semantic_hash": ""
   },
   "bot/services/migration_recovery.py": {
-    "mtime": 1781145463.7135224,
-    "ast_hash": "16ac489059c6f2679b43894902a8ef6a",
+    "mtime": 1781146929.323924,
+    "ast_hash": "808b98d2c98f4d9d7d88e176c4578ccf",
     "semantic_hash": ""
   },
   "migrate_migrated_group_recovery.py": {
@@ -2750,13 +2750,13 @@
     "semantic_hash": ""
   },
   "scripts/seed_migrated_group_recovery.py": {
-    "mtime": 1781145438.2343938,
-    "ast_hash": "56aa7ba8fef4610d31d355764c86f80a",
+    "mtime": 1781146934.6043568,
+    "ast_hash": "61e56f61dfd23d880a62fef71e139d15",
     "semantic_hash": ""
   },
   "tests/test_migration_recovery.py": {
-    "mtime": 1781145442.5076802,
-    "ast_hash": "5ed519b787f6b444955dba5032e1df89",
+    "mtime": 1781146961.2221575,
+    "ast_hash": "12d6612cdf4654c454f4875a55b6cab3",
     "semantic_hash": ""
   },
   "bot/services/migration_recovery_priority.py": {
@@ -2787,6 +2787,11 @@
   "tests/test_payment_binding_events.py": {
     "mtime": 1781146709.6095023,
     "ast_hash": "b4ba90c1a653259d9042886a74601284",
+    "semantic_hash": ""
+  },
+  "migrate_migration_recovery_control.py": {
+    "mtime": 1781146909.500312,
+    "ast_hash": "edbd5f48a0b939567c2144685136ab8e",
     "semantic_hash": ""
   }
 }
