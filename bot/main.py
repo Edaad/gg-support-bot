@@ -77,6 +77,15 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
 
             schedule_migration_recovery_job(app)
 
+        from club_gc_settings import is_migration_recovery_slack_summary_enabled
+
+        if is_migration_recovery_slack_summary_enabled():
+            from bot.services.migration_recovery import (
+                schedule_migration_recovery_slack_summary_job,
+            )
+
+            schedule_migration_recovery_slack_summary_job(app)
+
 
 async def _post_shutdown_dm_gc_listener(app, *, test_mode: bool = False):
     if test_mode:

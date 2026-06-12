@@ -780,9 +780,9 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "api/app.py": {
-    "mtime": 1780882880.9649012,
-    "ast_hash": "57f094605021fc6b685f3a90422908cf",
-    "semantic_hash": "57f094605021fc6b685f3a90422908cf"
+    "mtime": 1781221207.3207505,
+    "ast_hash": "36d327886d658caa160c65382e667357",
+    "semantic_hash": ""
   },
   "api/auth.py": {
     "mtime": 1775781975.5205543,
@@ -795,14 +795,14 @@
     "semantic_hash": "7751c0a4603afb2a3a77630f59614419"
   },
   "api/payment_v2_helpers.py": {
-    "mtime": 1780885386.0915897,
-    "ast_hash": "8d7e7328b1cc1f7704e789b2f7b27029",
-    "semantic_hash": "8d7e7328b1cc1f7704e789b2f7b27029"
+    "mtime": 1781221252.702023,
+    "ast_hash": "01227fba243b51e9eee1ca0a3923e0d8",
+    "semantic_hash": ""
   },
   "api/payments_helpers.py": {
-    "mtime": 1780917300.160799,
-    "ast_hash": "58860f48b187584494b840d6a8b2612c",
-    "semantic_hash": "58860f48b187584494b840d6a8b2612c"
+    "mtime": 1781221235.5171046,
+    "ast_hash": "162038f312710285e6681412e946732a",
+    "semantic_hash": ""
   },
   "api/routes/__init__.py": {
     "mtime": 1775781975.5206215,
@@ -850,8 +850,8 @@
     "semantic_hash": "461fb0a08f152dd606c9261551e60e96"
   },
   "api/routes/payments.py": {
-    "mtime": 1781010192.3259704,
-    "ast_hash": "0f6093b31a011b734e2461cc937dc8f3",
+    "mtime": 1781221247.0572264,
+    "ast_hash": "4beb6e084f83faebb4359bea67a11fa7",
     "semantic_hash": ""
   },
   "api/routes/simulate.py": {
@@ -895,9 +895,9 @@
     "semantic_hash": "8b56ec7d6488c493029f4bf8bc73ffc6"
   },
   "api/schemas_payments.py": {
-    "mtime": 1780878850.8843818,
-    "ast_hash": "574d7f8b7bf8ed2dde07f8e189df72ee",
-    "semantic_hash": "574d7f8b7bf8ed2dde07f8e189df72ee"
+    "mtime": 1781221237.933618,
+    "ast_hash": "c73d96ea38692cbaf5a683b483746501",
+    "semantic_hash": ""
   },
   "api/schemas_v2.py": {
     "mtime": 1780633859.6147068,
@@ -965,8 +965,8 @@
     "semantic_hash": ""
   },
   "bot/handlers/deposit.py": {
-    "mtime": 1781049444.0768106,
-    "ast_hash": "42b994a61fc208a985f1c67245ffe94c",
+    "mtime": 1781221250.5016284,
+    "ast_hash": "56ca3c12bca4906407c767bef9627cd6",
     "semantic_hash": ""
   },
   "bot/handlers/findgc.py": {
@@ -1170,8 +1170,8 @@
     "semantic_hash": ""
   },
   "bot/services/payment_method_binding.py": {
-    "mtime": 1781146583.2292888,
-    "ast_hash": "cbed282c75b169d2bfbbc40f7ed2e1f3",
+    "mtime": 1781221225.596051,
+    "ast_hash": "b8400e2a010ecf53b6743e6b53eeb461",
     "semantic_hash": ""
   },
   "bot/services/player_details.py": {
@@ -1315,8 +1315,8 @@
     "semantic_hash": "cc23f8156b7316b4f6b042cb88c89f88"
   },
   "dashboard/src/api/paymentsClient.ts": {
-    "mtime": 1780973540.3090463,
-    "ast_hash": "ae661861fae8de7409dcd5a4e86161f6",
+    "mtime": 1781221261.6719074,
+    "ast_hash": "2133d09a22f7ac1018d1c13145674aac",
     "semantic_hash": ""
   },
   "dashboard/src/api/v2Client.ts": {
@@ -1345,9 +1345,9 @@
     "semantic_hash": "c0dc5ba4f966cd52ed6d34c48e5c3928"
   },
   "dashboard/src/components/FirstTimeDepositLinkingSection.tsx": {
-    "mtime": 1780881092.1438549,
-    "ast_hash": "8d4fe6cc9dad9e706b77b898d0c20eba",
-    "semantic_hash": "8d4fe6cc9dad9e706b77b898d0c20eba"
+    "mtime": 1781221253.5559592,
+    "ast_hash": "ceb4f0afc3de230956de76d6699d3821",
+    "semantic_hash": ""
   },
   "dashboard/src/components/KpiStat.tsx": {
     "mtime": 1780760000.5325663,
@@ -1370,8 +1370,8 @@
     "semantic_hash": "1b7ed154ff8646439cfa876c5926a2ff"
   },
   "dashboard/src/components/PaymentMethodLinkingAnalytics.tsx": {
-    "mtime": 1780973544.6011155,
-    "ast_hash": "61fe62a8dd1f0264a8256d5e73a48b75",
+    "mtime": 1781221254.1185446,
+    "ast_hash": "76dd869cf66fd8473ce9bf99b573ba07",
     "semantic_hash": ""
   },
   "dashboard/src/components/ResponseEditor.tsx": {
@@ -1385,9 +1385,9 @@
     "semantic_hash": "9b823afa52ca6cc41d5926c89d3436b1"
   },
   "dashboard/src/components/V2MethodEditor.tsx": {
-    "mtime": 1780878864.6859107,
-    "ast_hash": "ab9589079c202fc4efc840da4ccb02e8",
-    "semantic_hash": "ab9589079c202fc4efc840da4ccb02e8"
+    "mtime": 1781221253.789131,
+    "ast_hash": "faf4c89754034fb0390d2ad7f9e4969c",
+    "semantic_hash": ""
   },
   "dashboard/src/components/V2SubOptionEditor.tsx": {
     "mtime": 1780104838.519559,
@@ -1465,9 +1465,9 @@
     "semantic_hash": "4a6da6727d0bd80a7e20d65c09e3ffde"
   },
   "dashboard/src/pages/Payments.tsx": {
-    "mtime": 1780891102.5330977,
-    "ast_hash": "81d2418c2d0c446233282817adb997e3",
-    "semantic_hash": "81d2418c2d0c446233282817adb997e3"
+    "mtime": 1781221278.9277346,
+    "ast_hash": "3f3598a0c9b44a6eefb5a430fb88a94f",
+    "semantic_hash": ""
   },
   "dashboard/src/pages/Settings.tsx": {
     "mtime": 1780104838.1154065,
@@ -1525,8 +1525,8 @@
     "semantic_hash": "f815b05a6bbf7c0237e414e0d04ee055"
   },
   "db/models.py": {
-    "mtime": 1781146908.137369,
-    "ast_hash": "277b28da3bab000d4ee4a34366f66b74",
+    "mtime": 1781221187.9440436,
+    "ast_hash": "1ef671373e2113b424d5027afa99aceb",
     "semantic_hash": ""
   },
   "export_payment_config_backup.py": {
@@ -1715,8 +1715,8 @@
     "semantic_hash": "3d1ee93392d4d24299b3663ce02bc830"
   },
   "notification/handlers/bind.py": {
-    "mtime": 1781149510.8396776,
-    "ast_hash": "46876bd7b71f377c52e21b8c57af3043",
+    "mtime": 1781221249.1132472,
+    "ast_hash": "4a86d4e4965193fc484b309b710004b5",
     "semantic_hash": ""
   },
   "notification/main.py": {
@@ -2690,8 +2690,8 @@
     "semantic_hash": ""
   },
   "bot/services/chat_id_remap.py": {
-    "mtime": 1781062572.9238138,
-    "ast_hash": "3171c3e114c80225d6b7830757db8a68",
+    "mtime": 1781221251.1612537,
+    "ast_hash": "76e9adea4e11944c06fc0c9ca2764cc5",
     "semantic_hash": ""
   },
   "scripts/readd_migrated_group_members.py": {
@@ -2765,8 +2765,8 @@
     "semantic_hash": ""
   },
   "bot/services/payment_binding_events.py": {
-    "mtime": 1781146682.6271114,
-    "ast_hash": "5c90811094b3fe9ade3e86aece184093",
+    "mtime": 1781221250.283463,
+    "ast_hash": "9a1663523022172d6c31a330832ae497",
     "semantic_hash": ""
   },
   "migrate_payment_binding_events.py": {
@@ -2842,6 +2842,31 @@
   "tests/test_migration_group_readd.py": {
     "mtime": 1781158171.014825,
     "ast_hash": "72a20893043f4823a6a69790e8452c20",
+    "semantic_hash": ""
+  },
+  "api/routes/paypal_payments.py": {
+    "mtime": 1781221206.9081535,
+    "ast_hash": "c3099562acfba90b01333ff74e629760",
+    "semantic_hash": ""
+  },
+  "bot/services/paypal_payments.py": {
+    "mtime": 1781221204.4309244,
+    "ast_hash": "423f95168817801fd8d936a0d8075e7b",
+    "semantic_hash": ""
+  },
+  "migrate_paypal_payments.py": {
+    "mtime": 1781221190.2296257,
+    "ast_hash": "012ce0ccae7b33e56daa60cc71f30257",
+    "semantic_hash": ""
+  },
+  "tests/test_paypal_payments_api.py": {
+    "mtime": 1781221282.4496794,
+    "ast_hash": "ed041715ad134d8980aa07aabdbdeb89",
+    "semantic_hash": ""
+  },
+  "docs/PAYPAL_PAYMENTS.md": {
+    "mtime": 1781221281.2425911,
+    "ast_hash": "e9e38f25c48b57d9edb0b90bf21e5883",
     "semantic_hash": ""
   }
 }

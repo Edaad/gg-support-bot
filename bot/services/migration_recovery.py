@@ -36,6 +36,8 @@ TERMINAL_STATUSES = frozenset(
     {"complete", "privacy_blocked", "failed", "skipped"}
 )
 
+HIGH_PRIORITY_TIERS = (1, 2)
+
 
 @dataclass(frozen=True)
 class RecoveryRow:
@@ -47,6 +49,59 @@ class RecoveryRow:
     old_chat_id: int
     player_telegram_user_id: int | None
     player_username: str | None
+
+
+@dataclass(frozen=True)
+class ClubRecoverySlackStats:
+    club_key: str
+    club_display_name: str
+    total: int
+    left: int
+    done: int
+    pct_done: float
+    direct_added: int
+    invite_link: int
+    still_missing: int
+
+
+def was_direct_added(readd_result: dict[str, Any] | None) -> bool:
+    added = (readd_result or {}).get("added") or []
+    return any(str(x).startswith("player:") for x in added)
+
+
+def is_already_in_only_result(result: ReaddGroupResult) -> bool:
+    return (
+        bool(result.already_member)
+        and not result.added
+        and not result.privacy_blocked
+        and not result.failed
+        and result.status not in ("no_targets", "error")
+    )
+
+
+def consumes_direct_add_quota(result: ReaddGroupResult) -> bool:
+    if result.status == "no_targets":
+        return False
+    if is_already_in_only_result(result):
+        return False
+    return True
+
+
+def should_skip_admin_dm_for_result(result: ReaddGroupResult, terminal_status: str) -> bool:
+    return terminal_status == "complete" and is_already_in_only_result(result)
+
+
+def classify_terminal_row_outcome(
+    *,
+    readd_result: dict[str, Any] | None,
+    player_in_group: bool,
+) -> str:
+    """Return ``direct_added``, ``invite_link``, or ``still_missing``."""
+    if not player_in_group:
+        return "still_missing"
+    if was_direct_added(readd_result):
+        return "direct_added"
+    return "invite_link"
 
 
 def map_readd_status(result: ReaddGroupResult) -> tuple[str, str | None]:
@@ -519,6 +574,39 @@ def claim_pending_batch(limit: int | None = None) -> list[RecoveryRow]:
         return [_recovery_row_from_model(row) for row in detail_rows]
 
 
+def claim_next_pending_row(club_key: str) -> RecoveryRow | None:
+    """Claim one pending row for a club (priority order, skip locked)."""
+
+    from sqlalchemy import select
+
+    from db.connection import get_db
+    from db.models import MigratedGroupRecovery
+
+    now = datetime.now(timezone.utc)
+    with get_db() as session:
+        row_id = session.execute(
+            select(MigratedGroupRecovery.id)
+            .where(MigratedGroupRecovery.readd_status == "pending")
+            .where(MigratedGroupRecovery.club_key == club_key)
+            .order_by(
+                MigratedGroupRecovery.priority_tier.asc(),
+                MigratedGroupRecovery.priority_rank.asc(),
+            )
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        ).scalar_one_or_none()
+        if row_id is None:
+            return None
+        row = session.get(MigratedGroupRecovery, int(row_id))
+        if row is None:
+            return None
+        row.readd_status = "processing"
+        row.readd_attempted_at = now
+        row.updated_at = now
+        session.commit()
+        return _recovery_row_from_model(row)
+
+
 def peek_next_recovery_rows(limit: int = 10) -> list[RecoveryRow]:
     """Read-only view of top pending rows (global priority order)."""
 
@@ -719,7 +807,7 @@ def finalize_row(
     return status
 
 
-async def _process_row(row: RecoveryRow) -> str:
+async def _process_row(row: RecoveryRow) -> tuple[str, ReaddGroupResult]:
     from bot.services.mtproto_dm_gc_listener import get_listener_client
 
     cfg = get_club_gc_config_by_link_club_id(int(row.club_id))
@@ -729,14 +817,15 @@ async def _process_row(row: RecoveryRow) -> str:
         *,
         pre_status: str | None = None,
         pre_error: str | None = None,
-    ) -> str:
+    ) -> tuple[str, ReaddGroupResult]:
         status = finalize_row(
             row.id,
             result,
             pre_status=pre_status,
             pre_error=pre_error,
         )
-        if cfg is not None:
+        skip_admin_dm = should_skip_admin_dm_for_result(result, status)
+        if cfg is not None and not skip_admin_dm:
             try:
                 await notify_readd_admin_dm(
                     cfg,
@@ -751,20 +840,14 @@ async def _process_row(row: RecoveryRow) -> str:
                     row.telegram_chat_id,
                     exc_info=True,
                 )
+        if cfg is not None or pre_error or status == "failed":
             await _notify_rt_ops_if_needed(
                 row=row,
                 result=result,
                 terminal_status=status,
                 pre_error=pre_error,
             )
-        elif pre_error or status == "failed":
-            await _notify_rt_ops_if_needed(
-                row=row,
-                result=result,
-                terminal_status=status,
-                pre_error=pre_error,
-            )
-        return status
+        return status, result
 
     if cfg is None:
         return await _finish(
@@ -828,23 +911,26 @@ async def tick_async() -> dict[str, int]:
     if not is_migration_recovery_enabled():
         return {"claimed": 0}
 
-    rows = claim_pending_batch()
+    active_clubs = migration_recovery_active_club_keys()
     summary: dict[str, int] = {
-        "claimed": len(rows),
+        "claimed": 0,
+        "direct_add_quota_used": 0,
+        "already_skipped": 0,
         "complete": 0,
         "privacy_blocked": 0,
         "failed": 0,
         "skipped": 0,
     }
 
-    if not rows:
-        logger.info("migration_recovery: no pending rows to claim this tick")
+    if not active_clubs:
+        logger.info("migration_recovery: no active clubs")
         await _maybe_auto_disable_after_tick()
         return summary
 
+    batch_size = get_migration_recovery_batch_size()
     delay = get_migration_recovery_invite_delay_sec()
     current_row: RecoveryRow | None = None
-    batch_row_ids = [row.id for row in rows]
+    flood_aborted = False
 
     async def _on_flood_wait(label: str, wait_s: int) -> None:
         detail = format_rate_limit_admin_notification(
@@ -866,30 +952,28 @@ async def tick_async() -> dict[str, int]:
     set_flood_wait_policy("abort")
     set_flood_wait_observer(_on_flood_wait)
     try:
-        for i, row in enumerate(rows):
-            if i > 0 and delay > 0:
-                await asyncio.sleep(delay)
-            current_row = row
-            try:
-                status = await _process_row(row)
-            except FloodWaitAbortError as exc:
-                remaining = [
-                    rid for rid in batch_row_ids[batch_row_ids.index(row.id) + 1 :]
-                ]
-                await _handle_rate_limit_abort(
-                    exc=exc,
-                    row=row,
-                    remaining_row_ids=remaining,
-                )
-                summary["failed"] += 1
+        for club_key in active_clubs:
+            if flood_aborted:
                 break
-            except Exception:
-                logger.exception(
-                    "migration_recovery: tick failed row_id=%s chat_id=%s",
-                    row.id,
-                    row.telegram_chat_id,
-                )
-                err_result = ReaddGroupResult(
+
+            quota = batch_size
+            club_processing_ids: list[int] = []
+            need_delay_before_next = False
+
+            while quota > 0:
+                if need_delay_before_next and delay > 0:
+                    await asyncio.sleep(delay)
+                    need_delay_before_next = False
+
+                row = claim_next_pending_row(club_key)
+                if row is None:
+                    break
+
+                summary["claimed"] += 1
+                club_processing_ids.append(row.id)
+                current_row = row
+                status = "failed"
+                result = ReaddGroupResult(
                     chat_id=row.telegram_chat_id,
                     club_id=row.club_id,
                     club_key=row.club_key,
@@ -899,41 +983,74 @@ async def tick_async() -> dict[str, int]:
                     status="error",
                     error="tick_exception",
                 )
-                status = finalize_row(row.id, err_result)
-                cfg = get_club_gc_config_by_link_club_id(int(row.club_id))
-                if cfg is not None:
-                    try:
-                        await notify_readd_admin_dm(
-                            cfg,
-                            row=row,
-                            result=err_result,
-                            terminal_status=status,
-                        )
-                    except Exception:
-                        logger.warning(
-                            "migration_recovery: admin DM failed row_id=%s chat_id=%s",
-                            row.id,
-                            row.telegram_chat_id,
-                            exc_info=True,
-                        )
-                await _notify_rt_ops_if_needed(
-                    row=row,
-                    result=err_result,
-                    terminal_status=status,
-                    pre_error="tick_exception",
-                )
-            if status in summary:
-                summary[status] += 1
-            else:
-                summary["failed"] += 1
-            current_row = None
+
+                try:
+                    status, result = await _process_row(row)
+                except FloodWaitAbortError as exc:
+                    to_release = [
+                        rid for rid in club_processing_ids if rid != row.id
+                    ]
+                    await _handle_rate_limit_abort(
+                        exc=exc,
+                        row=row,
+                        remaining_row_ids=to_release,
+                    )
+                    summary["failed"] += 1
+                    flood_aborted = True
+                    break
+                except Exception:
+                    logger.exception(
+                        "migration_recovery: tick failed row_id=%s chat_id=%s",
+                        row.id,
+                        row.telegram_chat_id,
+                    )
+                    status = finalize_row(row.id, result)
+                    cfg = get_club_gc_config_by_link_club_id(int(row.club_id))
+                    if cfg is not None:
+                        try:
+                            await notify_readd_admin_dm(
+                                cfg,
+                                row=row,
+                                result=result,
+                                terminal_status=status,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "migration_recovery: admin DM failed row_id=%s chat_id=%s",
+                                row.id,
+                                row.telegram_chat_id,
+                                exc_info=True,
+                            )
+                    await _notify_rt_ops_if_needed(
+                        row=row,
+                        result=result,
+                        terminal_status=status,
+                        pre_error="tick_exception",
+                    )
+
+                if consumes_direct_add_quota(result):
+                    quota -= 1
+                    summary["direct_add_quota_used"] += 1
+                    need_delay_before_next = True
+                else:
+                    summary["already_skipped"] += 1
+
+                if status in summary:
+                    summary[status] += 1
+                else:
+                    summary["failed"] += 1
+                current_row = None
+
     finally:
         set_flood_wait_observer(None)
         set_flood_wait_policy("retry")
 
     logger.info(
-        "migration_recovery tick: claimed=%s complete=%s privacy=%s failed=%s skipped=%s",
+        "migration_recovery tick: claimed=%s direct_add=%s already_skipped=%s "
+        "complete=%s privacy=%s failed=%s skipped=%s",
         summary["claimed"],
+        summary["direct_add_quota_used"],
+        summary["already_skipped"],
         summary["complete"],
         summary["privacy_blocked"],
         summary["failed"],
@@ -993,6 +1110,169 @@ def schedule_migration_recovery_job(app) -> None:
         get_migration_recovery_batch_size(),
         ",".join(migration_recovery_active_club_keys()),
         ",".join(sorted(get_migration_recovery_disabled_clubs())) or "(none)",
+    )
+
+
+async def is_player_in_group_bot(bot, chat_id: int, player_id: int) -> bool:
+    from telegram.constants import ChatMemberStatus
+
+    try:
+        member = await bot.get_chat_member(int(chat_id), int(player_id))
+    except Exception:
+        return False
+    return member.status in (
+        ChatMemberStatus.MEMBER,
+        ChatMemberStatus.ADMINISTRATOR,
+        ChatMemberStatus.OWNER,
+        ChatMemberStatus.RESTRICTED,
+    )
+
+
+async def compute_recovery_slack_stats(bot) -> list[ClubRecoverySlackStats]:
+    from club_gc_settings import (
+        CLUB_GC_CONFIG,
+        get_migration_recovery_slack_summary_check_delay_sec,
+    )
+    from db.connection import get_db
+    from db.models import MigratedGroupRecovery
+
+    check_delay = get_migration_recovery_slack_summary_check_delay_sec()
+    buckets: dict[str, dict[str, int]] = {
+        club_key: {
+            "total": 0,
+            "left": 0,
+            "done": 0,
+            "direct_added": 0,
+            "invite_link": 0,
+            "still_missing": 0,
+        }
+        for club_key in RECOVERY_CLUB_KEYS
+    }
+
+    with get_db() as session:
+        rows = (
+            session.query(MigratedGroupRecovery)
+            .filter(MigratedGroupRecovery.priority_tier.in_(HIGH_PRIORITY_TIERS))
+            .all()
+        )
+
+    for row in rows:
+        club_key = str(row.club_key)
+        if club_key not in buckets:
+            continue
+        bucket = buckets[club_key]
+        bucket["total"] += 1
+        status = str(row.readd_status)
+        if status in ("pending", "processing"):
+            bucket["left"] += 1
+        elif status in TERMINAL_STATUSES:
+            bucket["done"] += 1
+
+    for row in rows:
+        club_key = str(row.club_key)
+        if club_key not in buckets:
+            continue
+        if str(row.readd_status) not in TERMINAL_STATUSES:
+            continue
+        player_id = row.player_telegram_user_id
+        if player_id is None:
+            continue
+        in_group = await is_player_in_group_bot(
+            bot,
+            int(row.telegram_chat_id),
+            int(player_id),
+        )
+        outcome = classify_terminal_row_outcome(
+            readd_result=row.readd_result if isinstance(row.readd_result, dict) else None,
+            player_in_group=in_group,
+        )
+        bucket = buckets[club_key]
+        if outcome == "direct_added":
+            bucket["direct_added"] += 1
+        elif outcome == "invite_link":
+            bucket["invite_link"] += 1
+        else:
+            bucket["still_missing"] += 1
+        if check_delay > 0:
+            await asyncio.sleep(check_delay)
+
+    stats: list[ClubRecoverySlackStats] = []
+    for club_key in RECOVERY_CLUB_KEYS:
+        bucket = buckets[club_key]
+        if bucket["total"] == 0:
+            continue
+        display = CLUB_GC_CONFIG.get(club_key)
+        stats.append(
+            ClubRecoverySlackStats(
+                club_key=club_key,
+                club_display_name=(
+                    display.club_display_name if display is not None else club_key
+                ),
+                total=int(bucket["total"]),
+                left=int(bucket["left"]),
+                done=int(bucket["done"]),
+                pct_done=(100.0 * bucket["done"] / bucket["total"])
+                if bucket["total"]
+                else 0.0,
+                direct_added=int(bucket["direct_added"]),
+                invite_link=int(bucket["invite_link"]),
+                still_missing=int(bucket["still_missing"]),
+            )
+        )
+    return stats
+
+
+def format_recovery_slack_summary(stats: list[ClubRecoverySlackStats]) -> str:
+    lines = ["Migration recovery progress (tier 1+2)", ""]
+    for entry in stats:
+        pct = f"{entry.pct_done:.0f}%"
+        lines.append(entry.club_display_name)
+        lines.append(f"  left: {entry.left} | done: {pct} ({entry.done}/{entry.total})")
+        lines.append(
+            "  direct added: "
+            f"{entry.direct_added} | joined via link: {entry.invite_link} | "
+            f"still missing: {entry.still_missing}"
+        )
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+async def post_slack_recovery_summary() -> bool:
+    if _recovery_app is None:
+        logger.warning("migration_recovery: slack summary skipped (no app)")
+        return False
+    stats = await compute_recovery_slack_stats(_recovery_app.bot)
+    if not stats:
+        logger.info("migration_recovery: slack summary skipped (no tier 1+2 rows)")
+        return False
+    text = format_recovery_slack_summary(stats)
+    from bot.services.slack_ops_notify import notify_slack_ops
+
+    return await notify_slack_ops(text, source="migration_recovery")
+
+
+async def migration_recovery_slack_summary_job_callback(_context) -> None:
+    await post_slack_recovery_summary()
+
+
+def schedule_migration_recovery_slack_summary_job(app) -> None:
+    global _recovery_app
+
+    from datetime import timedelta
+
+    from club_gc_settings import get_migration_recovery_slack_summary_interval_sec
+
+    _recovery_app = app
+    interval_sec = get_migration_recovery_slack_summary_interval_sec()
+    app.job_queue.run_repeating(
+        migration_recovery_slack_summary_job_callback,
+        interval=timedelta(seconds=interval_sec),
+        first=timedelta(seconds=600),
+        name="migration_recovery_slack_summary",
+    )
+    logger.info(
+        "migration_recovery slack summary scheduled interval_sec=%s",
+        interval_sec,
     )
 
 

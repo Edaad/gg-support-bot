@@ -123,15 +123,17 @@ heroku config:set GC_MIGRATION_RECOVERY_DISABLED_CLUBS=round_table -a YOUR_APP
 heroku restart worker -a YOUR_APP
 ```
 
-Optional knobs: `GC_MIGRATION_RECOVERY_INTERVAL_SEC` (default `300`), `GC_MIGRATION_RECOVERY_BATCH_SIZE` (default `5`, **per active club**), `GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC` (default `2`), `GC_MIGRATION_RECOVERY_SKIP_WELCOME` (default `false`).
+Optional knobs: `GC_MIGRATION_RECOVERY_INTERVAL_SEC` (default `300`), `GC_MIGRATION_RECOVERY_BATCH_SIZE` (default `5`, **direct-add quota per active club per tick**), `GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC` (default `2`, between direct-add attempts only), `GC_MIGRATION_RECOVERY_SKIP_WELCOME` (default `false`).
 
-With `GC_MIGRATION_RECOVERY_BATCH_SIZE=1`, each tick claims up to **one GC per active club** — up to three groups per tick when all clubs are enabled.
+With `GC_MIGRATION_RECOVERY_BATCH_SIZE=1`, each tick processes up to **one direct-add attempt per active club** (already-in rows are skipped without counting toward quota).
 
-Requires `GC_DM_GC_LISTENER_ENABLED` (default on). Recovery direct-adds **only the mapped player** (not staff/bot accounts from `GC_USERS_*`); staff can join via invite link or manual add. Membership is checked with `GetParticipantRequest` before any invite. Each group is attempted **once**; no automatic retries. For one-off staff re-adds, use [`scripts/readd_migrated_group_members.py`](../scripts/readd_migrated_group_members.py) with `--invite-staff`.
+Requires `GC_DM_GC_LISTENER_ENABLED` (default on). Recovery direct-adds **only the mapped player** (not staff/bot accounts from `GC_USERS_*`); staff can join via invite link or manual add. Membership is checked with `GetParticipantRequest` before any invite. Each tick **drains already-in players without consuming batch quota** — it keeps claiming rows until `GC_MIGRATION_RECOVERY_BATCH_SIZE` groups that actually needed a direct add are processed per active club. Already-in-only rows finalize as `complete` without an admin DM. Each group is attempted **once**; no automatic retries. For one-off staff re-adds, use [`scripts/readd_migrated_group_members.py`](../scripts/readd_migrated_group_members.py) with `--invite-staff`.
+
+**Slack progress (tier 1+2, every 6h):** When `SLACK_OPS_BOT_TOKEN` + `SLACK_OPS_CHANNEL_ID` (or webhook) are set, the worker posts per-club stats: queue left, % done, direct added (in group + `InviteToChannel` succeeded), joined via link (in group but not direct added), still missing. Tune with `GC_MIGRATION_RECOVERY_SLACK_SUMMARY_INTERVAL_SEC` (default `21600`), `GC_MIGRATION_RECOVERY_SLACK_SUMMARY_ENABLED=false` to disable.
 
 Set `GC_MIGRATION_RECOVERY_SKIP_WELCOME=true` to suppress member-join preamble/TOS for chats in `migrated_group_recovery` during mass re-adds (independent of the recovery cron switch). Unset or set `false` to restore normal welcomes.
 
-After each attempt, the **GG Support bot** DMs that club's GC admin with a tappable GC title (supergroup `t.me/c/…` link when available), result status, and which accounts were added. **Rate limits (FloodWait)** halt recovery immediately, auto-disable the cron, and DM **all three club GC admins**. Other failures also DM the Round Table GC admin (`GC_ADMIN_USER_ROUND_TABLE`) for central ops visibility. Errors also post to **Slack** when `SLACK_OPS_BOT_TOKEN` + `SLACK_OPS_CHANNEL_ID` (or webhook) are set (see Slack ops below). Admins must have `/start`ed the bot.
+After each direct-add attempt (not already-in-only skips), the **GG Support bot** DMs that club's GC admin with a tappable GC title (supergroup `t.me/c/…` link when available), result status, and which accounts were added. **Rate limits (FloodWait)** halt recovery immediately, auto-disable the cron, and DM **all three club GC admins**. Other failures also DM the Round Table GC admin (`GC_ADMIN_USER_ROUND_TABLE`) for central ops visibility. Errors also post to **Slack** when `SLACK_OPS_BOT_TOKEN` + `SLACK_OPS_CHANNEL_ID` (or webhook) are set (see Slack ops below). Admins must have `/start`ed the bot.
 
 **Queue visibility:** Send `/whosnext` in a private DM with the bot (admin accounts only) to see the global top-10 pending rows, plus auto-add / auto-disable status.
 

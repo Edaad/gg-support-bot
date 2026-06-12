@@ -417,6 +417,23 @@ def is_migration_recovery_skip_welcome_enabled() -> bool:
     return _env_bool("GC_MIGRATION_RECOVERY_SKIP_WELCOME", default=False)
 
 
+def get_migration_recovery_slack_summary_interval_sec() -> int:
+    return max(600, _env_int("GC_MIGRATION_RECOVERY_SLACK_SUMMARY_INTERVAL_SEC", 21600))
+
+
+def get_migration_recovery_slack_summary_check_delay_sec() -> float:
+    return max(0.0, _env_float("GC_MIGRATION_RECOVERY_SLACK_SUMMARY_CHECK_DELAY_SEC", 0.1))
+
+
+def is_migration_recovery_slack_summary_enabled() -> bool:
+    if not _env_bool("GC_MIGRATION_RECOVERY_SLACK_SUMMARY_ENABLED", default=True):
+        return False
+    token = (_env_optional("SLACK_OPS_BOT_TOKEN") or "").strip()
+    channel = (_env_optional("SLACK_OPS_CHANNEL_ID") or "").strip()
+    webhook = (_env_optional("SLACK_OPS_WEBHOOK_URL") or "").strip()
+    return bool((token and channel) or webhook)
+
+
 def get_dm_gc_listener_restart_config() -> tuple[float, float, float]:
     """``(initial_delay_sec, max_delay_sec, backoff_multiplier)`` for listener supervision."""
 
