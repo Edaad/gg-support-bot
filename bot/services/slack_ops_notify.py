@@ -44,14 +44,12 @@ def _slack_mention() -> str | None:
 
 
 def format_slack_ops_message(text: str, *, source: str) -> str:
-    body = (text or "").strip()
-    prefix_parts: list[str] = [f"[{source}]"]
-    mention = _slack_mention()
-    if mention:
-        prefix_parts.append(mention)
-    header = " ".join(prefix_parts)
+    from bot.services.slack_ops_format import beautify_slack_body, slack_header
+
+    body = beautify_slack_body((text or "").strip(), source=source)
+    header = slack_header(source, mention=_slack_mention())
     if body:
-        message = f"{header}\n{body}"
+        message = f"{header}\n\n{body}"
     else:
         message = header
     if len(message) > _MAX_SLACK_TEXT_LEN:
@@ -130,4 +128,8 @@ async def notify_slack_ops(text: str, *, source: str) -> bool:
     if _slack_webhook_url():
         return await _post_via_webhook(message)
 
+    logger.warning(
+        "slack_ops: skipped source=%s (set SLACK_OPS_BOT_TOKEN+SLACK_OPS_CHANNEL_ID or SLACK_OPS_WEBHOOK_URL)",
+        source,
+    )
     return False

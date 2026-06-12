@@ -930,8 +930,8 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "bot/handlers/add.py": {
-    "mtime": 1781049444.5343106,
-    "ast_hash": "034e5ac990c37500c57e176302bfe3a7",
+    "mtime": 1781240016.161645,
+    "ast_hash": "998fbad3cc763b779bcf61642f30f642",
     "semantic_hash": ""
   },
   "bot/handlers/bonus.py": {
@@ -1110,9 +1110,9 @@
     "semantic_hash": "dd4cbac6032e04c09c7145f88937049b"
   },
   "bot/services/mtproto_bot_fallback.py": {
-    "mtime": 1780183346.448524,
-    "ast_hash": "738bde08dbaa270dbe6b13a3c3198090",
-    "semantic_hash": "738bde08dbaa270dbe6b13a3c3198090"
+    "mtime": 1781240019.2984715,
+    "ast_hash": "9f2910e900dca20a692c200daa162ec1",
+    "semantic_hash": ""
   },
   "bot/services/mtproto_check_player.py": {
     "mtime": 1779810895.056252,
@@ -1120,14 +1120,14 @@
     "semantic_hash": "563bb7e4bf87c4a7e0a2622d3109b5b4"
   },
   "bot/services/mtproto_dm_gc_listener.py": {
-    "mtime": 1781153712.7141087,
-    "ast_hash": "f134c2813da40a7400be68dc8f605a28",
+    "mtime": 1781240015.5767772,
+    "ast_hash": "b8542589126a46d1787750b1277da37c",
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_add.py": {
-    "mtime": 1780183388.9845803,
-    "ast_hash": "27b473c6872b24e806ac3b036f7ab938",
-    "semantic_hash": "27b473c6872b24e806ac3b036f7ab938"
+    "mtime": 1781240014.8709412,
+    "ast_hash": "2f9c3558f0ba289a5a31341226643e2f",
+    "semantic_hash": ""
   },
   "bot/services/mtproto_group_cash.py": {
     "mtime": 1781087277.863267,
@@ -2740,8 +2740,8 @@
     "semantic_hash": ""
   },
   "bot/services/migration_recovery.py": {
-    "mtime": 1781222547.5572493,
-    "ast_hash": "a04d21b32344d4415ec5e9b78da6f317",
+    "mtime": 1781272175.4972484,
+    "ast_hash": "f372ac24c29cf68b99896ec106f855dd",
     "semantic_hash": ""
   },
   "migrate_migrated_group_recovery.py": {
@@ -2815,13 +2815,13 @@
     "semantic_hash": ""
   },
   "bot/services/slack_ops_notify.py": {
-    "mtime": 1781150441.0375862,
-    "ast_hash": "b566483a0d484037b6caeaafcd5e8c32",
+    "mtime": 1781272020.990886,
+    "ast_hash": "6717a73ed571644a1d48df9014aa0008",
     "semantic_hash": ""
   },
   "tests/test_slack_ops_notify.py": {
-    "mtime": 1781150451.545708,
-    "ast_hash": "b120ef6d321bc48f7deec2e132b4101e",
+    "mtime": 1781272078.5028343,
+    "ast_hash": "ddd025405a4041eafb7b3b4db639f86f",
     "semantic_hash": ""
   },
   "tests/test_groups_member_join.py": {
@@ -2872,6 +2872,36 @@
   "tests/test_migration_recovery_batch.py": {
     "mtime": 1781222565.0305033,
     "ast_hash": "83461bb8dc1590ee5f82f530667ff2ad",
+    "semantic_hash": ""
+  },
+  "scripts/check_recovery_player_membership.py": {
+    "mtime": 1781272164.1168013,
+    "ast_hash": "3486f2b1610927391aa32d22262d59ca",
+    "semantic_hash": ""
+  },
+  "migrate_zelle_bank_recipient_labels.py": {
+    "mtime": 1781240330.4496639,
+    "ast_hash": "22302cd2efc5da8c31ee9ecf7a119d6f",
+    "semantic_hash": ""
+  },
+  "scripts/backcheck_expired_zelle_setups.py": {
+    "mtime": 1781241244.9710712,
+    "ast_hash": "d53d12980c567d7bb962d24c3f9daa8f",
+    "semantic_hash": ""
+  },
+  "bot/services/slack_ops_format.py": {
+    "mtime": 1781272012.927006,
+    "ast_hash": "5f363ba462cdf8bfc7b87d225eab3571",
+    "semantic_hash": ""
+  },
+  "tests/test_slack_ops_format.py": {
+    "mtime": 1781272069.9228842,
+    "ast_hash": "a059dcd6242684a0fa2b29487f591b04",
+    "semantic_hash": ""
+  },
+  "bot/services/recovery_membership_check.py": {
+    "mtime": 1781272181.378335,
+    "ast_hash": "b9f88a641eb9be2aa007383234c43839",
     "semantic_hash": ""
   }
 }

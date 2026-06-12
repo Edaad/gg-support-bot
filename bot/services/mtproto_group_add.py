@@ -7,6 +7,7 @@ import logging
 import random
 import re
 from decimal import Decimal, InvalidOperation
+from typing import Any
 
 from telethon import events
 
@@ -17,6 +18,7 @@ from bot.services.club import (
     record_activity_for_chat,
 )
 from bot.services.agent_debug_log import agent_debug_log
+from bot.services.mtproto_bot_fallback import bot_delete_message
 from bot.services.mtproto_group_create import (
     get_mtproto_lock,
     is_client_authorized,
@@ -167,11 +169,43 @@ def schedule_send_add_confirmation_from_club(
         asyncio.create_task(coro, name=f"group-add-send-{chat_id}")
 
 
+async def _delete_add_command_message(
+    event: events.NewMessage.Event,
+    *,
+    ptb_bot: Any | None,
+    club_key: str,
+    listener_label: str,
+) -> None:
+    """Delete /add command via Telethon, then Bot API if needed."""
+    deleted = False
+    try:
+        await event.delete()
+        deleted = True
+    except Exception as e:
+        logger.warning(
+            "group_add: telethon delete failed club=%s listener=%s chat_id=%s err=%s",
+            club_key,
+            listener_label,
+            event.chat_id,
+            type(e).__name__,
+        )
+
+    if deleted or ptb_bot is None or event.chat_id is None or not event.message:
+        return
+
+    await bot_delete_message(
+        ptb_bot,
+        chat_id=int(event.chat_id),
+        message_id=int(event.message.id),
+    )
+
+
 async def handle_group_add_outgoing(
     event: events.NewMessage.Event,
     cfg: ClubGcConfig,
     *,
     listener_label: str,
+    ptb_bot: Any | None = None,
 ) -> None:
     """Outgoing /add in a megagroup: delete command, send new message, record cooldown."""
     _raw = (event.raw_text or "")[:120]
@@ -222,16 +256,12 @@ async def handle_group_add_outgoing(
 
     confirmation = format_add_confirmation(amount, bonus, name=name)
 
-    try:
-        await event.delete()
-    except Exception as e:
-        logger.warning(
-            "group_add: delete failed club=%s listener=%s chat_id=%s err=%s",
-            cfg.club_key,
-            listener_label,
-            event.chat_id,
-            type(e).__name__,
-        )
+    await _delete_add_command_message(
+        event,
+        ptb_bot=ptb_bot,
+        club_key=cfg.club_key,
+        listener_label=listener_label,
+    )
 
     try:
         await event.client.send_message(event.chat_id, confirmation)

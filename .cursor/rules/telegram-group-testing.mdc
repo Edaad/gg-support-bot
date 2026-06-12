@@ -1,0 +1,41 @@
+---
+description: Test one Telegram group before any bulk group-chat script or code change
+alwaysApply: true
+---
+
+# Telegram group chat changes — test one group first
+
+Any script or code change that reads, writes, invites, scans, or updates **Telegram support group chats** is high-risk (FloodWait, wrong player IDs, MTProto session conflicts, silent false negatives). **Never ship or run bulk ops without proving the path on exactly one group first.**
+
+## Required workflow
+
+1. **Identify one safe test target** — a known chat id / recovery row id the user can verify in Telegram afterward.
+2. **Dry-run or read-only first** — no `--apply`, no invites, no DB writes until the single-group output looks correct.
+3. **Run the single-group path** — use built-in limits when they exist; add them if missing.
+4. **Verify in Telegram + logs** — membership, titles, invite state, admin DMs, CSV/stdout fields match reality.
+5. **Fix failures on that one group** — do not scale to all clubs/rows while errors remain.
+6. **Only then** run club-scoped or full batch (still prefer dry-run before `--apply`).
+
+## Single-group test hooks in this repo
+
+| Tool | One-group test |
+|------|----------------|
+| Migration recovery | `python scripts/run_migration_recovery_one.py --row-id <id> --dry-run` then without `--dry-run` |
+| Recovery membership audit | `python scripts/check_recovery_player_membership.py --row-id <id>`; `--from-csv <path> --apply` to apply without rescanning |
+| DM / invite scripts | `--chat-id <id>` where supported (e.g. `scripts/dm_readd_failed_invite.py`) |
+| MTProto re-add | `scripts/readd_migrated_group_members.py` with one `--chat-id` before batch |
+| New scripts | Add `--row-id`, `--chat-id`, or `--limit 1`; default to dry-run |
+
+## When implementing or modifying group-touching code
+
+- Add or preserve a **single-target flag** (`--row-id`, `--chat-id`, `--limit 1`) on any new bulk script.
+- **Default to dry-run**; require explicit `--apply` for writes.
+- After code changes, **run the single-group test yourself** — do not ask the user to discover bugs on 400+ groups.
+- Catch import/NameError and API errors on one row before claiming the feature works.
+- Warn about **MTProto session conflicts** with the Heroku worker (same club session must not run in two places).
+
+## What “done” means
+
+- One group tested end-to-end with expected CSV/log/DB outcome.
+- No unhandled exceptions on that group.
+- Bulk command documented only after single-group success.

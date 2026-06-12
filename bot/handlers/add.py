@@ -19,7 +19,7 @@ from bot.services.club import (
     record_activity_for_chat,
 )
 from bot.services.agent_debug_log import agent_debug_log
-from bot.services.mtproto_bot_fallback import telethon_missed_command_message
+from bot.services.mtproto_bot_fallback import bot_delete_message, telethon_missed_command_message
 from bot.services.mtproto_dm_gc_listener import _clients, get_dm_gc_listener_status
 from bot.services.mtproto_group_add import (
     format_add_confirmation,
@@ -60,16 +60,16 @@ async def _add_bot_api_path(
     confirmation = format_add_confirmation(amount, bonus, name=name)
 
     if not command_already_deleted:
-        try:
-            await context.bot.delete_message(
-                chat_id=chat.id, message_id=update.message.message_id
-            )
-        except Exception:
+        deleted = await bot_delete_message(
+            context.bot,
+            chat_id=chat.id,
+            message_id=update.message.message_id,
+        )
+        if not deleted:
             logger.warning(
                 "add: could not delete command message chat_id=%s message_id=%s",
                 chat.id,
                 update.message.message_id,
-                exc_info=True,
             )
 
     schedule_send_add_confirmation_from_club(

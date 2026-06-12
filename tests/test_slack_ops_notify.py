@@ -16,12 +16,14 @@ class TestFormatSlackOpsMessage(unittest.TestCase):
     @patch.dict(os.environ, {}, clear=True)
     def test_source_prefix_only(self) -> None:
         text = format_slack_ops_message("Something failed", source="migration_recovery")
-        self.assertEqual(text, "[migration_recovery]\nSomething failed")
+        self.assertIn("*Migration Recovery*", text)
+        self.assertIn("Something failed", text)
 
     @patch.dict(os.environ, {"SLACK_OPS_MENTION": "<@U123>"})
     def test_includes_mention(self) -> None:
         text = format_slack_ops_message("Alert", source="notification_report")
-        self.assertTrue(text.startswith("[notification_report] <@U123>"))
+        self.assertTrue(text.startswith("<@U123>"))
+        self.assertIn("*Notification Report*", text)
         self.assertIn("Alert", text)
 
     @patch.dict(os.environ, {}, clear=True)
@@ -65,7 +67,8 @@ class TestNotifySlackOps(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call_args.kwargs["headers"]["Authorization"], "Bearer xoxb-test")
         payload = call_args.kwargs["json"]
         self.assertEqual(payload["channel"], "C123")
-        self.assertEqual(payload["text"], "[migration_recovery]\nfailed row")
+        self.assertIn("Migration Recovery", payload["text"])
+        self.assertIn("failed row", payload["text"])
 
     @patch.dict(
         os.environ,
@@ -115,7 +118,8 @@ class TestNotifySlackOps(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(ok)
         call_kwargs = mock_client.post.await_args.kwargs
-        self.assertEqual(call_kwargs["json"]["text"], "[migration_recovery]\nfailed row")
+        self.assertIn("Migration Recovery", call_kwargs["json"]["text"])
+        self.assertIn("failed row", call_kwargs["json"]["text"])
 
     @patch.dict(
         os.environ,

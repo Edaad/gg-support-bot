@@ -807,7 +807,10 @@ def _register_club_event_handlers(
     def _make_group_add_handler(label: str, club_cfg_inner):
         async def _handler(event):
             await handle_group_add_outgoing(
-                event, club_cfg_inner, listener_label=label
+                event,
+                club_cfg_inner,
+                listener_label=label,
+                ptb_bot=ptb_bot,
             )
 
         return _handler

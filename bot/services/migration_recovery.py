@@ -1113,26 +1113,12 @@ def schedule_migration_recovery_job(app) -> None:
     )
 
 
-async def is_player_in_group_bot(bot, chat_id: int, player_id: int) -> bool:
-    from telegram.constants import ChatMemberStatus
-
-    try:
-        member = await bot.get_chat_member(int(chat_id), int(player_id))
-    except Exception:
-        return False
-    return member.status in (
-        ChatMemberStatus.MEMBER,
-        ChatMemberStatus.ADMINISTRATOR,
-        ChatMemberStatus.OWNER,
-        ChatMemberStatus.RESTRICTED,
-    )
-
-
-async def compute_recovery_slack_stats(bot) -> list[ClubRecoverySlackStats]:
+async def compute_recovery_slack_stats() -> list[ClubRecoverySlackStats]:
     from club_gc_settings import (
         CLUB_GC_CONFIG,
         get_migration_recovery_slack_summary_check_delay_sec,
     )
+    from bot.services.recovery_membership_check import mtproto_scan_recovery_rows
     from db.connection import get_db
     from db.models import MigratedGroupRecovery
 
@@ -1168,33 +1154,54 @@ async def compute_recovery_slack_stats(bot) -> list[ClubRecoverySlackStats]:
         elif status in TERMINAL_STATUSES:
             bucket["done"] += 1
 
+    terminal_by_club: dict[str, list[Any]] = {k: [] for k in RECOVERY_CLUB_KEYS}
+    row_by_id: dict[int, Any] = {}
     for row in rows:
         club_key = str(row.club_key)
-        if club_key not in buckets:
+        if club_key not in terminal_by_club:
             continue
         if str(row.readd_status) not in TERMINAL_STATUSES:
             continue
-        player_id = row.player_telegram_user_id
-        if player_id is None:
+        terminal_by_club[club_key].append(row)
+        row_by_id[int(row.id)] = row
+
+    for club_key, club_rows in terminal_by_club.items():
+        if not club_rows:
             continue
-        in_group = await is_player_in_group_bot(
-            bot,
-            int(row.telegram_chat_id),
-            int(player_id),
+        logger.info(
+            "migration_recovery: slack summary MTProto scan club=%s rows=%s",
+            club_key,
+            len(club_rows),
         )
-        outcome = classify_terminal_row_outcome(
-            readd_result=row.readd_result if isinstance(row.readd_result, dict) else None,
-            player_in_group=in_group,
+        checks = await mtproto_scan_recovery_rows(
+            club_key,
+            club_rows,
+            delay_sec=check_delay,
         )
-        bucket = buckets[club_key]
-        if outcome == "direct_added":
-            bucket["direct_added"] += 1
-        elif outcome == "invite_link":
-            bucket["invite_link"] += 1
-        else:
-            bucket["still_missing"] += 1
-        if check_delay > 0:
-            await asyncio.sleep(check_delay)
+        for row_id, check in checks.items():
+            row = row_by_id.get(int(row_id))
+            if row is None:
+                continue
+            if check.error:
+                logger.warning(
+                    "migration_recovery: slack summary check failed row_id=%s chat_id=%s err=%s",
+                    row_id,
+                    row.telegram_chat_id,
+                    check.error,
+                )
+                buckets[str(row.club_key)]["still_missing"] += 1
+                continue
+            outcome = classify_terminal_row_outcome(
+                readd_result=row.readd_result if isinstance(row.readd_result, dict) else None,
+                player_in_group=check.player_in_group,
+            )
+            bucket = buckets[str(row.club_key)]
+            if outcome == "direct_added":
+                bucket["direct_added"] += 1
+            elif outcome == "invite_link":
+                bucket["invite_link"] += 1
+            else:
+                bucket["still_missing"] += 1
 
     stats: list[ClubRecoverySlackStats] = []
     for club_key in RECOVERY_CLUB_KEYS:
@@ -1241,18 +1248,27 @@ async def post_slack_recovery_summary() -> bool:
     if _recovery_app is None:
         logger.warning("migration_recovery: slack summary skipped (no app)")
         return False
-    stats = await compute_recovery_slack_stats(_recovery_app.bot)
+    logger.info("migration_recovery: computing slack summary stats")
+    stats = await compute_recovery_slack_stats()
     if not stats:
         logger.info("migration_recovery: slack summary skipped (no tier 1+2 rows)")
         return False
     text = format_recovery_slack_summary(stats)
     from bot.services.slack_ops_notify import notify_slack_ops
 
-    return await notify_slack_ops(text, source="migration_recovery")
+    ok = await notify_slack_ops(text, source="migration_recovery")
+    if not ok:
+        logger.warning("migration_recovery: slack summary post failed")
+    return ok
 
 
 async def migration_recovery_slack_summary_job_callback(_context) -> None:
-    await post_slack_recovery_summary()
+    try:
+        logger.info("migration_recovery: slack summary job starting")
+        ok = await post_slack_recovery_summary()
+        logger.info("migration_recovery: slack summary job finished ok=%s", ok)
+    except Exception:
+        logger.exception("migration_recovery: slack summary job failed")
 
 
 def schedule_migration_recovery_slack_summary_job(app) -> None:
