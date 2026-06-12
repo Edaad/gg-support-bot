@@ -110,6 +110,39 @@ class TestFormatRecoverySlackSummary(unittest.TestCase):
         self.assertIn("still missing: 5", text)
 
 
+class TestComputeRecoverySlackStats(unittest.IsolatedAsyncioTestCase):
+    @patch(
+        "bot.services.recovery_membership_check.mtproto_scan_recovery_rows",
+        new_callable=AsyncMock,
+    )
+    @patch("db.connection.get_db")
+    async def test_reads_rows_before_session_closes(
+        self,
+        mock_get_db: MagicMock,
+        mock_scan: AsyncMock,
+    ) -> None:
+        from bot.services.migration_recovery import compute_recovery_slack_stats
+
+        mock_row = MagicMock()
+        mock_row.id = 1
+        mock_row.club_key = "round_table"
+        mock_row.readd_status = "pending"
+        mock_row.telegram_chat_id = -1001
+        mock_row.readd_result = None
+
+        session = MagicMock()
+        session.query.return_value.filter.return_value.all.return_value = [mock_row]
+        mock_get_db.return_value.__enter__.return_value = session
+
+        stats = await compute_recovery_slack_stats()
+
+        self.assertEqual(len(stats), 1)
+        self.assertEqual(stats[0].club_key, "round_table")
+        self.assertEqual(stats[0].total, 1)
+        self.assertEqual(stats[0].left, 1)
+        mock_scan.assert_not_called()
+
+
 class TestTickAsyncQuotaDrain(unittest.IsolatedAsyncioTestCase):
     @patch("bot.services.migration_recovery._maybe_auto_disable_after_tick", new_callable=AsyncMock)
     @patch("bot.services.migration_recovery.set_flood_wait_policy")

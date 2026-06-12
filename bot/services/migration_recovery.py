@@ -67,6 +67,17 @@ class ClubRecoverySlackStats:
     still_missing: int
 
 
+@dataclass(frozen=True)
+class _RecoverySlackScanRow:
+    """Detached snapshot for Slack stats (ORM rows expire after session close)."""
+
+    id: int
+    club_key: str
+    readd_status: str
+    telegram_chat_id: int
+    readd_result: dict[str, Any] | None
+
+
 def was_direct_added(readd_result: dict[str, Any] | None) -> bool:
     added = (readd_result or {}).get("added") or []
     return any(str(x).startswith("player:") for x in added)
@@ -334,6 +345,16 @@ def _recovery_row_from_model(row) -> RecoveryRow:
             else None
         ),
         player_username=(row.player_username or None),
+    )
+
+
+def _recovery_slack_scan_row_from_model(row) -> _RecoverySlackScanRow:
+    return _RecoverySlackScanRow(
+        id=int(row.id),
+        club_key=str(row.club_key),
+        readd_status=str(row.readd_status),
+        telegram_chat_id=int(row.telegram_chat_id),
+        readd_result=row.readd_result if isinstance(row.readd_result, dict) else None,
     )
 
 
@@ -1196,26 +1217,29 @@ async def compute_recovery_slack_stats() -> list[ClubRecoverySlackStats]:
             .filter(MigratedGroupRecovery.priority_tier.in_(HIGH_PRIORITY_TIERS))
             .all()
         )
+        scan_rows = [_recovery_slack_scan_row_from_model(row) for row in rows]
 
-    for row in rows:
-        club_key = str(row.club_key)
+    for row in scan_rows:
+        club_key = row.club_key
         if club_key not in buckets:
             continue
         bucket = buckets[club_key]
         bucket["total"] += 1
-        status = str(row.readd_status)
+        status = row.readd_status
         if status in ("pending", "processing"):
             bucket["left"] += 1
         elif status in TERMINAL_STATUSES:
             bucket["done"] += 1
 
-    terminal_by_club: dict[str, list[Any]] = {k: [] for k in RECOVERY_CLUB_KEYS}
-    row_by_id: dict[int, Any] = {}
-    for row in rows:
-        club_key = str(row.club_key)
+    terminal_by_club: dict[str, list[_RecoverySlackScanRow]] = {
+        k: [] for k in RECOVERY_CLUB_KEYS
+    }
+    row_by_id: dict[int, _RecoverySlackScanRow] = {}
+    for row in scan_rows:
+        club_key = row.club_key
         if club_key not in terminal_by_club:
             continue
-        if str(row.readd_status) not in TERMINAL_STATUSES:
+        if row.readd_status not in TERMINAL_STATUSES:
             continue
         terminal_by_club[club_key].append(row)
         row_by_id[int(row.id)] = row
@@ -1244,13 +1268,13 @@ async def compute_recovery_slack_stats() -> list[ClubRecoverySlackStats]:
                     row.telegram_chat_id,
                     check.error,
                 )
-                buckets[str(row.club_key)]["still_missing"] += 1
+                buckets[row.club_key]["still_missing"] += 1
                 continue
             outcome = classify_terminal_row_outcome(
-                readd_result=row.readd_result if isinstance(row.readd_result, dict) else None,
+                readd_result=row.readd_result,
                 player_in_group=check.player_in_group,
             )
-            bucket = buckets[str(row.club_key)]
+            bucket = buckets[row.club_key]
             if outcome == "direct_added":
                 bucket["direct_added"] += 1
             elif outcome == "invite_link":
