@@ -33,7 +33,7 @@ Each Heroku deploy runs the **`release`** Procfile phase before new dynos go liv
 - **Cooldown:** at most one notification per hour; rapid redeploys within the hour are skipped (logged as `deploy_notify: skipped (cooldown)`).
 - **Admins must have `/start`'d the support bot** in DM to receive messages.
 
-**One-time migration** (creates `deploy_notify_state` cooldown table):
+The release script auto-creates `deploy_notify_state` if missing (`CREATE TABLE IF NOT EXISTS`). You only need the manual migration when running outside release (e.g. local testing):
 
 ```bash
 heroku run -a YOUR_APP -- python migrate_deploy_notify_state.py
@@ -125,6 +125,7 @@ After a basic-group → supergroup upgrade drops members, the worker can drain a
 ```bash
 heroku run -a YOUR_APP -- python migrate_migrated_group_recovery.py
 heroku run -a YOUR_APP -- python migrate_migration_recovery_control.py
+heroku run -a YOUR_APP -- python migrate_migration_recovery_last_tick.py
 heroku run -a YOUR_APP -- python scripts/seed_migrated_group_recovery.py
 ```
 
@@ -147,6 +148,8 @@ heroku restart worker -a YOUR_APP
 ```
 
 Optional knobs: `GC_MIGRATION_RECOVERY_INTERVAL_SEC` (default `300`), `GC_MIGRATION_RECOVERY_BATCH_SIZE` (default `5`, **direct-add quota per active club per tick**), `GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC` (default `2`, between direct-add attempts only), `GC_MIGRATION_RECOVERY_SKIP_WELCOME` (default `false`).
+
+**Deploy / worker restart:** The worker stores `last_tick_at` in `migration_recovery_control` and schedules the next tick at `last_tick_at + GC_MIGRATION_RECOVERY_INTERVAL_SEC`. A deploy shortly after a tick does **not** trigger an immediate readd; if the interval has already elapsed, the first tick waits at least 60 seconds for the Telethon listener to connect.
 
 With `GC_MIGRATION_RECOVERY_BATCH_SIZE=1`, each tick processes up to **one direct-add attempt per active club** (already-in rows are skipped without counting toward quota).
 

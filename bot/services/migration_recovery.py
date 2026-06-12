@@ -6,7 +6,7 @@ import asyncio
 import html
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from club_gc_settings import (
@@ -14,6 +14,7 @@ from club_gc_settings import (
     get_club_gc_config_by_link_club_id,
     get_migration_recovery_batch_size,
     get_migration_recovery_disabled_clubs,
+    get_migration_recovery_interval_sec,
     get_migration_recovery_invite_delay_sec,
     is_migration_recovery_enabled,
     migration_recovery_active_club_keys,
@@ -37,6 +38,8 @@ TERMINAL_STATUSES = frozenset(
 )
 
 HIGH_PRIORITY_TIERS = (1, 2)
+
+_MIGRATION_RECOVERY_MIN_BOOT_DELAY_SEC = 60.0
 
 
 @dataclass(frozen=True)
@@ -366,6 +369,54 @@ def is_migration_recovery_auto_disabled() -> bool:
             return row is not None and row.auto_disabled_at is not None
     except Exception:
         return False
+
+
+def get_last_tick_at() -> datetime | None:
+    try:
+        from db.connection import get_db
+        from db.models import MigrationRecoveryControl
+
+        with get_db() as session:
+            row = session.get(MigrationRecoveryControl, 1)
+            if row is None or row.last_tick_at is None:
+                return None
+            value = row.last_tick_at
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
+            return value
+    except Exception:
+        logger.warning("migration_recovery: failed to read last_tick_at", exc_info=True)
+        return None
+
+
+def record_migration_recovery_tick() -> None:
+    from db.connection import get_db
+    from db.models import MigrationRecoveryControl
+
+    now = datetime.now(timezone.utc)
+    with get_db() as session:
+        row = session.get(MigrationRecoveryControl, 1)
+        if row is None:
+            row = MigrationRecoveryControl(id=1)
+            session.add(row)
+        row.last_tick_at = now
+        session.commit()
+
+
+def compute_migration_recovery_first_delay_sec(
+    *,
+    now: datetime | None = None,
+) -> float:
+    interval_sec = get_migration_recovery_interval_sec()
+    last = get_last_tick_at()
+    if last is None:
+        return _MIGRATION_RECOVERY_MIN_BOOT_DELAY_SEC
+
+    current = now or datetime.now(timezone.utc)
+    remaining = (last + timedelta(seconds=interval_sec) - current).total_seconds()
+    if remaining <= 0:
+        return _MIGRATION_RECOVERY_MIN_BOOT_DELAY_SEC
+    return remaining
 
 
 def clear_migration_recovery_auto_disable() -> bool:
@@ -1057,6 +1108,7 @@ async def tick_async() -> dict[str, int]:
         summary["skipped"],
     )
     await _maybe_auto_disable_after_tick()
+    record_migration_recovery_tick()
     return summary
 
 
@@ -1098,14 +1150,17 @@ def schedule_migration_recovery_job(app) -> None:
 
     _recovery_app = app
     interval_sec = get_migration_recovery_interval_sec()
+    first_delay_sec = compute_migration_recovery_first_delay_sec()
     app.job_queue.run_repeating(
         migration_recovery_job_callback,
         interval=timedelta(seconds=interval_sec),
-        first=timedelta(seconds=60),
+        first=timedelta(seconds=first_delay_sec),
         name="migration_recovery",
     )
     logger.info(
-        "migration_recovery job scheduled interval_sec=%s batch_size_per_club=%s active_clubs=%s disabled=%s",
+        "migration_recovery job scheduled first_delay_sec=%s interval_sec=%s "
+        "batch_size_per_club=%s active_clubs=%s disabled=%s",
+        first_delay_sec,
         interval_sec,
         get_migration_recovery_batch_size(),
         ",".join(migration_recovery_active_club_keys()),

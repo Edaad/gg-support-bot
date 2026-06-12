@@ -13,6 +13,7 @@ from bot.services.migration_recovery import (
     RECOVERY_CLUB_KEYS,
     build_readd_result_payload,
     claim_pending_batch,
+    compute_migration_recovery_first_delay_sec,
     format_auto_disable_notification,
     format_readd_admin_notification,
     format_rate_limit_admin_notification,
@@ -740,6 +741,64 @@ class TestHandleRateLimitAbort(unittest.TestCase):
         self.assertIn("FloodWait", text)
         self.assertIn("RT / test", text)
         self.assertIn("round_table", text)
+
+
+class TestMigrationRecoveryFirstDelay(unittest.TestCase):
+    def test_no_last_tick_uses_min_boot_delay(self) -> None:
+        with patch(
+            "bot.services.migration_recovery.get_last_tick_at",
+            return_value=None,
+        ):
+            delay = compute_migration_recovery_first_delay_sec()
+        self.assertEqual(delay, 60.0)
+
+    def test_recent_tick_waits_remaining_interval(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime(2026, 6, 12, 12, 0, 0, tzinfo=timezone.utc)
+        last = now - timedelta(minutes=30)
+        with patch(
+            "bot.services.migration_recovery.get_last_tick_at",
+            return_value=last,
+        ):
+            with patch(
+                "bot.services.migration_recovery.get_migration_recovery_interval_sec",
+                return_value=4000,
+            ):
+                delay = compute_migration_recovery_first_delay_sec(now=now)
+        self.assertAlmostEqual(delay, 2200.0, places=3)
+
+    def test_overdue_tick_uses_min_boot_delay(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime(2026, 6, 12, 12, 0, 0, tzinfo=timezone.utc)
+        last = now - timedelta(minutes=90)
+        with patch(
+            "bot.services.migration_recovery.get_last_tick_at",
+            return_value=last,
+        ):
+            with patch(
+                "bot.services.migration_recovery.get_migration_recovery_interval_sec",
+                return_value=4000,
+            ):
+                delay = compute_migration_recovery_first_delay_sec(now=now)
+        self.assertEqual(delay, 60.0)
+
+    def test_almost_due_tick_waits_remaining(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime(2026, 6, 12, 12, 0, 0, tzinfo=timezone.utc)
+        last = now - timedelta(minutes=2)
+        with patch(
+            "bot.services.migration_recovery.get_last_tick_at",
+            return_value=last,
+        ):
+            with patch(
+                "bot.services.migration_recovery.get_migration_recovery_interval_sec",
+                return_value=4000,
+            ):
+                delay = compute_migration_recovery_first_delay_sec(now=now)
+        self.assertAlmostEqual(delay, 3880.0, places=3)
 
 
 if __name__ == "__main__":

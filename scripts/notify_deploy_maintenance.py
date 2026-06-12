@@ -30,6 +30,7 @@ from bot.services.deploy_notify import (
     should_notify_deploy,
 )
 from db.connection import get_db, init_engine
+from migrate_deploy_notify_state import ensure_deploy_notify_state
 
 logger = logging.getLogger("notify_deploy_maintenance")
 
@@ -47,6 +48,7 @@ async def _run() -> None:
         return
 
     init_engine()
+    ensure_deploy_notify_state()
     with get_db() as session:
         if not should_notify_deploy(session):
             logger.info("deploy_notify: skipped (cooldown)")

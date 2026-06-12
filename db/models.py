@@ -720,6 +720,7 @@ class MigrationRecoveryControl(Base):
     auto_disabled_reason = Column(Text, nullable=True)
     exhausted_club_key = Column(String(64), nullable=True)
     pending_snapshot = Column(JSONB, nullable=True)
+    last_tick_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class StripeCustomer(Base):
