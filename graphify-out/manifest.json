@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1781222579.4978588,
-    "ast_hash": "7c13368d9c389d974dc86c07b4610b4a",
+    "mtime": 1781272453.3720686,
+    "ast_hash": "e1f2135b30a40474d653ad3c5409dc05",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2902,6 +2902,26 @@
   "bot/services/recovery_membership_check.py": {
     "mtime": 1781272181.378335,
     "ast_hash": "b9f88a641eb9be2aa007383234c43839",
+    "semantic_hash": ""
+  },
+  "bot/services/deploy_notify.py": {
+    "mtime": 1781272435.1550593,
+    "ast_hash": "1566253f74165f9166b16559df890774",
+    "semantic_hash": ""
+  },
+  "migrate_deploy_notify_state.py": {
+    "mtime": 1781272428.1394196,
+    "ast_hash": "74e90cfe43a9abdc6d427b997364515d",
+    "semantic_hash": ""
+  },
+  "scripts/notify_deploy_maintenance.py": {
+    "mtime": 1781272438.618319,
+    "ast_hash": "10a2b892e563b1a51749f0a94638da79",
+    "semantic_hash": ""
+  },
+  "tests/test_deploy_notify.py": {
+    "mtime": 1781272448.2645347,
+    "ast_hash": "f6d808d3f0b90279183df0249b5629a1",
     "semantic_hash": ""
   }
 }

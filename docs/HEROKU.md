@@ -25,6 +25,29 @@ The **Python buildpack** still runs `pip install -r requirements.txt`. At runtim
 
 3. **Deploy**: `git push heroku main` — compile runs `npm install` at the repo root, then **`heroku-postbuild`**, then Python.
 
+## Deploy maintenance notifications
+
+Each Heroku deploy runs the **`release`** Procfile phase before new dynos go live. That phase DMs every account in [`config.py`](../config.py) `ADMIN_USER_IDS` with a brief disruption warning (~1 minute while dynos restart).
+
+- **Trigger:** `git push heroku …` only (not `git push origin`).
+- **Cooldown:** at most one notification per hour; rapid redeploys within the hour are skipped (logged as `deploy_notify: skipped (cooldown)`).
+- **Admins must have `/start`'d the support bot** in DM to receive messages.
+
+**One-time migration** (creates `deploy_notify_state` cooldown table):
+
+```bash
+heroku run -a YOUR_APP -- python migrate_deploy_notify_state.py
+```
+
+**Config vars** (optional):
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `DEPLOY_NOTIFY_ENABLED` | `true` | Set `false` to disable release DMs |
+| `DEPLOY_NOTIFY_COOLDOWN_SECONDS` | `3600` | Minimum seconds between notifications |
+
+Script: [`scripts/notify_deploy_maintenance.py`](../scripts/notify_deploy_maintenance.py). Failures to send DMs never block deploy (release always exits 0).
+
 ## MTProto scripts vs worker
 
 Telegram allows **one live connection per MTProto session**. If the **worker** dyno is connected (dm_gc listener) and you also run an MTProto script against production, Telegram may invalidate the session (`AuthKeyDuplicatedError`) and exports fail with `ConnectionError`.

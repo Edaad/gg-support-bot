@@ -2740,8 +2740,8 @@
     "semantic_hash": ""
   },
   "bot/services/migration_recovery.py": {
-    "mtime": 1781272026.4355743,
-    "ast_hash": "001250ed35b23ab2d23d38e4b8621e03",
+    "mtime": 1781272175.4972484,
+    "ast_hash": "f372ac24c29cf68b99896ec106f855dd",
     "semantic_hash": ""
   },
   "migrate_migrated_group_recovery.py": {
@@ -2875,8 +2875,8 @@
     "semantic_hash": ""
   },
   "scripts/check_recovery_player_membership.py": {
-    "mtime": 1781272061.7473156,
-    "ast_hash": "c4ee1f9dc8d61c20c3b401c3265ed1f6",
+    "mtime": 1781272164.1168013,
+    "ast_hash": "3486f2b1610927391aa32d22262d59ca",
     "semantic_hash": ""
   },
   "migrate_zelle_bank_recipient_labels.py": {
@@ -2897,6 +2897,11 @@
   "tests/test_slack_ops_format.py": {
     "mtime": 1781272069.9228842,
     "ast_hash": "a059dcd6242684a0fa2b29487f591b04",
+    "semantic_hash": ""
+  },
+  "bot/services/recovery_membership_check.py": {
+    "mtime": 1781272181.378335,
+    "ast_hash": "b9f88a641eb9be2aa007383234c43839",
     "semantic_hash": ""
   }
 }
