@@ -20,7 +20,7 @@ TELEGRAM_BOT_TOKEN_ENV = "TELEGRAM_BOT_TOKEN"
 
 DEPLOY_NOTIFY_MESSAGE = (
     "Engineers are deploying an update to the support bot. "
-    "Please expect brief disruptions (~1 minute) while dynos restart."
+    "Please expect brief disruptions."
 )
 
 _DEFAULT_COOLDOWN_SECONDS = 3600
