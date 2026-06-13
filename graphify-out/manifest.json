@@ -845,9 +845,9 @@
     "semantic_hash": "9fe78ebf76b0389d08172e4d1e42276e"
   },
   "api/routes/gc_mtproto.py": {
-    "mtime": 1779808275.926471,
-    "ast_hash": "461fb0a08f152dd606c9261551e60e96",
-    "semantic_hash": "461fb0a08f152dd606c9261551e60e96"
+    "mtime": 1781316760.2066634,
+    "ast_hash": "cb585dff219f0a58d2584c8c5e14db9a",
+    "semantic_hash": ""
   },
   "api/routes/payments.py": {
     "mtime": 1781221247.0572264,
@@ -890,9 +890,9 @@
     "semantic_hash": "96f271c2d81733708b36919e55e95872"
   },
   "api/schemas.py": {
-    "mtime": 1780104838.2069108,
-    "ast_hash": "8b56ec7d6488c493029f4bf8bc73ffc6",
-    "semantic_hash": "8b56ec7d6488c493029f4bf8bc73ffc6"
+    "mtime": 1781316758.4998474,
+    "ast_hash": "22b8dbcb62d533884dd9126a3bc00f32",
+    "semantic_hash": ""
   },
   "api/schemas_payments.py": {
     "mtime": 1781221237.933618,
@@ -1120,8 +1120,8 @@
     "semantic_hash": "563bb7e4bf87c4a7e0a2622d3109b5b4"
   },
   "bot/services/mtproto_dm_gc_listener.py": {
-    "mtime": 1781276941.0426877,
-    "ast_hash": "b8542589126a46d1787750b1277da37c",
+    "mtime": 1781316779.5202007,
+    "ast_hash": "abdeeb5c2ab2756261945d968fb36bf3",
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_add.py": {
@@ -1160,9 +1160,9 @@
     "semantic_hash": "406d03a24beef4d9d6b15ad7f28b3ef7"
   },
   "bot/services/mtproto_session_db.py": {
-    "mtime": 1779808265.8842616,
-    "ast_hash": "2cf7128cf7782e27fee9e1eb809a9f05",
-    "semantic_hash": "2cf7128cf7782e27fee9e1eb809a9f05"
+    "mtime": 1781316782.6819825,
+    "ast_hash": "4df6339125e7e5e5d090f08eae196453",
+    "semantic_hash": ""
   },
   "bot/services/mtproto_track_contact.py": {
     "mtime": 1781148064.004099,
@@ -1310,9 +1310,9 @@
     "semantic_hash": "0a3ed4ec23dda7003da443d24ee876e0"
   },
   "dashboard/src/api/client.ts": {
-    "mtime": 1780795630.243308,
-    "ast_hash": "cc23f8156b7316b4f6b042cb88c89f88",
-    "semantic_hash": "cc23f8156b7316b4f6b042cb88c89f88"
+    "mtime": 1781316783.6655598,
+    "ast_hash": "859b46ed0672624872595741e92630f5",
+    "semantic_hash": ""
   },
   "dashboard/src/api/paymentsClient.ts": {
     "mtime": 1781221261.6719074,
@@ -1475,9 +1475,9 @@
     "semantic_hash": "b23b3996b785984ca6097d89ccb2c72d"
   },
   "dashboard/src/pages/TelegramLogin.tsx": {
-    "mtime": 1780075032.86312,
-    "ast_hash": "151bb4e341c70410d2bf371b081a466a",
-    "semantic_hash": "151bb4e341c70410d2bf371b081a466a"
+    "mtime": 1781316788.9628284,
+    "ast_hash": "eb49471aef4353fc250262f7b146eca7",
+    "semantic_hash": ""
   },
   "dashboard/src/pages/WeeklyStats.tsx": {
     "mtime": 1780171915.3710673,
@@ -1525,8 +1525,8 @@
     "semantic_hash": "f815b05a6bbf7c0237e414e0d04ee055"
   },
   "db/models.py": {
-    "mtime": 1781276066.977529,
-    "ast_hash": "fcb807b514d5abc662b56e5101f6f092",
+    "mtime": 1781316755.4755366,
+    "ast_hash": "742a056e11bdb82dec77598001ca45ed",
     "semantic_hash": ""
   },
   "export_payment_config_backup.py": {
@@ -2932,6 +2932,21 @@
   "scripts/post_migration_recovery_slack_summary.py": {
     "mtime": 1781292493.5004625,
     "ast_hash": "126bbbd5a3ccd9a77b5b71a6da4d48bd",
+    "semantic_hash": ""
+  },
+  "bot/services/mtproto_club_health.py": {
+    "mtime": 1781316754.1311386,
+    "ast_hash": "bf43e1921382ca264e5c438ea808cad6",
+    "semantic_hash": ""
+  },
+  "migrate_mtproto_club_health.py": {
+    "mtime": 1781316756.2260337,
+    "ast_hash": "ce61e7b1366a0e42c03a752f464a9627",
+    "semantic_hash": ""
+  },
+  "tests/test_mtproto_club_health.py": {
+    "mtime": 1781316793.6262176,
+    "ast_hash": "411b0a7879343d1574646964d8321414",
     "semantic_hash": ""
   }
 }

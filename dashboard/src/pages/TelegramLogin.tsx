@@ -5,6 +5,7 @@ import {
   gcMtprotoSignIn,
   gcMtprotoCloudPassword,
   gcMtprotoDeleteSession,
+  clubStatusLabel,
   type GcMtProtoClub,
 } from '../api/client'
 
@@ -151,6 +152,44 @@ export default function TelegramLogin({ token }: { token: string }) {
   const inputCls =
     'mt-2 w-full max-w-md rounded-lg border border-border bg-surface-raised px-4 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none'
 
+  function sessionBanner(c: GcMtProtoClub | undefined): { text: string; tone: 'ok' | 'warn' | 'muted' } | null {
+    if (!c) return null
+    if (c.session_authorized) {
+      return { text: 'Connected on worker — session is live.', tone: 'ok' }
+    }
+    if (!c.session_stored) {
+      return { text: 'No session stored. Send a login code below.', tone: 'muted' }
+    }
+    if (c.worker_status === 'auth_key_duplicated') {
+      return {
+        text:
+          c.worker_status_detail ??
+          'Auth key duplicated — Telegram invalidated this session. Log out (clear) and sign in again.',
+        tone: 'warn',
+      }
+    }
+    if (c.worker_status === 'unauthorized') {
+      return {
+        text: c.worker_status_detail ?? 'Session no longer authorized. Log in again below.',
+        tone: 'warn',
+      }
+    }
+    if (c.worker_status === 'mtproto_disabled') {
+      return {
+        text:
+          c.worker_status_detail ??
+          'GC_MTPROTO_ENABLED is off on the worker — stored session cannot be used until re-enabled.',
+        tone: 'warn',
+      }
+    }
+    if (c.worker_status_detail) {
+      return { text: c.worker_status_detail, tone: 'warn' }
+    }
+    return { text: 'Session on file but not active on the worker yet.', tone: 'muted' }
+  }
+
+  const banner = sessionBanner(selected)
+
   return (
     <div>
       <h1 className="mb-2 text-2xl font-bold">Telegram login</h1>
@@ -186,15 +225,33 @@ export default function TelegramLogin({ token }: { token: string }) {
           {clubs.map((c) => (
             <option key={c.club_key} value={c.club_key}>
               {c.club_display_name}
-              {c.session_authorized ? ' — logged in' : ''}
+              {clubStatusLabel(c)}
               {!c.phone_configured ? ' (phone not in env)' : ''}
             </option>
           ))}
         </select>
 
-        {selected?.session_authorized && (
+        {banner && (
+          <p
+            className={`mt-3 max-w-2xl text-xs ${
+              banner.tone === 'ok'
+                ? 'text-success-ink'
+                : banner.tone === 'warn'
+                  ? 'text-danger-ink'
+                  : 'text-ink-muted'
+            }`}
+          >
+            {banner.text}
+            {selected?.worker_checked_at && (
+              <span className="ml-1 text-ink-muted">
+                (worker checked {new Date(selected.worker_checked_at).toLocaleString()})
+              </span>
+            )}
+          </p>
+        )}
+
+        {selected?.session_stored && (
           <div className="mt-3 flex items-center gap-3">
-            <span className="text-xs text-success-ink">Session active</span>
             {!confirmLogout ? (
               <button
                 type="button"
@@ -202,7 +259,7 @@ export default function TelegramLogin({ token }: { token: string }) {
                 onClick={() => setConfirmLogout(true)}
                 className="btn-danger-outline disabled:opacity-40"
               >
-                Log out
+                Clear session
               </button>
             ) : (
               <>

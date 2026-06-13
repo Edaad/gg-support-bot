@@ -450,7 +450,11 @@ class GcMtProtoClubRead(BaseModel):
     club_key: str
     club_display_name: str
     session_authorized: bool
+    session_stored: bool
     phone_configured: bool
+    worker_status: str
+    worker_status_detail: Optional[str] = None
+    worker_checked_at: Optional[datetime] = None
 
 
 class MtProtoSendCodeRequest(BaseModel):

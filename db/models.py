@@ -598,6 +598,20 @@ class MtProtoSessionCredential(Base):
     )
 
 
+class MtProtoClubHealth(Base):
+    """Worker-reported Telethon live status per club (Dashboard reads; no web-side connect)."""
+
+    __tablename__ = "mtproto_club_health"
+
+    club_key = Column(String(64), primary_key=True)
+    worker_connected = Column(Boolean, nullable=False, default=False)
+    session_valid = Column(Boolean, nullable=False, default=False)
+    status = Column(String(32), nullable=False, default="unknown")
+    status_detail = Column(Text, nullable=True)
+    telegram_user_id = Column(BigInteger, nullable=True)
+    checked_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class CashierCashoutJob(Base):
     """Staff cashout wizard jobs (GGCashier bot)."""
 
