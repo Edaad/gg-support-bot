@@ -96,6 +96,10 @@ class TestFormatRecoverySlackSummary(unittest.TestCase):
                     left=40,
                     done=60,
                     pct_done=60.0,
+                    in_group=85,
+                    pct_in_group=85.0,
+                    in_group_pending=13,
+                    check_errors=0,
                     direct_added=10,
                     invite_link=45,
                     still_missing=5,
@@ -103,14 +107,18 @@ class TestFormatRecoverySlackSummary(unittest.TestCase):
             ]
         )
         self.assertIn("Creator Club", text)
-        self.assertIn("left: 40", text)
-        self.assertIn("60% (60/100)", text)
+        self.assertIn("queue left: 40", text)
+        self.assertIn("in group: 85% (85/100)", text)
+        self.assertIn("in group pending queue: 13", text)
         self.assertIn("direct added: 10", text)
         self.assertIn("joined via link: 45", text)
         self.assertIn("still missing: 5", text)
 
 
 class TestComputeRecoverySlackStats(unittest.IsolatedAsyncioTestCase):
+    @patch(
+        "bot.services.migration_recovery.maybe_finalize_recovery_row_from_membership",
+    )
     @patch(
         "bot.services.recovery_membership_check.mtproto_scan_recovery_rows",
         new_callable=AsyncMock,
@@ -120,8 +128,10 @@ class TestComputeRecoverySlackStats(unittest.IsolatedAsyncioTestCase):
         self,
         mock_get_db: MagicMock,
         mock_scan: AsyncMock,
+        mock_finalize: MagicMock,
     ) -> None:
         from bot.services.migration_recovery import compute_recovery_slack_stats
+        from bot.services.recovery_membership_check import RecoveryMembershipResult
 
         mock_row = MagicMock()
         mock_row.id = 1
@@ -133,14 +143,26 @@ class TestComputeRecoverySlackStats(unittest.IsolatedAsyncioTestCase):
         session = MagicMock()
         session.query.return_value.filter.return_value.all.return_value = [mock_row]
         mock_get_db.return_value.__enter__.return_value = session
+        mock_scan.return_value = {
+            1: RecoveryMembershipResult(
+                eligible_player_count=1,
+                eligible_player_ids=(123,),
+                player_in_group=True,
+            )
+        }
+        mock_finalize.return_value = True
 
         stats = await compute_recovery_slack_stats()
 
         self.assertEqual(len(stats), 1)
         self.assertEqual(stats[0].club_key, "round_table")
         self.assertEqual(stats[0].total, 1)
-        self.assertEqual(stats[0].left, 1)
-        mock_scan.assert_not_called()
+        self.assertEqual(stats[0].left, 0)
+        self.assertEqual(stats[0].done, 1)
+        self.assertEqual(stats[0].in_group, 1)
+        self.assertEqual(stats[0].in_group_pending, 0)
+        mock_scan.assert_called_once()
+        mock_finalize.assert_called_once_with(1, eligible_player_ids=(123,))
 
 
 class TestTickAsyncQuotaDrain(unittest.IsolatedAsyncioTestCase):

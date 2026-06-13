@@ -199,6 +199,9 @@ def _filter_csv_rows(
 
 def _apply_from_csv_row(row: dict[str, Any]) -> dict[str, Any]:
     from club_gc_settings import CLUB_GC_CONFIG
+    from bot.services.migration_recovery import (
+        maybe_finalize_recovery_row_from_membership,
+    )
     from bot.services.support_group_chats import bind_player_for_gc_reuse
 
     out = dict(row)
@@ -208,19 +211,31 @@ def _apply_from_csv_row(row: dict[str, Any]) -> dict[str, Any]:
         out["player_id_updated"] = False
         return out
 
+    in_group = _csv_row_in_group(row)
+    ids_raw = str(row.get("eligible_player_ids") or "").strip()
+    eligible_ids = tuple(
+        int(x.strip()) for x in ids_raw.split(",") if x.strip()
+    )
+    if in_group and eligible_ids:
+        if maybe_finalize_recovery_row_from_membership(
+            int(row["row_id"]),
+            eligible_player_ids=eligible_ids,
+        ):
+            out["readd_status"] = "complete"
+            out["readd_finalized"] = True
+
     try:
         count = int(str(row.get("eligible_player_count") or "").strip())
     except ValueError:
-        out["bind_status"] = "skipped_not_sole_player"
-        out["player_id_updated"] = False
+        out.setdefault("bind_status", "skipped_not_sole_player")
+        out.setdefault("player_id_updated", False)
         return out
 
     if count != 1:
-        out["bind_status"] = "skipped_not_sole_player"
-        out["player_id_updated"] = False
+        out.setdefault("bind_status", "skipped_not_sole_player")
+        out.setdefault("player_id_updated", False)
         return out
 
-    ids_raw = str(row.get("eligible_player_ids") or "").strip()
     if not ids_raw or "," in ids_raw:
         out["bind_status"] = "skipped_bad_player_id"
         out["player_id_updated"] = False
@@ -490,7 +505,21 @@ async def _scan_one_row(
     sole_user = check.sole_user
     player_id_updated: bool | str = False
     bind_status = ""
+    readd_finalized = False
     stored_pid = item.player_telegram_user_id
+
+    if apply and in_group:
+        from bot.services.migration_recovery import (
+            maybe_finalize_recovery_row_from_membership,
+        )
+
+        readd_finalized = await asyncio.to_thread(
+            maybe_finalize_recovery_row_from_membership,
+            item.row_id,
+            eligible_player_ids=check.eligible_player_ids,
+        )
+        if readd_finalized:
+            base["readd_status"] = "complete"
 
     if count == 1 and sole_user is not None:
         user = sole_user
@@ -537,6 +566,7 @@ async def _scan_one_row(
         "player_id_updated": player_id_updated,
         "bind_status": bind_status,
         "check_error": "",
+        "readd_finalized": readd_finalized,
     }
 
 
@@ -552,13 +582,15 @@ def _apply_from_csv(
     applied = 0
     skipped = 0
     for row in rows:
-        if only_would_update and str(row.get("player_id_updated") or "") != "would_update":
-            out.append(row)
-            skipped += 1
-            continue
         err = str(row.get("check_error") or "").strip()
-        count_ok = str(row.get("eligible_player_count") or "") == "1"
-        if err or not count_ok:
+        in_group = _csv_row_in_group(row)
+        sole_player = str(row.get("eligible_player_count") or "") == "1"
+        if only_would_update and str(row.get("player_id_updated") or "") != "would_update":
+            if err or (not in_group and not sole_player):
+                out.append(row)
+                skipped += 1
+                continue
+        if err and not in_group:
             out.append(row)
             skipped += 1
             continue
@@ -654,18 +686,22 @@ async def main() -> int:
         if args.apply:
             bind_counts: dict[str, int] = defaultdict(int)
             updated = 0
+            finalized = 0
             for row in csv_rows:
                 bs = str(row.get("bind_status") or "")
                 if bs:
                     bind_counts[bs] += 1
                 if row.get("player_id_updated") in (True, "True", "true"):
                     updated += 1
+                if row.get("readd_finalized") in (True, "True", "true"):
+                    finalized += 1
             apply_lines.append(
                 f"Applied player ID bindings from CSV ({len(csv_rows)} rows processed)."
             )
             apply_lines.append("")
             apply_lines.append("DB apply results:")
             apply_lines.append(f"  player_id_updated: {updated}")
+            apply_lines.append(f"  readd_finalized: {finalized}")
             for bs, n in sorted(bind_counts.items(), key=lambda x: -x[1]):
                 apply_lines.append(f"  bind {bs}: {n}")
             for line in apply_lines:

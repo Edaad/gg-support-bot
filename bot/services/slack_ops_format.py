@@ -60,13 +60,28 @@ def _beautify_migration_summary(body: str) -> str:
         line = raw.strip()
         if not line:
             continue
-        if not line.startswith("left:") and not line.startswith("direct added:"):
+        if not line.startswith(
+            (
+                "in group:",
+                "queue left:",
+                "left:",
+                "direct added:",
+                "in group pending queue:",
+                "membership check errors:",
+            )
+        ):
             flush_club()
             club_name = line
             continue
-        if line.startswith("left:"):
+        if line.startswith("in group:") or line.startswith("queue left:"):
+            club_lines.append(f"• {line.replace(' | ', '  |  ')}")
+        elif line.startswith("left:"):
             club_lines.append(f"• {line.replace(' | ', '  |  ')}")
         elif line.startswith("direct added:"):
+            club_lines.append(f"• {line}")
+        elif line.startswith("in group pending queue:"):
+            club_lines.append(f"• {line}")
+        elif line.startswith("membership check errors:"):
             club_lines.append(f"• {line}")
     flush_club()
     return "\n".join(out).rstrip()

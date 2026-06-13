@@ -27,7 +27,8 @@ class TestBeautifyMigrationRecovery(unittest.TestCase):
         body = (
             "Migration recovery progress (tier 1+2)\n\n"
             "Creator Club\n"
-            "  left: 40 | done: 60% (60/100)\n"
+            "  in group: 85% (85/100) | queue left: 40 | queue done: 60% (60/100)\n"
+            "  in group pending queue: 13\n"
             "  direct added: 10 | joined via link: 45 | still missing: 5"
         )
         text = beautify_slack_body(body, source="migration_recovery")

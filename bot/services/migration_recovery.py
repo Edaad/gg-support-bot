@@ -62,6 +62,10 @@ class ClubRecoverySlackStats:
     left: int
     done: int
     pct_done: float
+    in_group: int
+    pct_in_group: float
+    in_group_pending: int
+    check_errors: int
     direct_added: int
     invite_link: int
     still_missing: int
@@ -144,6 +148,76 @@ def build_readd_result_payload(result: ReaddGroupResult) -> dict[str, Any]:
         "member_count_after": result.member_count_after,
         "error": result.error,
     }
+
+
+def build_membership_audit_readd_result(
+    *,
+    eligible_player_ids: tuple[int, ...],
+) -> ReaddGroupResult:
+    """Synthetic re-add result when MTProto audit finds player(s) already present."""
+    markers = [f"player:{pid}" for pid in eligible_player_ids]
+    return ReaddGroupResult(
+        chat_id=0,
+        club_id=0,
+        club_key="",
+        title="",
+        member_count_before=0,
+        member_count_after=None,
+        status="ok",
+        already_member=markers,
+    )
+
+
+def maybe_finalize_recovery_row_from_membership(
+    row_id: int,
+    *,
+    eligible_player_ids: tuple[int, ...],
+) -> bool:
+    """Mark a pending/processing row complete when MTProto confirms player presence.
+
+    Returns True when the row was finalized.
+    """
+    if not eligible_player_ids:
+        return False
+
+    from db.connection import get_db
+    from db.models import MigratedGroupRecovery
+
+    with get_db() as session:
+        row = session.get(MigratedGroupRecovery, int(row_id))
+        if row is None:
+            return False
+        if row.readd_status not in ("pending", "processing"):
+            return False
+        snapshot = _recovery_row_from_model(row)
+
+    template = build_membership_audit_readd_result(
+        eligible_player_ids=eligible_player_ids,
+    )
+    result = ReaddGroupResult(
+        chat_id=int(snapshot.telegram_chat_id),
+        club_id=int(snapshot.club_id),
+        club_key=str(snapshot.club_key),
+        title=str(snapshot.group_title),
+        member_count_before=template.member_count_before,
+        member_count_after=template.member_count_after,
+        status=template.status,
+        already_member=list(template.already_member),
+    )
+    payload = build_readd_result_payload(result)
+    payload["membership_audit"] = True
+
+    now = datetime.now(timezone.utc)
+    with get_db() as session:
+        row = session.get(MigratedGroupRecovery, int(row_id))
+        if row is None or row.readd_status not in ("pending", "processing"):
+            return False
+        row.readd_status = "complete"
+        row.readd_result = payload
+        row.readd_completed_at = now
+        row.updated_at = now
+        session.commit()
+    return True
 
 
 def _format_account_lines(entries: list[str]) -> list[str]:
@@ -1204,6 +1278,10 @@ async def compute_recovery_slack_stats() -> list[ClubRecoverySlackStats]:
             "total": 0,
             "left": 0,
             "done": 0,
+            "in_group": 0,
+            "in_group_pending": 0,
+            "membership_finalized": 0,
+            "check_errors": 0,
             "direct_added": 0,
             "invite_link": 0,
             "still_missing": 0,
@@ -1231,20 +1309,18 @@ async def compute_recovery_slack_stats() -> list[ClubRecoverySlackStats]:
         elif status in TERMINAL_STATUSES:
             bucket["done"] += 1
 
-    terminal_by_club: dict[str, list[_RecoverySlackScanRow]] = {
+    rows_by_club: dict[str, list[_RecoverySlackScanRow]] = {
         k: [] for k in RECOVERY_CLUB_KEYS
     }
     row_by_id: dict[int, _RecoverySlackScanRow] = {}
     for row in scan_rows:
         club_key = row.club_key
-        if club_key not in terminal_by_club:
+        if club_key not in rows_by_club:
             continue
-        if row.readd_status not in TERMINAL_STATUSES:
-            continue
-        terminal_by_club[club_key].append(row)
+        rows_by_club[club_key].append(row)
         row_by_id[int(row.id)] = row
 
-    for club_key, club_rows in terminal_by_club.items():
+    for club_key, club_rows in rows_by_club.items():
         if not club_rows:
             continue
         logger.info(
@@ -1261,6 +1337,7 @@ async def compute_recovery_slack_stats() -> list[ClubRecoverySlackStats]:
             row = row_by_id.get(int(row_id))
             if row is None:
                 continue
+            bucket = buckets[row.club_key]
             if check.error:
                 logger.warning(
                     "migration_recovery: slack summary check failed row_id=%s chat_id=%s err=%s",
@@ -1268,19 +1345,48 @@ async def compute_recovery_slack_stats() -> list[ClubRecoverySlackStats]:
                     row.telegram_chat_id,
                     check.error,
                 )
-                buckets[row.club_key]["still_missing"] += 1
+                bucket["check_errors"] += 1
                 continue
-            outcome = classify_terminal_row_outcome(
-                readd_result=row.readd_result,
-                player_in_group=check.player_in_group,
-            )
-            bucket = buckets[row.club_key]
+
+            was_pending = row.readd_status in ("pending", "processing")
+            finalized = False
+            if check.player_in_group and was_pending:
+                finalized = maybe_finalize_recovery_row_from_membership(
+                    int(row_id),
+                    eligible_player_ids=check.eligible_player_ids,
+                )
+                if finalized:
+                    bucket["membership_finalized"] += 1
+                    bucket["left"] -= 1
+                    bucket["done"] += 1
+
+            if check.player_in_group:
+                bucket["in_group"] += 1
+                if was_pending and not finalized:
+                    bucket["in_group_pending"] += 1
+
+            if finalized:
+                outcome = "invite_link"
+            else:
+                outcome = classify_terminal_row_outcome(
+                    readd_result=row.readd_result,
+                    player_in_group=check.player_in_group,
+                )
             if outcome == "direct_added":
                 bucket["direct_added"] += 1
             elif outcome == "invite_link":
                 bucket["invite_link"] += 1
             else:
                 bucket["still_missing"] += 1
+
+    total_finalized = sum(
+        buckets[club_key]["membership_finalized"] for club_key in RECOVERY_CLUB_KEYS
+    )
+    if total_finalized:
+        logger.info(
+            "migration_recovery: slack summary finalized %s pending rows from MTProto",
+            total_finalized,
+        )
 
     stats: list[ClubRecoverySlackStats] = []
     for club_key in RECOVERY_CLUB_KEYS:
@@ -1300,6 +1406,12 @@ async def compute_recovery_slack_stats() -> list[ClubRecoverySlackStats]:
                 pct_done=(100.0 * bucket["done"] / bucket["total"])
                 if bucket["total"]
                 else 0.0,
+                in_group=int(bucket["in_group"]),
+                pct_in_group=(100.0 * bucket["in_group"] / bucket["total"])
+                if bucket["total"]
+                else 0.0,
+                in_group_pending=int(bucket["in_group_pending"]),
+                check_errors=int(bucket["check_errors"]),
                 direct_added=int(bucket["direct_added"]),
                 invite_link=int(bucket["invite_link"]),
                 still_missing=int(bucket["still_missing"]),
@@ -1311,14 +1423,25 @@ async def compute_recovery_slack_stats() -> list[ClubRecoverySlackStats]:
 def format_recovery_slack_summary(stats: list[ClubRecoverySlackStats]) -> str:
     lines = ["Migration recovery progress (tier 1+2)", ""]
     for entry in stats:
-        pct = f"{entry.pct_done:.0f}%"
+        pct_ig = f"{entry.pct_in_group:.0f}%"
+        pct_done = f"{entry.pct_done:.0f}%"
         lines.append(entry.club_display_name)
-        lines.append(f"  left: {entry.left} | done: {pct} ({entry.done}/{entry.total})")
+        lines.append(
+            f"  in group: {pct_ig} ({entry.in_group}/{entry.total}) | "
+            f"queue left: {entry.left} | queue done: {pct_done} "
+            f"({entry.done}/{entry.total})"
+        )
+        if entry.in_group_pending:
+            lines.append(
+                f"  in group pending queue: {entry.in_group_pending}"
+            )
         lines.append(
             "  direct added: "
             f"{entry.direct_added} | joined via link: {entry.invite_link} | "
             f"still missing: {entry.still_missing}"
         )
+        if entry.check_errors:
+            lines.append(f"  membership check errors: {entry.check_errors}")
         lines.append("")
     return "\n".join(lines).rstrip()
 
@@ -1327,7 +1450,9 @@ async def post_slack_recovery_summary() -> bool:
     if _recovery_app is None:
         logger.warning("migration_recovery: slack summary skipped (no app)")
         return False
-    logger.info("migration_recovery: computing slack summary stats")
+    logger.info(
+        "migration_recovery: MTProto membership sync + slack summary starting"
+    )
     stats = await compute_recovery_slack_stats()
     if not stats:
         logger.info("migration_recovery: slack summary skipped (no tier 1+2 rows)")
