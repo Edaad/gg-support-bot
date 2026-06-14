@@ -965,8 +965,8 @@
     "semantic_hash": ""
   },
   "bot/handlers/deposit.py": {
-    "mtime": 1781221250.5016284,
-    "ast_hash": "56ca3c12bca4906407c767bef9627cd6",
+    "mtime": 1781452020.1010711,
+    "ast_hash": "8dea9565cbfcbe5976908170230b49bb",
     "semantic_hash": ""
   },
   "bot/handlers/findgc.py": {
@@ -1120,7 +1120,7 @@
     "semantic_hash": "563bb7e4bf87c4a7e0a2622d3109b5b4"
   },
   "bot/services/mtproto_dm_gc_listener.py": {
-    "mtime": 1781316779.5202007,
+    "mtime": 1781451877.2045894,
     "ast_hash": "abdeeb5c2ab2756261945d968fb36bf3",
     "semantic_hash": ""
   },
@@ -1130,7 +1130,7 @@
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_cash.py": {
-    "mtime": 1781276941.0186925,
+    "mtime": 1781451877.2035532,
     "ast_hash": "1bc1e5ba5a1a984c0c4c86bac76207a8",
     "semantic_hash": "1bc1e5ba5a1a984c0c4c86bac76207a8"
   },
@@ -1195,8 +1195,8 @@
     "semantic_hash": "5e32130827b6a9eaeb50f032b3f8f222"
   },
   "bot/services/stripe_deposit.py": {
-    "mtime": 1781064427.2713718,
-    "ast_hash": "2d55746567f47cf9a2c442f734719efd",
+    "mtime": 1781452018.7821338,
+    "ast_hash": "1dc3e4901ba8cb270da99192b799921c",
     "semantic_hash": ""
   },
   "bot/services/support_group_chats.py": {
@@ -1280,7 +1280,7 @@
     "semantic_hash": "9d2f1e12ab88efc39fc25326e4308c37"
   },
   "club_gc_settings.py": {
-    "mtime": 1781276941.0739682,
+    "mtime": 1781451877.2216883,
     "ast_hash": "fcf07465ab4eb07ea5480fff9458e3aa",
     "semantic_hash": ""
   },
@@ -1405,7 +1405,7 @@
     "semantic_hash": "189f0042a50fd088d82577b996b664f6"
   },
   "dashboard/src/components/V2VariantEditor.tsx": {
-    "mtime": 1781276941.0185843,
+    "mtime": 1781451877.187427,
     "ast_hash": "94b7de3218bde406cab4bffe6ad69e54",
     "semantic_hash": "94b7de3218bde406cab4bffe6ad69e54"
   },
@@ -1965,9 +1965,9 @@
     "semantic_hash": "5b6e1bea8c950b81528f1727cab4f5c4"
   },
   "tests/test_deposit_hyperlink.py": {
-    "mtime": 1780793169.898934,
-    "ast_hash": "1595d8e5990753380d029dabfcc8a20b",
-    "semantic_hash": "1595d8e5990753380d029dabfcc8a20b"
+    "mtime": 1781452044.2244997,
+    "ast_hash": "9d5a2697aca1f20a5cbe6e06e8d79d18",
+    "semantic_hash": ""
   },
   "tests/test_deposit_reminder.py": {
     "mtime": 1781049453.464621,
@@ -2010,9 +2010,9 @@
     "semantic_hash": "f4856bfbe25250a0a491e8c8bef3ef5e"
   },
   "tests/test_stripe_deposit.py": {
-    "mtime": 1780158832.6650121,
-    "ast_hash": "7e9eb64dfd4fa135f2c584fc5c4ccce9",
-    "semantic_hash": "7e9eb64dfd4fa135f2c584fc5c4ccce9"
+    "mtime": 1781452027.9695525,
+    "ast_hash": "d159ee1d11baa890ecdd492921e5e322",
+    "semantic_hash": ""
   },
   "tests/test_stripe_deposit_api.py": {
     "mtime": 1779905678.2231605,
@@ -2540,7 +2540,7 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1781316593.8953726,
+    "mtime": 1781451877.1881812,
     "ast_hash": "973c0ec2bbdb4aece41e3ac18515d8ef",
     "semantic_hash": ""
   },
@@ -2695,7 +2695,7 @@
     "semantic_hash": ""
   },
   "scripts/readd_migrated_group_members.py": {
-    "mtime": 1781276941.0186112,
+    "mtime": 1781451877.1873527,
     "ast_hash": "e60b59b5332694de920a446525401aa8",
     "semantic_hash": ""
   },
@@ -2705,7 +2705,7 @@
     "semantic_hash": ""
   },
   "scripts/dm_deposit_groups_invite.py": {
-    "mtime": 1781276941.0426655,
+    "mtime": 1781451877.2166762,
     "ast_hash": "e2d3f613039dff2a0c85b5d9ed439b56",
     "semantic_hash": ""
   },
@@ -2715,7 +2715,7 @@
     "semantic_hash": ""
   },
   "scripts/migrated_groups_activity_report.py": {
-    "mtime": 1781276941.018555,
+    "mtime": 1781451877.1874363,
     "ast_hash": "210fcee0f35185122be57336e96e4f37",
     "semantic_hash": ""
   },

@@ -117,6 +117,7 @@ def resolve_checkout_amount_cents(
     *,
     min_usd: Decimal | float | int | str | None = None,
     max_usd: Decimal | float | int | str | None = None,
+    preset_usd: Decimal | float | int | str | None = None,
 ) -> tuple[int, int, int]:
     """Return (min_cents, max_cents, preset_cents) for Stripe custom_unit_amount."""
     min_c = _usd_to_cents(min_usd)
@@ -127,7 +128,10 @@ def resolve_checkout_amount_cents(
         max_c = STRIPE_CHECKOUT_MAX_CENTS
     if min_c > max_c:
         max_c = min_c
-    if min_usd is None and max_usd is None:
+    preset_c = _usd_to_cents(preset_usd)
+    if preset_c is not None:
+        preset = max(min_c, min(max_c, preset_c))
+    elif min_usd is None and max_usd is None:
         preset = STRIPE_CHECKOUT_PRESET_CENTS
     else:
         preset = (min_c + max_c) // 2
@@ -269,6 +273,7 @@ def create_stripe_checkout_session(
     no_minimum: bool = False,
     checkout_min_usd: Decimal | float | int | str | None = None,
     checkout_max_usd: Decimal | float | int | str | None = None,
+    checkout_preset_usd: Decimal | float | int | str | None = None,
 ) -> StripeCheckoutResult:
     """Create a Checkout Session where the player picks amount on Stripe.
 
@@ -320,6 +325,7 @@ def create_stripe_checkout_session(
         min_cents, max_cents, preset_cents = resolve_checkout_amount_cents(
             min_usd=checkout_min_usd,
             max_usd=checkout_max_usd,
+            preset_usd=checkout_preset_usd,
         )
     price_id = _create_custom_amount_price_id(
         effective_title,

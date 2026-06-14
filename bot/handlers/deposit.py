@@ -1660,6 +1660,7 @@ async def _send_deposit_method_response(
                 group_title=group_title,
                 checkout_min_usd=response_data.get("checkout_min_amount"),
                 checkout_max_usd=response_data.get("checkout_max_amount"),
+                checkout_preset_usd=amount if isinstance(amount, Decimal) else None,
             )
             _reset_deposit_info_messages(int(chat_id))
             await query.edit_message_text(f"Deposit via {display_name}")
