@@ -318,6 +318,16 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
                 "bot.services.venmo_payments.infer_variant_id_for_venmo_handle",
                 return_value=None,
             ),
+            patch("bot.services.venmo_payments.record_group_binding_in_session"),
+            patch("bot.services.venmo_payments.record_payment_bound"),
+            patch(
+                "bot.services.venmo_payments.sync_payment_notification_edit",
+                new=AsyncMock(),
+            ),
+            patch(
+                "bot.services.venmo_payments.maybe_notify_player_on_auto_bound",
+                new=AsyncMock(),
+            ) as player_notify_mock,
         ):
             mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
             mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
@@ -334,6 +344,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payment.club_id, CLUB_ID)
         self.assertFalse(payment.auto_bound)
         self.assertIsNotNone(payment.bound_at)
+        player_notify_mock.assert_not_awaited()
 
     async def test_ingest_auto_binds_known_payer(self):
         binding = VenmoPayerBinding(
@@ -349,12 +360,15 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             amount_cents=20000,
             venmo_handle="@godfather4444",
             goods_or_services=False,
+            telegram_chat_id=CHAT_ID,
+            club_id=CLUB_ID,
         )
 
         def _query(model):
             q = MagicMock()
             if model is VenmoPayment:
                 q.filter_by.return_value.one_or_none.side_effect = [None, payment_obj]
+                q.filter_by.return_value.one.return_value = payment_obj
             elif model is VenmoPayerBinding:
                 q.filter_by.return_value.one_or_none.return_value = binding
             return q
@@ -379,6 +393,11 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
                 "bot.services.venmo_payments.resolve_display_group_title",
                 return_value=GROUP_TITLE,
             ),
+            patch("bot.services.venmo_payments.track_ingest_notification"),
+            patch(
+                "bot.services.venmo_payments.maybe_notify_player_on_auto_bound",
+                new=AsyncMock(),
+            ) as player_notify_mock,
         ):
             mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
             mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
@@ -391,6 +410,12 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result.auto_bound)
         self.assertEqual(result.status, "bound")
+        player_notify_mock.assert_awaited_once_with(
+            telegram_chat_id=CHAT_ID,
+            amount_cents=20000,
+            auto_bound=True,
+            is_test=False,
+        )
 
     async def test_ingest_auto_binds_known_payer_different_recipient_handle(self):
         binding = VenmoPayerBinding(
@@ -406,12 +431,15 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             amount_cents=15000,
             venmo_handle="@other-venmo",
             goods_or_services=False,
+            telegram_chat_id=CHAT_ID,
+            club_id=CLUB_ID,
         )
 
         def _query(model):
             q = MagicMock()
             if model is VenmoPayment:
                 q.filter_by.return_value.one_or_none.side_effect = [None, payment_obj]
+                q.filter_by.return_value.one.return_value = payment_obj
             elif model is VenmoPayerBinding:
                 q.filter_by.return_value.one_or_none.return_value = binding
             return q
@@ -436,6 +464,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
                 "bot.services.venmo_payments.resolve_display_group_title",
                 return_value=GROUP_TITLE,
             ),
+            patch("bot.services.venmo_payments.track_ingest_notification"),
         ):
             mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
             mock_get_db.return_value.__exit__ = MagicMock(return_value=False)

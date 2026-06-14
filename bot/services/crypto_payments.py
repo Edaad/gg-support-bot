@@ -14,6 +14,7 @@ from bot.services.payment_binding_events import (
     sync_payment_notification_edit,
     track_ingest_notification,
 )
+from bot.services.payment_group_notify import maybe_notify_player_on_auto_bound
 from bot.services.payment_method_binding import (
     BOUND_VIA_MANUAL_DASHBOARD,
     BOUND_VIA_MANUAL_NOTIFICATION,
@@ -404,6 +405,12 @@ async def ingest_crypto_payment(
         club_id=int(bound_club_id) if bound_club_id is not None else None,
         bound_group_title=bound_title or group_title,
         auto_bound=auto_bound,
+    )
+    await maybe_notify_player_on_auto_bound(
+        telegram_chat_id=bound_chat_id,
+        amount_cents=amount_cents,
+        auto_bound=auto_bound,
+        is_test=bool(test),
     )
 
     status = "bound" if auto_bound else "unbound"

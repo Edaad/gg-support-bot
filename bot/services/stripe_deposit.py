@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 
 from bot.services.club import get_group_title_for_chat, update_group_name
 from bot.services.group_chat_invite_links import resolve_group_chat_notification_url
+from bot.services.payment_group_notify import notify_player_group_payment_received
 from bot.services.player_details import parse_group_title_parts
 from bot.services.venmo_payments import (
     escape_notification_html,
@@ -580,6 +581,10 @@ async def notify_stripe_payment_completed(checkout_obj: dict[str, Any]) -> None:
         group_chat_url=group_chat_url,
     )
     await send_telegram_notification(text)
+    await notify_player_group_payment_received(
+        telegram_chat_id=int(chat_id),
+        amount_cents=amount_cents,
+    )
     logger.info(
         "stripe webhook: notification sent chat_id=%s club_id=%s amount_cents=%s method=%r",
         chat_id,

@@ -14,6 +14,18 @@ Venmo Confirm Zaps POST payment details to this API. The **notification bot** (`
 
 Repeat payers (`venmo_payer_bindings`) auto-bind to their last group by **normalized payer name** (shared Venmo accounts rotate across clubs, so recipient `@handle` is not part of the lookup). Display always uses the **live** group title from `groups.name` via `get_group_title_for_chat`.
 
+## Player group confirmation (auto-bind only)
+
+When a payment **auto-binds** to a support group at ingest (repeat payer, setup amount, or memo match), the **support bot** (`TELEGRAM_BOT_TOKEN`) posts in that GC:
+
+```text
+We have received your payment for $50, chips will be loaded to your account shortly!!
+```
+
+Amount is whole dollars. **Manual** staff binds (notification reply or dashboard) do **not** send this message — settlement happens before binding. The same auto-bind behavior applies to Zelle, Crypto, Cash App, and PayPal ingest.
+
+Test payments (`test: true` on ingest) try `TELEGRAM_TEST_BOT_TOKEN` first, then fall back to `TELEGRAM_BOT_TOKEN`. Production payments try production first, then test. Set both tokens on the **web/API** dyno.
+
 ## Database tables
 
 | Table | Purpose |

@@ -14,6 +14,7 @@ from bot.services.payment_binding_events import (
     sync_payment_notification_edit,
     track_ingest_notification,
 )
+from bot.services.payment_group_notify import maybe_notify_player_on_auto_bound
 from bot.services.payment_method_binding import (
     BOUND_VIA_MANUAL_DASHBOARD,
     BOUND_VIA_MANUAL_NOTIFICATION,
@@ -422,6 +423,12 @@ async def ingest_paypal_payment(
         auto_bound=auto_bound,
         bound_via=setup_bound_via,
         bind_attempt_id=setup_attempt_id,
+    )
+    await maybe_notify_player_on_auto_bound(
+        telegram_chat_id=bound_chat_id,
+        amount_cents=amount_cents,
+        auto_bound=auto_bound,
+        is_test=bool(test),
     )
 
     status = "bound" if auto_bound else "unbound"
