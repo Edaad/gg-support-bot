@@ -23,6 +23,8 @@ The **Python buildpack** still runs `pip install -r requirements.txt`. At runtim
 
 2. **Config vars**: set `DATABASE_URL`, `DASHBOARD_PASSWORD`, `TELEGRAM_BOT_TOKEN`, etc., as you already do.
 
+   For **test payment** group confirmations (`test: true` on Zapier ingest), also set `TELEGRAM_TEST_BOT_TOKEN` on the **web** dyno (same value as local `run_test_bot.py`). Without it, only the production support bot is tried and test groups get `Chat not found`.
+
 3. **Deploy**: `git push heroku main` — compile runs `npm install` at the repo root, then **`heroku-postbuild`**, then Python.
 
 ## Deploy maintenance notifications

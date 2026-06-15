@@ -166,6 +166,7 @@ class TestComputeRecoverySlackStats(unittest.IsolatedAsyncioTestCase):
 
 
 class TestTickAsyncQuotaDrain(unittest.IsolatedAsyncioTestCase):
+    @patch("bot.services.migration_recovery.record_migration_recovery_tick")
     @patch("bot.services.migration_recovery._maybe_auto_disable_after_tick", new_callable=AsyncMock)
     @patch("bot.services.migration_recovery.set_flood_wait_policy")
     @patch("bot.services.migration_recovery.set_flood_wait_observer")
@@ -189,6 +190,7 @@ class TestTickAsyncQuotaDrain(unittest.IsolatedAsyncioTestCase):
         _mock_observer: MagicMock,
         _mock_policy: MagicMock,
         _mock_auto: AsyncMock,
+        _mock_record_tick: MagicMock,
     ) -> None:
         rows = [
             RecoveryRow(
@@ -249,6 +251,109 @@ class TestTickAsyncQuotaDrain(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary["direct_add_quota_used"], 2)
         self.assertEqual(summary["complete"], 3)
         self.assertEqual(summary["privacy_blocked"], 1)
+
+
+class TestFloodWaitAbortFromReaddResult(unittest.TestCase):
+    def test_parses_failed_blob(self) -> None:
+        from bot.services.migration_recovery import flood_wait_abort_from_readd_result
+
+        result = ReaddGroupResult(
+            chat_id=-1001,
+            club_id=3,
+            club_key="creator_club",
+            title="CC test",
+            member_count_before=0,
+            member_count_after=None,
+            status="partial",
+            failed=[
+                "player:@masongreen55:FloodWaitAbortError: "
+                "FloodWait 22391s during InviteToChannel:7246302971"
+            ],
+        )
+        exc = flood_wait_abort_from_readd_result(result)
+        self.assertIsNotNone(exc)
+        self.assertEqual(exc.wait_s, 22391)
+        self.assertEqual(exc.label, "InviteToChannel:7246302971")
+
+    def test_returns_none_without_flood_wait(self) -> None:
+        from bot.services.migration_recovery import flood_wait_abort_from_readd_result
+
+        result = ReaddGroupResult(
+            chat_id=-1001,
+            club_id=3,
+            club_key="creator_club",
+            title="CC test",
+            member_count_before=0,
+            member_count_after=None,
+            status="partial",
+            failed=["player:@p:UserPrivacyRestrictedError"],
+        )
+        self.assertIsNone(flood_wait_abort_from_readd_result(result))
+
+
+class TestTickAsyncFloodWaitAbort(unittest.IsolatedAsyncioTestCase):
+    @patch("bot.services.migration_recovery.record_migration_recovery_tick")
+    @patch("bot.services.migration_recovery._maybe_auto_disable_after_tick", new_callable=AsyncMock)
+    @patch("bot.services.migration_recovery.set_flood_wait_policy")
+    @patch("bot.services.migration_recovery.set_flood_wait_observer")
+    @patch("bot.services.migration_recovery.get_migration_recovery_invite_delay_sec", return_value=0.0)
+    @patch("bot.services.migration_recovery.get_migration_recovery_batch_size", return_value=2)
+    @patch(
+        "bot.services.migration_recovery.migration_recovery_active_club_keys",
+        return_value=("creator_club",),
+    )
+    @patch("bot.services.migration_recovery.is_migration_recovery_enabled", return_value=True)
+    @patch("bot.services.migration_recovery._handle_rate_limit_abort", new_callable=AsyncMock)
+    @patch("bot.services.migration_recovery._process_row", new_callable=AsyncMock)
+    @patch("bot.services.migration_recovery.claim_next_pending_row")
+    async def test_flood_wait_aborts_tick_without_second_row(
+        self,
+        mock_claim: MagicMock,
+        mock_process: AsyncMock,
+        mock_handle_abort: AsyncMock,
+        _mock_enabled: MagicMock,
+        _mock_clubs: MagicMock,
+        _mock_batch: MagicMock,
+        _mock_delay: MagicMock,
+        _mock_observer: MagicMock,
+        _mock_policy: MagicMock,
+        _mock_auto: AsyncMock,
+        _mock_record_tick: MagicMock,
+    ) -> None:
+        from bot.services.migration_group_readd import FloodWaitAbortError
+
+        rows = [
+            RecoveryRow(
+                id=1,
+                telegram_chat_id=-1001,
+                club_key="creator_club",
+                club_id=3,
+                group_title="CC 1",
+                old_chat_id=-500,
+                player_telegram_user_id=101,
+                player_username="p1",
+            ),
+            RecoveryRow(
+                id=2,
+                telegram_chat_id=-1002,
+                club_key="creator_club",
+                club_id=3,
+                group_title="CC 2",
+                old_chat_id=-501,
+                player_telegram_user_id=102,
+                player_username="p2",
+            ),
+        ]
+        mock_claim.side_effect = rows + [None]
+        mock_process.side_effect = FloodWaitAbortError(22391, "InviteToChannel:101")
+
+        summary = await tick_async()
+
+        self.assertEqual(mock_claim.call_count, 1)
+        mock_handle_abort.assert_awaited_once()
+        self.assertEqual(mock_handle_abort.await_args.kwargs["exc"].wait_s, 22391)
+        self.assertEqual(summary["claimed"], 1)
+        self.assertEqual(summary["failed"], 1)
 
 
 if __name__ == "__main__":

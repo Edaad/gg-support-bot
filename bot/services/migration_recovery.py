@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -22,6 +23,7 @@ from club_gc_settings import (
 from bot.services.migration_group_readd import (
     FloodWaitAbortError,
     ReaddGroupResult,
+    get_flood_wait_policy,
     set_flood_wait_observer,
     set_flood_wait_policy,
     readd_group,
@@ -38,6 +40,11 @@ TERMINAL_STATUSES = frozenset(
 )
 
 HIGH_PRIORITY_TIERS = (1, 2)
+
+_FLOOD_WAIT_ABORT_RE = re.compile(
+    r"FloodWait (\d+)s during ([^\s]+(?:\:\d+)?)",
+    re.IGNORECASE,
+)
 
 _MIGRATION_RECOVERY_MIN_BOOT_DELAY_SEC = 60.0
 
@@ -135,6 +142,18 @@ def map_readd_status(result: ReaddGroupResult) -> tuple[str, str | None]:
     if result.status in ("ok", "would_readd", "partial"):
         return "complete", None
     return "failed", result.status
+
+
+def flood_wait_abort_from_readd_result(result: ReaddGroupResult) -> FloodWaitAbortError | None:
+    """Parse a swallowed FloodWait abort from readd_group failure blobs."""
+
+    for blob in (result.error, "; ".join(result.failed)):
+        if not blob:
+            continue
+        match = _FLOOD_WAIT_ABORT_RE.search(blob)
+        if match is not None:
+            return FloodWaitAbortError(int(match.group(1)), match.group(2))
+    return None
 
 
 def build_readd_result_payload(result: ReaddGroupResult) -> dict[str, Any]:
@@ -1050,6 +1069,10 @@ async def _process_row(row: RecoveryRow) -> tuple[str, ReaddGroupResult]:
         invite_staff=False,
         listener_user_id=listener_user_id,
     )
+    if get_flood_wait_policy() == "abort":
+        flood_exc = flood_wait_abort_from_readd_result(result)
+        if flood_exc is not None:
+            raise flood_exc
     return await _finish(result)
 
 

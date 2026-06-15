@@ -34,6 +34,10 @@ def set_flood_wait_policy(policy: FloodWaitPolicy) -> None:
     _flood_wait_policy = policy
 
 
+def get_flood_wait_policy() -> FloodWaitPolicy:
+    return _flood_wait_policy
+
+
 @dataclass(frozen=True)
 class ReaddTarget:
     kind: UserKind
@@ -248,6 +252,8 @@ async def invite_user_id(
             lambda: client.get_entity(int(user_id)),
             label=f"get_entity:{user_id}",
         )
+    except FloodWaitAbortError:
+        raise
     except Exception as e:
         return "failed", error_label(e)
 
@@ -259,6 +265,8 @@ async def invite_user_id(
         return "already_member", None
     except UserNotParticipantError:
         pass
+    except FloodWaitAbortError:
+        raise
     except Exception:
         pass
 
@@ -270,6 +278,8 @@ async def invite_user_id(
         return "added", None
     except UserAlreadyParticipantError:
         return "already_member", None
+    except FloodWaitAbortError:
+        raise
     except Exception as e:
         reason = error_label(e)
         if is_privacy_error(reason):
@@ -294,6 +304,8 @@ async def invite_marker(
             lambda: client.get_entity(marker.strip()),
             label=f"get_entity:{marker}",
         )
+    except FloodWaitAbortError:
+        raise
     except Exception as e:
         return "failed", error_label(e)
     try:
@@ -304,6 +316,8 @@ async def invite_marker(
         return "added", None
     except UserAlreadyParticipantError:
         return "already_member", None
+    except FloodWaitAbortError:
+        raise
     except Exception as e:
         reason = error_label(e)
         if is_privacy_error(reason):
@@ -491,6 +505,8 @@ async def readd_group(
             result.status = "ok" if apply else "would_readd"
         else:
             result.status = "no_targets"
+    except FloodWaitAbortError:
+        raise
     except Exception as e:
         result.status = "error"
         result.error = error_label(e)

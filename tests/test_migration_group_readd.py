@@ -90,6 +90,43 @@ class TestInviteUserId(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(reason)
         self.assertEqual(len(invite_calls), 1)
 
+    @patch(
+        "bot.services.migration_group_readd.call_with_flood_retry",
+        side_effect=_passthrough_flood_retry,
+    )
+    async def test_flood_wait_abort_propagates(self, _mock_flood: MagicMock) -> None:
+        from telethon.errors.rpcerrorlist import UserNotParticipantError
+        from telethon.tl.functions.channels import GetParticipantRequest, InviteToChannelRequest
+
+        from bot.services.migration_group_readd import FloodWaitAbortError
+
+        mock_user = MagicMock()
+        mock_user.id = 789
+        channel_entity = MagicMock()
+        client = AsyncMock()
+
+        async def _client_call(request):
+            if isinstance(request, GetParticipantRequest):
+                raise UserNotParticipantError(request=None)
+            if isinstance(request, InviteToChannelRequest):
+                return MagicMock()
+            raise AssertionError(f"unexpected request: {type(request)}")
+
+        client.side_effect = _client_call
+
+        async def _abort_on_invite(factory, *, label: str):
+            if label.startswith("InviteToChannel"):
+                raise FloodWaitAbortError(90, label)
+            return await factory()
+
+        _mock_flood.side_effect = _abort_on_invite
+
+        with self.assertRaises(FloodWaitAbortError) as ctx:
+            await invite_user_id(client, channel_entity, 789, apply=True)
+
+        self.assertEqual(ctx.exception.wait_s, 90)
+        self.assertIn("InviteToChannel", ctx.exception.label)
+
 
 class TestReaddGroupPlayerOnly(unittest.IsolatedAsyncioTestCase):
     def _group(self) -> LinkedGroupRow:

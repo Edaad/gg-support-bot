@@ -44,6 +44,12 @@ def support_bot_tokens_to_try(*, is_test: bool = False) -> list[str]:
     """Return deduped support-bot tokens to try, primary first."""
     prod = (os.getenv(TELEGRAM_BOT_TOKEN_ENV) or "").strip()
     test = (resolve_test_bot_token() or "").strip()
+    if is_test and not test:
+        logger.warning(
+            "payment_group_notify: is_test=True but TELEGRAM_TEST_BOT_TOKEN is not set; "
+            "only %s will be tried",
+            TELEGRAM_BOT_TOKEN_ENV,
+        )
     order = (test, prod) if is_test else (prod, test)
     seen: set[str] = set()
     tokens: list[str] = []
