@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1781451877.1881812,
-    "ast_hash": "973c0ec2bbdb4aece41e3ac18515d8ef",
+    "mtime": 1781455862.1369054,
+    "ast_hash": "b8d8db98111c1abe622b9d0ea2f82709",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2735,13 +2735,13 @@
     "semantic_hash": ""
   },
   "bot/services/migration_group_readd.py": {
-    "mtime": 1781158118.6555147,
-    "ast_hash": "f41c807a9ebd81ee7c195cbd584545c7",
+    "mtime": 1781477219.9251676,
+    "ast_hash": "f274c541b555d9b804459dc273d5fa11",
     "semantic_hash": ""
   },
   "bot/services/migration_recovery.py": {
-    "mtime": 1781316592.6099904,
-    "ast_hash": "414c2e6a53515bdef15816381ecd7c16",
+    "mtime": 1781477224.9610133,
+    "ast_hash": "5751dab45f32c72a36c28973e2d675c5",
     "semantic_hash": ""
   },
   "migrate_migrated_group_recovery.py": {
@@ -2840,8 +2840,8 @@
     "semantic_hash": ""
   },
   "tests/test_migration_group_readd.py": {
-    "mtime": 1781222557.072807,
-    "ast_hash": "72a20893043f4823a6a69790e8452c20",
+    "mtime": 1781477244.3127403,
+    "ast_hash": "dbc58a496c8e29c00ba4b9abacb55ad8",
     "semantic_hash": ""
   },
   "api/routes/paypal_payments.py": {
@@ -2870,8 +2870,8 @@
     "semantic_hash": ""
   },
   "tests/test_migration_recovery_batch.py": {
-    "mtime": 1781316596.8532662,
-    "ast_hash": "60b32779e4038b13117fb8d6423bb29e",
+    "mtime": 1781477261.0580943,
+    "ast_hash": "8c8096b6074cc955a2781570e013a964",
     "semantic_hash": ""
   },
   "scripts/check_recovery_player_membership.py": {
@@ -2950,8 +2950,8 @@
     "semantic_hash": ""
   },
   "bot/services/payment_group_notify.py": {
-    "mtime": 1781455183.4153538,
-    "ast_hash": "9e9610ab674b11ec0025644c631ef1c2",
+    "mtime": 1781455847.7102344,
+    "ast_hash": "f4248e8d3d0675b93eefe4b16a5937dd",
     "semantic_hash": ""
   },
   "tests/test_payment_group_notify.py": {

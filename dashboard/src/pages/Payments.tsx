@@ -100,6 +100,10 @@ function fmtMoney(n: number): string {
   return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function stripeFeeUsd(amountCents: number): number {
+  return Math.round(amountCents * 0.029 + 30) / 100
+}
+
 function fmtGgNickname(nickname: string | null | undefined): string {
   const s = nickname?.trim()
   return s ? s : 'Not available'
@@ -486,6 +490,7 @@ export default function Payments({ token }: { token: string }) {
           'gg_player_id',
           'method_name',
           'amount_usd',
+          'stripe_fee',
           'currency',
           'stripe_payment_intent_id',
           'stripe_checkout_session_id',
@@ -497,6 +502,7 @@ export default function Payments({ token }: { token: string }) {
           row.gg_player_id || '',
           row.method_name || '',
           String(row.amount_usd),
+          fmtMoney(stripeFeeUsd(row.amount_cents)),
           row.currency,
           row.stripe_payment_intent_id || '',
           row.stripe_checkout_session_id,
