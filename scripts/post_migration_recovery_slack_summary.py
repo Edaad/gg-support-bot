@@ -28,6 +28,7 @@ except ImportError:
 from bot.services.migration_recovery import (
     compute_recovery_slack_stats,
     format_recovery_slack_summary,
+    record_slack_summary_post,
 )
 from bot.services.slack_ops_notify import notify_slack_ops
 
@@ -59,6 +60,8 @@ async def _run() -> int:
 
     text = format_recovery_slack_summary(stats)
     ok = await notify_slack_ops(text, source="migration_recovery")
+    if ok:
+        record_slack_summary_post()
     print("posted:", ok)
     return 0 if ok else 1
 

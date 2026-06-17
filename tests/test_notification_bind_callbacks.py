@@ -1,4 +1,4 @@
-"""Tests for bind keyboard callback_data length."""
+"""Tests for payment bind callbacks and keyboard markup."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from notification.bind_keyboards import (
     confirm_bind_markup,
     reassign_or_add_markup,
 )
+from notification.handlers.bind_callbacks import _is_stale_notification_button
 
 
 class BindKeyboardsTestCase(unittest.TestCase):
@@ -41,3 +42,38 @@ class BindKeyboardsTestCase(unittest.TestCase):
                 for button in row:
                     size = len(button["callback_data"].encode("utf-8"))
                     self.assertLessEqual(size, MAX_CALLBACK_BYTES)
+
+
+class StaleNotificationButtonTestCase(unittest.TestCase):
+    def test_same_message_is_never_stale(self):
+        self.assertFalse(
+            _is_stale_notification_button(
+                action="s",
+                payment_notification_message_id=8834,
+                callback_message_id=8834,
+            )
+        )
+
+    def test_notification_picker_on_wrong_message_is_stale(self):
+        self.assertTrue(
+            _is_stale_notification_button(
+                action="s",
+                payment_notification_message_id=8834,
+                callback_message_id=8836,
+            )
+        )
+
+    def test_reassign_add_on_bot_reply_is_allowed(self):
+        for action in ("r", "a", "c", "ac", "b"):
+            with self.subTest(action=action):
+                self.assertFalse(
+                    _is_stale_notification_button(
+                        action=action,
+                        payment_notification_message_id=8834,
+                        callback_message_id=8836,
+                    )
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()

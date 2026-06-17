@@ -1715,8 +1715,8 @@
     "semantic_hash": "3d1ee93392d4d24299b3663ce02bc830"
   },
   "notification/handlers/bind.py": {
-    "mtime": 1781662390.0127308,
-    "ast_hash": "b0d9be51e1b551fcd9c0dc1cd4d1cafc",
+    "mtime": 1781662656.4757636,
+    "ast_hash": "fa3f4c64600275b301332d6d4e0a76a8",
     "semantic_hash": ""
   },
   "notification/main.py": {

@@ -735,6 +735,7 @@ class MigrationRecoveryControl(Base):
     exhausted_club_key = Column(String(64), nullable=True)
     pending_snapshot = Column(JSONB, nullable=True)
     last_tick_at = Column(DateTime(timezone=True), nullable=True)
+    last_slack_summary_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class StripeCustomer(Base):

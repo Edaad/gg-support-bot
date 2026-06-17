@@ -32,11 +32,14 @@ from notification.bind_keyboards import (
 )
 from notification.chat_id import telegram_chat_ids_match
 from notification.handlers._chat import notification_chat_id
-from notification.payment_lookup import find_payment_by_notification
 
 logger = logging.getLogger(__name__)
 
 _BIND_ADD_MEMBER_KEY = "bind_add_member_pending"
+
+# Reassign / add-candidate flows post buttons on a separate bot reply, not the
+# original notification message — do not apply notification message_id stale check.
+_REPLY_MESSAGE_ACTIONS = frozenset({"r", "a", "c", "ac", "b"})
 
 
 def _parse_callback(data: str) -> tuple[str, str, int, int | None] | None:
@@ -70,6 +73,19 @@ def _bind_scope_error_for_chat(payment: object, chat_id: int) -> str | None:
         payment_is_test=bool(getattr(payment, "is_test", False)),
         group_title=title,
     )
+
+
+def _is_stale_notification_button(
+    *,
+    action: str,
+    payment_notification_message_id: int | None,
+    callback_message_id: int,
+) -> bool:
+    if payment_notification_message_id is None:
+        return False
+    if int(payment_notification_message_id) == int(callback_message_id):
+        return False
+    return action not in _REPLY_MESSAGE_ACTIONS
 
 
 async def payment_bind_callback_handler(
@@ -120,7 +136,13 @@ async def payment_bind_callback_handler(
         return
 
     notif_msg_id = getattr(payment, "notification_message_id", None)
-    if notif_msg_id is not None and int(notif_msg_id) != int(message.message_id):
+    if _is_stale_notification_button(
+        action=action,
+        payment_notification_message_id=(
+            int(notif_msg_id) if notif_msg_id is not None else None
+        ),
+        callback_message_id=int(message.message_id),
+    ):
         log_callback_result(
             action=action,
             method_slug=method_slug,

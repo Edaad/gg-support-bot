@@ -14,6 +14,7 @@ from bot.services.migration_recovery import (
     build_readd_result_payload,
     claim_pending_batch,
     compute_migration_recovery_first_delay_sec,
+    compute_migration_recovery_slack_summary_first_delay_sec,
     format_auto_disable_notification,
     format_readd_admin_notification,
     format_rate_limit_admin_notification,
@@ -799,6 +800,52 @@ class TestMigrationRecoveryFirstDelay(unittest.TestCase):
             ):
                 delay = compute_migration_recovery_first_delay_sec(now=now)
         self.assertAlmostEqual(delay, 3880.0, places=3)
+
+
+class TestMigrationRecoverySlackSummaryFirstDelay(unittest.TestCase):
+    def test_no_last_summary_waits_full_interval(self) -> None:
+        with patch(
+            "bot.services.migration_recovery.get_last_slack_summary_at",
+            return_value=None,
+        ):
+            with patch(
+                "club_gc_settings.get_migration_recovery_slack_summary_interval_sec",
+                return_value=21600,
+            ):
+                delay = compute_migration_recovery_slack_summary_first_delay_sec()
+        self.assertEqual(delay, 21600.0)
+
+    def test_recent_summary_waits_remaining_interval(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime(2026, 6, 12, 12, 0, 0, tzinfo=timezone.utc)
+        last = now - timedelta(hours=2)
+        with patch(
+            "bot.services.migration_recovery.get_last_slack_summary_at",
+            return_value=last,
+        ):
+            with patch(
+                "club_gc_settings.get_migration_recovery_slack_summary_interval_sec",
+                return_value=21600,
+            ):
+                delay = compute_migration_recovery_slack_summary_first_delay_sec(now=now)
+        self.assertAlmostEqual(delay, 14400.0, places=3)
+
+    def test_overdue_summary_uses_min_boot_delay(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime(2026, 6, 12, 12, 0, 0, tzinfo=timezone.utc)
+        last = now - timedelta(hours=7)
+        with patch(
+            "bot.services.migration_recovery.get_last_slack_summary_at",
+            return_value=last,
+        ):
+            with patch(
+                "club_gc_settings.get_migration_recovery_slack_summary_interval_sec",
+                return_value=21600,
+            ):
+                delay = compute_migration_recovery_slack_summary_first_delay_sec(now=now)
+        self.assertEqual(delay, 60.0)
 
 
 if __name__ == "__main__":

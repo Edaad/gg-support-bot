@@ -47,6 +47,7 @@ _FLOOD_WAIT_ABORT_RE = re.compile(
 )
 
 _MIGRATION_RECOVERY_MIN_BOOT_DELAY_SEC = 60.0
+_MIGRATION_RECOVERY_SLACK_SUMMARY_MIN_BOOT_DELAY_SEC = 60.0
 
 
 @dataclass(frozen=True)
@@ -515,6 +516,61 @@ def record_migration_recovery_tick() -> None:
             session.add(row)
         row.last_tick_at = now
         session.commit()
+
+
+def get_last_slack_summary_at() -> datetime | None:
+    from db.connection import get_db
+    from db.models import MigrationRecoveryControl
+
+    try:
+        with get_db() as session:
+            row = session.get(MigrationRecoveryControl, 1)
+            if row is None:
+                return None
+            value = row.last_slack_summary_at
+            if value is None:
+                return None
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
+            return value
+    except Exception:
+        logger.warning(
+            "migration_recovery: failed to read last_slack_summary_at",
+            exc_info=True,
+        )
+        return None
+
+
+def record_slack_summary_post() -> None:
+    from db.connection import get_db
+    from db.models import MigrationRecoveryControl
+
+    now = datetime.now(timezone.utc)
+    with get_db() as session:
+        row = session.get(MigrationRecoveryControl, 1)
+        if row is None:
+            row = MigrationRecoveryControl(id=1)
+            session.add(row)
+        row.last_slack_summary_at = now
+        session.commit()
+
+
+def compute_migration_recovery_slack_summary_first_delay_sec(
+    *,
+    now: datetime | None = None,
+) -> float:
+    from club_gc_settings import get_migration_recovery_slack_summary_interval_sec
+
+    interval_sec = get_migration_recovery_slack_summary_interval_sec()
+    last = get_last_slack_summary_at()
+    if last is None:
+        return float(interval_sec)
+
+    current = now or datetime.now(timezone.utc)
+    remaining = (last + timedelta(seconds=interval_sec) - current).total_seconds()
+    if remaining <= 0:
+        return _MIGRATION_RECOVERY_SLACK_SUMMARY_MIN_BOOT_DELAY_SEC
+    return remaining
 
 
 def compute_migration_recovery_first_delay_sec(
@@ -1486,7 +1542,9 @@ async def post_slack_recovery_summary() -> bool:
     ok = await notify_slack_ops(text, source="migration_recovery")
     if not ok:
         logger.warning("migration_recovery: slack summary post failed")
-    return ok
+        return False
+    record_slack_summary_post()
+    return True
 
 
 async def migration_recovery_slack_summary_job_callback(_context) -> None:
@@ -1507,14 +1565,16 @@ def schedule_migration_recovery_slack_summary_job(app) -> None:
 
     _recovery_app = app
     interval_sec = get_migration_recovery_slack_summary_interval_sec()
+    first_delay_sec = compute_migration_recovery_slack_summary_first_delay_sec()
     app.job_queue.run_repeating(
         migration_recovery_slack_summary_job_callback,
         interval=timedelta(seconds=interval_sec),
-        first=timedelta(seconds=600),
+        first=timedelta(seconds=first_delay_sec),
         name="migration_recovery_slack_summary",
     )
     logger.info(
-        "migration_recovery slack summary scheduled interval_sec=%s",
+        "migration_recovery slack summary scheduled first_delay_sec=%s interval_sec=%s",
+        first_delay_sec,
         interval_sec,
     )
 
