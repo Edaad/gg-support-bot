@@ -3,22 +3,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Optional
 
-from bot.services.cashapp_payments import find_cashapp_payment_by_notification_message
-from bot.services.crypto_payments import find_crypto_payment_by_notification_message
-from bot.services.paypal_payments import find_paypal_payment_by_notification_message
-from bot.services.venmo_payments import find_payment_by_notification_message
-from bot.services.zelle_payments import find_zelle_payment_by_notification_message
+from db.connection import get_db
+from db.models import (
+    CashAppPayment,
+    CryptoPayment,
+    PayPalPayment,
+    VenmoPayment,
+    ZellePayment,
+)
 
 METHOD_ORDER = ("crypto", "paypal", "cashapp", "zelle", "venmo")
 
-_FINDERS: dict[str, Callable[[int, int], object | None]] = {
-    "crypto": find_crypto_payment_by_notification_message,
-    "paypal": find_paypal_payment_by_notification_message,
-    "cashapp": find_cashapp_payment_by_notification_message,
-    "zelle": find_zelle_payment_by_notification_message,
-    "venmo": find_payment_by_notification_message,
+_MODELS = {
+    "crypto": CryptoPayment,
+    "paypal": PayPalPayment,
+    "cashapp": CashAppPayment,
+    "zelle": ZellePayment,
+    "venmo": VenmoPayment,
 }
 
 
@@ -33,13 +36,22 @@ def find_payment_by_notification(
     notification_chat_id: int,
     notification_message_id: int,
 ) -> Optional[PaymentRef]:
-    for slug in METHOD_ORDER:
-        finder = _FINDERS[slug]
-        payment = finder(int(notification_chat_id), int(notification_message_id))
-        if payment is not None:
-            return PaymentRef(
-                method_slug=slug,
-                payment_id=int(payment.id),
-                payment=payment,
+    with get_db() as session:
+        for slug in METHOD_ORDER:
+            payment = (
+                session.query(_MODELS[slug])
+                .filter_by(
+                    notification_chat_id=int(notification_chat_id),
+                    notification_message_id=int(notification_message_id),
+                )
+                .one_or_none()
             )
+            if payment is not None:
+                payment_id = int(payment.id)
+                session.expunge(payment)
+                return PaymentRef(
+                    method_slug=slug,
+                    payment_id=payment_id,
+                    payment=payment,
+                )
     return None
