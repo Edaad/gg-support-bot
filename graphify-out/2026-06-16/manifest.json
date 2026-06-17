@@ -1525,8 +1525,8 @@
     "semantic_hash": "f815b05a6bbf7c0237e414e0d04ee055"
   },
   "db/models.py": {
-    "mtime": 1781658443.2305386,
-    "ast_hash": "850ffd9dfe8b91df4db1264fe1117dc2",
+    "mtime": 1781662785.7600062,
+    "ast_hash": "cdae8f81e85ba4e49ebe20c0c385b1b5",
     "semantic_hash": ""
   },
   "export_payment_config_backup.py": {
@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1781455862.1369054,
-    "ast_hash": "b8d8db98111c1abe622b9d0ea2f82709",
+    "mtime": 1781662816.1838105,
+    "ast_hash": "2e3342dff1649754b6b161d12092dac0",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2740,8 +2740,8 @@
     "semantic_hash": ""
   },
   "bot/services/migration_recovery.py": {
-    "mtime": 1781477224.9610133,
-    "ast_hash": "5751dab45f32c72a36c28973e2d675c5",
+    "mtime": 1781662796.3084924,
+    "ast_hash": "c59d3bf8cf80ae560a3972966ac06d9f",
     "semantic_hash": ""
   },
   "migrate_migrated_group_recovery.py": {
@@ -2755,8 +2755,8 @@
     "semantic_hash": ""
   },
   "tests/test_migration_recovery.py": {
-    "mtime": 1781276090.551748,
-    "ast_hash": "265acc352e2c2663b13e8584c25712ed",
+    "mtime": 1781662807.5347965,
+    "ast_hash": "3e5552d2bb8348acedf906b0d1f0f290",
     "semantic_hash": ""
   },
   "bot/services/migration_recovery_priority.py": {
@@ -2930,8 +2930,8 @@
     "semantic_hash": ""
   },
   "scripts/post_migration_recovery_slack_summary.py": {
-    "mtime": 1781292493.5004625,
-    "ast_hash": "126bbbd5a3ccd9a77b5b71a6da4d48bd",
+    "mtime": 1781662803.273048,
+    "ast_hash": "e91513e9071b3c806a645229c7f943d2",
     "semantic_hash": ""
   },
   "bot/services/mtproto_club_health.py": {
@@ -2980,8 +2980,8 @@
     "semantic_hash": ""
   },
   "notification/handlers/bind_callbacks.py": {
-    "mtime": 1781660075.6511564,
-    "ast_hash": "7c19e70152403e1adccce9ceac49d67f",
+    "mtime": 1781663011.2177413,
+    "ast_hash": "2d4d78a73ce2e73eb9ab7a15343d38e9",
     "semantic_hash": ""
   },
   "notification/payment_bind_helpers.py": {
@@ -2995,8 +2995,8 @@
     "semantic_hash": ""
   },
   "tests/test_notification_bind_callbacks.py": {
-    "mtime": 1781658845.868306,
-    "ast_hash": "9cb189b17c74882be92d018924d2150e",
+    "mtime": 1781663025.6733153,
+    "ast_hash": "48d7fc00466296f725ecbef152a90935",
     "semantic_hash": ""
   },
   "tests/test_payment_bind_candidates.py": {
@@ -3007,6 +3007,11 @@
   "bot/services/payment_bind_logging.py": {
     "mtime": 1781659044.3709238,
     "ast_hash": "5ccdce39ce9f8fcc52f0abdee73a7449",
+    "semantic_hash": ""
+  },
+  "migrate_migration_recovery_slack_summary_last.py": {
+    "mtime": 1781662787.566538,
+    "ast_hash": "6c7abec7667a860c19a4388c4f71b427",
     "semantic_hash": ""
   }
 }

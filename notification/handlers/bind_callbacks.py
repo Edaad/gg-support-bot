@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from telegram import ForceReply, Update
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from bot.services.payment_bind_candidates import (
@@ -40,6 +41,31 @@ _BIND_ADD_MEMBER_KEY = "bind_add_member_pending"
 # Reassign / add-candidate flows post buttons on a separate bot reply, not the
 # original notification message — do not apply notification message_id stale check.
 _REPLY_MESSAGE_ACTIONS = frozenset({"r", "a", "c", "ac", "b"})
+
+
+async def _safe_clear_reply_markup(message) -> None:
+    """Remove inline keyboard; ignore Telegram 'not modified' after prior edits."""
+    try:
+        await message.edit_reply_markup(reply_markup=None)
+    except BadRequest as exc:
+        if "not modified" not in str(exc).lower():
+            raise
+
+
+async def _safe_finish_reply_message(message, text: str) -> None:
+    """Replace bot prompt text and remove inline keyboard."""
+    try:
+        await message.edit_text(text, reply_markup=None)
+    except BadRequest as exc:
+        err = str(exc).lower()
+        if "not modified" in err:
+            await _safe_clear_reply_markup(message)
+            return
+        if "there is no text in the message to edit" in err:
+            await _safe_clear_reply_markup(message)
+            await message.reply_text(text)
+            return
+        raise
 
 
 def _parse_callback(data: str) -> tuple[str, str, int, int | None] | None:
@@ -199,7 +225,7 @@ async def payment_bind_callback_handler(
                 )
             )
         else:
-            await message.edit_reply_markup(reply_markup=None)
+            await _safe_clear_reply_markup(message)
         return
 
     if action in ("r", "c") and target_chat_id is not None:
@@ -235,8 +261,12 @@ async def payment_bind_callback_handler(
         if not ok:
             await query.answer(err or "Bind failed.", show_alert=True)
             return
+        title = resolve_display_group_title(int(target_chat_id)) or "selected group"
         await query.answer("Payment bound.")
-        await message.edit_reply_markup(reply_markup=None)
+        if notif_msg_id is not None and int(message.message_id) == int(notif_msg_id):
+            await _safe_clear_reply_markup(message)
+        else:
+            await _safe_finish_reply_message(message, f"Bound to {title}.")
         return
 
     if action == "a" and target_chat_id is not None:
@@ -274,7 +304,12 @@ async def payment_bind_callback_handler(
         if not ok:
             await query.answer(err or "Could not add candidate.", show_alert=True)
             return
+        title = resolve_display_group_title(int(target_chat_id)) or "selected group"
         await query.answer("Added as possible match.")
+        await _safe_finish_reply_message(
+            message,
+            f"Added {title} as possible match.",
+        )
         return
 
     if action == "rs":
@@ -301,7 +336,7 @@ async def payment_bind_callback_handler(
             await query.answer(err or "Reset failed.", show_alert=True)
             return
         await query.answer("Bindings reset. Reply with a group title to bind.")
-        await message.edit_reply_markup(reply_markup=None)
+        await _safe_clear_reply_markup(message)
         return
 
     if action == "m":

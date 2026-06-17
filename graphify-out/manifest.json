@@ -2965,13 +2965,13 @@
     "semantic_hash": ""
   },
   "migrate_payment_bind_multi_candidates.py": {
-    "mtime": 1781658430.7571294,
-    "ast_hash": "cd54a57aa72d6bef37c635cf2f3ea921",
+    "mtime": 1781663496.7874522,
+    "ast_hash": "946ca9defebb3aa7317a189c97a6c2d5",
     "semantic_hash": ""
   },
   "notification/bind_actions.py": {
-    "mtime": 1781662365.99259,
-    "ast_hash": "f50b755439cc969a5e99b31db8351f47",
+    "mtime": 1781663866.342789,
+    "ast_hash": "eba7fe9539c456dcc5fb8bc86d38ce65",
     "semantic_hash": ""
   },
   "notification/bind_keyboards.py": {
@@ -2980,8 +2980,8 @@
     "semantic_hash": ""
   },
   "notification/handlers/bind_callbacks.py": {
-    "mtime": 1781660075.6511564,
-    "ast_hash": "7c19e70152403e1adccce9ceac49d67f",
+    "mtime": 1781663877.1966414,
+    "ast_hash": "cc8a7ecd2063ae94673c8b1cdcad596b",
     "semantic_hash": ""
   },
   "notification/payment_bind_helpers.py": {
@@ -2995,8 +2995,8 @@
     "semantic_hash": ""
   },
   "tests/test_notification_bind_callbacks.py": {
-    "mtime": 1781658845.868306,
-    "ast_hash": "9cb189b17c74882be92d018924d2150e",
+    "mtime": 1781663025.6733153,
+    "ast_hash": "48d7fc00466296f725ecbef152a90935",
     "semantic_hash": ""
   },
   "tests/test_payment_bind_candidates.py": {

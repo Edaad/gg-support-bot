@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Callable, Optional
 
+from sqlalchemy.exc import IntegrityError
+
 from bot.services.group_chat_invite_links import resolve_group_chat_url_for_payment
 from bot.services.payment_bind_candidates import (
     CandidateGroup,
@@ -19,6 +21,7 @@ from bot.services.payment_binding_events import (
     record_payment_bound,
     sync_payment_notification_edit,
 )
+from bot.services.payment_group_notify import notify_player_group_payment_received
 from bot.services.payment_method_binding import BOUND_VIA_MANUAL_NOTIFICATION
 from bot.services.venmo_payments import (
     BoundGroup,
@@ -223,6 +226,8 @@ async def confirm_bind_payment(
         )
         return False, scope_err
 
+    was_unbound = payment.telegram_chat_id is None
+
     if payment.telegram_chat_id is not None and int(payment.telegram_chat_id) == int(target_chat_id):
         logger.info(
             "payment_bind: confirm_bind noop_already_bound method=%s payment_id=%s chat_id=%s",
@@ -264,6 +269,12 @@ async def confirm_bind_payment(
         target_chat_id,
         format_payment_row(refreshed) if refreshed else None,
     )
+    if was_unbound and refreshed is not None:
+        await notify_player_group_payment_received(
+            telegram_chat_id=int(target_chat_id),
+            amount_cents=int(refreshed.amount_cents),
+            is_test=bool(getattr(refreshed, "is_test", False)),
+        )
     return True, None
 
 
@@ -320,19 +331,37 @@ async def confirm_add_candidate(
     if scope_err:
         return False, scope_err
 
-    with get_db() as session:
-        upsert_candidate_on_bind(
-            session,
+    try:
+        with get_db() as session:
+            upsert_candidate_on_bind(
+                session,
+                method_slug,
+                payer_name=getattr(payment, "payer_name", None),
+                method_handle=method_handle_for_payment(payment, method_slug),
+                from_address=getattr(payment, "from_address", None),
+                alert_scope=getattr(payment, "alert_scope", None),
+                telegram_chat_id=group.telegram_chat_id,
+                club_id=group.club_id,
+                bound_group_title_at_bind=group.group_title,
+                bound_by_telegram_user_id=actor_telegram_user_id,
+            )
+    except IntegrityError as exc:
+        logger.warning(
+            "payment_bind: confirm_add_candidate integrity_error method=%s "
+            "payment_id=%s target_chat_id=%s: %s",
             method_slug,
-            payer_name=getattr(payment, "payer_name", None),
-            method_handle=method_handle_for_payment(payment, method_slug),
-            from_address=getattr(payment, "from_address", None),
-            alert_scope=getattr(payment, "alert_scope", None),
-            telegram_chat_id=group.telegram_chat_id,
-            club_id=group.club_id,
-            bound_group_title_at_bind=group.group_title,
-            bound_by_telegram_user_id=actor_telegram_user_id,
+            payment_id,
+            target_chat_id,
+            exc,
         )
+        err_text = str(getattr(exc, "orig", exc))
+        if "payer_name" in err_text or "wallet_bindings" in err_text:
+            return (
+                False,
+                "Cannot add a second group for this payer until "
+                "migrate_payment_bind_multi_candidates.py has been run.",
+            )
+        return False, "Could not add candidate (database constraint)."
 
     notif_chat_id = getattr(payment, "notification_chat_id", None)
     notif_msg_id = getattr(payment, "notification_message_id", None)
