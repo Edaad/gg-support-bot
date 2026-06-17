@@ -200,7 +200,7 @@ async def payment_bind_reply_handler(
             payment_row=payment_row,
         )
         await _immediate_bind(
-            update,
+            update=update,
             expected_chat=expected_chat,
             reply=reply,
             title=title,
