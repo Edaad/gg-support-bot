@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from bot.services.payment_bind_candidates import METHOD_SHORT, CandidateGroup
-from bot.services.player_details import gg_player_id_from_title
 
 try:
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -22,13 +21,7 @@ def _cb(*parts: str) -> str:
 
 
 def _button_label(title: str) -> str:
-    player_id = gg_player_id_from_title(title)
-    if player_id:
-        return player_id
-    text = (title or "").strip()
-    if len(text) <= 32:
-        return text
-    return text[:29] + "…"
+    return _short_title(title, max_len=64)
 
 
 def _short_title(title: str, *, max_len: int = 28) -> str:
@@ -75,13 +68,18 @@ def confirm_bind_markup(
     method_slug: str,
     payment_id: int,
     telegram_chat_id: int,
+    *,
+    group_title: str | None = None,
 ) -> dict:
     short = METHOD_SHORT[method_slug]
+    confirm_label = "Confirm"
+    if group_title:
+        confirm_label = f"Confirm {_short_title(group_title, max_len=48)}"
     return {
         "inline_keyboard": [
             [
                 {
-                    "text": "Confirm",
+                    "text": confirm_label,
                     "callback_data": _cb(
                         "pb", "c", short, str(payment_id), str(telegram_chat_id)
                     ),

@@ -2965,23 +2965,23 @@
     "semantic_hash": ""
   },
   "migrate_payment_bind_multi_candidates.py": {
-    "mtime": 1781658430.7571294,
-    "ast_hash": "cd54a57aa72d6bef37c635cf2f3ea921",
+    "mtime": 1781663496.7874522,
+    "ast_hash": "946ca9defebb3aa7317a189c97a6c2d5",
     "semantic_hash": ""
   },
   "notification/bind_actions.py": {
-    "mtime": 1781662365.99259,
-    "ast_hash": "f50b755439cc969a5e99b31db8351f47",
+    "mtime": 1781663866.342789,
+    "ast_hash": "eba7fe9539c456dcc5fb8bc86d38ce65",
     "semantic_hash": ""
   },
   "notification/bind_keyboards.py": {
-    "mtime": 1781658796.4766266,
-    "ast_hash": "9f3c77cf8f497ad7218c7164475e0eb3",
+    "mtime": 1781664180.9873915,
+    "ast_hash": "3b2eaaee734c06b07746ab952fb546dd",
     "semantic_hash": ""
   },
   "notification/handlers/bind_callbacks.py": {
-    "mtime": 1781663011.2177413,
-    "ast_hash": "2d4d78a73ce2e73eb9ab7a15343d38e9",
+    "mtime": 1781663877.1966414,
+    "ast_hash": "cc8a7ecd2063ae94673c8b1cdcad596b",
     "semantic_hash": ""
   },
   "notification/payment_bind_helpers.py": {

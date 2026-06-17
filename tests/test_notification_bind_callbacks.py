@@ -12,6 +12,7 @@ from notification.bind_keyboards import (
     reassign_or_add_markup,
 )
 from notification.handlers.bind_callbacks import _is_stale_notification_button
+from notification.payment_bind_helpers import inject_pending_confirm_group_line
 
 
 class BindKeyboardsTestCase(unittest.TestCase):
@@ -42,6 +43,31 @@ class BindKeyboardsTestCase(unittest.TestCase):
                 for button in row:
                     size = len(button["callback_data"].encode("utf-8"))
                     self.assertLessEqual(size, MAX_CALLBACK_BYTES)
+
+    def test_confirm_bind_shows_group_title_on_button(self):
+        markup = confirm_bind_markup(
+            "venmo",
+            42,
+            -1001234567890,
+            group_title="CC / 4334-4433 / TEST",
+        )
+        self.assertIn("CC / 4334-4433 / TEST", markup["inline_keyboard"][0][0]["text"])
+
+
+class PendingConfirmGroupLineTestCase(unittest.TestCase):
+    def test_inject_replaces_ambiguous_picker_with_selected_group(self):
+        text = (
+            "🔔 Venmo Payment Notification\n\n"
+            "Group Chat: Unbound — select group below\n"
+            "• CC / 4334-4433 / TEST\n"
+            "• RT / 9090-9999 / TEST\n"
+            "\n"
+            "Name: Winson Dong"
+        )
+        updated = inject_pending_confirm_group_line(text, "CC / 4334-4433 / TEST")
+        self.assertIn("Group Chat: CC / 4334-4433 / TEST — confirm below", updated)
+        self.assertNotIn("select group below", updated)
+        self.assertNotIn("9090-9999", updated)
 
 
 class StaleNotificationButtonTestCase(unittest.TestCase):

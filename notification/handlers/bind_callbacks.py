@@ -8,6 +8,7 @@ from telegram import ForceReply, Update
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
+from bot.services.group_chat_invite_links import resolve_group_chat_url_for_payment
 from bot.services.payment_bind_candidates import (
     METHOD_FROM_SHORT,
     bind_scope_mismatch_error,
@@ -33,6 +34,10 @@ from notification.bind_keyboards import (
 )
 from notification.chat_id import telegram_chat_ids_match
 from notification.handlers._chat import notification_chat_id
+from notification.payment_bind_helpers import (
+    format_payment_notification,
+    inject_pending_confirm_group_line,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +71,33 @@ async def _safe_finish_reply_message(message, text: str) -> None:
             await message.reply_text(text)
             return
         raise
+
+
+async def _safe_edit_notification_message(message, text: str, *, reply_markup=None) -> None:
+    """Edit notification body (HTML) and keyboard; ignore harmless Telegram errors."""
+    try:
+        kwargs: dict = {"text": text, "parse_mode": "HTML"}
+        if reply_markup is not None:
+            kwargs["reply_markup"] = reply_markup
+        await message.edit_text(**kwargs)
+    except BadRequest as exc:
+        if "not modified" not in str(exc).lower():
+            raise
+
+
+async def _ambiguous_notification_text(
+    *,
+    method_slug: str,
+    payment: object,
+    candidates: list,
+) -> str:
+    group_chat_url = await resolve_group_chat_url_for_payment(payment, group_title=None)
+    return format_payment_notification(
+        method_slug,
+        payment,
+        group_chat_url=group_chat_url,
+        ambiguous_candidates=candidates if len(candidates) > 1 else None,
+    )
 
 
 def _parse_callback(data: str) -> tuple[str, str, int, int | None] | None:
@@ -197,10 +229,32 @@ async def payment_bind_callback_handler(
             await query.answer(bind_scope_err, show_alert=True)
             return
         await query.answer()
-        await message.edit_reply_markup(
-            reply_markup=to_inline_keyboard(
-                confirm_bind_markup(method_slug, payment_id, target_chat_id)
+        with get_db() as session:
+            candidates = candidates_for_payment(
+                session,
+                payment,
+                method_slug,
+                filter_alert_scope=getattr(payment, "alert_scope", None)
+                if method_slug == "crypto"
+                else None,
             )
+        base_text = await _ambiguous_notification_text(
+            method_slug=method_slug,
+            payment=payment,
+            candidates=candidates,
+        )
+        text = inject_pending_confirm_group_line(base_text, title)
+        await _safe_edit_notification_message(
+            message,
+            text,
+            reply_markup=to_inline_keyboard(
+                confirm_bind_markup(
+                    method_slug,
+                    payment_id,
+                    target_chat_id,
+                    group_title=title,
+                )
+            ),
         )
         return
 
@@ -219,10 +273,17 @@ async def payment_bind_callback_handler(
                 else None,
             )
         if len(candidates) > 1:
-            await message.edit_reply_markup(
+            text = await _ambiguous_notification_text(
+                method_slug=method_slug,
+                payment=fresh,
+                candidates=candidates,
+            )
+            await _safe_edit_notification_message(
+                message,
+                text,
                 reply_markup=to_inline_keyboard(
                     candidate_picker_markup(method_slug, payment_id, candidates)
-                )
+                ),
             )
         else:
             await _safe_clear_reply_markup(message)
@@ -239,9 +300,15 @@ async def payment_bind_callback_handler(
                 await query.answer(bind_scope_err, show_alert=True)
                 return
             await query.answer()
+            title = resolve_display_group_title(int(target_chat_id)) or "selected group"
             await message.edit_reply_markup(
                 reply_markup=to_inline_keyboard(
-                    confirm_bind_markup(method_slug, payment_id, target_chat_id)
+                    confirm_bind_markup(
+                        method_slug,
+                        payment_id,
+                        target_chat_id,
+                        group_title=title,
+                    )
                 )
             )
             return

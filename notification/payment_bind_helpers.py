@@ -36,6 +36,32 @@ def inject_ambiguous_group_chat_line(text: str, candidates: list[CandidateGroup]
     return "\n".join(out)
 
 
+def format_pending_confirm_group_chat_line(group_title: str) -> str:
+    safe = html.escape((group_title or "").strip(), quote=False)
+    return f"Group Chat: {safe} — confirm below"
+
+
+def inject_pending_confirm_group_line(text: str, group_title: str) -> str:
+    """Replace ambiguous picker section with the selected group pending confirm."""
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
+    pending_line = format_pending_confirm_group_chat_line(group_title)
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("Group Chat:") and (
+            "select group below" in line or "confirm below" in line
+        ):
+            out.append(pending_line)
+            i += 1
+            while i < len(lines) and lines[i].startswith("• "):
+                i += 1
+            continue
+        out.append(line)
+        i += 1
+    return "\n".join(out)
+
+
 def auto_bind_from_candidates(
     candidates: list[CandidateGroup],
 ) -> CandidateGroup | None:
