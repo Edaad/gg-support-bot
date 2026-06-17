@@ -47,8 +47,21 @@ def _message_body(message) -> str:
     return (getattr(message, "caption", None) or "").strip()
 
 
-def _reply_targets_payment_notification(reply) -> bool:
-    """Only bind when staff replied to an actual payment notification post."""
+def _reply_targets_payment_notification(
+    reply,
+    *,
+    notification_chat_id: int,
+) -> bool:
+    """Only bind when staff replied to an actual payment notification post.
+
+    Prefer DB lookup by (chat_id, message_id): Telegram often omits ``text`` on
+    ``reply_to_message`` after the notification was edited (e.g. reset bindings).
+    """
+    if find_payment_by_notification(
+        int(notification_chat_id),
+        int(reply.message_id),
+    ):
+        return True
     return "Payment Notification" in _message_body(reply)
 
 
@@ -83,7 +96,17 @@ async def payment_bind_reply_handler(
     if reply is None:
         return
 
-    if not _reply_targets_payment_notification(reply):
+    if not _reply_targets_payment_notification(
+        reply,
+        notification_chat_id=chat_id,
+    ):
+        logger.info(
+            "payment_bind: reply ignored chat_id=%s reply_to_message_id=%s "
+            "reply_text_present=%s",
+            chat_id,
+            reply.message_id,
+            bool(_message_body(reply)),
+        )
         return
 
     title = (update.message.text or "").strip()
@@ -91,7 +114,9 @@ async def payment_bind_reply_handler(
         await update.message.reply_text("Send the group title as your reply text.")
         return
 
-    ref = find_payment_by_notification(int(expected_chat), int(reply.message_id))
+    ref = find_payment_by_notification(chat_id, int(reply.message_id))
+    if ref is None and expected_chat is not None:
+        ref = find_payment_by_notification(int(expected_chat), int(reply.message_id))
     if ref is None:
         logger.warning(
             "payment_bind: reply no_payment notification_message_id=%s",

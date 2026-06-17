@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
@@ -57,6 +58,14 @@ ALERT_NAME_TO_SCOPE: dict[str, str] = {
     ALERT_NAME_RT_AT_CC.lower(): ALERT_SCOPE_RT_AT_CC,
 }
 
+_GTO_MARKERS = frozenset({"gto", "clubgto"})
+_RT_AT_CC_MARKERS = frozenset({"rt", "at", "cc"})
+
+
+def _alert_name_tokens(alert_name: str) -> frozenset[str]:
+    return frozenset(re.findall(r"[a-z0-9]+", (alert_name or "").strip().lower()))
+
+
 CLUB_NAME_TO_ALERT_SCOPE: dict[str, str] = {
     "ClubGTO": ALERT_SCOPE_CLUBGTO,
     "Round Table": ALERT_SCOPE_RT_AT_CC,
@@ -70,10 +79,19 @@ def resolve_alert_scope(alert_name: str) -> str:
     if not key:
         raise ValueError("alert_name is required")
     scope = ALERT_NAME_TO_SCOPE.get(key)
-    if scope is None:
-        allowed = f"{ALERT_NAME_CLUBGTO!r} or {ALERT_NAME_RT_AT_CC!r}"
-        raise ValueError(f"Unknown alert_name {alert_name!r}; expected {allowed}")
-    return scope
+    if scope is not None:
+        return scope
+
+    tokens = _alert_name_tokens(key)
+    if tokens & _GTO_MARKERS or any("gto" in token for token in tokens):
+        return ALERT_SCOPE_CLUBGTO
+    if tokens & _RT_AT_CC_MARKERS:
+        return ALERT_SCOPE_RT_AT_CC
+
+    raise ValueError(
+        f"Unknown alert_name {alert_name!r}; "
+        "expected a name containing GTO (ClubGTO) or RT/AT/CC"
+    )
 
 
 def alert_scope_for_club_name(club_name: str | None) -> Optional[str]:

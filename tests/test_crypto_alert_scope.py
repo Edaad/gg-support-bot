@@ -41,6 +41,19 @@ class CryptoAlertScopeTestCase(unittest.TestCase):
             ALERT_SCOPE_CLUBGTO,
         )
 
+    def test_resolve_alert_scope_gto_token(self):
+        self.assertEqual(resolve_alert_scope("GTO Crypto Payment"), ALERT_SCOPE_CLUBGTO)
+
+    def test_resolve_alert_scope_rt_token(self):
+        self.assertEqual(resolve_alert_scope("RT Crypto Payment"), ALERT_SCOPE_RT_AT_CC)
+
+    def test_resolve_alert_scope_at_cc_tokens(self):
+        self.assertEqual(resolve_alert_scope("AT/CC Crypto Payment"), ALERT_SCOPE_RT_AT_CC)
+
+    def test_resolve_alert_scope_plain_crypto_payment_rejected(self):
+        with self.assertRaises(ValueError):
+            resolve_alert_scope("Crypto Payment")
+
     def test_resolve_alert_scope_unknown_rejected(self):
         with self.assertRaises(ValueError):
             resolve_alert_scope("Other Crypto Payment")
