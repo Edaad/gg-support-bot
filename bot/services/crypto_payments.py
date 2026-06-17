@@ -213,25 +213,18 @@ def _upsert_wallet_binding(
     bound_group_title_at_bind: str,
     bound_by_telegram_user_id: Optional[int],
 ) -> None:
-    normalized = normalize_from_address(from_address)
-    scope = (alert_scope or "").strip()
-    now = datetime.now(timezone.utc)
-    row = (
-        session.query(CryptoWalletBinding)
-        .filter_by(from_address_normalized=normalized, alert_scope=scope)
-        .one_or_none()
+    from bot.services.payment_bind_candidates import upsert_candidate_on_bind
+
+    upsert_candidate_on_bind(
+        session,
+        "crypto",
+        from_address=from_address,
+        alert_scope=alert_scope,
+        telegram_chat_id=telegram_chat_id,
+        club_id=club_id,
+        bound_group_title_at_bind=bound_group_title_at_bind,
+        bound_by_telegram_user_id=bound_by_telegram_user_id,
     )
-    if row is None:
-        row = CryptoWalletBinding(
-            from_address_normalized=normalized,
-            alert_scope=scope,
-        )
-        session.add(row)
-    row.telegram_chat_id = int(telegram_chat_id)
-    row.club_id = int(club_id)
-    row.bound_group_title_at_bind = bound_group_title_at_bind[:255]
-    row.last_bound_at = now
-    row.last_bound_by_telegram_user_id = bound_by_telegram_user_id
 
 
 def find_crypto_payment_by_notification_message(
@@ -287,6 +280,7 @@ async def ingest_crypto_payment(
     ext_id = (source_external_id or "").strip() or None
     auto_bound = False
     group_title: Optional[str] = None
+    ambiguous_candidates: list = []
 
     with get_db() as session:
         if ext_id:
@@ -348,45 +342,82 @@ async def ingest_crypto_payment(
                 created=False,
             )
 
-        binding = (
-            session.query(CryptoWalletBinding)
-            .filter_by(
-                from_address_normalized=normalize_from_address(from_addr),
-                alert_scope=alert_scope,
-            )
-            .one_or_none()
+        from bot.services.payment_bind_candidates import candidates_for_payment
+        from notification.payment_bind_helpers import auto_bind_from_candidates
+
+        ambiguous_candidates = candidates_for_payment(
+            session,
+            payment,
+            "crypto",
+            filter_alert_scope=alert_scope,
         )
-        if binding is not None:
-            live_title = resolve_display_group_title(int(binding.telegram_chat_id))
-            club_id = binding.club_id
-            if club_id is None:
-                _t, club_id = get_group_title_for_chat(int(binding.telegram_chat_id))
-            if live_title and club_id is not None:
-                auto_bound = True
-                group_title = live_title
-                _apply_binding_to_payment(
-                    payment,
-                    telegram_chat_id=int(binding.telegram_chat_id),
-                    club_id=int(club_id),
-                    bound_group_title_at_bind=live_title,
-                    auto_bound=True,
-                )
+        single = auto_bind_from_candidates(ambiguous_candidates)
+        if single is not None:
+            auto_bound = True
+            group_title = single.group_title
+            _apply_binding_to_payment(
+                payment,
+                telegram_chat_id=int(single.telegram_chat_id),
+                club_id=int(single.club_id),
+                bound_group_title_at_bind=single.group_title,
+                auto_bound=True,
+            )
+        elif len(ambiguous_candidates) > 1:
+            ambiguous_candidates = list(ambiguous_candidates)
+        else:
+            ambiguous_candidates = []
 
         payment_id = int(payment.id)
         session.flush()
         session.expunge(payment)
 
+    from notification.bind_keyboards import candidate_picker_markup
+    from notification.payment_bind_helpers import format_payment_notification
+
     group_chat_url = await resolve_group_chat_url_for_payment(
         payment,
         group_title=group_title,
     )
-    text = format_notification_text(
+    text = format_payment_notification(
+        "crypto",
         payment,
         group_title=group_title,
         group_chat_url=group_chat_url,
+        ambiguous_candidates=ambiguous_candidates if not auto_bound else None,
     )
 
-    notif_chat_id, notif_message_id = await send_telegram_notification(text)
+    notif_markup: dict | None = None
+    if ambiguous_candidates and len(ambiguous_candidates) > 1 and not auto_bound:
+        notif_markup = candidate_picker_markup(
+            "crypto", int(payment.id), ambiguous_candidates
+        )
+
+    notif_chat_id, notif_message_id = await send_telegram_notification(
+        text,
+        reply_markup=notif_markup,
+    )
+
+    from bot.services.payment_bind_candidates import identity_label
+    from notification.payment_bind_helpers import log_ingest_bind_delivery
+
+    log_ingest_bind_delivery(
+        method_slug="crypto",
+        payment_id=payment_id,
+        identity_label=identity_label(
+            "crypto",
+            from_address=payment.from_address,
+            alert_scope=payment.alert_scope,
+        ),
+        candidate_count=1 if auto_bound else len(ambiguous_candidates),
+        auto_bound=auto_bound,
+        bound_chat_id=payment.telegram_chat_id,
+        bound_title=group_title,
+        setup_blocked=False,
+        setup_target_chat_id=None,
+        notif_markup=notif_markup,
+        notification_chat_id=notif_chat_id,
+        notification_message_id=notif_message_id,
+    )
 
     with get_db() as session:
         payment = session.query(CryptoPayment).filter_by(id=payment_id).one()
@@ -521,6 +552,8 @@ async def bind_crypto_payment_by_id(
 
     if notif_chat_id and notif_message_id and text:
         try:
+            from notification.bind_keyboards import empty_markup
+
             await sync_payment_notification_edit(
                 payment_method_slug="crypto",
                 payment_id=payment_id,
@@ -533,6 +566,7 @@ async def bind_crypto_payment_by_id(
                 club_id=group.club_id,
                 bound_group_title=live_title,
                 auto_bound=False,
+                reply_markup=empty_markup(),
             )
         except Exception:
             logger.exception(

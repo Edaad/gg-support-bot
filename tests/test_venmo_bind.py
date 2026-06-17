@@ -127,7 +127,8 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
             setup_chat_title="RT / 9999-0000 / New Setup",
         )
         self.assertIn("First-time setup warning", text)
-        self.assertIn(f"Already bound: {GROUP_TITLE}", text)
+        self.assertIn(GROUP_TITLE, text)
+        self.assertIn("Auto-bind attempt from RT / 9999-0000 / New Setup blocked.", text)
         self.assertIn("Player ID: <code>6485-8168</code>", text)
         self.assertIn("Last deposit: Jun 04, 2026 07:27 PM EST", text)
         self.assertIn("left unbound for manual review", text)
@@ -215,13 +216,18 @@ class SetupAlreadyLinkedIngestTestCase(unittest.IsolatedAsyncioTestCase):
             patch(
                 "bot.services.venmo_payments.find_existing_venmo_link_for_setup",
                 return_value=ExistingVenmoLink(
-                    linked_chat_id=CHAT_ID,
+                    linked_chat_ids=(CHAT_ID,),
                     via="payer_binding",
                 ),
             ),
             patch(
                 "bot.services.venmo_payments.get_last_bound_deposit_at",
                 return_value=datetime(2026, 6, 4, 23, 27, tzinfo=timezone.utc),
+            ),
+            patch("bot.services.venmo_payments.track_ingest_notification"),
+            patch(
+                "bot.services.payment_bind_candidates.candidate_chat_ids",
+                return_value=[CHAT_ID],
             ),
             patch(
                 "bot.services.venmo_payments.cancel_setup_attempt_in_session",
@@ -347,12 +353,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
         player_notify_mock.assert_not_awaited()
 
     async def test_ingest_auto_binds_known_payer(self):
-        binding = VenmoPayerBinding(
-            payer_name_normalized="moshe toussoun",
-            venmo_handle="@godfather4444",
-            telegram_chat_id=CHAT_ID,
-            club_id=CLUB_ID,
-        )
+        from bot.services.payment_bind_candidates import CandidateGroup
 
         payment_obj = VenmoPayment(
             id=99,
@@ -369,8 +370,6 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             if model is VenmoPayment:
                 q.filter_by.return_value.one_or_none.side_effect = [None, payment_obj]
                 q.filter_by.return_value.one.return_value = payment_obj
-            elif model is VenmoPayerBinding:
-                q.filter_by.return_value.one_or_none.return_value = binding
             return q
 
         mock_session = MagicMock()
@@ -383,6 +382,12 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
         mock_session.add.side_effect = _add
         mock_session.flush = MagicMock()
 
+        single = CandidateGroup(
+            telegram_chat_id=CHAT_ID,
+            club_id=CLUB_ID,
+            group_title=GROUP_TITLE,
+        )
+
         with (
             patch("bot.services.venmo_payments.get_db") as mock_get_db,
             patch(
@@ -392,6 +397,10 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             patch(
                 "bot.services.venmo_payments.resolve_display_group_title",
                 return_value=GROUP_TITLE,
+            ),
+            patch(
+                "bot.services.payment_bind_candidates.candidates_for_payment",
+                return_value=[single],
             ),
             patch("bot.services.venmo_payments.track_ingest_notification"),
             patch(
@@ -418,12 +427,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_ingest_auto_binds_known_payer_different_recipient_handle(self):
-        binding = VenmoPayerBinding(
-            payer_name_normalized="moshe toussoun",
-            venmo_handle="@godfather4444",
-            telegram_chat_id=CHAT_ID,
-            club_id=CLUB_ID,
-        )
+        from bot.services.payment_bind_candidates import CandidateGroup
 
         payment_obj = VenmoPayment(
             id=100,
@@ -440,8 +444,6 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             if model is VenmoPayment:
                 q.filter_by.return_value.one_or_none.side_effect = [None, payment_obj]
                 q.filter_by.return_value.one.return_value = payment_obj
-            elif model is VenmoPayerBinding:
-                q.filter_by.return_value.one_or_none.return_value = binding
             return q
 
         mock_session = MagicMock()
@@ -454,6 +456,12 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
         mock_session.add.side_effect = _add
         mock_session.flush = MagicMock()
 
+        single = CandidateGroup(
+            telegram_chat_id=CHAT_ID,
+            club_id=CLUB_ID,
+            group_title=GROUP_TITLE,
+        )
+
         with (
             patch("bot.services.venmo_payments.get_db") as mock_get_db,
             patch(
@@ -463,6 +471,10 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             patch(
                 "bot.services.venmo_payments.resolve_display_group_title",
                 return_value=GROUP_TITLE,
+            ),
+            patch(
+                "bot.services.payment_bind_candidates.candidates_for_payment",
+                return_value=[single],
             ),
             patch("bot.services.venmo_payments.track_ingest_notification"),
         ):

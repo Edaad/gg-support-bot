@@ -173,26 +173,18 @@ def _upsert_payer_binding(
     bound_group_title_at_bind: str,
     bound_by_telegram_user_id: Optional[int],
 ) -> None:
-    normalized = normalize_payer_name(payer_name)
-    email = normalize_paypal_email(paypal_email)
-    now = datetime.now(timezone.utc)
-    row = (
-        session.query(PayPalPayerBinding)
-        .filter_by(payer_name_normalized=normalized)
-        .one_or_none()
+    from bot.services.payment_bind_candidates import upsert_candidate_on_bind
+
+    upsert_candidate_on_bind(
+        session,
+        "paypal",
+        payer_name=payer_name,
+        method_handle=paypal_email,
+        telegram_chat_id=telegram_chat_id,
+        club_id=club_id,
+        bound_group_title_at_bind=bound_group_title_at_bind,
+        bound_by_telegram_user_id=bound_by_telegram_user_id,
     )
-    if row is None:
-        row = PayPalPayerBinding(
-            payer_name_normalized=normalized,
-            paypal_email=email,
-        )
-        session.add(row)
-    row.paypal_email = email
-    row.telegram_chat_id = int(telegram_chat_id)
-    row.club_id = int(club_id)
-    row.bound_group_title_at_bind = bound_group_title_at_bind[:255]
-    row.last_bound_at = now
-    row.last_bound_by_telegram_user_id = bound_by_telegram_user_id
 
 
 async def ingest_paypal_payment(
@@ -235,6 +227,9 @@ async def ingest_paypal_payment(
     setup_blocked_already_linked = False
     setup_attempt_id: Optional[int] = None
     setup_bound_via: Optional[str] = None
+    ambiguous_candidates: list = []
+    setup_target_chat_id: Optional[int] = None
+    setup_target_title: Optional[str] = None
 
     with get_db() as session:
         if source_id:
@@ -300,21 +295,25 @@ async def ingest_paypal_payment(
                     setup_chat_id=int(setup_attempt.telegram_chat_id),
                 )
                 if existing_link is not None:
-                    linked_title = (
-                        resolve_display_group_title(int(existing_link.linked_chat_id))
-                        or "—"
-                    )
+                    linked_titles = [
+                        resolve_display_group_title(int(cid)) or "—"
+                        for cid in existing_link.linked_chat_ids
+                    ]
+                    linked_title = linked_titles[0] if linked_titles else "—"
                     last_deposit_at = get_last_bound_paypal_deposit_at(
                         session,
                         payer_name=payer,
-                        telegram_chat_id=int(existing_link.linked_chat_id),
+                        telegram_chat_id=int(existing_link.linked_chat_ids[0]),
                         exclude_payment_id=int(payment.id),
                     )
                     cancel_setup_attempt_in_session(session, setup_attempt)
                     setup_blocked_already_linked = True
+                    setup_target_chat_id = int(setup_attempt.telegram_chat_id)
+                    setup_target_title = live_title
                     setup_warning_text = format_setup_already_linked_warning(
                         payment,
                         already_bound_group_title=linked_title,
+                        already_bound_group_titles=linked_titles,
                         last_deposit_at=last_deposit_at,
                         setup_chat_title=live_title,
                     )
@@ -361,48 +360,88 @@ async def ingest_paypal_payment(
                     )
 
         if not auto_bound and not setup_blocked_already_linked:
-            binding = (
-                session.query(PayPalPayerBinding)
-                .filter_by(payer_name_normalized=normalize_payer_name(payer))
-                .one_or_none()
-            )
-        else:
-            binding = None
+            from bot.services.payment_bind_candidates import candidates_for_payment
+            from notification.payment_bind_helpers import auto_bind_from_candidates
 
-        if binding is not None:
-            live_title = resolve_display_group_title(int(binding.telegram_chat_id))
-            club_id = binding.club_id
-            if club_id is None:
-                _t, club_id = get_group_title_for_chat(int(binding.telegram_chat_id))
-            if live_title and club_id is not None:
+            ambiguous_candidates = candidates_for_payment(session, payment, "paypal")
+            single = auto_bind_from_candidates(ambiguous_candidates)
+            if single is not None:
                 auto_bound = True
-                group_title = live_title
+                group_title = single.group_title
                 _apply_binding_to_payment(
                     payment,
-                    telegram_chat_id=int(binding.telegram_chat_id),
-                    club_id=int(club_id),
-                    bound_group_title_at_bind=live_title,
+                    telegram_chat_id=int(single.telegram_chat_id),
+                    club_id=int(single.club_id),
+                    bound_group_title_at_bind=single.group_title,
                     auto_bound=True,
                 )
+            elif len(ambiguous_candidates) > 1:
+                ambiguous_candidates = list(ambiguous_candidates)
+            else:
+                ambiguous_candidates = []
 
         payment_id = int(payment.id)
         session.flush()
         session.expunge(payment)
 
+    from notification.bind_keyboards import candidate_picker_markup, setup_blocked_markup
+    from notification.payment_bind_helpers import format_payment_notification
+
     group_chat_url = await resolve_group_chat_url_for_payment(
         payment,
         group_title=group_title,
     )
-    text = format_notification_text(
+    text = format_payment_notification(
+        "paypal",
         payment,
         group_title=group_title,
         group_chat_url=group_chat_url,
+        ambiguous_candidates=ambiguous_candidates if not auto_bound else None,
     )
+
+    notif_markup: dict | None = None
+    if setup_blocked_already_linked and setup_target_chat_id and setup_target_title:
+        from bot.services.payment_bind_candidates import candidate_chat_ids
+
+        with get_db() as session:
+            existing_ids = candidate_chat_ids(session, "paypal", payer_name=payment.payer_name)
+        notif_markup = setup_blocked_markup(
+            "paypal",
+            int(payment.id),
+            setup_chat_id=int(setup_target_chat_id),
+            setup_title=setup_target_title,
+            show_add=int(setup_target_chat_id) not in existing_ids,
+        )
+    elif ambiguous_candidates and len(ambiguous_candidates) > 1 and not auto_bound:
+        notif_markup = candidate_picker_markup(
+            "paypal", int(payment.id), ambiguous_candidates
+        )
 
     if setup_warning_text:
         await send_telegram_notification(setup_warning_text)
 
-    notif_chat_id, notif_message_id = await send_telegram_notification(text)
+    notif_chat_id, notif_message_id = await send_telegram_notification(
+        text,
+        reply_markup=notif_markup,
+    )
+
+    from bot.services.payment_bind_candidates import identity_label
+    from notification.payment_bind_helpers import log_ingest_bind_delivery
+
+    log_ingest_bind_delivery(
+        method_slug="paypal",
+        payment_id=payment_id,
+        identity_label=identity_label("paypal", payer_name=payment.payer_name),
+        candidate_count=1 if auto_bound else len(ambiguous_candidates),
+        auto_bound=auto_bound,
+        bound_chat_id=payment.telegram_chat_id,
+        bound_title=group_title,
+        setup_blocked=setup_blocked_already_linked,
+        setup_target_chat_id=setup_target_chat_id,
+        notif_markup=notif_markup,
+        notification_chat_id=notif_chat_id,
+        notification_message_id=notif_message_id,
+    )
 
     with get_db() as session:
         payment = session.query(PayPalPayment).filter_by(id=payment_id).one()
@@ -542,6 +581,8 @@ async def bind_paypal_payment_by_id(
 
     if notif_chat_id and notif_message_id and text:
         try:
+            from notification.bind_keyboards import empty_markup
+
             await sync_payment_notification_edit(
                 payment_method_slug="paypal",
                 payment_id=payment_id,
@@ -554,6 +595,7 @@ async def bind_paypal_payment_by_id(
                 club_id=group.club_id,
                 bound_group_title=live_title,
                 auto_bound=False,
+                reply_markup=empty_markup(),
             )
         except Exception:
             logger.exception(

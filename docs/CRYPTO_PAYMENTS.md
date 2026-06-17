@@ -2,7 +2,7 @@
 
 Arkham (ARKM) alerts fire to Zapier; Zapier extracts transfer fields and POSTs to this API. The **notification bot** posts alerts to the shared staff Telegram group. Staff **reply** with a support group title to bind each payment.
 
-Repeat wallets (`crypto_wallet_bindings`) auto-bind to their last group by **`from_address` + `alert_scope`**. Manual bind (reply or dashboard) updates that mapping. There is no `/deposit` first-time setup flow for crypto.
+Repeat wallets (`crypto_wallet_bindings`) can map to **multiple** support group candidates per **`from_address` + `alert_scope`**. When exactly one in-scope candidate exists, ingest auto-binds as before. When two or more exist, the payment stays unbound and staff pick from inline buttons (scope-filtered: ClubGTO vs RT/AT/CC). Manual bind with confirm updates the mapping.
 
 ## Alert scopes (two buckets)
 
@@ -36,6 +36,7 @@ Migrations:
 ```bash
 DATABASE_URL=... python migrate_crypto_payments.py
 DATABASE_URL=... python migrate_crypto_wallet_bindings.py
+DATABASE_URL=... python migrate_payment_bind_multi_candidates.py
 ```
 
 The wallet-bindings migration backfills from existing bound `crypto_payments` rows (most recent bind per address+scope).

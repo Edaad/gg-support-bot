@@ -225,6 +225,7 @@ async def sync_payment_notification_edit(
     club_id: int | None = None,
     bound_group_title: str | None = None,
     auto_bound: bool = False,
+    reply_markup: dict | None = None,
 ) -> bool:
     """Edit a payment notification and persist the outcome. Returns True on success."""
     from bot.services.venmo_payments import edit_telegram_notification
@@ -253,10 +254,14 @@ async def sync_payment_notification_edit(
         return False
 
     try:
+        edit_kwargs: dict = {}
+        if reply_markup is not None:
+            edit_kwargs["reply_markup"] = reply_markup
         await edit_telegram_notification(
             int(notification_chat_id),
             int(notification_message_id),
             text,
+            **edit_kwargs,
         )
     except Exception as exc:
         record_binding_event(
@@ -274,6 +279,18 @@ async def sync_payment_notification_edit(
             **base,
         )
     )
+    if reply_markup is not None:
+        from bot.services.payment_bind_logging import log_notification_edit
+
+        log_notification_edit(
+            method_slug=payment_method_slug,
+            payment_id=int(payment_id),
+            notification_chat_id=int(notification_chat_id),
+            notification_message_id=int(notification_message_id),
+            has_keyboard=bool(reply_markup.get("inline_keyboard")),
+            keyboard_kind="cleared" if not reply_markup.get("inline_keyboard") else "present",
+            reason="sync_payment_notification_edit",
+        )
     return True
 
 

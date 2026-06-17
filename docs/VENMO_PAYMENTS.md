@@ -10,9 +10,11 @@ Venmo Confirm Zaps POST payment details to this API. The **notification bot** (`
 
 1. **Zapier** — Gmail trigger + formatters + Glide (unchanged) + **POST** to `/api/venmo/payments`
 2. **API** — insert `venmo_payments`, auto-bind repeat payers, send Telegram notification
-3. **Notification bot** — staff reply with group title → bind + edit notification
+3. **Notification bot** — staff reply with group title → bind + edit notification (with confirm when rebinding or when multiple candidates exist)
 
-Repeat payers (`venmo_payer_bindings`) auto-bind to their last group by **normalized payer name** (shared Venmo accounts rotate across clubs, so recipient `@handle` is not part of the lookup). Display always uses the **live** group title from `groups.name` via `get_group_title_for_chat`.
+Repeat payers (`venmo_payer_bindings`) can have **multiple group candidates** per normalized payer name. **One candidate** → auto-bind at ingest (unchanged). **Two or more** → payment stays unbound; staff use inline buttons on the notification (Confirm / Back). Replying to an already-bound notification with a **different** group title no longer silently rebinds — the bot offers Reassign or Add as possible user, each with confirm.
+
+Run `DATABASE_URL=... python migrate_payment_bind_multi_candidates.py` after deploy to allow multiple rows per payer/wallet identity.
 
 ## Player group confirmation (auto-bind only)
 

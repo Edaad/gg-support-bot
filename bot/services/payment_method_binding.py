@@ -256,8 +256,12 @@ class SetupMatchResult:
 
 @dataclass(frozen=True)
 class ExistingVenmoLink:
-    linked_chat_id: int
+    linked_chat_ids: tuple[int, ...]
     via: Literal["payer_binding", "group_binding"]
+
+    @property
+    def linked_chat_id(self) -> int:
+        return self.linked_chat_ids[0]
 
 
 def _normalize_payer_name(name: str) -> str:
@@ -1134,20 +1138,16 @@ def find_existing_venmo_link_for_setup(
     payer_name: str,
     setup_chat_id: int,
 ) -> Optional[ExistingVenmoLink]:
-    """Return an existing Venmo link that should block setup (payer bound elsewhere)."""
-    normalized = _normalize_payer_name(payer_name)
-    payer_row = (
-        session.query(VenmoPayerBinding)
-        .filter_by(payer_name_normalized=normalized)
-        .one_or_none()
+    """Return existing Venmo links that should block setup (payer has candidates)."""
+    from bot.services.payment_bind_candidates import list_candidate_groups
+
+    candidates = list_candidate_groups(session, "venmo", payer_name=payer_name)
+    if not candidates:
+        return None
+    return ExistingVenmoLink(
+        linked_chat_ids=tuple(int(c.telegram_chat_id) for c in candidates),
+        via="payer_binding",
     )
-    if payer_row is not None:
-        linked_chat_id = int(payer_row.telegram_chat_id)
-        return ExistingVenmoLink(
-            linked_chat_id=linked_chat_id,
-            via="payer_binding",
-        )
-    return None
 
 
 def find_existing_zelle_link_for_setup(
@@ -1156,20 +1156,16 @@ def find_existing_zelle_link_for_setup(
     payer_name: str,
     setup_chat_id: int,
 ) -> Optional[ExistingVenmoLink]:
-    """Return an existing Zelle link that should block setup (payer bound elsewhere)."""
-    normalized = _normalize_payer_name(payer_name)
-    payer_row = (
-        session.query(ZellePayerBinding)
-        .filter_by(payer_name_normalized=normalized)
-        .one_or_none()
+    """Return existing Zelle links that should block setup (payer has candidates)."""
+    from bot.services.payment_bind_candidates import list_candidate_groups
+
+    candidates = list_candidate_groups(session, "zelle", payer_name=payer_name)
+    if not candidates:
+        return None
+    return ExistingVenmoLink(
+        linked_chat_ids=tuple(int(c.telegram_chat_id) for c in candidates),
+        via="payer_binding",
     )
-    if payer_row is not None:
-        linked_chat_id = int(payer_row.telegram_chat_id)
-        return ExistingVenmoLink(
-            linked_chat_id=linked_chat_id,
-            via="payer_binding",
-        )
-    return None
 
 
 def find_existing_cashapp_link_for_setup(
@@ -1178,20 +1174,16 @@ def find_existing_cashapp_link_for_setup(
     payer_name: str,
     setup_chat_id: int,
 ) -> Optional[ExistingVenmoLink]:
-    """Return an existing Cash App link that should block setup (payer bound elsewhere)."""
-    normalized = _normalize_payer_name(payer_name)
-    payer_row = (
-        session.query(CashAppPayerBinding)
-        .filter_by(payer_name_normalized=normalized)
-        .one_or_none()
+    """Return existing Cash App links that should block setup (payer has candidates)."""
+    from bot.services.payment_bind_candidates import list_candidate_groups
+
+    candidates = list_candidate_groups(session, "cashapp", payer_name=payer_name)
+    if not candidates:
+        return None
+    return ExistingVenmoLink(
+        linked_chat_ids=tuple(int(c.telegram_chat_id) for c in candidates),
+        via="payer_binding",
     )
-    if payer_row is not None:
-        linked_chat_id = int(payer_row.telegram_chat_id)
-        return ExistingVenmoLink(
-            linked_chat_id=linked_chat_id,
-            via="payer_binding",
-        )
-    return None
 
 
 def find_existing_paypal_link_for_setup(
@@ -1200,20 +1192,16 @@ def find_existing_paypal_link_for_setup(
     payer_name: str,
     setup_chat_id: int,
 ) -> Optional[ExistingVenmoLink]:
-    """Return an existing PayPal link that should block setup (payer bound elsewhere)."""
-    normalized = _normalize_payer_name(payer_name)
-    payer_row = (
-        session.query(PayPalPayerBinding)
-        .filter_by(payer_name_normalized=normalized)
-        .one_or_none()
+    """Return existing PayPal links that should block setup (payer has candidates)."""
+    from bot.services.payment_bind_candidates import list_candidate_groups
+
+    candidates = list_candidate_groups(session, "paypal", payer_name=payer_name)
+    if not candidates:
+        return None
+    return ExistingVenmoLink(
+        linked_chat_ids=tuple(int(c.telegram_chat_id) for c in candidates),
+        via="payer_binding",
     )
-    if payer_row is not None:
-        linked_chat_id = int(payer_row.telegram_chat_id)
-        return ExistingVenmoLink(
-            linked_chat_id=linked_chat_id,
-            via="payer_binding",
-        )
-    return None
 
 
 def get_last_bound_deposit_at(

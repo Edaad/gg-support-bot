@@ -857,13 +857,14 @@ class VenmoPayment(Base):
 
 
 class VenmoPayerBinding(Base):
-    """Remember last bind: normalized payer name -> support group (any shared Venmo)."""
+    """Remember bind candidates: normalized payer name + support group (any shared Venmo)."""
 
     __tablename__ = "venmo_payer_bindings"
     __table_args__ = (
         UniqueConstraint(
             "payer_name_normalized",
-            name="uq_venmo_payer_bindings_payer_name",
+            "telegram_chat_id",
+            name="uq_venmo_payer_bindings_payer_chat",
         ),
         Index("ix_venmo_payer_bindings_telegram_chat_id", "telegram_chat_id"),
     )
@@ -925,13 +926,14 @@ class CashAppPayment(Base):
 
 
 class CashAppPayerBinding(Base):
-    """Remember last bind: normalized payer name -> support group (any shared Cash App)."""
+    """Remember bind candidates: normalized payer name + support group (any shared Cash App)."""
 
     __tablename__ = "cashapp_payer_bindings"
     __table_args__ = (
         UniqueConstraint(
             "payer_name_normalized",
-            name="uq_cashapp_payer_bindings_payer_name",
+            "telegram_chat_id",
+            name="uq_cashapp_payer_bindings_payer_chat",
         ),
         Index("ix_cashapp_payer_bindings_telegram_chat_id", "telegram_chat_id"),
     )
@@ -993,13 +995,14 @@ class PayPalPayment(Base):
 
 
 class PayPalPayerBinding(Base):
-    """Remember last bind: normalized payer name -> support group (any shared PayPal)."""
+    """Remember bind candidates: normalized payer name + support group (any shared PayPal)."""
 
     __tablename__ = "paypal_payer_bindings"
     __table_args__ = (
         UniqueConstraint(
             "payer_name_normalized",
-            name="uq_paypal_payer_bindings_payer_name",
+            "telegram_chat_id",
+            name="uq_paypal_payer_bindings_payer_chat",
         ),
         Index("ix_paypal_payer_bindings_telegram_chat_id", "telegram_chat_id"),
     )
@@ -1109,14 +1112,15 @@ class CryptoPayment(Base):
 
 
 class CryptoWalletBinding(Base):
-    """Remember last bind: wallet address + alert scope -> support group."""
+    """Remember bind candidates: wallet address + alert scope + support group."""
 
     __tablename__ = "crypto_wallet_bindings"
     __table_args__ = (
         UniqueConstraint(
             "from_address_normalized",
             "alert_scope",
-            name="uq_crypto_wallet_bindings_address_scope",
+            "telegram_chat_id",
+            name="uq_crypto_wallet_bindings_address_scope_chat",
         ),
         Index("ix_crypto_wallet_bindings_telegram_chat_id", "telegram_chat_id"),
     )
@@ -1136,13 +1140,14 @@ class CryptoWalletBinding(Base):
 
 
 class ZellePayerBinding(Base):
-    """Remember last bind: normalized payer name -> support group (any shared Zelle)."""
+    """Remember bind candidates: normalized payer name + support group (any shared Zelle)."""
 
     __tablename__ = "zelle_payer_bindings"
     __table_args__ = (
         UniqueConstraint(
             "payer_name_normalized",
-            name="uq_zelle_payer_bindings_payer_name",
+            "telegram_chat_id",
+            name="uq_zelle_payer_bindings_payer_chat",
         ),
         Index("ix_zelle_payer_bindings_telegram_chat_id", "telegram_chat_id"),
     )

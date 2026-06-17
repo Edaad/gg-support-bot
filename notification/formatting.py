@@ -14,6 +14,8 @@ UNBOUND_GROUP_CHAT_LINE = (
     "Group Chat: Unbound — reply to this message with the group title to bind"
 )
 
+AMBIGUOUS_GROUP_CHAT_LINE = "Group Chat: Unbound — select group below"
+
 
 def format_player_id_line(group_title: str | None) -> str | None:
     """Tap-to-copy Player ID line for HTML payment notifications."""

@@ -242,25 +242,18 @@ class TestAllocateSetupMemoCode(unittest.TestCase):
 
 class TestExistingVenmoLink(unittest.TestCase):
     def test_finds_payer_binding_on_any_chat(self):
-        from db.models import VenmoPayerBinding
-
-        payer_row = VenmoPayerBinding(
-            payer_name_normalized="moshe toussoun",
-            venmo_handle="@godfather4444",
-            telegram_chat_id=-1001,
-            club_id=2,
-        )
-
         session = MagicMock()
-        session.query.return_value.filter_by.return_value.one_or_none.return_value = (
-            payer_row
-        )
-
-        found = find_existing_venmo_link_for_setup(
-            session,
-            payer_name="Moshe Toussoun",
-            setup_chat_id=-1002,
-        )
+        with patch(
+            "bot.services.payment_bind_candidates.list_candidate_groups",
+            return_value=[
+                MagicMock(telegram_chat_id=-1001, club_id=2, group_title="G1"),
+            ],
+        ):
+            found = find_existing_venmo_link_for_setup(
+                session,
+                payer_name="Moshe Toussoun",
+                setup_chat_id=-1002,
+            )
         self.assertIsNotNone(found)
         assert found is not None
         self.assertEqual(found.linked_chat_id, -1001)
@@ -268,13 +261,15 @@ class TestExistingVenmoLink(unittest.TestCase):
 
     def test_new_payer_allowed_when_group_already_bound(self):
         session = MagicMock()
-        session.query.return_value.filter_by.return_value.one_or_none.return_value = None
-
-        found = find_existing_venmo_link_for_setup(
-            session,
-            payer_name="New Player",
-            setup_chat_id=-1002,
-        )
+        with patch(
+            "bot.services.payment_bind_candidates.list_candidate_groups",
+            return_value=[],
+        ):
+            found = find_existing_venmo_link_for_setup(
+                session,
+                payer_name="New Player",
+                setup_chat_id=-1002,
+            )
         self.assertIsNone(found)
 
 
