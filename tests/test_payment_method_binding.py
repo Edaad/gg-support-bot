@@ -243,11 +243,17 @@ class TestAllocateSetupMemoCode(unittest.TestCase):
 class TestExistingVenmoLink(unittest.TestCase):
     def test_finds_payer_binding_on_any_chat(self):
         session = MagicMock()
-        with patch(
-            "bot.services.payment_bind_candidates.list_candidate_groups",
-            return_value=[
-                MagicMock(telegram_chat_id=-1001, club_id=2, group_title="G1"),
-            ],
+        with (
+            patch(
+                "bot.services.payment_method_binding._test_scope_for_setup_chat",
+                return_value=False,
+            ),
+            patch(
+                "bot.services.payment_bind_candidates.list_candidate_groups",
+                return_value=[
+                    MagicMock(telegram_chat_id=-1001, club_id=2, group_title="G1"),
+                ],
+            ),
         ):
             found = find_existing_venmo_link_for_setup(
                 session,
@@ -261,9 +267,15 @@ class TestExistingVenmoLink(unittest.TestCase):
 
     def test_new_payer_allowed_when_group_already_bound(self):
         session = MagicMock()
-        with patch(
-            "bot.services.payment_bind_candidates.list_candidate_groups",
-            return_value=[],
+        with (
+            patch(
+                "bot.services.payment_method_binding._test_scope_for_setup_chat",
+                return_value=False,
+            ),
+            patch(
+                "bot.services.payment_bind_candidates.list_candidate_groups",
+                return_value=[],
+            ),
         ):
             found = find_existing_venmo_link_for_setup(
                 session,

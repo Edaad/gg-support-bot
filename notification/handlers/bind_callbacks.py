@@ -7,7 +7,11 @@ import logging
 from telegram import ForceReply, Update
 from telegram.ext import ContextTypes
 
-from bot.services.payment_bind_candidates import METHOD_FROM_SHORT, candidates_for_payment
+from bot.services.payment_bind_candidates import (
+    METHOD_FROM_SHORT,
+    bind_scope_mismatch_error,
+    candidates_for_payment,
+)
 from bot.services.payment_bind_logging import format_payment_row, log_callback, log_callback_result
 from bot.services.venmo_payments import resolve_bound_group, resolve_display_group_title
 from db.connection import get_db
@@ -56,6 +60,16 @@ def _parse_callback(data: str) -> tuple[str, str, int, int | None] | None:
         except ValueError:
             return None
     return action, method_slug, payment_id, chat_id
+
+
+def _bind_scope_error_for_chat(payment: object, chat_id: int) -> str | None:
+    title = resolve_display_group_title(int(chat_id))
+    if not title:
+        return None
+    return bind_scope_mismatch_error(
+        payment_is_test=bool(getattr(payment, "is_test", False)),
+        group_title=title,
+    )
 
 
 async def payment_bind_callback_handler(
@@ -130,6 +144,10 @@ async def payment_bind_callback_handler(
         if scope_err:
             await query.answer(scope_err, show_alert=True)
             return
+        bind_scope_err = _bind_scope_error_for_chat(payment, int(target_chat_id))
+        if bind_scope_err:
+            await query.answer(bind_scope_err, show_alert=True)
+            return
         await query.answer()
         await message.edit_reply_markup(
             reply_markup=to_inline_keyboard(
@@ -168,6 +186,10 @@ async def payment_bind_callback_handler(
             if scope_err:
                 await query.answer(scope_err, show_alert=True)
                 return
+            bind_scope_err = _bind_scope_error_for_chat(payment, int(target_chat_id))
+            if bind_scope_err:
+                await query.answer(bind_scope_err, show_alert=True)
+                return
             await query.answer()
             await message.edit_reply_markup(
                 reply_markup=to_inline_keyboard(
@@ -199,6 +221,10 @@ async def payment_bind_callback_handler(
         scope_err = crypto_scope_error(method_slug, payment, _club_id_for_chat(int(target_chat_id)))
         if scope_err:
             await query.answer(scope_err, show_alert=True)
+            return
+        bind_scope_err = _bind_scope_error_for_chat(payment, int(target_chat_id))
+        if bind_scope_err:
+            await query.answer(bind_scope_err, show_alert=True)
             return
         current = resolve_display_group_title(int(payment.telegram_chat_id)) if payment.telegram_chat_id else "Unbound"
         await query.answer()
@@ -318,6 +344,14 @@ async def payment_bind_add_member_reply_handler(
     scope_err = crypto_scope_error(method_slug, payment, group.club_id)
     if scope_err:
         await update.message.reply_text(scope_err)
+        return
+
+    bind_scope_err = bind_scope_mismatch_error(
+        payment_is_test=bool(getattr(payment, "is_test", False)),
+        group_title=group.group_title,
+    )
+    if bind_scope_err:
+        await update.message.reply_text(bind_scope_err)
         return
 
     context.user_data.pop(_BIND_ADD_MEMBER_KEY, None)

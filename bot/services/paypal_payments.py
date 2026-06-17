@@ -187,6 +187,21 @@ def _upsert_payer_binding(
     )
 
 
+def find_paypal_payment_by_notification_message(
+    notification_chat_id: int,
+    notification_message_id: int,
+) -> Optional[PayPalPayment]:
+    with get_db() as session:
+        return (
+            session.query(PayPalPayment)
+            .filter_by(
+                notification_chat_id=int(notification_chat_id),
+                notification_message_id=int(notification_message_id),
+            )
+            .one_or_none()
+        )
+
+
 async def ingest_paypal_payment(
     *,
     payer_name: str,

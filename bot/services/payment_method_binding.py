@@ -1132,6 +1132,14 @@ def match_pending_memo_setup_in_session(
     return None
 
 
+def _test_scope_for_setup_chat(setup_chat_id: int) -> bool:
+    from api.payments_helpers import is_analytics_excluded_group_title
+    from bot.services.venmo_payments import resolve_display_group_title
+
+    title = resolve_display_group_title(int(setup_chat_id))
+    return is_analytics_excluded_group_title(title)
+
+
 def find_existing_venmo_link_for_setup(
     session,
     *,
@@ -1141,7 +1149,12 @@ def find_existing_venmo_link_for_setup(
     """Return existing Venmo links that should block setup (payer has candidates)."""
     from bot.services.payment_bind_candidates import list_candidate_groups
 
-    candidates = list_candidate_groups(session, "venmo", payer_name=payer_name)
+    candidates = list_candidate_groups(
+        session,
+        "venmo",
+        payer_name=payer_name,
+        test_scope=_test_scope_for_setup_chat(setup_chat_id),
+    )
     if not candidates:
         return None
     return ExistingVenmoLink(
@@ -1159,7 +1172,12 @@ def find_existing_zelle_link_for_setup(
     """Return existing Zelle links that should block setup (payer has candidates)."""
     from bot.services.payment_bind_candidates import list_candidate_groups
 
-    candidates = list_candidate_groups(session, "zelle", payer_name=payer_name)
+    candidates = list_candidate_groups(
+        session,
+        "zelle",
+        payer_name=payer_name,
+        test_scope=_test_scope_for_setup_chat(setup_chat_id),
+    )
     if not candidates:
         return None
     return ExistingVenmoLink(
@@ -1177,7 +1195,12 @@ def find_existing_cashapp_link_for_setup(
     """Return existing Cash App links that should block setup (payer has candidates)."""
     from bot.services.payment_bind_candidates import list_candidate_groups
 
-    candidates = list_candidate_groups(session, "cashapp", payer_name=payer_name)
+    candidates = list_candidate_groups(
+        session,
+        "cashapp",
+        payer_name=payer_name,
+        test_scope=_test_scope_for_setup_chat(setup_chat_id),
+    )
     if not candidates:
         return None
     return ExistingVenmoLink(
@@ -1195,7 +1218,12 @@ def find_existing_paypal_link_for_setup(
     """Return existing PayPal links that should block setup (payer has candidates)."""
     from bot.services.payment_bind_candidates import list_candidate_groups
 
-    candidates = list_candidate_groups(session, "paypal", payer_name=payer_name)
+    candidates = list_candidate_groups(
+        session,
+        "paypal",
+        payer_name=payer_name,
+        test_scope=_test_scope_for_setup_chat(setup_chat_id),
+    )
     if not candidates:
         return None
     return ExistingVenmoLink(

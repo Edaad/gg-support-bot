@@ -206,6 +206,21 @@ def _upsert_payer_binding(
     )
 
 
+def find_cashapp_payment_by_notification_message(
+    notification_chat_id: int,
+    notification_message_id: int,
+) -> Optional[CashAppPayment]:
+    with get_db() as session:
+        return (
+            session.query(CashAppPayment)
+            .filter_by(
+                notification_chat_id=int(notification_chat_id),
+                notification_message_id=int(notification_message_id),
+            )
+            .one_or_none()
+        )
+
+
 async def ingest_cashapp_payment(
     *,
     payer_name: str,

@@ -28,6 +28,17 @@ Amount is whole dollars. **Manual** staff binds (notification reply or dashboard
 
 Test payments (`test: true` on ingest) try `TELEGRAM_TEST_BOT_TOKEN` first, then fall back to `TELEGRAM_BOT_TOKEN`. Production payments try production first, then test. Set both tokens on the **web/API** dyno.
 
+### Test multi-candidate workflow
+
+Candidate lookup is **scoped by test mode**: `test: true` ingest only considers test/staging groups (title ending in `/ TEST` or containing `@jz034`); production ingest excludes those groups. This lets you exercise the ambiguous-picker flow safely without touching real player bindings.
+
+1. Bind the same payer to two test groups (reply-bind or **Add another member** on a prior test notification), e.g. `CC / 4334-4433 / TEST` and `CC / 5555-5555 / TEST`.
+2. POST ingest with `"test": true` (duplicate test Zap or curl).
+3. Expect **Group Chat: Unbound — select group below** with inline buttons for the test groups only.
+4. Confirm via buttons; the notification edits to the bound test group.
+
+Run `migrate_payment_bind_multi_candidates.py` if you have not already (see [VENMO_GROUP_BINDING.md](VENMO_GROUP_BINDING.md)).
+
 ## Database tables
 
 | Table | Purpose |

@@ -8,6 +8,7 @@ from typing import Callable, Optional
 from bot.services.group_chat_invite_links import resolve_group_chat_url_for_payment
 from bot.services.payment_bind_candidates import (
     CandidateGroup,
+    bind_scope_mismatch_error,
     candidates_for_payment,
     identity_kwargs_for_payment,
     method_handle_for_payment,
@@ -201,6 +202,13 @@ async def confirm_bind_payment(
     if not live_title:
         return False, "Group title not found for selected chat."
 
+    bind_scope_err = bind_scope_mismatch_error(
+        payment_is_test=bool(getattr(payment, "is_test", False)),
+        group_title=live_title,
+    )
+    if bind_scope_err:
+        return False, bind_scope_err
+
     scope_err = crypto_scope_error(method_slug, payment, _club_id_for_chat(int(target_chat_id)))
     if scope_err:
         logger.warning(
@@ -296,6 +304,13 @@ async def confirm_add_candidate(
     group = resolved.bound_group
     if int(group.telegram_chat_id) != int(target_chat_id):
         return False, "Group chat mismatch."
+
+    bind_scope_err = bind_scope_mismatch_error(
+        payment_is_test=bool(getattr(payment, "is_test", False)),
+        group_title=group.group_title,
+    )
+    if bind_scope_err:
+        return False, bind_scope_err
 
     scope_err = crypto_scope_error(method_slug, payment, group.club_id)
     if scope_err:

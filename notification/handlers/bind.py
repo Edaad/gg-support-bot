@@ -10,7 +10,10 @@ from telegram.ext import ContextTypes
 from bot.services.cashapp_payments import bind_cashapp_payment_from_reply
 from bot.services.paypal_payments import bind_paypal_payment_from_reply
 from bot.services.crypto_payments import bind_crypto_payment_from_reply
-from bot.services.payment_bind_candidates import candidates_for_payment
+from bot.services.payment_bind_candidates import (
+    bind_scope_mismatch_error,
+    candidates_for_payment,
+)
 from bot.services.payment_bind_logging import format_payment_row, log_reply_branch
 from bot.services.venmo_payments import (
     bind_venmo_payment_from_reply,
@@ -111,6 +114,14 @@ async def payment_bind_reply_handler(
         return
 
     payment = ref.payment
+    bind_scope_err = bind_scope_mismatch_error(
+        payment_is_test=bool(getattr(payment, "is_test", False)),
+        group_title=new_group.group_title,
+    )
+    if bind_scope_err:
+        await update.message.reply_text(bind_scope_err)
+        return
+
     bound_chat_id = getattr(payment, "telegram_chat_id", None)
 
     with get_db() as session:

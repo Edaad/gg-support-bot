@@ -490,6 +490,175 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.auto_bound)
         self.assertEqual(result.status, "bound")
 
+    async def test_ingest_test_ambiguous_two_test_candidates(self):
+        from bot.services.payment_bind_candidates import CandidateGroup
+        from notification.formatting import AMBIGUOUS_GROUP_CHAT_LINE
+
+        payment_obj = VenmoPayment(
+            id=110,
+            payer_name="Winson Dong",
+            amount_cents=20000,
+            venmo_handle="@godfather4444",
+            goods_or_services=False,
+            is_test=True,
+        )
+
+        def _query(model):
+            q = MagicMock()
+            if model is VenmoPayment:
+                q.filter_by.return_value.one_or_none.side_effect = [None, payment_obj]
+                q.filter_by.return_value.one.return_value = payment_obj
+            return q
+
+        mock_session = MagicMock()
+        mock_session.query.side_effect = _query
+
+        def _add(obj):
+            if isinstance(obj, VenmoPayment) and obj.id is None:
+                obj.id = 110
+
+        mock_session.add.side_effect = _add
+        mock_session.flush = MagicMock()
+
+        test_candidates = [
+            CandidateGroup(
+                telegram_chat_id=-1001,
+                club_id=CLUB_ID,
+                group_title="CC / 4334-4433 / TEST",
+            ),
+            CandidateGroup(
+                telegram_chat_id=-1002,
+                club_id=CLUB_ID,
+                group_title="CC / 5555-5555 / TEST",
+            ),
+        ]
+
+        send_mock = AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID))
+
+        with (
+            patch("bot.services.venmo_payments.get_db") as mock_get_db,
+            patch(
+                "bot.services.venmo_payments.send_telegram_notification",
+                new=send_mock,
+            ),
+            patch(
+                "bot.services.venmo_payments.match_pending_memo_setup_in_session",
+                return_value=None,
+            ),
+            patch(
+                "bot.services.venmo_payments.match_pending_venmo_setup_in_session",
+                return_value=None,
+            ),
+            patch(
+                "bot.services.payment_bind_candidates.list_candidate_groups",
+                return_value=test_candidates,
+            ),
+            patch("bot.services.venmo_payments.track_ingest_notification"),
+            patch(
+                "bot.services.venmo_payments.maybe_notify_player_on_auto_bound",
+                new=AsyncMock(),
+            ) as player_notify_mock,
+        ):
+            mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = await vp.ingest_venmo_payment(
+                payer_name="Winson Dong",
+                amount="200.00",
+                venmo_handle="@godfather4444",
+                test=True,
+            )
+
+        self.assertFalse(result.auto_bound)
+        self.assertEqual(result.status, "unbound")
+        player_notify_mock.assert_awaited_once_with(
+            telegram_chat_id=None,
+            amount_cents=20000,
+            auto_bound=False,
+            is_test=True,
+        )
+        payment_text = send_mock.await_args.kwargs.get("text") or send_mock.await_args.args[0]
+        self.assertIn(AMBIGUOUS_GROUP_CHAT_LINE, payment_text)
+        markup = send_mock.await_args.kwargs.get("reply_markup")
+        self.assertIsNotNone(markup)
+        self.assertGreater(len(markup.get("inline_keyboard") or []), 0)
+
+    async def test_ingest_test_auto_binds_single_test_candidate(self):
+        from bot.services.payment_bind_candidates import CandidateGroup
+
+        payment_obj = VenmoPayment(
+            id=111,
+            payer_name="Winson Dong",
+            amount_cents=20000,
+            venmo_handle="@godfather4444",
+            goods_or_services=False,
+            is_test=True,
+            telegram_chat_id=-1001,
+            club_id=CLUB_ID,
+        )
+
+        def _query(model):
+            q = MagicMock()
+            if model is VenmoPayment:
+                q.filter_by.return_value.one_or_none.side_effect = [None, payment_obj]
+                q.filter_by.return_value.one.return_value = payment_obj
+            return q
+
+        mock_session = MagicMock()
+        mock_session.query.side_effect = _query
+
+        def _add(obj):
+            if isinstance(obj, VenmoPayment) and obj.id is None:
+                obj.id = 111
+
+        mock_session.add.side_effect = _add
+        mock_session.flush = MagicMock()
+
+        single_test = CandidateGroup(
+            telegram_chat_id=-1001,
+            club_id=CLUB_ID,
+            group_title="CC / 4334-4433 / TEST",
+        )
+
+        with (
+            patch("bot.services.venmo_payments.get_db") as mock_get_db,
+            patch(
+                "bot.services.venmo_payments.send_telegram_notification",
+                new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
+            ),
+            patch(
+                "bot.services.venmo_payments.resolve_display_group_title",
+                return_value="CC / 4334-4433 / TEST",
+            ),
+            patch(
+                "bot.services.payment_bind_candidates.candidates_for_payment",
+                return_value=[single_test],
+            ),
+            patch("bot.services.venmo_payments.track_ingest_notification"),
+            patch(
+                "bot.services.venmo_payments.maybe_notify_player_on_auto_bound",
+                new=AsyncMock(),
+            ) as player_notify_mock,
+        ):
+            mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = await vp.ingest_venmo_payment(
+                payer_name="Winson Dong",
+                amount="200.00",
+                venmo_handle="@godfather4444",
+                test=True,
+            )
+
+        self.assertTrue(result.auto_bound)
+        self.assertEqual(result.status, "bound")
+        player_notify_mock.assert_awaited_once_with(
+            telegram_chat_id=-1001,
+            amount_cents=20000,
+            auto_bound=True,
+            is_test=True,
+        )
+
     async def test_ingest_idempotent_reject_logs_and_skips_telegram(self):
         existing = VenmoPayment(
             id=5,

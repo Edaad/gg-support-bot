@@ -23,6 +23,7 @@ from db.models import (
 
 import logging
 
+from api.payments_helpers import is_analytics_excluded_group_title
 from bot.services.payment_bind_logging import log_binding_table_write, log_candidate_list
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,38 @@ METHOD_SHORT: dict[str, str] = {
 }
 
 METHOD_FROM_SHORT: dict[str, str] = {v: k for k, v in METHOD_SHORT.items()}
+
+
+def _candidate_matches_test_scope(group_title: str, *, test_scope: bool) -> bool:
+    """True when a candidate group title belongs in the given test/production scope."""
+    is_test_group = is_analytics_excluded_group_title(group_title)
+    return is_test_group if test_scope else not is_test_group
+
+
+def _filter_candidates_by_test_scope(
+    candidates: list[CandidateGroup],
+    test_scope: bool | None,
+) -> list[CandidateGroup]:
+    if test_scope is None:
+        return candidates
+    return [
+        c
+        for c in candidates
+        if _candidate_matches_test_scope(c.group_title, test_scope=test_scope)
+    ]
+
+
+def bind_scope_mismatch_error(*, payment_is_test: bool, group_title: str) -> str | None:
+    """Reject bind targets that cross test vs production group scope."""
+    is_test_group = is_analytics_excluded_group_title(group_title)
+    if payment_is_test and not is_test_group:
+        return (
+            "Test payments can only bind to test/staging groups "
+            "(title ending in / TEST or containing @jz034)."
+        )
+    if not payment_is_test and is_test_group:
+        return "Production payments cannot bind to test/staging groups."
+    return None
 
 
 def identity_label(
@@ -99,6 +132,7 @@ def list_candidate_groups(
     from_address: str | None = None,
     alert_scope: str | None = None,
     filter_alert_scope: str | None = None,
+    test_scope: bool | None = None,
 ) -> list[CandidateGroup]:
     """Return all known group candidates for a payment identity."""
     slug = (method_slug or "").strip().lower()
@@ -128,6 +162,7 @@ def list_candidate_groups(
             )
             if candidate is not None:
                 candidates.append(candidate)
+        candidates = _filter_candidates_by_test_scope(candidates, test_scope)
         log_candidate_list(
             method_slug=slug,
             identity_label=identity_label(slug, payer_name=payer_name),
@@ -162,6 +197,7 @@ def list_candidate_groups(
             )
             if candidate is not None:
                 candidates.append(candidate)
+        candidates = _filter_candidates_by_test_scope(candidates, test_scope)
         log_candidate_list(
             method_slug=slug,
             identity_label=identity_label(
@@ -444,8 +480,12 @@ def candidates_for_payment(
     method_slug: str,
     *,
     filter_alert_scope: str | None = None,
+    test_scope: bool | None = None,
 ) -> list[CandidateGroup]:
     kwargs = identity_kwargs_for_payment(payment, method_slug)
     if filter_alert_scope is not None:
         kwargs["filter_alert_scope"] = filter_alert_scope
+    if test_scope is None:
+        test_scope = bool(getattr(payment, "is_test", False))
+    kwargs["test_scope"] = test_scope
     return list_candidate_groups(session, method_slug, **kwargs)
