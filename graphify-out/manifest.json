@@ -1715,13 +1715,13 @@
     "semantic_hash": "3d1ee93392d4d24299b3663ce02bc830"
   },
   "notification/handlers/bind.py": {
-    "mtime": 1781660062.9294035,
-    "ast_hash": "b830a0d798b64fed777b3922500594d3",
+    "mtime": 1781662390.0127308,
+    "ast_hash": "b0d9be51e1b551fcd9c0dc1cd4d1cafc",
     "semantic_hash": ""
   },
   "notification/main.py": {
-    "mtime": 1781658786.8865116,
-    "ast_hash": "70f75f598cd9b9cb863e616af6e6c0b6",
+    "mtime": 1781662382.0434144,
+    "ast_hash": "58ff7a748acd12e482b4c72d6c1c6a1d",
     "semantic_hash": ""
   },
   "package.json": {
@@ -2970,8 +2970,8 @@
     "semantic_hash": ""
   },
   "notification/bind_actions.py": {
-    "mtime": 1781660079.5289407,
-    "ast_hash": "f06dbf6a44f341c462e7465030ae40f7",
+    "mtime": 1781662365.99259,
+    "ast_hash": "f50b755439cc969a5e99b31db8351f47",
     "semantic_hash": ""
   },
   "notification/bind_keyboards.py": {
@@ -2990,8 +2990,8 @@
     "semantic_hash": ""
   },
   "notification/payment_lookup.py": {
-    "mtime": 1781661145.7964096,
-    "ast_hash": "7af5c3d94980aa61ee03ba62a68973b3",
+    "mtime": 1781662374.9955924,
+    "ast_hash": "f7a6d726d00b37692a0594046334ca80",
     "semantic_hash": ""
   },
   "tests/test_notification_bind_callbacks.py": {

@@ -108,21 +108,33 @@ async def payment_bind_reply_handler(
         return
 
     new_group = resolved.bound_group
-    scope_err = crypto_scope_error(ref.method_slug, ref.payment, new_group.club_id)
-    if scope_err:
-        await update.message.reply_text(scope_err)
-        return
+    if ref.method_slug == "crypto":
+        with get_db() as session:
+            from db.models import CryptoPayment
 
-    payment = ref.payment
+            crypto_payment = (
+                session.query(CryptoPayment)
+                .filter_by(id=ref.payment_id)
+                .one_or_none()
+            )
+            scope_err = (
+                crypto_scope_error(ref.method_slug, crypto_payment, new_group.club_id)
+                if crypto_payment is not None
+                else None
+            )
+        if scope_err:
+            await update.message.reply_text(scope_err)
+            return
+
     bind_scope_err = bind_scope_mismatch_error(
-        payment_is_test=bool(getattr(payment, "is_test", False)),
+        payment_is_test=ref.payment_is_test,
         group_title=new_group.group_title,
     )
     if bind_scope_err:
         await update.message.reply_text(bind_scope_err)
         return
 
-    bound_chat_id = getattr(payment, "telegram_chat_id", None)
+    bound_chat_id = ref.telegram_chat_id
 
     with get_db() as session:
         from db.models import (
@@ -160,6 +172,7 @@ async def payment_bind_reply_handler(
         bound_title = resolve_display_group_title(int(bound_chat_id)) if bound_chat_id else None
         if not bound_title:
             bound_title = getattr(fresh, "bound_group_title_at_bind", None)
+        payment_row = format_payment_row(fresh)
 
     if bound_chat_id is None:
         if candidate_count > 1:
@@ -170,7 +183,7 @@ async def payment_bind_reply_handler(
                 actor_telegram_user_id=user_id,
                 reply_title=title,
                 candidate_count=candidate_count,
-                payment_row=format_payment_row(fresh),
+                payment_row=payment_row,
             )
             await update.message.reply_text(
                 "Multiple possible matches — use the buttons on the notification, "
@@ -184,7 +197,7 @@ async def payment_bind_reply_handler(
             actor_telegram_user_id=user_id,
             reply_title=title,
             candidate_count=candidate_count,
-            payment_row=format_payment_row(fresh),
+            payment_row=payment_row,
         )
         await _immediate_bind(
             update,
@@ -208,7 +221,7 @@ async def payment_bind_reply_handler(
             reply_title=title,
             bound_chat_id=int(bound_chat_id),
             candidate_count=candidate_count,
-            payment_row=format_payment_row(fresh),
+            payment_row=payment_row,
         )
         await update.message.reply_text(
             f"Already bound to {bound_title or new_group.group_title}."
@@ -224,7 +237,7 @@ async def payment_bind_reply_handler(
         reply_title=title,
         bound_chat_id=int(bound_chat_id),
         candidate_count=candidate_count,
-        payment_row=format_payment_row(fresh),
+        payment_row=payment_row,
     )
     await update.message.reply_text(
         f"This payment is bound to {current_label}. "

@@ -29,7 +29,8 @@ _MODELS = {
 class PaymentRef:
     method_slug: str
     payment_id: int
-    payment: object
+    payment_is_test: bool
+    telegram_chat_id: int | None
 
 
 def find_payment_by_notification(
@@ -47,11 +48,10 @@ def find_payment_by_notification(
                 .one_or_none()
             )
             if payment is not None:
-                payment_id = int(payment.id)
-                session.expunge(payment)
                 return PaymentRef(
                     method_slug=slug,
-                    payment_id=payment_id,
-                    payment=payment,
+                    payment_id=int(payment.id),
+                    payment_is_test=bool(getattr(payment, "is_test", False)),
+                    telegram_chat_id=getattr(payment, "telegram_chat_id", None),
                 )
     return None

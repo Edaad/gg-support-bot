@@ -80,7 +80,11 @@ def load_payment(method_slug: str, payment_id: int):
     if model is None:
         return None
     with get_db() as session:
-        return session.query(model).filter_by(id=int(payment_id)).one_or_none()
+        payment = session.query(model).filter_by(id=int(payment_id)).one_or_none()
+        if payment is None:
+            return None
+        session.expunge(payment)
+        return payment
 
 
 def crypto_scope_error(method_slug: str, payment: object, club_id: int) -> str | None:

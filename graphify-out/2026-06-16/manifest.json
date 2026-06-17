@@ -2990,8 +2990,8 @@
     "semantic_hash": ""
   },
   "notification/payment_lookup.py": {
-    "mtime": 1781658526.7014308,
-    "ast_hash": "48cd28a0828a95342272a250e9d62709",
+    "mtime": 1781661145.7964096,
+    "ast_hash": "7af5c3d94980aa61ee03ba62a68973b3",
     "semantic_hash": ""
   },
   "tests/test_notification_bind_callbacks.py": {
