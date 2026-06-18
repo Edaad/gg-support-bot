@@ -8,6 +8,7 @@ SOURCE_HEADERS: dict[str, str] = {
     "migration_recovery": ":arrows_counterclockwise: *Migration Recovery*",
     "notification_report": ":bell: *Notification Report*",
     "recovery_membership_audit": ":mag: *Recovery Membership Audit*",
+    "recovery_triage": ":clipboard: *Recovery Triage*",
 }
 
 
@@ -28,6 +29,8 @@ def beautify_slack_body(text: str, *, source: str) -> str:
         return _beautify_notification_report(body)
     if source == "recovery_membership_audit":
         return _beautify_recovery_membership_audit(body)
+    if source == "recovery_triage":
+        return _beautify_recovery_triage(body)
     return body
 
 
@@ -68,8 +71,16 @@ def _beautify_migration_summary(body: str) -> str:
                 "direct added:",
                 "in group pending queue:",
                 "membership check errors:",
+                "tier 1+2 pending:",
+                "tier 3 pending:",
+                "skipped:",
             )
         ):
+            if line == "Queue snapshot (all tiers)":
+                flush_club()
+                out.append("*Queue snapshot* (all tiers)")
+                out.append("")
+                continue
             flush_club()
             club_name = line
             continue
@@ -83,8 +94,85 @@ def _beautify_migration_summary(body: str) -> str:
             club_lines.append(f"• {line}")
         elif line.startswith("membership check errors:"):
             club_lines.append(f"• {line}")
+        elif line.startswith("tier 1+2 pending:") or line.startswith("skipped:"):
+            club_lines.append(f"• {line.replace(' | ', '  |  ')}")
     flush_club()
     return "\n".join(out).rstrip()
+
+
+def _beautify_recovery_triage(body: str) -> str:
+    lines = [ln.rstrip() for ln in body.splitlines()]
+    out: list[str] = []
+    section = "summary"
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("Migration recovery triage"):
+            mode = line.split("—", 1)[-1].strip() if "—" in line else ""
+            out.append(f"*Recovery triage* — {mode}" if mode else "*Recovery triage*")
+            out.append("")
+            continue
+        if line == "Queue snapshot (all tiers)":
+            out.append("")
+            out.append("*Queue snapshot* (all tiers)")
+            out.append("")
+            section = "queue"
+            continue
+        if section == "queue":
+            if line.startswith("tier ") or line.startswith("skipped:"):
+                out.append(f"• {line.replace(' | ', '  |  ')}")
+            else:
+                out.append(f"*{line}*")
+            continue
+        if line.startswith("DB apply results:"):
+            section = "apply"
+            out.append("*Database*")
+            continue
+        if line.startswith("Output CSV:"):
+            out.append(f"• `{line.split(':', 1)[1].strip()}`")
+            continue
+        if section == "apply" and ":" in line:
+            key, val = line.split(":", 1)
+            out.append(f"• {key.strip()}: {val.strip()}")
+            continue
+        if line.startswith("Total rows:"):
+            out.append(f"• {line}")
+            continue
+        if line.startswith("promote:") or line.startswith("repair_pending:"):
+            out.append(f"• {line}")
+            continue
+        if line.startswith("drop_") or line.startswith("unchanged:"):
+            out.append(f"• {line}")
+            continue
+        if ":" in line and (
+            line.startswith("round_table:")
+            or line.startswith("creator_club:")
+            or line.startswith("clubgto:")
+        ):
+            out.append(f"• {line}")
+    return "\n".join(out).rstrip()
+
+
+def format_recovery_triage_slack(
+    *,
+    summary_lines: list[str],
+    output_csv: str | None = None,
+    include_queue_snapshot: bool = True,
+) -> str:
+    body = "\n".join(summary_lines)
+    if output_csv:
+        body += f"\n\nOutput CSV: {output_csv}"
+    if include_queue_snapshot:
+        from bot.services.migration_recovery import (
+            fetch_club_recovery_queue_snapshots,
+            format_recovery_queue_snapshot,
+        )
+
+        snap = format_recovery_queue_snapshot(fetch_club_recovery_queue_snapshots())
+        if snap:
+            body += "\n\n" + snap
+    return _beautify_recovery_triage(body)
 
 
 def _beautify_rate_limit(body: str) -> str:

@@ -62,6 +62,19 @@ class RecoveryRow:
 
 
 @dataclass(frozen=True)
+class ClubRecoveryQueueSnapshot:
+    """Per-club queue counts for Slack (all tiers)."""
+
+    club_key: str
+    club_display_name: str
+    tier12_pending: int
+    tier3_pending: int
+    skipped: int
+    failed: int
+    processing: int
+
+
+@dataclass(frozen=True)
 class ClubRecoverySlackStats:
     club_key: str
     club_display_name: str
@@ -1630,7 +1643,11 @@ async def compute_recovery_slack_stats() -> list[ClubRecoverySlackStats]:
     return stats
 
 
-def format_recovery_slack_summary(stats: list[ClubRecoverySlackStats]) -> str:
+def format_recovery_slack_summary(
+    stats: list[ClubRecoverySlackStats],
+    *,
+    queue_snapshots: list[ClubRecoveryQueueSnapshot] | None = None,
+) -> str:
     lines = ["Migration recovery progress (tier 1+2)", ""]
     for entry in stats:
         pct_ig = f"{entry.pct_in_group:.0f}%"
@@ -1653,6 +1670,13 @@ def format_recovery_slack_summary(stats: list[ClubRecoverySlackStats]) -> str:
         if entry.check_errors:
             lines.append(f"  membership check errors: {entry.check_errors}")
         lines.append("")
+    if queue_snapshots is None:
+        queue_snapshots = fetch_club_recovery_queue_snapshots()
+    queue_text = format_recovery_queue_snapshot(queue_snapshots)
+    if queue_text:
+        if lines and lines[-1] != "":
+            lines.append("")
+        lines.append(queue_text)
     return "\n".join(lines).rstrip()
 
 
@@ -1708,6 +1732,90 @@ def schedule_migration_recovery_slack_summary_job(app) -> None:
         first_delay_sec,
         interval_sec,
     )
+
+
+def fetch_club_recovery_queue_snapshots() -> list[ClubRecoveryQueueSnapshot]:
+    """Per-club pending/skipped/failed counts for Slack queue snapshot."""
+    from club_gc_settings import CLUB_GC_CONFIG
+    from db.connection import get_db
+    from db.models import MigratedGroupRecovery
+
+    buckets: dict[str, dict[str, int]] = {
+        club_key: {
+            "tier12_pending": 0,
+            "tier3_pending": 0,
+            "skipped": 0,
+            "failed": 0,
+            "processing": 0,
+        }
+        for club_key in RECOVERY_CLUB_KEYS
+    }
+
+    with get_db() as session:
+        rows = session.query(
+            MigratedGroupRecovery.club_key,
+            MigratedGroupRecovery.priority_tier,
+            MigratedGroupRecovery.readd_status,
+        ).all()
+        for club_key, tier, status in rows:
+            key = str(club_key)
+            if key not in buckets:
+                continue
+            bucket = buckets[key]
+            st = str(status)
+            t = int(tier)
+            if st == "pending":
+                if t in HIGH_PRIORITY_TIERS:
+                    bucket["tier12_pending"] += 1
+                elif t >= 3:
+                    bucket["tier3_pending"] += 1
+            elif st == "processing":
+                bucket["processing"] += 1
+            elif st == "skipped":
+                bucket["skipped"] += 1
+            elif st == "failed":
+                bucket["failed"] += 1
+
+    out: list[ClubRecoveryQueueSnapshot] = []
+    for club_key in RECOVERY_CLUB_KEYS:
+        bucket = buckets[club_key]
+        total = sum(bucket.values())
+        if total == 0:
+            continue
+        cfg = CLUB_GC_CONFIG.get(club_key)
+        out.append(
+            ClubRecoveryQueueSnapshot(
+                club_key=club_key,
+                club_display_name=(
+                    cfg.club_display_name if cfg is not None else club_key
+                ),
+                tier12_pending=int(bucket["tier12_pending"]),
+                tier3_pending=int(bucket["tier3_pending"]),
+                skipped=int(bucket["skipped"]),
+                failed=int(bucket["failed"]),
+                processing=int(bucket["processing"]),
+            )
+        )
+    return out
+
+
+def format_recovery_queue_snapshot(
+    snapshots: list[ClubRecoveryQueueSnapshot],
+) -> str:
+    if not snapshots:
+        return ""
+    lines = ["Queue snapshot (all tiers)", ""]
+    for entry in snapshots:
+        lines.append(entry.club_display_name)
+        lines.append(
+            f"  tier 1+2 pending: {entry.tier12_pending} | "
+            f"tier 3 pending: {entry.tier3_pending} | processing: {entry.processing}"
+        )
+        lines.append(
+            f"  skipped: {entry.skipped} | failed: {entry.failed}"
+        )
+        lines.append("")
+    return "\n".join(lines).rstrip()
 
 
 def recovery_status_counts() -> dict[str, dict[str, int]]:

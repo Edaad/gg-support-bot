@@ -8,10 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.services.migration_group_readd import ReaddGroupResult
 from bot.services.migration_recovery import (
+    ClubRecoveryQueueSnapshot,
     ClubRecoverySlackStats,
     RecoveryRow,
     classify_terminal_row_outcome,
     consumes_direct_add_quota,
+    format_recovery_queue_snapshot,
     format_recovery_slack_summary,
     is_already_in_only_result,
     tick_async,
@@ -104,7 +106,8 @@ class TestFormatRecoverySlackSummary(unittest.TestCase):
                     invite_link=45,
                     still_missing=5,
                 )
-            ]
+            ],
+            queue_snapshots=[],
         )
         self.assertIn("Creator Club", text)
         self.assertIn("queue left: 40", text)
@@ -113,6 +116,63 @@ class TestFormatRecoverySlackSummary(unittest.TestCase):
         self.assertIn("direct added: 10", text)
         self.assertIn("joined via link: 45", text)
         self.assertIn("still missing: 5", text)
+
+    def test_includes_queue_snapshot(self) -> None:
+        snapshots = [
+            ClubRecoveryQueueSnapshot(
+                club_key="round_table",
+                club_display_name="Round Table",
+                tier12_pending=120,
+                tier3_pending=50,
+                skipped=733,
+                failed=8,
+                processing=2,
+            )
+        ]
+        text = format_recovery_slack_summary(
+            [
+                ClubRecoverySlackStats(
+                    club_key="creator_club",
+                    club_display_name="Creator Club",
+                    total=100,
+                    left=40,
+                    done=60,
+                    pct_done=60.0,
+                    in_group=85,
+                    pct_in_group=85.0,
+                    in_group_pending=13,
+                    check_errors=0,
+                    direct_added=10,
+                    invite_link=45,
+                    still_missing=5,
+                )
+            ],
+            queue_snapshots=snapshots,
+        )
+        self.assertIn("Queue snapshot (all tiers)", text)
+        self.assertIn("tier 1+2 pending: 120", text)
+        self.assertIn("tier 3 pending: 50", text)
+        self.assertIn("skipped: 733", text)
+
+
+class TestFormatRecoveryQueueSnapshot(unittest.TestCase):
+    def test_formats_per_club_counts(self) -> None:
+        text = format_recovery_queue_snapshot(
+            [
+                ClubRecoveryQueueSnapshot(
+                    club_key="clubgto",
+                    club_display_name="GTO",
+                    tier12_pending=10,
+                    tier3_pending=5,
+                    skipped=100,
+                    failed=2,
+                    processing=1,
+                )
+            ]
+        )
+        self.assertIn("GTO", text)
+        self.assertIn("tier 3 pending: 5", text)
+        self.assertIn("failed: 2", text)
 
 
 class TestComputeRecoverySlackStats(unittest.IsolatedAsyncioTestCase):

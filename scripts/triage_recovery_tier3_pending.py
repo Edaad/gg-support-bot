@@ -19,6 +19,7 @@ Usage:
   python scripts/triage_recovery_tier3_pending.py --club round_table
   python scripts/triage_recovery_tier3_pending.py --club round_table --include-tier2-entity-failures
   python scripts/triage_recovery_tier3_pending.py --row-id 42 --apply
+  python scripts/triage_recovery_tier3_pending.py --club round_table --apply --slack
 """
 
 from __future__ import annotations
@@ -809,6 +810,25 @@ def _build_summary_lines(csv_rows: list[dict[str, Any]], *, mode: str) -> list[s
     return lines
 
 
+async def _post_slack_triage(
+    *,
+    summary_lines: list[str],
+    apply_lines: list[str] | None = None,
+    output_csv: str | None = None,
+) -> bool:
+    from bot.services.slack_ops_format import format_recovery_triage_slack
+    from bot.services.slack_ops_notify import notify_slack_ops
+
+    lines = list(summary_lines)
+    if apply_lines:
+        lines.extend(apply_lines)
+    text = format_recovery_triage_slack(
+        summary_lines=lines,
+        output_csv=output_csv,
+    )
+    return await notify_slack_ops(text, source="recovery_triage")
+
+
 async def run_triage(
     *,
     months: int,
@@ -975,6 +995,11 @@ async def main() -> int:
         action="store_true",
         help="Only tier-2 entity-failure repair (skip tier-3 pending triage)",
     )
+    parser.add_argument(
+        "--slack",
+        action="store_true",
+        help="Post summary to Slack ops (requires SLACK_OPS_* env on this machine)",
+    )
     args = parser.parse_args()
 
     include_tier2 = bool(
@@ -1003,7 +1028,9 @@ async def main() -> int:
     for line in _build_summary_lines(csv_rows, mode=mode):
         print(line)
 
+    apply_lines: list[str] | None = None
     if apply_counts is not None:
+        apply_lines = ["DB apply results:"]
         print("DB apply results:")
         for key in (
             "promoted",
@@ -1015,10 +1042,25 @@ async def main() -> int:
             "missing",
         ):
             if apply_counts.get(key):
-                print(f"  {key}: {apply_counts[key]}")
+                line = f"  {key}: {apply_counts[key]}"
+                apply_lines.append(line)
+                print(line)
 
     output_path = args.output or _default_output_path()
     _write_csv(output_path, csv_rows)
+    print(f"Wrote {output_path}")
+
+    if args.slack:
+        summary_lines = _build_summary_lines(csv_rows, mode=mode)
+        ok = await _post_slack_triage(
+            summary_lines=summary_lines,
+            apply_lines=apply_lines,
+            output_csv=str(output_path),
+        )
+        if not ok:
+            logger.warning("Slack triage post failed")
+            return 1
+
     return 0
 
 
