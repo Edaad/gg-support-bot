@@ -28,7 +28,6 @@ from bot.services.migration_group_readd import (
     set_flood_wait_policy,
     readd_group,
 )
-from notification.formatting import resolve_and_format_group_chat_line
 from scripts.backfill_support_group_invite_links import LinkedGroupRow
 
 logger = logging.getLogger(__name__)
@@ -351,49 +350,79 @@ def _format_account_lines(entries: list[str]) -> list[str]:
     return lines
 
 
-def format_readd_admin_notification(
+def is_readd_success_with_add(result: ReaddGroupResult, terminal_status: str) -> bool:
+    """True when the player was direct-added and the row finalized as complete."""
+    return terminal_status == "complete" and bool(result.added)
+
+
+def _player_username_for_notification(
+    row: RecoveryRow,
+    result: ReaddGroupResult,
+) -> str:
+    if result.resolved_player_username:
+        username = result.resolved_player_username.strip().lstrip("@")
+        if username:
+            return f"@{username}"
+    added = _format_account_lines(result.added)
+    if added:
+        marker = added[0].strip()
+        if marker and not marker.isdigit():
+            return marker if marker.startswith("@") else f"@{marker.lstrip('@')}"
+        if marker:
+            return marker
+    if row.player_username:
+        username = row.player_username.strip().lstrip("@")
+        if username:
+            return f"@{username}"
+    if row.player_telegram_user_id is not None:
+        return str(row.player_telegram_user_id)
+    return "player"
+
+
+def format_readd_success_admin_notification(
     *,
     row: RecoveryRow,
     result: ReaddGroupResult,
-    terminal_status: str,
-    club_display_name: str,
-    gc_line: str,
 ) -> str:
-    """HTML DM for the club GC admin after a migration re-add attempt."""
+    """Short HTML DM when a player was direct-added back to their GC."""
+    username = _player_username_for_notification(row, result)
+    gc_name = (row.group_title or result.title or "").strip() or "group chat"
+    safe_user = html.escape(username, quote=False)
+    safe_gc = html.escape(gc_name, quote=False)
+    return f"{safe_user} successfully added back to {safe_gc}"
 
-    added = _format_account_lines(result.added)
-    already = _format_account_lines(result.already_member)
-    privacy = _format_account_lines(result.privacy_blocked)
-    failed = _format_account_lines(result.failed)
 
-    def _section(title: str, items: list[str]) -> str:
-        if not items:
-            return f"{html.escape(title)}: (none)"
-        bullets = "\n".join(
-            f"  • {html.escape(item)}" for item in items
-        )
-        return f"{html.escape(title)}:\n{bullets}"
-
-    safe_club = html.escape(club_display_name, quote=False)
-    safe_status = html.escape(terminal_status, quote=False)
-    safe_chat_id = html.escape(str(row.telegram_chat_id), quote=False)
-
-    parts = [
-        f"[{safe_club}] Migration re-add attempted",
-        gc_line,
-        f"chat_id={safe_chat_id}",
-        f"Result: {safe_status}",
-        _section("Added", added),
-        _section("Already in group", already),
-        _section("Privacy blocked", privacy),
-        _section("Failed", failed),
-    ]
+def _readd_error_blobs(
+    result: ReaddGroupResult,
+    *,
+    pre_error: str | None = None,
+) -> list[str]:
+    blobs: list[str] = []
+    if pre_error:
+        blobs.append(pre_error)
     if result.error:
-        parts.append(f"Error: {html.escape(result.error, quote=False)}")
-    if result.invite_link:
-        safe_link = html.escape(result.invite_link, quote=True)
-        parts.append(f'Invite link: <a href="{safe_link}">{safe_link}</a>')
-    return "\n".join(parts)
+        blobs.append(result.error)
+    blobs.extend(result.failed)
+    return blobs
+
+
+def deactivated_account_hint(
+    result: ReaddGroupResult,
+    *,
+    pre_error: str | None = None,
+) -> str | None:
+    for blob in _readd_error_blobs(result, pre_error=pre_error):
+        if "entity_resolution_failed" in blob.lower():
+            return "The Telegram account may have been deactivated."
+        if "ValueError" in blob:
+            return "The Telegram account may have been deactivated."
+        if "could not find the input entity" in blob.lower():
+            return "The Telegram account may have been deactivated."
+        if "no user has" in blob.lower() and "as username" in blob.lower():
+            return "The Telegram account may have been deactivated."
+        if "username is not in use" in blob.lower():
+            return "The Telegram account may have been deactivated."
+    return None
 
 
 async def build_readd_admin_notification(
@@ -403,20 +432,8 @@ async def build_readd_admin_notification(
     terminal_status: str,
     club_display_name: str,
 ) -> str:
-    gc_line = await resolve_and_format_group_chat_line(
-        group_title=row.group_title,
-        telegram_chat_id=row.telegram_chat_id,
-        club_id=row.club_id,
-    )
-    if not gc_line.startswith("Group Chat:"):
-        gc_line = f"GC: {gc_line}"
-    return format_readd_admin_notification(
-        row=row,
-        result=result,
-        terminal_status=terminal_status,
-        club_display_name=club_display_name,
-        gc_line=gc_line,
-    )
+    del club_display_name, terminal_status
+    return format_readd_success_admin_notification(row=row, result=result)
 
 
 async def notify_readd_admin_dm(
@@ -428,6 +445,8 @@ async def notify_readd_admin_dm(
 ) -> None:
     from bot.services.mtproto_track_contact import notify_club_gc_admin_dm
 
+    if not is_readd_success_with_add(result, terminal_status):
+        return
     text = await build_readd_admin_notification(
         row=row,
         result=result,
@@ -443,7 +462,7 @@ def should_notify_rt_ops(
     *,
     pre_error: str | None = None,
 ) -> bool:
-    if terminal_status == "failed":
+    if terminal_status in ("failed", "privacy_blocked"):
         return True
     err_blob = " ".join(
         filter(
@@ -504,6 +523,12 @@ async def _notify_rt_ops_if_needed(
     detail = pre_error or result.error or terminal_status
     if result.failed:
         detail = f"{detail}\nFailures: {'; '.join(result.failed[:5])}"
+    if result.privacy_blocked:
+        privacy = _format_account_lines(result.privacy_blocked)
+        detail = f"{detail}\nPrivacy blocked: {'; '.join(privacy)}"
+    hint = deactivated_account_hint(result, pre_error=pre_error)
+    if hint:
+        detail = f"{detail}\n{hint}"
     try:
         await notify_rt_ops_issue(
             issue_kind=terminal_status,
@@ -1142,8 +1167,7 @@ async def _process_row(row: RecoveryRow) -> tuple[str, ReaddGroupResult]:
             pre_status=pre_status,
             pre_error=pre_error,
         )
-        skip_admin_dm = should_skip_admin_dm_for_result(result, status)
-        if cfg is not None and not skip_admin_dm:
+        if cfg is not None:
             try:
                 await notify_readd_admin_dm(
                     cfg,

@@ -15,8 +15,9 @@ from bot.services.migration_recovery import (
     claim_pending_batch,
     compute_migration_recovery_first_delay_sec,
     compute_migration_recovery_slack_summary_first_delay_sec,
+    deactivated_account_hint,
     format_auto_disable_notification,
-    format_readd_admin_notification,
+    format_readd_success_admin_notification,
     format_rate_limit_admin_notification,
     map_readd_status,
     peek_next_recovery_rows,
@@ -26,7 +27,6 @@ from bot.services.migration_recovery import (
     _maybe_auto_disable_after_tick,
 )
 from bot.services.migration_group_readd import FloodWaitAbortError, ReaddGroupResult
-from notification.formatting import format_group_chat_line
 from bot.services.migration_recovery import RecoveryRow
 from scripts.seed_migrated_group_recovery import build_seed_candidates
 from scripts.migrated_groups_activity_report import GroupAgg, MigratedGroupRow
@@ -163,6 +163,35 @@ class TestShouldNotifyRtOps(unittest.TestCase):
         result = self._result(status="ok", added=["player:1"])
         self.assertFalse(should_notify_rt_ops("complete", result))
 
+    def test_privacy_blocked_notifies(self) -> None:
+        result = self._result(
+            status="privacy_fallback",
+            privacy_blocked=["player:@player1"],
+        )
+        self.assertTrue(should_notify_rt_ops("privacy_blocked", result))
+
+    def test_deactivated_hint_for_value_error(self) -> None:
+        result = self._result(
+            status="partial",
+            failed=[
+                "player:@ian:ValueError: Could not find the input entity for PeerUser(user_id=1)"
+            ],
+        )
+        self.assertEqual(
+            deactivated_account_hint(result),
+            "The Telegram account may have been deactivated.",
+        )
+
+    def test_deactivated_hint_for_entity_resolution_failed(self) -> None:
+        result = self._result(
+            status="partial",
+            failed=["player:@ian:entity_resolution_failed"],
+        )
+        self.assertEqual(
+            deactivated_account_hint(result),
+            "The Telegram account may have been deactivated.",
+        )
+
     def test_rate_limit_marker_in_error_blob(self) -> None:
         result = self._result(status="ok")
         self.assertTrue(
@@ -174,46 +203,34 @@ class TestShouldNotifyRtOps(unittest.TestCase):
         )
 
 
-class TestFormatReaddAdminNotification(unittest.TestCase):
-    def test_includes_gc_and_added_accounts(self) -> None:
+class TestFormatReaddSuccessAdminNotification(unittest.TestCase):
+    def test_success_message_uses_username_and_gc_title(self) -> None:
         row = RecoveryRow(
             id=1,
             telegram_chat_id=-100123,
             club_key="round_table",
             club_id=2,
-            group_title="RT / / @player1",
+            group_title="RT / 7049-1538 / Ian",
             old_chat_id=-456,
-            player_telegram_user_id=111,
-            player_username="player1",
+            player_telegram_user_id=7070448608,
+            player_username="ian",
         )
         result = ReaddGroupResult(
             chat_id=-100123,
             club_id=2,
             club_key="round_table",
-            title="RT / / @player1",
+            title="RT / 7049-1538 / Ian",
             member_count_before=2,
-            member_count_after=4,
+            member_count_after=3,
             status="ok",
-            added=["player:@player1", "staff:@RoundTableSupport3"],
-            already_member=["bot:@YTranslateBot"],
+            added=["player:@ian"],
+            resolved_player_username="ian",
         )
-        text = format_readd_admin_notification(
-            row=row,
-            result=result,
-            terminal_status="complete",
-            club_display_name="Round Table",
-            gc_line=format_group_chat_line(
-                group_title=row.group_title,
-                telegram_chat_id=row.telegram_chat_id,
-            ),
+        text = format_readd_success_admin_notification(row=row, result=result)
+        self.assertEqual(
+            text,
+            "@ian successfully added back to RT / 7049-1538 / Ian",
         )
-        self.assertIn('<a href="https://t.me/c/123">', text)
-        self.assertIn("RT / / @player1", text)
-        self.assertIn("chat_id=-100123", text)
-        self.assertIn("@player1", text)
-        self.assertIn("@RoundTableSupport3", text)
-        self.assertIn("@YTranslateBot", text)
-        self.assertIn("Result: complete", text)
 
     def test_escapes_special_chars_in_title(self) -> None:
         row = RecoveryRow(
@@ -223,8 +240,8 @@ class TestFormatReaddAdminNotification(unittest.TestCase):
             club_id=2,
             group_title="RT & <test>",
             old_chat_id=-456,
-            player_telegram_user_id=None,
-            player_username=None,
+            player_telegram_user_id=111,
+            player_username="player1",
         )
         result = ReaddGroupResult(
             chat_id=-100123,
@@ -234,14 +251,10 @@ class TestFormatReaddAdminNotification(unittest.TestCase):
             member_count_before=0,
             member_count_after=None,
             status="ok",
+            added=["player:@player1"],
+            resolved_player_username="player1",
         )
-        text = format_readd_admin_notification(
-            row=row,
-            result=result,
-            terminal_status="complete",
-            club_display_name="Round Table",
-            gc_line='Group Chat: <a href="https://t.me/c/123">RT &amp; &lt;test&gt;</a>',
-        )
+        text = format_readd_success_admin_notification(row=row, result=result)
         self.assertIn("RT &amp; &lt;test&gt;", text)
         self.assertNotIn("RT & <test>", text)
 

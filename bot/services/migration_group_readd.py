@@ -238,7 +238,15 @@ def error_label(exc: BaseException) -> str:
 
 
 def is_entity_resolution_error(exc: BaseException) -> bool:
-    return "could not find the input entity" in str(exc).lower()
+    """True when Telethon cannot resolve a user/chat id or username (non-fatal)."""
+    if type(exc).__name__ == "UsernameNotOccupiedError":
+        return True
+    low = str(exc).lower()
+    return (
+        "could not find the input entity" in low
+        or "no user has" in low
+        or "username is not in use" in low
+    )
 
 
 def _username_marker(stored_username: str | None) -> str | None:

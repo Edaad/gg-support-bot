@@ -43,6 +43,16 @@ class TestEntityResolutionError(unittest.TestCase):
         )
         self.assertTrue(is_entity_resolution_error(exc))
 
+    def test_recognizes_dead_username(self) -> None:
+        exc = ValueError('No user has "howard123457" as username')
+        self.assertTrue(is_entity_resolution_error(exc))
+
+    def test_recognizes_username_not_occupied_type_name(self) -> None:
+        exc = type("UsernameNotOccupiedError", (Exception,), {})(
+            "The username is not in use by anyone else yet"
+        )
+        self.assertTrue(is_entity_resolution_error(exc))
+
     def test_ignores_other_errors(self) -> None:
         self.assertFalse(is_entity_resolution_error(RuntimeError("network down")))
 
