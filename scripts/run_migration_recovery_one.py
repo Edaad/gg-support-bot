@@ -94,6 +94,7 @@ async def _process_with_client(row, *, apply: bool) -> str:
     from bot.services.migration_recovery import (
         _notify_rt_ops_if_needed,
         finalize_row,
+        maybe_persist_resolved_player_from_readd,
         notify_readd_admin_dm,
     )
     from bot.services.mtproto_group_create import get_mtproto_lock, make_client
@@ -143,7 +144,20 @@ async def _process_with_client(row, *, apply: bool) -> str:
                 print(f"DRY-RUN status={result.status} added={result.added}")
                 print(f"already_member={result.already_member}")
                 print(f"privacy={result.privacy_blocked} failed={result.failed}")
+                if result.resolved_player_source:
+                    print(
+                        f"resolved_player id={result.resolved_player_id} "
+                        f"source={result.resolved_player_source}"
+                    )
                 return "dry_run"
+            try:
+                maybe_persist_resolved_player_from_readd(row, result, cfg)
+            except Exception:
+                logger.warning(
+                    "run_migration_recovery_one: persist resolved player failed row_id=%s",
+                    row.id,
+                    exc_info=True,
+                )
             status = finalize_row(row.id, result)
             await notify_readd_admin_dm(
                 cfg, row=row, result=result, terminal_status=status

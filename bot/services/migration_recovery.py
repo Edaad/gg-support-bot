@@ -158,7 +158,7 @@ def flood_wait_abort_from_readd_result(result: ReaddGroupResult) -> FloodWaitAbo
 
 
 def build_readd_result_payload(result: ReaddGroupResult) -> dict[str, Any]:
-    return {
+    payload = {
         "inner_status": result.status,
         "added": list(result.added),
         "already_member": list(result.already_member),
@@ -168,6 +168,103 @@ def build_readd_result_payload(result: ReaddGroupResult) -> dict[str, Any]:
         "member_count_after": result.member_count_after,
         "error": result.error,
     }
+    if result.resolved_player_id is not None:
+        payload["resolved_player_id"] = int(result.resolved_player_id)
+        payload["resolved_player_username"] = result.resolved_player_username
+        payload["resolved_player_display_name"] = result.resolved_player_display_name
+        payload["resolved_player_source"] = result.resolved_player_source
+    return payload
+
+
+def should_persist_resolved_player(
+    result: ReaddGroupResult,
+    *,
+    stored_player_id: int | None,
+) -> bool:
+    """True when re-add resolved a different player id and invite succeeded."""
+    if result.resolved_player_id is None:
+        return False
+    if stored_player_id is not None and int(result.resolved_player_id) == int(stored_player_id):
+        return False
+    return bool(result.added or result.already_member)
+
+
+def persist_resolved_recovery_player(
+    *,
+    row_id: int,
+    club_key: str,
+    club_display_name: str,
+    telegram_chat_id: int,
+    group_title: str,
+    player_id: int,
+    player_username: str | None,
+    player_display_name: str | None,
+) -> bool:
+    """Update migrated_group_recovery + support_group_chats with a resolved player id."""
+    from bot.services.support_group_chats import bind_player_for_gc_reuse
+    from db.connection import get_db
+    from db.models import MigratedGroupRecovery
+
+    pid = int(player_id)
+    un = (player_username or "").strip() or None
+    dn = (player_display_name or "").strip() or None
+    recovery_changed = False
+    with get_db() as session:
+        row = session.get(MigratedGroupRecovery, int(row_id))
+        if row is None:
+            return False
+        if row.player_telegram_user_id != pid:
+            row.player_telegram_user_id = pid
+            recovery_changed = True
+        if un is not None and (row.player_username or "") != un:
+            row.player_username = un
+            recovery_changed = True
+        if dn is not None and (row.player_display_name or "") != dn:
+            row.player_display_name = dn
+            recovery_changed = True
+
+    bind_status, _bind_row_id = bind_player_for_gc_reuse(
+        club_key=club_key,
+        club_display_name=club_display_name,
+        telegram_chat_id=int(telegram_chat_id),
+        telegram_chat_title=group_title,
+        player_telegram_user_id=pid,
+        player_username=un,
+        player_display_name=dn,
+    )
+    return recovery_changed or bind_status in ("updated", "inserted")
+
+
+def maybe_persist_resolved_player_from_readd(
+    row: RecoveryRow,
+    result: ReaddGroupResult,
+    cfg,
+) -> bool:
+    if not should_persist_resolved_player(
+        result,
+        stored_player_id=row.player_telegram_user_id,
+    ):
+        return False
+    changed = persist_resolved_recovery_player(
+        row_id=row.id,
+        club_key=cfg.club_key,
+        club_display_name=cfg.club_display_name,
+        telegram_chat_id=int(row.telegram_chat_id),
+        group_title=row.group_title,
+        player_id=int(result.resolved_player_id),
+        player_username=result.resolved_player_username,
+        player_display_name=result.resolved_player_display_name,
+    )
+    if changed:
+        logger.info(
+            "migration_recovery: persisted resolved player row_id=%s chat_id=%s "
+            "player_id=%s source=%s",
+            row.id,
+            row.telegram_chat_id,
+            result.resolved_player_id,
+            result.resolved_player_source,
+        )
+    return changed
 
 
 def build_membership_audit_readd_result(
@@ -1129,6 +1226,15 @@ async def _process_row(row: RecoveryRow) -> tuple[str, ReaddGroupResult]:
         flood_exc = flood_wait_abort_from_readd_result(result)
         if flood_exc is not None:
             raise flood_exc
+    try:
+        maybe_persist_resolved_player_from_readd(row, result, cfg)
+    except Exception:
+        logger.warning(
+            "migration_recovery: persist resolved player failed row_id=%s chat_id=%s",
+            row.id,
+            row.telegram_chat_id,
+            exc_info=True,
+        )
     return await _finish(result)
 
 

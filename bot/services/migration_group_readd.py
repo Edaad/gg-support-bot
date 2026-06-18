@@ -6,7 +6,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 from scripts.backfill_support_group_invite_links import LinkedGroupRow, _gc_display_name
 
@@ -60,6 +60,10 @@ class ReaddGroupResult:
     failed: list[str] = field(default_factory=list)
     invite_link: str | None = None
     error: str | None = None
+    resolved_player_id: int | None = None
+    resolved_player_username: str | None = None
+    resolved_player_display_name: str | None = None
+    resolved_player_source: str | None = None
 
 
 def set_flood_wait_observer(observer: FloodWaitObserver | None) -> None:
@@ -233,12 +237,73 @@ def error_label(exc: BaseException) -> str:
     return f"{name}: {msg}" if msg else name
 
 
+def is_entity_resolution_error(exc: BaseException) -> bool:
+    return "could not find the input entity" in str(exc).lower()
+
+
+def _username_marker(stored_username: str | None) -> str | None:
+    raw = (stored_username or "").strip()
+    if not raw or raw.isdigit():
+        return None
+    return raw if raw.startswith("@") else f"@{raw.lstrip('@')}"
+
+
+async def resolve_player_entity_for_readd(
+    client,
+    channel_entity,
+    cfg,
+    *,
+    stored_id: int,
+    stored_username: str | None,
+    self_id: int | None,
+) -> tuple[Any | None, str]:
+    """Resolve a Telethon user for direct-add; message scan is last resort."""
+    from bot.services.mtproto_group_player import find_latest_eligible_message_sender
+
+    try:
+        user = await call_with_flood_retry(
+            lambda: client.get_entity(int(stored_id)),
+            label=f"get_entity:{stored_id}",
+        )
+        return user, "stored_id"
+    except FloodWaitAbortError:
+        raise
+    except Exception as e:
+        if not is_entity_resolution_error(e):
+            raise
+
+    username_marker = _username_marker(stored_username)
+    if username_marker:
+        try:
+            user = await call_with_flood_retry(
+                lambda: client.get_entity(username_marker),
+                label=f"get_entity:{username_marker}",
+            )
+            return user, "username"
+        except FloodWaitAbortError:
+            raise
+        except Exception as e:
+            if not is_entity_resolution_error(e):
+                raise
+
+    user = await find_latest_eligible_message_sender(
+        client,
+        channel_entity,
+        cfg,
+        self_id=self_id,
+    )
+    if user is not None:
+        return user, "message_sender"
+    return None, "unresolved"
+
+
 async def invite_user_id(
     client,
     channel_entity,
     user_id: int,
     *,
     apply: bool,
+    user_entity: Any | None = None,
 ) -> tuple[str, str | None]:
     """Return (status, reason). status: added | already_member | privacy | failed | dry_run."""
     from telethon.errors.rpcerrorlist import UserAlreadyParticipantError, UserNotParticipantError
@@ -247,15 +312,17 @@ async def invite_user_id(
     if not apply:
         return "dry_run", None
 
-    try:
-        user = await call_with_flood_retry(
-            lambda: client.get_entity(int(user_id)),
-            label=f"get_entity:{user_id}",
-        )
-    except FloodWaitAbortError:
-        raise
-    except Exception as e:
-        return "failed", error_label(e)
+    user = user_entity
+    if user is None:
+        try:
+            user = await call_with_flood_retry(
+                lambda: client.get_entity(int(user_id)),
+                label=f"get_entity:{user_id}",
+            )
+        except FloodWaitAbortError:
+            raise
+        except Exception as e:
+            return "failed", error_label(e)
 
     try:
         await call_with_flood_retry(
@@ -373,13 +440,38 @@ async def readd_group(
                 result.status = "no_targets"
                 return result
 
-            marker = f"@{player_username}" if player_username else str(player_id)
+            from bot.services.mtproto_group_player import format_telegram_user_display
+
+            resolved_user, source = await resolve_player_entity_for_readd(
+                client,
+                entity,
+                cfg,
+                stored_id=int(player_id),
+                stored_username=player_username,
+                self_id=listener_user_id,
+            )
+            if resolved_user is None:
+                marker = f"@{player_username}" if player_username else str(player_id)
+                label = f"player:{marker}"
+                result.failed.append(f"{label}:entity_resolution_failed")
+                result.status = "partial"
+                return result
+
+            resolved_id = int(getattr(resolved_user, "id", player_id))
+            display_name, at_username = format_telegram_user_display(resolved_user)
+            marker = at_username or (f"@{player_username}" if player_username else str(resolved_id))
             label = f"player:{marker}"
+            result.resolved_player_id = resolved_id
+            result.resolved_player_username = (at_username or "").lstrip("@") or None
+            result.resolved_player_display_name = display_name
+            result.resolved_player_source = source
+
             status, reason = await invite_user_id(
                 client,
                 entity,
-                int(player_id),
+                resolved_id,
                 apply=apply,
+                user_entity=resolved_user,
             )
             needs_invite_export = False
             if status == "added":

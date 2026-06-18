@@ -1145,9 +1145,9 @@
     "semantic_hash": "6697ed95afa5b14a31fd76485b8ddb6b"
   },
   "bot/services/mtproto_group_player.py": {
-    "mtime": 1779811866.0723214,
-    "ast_hash": "81e9c5eecc64e92e0ded9b266836b99c",
-    "semantic_hash": "81e9c5eecc64e92e0ded9b266836b99c"
+    "mtime": 1781744349.089843,
+    "ast_hash": "7ead48c69574ccd51dfc06ae8db7b0ff",
+    "semantic_hash": ""
   },
   "bot/services/mtproto_group_rename.py": {
     "mtime": 1779662527.8363733,
@@ -2735,13 +2735,13 @@
     "semantic_hash": ""
   },
   "bot/services/migration_group_readd.py": {
-    "mtime": 1781477219.9251676,
-    "ast_hash": "f274c541b555d9b804459dc273d5fa11",
+    "mtime": 1781744363.0022721,
+    "ast_hash": "e4f785d3a120b60df8df57371ee88007",
     "semantic_hash": ""
   },
   "bot/services/migration_recovery.py": {
-    "mtime": 1781662796.3084924,
-    "ast_hash": "c59d3bf8cf80ae560a3972966ac06d9f",
+    "mtime": 1781744388.2870302,
+    "ast_hash": "ad286eec8f87d6a8a04c72189745a029",
     "semantic_hash": ""
   },
   "migrate_migrated_group_recovery.py": {
@@ -2780,8 +2780,8 @@
     "semantic_hash": ""
   },
   "scripts/run_migration_recovery_one.py": {
-    "mtime": 1781158089.7282453,
-    "ast_hash": "865d919a4e91d6fdc765f4d5458fa1a6",
+    "mtime": 1781744391.4545093,
+    "ast_hash": "77c9f81d446c46d5ff4d841e129f87ca",
     "semantic_hash": ""
   },
   "tests/test_payment_binding_events.py": {
@@ -2840,8 +2840,8 @@
     "semantic_hash": ""
   },
   "tests/test_migration_group_readd.py": {
-    "mtime": 1781477244.3127403,
-    "ast_hash": "dbc58a496c8e29c00ba4b9abacb55ad8",
+    "mtime": 1781744432.2066,
+    "ast_hash": "5199da99df1aa2153aad20ce63be4e03",
     "semantic_hash": ""
   },
   "api/routes/paypal_payments.py": {
@@ -3017,6 +3017,16 @@
   "tests/test_payment_notification_lookup.py": {
     "mtime": 1781666419.68724,
     "ast_hash": "48f6660001b3d0b9d24e2ae2bd2aa3c9",
+    "semantic_hash": ""
+  },
+  "scripts/triage_recovery_tier3_pending.py": {
+    "mtime": 1781745265.2763324,
+    "ast_hash": "4fb5432cbea2548ea8cc8c1f0d8d538b",
+    "semantic_hash": ""
+  },
+  "tests/test_triage_recovery_tier3_pending.py": {
+    "mtime": 1781745275.523112,
+    "ast_hash": "69b4ac55b234edb5d92d37e4208aa9fe",
     "semantic_hash": ""
   }
 }

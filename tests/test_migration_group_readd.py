@@ -8,14 +8,43 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from bot.services.migration_group_readd import (
     ReaddGroupResult,
     invite_user_id,
+    is_entity_resolution_error,
     readd_group,
+    resolve_player_entity_for_readd,
 )
-from bot.services.migration_recovery import RecoveryRow, _process_row
+from bot.services.migration_recovery import (
+    RecoveryRow,
+    _process_row,
+    maybe_persist_resolved_player_from_readd,
+    should_persist_resolved_player,
+)
 from scripts.backfill_support_group_invite_links import LinkedGroupRow
 
 
 async def _passthrough_flood_retry(factory, *, label: str):
     return await factory()
+
+
+def _mock_resolved_player(player_id: int = 111, username: str = "player1"):
+    user = MagicMock()
+    user.id = player_id
+    user.username = username
+    user.first_name = "Test"
+    user.last_name = "Player"
+    user.bot = False
+    return user
+
+
+class TestEntityResolutionError(unittest.TestCase):
+    def test_recognizes_telethon_value_error(self) -> None:
+        exc = ValueError(
+            "Could not find the input entity for PeerUser(user_id=8226300069) "
+            "(PeerUser). Please read https://docs.telethon.dev/..."
+        )
+        self.assertTrue(is_entity_resolution_error(exc))
+
+    def test_ignores_other_errors(self) -> None:
+        self.assertFalse(is_entity_resolution_error(RuntimeError("network down")))
 
 
 class TestInviteUserId(unittest.IsolatedAsyncioTestCase):
@@ -94,6 +123,45 @@ class TestInviteUserId(unittest.IsolatedAsyncioTestCase):
         "bot.services.migration_group_readd.call_with_flood_retry",
         side_effect=_passthrough_flood_retry,
     )
+    async def test_user_entity_skips_get_entity(self, mock_flood: MagicMock) -> None:
+        from telethon.errors.rpcerrorlist import UserNotParticipantError
+        from telethon.tl.functions.channels import GetParticipantRequest, InviteToChannelRequest
+
+        mock_user = MagicMock()
+        mock_user.id = 321
+        channel_entity = MagicMock()
+        client = AsyncMock()
+
+        async def _client_call(request):
+            if isinstance(request, GetParticipantRequest):
+                raise UserNotParticipantError(request=None)
+            if isinstance(request, InviteToChannelRequest):
+                return MagicMock()
+            raise AssertionError(f"unexpected request: {type(request)}")
+
+        client.side_effect = _client_call
+
+        status, reason = await invite_user_id(
+            client,
+            channel_entity,
+            321,
+            apply=True,
+            user_entity=mock_user,
+        )
+
+        self.assertEqual(status, "added")
+        self.assertIsNone(reason)
+        get_entity_calls = [
+            call
+            for call in mock_flood.call_args_list
+            if call.kwargs.get("label", "").startswith("get_entity:")
+        ]
+        self.assertEqual(get_entity_calls, [])
+
+    @patch(
+        "bot.services.migration_group_readd.call_with_flood_retry",
+        side_effect=_passthrough_flood_retry,
+    )
     async def test_flood_wait_abort_propagates(self, _mock_flood: MagicMock) -> None:
         from telethon.errors.rpcerrorlist import UserNotParticipantError
         from telethon.tl.functions.channels import GetParticipantRequest, InviteToChannelRequest
@@ -140,6 +208,10 @@ class TestReaddGroupPlayerOnly(unittest.IsolatedAsyncioTestCase):
         return cfg
 
     @patch(
+        "bot.services.migration_group_readd.resolve_player_entity_for_readd",
+        new_callable=AsyncMock,
+    )
+    @patch(
         "bot.services.migration_group_readd.call_with_flood_retry",
         new_callable=AsyncMock,
         return_value=MagicMock(),
@@ -158,7 +230,9 @@ class TestReaddGroupPlayerOnly(unittest.IsolatedAsyncioTestCase):
         _mock_invite: AsyncMock,
         mock_participants: AsyncMock,
         _mock_entity: AsyncMock,
+        mock_resolve: AsyncMock,
     ) -> None:
+        mock_resolve.return_value = (_mock_resolved_player(), "stored_id")
         result = await readd_group(
             client=MagicMock(),
             cfg=self._cfg(),
@@ -178,6 +252,10 @@ class TestReaddGroupPlayerOnly(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.added, [])
 
     @patch(
+        "bot.services.migration_group_readd.resolve_player_entity_for_readd",
+        new_callable=AsyncMock,
+    )
+    @patch(
         "bot.services.migration_group_readd.call_with_flood_retry",
         new_callable=AsyncMock,
         return_value=MagicMock(),
@@ -196,7 +274,9 @@ class TestReaddGroupPlayerOnly(unittest.IsolatedAsyncioTestCase):
         mock_invite: AsyncMock,
         mock_participants: AsyncMock,
         _mock_entity: AsyncMock,
+        mock_resolve: AsyncMock,
     ) -> None:
+        mock_resolve.return_value = (_mock_resolved_player(), "stored_id")
         result = await readd_group(
             client=MagicMock(),
             cfg=self._cfg(),
@@ -239,8 +319,192 @@ class TestReaddGroupPlayerOnly(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.status, "no_targets")
 
+    @patch(
+        "bot.services.migration_group_readd.resolve_player_entity_for_readd",
+        new_callable=AsyncMock,
+        return_value=(None, "unresolved"),
+    )
+    @patch(
+        "bot.services.migration_group_readd.call_with_flood_retry",
+        new_callable=AsyncMock,
+        return_value=MagicMock(),
+    )
+    async def test_player_only_entity_resolution_failed(
+        self,
+        _mock_entity: AsyncMock,
+        _mock_resolve: AsyncMock,
+    ) -> None:
+        result = await readd_group(
+            client=MagicMock(),
+            cfg=self._cfg(),
+            group=self._group(),
+            dialog_chat_id=-1001,
+            player_id=8226300069,
+            player_username=None,
+            apply=True,
+            update_invite_links=True,
+            invite_staff=False,
+            listener_user_id=999,
+        )
+
+        self.assertEqual(result.status, "partial")
+        self.assertTrue(any("entity_resolution_failed" in x for x in result.failed))
+
+    @patch(
+        "bot.services.migration_group_readd.invite_user_id",
+        new_callable=AsyncMock,
+        return_value=("already_member", None),
+    )
+    @patch(
+        "bot.services.migration_group_readd.resolve_player_entity_for_readd",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "bot.services.migration_group_readd.call_with_flood_retry",
+        new_callable=AsyncMock,
+        return_value=MagicMock(),
+    )
+    async def test_player_only_message_sender_fallback_metadata(
+        self,
+        _mock_entity: AsyncMock,
+        mock_resolve: AsyncMock,
+        mock_invite: AsyncMock,
+    ) -> None:
+        resolved = _mock_resolved_player(player_id=555555, username="realplayer")
+        mock_resolve.return_value = (resolved, "message_sender")
+
+        result = await readd_group(
+            client=MagicMock(),
+            cfg=self._cfg(),
+            group=self._group(),
+            dialog_chat_id=-1001,
+            player_id=8226300069,
+            player_username=None,
+            apply=True,
+            update_invite_links=True,
+            invite_staff=False,
+            listener_user_id=999,
+        )
+
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.resolved_player_id, 555555)
+        self.assertEqual(result.resolved_player_source, "message_sender")
+        mock_invite.assert_awaited_once()
+        self.assertIs(mock_invite.await_args.kwargs["user_entity"], resolved)
+
+
+class TestResolvePlayerEntityForReadd(unittest.IsolatedAsyncioTestCase):
+    @patch(
+        "bot.services.mtproto_group_player.find_latest_eligible_message_sender",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "bot.services.migration_group_readd.call_with_flood_retry",
+        side_effect=_passthrough_flood_retry,
+    )
+    async def test_falls_back_to_message_sender(
+        self,
+        _mock_flood: MagicMock,
+        mock_find_sender: AsyncMock,
+    ) -> None:
+        entity_err = ValueError("Could not find the input entity for PeerUser(user_id=1)")
+        sender = _mock_resolved_player(player_id=99, username="fromchat")
+        mock_find_sender.return_value = sender
+        client = AsyncMock()
+        client.get_entity = AsyncMock(side_effect=entity_err)
+
+        user, source = await resolve_player_entity_for_readd(
+            client,
+            MagicMock(),
+            MagicMock(),
+            stored_id=1,
+            stored_username=None,
+            self_id=999,
+        )
+
+        self.assertIs(user, sender)
+        self.assertEqual(source, "message_sender")
+        mock_find_sender.assert_awaited_once()
+
+
+class TestPersistResolvedPlayer(unittest.TestCase):
+    def test_should_persist_when_id_changed_and_already_member(self) -> None:
+        result = ReaddGroupResult(
+            chat_id=-1,
+            club_id=1,
+            club_key="clubgto",
+            title="GC",
+            member_count_before=0,
+            member_count_after=None,
+            status="ok",
+            already_member=["player:@real"],
+            resolved_player_id=555,
+            resolved_player_source="message_sender",
+        )
+        self.assertTrue(
+            should_persist_resolved_player(result, stored_player_id=8226300069)
+        )
+
+    def test_should_not_persist_same_id(self) -> None:
+        result = ReaddGroupResult(
+            chat_id=-1,
+            club_id=1,
+            club_key="clubgto",
+            title="GC",
+            member_count_before=0,
+            member_count_after=None,
+            status="ok",
+            already_member=["player:@p"],
+            resolved_player_id=111,
+            resolved_player_source="stored_id",
+        )
+        self.assertFalse(should_persist_resolved_player(result, stored_player_id=111))
+
+    @patch("bot.services.migration_recovery.persist_resolved_recovery_player", return_value=True)
+    def test_maybe_persist_calls_helper(self, mock_persist: MagicMock) -> None:
+        result = ReaddGroupResult(
+            chat_id=-1001,
+            club_id=2,
+            club_key="clubgto",
+            title="GTO / test",
+            member_count_before=0,
+            member_count_after=None,
+            status="ok",
+            added=["player:@real"],
+            resolved_player_id=555,
+            resolved_player_username="real",
+            resolved_player_display_name="Real Player",
+            resolved_player_source="message_sender",
+        )
+        row = RecoveryRow(
+            id=7,
+            telegram_chat_id=-1001,
+            club_key="clubgto",
+            club_id=3,
+            group_title="GTO / test",
+            old_chat_id=-1,
+            player_telegram_user_id=8226300069,
+            player_username=None,
+        )
+        cfg = MagicMock(club_key="clubgto", club_display_name="Club GTO")
+
+        changed = maybe_persist_resolved_player_from_readd(row, result, cfg)
+
+        self.assertTrue(changed)
+        mock_persist.assert_called_once_with(
+            row_id=7,
+            club_key="clubgto",
+            club_display_name="Club GTO",
+            telegram_chat_id=-1001,
+            group_title="GTO / test",
+            player_id=555,
+            player_username="real",
+            player_display_name="Real Player",
+        )
+
 
 class TestMigrationRecoveryProcessRow(unittest.IsolatedAsyncioTestCase):
+    @patch("bot.services.migration_recovery.maybe_persist_resolved_player_from_readd")
     @patch("bot.services.migration_recovery._notify_rt_ops_if_needed", new_callable=AsyncMock)
     @patch("bot.services.migration_recovery.notify_readd_admin_dm", new_callable=AsyncMock)
     @patch("bot.services.migration_recovery.finalize_row", return_value="complete")
@@ -255,6 +519,7 @@ class TestMigrationRecoveryProcessRow(unittest.IsolatedAsyncioTestCase):
         _mock_finalize: MagicMock,
         _mock_notify_admin: AsyncMock,
         _mock_notify_ops: AsyncMock,
+        mock_persist: MagicMock,
     ) -> None:
         mock_get_cfg.return_value = MagicMock(
             club_key="round_table",
@@ -290,6 +555,7 @@ class TestMigrationRecoveryProcessRow(unittest.IsolatedAsyncioTestCase):
 
         mock_readd.assert_awaited_once()
         self.assertFalse(mock_readd.await_args.kwargs["invite_staff"])
+        mock_persist.assert_called_once()
 
 
 if __name__ == "__main__":
