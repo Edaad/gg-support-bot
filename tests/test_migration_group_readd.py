@@ -426,6 +426,58 @@ class TestResolvePlayerEntityForReadd(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(source, "message_sender")
         mock_find_sender.assert_awaited_once()
 
+    @patch(
+        "bot.services.mtproto_group_player.find_latest_eligible_message_sender",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "bot.services.migration_group_readd.call_with_flood_retry",
+        side_effect=_passthrough_flood_retry,
+    )
+    async def test_falls_back_to_old_chat_message_sender(
+        self,
+        _mock_flood: MagicMock,
+        mock_find_sender: AsyncMock,
+    ) -> None:
+        entity_err = ValueError("Could not find the input entity for PeerUser(user_id=1)")
+        sender = _mock_resolved_player(player_id=1779692689, username="derek")
+        current_ent = MagicMock()
+        old_ent = MagicMock()
+
+        async def _find_sender(client, channel_ent, cfg, *, self_id, limit=50):
+            if channel_ent is current_ent:
+                return None
+            if channel_ent is old_ent:
+                return sender
+            return None
+
+        mock_find_sender.side_effect = _find_sender
+
+        client = AsyncMock()
+
+        async def _get_entity(cid):
+            if int(cid) == 1779692689:
+                raise entity_err
+            if int(cid) == -5253511706:
+                return old_ent
+            return current_ent
+
+        client.get_entity = AsyncMock(side_effect=_get_entity)
+
+        user, source = await resolve_player_entity_for_readd(
+            client,
+            current_ent,
+            MagicMock(),
+            stored_id=1779692689,
+            stored_username=None,
+            self_id=999,
+            old_chat_id=-5253511706,
+        )
+
+        self.assertIs(user, sender)
+        self.assertEqual(source, "old_chat_message_sender")
+        self.assertEqual(mock_find_sender.await_count, 2)
+
 
 class TestPersistResolvedPlayer(unittest.TestCase):
     def test_should_persist_when_id_changed_and_already_member(self) -> None:
@@ -555,6 +607,7 @@ class TestMigrationRecoveryProcessRow(unittest.IsolatedAsyncioTestCase):
 
         mock_readd.assert_awaited_once()
         self.assertFalse(mock_readd.await_args.kwargs["invite_staff"])
+        self.assertEqual(mock_readd.await_args.kwargs["old_chat_id"], -456)
         mock_persist.assert_called_once()
 
 

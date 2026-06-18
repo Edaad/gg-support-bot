@@ -139,6 +139,7 @@ async def _process_with_client(row, *, apply: bool) -> str:
                 update_invite_links=apply,
                 invite_staff=False,
                 listener_user_id=listener_user_id,
+                old_chat_id=int(row.old_chat_id),
             )
             if not apply:
                 print(f"DRY-RUN status={result.status} added={result.added}")

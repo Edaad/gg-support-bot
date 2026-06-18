@@ -1221,6 +1221,7 @@ async def _process_row(row: RecoveryRow) -> tuple[str, ReaddGroupResult]:
         update_invite_links=True,
         invite_staff=False,
         listener_user_id=listener_user_id,
+        old_chat_id=int(row.old_chat_id),
     )
     if get_flood_wait_policy() == "abort":
         flood_exc = flood_wait_abort_from_readd_result(result)

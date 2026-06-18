@@ -256,6 +256,7 @@ async def resolve_player_entity_for_readd(
     stored_id: int,
     stored_username: str | None,
     self_id: int | None,
+    old_chat_id: int | None = None,
 ) -> tuple[Any | None, str]:
     """Resolve a Telethon user for direct-add; message scan is last resort."""
     from bot.services.mtproto_group_player import find_latest_eligible_message_sender
@@ -294,6 +295,31 @@ async def resolve_player_entity_for_readd(
     )
     if user is not None:
         return user, "message_sender"
+
+    if old_chat_id is not None:
+        try:
+            old_entity = await call_with_flood_retry(
+                lambda: client.get_entity(int(old_chat_id)),
+                label=f"get_entity:old_chat:{old_chat_id}",
+            )
+        except FloodWaitAbortError:
+            raise
+        except Exception as e:
+            logger.warning(
+                "resolve_player: open old_chat_id=%s failed: %s",
+                old_chat_id,
+                error_label(e),
+            )
+        else:
+            user = await find_latest_eligible_message_sender(
+                client,
+                old_entity,
+                cfg,
+                self_id=self_id,
+            )
+            if user is not None:
+                return user, "old_chat_message_sender"
+
     return None, "unresolved"
 
 
@@ -417,6 +443,7 @@ async def readd_group(
     update_invite_links: bool,
     invite_staff: bool,
     listener_user_id: int | None,
+    old_chat_id: int | None = None,
 ) -> ReaddGroupResult:
     title = _gc_display_name(group.title, group.chat_id)
     result = ReaddGroupResult(
@@ -449,6 +476,7 @@ async def readd_group(
                 stored_id=int(player_id),
                 stored_username=player_username,
                 self_id=listener_user_id,
+                old_chat_id=old_chat_id,
             )
             if resolved_user is None:
                 marker = f"@{player_username}" if player_username else str(player_id)
