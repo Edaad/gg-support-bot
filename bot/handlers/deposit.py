@@ -3,7 +3,9 @@
 import html
 import logging
 import re
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from typing import Any
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -35,6 +37,7 @@ from bot.services.club import (
     update_group_name,
     record_method_deposit,
     get_deposit_method_names,
+    is_club_staff,
 )
 from bot.services.mtproto_group_rename import rename_support_group_title
 from bot.services.player_details import merge_union_prefix
@@ -66,7 +69,14 @@ from bot.services.payment_method_binding import (
 from bot.services.payment_method_binding import expire_attempt as expire_bind_attempt
 from bot.runtime_config import is_test_bot_worker, use_payment_v2
 from db.connection import get_db
-from db.models import Club
+from db.models import (
+    CashAppPayment,
+    Club,
+    CryptoPayment,
+    PayPalPayment,
+    VenmoPayment,
+    ZellePayment,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -263,11 +273,21 @@ _STRIPE_HARDCODE_DEFAULT_TEXT = (
 _PLACEHOLDER_RESPONSE_TEXT = frozenset({"long text", "test", "placeholder", "todo"})
 
 DEPOSIT_REMINDER_SECONDS = 600  # 10 minutes
+_PAYMENT_RECEIVED_SNIPPET = "we have received your payment"
 
 # Maps chat_id → customer user_id that we're waiting on for a deposit follow-up.
 _PENDING_DEPOSIT_REMINDERS: dict[int, int] = {}
 # Maps chat_id → deposit instruction message ids to delete after the reminder fires.
 _DEPOSIT_INFO_MESSAGE_IDS: dict[int, list[int]] = {}
+_deposit_reminder_app: Any | None = None
+
+_PAYMENT_BOUND_MODELS = (
+    VenmoPayment,
+    CashAppPayment,
+    PayPalPayment,
+    ZellePayment,
+    CryptoPayment,
+)
 
 
 def _reset_deposit_info_messages(chat_id: int) -> None:
@@ -565,19 +585,67 @@ def _reminder_job_name(chat_id: int | str) -> str:
     return f"deposit_reminder_{chat_id}"
 
 
+def register_deposit_reminder_runtime(app: Any) -> None:
+    """Store Application for cancel_deposit_reminder_for_chat outside handlers."""
+    global _deposit_reminder_app
+    _deposit_reminder_app = app
+
+
+def _chat_has_payment_bound_since(chat_id: int, since: datetime) -> bool:
+    """True if any payment was bound to this GC at or after since (UTC)."""
+    since_utc = since if since.tzinfo else since.replace(tzinfo=timezone.utc)
+    with get_db() as session:
+        for model in _PAYMENT_BOUND_MODELS:
+            row = (
+                session.query(model)
+                .filter(
+                    model.telegram_chat_id == int(chat_id),
+                    model.bound_at.isnot(None),
+                    model.bound_at >= since_utc,
+                )
+                .first()
+            )
+            if row is not None:
+                return True
+    return False
+
+
+def _parse_scheduled_at(job_data: dict | None) -> datetime | None:
+    raw = (job_data or {}).get("scheduled_at")
+    if not raw:
+        return None
+    try:
+        scheduled_at = datetime.fromisoformat(str(raw))
+    except (ValueError, TypeError):
+        return None
+    if scheduled_at.tzinfo is None:
+        return scheduled_at.replace(tzinfo=timezone.utc)
+    return scheduled_at
+
+
 async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Job queue callback: delete deposit instructions and nudge the customer."""
-    chat_id = context.job.chat_id
-    club_id = context.job.data.get("club_id") if context.job.data else None
-    _PENDING_DEPOSIT_REMINDERS.pop(int(chat_id), None)
+    chat_id = int(context.job.chat_id)
+    job_data = context.job.data or {}
+    club_id = job_data.get("club_id")
+    _PENDING_DEPOSIT_REMINDERS.pop(chat_id, None)
 
-    tracked_count = len(_DEPOSIT_INFO_MESSAGE_IDS.get(int(chat_id), []))
+    scheduled_at = _parse_scheduled_at(job_data)
+    if scheduled_at and _chat_has_payment_bound_since(chat_id, scheduled_at):
+        logger.info(
+            "deposit_reminder skipped chat_id=%s payment bound since schedule",
+            chat_id,
+        )
+        await _delete_deposit_info_messages(context.bot, chat_id)
+        return
+
+    tracked_count = len(_DEPOSIT_INFO_MESSAGE_IDS.get(chat_id, []))
     logger.info(
         "deposit_reminder firing chat_id=%s tracked_messages=%s",
         chat_id,
         tracked_count,
     )
-    await _delete_deposit_info_messages(context.bot, int(chat_id))
+    await _delete_deposit_info_messages(context.bot, chat_id)
 
     methods = get_deposit_method_names(club_id) if club_id else []
     method_list = ", ".join(methods) if methods else ""
@@ -614,7 +682,10 @@ def _schedule_deposit_reminder(
             _deposit_reminder_callback,
             when=DEPOSIT_REMINDER_SECONDS,
             chat_id=int(chat_id),
-            data={"club_id": club_id},
+            data={
+                "club_id": club_id,
+                "scheduled_at": datetime.now(timezone.utc).isoformat(),
+            },
             name=name,
         )
         if user_id:
@@ -631,20 +702,42 @@ def _schedule_deposit_reminder(
         )
 
 
-def _cancel_deposit_reminder(context: ContextTypes.DEFAULT_TYPE, chat_id: int | str) -> None:
-    """Cancel any pending deposit follow-up reminder for a chat."""
+def cancel_deposit_reminder_for_chat(
+    chat_id: int | str,
+    *,
+    job_queue: Any | None = None,
+) -> None:
+    """Cancel pending deposit follow-up for a chat (handlers, payment notify, etc.)."""
     _PENDING_DEPOSIT_REMINDERS.pop(int(chat_id), None)
     _DEPOSIT_INFO_MESSAGE_IDS.pop(int(chat_id), None)
+    queue = job_queue
+    if queue is None and _deposit_reminder_app is not None:
+        queue = getattr(_deposit_reminder_app, "job_queue", None)
+    if queue is None:
+        return
     try:
-        for job in context.job_queue.get_jobs_by_name(_reminder_job_name(chat_id)):
+        for job in queue.get_jobs_by_name(_reminder_job_name(chat_id)):
             job.schedule_removal()
     except Exception:
         pass
 
 
+def _cancel_deposit_reminder(context: ContextTypes.DEFAULT_TYPE, chat_id: int | str) -> None:
+    """Cancel any pending deposit follow-up reminder for a chat."""
+    cancel_deposit_reminder_for_chat(chat_id, job_queue=context.job_queue)
+
+
 def cancel_deposit_reminder(context: ContextTypes.DEFAULT_TYPE, chat_id: int | str) -> None:
     """Public entry: cancel pending deposit follow-up reminder for a chat."""
     _cancel_deposit_reminder(context, chat_id)
+
+
+def _can_cancel_reminder_as_staff(user_id: int, club_id: int) -> bool:
+    if is_club_staff(user_id, club_id):
+        return True
+    if user_id in ADMIN_USER_IDS:
+        return get_club_allows_admin_commands(club_id)
+    return False
 
 
 async def cancel_deposit_reminder_on_customer_msg(
@@ -658,6 +751,36 @@ async def cancel_deposit_reminder_on_customer_msg(
     if expected_user is None:
         return
     if update.effective_user.id != expected_user:
+        return
+    _cancel_deposit_reminder(context, chat_id)
+
+
+async def cancel_deposit_reminder_on_group_activity(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Group handler (group=2): cancel on payment-received bot post or staff 'added' message."""
+    if not update.message or not update.effective_chat or not update.effective_user:
+        return
+    text = (update.message.text or update.message.caption or "").strip()
+    if not text:
+        return
+
+    chat_id = update.effective_chat.id
+    lowered = text.lower()
+    user = update.effective_user
+
+    if user.is_bot:
+        if _PAYMENT_RECEIVED_SNIPPET in lowered:
+            _cancel_deposit_reminder(context, chat_id)
+        return
+
+    if "added" not in lowered:
+        return
+
+    club_id = get_club_for_chat(chat_id)
+    if club_id is None:
+        return
+    if not _can_cancel_reminder_as_staff(user.id, club_id):
         return
     _cancel_deposit_reminder(context, chat_id)
 

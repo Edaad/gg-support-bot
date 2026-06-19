@@ -52,8 +52,10 @@ def _configure_worker_logging() -> None:
 
 
 async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
+    from bot.handlers.deposit import register_deposit_reminder_runtime
     from bot.services.mtproto_track_contact import set_contact_save_notify_bot
 
+    register_deposit_reminder_runtime(app)
     set_contact_save_notify_bot(app.bot)
 
     if test_mode:
@@ -237,12 +239,22 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     )
 
     # Cancel deposit follow-up reminders when the depositing customer responds
-    from bot.handlers.deposit import cancel_deposit_reminder_on_customer_msg
+    from bot.handlers.deposit import (
+        cancel_deposit_reminder_on_customer_msg,
+        cancel_deposit_reminder_on_group_activity,
+    )
 
     app.add_handler(
         MessageHandler(
             filters.ChatType.GROUPS & filters.ALL,
             cancel_deposit_reminder_on_customer_msg,
+        ),
+        group=2,
+    )
+    app.add_handler(
+        MessageHandler(
+            filters.ChatType.GROUPS & filters.ALL,
+            cancel_deposit_reminder_on_group_activity,
         ),
         group=2,
     )

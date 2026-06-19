@@ -102,6 +102,9 @@ async def notify_player_group_payment_received(
             is_test,
             token[-8:] if len(token) >= 8 else token,
         )
+        from bot.handlers.deposit import cancel_deposit_reminder_for_chat
+
+        cancel_deposit_reminder_for_chat(int(telegram_chat_id))
         return True
 
     logger.exception(
