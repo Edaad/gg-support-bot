@@ -6,6 +6,7 @@ import {
   bindCashAppPayment,
   bindPayPalPayment,
   bindCryptoPayment,
+  downloadAuditExport,
   fetchAllStripeCustomers,
   fetchAllStripeSessions,
   fetchAllVenmoPayers,
@@ -124,6 +125,8 @@ export default function Payments({ token }: { token: string }) {
   const searchId = useId()
   const fromDateId = useId()
   const toDateId = useId()
+  const auditFromDateId = useId()
+  const auditToDateId = useId()
   const bindTitleId = useId()
 
   const [tab, setTab] = useState<Tab>('Payments')
@@ -138,6 +141,9 @@ export default function Payments({ token }: { token: string }) {
   const [appliedSearch, setAppliedSearch] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
+  const [auditFromDate, setAuditFromDate] = useState('')
+  const [auditToDate, setAuditToDate] = useState('')
+  const [auditExporting, setAuditExporting] = useState(false)
   const [appliedFrom, setAppliedFrom] = useState('')
   const [appliedTo, setAppliedTo] = useState('')
 
@@ -628,37 +634,6 @@ export default function Payments({ token }: { token: string }) {
     }
   }
 
-  const exportCustomersCsv = async () => {
-    if (clubId == null) return
-    setExporting(true)
-    setErr('')
-    try {
-      const rows = await fetchAllStripeCustomers(token, {
-        clubId,
-        q: appliedSearch || undefined,
-      })
-      if (rows.length === 0) {
-        setErr('No customers to export for the selected filters.')
-        return
-      }
-      downloadCsv(
-        `customers-${slugForFilename(clubName)}.csv`,
-        ['group_title', 'gg_player_id', 'gg_nickname', 'total_deposited_usd', 'created_at'],
-        rows.map((row) => [
-          row.group_title || '',
-          row.gg_player_id || '',
-          row.gg_nickname || '',
-          String(row.total_deposited_usd),
-          row.created_at,
-        ]),
-      )
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Export failed.')
-    } finally {
-      setExporting(false)
-    }
-  }
-
   const exportManualPayersCsv = async () => {
     if (clubId == null || !manualProvider) return
     setExporting(true)
@@ -707,6 +682,57 @@ export default function Payments({ token }: { token: string }) {
     }
   }
 
+  const exportCustomersCsv = async () => {
+    if (clubId == null) return
+    setExporting(true)
+    setErr('')
+    try {
+      const rows = await fetchAllStripeCustomers(token, {
+        clubId,
+        q: appliedSearch || undefined,
+      })
+      if (rows.length === 0) {
+        setErr('No customers to export for the selected filters.')
+        return
+      }
+      downloadCsv(
+        `customers-${slugForFilename(clubName)}.csv`,
+        ['group_title', 'gg_player_id', 'gg_nickname', 'total_deposited_usd', 'created_at'],
+        rows.map((row) => [
+          row.group_title || '',
+          row.gg_player_id || '',
+          row.gg_nickname || '',
+          String(row.total_deposited_usd),
+          row.created_at,
+        ]),
+      )
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Export failed.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const exportAuditXlsx = async () => {
+    if (!auditFromDate || !auditToDate) {
+      setErr('Select both from and to dates for the audit export.')
+      return
+    }
+    if (auditFromDate > auditToDate) {
+      setErr('From date must be on or before to date.')
+      return
+    }
+    setAuditExporting(true)
+    setErr('')
+    try {
+      await downloadAuditExport(token, auditFromDate, auditToDate)
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Audit export failed.')
+    } finally {
+      setAuditExporting(false)
+    }
+  }
+
   const customerPages = Math.max(1, Math.ceil(customerTotal / PAGE_SIZE))
   const sessionPages = Math.max(1, Math.ceil(sessionTotal / PAGE_SIZE))
   const venmoPaymentPages = Math.max(1, Math.ceil(venmoPaymentTotal / PAGE_SIZE))
@@ -715,6 +741,48 @@ export default function Payments({ token }: { token: string }) {
   return (
     <div>
       <h1 className="mb-6 text-2xl font-bold">Payments</h1>
+
+      <section className="panel mb-6">
+        <h2 className="mb-2 text-lg font-semibold text-ink">Export audit data</h2>
+        <p className="mb-4 text-sm text-ink-muted">
+          Download all deposit transactions across every club for a date range. One XLSX file with
+          a tab per payment provider (Stripe, Venmo, Zelle, Cash App, PayPal, Crypto).
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label htmlFor={auditFromDateId} className="label-field-xs">
+              From
+            </label>
+            <input
+              id={auditFromDateId}
+              type="date"
+              value={auditFromDate}
+              onChange={(e) => setAuditFromDate(e.target.value)}
+              className="input-field-sm"
+            />
+          </div>
+          <div>
+            <label htmlFor={auditToDateId} className="label-field-xs">
+              To
+            </label>
+            <input
+              id={auditToDateId}
+              type="date"
+              value={auditToDate}
+              onChange={(e) => setAuditToDate(e.target.value)}
+              className="input-field-sm"
+            />
+          </div>
+          <button
+            type="button"
+            disabled={auditExporting || !auditFromDate || !auditToDate}
+            onClick={() => void exportAuditXlsx()}
+            className="btn-primary-sm disabled:opacity-40"
+          >
+            {auditExporting ? 'Exporting…' : 'Export XLSX'}
+          </button>
+        </div>
+      </section>
 
       <div className="mb-6 flex flex-wrap items-end gap-4">
         <div>

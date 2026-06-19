@@ -6,11 +6,13 @@ from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from api.auth import get_current_admin
+from api.audit_export import build_audit_workbook
 from api.payments_helpers import (
     apply_analytics_chat_exclusion,
     apply_customer_search,
@@ -242,6 +244,35 @@ def list_providers():
         PaymentProviderRead(id="paypal", label="PayPal"),
         PaymentProviderRead(id="crypto", label="Crypto"),
     ]
+
+
+@router.get("/audit-export")
+def audit_export(
+    from_dt: str = Query(..., alias="from"),
+    to_dt: str = Query(..., alias="to"),
+    db: Session = Depends(get_db_dependency),
+):
+    parsed_from = _parse_dt(from_dt)
+    parsed_to = _parse_dt(to_dt)
+    if parsed_from is None or parsed_to is None:
+        raise HTTPException(400, "Both from and to dates are required.")
+    if parsed_from > parsed_to:
+        raise HTTPException(400, "from must be on or before to.")
+
+    try:
+        content = build_audit_workbook(db, parsed_from, parsed_to)
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
+        raise
+
+    from_label = from_dt.strip()[:10]
+    to_label = to_dt.strip()[:10]
+    filename = f"audit-export-{from_label}-{to_label}.xlsx"
+    return StreamingResponse(
+        iter([content]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/stripe/methods", response_model=List[StripeMethodOptionRead])

@@ -952,3 +952,57 @@ export async function fetchAllVenmoPayers(
   }
   return all
 }
+
+function filenameFromContentDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback
+  const match = /filename="([^"]+)"/.exec(header)
+  return match?.[1] ?? fallback
+}
+
+export async function downloadAuditExport(
+  token: string,
+  from: string,
+  to: string,
+): Promise<void> {
+  const q = new URLSearchParams()
+  q.set('from', `${from}T00:00:00Z`)
+  q.set('to', `${to}T23:59:59Z`)
+
+  const res = await fetch(apiUrl(`${BASE}/audit-export?${q}`), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
+  if (res.status === 401) {
+    localStorage.removeItem('token')
+    window.location.href = '/'
+    throw new Error('Unauthorized')
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: unknown }
+    let msg: string | undefined
+    const d = body.detail
+    if (typeof d === 'string') msg = d
+    else if (Array.isArray(d))
+      msg = d
+        .map((x) =>
+          typeof x === 'object' && x != null && 'msg' in x
+            ? String((x as { msg: unknown }).msg)
+            : String(x),
+        )
+        .join('; ')
+    else if (d != null) msg = String(d)
+    throw new Error(msg || `HTTP ${res.status}`)
+  }
+
+  const blob = await res.blob()
+  const filename = filenameFromContentDisposition(
+    res.headers.get('Content-Disposition'),
+    `audit-export-${from}-${to}.xlsx`,
+  )
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
