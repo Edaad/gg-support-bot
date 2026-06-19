@@ -24,15 +24,15 @@ class ResolveGroupChatNotificationUrlTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(url, "https://t.me/c/1234567890")
         bot_mock.assert_not_called()
 
-    async def test_legacy_basic_id_returns_supergroup_variant_url(self):
+    async def test_legacy_basic_id_returns_none(self):
         url = await gcil.resolve_group_chat_notification_url(
             telegram_chat_id=-1234567890,
             group_title="RT / 1234 / Player",
             club_id=2,
         )
-        self.assertEqual(url, "https://t.me/c/1234567890")
+        self.assertIsNone(url)
 
-    async def test_legacy_basic_id_returns_member_link_not_invite(self):
+    async def test_legacy_basic_id_does_not_use_invite_or_synthetic_t_me_c(self):
         with patch.object(
             gcil,
             "export_invite_link_via_bot_api",
@@ -43,7 +43,7 @@ class ResolveGroupChatNotificationUrlTestCase(unittest.IsolatedAsyncioTestCase):
                 group_title="GTO / 5155 / Player",
                 club_id=4,
             )
-        self.assertEqual(url, "https://t.me/c/5287778428")
+        self.assertIsNone(url)
         bot_mock.assert_not_called()
 
     async def test_empty_title_returns_none(self):

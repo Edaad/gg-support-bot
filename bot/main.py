@@ -69,6 +69,23 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
 
         start_listener_background(app.bot.token)
 
+    if not test_mode:
+        from club_gc_settings import is_migration_recovery_enabled
+
+        if is_migration_recovery_enabled():
+            from bot.services.migration_recovery import schedule_migration_recovery_job
+
+            schedule_migration_recovery_job(app)
+
+        from club_gc_settings import is_migration_recovery_slack_summary_enabled
+
+        if is_migration_recovery_slack_summary_enabled():
+            from bot.services.migration_recovery import (
+                schedule_migration_recovery_slack_summary_job,
+            )
+
+            schedule_migration_recovery_slack_summary_job(app)
+
 
 async def _post_shutdown_dm_gc_listener(app, *, test_mode: bool = False):
     if test_mode:
@@ -148,6 +165,12 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(CommandHandler("whoami", whoami_handler))
     app.add_handler(CommandHandler("fileid", fileid_handler))
     app.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, fileid_photo_handler))
+
+    from bot.handlers.whosnext import whosnext_handler
+
+    app.add_handler(
+        CommandHandler("whosnext", whosnext_handler, filters=filters.ChatType.PRIVATE)
+    )
     app.add_handler(CommandHandler("mycmds", mycmds_handler))
     app.add_handler(CommandHandler("delete", delete_handler))
     app.add_handler(CommandHandler("bypass", bypass_handler))

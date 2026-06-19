@@ -26,12 +26,19 @@ from bot.services.mtproto_group_create import (
     authenticate_mtproto_password,
     send_code_for_phone,
 )
+from bot.services.mtproto_club_health import resolve_club_session_status
 from bot.services.mtproto_session_db import (
     delete_session_for_club,
     load_session_string_for_club,
     snapshot_disk_session_to_database,
 )
-from club_gc_settings import CLUB_GC_CONFIG, ClubGcConfig, get_tg_mtproto_credentials
+from club_gc_settings import (
+    CLUB_GC_CONFIG,
+    ClubGcConfig,
+    get_tg_mtproto_credentials,
+    is_dm_gc_listener_enabled,
+    is_mtproto_enabled,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,20 +67,31 @@ async def _require_api_credentials() -> None:
 async def list_gc_mtproto_clubs():
     await _require_api_credentials()
     configs = list(CLUB_GC_CONFIG.values())
-    # Check session presence via DB only — never connect with the production session
-    # from the web dyno (different IP from worker → AuthKeyDuplicatedError).
-    flags = await asyncio.gather(
+    # Never connect with the production session from the web dyno (AuthKeyDuplicatedError).
+    # Session blob presence + worker-reported health come from Postgres only.
+    blobs = await asyncio.gather(
         *(asyncio.to_thread(load_session_string_for_club, c.club_key) for c in configs)
     )
-    return [
-        GcMtProtoClubRead(
-            club_key=c.club_key,
-            club_display_name=c.club_display_name,
-            session_authorized=bool(f),
-            phone_configured=c.mtproto_phone_number is not None,
+    mtproto_on = is_mtproto_enabled()
+    listener_on = is_dm_gc_listener_enabled()
+    rows: list[GcMtProtoClubRead] = []
+    for cfg, blob in zip(configs, blobs):
+        status = await asyncio.to_thread(
+            resolve_club_session_status,
+            cfg.club_key,
+            session_stored=bool(blob),
+            mtproto_enabled=mtproto_on,
+            listener_enabled=listener_on,
         )
-        for c, f in zip(configs, flags)
-    ]
+        rows.append(
+            GcMtProtoClubRead(
+                club_key=cfg.club_key,
+                club_display_name=cfg.club_display_name,
+                phone_configured=cfg.mtproto_phone_number is not None,
+                **status,
+            )
+        )
+    return rows
 
 
 @router.delete("/session/{club_key}", status_code=204)

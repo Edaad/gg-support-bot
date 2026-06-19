@@ -71,6 +71,97 @@ def format_telegram_user_display(user: Any) -> tuple[str, str | None]:
     return display, username
 
 
+def is_eligible_player_user(
+    user: Any,
+    *,
+    self_id: int | None,
+    invite_ids: frozenset[int] | set[int],
+    invite_usernames: frozenset[str],
+    skip_operators: frozenset[int] | set[int],
+    skip_dashboard_admins: frozenset[int] | set[int],
+) -> bool:
+    """True when ``user`` is a non-bot player candidate (not staff/support)."""
+    if not user or getattr(user, "bot", False):
+        return False
+    uid = getattr(user, "id", None)
+    if uid is None:
+        return False
+    uid_int = int(uid)
+    if self_id is not None and uid_int == self_id:
+        return False
+    if uid_int in invite_ids:
+        return False
+    if invite_usernames:
+        un = getattr(user, "username", None)
+        key = un.strip().lower().lstrip("@") if isinstance(un, str) and un.strip() else ""
+        if key and key in invite_usernames:
+            return False
+    if uid_int in skip_operators:
+        return False
+    if uid_int in skip_dashboard_admins:
+        return False
+    return True
+
+
+async def _eligible_player_filter_context(
+    client: Any,
+    cfg: ClubGcConfig,
+    *,
+    self_id: int | None,
+) -> tuple[set[int], frozenset[str], frozenset[int], frozenset[int]]:
+    invite_ids = await _resolve_invitee_user_ids(client, cfg)
+    invite_usernames = frozenset(
+        m.strip().lower().lstrip("@")
+        for m in (list(get_gc_users_to_add(cfg)) + ([cfg.bot_account] if cfg.bot_account else []))
+        if isinstance(m, str) and m.strip()
+    )
+    skip_operators = frozenset(gc_mtproto_operator_telegram_user_ids())
+    skip_dashboard_admins = frozenset(int(x) for x in ADMIN_USER_IDS)
+    return invite_ids, invite_usernames, skip_operators, skip_dashboard_admins
+
+
+async def find_latest_eligible_message_sender(
+    client: Any,
+    channel_ent: Any,
+    cfg: ClubGcConfig,
+    *,
+    self_id: int | None,
+    limit: int = 50,
+) -> Any | None:
+    """Return the sender of the newest message from an eligible non-support human."""
+    invite_ids, invite_usernames, skip_operators, skip_dashboard_admins = (
+        await _eligible_player_filter_context(client, cfg, self_id=self_id)
+    )
+
+    async def scan():
+        async for msg in client.iter_messages(channel_ent, limit=max(1, limit)):
+            if getattr(msg, "out", False):
+                continue
+            if not getattr(msg, "sender_id", None):
+                continue
+            try:
+                sender = await msg.get_sender()
+            except Exception as e:
+                logger.warning(
+                    "group_player: get_sender failed msg_id=%s: %s",
+                    getattr(msg, "id", "?"),
+                    type(e).__name__,
+                )
+                continue
+            if is_eligible_player_user(
+                sender,
+                self_id=self_id,
+                invite_ids=invite_ids,
+                invite_usernames=invite_usernames,
+                skip_operators=skip_operators,
+                skip_dashboard_admins=skip_dashboard_admins,
+            ):
+                return sender
+        return None
+
+    return await _with_single_flood_retry("iter_messages_eligible_sender", scan)
+
+
 async def collect_eligible_player_participants(
     client: Any,
     channel_ent: Any,
@@ -79,39 +170,23 @@ async def collect_eligible_player_participants(
     self_id: int | None,
 ) -> list[Any]:
     """All non-bot player candidates after staff/operator exclusions (see ``find_sole_player_participant``)."""
-    invite_ids = await _resolve_invitee_user_ids(client, cfg)
-    invite_usernames = frozenset(
-        m.strip().lower().lstrip("@")
-        for m in (list(get_gc_users_to_add(cfg)) + ([cfg.bot_account] if cfg.bot_account else []))
-        if isinstance(m, str) and m.strip()
+    invite_ids, invite_usernames, skip_operators, skip_dashboard_admins = (
+        await _eligible_player_filter_context(client, cfg, self_id=self_id)
     )
-    skip_operators = gc_mtproto_operator_telegram_user_ids()
-    skip_dashboard_admins = frozenset(int(x) for x in ADMIN_USER_IDS)
 
     candidates: list[Any] = []
 
     async def collect():
         async for u in client.iter_participants(channel_ent):
-            if not u or getattr(u, "bot", False):
-                continue
-            uid = getattr(u, "id", None)
-            if uid is None:
-                continue
-            uid_int = int(uid)
-            if self_id is not None and uid_int == self_id:
-                continue
-            if uid_int in invite_ids:
-                continue
-            if invite_usernames:
-                un = getattr(u, "username", None)
-                key = un.strip().lower().lstrip("@") if isinstance(un, str) and un.strip() else ""
-                if key and key in invite_usernames:
-                    continue
-            if uid_int in skip_operators:
-                continue
-            if uid_int in skip_dashboard_admins:
-                continue
-            candidates.append(u)
+            if is_eligible_player_user(
+                u,
+                self_id=self_id,
+                invite_ids=invite_ids,
+                invite_usernames=invite_usernames,
+                skip_operators=skip_operators,
+                skip_dashboard_admins=skip_dashboard_admins,
+            ):
+                candidates.append(u)
 
     await _with_single_flood_retry("iter_participants_sole_player", collect)
     return candidates

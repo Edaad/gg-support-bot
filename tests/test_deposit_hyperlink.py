@@ -98,8 +98,8 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         create_session.assert_called_once()
 
     async def test_tier_group_checkout_overrides_method(self):
-        chat = SimpleNamespace(send_message=AsyncMock())
-        message = SimpleNamespace(chat=chat)
+        chat = SimpleNamespace(send_message=AsyncMock(), id=-100123)
+        message = SimpleNamespace(chat=chat, message_id=42)
         query = SimpleNamespace(
             message=message,
             edit_message_text=AsyncMock(),
@@ -136,7 +136,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
             ok = await dep._send_deposit_method_response(
                 query,
                 context,
-                amount=dep.Decimal("50"),
+                amount=dep.Decimal("100"),
                 display_name="Cashapp",
                 method_id=123,
                 method_slug="cashapp",
@@ -148,6 +148,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         create_session.assert_called_once()
         self.assertEqual(create_session.call_args.kwargs.get("checkout_min_usd"), 20)
         self.assertEqual(create_session.call_args.kwargs.get("checkout_max_usd"), 100)
+        self.assertEqual(create_session.call_args.kwargs.get("checkout_preset_usd"), dep.Decimal("100"))
 
     async def test_stripe_checkout_uses_dashboard_min_max(self):
         chat = SimpleNamespace(send_message=AsyncMock())

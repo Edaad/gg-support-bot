@@ -144,7 +144,7 @@ Deploy runs **`npm run build` for `dashboard/` automatically** via the root `pac
 
 There are two triggers:
 
-1. **Bot command** — Authorized operators (per-club `command_admin_user_id` in [`club_gc_settings.py`](club_gc_settings.py)) send **`/gc` in private chat with the bot** to create a **generic** support megagroup (no target player row).
+1. **Bot command** — Authorized operators (per-club `command_admin_user_id` in [`club_gc_settings.py`](club_gc_settings.py)) send **`/gc @username`** or **`/gc <telegram_user_id>`** in private chat with the bot to create a **player-bound** support megagroup (binds `support_group_chats`, DMs the player). Plain **`/gc`** creates a generic group (no player row).
 2. **Admin DM** — By default each club’s **MTProto user** session runs `/gc` when a **player DMs that account** (any incoming private message), and when staff send **`/gc` in a private DM with a player** (outgoing; command is deleted). One megagroup per `(club, player)` is created or reused, the player gets a DM, and metadata is stored on `support_group_chats`. Set **`GC_DM_GC_LISTENER_ENABLED=false`** to turn this off. **Do not** run two workers with the same Telethon session.
 
 Shared setup:

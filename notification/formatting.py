@@ -14,6 +14,8 @@ UNBOUND_GROUP_CHAT_LINE = (
     "Group Chat: Unbound — reply to this message with the group title to bind"
 )
 
+AMBIGUOUS_GROUP_CHAT_LINE = "Group Chat: Unbound — select group below"
+
 
 def format_player_id_line(group_title: str | None) -> str | None:
     """Tap-to-copy Player ID line for HTML payment notifications."""
@@ -41,8 +43,11 @@ def format_group_chat_line(
         url = (group_chat_url or "").strip() or None
         if url and is_joinable_invite_url(url):
             url = None
-        if url is None:
-            url = notification_group_chat_url(int(telegram_chat_id))
+        canonical = notification_group_chat_url(int(telegram_chat_id))
+        if canonical is not None:
+            url = canonical
+        elif url and "t.me/c/" in url.lower():
+            url = None
         if url:
             safe_url = html.escape(url, quote=True)
             return f'Group Chat: <a href="{safe_url}">{safe_title}</a>'

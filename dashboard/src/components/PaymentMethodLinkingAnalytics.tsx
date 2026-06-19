@@ -33,6 +33,11 @@ const METHOD_LABELS: Record<
     accountColumn: 'Handle',
     accountLabel: 'Cash App handle',
   },
+  paypal: {
+    section: 'PayPal group linking',
+    accountColumn: 'Email',
+    accountLabel: 'PayPal email',
+  },
 }
 
 function boundViaLabel(via: string): string {

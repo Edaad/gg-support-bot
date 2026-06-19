@@ -253,6 +253,64 @@ class CashAppBindResponse(BaseModel):
     payment: Optional[CashAppPaymentRead] = None
 
 
+class PayPalPaymentRead(BaseModel):
+    id: int
+    payer_name: str
+    paypal_email: str
+    amount_cents: int
+    amount_usd: Decimal
+    paid_at: Optional[str] = None
+    group_title: Optional[str] = None
+    gg_player_id: Optional[str] = None
+    gg_nickname: Optional[str] = None
+    club_id: Optional[int] = None
+    telegram_chat_id: Optional[int] = None
+    status: str
+    auto_bound: bool
+    is_test: bool
+    created_at: datetime
+    bound_at: Optional[datetime] = None
+
+
+class PayPalPaymentListResponse(BaseModel):
+    items: list[PayPalPaymentRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class PayPalPayerRead(BaseModel):
+    payer_name: str
+    paypal_email: str
+    group_title: Optional[str] = None
+    gg_player_id: Optional[str] = None
+    gg_nickname: Optional[str] = None
+    total_deposited_cents: int
+    total_deposited_usd: Decimal
+    payment_count: int
+    last_payment_at: Optional[datetime] = None
+
+
+class PayPalPayerListResponse(BaseModel):
+    items: list[PayPalPayerRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class PayPalBindRequest(BaseModel):
+    group_title: str
+
+
+class PayPalBindResponse(BaseModel):
+    ok: bool
+    error: Optional[str] = None
+    group_title: Optional[str] = None
+    telegram_chat_id: Optional[int] = None
+    club_id: Optional[int] = None
+    payment: Optional[PayPalPaymentRead] = None
+
+
 class ZellePaymentSummaryByClub(BaseModel):
     club_id: Optional[int] = None
     club_name: Optional[str] = None
@@ -391,6 +449,7 @@ class BindAttemptRead(BaseModel):
     venmo_payment_id: Optional[int] = None
     zelle_payment_id: Optional[int] = None
     cashapp_payment_id: Optional[int] = None
+    paypal_payment_id: Optional[int] = None
     group_title: Optional[str] = None
     created_at: datetime
     expires_at: datetime

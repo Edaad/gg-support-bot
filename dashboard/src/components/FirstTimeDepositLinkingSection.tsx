@@ -21,11 +21,12 @@ const BIND_VERIFICATION_OPTIONS: {
   },
 ]
 
-const BINDABLE_DEPOSIT_SLUGS = new Set(['venmo', 'zelle', 'cashapp'])
+const BINDABLE_DEPOSIT_SLUGS = new Set(['venmo', 'zelle', 'cashapp', 'paypal'])
 
 const DOC_LINK_BY_SLUG: Record<string, string> = {
   zelle: 'docs/ZELLE_PAYMENTS.md',
   cashapp: 'docs/CASHAPP_PAYMENTS.md',
+  paypal: 'docs/PAYPAL_PAYMENTS.md',
   venmo: 'docs/VENMO_GROUP_BINDING.md',
 }
 

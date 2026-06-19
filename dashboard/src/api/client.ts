@@ -116,8 +116,35 @@ export interface GcMtProtoClub {
   club_key: string
   club_display_name: string
   session_authorized: boolean
+  session_stored: boolean
   phone_configured: boolean
+  worker_status: string
+  worker_status_detail?: string | null
+  worker_checked_at?: string | null
 }
+
+function clubStatusLabel(c: GcMtProtoClub): string {
+  if (c.session_authorized) return ' — connected on worker'
+  if (!c.session_stored) return ''
+  switch (c.worker_status) {
+    case 'auth_key_duplicated':
+      return ' — session invalidated (duplicate key)'
+    case 'unauthorized':
+      return ' — session expired'
+    case 'mtproto_disabled':
+      return ' — MTProto paused on worker'
+    case 'disconnected':
+      return ' — stored, worker disconnected'
+    case 'error':
+      return ' — worker error'
+    case 'unknown':
+      return ' — stored, status pending'
+    default:
+      return ' — not active on worker'
+  }
+}
+
+export { clubStatusLabel }
 
 export const gcMtprotoListClubs = (token: string) =>
   request<GcMtProtoClub[]>('/gc/mtproto/clubs', {}, token)

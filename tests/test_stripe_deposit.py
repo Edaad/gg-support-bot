@@ -106,6 +106,26 @@ class StripeDepositTestCase(unittest.TestCase):
         self.assertEqual(max_c, sd.STRIPE_CHECKOUT_MAX_CENTS)
         self.assertEqual(preset, sd.STRIPE_CHECKOUT_PRESET_CENTS)
 
+    def test_resolve_checkout_amount_cents_from_deposit_amount(self):
+        min_c, max_c, preset = sd.resolve_checkout_amount_cents(
+            min_usd=20, max_usd=100, preset_usd=100
+        )
+        self.assertEqual(min_c, 2000)
+        self.assertEqual(max_c, 10000)
+        self.assertEqual(preset, 10000)
+
+    def test_resolve_checkout_amount_cents_preset_clamped_to_max(self):
+        _, _, preset = sd.resolve_checkout_amount_cents(
+            min_usd=20, max_usd=100, preset_usd=150
+        )
+        self.assertEqual(preset, 10000)
+
+    def test_resolve_checkout_amount_cents_preset_clamped_to_min(self):
+        _, _, preset = sd.resolve_checkout_amount_cents(
+            min_usd=20, max_usd=100, preset_usd=10
+        )
+        self.assertEqual(preset, 2000)
+
     def setUp(self):
         self.env_patch = patch.dict(
             os.environ,
@@ -176,6 +196,36 @@ class StripeDepositTestCase(unittest.TestCase):
         self.assertEqual(
             price_kwargs["custom_unit_amount"]["preset"], sd.STRIPE_CHECKOUT_PRESET_CENTS
         )
+
+    def test_checkout_session_uses_deposit_preset(self):
+        store = _make_store_with_customer("cus_existing")
+        product, price, customer, checkout = _stripe_mocks()
+
+        with (
+            self._db(store),
+            self._club_mocks(),
+            patch.object(sd.stripe.Customer, "create", return_value=customer),
+            patch.object(sd.stripe.Product, "create", return_value=product),
+            patch.object(sd.stripe.Price, "create", return_value=price) as price_create,
+            patch.object(
+                sd.stripe.checkout.Session,
+                "create",
+                return_value=checkout,
+            ),
+        ):
+            sd.create_stripe_checkout_session(
+                telegram_chat_id=CHAT_ID,
+                club_id=CLUB_ID,
+                group_title=GROUP_TITLE,
+                checkout_min_usd=20,
+                checkout_max_usd=100,
+                checkout_preset_usd=100,
+            )
+
+        price_kwargs = price_create.call_args.kwargs
+        self.assertEqual(price_kwargs["custom_unit_amount"]["minimum"], 2000)
+        self.assertEqual(price_kwargs["custom_unit_amount"]["maximum"], 10000)
+        self.assertEqual(price_kwargs["custom_unit_amount"]["preset"], 10000)
 
     def test_new_customer_creation(self):
         """B: Create one Stripe Customer and attach checkout to it."""

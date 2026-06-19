@@ -10,9 +10,34 @@ Venmo Confirm Zaps POST payment details to this API. The **notification bot** (`
 
 1. **Zapier** — Gmail trigger + formatters + Glide (unchanged) + **POST** to `/api/venmo/payments`
 2. **API** — insert `venmo_payments`, auto-bind repeat payers, send Telegram notification
-3. **Notification bot** — staff reply with group title → bind + edit notification
+3. **Notification bot** — staff reply with group title → bind + edit notification (with confirm when rebinding or when multiple candidates exist)
 
-Repeat payers (`venmo_payer_bindings`) auto-bind to their last group by **normalized payer name** (shared Venmo accounts rotate across clubs, so recipient `@handle` is not part of the lookup). Display always uses the **live** group title from `groups.name` via `get_group_title_for_chat`.
+Repeat payers (`venmo_payer_bindings`) can have **multiple group candidates** per normalized payer name. **One candidate** → auto-bind at ingest (unchanged). **Two or more** → payment stays unbound; staff use inline buttons on the notification (Confirm / Back). Replying to an already-bound notification with a **different** group title no longer silently rebinds — the bot offers Reassign or Add as possible user, each with confirm.
+
+Run `DATABASE_URL=... python migrate_payment_bind_multi_candidates.py` after deploy to allow multiple rows per payer/wallet identity.
+
+## Player group confirmation (auto-bind only)
+
+When a payment **auto-binds** to a support group at ingest (repeat payer, setup amount, or memo match), the **support bot** (`TELEGRAM_BOT_TOKEN`) posts in that GC:
+
+```text
+We have received your payment for $50, chips will be loaded to your account shortly!!
+```
+
+Amount is whole dollars. **Manual** staff binds (notification reply or dashboard) do **not** send this message — settlement happens before binding. The same auto-bind behavior applies to Zelle, Crypto, Cash App, and PayPal ingest.
+
+Test payments (`test: true` on ingest) try `TELEGRAM_TEST_BOT_TOKEN` first, then fall back to `TELEGRAM_BOT_TOKEN`. Production payments try production first, then test. Set both tokens on the **web/API** dyno.
+
+### Test multi-candidate workflow
+
+Candidate lookup is **scoped by test mode**: `test: true` ingest only considers test/staging groups (title ending in `/ TEST` or containing `@jz034`); production ingest excludes those groups. This lets you exercise the ambiguous-picker flow safely without touching real player bindings.
+
+1. Bind the same payer to two test groups (reply-bind or **Add another member** on a prior test notification), e.g. `CC / 4334-4433 / TEST` and `CC / 5555-5555 / TEST`.
+2. POST ingest with `"test": true` (duplicate test Zap or curl).
+3. Expect **Group Chat: Unbound — select group below** with inline buttons for the test groups only.
+4. Confirm via buttons; the notification edits to the bound test group.
+
+Run `migrate_payment_bind_multi_candidates.py` if you have not already (see [VENMO_GROUP_BINDING.md](VENMO_GROUP_BINDING.md)).
 
 ## Database tables
 

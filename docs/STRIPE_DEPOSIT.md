@@ -113,6 +113,8 @@ When a player **completes** checkout, the webhook **inserts** a row into `stripe
 
 Unpaid / expired checkouts are not stored. Idempotent — duplicate webhooks for the same `cs_…` are ignored.
 
+When checkout completes, the **support bot** also posts in the linked GC (same message as Venmo auto-bind): `We have received your payment for $N, chips will be loaded to your account shortly!!` Uses `TELEGRAM_BOT_TOKEN` on the API dyno.
+
 To remove legacy open rows: `python scripts/cleanup_stripe_open_sessions.py --apply`
 
 ## Missing payments on the dashboard

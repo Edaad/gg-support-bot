@@ -10,7 +10,11 @@ Before a support group can use a configured deposit method in `/deposit`, the ch
 - **Already linked:** `/deposit` → Venmo/Zelle shows normal deposit instructions.
 - **Another Venmo/Zelle account:** payment arrives unbound; staff bind it manually (same as any other unbound payment). No separate customer setup flow.
 
-A payer name can only be linked to one support group at a time. If that name is already linked elsewhere, setup is blocked and staff get a warning.
+A payer name can be linked to **multiple** support group candidates (same payer, different players). When exactly one candidate exists, ingest auto-binds as before. When two or more exist, the payment stays unbound and staff pick from inline buttons on the notification.
+
+**Test vs production:** Candidate lists are scoped by payment mode — `test: true` ingest only matches test/staging group titles (`/ TEST` or `@jz034`); production ingest excludes them. Use test groups to rehearse multi-candidate binding without affecting production payer rows.
+
+If that name is already linked elsewhere during first-time setup, setup is blocked and staff get a warning plus Reassign / Add possible user buttons on the unbound payment notification.
 
 Configure per deposit method in the dashboard (**Club → Deposit methods → Venmo/Zelle → First-time deposit linking**).
 
@@ -66,6 +70,7 @@ Migrations:
 DATABASE_URL=... python migrate_payment_method_bindings.py
 DATABASE_URL=... python migrate_payment_method_bind_memo.py
 DATABASE_URL=... python migrate_club_payment_first_time_linking.py
+DATABASE_URL=... python migrate_payment_bind_multi_candidates.py
 ```
 
 ## Observability (dashboard + API)

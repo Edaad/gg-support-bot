@@ -46,17 +46,10 @@ class NotificationGroupChatUrlTestCase(unittest.TestCase):
             "https://t.me/c/3959356975",
         )
 
-    def test_legacy_basic_id_uses_supergroup_variant(self):
-        self.assertEqual(
-            notification_group_chat_url(-1234567890),
-            "https://t.me/c/1234567890",
-        )
-
-    def test_legacy_basic_id_resolves_via_supergroup_variant(self):
-        self.assertEqual(
-            notification_group_chat_url(-5287778428),
-            "https://t.me/c/5287778428",
-        )
+    def test_legacy_basic_id_has_no_link(self):
+        # Basic groups use unrelated -100… ids after migrate; never synthesize t.me/c.
+        self.assertIsNone(notification_group_chat_url(-1234567890))
+        self.assertIsNone(notification_group_chat_url(-5287778428))
 
     def test_positive_id_returns_none(self):
         self.assertIsNone(notification_group_chat_url(12345))

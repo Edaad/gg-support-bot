@@ -52,14 +52,10 @@ def is_joinable_invite_url(url: str | None) -> bool:
 
 
 def notification_group_chat_url(chat_id: int) -> str | None:
-    """Member-only deep link for notifications; never a joinable invite link."""
-    cid = int(chat_id)
-    variants = sorted(
-        telegram_chat_id_variants(cid),
-        key=lambda x: (0 if str(x).startswith("-100") else 1, x),
-    )
-    for variant in variants:
-        url = telegram_supergroup_chat_url(variant)
-        if url:
-            return url
-    return None
+    """Member-only deep link for notifications; never a joinable invite link.
+
+    Only real supergroup ids (``-100…`` stored in Postgres after migration) are
+    valid. Legacy basic-group ids (``-528…``) must not be converted to
+    ``t.me/c/…`` — Telegram assigns an unrelated ``-100…`` id on migrate.
+    """
+    return telegram_supergroup_chat_url(int(chat_id))

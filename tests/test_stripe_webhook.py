@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import unittest
 from contextlib import contextmanager
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -191,6 +191,40 @@ class StripeWebhookApiTestCase(unittest.TestCase):
         self.assertEqual(response.json(), {"received": True})
         apply_mock.assert_called_once_with(event)
         notify_mock.assert_awaited_once_with(checkout_obj)
+
+
+class StripeNotifyPaymentCompletedTestCase(unittest.IsolatedAsyncioTestCase):
+    async def test_notify_stripe_payment_completed_posts_player_group_message(self):
+        checkout_obj = _completed_checkout_payload()
+        with (
+            patch.object(sd, "get_group_title_for_chat", return_value=("RT / 6485-8168 / Angus Mcgoon", CLUB_ID)),
+            patch.object(sd, "get_db") as mock_get_db,
+            patch.object(sd, "_resolve_stripe_method_label", return_value="Stripe"),
+            patch.object(
+                sd,
+                "send_telegram_notification",
+                new=AsyncMock(),
+            ),
+            patch.object(
+                sd,
+                "notify_player_group_payment_received",
+                new=AsyncMock(return_value=True),
+            ) as player_notify_mock,
+            patch.object(sd, "resolve_group_chat_notification_url", new=AsyncMock(return_value=None)),
+        ):
+            mock_session = MagicMock()
+            mock_club = MagicMock()
+            mock_club.name = "Round Table"
+            mock_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_club
+            mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+
+            await sd.notify_stripe_payment_completed(checkout_obj)
+
+        player_notify_mock.assert_awaited_once_with(
+            telegram_chat_id=CHAT_ID,
+            amount_cents=5000,
+        )
 
 
 if __name__ == "__main__":

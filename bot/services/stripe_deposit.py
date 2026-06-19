@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 
 from bot.services.club import get_group_title_for_chat, update_group_name
 from bot.services.group_chat_invite_links import resolve_group_chat_notification_url
+from bot.services.payment_group_notify import notify_player_group_payment_received
 from bot.services.player_details import parse_group_title_parts
 from bot.services.venmo_payments import (
     escape_notification_html,
@@ -117,6 +118,7 @@ def resolve_checkout_amount_cents(
     *,
     min_usd: Decimal | float | int | str | None = None,
     max_usd: Decimal | float | int | str | None = None,
+    preset_usd: Decimal | float | int | str | None = None,
 ) -> tuple[int, int, int]:
     """Return (min_cents, max_cents, preset_cents) for Stripe custom_unit_amount."""
     min_c = _usd_to_cents(min_usd)
@@ -127,7 +129,10 @@ def resolve_checkout_amount_cents(
         max_c = STRIPE_CHECKOUT_MAX_CENTS
     if min_c > max_c:
         max_c = min_c
-    if min_usd is None and max_usd is None:
+    preset_c = _usd_to_cents(preset_usd)
+    if preset_c is not None:
+        preset = max(min_c, min(max_c, preset_c))
+    elif min_usd is None and max_usd is None:
         preset = STRIPE_CHECKOUT_PRESET_CENTS
     else:
         preset = (min_c + max_c) // 2
@@ -269,6 +274,7 @@ def create_stripe_checkout_session(
     no_minimum: bool = False,
     checkout_min_usd: Decimal | float | int | str | None = None,
     checkout_max_usd: Decimal | float | int | str | None = None,
+    checkout_preset_usd: Decimal | float | int | str | None = None,
 ) -> StripeCheckoutResult:
     """Create a Checkout Session where the player picks amount on Stripe.
 
@@ -320,6 +326,7 @@ def create_stripe_checkout_session(
         min_cents, max_cents, preset_cents = resolve_checkout_amount_cents(
             min_usd=checkout_min_usd,
             max_usd=checkout_max_usd,
+            preset_usd=checkout_preset_usd,
         )
     price_id = _create_custom_amount_price_id(
         effective_title,
@@ -574,6 +581,10 @@ async def notify_stripe_payment_completed(checkout_obj: dict[str, Any]) -> None:
         group_chat_url=group_chat_url,
     )
     await send_telegram_notification(text)
+    await notify_player_group_payment_received(
+        telegram_chat_id=int(chat_id),
+        amount_cents=amount_cents,
+    )
     logger.info(
         "stripe webhook: notification sent chat_id=%s club_id=%s amount_cents=%s method=%r",
         chat_id,

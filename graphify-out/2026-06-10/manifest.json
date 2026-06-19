@@ -960,9 +960,9 @@
     "semantic_hash": "83d6a914c0b50be1e004c545364fd630"
   },
   "bot/handlers/commands.py": {
-    "mtime": 1780577730.3398564,
-    "ast_hash": "bae976dc2d18c16e872f216ba1a36f0c",
-    "semantic_hash": "bae976dc2d18c16e872f216ba1a36f0c"
+    "mtime": 1781148093.7125168,
+    "ast_hash": "81ce552651149f576f17d00f7b0536bb",
+    "semantic_hash": ""
   },
   "bot/handlers/deposit.py": {
     "mtime": 1781049444.0768106,
@@ -1015,9 +1015,9 @@
     "semantic_hash": "7ab9aca8988addf9301b13f98fd947ee"
   },
   "bot/handlers/start.py": {
-    "mtime": 1780633824.5614414,
-    "ast_hash": "ecb6b74d9621e27283d72ef0ccbc2763",
-    "semantic_hash": "ecb6b74d9621e27283d72ef0ccbc2763"
+    "mtime": 1781148094.5581143,
+    "ast_hash": "9f6befe3b8f81dca82d0c7e8ca47063d",
+    "semantic_hash": ""
   },
   "bot/handlers/stripe.py": {
     "mtime": 1780021376.9414487,
@@ -1045,8 +1045,8 @@
     "semantic_hash": "79c6fe14be16e88a1c87f51a4407ab76"
   },
   "bot/main.py": {
-    "mtime": 1781062587.1218772,
-    "ast_hash": "1b636d1b54c44a0b25031c9ebde42c2b",
+    "mtime": 1781148093.1678596,
+    "ast_hash": "756e8bad9c5d00047dfd5a194ec2c24d",
     "semantic_hash": ""
   },
   "bot/runtime_config.py": {
@@ -1065,9 +1065,9 @@
     "semantic_hash": "5371ce9cb1b02e03d0139497279d9549"
   },
   "bot/services/cashapp_payments.py": {
-    "mtime": 1780891290.7707362,
-    "ast_hash": "e1c338f64facfb155725cfac5eec4486",
-    "semantic_hash": "e1c338f64facfb155725cfac5eec4486"
+    "mtime": 1781146703.7993646,
+    "ast_hash": "4cd320994e47bc60c43ec03b2926c714",
+    "semantic_hash": ""
   },
   "bot/services/club.py": {
     "mtime": 1780964130.3977704,
@@ -1080,8 +1080,8 @@
     "semantic_hash": "431bae6da271385e216582d3f820cf85"
   },
   "bot/services/crypto_payments.py": {
-    "mtime": 1781012426.9981027,
-    "ast_hash": "5a7ad7a2d30f9bb4e27da6e77df00e5e",
+    "mtime": 1781146704.3299756,
+    "ast_hash": "d15d499a16223359af833beda8c91714",
     "semantic_hash": ""
   },
   "bot/services/gc_phone.py": {
@@ -1120,8 +1120,8 @@
     "semantic_hash": "563bb7e4bf87c4a7e0a2622d3109b5b4"
   },
   "bot/services/mtproto_dm_gc_listener.py": {
-    "mtime": 1780976242.7710328,
-    "ast_hash": "35bdacb45a829903c393fad9d8ba1e58",
+    "mtime": 1781089033.5618036,
+    "ast_hash": "a0f07e64a35ae0df2bd0f9a4aee67bc5",
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_add.py": {
@@ -1130,7 +1130,7 @@
     "semantic_hash": "27b473c6872b24e806ac3b036f7ab938"
   },
   "bot/services/mtproto_group_cash.py": {
-    "mtime": 1780917300.1567183,
+    "mtime": 1781087277.863267,
     "ast_hash": "1bc1e5ba5a1a984c0c4c86bac76207a8",
     "semantic_hash": "1bc1e5ba5a1a984c0c4c86bac76207a8"
   },
@@ -1165,13 +1165,13 @@
     "semantic_hash": "2cf7128cf7782e27fee9e1eb809a9f05"
   },
   "bot/services/mtproto_track_contact.py": {
-    "mtime": 1779862211.133601,
-    "ast_hash": "b9df61dfabb1ca066be90165e42b4f30",
-    "semantic_hash": "b9df61dfabb1ca066be90165e42b4f30"
+    "mtime": 1781148064.004099,
+    "ast_hash": "eb18a9a5967f16673b88d926805d61a2",
+    "semantic_hash": ""
   },
   "bot/services/payment_method_binding.py": {
-    "mtime": 1781010201.2328923,
-    "ast_hash": "9cf2f35d6e280d15d76081347a92c147",
+    "mtime": 1781146583.2292888,
+    "ast_hash": "cbed282c75b169d2bfbbc40f7ed2e1f3",
     "semantic_hash": ""
   },
   "bot/services/player_details.py": {
@@ -1185,9 +1185,9 @@
     "semantic_hash": "df2f6e0d0c4a7ba20b2192f3f4ea1572"
   },
   "bot/services/player_support_dm_messages.py": {
-    "mtime": 1778285046.9795847,
-    "ast_hash": "fc21535fa50c444e8246ceb59f596cc7",
-    "semantic_hash": "fc21535fa50c444e8246ceb59f596cc7"
+    "mtime": 1781087277.8870475,
+    "ast_hash": "ba95b22eaf8ba8cb3df3cf400bf3d801",
+    "semantic_hash": ""
   },
   "bot/services/round_table_unions.py": {
     "mtime": 1779661841.4878204,
@@ -1195,9 +1195,9 @@
     "semantic_hash": "5e32130827b6a9eaeb50f032b3f8f222"
   },
   "bot/services/stripe_deposit.py": {
-    "mtime": 1780881863.3868876,
-    "ast_hash": "ce082bb66b542305ff33987f5db7da38",
-    "semantic_hash": "ce082bb66b542305ff33987f5db7da38"
+    "mtime": 1781064427.2713718,
+    "ast_hash": "2d55746567f47cf9a2c442f734719efd",
+    "semantic_hash": ""
   },
   "bot/services/support_group_chats.py": {
     "mtime": 1780880906.558787,
@@ -1205,14 +1205,14 @@
     "semantic_hash": "c5dda03a4e0f785719a050905a946870"
   },
   "bot/services/venmo_payments.py": {
-    "mtime": 1780891288.4354527,
-    "ast_hash": "9efaa48e49b742c2add4b45d9a06c76a",
-    "semantic_hash": "9efaa48e49b742c2add4b45d9a06c76a"
+    "mtime": 1781146637.986795,
+    "ast_hash": "51049c3983933247495b01f35c89b7d0",
+    "semantic_hash": ""
   },
   "bot/services/zelle_payments.py": {
-    "mtime": 1780891289.6277244,
-    "ast_hash": "f4a8f921c49b8d8da85e7688b5a523af",
-    "semantic_hash": "f4a8f921c49b8d8da85e7688b5a523af"
+    "mtime": 1781146703.319694,
+    "ast_hash": "4f38730d379b21d8741b2f5d70f30f75",
+    "semantic_hash": ""
   },
   "cashier/__init__.py": {
     "mtime": 1779501171.1365676,
@@ -1280,8 +1280,8 @@
     "semantic_hash": "9d2f1e12ab88efc39fc25326e4308c37"
   },
   "club_gc_settings.py": {
-    "mtime": 1780976242.205983,
-    "ast_hash": "b1e292daaad2e762dec6896a0c508d81",
+    "mtime": 1781146910.6379287,
+    "ast_hash": "d0cec7bf6edeee0d668288f796e364e2",
     "semantic_hash": ""
   },
   "config.py": {
@@ -1405,7 +1405,7 @@
     "semantic_hash": "189f0042a50fd088d82577b996b664f6"
   },
   "dashboard/src/components/V2VariantEditor.tsx": {
-    "mtime": 1780917300.1606443,
+    "mtime": 1781087277.8580678,
     "ast_hash": "94b7de3218bde406cab4bffe6ad69e54",
     "semantic_hash": "94b7de3218bde406cab4bffe6ad69e54"
   },
@@ -1525,8 +1525,8 @@
     "semantic_hash": "f815b05a6bbf7c0237e414e0d04ee055"
   },
   "db/models.py": {
-    "mtime": 1781010193.380039,
-    "ast_hash": "250d14811fba0aba5c1ee71e50ed12ae",
+    "mtime": 1781146908.137369,
+    "ast_hash": "277b28da3bab000d4ee4a34366f66b74",
     "semantic_hash": ""
   },
   "export_payment_config_backup.py": {
@@ -1695,18 +1695,18 @@
     "semantic_hash": "b2ab430792d9e27b39826543a7ec93eb"
   },
   "notification/chat_id.py": {
-    "mtime": 1781060127.7920105,
-    "ast_hash": "2555ad7f29110ed12eac7340eaef68ef",
+    "mtime": 1781087277.8580742,
+    "ast_hash": "d83e3f69f5e9f79df09f1deb37e6a433",
     "semantic_hash": ""
   },
   "notification/constants.py": {
-    "mtime": 1781014858.3631701,
-    "ast_hash": "27e6553c64f841023dc1574835434a56",
+    "mtime": 1781148587.7356393,
+    "ast_hash": "91e1166fd4c0448a5ce2a283435adf63",
     "semantic_hash": ""
   },
   "notification/formatting.py": {
-    "mtime": 1781060129.8165898,
-    "ast_hash": "2124f536d5dfea0f80fe47b00af65a39",
+    "mtime": 1781087277.8582802,
+    "ast_hash": "7828e4f56558c173f2227a42062eea2a",
     "semantic_hash": ""
   },
   "notification/handlers/__init__.py": {
@@ -1715,14 +1715,14 @@
     "semantic_hash": "3d1ee93392d4d24299b3663ce02bc830"
   },
   "notification/handlers/bind.py": {
-    "mtime": 1780878914.3640954,
-    "ast_hash": "c9b88f4d28a90d82ab4a20e068ed7a86",
-    "semantic_hash": "c9b88f4d28a90d82ab4a20e068ed7a86"
+    "mtime": 1781149510.8396776,
+    "ast_hash": "46876bd7b71f377c52e21b8c57af3043",
+    "semantic_hash": ""
   },
   "notification/main.py": {
-    "mtime": 1780665315.1642306,
-    "ast_hash": "648333605afeb6f632704de755900228",
-    "semantic_hash": "648333605afeb6f632704de755900228"
+    "mtime": 1781148588.1383555,
+    "ast_hash": "8a37563426fad83a8c6a50d16d0b994c",
+    "semantic_hash": ""
   },
   "package.json": {
     "mtime": 1776633431.813561,
@@ -1940,9 +1940,9 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "tests/test_cashapp_bind.py": {
-    "mtime": 1780878904.2790844,
-    "ast_hash": "d99d05ee5048a4d0282abd4b4fcf8f71",
-    "semantic_hash": "d99d05ee5048a4d0282abd4b4fcf8f71"
+    "mtime": 1781146728.074887,
+    "ast_hash": "c44f9df7b2031d746acf8bb17c78c7fe",
+    "semantic_hash": ""
   },
   "tests/test_cashapp_payments_api.py": {
     "mtime": 1780878894.317034,
@@ -1975,18 +1975,18 @@
     "semantic_hash": ""
   },
   "tests/test_group_chat_invite_links.py": {
-    "mtime": 1781060191.8982413,
-    "ast_hash": "c64de117164e76c71d1ebce7d7f0e49a",
+    "mtime": 1781087277.8580313,
+    "ast_hash": "ed695491fc81309a17feee37dca610c2",
     "semantic_hash": ""
   },
   "tests/test_notification_chat_id.py": {
-    "mtime": 1781060185.9806185,
-    "ast_hash": "a23fc57c6dc6c98326a9a8d1cdb56573",
+    "mtime": 1781087277.8580453,
+    "ast_hash": "6ace1bec829928f7eee828799f9124dd",
     "semantic_hash": ""
   },
   "tests/test_notification_formatting.py": {
-    "mtime": 1781060182.5257583,
-    "ast_hash": "54e8158246292ad264765ad5fe4ebf6d",
+    "mtime": 1781087277.8870108,
+    "ast_hash": "de594e823a252d44a29dbf0a820f26d8",
     "semantic_hash": ""
   },
   "tests/test_payment_method_binding.py": {
@@ -2020,9 +2020,9 @@
     "semantic_hash": "e26b98092fd3845dc7da47a2e97da2cf"
   },
   "tests/test_stripe_webhook.py": {
-    "mtime": 1780887568.6456096,
-    "ast_hash": "a1da7b7ca8437fc7bfde7aac868951e4",
-    "semantic_hash": "a1da7b7ca8437fc7bfde7aac868951e4"
+    "mtime": 1781064454.579771,
+    "ast_hash": "cdf8e822f74519e31da2e4f06f1cf6a2",
+    "semantic_hash": ""
   },
   "tests/test_v2_tier_amounts.py": {
     "mtime": 1780795798.1222885,
@@ -2030,14 +2030,14 @@
     "semantic_hash": "b6b6efe61ef367a6fd8ccfaebbad447d"
   },
   "tests/test_venmo_bind.py": {
-    "mtime": 1780887568.3987489,
-    "ast_hash": "9834bce65653577e118de163c32c5529",
-    "semantic_hash": "9834bce65653577e118de163c32c5529"
+    "mtime": 1781064453.7014089,
+    "ast_hash": "b626c6f022200732cf45ca527c33e0cd",
+    "semantic_hash": ""
   },
   "tests/test_venmo_bind_service.py": {
-    "mtime": 1780883717.2005548,
-    "ast_hash": "e6c82df9690f7871808bdf02fb09a47d",
-    "semantic_hash": "e6c82df9690f7871808bdf02fb09a47d"
+    "mtime": 1781146727.080664,
+    "ast_hash": "d20381dbd032865758e3cb4bd2749e79",
+    "semantic_hash": ""
   },
   "tests/test_venmo_payments_api.py": {
     "mtime": 1780243986.0240498,
@@ -2045,9 +2045,9 @@
     "semantic_hash": "7675b8c6a7d6bb0463e008520a187a8c"
   },
   "tests/test_zelle_bind_service.py": {
-    "mtime": 1780887568.1798615,
-    "ast_hash": "bcfb9f21cc60f149b0b02cbbebb54bb6",
-    "semantic_hash": "bcfb9f21cc60f149b0b02cbbebb54bb6"
+    "mtime": 1781064458.8910408,
+    "ast_hash": "56bc601b1b97488a97c2f8eec422c325",
+    "semantic_hash": ""
   },
   "tests/test_zelle_payments_api.py": {
     "mtime": 1780665394.3488362,
@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1781009628.2132442,
-    "ast_hash": "4703df01dac92f3a1e3f389df6e116fc",
+    "mtime": 1781148605.0516915,
+    "ast_hash": "d852d2faa78d2231d40019cc09505435",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2692,6 +2692,126 @@
   "bot/services/chat_id_remap.py": {
     "mtime": 1781062572.9238138,
     "ast_hash": "3171c3e114c80225d6b7830757db8a68",
+    "semantic_hash": ""
+  },
+  "scripts/readd_migrated_group_members.py": {
+    "mtime": 1781089054.6865628,
+    "ast_hash": "e60b59b5332694de920a446525401aa8",
+    "semantic_hash": ""
+  },
+  "scripts/backup_groups_reader.py": {
+    "mtime": 1781087277.8580575,
+    "ast_hash": "25d0cfd61a6a855d1b9fbf280b3c86e3",
+    "semantic_hash": ""
+  },
+  "scripts/dm_deposit_groups_invite.py": {
+    "mtime": 1781088135.0504034,
+    "ast_hash": "e2d3f613039dff2a0c85b5d9ed439b56",
+    "semantic_hash": ""
+  },
+  "scripts/crossref_deposits_migrated_groups.py": {
+    "mtime": 1781087277.8873959,
+    "ast_hash": "83004de39a0b544e1492cbaea3ed2c0d",
+    "semantic_hash": ""
+  },
+  "scripts/migrated_groups_activity_report.py": {
+    "mtime": 1781089035.020115,
+    "ast_hash": "210fcee0f35185122be57336e96e4f37",
+    "semantic_hash": ""
+  },
+  "scripts/dm_readd_failed_invite.py": {
+    "mtime": 1781087277.8582895,
+    "ast_hash": "28d3fe5d799104a2853fb9a57288d063",
+    "semantic_hash": ""
+  },
+  "scripts/crossref_affected_gap.py": {
+    "mtime": 1781087740.265509,
+    "ast_hash": "b1572627f488d0feaac4f934fff731c2",
+    "semantic_hash": ""
+  },
+  "scripts/dm_affected_gap_invite.py": {
+    "mtime": 1781088364.9277012,
+    "ast_hash": "6fbb29405ff875ce3967ed33eeb95822",
+    "semantic_hash": ""
+  },
+  "bot/services/migration_group_readd.py": {
+    "mtime": 1781148060.526891,
+    "ast_hash": "245456b9040d6d506d316552fe627db7",
+    "semantic_hash": ""
+  },
+  "bot/services/migration_recovery.py": {
+    "mtime": 1781148632.757829,
+    "ast_hash": "297b4ec619ba319c55be449528249713",
+    "semantic_hash": ""
+  },
+  "migrate_migrated_group_recovery.py": {
+    "mtime": 1781088917.668671,
+    "ast_hash": "5db0795a9d82d051a5a61523e29c03a2",
+    "semantic_hash": ""
+  },
+  "scripts/seed_migrated_group_recovery.py": {
+    "mtime": 1781146934.6043568,
+    "ast_hash": "61e56f61dfd23d880a62fef71e139d15",
+    "semantic_hash": ""
+  },
+  "tests/test_migration_recovery.py": {
+    "mtime": 1781148114.9873476,
+    "ast_hash": "27ce9ad1bd8923899b207528ff87bc47",
+    "semantic_hash": ""
+  },
+  "bot/services/migration_recovery_priority.py": {
+    "mtime": 1781145433.9698904,
+    "ast_hash": "1532fcf9e2b291ad7b67aea4ebccad71",
+    "semantic_hash": ""
+  },
+  "bot/services/payment_binding_events.py": {
+    "mtime": 1781146682.6271114,
+    "ast_hash": "5c90811094b3fe9ade3e86aece184093",
+    "semantic_hash": ""
+  },
+  "migrate_payment_binding_events.py": {
+    "mtime": 1781146559.6481678,
+    "ast_hash": "f9b8f1f9f7839549771586c29b044c4d",
+    "semantic_hash": ""
+  },
+  "scripts/audit_payment_notification_sync.py": {
+    "mtime": 1781146685.706553,
+    "ast_hash": "9102bb393a2c33df0b83af45d168dc99",
+    "semantic_hash": ""
+  },
+  "scripts/run_migration_recovery_one.py": {
+    "mtime": 1781146045.7999172,
+    "ast_hash": "c5ab88c98ac4eb3ab5b0ed61e696a4c4",
+    "semantic_hash": ""
+  },
+  "tests/test_payment_binding_events.py": {
+    "mtime": 1781146709.6095023,
+    "ast_hash": "b4ba90c1a653259d9042886a74601284",
+    "semantic_hash": ""
+  },
+  "migrate_migration_recovery_control.py": {
+    "mtime": 1781146909.500312,
+    "ast_hash": "edbd5f48a0b939567c2144685136ab8e",
+    "semantic_hash": ""
+  },
+  "bot/handlers/whosnext.py": {
+    "mtime": 1781148092.3468735,
+    "ast_hash": "026ce77a6835263b61a0c68aa428da3a",
+    "semantic_hash": ""
+  },
+  "notification/handlers/_chat.py": {
+    "mtime": 1781148578.3178227,
+    "ast_hash": "98568296867ab5a2f0f60121136772ef",
+    "semantic_hash": ""
+  },
+  "notification/handlers/report.py": {
+    "mtime": 1781149509.4280005,
+    "ast_hash": "215aaeef40c89e0177239a07a198b29d",
+    "semantic_hash": ""
+  },
+  "tests/test_notification_report.py": {
+    "mtime": 1781149511.5897593,
+    "ast_hash": "71a0cb3a30466ed8e6ec05c8f418c5cb",
     "semantic_hash": ""
   }
 }

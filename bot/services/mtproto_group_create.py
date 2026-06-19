@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Literal
+from typing import Any, Literal
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -402,6 +402,68 @@ async def _invite_one(
         readable = readable[:500]
         logger.info("Invite skipped for %s: %s", marker, type(e).__name__)
         return False, readable
+
+
+async def resolve_telegram_user_marker(
+    cfg: ClubGcConfig,
+    marker: str,
+) -> tuple[Any | None, str | None]:
+    """Resolve ``@username`` or numeric Telegram user id to a Telethon ``User``."""
+
+    from telethon.tl.types import User
+
+    raw = (marker or "").strip()
+    if not raw:
+        return None, "empty_marker"
+
+    lookup = raw if raw.startswith("@") or raw.lstrip("-").isdigit() else f"@{raw.lstrip('@')}"
+
+    async with get_mtproto_lock(cfg.club_key):
+        client = make_client(cfg)
+        await client.connect()
+        try:
+            if not await client.is_user_authorized():
+                return None, "not_authorized"
+            ent = await _with_single_flood_retry(
+                f"get_entity:{lookup}",
+                lambda: client.get_entity(lookup),
+            )
+            if not isinstance(ent, User):
+                return None, "not_a_user"
+            if getattr(ent, "bot", False):
+                return None, "is_bot"
+            return ent, None
+        except Exception as e:
+            logger.info("resolve_telegram_user_marker failed marker=%s: %s", lookup, type(e).__name__)
+            return None, type(e).__name__
+        finally:
+            await client.disconnect()
+
+
+async def send_player_dm_via_club(cfg: ClubGcConfig, player_user, text: str) -> tuple[bool, str | None]:
+    """DM a player from the club MTProto account (best-effort)."""
+
+    body = (text or "").strip()
+    if not body:
+        return False, "empty_message"
+
+    async with get_mtproto_lock(cfg.club_key):
+        client = make_client(cfg)
+        await client.connect()
+        try:
+            if not await client.is_user_authorized():
+                return False, "not_authorized"
+            await client.send_message(player_user, body)
+            return True, None
+        except Exception as e:
+            logger.warning(
+                "send_player_dm_via_club failed club=%s: %s",
+                cfg.club_key,
+                type(e).__name__,
+            )
+            return False, type(e).__name__
+        finally:
+            await client.disconnect()
 
 
 async def create_support_megagroup(

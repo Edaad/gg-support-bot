@@ -266,6 +266,18 @@ def is_dm_gc_listener_enabled() -> bool:
     return str(raw).strip().lower() not in ("0", "false", "no", "off", "")
 
 
+def is_dm_gc_new_groups_enabled() -> bool:
+    """Auto /gc may create new megagroups for unbound players unless explicitly disabled.
+
+    Default **on**. Set ``GC_DM_GC_NEW_GROUPS_ENABLED`` to ``false``, ``0``, ``no``, or ``off`` to
+    skip ``CreateChannel`` for players with no ``support_group_chats`` row; existing bindings
+    still run re-add + invite DM via the dm_gc listener.
+    """
+    if not is_dm_gc_listener_enabled():
+        return False
+    return _env_bool("GC_DM_GC_NEW_GROUPS_ENABLED", default=True)
+
+
 def is_contact_save_enabled() -> bool:
     """Telethon saves player contacts from title change, /track, and /info unless explicitly disabled."""
 
@@ -323,6 +335,103 @@ def get_mtproto_telethon_client_kwargs() -> dict[str, int | float | bool]:
         "request_retries": _env_int("GC_MTPROTO_REQUEST_RETRIES", 5),
         "auto_reconnect": _env_bool("GC_MTPROTO_AUTO_RECONNECT", True),
     }
+
+
+_MIGRATION_RECOVERY_CLUB_ENV: dict[str, str] = {
+    "round_table": "GC_MIGRATION_RECOVERY_ROUND_TABLE",
+    "creator_club": "GC_MIGRATION_RECOVERY_CREATOR_CLUB",
+    "clubgto": "GC_MIGRATION_RECOVERY_CLUB_GTO",
+}
+
+MIGRATION_RECOVERY_CLUB_KEYS: tuple[str, ...] = (
+    "round_table",
+    "creator_club",
+    "clubgto",
+)
+
+
+def get_migration_recovery_disabled_clubs() -> frozenset[str]:
+    """Club keys excluded from the migration recovery cron (env list + per-club false)."""
+
+    disabled: set[str] = set()
+    raw = (os.getenv("GC_MIGRATION_RECOVERY_DISABLED_CLUBS") or "").strip()
+    if raw:
+        for part in raw.split(","):
+            key = part.strip().lower()
+            if key:
+                disabled.add(key)
+    for club_key, env_var in _MIGRATION_RECOVERY_CLUB_ENV.items():
+        env_raw = os.getenv(env_var)
+        if env_raw is not None and str(env_raw).strip().lower() in (
+            "0",
+            "false",
+            "no",
+            "off",
+        ):
+            disabled.add(club_key)
+    return frozenset(disabled)
+
+
+def migration_recovery_active_club_keys() -> tuple[str, ...]:
+    """Clubs processed when ``GC_MIGRATION_RECOVERY_ENABLED`` is on."""
+
+    disabled = get_migration_recovery_disabled_clubs()
+    return tuple(k for k in MIGRATION_RECOVERY_CLUB_KEYS if k not in disabled)
+
+
+def is_migration_recovery_enabled_for_club(club_key: str) -> bool:
+    if club_key in get_migration_recovery_disabled_clubs():
+        return False
+    return is_migration_recovery_enabled()
+
+
+def is_migration_recovery_enabled() -> bool:
+    """Background batch re-add for migrated supergroups (worker job_queue)."""
+
+    if not is_dm_gc_listener_enabled():
+        return False
+    if not _env_bool("GC_MIGRATION_RECOVERY_ENABLED", default=False):
+        return False
+    from bot.services.migration_recovery import is_migration_recovery_auto_disabled
+
+    if is_migration_recovery_auto_disabled():
+        return False
+    return bool(migration_recovery_active_club_keys())
+
+
+def get_migration_recovery_interval_sec() -> int:
+    return max(60, _env_int("GC_MIGRATION_RECOVERY_INTERVAL_SEC", 300))
+
+
+def get_migration_recovery_batch_size() -> int:
+    return max(1, min(_env_int("GC_MIGRATION_RECOVERY_BATCH_SIZE", 5), 20))
+
+
+def get_migration_recovery_invite_delay_sec() -> float:
+    return max(0.0, _env_float("GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC", 2.0))
+
+
+def is_migration_recovery_skip_welcome_enabled() -> bool:
+    """Skip member-join preamble/TOS for chats in ``migrated_group_recovery``."""
+
+    return _env_bool("GC_MIGRATION_RECOVERY_SKIP_WELCOME", default=False)
+
+
+def get_migration_recovery_slack_summary_interval_sec() -> int:
+    return max(600, _env_int("GC_MIGRATION_RECOVERY_SLACK_SUMMARY_INTERVAL_SEC", 21600))
+
+
+def get_migration_recovery_slack_summary_check_delay_sec() -> float:
+    return max(0.0, _env_float("GC_MIGRATION_RECOVERY_SLACK_SUMMARY_CHECK_DELAY_SEC", 0.1))
+
+
+def is_migration_recovery_slack_summary_enabled() -> bool:
+    if not _env_bool("GC_MIGRATION_RECOVERY_SLACK_SUMMARY_ENABLED", default=True):
+        return False
+    token = (_env_optional("SLACK_OPS_BOT_TOKEN") or "").strip()
+    channel = (_env_optional("SLACK_OPS_CHANNEL_ID") or "").strip()
+    webhook = (_env_optional("SLACK_OPS_WEBHOOK_URL") or "").strip()
+    return bool((token and channel) or webhook)
 
 
 def get_dm_gc_listener_restart_config() -> tuple[float, float, float]:

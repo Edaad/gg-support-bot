@@ -17,6 +17,7 @@ from club_gc_settings import (
     get_dm_gc_listener_restart_config,
     get_tg_mtproto_credentials,
     is_dm_gc_listener_enabled,
+    is_dm_gc_new_groups_enabled,
     is_dm_gc_verbose_logging,
 )
 from bot.handlers.groups import send_post_gc_intro_bundle
@@ -37,6 +38,13 @@ from bot.services.player_support_dm_messages import (
     PLAYER_RE_ADDED_MESSAGE,
 )
 from bot.services.agent_debug_log import agent_debug_log
+from bot.services.mtproto_club_health import (
+    STATUS_CONNECTED,
+    STATUS_DISCONNECTED,
+    STATUS_UNAUTHORIZED,
+    classify_mtproto_error,
+    persist_club_health,
+)
 from bot.services.mtproto_group_add import handle_group_add_outgoing
 from bot.services.mtproto_group_cash import handle_group_cash_outgoing
 from bot.services.mtproto_group_delete import handle_group_delete_outgoing
@@ -72,12 +80,26 @@ def _dm_gc_verbose_info(msg: str, *args) -> None:
         logger.info(msg, *args)
 
 
+async def _report_club_health(club_key: str, **kwargs) -> None:
+    await asyncio.to_thread(persist_club_health, club_key, **kwargs)
+
+
+def get_listener_client(club_key: str) -> TelegramClient | None:
+    """Return the live dm_gc Telethon client for a club, if connected."""
+
+    for client in _clients:
+        if getattr(client, "_gg_club_key", None) == club_key and client.is_connected():
+            return client
+    return None
+
+
 def get_dm_gc_listener_status() -> dict[str, Any]:
     """Public snapshot of the background Telethon listener thread."""
     loop = _loop_holder.get("loop")
     connected = sum(1 for c in _clients if c.is_connected())
     return {
         "enabled": is_dm_gc_listener_enabled(),
+        "new_groups_enabled": is_dm_gc_new_groups_enabled(),
         "loop_running": loop is not None and loop.is_running(),
         "connected_clients": connected,
         "total_clients": len(_clients),
@@ -388,7 +410,7 @@ async def _run_gc_flow_for_player(
             await _flow_existing_group(
                 client, cfg, existing, player, listener_label=listener_label
             )
-        else:
+        elif is_dm_gc_new_groups_enabled():
             await _flow_new_group(
                 client,
                 cfg,
@@ -396,6 +418,16 @@ async def _run_gc_flow_for_player(
                 bot_dm_username,
                 ptb_bot,
                 listener_label=listener_label,
+            )
+        else:
+            logger.warning(
+                "dm_gc /gc skipped: new_groups_disabled club_key=%s listener=%s player=%s "
+                "trigger=%s (no support_group_chats row; set GC_DM_GC_NEW_GROUPS_ENABLED=true "
+                "or /bind an existing group)",
+                cfg.club_key,
+                listener_label,
+                player_label,
+                trigger,
             )
     except Exception as e:
         logger.exception(
@@ -786,7 +818,10 @@ def _register_club_event_handlers(
     def _make_group_add_handler(label: str, club_cfg_inner):
         async def _handler(event):
             await handle_group_add_outgoing(
-                event, club_cfg_inner, listener_label=label
+                event,
+                club_cfg_inner,
+                listener_label=label,
+                ptb_bot=ptb_bot,
             )
 
         return _handler
@@ -847,6 +882,16 @@ async def _start_telethon_clients(
                 "will not trigger for this club until Dashboard Telegram login (or CLI) completes.",
                 cfg.club_key,
             )
+            await _report_club_health(
+                cfg.club_key,
+                worker_connected=False,
+                session_valid=False,
+                status=STATUS_UNAUTHORIZED,
+                status_detail=(
+                    "Stored session is not authorized on the worker. "
+                    "Log in again via Dashboard Telegram login."
+                ),
+            )
             continue
 
         client = make_client(cfg)
@@ -860,6 +905,15 @@ async def _start_telethon_clients(
                     cfg.club_key,
                 )
                 await client.disconnect()
+                await _report_club_health(
+                    cfg.club_key,
+                    worker_connected=False,
+                    session_valid=False,
+                    status=STATUS_UNAUTHORIZED,
+                    status_detail=(
+                        "Session rejected after connect — likely expired or invalidated. Log in again."
+                    ),
+                )
                 continue
 
             me_who = await client.get_me()
@@ -878,6 +932,14 @@ async def _start_telethon_clients(
                 ptb_bot=ptb_bot,
             )
             started.append(client)
+            await _report_club_health(
+                cfg.club_key,
+                worker_connected=True,
+                session_valid=True,
+                status=STATUS_CONNECTED,
+                status_detail=None,
+                telegram_user_id=getattr(me_who, "id", None),
+            )
             # #region agent log
             agent_debug_log(
                 hypothesis_id="E",
@@ -896,6 +958,14 @@ async def _start_telethon_clients(
                 "dm_gc failed to start client club_key=%s: %s",
                 cfg.club_key,
                 type(e).__name__,
+            )
+            status, detail = classify_mtproto_error(e)
+            await _report_club_health(
+                cfg.club_key,
+                worker_connected=False,
+                session_valid=False,
+                status=status,
+                status_detail=detail,
             )
             # #region agent log
             agent_debug_log(
@@ -941,10 +1011,34 @@ async def _listener_health_watchdog(
                         club_key,
                         ping_error,
                     )
+                    status, detail = classify_mtproto_error(e)
+                    await _report_club_health(
+                        str(club_key),
+                        worker_connected=False,
+                        session_valid=False,
+                        status=status,
+                        status_detail=detail,
+                    )
                     try:
                         await client.disconnect()
                     except Exception:
                         pass
+                else:
+                    await _report_club_health(
+                        str(club_key),
+                        worker_connected=True,
+                        session_valid=True,
+                        status=STATUS_CONNECTED,
+                        status_detail=None,
+                    )
+            else:
+                await _report_club_health(
+                    str(club_key),
+                    worker_connected=False,
+                    session_valid=False,
+                    status=STATUS_DISCONNECTED,
+                    status_detail="Telethon client disconnected on worker.",
+                )
             # #region agent log
             agent_debug_log(
                 hypothesis_id="C",
@@ -974,6 +1068,14 @@ async def _teardown_listener_cycle(
                 "dm_gc disconnect failed club_key=%s: %s",
                 club_key,
                 type(e).__name__,
+            )
+        if isinstance(club_key, str) and club_key != "?":
+            await _report_club_health(
+                club_key,
+                worker_connected=False,
+                session_valid=False,
+                status=STATUS_DISCONNECTED,
+                status_detail="Listener cycle ended; worker Telethon client disconnected.",
             )
     if ptb_bot is not None:
         try:

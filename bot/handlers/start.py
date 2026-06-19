@@ -31,6 +31,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• /mycmds — List your custom commands",
             "• /delete <name> — Remove a custom command",
             "• /whoami — Show your user ID",
+            "• /whosnext — Next 10 GCs in migration recovery queue (DM)",
         ]
     )
     await update.message.reply_text("\n".join(lines))

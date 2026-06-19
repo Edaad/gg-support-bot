@@ -114,7 +114,7 @@ def delete_session_for_club(club_key: str) -> bool:
         return False
     try:
         from db.connection import get_db
-        from db.models import MtProtoSessionCredential
+        from db.models import MtProtoClubHealth, MtProtoSessionCredential
 
         with get_db() as db:
             row = (
@@ -122,10 +122,13 @@ def delete_session_for_club(club_key: str) -> bool:
                 .filter(MtProtoSessionCredential.club_key == club_key)
                 .one_or_none()
             )
-            if row is None:
-                return False
-            db.delete(row)
-        return True
+            removed = row is not None
+            if row is not None:
+                db.delete(row)
+            health = db.get(MtProtoClubHealth, club_key)
+            if health is not None:
+                db.delete(health)
+        return removed
     except Exception as e:
         logger.warning("mtproto session DB delete failed club=%s: %s", club_key, e)
         return False

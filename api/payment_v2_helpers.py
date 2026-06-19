@@ -263,7 +263,7 @@ def sync_method_envelope_side_effects(method: ClubPaymentMethod) -> None:
             )
 
 
-_FIRST_TIME_BIND_SLUGS = frozenset({"venmo", "zelle", "cashapp"})
+_FIRST_TIME_BIND_SLUGS = frozenset({"venmo", "zelle", "cashapp", "paypal"})
 _FIRST_TIME_BIND_MODES = frozenset({"special_amount", "memo_emoji"})
 
 
@@ -278,7 +278,7 @@ def validate_first_time_linking(method: ClubPaymentMethod) -> None:
         raise ValueError("First-time linking applies to deposit methods only.")
     if slug not in _FIRST_TIME_BIND_SLUGS:
         raise ValueError(
-            "First-time linking is only supported for venmo, zelle, and cashapp."
+            "First-time linking is only supported for venmo, zelle, cashapp, and paypal."
         )
     if slug == "zelle" and mode == "memo_emoji":
         raise ValueError("Memo first-time linking is not supported for Zelle.")

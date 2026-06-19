@@ -28,3 +28,9 @@ PLAYER_EXISTING_INVITE_MESSAGE = (
     "{invite_link}\n\n"
     "Please message us there for all communication going forward so our team can help you quickly and properly. 🚀"
 )
+
+PLAYER_MIGRATION_UPGRADE_INVITE_MESSAGE = (
+    "We were upgrading your support group chat. Here is the invite link to rejoin:\n"
+    "{invite_link}\n\n"
+    "Please message us there for all communication going forward so our team can help you quickly and properly. 🚀"
+)

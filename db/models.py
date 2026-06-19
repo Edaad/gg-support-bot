@@ -598,6 +598,20 @@ class MtProtoSessionCredential(Base):
     )
 
 
+class MtProtoClubHealth(Base):
+    """Worker-reported Telethon live status per club (Dashboard reads; no web-side connect)."""
+
+    __tablename__ = "mtproto_club_health"
+
+    club_key = Column(String(64), primary_key=True)
+    worker_connected = Column(Boolean, nullable=False, default=False)
+    session_valid = Column(Boolean, nullable=False, default=False)
+    status = Column(String(32), nullable=False, default="unknown")
+    status_detail = Column(Text, nullable=True)
+    telegram_user_id = Column(BigInteger, nullable=True)
+    checked_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class CashierCashoutJob(Base):
     """Staff cashout wizard jobs (GGCashier bot)."""
 
@@ -673,6 +687,55 @@ class SupportGroupChat(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class MigratedGroupRecovery(Base):
+    """Queue for one-shot direct-add recovery after basic-group → supergroup migration."""
+
+    __tablename__ = "migrated_group_recovery"
+    __table_args__ = (
+        Index("ix_migrated_group_recovery_claim", "readd_status", "priority_tier", "priority_rank"),
+        Index("ix_migrated_group_recovery_club_key", "club_key"),
+        UniqueConstraint("telegram_chat_id", name="uq_migrated_group_recovery_telegram_chat_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    club_key = Column(String(64), nullable=False)
+    club_id = Column(Integer, nullable=False)
+    group_title = Column(Text, nullable=False)
+    old_chat_id = Column(BigInteger, nullable=False)
+    player_telegram_user_id = Column(BigInteger, nullable=True)
+    player_username = Column(Text, nullable=True)
+    player_display_name = Column(Text, nullable=True)
+    priority_tier = Column(Integer, nullable=False)
+    priority_rank = Column(BigInteger, nullable=False, default=0)
+    readd_status = Column(String(32), nullable=False, default="pending")
+    readd_result = Column(JSONB, nullable=True)
+    invite_link = Column(Text, nullable=True)
+    last_error = Column(Text, nullable=True)
+    readd_attempted_at = Column(DateTime(timezone=True), nullable=True)
+    readd_completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class MigrationRecoveryControl(Base):
+    """Singleton row: auto-disable state for migration recovery worker cron."""
+
+    __tablename__ = "migration_recovery_control"
+
+    id = Column(Integer, primary_key=True, default=1)
+    auto_disabled_at = Column(DateTime(timezone=True), nullable=True)
+    auto_disabled_reason = Column(Text, nullable=True)
+    exhausted_club_key = Column(String(64), nullable=True)
+    pending_snapshot = Column(JSONB, nullable=True)
+    last_tick_at = Column(DateTime(timezone=True), nullable=True)
+    last_slack_summary_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class StripeCustomer(Base):
@@ -795,13 +858,14 @@ class VenmoPayment(Base):
 
 
 class VenmoPayerBinding(Base):
-    """Remember last bind: normalized payer name -> support group (any shared Venmo)."""
+    """Remember bind candidates: normalized payer name + support group (any shared Venmo)."""
 
     __tablename__ = "venmo_payer_bindings"
     __table_args__ = (
         UniqueConstraint(
             "payer_name_normalized",
-            name="uq_venmo_payer_bindings_payer_name",
+            "telegram_chat_id",
+            name="uq_venmo_payer_bindings_payer_chat",
         ),
         Index("ix_venmo_payer_bindings_telegram_chat_id", "telegram_chat_id"),
     )
@@ -863,13 +927,14 @@ class CashAppPayment(Base):
 
 
 class CashAppPayerBinding(Base):
-    """Remember last bind: normalized payer name -> support group (any shared Cash App)."""
+    """Remember bind candidates: normalized payer name + support group (any shared Cash App)."""
 
     __tablename__ = "cashapp_payer_bindings"
     __table_args__ = (
         UniqueConstraint(
             "payer_name_normalized",
-            name="uq_cashapp_payer_bindings_payer_name",
+            "telegram_chat_id",
+            name="uq_cashapp_payer_bindings_payer_chat",
         ),
         Index("ix_cashapp_payer_bindings_telegram_chat_id", "telegram_chat_id"),
     )
@@ -877,6 +942,75 @@ class CashAppPayerBinding(Base):
     id = Column(Integer, primary_key=True)
     payer_name_normalized = Column(String(255), nullable=False)
     cashapp_handle = Column(String(100), nullable=False)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    bound_group_title_at_bind = Column(String(255), nullable=True)
+    last_bound_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_bound_by_telegram_user_id = Column(BigInteger, nullable=True)
+
+    club = relationship("Club")
+
+
+class PayPalPayment(Base):
+    """One PayPal deposit ingested from Zapier; optionally bound to a support group."""
+
+    __tablename__ = "paypal_payments"
+    __table_args__ = (
+        Index(
+            "ix_paypal_payments_notification_msg",
+            "notification_chat_id",
+            "notification_message_id",
+        ),
+        Index("ix_paypal_payments_telegram_chat_id", "telegram_chat_id"),
+        Index("ix_paypal_payments_created_at", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    payer_name = Column(String(255), nullable=False)
+    amount_cents = Column(Integer, nullable=False)
+    paypal_email = Column(String(255), nullable=False)
+    paid_at = Column(String(255), nullable=True)
+    source_external_id = Column(String(255), unique=True, nullable=True)
+    telegram_chat_id = Column(BigInteger, nullable=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    bound_group_title_at_bind = Column(String(255), nullable=True)
+    notification_chat_id = Column(BigInteger, nullable=True)
+    notification_message_id = Column(BigInteger, nullable=True)
+    bound_by_telegram_user_id = Column(BigInteger, nullable=True)
+    auto_bound = Column(Boolean, nullable=False, default=False)
+    is_test = Column(Boolean, nullable=False, default=False)
+    bound_at = Column(DateTime(timezone=True), nullable=True)
+    memo = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    club = relationship("Club")
+
+
+class PayPalPayerBinding(Base):
+    """Remember bind candidates: normalized payer name + support group (any shared PayPal)."""
+
+    __tablename__ = "paypal_payer_bindings"
+    __table_args__ = (
+        UniqueConstraint(
+            "payer_name_normalized",
+            "telegram_chat_id",
+            name="uq_paypal_payer_bindings_payer_chat",
+        ),
+        Index("ix_paypal_payer_bindings_telegram_chat_id", "telegram_chat_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    payer_name_normalized = Column(String(255), nullable=False)
+    paypal_email = Column(String(255), nullable=False)
     telegram_chat_id = Column(BigInteger, nullable=False)
     club_id = Column(
         Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
@@ -979,14 +1113,15 @@ class CryptoPayment(Base):
 
 
 class CryptoWalletBinding(Base):
-    """Remember last bind: wallet address + alert scope -> support group."""
+    """Remember bind candidates: wallet address + alert scope + support group."""
 
     __tablename__ = "crypto_wallet_bindings"
     __table_args__ = (
         UniqueConstraint(
             "from_address_normalized",
             "alert_scope",
-            name="uq_crypto_wallet_bindings_address_scope",
+            "telegram_chat_id",
+            name="uq_crypto_wallet_bindings_address_scope_chat",
         ),
         Index("ix_crypto_wallet_bindings_telegram_chat_id", "telegram_chat_id"),
     )
@@ -1006,13 +1141,14 @@ class CryptoWalletBinding(Base):
 
 
 class ZellePayerBinding(Base):
-    """Remember last bind: normalized payer name -> support group (any shared Zelle)."""
+    """Remember bind candidates: normalized payer name + support group (any shared Zelle)."""
 
     __tablename__ = "zelle_payer_bindings"
     __table_args__ = (
         UniqueConstraint(
             "payer_name_normalized",
-            name="uq_zelle_payer_bindings_payer_name",
+            "telegram_chat_id",
+            name="uq_zelle_payer_bindings_payer_chat",
         ),
         Index("ix_zelle_payer_bindings_telegram_chat_id", "telegram_chat_id"),
     )
@@ -1102,6 +1238,11 @@ class PaymentMethodBindAttempt(Base):
         ForeignKey("cashapp_payments.id", ondelete="SET NULL"),
         nullable=True,
     )
+    paypal_payment_id = Column(
+        Integer,
+        ForeignKey("paypal_payments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
@@ -1111,6 +1252,7 @@ class PaymentMethodBindAttempt(Base):
     venmo_payment = relationship("VenmoPayment")
     zelle_payment = relationship("ZellePayment")
     cashapp_payment = relationship("CashAppPayment")
+    paypal_payment = relationship("PayPalPayment")
 
 
 class GroupPaymentMethodBinding(Base):
@@ -1158,3 +1300,55 @@ class GroupPaymentMethodBinding(Base):
         "PaymentMethodBindAttempt",
         foreign_keys=[first_bind_attempt_id],
     )
+
+
+class PaymentBindingEvent(Base):
+    """Append-only audit log for payment/group binding and notification sync."""
+
+    __tablename__ = "payment_binding_events"
+    __table_args__ = (
+        Index(
+            "ix_pbe_method_payment",
+            "payment_method_slug",
+            "payment_id",
+        ),
+        Index(
+            "ix_pbe_notification_msg",
+            "notification_chat_id",
+            "notification_message_id",
+        ),
+        Index("ix_pbe_event_type_created", "event_type", "created_at"),
+        Index("ix_pbe_telegram_chat_id", "telegram_chat_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    event_type = Column(String(32), nullable=False)
+    payment_method_slug = Column(String(32), nullable=False)
+    payment_id = Column(Integer, nullable=True)
+    bind_attempt_id = Column(
+        Integer,
+        ForeignKey("payment_method_bind_attempts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    group_binding_id = Column(
+        Integer,
+        ForeignKey("group_payment_method_bindings.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    telegram_chat_id = Column(BigInteger, nullable=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    bound_group_title = Column(String(255), nullable=True)
+    bound_via = Column(String(32), nullable=True)
+    auto_bound = Column(Boolean, nullable=True)
+    actor_telegram_user_id = Column(BigInteger, nullable=True)
+    notification_chat_id = Column(BigInteger, nullable=True)
+    notification_message_id = Column(BigInteger, nullable=True)
+    previous_telegram_chat_id = Column(BigInteger, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    club = relationship("Club")
+    bind_attempt = relationship("PaymentMethodBindAttempt")
+    group_binding = relationship("GroupPaymentMethodBinding")
