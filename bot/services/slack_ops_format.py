@@ -7,6 +7,7 @@ import re
 SOURCE_HEADERS: dict[str, str] = {
     "migration_recovery": ":arrows_counterclockwise: *Migration Recovery*",
     "notification_report": ":bell: *Notification Report*",
+    "issue_report": ":ticket: *Issue Report*",
     "recovery_membership_audit": ":mag: *Recovery Membership Audit*",
     "recovery_triage": ":clipboard: *Recovery Triage*",
 }
@@ -27,6 +28,8 @@ def beautify_slack_body(text: str, *, source: str) -> str:
         return _beautify_migration_recovery(body)
     if source == "notification_report":
         return _beautify_notification_report(body)
+    if source == "issue_report":
+        return _beautify_issue_report(body)
     if source == "recovery_membership_audit":
         return _beautify_recovery_membership_audit(body)
     if source == "recovery_triage":
@@ -279,6 +282,34 @@ def _beautify_notification_report(body: str) -> str:
         out.append("```")
         out.append(original.strip())
         out.append("```")
+    return "\n".join(out)
+
+
+def _beautify_issue_report(body: str) -> str:
+    if "Issue report" not in body:
+        return body
+
+    ticket_id = _field(body, r"Ticket:\s*#(\d+)")
+    title = _field(body, r"Title:\s*(.+)")
+    reporter = _field(body, r"Reporter:\s*(.+)")
+    tags_raw = _field(body, r"Tags:\s*(.+)")
+    description = _extract_block(body, "Description:", ("Reporter:", "Tags:", "Title:"))
+
+    out: list[str] = []
+    if ticket_id:
+        out.append(f"*Ticket* `#{ticket_id}`")
+    if title:
+        out.append(f"*Title:* {title.strip()}")
+    if tags_raw and tags_raw.strip() not in ("(none)", ""):
+        tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
+        if tags:
+            out.append(f"*Tags:* {', '.join(f'`{t}`' for t in tags)}")
+    if reporter:
+        out.append(f"*Reporter:* {reporter.strip()}")
+    if description:
+        out.append("")
+        out.append("*Description:*")
+        out.append(description.strip())
     return "\n".join(out)
 
 

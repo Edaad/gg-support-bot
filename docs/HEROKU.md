@@ -210,7 +210,7 @@ Migration re-add **errors** (failed rows, rate limits, auto-disable) and notific
 **Preferred: custom Slack app** ([`chat.postMessage`](https://docs.slack.dev/reference/methods/chat.postMessage)) — e.g. **Engineer noti service**:
 
 1. At [api.slack.com/apps](https://api.slack.com/apps), open your app → **OAuth & Permissions**.
-2. Bot Token Scopes: `chat:write` (and `chat:write.public` if the bot is not invited to the channel).
+2. Bot Token Scopes: `chat:write` (and `chat:write.public` if the bot is not invited to the channel). For **issue report screenshots**, also add `files:write`.
 3. **Install to workspace** → copy **Bot User OAuth Token** (`xoxb-…`).
 4. Invite the app to your ops channel (or rely on `chat:write.public` for public channels).
 5. Channel ID: open the channel in Slack → channel name → **View channel details** → copy ID (`C…`), or right-click channel → Copy link (ID is in the URL).
@@ -222,6 +222,8 @@ heroku config:set SLACK_OPS_MENTION='<@UYOUR_SLACK_USER_ID>' -a YOUR_APP   # opt
 ```
 
 **Optional fallback:** Incoming Webhook (`SLACK_OPS_WEBHOOK_URL`) if bot post fails or you have not set bot token yet.
+
+**Issue reports (account managers):** Tickets are stored in Postgres (`issue_reports`). Create via `POST /api/issue-reports` (multipart) or `python scripts/create_issue_report.py`. Slack posts use the same ops channel; optional per-tag mentions via `ISSUE_REPORT_TAG_MENTIONS` JSON (e.g. `{"cashout":"<@U123>","bot_issue":"<!subteam^S456>"}`). Run `python migrate_issue_reports.py` once after deploy.
 
 Set app-wide (worker + notification dynos). Restart after deploy: `heroku restart worker notification -a YOUR_APP`
 

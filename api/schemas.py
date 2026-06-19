@@ -530,3 +530,38 @@ class BonusRecordRead(BaseModel):
     club_name: Optional[str] = None
     admin_telegram_user_id: int
     created_at: Optional[datetime]
+
+
+# ── Issue reports ─────────────────────────────────────────────────────────────
+
+class IssueReportAttachmentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    filename: str
+    content_type: str
+    slack_file_id: Optional[str] = None
+    created_at: Optional[datetime]
+
+
+class IssueReportRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    description: str
+    tags: List[str]
+    status: str
+    reporter_name: Optional[str] = None
+    reporter_source: str
+    slack_message_ts: Optional[str] = None
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+    attachments: List[IssueReportAttachmentRead] = []
+
+
+class IssueReportCreate(BaseModel):
+    title: str
+    description: str
+    tags: List[str] = []
+    reporter_name: Optional[str] = None

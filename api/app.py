@@ -91,6 +91,7 @@ def create_app() -> FastAPI:
     from api.routes.paypal_payments import router as paypal_payments_router
     from api.routes.crypto_payments import router as crypto_payments_router
     from api.routes.v2_payment import router as v2_payment_router
+    from api.routes.issue_reports import router as issue_reports_router
 
     app.include_router(weekly_stats_proxy_router)
     app.include_router(stripe_deposit_router)
@@ -109,6 +110,7 @@ def create_app() -> FastAPI:
     app.include_router(gc_mtproto_router)
     app.include_router(bonus_router)
     app.include_router(payments_router)
+    app.include_router(issue_reports_router)
 
     # ── Serve React dashboard (production build) ─────────────────────────
     # Only mount if a real Vite build exists (dist/assets + index.html). Heroku/API-only

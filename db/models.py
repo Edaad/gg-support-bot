@@ -11,6 +11,7 @@ from sqlalchemy import (
     UniqueConstraint,
     CheckConstraint,
     Index,
+    LargeBinary,
     text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
@@ -1352,3 +1353,51 @@ class PaymentBindingEvent(Base):
     club = relationship("Club")
     bind_attempt = relationship("PaymentMethodBindAttempt")
     group_binding = relationship("GroupPaymentMethodBinding")
+
+
+class IssueReport(Base):
+    """Account-manager issue report ticket."""
+
+    __tablename__ = "issue_reports"
+    __table_args__ = (Index("ix_issue_reports_created_at", "created_at"),)
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    tags = Column(ARRAY(String(32)), nullable=False, server_default="{}")
+    status = Column(String(32), nullable=False, server_default="open")
+    reporter_name = Column(String(255), nullable=True)
+    reporter_source = Column(String(32), nullable=False, server_default="api")
+    slack_message_ts = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    attachments = relationship(
+        "IssueReportAttachment",
+        back_populates="issue_report",
+        cascade="all, delete-orphan",
+    )
+
+
+class IssueReportAttachment(Base):
+    """Screenshot attached to an issue report."""
+
+    __tablename__ = "issue_report_attachments"
+
+    id = Column(Integer, primary_key=True)
+    issue_report_id = Column(
+        Integer,
+        ForeignKey("issue_reports.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    filename = Column(String(255), nullable=False)
+    content_type = Column(String(128), nullable=False)
+    content = Column(LargeBinary, nullable=False)
+    slack_file_id = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    issue_report = relationship("IssueReport", back_populates="attachments")
