@@ -14,8 +14,11 @@ from openpyxl import load_workbook
 
 from api.auth import create_token, get_current_admin
 from api.audit_export import SHEET_SPECS, build_audit_workbook
+from api.payments_helpers import build_crypto_payment_read
 from api.routes.payments import router
+from bot.services.crypto_payments import ALERT_SCOPE_LABELS, ALERT_SCOPE_CLUBGTO
 from db.connection import get_db_dependency
+from db.models import CryptoPayment
 
 TOKEN = create_token()
 
@@ -36,6 +39,27 @@ def _make_app() -> FastAPI:
 
 
 class AuditExportWorkbookTestCase(unittest.TestCase):
+    def test_alert_scope_labels_importable(self):
+        self.assertIn(ALERT_SCOPE_CLUBGTO, ALERT_SCOPE_LABELS)
+
+    def test_build_crypto_payment_read_does_not_raise(self):
+        payment = CryptoPayment(
+            id=1,
+            amount_cents=10000,
+            token_symbol="USDC",
+            chain="ethereum",
+            from_address="0xfrom1234567890abcdef",
+            to_address="0xto",
+            transaction_hash="0xhash",
+            alert_scope=ALERT_SCOPE_CLUBGTO,
+            is_test=False,
+            auto_bound=False,
+            created_at=datetime(2026, 6, 17, tzinfo=timezone.utc),
+        )
+        data = build_crypto_payment_read(MagicMock(), payment)
+        self.assertEqual(data["alert_scope_label"], ALERT_SCOPE_LABELS[ALERT_SCOPE_CLUBGTO])
+        self.assertIn("0xfrom", data["from_label"])
+
     @patch("api.audit_export._fetch_stripe_rows", return_value=[])
     @patch("api.audit_export._fetch_manual_rows", return_value=[])
     @patch("api.audit_export._club_name_map", return_value={})

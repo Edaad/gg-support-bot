@@ -850,8 +850,8 @@
     "semantic_hash": ""
   },
   "api/routes/payments.py": {
-    "mtime": 1781221247.0572264,
-    "ast_hash": "4beb6e084f83faebb4359bea67a11fa7",
+    "mtime": 1781882368.2686634,
+    "ast_hash": "9e264670e8524ce46869a0f8f8621a43",
     "semantic_hash": ""
   },
   "api/routes/simulate.py": {
@@ -1315,8 +1315,8 @@
     "semantic_hash": ""
   },
   "dashboard/src/api/paymentsClient.ts": {
-    "mtime": 1781221261.6719074,
-    "ast_hash": "2133d09a22f7ac1018d1c13145674aac",
+    "mtime": 1781882387.7732844,
+    "ast_hash": "46c5a9bdcad3b6c2ea1d03f9e59e2da5",
     "semantic_hash": ""
   },
   "dashboard/src/api/v2Client.ts": {
@@ -1465,8 +1465,8 @@
     "semantic_hash": "4a6da6727d0bd80a7e20d65c09e3ffde"
   },
   "dashboard/src/pages/Payments.tsx": {
-    "mtime": 1781649540.3991573,
-    "ast_hash": "234716ac6342c2872735aaf9fbb959ca",
+    "mtime": 1781882408.9843082,
+    "ast_hash": "7d57ae1db1d125028640b4acdf182bdb",
     "semantic_hash": ""
   },
   "dashboard/src/pages/Settings.tsx": {
@@ -2585,8 +2585,8 @@
     "semantic_hash": ""
   },
   "requirements.txt": {
-    "mtime": 1779819958.0257974,
-    "ast_hash": "6800b080f4d477d76bc372d15b833537",
+    "mtime": 1781882323.8154204,
+    "ast_hash": "5a172a59827d5b0aaeedfc0218788cbe",
     "semantic_hash": ""
   },
   "assets/group_photos/clubgto.jpg": {
@@ -3027,6 +3027,16 @@
   "tests/test_triage_recovery_tier3_pending.py": {
     "mtime": 1781747975.7882571,
     "ast_hash": "5bd33d2ea7803744148a3cba8a32ce44",
+    "semantic_hash": ""
+  },
+  "api/audit_export.py": {
+    "mtime": 1781882357.1839,
+    "ast_hash": "989ad336f739887a90be56e87379d4e1",
+    "semantic_hash": ""
+  },
+  "tests/test_audit_export.py": {
+    "mtime": 1781882423.9105399,
+    "ast_hash": "e22316379125de96c88ec90ec76d05de",
     "semantic_hash": ""
   }
 }

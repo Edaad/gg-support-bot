@@ -72,6 +72,11 @@ CLUB_NAME_TO_ALERT_SCOPE: dict[str, str] = {
     "Creator Club": ALERT_SCOPE_RT_AT_CC,
 }
 
+ALERT_SCOPE_LABELS: dict[str, str] = {
+    ALERT_SCOPE_CLUBGTO: "ClubGTO",
+    ALERT_SCOPE_RT_AT_CC: "Round Table / AT / CC",
+}
+
 
 def resolve_alert_scope(alert_name: str) -> str:
     """Map Arkham alert name to clubgto or rt_at_cc bucket."""
