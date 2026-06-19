@@ -101,7 +101,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     engine = init_engine()
     Base.metadata.create_all(engine)
 
-    from bot.handlers.start import start_handler, help_handler, whoami_handler
+    from bot.handlers.start import start_handler, help_handler, whoami_handler, fileid_handler, fileid_photo_handler
     from bot.handlers.commands import (
         get_set_handler,
         mycmds_handler,
@@ -146,6 +146,8 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("help", help_handler))
     app.add_handler(CommandHandler("whoami", whoami_handler))
+    app.add_handler(CommandHandler("fileid", fileid_handler))
+    app.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, fileid_photo_handler))
     app.add_handler(CommandHandler("mycmds", mycmds_handler))
     app.add_handler(CommandHandler("delete", delete_handler))
     app.add_handler(CommandHandler("bypass", bypass_handler))

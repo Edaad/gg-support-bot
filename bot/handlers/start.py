@@ -45,3 +45,30 @@ async def whoami_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"Your Telegram user ID: {update.effective_user.id}"
         )
+
+
+async def fileid_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reply with the file_id of a photo sent to the bot. Usage: send a photo, then /fileid as reply."""
+    if not update.message:
+        return
+
+    photo = None
+    target = update.message.reply_to_message or update.message
+    if target.photo:
+        photo = target.photo[-1]
+
+    if not photo:
+        await update.message.reply_text(
+            "Send or forward a photo to this chat, then reply to it with /fileid."
+        )
+        return
+
+    await update.message.reply_text(f"file_id:\n\n{photo.file_id}")
+
+
+async def fileid_photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """When a photo is sent directly (no command), reply with its file_id if preceded by /fileid."""
+    if not update.message or not update.message.photo:
+        return
+    photo = update.message.photo[-1]
+    await update.message.reply_text(f"file_id:\n\n{photo.file_id}")
