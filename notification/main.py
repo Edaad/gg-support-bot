@@ -89,7 +89,7 @@ def run_notification_bot(token: str | None = None) -> None:
     )
     app.add_handler(
         MessageHandler(
-            filters.TEXT & ~filters.COMMAND & ~filters.REPLY,
+            filters.TEXT & ~filters.COMMAND,
             payment_bind_add_member_reply_handler,
         )
     )

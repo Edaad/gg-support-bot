@@ -41,7 +41,8 @@ from notification.payment_bind_helpers import (
 
 logger = logging.getLogger(__name__)
 
-_BIND_ADD_MEMBER_KEY = "bind_add_member_pending"
+BIND_ADD_MEMBER_PENDING_KEY = "bind_add_member_pending"
+_BIND_ADD_MEMBER_KEY = BIND_ADD_MEMBER_PENDING_KEY
 
 # Reassign / add-candidate flows post buttons on a separate bot reply, not the
 # original notification message — do not apply notification message_id stale check.
