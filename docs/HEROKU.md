@@ -282,7 +282,7 @@ heroku config:set SLACK_OPS_MENTION='<@UYOUR_SLACK_USER_ID>' -a YOUR_APP   # opt
 
 **Issue reports (account managers):** Tickets are stored in Postgres (`issue_reports`). Create via `POST /api/issue-reports` (multipart) or `python scripts/create_issue_report.py`. Slack posts use the same ops channel; optional per-tag mentions via `ISSUE_REPORT_TAG_MENTIONS` JSON (e.g. `{"cashout":"<@U123>","bot_issue":"<!subteam^S456>"}`). Run `python migrate_issue_reports.py` once after deploy.
 
-**Support notes (player disputes):** AM shift handoff via bot commands `/note`, `/notes`, and `/resolve` (staff-only; full output in bot private chat). Stored in `player_support_issues` and `player_support_notes`. Run `python migrate_player_support_notes.py` once after deploy.
+**Support notes (player disputes):** AM shift handoff via `/note`, `/notes`, and `/resolve` — see [`docs/SUPPORT_NOTES.md`](SUPPORT_NOTES.md). Run `python migrate_player_support_notes.py` once after deploy.
 
 Set app-wide (worker + notification dynos). Restart after deploy: `heroku restart worker notification -a YOUR_APP`
 
