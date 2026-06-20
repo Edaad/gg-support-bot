@@ -1,4 +1,4 @@
-"""Add last_slack_summary_at to migration_recovery_control (DB-backed 6h Slack cadence).
+"""Add last_slack_summary_at to migration_recovery_control (DB-backed 24h Slack cadence).
 
 Usage:
     DATABASE_URL=... python migrate_migration_recovery_slack_summary_last.py

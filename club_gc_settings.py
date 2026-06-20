@@ -418,7 +418,7 @@ def is_migration_recovery_skip_welcome_enabled() -> bool:
 
 
 def get_migration_recovery_slack_summary_interval_sec() -> int:
-    return max(600, _env_int("GC_MIGRATION_RECOVERY_SLACK_SUMMARY_INTERVAL_SEC", 21600))
+    return max(600, _env_int("GC_MIGRATION_RECOVERY_SLACK_SUMMARY_INTERVAL_SEC", 86400))
 
 
 def get_migration_recovery_slack_summary_check_delay_sec() -> float:
