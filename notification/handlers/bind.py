@@ -98,7 +98,7 @@ async def payment_bind_reply_handler(
 
     # ForceReply answers to "Add another member" are replies to the bot prompt,
     # not the payment notification — route before the notification-only check.
-    if get_add_member_pending(context):
+    if get_add_member_pending(context, chat_id=chat_id):
         await payment_bind_add_member_reply_handler(update, context)
         return
 

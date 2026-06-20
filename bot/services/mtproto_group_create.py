@@ -25,6 +25,9 @@ from club_gc_settings import (
     get_gc_users_to_add,
     get_mtproto_telethon_client_kwargs,
     get_tg_mtproto_credentials,
+    link_join_exclude_normalized,
+    resolve_group_creator_cfg,
+    resolve_link_join_cfg,
 )
 from bot.services.mtproto_session_db import load_session_string_for_club
 
@@ -287,6 +290,9 @@ class MtProtoGroupOutcome:
     warnings: list[str] = field(default_factory=list)
     error_hint: str | None = None
     player_direct_add_ok: bool | None = None
+    link_joined_users: list[dict] = field(default_factory=list)
+    promoted_admins: list[dict] = field(default_factory=list)
+    link_join_failures: list[dict] = field(default_factory=list)
 
 
 async def apply_club_group_photo(
@@ -548,9 +554,18 @@ async def create_support_megagroup(
     player_direct_add_ok: bool | None = None
 
     bot_label = cfg.bot_account or (f"@{bot_dm_username}" if bot_dm_username else None)
+    creator_cfg = resolve_group_creator_cfg(cfg)
+    link_join_cfg = resolve_link_join_cfg(cfg)
+    promote_marker = (cfg.promote_admin_marker or "").strip() or None
+    exclude_invites = link_join_exclude_normalized(cfg)
 
-    async with get_mtproto_lock(cfg.club_key):
-        client = make_client(cfg)
+    link_joined_users: list[dict] = []
+    promoted_admins: list[dict] = []
+    link_join_failures: list[dict] = []
+    channel_ent = None
+
+    async with get_mtproto_lock(creator_cfg.club_key):
+        client = make_client(creator_cfg)
         await client.connect()
         try:
             if not await client.is_user_authorized():
@@ -633,6 +648,8 @@ async def create_support_megagroup(
                 if not marker:
                     continue
                 norm = marker.lower().lstrip("@")
+                if norm in exclude_invites:
+                    continue
                 if norm in invite_seen:
                     continue
                 invite_seen.add(norm)
@@ -696,26 +713,46 @@ async def create_support_megagroup(
                     }
                 )
 
-            mega_ok_out = chat_id_big is not None
-            ghint = None
-            if chat_id_big is None:
-                ghint = "missing Telegram chat id after creation"
-
-            group_photo_final = (not cfg.group_photo_path) or photo_ok
-
-            return MtProtoGroupOutcome(
-                ok=mega_ok_out,
-                telegram_chat_id=chat_id_big,
-                telegram_chat_title=title_out,
-                invite_link=invite_link,
-                added_users=added_ok,
-                failed_users=failed_ok,
-                initial_message_sent=initial_sent,
-                group_photo_attempted=photo_attempted,
-                group_photo_ok=group_photo_final,
-                warnings=warnings_local,
-                error_hint=ghint,
-                player_direct_add_ok=player_direct_add_ok,
-            )
         finally:
             await client.disconnect()
+
+    if (
+        link_join_cfg is not None
+        and promote_marker
+        and invite_link
+        and channel_ent is not None
+    ):
+        from bot.services.mtproto_group_join import run_link_join_and_promote
+
+        lj, prom, fail = await run_link_join_and_promote(
+            creator_cfg,
+            channel_entity=channel_ent,
+            invite_link=invite_link,
+            promote_marker=promote_marker,
+            link_join_cfg=link_join_cfg,
+        )
+        link_joined_users.extend(lj)
+        promoted_admins.extend(prom)
+        link_join_failures.extend(fail)
+
+    mega_ok_out = chat_id_big is not None
+    ghint = None if chat_id_big is not None else "missing Telegram chat id after creation"
+    group_photo_final = (not cfg.group_photo_path) or photo_ok
+
+    return MtProtoGroupOutcome(
+        ok=mega_ok_out,
+        telegram_chat_id=chat_id_big,
+        telegram_chat_title=title_out,
+        invite_link=invite_link,
+        added_users=added_ok,
+        failed_users=failed_ok,
+        initial_message_sent=initial_sent,
+        group_photo_attempted=photo_attempted,
+        group_photo_ok=group_photo_final,
+        warnings=warnings_local,
+        error_hint=ghint,
+        player_direct_add_ok=player_direct_add_ok,
+        link_joined_users=link_joined_users,
+        promoted_admins=promoted_admins,
+        link_join_failures=link_join_failures,
+    )

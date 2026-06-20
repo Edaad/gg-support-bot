@@ -45,30 +45,69 @@ BIND_ADD_MEMBER_PENDING_KEY = "bind_add_member_pending"
 _BIND_ADD_MEMBER_KEY = BIND_ADD_MEMBER_PENDING_KEY
 
 
-def get_add_member_pending(context: ContextTypes.DEFAULT_TYPE) -> dict | None:
+def _canonical_notification_chat_id(chat_id: int) -> int | None:
+    """Map Telegram chat id variants to the configured notification chat id."""
+    expected = notification_chat_id()
+    if expected is None:
+        return int(chat_id)
+    if telegram_chat_ids_match(int(chat_id), int(expected)):
+        return int(expected)
+    return None
+
+
+def _pending_store(context: ContextTypes.DEFAULT_TYPE) -> dict:
+    return context.application.bot_data.setdefault(BIND_ADD_MEMBER_PENDING_KEY, {})
+
+
+def get_add_member_pending(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int,
+) -> dict | None:
     """Pending add-member flow for the shared notification chat (any staff may reply)."""
-    pending = context.chat_data.get(BIND_ADD_MEMBER_PENDING_KEY)
+    key = _canonical_notification_chat_id(chat_id)
+    if key is None:
+        return None
+    pending = _pending_store(context).get(key)
     return pending if isinstance(pending, dict) else None
 
 
 def set_add_member_pending(
     context: ContextTypes.DEFAULT_TYPE,
     *,
+    chat_id: int,
     method_slug: str,
     payment_id: int,
     notification_message_id: int,
     actor_user_id: int,
 ) -> None:
-    context.chat_data[BIND_ADD_MEMBER_PENDING_KEY] = {
+    key = _canonical_notification_chat_id(chat_id)
+    if key is None:
+        logger.warning(
+            "payment_bind: add_member_pending_set skipped unknown chat_id=%s",
+            chat_id,
+        )
+        return
+    _pending_store(context)[key] = {
         "method_slug": method_slug,
         "payment_id": payment_id,
         "notification_message_id": notification_message_id,
         "actor_user_id": actor_user_id,
     }
+    logger.info(
+        "payment_bind: add_member_pending_set chat_id=%s key=%s method=%s payment_id=%s",
+        chat_id,
+        key,
+        method_slug,
+        payment_id,
+    )
 
 
-def clear_add_member_pending(context: ContextTypes.DEFAULT_TYPE) -> None:
-    context.chat_data.pop(BIND_ADD_MEMBER_PENDING_KEY, None)
+def clear_add_member_pending(context: ContextTypes.DEFAULT_TYPE, *, chat_id: int) -> None:
+    key = _canonical_notification_chat_id(chat_id)
+    if key is None:
+        return
+    _pending_store(context).pop(key, None)
 
 # Reassign / add-candidate flows post buttons on a separate bot reply, not the
 # original notification message — do not apply notification message_id stale check.
@@ -436,6 +475,7 @@ async def payment_bind_callback_handler(
     if action == "m":
         set_add_member_pending(
             context,
+            chat_id=int(message.chat_id),
             method_slug=method_slug,
             payment_id=payment_id,
             notification_message_id=int(message.message_id),
@@ -465,8 +505,17 @@ async def payment_bind_add_member_reply_handler(
     if not update.message or not update.effective_user:
         return
 
-    pending = get_add_member_pending(context)
+    pending = get_add_member_pending(context, chat_id=int(update.effective_chat.id))
     if not pending:
+        if update.message.reply_to_message is not None:
+            logger.info(
+                "payment_bind: add_member_no_pending chat_id=%s user_id=%s "
+                "reply_to_message_id=%s pending_keys=%s",
+                update.effective_chat.id,
+                update.effective_user.id,
+                update.message.reply_to_message.message_id,
+                list(_pending_store(context).keys()),
+            )
         return
 
     expected_chat = notification_chat_id()
@@ -495,7 +544,7 @@ async def payment_bind_add_member_reply_handler(
     payment_id = int(pending["payment_id"])
     payment = load_payment(method_slug, payment_id)
     if payment is None:
-        clear_add_member_pending(context)
+        clear_add_member_pending(context, chat_id=int(update.effective_chat.id))
         await update.message.reply_text("Payment not found.")
         return
 
@@ -518,7 +567,7 @@ async def payment_bind_add_member_reply_handler(
         await update.message.reply_text(bind_scope_err)
         return
 
-    clear_add_member_pending(context)
+    clear_add_member_pending(context, chat_id=int(update.effective_chat.id))
     logger.info(
         "payment_bind: add_member_resolved method=%s payment_id=%s target_chat_id=%s "
         "title=%r actor_user_id=%s",

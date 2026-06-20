@@ -97,6 +97,29 @@ def _nullable_path(key: str, default_rel: str) -> str | None:
     return default_rel
 
 
+def _elevate_creator_round_table_enabled() -> bool:
+    raw = os.getenv("GC_ELEVATE_CREATOR_ROUND_TABLE")
+    if raw is None or not str(raw).strip():
+        return False
+    return str(raw).strip().lower() not in ("0", "false", "no", "off")
+
+
+def _round_table_elevate_kwargs() -> dict[str, object]:
+    """Optional Elevate Admin creator + RTS2 link-join when ``GC_ELEVATE_CREATOR_ROUND_TABLE`` is on."""
+
+    if not _elevate_creator_round_table_enabled():
+        return {}
+    exclude_raw = _env_csv_tuple("GC_LINK_JOIN_EXCLUDE_ROUND_TABLE")
+    exclude = exclude_raw if exclude_raw else ("@RoundTableSupport2",)
+    promote = _env_optional("GC_PROMOTE_ADMIN_ROUND_TABLE") or "@RoundTableSupport2"
+    return {
+        "group_creator_club_key": "elevate_admin",
+        "link_join_club_key": "round_table_support2",
+        "promote_admin_marker": promote,
+        "link_join_exclude_markers": exclude,
+    }
+
+
 @dataclass(frozen=True)
 class ClubGcConfig:
     club_key: str
@@ -113,10 +136,58 @@ class ClubGcConfig:
     initial_group_message_template: str
     # Dashboard clubs.id — link megagroups from /gc so the bot sends welcome + member-join bundle.
     link_club_id: int
+    # Elevate Admin flow (Round Table): optional alternate creator + link-join admin target.
+    group_creator_club_key: str | None = None
+    link_join_club_key: str | None = None
+    promote_admin_marker: str | None = None
+    link_join_exclude_markers: tuple[str, ...] = ()
+    # Dashboard Telegram login: ``listener`` | ``creator`` | ``link_join``
+    session_role: str = "listener"
+
+
+def build_auxiliary_mtproto_config() -> Mapping[str, ClubGcConfig]:
+    """Auxiliary Telethon sessions (Elevate creator, RTS2 link-join) — not DM listeners."""
+
+    return {
+        "elevate_admin": ClubGcConfig(
+            club_key="elevate_admin",
+            club_display_name="Elevate Admin",
+            command_admin_user_id=0,
+            mtproto_session=_env_str(
+                "GC_SESSION_ELEVATE_ADMIN", "sessions/elevate_admin.session"
+            ),
+            mtproto_phone_number=_env_optional("MT_PROTO_PHONE_ELEVATE_ADMIN"),
+            group_title="",
+            group_photo_path=None,
+            users_to_add=(),
+            bot_account=None,
+            initial_group_message_template="",
+            link_club_id=0,
+            session_role="creator",
+        ),
+        "round_table_support2": ClubGcConfig(
+            club_key="round_table_support2",
+            club_display_name="Round Table Support2",
+            command_admin_user_id=0,
+            mtproto_session=_env_str(
+                "GC_SESSION_ROUND_TABLE_SUPPORT2",
+                "sessions/round_table_support2.session",
+            ),
+            mtproto_phone_number=_env_optional("MT_PROTO_PHONE_ROUND_TABLE_SUPPORT2"),
+            group_title="",
+            group_photo_path=None,
+            users_to_add=(),
+            bot_account=None,
+            initial_group_message_template="",
+            link_club_id=0,
+            session_role="link_join",
+        ),
+    }
 
 
 def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
     bot_account = _env_optional("GC_BOT_ACCOUNT")
+    rt_elevate = _round_table_elevate_kwargs()
 
     return {
         "round_table": ClubGcConfig(
@@ -138,6 +209,7 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
                 "Group created. Invite link: {invite_link}",
             ),
             link_club_id=_link_club_id_for_gc("GC_LINK_CLUB_ID_ROUND_TABLE", default_dashboard_id=2),
+            **rt_elevate,
         ),
         "creator_club": ClubGcConfig(
             club_key="creator_club",
@@ -181,6 +253,64 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
 
 
 CLUB_GC_CONFIG = build_club_gc_config()
+AUX_MTPROTO_CONFIG = build_auxiliary_mtproto_config()
+
+
+def get_mtproto_session_config(club_key: str) -> ClubGcConfig | None:
+    """Resolve listener club or auxiliary session config by ``club_key``."""
+
+    cfg = CLUB_GC_CONFIG.get(club_key)
+    if cfg is not None:
+        return cfg
+    return AUX_MTPROTO_CONFIG.get(club_key)
+
+
+def is_elevate_creator_enabled(club_key: str) -> bool:
+    """True when this club uses Elevate Admin as megagroup creator (Round Table only today)."""
+
+    if club_key != "round_table" or not _elevate_creator_round_table_enabled():
+        return False
+    cfg = CLUB_GC_CONFIG.get(club_key)
+    return cfg is not None and bool(cfg.group_creator_club_key)
+
+
+def resolve_group_creator_cfg(cfg: ClubGcConfig) -> ClubGcConfig:
+    """MTProto session that runs ``CreateChannelRequest`` (Elevate when enabled, else ``cfg``)."""
+
+    if not cfg.group_creator_club_key:
+        return cfg
+    if cfg.club_key == "round_table" and not _elevate_creator_round_table_enabled():
+        return cfg
+    creator = get_mtproto_session_config(cfg.group_creator_club_key)
+    return creator if creator is not None else cfg
+
+
+def resolve_link_join_cfg(cfg: ClubGcConfig) -> ClubGcConfig | None:
+    if not cfg.link_join_club_key:
+        return None
+    if cfg.club_key == "round_table" and not _elevate_creator_round_table_enabled():
+        return None
+    return get_mtproto_session_config(cfg.link_join_club_key)
+
+
+def link_join_exclude_normalized(cfg: ClubGcConfig) -> frozenset[str]:
+    return frozenset(m.lower().strip().lstrip("@") for m in cfg.link_join_exclude_markers if m.strip())
+
+
+def get_mtproto_login_profiles() -> tuple[ClubGcConfig, ...]:
+    """Ordered list for Dashboard Telegram login (listeners + auxiliary sessions)."""
+
+    clubs = list(CLUB_GC_CONFIG.values())
+    aux = list(AUX_MTPROTO_CONFIG.values())
+    # Round Table listener, then Elevate + RTS2, then remaining listener clubs.
+    rt = next((c for c in clubs if c.club_key == "round_table"), None)
+    rest = [c for c in clubs if c.club_key != "round_table"]
+    ordered: list[ClubGcConfig] = []
+    if rt is not None:
+        ordered.append(rt)
+    ordered.extend(aux)
+    ordered.extend(rest)
+    return tuple(ordered)
 
 
 def get_gc_users_to_add(cfg: ClubGcConfig) -> tuple[str, ...]:

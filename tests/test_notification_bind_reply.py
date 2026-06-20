@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from notification.handlers.bind import payment_bind_reply_handler
 from notification.handlers.bind_callbacks import (
     BIND_ADD_MEMBER_PENDING_KEY,
+    get_add_member_pending,
     payment_bind_add_member_reply_handler,
     set_add_member_pending,
 )
@@ -54,9 +55,14 @@ def _plain_text_update(
 
 
 def _context_with_pending(*, prompt_actor: int = 8318575265) -> SimpleNamespace:
-    context = SimpleNamespace(chat_data={}, user_data={})
+    context = SimpleNamespace(
+        chat_data={},
+        user_data={},
+        application=SimpleNamespace(bot_data={}),
+    )
     set_add_member_pending(
         context,
+        chat_id=NOTIF_CHAT_ID,
         method_slug="crypto",
         payment_id=116,
         notification_message_id=9408,
@@ -97,6 +103,8 @@ class ForceReplyAddMemberRoutingTestCase(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
         context.chat_data = {}
         context.user_data = {}
+        context.application = MagicMock()
+        context.application.bot_data = {}
 
         await payment_bind_reply_handler(_reply_update(), context)
 
@@ -140,7 +148,27 @@ class SharedChatAddMemberTestCase(unittest.IsolatedAsyncioTestCase):
 
         update.message.reply_text.assert_awaited_once()
         self.assertIn("Confirm add", update.message.reply_text.await_args.args[0])
-        self.assertNotIn(BIND_ADD_MEMBER_PENDING_KEY, context.chat_data)
+        self.assertNotIn(BIND_ADD_MEMBER_PENDING_KEY, context.application.bot_data.get(BIND_ADD_MEMBER_PENDING_KEY, {}))
+
+
+class ChatIdVariantPendingTestCase(unittest.TestCase):
+    def test_pending_survives_supergroup_chat_id_variant(self) -> None:
+        context = SimpleNamespace(
+            chat_data={},
+            user_data={},
+            application=SimpleNamespace(bot_data={}),
+        )
+        set_add_member_pending(
+            context,
+            chat_id=-1005273879167,
+            method_slug="crypto",
+            payment_id=116,
+            notification_message_id=9408,
+            actor_user_id=8318575265,
+        )
+        pending = get_add_member_pending(context, chat_id=-5273879167)
+        self.assertIsNotNone(pending)
+        self.assertEqual(pending["payment_id"], 116)
 
 
 if __name__ == "__main__":

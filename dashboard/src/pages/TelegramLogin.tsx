@@ -154,6 +154,20 @@ export default function TelegramLogin({ token }: { token: string }) {
 
   function sessionBanner(c: GcMtProtoClub | undefined): { text: string; tone: 'ok' | 'warn' | 'muted' } | null {
     if (!c) return null
+    if (c.session_role === 'creator' || c.session_role === 'link_join') {
+      if (c.session_stored) {
+        return {
+          text:
+            c.worker_status_detail ??
+            'Session stored — used automatically during /gc (not a DM listener).',
+          tone: 'ok',
+        }
+      }
+      return {
+        text: 'No session stored. Log in below before enabling Elevate Admin group creation.',
+        tone: 'muted',
+      }
+    }
     if (c.session_authorized) {
       return { text: 'Connected on worker — session is live.', tone: 'ok' }
     }

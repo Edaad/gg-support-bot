@@ -116,6 +116,36 @@ def load_club_health(club_key: str) -> ClubHealthSnapshot | None:
         return None
 
 
+def resolve_auxiliary_session_status(
+    *,
+    session_stored: bool,
+    session_role: str,
+) -> dict[str, Any]:
+    """Dashboard status for creator/link-join sessions (no worker listener)."""
+
+    role_detail = {
+        "creator": "Group creator only — used briefly when /gc creates a new megagroup.",
+        "link_join": "Link-join account — joins new groups via invite link during /gc.",
+    }.get(session_role, "Auxiliary session — not used by the DM listener.")
+
+    if not session_stored:
+        return {
+            "session_stored": False,
+            "session_authorized": False,
+            "worker_status": STATUS_NO_SESSION,
+            "worker_status_detail": None,
+            "worker_checked_at": None,
+        }
+
+    return {
+        "session_stored": True,
+        "session_authorized": True,
+        "worker_status": "auxiliary",
+        "worker_status_detail": role_detail,
+        "worker_checked_at": None,
+    }
+
+
 def resolve_club_session_status(
     club_key: str,
     *,

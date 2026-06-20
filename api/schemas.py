@@ -455,6 +455,7 @@ class GcMtProtoClubRead(BaseModel):
     worker_status: str
     worker_status_detail: Optional[str] = None
     worker_checked_at: Optional[datetime] = None
+    session_role: str = "listener"
 
 
 class MtProtoSendCodeRequest(BaseModel):

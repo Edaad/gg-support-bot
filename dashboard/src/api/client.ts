@@ -121,9 +121,14 @@ export interface GcMtProtoClub {
   worker_status: string
   worker_status_detail?: string | null
   worker_checked_at?: string | null
+  session_role?: string
 }
 
 function clubStatusLabel(c: GcMtProtoClub): string {
+  if (c.session_role === 'creator' || c.session_role === 'link_join') {
+    if (c.session_stored) return ' — session stored'
+    return ' — log in to store session'
+  }
   if (c.session_authorized) return ' — connected on worker'
   if (!c.session_stored) return ''
   switch (c.worker_status) {

@@ -26,15 +26,19 @@ from bot.services.mtproto_group_create import (
     authenticate_mtproto_password,
     send_code_for_phone,
 )
-from bot.services.mtproto_club_health import resolve_club_session_status
+from bot.services.mtproto_club_health import (
+    resolve_auxiliary_session_status,
+    resolve_club_session_status,
+)
 from bot.services.mtproto_session_db import (
     delete_session_for_club,
     load_session_string_for_club,
     snapshot_disk_session_to_database,
 )
 from club_gc_settings import (
-    CLUB_GC_CONFIG,
     ClubGcConfig,
+    get_mtproto_login_profiles,
+    get_mtproto_session_config,
     get_tg_mtproto_credentials,
     is_dm_gc_listener_enabled,
     is_mtproto_enabled,
@@ -50,7 +54,7 @@ router = APIRouter(
 
 
 def _cfg(club_key: str) -> ClubGcConfig:
-    c = CLUB_GC_CONFIG.get(club_key)
+    c = get_mtproto_session_config(club_key)
     if c is None:
         raise HTTPException(status_code=404, detail=f"Unknown club_key: {club_key!r}")
     return c
@@ -66,7 +70,7 @@ async def _require_api_credentials() -> None:
 @router.get("/clubs", response_model=list[GcMtProtoClubRead])
 async def list_gc_mtproto_clubs():
     await _require_api_credentials()
-    configs = list(CLUB_GC_CONFIG.values())
+    configs = list(get_mtproto_login_profiles())
     # Never connect with the production session from the web dyno (AuthKeyDuplicatedError).
     # Session blob presence + worker-reported health come from Postgres only.
     blobs = await asyncio.gather(
@@ -76,18 +80,25 @@ async def list_gc_mtproto_clubs():
     listener_on = is_dm_gc_listener_enabled()
     rows: list[GcMtProtoClubRead] = []
     for cfg, blob in zip(configs, blobs):
-        status = await asyncio.to_thread(
-            resolve_club_session_status,
-            cfg.club_key,
-            session_stored=bool(blob),
-            mtproto_enabled=mtproto_on,
-            listener_enabled=listener_on,
-        )
+        if cfg.session_role in ("creator", "link_join"):
+            status = resolve_auxiliary_session_status(
+                session_stored=bool(blob),
+                session_role=cfg.session_role,
+            )
+        else:
+            status = await asyncio.to_thread(
+                resolve_club_session_status,
+                cfg.club_key,
+                session_stored=bool(blob),
+                mtproto_enabled=mtproto_on,
+                listener_enabled=listener_on,
+            )
         rows.append(
             GcMtProtoClubRead(
                 club_key=cfg.club_key,
                 club_display_name=cfg.club_display_name,
                 phone_configured=cfg.mtproto_phone_number is not None,
+                session_role=cfg.session_role,
                 **status,
             )
         )
