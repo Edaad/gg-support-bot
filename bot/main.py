@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import warnings
+from types import SimpleNamespace
 
 from telegram import Update
 from telegram.warnings import PTBUserWarning
@@ -101,25 +102,12 @@ async def _post_shutdown_dm_gc_listener(app, *, test_mode: bool = False):
         stop_listener_background()
 
 
-def run_bot(token: str | None = None, *, test_mode: bool = False):
-    from bot.runtime_config import resolve_test_bot_token, use_payment_v2
+def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
+    """Import all handler modules used by ``run_bot``.
 
-    if test_mode:
-        token = token or resolve_test_bot_token()
-        if not token:
-            raise SystemExit(
-                "Test bot: set TELEGRAM_TEST_BOT_TOKEN (or TEST_BOT_TOKEN) in .env"
-            )
-    else:
-        token = token or os.getenv("TELEGRAM_BOT_TOKEN")
-        if not token:
-            raise SystemExit("Provide a token via TELEGRAM_BOT_TOKEN env var")
-
-    _configure_worker_logging()
-
-    engine = init_engine()
-    Base.metadata.create_all(engine)
-
+    Raises ``ImportError`` / ``ModuleNotFoundError`` if any handler module is missing.
+    Used by deploy import smoke tests.
+    """
     from bot.handlers.start import start_handler, help_handler, whoami_handler, fileid_handler, fileid_photo_handler
     from bot.handlers.commands import (
         get_set_handler,
@@ -156,6 +144,84 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         notes_handler,
         resolve_handler,
     )
+    from bot.handlers.whosnext import whosnext_handler
+    from bot.handlers.unbind_method import unbindmethod_handler
+    from bot.handlers.deposit import (
+        cancel_deposit_reminder_on_customer_msg,
+        cancel_deposit_reminder_on_group_activity,
+    )
+
+    deposit_amount_priority_handler = None
+    if test_mode:
+        from bot.handlers.deposit import deposit_amount_priority_handler
+
+    return SimpleNamespace(
+        start_handler=start_handler,
+        help_handler=help_handler,
+        whoami_handler=whoami_handler,
+        fileid_handler=fileid_handler,
+        fileid_photo_handler=fileid_photo_handler,
+        get_set_handler=get_set_handler,
+        mycmds_handler=mycmds_handler,
+        delete_handler=delete_handler,
+        command_router=command_router,
+        get_deposit_handler=get_deposit_handler,
+        get_cashout_handler=get_cashout_handler,
+        flow_cancel_handler=flow_cancel_handler,
+        list_handler=list_handler,
+        on_chat_migrate_from=on_chat_migrate_from,
+        on_my_chat_member_updated=on_my_chat_member_updated,
+        on_new_chat_members=on_new_chat_members,
+        on_other_chat_member_join=on_other_chat_member_join,
+        auto_link_group=auto_link_group,
+        bypass_handler=bypass_handler,
+        bypass_permanent_handler=bypass_permanent_handler,
+        add_handler=add_handler,
+        cash_handler=cash_handler,
+        on_new_chat_title=on_new_chat_title,
+        track_handler=track_handler,
+        info_handler=info_handler,
+        override_handler=override_handler,
+        telemsg_handler=telemsg_handler,
+        lookup_handler=lookup_handler,
+        findgc_handler=findgc_handler,
+        refresh_handler=refresh_handler,
+        checkplayer_handler=checkplayer_handler,
+        get_gc_handler=get_gc_handler,
+        get_bonus_handler=get_bonus_handler,
+        stripe_handler=stripe_handler,
+        teststripe_handler=teststripe_handler,
+        get_note_conversation_handler=get_note_conversation_handler,
+        notes_handler=notes_handler,
+        resolve_handler=resolve_handler,
+        whosnext_handler=whosnext_handler,
+        unbindmethod_handler=unbindmethod_handler,
+        deposit_amount_priority_handler=deposit_amount_priority_handler,
+        cancel_deposit_reminder_on_customer_msg=cancel_deposit_reminder_on_customer_msg,
+        cancel_deposit_reminder_on_group_activity=cancel_deposit_reminder_on_group_activity,
+    )
+
+
+def run_bot(token: str | None = None, *, test_mode: bool = False):
+    from bot.runtime_config import resolve_test_bot_token, use_payment_v2
+
+    if test_mode:
+        token = token or resolve_test_bot_token()
+        if not token:
+            raise SystemExit(
+                "Test bot: set TELEGRAM_TEST_BOT_TOKEN (or TEST_BOT_TOKEN) in .env"
+            )
+    else:
+        token = token or os.getenv("TELEGRAM_BOT_TOKEN")
+        if not token:
+            raise SystemExit("Provide a token via TELEGRAM_BOT_TOKEN env var")
+
+    _configure_worker_logging()
+
+    engine = init_engine()
+    Base.metadata.create_all(engine)
+
+    h = import_worker_handlers(test_mode=test_mode)
 
     app = (
         ApplicationBuilder()
@@ -166,102 +232,91 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         .build()
     )
 
-    app.add_handler(CommandHandler("start", start_handler))
-    app.add_handler(CommandHandler("help", help_handler))
-    app.add_handler(CommandHandler("whoami", whoami_handler))
-    app.add_handler(CommandHandler("fileid", fileid_handler))
-    app.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, fileid_photo_handler))
-
-    from bot.handlers.whosnext import whosnext_handler
+    app.add_handler(CommandHandler("start", h.start_handler))
+    app.add_handler(CommandHandler("help", h.help_handler))
+    app.add_handler(CommandHandler("whoami", h.whoami_handler))
+    app.add_handler(CommandHandler("fileid", h.fileid_handler))
+    app.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, h.fileid_photo_handler))
 
     app.add_handler(
-        CommandHandler("whosnext", whosnext_handler, filters=filters.ChatType.PRIVATE)
+        CommandHandler("whosnext", h.whosnext_handler, filters=filters.ChatType.PRIVATE)
     )
-    app.add_handler(CommandHandler("mycmds", mycmds_handler))
-    app.add_handler(CommandHandler("delete", delete_handler))
-    app.add_handler(CommandHandler("bypass", bypass_handler))
-    app.add_handler(CommandHandler("bypasspermanent", bypass_permanent_handler))
-    app.add_handler(CommandHandler("add", add_handler))
-    app.add_handler(CommandHandler("cash", cash_handler))
-    app.add_handler(CommandHandler("track", track_handler))
-    app.add_handler(CommandHandler("override", override_handler))
-    app.add_handler(CommandHandler("info", info_handler))
-    app.add_handler(CommandHandler("telemsg", telemsg_handler))
-    app.add_handler(CommandHandler("lookup", lookup_handler))
-    app.add_handler(CommandHandler("findgc", findgc_handler))
-    app.add_handler(CommandHandler("refresh", refresh_handler))
-    app.add_handler(CommandHandler("checkplayer", checkplayer_handler))
-    app.add_handler(CommandHandler("stripe", stripe_handler))
-    app.add_handler(CommandHandler("teststripe", teststripe_handler))
-    app.add_handler(CommandHandler("notes", notes_handler))
-    app.add_handler(CommandHandler("resolve", resolve_handler))
-    app.add_handler(get_note_conversation_handler())
+    app.add_handler(CommandHandler("mycmds", h.mycmds_handler))
+    app.add_handler(CommandHandler("delete", h.delete_handler))
+    app.add_handler(CommandHandler("bypass", h.bypass_handler))
+    app.add_handler(CommandHandler("bypasspermanent", h.bypass_permanent_handler))
+    app.add_handler(CommandHandler("add", h.add_handler))
+    app.add_handler(CommandHandler("cash", h.cash_handler))
+    app.add_handler(CommandHandler("track", h.track_handler))
+    app.add_handler(CommandHandler("override", h.override_handler))
+    app.add_handler(CommandHandler("info", h.info_handler))
+    app.add_handler(CommandHandler("telemsg", h.telemsg_handler))
+    app.add_handler(CommandHandler("lookup", h.lookup_handler))
+    app.add_handler(CommandHandler("findgc", h.findgc_handler))
+    app.add_handler(CommandHandler("refresh", h.refresh_handler))
+    app.add_handler(CommandHandler("checkplayer", h.checkplayer_handler))
+    app.add_handler(CommandHandler("stripe", h.stripe_handler))
+    app.add_handler(CommandHandler("teststripe", h.teststripe_handler))
+    app.add_handler(CommandHandler("notes", h.notes_handler))
+    app.add_handler(CommandHandler("resolve", h.resolve_handler))
+    app.add_handler(h.get_note_conversation_handler())
 
-    from bot.handlers.unbind_method import unbindmethod_handler
+    app.add_handler(CommandHandler("unbindmethod", h.unbindmethod_handler))
 
-    app.add_handler(CommandHandler("unbindmethod", unbindmethod_handler))
-
-    if test_mode:
-        from bot.handlers.deposit import deposit_amount_priority_handler
-
+    if test_mode and h.deposit_amount_priority_handler is not None:
         app.add_handler(
             MessageHandler(
                 filters.ChatType.GROUPS & ~filters.COMMAND,
-                deposit_amount_priority_handler,
+                h.deposit_amount_priority_handler,
                 block=False,
             )
         )
 
-    app.add_handler(get_set_handler())
-    app.add_handler(get_deposit_handler())
-    app.add_handler(get_cashout_handler())
-    app.add_handler(CommandHandler("cancel", flow_cancel_handler))
-    app.add_handler(get_gc_handler())
-    app.add_handler(get_bonus_handler())
+    app.add_handler(h.get_set_handler())
+    app.add_handler(h.get_deposit_handler())
+    app.add_handler(h.get_cashout_handler())
+    app.add_handler(CommandHandler("cancel", h.flow_cancel_handler))
+    app.add_handler(h.get_gc_handler())
+    app.add_handler(h.get_bonus_handler())
 
-    app.add_handler(MessageHandler(filters.StatusUpdate.MIGRATE, on_chat_migrate_from))
+    app.add_handler(MessageHandler(filters.StatusUpdate.MIGRATE, h.on_chat_migrate_from))
     app.add_handler(
-        ChatMemberHandler(on_my_chat_member_updated, ChatMemberHandler.MY_CHAT_MEMBER)
+        ChatMemberHandler(h.on_my_chat_member_updated, ChatMemberHandler.MY_CHAT_MEMBER)
     )
 
     app.add_handler(
-        ChatMemberHandler(on_other_chat_member_join, ChatMemberHandler.CHAT_MEMBER),
+        ChatMemberHandler(h.on_other_chat_member_join, ChatMemberHandler.CHAT_MEMBER),
     )
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_TITLE, on_new_chat_title))
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_TITLE, h.on_new_chat_title))
     app.add_handler(
         MessageHandler(
             filters.ChatType.GROUPS & filters.StatusUpdate.NEW_CHAT_MEMBERS,
-            on_new_chat_members,
+            h.on_new_chat_members,
         )
     )
-    app.add_handler(CommandHandler("list", list_handler))
+    app.add_handler(CommandHandler("list", h.list_handler))
 
     # Catch-all for custom commands (must be last among command handlers)
-    app.add_handler(MessageHandler(filters.COMMAND, command_router))
+    app.add_handler(MessageHandler(filters.COMMAND, h.command_router))
 
     # Auto-link unlinked groups on any message (group=1 so it doesn't block other handlers)
     app.add_handler(
-        MessageHandler(filters.ChatType.GROUPS & filters.ALL, auto_link_group),
+        MessageHandler(filters.ChatType.GROUPS & filters.ALL, h.auto_link_group),
         group=1,
     )
 
     # Cancel deposit follow-up reminders when the depositing customer responds
-    from bot.handlers.deposit import (
-        cancel_deposit_reminder_on_customer_msg,
-        cancel_deposit_reminder_on_group_activity,
-    )
-
     app.add_handler(
         MessageHandler(
             filters.ChatType.GROUPS & filters.ALL,
-            cancel_deposit_reminder_on_customer_msg,
+            h.cancel_deposit_reminder_on_customer_msg,
         ),
         group=2,
     )
     app.add_handler(
         MessageHandler(
             filters.ChatType.GROUPS & filters.ALL,
-            cancel_deposit_reminder_on_group_activity,
+            h.cancel_deposit_reminder_on_group_activity,
         ),
         group=2,
     )

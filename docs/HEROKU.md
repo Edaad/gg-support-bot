@@ -86,9 +86,12 @@ Inspect deliveries: `heroku webhooks:deliveries -a gg-support-bot-2025`.
 
 ## Deploy maintenance notifications
 
-Each Heroku deploy runs the **`release`** Procfile phase before new dynos go live. That phase DMs every account in [`config.py`](../config.py) `ADMIN_USER_IDS` with a brief disruption warning (~1 minute while dynos restart).
+Each Heroku deploy runs the **`release`** Procfile phase before new dynos go live. That phase:
 
-- **Trigger:** `git push heroku …` only (not `git push origin`).
+1. **Import smoke (blocking)** — verifies all Procfile entrypoints import cleanly (`web`, `worker`, `cashier`, `notification`). If any handler module is missing, release exits non-zero and the deploy is aborted (previous slug stays live).
+2. **Deploy notify DMs (non-blocking)** — DMs every account in [`config.py`](../config.py) `ADMIN_USER_IDS` with a brief disruption warning (~1 minute while dynos restart).
+
+- **Trigger:** any deploy path (GitHub auto-deploy, Dashboard, `git push heroku …`).
 - **Cooldown:** at most one notification per hour; rapid redeploys within the hour are skipped (logged as `deploy_notify: skipped (cooldown)`).
 - **Admins must have `/start`'d the support bot** in DM to receive messages.
 
@@ -105,7 +108,7 @@ heroku run -a YOUR_APP -- python migrate_deploy_notify_state.py
 | `DEPLOY_NOTIFY_ENABLED` | `true` | Set `false` to disable release DMs |
 | `DEPLOY_NOTIFY_COOLDOWN_SECONDS` | `3600` | Minimum seconds between notifications |
 
-Script: [`scripts/notify_deploy_maintenance.py`](../scripts/notify_deploy_maintenance.py). Failures to send DMs never block deploy (release always exits 0).
+Scripts: [`scripts/heroku_release.py`](../scripts/heroku_release.py) (orchestrator), [`scripts/pre_push_import_smoke.py`](../scripts/pre_push_import_smoke.py) (import smoke), [`scripts/notify_deploy_maintenance.py`](../scripts/notify_deploy_maintenance.py) (DMs). Import failures block deploy; failures to send DMs never block deploy.
 
 ## MTProto scripts vs worker
 
