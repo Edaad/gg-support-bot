@@ -531,6 +531,7 @@ async def create_support_megagroup(
     *,
     bot_dm_username: str | None,
     player_user=None,
+    link_join_client: TelegramClient | None = None,
 ) -> MtProtoGroupOutcome:
     """
     Create megagroup for ``cfg`` via MTProto, invite users + bot, optional photo + inner message.
@@ -730,6 +731,7 @@ async def create_support_megagroup(
             invite_link=invite_link,
             promote_marker=promote_marker,
             link_join_cfg=link_join_cfg,
+            link_join_client=link_join_client,
         )
         link_joined_users.extend(lj)
         promoted_admins.extend(prom)

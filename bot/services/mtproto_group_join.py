@@ -143,6 +143,24 @@ async def promote_megagroup_admin(
         return False, str(err)[:500]
 
 
+def _resolve_link_join_client(
+    link_join_cfg: ClubGcConfig,
+    link_join_client: TelegramClient | None,
+) -> tuple[TelegramClient | None, bool]:
+    """Return ``(client, owns_connection)`` — reuse listener when already connected."""
+
+    if link_join_client is not None and link_join_client.is_connected():
+        return link_join_client, False
+
+    from bot.services.mtproto_dm_gc_listener import get_listener_client
+
+    listener = get_listener_client(link_join_cfg.club_key)
+    if listener is not None and listener.is_connected():
+        return listener, False
+
+    return None, True
+
+
 async def run_link_join_and_promote(
     creator_cfg: ClubGcConfig,
     *,
@@ -150,8 +168,9 @@ async def run_link_join_and_promote(
     invite_link: str | None,
     promote_marker: str,
     link_join_cfg: ClubGcConfig,
+    link_join_client: TelegramClient | None = None,
 ) -> tuple[list[dict], list[dict], list[dict]]:
-    """RTS2 link-join + admin promote after megagroup creation. Best-effort."""
+    """Round Table link-join + admin promote after megagroup creation. Best-effort."""
 
     link_joined: list[dict] = []
     promoted: list[dict] = []
@@ -165,9 +184,13 @@ async def run_link_join_and_promote(
         return link_joined, promoted, failures
 
     joined_entity = channel_entity
+    borrowed, owns_connection = _resolve_link_join_client(link_join_cfg, link_join_client)
+
     async with get_mtproto_lock(link_join_cfg.club_key):
-        join_client = make_client(link_join_cfg)
-        await join_client.connect()
+        join_client = borrowed
+        if join_client is None:
+            join_client = make_client(link_join_cfg)
+            await join_client.connect()
         try:
             if not await join_client.is_user_authorized():
                 failures.append(
@@ -191,7 +214,8 @@ async def run_link_join_and_promote(
             joined_entity = ent
             link_joined.append({"user": promote_marker, "kind": "link_join"})
         finally:
-            await join_client.disconnect()
+            if owns_connection:
+                await join_client.disconnect()
 
     async with get_mtproto_lock(creator_cfg.club_key):
         promote_client = make_client(creator_cfg)

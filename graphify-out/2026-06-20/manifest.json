@@ -845,8 +845,8 @@
     "semantic_hash": "9fe78ebf76b0389d08172e4d1e42276e"
   },
   "api/routes/gc_mtproto.py": {
-    "mtime": 1781316760.2066634,
-    "ast_hash": "cb585dff219f0a58d2584c8c5e14db9a",
+    "mtime": 1781982895.3625383,
+    "ast_hash": "d1940bb458b2a417fe7d6f7619ad524f",
     "semantic_hash": ""
   },
   "api/routes/payments.py": {
@@ -890,8 +890,8 @@
     "semantic_hash": "96f271c2d81733708b36919e55e95872"
   },
   "api/schemas.py": {
-    "mtime": 1781904583.349363,
-    "ast_hash": "9b754624a97c5e8829c918ba985b3399",
+    "mtime": 1781982892.8260677,
+    "ast_hash": "d3e4117eae04b014edd179fd5306b366",
     "semantic_hash": ""
   },
   "api/schemas_payments.py": {
@@ -1135,8 +1135,8 @@
     "semantic_hash": "1bc1e5ba5a1a984c0c4c86bac76207a8"
   },
   "bot/services/mtproto_group_create.py": {
-    "mtime": 1781959588.3612657,
-    "ast_hash": "ab8399dfa03d5aff22f2965278bdfe62",
+    "mtime": 1781982912.229866,
+    "ast_hash": "0e7df1a5e8e2a027df9cc6cbf3bfe104",
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_delete.py": {
@@ -1280,8 +1280,8 @@
     "semantic_hash": "9d2f1e12ab88efc39fc25326e4308c37"
   },
   "club_gc_settings.py": {
-    "mtime": 1781978167.1167548,
-    "ast_hash": "740b3e818e2b27e66caa804a362a97e0",
+    "mtime": 1781982920.1598449,
+    "ast_hash": "83c7877d5c079379e9fe48aa755192e5",
     "semantic_hash": ""
   },
   "config.py": {
@@ -1310,8 +1310,8 @@
     "semantic_hash": "0a3ed4ec23dda7003da443d24ee876e0"
   },
   "dashboard/src/api/client.ts": {
-    "mtime": 1781316783.6655598,
-    "ast_hash": "859b46ed0672624872595741e92630f5",
+    "mtime": 1781982897.3509142,
+    "ast_hash": "6bf85ddd00223fc11ce0d4fb2be12e7b",
     "semantic_hash": ""
   },
   "dashboard/src/api/paymentsClient.ts": {
@@ -1475,8 +1475,8 @@
     "semantic_hash": "b23b3996b785984ca6097d89ccb2c72d"
   },
   "dashboard/src/pages/TelegramLogin.tsx": {
-    "mtime": 1781316788.9628284,
-    "ast_hash": "eb49471aef4353fc250262f7b146eca7",
+    "mtime": 1781982899.25689,
+    "ast_hash": "834c36e8666c43fd51153e71dc0963fa",
     "semantic_hash": ""
   },
   "dashboard/src/pages/WeeklyStats.tsx": {
@@ -2535,8 +2535,8 @@
     "semantic_hash": ""
   },
   "docs/GC.md": {
-    "mtime": 1781153712.921112,
-    "ast_hash": "8490a30a82c2fe36833e4b1bdf58ea05",
+    "mtime": 1781982910.1442487,
+    "ast_hash": "4be68ce0e6ab0dd854e86f6e39f65829",
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
@@ -2935,8 +2935,8 @@
     "semantic_hash": ""
   },
   "bot/services/mtproto_club_health.py": {
-    "mtime": 1781316754.1311386,
-    "ast_hash": "bf43e1921382ca264e5c438ea808cad6",
+    "mtime": 1781982892.2756934,
+    "ast_hash": "4b0979ad4f1d14af1ee810531f873f3f",
     "semantic_hash": ""
   },
   "migrate_mtproto_club_health.py": {
@@ -3152,6 +3152,16 @@
   "scripts/heroku_release.py": {
     "mtime": 1781977761.180876,
     "ast_hash": "5d5521287f6afda4b0c7057a902b26ba",
+    "semantic_hash": ""
+  },
+  "bot/services/mtproto_group_join.py": {
+    "mtime": 1781982911.7925842,
+    "ast_hash": "a084316b657c2632f138adb648a566dc",
+    "semantic_hash": ""
+  },
+  "tests/test_elevate_gc.py": {
+    "mtime": 1781982925.2720895,
+    "ast_hash": "7808d83db1cb7fd75bdfee04ee74819c",
     "semantic_hash": ""
   }
 }

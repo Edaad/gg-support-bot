@@ -228,7 +228,10 @@ async def _flow_new_group(
 
     try:
         outcome = await create_support_megagroup(
-            cfg, bot_dm_username=bot_dm_username, player_user=player
+            cfg,
+            bot_dm_username=bot_dm_username,
+            player_user=player,
+            link_join_client=client,
         )
     except Exception as e:
         err_name = type(e).__name__

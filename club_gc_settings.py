@@ -114,7 +114,7 @@ def _round_table_elevate_kwargs() -> dict[str, object]:
     promote = _env_optional("GC_PROMOTE_ADMIN_ROUND_TABLE") or "@RoundTableSupport2"
     return {
         "group_creator_club_key": "elevate_admin",
-        "link_join_club_key": "round_table_support2",
+        "link_join_club_key": "round_table",
         "promote_admin_marker": promote,
         "link_join_exclude_markers": exclude,
     }
@@ -146,7 +146,7 @@ class ClubGcConfig:
 
 
 def build_auxiliary_mtproto_config() -> Mapping[str, ClubGcConfig]:
-    """Auxiliary Telethon sessions (Elevate creator, RTS2 link-join) — not DM listeners."""
+    """Auxiliary Telethon sessions (Elevate creator) — not DM listeners."""
 
     return {
         "elevate_admin": ClubGcConfig(
@@ -164,23 +164,6 @@ def build_auxiliary_mtproto_config() -> Mapping[str, ClubGcConfig]:
             initial_group_message_template="",
             link_club_id=0,
             session_role="creator",
-        ),
-        "round_table_support2": ClubGcConfig(
-            club_key="round_table_support2",
-            club_display_name="Round Table Support2",
-            command_admin_user_id=0,
-            mtproto_session=_env_str(
-                "GC_SESSION_ROUND_TABLE_SUPPORT2",
-                "sessions/round_table_support2.session",
-            ),
-            mtproto_phone_number=_env_optional("MT_PROTO_PHONE_ROUND_TABLE_SUPPORT2"),
-            group_title="",
-            group_photo_path=None,
-            users_to_add=(),
-            bot_account=None,
-            initial_group_message_template="",
-            link_club_id=0,
-            session_role="link_join",
         ),
     }
 
@@ -302,7 +285,7 @@ def get_mtproto_login_profiles() -> tuple[ClubGcConfig, ...]:
 
     clubs = list(CLUB_GC_CONFIG.values())
     aux = list(AUX_MTPROTO_CONFIG.values())
-    # Round Table listener, then Elevate + RTS2, then remaining listener clubs.
+    # Round Table listener (same session as @RoundTableSupport2), then Elevate, then other clubs.
     rt = next((c for c in clubs if c.club_key == "round_table"), None)
     rest = [c for c in clubs if c.club_key != "round_table"]
     ordered: list[ClubGcConfig] = []

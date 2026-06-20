@@ -45,7 +45,7 @@ class TestElevateConfig(unittest.TestCase):
             self.assertIsNone(cfg.group_creator_club_key)
             self.assertEqual(resolve_group_creator_cfg(cfg).club_key, "round_table")
 
-    def test_elevate_enabled_sets_creator_and_excludes_rts2(self) -> None:
+    def test_elevate_enabled_uses_round_table_for_link_join(self) -> None:
         env = {
             "GC_ELEVATE_CREATOR_ROUND_TABLE": "true",
             "GC_PROMOTE_ADMIN_ROUND_TABLE": "@RoundTableSupport2",
@@ -53,7 +53,7 @@ class TestElevateConfig(unittest.TestCase):
         with patch.dict(os.environ, env, clear=False):
             cfg = build_club_gc_config()["round_table"]
             self.assertEqual(cfg.group_creator_club_key, "elevate_admin")
-            self.assertEqual(cfg.link_join_club_key, "round_table_support2")
+            self.assertEqual(cfg.link_join_club_key, "round_table")
             self.assertEqual(cfg.promote_admin_marker, "@RoundTableSupport2")
             exclude = link_join_exclude_normalized(cfg)
             self.assertIn("roundtablesupport2", exclude)
@@ -61,12 +61,11 @@ class TestElevateConfig(unittest.TestCase):
                 creator = resolve_group_creator_cfg(cfg)
             self.assertEqual(creator.club_key, "elevate_admin")
 
-    def test_auxiliary_profiles_exist(self) -> None:
+    def test_auxiliary_profiles_elevate_only(self) -> None:
         aux = build_auxiliary_mtproto_config()
         self.assertIn("elevate_admin", aux)
-        self.assertIn("round_table_support2", aux)
+        self.assertNotIn("round_table_support2", aux)
         self.assertEqual(aux["elevate_admin"].session_role, "creator")
-        self.assertEqual(aux["round_table_support2"].session_role, "link_join")
 
 
 class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
@@ -84,7 +83,7 @@ class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
             initial_group_message_template="link: {invite_link}",
             link_club_id=2,
             group_creator_club_key="elevate_admin",
-            link_join_club_key="round_table_support2",
+            link_join_club_key="round_table",
             promote_admin_marker="@RoundTableSupport2",
             link_join_exclude_markers=("@RoundTableSupport2",),
         )
@@ -124,10 +123,11 @@ class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
 
         listener_cfg = self._listener_cfg()
         creator_cfg = self._creator_cfg()
-        link_cfg = build_auxiliary_mtproto_config()["round_table_support2"]
+        listener_client = MagicMock()
+        listener_client.is_connected = MagicMock(return_value=True)
 
         mock_resolve_creator.return_value = creator_cfg
-        mock_resolve_link.return_value = link_cfg
+        mock_resolve_link.return_value = listener_cfg
         mock_lock.return_value.__aenter__ = AsyncMock(return_value=None)
         mock_lock.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -151,8 +151,6 @@ class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
         channel_ent.access_hash = 123
         channel_ent.title = "RT / / @player"
 
-        client.side_effect = None
-        client.__call__ = AsyncMock(return_value=mega)
         client.get_entity = AsyncMock(return_value=channel_ent)
         client.send_message = AsyncMock()
 
@@ -185,9 +183,15 @@ class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
             patch("bot.handlers.groups._mark_post_gc_bundle_window"),
             patch("telethon.utils.get_peer_id", return_value=-100999),
         ):
-            outcome = await create_support_megagroup(listener_cfg, bot_dm_username="Bot")
+            outcome = await create_support_megagroup(
+                listener_cfg,
+                bot_dm_username="Bot",
+                link_join_client=listener_client,
+            )
 
         mock_link_promote.assert_awaited_once()
+        call_kw = mock_link_promote.await_args.kwargs
+        self.assertIs(call_kw.get("link_join_client"), listener_client)
         self.assertEqual(outcome.link_joined_users[0]["kind"], "link_join")
         self.assertEqual(outcome.promoted_admins[0]["kind"], "admin")
         invite_markers = [u["user"] for u in outcome.added_users]

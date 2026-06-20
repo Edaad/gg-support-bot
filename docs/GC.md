@@ -118,18 +118,18 @@ When **`GC_ELEVATE_CREATOR_ROUND_TABLE=true`**:
 1. **Elevate Admin** MTProto session creates the megagroup (not the `round_table` listener session).
 2. Player, bot, and other staff (`@RoundTableSupport3`, `@YTranslateBot`, etc.) are **direct-invited** — **`@RoundTableSupport2` is excluded** from direct invite.
 3. Elevate exports an invite link.
-4. The **Round Table Support2** stored Telethon session joins via `ImportChatInviteRequest` **automatically in the worker** (no account-manager action).
+4. The **Round Table** MTProto session (same account as `@RoundTableSupport2` and the DM listener) joins via `ImportChatInviteRequest` **automatically in the worker** (reuses the live listener client when connected — no account-manager action).
 5. Elevate promotes Support2 to group admin via `EditAdminRequest`.
 
 The **round_table listener session is unchanged** for incoming player DMs and outgoing `/gc` in staff→player DMs.
 
 **Setup:**
 
-1. Dashboard → **Telegram login** → authorize **Elevate Admin** and **Round Table Support2** (one-time SMS + 2FA each).
-2. Deploy with `GC_ELEVATE_CREATOR_ROUND_TABLE=false`, verify sessions in `mtproto_session_credentials`, then set `GC_ELEVATE_CREATOR_ROUND_TABLE=true` on the worker and restart.
+1. Dashboard → **Telegram login** → authorize **Elevate Admin** (one-time SMS + 2FA). **Round Table** should already be logged in for the DM listener.
+2. Deploy with `GC_ELEVATE_CREATOR_ROUND_TABLE=false`, verify `elevate_admin` in `mtproto_session_credentials`, then set `GC_ELEVATE_CREATOR_ROUND_TABLE=true` on the worker and restart.
 3. Test on **one** player/group before scaling (see telegram-group-testing rule).
 
-Auxiliary session keys: `elevate_admin`, `round_table_support2` (see [`club_gc_settings.py`](../club_gc_settings.py) `AUX_MTPROTO_CONFIG`).
+Auxiliary session key: `elevate_admin` only (see [`club_gc_settings.py`](../club_gc_settings.py) `AUX_MTPROTO_CONFIG`). Link-join uses the existing `round_table` session — no separate RTS2 login.
 
 ### Sessions and gitignore
 
