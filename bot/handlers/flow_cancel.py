@@ -7,7 +7,7 @@ from typing import Literal
 from telegram import Update
 from telegram.ext import ContextTypes
 
-FlowName = Literal["deposit", "cashout", "bonus"]
+FlowName = Literal["deposit", "cashout", "bonus", "support_note"]
 
 ACTIVE_FLOW_KEY = "active_bot_flow"
 
@@ -29,6 +29,13 @@ _BONUS_ACTIVE_KEYS = (
     "bonus_admin_id",
     "bonus_player",
     "bonus_amount",
+)
+_SUPPORT_NOTE_ACTIVE_KEYS = (
+    "support_note_admin_id",
+    "support_note_club_id",
+    "support_note_gg_player_id",
+    "support_note_situation",
+    "support_note_actions",
 )
 
 
@@ -52,13 +59,17 @@ def bonus_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return any(k in context.user_data for k in _BONUS_ACTIVE_KEYS)
 
 
+def support_note_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    return any(k in context.user_data for k in _SUPPORT_NOTE_ACTIVE_KEYS)
+
+
 def _cancel_order(context: ContextTypes.DEFAULT_TYPE) -> list[FlowName]:
     """Prefer the flow the user started most recently, then other active flows."""
     latest = context.user_data.get(ACTIVE_FLOW_KEY)
     order: list[FlowName] = []
-    if latest in ("deposit", "cashout", "bonus"):
+    if latest in ("deposit", "cashout", "bonus", "support_note"):
         order.append(latest)
-    for name in ("bonus", "deposit", "cashout"):
+    for name in ("bonus", "support_note", "deposit", "cashout"):
         if name not in order:
             order.append(name)
     return order
@@ -70,6 +81,11 @@ async def flow_cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     for flow in _cancel_order(context):
+        if flow == "support_note" and support_note_flow_active(context):
+            from bot.handlers.support_notes import support_note_cancel
+
+            await support_note_cancel(update, context)
+            return
         if flow == "bonus" and bonus_flow_active(context):
             from bot.handlers.bonus import bonus_cancel
 
@@ -88,6 +104,6 @@ async def flow_cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     clear_active_flow(context)
     await update.message.reply_text(
-        "No active deposit, cashout, or bonus to cancel.\n\n"
+        "No active deposit, cashout, bonus, or support note to cancel.\n\n"
         "If you already finished, you are all set — nothing else to do."
     )

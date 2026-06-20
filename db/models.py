@@ -1401,3 +1401,70 @@ class IssueReportAttachment(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     issue_report = relationship("IssueReport", back_populates="attachments")
+
+
+class PlayerSupportIssue(Base):
+    """Open or resolved player dispute tracked between AM shifts."""
+
+    __tablename__ = "player_support_issues"
+    __table_args__ = (
+        Index("ix_player_support_issues_club_id", "club_id"),
+        Index("ix_player_support_issues_gg_player_id", "gg_player_id"),
+        Index("ix_player_support_issues_status", "status"),
+        Index(
+            "uq_player_support_issues_open_club_player",
+            "club_id",
+            "gg_player_id",
+            unique=True,
+            postgresql_where=text("status = 'open'"),
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    gg_player_id = Column(String(255), nullable=False)
+    status = Column(String(32), nullable=False, server_default="open")
+    telegram_chat_id = Column(BigInteger, nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_by_telegram_user_id = Column(BigInteger, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    club = relationship("Club")
+    notes = relationship(
+        "PlayerSupportNote",
+        back_populates="issue",
+        cascade="all, delete-orphan",
+        order_by="PlayerSupportNote.created_at",
+    )
+
+
+class PlayerSupportNote(Base):
+    """Append-only dispute note on a player support issue."""
+
+    __tablename__ = "player_support_notes"
+    __table_args__ = (
+        Index("ix_player_support_notes_issue_id", "issue_id"),
+        Index("ix_player_support_notes_created_at", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    issue_id = Column(
+        Integer,
+        ForeignKey("player_support_issues.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    situation = Column(Text, nullable=False)
+    actions_taken = Column(Text, nullable=False)
+    next_steps = Column(Text, nullable=False)
+    created_by_telegram_user_id = Column(BigInteger, nullable=False)
+    source_telegram_chat_id = Column(BigInteger, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    issue = relationship("PlayerSupportIssue", back_populates="notes")

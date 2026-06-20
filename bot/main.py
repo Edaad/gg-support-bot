@@ -152,6 +152,11 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     from bot.handlers.stripe import stripe_handler
     from bot.handlers.stripe import stripe_handler
     from bot.handlers.teststripe import teststripe_handler
+    from bot.handlers.support_notes import (
+        get_note_conversation_handler,
+        notes_handler,
+        resolve_handler,
+    )
 
     app = (
         ApplicationBuilder()
@@ -189,6 +194,9 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(CommandHandler("checkplayer", checkplayer_handler))
     app.add_handler(CommandHandler("stripe", stripe_handler))
     app.add_handler(CommandHandler("teststripe", teststripe_handler))
+    app.add_handler(CommandHandler("notes", notes_handler))
+    app.add_handler(CommandHandler("resolve", resolve_handler))
+    app.add_handler(get_note_conversation_handler())
 
     from bot.handlers.unbind_method import unbindmethod_handler
 
