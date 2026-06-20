@@ -34,6 +34,13 @@ from bot.services.club import (
     update_group_name,
 )
 from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
+from bot.handlers.flow_staleness import (
+    answer_stale_callback,
+    cashout_amount_actor_allowed,
+    is_update_too_old,
+    log_stale_update,
+    looks_like_amount,
+)
 from bot.handlers.response_utils import send_response_messages
 
 CASHOUT_AMOUNT, CASHOUT_CHOOSE, CASHOUT_SUB, CASHOUT_SIMPLE_AMOUNT = range(4)
@@ -42,6 +49,10 @@ CASHOUT_AMOUNT, CASHOUT_CHOOSE, CASHOUT_SUB, CASHOUT_SIMPLE_AMOUNT = range(4)
 async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_chat or not update.effective_user:
         return ConversationHandler.END
+    if is_update_too_old(update):
+        log_stale_update(update, handler="cashout_entry")
+        return ConversationHandler.END
+    _cleanup(context)
     chat = update.effective_chat
     if chat.type not in ("group", "supergroup"):
         await update.message.reply_text("Use /cashout in a club group.")
@@ -126,6 +137,17 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return ConversationHandler.END
+    if is_update_too_old(update):
+        log_stale_update(update, handler="cashout_amount_received")
+        _cleanup(context)
+        return ConversationHandler.END
+
+    sender_id = update.effective_user.id if update.effective_user else None
+    message_text = update.message.text or ""
+    if not cashout_amount_actor_allowed(
+        context, sender_id=sender_id, text=message_text
+    ):
+        return CASHOUT_AMOUNT
 
     # In admin-initiated flows, only record a non-admin as the cashouter
     # and only run cooldown checks when a customer responds.
@@ -147,15 +169,16 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
     if not club_id:
         return ConversationHandler.END
 
-    raw = (update.message.text or "").strip().replace("$", "").replace(",", "")
+    raw = message_text.strip().replace("$", "").replace(",", "")
     try:
         amount = Decimal(raw)
         if amount <= 0:
             raise InvalidOperation()
     except (InvalidOperation, Exception):
-        await update.message.reply_text(
-            "Please enter a valid dollar amount (Example: 50 or 100.00)."
-        )
+        if looks_like_amount(message_text):
+            await update.message.reply_text(
+                "Please enter a valid dollar amount (Example: 50 or 100.00)."
+            )
         return CASHOUT_AMOUNT
 
     max_amt = get_cashout_max_amount(club_id)
@@ -174,6 +197,17 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
 async def cashout_simple_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return ConversationHandler.END
+    if is_update_too_old(update):
+        log_stale_update(update, handler="cashout_simple_amount_received")
+        _cleanup(context)
+        return ConversationHandler.END
+
+    sender_id = update.effective_user.id if update.effective_user else None
+    message_text = update.message.text or ""
+    if not cashout_amount_actor_allowed(
+        context, sender_id=sender_id, text=message_text
+    ):
+        return CASHOUT_SIMPLE_AMOUNT
 
     if context.chat_data.get("cashout_admin_initiated") and update.effective_user:
         uid = update.effective_user.id
@@ -193,15 +227,16 @@ async def cashout_simple_amount_received(update: Update, context: ContextTypes.D
     if not club_id:
         return ConversationHandler.END
 
-    raw = (update.message.text or "").strip().replace("$", "").replace(",", "")
+    raw = message_text.strip().replace("$", "").replace(",", "")
     try:
         amount = Decimal(raw)
         if amount <= 0:
             raise InvalidOperation()
     except (InvalidOperation, Exception):
-        await update.message.reply_text(
-            "Please enter a valid dollar amount (Example: 50 or 100.00)."
-        )
+        if looks_like_amount(message_text):
+            await update.message.reply_text(
+                "Please enter a valid dollar amount (Example: 50 or 100.00)."
+            )
         return CASHOUT_SIMPLE_AMOUNT
 
     max_amt = get_cashout_max_amount(club_id)
@@ -297,6 +332,11 @@ async def cashout_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     if not update.callback_query:
         return ConversationHandler.END
     query = update.callback_query
+    if is_update_too_old(update):
+        log_stale_update(update, handler="cashout_method_chosen")
+        await answer_stale_callback(update, context, flow_command="/cashout")
+        _cleanup(context)
+        return ConversationHandler.END
     await query.answer()
 
     data = query.data or ""
@@ -363,6 +403,11 @@ async def cashout_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not update.callback_query:
         return ConversationHandler.END
     query = update.callback_query
+    if is_update_too_old(update):
+        log_stale_update(update, handler="cashout_sub_chosen")
+        await answer_stale_callback(update, context, flow_command="/cashout")
+        _cleanup(context)
+        return ConversationHandler.END
     await query.answer()
 
     data = query.data or ""

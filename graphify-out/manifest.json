@@ -950,9 +950,9 @@
     "semantic_hash": "cea84f42fb17e23f5ec3237436e5adab"
   },
   "bot/handlers/cashout.py": {
-    "mtime": 1780457124.5693753,
-    "ast_hash": "c10e2e43e37d546f33d14265cf1f4b69",
-    "semantic_hash": "c10e2e43e37d546f33d14265cf1f4b69"
+    "mtime": 1781972100.4229476,
+    "ast_hash": "202bd130399816a41fb531e15c6d99ce",
+    "semantic_hash": ""
   },
   "bot/handlers/checkplayer.py": {
     "mtime": 1779810886.1481245,
@@ -965,8 +965,8 @@
     "semantic_hash": ""
   },
   "bot/handlers/deposit.py": {
-    "mtime": 1781881915.6959589,
-    "ast_hash": "f8306569ecfe551e8f6ad11098326da0",
+    "mtime": 1781972076.7451463,
+    "ast_hash": "f50de667658abb0370752b6c11b055fb",
     "semantic_hash": ""
   },
   "bot/handlers/findgc.py": {
@@ -1465,8 +1465,8 @@
     "semantic_hash": "4a6da6727d0bd80a7e20d65c09e3ffde"
   },
   "dashboard/src/pages/Payments.tsx": {
-    "mtime": 1781882408.9843082,
-    "ast_hash": "7d57ae1db1d125028640b4acdf182bdb",
+    "mtime": 1781974793.09768,
+    "ast_hash": "631a06b6df5e046de2218122bd07f48d",
     "semantic_hash": ""
   },
   "dashboard/src/pages/Settings.tsx": {
@@ -3030,13 +3030,13 @@
     "semantic_hash": ""
   },
   "api/audit_export.py": {
-    "mtime": 1781882357.1839,
-    "ast_hash": "989ad336f739887a90be56e87379d4e1",
+    "mtime": 1781974767.4113002,
+    "ast_hash": "67ec0456517e22686d3a250ff93dfb82",
     "semantic_hash": ""
   },
   "tests/test_audit_export.py": {
-    "mtime": 1781883042.6558924,
-    "ast_hash": "304102e972d79e4d01efdd166cb624f4",
+    "mtime": 1781974789.085173,
+    "ast_hash": "ebf6de4baf780a54bf0b028162859ae9",
     "semantic_hash": ""
   },
   "api/routes/issue_reports.py": {
@@ -3094,11 +3094,6 @@
     "ast_hash": "bc513dd40098131358f9a6b1ff1cf5d0",
     "semantic_hash": ""
   },
-  "bot/handlers/support_notes.py": {
-    "mtime": 1781959088.3152506,
-    "ast_hash": "b21efa5f451e1f5efe679e653faa6a35",
-    "semantic_hash": ""
-  },
   "bot/services/player_support_notes.py": {
     "mtime": 1781970667.6972954,
     "ast_hash": "c1359b871db6bbc7f8e78f1be94c65e6",
@@ -3132,6 +3127,16 @@
   "docs/SUPPORT_NOTES.md": {
     "mtime": 1781970643.7651024,
     "ast_hash": "014ff756476c6cddae135bad302ab3c1",
+    "semantic_hash": ""
+  },
+  "bot/handlers/flow_staleness.py": {
+    "mtime": 1781972121.5159361,
+    "ast_hash": "922146ddc2bfc6811b00cb7ee53b28a1",
+    "semantic_hash": ""
+  },
+  "tests/test_flow_staleness.py": {
+    "mtime": 1781972161.4363053,
+    "ast_hash": "9f10aa6a4ac2afc46e4cc32bb5c9ae55",
     "semantic_hash": ""
   }
 }

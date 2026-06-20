@@ -745,8 +745,9 @@ export default function Payments({ token }: { token: string }) {
       <section className="panel mb-6">
         <h2 className="mb-2 text-lg font-semibold text-ink">Export audit data</h2>
         <p className="mb-4 text-sm text-ink-muted">
-          Download all deposit transactions across every club for a date range. One XLSX file with
-          a tab per payment provider (Stripe, Venmo, Zelle, Cash App, PayPal, Crypto).
+          Download receipt-style deposit transactions across every club for a date range. One XLSX
+          file with tabs for Stripe, Zelle, venmo, cashapp, PayPal, plus blank bonus and early
+          rakeback sheets for manual entry.
         </p>
         <div className="flex flex-wrap items-end gap-3">
           <div>

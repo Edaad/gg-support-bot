@@ -47,6 +47,13 @@ from bot.services.round_table_unions import (
     union_label_for_shorthand,
 )
 from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
+from bot.handlers.flow_staleness import (
+    answer_stale_callback,
+    deposit_amount_actor_allowed,
+    is_update_too_old,
+    log_stale_update,
+    looks_like_amount,
+)
 from bot.handlers.response_utils import send_response_messages
 from bot.services.stripe_deposit import (
     create_stripe_checkout_session,
@@ -949,9 +956,17 @@ async def deposit_amount_priority_handler(
         return
 
     chat_id = chat.id
+    if is_update_too_old(update):
+        log_stale_update(update, handler="deposit_amount_priority")
+        return
     if not _is_awaiting_amount(context, chat_id):
         return
     if context.chat_data.get("deposit_amount"):
+        return
+    sender_id = update.effective_user.id if update.effective_user else None
+    if not deposit_amount_actor_allowed(
+        context, sender_id=sender_id, text=update.message.text
+    ):
         return
 
     logger.info(
@@ -984,6 +999,10 @@ def _no_deposit_methods_message(club_id: int | None, amount: Decimal) -> str:
 async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_chat or not update.effective_user:
         return ConversationHandler.END
+    if is_update_too_old(update):
+        log_stale_update(update, handler="deposit_entry")
+        return ConversationHandler.END
+    _cleanup(context)
     chat = update.effective_chat
     if chat.type not in ("group", "supergroup"):
         await update.message.reply_text("Use /deposit in a club group.")
@@ -1066,6 +1085,10 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def deposit_referral_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return ConversationHandler.END
+    if is_update_too_old(update):
+        log_stale_update(update, handler="deposit_referral_received")
+        _cleanup(context)
+        return ConversationHandler.END
 
     simple = context.chat_data.get("deposit_simple_data")
     if simple:
@@ -1077,13 +1100,23 @@ async def deposit_referral_received(update: Update, context: ContextTypes.DEFAUL
 async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_chat:
         return ConversationHandler.END
+    if is_update_too_old(update):
+        log_stale_update(update, handler="deposit_amount_received")
+        _cleanup(context)
+        return ConversationHandler.END
 
     admin_uid = context.chat_data.get("deposit_admin_user_id")
     sender_id = update.effective_user.id if update.effective_user else None
+    message_text = update.message.text or ""
+
+    if not deposit_amount_actor_allowed(
+        context, sender_id=sender_id, text=message_text
+    ):
+        return DEPOSIT_AMOUNT
 
     logger.info(
         "deposit_amount_received text=%r chat_id=%s user_id=%s awaiting=%s admin_uid=%s test=%s",
-        (update.message.text or "")[:30],
+        message_text[:30],
         update.effective_chat.id,
         sender_id,
         context.chat_data.get("deposit_awaiting_amount"),
@@ -1109,15 +1142,16 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         )
         return ConversationHandler.END
 
-    raw = (update.message.text or "").strip().replace("$", "").replace(",", "")
+    raw = message_text.strip().replace("$", "").replace(",", "")
     try:
         amount = Decimal(raw)
         if amount <= 0:
             raise InvalidOperation()
     except (InvalidOperation, Exception):
-        await update.message.reply_text(
-            "Please enter a valid dollar amount (Example: 50 or 100.00)."
-        )
+        if looks_like_amount(message_text):
+            await update.message.reply_text(
+                "Please enter a valid dollar amount (Example: 50 or 100.00)."
+            )
         return DEPOSIT_AMOUNT
 
     context.chat_data["deposit_amount"] = amount
@@ -1172,6 +1206,11 @@ async def deposit_union_chosen(update: Update, context: ContextTypes.DEFAULT_TYP
     if not update.callback_query:
         return ConversationHandler.END
     query = update.callback_query
+    if is_update_too_old(update):
+        log_stale_update(update, handler="deposit_union_chosen")
+        await answer_stale_callback(update, context, flow_command="/deposit")
+        _cleanup(context)
+        return ConversationHandler.END
     await query.answer()
 
     data = query.data or ""
@@ -1371,6 +1410,11 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     if not update.callback_query:
         return ConversationHandler.END
     query = update.callback_query
+    if is_update_too_old(update):
+        log_stale_update(update, handler="deposit_method_chosen")
+        await answer_stale_callback(update, context, flow_command="/deposit")
+        _cleanup(context)
+        return ConversationHandler.END
     await query.answer()
 
     data = query.data or ""
@@ -1455,6 +1499,11 @@ async def deposit_setup_ack(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.callback_query:
         return ConversationHandler.END
     query = update.callback_query
+    if is_update_too_old(update):
+        log_stale_update(update, handler="deposit_setup_ack")
+        await answer_stale_callback(update, context, flow_command="/deposit")
+        _cleanup(context)
+        return ConversationHandler.END
     data = query.data or ""
     if not data.startswith("depft:"):
         return ConversationHandler.END
@@ -1515,6 +1564,11 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not update.callback_query:
         return ConversationHandler.END
     query = update.callback_query
+    if is_update_too_old(update):
+        log_stale_update(update, handler="deposit_sub_chosen")
+        await answer_stale_callback(update, context, flow_command="/deposit")
+        _cleanup(context)
+        return ConversationHandler.END
     await query.answer()
 
     data = query.data or ""
