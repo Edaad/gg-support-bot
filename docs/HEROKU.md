@@ -27,6 +27,63 @@ The **Python buildpack** still runs `pip install -r requirements.txt`. At runtim
 
 3. **Deploy**: `git push heroku main` — compile runs `npm install` at the repo root, then **`heroku-postbuild`**, then Python.
 
+## Pipeline build failure notifications
+
+Get Slack alerts when a Heroku **build** fails (Vite compile, `pip install`, release phase, etc.). This is separate from deploy-maintenance DMs (which only fire on successful deploys).
+
+**Recommended: Heroku ChatOps → Slack.** Native pipeline notifications; failed builds show in deploy threads and in the routed channel when deploys come from the Dashboard or GitHub integration.
+
+**Limitation:** ChatOps pipeline routing does **not** cover deploys started with `git push heroku …` from the CLI. If you still deploy that way, add the app webhook in step 4 below (or switch to GitHub-connected auto-deploy / `/h deploy`).
+
+### 1. Pipeline + GitHub (one-time)
+
+If the app is not in a pipeline yet (team-owned apps need `-t round-table`):
+
+```bash
+heroku pipelines:create gg-support-bot -a gg-support-bot-2025 -s production -t round-table
+# optional second stage:
+# heroku pipelines:add -a gg-support-bot-staging -s staging
+
+heroku pipelines:connect gg-support-bot -r Edaad/gg-support-bot
+```
+
+**Current state:** pipeline **`gg-support-bot`** exists with **`gg-support-bot-2025`** in **production**, GitHub repo connected. Remaining step: Slack routing (below).
+
+In **Dashboard → pipeline → Settings**, enable **Wait for GitHub checks** if you add CI later. Connect the repo if the CLI step above did not.
+
+### 2. Install Heroku ChatOps in Slack
+
+1. Install [Heroku ChatOps](https://slack.com/apps/A0BVC2A9Q-heroku) to the workspace.
+2. In a **public** ops channel (same one as `SLACK_OPS_CHANNEL_ID` is fine), run:
+
+   ```
+   /h login
+   /h route gg-support-bot to #your-ops-channel
+   ```
+
+3. In that channel, run `/h route`, pick **gg-support-bot**, and enable:
+   - **App deployments** — deploy/promote progress; build failures appear in the thread
+   - **GitHub Activity** (optional) — PR / commit status, including failed checks
+
+ChatOps supports one routed channel per pipeline. Private Slack channels are not supported.
+
+### 3. Verify
+
+Trigger a failing build on a **non-production** app or review app (e.g. temporarily break `dashboard/package.json`), deploy from the Dashboard or `/h deploy gg-support-bot to staging`, and confirm the Slack thread shows the failed build step.
+
+### 4. Optional: `git push heroku` build failures
+
+Subscribe each app to build webhooks; filter for `data.status == "failed"` on `api:build` `update` events and forward to Slack (Zapier catch hook, Hookdeck, or a tiny relay — Heroku’s payload is not Slack’s incoming-webhook format):
+
+```bash
+heroku webhooks:add -a gg-support-bot-2025 \
+  -i api:build \
+  -l notify \
+  -u https://YOUR_RELAY_URL/heroku-build
+```
+
+Inspect deliveries: `heroku webhooks:deliveries -a gg-support-bot-2025`.
+
 ## Deploy maintenance notifications
 
 Each Heroku deploy runs the **`release`** Procfile phase before new dynos go live. That phase DMs every account in [`config.py`](../config.py) `ADMIN_USER_IDS` with a brief disruption warning (~1 minute while dynos restart).

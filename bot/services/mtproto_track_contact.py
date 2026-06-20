@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from telegram import Bot
 
@@ -26,6 +27,8 @@ logger = logging.getLogger(__name__)
 _CONTACT_FIRST_MAX = 64
 
 _notify_bot: Bot | None = None
+_channels_too_much_last_notify: dict[str, float] = {}
+_CHANNELS_TOO_MUCH_NOTIFY_COOLDOWN_SEC = 600.0
 
 
 def set_contact_save_notify_bot(bot: Bot | None) -> None:
@@ -111,6 +114,35 @@ async def notify_club_gc_admin_dm(
             cfg.command_admin_user_id,
             exc_info=True,
         )
+
+
+async def notify_club_gc_channels_too_much(
+    cfg: ClubGcConfig,
+    *,
+    player_label: str,
+    trigger: str | None = None,
+) -> None:
+    """DM club GC admin when megagroup creation hits Telegram's group/channel cap."""
+
+    now = time.monotonic()
+    last = _channels_too_much_last_notify.get(cfg.club_key, 0.0)
+    if now - last < _CHANNELS_TOO_MUCH_NOTIFY_COOLDOWN_SEC:
+        return
+    _channels_too_much_last_notify[cfg.club_key] = now
+
+    lines = [
+        f"⚠️ {cfg.club_display_name}: cannot create a support group — the club "
+        "MTProto account has joined too many Telegram groups/channels "
+        "(ChannelsTooMuchError).",
+        f"Player: {player_label}",
+    ]
+    if trigger:
+        lines.append(f"Trigger: {trigger}")
+    lines.append(
+        "Leave inactive support groups on the club account, then retry /gc or have "
+        "the player DM again."
+    )
+    await notify_club_gc_admin_dm(cfg, "\n".join(lines))
 
 
 async def notify_all_gc_admins_dm(

@@ -74,16 +74,8 @@ def _beautify_migration_summary(body: str) -> str:
                 "direct added:",
                 "in group pending queue:",
                 "membership check errors:",
-                "tier 1+2 pending:",
-                "tier 3 pending:",
-                "skipped:",
             )
         ):
-            if line == "Queue snapshot (all tiers)":
-                flush_club()
-                out.append("*Queue snapshot* (all tiers)")
-                out.append("")
-                continue
             flush_club()
             club_name = line
             continue
@@ -97,8 +89,6 @@ def _beautify_migration_summary(body: str) -> str:
             club_lines.append(f"• {line}")
         elif line.startswith("membership check errors:"):
             club_lines.append(f"• {line}")
-        elif line.startswith("tier 1+2 pending:") or line.startswith("skipped:"):
-            club_lines.append(f"• {line.replace(' | ', '  |  ')}")
     flush_club()
     return "\n".join(out).rstrip()
 

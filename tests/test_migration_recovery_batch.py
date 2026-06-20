@@ -107,7 +107,6 @@ class TestFormatRecoverySlackSummary(unittest.TestCase):
                     still_missing=5,
                 )
             ],
-            queue_snapshots=[],
         )
         self.assertIn("Creator Club", text)
         self.assertIn("queue left: 40", text)
@@ -117,18 +116,7 @@ class TestFormatRecoverySlackSummary(unittest.TestCase):
         self.assertIn("joined via link: 45", text)
         self.assertIn("still missing: 5", text)
 
-    def test_includes_queue_snapshot(self) -> None:
-        snapshots = [
-            ClubRecoveryQueueSnapshot(
-                club_key="round_table",
-                club_display_name="Round Table",
-                tier12_pending=120,
-                tier3_pending=50,
-                skipped=733,
-                failed=8,
-                processing=2,
-            )
-        ]
+    def test_omits_queue_snapshot(self) -> None:
         text = format_recovery_slack_summary(
             [
                 ClubRecoverySlackStats(
@@ -147,12 +135,9 @@ class TestFormatRecoverySlackSummary(unittest.TestCase):
                     still_missing=5,
                 )
             ],
-            queue_snapshots=snapshots,
         )
-        self.assertIn("Queue snapshot (all tiers)", text)
-        self.assertIn("tier 1+2 pending: 120", text)
-        self.assertIn("tier 3 pending: 50", text)
-        self.assertIn("skipped: 733", text)
+        self.assertNotIn("Queue snapshot (all tiers)", text)
+        self.assertNotIn("tier 1+2 pending:", text)
 
 
 class TestFormatRecoveryQueueSnapshot(unittest.TestCase):

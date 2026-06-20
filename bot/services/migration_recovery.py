@@ -1645,8 +1645,6 @@ async def compute_recovery_slack_stats() -> list[ClubRecoverySlackStats]:
 
 def format_recovery_slack_summary(
     stats: list[ClubRecoverySlackStats],
-    *,
-    queue_snapshots: list[ClubRecoveryQueueSnapshot] | None = None,
 ) -> str:
     lines = ["Migration recovery progress (tier 1+2)", ""]
     for entry in stats:
@@ -1670,13 +1668,6 @@ def format_recovery_slack_summary(
         if entry.check_errors:
             lines.append(f"  membership check errors: {entry.check_errors}")
         lines.append("")
-    if queue_snapshots is None:
-        queue_snapshots = fetch_club_recovery_queue_snapshots()
-    queue_text = format_recovery_queue_snapshot(queue_snapshots)
-    if queue_text:
-        if lines and lines[-1] != "":
-            lines.append("")
-        lines.append(queue_text)
     return "\n".join(lines).rstrip()
 
 

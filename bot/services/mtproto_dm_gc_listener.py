@@ -46,6 +46,7 @@ from bot.services.mtproto_club_health import (
     persist_club_health,
 )
 from bot.services.mtproto_group_add import handle_group_add_outgoing
+from bot.services.mtproto_track_contact import notify_club_gc_channels_too_much
 from bot.services.mtproto_group_cash import handle_group_cash_outgoing
 from bot.services.mtproto_group_delete import handle_group_delete_outgoing
 from bot.services.support_group_chats import (
@@ -217,6 +218,7 @@ async def _flow_new_group(
     ptb_bot,
     *,
     listener_label: str,
+    trigger: str,
 ) -> None:
     me = await client.get_me()
     admin_id = me.id
@@ -229,13 +231,20 @@ async def _flow_new_group(
             cfg, bot_dm_username=bot_dm_username, player_user=player
         )
     except Exception as e:
+        err_name = type(e).__name__
         logger.exception(
             "dm_gc /gc failed: create_support_megagroup threw club_key=%s listener=%s player=%s: %s",
             cfg.club_key,
             listener_label,
             player_label,
-            type(e).__name__,
+            err_name,
         )
+        if err_name == "ChannelsTooMuchError":
+            await notify_club_gc_channels_too_much(
+                cfg,
+                player_label=player_label,
+                trigger=trigger,
+            )
         return
 
     cid = outcome.telegram_chat_id
@@ -418,6 +427,7 @@ async def _run_gc_flow_for_player(
                 bot_dm_username,
                 ptb_bot,
                 listener_label=listener_label,
+                trigger=trigger,
             )
         else:
             logger.warning(

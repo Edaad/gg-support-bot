@@ -323,10 +323,25 @@ async def gc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         hint = type(e).__name__
         logger.exception("MTProto megagroup flow failed (%s)", hint)
-        await update.message.reply_text(
-            "Group creation failed before completion (details logged). "
-            f"Error type: {hint}. Nothing was saved."
-        )
+        if hint == "ChannelsTooMuchError":
+            from bot.services.mtproto_track_contact import notify_club_gc_channels_too_much
+
+            player_label = player_marker or "(generic group)"
+            await notify_club_gc_channels_too_much(
+                cfg,
+                player_label=player_label,
+                trigger="bot /gc",
+            )
+            await update.message.reply_text(
+                "Group creation failed: the club MTProto account has joined too many "
+                "Telegram groups/channels. Leave inactive groups on that account and retry. "
+                "The club admin was DM'd on this bot."
+            )
+        else:
+            await update.message.reply_text(
+                "Group creation failed before completion (details logged). "
+                f"Error type: {hint}. Nothing was saved."
+            )
         return
 
     await _finish_gc_creation(
