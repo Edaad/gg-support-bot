@@ -1045,8 +1045,8 @@
     "semantic_hash": "79c6fe14be16e88a1c87f51a4407ab76"
   },
   "bot/main.py": {
-    "mtime": 1781969577.4849312,
-    "ast_hash": "104431ffed63a54e2d372cf0da30416d",
+    "mtime": 1781977751.3682802,
+    "ast_hash": "e8f73f29b935f87df6a76b3ca2a77404",
     "semantic_hash": ""
   },
   "bot/runtime_config.py": {
@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1781970535.631317,
-    "ast_hash": "f9b702f1125300573c8b6651992a8435",
+    "mtime": 1781977757.916884,
+    "ast_hash": "f7a0b92575bfcf9b92adac9d2633d82c",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -3120,8 +3120,8 @@
     "semantic_hash": ""
   },
   "scripts/pre_push_import_smoke.py": {
-    "mtime": 1781969858.4258413,
-    "ast_hash": "1bf8e994d43ca05545bc3e426af51162",
+    "mtime": 1781977754.3461516,
+    "ast_hash": "d5430ad66719b5bb6af46c6b3aade027",
     "semantic_hash": ""
   },
   "docs/SUPPORT_NOTES.md": {
@@ -3147,6 +3147,11 @@
   "bot/handlers/support_notes.py": {
     "mtime": 1781977598.8836434,
     "ast_hash": "b21efa5f451e1f5efe679e653faa6a35",
+    "semantic_hash": ""
+  },
+  "scripts/heroku_release.py": {
+    "mtime": 1781977761.180876,
+    "ast_hash": "5d5521287f6afda4b0c7057a902b26ba",
     "semantic_hash": ""
   }
 }

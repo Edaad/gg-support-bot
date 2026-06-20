@@ -28,7 +28,7 @@ from notification.chat_id import telegram_chat_ids_match
 from notification.constants import PAYMENT_NOTIFICATION_CHAT_ID_ENV
 from notification.handlers._chat import notification_chat_id
 from notification.handlers.bind_callbacks import (
-    BIND_ADD_MEMBER_PENDING_KEY,
+    get_add_member_pending,
     payment_bind_add_member_reply_handler,
 )
 from notification.payment_lookup import find_payment_by_notification
@@ -98,7 +98,7 @@ async def payment_bind_reply_handler(
 
     # ForceReply answers to "Add another member" are replies to the bot prompt,
     # not the payment notification — route before the notification-only check.
-    if context.user_data.get(BIND_ADD_MEMBER_PENDING_KEY):
+    if get_add_member_pending(context):
         await payment_bind_add_member_reply_handler(update, context)
         return
 

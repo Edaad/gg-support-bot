@@ -44,6 +44,32 @@ logger = logging.getLogger(__name__)
 BIND_ADD_MEMBER_PENDING_KEY = "bind_add_member_pending"
 _BIND_ADD_MEMBER_KEY = BIND_ADD_MEMBER_PENDING_KEY
 
+
+def get_add_member_pending(context: ContextTypes.DEFAULT_TYPE) -> dict | None:
+    """Pending add-member flow for the shared notification chat (any staff may reply)."""
+    pending = context.chat_data.get(BIND_ADD_MEMBER_PENDING_KEY)
+    return pending if isinstance(pending, dict) else None
+
+
+def set_add_member_pending(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    method_slug: str,
+    payment_id: int,
+    notification_message_id: int,
+    actor_user_id: int,
+) -> None:
+    context.chat_data[BIND_ADD_MEMBER_PENDING_KEY] = {
+        "method_slug": method_slug,
+        "payment_id": payment_id,
+        "notification_message_id": notification_message_id,
+        "actor_user_id": actor_user_id,
+    }
+
+
+def clear_add_member_pending(context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.chat_data.pop(BIND_ADD_MEMBER_PENDING_KEY, None)
+
 # Reassign / add-candidate flows post buttons on a separate bot reply, not the
 # original notification message — do not apply notification message_id stale check.
 _REPLY_MESSAGE_ACTIONS = frozenset({"r", "a", "c", "ac", "b"})
@@ -408,11 +434,13 @@ async def payment_bind_callback_handler(
         return
 
     if action == "m":
-        context.user_data[_BIND_ADD_MEMBER_KEY] = {
-            "method_slug": method_slug,
-            "payment_id": payment_id,
-            "notification_message_id": int(message.message_id),
-        }
+        set_add_member_pending(
+            context,
+            method_slug=method_slug,
+            payment_id=payment_id,
+            notification_message_id=int(message.message_id),
+            actor_user_id=actor_id,
+        )
         logger.info(
             "payment_bind: add_member_prompt method=%s payment_id=%s actor_user_id=%s",
             method_slug,
@@ -437,7 +465,7 @@ async def payment_bind_add_member_reply_handler(
     if not update.message or not update.effective_user:
         return
 
-    pending = context.user_data.get(_BIND_ADD_MEMBER_KEY)
+    pending = get_add_member_pending(context)
     if not pending:
         return
 
@@ -452,11 +480,22 @@ async def payment_bind_add_member_reply_handler(
         await update.message.reply_text("Send the group title as text.")
         return
 
+    actor_id = int(update.effective_user.id)
+    logger.info(
+        "payment_bind: add_member_reply method=%s payment_id=%s actor_user_id=%s "
+        "prompt_actor_user_id=%s title=%r",
+        pending.get("method_slug"),
+        pending.get("payment_id"),
+        actor_id,
+        pending.get("actor_user_id"),
+        title,
+    )
+
     method_slug = pending["method_slug"]
     payment_id = int(pending["payment_id"])
     payment = load_payment(method_slug, payment_id)
     if payment is None:
-        context.user_data.pop(_BIND_ADD_MEMBER_KEY, None)
+        clear_add_member_pending(context)
         await update.message.reply_text("Payment not found.")
         return
 
@@ -479,7 +518,7 @@ async def payment_bind_add_member_reply_handler(
         await update.message.reply_text(bind_scope_err)
         return
 
-    context.user_data.pop(_BIND_ADD_MEMBER_KEY, None)
+    clear_add_member_pending(context)
     logger.info(
         "payment_bind: add_member_resolved method=%s payment_id=%s target_chat_id=%s "
         "title=%r actor_user_id=%s",
