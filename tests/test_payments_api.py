@@ -60,9 +60,9 @@ class PaymentsApiTestCase(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(len(data), 2)
+        self.assertEqual(len(data), 6)
         ids = {row["id"] for row in data}
-        self.assertEqual(ids, {"stripe", "venmo"})
+        self.assertEqual(ids, {"stripe", "venmo", "zelle", "cashapp", "paypal", "crypto"})
 
     def test_venmo_payments_club_not_found(self):
         mock_db = MagicMock()

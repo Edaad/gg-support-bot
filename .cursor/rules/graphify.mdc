@@ -11,7 +11,7 @@ This project has a graphify knowledge graph at graphify-out/.
 - After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
 - Git hooks (install: `bash scripts/install-graphify-hooks.sh`):
   - **post-commit** — background rebuild after each commit
-  - **pre-push** — python compile + dashboard build, then sync graph rebuild before `git push` / `gp` (blocks push briefly; graphify skipped if either build fails)
+  - **pre-push** — python imports + tests + dashboard build, then sync graph rebuild before `git push` / `gp` (blocks push briefly; graphify skipped if any step fails)
   - **post-checkout** — rebuild when switching branches
 - Skip hooks once: `GRAPHIFY_SKIP_HOOK=1 git commit` or `git push`
 - Rebuild log: `~/.cache/graphify-rebuild.log`

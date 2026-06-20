@@ -18,6 +18,7 @@ from bot.services.crypto_payments import (
     validate_bind_alert_scope,
 )
 from bot.services.venmo_payments import BindResult, BoundGroup
+from bot.services.payment_bind_candidates import CandidateGroup
 from db.models import CryptoPayment, CryptoWalletBinding
 
 CHAT_ID = -1001234567890
@@ -158,6 +159,7 @@ class CryptoIngestIdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
                 "bot.services.crypto_payments.resolve_group_chat_url_for_payment",
                 new=AsyncMock(return_value=None),
             ),
+            patch("bot.services.crypto_payments.track_ingest_notification"),
         ):
             get_db_mock.return_value.__enter__.return_value = session
             get_db_mock.return_value.__exit__.return_value = False
@@ -188,11 +190,10 @@ class CryptoWalletBindingTestCase(unittest.TestCase):
 
 class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_ingest_auto_binds_known_wallet(self):
-        binding = CryptoWalletBinding(
-            from_address_normalized=normalize_from_address(FROM_ADDRESS),
-            alert_scope=ALERT_SCOPE_CLUBGTO,
+        candidate = CandidateGroup(
             telegram_chat_id=CHAT_ID,
             club_id=CLUB_ID,
+            group_title=GROUP_TITLE,
         )
         payment_obj = CryptoPayment(
             id=99,
@@ -210,8 +211,6 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
             q = MagicMock()
             if model is CryptoPayment:
                 q.filter_by.return_value.one_or_none.side_effect = [None, payment_obj]
-            elif model is CryptoWalletBinding:
-                q.filter_by.return_value.one_or_none.return_value = binding
             return q
 
         mock_session = MagicMock()
@@ -231,12 +230,21 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
             ),
             patch(
-                "bot.services.crypto_payments.resolve_display_group_title",
-                return_value=GROUP_TITLE,
-            ),
-            patch(
                 "bot.services.crypto_payments.resolve_group_chat_url_for_payment",
                 new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "bot.services.payment_bind_candidates.candidates_for_payment",
+                return_value=[candidate],
+            ),
+            patch(
+                "notification.payment_bind_helpers.auto_bind_from_candidates",
+                return_value=candidate,
+            ),
+            patch("bot.services.crypto_payments.track_ingest_notification"),
+            patch(
+                "bot.services.crypto_payments.maybe_notify_player_on_auto_bound",
+                new=AsyncMock(),
             ),
         ):
             mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
@@ -256,12 +264,6 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, "bound")
 
     async def test_ingest_same_address_different_scope_stays_unbound(self):
-        binding = CryptoWalletBinding(
-            from_address_normalized=normalize_from_address(FROM_ADDRESS),
-            alert_scope=ALERT_SCOPE_CLUBGTO,
-            telegram_chat_id=CHAT_ID,
-            club_id=CLUB_ID,
-        )
         payment_obj = CryptoPayment(
             id=100,
             amount_cents=5000,
@@ -278,8 +280,6 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
             q = MagicMock()
             if model is CryptoPayment:
                 q.filter_by.return_value.one_or_none.side_effect = [None, payment_obj]
-            elif model is CryptoWalletBinding:
-                q.filter_by.return_value.one_or_none.return_value = None
             return q
 
         mock_session = MagicMock()
@@ -302,6 +302,11 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
                 "bot.services.crypto_payments.resolve_group_chat_url_for_payment",
                 new=AsyncMock(return_value=None),
             ),
+            patch(
+                "bot.services.payment_bind_candidates.candidates_for_payment",
+                return_value=[],
+            ),
+            patch("bot.services.crypto_payments.track_ingest_notification"),
         ):
             mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
             mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
@@ -378,13 +383,14 @@ class CryptoManualBindUpsertTestCase(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(return_value=None),
             ),
             patch(
-                "bot.services.crypto_payments.edit_telegram_notification",
+                "bot.services.crypto_payments.sync_payment_notification_edit",
                 new=AsyncMock(),
             ),
             patch(
                 "bot.services.crypto_payments.validate_bind_alert_scope",
                 return_value=None,
             ),
+            patch("bot.services.crypto_payments.record_payment_bound"),
         ):
             mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
             mock_get_db.return_value.__exit__ = MagicMock(return_value=False)

@@ -13,6 +13,7 @@ from bot.services.payment_method_binding import (
     allocate_setup_amount_cents,
     bind_mode_for_method,
     effective_min_cents,
+    SETUP_MEMO_CODE_POOL,
     extract_venmo_handle_from_text,
     extract_venmo_url,
     extract_cashapp_handle_from_text,
@@ -225,13 +226,13 @@ class TestAllocateSetupMemoCode(unittest.TestCase):
         session = MagicMock()
         session.query.return_value.filter_by.return_value.scalar.return_value = 0
         code = allocate_setup_memo_code(session, variant_id=1)
-        self.assertEqual(code, "FLOP")
+        self.assertEqual(code, SETUP_MEMO_CODE_POOL[0])
 
     def test_second_pending_gets_second_code(self):
         session = MagicMock()
         session.query.return_value.filter_by.return_value.scalar.return_value = 1
         code = allocate_setup_memo_code(session, variant_id=1)
-        self.assertEqual(code, "TURN")
+        self.assertEqual(code, SETUP_MEMO_CODE_POOL[1])
 
     def test_exhausted_pool_raises(self):
         session = MagicMock()

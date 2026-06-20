@@ -1045,8 +1045,8 @@
     "semantic_hash": "79c6fe14be16e88a1c87f51a4407ab76"
   },
   "bot/main.py": {
-    "mtime": 1781969530.5962148,
-    "ast_hash": "4fa5f0bdeb21dc7dd147ba0152277a9d",
+    "mtime": 1781969577.4849312,
+    "ast_hash": "104431ffed63a54e2d372cf0da30416d",
     "semantic_hash": ""
   },
   "bot/runtime_config.py": {
@@ -2615,8 +2615,8 @@
     "semantic_hash": "a9bc13861206090b705db2169d97d382"
   },
   "scripts/install-graphify-hooks.sh": {
-    "mtime": 1781969544.8001544,
-    "ast_hash": "d587e51f99d9dec3ce5b5308f4af57b6",
+    "mtime": 1781969646.1472902,
+    "ast_hash": "7b5dc72f46602b1d27610000e3d0b215",
     "semantic_hash": ""
   },
   ".claude/CLAUDE.md": {
@@ -3120,8 +3120,8 @@
     "semantic_hash": ""
   },
   "scripts/pre-push-build-hook.sh": {
-    "mtime": 1781969517.9369202,
-    "ast_hash": "3686876ed5f5d0b580472ec627e7c4ff",
+    "mtime": 1781969646.011291,
+    "ast_hash": "bb2f81f51d7289bbd674a9b71369116b",
     "semantic_hash": ""
   }
 }

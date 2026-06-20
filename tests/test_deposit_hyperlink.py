@@ -9,14 +9,19 @@ from unittest.mock import AsyncMock, patch
 from bot.handlers import deposit as dep
 
 
+def _deposit_query(*, chat_id=-100123, message_id=42):
+    chat = SimpleNamespace(
+        id=chat_id,
+        send_message=AsyncMock(return_value=SimpleNamespace(message_id=99)),
+    )
+    message = SimpleNamespace(chat=chat, message_id=message_id)
+    return SimpleNamespace(message=message, edit_message_text=AsyncMock())
+
+
 class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_stripe_hyperlink_placeholder_replaced_with_html_link(self):
-        chat = SimpleNamespace(send_message=AsyncMock())
-        message = SimpleNamespace(chat=chat)
-        query = SimpleNamespace(
-            message=message,
-            edit_message_text=AsyncMock(),
-        )
+        query = _deposit_query()
+        chat = query.message.chat
         context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
 
         result = SimpleNamespace(
@@ -58,12 +63,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(chat.send_message.call_args.kwargs.get("parse_mode"), "HTML")
 
     async def test_stripe_checkout_when_provider_missing_defaults_stripe(self):
-        chat = SimpleNamespace(send_message=AsyncMock())
-        message = SimpleNamespace(chat=chat)
-        query = SimpleNamespace(
-            message=message,
-            edit_message_text=AsyncMock(),
-        )
+        query = _deposit_query()
         context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
 
         result = SimpleNamespace(
@@ -98,12 +98,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         create_session.assert_called_once()
 
     async def test_tier_group_checkout_overrides_method(self):
-        chat = SimpleNamespace(send_message=AsyncMock(), id=-100123)
-        message = SimpleNamespace(chat=chat, message_id=42)
-        query = SimpleNamespace(
-            message=message,
-            edit_message_text=AsyncMock(),
-        )
+        query = _deposit_query()
         context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
 
         result = SimpleNamespace(
@@ -151,12 +146,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(create_session.call_args.kwargs.get("checkout_preset_usd"), dep.Decimal("100"))
 
     async def test_stripe_checkout_uses_dashboard_min_max(self):
-        chat = SimpleNamespace(send_message=AsyncMock())
-        message = SimpleNamespace(chat=chat)
-        query = SimpleNamespace(
-            message=message,
-            edit_message_text=AsyncMock(),
-        )
+        query = _deposit_query()
         context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
 
         result = SimpleNamespace(
@@ -171,8 +161,8 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
             "use_group_checkout_link": True,
             "group_checkout_provider": "stripe",
             "hyperlink_text": "Pay",
-            "min_amount": 25,
-            "max_amount": 75,
+            "checkout_min_amount": 25,
+            "checkout_max_amount": 75,
         }
 
         with (
@@ -195,12 +185,8 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(create_session.call_args.kwargs.get("checkout_max_usd"), 75)
 
     async def test_stripe_without_placeholder_sends_link_separately(self):
-        chat = SimpleNamespace(send_message=AsyncMock())
-        message = SimpleNamespace(chat=chat)
-        query = SimpleNamespace(
-            message=message,
-            edit_message_text=AsyncMock(),
-        )
+        query = _deposit_query()
+        chat = query.message.chat
         context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
 
         result = SimpleNamespace(
@@ -234,7 +220,8 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         self.assertGreaterEqual(chat.send_message.await_count, 2)
         first_text = chat.send_message.await_args_list[0].args[0]
-        second_text = chat.send_message.await_args_list[1].args[0]
+        second_call = chat.send_message.await_args_list[1]
+        second_text = second_call.kwargs.get("text") or second_call.args[0]
         self.assertEqual(first_text, "Hello")
         self.assertIn('<a href="https://checkout.stripe.com/test">PAY</a>', second_text)
 
@@ -254,12 +241,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(dep._stripe_checkout_enabled(merged))
 
     async def test_stripe_slug_without_group_checkout_uses_static_response(self):
-        chat = SimpleNamespace(send_message=AsyncMock())
-        message = SimpleNamespace(chat=chat)
-        query = SimpleNamespace(
-            message=message,
-            edit_message_text=AsyncMock(),
-        )
+        query = _deposit_query()
         context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
 
         response_data = {
@@ -289,12 +271,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         send_response.assert_awaited()
 
     async def test_variant_group_checkout_overrides_tier(self):
-        chat = SimpleNamespace(send_message=AsyncMock())
-        message = SimpleNamespace(chat=chat)
-        query = SimpleNamespace(
-            message=message,
-            edit_message_text=AsyncMock(),
-        )
+        query = _deposit_query()
         context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
 
         result = SimpleNamespace(
@@ -309,8 +286,8 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
             "use_group_checkout_link": True,
             "group_checkout_provider": "stripe",
             "hyperlink_text": "Pay now",
-            "min_amount": 101,
-            "max_amount": 2000,
+            "checkout_min_amount": 101,
+            "checkout_max_amount": 2000,
         }
         method = {
             "use_group_checkout_link": False,
@@ -345,12 +322,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(create_session.call_args.kwargs.get("checkout_max_usd"), 2000)
 
     async def test_cashapp_below_100_uses_configured_variant_stripe(self):
-        chat = SimpleNamespace(send_message=AsyncMock())
-        message = SimpleNamespace(chat=chat)
-        query = SimpleNamespace(
-            message=message,
-            edit_message_text=AsyncMock(),
-        )
+        query = _deposit_query()
         context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
 
         result = SimpleNamespace(
@@ -412,12 +384,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("_stripe_link_only_html", sent)
 
     async def test_cashapp_over_100_does_not_use_stripe_without_group_checkout(self):
-        chat = SimpleNamespace(send_message=AsyncMock())
-        message = SimpleNamespace(chat=chat)
-        query = SimpleNamespace(
-            message=message,
-            edit_message_text=AsyncMock(),
-        )
+        query = _deposit_query()
         context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
 
         response_data = {
