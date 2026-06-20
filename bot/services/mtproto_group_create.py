@@ -289,8 +289,60 @@ class MtProtoGroupOutcome:
     player_direct_add_ok: bool | None = None
 
 
+async def apply_club_group_photo(
+    client: TelegramClient,
+    channel_entity,
+    cfg: ClubGcConfig,
+    *,
+    warnings: list[str] | None = None,
+    failed_users: list[dict] | None = None,
+) -> bool:
+    """Best-effort: set megagroup photo from ``cfg.group_photo_path``."""
+
+    if not cfg.group_photo_path:
+        return False
+
+    photo_abs = resolve_repo_path(cfg.group_photo_path)
+    if not photo_abs.exists():
+        msg = f"group photo path missing on disk: {photo_abs.as_posix()} — skipped."
+        if warnings is not None:
+            warnings.append(msg)
+        logger.warning("apply_club_group_photo: %s club=%s", msg, cfg.club_key)
+        return False
+
+    try:
+
+        async def upload_channel_photo():
+            uploaded = await client.upload_file(photo_abs.as_posix())
+            inp = utils.get_input_channel(channel_entity)
+            await client(
+                EditPhotoRequest(
+                    inp,
+                    InputChatUploadedPhoto(file=uploaded),
+                )
+            )
+
+        await _with_single_flood_retry("EditPhotoRequest", upload_channel_photo)
+        return True
+    except Exception as e:
+        err_name = type(e).__name__
+        if warnings is not None:
+            warnings.append(f"group photo upload failed ({err_name})")
+        if failed_users is not None:
+            failed_users.append(
+                {"user": "__group_photo__", "reason": err_name, "kind": "photo"}
+            )
+        logger.warning(
+            "apply_club_group_photo failed club=%s: %s", cfg.club_key, err_name
+        )
+        return False
+
+
 async def ensure_player_in_support_group(
-    client: TelegramClient, channel_entity, player_user
+    client: TelegramClient,
+    channel_entity,
+    player_user,
+    cfg: ClubGcConfig,
 ) -> Literal["already_member", "invited_ok", "invite_failed"]:
     """Re-add flow: detect membership or best-effort invite."""
 
@@ -308,6 +360,8 @@ async def ensure_player_in_support_group(
         logger.info("GetParticipantRequest: %s", type(e).__name__)
 
     ok, _ = await _invite_user_entity(client, channel_entity, player_user)
+    if ok:
+        await apply_club_group_photo(client, channel_entity, cfg)
     return "invited_ok" if ok else "invite_failed"
 
 
@@ -600,33 +654,13 @@ async def create_support_megagroup(
                 else:
                     failed_ok.append({"user": marker, "reason": err or "unknown", "kind": kind})
 
-            if cfg.group_photo_path:
-                photo_abs = resolve_repo_path(cfg.group_photo_path)
-                if photo_abs.exists():
-                    try:
-
-                        async def upload_channel_photo():
-                            uploaded = await client.upload_file(photo_abs.as_posix())
-                            inp = utils.get_input_channel(channel_ent)
-                            await client(
-                                EditPhotoRequest(
-                                    inp,
-                                    InputChatUploadedPhoto(file=uploaded),
-                                )
-                            )
-
-                        await _with_single_flood_retry("EditPhotoRequest", upload_channel_photo)
-                        photo_ok = True
-                    except Exception as e:
-
-                        warnings_local.append(f"group photo upload failed ({type(e).__name__})")
-                        failed_ok.append(
-                            {"user": "__group_photo__", "reason": type(e).__name__, "kind": "photo"}
-                        )
-                else:
-                    warnings_local.append(
-                        f"group photo path missing on disk: {photo_abs.as_posix()} — skipped."
-                    )
+            photo_ok = await apply_club_group_photo(
+                client,
+                channel_ent,
+                cfg,
+                warnings=warnings_local,
+                failed_users=failed_ok,
+            )
 
             try:
                 invite_link = await _export_invite_link(client, channel_ent)

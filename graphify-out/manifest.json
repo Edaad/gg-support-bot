@@ -1045,8 +1045,8 @@
     "semantic_hash": "79c6fe14be16e88a1c87f51a4407ab76"
   },
   "bot/main.py": {
-    "mtime": 1781959071.369165,
-    "ast_hash": "5836f9c21f05e93d0bbae54969e9c7c5",
+    "mtime": 1781969530.5962148,
+    "ast_hash": "4fa5f0bdeb21dc7dd147ba0152277a9d",
     "semantic_hash": ""
   },
   "bot/runtime_config.py": {
@@ -1120,8 +1120,8 @@
     "semantic_hash": "563bb7e4bf87c4a7e0a2622d3109b5b4"
   },
   "bot/services/mtproto_dm_gc_listener.py": {
-    "mtime": 1781917625.4491117,
-    "ast_hash": "e2dd83c5002f5fe562a01f94b4c3c9ca",
+    "mtime": 1781959588.535165,
+    "ast_hash": "a1c4171ddbce1e756bb47598e63f99c7",
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_add.py": {
@@ -1135,8 +1135,8 @@
     "semantic_hash": "1bc1e5ba5a1a984c0c4c86bac76207a8"
   },
   "bot/services/mtproto_group_create.py": {
-    "mtime": 1781153712.9470766,
-    "ast_hash": "4c7c20dbe824e7b72668b8ac7b0d0d51",
+    "mtime": 1781959588.3612657,
+    "ast_hash": "ab8399dfa03d5aff22f2965278bdfe62",
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_delete.py": {
@@ -2615,9 +2615,9 @@
     "semantic_hash": "a9bc13861206090b705db2169d97d382"
   },
   "scripts/install-graphify-hooks.sh": {
-    "mtime": 1780964552.6099465,
-    "ast_hash": "8e272dfb2d8af27bfaeb6a7b4fa51465",
-    "semantic_hash": "8e272dfb2d8af27bfaeb6a7b4fa51465"
+    "mtime": 1781969544.8001544,
+    "ast_hash": "d587e51f99d9dec3ce5b5308f4af57b6",
+    "semantic_hash": ""
   },
   ".claude/CLAUDE.md": {
     "mtime": 1780964349.9182434,
@@ -3112,6 +3112,16 @@
   "tests/test_player_support_notes.py": {
     "mtime": 1781959084.0386837,
     "ast_hash": "f3ac4276939a24d311d6a9284ab46768",
+    "semantic_hash": ""
+  },
+  "tests/test_group_photo_on_add.py": {
+    "mtime": 1781959591.1727068,
+    "ast_hash": "8458ee945d936009e6036fd485be12d9",
+    "semantic_hash": ""
+  },
+  "scripts/pre-push-build-hook.sh": {
+    "mtime": 1781969517.9369202,
+    "ast_hash": "3686876ed5f5d0b580472ec627e7c4ff",
     "semantic_hash": ""
   }
 }

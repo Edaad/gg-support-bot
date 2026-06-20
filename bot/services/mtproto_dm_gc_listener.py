@@ -160,7 +160,7 @@ async def _flow_existing_group(
         )
         return
 
-    st = await ensure_player_in_support_group(client, channel, player)
+    st = await ensure_player_in_support_group(client, channel, player, cfg)
     exported = await export_invite_link_for_peer(client, channel)
     new_link = exported or row.invite_link
     link = (new_link or "").strip()

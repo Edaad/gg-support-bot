@@ -16,21 +16,16 @@ HOOKS_DIR="$ROOT/$HOOKS_DIR"
 mkdir -p "$HOOKS_DIR"
 
 PUSH_HOOK="$HOOKS_DIR/pre-push"
-MARKER="# graphify-pre-push-hook-start"
-BODY="$ROOT/scripts/graphify-pre-push-hook.sh"
+BUILD_BODY="$ROOT/scripts/pre-push-build-hook.sh"
+GRAPH_BODY="$ROOT/scripts/graphify-pre-push-hook.sh"
 
-if [ -f "$PUSH_HOOK" ] && grep -q "$MARKER" "$PUSH_HOOK" 2>/dev/null; then
-  echo "pre-push: graphify hook already installed at $PUSH_HOOK"
-else
-  if [ -f "$PUSH_HOOK" ]; then
-    cat "$BODY" >> "$PUSH_HOOK"
-    echo "pre-push: appended graphify hook to $PUSH_HOOK"
-  else
-    { echo '#!/bin/sh'; cat "$BODY"; } > "$PUSH_HOOK"
-    chmod +x "$PUSH_HOOK"
-    echo "pre-push: installed at $PUSH_HOOK"
-  fi
-fi
+TMP=$(mktemp)
+echo '#!/bin/sh' > "$TMP"
+cat "$BUILD_BODY" >> "$TMP"
+tail -n +2 "$GRAPH_BODY" >> "$TMP"
+mv "$TMP" "$PUSH_HOOK"
+chmod +x "$PUSH_HOOK"
+echo "pre-push: installed build + graphify hooks at $PUSH_HOOK"
 
 # Pin Python path in pre-push hook (same as graphify hook install).
 PINNED=""
@@ -62,7 +57,9 @@ echo ""
 echo "Hooks active:"
 echo "  post-commit  — background rebuild after each commit"
 echo "  post-checkout — rebuild when switching branches"
-echo "  pre-push     — sync rebuild before git push / gp"
+echo "  pre-push     — python compile + dashboard build, then graphify sync, before git push / gp"
 echo ""
-echo "Skip once: GRAPHIFY_SKIP_HOOK=1 git push"
+echo "Skip once:"
+echo "  BUILD_SKIP_HOOK=1 git push      — skip python + dashboard builds"
+echo "  GRAPHIFY_SKIP_HOOK=1 git push   — skip graphify sync"
 echo "Log: ~/.cache/graphify-rebuild.log"
