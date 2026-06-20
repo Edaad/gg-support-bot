@@ -1950,8 +1950,8 @@
     "semantic_hash": "3fb91494340ffcbef6926ae3bc71ce71"
   },
   "tests/test_crypto_alert_scope.py": {
-    "mtime": 1781665475.5293531,
-    "ast_hash": "2ac2a497de7cddd8b32452ee8a2db665",
+    "mtime": 1781970289.3248863,
+    "ast_hash": "39f018758867de7a054db24ee66dd8f2",
     "semantic_hash": ""
   },
   "tests/test_crypto_payments_api.py": {
@@ -1965,8 +1965,8 @@
     "semantic_hash": "5b6e1bea8c950b81528f1727cab4f5c4"
   },
   "tests/test_deposit_hyperlink.py": {
-    "mtime": 1781452044.2244997,
-    "ast_hash": "9d5a2697aca1f20a5cbe6e06e8d79d18",
+    "mtime": 1781970273.4691236,
+    "ast_hash": "2f07ba3a8a1ef25781ac76532466e386",
     "semantic_hash": ""
   },
   "tests/test_deposit_reminder.py": {
@@ -1990,14 +1990,14 @@
     "semantic_hash": ""
   },
   "tests/test_payment_method_binding.py": {
-    "mtime": 1781660220.7413962,
-    "ast_hash": "8f5d0bce4afe01d4f229356ddd18a3a7",
+    "mtime": 1781970211.7688363,
+    "ast_hash": "1f69e9a18f749b689bc28d94bcda44bd",
     "semantic_hash": ""
   },
   "tests/test_payments_api.py": {
-    "mtime": 1780711866.0358808,
-    "ast_hash": "7453a1e74e83d960f23dcfa9b7c841bb",
-    "semantic_hash": "7453a1e74e83d960f23dcfa9b7c841bb"
+    "mtime": 1781970212.389725,
+    "ast_hash": "ec0897c57404cacd8e259dc1888d1f01",
+    "semantic_hash": ""
   },
   "tests/test_player_override.py": {
     "mtime": 1780023356.9274433,
@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1781959084.6004162,
-    "ast_hash": "9856318efc41e035e132a8fe5387d3ca",
+    "mtime": 1781970535.631317,
+    "ast_hash": "f9b702f1125300573c8b6651992a8435",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2615,8 +2615,8 @@
     "semantic_hash": "a9bc13861206090b705db2169d97d382"
   },
   "scripts/install-graphify-hooks.sh": {
-    "mtime": 1781969646.1472902,
-    "ast_hash": "7b5dc72f46602b1d27610000e3d0b215",
+    "mtime": 1781969860.081169,
+    "ast_hash": "9db349e1aca15e70ca5a29efeb9bd3fc",
     "semantic_hash": ""
   },
   ".claude/CLAUDE.md": {
@@ -3100,8 +3100,8 @@
     "semantic_hash": ""
   },
   "bot/services/player_support_notes.py": {
-    "mtime": 1781959087.9194002,
-    "ast_hash": "05a0ecd21e99a356ea5ae83ed0b1140f",
+    "mtime": 1781970667.6972954,
+    "ast_hash": "c1359b871db6bbc7f8e78f1be94c65e6",
     "semantic_hash": ""
   },
   "migrate_player_support_notes.py": {
@@ -3120,8 +3120,18 @@
     "semantic_hash": ""
   },
   "scripts/pre-push-build-hook.sh": {
-    "mtime": 1781969646.011291,
-    "ast_hash": "bb2f81f51d7289bbd674a9b71369116b",
+    "mtime": 1781969859.4992764,
+    "ast_hash": "8733f304eb8b670bc08b162559f6bf35",
+    "semantic_hash": ""
+  },
+  "scripts/pre_push_import_smoke.py": {
+    "mtime": 1781969858.4258413,
+    "ast_hash": "1bf8e994d43ca05545bc3e426af51162",
+    "semantic_hash": ""
+  },
+  "docs/SUPPORT_NOTES.md": {
+    "mtime": 1781970643.7651024,
+    "ast_hash": "014ff756476c6cddae135bad302ab3c1",
     "semantic_hash": ""
   }
 }

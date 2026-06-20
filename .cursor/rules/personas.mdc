@@ -1,0 +1,34 @@
+---
+description: Use personas/ for UX, product, and bot-flow context
+alwaysApply: true
+---
+
+# Personas
+
+When work touches **UX, Telegram bot flows, support groups, copy, onboarding, deposits/cashouts, or AM workflows**, use the persona files in `personas/` as context — read the relevant file(s) before proposing changes.
+
+## Available personas (incomplete set)
+
+Only these exist today; treat them as the source of truth:
+
+| File | Who |
+|------|-----|
+| `personas/player.md` | Club member using their support group |
+| `personas/account-manager.md` | Shift-based AM on shared club Telegram accounts |
+
+More personas may be added later. Do **not** invent or assume personas that are not in `personas/`.
+
+## How to use them
+
+- **Read when relevant** — e.g. bot command copy → `player.md`; `/gc`, shift handoff, escalation → `account-manager.md`; shared group UX → both.
+- **Let them shape decisions** — goals, frustrations, anti-patterns, and "success feels like" should inform requirements, error messages, and flow design.
+- **Do not recite them** — use personas as internal context. Do not open every response with a persona summary or bullet list of all personas unless the user explicitly asks for persona review.
+
+## Quick triggers
+
+| Task | Persona(s) |
+|------|------------|
+| `/deposit`, `/cashout`, `/referral`, player-facing copy | Player |
+| `/gc`, MTProto auto-add, GGCashier, staff commands | Account Manager (+ Player for in-group impact) |
+| Onboarding, support group creation | Both |
+| Dashboard / API-only backend with no Telegram surface | Skip unless user asks for persona lens |
