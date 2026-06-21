@@ -533,6 +533,59 @@ class BonusRecordRead(BaseModel):
     created_at: Optional[datetime]
 
 
+# ── Staff cashout records ─────────────────────────────────────────────────────
+
+class StaffCashoutPaymentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    payment_method_id: Optional[int] = None
+    payment_sub_option_id: Optional[int] = None
+    method_display_name: Optional[str] = None
+    payout_details: Optional[str] = None
+    amount: Optional[Decimal] = None
+    sort_order: int
+
+
+class StaffCashoutRecordRead(BaseModel):
+    id: int
+    cashier_job_id: int
+    club_id: int
+    club_name: Optional[str] = None
+    chat_id: int
+    group_title: str
+    gg_player_id: Optional[str] = None
+    amount: Decimal
+    recorded_by_telegram_user_id: int
+    trigger: str
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+    payments: List[StaffCashoutPaymentRead] = []
+
+
+class StaffCashoutRecordUpdate(BaseModel):
+    group_title: Optional[str] = None
+    amount: Optional[Decimal] = None
+
+
+class StaffCashoutPaymentCreate(BaseModel):
+    payment_method_id: Optional[int] = None
+    payment_sub_option_id: Optional[int] = None
+    method_display_name: Optional[str] = None
+    payout_details: Optional[str] = None
+    amount: Optional[Decimal] = None
+    sort_order: Optional[int] = None
+
+
+class StaffCashoutPaymentUpdate(BaseModel):
+    payment_method_id: Optional[int] = None
+    payment_sub_option_id: Optional[int] = None
+    method_display_name: Optional[str] = None
+    payout_details: Optional[str] = None
+    amount: Optional[Decimal] = None
+    sort_order: Optional[int] = None
+
+
 # ── Issue reports ─────────────────────────────────────────────────────────────
 
 class IssueReportAttachmentRead(BaseModel):

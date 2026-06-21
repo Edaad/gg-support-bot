@@ -297,6 +297,10 @@ async def handle_group_add_outgoing(
         )
         return
 
+    from bot.handlers.deposit import cancel_deposit_reminder_for_chat
+
+    cancel_deposit_reminder_for_chat(int(event.chat_id))
+
     try:
         await asyncio.to_thread(
             record_activity_for_chat,

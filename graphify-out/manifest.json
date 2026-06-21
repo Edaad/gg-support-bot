@@ -965,8 +965,8 @@
     "semantic_hash": ""
   },
   "bot/handlers/deposit.py": {
-    "mtime": 1781972076.7451463,
-    "ast_hash": "f50de667658abb0370752b6c11b055fb",
+    "mtime": 1781993697.1987395,
+    "ast_hash": "b11ea2090d60d9ab615968b725d05573",
     "semantic_hash": ""
   },
   "bot/handlers/findgc.py": {
@@ -1125,8 +1125,8 @@
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_add.py": {
-    "mtime": 1781240014.8709412,
-    "ast_hash": "2f9c3558f0ba289a5a31341226643e2f",
+    "mtime": 1781993702.1932604,
+    "ast_hash": "4e80940389b8e22cb45836e3927bd94a",
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_cash.py": {
@@ -1140,9 +1140,9 @@
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_delete.py": {
-    "mtime": 1779769145.7566564,
-    "ast_hash": "6697ed95afa5b14a31fd76485b8ddb6b",
-    "semantic_hash": "6697ed95afa5b14a31fd76485b8ddb6b"
+    "mtime": 1781992545.1019444,
+    "ast_hash": "61f1e36fb201f5604d112a0bd9a80c35",
+    "semantic_hash": ""
   },
   "bot/services/mtproto_group_player.py": {
     "mtime": 1781744349.089843,
@@ -1970,8 +1970,8 @@
     "semantic_hash": ""
   },
   "tests/test_deposit_reminder.py": {
-    "mtime": 1781881915.7181287,
-    "ast_hash": "daf8b4c820ca51f47a3317c0ded9d836",
+    "mtime": 1781993710.3585484,
+    "ast_hash": "ea404d80642cc9a5a827e837f0232619",
     "semantic_hash": ""
   },
   "tests/test_group_chat_invite_links.py": {
@@ -2980,8 +2980,8 @@
     "semantic_hash": ""
   },
   "notification/handlers/bind_callbacks.py": {
-    "mtime": 1781978698.9548864,
-    "ast_hash": "3670396249cdee5c18a6019554df054d",
+    "mtime": 1781988990.594946,
+    "ast_hash": "7ab68ebdf052083fc58709917aa0b142",
     "semantic_hash": ""
   },
   "notification/payment_bind_helpers.py": {
@@ -3162,6 +3162,16 @@
   "tests/test_elevate_gc.py": {
     "mtime": 1781985520.1621497,
     "ast_hash": "e28a651882d37b87ac919c08ff29f9e8",
+    "semantic_hash": ""
+  },
+  "scripts/bulk_delete_tracking_groups_from_csv.py": {
+    "mtime": 1781992565.1195445,
+    "ast_hash": "63f8f21f0bbc11ad827d467a66af0cac",
+    "semantic_hash": ""
+  },
+  "scripts/list_least_active_telegram_groups.py": {
+    "mtime": 1781989914.540663,
+    "ast_hash": "933e98c5a5925470927552735ddf74cd",
     "semantic_hash": ""
   }
 }

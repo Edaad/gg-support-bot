@@ -490,7 +490,7 @@ async def payment_bind_callback_handler(
         await query.answer()
         await message.reply_text(
             "Send the group title for the member to add.",
-            reply_markup=ForceReply(selective=True),
+            reply_markup=ForceReply(selective=False),
         )
         return
 

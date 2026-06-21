@@ -11,6 +11,7 @@ from bot.services.club import (
     record_activity_for_chat,
 )
 from bot.services.mtproto_group_cash import schedule_cash_flow_from_club
+from bot.services.staff_cashout_records import create_staff_cashout_record_from_job
 from cashier.services.jobs import complete_job, get_job
 from cashier.services.zapier import fire_zapier_webhook
 
@@ -39,6 +40,14 @@ async def complete_cashout_job(job_id: int) -> tuple[bool, Optional[str]]:
             zap_err,
         )
         return False, zap_err
+
+    try:
+        create_staff_cashout_record_from_job(job)
+    except Exception:
+        logger.exception(
+            "complete_cashout_job: staff_cashout_record failed job_id=%s",
+            job_id,
+        )
 
     club_id = int(job["club_id"])
     chat_id = int(job["chat_id"])
