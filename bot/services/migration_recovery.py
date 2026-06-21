@@ -18,15 +18,19 @@ from club_gc_settings import (
     get_migration_recovery_interval_sec,
     get_migration_recovery_invite_delay_sec,
     is_migration_recovery_enabled,
+    is_round_table_elevate_recovery_enabled,
     migration_recovery_active_club_keys,
 )
 from bot.services.migration_group_readd import (
+    ElevateJoinResult,
     FloodWaitAbortError,
     ReaddGroupResult,
+    elevate_join_recovery_group,
     get_flood_wait_policy,
+    readd_group,
+    readd_round_table_player_and_link,
     set_flood_wait_observer,
     set_flood_wait_policy,
-    readd_group,
 )
 from scripts.backfill_support_group_invite_links import LinkedGroupRow
 
@@ -198,6 +202,115 @@ def build_readd_result_payload(result: ReaddGroupResult) -> dict[str, Any]:
         payload["resolved_player_display_name"] = result.resolved_player_display_name
         payload["resolved_player_source"] = result.resolved_player_source
     return payload
+
+
+def elevate_joined_in_payload(payload: dict[str, Any] | None) -> bool:
+    if not payload:
+        return False
+    return bool(payload.get("elevate_joined"))
+
+
+def merge_elevate_into_payload(
+    payload: dict[str, Any],
+    elevate: ElevateJoinResult,
+) -> dict[str, Any]:
+    merged = dict(payload)
+    merged["elevate_joined"] = elevate.joined or elevate.already_member
+    merged["elevate_join_error"] = elevate.error
+    if elevate.joined or elevate.already_member:
+        merged["elevate_join_at"] = datetime.now(timezone.utc).isoformat()
+    if elevate.already_member:
+        merged["elevate_already_member"] = True
+    return merged
+
+
+def _player_readd_ok(result: ReaddGroupResult) -> bool:
+    status, _err = map_readd_status(result)
+    if status == "complete":
+        return True
+    return bool(result.added or result.already_member) and not result.failed
+
+
+def map_readd_status_with_elevate(
+    result: ReaddGroupResult,
+    *,
+    elevate: ElevateJoinResult | None,
+    require_elevate: bool,
+) -> tuple[str, str | None]:
+    base_status, base_error = map_readd_status(result)
+    if not require_elevate:
+        return base_status, base_error
+    if not _player_readd_ok(result):
+        return base_status, base_error
+    if elevate is None:
+        return "processing", None
+    if elevate.dry_run:
+        return base_status, base_error
+    if elevate.joined or elevate.already_member:
+        return "complete", None
+    if elevate.error:
+        return "failed", f"elevate_join:{elevate.error}"
+    return "processing", None
+
+
+def count_elevate_pending_rows() -> int:
+    from db.connection import get_db
+    from db.models import MigratedGroupRecovery
+
+    tiers = recovery_priority_tiers_for_club("round_table")
+    count = 0
+    with get_db() as session:
+        rows = (
+            session.query(MigratedGroupRecovery)
+            .filter(MigratedGroupRecovery.club_key == "round_table")
+            .filter(MigratedGroupRecovery.priority_tier.in_(tiers))
+            .filter(MigratedGroupRecovery.invite_link.isnot(None))
+            .filter(MigratedGroupRecovery.invite_link != "")
+            .all()
+        )
+        for row in rows:
+            payload = row.readd_result if isinstance(row.readd_result, dict) else {}
+            if not elevate_joined_in_payload(payload):
+                count += 1
+    return count
+
+
+def find_oldest_elevate_pending_row() -> RecoveryRow | None:
+    from db.connection import get_db
+    from db.models import MigratedGroupRecovery
+
+    tiers = recovery_priority_tiers_for_club("round_table")
+    with get_db() as session:
+        rows = (
+            session.query(MigratedGroupRecovery)
+            .filter(MigratedGroupRecovery.club_key == "round_table")
+            .filter(MigratedGroupRecovery.priority_tier.in_(tiers))
+            .filter(MigratedGroupRecovery.invite_link.isnot(None))
+            .filter(MigratedGroupRecovery.invite_link != "")
+            .order_by(
+                MigratedGroupRecovery.priority_tier.asc(),
+                MigratedGroupRecovery.priority_rank.asc(),
+            )
+            .all()
+        )
+        for row in rows:
+            payload = row.readd_result if isinstance(row.readd_result, dict) else {}
+            if elevate_joined_in_payload(payload):
+                continue
+            return _recovery_row_from_model(row)
+    return None
+
+
+def _load_row_invite_link(row_id: int) -> str | None:
+    from db.connection import get_db
+    from db.models import MigratedGroupRecovery
+
+    with get_db() as session:
+        row = session.get(MigratedGroupRecovery, int(row_id))
+        if row is None:
+            return None
+        link = (row.invite_link or "").strip()
+        return link or None
 
 
 def should_persist_resolved_player(
@@ -1219,6 +1332,9 @@ def format_whosnext_message(rows: list[RecoveryRow]) -> str:
             f"Batch size per club: {get_migration_recovery_batch_size()}",
         ]
     )
+    if is_round_table_elevate_recovery_enabled():
+        pending_elevate = count_elevate_pending_rows()
+        lines.append(f"Elevate-pending (RT tier 1+2, has link): {pending_elevate}")
     if is_rate_limit_pause_pending() and resume_at is not None:
         lines.append(f"Rate-limit auto-resume at: {resume_at.isoformat()}")
     return "\n".join(lines)
@@ -1339,6 +1455,8 @@ def finalize_row(
     *,
     pre_status: str | None = None,
     pre_error: str | None = None,
+    elevate: ElevateJoinResult | None = None,
+    require_elevate: bool = False,
 ) -> str:
     from db.connection import get_db
     from db.models import MigratedGroupRecovery
@@ -1349,8 +1467,14 @@ def finalize_row(
         payload = {"pre_finalize": True, "error": pre_error}
         invite_link = None
     else:
-        status, last_error = map_readd_status(result)
         payload = build_readd_result_payload(result)
+        if elevate is not None:
+            payload = merge_elevate_into_payload(payload, elevate)
+        status, last_error = map_readd_status_with_elevate(
+            result,
+            elevate=elevate,
+            require_elevate=require_elevate,
+        )
         invite_link = result.invite_link
 
     now = datetime.now(timezone.utc)
@@ -1360,9 +1484,43 @@ def finalize_row(
             return status
         row.readd_status = status
         row.readd_result = payload
-        row.invite_link = invite_link
+        if invite_link is not None:
+            row.invite_link = invite_link
         row.last_error = last_error
-        row.readd_completed_at = now
+        if status == "processing":
+            row.readd_completed_at = None
+        else:
+            row.readd_completed_at = now
+        row.updated_at = now
+        session.commit()
+    return status
+
+
+def finalize_elevate_only(row_id: int, elevate: ElevateJoinResult) -> str:
+    from db.connection import get_db
+    from db.models import MigratedGroupRecovery
+
+    now = datetime.now(timezone.utc)
+    with get_db() as session:
+        row = session.get(MigratedGroupRecovery, int(row_id))
+        if row is None:
+            return "failed"
+        payload = dict(row.readd_result) if isinstance(row.readd_result, dict) else {}
+        payload = merge_elevate_into_payload(payload, elevate)
+        row.readd_result = payload
+        if elevate.joined or elevate.already_member:
+            row.readd_status = "complete"
+            row.last_error = None
+            row.readd_completed_at = now
+            status = "complete"
+        elif elevate.error:
+            row.readd_status = "failed"
+            row.last_error = f"elevate_join:{elevate.error}"
+            row.readd_completed_at = now
+            status = "failed"
+        else:
+            row.readd_status = "processing"
+            status = "processing"
         row.updated_at = now
         session.commit()
     return status
@@ -1378,12 +1536,16 @@ async def _process_row(row: RecoveryRow) -> tuple[str, ReaddGroupResult]:
         *,
         pre_status: str | None = None,
         pre_error: str | None = None,
+        elevate: ElevateJoinResult | None = None,
+        require_elevate: bool = False,
     ) -> tuple[str, ReaddGroupResult]:
         status = finalize_row(
             row.id,
             result,
             pre_status=pre_status,
             pre_error=pre_error,
+            elevate=elevate,
+            require_elevate=require_elevate,
         )
         if cfg is not None:
             try:
@@ -1452,7 +1614,11 @@ async def _process_row(row: RecoveryRow) -> tuple[str, ReaddGroupResult]:
         club_id=int(row.club_id),
         title=row.group_title,
     )
-    result = await readd_group(
+    use_elevate_rt = (
+        row.club_key == "round_table" and is_round_table_elevate_recovery_enabled()
+    )
+    readd_fn = readd_round_table_player_and_link if use_elevate_rt else readd_group
+    result = await readd_fn(
         client=client,
         cfg=cfg,
         group=group,
@@ -1478,7 +1644,49 @@ async def _process_row(row: RecoveryRow) -> tuple[str, ReaddGroupResult]:
             row.telegram_chat_id,
             exc_info=True,
         )
-    return await _finish(result)
+    return await _finish(result, require_elevate=use_elevate_rt)
+
+
+async def _process_elevate_catchup() -> tuple[str, RecoveryRow | None]:
+    """Elevate link-join on oldest RT row with invite link but no elevate_joined."""
+
+    if not is_round_table_elevate_recovery_enabled():
+        return "skipped", None
+
+    row = find_oldest_elevate_pending_row()
+    if row is None:
+        return "skipped", None
+
+    from bot.services.mtproto_dm_gc_listener import get_listener_client
+
+    rt_client = get_listener_client("round_table")
+    if rt_client is None or not rt_client.is_connected():
+        logger.warning("migration_recovery: elevate catch-up skipped (RT listener down)")
+        return "failed", row
+
+    invite_link = _load_row_invite_link(row.id)
+    if not invite_link:
+        return "failed", row
+
+    try:
+        elevate = await elevate_join_recovery_group(
+            invite_link=invite_link,
+            dialog_chat_id=int(row.telegram_chat_id),
+            rt_client=rt_client,
+            apply=True,
+        )
+    except FloodWaitAbortError:
+        raise
+
+    status = finalize_elevate_only(row.id, elevate)
+    logger.info(
+        "migration_recovery elevate catch-up row_id=%s chat_id=%s status=%s error=%s",
+        row.id,
+        row.telegram_chat_id,
+        status,
+        elevate.error,
+    )
+    return status, row
 
 
 async def tick_async() -> dict[str, int]:
@@ -1494,6 +1702,9 @@ async def tick_async() -> dict[str, int]:
         "privacy_blocked": 0,
         "failed": 0,
         "skipped": 0,
+        "elevate_joined": 0,
+        "elevate_failed": 0,
+        "elevate_skipped": 0,
     }
 
     if not active_clubs:
@@ -1620,9 +1831,30 @@ async def tick_async() -> dict[str, int]:
         set_flood_wait_observer(None)
         set_flood_wait_policy("retry")
 
+    if not flood_aborted and is_round_table_elevate_recovery_enabled():
+        try:
+            elevate_status, _elevate_row = await _process_elevate_catchup()
+            if elevate_status == "complete":
+                summary["elevate_joined"] += 1
+            elif elevate_status == "failed":
+                summary["elevate_failed"] += 1
+            else:
+                summary["elevate_skipped"] += 1
+        except FloodWaitAbortError as exc:
+            counts = pending_count_by_club(include_processing=True)
+            await auto_disable_migration_recovery(
+                reason="rate_limit",
+                exhausted_club_key="round_table",
+                pending_snapshot=counts,
+                flood_wait_sec=exc.wait_s,
+            )
+            summary["elevate_failed"] += 1
+            flood_aborted = True
+
     logger.info(
         "migration_recovery tick: claimed=%s direct_add=%s already_skipped=%s "
-        "complete=%s privacy=%s failed=%s skipped=%s",
+        "complete=%s privacy=%s failed=%s skipped=%s "
+        "elevate_joined=%s elevate_failed=%s elevate_skipped=%s",
         summary["claimed"],
         summary["direct_add_quota_used"],
         summary["already_skipped"],
@@ -1630,6 +1862,9 @@ async def tick_async() -> dict[str, int]:
         summary["privacy_blocked"],
         summary["failed"],
         summary["skipped"],
+        summary["elevate_joined"],
+        summary["elevate_failed"],
+        summary["elevate_skipped"],
     )
     await _maybe_auto_disable_after_tick()
     record_migration_recovery_tick()

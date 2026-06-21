@@ -66,6 +66,14 @@ class ReaddGroupResult:
     resolved_player_source: str | None = None
 
 
+@dataclass
+class ElevateJoinResult:
+    joined: bool = False
+    already_member: bool = False
+    error: str | None = None
+    dry_run: bool = False
+
+
 def set_flood_wait_observer(observer: FloodWaitObserver | None) -> None:
     global _flood_wait_observer
     _flood_wait_observer = observer
@@ -452,6 +460,7 @@ async def readd_group(
     invite_staff: bool,
     listener_user_id: int | None,
     old_chat_id: int | None = None,
+    export_invite_link_always: bool = False,
 ) -> ReaddGroupResult:
     title = _gc_display_name(group.title, group.chat_id)
     result = ReaddGroupResult(
@@ -538,6 +547,23 @@ async def readd_group(
                         invite_link=invite_link,
                         mtproto_session_name=cfg.mtproto_session,
                     )
+
+            if export_invite_link_always and apply and not result.invite_link:
+                invite_link = await export_invite_link(client, entity)
+                result.invite_link = invite_link
+                if invite_link and update_invite_links:
+                    from bot.services.support_group_chats import upsert_support_group_invite_link
+
+                    upsert_support_group_invite_link(
+                        club_key=cfg.club_key,
+                        club_display_name=cfg.club_display_name,
+                        telegram_chat_id=int(group.chat_id),
+                        telegram_chat_title=title,
+                        invite_link=invite_link,
+                        mtproto_session_name=cfg.mtproto_session,
+                    )
+            elif export_invite_link_always and not apply:
+                result.added.append("would_export:invite_link")
 
             if result.privacy_blocked:
                 result.status = "privacy_fallback"
@@ -640,3 +666,105 @@ async def readd_group(
         result.error = error_label(e)
 
     return result
+
+
+async def readd_round_table_player_and_link(
+    *,
+    client,
+    cfg,
+    group: LinkedGroupRow,
+    dialog_chat_id: int,
+    player_id: int | None,
+    player_username: str | None,
+    apply: bool,
+    update_invite_links: bool,
+    listener_user_id: int | None,
+    old_chat_id: int | None = None,
+) -> ReaddGroupResult:
+    """RT recovery pass: direct-add player and always export invite link."""
+
+    return await readd_group(
+        client=client,
+        cfg=cfg,
+        group=group,
+        dialog_chat_id=dialog_chat_id,
+        player_id=player_id,
+        player_username=player_username,
+        apply=apply,
+        update_invite_links=update_invite_links,
+        invite_staff=False,
+        listener_user_id=listener_user_id,
+        old_chat_id=old_chat_id,
+        export_invite_link_always=True,
+    )
+
+
+async def _elevate_user_id(elevate_client) -> int | None:
+    try:
+        me = await elevate_client.get_me()
+        if me and getattr(me, "id", None):
+            return int(me.id)
+    except Exception:
+        logger.warning("elevate_join: get_me failed", exc_info=True)
+    return None
+
+
+async def elevate_join_recovery_group(
+    *,
+    invite_link: str,
+    dialog_chat_id: int,
+    rt_client,
+    apply: bool,
+) -> ElevateJoinResult:
+    """Join a migrated GC via invite link using the Elevate Admin session."""
+
+    from club_gc_settings import get_mtproto_session_config
+    from bot.services.mtproto_group_create import get_mtproto_lock, make_client
+    from bot.services.mtproto_group_join import join_chat_via_invite_link
+
+    link = (invite_link or "").strip()
+    if not link:
+        return ElevateJoinResult(error="no_invite_link")
+
+    elevate_cfg = get_mtproto_session_config("elevate_admin")
+    if elevate_cfg is None:
+        return ElevateJoinResult(error="no_elevate_config")
+
+    if not apply:
+        return ElevateJoinResult(dry_run=True)
+
+    try:
+        entity = await call_with_flood_retry(
+            lambda: rt_client.get_entity(int(dialog_chat_id)),
+            label=f"get_entity:{dialog_chat_id}",
+        )
+    except FloodWaitAbortError:
+        raise
+    except Exception as e:
+        return ElevateJoinResult(error=error_label(e))
+
+    async with get_mtproto_lock("elevate_admin"):
+        elevate_client = make_client(elevate_cfg)
+        await elevate_client.connect()
+        try:
+            if not await elevate_client.is_user_authorized():
+                return ElevateJoinResult(error="elevate_session_not_authorized")
+
+            elevate_id = await _elevate_user_id(elevate_client)
+            if elevate_id is not None:
+                member_ids = await participant_user_ids(rt_client, entity)
+                if elevate_id in member_ids:
+                    return ElevateJoinResult(already_member=True)
+
+            _ent, join_err = await join_chat_via_invite_link(elevate_client, link)
+            if join_err:
+                return ElevateJoinResult(error=join_err)
+
+            if elevate_id is not None:
+                member_ids = await participant_user_ids(rt_client, entity)
+                if elevate_id in member_ids:
+                    return ElevateJoinResult(joined=True)
+
+            return ElevateJoinResult(joined=True)
+        finally:
+            await elevate_client.disconnect()

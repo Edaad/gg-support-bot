@@ -257,6 +257,12 @@ def is_elevate_creator_enabled(club_key: str) -> bool:
     return cfg is not None and bool(cfg.group_creator_club_key)
 
 
+def is_round_table_elevate_recovery_enabled() -> bool:
+    """RT migration recovery uses Elevate link-join after player direct-add."""
+
+    return is_elevate_creator_enabled("round_table")
+
+
 def resolve_group_creator_cfg(cfg: ClubGcConfig) -> ClubGcConfig:
     """MTProto session that runs ``CreateChannelRequest`` (Elevate when enabled, else ``cfg``)."""
 

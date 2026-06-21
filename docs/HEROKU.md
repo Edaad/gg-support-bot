@@ -240,6 +240,25 @@ python scripts/seed_migrated_group_recovery.py --status
 python scripts/seed_migrated_group_recovery.py --clear-auto-disable
 ```
 
+**Round Table Elevate link-join recovery** (requires `GC_ELEVATE_CREATOR_ROUND_TABLE=true` and authorized `elevate_admin` session — see [`docs/GC.md`](GC.md)):
+
+- **RT session** (tier 1+2): direct-add player + always export invite link.
+- **Elevate session** (same tick): link-join oldest row that has a stored link but `readd_result.elevate_joined != true`.
+- Row stays `processing` until both player re-add and Elevate join succeed.
+
+One-group trial (dry-run first):
+
+```bash
+python scripts/run_migration_recovery_one.py --row-id ROW_ID --elevate-link-join --dry-run
+python scripts/run_migration_recovery_one.py --row-id ROW_ID --elevate-link-join
+```
+
+On Heroku (pause worker or set `GC_MTPROTO_ENABLED=false` on worker to avoid session conflict):
+
+```bash
+heroku run -a YOUR_APP -- python scripts/run_migration_recovery_one.py --row-id ROW_ID --elevate-link-join --dry-run
+```
+
 ```sql
 SELECT club_key, group_title, priority_tier, readd_status, readd_attempted_at, last_error
 FROM migrated_group_recovery
