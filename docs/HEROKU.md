@@ -189,6 +189,7 @@ heroku run -a YOUR_APP -- python migrate_migrated_group_recovery.py
 heroku run -a YOUR_APP -- python migrate_migration_recovery_control.py
 heroku run -a YOUR_APP -- python migrate_migration_recovery_last_tick.py
 heroku run -a YOUR_APP -- python migrate_migration_recovery_slack_summary_last.py
+heroku run -a YOUR_APP -- python migrate_migration_recovery_rate_limit_resume.py
 heroku run -a YOUR_APP -- python scripts/seed_migrated_group_recovery.py
 ```
 
@@ -226,11 +227,11 @@ Requires `GC_DM_GC_LISTENER_ENABLED` (default on). Recovery direct-adds **only t
 
 Set `GC_MIGRATION_RECOVERY_SKIP_WELCOME=true` to suppress member-join preamble/TOS for chats in `migrated_group_recovery` during mass re-adds (independent of the recovery cron switch). Unset or set `false` to restore normal welcomes.
 
-After each direct-add attempt (not already-in-only skips), the **GG Support bot** DMs that club's GC admin with a tappable GC title (supergroup `t.me/c/…` link when available), result status, and which accounts were added. **Rate limits (FloodWait)** halt recovery immediately, auto-disable the cron, and DM **all three club GC admins**. Other failures also DM the Round Table GC admin (`GC_ADMIN_USER_ROUND_TABLE`) for central ops visibility. Errors also post to **Slack** when `SLACK_OPS_BOT_TOKEN` + `SLACK_OPS_CHANNEL_ID` (or webhook) are set (see Slack ops below). Admins must have `/start`ed the bot.
+After each direct-add attempt (not already-in-only skips), the **GG Support bot** DMs that club's GC admin with a tappable GC title (supergroup `t.me/c/…` link when available), result status, and which accounts were added. **Rate limits (FloodWait)** halt recovery immediately, auto-disable the cron, DM **all three club GC admins**, and schedule **auto-resume 1 hour after the FloodWait ends** (stored in `migration_recovery_control.rate_limit_resume_at`; survives worker restart/deploy). Tune extra cooldown with `GC_MIGRATION_RECOVERY_RATE_LIMIT_COOLDOWN_SEC` (default `3600`). Other failures also DM the Round Table GC admin (`GC_ADMIN_USER_ROUND_TABLE`) for central ops visibility. Errors also post to **Slack** when `SLACK_OPS_BOT_TOKEN` + `SLACK_OPS_CHANNEL_ID` (or webhook) are set (see Slack ops below). Admins must have `/start`ed the bot.
 
 **Queue visibility:** Send `/whosnext` in a private DM with the bot (admin accounts only) to see the global top-10 pending rows, plus auto-add / auto-disable status.
 
-**Auto-disable:** When **any active club's** queue (pending + processing) hits zero, the worker stops the cron job, persists a flag in `migration_recovery_control`, and DMs the RT admin. Disabled clubs (e.g. `GC_MIGRATION_RECOVERY_DISABLED_CLUBS`) are ignored for exhaustion. This can still happen while other active clubs have pending rows — review and re-enable manually if you want to continue those clubs. Rate limits also trigger auto-disable (see above).
+**Auto-disable:** When **every active club's tier-scoped queue** (pending + processing) hits zero, the worker stops the cron job, persists a flag in `migration_recovery_control`, and DMs the RT admin. Tier scope: **Round Table = tier 1+2**; **Creator Club + ClubGTO = tier 3**. CC/GTO having no tier-3 pending while RT still has tier 1+2 work does **not** auto-disable (and vice versa). Disabled clubs (e.g. `GC_MIGRATION_RECOVERY_DISABLED_CLUBS`) are ignored. Rate limits also trigger auto-disable (see above).
 
 **Monitor** (SQL or local):
 

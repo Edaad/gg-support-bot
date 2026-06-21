@@ -808,6 +808,7 @@ class MigrationRecoveryControl(Base):
     pending_snapshot = Column(JSONB, nullable=True)
     last_tick_at = Column(DateTime(timezone=True), nullable=True)
     last_slack_summary_at = Column(DateTime(timezone=True), nullable=True)
+    rate_limit_resume_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class StripeCustomer(Base):

@@ -39,6 +39,18 @@ TERMINAL_STATUSES = frozenset(
 )
 
 HIGH_PRIORITY_TIERS = (1, 2)
+LOW_PRIORITY_TIERS = (3,)
+
+# Per-club tier scope: RT finishes deposits + active (1+2); CC/GTO run tier 3.
+CLUB_RECOVERY_PRIORITY_TIERS: dict[str, tuple[int, ...]] = {
+    "round_table": HIGH_PRIORITY_TIERS,
+    "creator_club": LOW_PRIORITY_TIERS,
+    "clubgto": LOW_PRIORITY_TIERS,
+}
+
+
+def recovery_priority_tiers_for_club(club_key: str) -> tuple[int, ...]:
+    return CLUB_RECOVERY_PRIORITY_TIERS.get(club_key, HIGH_PRIORITY_TIERS)
 
 _FLOOD_WAIT_ABORT_RE = re.compile(
     r"FloodWait (\d+)s during ([^\s]+(?:\:\d+)?)",
@@ -588,7 +600,7 @@ def _recovery_slack_scan_row_from_model(row) -> _RecoverySlackScanRow:
 
 
 def pending_count_by_club(*, include_processing: bool = False) -> dict[str, int]:
-    """Count queue rows per club (pending, optionally including processing)."""
+    """Count scoped queue rows per club (pending, optionally including processing)."""
 
     from sqlalchemy import func
 
@@ -599,14 +611,19 @@ def pending_count_by_club(*, include_processing: bool = False) -> dict[str, int]
     if include_processing:
         statuses.append("processing")
 
+    counts: dict[str, int] = {}
     with get_db() as session:
-        rows = (
-            session.query(MigratedGroupRecovery.club_key, func.count())
-            .filter(MigratedGroupRecovery.readd_status.in_(statuses))
-            .group_by(MigratedGroupRecovery.club_key)
-            .all()
-        )
-    return {str(club_key): int(count) for club_key, count in rows}
+        for club_key in RECOVERY_CLUB_KEYS:
+            tiers = recovery_priority_tiers_for_club(club_key)
+            count = (
+                session.query(func.count())
+                .filter(MigratedGroupRecovery.club_key == club_key)
+                .filter(MigratedGroupRecovery.readd_status.in_(statuses))
+                .filter(MigratedGroupRecovery.priority_tier.in_(tiers))
+                .scalar()
+            )
+            counts[str(club_key)] = int(count or 0)
+    return counts
 
 
 def is_migration_recovery_auto_disabled() -> bool:
@@ -619,6 +636,102 @@ def is_migration_recovery_auto_disabled() -> bool:
             return row is not None and row.auto_disabled_at is not None
     except Exception:
         return False
+
+
+def get_rate_limit_resume_at() -> datetime | None:
+    try:
+        from db.connection import get_db
+        from db.models import MigrationRecoveryControl
+
+        with get_db() as session:
+            row = session.get(MigrationRecoveryControl, 1)
+            if row is None or row.rate_limit_resume_at is None:
+                return None
+            value = row.rate_limit_resume_at
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
+            return value
+    except Exception:
+        logger.warning(
+            "migration_recovery: failed to read rate_limit_resume_at",
+            exc_info=True,
+        )
+        return None
+
+
+def is_rate_limit_pause_pending(*, now: datetime | None = None) -> bool:
+    try:
+        from db.connection import get_db
+        from db.models import MigrationRecoveryControl
+
+        with get_db() as session:
+            row = session.get(MigrationRecoveryControl, 1)
+            if row is None or row.auto_disabled_at is None:
+                return False
+            if row.auto_disabled_reason != "rate_limit":
+                return False
+            resume_at = row.rate_limit_resume_at
+            if resume_at is None:
+                return False
+            if resume_at.tzinfo is None:
+                resume_at = resume_at.replace(tzinfo=timezone.utc)
+            current = now or datetime.now(timezone.utc)
+            return current < resume_at
+    except Exception:
+        return False
+
+
+def compute_rate_limit_resume_at(
+    *,
+    flood_wait_sec: int,
+    now: datetime | None = None,
+) -> datetime:
+    from club_gc_settings import get_migration_recovery_rate_limit_cooldown_sec
+
+    current = now or datetime.now(timezone.utc)
+    return current + timedelta(
+        seconds=int(flood_wait_sec) + get_migration_recovery_rate_limit_cooldown_sec()
+    )
+
+
+def maybe_apply_rate_limit_resume(*, now: datetime | None = None) -> bool:
+    """Clear a rate-limit pause once ``rate_limit_resume_at`` has passed."""
+
+    from db.connection import get_db
+    from db.models import MigrationRecoveryControl
+
+    current = now or datetime.now(timezone.utc)
+    with get_db() as session:
+        row = session.get(MigrationRecoveryControl, 1)
+        if row is None or row.auto_disabled_at is None:
+            return False
+        if row.auto_disabled_reason != "rate_limit":
+            return False
+        resume_at = row.rate_limit_resume_at
+        if resume_at is None:
+            return False
+        if resume_at.tzinfo is None:
+            resume_at = resume_at.replace(tzinfo=timezone.utc)
+        if current < resume_at:
+            return False
+        row.auto_disabled_at = None
+        row.auto_disabled_reason = None
+        row.exhausted_club_key = None
+        row.pending_snapshot = None
+        row.rate_limit_resume_at = None
+        session.commit()
+    return True
+
+
+def compute_rate_limit_resume_delay_sec(*, now: datetime | None = None) -> float | None:
+    resume_at = get_rate_limit_resume_at()
+    if resume_at is None:
+        return None
+    current = now or datetime.now(timezone.utc)
+    remaining = (resume_at - current).total_seconds()
+    if remaining <= 0:
+        return _MIGRATION_RECOVERY_MIN_BOOT_DELAY_SEC
+    return remaining
 
 
 def get_last_tick_at() -> datetime | None:
@@ -738,6 +851,7 @@ def clear_migration_recovery_auto_disable() -> bool:
         row.auto_disabled_reason = None
         row.exhausted_club_key = None
         row.pending_snapshot = None
+        row.rate_limit_resume_at = None
         session.commit()
     return True
 
@@ -765,9 +879,16 @@ def format_auto_disable_notification(
             "the DB flag and re-enable if you want to continue other clubs."
         )
     elif reason == "rate_limit":
-        lines.append(
-            "Telegram rate limit hit. Clear the DB flag and re-enable after the wait."
-        )
+        resume_at = get_rate_limit_resume_at()
+        if resume_at is not None:
+            lines.append(
+                f"Auto-resume scheduled at {resume_at.isoformat()} "
+                "(1h after FloodWait ends; persisted in DB)."
+            )
+        else:
+            lines.append(
+                "Telegram rate limit hit. Clear the DB flag and re-enable after the wait."
+            )
     else:
         lines.append("All clubs drained. Recovery complete.")
     lines.append(
@@ -788,11 +909,24 @@ def remove_migration_recovery_job() -> None:
         job.schedule_removal()
 
 
+def remove_migration_recovery_rate_limit_resume_job() -> None:
+    global _recovery_app
+
+    if _recovery_app is None:
+        return
+    job_queue = getattr(_recovery_app, "job_queue", None)
+    if job_queue is None:
+        return
+    for job in job_queue.get_jobs_by_name("migration_recovery_rate_limit_resume"):
+        job.schedule_removal()
+
+
 def persist_auto_disable_flag(
     *,
     reason: str,
     exhausted_club_key: str,
     pending_snapshot: dict[str, int],
+    rate_limit_resume_at: datetime | None = None,
 ) -> None:
     from db.connection import get_db
     from db.models import MigrationRecoveryControl
@@ -807,7 +941,34 @@ def persist_auto_disable_flag(
         row.auto_disabled_reason = reason
         row.exhausted_club_key = exhausted_club_key
         row.pending_snapshot = dict(pending_snapshot)
+        if reason == "rate_limit":
+            row.rate_limit_resume_at = rate_limit_resume_at
+        else:
+            row.rate_limit_resume_at = None
         session.commit()
+
+
+def extend_rate_limit_pause(*, flood_wait_sec: int) -> bool:
+    """Extend an active rate-limit pause if the new resume time is later."""
+
+    from db.connection import get_db
+    from db.models import MigrationRecoveryControl
+
+    resume_at = compute_rate_limit_resume_at(flood_wait_sec=flood_wait_sec)
+    with get_db() as session:
+        row = session.get(MigrationRecoveryControl, 1)
+        if row is None or row.auto_disabled_at is None:
+            return False
+        if row.auto_disabled_reason != "rate_limit":
+            return False
+        existing = row.rate_limit_resume_at
+        if existing is not None and existing.tzinfo is None:
+            existing = existing.replace(tzinfo=timezone.utc)
+        if existing is not None and resume_at <= existing:
+            return False
+        row.rate_limit_resume_at = resume_at
+        session.commit()
+    return True
 
 
 async def auto_disable_migration_recovery(
@@ -815,14 +976,24 @@ async def auto_disable_migration_recovery(
     reason: str,
     exhausted_club_key: str,
     pending_snapshot: dict[str, int],
+    flood_wait_sec: int | None = None,
 ) -> None:
     if is_migration_recovery_auto_disabled():
+        if reason == "rate_limit" and flood_wait_sec is not None:
+            updated = extend_rate_limit_pause(flood_wait_sec=flood_wait_sec)
+            if updated and _recovery_app is not None:
+                schedule_migration_recovery_rate_limit_resume_job(_recovery_app)
         return
+
+    resume_at = None
+    if reason == "rate_limit" and flood_wait_sec is not None:
+        resume_at = compute_rate_limit_resume_at(flood_wait_sec=flood_wait_sec)
 
     persist_auto_disable_flag(
         reason=reason,
         exhausted_club_key=exhausted_club_key,
         pending_snapshot=pending_snapshot,
+        rate_limit_resume_at=resume_at,
     )
     remove_migration_recovery_job()
 
@@ -842,11 +1013,15 @@ async def auto_disable_migration_recovery(
 
     logger.info(
         "migration_recovery auto-disabled reason=%s exhausted_club=%s snapshot=%s "
-        "(unset GC_MIGRATION_RECOVERY_ENABLED on Heroku)",
+        "rate_limit_resume_at=%s",
         reason,
         exhausted_club_key,
         pending_snapshot,
+        resume_at.isoformat() if resume_at is not None else None,
     )
+
+    if reason == "rate_limit" and resume_at is not None and _recovery_app is not None:
+        schedule_migration_recovery_rate_limit_resume_job(_recovery_app)
 
 
 async def _maybe_auto_disable_after_tick() -> None:
@@ -856,13 +1031,11 @@ async def _maybe_auto_disable_after_tick() -> None:
 
     counts = pending_count_by_club(include_processing=True)
     exhausted = [k for k in active_clubs if counts.get(k, 0) == 0]
-    if not exhausted:
+    if len(exhausted) < len(active_clubs):
         return
 
-    other_pending = sum(counts.get(k, 0) for k in active_clubs if k not in exhausted)
-    reason = "all_clubs_drained" if other_pending == 0 else "club_exhausted"
     await auto_disable_migration_recovery(
-        reason=reason,
+        reason="all_clubs_drained",
         exhausted_club_key=exhausted[0],
         pending_snapshot=counts,
     )
@@ -884,11 +1057,13 @@ def claim_pending_batch(limit: int | None = None) -> list[RecoveryRow]:
 
     with get_db() as session:
         for club_key in active_clubs:
+            tiers = recovery_priority_tiers_for_club(club_key)
             ids = list(
                 session.execute(
                     select(MigratedGroupRecovery.id)
                     .where(MigratedGroupRecovery.readd_status == "pending")
                     .where(MigratedGroupRecovery.club_key == club_key)
+                    .where(MigratedGroupRecovery.priority_tier.in_(tiers))
                     .order_by(
                         MigratedGroupRecovery.priority_tier.asc(),
                         MigratedGroupRecovery.priority_rank.asc(),
@@ -938,12 +1113,14 @@ def claim_next_pending_row(club_key: str) -> RecoveryRow | None:
     from db.connection import get_db
     from db.models import MigratedGroupRecovery
 
+    tiers = recovery_priority_tiers_for_club(club_key)
     now = datetime.now(timezone.utc)
     with get_db() as session:
         row_id = session.execute(
             select(MigratedGroupRecovery.id)
             .where(MigratedGroupRecovery.readd_status == "pending")
             .where(MigratedGroupRecovery.club_key == club_key)
+            .where(MigratedGroupRecovery.priority_tier.in_(tiers))
             .order_by(
                 MigratedGroupRecovery.priority_tier.asc(),
                 MigratedGroupRecovery.priority_rank.asc(),
@@ -964,15 +1141,29 @@ def claim_next_pending_row(club_key: str) -> RecoveryRow | None:
 
 
 def peek_next_recovery_rows(limit: int = 10) -> list[RecoveryRow]:
-    """Read-only view of top pending rows (global priority order)."""
+    """Read-only view of top pending rows in each club's tier scope."""
+
+    from sqlalchemy import or_
 
     from db.connection import get_db
     from db.models import MigratedGroupRecovery
+
+    active_clubs = migration_recovery_active_club_keys()
+    scope_filters = [
+        (
+            (MigratedGroupRecovery.club_key == club_key)
+            & (MigratedGroupRecovery.priority_tier.in_(recovery_priority_tiers_for_club(club_key)))
+        )
+        for club_key in active_clubs
+    ]
+    if not scope_filters:
+        return []
 
     with get_db() as session:
         detail_rows = (
             session.query(MigratedGroupRecovery)
             .filter(MigratedGroupRecovery.readd_status == "pending")
+            .filter(or_(*scope_filters))
             .order_by(
                 MigratedGroupRecovery.priority_tier.asc(),
                 MigratedGroupRecovery.priority_rank.asc(),
@@ -1016,6 +1207,7 @@ def format_whosnext_message(rows: list[RecoveryRow]) -> str:
                 f"   chat_id={row.telegram_chat_id}  player={player}"
             )
     disabled = sorted(get_migration_recovery_disabled_clubs())
+    resume_at = get_rate_limit_resume_at()
     lines.extend(
         [
             "",
@@ -1023,9 +1215,12 @@ def format_whosnext_message(rows: list[RecoveryRow]) -> str:
             f"Auto-disabled (DB): {'yes' if is_migration_recovery_auto_disabled() else 'no'}",
             f"Active clubs: {', '.join(migration_recovery_active_club_keys()) or '(none)'}",
             f"Disabled clubs: {', '.join(disabled) if disabled else '(none)'}",
+            "Tier scope: RT=tier 1+2, CC/GTO=tier 3",
             f"Batch size per club: {get_migration_recovery_batch_size()}",
         ]
     )
+    if is_rate_limit_pause_pending() and resume_at is not None:
+        lines.append(f"Rate-limit auto-resume at: {resume_at.isoformat()}")
     return "\n".join(lines)
 
 
@@ -1057,6 +1252,7 @@ def format_rate_limit_admin_notification(
     wait_s: int,
     label: str,
     row: RecoveryRow | None,
+    resume_at: datetime | None = None,
 ) -> str:
     lines = [
         "[Migration recovery ops]",
@@ -1070,9 +1266,15 @@ def format_rate_limit_admin_notification(
                 f"chat_id={row.telegram_chat_id}",
             ]
         )
-    lines.append(
-        "Recovery auto-disabled. Clear DB flag and re-enable env to resume."
-    )
+    if resume_at is not None:
+        lines.append(
+            f"Recovery paused. Auto-resume at {resume_at.isoformat()} "
+            "(1h after FloodWait ends; survives deploy/restart)."
+        )
+    else:
+        lines.append(
+            "Recovery auto-disabled. Clear DB flag and re-enable env to resume."
+        )
     return "\n".join(lines)
 
 
@@ -1100,10 +1302,12 @@ async def _handle_rate_limit_abort(
     )
     release_processing_rows(remaining_row_ids)
 
+    resume_at = compute_rate_limit_resume_at(flood_wait_sec=exc.wait_s)
     detail = format_rate_limit_admin_notification(
         wait_s=exc.wait_s,
         label=exc.label,
         row=row,
+        resume_at=resume_at,
     )
     from bot.services.mtproto_track_contact import notify_all_gc_admins_dm
 
@@ -1125,6 +1329,7 @@ async def _handle_rate_limit_abort(
         reason="rate_limit",
         exhausted_club_key=row.club_key,
         pending_snapshot=counts,
+        flood_wait_sec=exc.wait_s,
     )
 
 
@@ -1306,6 +1511,7 @@ async def tick_async() -> dict[str, int]:
             wait_s=wait_s,
             label=label,
             row=current_row,
+            resume_at=compute_rate_limit_resume_at(flood_wait_sec=wait_s),
         )
         from bot.services.mtproto_track_contact import notify_all_gc_admins_dm
 
@@ -1459,6 +1665,69 @@ def migration_recovery_job_callback(context) -> None:
     schedule_migration_recovery_tick()
 
 
+def migration_recovery_rate_limit_resume_callback(context) -> None:
+    remove_migration_recovery_rate_limit_resume_job()
+    resumed = maybe_apply_rate_limit_resume()
+    if not resumed:
+        logger.info("migration_recovery: rate-limit resume skipped (not due or cleared)")
+        return
+    if not is_migration_recovery_enabled():
+        logger.info(
+            "migration_recovery: rate-limit pause cleared but recovery still disabled"
+        )
+        return
+    if _recovery_app is None:
+        logger.warning("migration_recovery: rate-limit resume missing app reference")
+        return
+    schedule_migration_recovery_job(_recovery_app)
+    logger.info("migration_recovery: resumed after rate-limit cooldown")
+
+
+def schedule_migration_recovery_rate_limit_resume_job(app) -> None:
+    global _recovery_app
+
+    _recovery_app = app
+    remove_migration_recovery_rate_limit_resume_job()
+    delay_sec = compute_rate_limit_resume_delay_sec()
+    if delay_sec is None:
+        return
+    app.job_queue.run_once(
+        migration_recovery_rate_limit_resume_callback,
+        when=timedelta(seconds=delay_sec),
+        name="migration_recovery_rate_limit_resume",
+    )
+    logger.info(
+        "migration_recovery rate-limit resume scheduled delay_sec=%s resume_at=%s",
+        delay_sec,
+        get_rate_limit_resume_at().isoformat() if get_rate_limit_resume_at() else None,
+    )
+
+
+def setup_migration_recovery_jobs(app) -> None:
+    """Schedule recovery cron and DB-backed rate-limit resume after worker boot."""
+
+    global _recovery_app
+
+    from club_gc_settings import (
+        _env_bool,
+        is_dm_gc_listener_enabled,
+        is_migration_recovery_enabled,
+    )
+
+    if not is_dm_gc_listener_enabled():
+        return
+    if not _env_bool("GC_MIGRATION_RECOVERY_ENABLED", default=False):
+        return
+
+    _recovery_app = app
+    maybe_apply_rate_limit_resume()
+
+    if is_migration_recovery_enabled():
+        schedule_migration_recovery_job(app)
+    elif is_rate_limit_pause_pending():
+        schedule_migration_recovery_rate_limit_resume_job(app)
+
+
 def schedule_migration_recovery_job(app) -> None:
     global _recovery_app
 
@@ -1467,6 +1736,7 @@ def schedule_migration_recovery_job(app) -> None:
     from club_gc_settings import get_migration_recovery_interval_sec
 
     _recovery_app = app
+    remove_migration_recovery_rate_limit_resume_job()
     interval_sec = get_migration_recovery_interval_sec()
     first_delay_sec = compute_migration_recovery_first_delay_sec()
     app.job_queue.run_repeating(

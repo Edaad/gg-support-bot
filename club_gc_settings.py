@@ -524,6 +524,12 @@ def get_migration_recovery_invite_delay_sec() -> float:
     return max(0.0, _env_float("GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC", 2.0))
 
 
+def get_migration_recovery_rate_limit_cooldown_sec() -> int:
+    """Extra wait after FloodWait ends before recovery cron resumes (default 1h)."""
+
+    return max(0, _env_int("GC_MIGRATION_RECOVERY_RATE_LIMIT_COOLDOWN_SEC", 3600))
+
+
 def is_migration_recovery_skip_welcome_enabled() -> bool:
     """Skip member-join preamble/TOS for chats in ``migrated_group_recovery``."""
 

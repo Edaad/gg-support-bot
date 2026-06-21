@@ -15,11 +15,16 @@ from bot.services.migration_recovery import (
     claim_pending_batch,
     compute_migration_recovery_first_delay_sec,
     compute_migration_recovery_slack_summary_first_delay_sec,
+    compute_rate_limit_resume_at,
+    compute_rate_limit_resume_delay_sec,
     deactivated_account_hint,
+    extend_rate_limit_pause,
     format_auto_disable_notification,
     format_readd_success_admin_notification,
     format_rate_limit_admin_notification,
+    is_rate_limit_pause_pending,
     map_readd_status,
+    maybe_apply_rate_limit_resume,
     peek_next_recovery_rows,
     release_processing_rows,
     should_notify_rt_ops,
@@ -341,7 +346,7 @@ class TestFormatAutoDisableNotification(unittest.TestCase):
 
 
 class TestMaybeAutoDisableAfterTick(unittest.TestCase):
-    def test_triggers_when_one_club_empty(self) -> None:
+    def test_does_not_trigger_when_one_club_empty_but_others_have_work(self) -> None:
         with patch(
             "bot.services.migration_recovery.pending_count_by_club",
             return_value={
@@ -354,15 +359,45 @@ class TestMaybeAutoDisableAfterTick(unittest.TestCase):
             new_callable=AsyncMock,
         ) as mock_disable:
             asyncio.run(_maybe_auto_disable_after_tick())
-        mock_disable.assert_awaited_once_with(
-            reason="club_exhausted",
-            exhausted_club_key="creator_club",
-            pending_snapshot={
-                "round_table": 10,
+        mock_disable.assert_not_awaited()
+
+    def test_triggers_when_all_active_clubs_empty(self) -> None:
+        with patch(
+            "bot.services.migration_recovery.pending_count_by_club",
+            return_value={
+                "round_table": 0,
                 "creator_club": 0,
-                "clubgto": 5,
+                "clubgto": 0,
+            },
+        ), patch(
+            "bot.services.migration_recovery.auto_disable_migration_recovery",
+            new_callable=AsyncMock,
+        ) as mock_disable:
+            asyncio.run(_maybe_auto_disable_after_tick())
+        mock_disable.assert_awaited_once_with(
+            reason="all_clubs_drained",
+            exhausted_club_key="round_table",
+            pending_snapshot={
+                "round_table": 0,
+                "creator_club": 0,
+                "clubgto": 0,
             },
         )
+
+    def test_does_not_trigger_when_rt_has_tier12_but_cc_gto_tier3_empty(self) -> None:
+        with patch(
+            "bot.services.migration_recovery.pending_count_by_club",
+            return_value={
+                "round_table": 39,
+                "creator_club": 0,
+                "clubgto": 0,
+            },
+        ), patch(
+            "bot.services.migration_recovery.auto_disable_migration_recovery",
+            new_callable=AsyncMock,
+        ) as mock_disable:
+            asyncio.run(_maybe_auto_disable_after_tick())
+        mock_disable.assert_not_awaited()
 
     def test_all_drained_reason(self) -> None:
         with patch(
@@ -525,15 +560,7 @@ class TestMigrationRecoveryDisabledClubs(unittest.TestCase):
             new_callable=AsyncMock,
         ) as mock_disable:
             asyncio.run(_maybe_auto_disable_after_tick())
-        mock_disable.assert_awaited_once_with(
-            reason="club_exhausted",
-            exhausted_club_key="creator_club",
-            pending_snapshot={
-                "round_table": 999,
-                "creator_club": 0,
-                "clubgto": 4,
-            },
-        )
+        mock_disable.assert_not_awaited()
 
     @patch("bot.services.migration_recovery.get_migration_recovery_batch_size", return_value=1)
     @patch(
@@ -556,7 +583,7 @@ class TestMigrationRecoveryDisabledClubs(unittest.TestCase):
         cc_row.old_chat_id = -502
         cc_row.player_telegram_user_id = None
         cc_row.player_username = None
-        cc_row.priority_tier = 1
+        cc_row.priority_tier = 3
         cc_row.priority_rank = 1
 
         gto_row = MagicMock()
@@ -568,7 +595,7 @@ class TestMigrationRecoveryDisabledClubs(unittest.TestCase):
         gto_row.old_chat_id = -503
         gto_row.player_telegram_user_id = None
         gto_row.player_username = None
-        gto_row.priority_tier = 1
+        gto_row.priority_tier = 3
         gto_row.priority_rank = 2
 
         session = MagicMock()
@@ -734,6 +761,7 @@ class TestHandleRateLimitAbort(unittest.TestCase):
             reason="rate_limit",
             exhausted_club_key="clubgto",
             pending_snapshot={"round_table": 1, "creator_club": 2, "clubgto": 3},
+            flood_wait_sec=90,
         )
 
     def test_rate_limit_notification_includes_gc(self) -> None:
@@ -859,6 +887,97 @@ class TestMigrationRecoverySlackSummaryFirstDelay(unittest.TestCase):
             ):
                 delay = compute_migration_recovery_slack_summary_first_delay_sec(now=now)
         self.assertEqual(delay, 60.0)
+
+
+class TestRateLimitResume(unittest.TestCase):
+    def test_compute_rate_limit_resume_at_adds_flood_wait_and_cooldown(self) -> None:
+        from datetime import datetime, timezone
+
+        now = datetime(2026, 6, 21, 12, 0, 0, tzinfo=timezone.utc)
+        with patch(
+            "club_gc_settings.get_migration_recovery_rate_limit_cooldown_sec",
+            return_value=3600,
+        ):
+            resume_at = compute_rate_limit_resume_at(flood_wait_sec=90, now=now)
+        self.assertEqual(
+            resume_at,
+            datetime(2026, 6, 21, 13, 1, 30, tzinfo=timezone.utc),
+        )
+
+    def test_rate_limit_notification_mentions_auto_resume(self) -> None:
+        from datetime import datetime, timezone
+
+        resume_at = datetime(2026, 6, 21, 13, 0, 0, tzinfo=timezone.utc)
+        text = format_rate_limit_admin_notification(
+            wait_s=60,
+            label="InviteToChannelRequest",
+            row=None,
+            resume_at=resume_at,
+        )
+        self.assertIn("Auto-resume at", text)
+        self.assertIn(resume_at.isoformat(), text)
+
+    @patch("db.connection.get_db")
+    def test_maybe_apply_rate_limit_resume_clears_due_pause(self, mock_get_db: MagicMock) -> None:
+        from datetime import datetime, timezone
+
+        row = MagicMock()
+        row.auto_disabled_at = datetime(2026, 6, 21, 12, 0, 0, tzinfo=timezone.utc)
+        row.auto_disabled_reason = "rate_limit"
+        row.rate_limit_resume_at = datetime(2026, 6, 21, 13, 0, 0, tzinfo=timezone.utc)
+        session = MagicMock()
+        mock_get_db.return_value.__enter__.return_value = session
+        session.get.return_value = row
+
+        now = datetime(2026, 6, 21, 13, 5, 0, tzinfo=timezone.utc)
+        self.assertTrue(maybe_apply_rate_limit_resume(now=now))
+        self.assertIsNone(row.auto_disabled_at)
+        self.assertIsNone(row.rate_limit_resume_at)
+
+    @patch("db.connection.get_db")
+    def test_is_rate_limit_pause_pending_before_resume_at(self, mock_get_db: MagicMock) -> None:
+        from datetime import datetime, timezone
+
+        row = MagicMock()
+        row.auto_disabled_at = datetime(2026, 6, 21, 12, 0, 0, tzinfo=timezone.utc)
+        row.auto_disabled_reason = "rate_limit"
+        row.rate_limit_resume_at = datetime(2026, 6, 21, 13, 0, 0, tzinfo=timezone.utc)
+        session = MagicMock()
+        mock_get_db.return_value.__enter__.return_value = session
+        session.get.return_value = row
+
+        now = datetime(2026, 6, 21, 12, 30, 0, tzinfo=timezone.utc)
+        self.assertTrue(is_rate_limit_pause_pending(now=now))
+
+    @patch("db.connection.get_db")
+    def test_extend_rate_limit_pause_only_moves_later(self, mock_get_db: MagicMock) -> None:
+        from datetime import datetime, timezone
+
+        row = MagicMock()
+        row.auto_disabled_at = datetime(2026, 6, 21, 12, 0, 0, tzinfo=timezone.utc)
+        row.auto_disabled_reason = "rate_limit"
+        row.rate_limit_resume_at = datetime(2026, 6, 21, 14, 0, 0, tzinfo=timezone.utc)
+        session = MagicMock()
+        mock_get_db.return_value.__enter__.return_value = session
+        session.get.return_value = row
+
+        with patch(
+            "bot.services.migration_recovery.compute_rate_limit_resume_at",
+            return_value=datetime(2026, 6, 21, 13, 0, 0, tzinfo=timezone.utc),
+        ):
+            self.assertFalse(extend_rate_limit_pause(flood_wait_sec=30))
+
+    def test_compute_rate_limit_resume_delay_sec_before_due(self) -> None:
+        from datetime import datetime, timezone
+
+        now = datetime(2026, 6, 21, 12, 0, 0, tzinfo=timezone.utc)
+        resume_at = datetime(2026, 6, 21, 13, 0, 0, tzinfo=timezone.utc)
+        with patch(
+            "bot.services.migration_recovery.get_rate_limit_resume_at",
+            return_value=resume_at,
+        ):
+            delay = compute_rate_limit_resume_delay_sec(now=now)
+        self.assertEqual(delay, 3600.0)
 
 
 if __name__ == "__main__":
