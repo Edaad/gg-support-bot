@@ -215,6 +215,17 @@ async def _erase_group_chat(
         return f"Delete failed ({type(e).__name__}: {e})."
 
 
+async def erase_group_chat(
+    client: Any,
+    *,
+    cfg: ClubGcConfig,
+    chat_id: int,
+) -> str | None:
+    """Kick participants then delete channel. Returns error reason or None on success."""
+
+    return await _erase_group_chat(client, cfg=cfg, chat_id=chat_id)
+
+
 async def handle_group_delete_outgoing(
     event: events.NewMessage.Event,
     cfg: ClubGcConfig,
@@ -270,7 +281,7 @@ async def handle_group_delete_outgoing(
 
     async with get_mtproto_lock(cfg.club_key):
         client = event.client
-        err = await _erase_group_chat(
+        err = await erase_group_chat(
             client,
             cfg=cfg,
             chat_id=chat_id,

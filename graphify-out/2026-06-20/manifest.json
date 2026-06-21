@@ -1120,8 +1120,8 @@
     "semantic_hash": "563bb7e4bf87c4a7e0a2622d3109b5b4"
   },
   "bot/services/mtproto_dm_gc_listener.py": {
-    "mtime": 1781978167.1168244,
-    "ast_hash": "a1c4171ddbce1e756bb47598e63f99c7",
+    "mtime": 1781985507.427827,
+    "ast_hash": "6f36ef0589e7adb9c6c3bc5afb78bfdc",
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_add.py": {
@@ -1135,14 +1135,14 @@
     "semantic_hash": "1bc1e5ba5a1a984c0c4c86bac76207a8"
   },
   "bot/services/mtproto_group_create.py": {
-    "mtime": 1781982912.229866,
-    "ast_hash": "0e7df1a5e8e2a027df9cc6cbf3bfe104",
+    "mtime": 1781985506.972191,
+    "ast_hash": "1980f3a4d78aa44c9afbb1bf376e06e4",
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_delete.py": {
-    "mtime": 1779769145.7566564,
-    "ast_hash": "6697ed95afa5b14a31fd76485b8ddb6b",
-    "semantic_hash": "6697ed95afa5b14a31fd76485b8ddb6b"
+    "mtime": 1781992545.1019444,
+    "ast_hash": "61f1e36fb201f5604d112a0bd9a80c35",
+    "semantic_hash": ""
   },
   "bot/services/mtproto_group_player.py": {
     "mtime": 1781744349.089843,
@@ -1280,8 +1280,8 @@
     "semantic_hash": "9d2f1e12ab88efc39fc25326e4308c37"
   },
   "club_gc_settings.py": {
-    "mtime": 1781982920.1598449,
-    "ast_hash": "83c7877d5c079379e9fe48aa755192e5",
+    "mtime": 1781985494.1608074,
+    "ast_hash": "6eb71257e3a5740ebd27e16fc76f23a4",
     "semantic_hash": ""
   },
   "config.py": {
@@ -2535,8 +2535,8 @@
     "semantic_hash": ""
   },
   "docs/GC.md": {
-    "mtime": 1781982910.1442487,
-    "ast_hash": "4be68ce0e6ab0dd854e86f6e39f65829",
+    "mtime": 1781985513.528728,
+    "ast_hash": "0a06ed51f52e9676b549b897558a3b63",
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
@@ -2980,8 +2980,8 @@
     "semantic_hash": ""
   },
   "notification/handlers/bind_callbacks.py": {
-    "mtime": 1781978698.9548864,
-    "ast_hash": "3670396249cdee5c18a6019554df054d",
+    "mtime": 1781988990.594946,
+    "ast_hash": "7ab68ebdf052083fc58709917aa0b142",
     "semantic_hash": ""
   },
   "notification/payment_bind_helpers.py": {
@@ -3155,13 +3155,23 @@
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_join.py": {
-    "mtime": 1781982911.7925842,
-    "ast_hash": "a084316b657c2632f138adb648a566dc",
+    "mtime": 1781985505.3115382,
+    "ast_hash": "a2b537c2c4c2b866512c5f95a2737f74",
     "semantic_hash": ""
   },
   "tests/test_elevate_gc.py": {
-    "mtime": 1781982925.2720895,
-    "ast_hash": "7808d83db1cb7fd75bdfee04ee74819c",
+    "mtime": 1781985520.1621497,
+    "ast_hash": "e28a651882d37b87ac919c08ff29f9e8",
+    "semantic_hash": ""
+  },
+  "scripts/bulk_delete_tracking_groups_from_csv.py": {
+    "mtime": 1781992565.1195445,
+    "ast_hash": "63f8f21f0bbc11ad827d467a66af0cac",
+    "semantic_hash": ""
+  },
+  "scripts/list_least_active_telegram_groups.py": {
+    "mtime": 1781989914.540663,
+    "ast_hash": "933e98c5a5925470927552735ddf74cd",
     "semantic_hash": ""
   }
 }

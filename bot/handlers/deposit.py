@@ -82,6 +82,8 @@ from db.models import (
     Club,
     CryptoPayment,
     PayPalPayment,
+    PlayerActivity,
+    StripeCheckoutSession,
     VenmoPayment,
     ZellePayment,
 )
@@ -618,6 +620,49 @@ def _chat_has_payment_bound_since(chat_id: int, since: datetime) -> bool:
     return False
 
 
+def _chat_has_stripe_checkout_completed_since(chat_id: int, since: datetime) -> bool:
+    """True if a Stripe checkout completed for this GC at or after since (UTC)."""
+    since_utc = since if since.tzinfo else since.replace(tzinfo=timezone.utc)
+    with get_db() as session:
+        row = (
+            session.query(StripeCheckoutSession)
+            .filter(
+                StripeCheckoutSession.telegram_chat_id == int(chat_id),
+                StripeCheckoutSession.status == "complete",
+                StripeCheckoutSession.completed_at.isnot(None),
+                StripeCheckoutSession.completed_at >= since_utc,
+            )
+            .first()
+        )
+        return row is not None
+
+
+def _chat_has_deposit_activity_since(chat_id: int, since: datetime) -> bool:
+    """True if chips were added (/add) in this GC at or after since (UTC)."""
+    since_utc = since if since.tzinfo else since.replace(tzinfo=timezone.utc)
+    with get_db() as session:
+        row = (
+            session.query(PlayerActivity)
+            .filter(
+                PlayerActivity.chat_id == int(chat_id),
+                PlayerActivity.activity_type == "deposit",
+                PlayerActivity.cancelled.is_(False),
+                PlayerActivity.created_at >= since_utc,
+            )
+            .first()
+        )
+        return row is not None
+
+
+def _should_skip_deposit_reminder(chat_id: int, since: datetime) -> bool:
+    """True when payment received, Stripe checkout, or /add completed since schedule."""
+    return (
+        _chat_has_payment_bound_since(chat_id, since)
+        or _chat_has_stripe_checkout_completed_since(chat_id, since)
+        or _chat_has_deposit_activity_since(chat_id, since)
+    )
+
+
 def _parse_scheduled_at(job_data: dict | None) -> datetime | None:
     raw = (job_data or {}).get("scheduled_at")
     if not raw:
@@ -639,9 +684,9 @@ async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None
     _PENDING_DEPOSIT_REMINDERS.pop(chat_id, None)
 
     scheduled_at = _parse_scheduled_at(job_data)
-    if scheduled_at and _chat_has_payment_bound_since(chat_id, scheduled_at):
+    if scheduled_at and _should_skip_deposit_reminder(chat_id, scheduled_at):
         logger.info(
-            "deposit_reminder skipped chat_id=%s payment bound since schedule",
+            "deposit_reminder skipped chat_id=%s deposit completed since schedule",
             chat_id,
         )
         await _delete_deposit_info_messages(context.bot, chat_id)

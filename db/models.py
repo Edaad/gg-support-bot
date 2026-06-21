@@ -653,6 +653,70 @@ class CashierCashoutJob(Base):
     club = relationship("Club")
 
 
+class StaffCashoutRecord(Base):
+    """Completed GGCashier cashouts — editable audit record separate from job workflow."""
+
+    __tablename__ = "staff_cashout_records"
+    __table_args__ = (
+        UniqueConstraint("cashier_job_id", name="uq_staff_cashout_records_cashier_job_id"),
+        Index("ix_staff_cashout_records_club_id", "club_id"),
+        Index("ix_staff_cashout_records_created_at", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    cashier_job_id = Column(
+        Integer,
+        ForeignKey("cashier_cashout_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    chat_id = Column(BigInteger, nullable=False)
+    group_title = Column(String(255), nullable=False)
+    gg_player_id = Column(String(64), nullable=True)
+    amount = Column(Numeric(12, 2), nullable=False)
+    recorded_by_telegram_user_id = Column(BigInteger, nullable=False)
+    trigger = Column(String(20), nullable=False)  # group_cash | dm_cashout
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    club = relationship("Club")
+    cashier_job = relationship("CashierCashoutJob")
+    payments = relationship(
+        "StaffCashoutPayment",
+        back_populates="cashout_record",
+        cascade="all, delete-orphan",
+        order_by="StaffCashoutPayment.sort_order",
+    )
+
+
+class StaffCashoutPayment(Base):
+    """Payout line(s) for a staff cashout record — supports multiple payment methods."""
+
+    __tablename__ = "staff_cashout_payments"
+    __table_args__ = (
+        Index("ix_staff_cashout_payments_record_id", "cashout_record_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    cashout_record_id = Column(
+        Integer,
+        ForeignKey("staff_cashout_records.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    payment_method_id = Column(Integer, nullable=True)
+    payment_sub_option_id = Column(Integer, nullable=True)
+    method_display_name = Column(String(100), nullable=True)
+    payout_details = Column(Text, nullable=True)
+    amount = Column(Numeric(12, 2), nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+    cashout_record = relationship("StaffCashoutRecord", back_populates="payments")
+
+
 class SupportGroupChat(Base):
     """Megagroups created via /gc MTProto automation (per-club sessions)."""
 
