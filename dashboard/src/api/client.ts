@@ -212,6 +212,7 @@ export interface Club {
   list_caption: string | null
   allow_multi_cashout: boolean
   allow_admin_commands: boolean
+  auto_chip_adding_enabled: boolean
   deposit_simple_mode: boolean
   deposit_simple_type: string | null
   deposit_simple_text: string | null

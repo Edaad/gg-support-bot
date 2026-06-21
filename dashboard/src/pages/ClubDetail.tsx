@@ -286,6 +286,22 @@ function GeneralTab({
           <label className="flex items-center gap-2 text-sm text-ink">
             <input
               type="checkbox"
+              checked={form.auto_chip_adding_enabled ?? false}
+              onChange={(e) => setField('auto_chip_adding_enabled', e.target.checked)}
+              className="h-4 w-4 rounded border-border bg-control text-accent"
+            />
+            Auto chip adding on /add
+          </label>
+          <p className="ml-6 text-xs text-ink-muted">
+            When enabled, an admin /add in a linked group also sends the chips to ClubGG
+            automatically (player id + amount from the group, Round Table vs Aces Table from
+            the customer's last deposit choice). The /add confirmation the customer sees is
+            unchanged. When disabled, /add behaves exactly as before. Requires the deposit-bot
+            API to be configured on the worker.
+          </p>
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
               checked={form.is_active ?? true}
               onChange={(e) => setField('is_active', e.target.checked)}
               className="h-4 w-4 rounded border-border bg-control text-accent"

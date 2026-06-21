@@ -563,6 +563,37 @@ def get_club_allows_admin_commands(club_id: int) -> bool:
         return bool(club.allow_admin_commands)
 
 
+def get_auto_chip_adding_enabled(club_id: int) -> bool:
+    """True if /add should trigger ClubGG auto chip-adding for this club."""
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club:
+            return False
+        return bool(getattr(club, "auto_chip_adding_enabled", False))
+
+
+def set_last_deposit_union(chat_id: int, shorthand: str) -> None:
+    """Record the customer's last Round Table deposit union ("RT"/"AT") for a group."""
+    token = (shorthand or "").strip().upper()
+    if token not in ("RT", "AT"):
+        return
+    with get_db() as session:
+        group = session.query(Group).filter_by(chat_id=int(chat_id)).first()
+        if not group:
+            return
+        group.last_deposit_union = token
+        group.last_deposit_union_at = datetime.now(timezone.utc)
+
+
+def get_last_deposit_union(chat_id: int) -> Tuple[Optional[str], Optional[datetime]]:
+    """Return (union_shorthand, recorded_at_utc) for a group, or (None, None)."""
+    with get_db() as session:
+        group = session.query(Group).filter_by(chat_id=int(chat_id)).first()
+        if not group or not group.last_deposit_union:
+            return (None, None)
+        return (group.last_deposit_union, group.last_deposit_union_at)
+
+
 def get_cashout_max_amount(club_id: int) -> Optional[Decimal]:
     with get_db() as session:
         club = session.query(Club).get(club_id)

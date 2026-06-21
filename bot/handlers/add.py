@@ -44,6 +44,33 @@ def _parse_from_args(args: list[str]) -> tuple[Decimal, Decimal | None, str | No
     return parse_add_command("/add " + " ".join(args))
 
 
+def _schedule_auto_chip_add(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int,
+    club_id: int,
+    message_id: int,
+    amount: Decimal,
+    bonus: Decimal | None,
+    group_title: str | None,
+) -> None:
+    """Fire optional ClubGG auto chip-add (no-op unless enabled + configured)."""
+    from bot.services.clubgg_deposit_api import trigger_auto_chip_add
+
+    context.application.create_task(
+        trigger_auto_chip_add(
+            club_id=club_id,
+            chat_id=chat_id,
+            message_id=message_id,
+            amount=amount,
+            bonus=bonus,
+            group_title=group_title,
+            ptb_bot=context.bot,
+        ),
+        name=f"auto-chip-add-{chat_id}",
+    )
+
+
 async def _add_bot_api_path(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -76,6 +103,16 @@ async def _add_bot_api_path(
         chat_id=chat.id,
         club_id=club_id,
         text=confirmation,
+    )
+
+    _schedule_auto_chip_add(
+        context,
+        chat_id=chat.id,
+        club_id=club_id,
+        message_id=update.message.message_id,
+        amount=amount,
+        bonus=bonus,
+        group_title=chat.title,
     )
 
 

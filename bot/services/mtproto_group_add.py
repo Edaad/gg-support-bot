@@ -315,3 +315,27 @@ async def handle_group_add_outgoing(
             club_id,
             event.chat_id,
         )
+
+    # Optional ClubGG auto chip-adding (no-op unless enabled + configured).
+    try:
+        from bot.services.clubgg_deposit_api import trigger_auto_chip_add
+
+        message_id = event.message.id if event.message else None
+        if message_id is not None:
+            asyncio.create_task(
+                trigger_auto_chip_add(
+                    club_id=int(club_id),
+                    chat_id=int(event.chat_id),
+                    message_id=int(message_id),
+                    amount=amount,
+                    bonus=bonus,
+                    group_title=None,
+                    ptb_bot=ptb_bot,
+                )
+            )
+    except Exception:
+        logger.exception(
+            "group_add: failed to schedule auto chip-add club_id=%s chat_id=%s",
+            club_id,
+            event.chat_id,
+        )

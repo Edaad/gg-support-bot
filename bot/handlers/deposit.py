@@ -38,6 +38,7 @@ from bot.services.club import (
     record_method_deposit,
     get_deposit_method_names,
     is_club_staff,
+    set_last_deposit_union,
 )
 from bot.services.mtproto_group_rename import rename_support_group_title
 from bot.services.player_details import merge_union_prefix
@@ -1710,6 +1711,7 @@ async def _complete_deposit_flow(chat, context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.chat_data.get("deposit_chat_id")
     customer_uid = context.chat_data.get("deposit_user_id")
     _record_deposit(context)
+    _persist_deposit_union(context)
     await _send_union_chips_message(chat, context)
     await _maybe_rename_group_for_union(context)
     await _send_bonus_message(chat, context)
@@ -1752,6 +1754,20 @@ def _record_deposit(context):
             record_activity(club_id, user_id, chat_id, "deposit")
         except Exception:
             pass
+
+
+def _persist_deposit_union(context):
+    """Save the customer's RT/AT union choice on the group for auto chip-add routing."""
+    shorthand = context.chat_data.get("deposit_union_shorthand")
+    chat_id = context.chat_data.get("deposit_chat_id")
+    if shorthand and chat_id:
+        try:
+            set_last_deposit_union(int(chat_id), str(shorthand))
+        except Exception:
+            logger.warning(
+                "deposit: failed to persist union choice chat_id=%s", chat_id,
+                exc_info=True,
+            )
 
 
 async def _send_deposit_method_response(

@@ -40,6 +40,9 @@ class Club(Base):
     list_caption = Column(Text)
     allow_multi_cashout = Column(Boolean, default=True)
     allow_admin_commands = Column(Boolean, default=True)
+    auto_chip_adding_enabled = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
     deposit_simple_mode = Column(Boolean, default=False)
     deposit_simple_type = Column(String(10), default="text")
     deposit_simple_text = Column(Text)
@@ -398,6 +401,10 @@ class Group(Base):
     )
     name = Column(String(255), nullable=True)
     first_deposit_claimed = Column(Boolean, default=False)
+    # Last customer-chosen Round Table deposit union ("RT" or "AT"), used to route
+    # auto chip-adding to the correct ClubGG club (Round Table vs Aces Table).
+    last_deposit_union = Column(String(2), nullable=True)
+    last_deposit_union_at = Column(DateTime(timezone=True), nullable=True)
     added_at = Column(DateTime, server_default=func.now())
 
     club = relationship("Club", back_populates="groups")

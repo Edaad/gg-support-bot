@@ -316,3 +316,43 @@ heroku run -a YOUR_APP -- python migrate_stripe_checkout_session_lifecycle.py
 `migrate_stripe_deposit_tracking.py` now includes lifecycle columns (`completed_at`, `updated_at`, `stripe_payment_intent_id`) when run on an existing install.
 
 Also set `STRIPE_WEBHOOK_SECRET` on the **web** dyno and register `https://YOUR_APP.herokuapp.com/api/stripe/webhook` in Stripe (event: `checkout.session.completed`). See [`docs/STRIPE_DEPOSIT.md`](STRIPE_DEPOSIT.md).
+
+## Auto chip-adding on /add (ClubGG deposit bot)
+
+Lets an admin `/add <amount>` in a linked group also send the chips to the ClubGG
+deposit bot automatically. It is **off** unless (1) the per-club toggle "Auto chip
+adding on /add" is enabled in the dashboard (Club → General) **and** (2) the worker
+has the deposit-bot API configured. The customer-facing `/add` confirmation is
+unchanged; failures alert staff out-of-band and degrade to today's manual behaviour.
+
+Run the migration once after deploy (adds `clubs.auto_chip_adding_enabled` and
+`groups.last_deposit_union` / `last_deposit_union_at`):
+
+```bash
+heroku run -a YOUR_APP -- python migrate_auto_chip_adding.py
+```
+
+Set on the **worker** dyno (see `.env.example` for the full list):
+
+```bash
+heroku config:set -a YOUR_APP \
+  GG_DEPOSIT_API_BASE_URL=https://your-tunnel-url \
+  GG_DEPOSIT_API_TOKEN=the-server.json-token \
+  GG_DEPOSIT_API_DRY_RUN=true \
+  GG_DEPOSIT_API_ALERT_CHAT_ID=-1001234567890
+```
+
+**Rollout / single-group test (do this before real sends):**
+
+1. Run the migration; enable the toggle for **one** club only.
+2. Keep `GG_DEPOSIT_API_DRY_RUN=true`. Make a `/deposit` in one Round Table group,
+   pick RT or AT, then `/add <amount>` — confirm the staff alert shows a `dry_run`
+   result for the correct ClubGG club (Round Table vs Aces Table) and player id.
+3. For CC/GTO, confirm club resolves with no union needed.
+4. Only after the dry-run looks correct, set `GG_DEPOSIT_API_DRY_RUN=false` and
+   restart the worker. The ClubGG desktop app must be open/foregrounded and the
+   deposit server + tunnel running.
+
+`Round Table` deposits route to ClubGG **Round Table** (`522594`) or **Aces Table**
+(`983183`) based on the customer's last `/deposit` union choice; `ClubGTO` (`790203`)
+and `Creator Club` (`846162`) route by club name. Restart after config: `heroku restart worker -a YOUR_APP`.
