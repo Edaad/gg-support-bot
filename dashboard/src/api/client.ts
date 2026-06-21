@@ -193,6 +193,87 @@ export const deleteBonusType = (token: string, id: number) =>
 export const listBonusRecords = (token: string) =>
   request<BonusRecordT[]>('/bonus/records', {}, token)
 
+// Staff cashout records
+export interface StaffCashoutPaymentT {
+  id: number
+  payment_method_id: number | null
+  payment_sub_option_id: number | null
+  method_display_name: string | null
+  payout_details: string | null
+  amount: number | null
+  sort_order: number
+}
+
+export interface StaffCashoutRecordT {
+  id: number
+  cashier_job_id: number
+  club_id: number
+  club_name: string | null
+  chat_id: number
+  group_title: string
+  gg_player_id: string | null
+  amount: number
+  recorded_by_telegram_user_id: number
+  trigger: string
+  created_at: string | null
+  updated_at: string | null
+  payments: StaffCashoutPaymentT[]
+}
+
+export const listCashoutRecords = (token: string, clubId?: number) => {
+  const q = clubId != null ? `?club_id=${clubId}` : ''
+  return request<StaffCashoutRecordT[]>(`/cashout-records${q}`, {}, token)
+}
+
+export const getCashoutRecord = (token: string, id: number) =>
+  request<StaffCashoutRecordT>(`/cashout-records/${id}`, {}, token)
+
+export const updateCashoutRecord = (
+  token: string,
+  id: number,
+  data: { group_title?: string; amount?: number },
+) =>
+  request<StaffCashoutRecordT>(`/cashout-records/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }, token)
+
+export const addCashoutPayment = (
+  token: string,
+  recordId: number,
+  data: Partial<StaffCashoutPaymentT>,
+) =>
+  request<StaffCashoutRecordT>(`/cashout-records/${recordId}/payments`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }, token)
+
+export const updateCashoutPayment = (
+  token: string,
+  recordId: number,
+  paymentId: number,
+  data: Partial<StaffCashoutPaymentT>,
+) =>
+  request<StaffCashoutRecordT>(
+    `/cashout-records/${recordId}/payments/${paymentId}`,
+    { method: 'PATCH', body: JSON.stringify(data) },
+    token,
+  )
+
+export const deleteCashoutPayment = (
+  token: string,
+  recordId: number,
+  paymentId: number,
+) =>
+  request<StaffCashoutRecordT>(
+    `/cashout-records/${recordId}/payments/${paymentId}`,
+    { method: 'DELETE' },
+    token,
+  )
+
+export const syncCashoutRecord = (token: string, recordId: number) =>
+  request<{ ok: boolean }>(`/cashout-records/${recordId}/sync`, { method: 'POST' }, token)
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface Club {
