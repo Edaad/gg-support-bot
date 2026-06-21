@@ -354,5 +354,7 @@ heroku config:set -a YOUR_APP \
    deposit server + tunnel running.
 
 `Round Table` deposits route to ClubGG **Round Table** (`522594`) or **Aces Table**
-(`983183`) based on the customer's last `/deposit` union choice; `ClubGTO` (`790203`)
+(`983183`) from the customer's last `/deposit` RT/AT choice when one exists (stale
+choices are kept). If the customer never ran `/deposit` / never picked RT or AT,
+`/add` defaults to **Round Table** (RT). `ClubGTO` (`790203`)
 and `Creator Club` (`846162`) route by club name. Restart after config: `heroku restart worker -a YOUR_APP`.

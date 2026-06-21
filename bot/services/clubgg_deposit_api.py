@@ -12,8 +12,9 @@ Design goals:
 - **Idempotent.** ``request_id`` is derived from the Telegram message id so the
   same ``/add`` can never double-send (and the two internal /add code paths can
   never both fire a deposit).
-- **Round Table vs Aces Table** is resolved from the customer's last ``/deposit``
-  union choice (persisted on the group), never guessed.
+- **Round Table vs Aces Table** uses the customer's last ``/deposit`` union choice
+  when one exists (even if stale). If the customer never picked RT/AT, defaults to
+  **RT** (Round Table / TMT).
 
 All configuration is via environment variables (see ``.env.example``). The
 per-club on/off switch lives in the database (``clubs.auto_chip_adding_enabled``).
@@ -317,6 +318,14 @@ def _union_is_fresh(recorded_at: Optional[datetime], max_age_hours: float) -> bo
     return age.total_seconds() <= max_age_hours * 3600.0
 
 
+def _resolve_round_table_union_shorthand(union_shorthand: Optional[str]) -> str:
+    """Return RT or AT from a stored deposit union; default RT when never chosen."""
+    token = (union_shorthand or "").strip().upper()
+    if token in ("RT", "AT"):
+        return token
+    return "RT"
+
+
 async def _run_single_deposit(
     cfg: _Config,
     client: httpx.AsyncClient,
@@ -418,23 +427,24 @@ async def trigger_auto_chip_add(
         club = await asyncio.to_thread(get_club_by_id, int(club_id))
         club_name = club.name if club else None
 
-        # Round Table needs the customer's last RT/AT deposit choice.
+        # Round Table: use stored RT/AT when present (even if stale); else default RT.
         union_shorthand: Optional[str] = None
         if (club_name or "").strip().lower() == ROUND_TABLE_CLUB_NAME.strip().lower():
-            union_shorthand, recorded_at = await asyncio.to_thread(
+            stored_union, recorded_at = await asyncio.to_thread(
                 get_last_deposit_union, int(chat_id)
             )
-            if not union_shorthand or not _union_is_fresh(
-                recorded_at, cfg.union_max_age_hours
-            ):
-                await _send_alert(
-                    cfg,
-                    ptb_bot,
-                    f"Auto chip-add skipped for player {player_id} (chat {chat_id}): "
-                    f"no fresh Round Table/Aces Table selection. Ask the customer to "
-                    f"run /deposit and pick the club, or add chips manually.",
+            union_shorthand = _resolve_round_table_union_shorthand(stored_union)
+            if not (stored_union or "").strip():
+                logger.info(
+                    "auto_chip_add: no RT/AT union on chat %s; defaulting to RT",
+                    chat_id,
                 )
-                return
+            elif not _union_is_fresh(recorded_at, cfg.union_max_age_hours):
+                logger.info(
+                    "auto_chip_add: using stale RT/AT union %s for chat %s",
+                    union_shorthand,
+                    chat_id,
+                )
 
         clubgg_club = resolve_clubgg_club_name(club_name, union_shorthand)
         if not clubgg_club:
@@ -445,8 +455,6 @@ async def trigger_auto_chip_add(
                 f"could not map club {club_name!r}/union {union_shorthand!r} to a "
                 f"ClubGG club. Add chips manually.",
             )
-            return
-
             return
 
         timeout = httpx.Timeout(cfg.timeout_sec)
