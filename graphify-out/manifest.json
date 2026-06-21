@@ -780,8 +780,8 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "api/app.py": {
-    "mtime": 1781904587.8549614,
-    "ast_hash": "1fd56aabac6be0190cc4374e35918207",
+    "mtime": 1782050969.4845726,
+    "ast_hash": "f192025424548345cefe40ce7531b6ac",
     "semantic_hash": ""
   },
   "api/auth.py": {
@@ -890,8 +890,8 @@
     "semantic_hash": "96f271c2d81733708b36919e55e95872"
   },
   "api/schemas.py": {
-    "mtime": 1781982892.8260677,
-    "ast_hash": "d3e4117eae04b014edd179fd5306b366",
+    "mtime": 1782050944.5540912,
+    "ast_hash": "52f457d2bb19d519131cf57f1bdd45ee",
     "semantic_hash": ""
   },
   "api/schemas_payments.py": {
@@ -1255,9 +1255,9 @@
     "semantic_hash": "352eb0e3101e36d8d43db89b4ef20d0d"
   },
   "cashier/services/complete.py": {
-    "mtime": 1779502993.3808365,
-    "ast_hash": "912dfe9dcb5de50c86ee840bed4a2225",
-    "semantic_hash": "912dfe9dcb5de50c86ee840bed4a2225"
+    "mtime": 1782050932.9140666,
+    "ast_hash": "682332ef726fddacce05b76ec11b6d42",
+    "semantic_hash": ""
   },
   "cashier/services/group_cash_init.py": {
     "mtime": 1779504662.2126017,
@@ -1275,9 +1275,9 @@
     "semantic_hash": "4bb72bacd79a8fc1a57362344eb35946"
   },
   "cashier/services/zapier.py": {
-    "mtime": 1779550863.129085,
-    "ast_hash": "9d2f1e12ab88efc39fc25326e4308c37",
-    "semantic_hash": "9d2f1e12ab88efc39fc25326e4308c37"
+    "mtime": 1782050929.6734095,
+    "ast_hash": "608424a484e911586308f116d74aa190",
+    "semantic_hash": ""
   },
   "club_gc_settings.py": {
     "mtime": 1781985494.1608074,
@@ -1300,9 +1300,9 @@
     "semantic_hash": "f8226b9356242bab45d4319bfe46d337"
   },
   "dashboard/src/App.tsx": {
-    "mtime": 1780758932.7706995,
-    "ast_hash": "622c265bdad8719f35b0f6d777b12c5c",
-    "semantic_hash": "622c265bdad8719f35b0f6d777b12c5c"
+    "mtime": 1782051027.2839212,
+    "ast_hash": "307338a7c1bd84c435c76e02223fdad5",
+    "semantic_hash": ""
   },
   "dashboard/src/api/apiBase.ts": {
     "mtime": 1780795626.56049,
@@ -1310,8 +1310,8 @@
     "semantic_hash": "0a3ed4ec23dda7003da443d24ee876e0"
   },
   "dashboard/src/api/client.ts": {
-    "mtime": 1781982897.3509142,
-    "ast_hash": "6bf85ddd00223fc11ce0d4fb2be12e7b",
+    "mtime": 1782050984.998222,
+    "ast_hash": "5a5a0c21827bf2a23ddbf222302e7224",
     "semantic_hash": ""
   },
   "dashboard/src/api/paymentsClient.ts": {
@@ -1355,9 +1355,9 @@
     "semantic_hash": "2a27661b9e239d91401e3ad14ccc0c2d"
   },
   "dashboard/src/components/Layout.tsx": {
-    "mtime": 1780710866.3381474,
-    "ast_hash": "4927183abe570890b8a3490dd9b17309",
-    "semantic_hash": "4927183abe570890b8a3490dd9b17309"
+    "mtime": 1782051028.730221,
+    "ast_hash": "630ead012e0b5d67e23855695a30436d",
+    "semantic_hash": ""
   },
   "dashboard/src/components/LinkingDrilldownModal.tsx": {
     "mtime": 1780973545.4045603,
@@ -1525,8 +1525,8 @@
     "semantic_hash": "f815b05a6bbf7c0237e414e0d04ee055"
   },
   "db/models.py": {
-    "mtime": 1781959028.3460522,
-    "ast_hash": "0451e2da4c17509324427fc397615e9d",
+    "mtime": 1782050873.833391,
+    "ast_hash": "5f16fbfda1c529d95d07e8221e735840",
     "semantic_hash": ""
   },
   "export_payment_config_backup.py": {
@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1781978167.1165185,
-    "ast_hash": "f7a0b92575bfcf9b92adac9d2633d82c",
+    "mtime": 1782051057.8878992,
+    "ast_hash": "fd9d0279b50b407ab6df5816155d922e",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -3125,7 +3125,7 @@
     "semantic_hash": ""
   },
   "docs/SUPPORT_NOTES.md": {
-    "mtime": 1781970643.7651024,
+    "mtime": 1782050998.1103446,
     "ast_hash": "014ff756476c6cddae135bad302ab3c1",
     "semantic_hash": ""
   },
@@ -3145,8 +3145,8 @@
     "semantic_hash": ""
   },
   "bot/handlers/support_notes.py": {
-    "mtime": 1781977598.8836434,
-    "ast_hash": "b21efa5f451e1f5efe679e653faa6a35",
+    "mtime": 1782050993.3652709,
+    "ast_hash": "96fb4cf90929549df430f9e73d41a5e6",
     "semantic_hash": ""
   },
   "scripts/heroku_release.py": {
@@ -3165,13 +3165,48 @@
     "semantic_hash": ""
   },
   "scripts/bulk_delete_tracking_groups_from_csv.py": {
-    "mtime": 1781992565.1195445,
-    "ast_hash": "63f8f21f0bbc11ad827d467a66af0cac",
+    "mtime": 1781993740.605799,
+    "ast_hash": "c01cad023b889011c18b48677e19c6f2",
     "semantic_hash": ""
   },
   "scripts/list_least_active_telegram_groups.py": {
     "mtime": 1781989914.540663,
     "ast_hash": "933e98c5a5925470927552735ddf74cd",
+    "semantic_hash": ""
+  },
+  "api/routes/cashout_records.py": {
+    "mtime": 1782050970.5211284,
+    "ast_hash": "ff656e9dcbf1779c4961857f23b8687e",
+    "semantic_hash": ""
+  },
+  "bot/services/staff_cashout_records.py": {
+    "mtime": 1782050911.5035067,
+    "ast_hash": "87b964520610ec913e5a542728b4599e",
+    "semantic_hash": ""
+  },
+  "migrate_bonus_records.py": {
+    "mtime": 1782050881.469911,
+    "ast_hash": "f8854fae697add598a0f365ddbe8f74d",
+    "semantic_hash": ""
+  },
+  "migrate_staff_cashout_records.py": {
+    "mtime": 1782050878.0045493,
+    "ast_hash": "bef3639bbdaedaf70f67435d82feb2bc",
+    "semantic_hash": ""
+  },
+  "dashboard/src/pages/CashoutRecords.tsx": {
+    "mtime": 1782051024.7578964,
+    "ast_hash": "15bc55a7b71b58043c186197069bb17e",
+    "semantic_hash": ""
+  },
+  "scripts/backfill_staff_cashout_records.py": {
+    "mtime": 1782068934.6648965,
+    "ast_hash": "6f43e4ba2d253115ef11d0a23cb74810",
+    "semantic_hash": ""
+  },
+  "tests/test_staff_cashout_records.py": {
+    "mtime": 1782051091.2715347,
+    "ast_hash": "41e312bc3c7f3fadd62f4fa010bd093f",
     "semantic_hash": ""
   }
 }

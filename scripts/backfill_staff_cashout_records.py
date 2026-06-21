@@ -46,22 +46,25 @@ def main() -> int:
         )
         if args.limit:
             query = query.limit(args.limit)
-        jobs = query.all()
+        job_dicts = [_job_to_dict(job) for job in query.all()]
 
     created = 0
     skipped = 0
-    for job in jobs:
-        job_dict = _job_to_dict(job)
-        if get_staff_cashout_record_by_job_id(int(job.id)):
+    for job_dict in job_dicts:
+        job_id = int(job_dict["id"])
+        if get_staff_cashout_record_by_job_id(job_id):
             skipped += 1
-            print(f"skip job_id={job.id} (record exists)")
+            print(f"skip job_id={job_id} (record exists)")
             continue
         if not args.apply:
-            print(f"would create record for job_id={job.id} title={job.group_title!r}")
+            print(
+                f"would create record for job_id={job_id} "
+                f"title={job_dict.get('group_title')!r}"
+            )
             created += 1
             continue
         record_id = create_staff_cashout_record_from_job(job_dict)
-        print(f"created record_id={record_id} job_id={job.id}")
+        print(f"created record_id={record_id} job_id={job_id}")
         created += 1
 
     mode = "APPLY" if args.apply else "DRY-RUN"

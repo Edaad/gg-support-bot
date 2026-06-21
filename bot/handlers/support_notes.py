@@ -84,25 +84,10 @@ async def _note_group_stub(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     chat = update.effective_chat
     club_id = get_club_for_chat(chat.id)
     if club_id is None:
-        await update.message.reply_text("This group isn't linked to a club.")
         return
 
     if not is_club_staff(update.effective_user.id, club_id):
         return
-
-    gg_player_id = gg_player_id_from_title(chat.title)
-    if not gg_player_id:
-        await update.message.reply_text(
-            "Could not read player id from the group title.\n"
-            "Use a title like RT / 8190-5287 / PlayerName, or run /note in a private chat with me."
-        )
-        return
-
-    context.user_data[PENDING_KEY] = {
-        "club_id": int(club_id),
-        "gg_player_id": gg_player_id,
-        "telegram_chat_id": chat.id,
-    }
 
     try:
         await context.bot.delete_message(
@@ -117,10 +102,20 @@ async def _note_group_stub(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             exc_info=True,
         )
 
-    await update.message.reply_text(
-        f"Context saved for player {gg_player_id}. "
-        "Open a private chat with me and send /note to add a dispute note."
-    )
+    gg_player_id = gg_player_id_from_title(chat.title)
+    if not gg_player_id:
+        logger.warning(
+            "support_note: could not read player id from group title chat_id=%s title=%r",
+            chat.id,
+            chat.title,
+        )
+        return
+
+    context.user_data[PENDING_KEY] = {
+        "club_id": int(club_id),
+        "gg_player_id": gg_player_id,
+        "telegram_chat_id": chat.id,
+    }
 
 
 def _apply_pending_context(context: ContextTypes.DEFAULT_TYPE) -> bool:
