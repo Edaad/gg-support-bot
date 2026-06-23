@@ -135,11 +135,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
     from bot.handlers.bonus import get_bonus_handler
     from bot.handlers.stripe import stripe_handler
     from bot.handlers.teststripe import teststripe_handler
-    from bot.handlers.support_notes import (
-        get_note_conversation_handler,
-        notes_handler,
-        resolve_handler,
-    )
+    from bot.handlers.issue_reports import register_issue_report_handlers
     from bot.handlers.whosnext import whosnext_handler
     from bot.handlers.unbind_method import unbindmethod_handler
     from bot.handlers.deposit import (
@@ -187,9 +183,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         get_bonus_handler=get_bonus_handler,
         stripe_handler=stripe_handler,
         teststripe_handler=teststripe_handler,
-        get_note_conversation_handler=get_note_conversation_handler,
-        notes_handler=notes_handler,
-        resolve_handler=resolve_handler,
+        register_issue_report_handlers=register_issue_report_handlers,
         whosnext_handler=whosnext_handler,
         unbindmethod_handler=unbindmethod_handler,
         deposit_amount_priority_handler=deposit_amount_priority_handler,
@@ -253,9 +247,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(CommandHandler("checkplayer", h.checkplayer_handler))
     app.add_handler(CommandHandler("stripe", h.stripe_handler))
     app.add_handler(CommandHandler("teststripe", h.teststripe_handler))
-    app.add_handler(CommandHandler("notes", h.notes_handler))
-    app.add_handler(CommandHandler("resolve", h.resolve_handler))
-    app.add_handler(h.get_note_conversation_handler())
+    h.register_issue_report_handlers(app)
 
     app.add_handler(CommandHandler("unbindmethod", h.unbindmethod_handler))
 

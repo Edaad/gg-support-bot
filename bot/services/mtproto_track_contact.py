@@ -29,6 +29,8 @@ _CONTACT_FIRST_MAX = 64
 _notify_bot: Bot | None = None
 _channels_too_much_last_notify: dict[str, float] = {}
 _CHANNELS_TOO_MUCH_NOTIFY_COOLDOWN_SEC = 600.0
+_mtproto_disconnect_last_notify: dict[str, float] = {}
+_MTPROTO_DISCONNECT_NOTIFY_COOLDOWN_SEC = 600.0
 
 
 def set_contact_save_notify_bot(bot: Bot | None) -> None:
@@ -143,6 +145,39 @@ async def notify_club_gc_channels_too_much(
         "the player DM again."
     )
     await notify_club_gc_admin_dm(cfg, "\n".join(lines))
+
+
+async def notify_club_gc_mtproto_disconnected(
+    cfg: ClubGcConfig,
+    *,
+    status_detail: str | None = None,
+) -> None:
+    """DM club GC admin when the worker loses this club's MTProto session."""
+
+    now = time.monotonic()
+    last = _mtproto_disconnect_last_notify.get(cfg.club_key, 0.0)
+    if now - last < _MTPROTO_DISCONNECT_NOTIFY_COOLDOWN_SEC:
+        return
+    _mtproto_disconnect_last_notify[cfg.club_key] = now
+
+    lines = [
+        f"⚠️ {cfg.club_display_name}: MTProto is not connected on the support bot server.",
+        "",
+        "There is an issue with the server — please inform a head admin or engineer.",
+        "",
+        "Until this is resolved, /add, /cash, and automatic /gc (when a player DMs "
+        "the club account) will not work.",
+    ]
+    detail = (status_detail or "").strip()
+    if detail:
+        lines.extend(["", f"Detail: {detail}"])
+    await notify_club_gc_admin_dm(cfg, "\n".join(lines))
+
+
+def clear_mtproto_disconnect_notify_cooldown(club_key: str) -> None:
+    """Allow a fresh disconnect DM after the club session reconnects."""
+
+    _mtproto_disconnect_last_notify.pop(club_key, None)
 
 
 async def notify_all_gc_admins_dm(

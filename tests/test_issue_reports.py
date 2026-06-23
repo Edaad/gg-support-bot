@@ -124,7 +124,7 @@ class TestCreateIssueReport(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report.slack_message_ts, "1234.5678")
         slack_mock.assert_awaited_once()
         call_kwargs = slack_mock.await_args.kwargs
-        self.assertEqual(call_kwargs["tags"], ["cashout"])
+        self.assertEqual(call_kwargs["tags"], ["head_admin"])
         self.assertEqual(call_kwargs["file_bytes"][0][0], "shot.png")
 
     async def test_requires_title_and_description(self) -> None:
@@ -139,7 +139,7 @@ class TestIssueReportTags(unittest.TestCase):
     def test_allowlist(self) -> None:
         self.assertEqual(
             ISSUE_REPORT_TAGS,
-            frozenset({"bot_issue", "cashout", "deposit", "rakeback"}),
+            frozenset({"bot_issue", "cashout", "deposit", "rakeback", "other"}),
         )
 
 

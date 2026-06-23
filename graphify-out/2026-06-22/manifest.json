@@ -975,8 +975,8 @@
     "semantic_hash": "2a59565cb91f3f108c684a139bb0c4e3"
   },
   "bot/handlers/flow_cancel.py": {
-    "mtime": 1781959070.2521036,
-    "ast_hash": "84ab61fb05928f1ac1a08d0f53466cf2",
+    "mtime": 1782181566.9066122,
+    "ast_hash": "fc7c3f2a9929f9efeb2aff60e6d01a0d",
     "semantic_hash": ""
   },
   "bot/handlers/gc_chat_id.py": {
@@ -1045,8 +1045,8 @@
     "semantic_hash": "79c6fe14be16e88a1c87f51a4407ab76"
   },
   "bot/main.py": {
-    "mtime": 1782069744.9184194,
-    "ast_hash": "2ddfd46f16feb20a4d9ff892ae431e9b",
+    "mtime": 1782181568.465197,
+    "ast_hash": "4c7fe27f870442d71740f7929b99b633",
     "semantic_hash": ""
   },
   "bot/runtime_config.py": {
@@ -1525,8 +1525,8 @@
     "semantic_hash": "f815b05a6bbf7c0237e414e0d04ee055"
   },
   "db/models.py": {
-    "mtime": 1782069722.848661,
-    "ast_hash": "090ca742c7f3dce552ba7bdc2e750a63",
+    "mtime": 1782181448.7211056,
+    "ast_hash": "29c6d155f5e91812dc639ca360e6373c",
     "semantic_hash": ""
   },
   "export_payment_config_backup.py": {
@@ -2740,8 +2740,8 @@
     "semantic_hash": ""
   },
   "bot/services/migration_recovery.py": {
-    "mtime": 1782070063.2360938,
-    "ast_hash": "5a7b2eabeab541cda262eeeb89f3b947",
+    "mtime": 1782177542.141822,
+    "ast_hash": "fb9a39e318d10076f4ca39ba16079e2d",
     "semantic_hash": ""
   },
   "migrate_migrated_group_recovery.py": {
@@ -2840,8 +2840,8 @@
     "semantic_hash": ""
   },
   "tests/test_migration_group_readd.py": {
-    "mtime": 1781747098.9080327,
-    "ast_hash": "cc353c2dc8ea31167ac830fea830f2cb",
+    "mtime": 1782177549.288781,
+    "ast_hash": "7d9775a5bf7aaf6220ed090b978cb1ec",
     "semantic_hash": ""
   },
   "api/routes/paypal_payments.py": {
@@ -3045,8 +3045,8 @@
     "semantic_hash": ""
   },
   "bot/services/issue_reports.py": {
-    "mtime": 1781913717.998218,
-    "ast_hash": "70c6bbc340d09ee3cfc5f52f896d99e1",
+    "mtime": 1782181484.6130388,
+    "ast_hash": "9a28f0d994c06dc74e8e5522d6a7ee77",
     "semantic_hash": ""
   },
   "migrate_issue_reports.py": {
@@ -3065,8 +3065,8 @@
     "semantic_hash": ""
   },
   "tests/test_issue_reports.py": {
-    "mtime": 1781913717.9858432,
-    "ast_hash": "aebe1077644c00116b51f8d6f63b334c",
+    "mtime": 1782181592.5662754,
+    "ast_hash": "8272881754f73d87912dcbdcc98f7fbe",
     "semantic_hash": ""
   },
   "tests/test_issue_reports_api.py": {
@@ -3242,6 +3242,41 @@
   "scripts/reopen_recovery_skipped.py": {
     "mtime": 1782070433.6811445,
     "ast_hash": "6ed6d545d936e07a084558da4bfec797",
+    "semantic_hash": ""
+  },
+  "bot/handlers/issue_reports.py": {
+    "mtime": 1782181540.8919673,
+    "ast_hash": "803f2dcfeba541983b4be492f1f3475b",
+    "semantic_hash": ""
+  },
+  "bot/services/issue_report_drafts.py": {
+    "mtime": 1782181487.516022,
+    "ast_hash": "5999d691b8f37d911dcb8209dbce4b86",
+    "semantic_hash": ""
+  },
+  "bot/services/issue_report_notify.py": {
+    "mtime": 1782181489.101033,
+    "ast_hash": "94390281e0e6b48120b04fde222e0579",
+    "semantic_hash": ""
+  },
+  "migrate_issue_report_drafts.py": {
+    "mtime": 1782181453.3682768,
+    "ast_hash": "1ae432bc4f5888255bdfac346b9b1bc4",
+    "semantic_hash": ""
+  },
+  "migrate_issue_reports_v2.py": {
+    "mtime": 1782181451.5437288,
+    "ast_hash": "7c1d8957443d4ff4833b7dd2920c431c",
+    "semantic_hash": ""
+  },
+  "tests/test_issue_report_bot.py": {
+    "mtime": 1782181593.2005773,
+    "ast_hash": "04e7fc1f5efafd7250fbc875f40f5052",
+    "semantic_hash": ""
+  },
+  "docs/ISSUE_REPORTS_BOT.md": {
+    "mtime": 1782181610.5787122,
+    "ast_hash": "83d925226cf6cdcf98d4cc2b30e940e2",
     "semantic_hash": ""
   }
 }

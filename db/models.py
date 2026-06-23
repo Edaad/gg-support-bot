@@ -1437,10 +1437,18 @@ class IssueReport(Base):
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
     tags = Column(ARRAY(String(32)), nullable=False, server_default="{}")
+    category = Column(String(32), nullable=True)
+    notify_tags = Column(ARRAY(String(32)), nullable=False, server_default="{}")
     status = Column(String(32), nullable=False, server_default="open")
     reporter_name = Column(String(255), nullable=True)
     reporter_source = Column(String(32), nullable=False, server_default="api")
+    reporter_telegram_user_id = Column(BigInteger, nullable=True)
+    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True)
+    group_title = Column(String(512), nullable=True)
+    telegram_chat_id = Column(BigInteger, nullable=True)
     slack_message_ts = Column(String(64), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_by_telegram_user_id = Column(BigInteger, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),
@@ -1448,6 +1456,7 @@ class IssueReport(Base):
         onupdate=func.now(),
     )
 
+    club = relationship("Club")
     attachments = relationship(
         "IssueReportAttachment",
         back_populates="issue_report",
@@ -1473,6 +1482,27 @@ class IssueReportAttachment(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     issue_report = relationship("IssueReport", back_populates="attachments")
+
+
+class IssueReportDraft(Base):
+    """Pending issue report started from a support group /report command."""
+
+    __tablename__ = "issue_report_drafts"
+    __table_args__ = (
+        Index("ix_issue_report_drafts_staff_user_id", "staff_telegram_user_id"),
+        Index("ix_issue_report_drafts_status", "status"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    staff_telegram_user_id = Column(BigInteger, nullable=False)
+    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True)
+    group_title = Column(String(512), nullable=True)
+    telegram_chat_id = Column(BigInteger, nullable=True)
+    status = Column(String(32), nullable=False, server_default="pending")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+
+    club = relationship("Club")
 
 
 class PlayerSupportIssue(Base):

@@ -46,7 +46,11 @@ from bot.services.mtproto_club_health import (
     persist_club_health,
 )
 from bot.services.mtproto_group_add import handle_group_add_outgoing
-from bot.services.mtproto_track_contact import notify_club_gc_channels_too_much
+from bot.services.mtproto_track_contact import (
+    clear_mtproto_disconnect_notify_cooldown,
+    notify_club_gc_channels_too_much,
+    notify_club_gc_mtproto_disconnected,
+)
 from bot.services.mtproto_group_cash import handle_group_cash_outgoing
 from bot.services.mtproto_group_delete import handle_group_delete_outgoing
 from bot.services.support_group_chats import (
@@ -81,8 +85,32 @@ def _dm_gc_verbose_info(msg: str, *args) -> None:
         logger.info(msg, *args)
 
 
-async def _report_club_health(club_key: str, **kwargs) -> None:
+async def _report_club_health(
+    club_key: str,
+    *,
+    notify_on_disconnect: bool = True,
+    **kwargs,
+) -> None:
     await asyncio.to_thread(persist_club_health, club_key, **kwargs)
+
+    cfg = CLUB_GC_CONFIG.get(club_key)
+    if cfg is None or not notify_on_disconnect:
+        return
+
+    status = kwargs.get("status")
+    worker_connected = bool(kwargs.get("worker_connected"))
+    session_valid = bool(kwargs.get("session_valid"))
+    is_healthy = (
+        status == STATUS_CONNECTED and worker_connected and session_valid
+    )
+    if is_healthy:
+        clear_mtproto_disconnect_notify_cooldown(club_key)
+        return
+
+    await notify_club_gc_mtproto_disconnected(
+        cfg,
+        status_detail=kwargs.get("status_detail"),
+    )
 
 
 def get_listener_client(club_key: str) -> TelegramClient | None:
@@ -1089,6 +1117,7 @@ async def _teardown_listener_cycle(
                 session_valid=False,
                 status=STATUS_DISCONNECTED,
                 status_detail="Listener cycle ended; worker Telethon client disconnected.",
+                notify_on_disconnect=False,
             )
     if ptb_bot is not None:
         try:
