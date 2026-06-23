@@ -167,6 +167,20 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
     def test_alert_scope_labels_importable(self):
         self.assertIn(ALERT_SCOPE_CLUBGTO, ALERT_SCOPE_LABELS)
 
+    def test_sheet_specs_use_title_case_tab_names(self):
+        self.assertEqual(
+            [spec.title for spec in SHEET_SPECS],
+            [
+                "Stripe",
+                "Zelle",
+                "Venmo",
+                "Cash App",
+                "PayPal",
+                "Bonus",
+                "Early Rakeback",
+            ],
+        )
+
     def test_build_crypto_payment_read_does_not_raise(self):
         payment = CryptoPayment(
             id=1,
@@ -211,6 +225,8 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
             StripeAuditRow(
                 amount_usd=42.0,
                 player="GTO / 3011-9668 / Pvtenis",
+                group_title="GTO / 3011-9668 / Pvtenis",
+                club_label="ClubGTO",
                 time_label="Jun 19th 2026, 12:58 AM",
                 stripe_fee_usd=Decimal("1.52"),
             )
@@ -236,6 +252,13 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         self.assertEqual(amount_cell.number_format, "$#,##0.00")
         self.assertIsNotNone(amount_cell.comment)
         self.assertIn("Stripe fee", amount_cell.comment.text)
+        self.assertEqual(
+            [cell.value for cell in ws[1]],
+            ["Amount", "Player", "Group", "Club", "Time"],
+        )
+        self.assertEqual(ws["B2"].value, "GTO / 3011-9668 / Pvtenis")
+        self.assertEqual(ws["C2"].value, "GTO / 3011-9668 / Pvtenis")
+        self.assertEqual(ws["D2"].value, "ClubGTO")
 
         zelle_ws = wb["Zelle"]
         self.assertEqual(zelle_ws.max_row, 1)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
@@ -9,6 +10,24 @@ from sqlalchemy.orm import Session
 from db.models import IssueReportDraft
 
 DRAFT_TTL_MINUTES = 30
+
+
+@dataclass(frozen=True)
+class DraftContext:
+    id: int
+    club_id: int | None
+    group_title: str | None
+    telegram_chat_id: int | None
+
+
+def draft_to_context(draft: IssueReportDraft) -> DraftContext:
+    """Copy draft fields while the SQLAlchemy session is still open."""
+    return DraftContext(
+        id=int(draft.id),
+        club_id=int(draft.club_id) if draft.club_id is not None else None,
+        group_title=draft.group_title,
+        telegram_chat_id=draft.telegram_chat_id,
+    )
 
 
 def _as_utc(dt: datetime) -> datetime:

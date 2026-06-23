@@ -36,7 +36,7 @@ from db.models import (
     ZellePayment,
 )
 
-STRIPE_LAYOUT = ["Amount", "Player", "Time"]
+STRIPE_LAYOUT = ["Amount", "Player", "Group", "Club", "Time"]
 MANUAL_LAYOUT = ["Amount", "Name", "Group", "Club", "Time"]
 
 SheetLayout = Literal["stripe", "manual"]
@@ -46,7 +46,7 @@ _HEADER_FILL = PatternFill("solid", fgColor="38761D")
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _CURRENCY_FORMAT = "$#,##0.00"
 _COLUMN_WIDTHS: dict[SheetLayout, list[float]] = {
-    "stripe": [14, 40, 28],
+    "stripe": [14, 28, 40, 18, 28],
     "manual": [14, 28, 40, 18, 28],
 }
 
@@ -61,11 +61,11 @@ class SheetSpec:
 SHEET_SPECS: list[SheetSpec] = [
     SheetSpec("Stripe", STRIPE_LAYOUT, "stripe"),
     SheetSpec("Zelle", MANUAL_LAYOUT, "manual"),
-    SheetSpec("venmo", MANUAL_LAYOUT, "manual"),
-    SheetSpec("cashapp", MANUAL_LAYOUT, "manual"),
+    SheetSpec("Venmo", MANUAL_LAYOUT, "manual"),
+    SheetSpec("Cash App", MANUAL_LAYOUT, "manual"),
     SheetSpec("PayPal", MANUAL_LAYOUT, "manual"),
-    SheetSpec("bonus", MANUAL_LAYOUT, "manual"),
-    SheetSpec("early rakeback", STRIPE_LAYOUT, "stripe"),
+    SheetSpec("Bonus", MANUAL_LAYOUT, "manual"),
+    SheetSpec("Early Rakeback", STRIPE_LAYOUT, "stripe"),
 ]
 
 
@@ -73,6 +73,8 @@ SHEET_SPECS: list[SheetSpec] = [
 class StripeAuditRow:
     amount_usd: float
     player: str
+    group_title: str
+    club_label: str
     time_label: str
     stripe_fee_usd: Decimal
 
@@ -281,7 +283,15 @@ def _write_formatted_sheet(
     if spec.layout == "stripe":
         rows = stripe_rows or []
         for row_idx, row in enumerate(rows, start=data_row_start):
-            ws.append([row.amount_usd, row.player, row.time_label])
+            ws.append(
+                [
+                    row.amount_usd,
+                    row.player,
+                    row.group_title,
+                    row.club_label,
+                    row.time_label,
+                ]
+            )
             amount_cell = ws.cell(row=row_idx, column=1)
             amount_cell.number_format = _CURRENCY_FORMAT
             amount_cell.alignment = Alignment(horizontal="right")
@@ -412,15 +422,18 @@ def _fetch_stripe_rows(
         )
         nickname = lookup_gg_nickname(session, row.club_id, gg_id) or ""
         completed = row.completed_at or row.created_at
+        club_label = _club_name(club_names, row.club_id)
         out.append(
             StripeAuditRow(
                 amount_usd=float(row.amount_cents) / 100.0,
                 player=_stripe_player_cell(
                     group_title=title,
-                    club_name=_club_name(club_names, row.club_id),
+                    club_name=club_label,
                     gg_player_id=gg_id,
                     gg_nickname=nickname,
                 ),
+                group_title=(title or "").strip(),
+                club_label=club_label,
                 time_label=_fmt_stripe_audit_time(completed),
                 stripe_fee_usd=_stripe_fee_usd(row.amount_cents),
             )

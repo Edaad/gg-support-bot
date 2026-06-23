@@ -1045,8 +1045,8 @@
     "semantic_hash": "79c6fe14be16e88a1c87f51a4407ab76"
   },
   "bot/main.py": {
-    "mtime": 1782181568.465197,
-    "ast_hash": "4c7fe27f870442d71740f7929b99b633",
+    "mtime": 1782183977.5505602,
+    "ast_hash": "bc75a67e2f880b7eac69e93abe8daf63",
     "semantic_hash": ""
   },
   "bot/runtime_config.py": {
@@ -1525,8 +1525,8 @@
     "semantic_hash": "f815b05a6bbf7c0237e414e0d04ee055"
   },
   "db/models.py": {
-    "mtime": 1782181448.7211056,
-    "ast_hash": "29c6d155f5e91812dc639ca360e6373c",
+    "mtime": 1782183898.2942111,
+    "ast_hash": "e5c2f2c10bacf0138cb3b8c017f84bf6",
     "semantic_hash": ""
   },
   "export_payment_config_backup.py": {
@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1782181907.538467,
-    "ast_hash": "83e4efc00e58b59b0fc73cf9b77d9db5",
+    "mtime": 1782184038.6545854,
+    "ast_hash": "80292414de2cc8c94dbadf3326b3100b",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2815,8 +2815,8 @@
     "semantic_hash": ""
   },
   "bot/services/slack_ops_notify.py": {
-    "mtime": 1781904573.6399145,
-    "ast_hash": "0d6196c9a3343e4c1e2275f151ebe8f3",
+    "mtime": 1782183935.317751,
+    "ast_hash": "ddf9008e2775c182691f7f6bb683cc60",
     "semantic_hash": ""
   },
   "tests/test_slack_ops_notify.py": {
@@ -3045,8 +3045,8 @@
     "semantic_hash": ""
   },
   "bot/services/issue_reports.py": {
-    "mtime": 1782181484.6130388,
-    "ast_hash": "9a28f0d994c06dc74e8e5522d6a7ee77",
+    "mtime": 1782183962.4014335,
+    "ast_hash": "c949e201eb42c67a8025c128bef29e31",
     "semantic_hash": ""
   },
   "migrate_issue_reports.py": {
@@ -3245,8 +3245,8 @@
     "semantic_hash": ""
   },
   "bot/handlers/issue_reports.py": {
-    "mtime": 1782183244.8528905,
-    "ast_hash": "cac4cf03a48e952985c63feaca600b64",
+    "mtime": 1782184007.4716551,
+    "ast_hash": "1c7323369aea43ee8b44ce18c9c68563",
     "semantic_hash": ""
   },
   "bot/services/issue_report_drafts.py": {
@@ -3275,13 +3275,28 @@
     "semantic_hash": ""
   },
   "docs/ISSUE_REPORTS_BOT.md": {
-    "mtime": 1782183258.4119346,
-    "ast_hash": "736875afd4480545acada029c4b6d40d",
+    "mtime": 1782184029.013405,
+    "ast_hash": "9a4f4ec46e4392df6f58dafb3de4dff2",
     "semantic_hash": ""
   },
   "tests/test_mtproto_disconnect_notify.py": {
     "mtime": 1782181818.7283177,
     "ast_hash": "dcb3ff685913774441eaa779c9cf7027",
+    "semantic_hash": ""
+  },
+  "bot/services/issue_report_reminders.py": {
+    "mtime": 1782183975.489384,
+    "ast_hash": "23c602e899c19efb64d5958f65ee6aec",
+    "semantic_hash": ""
+  },
+  "migrate_issue_reports_resolve.py": {
+    "mtime": 1782183894.9810262,
+    "ast_hash": "b5f9c2e683b78d1d94a4a6ba84d34388",
+    "semantic_hash": ""
+  },
+  "tests/test_issue_report_resolve.py": {
+    "mtime": 1782184025.520216,
+    "ast_hash": "7d56eb456ac830f77966bf811e077aa8",
     "semantic_hash": ""
   }
 }
