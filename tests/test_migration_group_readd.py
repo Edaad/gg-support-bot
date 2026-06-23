@@ -620,6 +620,64 @@ class TestMigrationRecoveryProcessRow(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_readd.await_args.kwargs["old_chat_id"], -456)
         mock_persist.assert_called_once()
 
+    @patch("bot.services.migration_recovery.maybe_persist_resolved_player_from_readd")
+    @patch("bot.services.migration_recovery._notify_rt_ops_if_needed", new_callable=AsyncMock)
+    @patch("bot.services.migration_recovery.notify_readd_admin_dm", new_callable=AsyncMock)
+    @patch("bot.services.migration_recovery.finalize_row", return_value="complete")
+    @patch(
+        "bot.services.migration_recovery.readd_round_table_player_and_link",
+        new_callable=AsyncMock,
+    )
+    @patch("bot.services.migration_recovery.is_round_table_elevate_recovery_enabled", return_value=True)
+    @patch("bot.services.mtproto_dm_gc_listener.get_listener_client")
+    @patch("bot.services.migration_recovery.get_club_gc_config_by_link_club_id")
+    async def test_process_row_elevate_rt_omits_invite_staff_kwarg(
+        self,
+        mock_get_cfg: MagicMock,
+        mock_get_client: MagicMock,
+        _mock_elevate_enabled: MagicMock,
+        mock_readd_rt: AsyncMock,
+        _mock_finalize: MagicMock,
+        _mock_notify_admin: AsyncMock,
+        _mock_notify_ops: AsyncMock,
+        mock_persist: MagicMock,
+    ) -> None:
+        mock_get_cfg.return_value = MagicMock(
+            club_key="round_table",
+            club_display_name="Round Table",
+        )
+        mock_client = MagicMock()
+        mock_client.is_connected.return_value = True
+        mock_client.get_me = AsyncMock(return_value=MagicMock(id=999))
+        mock_get_client.return_value = mock_client
+        mock_readd_rt.return_value = ReaddGroupResult(
+            chat_id=-1001,
+            club_id=2,
+            club_key="round_table",
+            title="RT / 7320-2126 / Abid",
+            member_count_before=0,
+            member_count_after=None,
+            status="ok",
+            added=["player:@abid"],
+        )
+
+        row = RecoveryRow(
+            id=993,
+            telegram_chat_id=-1003928775699,
+            club_key="round_table",
+            club_id=2,
+            group_title="RT / 7320-2126 / Abid",
+            old_chat_id=-4922298322,
+            player_telegram_user_id=7431689848,
+            player_username=None,
+        )
+
+        await _process_row(row)
+
+        mock_readd_rt.assert_awaited_once()
+        self.assertNotIn("invite_staff", mock_readd_rt.await_args.kwargs)
+        mock_persist.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

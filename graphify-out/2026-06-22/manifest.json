@@ -3155,13 +3155,13 @@
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_join.py": {
-    "mtime": 1781985505.3115382,
-    "ast_hash": "a2b537c2c4c2b866512c5f95a2737f74",
+    "mtime": 1782176448.5764453,
+    "ast_hash": "22484a398882034beb1528808f441eb1",
     "semantic_hash": ""
   },
   "tests/test_elevate_gc.py": {
-    "mtime": 1781985520.1621497,
-    "ast_hash": "e28a651882d37b87ac919c08ff29f9e8",
+    "mtime": 1782176461.2889578,
+    "ast_hash": "b86dce2860369dafd1a9197b2a73cc58",
     "semantic_hash": ""
   },
   "scripts/bulk_delete_tracking_groups_from_csv.py": {

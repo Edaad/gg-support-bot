@@ -2740,8 +2740,8 @@
     "semantic_hash": ""
   },
   "bot/services/migration_recovery.py": {
-    "mtime": 1782070063.2360938,
-    "ast_hash": "5a7b2eabeab541cda262eeeb89f3b947",
+    "mtime": 1782177542.141822,
+    "ast_hash": "fb9a39e318d10076f4ca39ba16079e2d",
     "semantic_hash": ""
   },
   "migrate_migrated_group_recovery.py": {
@@ -2840,8 +2840,8 @@
     "semantic_hash": ""
   },
   "tests/test_migration_group_readd.py": {
-    "mtime": 1781747098.9080327,
-    "ast_hash": "cc353c2dc8ea31167ac830fea830f2cb",
+    "mtime": 1782177549.288781,
+    "ast_hash": "7d9775a5bf7aaf6220ed090b978cb1ec",
     "semantic_hash": ""
   },
   "api/routes/paypal_payments.py": {

@@ -1617,8 +1617,7 @@ async def _process_row(row: RecoveryRow) -> tuple[str, ReaddGroupResult]:
     use_elevate_rt = (
         row.club_key == "round_table" and is_round_table_elevate_recovery_enabled()
     )
-    readd_fn = readd_round_table_player_and_link if use_elevate_rt else readd_group
-    result = await readd_fn(
+    readd_kwargs = dict(
         client=client,
         cfg=cfg,
         group=group,
@@ -1627,10 +1626,13 @@ async def _process_row(row: RecoveryRow) -> tuple[str, ReaddGroupResult]:
         player_username=row.player_username,
         apply=True,
         update_invite_links=True,
-        invite_staff=False,
         listener_user_id=listener_user_id,
         old_chat_id=int(row.old_chat_id),
     )
+    if use_elevate_rt:
+        result = await readd_round_table_player_and_link(**readd_kwargs)
+    else:
+        result = await readd_group(**readd_kwargs, invite_staff=False)
     if get_flood_wait_policy() == "abort":
         flood_exc = flood_wait_abort_from_readd_result(result)
         if flood_exc is not None:
