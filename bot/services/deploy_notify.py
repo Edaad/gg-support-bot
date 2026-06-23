@@ -23,7 +23,7 @@ DEPLOY_NOTIFY_MESSAGE = (
     "Please expect brief disruptions."
 )
 
-_DEFAULT_COOLDOWN_SECONDS = 3600
+_DEFAULT_COOLDOWN_SECONDS = 900
 
 
 def is_deploy_notify_enabled() -> bool:

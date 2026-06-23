@@ -1120,8 +1120,8 @@
     "semantic_hash": "563bb7e4bf87c4a7e0a2622d3109b5b4"
   },
   "bot/services/mtproto_dm_gc_listener.py": {
-    "mtime": 1781985507.427827,
-    "ast_hash": "6f36ef0589e7adb9c6c3bc5afb78bfdc",
+    "mtime": 1782181806.5738497,
+    "ast_hash": "517e618b3eaaf44a814d82c2acd5112e",
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_add.py": {
@@ -1165,8 +1165,8 @@
     "semantic_hash": ""
   },
   "bot/services/mtproto_track_contact.py": {
-    "mtime": 1781917618.0279024,
-    "ast_hash": "d0b54eeabe4ac6fc032a56e337b62dbc",
+    "mtime": 1782181802.358094,
+    "ast_hash": "96a275a73f027c7de94aec9b74030992",
     "semantic_hash": ""
   },
   "bot/services/payment_method_binding.py": {
@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1782070112.688404,
-    "ast_hash": "266a0d704d73ebae0227701c69752b3f",
+    "mtime": 1782181629.3818843,
+    "ast_hash": "1b06ded89d142985fd069172367da0fc",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -3277,6 +3277,11 @@
   "docs/ISSUE_REPORTS_BOT.md": {
     "mtime": 1782181610.5787122,
     "ast_hash": "83d925226cf6cdcf98d4cc2b30e940e2",
+    "semantic_hash": ""
+  },
+  "tests/test_mtproto_disconnect_notify.py": {
+    "mtime": 1782181818.7283177,
+    "ast_hash": "dcb3ff685913774441eaa779c9cf7027",
     "semantic_hash": ""
   }
 }

@@ -106,7 +106,7 @@ heroku run -a YOUR_APP -- python migrate_deploy_notify_state.py
 | Var | Default | Purpose |
 |-----|---------|---------|
 | `DEPLOY_NOTIFY_ENABLED` | `true` | Set `false` to disable release DMs |
-| `DEPLOY_NOTIFY_COOLDOWN_SECONDS` | `3600` | Minimum seconds between notifications |
+| `DEPLOY_NOTIFY_COOLDOWN_SECONDS` | `900` | Minimum seconds between notifications (15 minutes) |
 
 Scripts: [`scripts/heroku_release.py`](../scripts/heroku_release.py) (orchestrator), [`scripts/pre_push_import_smoke.py`](../scripts/pre_push_import_smoke.py) (import smoke), [`scripts/notify_deploy_maintenance.py`](../scripts/notify_deploy_maintenance.py) (DMs). Import failures block deploy; failures to send DMs never block deploy.
 
