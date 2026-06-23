@@ -305,7 +305,7 @@ heroku config:set SLACK_OPS_MENTION='<@UYOUR_SLACK_USER_ID>' -a YOUR_APP   # opt
 
 **Issue reports (account managers):** Tickets are stored in Postgres (`issue_reports`). Create via `POST /api/issue-reports` (multipart) or `python scripts/create_issue_report.py`. Slack posts use the same ops channel; optional per-tag mentions via `ISSUE_REPORT_TAG_MENTIONS` JSON (e.g. `{"cashout":"<@U123>","bot_issue":"<!subteam^S456>"}`). Run `python migrate_issue_reports.py` once after deploy.
 
-**Issue reports (AMs):** `/report` and `/reports` in Telegram — see [`docs/ISSUE_REPORTS_BOT.md`](ISSUE_REPORTS_BOT.md). Run `python migrate_issue_reports_v2.py` and `python migrate_issue_report_drafts.py` once after deploy.
+**Issue reports (AMs):** `/escalate` (group) and `/report` (DM) — see [`docs/ISSUE_REPORTS_BOT.md`](ISSUE_REPORTS_BOT.md). Run `python migrate_issue_reports_v2.py`, `python migrate_issue_report_drafts.py`, and `python migrate_issue_reports_resolve.py` once after deploy.
 
 **Staff cashout records + bonus tables:** Editable GGCashier cashout history lives in `staff_cashout_records` / `staff_cashout_payments`; `/bonus` uses `bonus_records`. Run once after deploy:
 

@@ -75,10 +75,14 @@ _IR_USER_KEYS = (
     "ir_admin_id",
     "ir_triage_report_id",
     "ir_triage_mode",
+    "ir_resolve_notes",
+    "ir_resolve_evidence",
 )
 
 _TRIAGE_MODE_EDIT = "edit"
 _TRIAGE_MODE_EVIDENCE = "evidence"
+_TRIAGE_MODE_RESOLVE_NOTES = "resolve_notes"
+_TRIAGE_MODE_RESOLVE_EVIDENCE = "resolve_evidence"
 
 
 def _can_use_issue_reports(user_id: int) -> bool:
@@ -142,6 +146,101 @@ def _confirm_keyboard() -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def _resolve_evidence_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Skip", callback_data="ir_resolve_skip"),
+                InlineKeyboardButton("Done", callback_data="ir_resolve_done"),
+            ],
+            [InlineKeyboardButton("CANCEL", callback_data="ir_resolve_cancel")],
+        ]
+    )
+
+
+async def _start_resolve_flow(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    report_id: int,
+    send,
+) -> None:
+    with get_db() as session:
+        report = get_issue_report(session, report_id)
+    if not report:
+        await send(f"Report #{report_id} not found.")
+        return
+    if report.status == "resolved":
+        await send(f"Report #{report_id} is already resolved.")
+        return
+
+    context.user_data["ir_triage_report_id"] = report_id
+    context.user_data["ir_triage_mode"] = _TRIAGE_MODE_RESOLVE_NOTES
+    context.user_data["ir_resolve_notes"] = None
+    context.user_data["ir_resolve_evidence"] = []
+    await send(
+        f"Resolving report #{report_id}.\n\n"
+        "How was this resolved? What was the solution?"
+    )
+
+
+async def _finish_resolve(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    reply,
+) -> None:
+    report_id = context.user_data.get("ir_triage_report_id")
+    notes = context.user_data.get("ir_resolve_notes")
+    files = list(context.user_data.get("ir_resolve_evidence") or [])
+    user = update.effective_user
+    if not report_id or not user:
+        return
+
+    try:
+        with get_db() as session:
+            result = await resolve_report(
+                session,
+                int(report_id),
+                resolved_by_telegram_user_id=user.id,
+                resolution_notes=str(notes or ""),
+                resolution_files=files,
+            )
+    except IssueReportValidationError as exc:
+        await reply(str(exc))
+        return
+
+    context.user_data.pop("ir_triage_mode", None)
+    context.user_data.pop("ir_triage_report_id", None)
+    context.user_data.pop("ir_resolve_notes", None)
+    context.user_data.pop("ir_resolve_evidence", None)
+    await reply(format_resolve_result(result))
+
+
+async def resolve_evidence_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    query = update.callback_query
+    if not query or not query.data:
+        return
+    await query.answer()
+
+    if query.data == "ir_resolve_cancel":
+        context.user_data.pop("ir_triage_mode", None)
+        context.user_data.pop("ir_triage_report_id", None)
+        context.user_data.pop("ir_resolve_notes", None)
+        context.user_data.pop("ir_resolve_evidence", None)
+        await query.edit_message_text("Resolve cancelled.")
+        return
+
+    if context.user_data.get("ir_triage_mode") != _TRIAGE_MODE_RESOLVE_EVIDENCE:
+        return
+
+    async def reply(text: str) -> None:
+        await query.edit_message_text(text)
+
+    await _finish_resolve(update, context, reply=reply)
 
 
 def _detail_keyboard(report_id: int, *, status: str) -> InlineKeyboardMarkup:
@@ -660,16 +759,11 @@ async def reports_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
 
         if len(args) >= 2 and args[1].lower() == "resolve":
-            try:
-                result = resolve_report(
-                    session,
-                    report_id,
-                    resolved_by_telegram_user_id=update.effective_user.id,
-                )
-            except IssueReportValidationError as exc:
-                await update.message.reply_text(str(exc))
-                return
-            await update.message.reply_text(format_resolve_result(result))
+            await _start_resolve_flow(
+                context=context,
+                report_id=report_id,
+                send=update.message.reply_text,
+            )
             return
 
         if len(args) >= 2 and args[1].lower() == "edit":
@@ -737,16 +831,11 @@ async def triage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     with get_db() as session:
         if action == "resolve":
-            try:
-                result = resolve_report(
-                    session,
-                    report_id,
-                    resolved_by_telegram_user_id=update.effective_user.id,
-                )
-            except IssueReportValidationError as exc:
-                await query.edit_message_text(str(exc))
-                return
-            await query.edit_message_text(format_resolve_result(result))
+            await _start_resolve_flow(
+                context=context,
+                report_id=report_id,
+                send=query.edit_message_text,
+            )
             return
 
         if action == "edit":
@@ -797,6 +886,43 @@ async def triage_followup_message(
             context.user_data.pop("ir_triage_report_id", None)
             context.user_data.pop("ir_triage_evidence", None)
             await update.message.reply_text(f"Evidence saved for report #{report_id}.")
+        return
+
+    if mode == _TRIAGE_MODE_RESOLVE_NOTES and update.message.text:
+        notes = (update.message.text or "").strip()
+        if not notes:
+            await update.message.reply_text("Please describe how the issue was resolved.")
+            return
+        context.user_data["ir_resolve_notes"] = notes
+        context.user_data["ir_triage_mode"] = _TRIAGE_MODE_RESOLVE_EVIDENCE
+        await update.message.reply_text(
+            "Send resolution screenshots (optional), then tap Done — or Skip.",
+            reply_markup=_resolve_evidence_keyboard(),
+        )
+        return
+
+    if mode == _TRIAGE_MODE_RESOLVE_EVIDENCE and update.message.photo:
+        files: list = list(context.user_data.get("ir_resolve_evidence") or [])
+        if len(files) >= 5:
+            await update.message.reply_text(
+                "Maximum 5 screenshots. Tap Done to finish.",
+                reply_markup=_resolve_evidence_keyboard(),
+            )
+            return
+        try:
+            file_input = await _download_photo(update, context)
+        except Exception:
+            logger.exception("issue_report: resolution photo download failed")
+            await update.message.reply_text("Could not download that image. Try again.")
+            return
+        if file_input is None:
+            return
+        files.append(file_input)
+        context.user_data["ir_resolve_evidence"] = files
+        await update.message.reply_text(
+            f"Saved ({len(files)}/5). Send more or tap Done.",
+            reply_markup=_resolve_evidence_keyboard(),
+        )
         return
 
     if mode == _TRIAGE_MODE_EDIT and update.message.text:
@@ -899,6 +1025,12 @@ def register_issue_report_handlers(app) -> None:
     app.add_handler(get_report_conversation_handler())
     app.add_handler(CommandHandler("reports", reports_handler))
     app.add_handler(CallbackQueryHandler(triage_callback, pattern=r"^ir_triage:"))
+    app.add_handler(
+        CallbackQueryHandler(
+            resolve_evidence_callback,
+            pattern=r"^ir_resolve_(skip|done|cancel)$",
+        )
+    )
     app.add_handler(
         MessageHandler(
             filters.ChatType.PRIVATE & (filters.TEXT | filters.PHOTO) & ~filters.COMMAND,

@@ -85,6 +85,10 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
 
             schedule_migration_recovery_slack_summary_job(app)
 
+        from bot.services.issue_report_reminders import schedule_issue_report_reminder_job
+
+        schedule_issue_report_reminder_job(app)
+
 
 async def _post_shutdown_dm_gc_listener(app, *, test_mode: bool = False):
     if test_mode:

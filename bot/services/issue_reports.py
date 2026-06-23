@@ -51,6 +51,9 @@ ALLOWED_IMAGE_CONTENT_TYPES: frozenset[str] = frozenset(
 
 MAX_ATTACHMENTS = 5
 MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
+REMINDER_INTERVAL_HOURS = 2
+ATTACHMENT_TYPE_EVIDENCE = "evidence"
+ATTACHMENT_TYPE_RESOLUTION = "resolution"
 
 
 class IssueReportValidationError(ValueError):
@@ -69,6 +72,12 @@ class ResolveReportResult:
     report_id: int
     title: str
     already_resolved: bool
+
+
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def club_label_for_id(session: Session, club_id: int) -> str:
@@ -245,15 +254,34 @@ def format_report_detail(report: IssueReport, *, session: Session | None = None)
         lines.append(f"Group: {report.group_title}")
     if report.club_id and session is not None:
         lines.append(f"Club: {club_label_for_id(session, int(report.club_id))}")
-    att_count = len(report.attachments or [])
+    evidence_count = sum(
+        1
+        for a in (report.attachments or [])
+        if (a.attachment_type or ATTACHMENT_TYPE_EVIDENCE) == ATTACHMENT_TYPE_EVIDENCE
+    )
+    resolution_count = sum(
+        1
+        for a in (report.attachments or [])
+        if a.attachment_type == ATTACHMENT_TYPE_RESOLUTION
+    )
     lines.extend(
         [
-            f"Evidence: {att_count} file(s)",
+            f"Evidence: {evidence_count} file(s)",
             "",
             "Details:",
             report.description,
         ]
     )
+    if status == "resolved" and report.resolution_notes:
+        lines.extend(
+            [
+                "",
+                "Resolution:",
+                report.resolution_notes,
+            ]
+        )
+        if resolution_count:
+            lines.append(f"Resolution screenshots: {resolution_count} file(s)")
     return "\n".join(lines)
 
 
@@ -280,6 +308,56 @@ def list_open_reports(db: Session, *, limit: int = 30) -> list[IssueReport]:
         .limit(limit)
         .all()
     )
+
+
+def list_open_reports_needing_reminder(
+    db: Session, *, interval_hours: int = REMINDER_INTERVAL_HOURS
+) -> list[IssueReport]:
+    now = datetime.now(timezone.utc)
+    threshold = timedelta(hours=interval_hours)
+    reports = (
+        db.query(IssueReport)
+        .filter(IssueReport.status == "open")
+        .order_by(IssueReport.created_at.asc())
+        .all()
+    )
+    due: list[IssueReport] = []
+    for report in reports:
+        anchor = report.last_slack_reminder_at or report.created_at
+        if anchor is None:
+            continue
+        if now - _as_utc(anchor) >= threshold:
+            due.append(report)
+    return due
+
+
+def format_reminder_slack_body(report: IssueReport) -> str:
+    age = _age_label(report.created_at)
+    lines = [
+        "Unresolved incident reminder",
+        "",
+        f"Ticket: #{report.id}",
+        f"Title: {report.title}",
+        f"Category: {_category_label(report)}",
+        f"Open for: {age}",
+    ]
+    if report.group_title:
+        lines.append(f"Group: {report.group_title}")
+    lines.extend(["", "Details:", report.description])
+    return "\n".join(lines)
+
+
+def format_resolution_slack_body(report: IssueReport) -> str:
+    lines = [
+        "Incident resolved",
+        "",
+        f"Ticket: #{report.id}",
+        f"Title: {report.title}",
+        "",
+        "Resolution:",
+        report.resolution_notes or "(no notes)",
+    ]
+    return "\n".join(lines)
 
 
 def list_resolved_reports(
@@ -378,6 +456,7 @@ async def create_issue_report(
             filename=f.filename,
             content_type=content_type,
             content=f.content,
+            attachment_type=ATTACHMENT_TYPE_EVIDENCE,
         )
         db.add(att)
         attachments.append(att)
@@ -409,11 +488,13 @@ async def create_issue_report(
     return report
 
 
-def resolve_report(
+async def resolve_report(
     db: Session,
     report_id: int,
     *,
     resolved_by_telegram_user_id: int,
+    resolution_notes: str,
+    resolution_files: list[IssueReportFileInput] | None = None,
 ) -> ResolveReportResult:
     report = get_issue_report(db, report_id)
     if report is None:
@@ -424,10 +505,64 @@ def resolve_report(
             title=report.title,
             already_resolved=True,
         )
+
+    notes_clean = (resolution_notes or "").strip()
+    if not notes_clean:
+        raise IssueReportValidationError("resolution notes are required")
+
+    file_inputs = list(resolution_files or [])
+    if file_inputs:
+        validate_files(file_inputs)
+
     report.status = "resolved"
+    report.resolution_notes = notes_clean
     report.resolved_at = datetime.now(timezone.utc)
     report.resolved_by_telegram_user_id = resolved_by_telegram_user_id
+
+    resolution_attachments: list[IssueReportAttachment] = []
+    for f in file_inputs:
+        content_type = f.content_type.split(";", 1)[0].strip().lower()
+        att = IssueReportAttachment(
+            issue_report_id=report.id,
+            filename=f.filename,
+            content_type=content_type,
+            content=f.content,
+            attachment_type=ATTACHMENT_TYPE_RESOLUTION,
+        )
+        db.add(att)
+        resolution_attachments.append(att)
     db.flush()
+
+    from bot.services.slack_ops_notify import (
+        notify_slack_issue_report,
+        notify_slack_issue_report_thread,
+    )
+
+    slack_body = format_resolution_slack_body(report)
+    file_bytes = [(a.filename, a.content, a.content_type) for a in resolution_attachments]
+    notify_tags = list(report.notify_tags or [])
+
+    if report.slack_message_ts:
+        ok = await notify_slack_issue_report_thread(
+            slack_body,
+            thread_ts=report.slack_message_ts,
+            tags=notify_tags,
+            file_bytes=file_bytes,
+        )
+    else:
+        ok, _, _ = await notify_slack_issue_report(
+            f"Resolved\n\n{slack_body}",
+            tags=notify_tags,
+            file_bytes=file_bytes,
+        )
+
+    if not ok:
+        logger.warning(
+            "issue_report: Slack resolution notify failed report_id=%s",
+            report.id,
+        )
+
+    db.refresh(report)
     return ResolveReportResult(
         report_id=report.id,
         title=report.title,
@@ -475,6 +610,7 @@ async def add_report_evidence(
                 filename=f.filename,
                 content_type=content_type,
                 content=f.content,
+                attachment_type=ATTACHMENT_TYPE_EVIDENCE,
             )
         )
     db.flush()

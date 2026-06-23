@@ -850,8 +850,8 @@
     "semantic_hash": ""
   },
   "api/routes/payments.py": {
-    "mtime": 1782176394.000903,
-    "ast_hash": "d4eaffe2c76650589b2e591a6861c5c9",
+    "mtime": 1782183397.2203336,
+    "ast_hash": "c0a9b68f811439e939ad47b832519ef0",
     "semantic_hash": ""
   },
   "api/routes/simulate.py": {
@@ -3030,13 +3030,13 @@
     "semantic_hash": ""
   },
   "api/audit_export.py": {
-    "mtime": 1782182882.3216898,
-    "ast_hash": "15d5107781efa4df628766ac7307381e",
+    "mtime": 1782183390.924154,
+    "ast_hash": "3abd0b625b23bdd36f6862b2fa8bd87d",
     "semantic_hash": ""
   },
   "tests/test_audit_export.py": {
-    "mtime": 1782182926.9348538,
-    "ast_hash": "dbd5a34c79bbaf0a92ec79841486806a",
+    "mtime": 1782183407.9484906,
+    "ast_hash": "14e7782255d22253edc020f7f8cad268",
     "semantic_hash": ""
   },
   "api/routes/issue_reports.py": {
@@ -3245,13 +3245,13 @@
     "semantic_hash": ""
   },
   "bot/handlers/issue_reports.py": {
-    "mtime": 1782181540.8919673,
-    "ast_hash": "803f2dcfeba541983b4be492f1f3475b",
+    "mtime": 1782183244.8528905,
+    "ast_hash": "cac4cf03a48e952985c63feaca600b64",
     "semantic_hash": ""
   },
   "bot/services/issue_report_drafts.py": {
-    "mtime": 1782181487.516022,
-    "ast_hash": "5999d691b8f37d911dcb8209dbce4b86",
+    "mtime": 1782183220.5364218,
+    "ast_hash": "6254d198e142266f0ddcdd1e917899cb",
     "semantic_hash": ""
   },
   "bot/services/issue_report_notify.py": {
@@ -3270,13 +3270,13 @@
     "semantic_hash": ""
   },
   "tests/test_issue_report_bot.py": {
-    "mtime": 1782181593.2005773,
-    "ast_hash": "04e7fc1f5efafd7250fbc875f40f5052",
+    "mtime": 1782183255.6272264,
+    "ast_hash": "2cd7fee59916ac7cd90892f34892ee88",
     "semantic_hash": ""
   },
   "docs/ISSUE_REPORTS_BOT.md": {
-    "mtime": 1782181610.5787122,
-    "ast_hash": "83d925226cf6cdcf98d4cc2b30e940e2",
+    "mtime": 1782183258.4119346,
+    "ast_hash": "736875afd4480545acada029c4b6d40d",
     "semantic_hash": ""
   },
   "tests/test_mtproto_disconnect_notify.py": {

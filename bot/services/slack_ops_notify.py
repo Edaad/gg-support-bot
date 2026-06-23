@@ -331,3 +331,74 @@ async def notify_slack_issue_report(
         "slack_ops: skipped issue_report (set SLACK_OPS_BOT_TOKEN+SLACK_OPS_CHANNEL_ID or SLACK_OPS_WEBHOOK_URL)",
     )
     return False, None, slack_file_ids
+
+
+async def notify_slack_issue_report_thread(
+    text: str,
+    *,
+    thread_ts: str,
+    tags: list[str] | None = None,
+    file_bytes: list[tuple[str, bytes, str]] | None = None,
+) -> bool:
+    """Post a reply in an existing issue-report Slack thread. Never raises."""
+
+    tag_mentions = _collect_tag_mentions(tags or [])
+    prefix = tag_mentions or ""
+
+    from bot.services.slack_ops_format import beautify_slack_body
+
+    body = beautify_slack_body((text or "").strip(), source="issue_report")
+    message = f"{prefix} {body}".strip() if prefix else body
+    if len(message) > _MAX_SLACK_TEXT_LEN:
+        message = message[: _MAX_SLACK_TEXT_LEN - 1] + "…"
+
+    token = _slack_bot_token()
+    channel = _slack_channel_id()
+    if not token or not channel:
+        logger.warning("slack_ops: skipped issue_report thread (no bot token/channel)")
+        return False
+
+    files = file_bytes or []
+    try:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SEC) as client:
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=utf-8",
+            }
+            payload = {
+                "channel": channel,
+                "text": message,
+                "thread_ts": thread_ts,
+                "unfurl_links": False,
+            }
+            resp = await client.post(
+                SLACK_CHAT_POST_MESSAGE_URL,
+                headers=headers,
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if not data.get("ok"):
+                logger.warning(
+                    "slack_ops: issue_report thread reply failed error=%s",
+                    data.get("error"),
+                )
+                return False
+
+            for filename, content, content_type in files:
+                await _upload_slack_file(
+                    client,
+                    token=token,
+                    channel=channel,
+                    filename=filename,
+                    content=content,
+                    content_type=content_type,
+                    thread_ts=thread_ts,
+                )
+            return True
+    except Exception:
+        logger.warning(
+            "slack_ops: issue_report thread reply request failed",
+            exc_info=True,
+        )
+        return False

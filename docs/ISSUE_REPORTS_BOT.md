@@ -28,7 +28,7 @@ Or DM the bot directly: **`/report`**
 | `/reports` | List open reports |
 | `/reports resolved` | List recently resolved |
 | `/reports 42` | Detail + buttons (Resolve, Edit, Add evidence) |
-| `/reports 42 resolve` | Resolve report #42 |
+| `/reports 42 resolve` | Start resolve flow — solution text + optional screenshots |
 
 ## Slack routing
 
@@ -47,7 +47,10 @@ Set `ISSUE_REPORT_TAG_MENTIONS` JSON for audience mentions:
 ```bash
 DATABASE_URL=... python migrate_issue_reports_v2.py
 DATABASE_URL=... python migrate_issue_report_drafts.py
+DATABASE_URL=... python migrate_issue_reports_resolve.py
 ```
+
+Open tickets get a **Slack reminder every 2 hours** until resolved (thread reply when possible).
 
 ## Code
 

@@ -1447,6 +1447,8 @@ class IssueReport(Base):
     group_title = Column(String(512), nullable=True)
     telegram_chat_id = Column(BigInteger, nullable=True)
     slack_message_ts = Column(String(64), nullable=True)
+    resolution_notes = Column(Text, nullable=True)
+    last_slack_reminder_at = Column(DateTime(timezone=True), nullable=True)
     resolved_at = Column(DateTime(timezone=True), nullable=True)
     resolved_by_telegram_user_id = Column(BigInteger, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -1478,6 +1480,7 @@ class IssueReportAttachment(Base):
     filename = Column(String(255), nullable=False)
     content_type = Column(String(128), nullable=False)
     content = Column(LargeBinary, nullable=False)
+    attachment_type = Column(String(32), nullable=False, server_default="evidence")
     slack_file_id = Column(String(64), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
