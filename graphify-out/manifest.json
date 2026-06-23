@@ -850,8 +850,8 @@
     "semantic_hash": ""
   },
   "api/routes/payments.py": {
-    "mtime": 1782176394.000903,
-    "ast_hash": "d4eaffe2c76650589b2e591a6861c5c9",
+    "mtime": 1782183397.2203336,
+    "ast_hash": "c0a9b68f811439e939ad47b832519ef0",
     "semantic_hash": ""
   },
   "api/routes/simulate.py": {
@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1782181629.3818843,
-    "ast_hash": "1b06ded89d142985fd069172367da0fc",
+    "mtime": 1782181907.538467,
+    "ast_hash": "83e4efc00e58b59b0fc73cf9b77d9db5",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2905,8 +2905,8 @@
     "semantic_hash": ""
   },
   "bot/services/deploy_notify.py": {
-    "mtime": 1781272712.4828281,
-    "ast_hash": "08dff9c298e2577730cacdae41290a3e",
+    "mtime": 1782181906.9407961,
+    "ast_hash": "9a89e830439d1049349d1a94e96a8104",
     "semantic_hash": ""
   },
   "migrate_deploy_notify_state.py": {
@@ -3030,13 +3030,13 @@
     "semantic_hash": ""
   },
   "api/audit_export.py": {
-    "mtime": 1782176391.5377953,
-    "ast_hash": "000a25617f723a7936604039470ebd31",
+    "mtime": 1782183390.924154,
+    "ast_hash": "3abd0b625b23bdd36f6862b2fa8bd87d",
     "semantic_hash": ""
   },
   "tests/test_audit_export.py": {
-    "mtime": 1782176412.084805,
-    "ast_hash": "659a4663edcc21be76ef28e7e0a2d814",
+    "mtime": 1782183407.9484906,
+    "ast_hash": "14e7782255d22253edc020f7f8cad268",
     "semantic_hash": ""
   },
   "api/routes/issue_reports.py": {
@@ -3245,13 +3245,13 @@
     "semantic_hash": ""
   },
   "bot/handlers/issue_reports.py": {
-    "mtime": 1782181540.8919673,
-    "ast_hash": "803f2dcfeba541983b4be492f1f3475b",
+    "mtime": 1782183244.8528905,
+    "ast_hash": "cac4cf03a48e952985c63feaca600b64",
     "semantic_hash": ""
   },
   "bot/services/issue_report_drafts.py": {
-    "mtime": 1782181487.516022,
-    "ast_hash": "5999d691b8f37d911dcb8209dbce4b86",
+    "mtime": 1782183220.5364218,
+    "ast_hash": "6254d198e142266f0ddcdd1e917899cb",
     "semantic_hash": ""
   },
   "bot/services/issue_report_notify.py": {
@@ -3270,13 +3270,13 @@
     "semantic_hash": ""
   },
   "tests/test_issue_report_bot.py": {
-    "mtime": 1782181593.2005773,
-    "ast_hash": "04e7fc1f5efafd7250fbc875f40f5052",
+    "mtime": 1782183255.6272264,
+    "ast_hash": "2cd7fee59916ac7cd90892f34892ee88",
     "semantic_hash": ""
   },
   "docs/ISSUE_REPORTS_BOT.md": {
-    "mtime": 1782181610.5787122,
-    "ast_hash": "83d925226cf6cdcf98d4cc2b30e940e2",
+    "mtime": 1782183258.4119346,
+    "ast_hash": "736875afd4480545acada029c4b6d40d",
     "semantic_hash": ""
   },
   "tests/test_mtproto_disconnect_notify.py": {

@@ -37,7 +37,7 @@ from db.models import (
 )
 
 STRIPE_LAYOUT = ["Amount", "Player", "Time"]
-MANUAL_LAYOUT = ["Amount", "Name", "Club", "Time"]
+MANUAL_LAYOUT = ["Amount", "Name", "Group", "Club", "Time"]
 
 SheetLayout = Literal["stripe", "manual"]
 
@@ -47,7 +47,7 @@ _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _CURRENCY_FORMAT = "$#,##0.00"
 _COLUMN_WIDTHS: dict[SheetLayout, list[float]] = {
     "stripe": [14, 40, 28],
-    "manual": [14, 28, 18, 28],
+    "manual": [14, 28, 40, 18, 28],
 }
 
 
@@ -81,6 +81,7 @@ class StripeAuditRow:
 class ManualAuditRow:
     amount_usd: float
     payer_name: str
+    group_title: str
     club_label: str
     time_label: str
 
@@ -107,6 +108,23 @@ def eastern_day_bounds_utc(date_str: str) -> tuple[datetime, datetime]:
         tzinfo=_EASTERN,
     ) - timedelta(microseconds=1)
     return start_et.astimezone(timezone.utc), end_et.astimezone(timezone.utc)
+
+
+def eastern_audit_end_utc(date_str: str) -> datetime:
+    """UTC end of audit window for one Eastern calendar day + first hour of next day."""
+    raw = date_str.strip()[:10]
+    local_date = datetime.strptime(raw, "%Y-%m-%d").date()
+    next_day = local_date + timedelta(days=1)
+    end_et = datetime(
+        next_day.year,
+        next_day.month,
+        next_day.day,
+        1,
+        0,
+        0,
+        tzinfo=_EASTERN,
+    ) - timedelta(microseconds=1)
+    return end_et.astimezone(timezone.utc)
 
 
 def _to_eastern(dt: datetime) -> datetime:
@@ -178,8 +196,32 @@ def _stripe_player_cell(
     return " / ".join(parts)
 
 
-def _manual_club_cell(data: dict, club_key: str) -> str:
-    return str(data.get(club_key) or "").strip()
+def _manual_group_cell(data: dict) -> str:
+    return str(data.get("group_title") or "").strip()
+
+
+def _manual_club_name(data: dict, club_names: dict[int, str]) -> str:
+    club_id = data.get("club_id")
+    if club_id is not None:
+        name = club_names.get(int(club_id), "")
+        if name:
+            return name
+
+    title = str(data.get("group_title") or "").strip()
+    if not title:
+        return ""
+
+    from bot.services.player_details import parse_group_title_parts
+
+    parsed = parse_group_title_parts(title)
+    if not parsed:
+        return ""
+
+    for token in sorted(parsed.shorthands):
+        full_name = CLUB_SHORTHAND_TO_NAME.get(token)
+        if full_name:
+            return full_name
+    return ""
 
 
 def _club_name_map(session: Session) -> dict[int, str]:
@@ -251,7 +293,15 @@ def _write_formatted_sheet(
     else:
         rows = manual_rows or []
         for row_idx, row in enumerate(rows, start=data_row_start):
-            ws.append([row.amount_usd, row.payer_name, row.club_label, row.time_label])
+            ws.append(
+                [
+                    row.amount_usd,
+                    row.payer_name,
+                    row.group_title,
+                    row.club_label,
+                    row.time_label,
+                ]
+            )
             amount_cell = ws.cell(row=row_idx, column=1)
             amount_cell.number_format = _CURRENCY_FORMAT
             amount_cell.alignment = Alignment(horizontal="right")
@@ -274,33 +324,33 @@ def build_audit_workbook(session: Session, from_dt: datetime, to_dt: datetime) -
         session,
         ZellePayment,
         build_zelle_payment_read,
+        club_names,
         from_dt,
         to_dt,
-        lambda data: _manual_row(data, "zelle_recipient"),
     )
     venmo_rows = _fetch_manual_rows(
         session,
         VenmoPayment,
         build_venmo_payment_read,
+        club_names,
         from_dt,
         to_dt,
-        lambda data: _manual_row(data, "venmo_handle"),
     )
     cashapp_rows = _fetch_manual_rows(
         session,
         CashAppPayment,
         build_cashapp_payment_read,
+        club_names,
         from_dt,
         to_dt,
-        lambda data: _manual_row(data, "cashapp_handle"),
     )
     paypal_rows = _fetch_manual_rows(
         session,
         PayPalPayment,
         build_paypal_payment_read,
+        club_names,
         from_dt,
         to_dt,
-        lambda data: _manual_row(data, "paypal_email"),
     )
 
     sheet_rows: list[list[StripeAuditRow] | list[ManualAuditRow]] = [
@@ -382,9 +432,9 @@ def _fetch_manual_rows(
     session: Session,
     payment_cls,
     build_read: Callable,
+    club_names: dict[int, str],
     from_dt: datetime,
     to_dt: datetime,
-    to_row: Callable[[dict], ManualAuditRow],
 ) -> list[ManualAuditRow]:
     query = _apply_audit_manual_filters(
         session,
@@ -394,10 +444,10 @@ def _fetch_manual_rows(
         to_dt=to_dt,
     )
     rows = query.order_by(payment_cls.created_at.desc(), payment_cls.id.desc()).all()
-    return [to_row(build_read(session, row)) for row in rows]
+    return [_manual_row(build_read(session, row), club_names) for row in rows]
 
 
-def _manual_row(data: dict, club_key: str) -> ManualAuditRow:
+def _manual_row(data: dict, club_names: dict[int, str]) -> ManualAuditRow:
     amount = data["amount_usd"]
     if isinstance(amount, Decimal):
         amount_usd = float(amount)
@@ -406,6 +456,7 @@ def _manual_row(data: dict, club_key: str) -> ManualAuditRow:
     return ManualAuditRow(
         amount_usd=amount_usd,
         payer_name=str(data["payer_name"]),
-        club_label=_manual_club_cell(data, club_key),
+        group_title=_manual_group_cell(data),
+        club_label=_manual_club_name(data, club_names),
         time_label=_fmt_manual_audit_time(data["created_at"]),
     )

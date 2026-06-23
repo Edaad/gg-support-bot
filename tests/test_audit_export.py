@@ -20,9 +20,12 @@ from api.audit_export import (
     StripeAuditRow,
     _fmt_manual_audit_time,
     _fmt_stripe_audit_time,
-    _manual_club_cell,
+    _manual_club_name,
+    _manual_group_cell,
+    _manual_row,
     _stripe_player_cell,
     build_audit_workbook,
+    eastern_audit_end_utc,
     eastern_day_bounds_utc,
 )
 from api.payments_helpers import build_crypto_payment_read
@@ -65,6 +68,14 @@ class AuditExportFormattingTestCase(unittest.TestCase):
         self.assertEqual(start, datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc))
         self.assertEqual(end, datetime(2026, 6, 20, 3, 59, 59, 999999, tzinfo=timezone.utc))
 
+    def test_eastern_audit_end_utc_edt(self):
+        end = eastern_audit_end_utc("2026-06-21")
+        self.assertEqual(end, datetime(2026, 6, 22, 4, 59, 59, 999999, tzinfo=timezone.utc))
+
+    def test_eastern_audit_end_utc_est(self):
+        end = eastern_audit_end_utc("2026-01-15")
+        self.assertEqual(end, datetime(2026, 1, 16, 5, 59, 59, 999999, tzinfo=timezone.utc))
+
     def test_fmt_stripe_audit_time_uses_ordinal_eastern(self):
         dt = datetime(2026, 6, 19, 4, 58, tzinfo=timezone.utc)
         self.assertEqual(_fmt_stripe_audit_time(dt), "Jun 19th 2026, 12:58 AM")
@@ -95,11 +106,61 @@ class AuditExportFormattingTestCase(unittest.TestCase):
             "GTO / 3011-9668 / Pvtenis",
         )
 
-    def test_manual_club_cell_reads_provider_label(self):
+    def test_manual_group_cell_returns_bound_group_title(self):
         self.assertEqual(
-            _manual_club_cell({"zelle_recipient": "RT/AT/CC"}, "zelle_recipient"),
-            "RT/AT/CC",
+            _manual_group_cell({"group_title": "GTO / 3011-9668 / Pvtenis"}),
+            "GTO / 3011-9668 / Pvtenis",
         )
+
+    def test_manual_group_cell_empty_when_unbound(self):
+        self.assertEqual(_manual_group_cell({}), "")
+        self.assertEqual(_manual_group_cell({"group_title": None}), "")
+
+    def test_manual_club_name_from_club_id(self):
+        club_names = {1: "ClubGTO"}
+        self.assertEqual(
+            _manual_club_name(
+                {
+                    "club_id": 1,
+                    "group_title": "GTO / 3011-9668 / Pvtenis",
+                },
+                club_names,
+            ),
+            "ClubGTO",
+        )
+
+    def test_manual_club_name_falls_back_to_title_parsing(self):
+        self.assertEqual(
+            _manual_club_name(
+                {"group_title": "GTO / 8190-5287 / ThePirate343"},
+                {},
+            ),
+            "ClubGTO",
+        )
+
+    def test_manual_club_name_empty_when_unbound(self):
+        self.assertEqual(
+            _manual_club_name({"zelle_recipient": "clubgto1234@gmail.com"}, {}),
+            "",
+        )
+
+    def test_manual_row_includes_group_and_club(self):
+        created = datetime(2026, 6, 22, 1, 51, tzinfo=timezone.utc)
+        row = _manual_row(
+            {
+                "amount_usd": Decimal("100.00"),
+                "payer_name": "Jackson Taylor",
+                "group_title": "RT / 6485-8168 / Angus Mcgoon",
+                "club_id": 2,
+                "created_at": created,
+            },
+            {2: "Round Table"},
+        )
+        self.assertEqual(row.amount_usd, 100.0)
+        self.assertEqual(row.payer_name, "Jackson Taylor")
+        self.assertEqual(row.group_title, "RT / 6485-8168 / Angus Mcgoon")
+        self.assertEqual(row.club_label, "Round Table")
+        self.assertEqual(row.time_label, _fmt_manual_audit_time(created))
 
 
 class AuditExportWorkbookTestCase(unittest.TestCase):
@@ -179,6 +240,50 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         zelle_ws = wb["Zelle"]
         self.assertEqual(zelle_ws.max_row, 1)
 
+    @patch("api.audit_export._fetch_stripe_rows", return_value=[])
+    @patch("api.audit_export._club_name_map", return_value={})
+    def test_build_audit_workbook_writes_manual_group_and_club_columns(
+        self,
+        _club_map,
+        _stripe,
+    ):
+        manual_rows = [
+            ManualAuditRow(
+                amount_usd=199.99,
+                payer_name="MR ROHIT KOTHLAPURAM",
+                group_title="GTO / 3011-9668 / Pvtenis",
+                club_label="ClubGTO",
+                time_label="June 21, 2026 at 11:57 PM",
+            )
+        ]
+
+        def manual_side_effect(session, payment_cls, build_read, club_names, from_dt, to_dt):
+            if payment_cls.__name__ == "ZellePayment":
+                return manual_rows
+            return []
+
+        with patch(
+            "api.audit_export._fetch_manual_rows",
+            side_effect=manual_side_effect,
+        ):
+            content = build_audit_workbook(
+                MagicMock(),
+                datetime(2026, 6, 21, 4, 0, tzinfo=timezone.utc),
+                datetime(2026, 6, 22, 3, 59, 59, 999999, tzinfo=timezone.utc),
+            )
+
+        wb = load_workbook(io.BytesIO(content))
+        zelle_ws = wb["Zelle"]
+        self.assertEqual(
+            [cell.value for cell in zelle_ws[1]],
+            ["Amount", "Name", "Group", "Club", "Time"],
+        )
+        self.assertEqual(zelle_ws["A2"].value, 199.99)
+        self.assertEqual(zelle_ws["B2"].value, "MR ROHIT KOTHLAPURAM")
+        self.assertEqual(zelle_ws["C2"].value, "GTO / 3011-9668 / Pvtenis")
+        self.assertEqual(zelle_ws["D2"].value, "ClubGTO")
+        self.assertEqual(zelle_ws["E2"].value, "June 21, 2026 at 11:57 PM")
+
 
 class AuditExportApiTestCase(unittest.TestCase):
     def setUp(self):
@@ -244,7 +349,7 @@ class AuditExportApiTestCase(unittest.TestCase):
         mock_build.assert_called_once()
         _, from_dt, to_dt = mock_build.call_args[0]
         self.assertEqual(from_dt, datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc))
-        self.assertEqual(to_dt, datetime(2026, 6, 20, 3, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(to_dt, datetime(2026, 6, 20, 4, 59, 59, 999999, tzinfo=timezone.utc))
 
 
 if __name__ == "__main__":

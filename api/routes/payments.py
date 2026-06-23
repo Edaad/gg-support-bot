@@ -12,7 +12,7 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from api.auth import get_current_admin
-from api.audit_export import build_audit_workbook, eastern_day_bounds_utc
+from api.audit_export import build_audit_workbook, eastern_audit_end_utc, eastern_day_bounds_utc
 from api.payments_helpers import (
     apply_analytics_chat_exclusion,
     apply_customer_search,
@@ -256,7 +256,7 @@ def audit_export(
         raise HTTPException(400, "Both from and to dates are required.")
     try:
         parsed_from, _ = eastern_day_bounds_utc(from_dt)
-        _, parsed_to = eastern_day_bounds_utc(to_dt)
+        parsed_to = eastern_audit_end_utc(to_dt)
     except ValueError as e:
         raise HTTPException(400, f"Invalid date: {e}") from e
     if parsed_from > parsed_to:

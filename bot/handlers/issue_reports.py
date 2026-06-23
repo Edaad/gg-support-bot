@@ -95,18 +95,6 @@ def _cleanup_report_flow(context: ContextTypes.DEFAULT_TYPE) -> None:
         context.user_data.pop(key, None)
 
 
-def sync_report_conv_state(
-    conversation: ConversationHandler,
-    update: Update,
-    new_state: int | None,
-) -> None:
-    key = conversation._get_key(update)
-    if new_state is None or new_state == ConversationHandler.END:
-        conversation._conversations.pop(key, None)
-    else:
-        conversation._conversations[key] = new_state
-
-
 async def _reply_long(message, text: str) -> None:
     chunk = 4096
     for i in range(0, len(text), chunk):
@@ -212,7 +200,7 @@ async def _report_group_stub(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
     except Exception:
         logger.warning(
-            "issue_report: could not delete /report command chat_id=%s message_id=%s",
+            "issue_report: could not delete /escalate command chat_id=%s message_id=%s",
             chat.id,
             update.message.message_id,
             exc_info=True,
@@ -258,23 +246,34 @@ async def _begin_dm_report_flow(update: Update, context: ContextTypes.DEFAULT_TY
     return IR_CATEGORY
 
 
+async def escalate_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Silent group kickoff — staff sends /escalate in a support group."""
+    if not update.message or not update.effective_user or not update.effective_chat:
+        return
+
+    chat = update.effective_chat
+    if chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+        return
+
+    if not _can_use_issue_reports(update.effective_user.id):
+        return
+
+    await _report_group_stub(update, context)
+
+
 async def report_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """DM-only wizard entry — staff sends /report to GG Support."""
     if not update.message or not update.effective_user or not update.effective_chat:
         return ConversationHandler.END
 
     user_id = update.effective_user.id
     chat = update.effective_chat
 
-    if not _can_use_issue_reports(user_id):
-        if chat.type == ChatType.PRIVATE:
-            await update.message.reply_text("You are not allowed to file issue reports.")
-        return ConversationHandler.END
-
-    if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
-        await _report_group_stub(update, context)
-        return ConversationHandler.END
-
     if chat.type != ChatType.PRIVATE:
+        return ConversationHandler.END
+
+    if not _can_use_issue_reports(user_id):
+        await update.message.reply_text("You are not allowed to file issue reports.")
         return ConversationHandler.END
 
     _cleanup_report_flow(context)
@@ -285,6 +284,7 @@ async def draft_continue_entry(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     if not query or not query.data or not update.effective_user:
         return ConversationHandler.END
+
     await query.answer()
 
     try:
@@ -293,13 +293,36 @@ async def draft_continue_entry(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text("Invalid draft. Send /report to start again.")
         return ConversationHandler.END
 
-    with get_db() as session:
-        draft = get_pending_draft(
-            session,
+    logger.info(
+        "issue_report: continue draft_id=%s user_id=%s",
+        draft_id,
+        update.effective_user.id,
+    )
+
+    try:
+        with get_db() as session:
+            draft = get_pending_draft(
+                session,
+                draft_id,
+                staff_telegram_user_id=update.effective_user.id,
+            )
+    except Exception:
+        logger.exception(
+            "issue_report: draft lookup failed draft_id=%s user_id=%s",
             draft_id,
-            staff_telegram_user_id=update.effective_user.id,
+            update.effective_user.id,
         )
+        await query.edit_message_text(
+            "Could not load report draft. Send /report to start again."
+        )
+        return ConversationHandler.END
+
     if not draft:
+        logger.warning(
+            "issue_report: draft missing or expired draft_id=%s user_id=%s",
+            draft_id,
+            update.effective_user.id,
+        )
         await query.edit_message_text("Report draft expired. Send /report to start again.")
         return ConversationHandler.END
 
@@ -309,10 +332,22 @@ async def draft_continue_entry(update: Update, context: ContextTypes.DEFAULT_TYP
     _load_draft_into_user_data(context, draft)
 
     intro = _group_context_line(context)
-    await query.edit_message_text(
-        f"{intro}Select category:",
-        reply_markup=_category_keyboard(),
-    )
+    try:
+        await query.edit_message_text(
+            f"{intro}Select category:",
+            reply_markup=_category_keyboard(),
+        )
+    except Exception:
+        logger.exception(
+            "issue_report: edit_message failed draft_id=%s user_id=%s",
+            draft_id,
+            update.effective_user.id,
+        )
+        await context.bot.send_message(
+            chat_id=update.effective_user.id,
+            text=f"{intro}Select category:",
+            reply_markup=_category_keyboard(),
+        )
     return IR_CATEGORY
 
 
@@ -807,7 +842,10 @@ _REPORT_CANCEL_CB = CallbackQueryHandler(report_cancel, pattern=r"^ir_cancel$")
 
 def get_report_conversation_handler() -> ConversationHandler:
     return ConversationHandler(
-        entry_points=[CommandHandler("report", report_entry)],
+        entry_points=[
+            CommandHandler("report", report_entry, filters=filters.ChatType.PRIVATE),
+            CallbackQueryHandler(draft_continue_entry, pattern=r"^ir_draft:\d+$"),
+        ],
         states={
             IR_CATEGORY: [
                 CallbackQueryHandler(category_chosen, pattern=r"^ir_cat:"),
@@ -853,20 +891,12 @@ def get_report_conversation_handler() -> ConversationHandler:
 
 
 def register_issue_report_handlers(app) -> None:
-    """Register draft callbacks, wizard, triage, and follow-up handlers."""
-    conv = get_report_conversation_handler()
-
-    async def on_draft_continue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        result = await draft_continue_entry(update, context)
-        sync_report_conv_state(conv, update, result)
-
-    async def on_draft_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        result = await draft_cancel_callback(update, context)
-        sync_report_conv_state(conv, update, result)
-
-    app.add_handler(CallbackQueryHandler(on_draft_continue, pattern=r"^ir_draft:\d+$"))
-    app.add_handler(CallbackQueryHandler(on_draft_cancel, pattern=r"^ir_draft_cancel:\d+$"))
-    app.add_handler(conv)
+    """Register escalate, draft cancel, wizard, triage, and follow-up handlers."""
+    app.add_handler(CommandHandler("escalate", escalate_entry))
+    app.add_handler(
+        CallbackQueryHandler(draft_cancel_callback, pattern=r"^ir_draft_cancel:\d+$")
+    )
+    app.add_handler(get_report_conversation_handler())
     app.add_handler(CommandHandler("reports", reports_handler))
     app.add_handler(CallbackQueryHandler(triage_callback, pattern=r"^ir_triage:"))
     app.add_handler(

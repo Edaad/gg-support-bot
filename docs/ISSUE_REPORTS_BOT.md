@@ -4,7 +4,7 @@ Staff-only bot commands for centralized issue reporting. Reports go to Postgres 
 
 ## Create a report
 
-1. In a support group, send **`/report`** (silent — command deleted, no group reply)
+1. In a support group, send **`/escalate`** (silent — command deleted, no group reply)
 2. Open **DM with GG Support** → tap **Continue report**
 3. Wizard: **Category** → **Notify** (who to ping) → **Title** → **Details** → **Evidence** (optional) → **Submit**
 

@@ -1,4 +1,4 @@
-"""Pending issue report drafts (group /report → DM wizard)."""
+"""Pending issue report drafts (group /escalate → DM wizard)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,12 @@ from sqlalchemy.orm import Session
 from db.models import IssueReportDraft
 
 DRAFT_TTL_MINUTES = 30
+
+
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def create_draft(
@@ -37,32 +43,40 @@ def get_pending_draft(
     session: Session, draft_id: int, *, staff_telegram_user_id: int
 ) -> IssueReportDraft | None:
     now = datetime.now(timezone.utc)
-    return (
+    draft = (
         session.query(IssueReportDraft)
         .filter(
             IssueReportDraft.id == draft_id,
             IssueReportDraft.staff_telegram_user_id == staff_telegram_user_id,
             IssueReportDraft.status == "pending",
-            IssueReportDraft.expires_at > now,
         )
         .first()
     )
+    if draft is None:
+        return None
+    if _as_utc(draft.expires_at) <= now:
+        return None
+    return draft
 
 
 def get_latest_pending_draft(
     session: Session, *, staff_telegram_user_id: int
 ) -> IssueReportDraft | None:
     now = datetime.now(timezone.utc)
-    return (
+    drafts = (
         session.query(IssueReportDraft)
         .filter(
             IssueReportDraft.staff_telegram_user_id == staff_telegram_user_id,
             IssueReportDraft.status == "pending",
-            IssueReportDraft.expires_at > now,
         )
         .order_by(IssueReportDraft.created_at.desc())
-        .first()
+        .limit(5)
+        .all()
     )
+    for draft in drafts:
+        if _as_utc(draft.expires_at) > now:
+            return draft
+    return None
 
 
 def mark_draft_submitted(session: Session, draft_id: int) -> None:

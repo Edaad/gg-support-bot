@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from telegram import Chat, Message, Update, User
 from telegram.constants import ChatType
 
-from bot.handlers.issue_reports import _report_group_stub, report_entry
+from bot.handlers.issue_reports import _report_group_stub, escalate_entry, report_entry
 
 
 def _group_update(user_id: int = 100, chat_id: int = -123) -> Update:
@@ -19,7 +19,7 @@ def _group_update(user_id: int = 100, chat_id: int = -123) -> Update:
         date=None,
         chat=chat,
         from_user=user,
-        text="/report",
+        text="/escalate",
     )
     update = Update(update_id=1, message=message)
     update._effective_user = user
@@ -67,17 +67,42 @@ class TestReportGroupStub(unittest.IsolatedAsyncioTestCase):
         context.bot.delete_message.assert_not_awaited()
 
 
-class TestReportEntry(unittest.IsolatedAsyncioTestCase):
+class TestEscalateEntry(unittest.IsolatedAsyncioTestCase):
     @patch("bot.handlers.issue_reports._report_group_stub", new_callable=AsyncMock)
     @patch("bot.handlers.issue_reports._can_use_issue_reports", return_value=True)
     async def test_group_delegates_to_stub(self, _can, mock_stub) -> None:
+        update = _group_update()
+        context = MagicMock()
+        await escalate_entry(update, context)
+        mock_stub.assert_awaited_once()
+
+
+class TestReportEntry(unittest.IsolatedAsyncioTestCase):
+    @patch("bot.handlers.issue_reports._begin_dm_report_flow", new_callable=AsyncMock, return_value=0)
+    @patch("bot.handlers.issue_reports._can_use_issue_reports", return_value=True)
+    async def test_dm_starts_wizard(self, _can, mock_begin) -> None:
+        from telegram.ext import ConversationHandler
+
+        user = User(id=100, is_bot=False, first_name="AM")
+        chat = Chat(id=100, type=ChatType.PRIVATE)
+        message = Message(message_id=1, date=None, chat=chat, from_user=user, text="/report")
+        update = Update(update_id=1, message=message)
+        update._effective_user = user
+        update._effective_chat = chat
+        context = MagicMock()
+        result = await report_entry(update, context)
+        self.assertEqual(result, 0)
+        mock_begin.assert_awaited_once()
+
+    @patch("bot.handlers.issue_reports._report_group_stub", new_callable=AsyncMock)
+    async def test_group_ignored(self, mock_stub) -> None:
         from telegram.ext import ConversationHandler
 
         update = _group_update()
         context = MagicMock()
         result = await report_entry(update, context)
         self.assertEqual(result, ConversationHandler.END)
-        mock_stub.assert_awaited_once()
+        mock_stub.assert_not_awaited()
 
 
 if __name__ == "__main__":
