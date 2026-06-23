@@ -850,8 +850,8 @@
     "semantic_hash": ""
   },
   "api/routes/payments.py": {
-    "mtime": 1781882368.2686634,
-    "ast_hash": "9e264670e8524ce46869a0f8f8621a43",
+    "mtime": 1782176394.000903,
+    "ast_hash": "d4eaffe2c76650589b2e591a6861c5c9",
     "semantic_hash": ""
   },
   "api/routes/simulate.py": {
@@ -1315,8 +1315,8 @@
     "semantic_hash": ""
   },
   "dashboard/src/api/paymentsClient.ts": {
-    "mtime": 1781882387.7732844,
-    "ast_hash": "46c5a9bdcad3b6c2ea1d03f9e59e2da5",
+    "mtime": 1782176395.1372986,
+    "ast_hash": "5a4b53efe069152f93bb54fef45b7fc9",
     "semantic_hash": ""
   },
   "dashboard/src/api/v2Client.ts": {
@@ -1465,8 +1465,8 @@
     "semantic_hash": "4a6da6727d0bd80a7e20d65c09e3ffde"
   },
   "dashboard/src/pages/Payments.tsx": {
-    "mtime": 1781974793.09768,
-    "ast_hash": "631a06b6df5e046de2218122bd07f48d",
+    "mtime": 1782176397.0570412,
+    "ast_hash": "616ee6ee33c172d9a2cea57ce8a2f062",
     "semantic_hash": ""
   },
   "dashboard/src/pages/Settings.tsx": {
@@ -3030,13 +3030,13 @@
     "semantic_hash": ""
   },
   "api/audit_export.py": {
-    "mtime": 1781974767.4113002,
-    "ast_hash": "67ec0456517e22686d3a250ff93dfb82",
+    "mtime": 1782176391.5377953,
+    "ast_hash": "000a25617f723a7936604039470ebd31",
     "semantic_hash": ""
   },
   "tests/test_audit_export.py": {
-    "mtime": 1781974789.085173,
-    "ast_hash": "ebf6de4baf780a54bf0b028162859ae9",
+    "mtime": 1782176412.084805,
+    "ast_hash": "659a4663edcc21be76ef28e7e0a2d814",
     "semantic_hash": ""
   },
   "api/routes/issue_reports.py": {
@@ -3155,13 +3155,13 @@
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_join.py": {
-    "mtime": 1781985505.3115382,
-    "ast_hash": "a2b537c2c4c2b866512c5f95a2737f74",
+    "mtime": 1782176448.5764453,
+    "ast_hash": "22484a398882034beb1528808f441eb1",
     "semantic_hash": ""
   },
   "tests/test_elevate_gc.py": {
-    "mtime": 1781985520.1621497,
-    "ast_hash": "e28a651882d37b87ac919c08ff29f9e8",
+    "mtime": 1782176461.2889578,
+    "ast_hash": "b86dce2860369dafd1a9197b2a73cc58",
     "semantic_hash": ""
   },
   "scripts/bulk_delete_tracking_groups_from_csv.py": {
@@ -3232,6 +3232,16 @@
   "tests/test_migration_recovery_elevate.py": {
     "mtime": 1782070131.8437002,
     "ast_hash": "7a5e8551f2c93fef28532ab04e03e386",
+    "semantic_hash": ""
+  },
+  "scripts/audit_recovery_skipped.py": {
+    "mtime": 1782070499.9230578,
+    "ast_hash": "00c7879637afb8fed3f317bf5b1bb1a7",
+    "semantic_hash": ""
+  },
+  "scripts/reopen_recovery_skipped.py": {
+    "mtime": 1782070433.6811445,
+    "ast_hash": "6ed6d545d936e07a084558da4bfec797",
     "semantic_hash": ""
   }
 }

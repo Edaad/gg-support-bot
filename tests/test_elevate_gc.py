@@ -198,5 +198,58 @@ class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("@RoundTableSupport2", invite_markers)
 
 
+class TestRunLinkJoinAndPromote(unittest.IsolatedAsyncioTestCase):
+    @patch("bot.services.mtproto_group_join.promote_megagroup_admin", new_callable=AsyncMock)
+    @patch("bot.services.mtproto_group_join.join_chat_via_invite_link", new_callable=AsyncMock)
+    @patch("bot.services.mtproto_group_join.make_client")
+    @patch("bot.services.mtproto_group_join.get_mtproto_lock")
+    async def test_promote_uses_creator_channel_entity(
+        self,
+        mock_lock: MagicMock,
+        mock_make_client: MagicMock,
+        mock_join: AsyncMock,
+        mock_promote: AsyncMock,
+    ) -> None:
+        from bot.services.mtproto_group_join import run_link_join_and_promote
+
+        mock_lock.return_value.__aenter__ = AsyncMock(return_value=None)
+        mock_lock.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        creator_channel = MagicMock(name="creator_channel")
+        join_channel = MagicMock(name="join_channel")
+        mock_join.return_value = (join_channel, None)
+        mock_promote.return_value = (True, None)
+
+        join_client = MagicMock()
+        join_client.is_connected = MagicMock(return_value=True)
+        join_client.is_user_authorized = AsyncMock(return_value=True)
+
+        promote_client = MagicMock()
+        promote_client.connect = AsyncMock()
+        promote_client.disconnect = AsyncMock()
+        promote_client.is_user_authorized = AsyncMock(return_value=True)
+        mock_make_client.return_value = promote_client
+
+        creator_cfg = MagicMock(club_key="elevate_admin")
+        link_join_cfg = MagicMock(club_key="round_table")
+
+        lj, prom, fail = await run_link_join_and_promote(
+            creator_cfg,
+            channel_entity=creator_channel,
+            invite_link="https://t.me/+TestHash",
+            promote_marker="@RoundTableSupport2",
+            link_join_cfg=link_join_cfg,
+            link_join_client=join_client,
+        )
+
+        self.assertEqual(lj, [{"user": "@RoundTableSupport2", "kind": "link_join"}])
+        self.assertEqual(prom, [{"user": "@RoundTableSupport2", "kind": "admin"}])
+        self.assertEqual(fail, [])
+        mock_promote.assert_awaited_once()
+        promote_args = mock_promote.await_args
+        self.assertIs(promote_args.args[1], creator_channel)
+        self.assertIsNot(promote_args.args[1], join_channel)
+
+
 if __name__ == "__main__":
     unittest.main()

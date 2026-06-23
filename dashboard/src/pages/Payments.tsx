@@ -747,7 +747,7 @@ export default function Payments({ token }: { token: string }) {
         <p className="mb-4 text-sm text-ink-muted">
           Download receipt-style deposit transactions across every club for a date range. One XLSX
           file with tabs for Stripe, Zelle, venmo, cashapp, PayPal, plus blank bonus and early
-          rakeback sheets for manual entry.
+          rakeback sheets for manual entry. Dates use US Eastern (ET).
         </p>
         <div className="flex flex-wrap items-end gap-3">
           <div>

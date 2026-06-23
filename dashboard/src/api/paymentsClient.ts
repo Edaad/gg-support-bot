@@ -965,8 +965,8 @@ export async function downloadAuditExport(
   to: string,
 ): Promise<void> {
   const q = new URLSearchParams()
-  q.set('from', `${from}T00:00:00Z`)
-  q.set('to', `${to}T23:59:59Z`)
+  q.set('from', from)
+  q.set('to', to)
 
   const res = await fetch(apiUrl(`${BASE}/audit-export?${q}`), {
     headers: { Authorization: `Bearer ${token}` },

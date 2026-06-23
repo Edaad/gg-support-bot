@@ -1280,8 +1280,8 @@
     "semantic_hash": ""
   },
   "club_gc_settings.py": {
-    "mtime": 1782069723.1960504,
-    "ast_hash": "31dbb749587af9bef624e8c783649463",
+    "mtime": 1782070021.9183185,
+    "ast_hash": "c5a50fe46c11f44a77ee530bff67304b",
     "semantic_hash": ""
   },
   "config.py": {
@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1782069747.3902898,
-    "ast_hash": "c1758b52511b8f0262e54c2a1a5272d9",
+    "mtime": 1782070112.688404,
+    "ast_hash": "266a0d704d73ebae0227701c69752b3f",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2735,13 +2735,13 @@
     "semantic_hash": ""
   },
   "bot/services/migration_group_readd.py": {
-    "mtime": 1781747094.0879407,
-    "ast_hash": "58788687127a6c5dfd21ffe020569d14",
+    "mtime": 1782070028.2086582,
+    "ast_hash": "27808719655a1bc06d518825ba9f11ab",
     "semantic_hash": ""
   },
   "bot/services/migration_recovery.py": {
-    "mtime": 1782069749.6420925,
-    "ast_hash": "99b57483e01ab464acc67bd1a66fc661",
+    "mtime": 1782070063.2360938,
+    "ast_hash": "5a7b2eabeab541cda262eeeb89f3b947",
     "semantic_hash": ""
   },
   "migrate_migrated_group_recovery.py": {
@@ -2750,8 +2750,8 @@
     "semantic_hash": ""
   },
   "scripts/seed_migrated_group_recovery.py": {
-    "mtime": 1782069745.7197993,
-    "ast_hash": "99d3660224371f803337f630b8d48f87",
+    "mtime": 1782070087.277183,
+    "ast_hash": "e689b46a617f105601d431c5d8610303",
     "semantic_hash": ""
   },
   "tests/test_migration_recovery.py": {
@@ -2780,8 +2780,8 @@
     "semantic_hash": ""
   },
   "scripts/run_migration_recovery_one.py": {
-    "mtime": 1781746386.375394,
-    "ast_hash": "f1aa6afc2fc64361767db33ace1c2e3b",
+    "mtime": 1782070085.9840925,
+    "ast_hash": "2b1ccbc60051226ee431d622d7959236",
     "semantic_hash": ""
   },
   "tests/test_payment_binding_events.py": {
@@ -3227,6 +3227,11 @@
   "migrate_migration_recovery_rate_limit_resume.py": {
     "mtime": 1782069722.8614714,
     "ast_hash": "cd5719abc63322f8fe4dfa5c5e79fb6a",
+    "semantic_hash": ""
+  },
+  "tests/test_migration_recovery_elevate.py": {
+    "mtime": 1782070131.8437002,
+    "ast_hash": "7a5e8551f2c93fef28532ab04e03e386",
     "semantic_hash": ""
   }
 }

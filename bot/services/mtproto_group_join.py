@@ -183,7 +183,6 @@ async def run_link_join_and_promote(
         )
         return link_joined, promoted, failures
 
-    joined_entity = channel_entity
     borrowed, owns_connection = _resolve_link_join_client(link_join_cfg, link_join_client)
 
     async with get_mtproto_lock(link_join_cfg.club_key):
@@ -211,7 +210,6 @@ async def run_link_join_and_promote(
                     }
                 )
                 return link_joined, promoted, failures
-            joined_entity = ent
             link_joined.append({"user": promote_marker, "kind": "link_join"})
         finally:
             if owns_connection:
@@ -230,9 +228,10 @@ async def run_link_join_and_promote(
                     }
                 )
                 return link_joined, promoted, failures
+            # Use the creator session's channel entity — access_hash is account-specific.
             ok, prom_err = await promote_megagroup_admin(
                 promote_client,
-                joined_entity,
+                channel_entity,
                 promote_marker,
             )
             if ok:

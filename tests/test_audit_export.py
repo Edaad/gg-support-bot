@@ -23,6 +23,7 @@ from api.audit_export import (
     _manual_club_cell,
     _stripe_player_cell,
     build_audit_workbook,
+    eastern_day_bounds_utc,
 )
 from api.payments_helpers import build_crypto_payment_read
 from api.routes.payments import router
@@ -49,6 +50,21 @@ def _make_app() -> FastAPI:
 
 
 class AuditExportFormattingTestCase(unittest.TestCase):
+    def test_eastern_day_bounds_utc_edt(self):
+        start, end = eastern_day_bounds_utc("2026-06-19")
+        self.assertEqual(start, datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc))
+        self.assertEqual(end, datetime(2026, 6, 20, 3, 59, 59, 999999, tzinfo=timezone.utc))
+
+    def test_eastern_day_bounds_utc_est(self):
+        start, end = eastern_day_bounds_utc("2026-01-15")
+        self.assertEqual(start, datetime(2026, 1, 15, 5, 0, tzinfo=timezone.utc))
+        self.assertEqual(end, datetime(2026, 1, 16, 4, 59, 59, 999999, tzinfo=timezone.utc))
+
+    def test_eastern_day_bounds_utc_accepts_iso_prefix(self):
+        start, end = eastern_day_bounds_utc("2026-06-19T00:00:00Z")
+        self.assertEqual(start, datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc))
+        self.assertEqual(end, datetime(2026, 6, 20, 3, 59, 59, 999999, tzinfo=timezone.utc))
+
     def test_fmt_stripe_audit_time_uses_ordinal_eastern(self):
         dt = datetime(2026, 6, 19, 4, 58, tzinfo=timezone.utc)
         self.assertEqual(_fmt_stripe_audit_time(dt), "Jun 19th 2026, 12:58 AM")
@@ -215,6 +231,20 @@ class AuditExportApiTestCase(unittest.TestCase):
         self.assertIn("audit-export-2026-01-01-2026-01-31.xlsx", response.headers["content-disposition"])
         self.assertEqual(response.content, b"fake-xlsx")
         mock_build.assert_called_once()
+
+    @patch("api.routes.payments.build_audit_workbook")
+    def test_audit_export_uses_eastern_day_bounds(self, mock_build):
+        mock_build.return_value = b"fake-xlsx"
+        response = self.client.get(
+            "/api/payments/audit-export",
+            params={"from": "2026-06-19", "to": "2026-06-19"},
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+        self.assertEqual(response.status_code, 200)
+        mock_build.assert_called_once()
+        _, from_dt, to_dt = mock_build.call_args[0]
+        self.assertEqual(from_dt, datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc))
+        self.assertEqual(to_dt, datetime(2026, 6, 20, 3, 59, 59, 999999, tzinfo=timezone.utc))
 
 
 if __name__ == "__main__":

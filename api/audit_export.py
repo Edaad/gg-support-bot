@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Callable, Literal
 from zoneinfo import ZoneInfo
@@ -87,6 +87,26 @@ class ManualAuditRow:
 
 def _stripe_fee_usd(amount_cents: int) -> Decimal:
     return Decimal(round(amount_cents * 0.029 + 30)) / Decimal(100)
+
+
+def eastern_day_bounds_utc(date_str: str) -> tuple[datetime, datetime]:
+    """Return (start, end) of a US Eastern calendar day as UTC datetimes."""
+    raw = date_str.strip()[:10]
+    local_date = datetime.strptime(raw, "%Y-%m-%d").date()
+    start_et = datetime(
+        local_date.year,
+        local_date.month,
+        local_date.day,
+        tzinfo=_EASTERN,
+    )
+    next_day = local_date + timedelta(days=1)
+    end_et = datetime(
+        next_day.year,
+        next_day.month,
+        next_day.day,
+        tzinfo=_EASTERN,
+    ) - timedelta(microseconds=1)
+    return start_et.astimezone(timezone.utc), end_et.astimezone(timezone.utc)
 
 
 def _to_eastern(dt: datetime) -> datetime:
