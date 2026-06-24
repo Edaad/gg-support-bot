@@ -182,10 +182,11 @@ def format_issue_report_slack_body(report: IssueReport, *, session: Session | No
         "",
         f"Ticket: #{report.id}",
         f"Title: {report.title}",
-        f"Category: {_category_label(report)}",
         f"Notify: {_notify_labels(list(report.notify_tags or []))}",
         f"Reporter: {reporter} (source={report.reporter_source})",
     ]
+    if report.category:
+        lines.insert(5, f"Category: {_category_label(report)}")
     if report.group_title:
         lines.append(f"Group: {report.group_title}")
     if report.telegram_chat_id:
@@ -338,9 +339,11 @@ def format_reminder_slack_body(report: IssueReport) -> str:
         "",
         f"Ticket: #{report.id}",
         f"Title: {report.title}",
-        f"Category: {_category_label(report)}",
+        f"Notify: {_notify_labels(list(report.notify_tags or []))}",
         f"Open for: {age}",
     ]
+    if report.category:
+        lines.insert(5, f"Category: {_category_label(report)}")
     if report.group_title:
         lines.append(f"Group: {report.group_title}")
     lines.extend(["", "Details:", report.description])

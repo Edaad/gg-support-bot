@@ -36,6 +36,7 @@ class TestBeautifyMigrationRecovery(unittest.TestCase):
         self.assertIn("*Creator Club*", text)
         self.assertIn("direct added", text)
 
+
 class TestBeautifyRecoveryTriage(unittest.TestCase):
     def test_apply_summary(self) -> None:
         body = (
@@ -57,6 +58,23 @@ class TestBeautifyRecoveryTriage(unittest.TestCase):
         self.assertIn("*Database*", text)
         self.assertIn("promoted: 258", text)
         self.assertIn("`backups/recovery_tier3_triage_round_table.csv`", text)
+
+
+class TestBeautifyIssueReport(unittest.TestCase):
+    def test_notify_and_details(self) -> None:
+        body = (
+            "Issue report\n\n"
+            "Ticket: #9\n"
+            "Title: Bot down\n"
+            "Notify: Engineer\n"
+            "Reporter: Sam (source=telegram)\n\n"
+            "Details:\n"
+            "Deposit flow broken"
+        )
+        text = beautify_slack_body(body, source="issue_report")
+        self.assertIn("*For:* Engineer", text)
+        self.assertIn("*Details:*", text)
+        self.assertIn("Deposit flow broken", text)
 
 
 class TestBeautifyNotificationReport(unittest.TestCase):

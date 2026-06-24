@@ -213,10 +213,13 @@ class TestComputeRecoverySlackStats(unittest.IsolatedAsyncioTestCase):
 class TestTickAsyncQuotaDrain(unittest.IsolatedAsyncioTestCase):
     @patch("bot.services.migration_recovery.record_migration_recovery_tick")
     @patch("bot.services.migration_recovery._maybe_auto_disable_after_tick", new_callable=AsyncMock)
+    @patch("bot.services.migration_recovery.maybe_clear_expired_club_rate_limits", return_value=[])
+    @patch("bot.services.migration_recovery.is_round_table_elevate_recovery_enabled", return_value=False)
     @patch("bot.services.migration_recovery.set_flood_wait_policy")
     @patch("bot.services.migration_recovery.set_flood_wait_observer")
     @patch("bot.services.migration_recovery.get_migration_recovery_invite_delay_sec", return_value=0.0)
     @patch("bot.services.migration_recovery.get_migration_recovery_batch_size", return_value=2)
+    @patch("bot.services.migration_recovery.is_club_rate_limited", return_value=False)
     @patch(
         "bot.services.migration_recovery.migration_recovery_active_club_keys",
         return_value=("creator_club",),
@@ -230,10 +233,13 @@ class TestTickAsyncQuotaDrain(unittest.IsolatedAsyncioTestCase):
         mock_process: AsyncMock,
         _mock_enabled: MagicMock,
         _mock_clubs: MagicMock,
+        _mock_limited: MagicMock,
         _mock_batch: MagicMock,
         _mock_delay: MagicMock,
         _mock_observer: MagicMock,
         _mock_policy: MagicMock,
+        _mock_elevate: MagicMock,
+        _mock_clear: MagicMock,
         _mock_auto: AsyncMock,
         _mock_record_tick: MagicMock,
     ) -> None:
@@ -339,10 +345,13 @@ class TestFloodWaitAbortFromReaddResult(unittest.TestCase):
 class TestTickAsyncFloodWaitAbort(unittest.IsolatedAsyncioTestCase):
     @patch("bot.services.migration_recovery.record_migration_recovery_tick")
     @patch("bot.services.migration_recovery._maybe_auto_disable_after_tick", new_callable=AsyncMock)
+    @patch("bot.services.migration_recovery.maybe_clear_expired_club_rate_limits", return_value=[])
+    @patch("bot.services.migration_recovery.is_round_table_elevate_recovery_enabled", return_value=False)
     @patch("bot.services.migration_recovery.set_flood_wait_policy")
     @patch("bot.services.migration_recovery.set_flood_wait_observer")
     @patch("bot.services.migration_recovery.get_migration_recovery_invite_delay_sec", return_value=0.0)
     @patch("bot.services.migration_recovery.get_migration_recovery_batch_size", return_value=2)
+    @patch("bot.services.migration_recovery.is_club_rate_limited", return_value=False)
     @patch(
         "bot.services.migration_recovery.migration_recovery_active_club_keys",
         return_value=("creator_club",),
@@ -358,10 +367,13 @@ class TestTickAsyncFloodWaitAbort(unittest.IsolatedAsyncioTestCase):
         mock_handle_abort: AsyncMock,
         _mock_enabled: MagicMock,
         _mock_clubs: MagicMock,
+        _mock_limited: MagicMock,
         _mock_batch: MagicMock,
         _mock_delay: MagicMock,
         _mock_observer: MagicMock,
         _mock_policy: MagicMock,
+        _mock_elevate: MagicMock,
+        _mock_clear: MagicMock,
         _mock_auto: AsyncMock,
         _mock_record_tick: MagicMock,
     ) -> None:

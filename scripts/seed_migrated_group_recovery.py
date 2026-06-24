@@ -294,11 +294,12 @@ def run_seed(
 def print_status() -> None:
     from bot.services.migration_recovery import (
         count_elevate_pending_rows,
-        get_rate_limit_resume_at,
+        get_club_rate_limit_resume_at,
         is_migration_recovery_auto_disabled,
         is_round_table_elevate_recovery_enabled,
         pending_count_by_club,
         recovery_status_counts,
+        ELEVATE_CATCHUP_PAUSE_KEY,
     )
 
     counts = recovery_status_counts()
@@ -319,11 +320,12 @@ def print_status() -> None:
         print(f"Elevate-pending (RT tier 1+2, has link): {count_elevate_pending_rows()}")
     if is_migration_recovery_auto_disabled():
         print("Auto-disable: SET (recovery cron will not run until cleared)")
-        resume_at = get_rate_limit_resume_at()
-        if resume_at is not None:
-            print(f"Rate-limit auto-resume at: {resume_at.isoformat()}")
     else:
         print("Auto-disable: not set")
+    for club_key in ("round_table", "creator_club", "clubgto", ELEVATE_CATCHUP_PAUSE_KEY):
+        resume_at = get_club_rate_limit_resume_at(club_key)
+        if resume_at is not None:
+            print(f"Rate-limit pause {club_key}: until {resume_at.isoformat()}")
 
 
 def main() -> None:

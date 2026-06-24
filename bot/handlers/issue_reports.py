@@ -31,15 +31,12 @@ from bot.services.issue_report_drafts import (
 )
 from bot.services.issue_report_notify import notify_staff_issue_report_draft
 from bot.services.issue_reports import (
-    CATEGORY_LABELS,
-    ISSUE_REPORT_CATEGORIES,
     NOTIFY_LABELS,
     NOTIFY_TAGS,
     IssueReportFileInput,
     IssueReportValidationError,
     add_report_evidence,
     create_issue_report,
-    default_notify_for_category,
     format_open_reports_list,
     format_report_detail,
     format_resolve_result,
@@ -56,20 +53,18 @@ from db.connection import get_db
 logger = logging.getLogger(__name__)
 
 (
-    IR_CATEGORY,
     IR_NOTIFY,
     IR_TITLE,
     IR_DETAILS,
     IR_EVIDENCE,
     IR_CONFIRM,
-) = range(6)
+) = range(5)
 
 _IR_USER_KEYS = (
     "ir_draft_id",
     "ir_club_id",
     "ir_group_title",
     "ir_telegram_chat_id",
-    "ir_category",
     "ir_notify_tags",
     "ir_title",
     "ir_details",
@@ -118,21 +113,6 @@ async def _reply_long(message, text: str) -> None:
     chunk = 4096
     for i in range(0, len(text), chunk):
         await message.reply_text(text[i : i + chunk])
-
-
-def _category_keyboard() -> InlineKeyboardMarkup:
-    rows = []
-    row: list[InlineKeyboardButton] = []
-    for key in sorted(ISSUE_REPORT_CATEGORIES):
-        label = CATEGORY_LABELS.get(key, key)
-        row.append(InlineKeyboardButton(label, callback_data=f"ir_cat:{key}"))
-        if len(row) == 2:
-            rows.append(row)
-            row = []
-    if row:
-        rows.append(row)
-    rows.append([InlineKeyboardButton("CANCEL", callback_data="ir_cancel")])
-    return InlineKeyboardMarkup(rows)
 
 
 def _notify_keyboard(selected: list[str]) -> InlineKeyboardMarkup:
@@ -354,11 +334,12 @@ async def _begin_dm_report_flow(update: Update, context: ContextTypes.DEFAULT_TY
         _load_draft_into_user_data(context, draft_ctx)
 
     intro = _group_context_line(context)
+    context.user_data["ir_notify_tags"] = []
     await update.message.reply_text(
-        f"{intro}Select category:",
-        reply_markup=_category_keyboard(),
+        f"{intro}Who should be notified? Tap to toggle, then Continue.",
+        reply_markup=_notify_keyboard([]),
     )
-    return IR_CATEGORY
+    return IR_NOTIFY
 
 
 async def escalate_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -448,11 +429,11 @@ async def draft_continue_entry(update: Update, context: ContextTypes.DEFAULT_TYP
     _load_draft_into_user_data(context, draft_ctx)
 
     intro = _group_context_line(context)
+    context.user_data["ir_notify_tags"] = []
+    notify_text = f"{intro}Who should be notified? Tap to toggle, then Continue."
+    notify_markup = _notify_keyboard([])
     try:
-        await query.edit_message_text(
-            f"{intro}Select category:",
-            reply_markup=_category_keyboard(),
-        )
+        await query.edit_message_text(notify_text, reply_markup=notify_markup)
     except Exception:
         logger.exception(
             "issue_report: edit_message failed draft_id=%s user_id=%s",
@@ -461,10 +442,10 @@ async def draft_continue_entry(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         await context.bot.send_message(
             chat_id=update.effective_user.id,
-            text=f"{intro}Select category:",
-            reply_markup=_category_keyboard(),
+            text=notify_text,
+            reply_markup=notify_markup,
         )
-    return IR_CATEGORY
+    return IR_NOTIFY
 
 
 async def draft_cancel_callback(
@@ -505,30 +486,6 @@ async def report_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         _cleanup_report_flow(context)
         await update.message.reply_text("Issue report cancelled.")
     return ConversationHandler.END
-
-
-async def category_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    if not query or not query.data or not query.data.startswith("ir_cat:"):
-        return IR_CATEGORY
-    await query.answer()
-    category = query.data.split(":", 1)[1]
-    try:
-        from bot.services.issue_reports import normalize_category
-
-        category = normalize_category(category)
-    except IssueReportValidationError as exc:
-        await query.edit_message_text(str(exc))
-        return IR_CATEGORY
-
-    context.user_data["ir_category"] = category
-    selected = default_notify_for_category(category)
-    context.user_data["ir_notify_tags"] = selected
-    await query.edit_message_text(
-        "Who should be notified? Tap to toggle, then Continue.",
-        reply_markup=_notify_keyboard(selected),
-    )
-    return IR_NOTIFY
 
 
 async def notify_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -590,13 +547,14 @@ async def details_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     keyboard = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("Skip evidence", callback_data="ir_evidence_done"),
-                InlineKeyboardButton("CANCEL", callback_data="ir_cancel"),
-            ]
+                InlineKeyboardButton("Done", callback_data="ir_evidence_done"),
+                InlineKeyboardButton("Skip", callback_data="ir_evidence_done"),
+            ],
+            [InlineKeyboardButton("CANCEL", callback_data="ir_cancel")],
         ]
     )
     await update.message.reply_text(
-        "Send screenshots (optional), then tap Done — or Skip.",
+        "Send screenshots (optional), then tap Done.\nNo screenshots? Tap Skip.",
         reply_markup=keyboard,
     )
     return IR_EVIDENCE
@@ -655,28 +613,25 @@ async def evidence_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if query:
         await query.answer()
 
-    category = context.user_data.get("ir_category")
     notify_tags = context.user_data.get("ir_notify_tags") or []
     title = context.user_data.get("ir_title")
     details = context.user_data.get("ir_details")
     evidence = list(context.user_data.get("ir_evidence") or [])
     att_label = f"{len(evidence)} file(s)" if evidence else "none"
 
-    summary = "\n".join(
-        [
-            "Confirm report:",
-            "",
-            _group_context_line(context).strip(),
-            f"Category: {CATEGORY_LABELS.get(category, category)}",
-            f"Notify: {', '.join(NOTIFY_LABELS.get(t, t) for t in notify_tags)}",
-            f"Title: {title}",
-            "",
-            "Details:",
-            details,
-            "",
-            f"Evidence: {att_label}",
-        ]
-    ).strip()
+    summary_lines = [
+        "Confirm report:",
+        "",
+        _group_context_line(context).strip(),
+        f"Notify: {', '.join(NOTIFY_LABELS.get(t, t) for t in notify_tags)}",
+        f"Title: {title}",
+        "",
+        "Details:",
+        details,
+        "",
+        f"Evidence: {att_label}",
+    ]
+    summary = "\n".join(summary_lines).strip()
 
     if query:
         await query.edit_message_text(summary, reply_markup=_confirm_keyboard())
@@ -707,7 +662,6 @@ async def submit_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 session,
                 title=str(context.user_data.get("ir_title") or ""),
                 description=str(context.user_data.get("ir_details") or ""),
-                category=str(context.user_data.get("ir_category") or ""),
                 notify_tags=list(context.user_data.get("ir_notify_tags") or []),
                 reporter_name=reporter_name,
                 reporter_source="telegram",
@@ -975,6 +929,15 @@ def issue_report_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return any(k in context.user_data for k in _IR_USER_KEYS if k.startswith("ir_"))
 
 
+def issue_report_awaiting_evidence(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """True while /report wizard is on the optional screenshot step."""
+    return (
+        context.user_data.get("active_bot_flow") == "issue_report"
+        and "ir_details" in context.user_data
+        and "ir_evidence" in context.user_data
+    )
+
+
 async def issue_report_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return await report_cancel(update, context)
 
@@ -989,11 +952,6 @@ def get_report_conversation_handler() -> ConversationHandler:
             CommandHandler("report", report_entry, filters=filters.ChatType.PRIVATE),
         ],
         states={
-            IR_CATEGORY: [
-                CallbackQueryHandler(category_chosen, pattern=r"^ir_cat:"),
-                _REPORT_CANCEL_CB,
-                _REPORT_CANCEL,
-            ],
             IR_NOTIFY: [
                 CallbackQueryHandler(notify_toggle, pattern=r"^ir_notify"),
                 _REPORT_CANCEL_CB,

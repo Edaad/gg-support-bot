@@ -68,8 +68,14 @@ async def fileid_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def fileid_photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """When a photo is sent directly (no command), reply with its file_id if preceded by /fileid."""
+    """When a photo is sent directly (no command), reply with its file_id."""
     if not update.message or not update.message.photo:
         return
+
+    from bot.handlers.issue_reports import issue_report_awaiting_evidence
+
+    if issue_report_awaiting_evidence(context):
+        return
+
     photo = update.message.photo[-1]
     await update.message.reply_text(f"file_id:\n\n{photo.file_id}")

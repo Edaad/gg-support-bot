@@ -809,6 +809,7 @@ class MigrationRecoveryControl(Base):
     last_tick_at = Column(DateTime(timezone=True), nullable=True)
     last_slack_summary_at = Column(DateTime(timezone=True), nullable=True)
     rate_limit_resume_at = Column(DateTime(timezone=True), nullable=True)
+    club_rate_limit_resume_at = Column(JSONB, nullable=True)
 
 
 class StripeCustomer(Base):

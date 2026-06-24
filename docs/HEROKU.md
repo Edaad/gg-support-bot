@@ -190,6 +190,7 @@ heroku run -a YOUR_APP -- python migrate_migration_recovery_control.py
 heroku run -a YOUR_APP -- python migrate_migration_recovery_last_tick.py
 heroku run -a YOUR_APP -- python migrate_migration_recovery_slack_summary_last.py
 heroku run -a YOUR_APP -- python migrate_migration_recovery_rate_limit_resume.py
+heroku run -a YOUR_APP -- python migrate_migration_recovery_club_rate_limit.py
 heroku run -a YOUR_APP -- python scripts/seed_migrated_group_recovery.py
 ```
 
@@ -227,11 +228,11 @@ Requires `GC_DM_GC_LISTENER_ENABLED` (default on). Recovery direct-adds **only t
 
 Set `GC_MIGRATION_RECOVERY_SKIP_WELCOME=true` to suppress member-join preamble/TOS for chats in `migrated_group_recovery` during mass re-adds (independent of the recovery cron switch). Unset or set `false` to restore normal welcomes.
 
-After each direct-add attempt (not already-in-only skips), the **GG Support bot** DMs that club's GC admin with a tappable GC title (supergroup `t.me/c/…` link when available), result status, and which accounts were added. **Rate limits (FloodWait)** halt recovery immediately, auto-disable the cron, DM **all three club GC admins**, and schedule **auto-resume 1 hour after the FloodWait ends** (stored in `migration_recovery_control.rate_limit_resume_at`; survives worker restart/deploy). Tune extra cooldown with `GC_MIGRATION_RECOVERY_RATE_LIMIT_COOLDOWN_SEC` (default `3600`). Other failures also DM the Round Table GC admin (`GC_ADMIN_USER_ROUND_TABLE`) for central ops visibility. Errors also post to **Slack** when `SLACK_OPS_BOT_TOKEN` + `SLACK_OPS_CHANNEL_ID` (or webhook) are set (see Slack ops below). Admins must have `/start`ed the bot.
+After each successful direct-add (not already-in-only skips), the **GG Support bot** DMs that club's GC admin with the player and GC name. **Rate limits (FloodWait)** pause only the affected club (or `elevate_catchup` for Elevate link-join); other clubs and Elevate keep running. Pauses post to **Slack ops** and auto-resume **1 hour after the FloodWait ends** per club (stored in `migration_recovery_control.club_rate_limit_resume_at`; survives worker restart/deploy). Tune extra cooldown with `GC_MIGRATION_RECOVERY_RATE_LIMIT_COOLDOWN_SEC` (default `3600`). Other failures (privacy blocked, entity resolution, tick errors, auto-disable) also post to **Slack** when `SLACK_OPS_BOT_TOKEN` + `SLACK_OPS_CHANNEL_ID` (or webhook) are set (see Slack ops below). Telegram DMs are success-only; admins must have `/start`ed the bot to receive those.
 
 **Queue visibility:** Send `/whosnext` in a private DM with the bot (admin accounts only) to see the global top-10 pending rows, plus auto-add / auto-disable status.
 
-**Auto-disable:** When **every active club's tier-scoped queue** (pending + processing) hits zero, the worker stops the cron job, persists a flag in `migration_recovery_control`, and DMs the RT admin. Tier scope: **Round Table = tier 1+2**; **Creator Club + ClubGTO = tier 3**. CC/GTO having no tier-3 pending while RT still has tier 1+2 work does **not** auto-disable (and vice versa). Disabled clubs (e.g. `GC_MIGRATION_RECOVERY_DISABLED_CLUBS`) are ignored. Rate limits also trigger auto-disable (see above).
+**Auto-disable:** When **every active club's tier-scoped queue** (pending + processing) hits zero, the worker stops the cron job, persists a flag in `migration_recovery_control`, and posts to Slack ops. Tier scope: **Round Table = tier 1+2**; **Creator Club + ClubGTO = tier 3**. CC/GTO having no tier-3 pending while RT still has tier 1+2 work does **not** auto-disable (and vice versa). Disabled clubs (e.g. `GC_MIGRATION_RECOVERY_DISABLED_CLUBS`) are ignored. FloodWait pauses are per-club and do **not** auto-disable the cron (see above).
 
 **Monitor** (SQL or local):
 
@@ -303,7 +304,13 @@ heroku config:set SLACK_OPS_MENTION='<@UYOUR_SLACK_USER_ID>' -a YOUR_APP   # opt
 
 **Optional fallback:** Incoming Webhook (`SLACK_OPS_WEBHOOK_URL`) if bot post fails or you have not set bot token yet.
 
-**Issue reports (account managers):** Tickets are stored in Postgres (`issue_reports`). Create via `POST /api/issue-reports` (multipart) or `python scripts/create_issue_report.py`. Slack posts use the same ops channel; optional per-tag mentions via `ISSUE_REPORT_TAG_MENTIONS` JSON (e.g. `{"cashout":"<@U123>","bot_issue":"<!subteam^S456>"}`). Run `python migrate_issue_reports.py` once after deploy.
+**Issue reports (account managers):** Tickets are stored in Postgres (`issue_reports`). Create via `POST /api/issue-reports` (multipart) or `python scripts/create_issue_report.py`. Slack posts use a **dedicated** app/channel (`SLACK_ISSUE_REPORT_BOT_TOKEN` + `SLACK_ISSUE_REPORT_CHANNEL_ID`, or `SLACK_ISSUE_REPORT_WEBHOOK_URL`). Optional audience mentions via `ISSUE_REPORT_TAG_MENTIONS` JSON (e.g. `{"head_admin":"<!subteam^S_HEAD>","engineer":"<!subteam^S_ENG>"}`). Bot scopes: `chat:write`, `files:write`. Run `python migrate_issue_reports.py` once after deploy.
+
+```bash
+heroku config:set SLACK_ISSUE_REPORT_BOT_TOKEN=xoxb-... -a YOUR_APP
+heroku config:set SLACK_ISSUE_REPORT_CHANNEL_ID=C... -a YOUR_APP
+heroku config:set ISSUE_REPORT_TAG_MENTIONS='{"head_admin":"<!subteam^S_HEAD>","engineer":"<!subteam^S_ENG>"}' -a YOUR_APP
+```
 
 **Issue reports (AMs):** `/escalate` (group) and `/report` (DM) — see [`docs/ISSUE_REPORTS_BOT.md`](ISSUE_REPORTS_BOT.md). Run `python migrate_issue_reports_v2.py`, `python migrate_issue_report_drafts.py`, and `python migrate_issue_reports_resolve.py` once after deploy.
 

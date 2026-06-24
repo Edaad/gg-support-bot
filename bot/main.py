@@ -230,7 +230,14 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(CommandHandler("help", h.help_handler))
     app.add_handler(CommandHandler("whoami", h.whoami_handler))
     app.add_handler(CommandHandler("fileid", h.fileid_handler))
-    app.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, h.fileid_photo_handler))
+    h.register_issue_report_handlers(app)
+    app.add_handler(
+        MessageHandler(
+            filters.PHOTO & filters.ChatType.PRIVATE,
+            h.fileid_photo_handler,
+            block=False,
+        )
+    )
 
     app.add_handler(
         CommandHandler("whosnext", h.whosnext_handler, filters=filters.ChatType.PRIVATE)
@@ -251,7 +258,6 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(CommandHandler("checkplayer", h.checkplayer_handler))
     app.add_handler(CommandHandler("stripe", h.stripe_handler))
     app.add_handler(CommandHandler("teststripe", h.teststripe_handler))
-    h.register_issue_report_handlers(app)
 
     app.add_handler(CommandHandler("unbindmethod", h.unbindmethod_handler))
 

@@ -8,7 +8,7 @@ Usage:
         --tags cashout,deposit \\
         --screenshot ./screenshot.png
 
-Requires DATABASE_URL. Slack posts when SLACK_OPS_* env is configured.
+Requires DATABASE_URL. Slack posts when SLACK_ISSUE_REPORT_* env is configured.
 """
 
 from __future__ import annotations
@@ -103,7 +103,7 @@ async def _run() -> int:
     if report.slack_message_ts:
         print(f"  slack_message_ts: {report.slack_message_ts}")
     else:
-        print("  slack: not posted (check SLACK_OPS_* env and logs)")
+        print("  slack: not posted (check SLACK_ISSUE_REPORT_* env and logs)")
     return 0
 
 

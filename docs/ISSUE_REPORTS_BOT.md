@@ -1,12 +1,12 @@
 # Issue reports — `/report` and `/reports`
 
-Staff-only bot commands for centralized issue reporting. Reports go to Postgres and Slack ops; nothing is posted in player support groups.
+Staff-only bot commands for centralized issue reporting. Reports go to Postgres and a dedicated Slack channel; nothing is posted in player support groups.
 
 ## Create a report
 
 1. In a support group, send **`/escalate`** (silent — command deleted, no group reply)
 2. Open **DM with GG Support** → tap **Continue report**
-3. Wizard: **Category** → **Notify** (who to ping) → **Title** → **Details** → **Evidence** (optional) → **Submit**
+3. Wizard: **Notify** (who to ping) → **Title** → **Details** → **Evidence** (optional) → **Submit**
 
 Or DM the bot directly: **`/report`**
 
@@ -14,8 +14,7 @@ Or DM the bot directly: **`/report`**
 
 | Field | Required |
 |-------|----------|
-| Category | Deposit, Cashout, Bot issue, Rakeback, Other |
-| Notify | Head admin, Engineer, RB admin (defaults suggested per category) |
+| Notify | Head admin, Engineer, RB admin (pick at least one) |
 | Title | Yes |
 | Details | Yes |
 | Evidence | No (up to 5 screenshots) |
@@ -32,7 +31,16 @@ Or DM the bot directly: **`/report`**
 
 ## Slack routing
 
-Set `ISSUE_REPORT_TAG_MENTIONS` JSON for audience mentions:
+Issue reports use a **separate Slack app and channel** from general ops alerts (`SLACK_OPS_*`).
+
+```bash
+SLACK_ISSUE_REPORT_BOT_TOKEN=xoxb-...
+SLACK_ISSUE_REPORT_CHANNEL_ID=C...
+# optional fallback:
+# SLACK_ISSUE_REPORT_WEBHOOK_URL=https://hooks.slack.com/services/...
+```
+
+Set `ISSUE_REPORT_TAG_MENTIONS` JSON to @mention the right audience in Slack:
 
 ```json
 {
@@ -41,6 +49,8 @@ Set `ISSUE_REPORT_TAG_MENTIONS` JSON for audience mentions:
   "rb_admin": "<!subteam^S_RB>"
 }
 ```
+
+Slack messages show **For:** Head admin, Engineer, etc., plus subteam/user mentions when configured.
 
 ## Migrations
 

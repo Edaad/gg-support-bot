@@ -70,15 +70,18 @@ class TestFormatIssueReportSlackBody(unittest.TestCase):
             title="Broken deposit",
             description="Nothing happens",
             tags=["deposit", "bot_issue"],
+            notify_tags=["head_admin", "engineer"],
             reporter_name="Alice",
             reporter_source="api",
         )
         body = format_issue_report_slack_body(report)
         self.assertIn("Ticket: #7", body)
         self.assertIn("Title: Broken deposit", body)
+        self.assertIn("Notify: Head admin, Engineer", body)
         self.assertIn("Reporter: Alice", body)
         self.assertIn("Tags: deposit, bot_issue", body)
         self.assertIn("Nothing happens", body)
+        self.assertNotIn("Category:", body)
 
 
 class TestCreateIssueReport(unittest.IsolatedAsyncioTestCase):

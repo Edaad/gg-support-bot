@@ -17,6 +17,11 @@ SLACK_OPS_CHANNEL_ID_ENV = "SLACK_OPS_CHANNEL_ID"
 SLACK_OPS_WEBHOOK_URL_ENV = "SLACK_OPS_WEBHOOK_URL"
 SLACK_OPS_MENTION_ENV = "SLACK_OPS_MENTION"
 
+# Issue reports — separate Slack app/channel from general ops alerts.
+SLACK_ISSUE_REPORT_BOT_TOKEN_ENV = "SLACK_ISSUE_REPORT_BOT_TOKEN"
+SLACK_ISSUE_REPORT_CHANNEL_ID_ENV = "SLACK_ISSUE_REPORT_CHANNEL_ID"
+SLACK_ISSUE_REPORT_WEBHOOK_URL_ENV = "SLACK_ISSUE_REPORT_WEBHOOK_URL"
+
 SLACK_CHAT_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage"
 SLACK_FILES_UPLOAD_URL = "https://slack.com/api/files.upload"
 
@@ -42,6 +47,21 @@ def _slack_webhook_url() -> str | None:
 
 def _slack_mention() -> str | None:
     raw = (os.getenv(SLACK_OPS_MENTION_ENV) or "").strip()
+    return raw or None
+
+
+def _issue_report_bot_token() -> str | None:
+    raw = (os.getenv(SLACK_ISSUE_REPORT_BOT_TOKEN_ENV) or "").strip()
+    return raw or None
+
+
+def _issue_report_channel_id() -> str | None:
+    raw = (os.getenv(SLACK_ISSUE_REPORT_CHANNEL_ID_ENV) or "").strip()
+    return raw or None
+
+
+def _issue_report_webhook_url() -> str | None:
+    raw = (os.getenv(SLACK_ISSUE_REPORT_WEBHOOK_URL_ENV) or "").strip()
     return raw or None
 
 
@@ -110,6 +130,22 @@ async def _post_via_webhook(text: str) -> bool:
         return True
     except Exception:
         logger.warning("slack_ops: webhook post failed", exc_info=True)
+        return False
+
+
+async def _post_issue_report_via_webhook(text: str) -> bool:
+    url = _issue_report_webhook_url()
+    if not url:
+        return False
+
+    try:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SEC) as client:
+            resp = await client.post(url, json={"text": text})
+            resp.raise_for_status()
+        logger.info("slack_issue_report: webhook posted status=%s", resp.status_code)
+        return True
+    except Exception:
+        logger.warning("slack_issue_report: webhook post failed", exc_info=True)
         return False
 
 
@@ -223,9 +259,7 @@ async def notify_slack_issue_report(
     """
 
     tag_mentions = _collect_tag_mentions(tags or [])
-    mention = _slack_mention()
-    prefix_parts = [p for p in (mention, tag_mentions) if p]
-    prefix = " ".join(prefix_parts)
+    prefix = tag_mentions
 
     from bot.services.slack_ops_format import beautify_slack_body, slack_header
 
@@ -243,8 +277,8 @@ async def notify_slack_issue_report(
     files = file_bytes or []
     slack_file_ids: list[str | None] = [None] * len(files)
 
-    token = _slack_bot_token()
-    channel = _slack_channel_id()
+    token = _issue_report_bot_token()
+    channel = _issue_report_channel_id()
     if token and channel:
         try:
             async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SEC) as client:
@@ -266,24 +300,24 @@ async def notify_slack_issue_report(
                 data = resp.json()
                 if not data.get("ok"):
                     logger.warning(
-                        "slack_ops: issue_report chat.postMessage failed error=%s",
+                        "slack_issue_report: chat.postMessage failed error=%s",
                         data.get("error"),
                     )
-                    if _slack_webhook_url():
+                    if _issue_report_webhook_url():
                         note = message
                         if files:
                             note += (
                                 f"\n\n_({len(files)} screenshot(s) stored in API only — "
                                 "webhook fallback cannot attach files)_"
                             )
-                        ok = await _post_via_webhook(note)
+                        ok = await _post_issue_report_via_webhook(note)
                         return ok, None, slack_file_ids
                     return False, None, slack_file_ids
 
                 message_ts = data.get("ts")
                 ts_str = str(message_ts) if message_ts else None
                 logger.info(
-                    "slack_ops: issue_report chat.postMessage ok channel=%s ts=%s",
+                    "slack_issue_report: chat.postMessage ok channel=%s ts=%s",
                     channel,
                     ts_str,
                 )
@@ -303,32 +337,33 @@ async def notify_slack_issue_report(
                 return True, ts_str, slack_file_ids
         except Exception:
             logger.warning(
-                "slack_ops: issue_report bot API request failed",
+                "slack_issue_report: bot API request failed",
                 exc_info=True,
             )
-            if _slack_webhook_url():
+            if _issue_report_webhook_url():
                 note = message
                 if files:
                     note += (
                         f"\n\n_({len(files)} screenshot(s) stored in API only — "
                         "webhook fallback cannot attach files)_"
                     )
-                ok = await _post_via_webhook(note)
+                ok = await _post_issue_report_via_webhook(note)
                 return ok, None, slack_file_ids
             return False, None, slack_file_ids
 
-    if _slack_webhook_url():
+    if _issue_report_webhook_url():
         note = message
         if files:
             note += (
                 f"\n\n_({len(files)} screenshot(s) stored in API only — "
                 "webhook fallback cannot attach files)_"
             )
-        ok = await _post_via_webhook(note)
+        ok = await _post_issue_report_via_webhook(note)
         return ok, None, slack_file_ids
 
     logger.warning(
-        "slack_ops: skipped issue_report (set SLACK_OPS_BOT_TOKEN+SLACK_OPS_CHANNEL_ID or SLACK_OPS_WEBHOOK_URL)",
+        "slack_issue_report: skipped (set SLACK_ISSUE_REPORT_BOT_TOKEN+"
+        "SLACK_ISSUE_REPORT_CHANNEL_ID or SLACK_ISSUE_REPORT_WEBHOOK_URL)",
     )
     return False, None, slack_file_ids
 
@@ -352,10 +387,12 @@ async def notify_slack_issue_report_thread(
     if len(message) > _MAX_SLACK_TEXT_LEN:
         message = message[: _MAX_SLACK_TEXT_LEN - 1] + "…"
 
-    token = _slack_bot_token()
-    channel = _slack_channel_id()
+    token = _issue_report_bot_token()
+    channel = _issue_report_channel_id()
     if not token or not channel:
-        logger.warning("slack_ops: skipped issue_report thread (no bot token/channel)")
+        logger.warning(
+            "slack_issue_report: skipped thread (no SLACK_ISSUE_REPORT bot token/channel)"
+        )
         return False
 
     files = file_bytes or []
@@ -380,7 +417,7 @@ async def notify_slack_issue_report_thread(
             data = resp.json()
             if not data.get("ok"):
                 logger.warning(
-                    "slack_ops: issue_report thread reply failed error=%s",
+                    "slack_issue_report: thread reply failed error=%s",
                     data.get("error"),
                 )
                 return False
@@ -398,7 +435,7 @@ async def notify_slack_issue_report_thread(
             return True
     except Exception:
         logger.warning(
-            "slack_ops: issue_report thread reply request failed",
+            "slack_issue_report: thread reply request failed",
             exc_info=True,
         )
         return False

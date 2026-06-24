@@ -11,6 +11,7 @@ from bot.services.migration_recovery_priority import (
 )
 from bot.services.migration_recovery import (
     RECOVERY_CLUB_KEYS,
+    ELEVATE_CATCHUP_PAUSE_KEY,
     build_readd_result_payload,
     claim_pending_batch,
     compute_migration_recovery_first_delay_sec,
@@ -18,18 +19,21 @@ from bot.services.migration_recovery import (
     compute_rate_limit_resume_at,
     compute_rate_limit_resume_delay_sec,
     deactivated_account_hint,
-    extend_rate_limit_pause,
     format_auto_disable_notification,
     format_readd_success_admin_notification,
     format_rate_limit_admin_notification,
+    is_club_rate_limited,
     is_rate_limit_pause_pending,
     map_readd_status,
     maybe_apply_rate_limit_resume,
+    maybe_clear_expired_club_rate_limits,
+    pause_club_for_rate_limit,
     peek_next_recovery_rows,
     release_processing_rows,
     should_notify_rt_ops,
     _handle_rate_limit_abort,
     _maybe_auto_disable_after_tick,
+    tick_async,
 )
 from bot.services.migration_group_readd import FloodWaitAbortError, ReaddGroupResult
 from bot.services.migration_recovery import RecoveryRow
@@ -715,7 +719,9 @@ class TestReleaseProcessingRows(unittest.TestCase):
 
 
 class TestHandleRateLimitAbort(unittest.TestCase):
-    def test_rate_limit_triggers_auto_disable(self) -> None:
+    def test_rate_limit_pauses_club_only(self) -> None:
+        from datetime import datetime, timezone
+
         row = RecoveryRow(
             id=5,
             telegram_chat_id=-100999,
@@ -726,6 +732,7 @@ class TestHandleRateLimitAbort(unittest.TestCase):
             player_telegram_user_id=None,
             player_username=None,
         )
+        resume_at = datetime(2026, 6, 21, 13, 1, 30, tzinfo=timezone.utc)
         with patch(
             "bot.services.migration_recovery.finalize_row",
             return_value="failed",
@@ -733,15 +740,12 @@ class TestHandleRateLimitAbort(unittest.TestCase):
             "bot.services.migration_recovery.release_processing_rows",
             return_value=1,
         ) as mock_release, patch(
-            "bot.services.migration_recovery.pending_count_by_club",
-            return_value={"round_table": 1, "creator_club": 2, "clubgto": 3},
-        ), patch(
+            "bot.services.migration_recovery.pause_club_for_rate_limit",
+            return_value=resume_at,
+        ) as mock_pause, patch(
             "bot.services.migration_recovery.auto_disable_migration_recovery",
             new_callable=AsyncMock,
         ) as mock_disable, patch(
-            "bot.services.mtproto_track_contact.notify_all_gc_admins_dm",
-            new_callable=AsyncMock,
-        ) as mock_notify, patch(
             "bot.services.slack_ops_notify.notify_slack_ops",
             new_callable=AsyncMock,
         ) as mock_slack:
@@ -754,15 +758,12 @@ class TestHandleRateLimitAbort(unittest.TestCase):
             )
         mock_finalize.assert_called_once()
         mock_release.assert_called_once_with([6, 7])
-        mock_notify.assert_awaited_once()
         mock_slack.assert_awaited_once()
         self.assertEqual(mock_slack.await_args.kwargs["source"], "migration_recovery")
-        mock_disable.assert_awaited_once_with(
-            reason="rate_limit",
-            exhausted_club_key="clubgto",
-            pending_snapshot={"round_table": 1, "creator_club": 2, "clubgto": 3},
-            flood_wait_sec=90,
-        )
+        mock_pause.assert_called_once_with("clubgto", 90)
+        mock_disable.assert_not_awaited()
+        body = mock_slack.await_args.args[0]
+        self.assertIn("Other clubs and Elevate catch-up continue", body)
 
     def test_rate_limit_notification_includes_gc(self) -> None:
         row = RecoveryRow(
@@ -913,35 +914,70 @@ class TestRateLimitResume(unittest.TestCase):
             label="InviteToChannelRequest",
             row=None,
             resume_at=resume_at,
+            pause_club_key="round_table",
         )
         self.assertIn("Auto-resume at", text)
         self.assertIn(resume_at.isoformat(), text)
+        self.assertIn("Other clubs and Elevate catch-up continue", text)
 
+    @patch("bot.services.migration_recovery._recovery_app", None)
     @patch("db.connection.get_db")
-    def test_maybe_apply_rate_limit_resume_clears_due_pause(self, mock_get_db: MagicMock) -> None:
+    def test_pause_club_for_rate_limit_persists_map(self, mock_get_db: MagicMock) -> None:
         from datetime import datetime, timezone
 
         row = MagicMock()
-        row.auto_disabled_at = datetime(2026, 6, 21, 12, 0, 0, tzinfo=timezone.utc)
-        row.auto_disabled_reason = "rate_limit"
-        row.rate_limit_resume_at = datetime(2026, 6, 21, 13, 0, 0, tzinfo=timezone.utc)
+        row.auto_disabled_reason = None
+        row.club_rate_limit_resume_at = None
         session = MagicMock()
         mock_get_db.return_value.__enter__.return_value = session
         session.get.return_value = row
 
-        now = datetime(2026, 6, 21, 13, 5, 0, tzinfo=timezone.utc)
-        self.assertTrue(maybe_apply_rate_limit_resume(now=now))
-        self.assertIsNone(row.auto_disabled_at)
-        self.assertIsNone(row.rate_limit_resume_at)
+        now = datetime(2026, 6, 21, 12, 0, 0, tzinfo=timezone.utc)
+        with patch(
+            "club_gc_settings.get_migration_recovery_rate_limit_cooldown_sec",
+            return_value=3600,
+        ), patch(
+            "bot.services.migration_recovery.compute_rate_limit_resume_at",
+            return_value=datetime(2026, 6, 21, 13, 1, 30, tzinfo=timezone.utc),
+        ):
+            resume_at = pause_club_for_rate_limit("round_table", 90)
+        self.assertEqual(
+            resume_at,
+            datetime(2026, 6, 21, 13, 1, 30, tzinfo=timezone.utc),
+        )
+        saved = row.club_rate_limit_resume_at
+        self.assertIn("round_table", saved)
 
     @patch("db.connection.get_db")
-    def test_is_rate_limit_pause_pending_before_resume_at(self, mock_get_db: MagicMock) -> None:
+    def test_maybe_clear_expired_club_rate_limits(self, mock_get_db: MagicMock) -> None:
         from datetime import datetime, timezone
 
         row = MagicMock()
-        row.auto_disabled_at = datetime(2026, 6, 21, 12, 0, 0, tzinfo=timezone.utc)
-        row.auto_disabled_reason = "rate_limit"
-        row.rate_limit_resume_at = datetime(2026, 6, 21, 13, 0, 0, tzinfo=timezone.utc)
+        row.auto_disabled_reason = None
+        past = datetime(2026, 6, 21, 12, 0, 0, tzinfo=timezone.utc)
+        future = datetime(2026, 6, 21, 14, 0, 0, tzinfo=timezone.utc)
+        row.club_rate_limit_resume_at = {
+            "round_table": past.isoformat(),
+            "creator_club": future.isoformat(),
+        }
+        session = MagicMock()
+        mock_get_db.return_value.__enter__.return_value = session
+        session.get.return_value = row
+
+        now = datetime(2026, 6, 21, 13, 0, 0, tzinfo=timezone.utc)
+        cleared = maybe_clear_expired_club_rate_limits(now=now)
+        self.assertEqual(cleared, ["round_table"])
+        self.assertIn("creator_club", row.club_rate_limit_resume_at)
+
+    @patch("db.connection.get_db")
+    def test_is_rate_limit_pause_pending_from_club_map(self, mock_get_db: MagicMock) -> None:
+        from datetime import datetime, timezone
+
+        row = MagicMock()
+        row.auto_disabled_reason = None
+        row.club_rate_limit_resume_at = {
+            "round_table": datetime(2026, 6, 21, 13, 0, 0, tzinfo=timezone.utc).isoformat(),
+        }
         session = MagicMock()
         mock_get_db.return_value.__enter__.return_value = session
         session.get.return_value = row
@@ -950,22 +986,21 @@ class TestRateLimitResume(unittest.TestCase):
         self.assertTrue(is_rate_limit_pause_pending(now=now))
 
     @patch("db.connection.get_db")
-    def test_extend_rate_limit_pause_only_moves_later(self, mock_get_db: MagicMock) -> None:
+    def test_is_club_rate_limited(self, mock_get_db: MagicMock) -> None:
         from datetime import datetime, timezone
 
         row = MagicMock()
-        row.auto_disabled_at = datetime(2026, 6, 21, 12, 0, 0, tzinfo=timezone.utc)
-        row.auto_disabled_reason = "rate_limit"
-        row.rate_limit_resume_at = datetime(2026, 6, 21, 14, 0, 0, tzinfo=timezone.utc)
+        row.auto_disabled_reason = None
+        row.club_rate_limit_resume_at = {
+            "round_table": datetime(2026, 6, 21, 13, 0, 0, tzinfo=timezone.utc).isoformat(),
+        }
         session = MagicMock()
         mock_get_db.return_value.__enter__.return_value = session
         session.get.return_value = row
 
-        with patch(
-            "bot.services.migration_recovery.compute_rate_limit_resume_at",
-            return_value=datetime(2026, 6, 21, 13, 0, 0, tzinfo=timezone.utc),
-        ):
-            self.assertFalse(extend_rate_limit_pause(flood_wait_sec=30))
+        now = datetime(2026, 6, 21, 12, 30, 0, tzinfo=timezone.utc)
+        self.assertTrue(is_club_rate_limited("round_table", now=now))
+        self.assertFalse(is_club_rate_limited("creator_club", now=now))
 
     def test_compute_rate_limit_resume_delay_sec_before_due(self) -> None:
         from datetime import datetime, timezone
@@ -978,6 +1013,102 @@ class TestRateLimitResume(unittest.TestCase):
         ):
             delay = compute_rate_limit_resume_delay_sec(now=now)
         self.assertEqual(delay, 3600.0)
+
+
+class TestTickAsyncPerClubFloodWait(unittest.IsolatedAsyncioTestCase):
+    @patch("bot.services.migration_recovery.record_migration_recovery_tick")
+    @patch("bot.services.migration_recovery._maybe_auto_disable_after_tick", new_callable=AsyncMock)
+    @patch("bot.services.migration_recovery.maybe_clear_expired_club_rate_limits", return_value=[])
+    @patch("bot.services.migration_recovery.is_round_table_elevate_recovery_enabled", return_value=False)
+    @patch("bot.services.migration_recovery.set_flood_wait_policy")
+    @patch("bot.services.migration_recovery.set_flood_wait_observer")
+    @patch("bot.services.migration_recovery.get_migration_recovery_invite_delay_sec", return_value=0.0)
+    @patch("bot.services.migration_recovery.get_migration_recovery_batch_size", return_value=2)
+    @patch("bot.services.migration_recovery.is_club_rate_limited", return_value=False)
+    @patch(
+        "bot.services.migration_recovery.migration_recovery_active_club_keys",
+        return_value=("round_table", "creator_club"),
+    )
+    @patch("bot.services.migration_recovery.is_migration_recovery_enabled", return_value=True)
+    @patch("bot.services.migration_recovery._handle_rate_limit_abort", new_callable=AsyncMock)
+    @patch("bot.services.migration_recovery._process_row", new_callable=AsyncMock)
+    @patch("bot.services.migration_recovery.claim_next_pending_row")
+    async def test_flood_wait_on_first_club_continues_to_second(
+        self,
+        mock_claim: MagicMock,
+        mock_process: AsyncMock,
+        mock_handle_abort: AsyncMock,
+        _mock_enabled: MagicMock,
+        _mock_clubs: MagicMock,
+        _mock_limited: MagicMock,
+        _mock_batch: MagicMock,
+        _mock_delay: MagicMock,
+        _mock_observer: MagicMock,
+        _mock_policy: MagicMock,
+        _mock_elevate: MagicMock,
+        _mock_clear: MagicMock,
+        _mock_auto: AsyncMock,
+        _mock_record_tick: MagicMock,
+    ) -> None:
+        rt_row = RecoveryRow(
+            id=1,
+            telegram_chat_id=-1001,
+            club_key="round_table",
+            club_id=2,
+            group_title="RT 1",
+            old_chat_id=-500,
+            player_telegram_user_id=101,
+            player_username="p1",
+        )
+        cc_row = RecoveryRow(
+            id=2,
+            telegram_chat_id=-1002,
+            club_key="creator_club",
+            club_id=3,
+            group_title="CC 1",
+            old_chat_id=-501,
+            player_telegram_user_id=102,
+            player_username="p2",
+        )
+        ok_result = ReaddGroupResult(
+            chat_id=-1002,
+            club_id=3,
+            club_key="creator_club",
+            title="CC 1",
+            member_count_before=0,
+            member_count_after=1,
+            status="ok",
+        )
+
+        cc_claimed = False
+
+        def claim_side_effect(club_key: str):
+            nonlocal cc_claimed
+            if club_key == "round_table":
+                return rt_row
+            if club_key == "creator_club":
+                if cc_claimed:
+                    return None
+                cc_claimed = True
+                return cc_row
+            return None
+
+        mock_claim.side_effect = claim_side_effect
+
+        async def process_side_effect(row: RecoveryRow):
+            if row.club_key == "round_table":
+                raise FloodWaitAbortError(90, "InviteToChannel:101")
+            return "complete", ok_result
+
+        mock_process.side_effect = process_side_effect
+
+        summary = await tick_async()
+
+        mock_handle_abort.assert_awaited_once()
+        self.assertEqual(mock_claim.call_count, 3)
+        self.assertEqual(summary["claimed"], 2)
+        self.assertEqual(summary["failed"], 1)
+        self.assertEqual(summary["complete"], 1)
 
 
 if __name__ == "__main__":
