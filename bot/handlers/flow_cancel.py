@@ -56,6 +56,8 @@ def cashout_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
 
 
 def bonus_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if context.user_data.get("bonus_step"):
+        return True
     return any(k in context.user_data for k in _BONUS_ACTIVE_KEYS)
 
 

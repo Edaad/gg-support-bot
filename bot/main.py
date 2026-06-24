@@ -10,6 +10,7 @@ from telegram import Update
 from telegram.warnings import PTBUserWarning
 from telegram.ext import (
     ApplicationBuilder,
+    CallbackQueryHandler,
     CommandHandler,
     MessageHandler,
     ChatMemberHandler,
@@ -136,7 +137,11 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
     from bot.handlers.refresh import refresh_handler
     from bot.handlers.checkplayer import checkplayer_handler
     from bot.handlers.group_create import get_gc_handler
-    from bot.handlers.bonus import get_bonus_handler
+    from bot.handlers.bonus import (
+        bonus_callback_handler,
+        bonus_entry,
+        bonus_message_handler,
+    )
     from bot.handlers.stripe import stripe_handler
     from bot.handlers.teststripe import teststripe_handler
     from bot.handlers.issue_reports import register_issue_report_handlers
@@ -184,7 +189,9 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         refresh_handler=refresh_handler,
         checkplayer_handler=checkplayer_handler,
         get_gc_handler=get_gc_handler,
-        get_bonus_handler=get_bonus_handler,
+        bonus_entry=bonus_entry,
+        bonus_message_handler=bonus_message_handler,
+        bonus_callback_handler=bonus_callback_handler,
         stripe_handler=stripe_handler,
         teststripe_handler=teststripe_handler,
         register_issue_report_handlers=register_issue_report_handlers,
@@ -224,6 +231,20 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         .post_init(lambda app: _post_init_dm_gc_listener(app, test_mode=test_mode))
         .post_shutdown(lambda app: _post_shutdown_dm_gc_listener(app, test_mode=test_mode))
         .build()
+    )
+
+    # /bonus — register first (group -1) so other flows cannot swallow follow-up messages
+    app.add_handler(CommandHandler("bonus", h.bonus_entry), group=-1)
+    app.add_handler(
+        MessageHandler(
+            filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+            h.bonus_message_handler,
+        ),
+        group=-1,
+    )
+    app.add_handler(
+        CallbackQueryHandler(h.bonus_callback_handler, pattern=r"^b(type:|club:)"),
+        group=-1,
     )
 
     app.add_handler(CommandHandler("start", h.start_handler))
@@ -270,7 +291,6 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
             )
         )
 
-    app.add_handler(h.get_bonus_handler())
     app.add_handler(h.get_set_handler())
     app.add_handler(h.get_deposit_handler())
     app.add_handler(h.get_cashout_handler())
