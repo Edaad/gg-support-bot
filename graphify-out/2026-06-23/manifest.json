@@ -1525,8 +1525,8 @@
     "semantic_hash": "f815b05a6bbf7c0237e414e0d04ee055"
   },
   "db/models.py": {
-    "mtime": 1782183898.2942111,
-    "ast_hash": "e5c2f2c10bacf0138cb3b8c017f84bf6",
+    "mtime": 1782267932.3803499,
+    "ast_hash": "7878f19d665daa9f9824b99461307464",
     "semantic_hash": ""
   },
   "export_payment_config_backup.py": {
@@ -2540,8 +2540,8 @@
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1782267220.1842473,
-    "ast_hash": "781e52987a9185be11ad982db2d5df33",
+    "mtime": 1782268048.3633718,
+    "ast_hash": "61112fa8068035db11efcf64e63c06e9",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -2740,8 +2740,8 @@
     "semantic_hash": ""
   },
   "bot/services/migration_recovery.py": {
-    "mtime": 1782267210.5696728,
-    "ast_hash": "bad7bf2094a7b289a9fd0ecb29fc490e",
+    "mtime": 1782268162.0216112,
+    "ast_hash": "346c91e60f67f481cca1f99914389859",
     "semantic_hash": ""
   },
   "migrate_migrated_group_recovery.py": {
@@ -2750,13 +2750,13 @@
     "semantic_hash": ""
   },
   "scripts/seed_migrated_group_recovery.py": {
-    "mtime": 1782070087.277183,
-    "ast_hash": "e689b46a617f105601d431c5d8610303",
+    "mtime": 1782268051.8924298,
+    "ast_hash": "6b5d41b089cfc1fae86ef5ad33a4ec64",
     "semantic_hash": ""
   },
   "tests/test_migration_recovery.py": {
-    "mtime": 1782267213.5781932,
-    "ast_hash": "6addd4b80cfcd3935a83f429c6fbf719",
+    "mtime": 1782268150.840239,
+    "ast_hash": "26d1174e53713c7094832d685c4d2cc3",
     "semantic_hash": ""
   },
   "bot/services/migration_recovery_priority.py": {
@@ -2870,8 +2870,8 @@
     "semantic_hash": ""
   },
   "tests/test_migration_recovery_batch.py": {
-    "mtime": 1781958510.1009943,
-    "ast_hash": "209c5348ee406d4bf77acd2c32c7b29a",
+    "mtime": 1782268154.046873,
+    "ast_hash": "69f0f86743e98fad214d625040d6a399",
     "semantic_hash": ""
   },
   "scripts/check_recovery_player_membership.py": {
@@ -3307,6 +3307,11 @@
   "tests/test_fileid_issue_report.py": {
     "mtime": 1782184989.9570842,
     "ast_hash": "d7d792244818c88ad565222d259f0b46",
+    "semantic_hash": ""
+  },
+  "migrate_migration_recovery_club_rate_limit.py": {
+    "mtime": 1782267934.0941608,
+    "ast_hash": "a8ee699e9de8b41259049a1f590be69c",
     "semantic_hash": ""
   }
 }
