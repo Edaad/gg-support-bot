@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 
 import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ChatType
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
@@ -87,7 +88,11 @@ async def _fire_zapier_webhook(data: dict):
 
 
 async def bonus_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.effective_user:
+    if not update.message or not update.effective_user or not update.effective_chat:
+        return ConversationHandler.END
+
+    if update.effective_chat.type != ChatType.PRIVATE:
+        await update.message.reply_text("Use /bonus in a private chat with this bot.")
         return ConversationHandler.END
 
     user_id = update.effective_user.id
@@ -283,6 +288,7 @@ async def bonus_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
     _cleanup(context)
+    return ConversationHandler.END
 
 
 _BONUS_CANCEL = CommandHandler("cancel", bonus_cancel)

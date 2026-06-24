@@ -68,6 +68,14 @@ class TestFlowStalenessHelpers(unittest.TestCase):
         self.assertFalse(fs.looks_like_amount("40 debit card"))
         self.assertFalse(fs.looks_like_amount("It keeps saying link expired"))
         self.assertFalse(fs.looks_like_amount("abc"))
+        self.assertFalse(fs.looks_like_amount("TakeYourStack"))
+        self.assertFalse(fs.looks_like_amount("alvareznico"))
+
+    def test_amount_text_filter(self):
+        amount_msg = SimpleNamespace(text="50")
+        username_msg = SimpleNamespace(text="TakeYourStack")
+        self.assertTrue(fs.AMOUNT_TEXT.filter(amount_msg))
+        self.assertFalse(fs.AMOUNT_TEXT.filter(username_msg))
 
     def test_is_update_too_old_rejects_four_minute_backlog(self):
         update = _message_update(age_seconds=240)

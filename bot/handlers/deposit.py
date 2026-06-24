@@ -49,6 +49,7 @@ from bot.services.round_table_unions import (
 )
 from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
 from bot.handlers.flow_staleness import (
+    AMOUNT_TEXT,
     answer_stale_callback,
     deposit_amount_actor_allowed,
     is_update_too_old,
@@ -2231,7 +2232,8 @@ def get_deposit_handler() -> ConversationHandler:
             ],
             DEPOSIT_AMOUNT: [
                 MessageHandler(
-                    filters.TEXT & ~filters.COMMAND, deposit_amount_received
+                    filters.TEXT & ~filters.COMMAND & AMOUNT_TEXT,
+                    deposit_amount_received,
                 ),
                 _DEPOSIT_CANCEL,
             ],

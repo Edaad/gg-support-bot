@@ -270,12 +270,12 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
             )
         )
 
+    app.add_handler(h.get_bonus_handler())
     app.add_handler(h.get_set_handler())
     app.add_handler(h.get_deposit_handler())
     app.add_handler(h.get_cashout_handler())
     app.add_handler(CommandHandler("cancel", h.flow_cancel_handler))
     app.add_handler(h.get_gc_handler())
-    app.add_handler(h.get_bonus_handler())
 
     app.add_handler(MessageHandler(filters.StatusUpdate.MIGRATE, h.on_chat_migrate_from))
     app.add_handler(

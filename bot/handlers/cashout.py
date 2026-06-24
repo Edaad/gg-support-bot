@@ -35,6 +35,7 @@ from bot.services.club import (
 )
 from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
 from bot.handlers.flow_staleness import (
+    AMOUNT_TEXT,
     answer_stale_callback,
     cashout_amount_actor_allowed,
     is_update_too_old,
@@ -552,13 +553,15 @@ def get_cashout_handler() -> ConversationHandler:
         states={
             CASHOUT_AMOUNT: [
                 MessageHandler(
-                    filters.TEXT & ~filters.COMMAND, cashout_amount_received
+                    filters.TEXT & ~filters.COMMAND & AMOUNT_TEXT,
+                    cashout_amount_received,
                 ),
                 _CASHOUT_CANCEL,
             ],
             CASHOUT_SIMPLE_AMOUNT: [
                 MessageHandler(
-                    filters.TEXT & ~filters.COMMAND, cashout_simple_amount_received
+                    filters.TEXT & ~filters.COMMAND & AMOUNT_TEXT,
+                    cashout_simple_amount_received,
                 ),
                 _CASHOUT_CANCEL,
             ],

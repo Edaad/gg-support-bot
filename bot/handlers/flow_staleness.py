@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from telegram import Update
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, filters
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +70,16 @@ def log_stale_update(update: Update, *, handler: str) -> None:
         update_max_age_seconds(),
         chat_id,
     )
+
+
+class _AmountTextFilter(filters.MessageFilter):
+    """Only match messages that look like a dollar amount (not usernames or notes)."""
+
+    def filter(self, message) -> bool:  # type: ignore[override]
+        return looks_like_amount(getattr(message, "text", None))
+
+
+AMOUNT_TEXT = _AmountTextFilter()
 
 
 def looks_like_amount(text: str | None) -> bool:
