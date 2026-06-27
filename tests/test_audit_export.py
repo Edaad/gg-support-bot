@@ -18,12 +18,14 @@ from api.audit_export import (
     SHEET_SPECS,
     ManualAuditRow,
     StripeAuditRow,
+    VenmoAuditRow,
     _fmt_manual_audit_time,
     _fmt_stripe_audit_time,
     _manual_club_name,
     _manual_group_cell,
     _manual_row,
     _stripe_player_cell,
+    _venmo_row,
     build_audit_workbook,
     eastern_audit_end_utc,
     eastern_day_bounds_utc,
@@ -162,6 +164,23 @@ class AuditExportFormattingTestCase(unittest.TestCase):
         self.assertEqual(row.club_label, "Round Table")
         self.assertEqual(row.time_label, _fmt_manual_audit_time(created))
 
+    def test_venmo_row_includes_tag(self):
+        created = datetime(2026, 6, 22, 1, 51, tzinfo=timezone.utc)
+        row = _venmo_row(
+            {
+                "amount_usd": Decimal("50.00"),
+                "payer_name": "Jane Doe",
+                "venmo_handle": "@godfather4444",
+                "group_title": "GTO / 3011-9668 / Pvtenis",
+                "club_id": 1,
+                "created_at": created,
+            },
+            {1: "ClubGTO"},
+        )
+        self.assertEqual(row.venmo_tag, "@godfather4444")
+        self.assertEqual(row.payer_name, "Jane Doe")
+        self.assertEqual(row.club_label, "ClubGTO")
+
 
 class AuditExportWorkbookTestCase(unittest.TestCase):
     def test_alert_scope_labels_importable(self):
@@ -200,12 +219,14 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         self.assertIn("0xfrom", data["from_label"])
 
     @patch("api.audit_export._fetch_stripe_rows", return_value=[])
+    @patch("api.audit_export._fetch_venmo_rows", return_value=[])
     @patch("api.audit_export._fetch_manual_rows", return_value=[])
     @patch("api.audit_export._club_name_map", return_value={})
     def test_build_audit_workbook_has_seven_sheets_with_headers(
         self,
         _club_map,
         _manual,
+        _venmo,
         _stripe,
     ):
         session = MagicMock()
@@ -218,9 +239,10 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
             ws = wb[spec.title]
             self.assertEqual([cell.value for cell in ws[1]], spec.headers)
 
+    @patch("api.audit_export._fetch_venmo_rows", return_value=[])
     @patch("api.audit_export._fetch_manual_rows", return_value=[])
     @patch("api.audit_export._club_name_map", return_value={})
-    def test_build_audit_workbook_styles_stripe_sheet(self, _club_map, _manual):
+    def test_build_audit_workbook_styles_stripe_sheet(self, _club_map, _manual, _venmo):
         stripe_rows = [
             StripeAuditRow(
                 amount_usd=42.0,
@@ -264,10 +286,12 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         self.assertEqual(zelle_ws.max_row, 1)
 
     @patch("api.audit_export._fetch_stripe_rows", return_value=[])
+    @patch("api.audit_export._fetch_venmo_rows", return_value=[])
     @patch("api.audit_export._club_name_map", return_value={})
     def test_build_audit_workbook_writes_manual_group_and_club_columns(
         self,
         _club_map,
+        _venmo,
         _stripe,
     ):
         manual_rows = [
@@ -306,6 +330,38 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         self.assertEqual(zelle_ws["C2"].value, "GTO / 3011-9668 / Pvtenis")
         self.assertEqual(zelle_ws["D2"].value, "ClubGTO")
         self.assertEqual(zelle_ws["E2"].value, "June 21, 2026 at 11:57 PM")
+
+    @patch("api.audit_export._fetch_stripe_rows", return_value=[])
+    @patch("api.audit_export._fetch_manual_rows", return_value=[])
+    @patch("api.audit_export._club_name_map", return_value={})
+    def test_build_audit_workbook_writes_venmo_tag_column(self, _club_map, _manual, _stripe):
+        venmo_rows = [
+            VenmoAuditRow(
+                amount_usd=100.0,
+                payer_name="Jane Doe",
+                venmo_tag="@godfather4444",
+                group_title="GTO / 3011-9668 / Pvtenis",
+                club_label="ClubGTO",
+                time_label="June 21, 2026 at 11:57 PM",
+            )
+        ]
+
+        with patch("api.audit_export._fetch_venmo_rows", return_value=venmo_rows):
+            content = build_audit_workbook(
+                MagicMock(),
+                datetime(2026, 6, 21, 4, 0, tzinfo=timezone.utc),
+                datetime(2026, 6, 22, 3, 59, 59, 999999, tzinfo=timezone.utc),
+            )
+
+        wb = load_workbook(io.BytesIO(content))
+        venmo_ws = wb["Venmo"]
+        self.assertEqual(
+            [cell.value for cell in venmo_ws[1]],
+            ["Amount", "Name", "Tag", "Group", "Club", "Time"],
+        )
+        self.assertEqual(venmo_ws["C2"].value, "@godfather4444")
+        self.assertEqual(venmo_ws["D2"].value, "GTO / 3011-9668 / Pvtenis")
+        self.assertEqual(venmo_ws["E2"].value, "ClubGTO")
 
 
 class AuditExportApiTestCase(unittest.TestCase):
