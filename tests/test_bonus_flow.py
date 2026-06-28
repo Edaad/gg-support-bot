@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, patch
 from telegram.ext import ApplicationHandlerStop
 
 from bot.handlers import bonus as bonus_mod
+from bot.handlers.commands import RESERVED_CMDS
+from bot.handlers.flow_cancel import ACTIVE_FLOW_KEY
 
 
 def _private_text_update(*, text: str, user_id: int = 12345, chat_id: int = 12345):
@@ -28,6 +30,9 @@ def _private_text_update(*, text: str, user_id: int = 12345, chat_id: int = 1234
 
 
 class TestBonusFlow(unittest.IsolatedAsyncioTestCase):
+    def test_bonus_is_reserved_command(self):
+        self.assertIn("bonus", RESERVED_CMDS)
+
     @patch.object(bonus_mod, "ADMIN_USER_IDS", {12345})
     async def test_username_advances_to_amount(self):
         update = _private_text_update(text="TakeYourStack")
@@ -39,6 +44,25 @@ class TestBonusFlow(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.user_data["bonus_step"], "amount")
         self.assertEqual(context.user_data["bonus_player"], "TakeYourStack")
         update.message.reply_text.assert_awaited_once_with("Amount ($):")
+
+    @patch.object(bonus_mod, "ADMIN_USER_IDS", {12345})
+    async def test_username_not_blocked_by_stale_sendinactive_keys(self):
+        update = _private_text_update(text="LPONLOCK")
+        context = SimpleNamespace(
+            user_data={
+                "bonus_step": "username",
+                "bonus_admin_id": 12345,
+                ACTIVE_FLOW_KEY: "bonus",
+                "io_club_key": "round_table",
+                "io_step": "compose",
+            }
+        )
+
+        with self.assertRaises(ApplicationHandlerStop):
+            await bonus_mod.bonus_message_handler(update, context)
+
+        self.assertEqual(context.user_data["bonus_step"], "amount")
+        self.assertEqual(context.user_data["bonus_player"], "LPONLOCK")
 
     async def test_message_handler_ignored_when_not_in_bonus_flow(self):
         update = _private_text_update(text="hello")

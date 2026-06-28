@@ -12,7 +12,7 @@ from telegram.constants import ChatType
 from telegram.ext import ApplicationHandlerStop, ContextTypes
 
 from config import ADMIN_USER_IDS
-from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
+from bot.handlers.flow_cancel import ACTIVE_FLOW_KEY, clear_active_flow, mark_active_flow
 from db.connection import get_db
 from db.models import BonusType, BonusRecord, Club
 
@@ -169,6 +169,9 @@ async def bonus_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not _is_bonus_admin(update):
         return
 
+    from bot.handlers.inactive_outreach_send import _cleanup_send_flow
+
+    _cleanup_send_flow(context)
     _cleanup(context)
     user_id = update.effective_user.id
     context.user_data["bonus_admin_id"] = user_id
@@ -180,6 +183,7 @@ async def bonus_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         user_id=user_id,
     )
     await update.message.reply_text("Player Username:")
+    raise ApplicationHandlerStop()
 
 
 async def bonus_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -189,9 +193,7 @@ async def bonus_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if update.effective_chat.type != ChatType.PRIVATE:
         return
 
-    from bot.handlers.inactive_outreach_send import sendinactive_compose_active
-
-    if sendinactive_compose_active(context):
+    if context.user_data.get(ACTIVE_FLOW_KEY) == "inactive_outreach_send":
         return
 
     step = context.user_data.get(BONUS_STEP_KEY)

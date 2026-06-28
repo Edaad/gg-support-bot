@@ -13,7 +13,7 @@ from telegram.ext import (
 
 from club_gc_settings import INACTIVE_OUTREACH_CLUB_KEYS, gc_mtproto_operator_telegram_user_ids
 from config import ADMIN_USER_IDS
-from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
+from bot.handlers.flow_cancel import ACTIVE_FLOW_KEY, clear_active_flow, mark_active_flow
 from bot.services.inactive_group_outreach_dm import (
     arm_dm_campaign,
     count_dm_eligible_recipients,
@@ -145,6 +145,9 @@ async def sendinactive_entry(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         raise ApplicationHandlerStop()
 
+    from bot.handlers.bonus import _cleanup as _cleanup_bonus_flow
+
+    _cleanup_bonus_flow(context)
     _cleanup_send_flow(context)
     mark_active_flow(context, "inactive_outreach_send")
     context.user_data["io_club_key"] = club_key
@@ -184,6 +187,8 @@ async def sendinactive_message_handler(
     if not update.message or not update.effective_chat or not update.effective_user:
         return
     if update.effective_chat.type != ChatType.PRIVATE:
+        return
+    if context.user_data.get(ACTIVE_FLOW_KEY) == "bonus":
         return
     if not sendinactive_compose_active(context):
         return

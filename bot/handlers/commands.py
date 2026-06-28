@@ -35,6 +35,7 @@ RESERVED_CMDS = {
     "gc", "add", "cash", "refresh", "unbindmethod", "whosnext",
     "stripe", "cashapp", "stageinactive", "unstageinactive", "stagedinactive",
     "sendinactive",
+    "bonus",
 }
 
 SET_NAME, SET_MESSAGE = range(2)
