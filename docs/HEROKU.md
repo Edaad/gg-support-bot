@@ -276,6 +276,62 @@ heroku config:unset GC_MIGRATION_RECOVERY_ENABLED -a YOUR_APP
 
 To resume after auto-disable: clear the DB flag (`--clear-auto-disable`), set the env var again, and restart the worker.
 
+## Inactive group outreach scan (one-shot, entity resolution only)
+
+Scans all three clubs' support megagroups for **last non-support player message** activity (Telethon history, not deposit/bind signals), flags **90d / 180d** inactivity, resolves player entities for future DMs, and writes audit rows. **Does not send DMs.** Reuses the worker's live MTProto listener — no `heroku run` and no `GC_MTPROTO_ENABLED=false`.
+
+**Migration:**
+
+```bash
+heroku run -a YOUR_APP -- python migrate_inactive_group_outreach.py
+```
+
+**Enable** on the worker dyno:
+
+```bash
+heroku config:set GC_INACTIVE_OUTREACH_SCAN_ENABLED=true -a YOUR_APP
+heroku restart worker -a YOUR_APP
+```
+
+Optional knobs: `GC_INACTIVE_OUTREACH_BATCH_SIZE` (default `8`, groups per club per tick), `GC_INACTIVE_OUTREACH_INTERVAL_SEC` (default `120`), `GC_INACTIVE_OUTREACH_HISTORY_LIMIT` (default `200` messages per chat), `GC_INACTIVE_OUTREACH_FIRST_DELAY_SEC` (default `300`, delay after boot before first tick).
+
+Requires `GC_DM_GC_LISTENER_ENABLED` (default on). The job seeds one row per tracking-title **megagroup** from `iter_dialogs`, dual-scans supergroup + legacy `old_chat_id`, merges timestamps, and stops when `inactive_group_outreach_control.scan_status=complete`. Unset env after completion (optional — DB gate prevents re-run).
+
+**Monitor:**
+
+```sql
+SELECT scan_status, targets_total, rows_scanned,
+       inactive_90d_count, inactive_180d_count, entity_resolvable_count,
+       started_at, completed_at, last_error
+FROM inactive_group_outreach_control WHERE id = 1;
+
+SELECT club_key, COUNT(*) FROM inactive_group_outreach_rows
+WHERE inactive_180d AND entity_resolvable
+GROUP BY club_key;
+
+SELECT club_key, activity_merged_from, COUNT(*)
+FROM inactive_group_outreach_rows
+WHERE duplicate_title
+GROUP BY club_key, activity_merged_from;
+```
+
+Tail worker logs: `heroku logs -a YOUR_APP --dyno worker --tail | rg inactive_outreach`
+
+**Reset for a future re-scan** (manual):
+
+```sql
+UPDATE inactive_group_outreach_control
+SET scan_status = 'idle', started_at = NULL, completed_at = NULL,
+    targets_total = 0, rows_scanned = 0, inactive_90d_count = 0,
+    inactive_180d_count = 0, entity_resolvable_count = 0, last_error = NULL
+WHERE id = 1;
+TRUNCATE inactive_group_outreach_rows;
+```
+
+Then set `GC_INACTIVE_OUTREACH_SCAN_ENABLED=true` and restart the worker.
+
+Local single-group debug: [`scripts/run_inactive_group_outreach_scan.py`](../scripts/run_inactive_group_outreach_scan.py) (`--chat-id` / `--row-id`, default dry-run). Uses a dedicated MTProto session — do not run against a club session held by the worker.
+
 ## Notification bot (`notification` dyno)
 
 Separate bot for payment notification bind replies (`TELEGRAM_NOTIFICATION_BOT_TOKEN`, `PAYMENT_NOTIFICATION_CHAT_ID`).

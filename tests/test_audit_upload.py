@@ -39,7 +39,12 @@ class AuditUploadApiTestCase(unittest.TestCase):
                 return q
 
             if model is TradeRecordUpload:
-                q.filter_by.return_value.first.side_effect = self._existing_upload
+                def filter_by(**kwargs):
+                    q = MagicMock()
+                    q.first.return_value = self._existing_upload(**kwargs)
+                    return q
+
+                q.filter_by.side_effect = filter_by
                 return q
 
             if model is TradeRecordLine:
@@ -119,6 +124,43 @@ class AuditUploadApiTestCase(unittest.TestCase):
         self.assertEqual(body["club_slug"], "aces-table")
         self.assertEqual(body["audit_date"], "2026-06-21")
         self.assertTrue(len(self.line_rows) >= 2)
+
+    @patch("api.routes.audit.sync_identities")
+    @patch("api.routes.audit.resolve_club_id", return_value=2)
+    def test_reupload_updates_existing_upload(self, _resolve, mock_sync):
+        from api.trade_record_sync import IdentitySyncReport
+
+        mock_sync.return_value = IdentitySyncReport(identities_extracted=3)
+        existing = TradeRecordUpload(
+            id=1,
+            club_id=2,
+            audit_date=date(2026, 6, 21),
+            filename="old.xlsx",
+            metadata_json="{}",
+        )
+        self.upload_rows.append(existing)
+
+        raw = build_sample_trade_record_xlsx(
+            club_label="Aces Table",
+            audit_date=date(2026, 6, 21),
+        )
+        response = self.client.post(
+            "/api/audit/trade-records/upload",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+            files={
+                "file": (
+                    "Aces-21.xlsx",
+                    raw,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertTrue(body["replaced_previous"])
+        self.assertEqual(body["upload_id"], 1)
+        self.assertEqual(len(self.upload_rows), 1)
+        self.assertEqual(self.upload_rows[0].filename, "Aces-21.xlsx")
 
     def test_upload_requires_auth(self):
         app = FastAPI()

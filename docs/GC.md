@@ -231,6 +231,32 @@ DATABASE_URL=postgresql://... python migrate_support_group_chats.py
 DATABASE_URL=postgresql://... python migrate_support_group_chats_player_dm.py
 ```
 
+## Inactive group outreach scan (entity resolution only)
+
+One-shot worker batch job that scans all three clubs' support megagroups for **last non-support message activity**, flags **90d / 180d** inactivity, resolves player entities, and persists audit rows to Postgres. **No DMs in v1.**
+
+- Reuses live listener Telethon clients via [`get_listener_client()`](mtproto_dm_gc_listener.py) — no `heroku run`, no worker MTProto disable.
+- Dual-chat scan: supergroup + legacy `old_chat_id` merge (same pattern as migration triage).
+- Implementation: [`bot/services/inactive_group_outreach.py`](../bot/services/inactive_group_outreach.py), shared activity helpers in [`bot/services/mtproto_group_activity.py`](../bot/services/mtproto_group_activity.py).
+
+**Enable on worker:**
+
+```bash
+heroku run -a YOUR_APP -- python migrate_inactive_group_outreach.py
+heroku config:set GC_INACTIVE_OUTREACH_SCAN_ENABLED=true -a YOUR_APP
+heroku restart worker -a YOUR_APP
+```
+
+Knobs: `GC_INACTIVE_OUTREACH_BATCH_SIZE` (default `8`), `GC_INACTIVE_OUTREACH_INTERVAL_SEC` (default `120`), `GC_INACTIVE_OUTREACH_HISTORY_LIMIT` (default `200`), `GC_INACTIVE_OUTREACH_FIRST_DELAY_SEC` (default `300`). When `inactive_group_outreach_control.scan_status=complete`, the job self-stops (DB gate; unset env optional).
+
+Local debug (dedicated session — not concurrent with worker):
+
+```bash
+python scripts/run_inactive_group_outreach_scan.py --club-key round_table --chat-id -100123 --dry-run
+```
+
+See [`docs/HEROKU.md`](HEROKU.md) for SQL query examples and reset instructions.
+
 ## Troubleshooting
 
 - **Unauthorized**: Your Telegram user id does not match any `command_admin_user_id` in `club_gc_settings.py`.

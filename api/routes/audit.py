@@ -72,30 +72,31 @@ async def upload_trade_record(
         .first()
     )
     replaced_previous = existing is not None
-    replaced_id = existing.id if existing else None
+    metadata_json = json.dumps(
+        {
+            "club_text": parsed.metadata.club_text,
+            "club_id_text": parsed.metadata.club_id_text,
+            "date_text": parsed.metadata.date_text,
+        }
+    )
 
     if existing:
         db.query(TradeRecordLine).filter_by(upload_id=existing.id).delete(
             synchronize_session=False
         )
-        db.delete(existing)
+        existing.filename = filename
+        existing.metadata_json = metadata_json
+        upload = existing
         db.flush()
-
-    upload = TradeRecordUpload(
-        club_id=club_id,
-        audit_date=parsed_date,
-        filename=filename,
-        metadata_json=json.dumps(
-            {
-                "club_text": parsed.metadata.club_text,
-                "club_id_text": parsed.metadata.club_id_text,
-                "date_text": parsed.metadata.date_text,
-            }
-        ),
-        replaced_upload_id=replaced_id,
-    )
-    db.add(upload)
-    db.flush()
+    else:
+        upload = TradeRecordUpload(
+            club_id=club_id,
+            audit_date=parsed_date,
+            filename=filename,
+            metadata_json=metadata_json,
+        )
+        db.add(upload)
+        db.flush()
 
     for tx in parsed.transactions:
         db.add(

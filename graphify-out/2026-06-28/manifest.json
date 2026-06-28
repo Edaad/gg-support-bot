@@ -960,8 +960,8 @@
     "semantic_hash": "83d6a914c0b50be1e004c545364fd630"
   },
   "bot/handlers/commands.py": {
-    "mtime": 1781148093.7125168,
-    "ast_hash": "81ce552651149f576f17d00f7b0536bb",
+    "mtime": 1782621009.7506213,
+    "ast_hash": "601fcecca540e0110034ef73f8f15cd4",
     "semantic_hash": ""
   },
   "bot/handlers/deposit.py": {
@@ -1020,9 +1020,9 @@
     "semantic_hash": ""
   },
   "bot/handlers/stripe.py": {
-    "mtime": 1780021376.9414487,
-    "ast_hash": "c1529849cb05dc7613f667f30683c9d5",
-    "semantic_hash": "c1529849cb05dc7613f667f30683c9d5"
+    "mtime": 1782621003.4511733,
+    "ast_hash": "b1b39e75923ad388d3a7961111082599",
+    "semantic_hash": ""
   },
   "bot/handlers/telemsg.py": {
     "mtime": 1779551492.662922,
@@ -1045,8 +1045,8 @@
     "semantic_hash": "79c6fe14be16e88a1c87f51a4407ab76"
   },
   "bot/main.py": {
-    "mtime": 1782570391.9608135,
-    "ast_hash": "3252d42b1c89d6e5e475786f83a07c51",
+    "mtime": 1782621011.9410558,
+    "ast_hash": "906c1bdea7186cdd67eec32ea2b2e41a",
     "semantic_hash": ""
   },
   "bot/runtime_config.py": {
@@ -3372,6 +3372,21 @@
   "tests/test_trade_record_parser.py": {
     "mtime": 1782620141.2909005,
     "ast_hash": "0da584bba20d9374e2c27bec1bfe4b33",
+    "semantic_hash": ""
+  },
+  "bot/handlers/cashapp.py": {
+    "mtime": 1782621000.2284102,
+    "ast_hash": "8c0211eee135479405c1f16879299d75",
+    "semantic_hash": ""
+  },
+  "bot/handlers/group_checkout_commands.py": {
+    "mtime": 1782620995.8638678,
+    "ast_hash": "c8ee342944dc9d0d2403916f978f560b",
+    "semantic_hash": ""
+  },
+  "tests/test_group_checkout_commands.py": {
+    "mtime": 1782621036.4652164,
+    "ast_hash": "f23fe13da845a166a213c7260c5123ac",
     "semantic_hash": ""
   }
 }

@@ -813,6 +813,74 @@ class MigrationRecoveryControl(Base):
     club_rate_limit_resume_at = Column(JSONB, nullable=True)
 
 
+class InactiveGroupOutreachControl(Base):
+    """Singleton row: one-shot inactive group outreach scan state."""
+
+    __tablename__ = "inactive_group_outreach_control"
+
+    id = Column(Integer, primary_key=True, default=1)
+    scan_status = Column(String(32), nullable=False, default="idle")
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    targets_total = Column(Integer, nullable=False, default=0)
+    rows_scanned = Column(Integer, nullable=False, default=0)
+    inactive_90d_count = Column(Integer, nullable=False, default=0)
+    inactive_180d_count = Column(Integer, nullable=False, default=0)
+    entity_resolvable_count = Column(Integer, nullable=False, default=0)
+    last_error = Column(Text, nullable=True)
+    last_tick_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class InactiveGroupOutreachRow(Base):
+    """Per-megagroup audit row for inactive outreach scan (entity resolution only in v1)."""
+
+    __tablename__ = "inactive_group_outreach_rows"
+    __table_args__ = (
+        UniqueConstraint(
+            "club_key",
+            "telegram_chat_id",
+            name="uq_inactive_group_outreach_club_chat",
+        ),
+        Index("ix_inactive_group_outreach_rows_scan_status", "scan_status", "club_key"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    club_key = Column(String(64), nullable=False)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    group_title = Column(Text, nullable=False)
+    legacy_chat_id = Column(BigInteger, nullable=True)
+    gg_player_id = Column(String(64), nullable=True)
+    last_external_message_at = Column(DateTime(timezone=True), nullable=True)
+    activity_basis = Column(String(32), nullable=True)
+    last_external_supergroup_at = Column(DateTime(timezone=True), nullable=True)
+    activity_basis_supergroup = Column(String(32), nullable=True)
+    last_external_legacy_at = Column(DateTime(timezone=True), nullable=True)
+    activity_basis_legacy = Column(String(32), nullable=True)
+    activity_merged_from = Column(String(16), nullable=True)
+    inactive_90d = Column(Boolean, nullable=False, default=False)
+    inactive_180d = Column(Boolean, nullable=False, default=False)
+    duplicate_title = Column(Boolean, nullable=False, default=False)
+    newer_same_title_chat_id = Column(BigInteger, nullable=True)
+    player_telegram_user_id = Column(BigInteger, nullable=True)
+    player_username = Column(Text, nullable=True)
+    player_display_name = Column(Text, nullable=True)
+    player_source = Column(String(32), nullable=True)
+    account_check = Column(String(16), nullable=True)
+    entity_resolvable = Column(Boolean, nullable=False, default=False)
+    scan_status = Column(String(16), nullable=False, default="pending")
+    scan_error = Column(Text, nullable=True)
+    scanned_at = Column(DateTime(timezone=True), nullable=True)
+    dm_status = Column(String(32), nullable=True)
+    dm_error = Column(Text, nullable=True)
+    dm_sent_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class StripeCustomer(Base):
     """Maps a support group chat to a stable Stripe Customer for debit-card deposits."""
 

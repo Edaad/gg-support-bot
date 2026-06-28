@@ -1045,8 +1045,8 @@
     "semantic_hash": "79c6fe14be16e88a1c87f51a4407ab76"
   },
   "bot/main.py": {
-    "mtime": 1782621011.9410558,
-    "ast_hash": "906c1bdea7186cdd67eec32ea2b2e41a",
+    "mtime": 1782622234.3864586,
+    "ast_hash": "9539ff9b761982aa812c3d15487d9ab4",
     "semantic_hash": ""
   },
   "bot/runtime_config.py": {
@@ -1280,8 +1280,8 @@
     "semantic_hash": ""
   },
   "club_gc_settings.py": {
-    "mtime": 1782570375.8387425,
-    "ast_hash": "c5a50fe46c11f44a77ee530bff67304b",
+    "mtime": 1782622213.1149912,
+    "ast_hash": "07ea9209c6aa20a0974964e1ca4514fd",
     "semantic_hash": ""
   },
   "config.py": {
@@ -1525,8 +1525,8 @@
     "semantic_hash": "f815b05a6bbf7c0237e414e0d04ee055"
   },
   "db/models.py": {
-    "mtime": 1782611061.1383142,
-    "ast_hash": "18a9a6b7902395f3589ce0fda9e62184",
+    "mtime": 1782622210.0255957,
+    "ast_hash": "1e2299799138db812c9267ab88a03ae6",
     "semantic_hash": ""
   },
   "export_payment_config_backup.py": {
@@ -2535,13 +2535,13 @@
     "semantic_hash": ""
   },
   "docs/GC.md": {
-    "mtime": 1781985513.528728,
-    "ast_hash": "0a06ed51f52e9676b549b897558a3b63",
+    "mtime": 1782622254.4132912,
+    "ast_hash": "a40aaa21c58f438e2791dd897b1cc891",
     "semantic_hash": ""
   },
   "docs/HEROKU.md": {
-    "mtime": 1782570375.8334658,
-    "ast_hash": "61112fa8068035db11efcf64e63c06e9",
+    "mtime": 1782622258.4225214,
+    "ast_hash": "693d2198d3487145bf0dd816678e3b7d",
     "semantic_hash": ""
   },
   "docs/LINKED_ACCOUNTS.md": {
@@ -3387,6 +3387,31 @@
   "tests/test_group_checkout_commands.py": {
     "mtime": 1782621036.4652164,
     "ast_hash": "f23fe13da845a166a213c7260c5123ac",
+    "semantic_hash": ""
+  },
+  "bot/services/inactive_group_outreach.py": {
+    "mtime": 1782622234.4173276,
+    "ast_hash": "bf50bf5e546a94f5c70e9fcc742f9bc7",
+    "semantic_hash": ""
+  },
+  "bot/services/mtproto_group_activity.py": {
+    "mtime": 1782622204.928012,
+    "ast_hash": "8a2292e0b320dca95c8d9155d8158cb0",
+    "semantic_hash": ""
+  },
+  "migrate_inactive_group_outreach.py": {
+    "mtime": 1782622198.5977526,
+    "ast_hash": "4ad2ba4e75d6fff4da01346854305575",
+    "semantic_hash": ""
+  },
+  "scripts/run_inactive_group_outreach_scan.py": {
+    "mtime": 1782622238.9967756,
+    "ast_hash": "3bbed51212f5707de4ed4d162d56ca3e",
+    "semantic_hash": ""
+  },
+  "tests/test_inactive_group_outreach.py": {
+    "mtime": 1782622270.8179042,
+    "ast_hash": "63cdfccc29607a83f6d13d86e77de3b7",
     "semantic_hash": ""
   }
 }

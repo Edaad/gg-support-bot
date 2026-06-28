@@ -559,6 +559,31 @@ def is_migration_recovery_slack_summary_enabled() -> bool:
     return bool((token and channel) or webhook)
 
 
+INACTIVE_OUTREACH_CLUB_KEYS: tuple[str, ...] = MIGRATION_RECOVERY_CLUB_KEYS
+
+
+def is_inactive_outreach_scan_enabled() -> bool:
+    """One-shot worker batch scan for inactive support megagroups (entity resolution only)."""
+
+    return _env_bool("GC_INACTIVE_OUTREACH_SCAN_ENABLED", default=False)
+
+
+def get_inactive_outreach_batch_size() -> int:
+    return max(1, min(_env_int("GC_INACTIVE_OUTREACH_BATCH_SIZE", 8), 50))
+
+
+def get_inactive_outreach_interval_sec() -> int:
+    return max(60, _env_int("GC_INACTIVE_OUTREACH_INTERVAL_SEC", 120))
+
+
+def get_inactive_outreach_history_limit() -> int:
+    return max(1, _env_int("GC_INACTIVE_OUTREACH_HISTORY_LIMIT", 200))
+
+
+def get_inactive_outreach_first_delay_sec() -> float:
+    return max(0.0, _env_float("GC_INACTIVE_OUTREACH_FIRST_DELAY_SEC", 300.0))
+
+
 def get_dm_gc_listener_restart_config() -> tuple[float, float, float]:
     """``(initial_delay_sec, max_delay_sec, backoff_multiplier)`` for listener supervision."""
 
