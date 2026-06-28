@@ -57,7 +57,7 @@ class TestGcCommand(unittest.IsolatedAsyncioTestCase):
 
     @patch("bot.handlers.group_create.fetch_support_group_chat_by_club_player")
     @patch("bot.handlers.group_create.resolve_telegram_user_marker", new_callable=AsyncMock)
-    @patch("bot.handlers.group_create.create_support_megagroup", new_callable=AsyncMock)
+    @patch("bot.handlers.group_create.create_support_group", new_callable=AsyncMock)
     @patch("bot.handlers.group_create.is_client_authorized", new_callable=AsyncMock, return_value=True)
     @patch("bot.handlers.group_create.get_tg_mtproto_credentials")
     @patch("bot.handlers.group_create.get_club_config_for_admin")
@@ -90,7 +90,7 @@ class TestGcCommand(unittest.IsolatedAsyncioTestCase):
 
         mock_create.return_value = MtProtoGroupOutcome(
             ok=True,
-            telegram_chat_id=-100123,
+            telegram_chat_id=-5287778428,
             telegram_chat_title="RT / / @carson",
             invite_link="https://t.me/+abc",
             added_users=[],

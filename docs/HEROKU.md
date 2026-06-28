@@ -128,7 +128,7 @@ heroku config:unset GC_MTPROTO_ENABLED -a YOUR_APP   # or set true
 heroku restart worker -a YOUR_APP
 ```
 
-`GC_MTPROTO_ENABLED=false` disables the dm_gc listener and MTProto contact save on the worker. Finer control: `GC_DM_GC_LISTENER_ENABLED=false` only (when `GC_MTPROTO_ENABLED` is still on). To pause **new** auto `/gc` megagroups while still re-adding bound players: `GC_DM_GC_NEW_GROUPS_ENABLED=false`. See [`docs/GC.md`](GC.md).
+`GC_MTPROTO_ENABLED=false` disables the dm_gc listener and MTProto contact save on the worker. Finer control: `GC_DM_GC_LISTENER_ENABLED=false` only (when `GC_MTPROTO_ENABLED` is still on). To pause **new** auto `/gc` groups while still re-adding bound players: `GC_DM_GC_NEW_GROUPS_ENABLED=false`. See [`docs/GC.md`](GC.md).
 
 ### Invite link backfill (`support_group_chats.invite_link`)
 
@@ -296,6 +296,8 @@ heroku restart worker -a YOUR_APP
 Optional knobs: `GC_INACTIVE_OUTREACH_BATCH_SIZE` (default `8`, groups per club per tick), `GC_INACTIVE_OUTREACH_INTERVAL_SEC` (default `120`), `GC_INACTIVE_OUTREACH_HISTORY_LIMIT` (default `200` messages per chat), `GC_INACTIVE_OUTREACH_FIRST_DELAY_SEC` (default `300`, delay after boot before first tick).
 
 Requires `GC_DM_GC_LISTENER_ENABLED` (default on). The job seeds one row per tracking-title **megagroup** from `iter_dialogs`, dual-scans supergroup + legacy `old_chat_id`, merges timestamps, and stops when `inactive_group_outreach_control.scan_status=complete`. Unset env after completion (optional — DB gate prevents re-run).
+
+**Inactivity definition:** last message from an **eligible player** only (same exclusions as contact save / player discovery). Staff or bot messages do **not** count. When a supergroup has multiple pre-migration basic groups, **all** known legacy chat ids are scanned and the newest player activity is kept.
 
 **Monitor:**
 

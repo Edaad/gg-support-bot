@@ -124,7 +124,7 @@ async def notify_club_gc_channels_too_much(
     player_label: str,
     trigger: str | None = None,
 ) -> None:
-    """DM club GC admin when megagroup creation hits Telegram's group/channel cap."""
+    """DM club GC admin when group creation hits Telegram's group/channel cap."""
 
     now = time.monotonic()
     last = _channels_too_much_last_notify.get(cfg.club_key, 0.0)

@@ -24,7 +24,7 @@ from bot.handlers.groups import send_post_gc_intro_bundle
 from bot.services.club import ensure_group_chat_linked
 from bot.services.club import find_group_chat_id_by_name, get_group_title_for_chat
 from bot.services.mtproto_group_create import (
-    create_support_megagroup,
+    create_support_group,
     ensure_player_in_support_group,
     export_invite_link_for_peer,
     is_client_authorized,
@@ -255,7 +255,7 @@ async def _flow_new_group(
     player_label = _telethon_user_label(player)
 
     try:
-        outcome = await create_support_megagroup(
+        outcome = await create_support_group(
             cfg,
             bot_dm_username=bot_dm_username,
             player_user=player,
@@ -264,7 +264,7 @@ async def _flow_new_group(
     except Exception as e:
         err_name = type(e).__name__
         logger.exception(
-            "dm_gc /gc failed: create_support_megagroup threw club_key=%s listener=%s player=%s: %s",
+            "dm_gc /gc failed: create_support_group threw club_key=%s listener=%s player=%s: %s",
             cfg.club_key,
             listener_label,
             player_label,
@@ -282,7 +282,7 @@ async def _flow_new_group(
     if cid is None:
         warn_tail = "; ".join((outcome.warnings or [])[:8]) if outcome.warnings else ""
         logger.warning(
-            "dm_gc /gc failed: megagroup_missing_chat_id club_key=%s listener=%s player=%s "
+            "dm_gc /gc failed: group_missing_chat_id club_key=%s listener=%s player=%s "
             "error_hint=%s warnings_preview=%s",
             cfg.club_key,
             listener_label,
@@ -407,7 +407,7 @@ async def _run_gc_flow_for_player(
     trigger: str,
     delete_trigger_message: bool = False,
 ) -> None:
-    """Create or reuse a support megagroup for ``player`` (shared by incoming DM and outgoing /gc)."""
+    """Create or reuse a support group for ``player`` (shared by incoming DM and outgoing /gc)."""
     player_id = player.id
     player_label = _telethon_user_label(player)
 

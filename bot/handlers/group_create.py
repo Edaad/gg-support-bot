@@ -1,4 +1,4 @@
-"""`/gc`: create support megagroups via MTProto when the Telethon session is already authorized."""
+"""`/gc`: create support groups via MTProto when the Telethon session is already authorized."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from bot.handlers.groups import send_post_gc_intro_bundle
 from bot.services.club import ensure_group_chat_linked
 from bot.services.mtproto_group_create import (
     MtProtoGroupOutcome,
-    create_support_megagroup,
+    create_support_group,
     is_client_authorized,
     resolve_telegram_user_marker,
     send_player_dm_via_club,
@@ -264,7 +264,7 @@ async def _finish_gc_creation(
 
 
 async def gc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Create a megagroup when authorized; otherwise point operators to Dashboard login."""
+    """Create a basic support group when authorized; otherwise point operators to Dashboard login."""
 
     if (
         not update.effective_user
@@ -315,14 +315,14 @@ async def gc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_username = me.username.strip() if me and me.username else None
 
     try:
-        outcome = await create_support_megagroup(
+        outcome = await create_support_group(
             cfg,
             bot_dm_username=bot_username,
             player_user=player_user,
         )
     except Exception as e:
         hint = type(e).__name__
-        logger.exception("MTProto megagroup flow failed (%s)", hint)
+        logger.exception("MTProto group creation failed (%s)", hint)
         if hint == "ChannelsTooMuchError":
             from bot.services.mtproto_track_contact import notify_club_gc_channels_too_much
 

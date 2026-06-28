@@ -1,4 +1,4 @@
-"""Rename support megagroups via the club MTProto session (group creator).
+"""Rename support groups via the club MTProto session (group creator).
 
 The bot is invited as a regular member, so Bot API ``set_chat_title`` usually fails.
 """
@@ -12,6 +12,7 @@ from telegram import Bot
 from club_gc_settings import get_club_gc_config_by_link_club_id
 from bot.services.club import update_group_name
 from bot.services.mtproto_group_create import (
+    _is_channel_entity,
     _with_single_flood_retry,
     get_mtproto_lock,
     is_client_authorized,
@@ -44,19 +45,28 @@ async def rename_support_group_title(
                     await client.connect()
                     try:
                         from telethon.tl.functions.channels import EditTitleRequest
+                        from telethon.tl.functions.messages import EditChatTitleRequest
                         from telethon.utils import get_input_channel
 
                         entity = await client.get_entity(int(chat_id))
 
                         async def _edit():
-                            await client(
-                                EditTitleRequest(
-                                    channel=get_input_channel(entity),
-                                    title=title[:255],
+                            if _is_channel_entity(entity):
+                                await client(
+                                    EditTitleRequest(
+                                        channel=get_input_channel(entity),
+                                        title=title[:255],
+                                    )
                                 )
-                            )
+                            else:
+                                await client(
+                                    EditChatTitleRequest(
+                                        chat_id=int(entity.id),
+                                        title=title[:255],
+                                    )
+                                )
 
-                        await _with_single_flood_retry("EditTitleRequest", _edit)
+                        await _with_single_flood_retry("EditGroupTitle", _edit)
                         update_group_name(int(chat_id), title)
                         schedule_save_player_contact_named_group(
                             chat_id=int(chat_id),

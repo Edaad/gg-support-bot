@@ -1,6 +1,8 @@
 # MTProto `/gc` — support group automation
 
-This project supports creating **new Telegram support megagroups** via **MTProto (Telethon)**, triggered by the bot command **`/gc`**, when a **player DMs the club MTProto account**, or when staff send **`/gc` in a private DM with a player** from that account.
+This project supports creating **new Telegram support groups** (basic groups via MTProto) via **MTProto (Telethon)**, triggered by the bot command **`/gc`**, when a **player DMs the club MTProto account**, or when staff send **`/gc` in a private DM with a player** from that account.
+
+Telegram may still auto-upgrade a basic group to a supergroup (e.g. at 200 members); the bot remaps chat ids on migration.
 
 Key point: **the group is created by a club’s Telegram user account via MTProto, not by the bot via the Bot API**.
 
@@ -9,7 +11,7 @@ Key point: **the group is created by a club’s Telegram user account via MTProt
 **On by default** on the bot worker. Disable with **`GC_MTPROTO_ENABLED=false`** (all Telethon on the worker) or **`GC_DM_GC_LISTENER_ENABLED=false`** (listener only). Use **one** process only — the same Telethon session must not connect twice:
 
 - Each configured club starts a Telethon client using that club’s session (file and/or Postgres `StringSession`).
-- **Incoming:** When anyone **DMs the club MTProto account** (private chat, non-bot), the handler creates or reuses the support megagroup for `(club_key, player_telegram_user_id)` and DMs the player (same flow as `/gc`). Disable per club with **`GC_DM_GC_AUTO_DISABLED_CLUBS=round_table`** or **`GC_DM_GC_AUTO_ROUND_TABLE=false`**; disable all clubs with **`GC_DM_GC_AUTO_ENABLED=false`**. Staff outgoing `/gc` is unchanged.
+- **Incoming:** When anyone **DMs the club MTProto account** (private chat, non-bot), the handler creates or reuses the support group for `(club_key, player_telegram_user_id)` and DMs the player (same flow as `/gc`). Disable per club with **`GC_DM_GC_AUTO_DISABLED_CLUBS=round_table`** or **`GC_DM_GC_AUTO_ROUND_TABLE=false`**; disable all clubs with **`GC_DM_GC_AUTO_ENABLED=false`**. Staff outgoing `/gc` is unchanged.
 - **Outgoing:** If an outgoing private message text is **exactly** `/gc`, the handler deletes that message, resolves the **player** from the DM peer, and runs the same create/reuse flow.
 - The player receives a **global** DM template (see [`bot/services/player_support_dm_messages.py`](../bot/services/player_support_dm_messages.py)).
 - Metadata is written to **`support_group_chats`** (run [`migrate_support_group_chats_player_dm.py`](../migrate_support_group_chats_player_dm.py) on existing DBs).
@@ -31,7 +33,7 @@ When an authorized club operator sends `/gc` in a **private chat** with the bot:
 - **Identifies club** by matching the sender’s Telegram user id against per-club config (`command_admin_user_id`).
 - **Loads the club’s MTProto session** (Telethon `*.session` file).
 - If the session is **not authenticated**, `/gc` tells you it **expired or is missing**, and directs you to **Dashboard → Telegram login** to complete SMS / Telegram code + optional 2FA (no OTP in Telegram bot DMs anymore).
-- When the session is authorized, **`/gc` creates a new megagroup** titled **`{RT|CC|GTO} / / {player label}`**: club prefix (`RT`, `CC`, or `GTO`), then literal **` / / `**, then player identity in order **`@username` → `First Last` → `First` → `New Player`**.
+- When the session is authorized, **`/gc` creates a new basic group** titled **`{RT|CC|GTO} / / {player label}`**: club prefix (`RT`, `CC`, or `GTO`), then literal **` / / `**, then player identity in order **`@username` → `First Last` → `First` → `New Player`**.
   - **GG Support bot (private DM):** `/gc @username` or `/gc <telegram_user_id>` — player-bound group (stored on `support_group_chats`, player DM sent). Plain `/gc` — generic group (`New Player` label, no player row). Not affected by `GC_DM_GC_NEW_GROUPS_ENABLED` (that flag is auto-dm listener only).
   - Telegram has a ~255-character title cap; extra-long labels are truncated.
 - Adds members best-effort:
@@ -96,14 +98,14 @@ Per-club overrides are supported via `GC_*` variables (see [`.env.example`](../.
 
 - **`GC_MTPROTO_ENABLED`** — omit or leave empty for **on**; set `false` / `0` / `no` / `off` to disable **all** worker Telethon (listener + contact save). Use on Heroku before [`scripts/backfill_support_group_invite_links.py`](../scripts/backfill_support_group_invite_links.py) or other MTProto scripts (see [`docs/HEROKU.md`](HEROKU.md#mtproto-scripts-vs-worker)).
 - **`GC_DM_GC_LISTENER_ENABLED`** — omit or leave empty for **on**; set `false` / `0` / `no` / `off` to disable the Telethon listener entirely (also off when `GC_MTPROTO_ENABLED` is false).
-- **`GC_DM_GC_NEW_GROUPS_ENABLED`** — omit or leave empty for **on**; set `false` to stop **new** megagroup creation for players with no `support_group_chats` row. Players already bound (prior `/gc` or `/bind`) still get re-add + invite DM. Use when the MTProto account hits Telegram's group limit (`ChannelsTooMuchError`).
+- **`GC_DM_GC_NEW_GROUPS_ENABLED`** — omit or leave empty for **on**; set `false` to stop **new** group creation for players with no `support_group_chats` row. Players already bound (prior `/gc` or `/bind`) still get re-add + invite DM. Use when the MTProto account hits Telegram's group limit (`ChannelsTooMuchError`).
 - **`GC_DM_GC_AUTO_ENABLED`** — omit for **on**; set `false` to stop **incoming** player-DM auto `/gc` for all clubs. Staff outgoing `/gc`, `/add`, and `/cash` unchanged.
 - **`GC_DM_GC_AUTO_DISABLED_CLUBS`** — comma-separated club keys (e.g. `round_table`) to disable incoming auto `/gc` per club. Or per-club: `GC_DM_GC_AUTO_ROUND_TABLE=false`, `GC_DM_GC_AUTO_CREATOR_CLUB=false`, `GC_DM_GC_AUTO_CLUB_GTO=false`.
 - **`GC_DM_GC_VERBOSE_LOGS`** — set `true` / `1` / `yes` to emit extra **INFO** lines for outgoing-DM `/gc` (`dm_capture`, `/gc_match`, bootstrap). Omit for **quiet** INFO (warnings and errors still log).
 
 ### Bot account invite behavior
 
-To add the bot into the newly created megagroup, the MTProto account must be able to resolve the bot as a peer.
+To add the bot into the newly created group, the MTProto account must be able to resolve the bot as a peer.
 
 - If the bot has a public username, we resolve `@<bot_username>` automatically via `get_me()`.
 - If Telegram hides the bot username (or it is missing), set:
@@ -115,7 +117,7 @@ If neither is available, `/gc` will still create the group and log a warning tha
 
 When **`GC_ELEVATE_CREATOR_ROUND_TABLE=true`**:
 
-1. **Elevate Admin** MTProto session creates the megagroup (not the `round_table` listener session).
+1. **Elevate Admin** MTProto session creates the group (not the `round_table` listener session).
 2. Player, bot, and other staff (`@RoundTableSupport3`, `@YTranslateBot`, etc.) are **direct-invited** — **`@RoundTableSupport2` is excluded** from direct invite.
 3. Elevate exports an invite link.
 4. The **Round Table** MTProto session (same account as `@RoundTableSupport2` and the DM listener) joins via `ImportChatInviteRequest` **automatically in the worker** (reuses the live listener client when connected — no account-manager action).

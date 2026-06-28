@@ -8,9 +8,11 @@ from typing import Any
 from telethon import TelegramClient
 from telethon.errors import RPCError
 from telethon.tl.functions.channels import EditAdminRequest
+from telethon.tl.functions.messages import EditChatAdminRequest
 from telethon.tl.types import ChatAdminRights
 
 from bot.services.mtproto_group_create import (
+    _is_channel_entity,
     _with_single_flood_retry,
     get_mtproto_lock,
     make_client,
@@ -56,7 +58,7 @@ async def join_chat_via_invite_link(
     client: TelegramClient,
     invite_link: str,
 ) -> tuple[Any | None, str | None]:
-    """Join a megagroup via invite link; return ``(channel_entity, error)``."""
+    """Join a group via invite link; return ``(group_entity, error)``."""
 
     from telethon.tl import functions
     from telethon.utils import get_peer_id
@@ -104,14 +106,14 @@ async def join_chat_via_invite_link(
         return None, str(err)[:500]
 
 
-async def promote_megagroup_admin(
+async def promote_group_admin(
     client: TelegramClient,
-    channel_entity,
+    group_entity,
     user_marker: str,
     *,
     rank: str = "Admin",
 ) -> tuple[bool, str | None]:
-    """Promote ``user_marker`` to megagroup admin via ``EditAdminRequest``."""
+    """Promote ``user_marker`` to group admin (basic group or megagroup)."""
 
     marker = (user_marker or "").strip()
     if not marker:
@@ -123,24 +125,51 @@ async def promote_megagroup_admin(
             f"get_entity:{lookup}",
             lambda: client.get_entity(lookup),
         )
-        await _with_single_flood_retry(
-            "EditAdminRequest",
-            lambda: client(
-                EditAdminRequest(
-                    channel=channel_entity,
-                    user_id=user_ent,
-                    admin_rights=_MEGAGROUP_ADMIN_RIGHTS,
-                    rank=rank,
-                )
-            ),
-        )
+        if _is_channel_entity(group_entity):
+            await _with_single_flood_retry(
+                "EditAdminRequest",
+                lambda: client(
+                    EditAdminRequest(
+                        channel=group_entity,
+                        user_id=user_ent,
+                        admin_rights=_MEGAGROUP_ADMIN_RIGHTS,
+                        rank=rank,
+                    )
+                ),
+            )
+        else:
+            await _with_single_flood_retry(
+                "EditChatAdminRequest",
+                lambda: client(
+                    EditChatAdminRequest(
+                        chat_id=int(group_entity.id),
+                        user_id=user_ent,
+                        is_admin=True,
+                        admin_rights=_MEGAGROUP_ADMIN_RIGHTS,
+                    )
+                ),
+            )
         return True, None
     except Exception as e:
         err = getattr(e, "message", None) or type(e).__name__
         if isinstance(e, RPCError):
             err = getattr(e, "message", err) or type(e).__name__
-        logger.info("promote_megagroup_admin failed marker=%s: %s", lookup, type(e).__name__)
+        logger.info("promote_group_admin failed marker=%s: %s", lookup, type(e).__name__)
         return False, str(err)[:500]
+
+
+async def promote_megagroup_admin(
+    client: TelegramClient,
+    channel_entity,
+    user_marker: str,
+    *,
+    rank: str = "Admin",
+) -> tuple[bool, str | None]:
+    """Deprecated alias for :func:`promote_group_admin`."""
+
+    return await promote_group_admin(
+        client, channel_entity, user_marker, rank=rank
+    )
 
 
 def _resolve_link_join_client(
@@ -164,13 +193,21 @@ def _resolve_link_join_client(
 async def run_link_join_and_promote(
     creator_cfg: ClubGcConfig,
     *,
-    channel_entity,
+    group_entity,
     invite_link: str | None,
     promote_marker: str,
     link_join_cfg: ClubGcConfig,
     link_join_client: TelegramClient | None = None,
+    channel_entity=None,
 ) -> tuple[list[dict], list[dict], list[dict]]:
-    """Round Table link-join + admin promote after megagroup creation. Best-effort."""
+    """Round Table link-join + admin promote after group creation. Best-effort."""
+
+    if group_entity is None:
+        group_entity = channel_entity
+    if group_entity is None:
+        return [], [], [
+            {"user": promote_marker, "reason": "missing_group_entity", "kind": "promote"}
+        ]
 
     link_joined: list[dict] = []
     promoted: list[dict] = []
@@ -228,10 +265,10 @@ async def run_link_join_and_promote(
                     }
                 )
                 return link_joined, promoted, failures
-            # Use the creator session's channel entity — access_hash is account-specific.
-            ok, prom_err = await promote_megagroup_admin(
+            # Use the creator session's group entity — access_hash is account-specific.
+            ok, prom_err = await promote_group_admin(
                 promote_client,
-                channel_entity,
+                group_entity,
                 promote_marker,
             )
             if ok:

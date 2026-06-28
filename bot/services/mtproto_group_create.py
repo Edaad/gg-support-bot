@@ -1,4 +1,4 @@
-"""MTProto (Telethon) helpers for `/gc`: auth, megagroup creation, invites, photo, invite link."""
+"""MTProto (Telethon) helpers for `/gc`: auth, basic group creation, invites, photo, invite link."""
 
 from __future__ import annotations
 
@@ -13,12 +13,12 @@ from telethon.errors import FloodWaitError, RPCError, SessionPasswordNeededError
 from telethon.errors.rpcerrorlist import UserAlreadyParticipantError
 from telethon.sessions import StringSession
 from telethon.tl.functions.channels import (
-    CreateChannelRequest,
     EditPhotoRequest,
     GetParticipantRequest,
     InviteToChannelRequest,
 )
-from telethon.tl.types import InputChatUploadedPhoto
+from telethon.tl.functions.messages import AddChatUserRequest, CreateChatRequest, EditChatPhotoRequest
+from telethon.tl.types import Channel, Chat, InputChatUploadedPhoto, User
 
 from club_gc_settings import (
     ClubGcConfig,
@@ -274,9 +274,152 @@ async def authenticate_mtproto_password(cfg: ClubGcConfig, *, password: str) -> 
             await client.disconnect()
 
 
+def _is_channel_entity(entity: Any) -> bool:
+    return isinstance(entity, Channel)
+
+
+async def _is_user_in_group(
+    client: TelegramClient, group_entity: Any, user_entity: Any
+) -> bool:
+    from telethon.errors.rpcerrorlist import UserNotParticipantError
+
+    if _is_channel_entity(group_entity):
+        try:
+            await _with_single_flood_retry(
+                "GetParticipantRequest",
+                lambda: client(GetParticipantRequest(group_entity, user_entity)),
+            )
+            return True
+        except UserNotParticipantError:
+            return False
+        except Exception:
+            return False
+
+    uid = getattr(user_entity, "id", None)
+    if uid is None:
+        return False
+    try:
+        async for participant in client.iter_participants(group_entity):
+            if int(getattr(participant, "id", 0)) == int(uid):
+                return True
+    except Exception as e:
+        logger.info("iter_participants membership check: %s", type(e).__name__)
+    return False
+
+
+async def _add_user_to_group(
+    client: TelegramClient, group_entity: Any, user_entity: Any
+) -> tuple[bool, str | None]:
+    try:
+        if _is_channel_entity(group_entity):
+            await _with_single_flood_retry(
+                "InviteToChannelRequest",
+                lambda: client(
+                    InviteToChannelRequest(channel=group_entity, users=[user_entity])
+                ),
+            )
+        else:
+            await _with_single_flood_retry(
+                "AddChatUserRequest",
+                lambda: client(
+                    AddChatUserRequest(
+                        chat_id=int(group_entity.id),
+                        user_id=user_entity,
+                        fwd_limit=50,
+                    )
+                ),
+            )
+        return True, None
+    except UserAlreadyParticipantError:
+        return True, None
+    except Exception as e:
+        low = repr(e).lower()
+        readable: str | None = str(e).strip()
+        if not readable:
+            readable = type(e).__name__
+        if isinstance(e, RPCError):
+            readable = getattr(e, "message", readable) or readable
+        if "privacy" in low or "user_privacy" in low:
+            readable = "privacy restricted"
+        readable = readable[:500]
+        logger.info("Add user to group skipped: %s", type(e).__name__)
+        return False, readable
+
+
+async def _apply_group_photo_entity(
+    client: TelegramClient,
+    group_entity: Any,
+    photo_abs: Path,
+) -> None:
+    uploaded = await client.upload_file(photo_abs.as_posix())
+    photo = InputChatUploadedPhoto(file=uploaded)
+    if _is_channel_entity(group_entity):
+        inp = utils.get_input_channel(group_entity)
+        await client(EditPhotoRequest(inp, photo))
+        return
+    await client(
+        EditChatPhotoRequest(
+            chat_id=int(group_entity.id),
+            photo=photo,
+        )
+    )
+
+
+def _user_marker_norm(user_entity: Any) -> str | None:
+    un = getattr(user_entity, "username", None)
+    if isinstance(un, str) and un.strip():
+        return un.strip().lstrip("@").lower()
+    uid = getattr(user_entity, "id", None)
+    return str(uid) if uid is not None else None
+
+
+def _marker_matches_user(marker: str, user_entity: Any) -> bool:
+    raw = (marker or "").strip()
+    if not raw:
+        return False
+    norm = raw.lstrip("@").lower()
+    user_norm = _user_marker_norm(user_entity)
+    if user_norm and norm == user_norm:
+        return True
+    uid = getattr(user_entity, "id", None)
+    return uid is not None and raw.lstrip("-").isdigit() and int(raw) == int(uid)
+
+
+def _looks_like_invitable_user(ent: Any) -> bool:
+    if isinstance(ent, User):
+        return True
+    return (
+        getattr(ent, "id", None) is not None
+        and not _is_channel_entity(ent)
+        and not isinstance(ent, Chat)
+    )
+
+
+async def _resolve_seed_user_for_create_chat(
+    client: TelegramClient,
+    *,
+    player_user: Any | None,
+    invite_targets: list[str],
+) -> User | None:
+    if player_user is not None:
+        return player_user
+
+    for marker in invite_targets:
+        try:
+            ent = await _with_single_flood_retry(
+                f"get_entity:{marker}",
+                lambda m=marker: client.get_entity(m.strip()),
+            )
+        except Exception:
+            continue
+        if _looks_like_invitable_user(ent):
+            return ent
+    return None
+
+
 @dataclass
 class MtProtoGroupOutcome:
-    """Result of megagroup creation + post-setup."""
+    """Result of support group creation + post-setup."""
 
     ok: bool
     telegram_chat_id: int | None
@@ -297,13 +440,13 @@ class MtProtoGroupOutcome:
 
 async def apply_club_group_photo(
     client: TelegramClient,
-    channel_entity,
+    group_entity,
     cfg: ClubGcConfig,
     *,
     warnings: list[str] | None = None,
     failed_users: list[dict] | None = None,
 ) -> bool:
-    """Best-effort: set megagroup photo from ``cfg.group_photo_path``."""
+    """Best-effort: set group photo from ``cfg.group_photo_path``."""
 
     if not cfg.group_photo_path:
         return False
@@ -318,17 +461,10 @@ async def apply_club_group_photo(
 
     try:
 
-        async def upload_channel_photo():
-            uploaded = await client.upload_file(photo_abs.as_posix())
-            inp = utils.get_input_channel(channel_entity)
-            await client(
-                EditPhotoRequest(
-                    inp,
-                    InputChatUploadedPhoto(file=uploaded),
-                )
-            )
+        async def upload_group_photo():
+            await _apply_group_photo_entity(client, group_entity, photo_abs)
 
-        await _with_single_flood_retry("EditPhotoRequest", upload_channel_photo)
+        await _with_single_flood_retry("EditGroupPhoto", upload_group_photo)
         return True
     except Exception as e:
         err_name = type(e).__name__
@@ -346,28 +482,18 @@ async def apply_club_group_photo(
 
 async def ensure_player_in_support_group(
     client: TelegramClient,
-    channel_entity,
+    group_entity,
     player_user,
     cfg: ClubGcConfig,
 ) -> Literal["already_member", "invited_ok", "invite_failed"]:
     """Re-add flow: detect membership or best-effort invite."""
 
-    from telethon.errors.rpcerrorlist import UserNotParticipantError
-
-    try:
-        await _with_single_flood_retry(
-            "GetParticipantRequest",
-            lambda: client(GetParticipantRequest(channel_entity, player_user)),
-        )
+    if await _is_user_in_group(client, group_entity, player_user):
         return "already_member"
-    except UserNotParticipantError:
-        pass
-    except Exception as e:
-        logger.info("GetParticipantRequest: %s", type(e).__name__)
 
-    ok, _ = await _invite_user_entity(client, channel_entity, player_user)
+    ok, _ = await _add_user_to_group(client, group_entity, player_user)
     if ok:
-        await apply_club_group_photo(client, channel_entity, cfg)
+        await apply_club_group_photo(client, group_entity, cfg)
     return "invited_ok" if ok else "invite_failed"
 
 
@@ -387,7 +513,7 @@ async def _export_invite_link(client: TelegramClient, peer) -> str:
 
 
 async def export_invite_link_for_peer(client: TelegramClient, peer) -> str | None:
-    """Best-effort invite link for a channel/megagroup entity."""
+    """Best-effort invite link for a group or channel entity."""
     try:
         return normalize_invite_link(await _export_invite_link(client, peer))
     except Exception as e:
@@ -404,52 +530,24 @@ def _player_log_marker(user_entity) -> str:
 
 
 async def _invite_user_entity(
-    client: TelegramClient, channel_entity, user_entity
+    client: TelegramClient, group_entity, user_entity
 ) -> tuple[bool, str | None]:
-    try:
-        await _with_single_flood_retry(
-            "invite_user_entity",
-            lambda: client(
-                InviteToChannelRequest(channel=channel_entity, users=[user_entity])
-            ),
-        )
-        return True, None
-    except UserAlreadyParticipantError:
-        return True, None
-    except Exception as e:
-        low = repr(e).lower()
-        readable: str | None = str(e).strip()
-        if not readable:
-            readable = type(e).__name__
-        if isinstance(e, RPCError):
-            readable = getattr(e, "message", readable) or readable
-        if "privacy" in low or "user_privacy" in low:
-            readable = "privacy restricted"
-        readable = readable[:500]
-        logger.info("Invite entity skipped: %s", type(e).__name__)
-        return False, readable
+    return await _add_user_to_group(client, group_entity, user_entity)
 
 
 async def _invite_one(
-    client: TelegramClient, channel_entity, marker: str
+    client: TelegramClient, group_entity, marker: str
 ) -> tuple[bool, str | None]:
     try:
         ent = await _with_single_flood_retry(
             f"get_entity:{marker}",
             lambda: client.get_entity(marker.strip()),
         )
+        if not _looks_like_invitable_user(ent):
+            return False, "not_a_user"
         if not getattr(ent, "access_hash", None):
             return False, "missing access_hash"
-
-        await _with_single_flood_retry(
-            f"invite:{marker}",
-            lambda: client(
-                InviteToChannelRequest(channel=channel_entity, users=[ent])
-            ),
-        )
-        return True, None
-    except UserAlreadyParticipantError:
-        return True, None
+        return await _add_user_to_group(client, group_entity, ent)
     except Exception as e:
         low = repr(e).lower()
         readable: str | None = str(e).strip()
@@ -526,7 +624,7 @@ async def send_player_dm_via_club(cfg: ClubGcConfig, player_user, text: str) -> 
             await client.disconnect()
 
 
-async def create_support_megagroup(
+async def create_support_group(
     cfg: ClubGcConfig,
     *,
     bot_dm_username: str | None,
@@ -534,9 +632,11 @@ async def create_support_megagroup(
     link_join_client: TelegramClient | None = None,
 ) -> MtProtoGroupOutcome:
     """
-    Create megagroup for ``cfg`` via MTProto, invite users + bot, optional photo + inner message.
+    Create a basic Telegram group for ``cfg`` via MTProto, invite users + bot,
+    optional photo + inner message.
 
-    When ``player_user`` is set (Telethon User), invite that account first (best-effort).
+    When ``player_user`` is set (Telethon User), that account is seeded into the
+  new group at creation time (best-effort).
 
     Caller must ensure session is authenticated.
     """
@@ -550,8 +650,8 @@ async def create_support_megagroup(
     initial_sent = False
     invite_link: str | None = None
     chat_id_big: int | None = None
-    title_for_channel = build_support_megagroup_title(cfg, player_user)
-    title_out = title_for_channel
+    title_for_group = build_support_megagroup_title(cfg, player_user)
+    title_out = title_for_group
     player_direct_add_ok: bool | None = None
 
     bot_label = cfg.bot_account or (f"@{bot_dm_username}" if bot_dm_username else None)
@@ -563,7 +663,29 @@ async def create_support_megagroup(
     link_joined_users: list[dict] = []
     promoted_admins: list[dict] = []
     link_join_failures: list[dict] = []
-    channel_ent = None
+    group_ent = None
+
+    raw_invites = list(get_gc_users_to_add(cfg))
+    if bot_label:
+        raw_invites.append(bot_label)
+    else:
+        warnings_local.append(
+            "Skipping bot invite: bot has no username in Telegram and GC_BOT_ACCOUNT is unset."
+        )
+
+    invite_seen: set[str] = set()
+    invite_targets: list[str] = []
+    for raw in raw_invites:
+        marker = raw.strip()
+        if not marker:
+            continue
+        norm = marker.lower().lstrip("@")
+        if norm in exclude_invites:
+            continue
+        if norm in invite_seen:
+            continue
+        invite_seen.add(norm)
+        invite_targets.append(marker)
 
     async with get_mtproto_lock(creator_cfg.club_key):
         client = make_client(creator_cfg)
@@ -574,40 +696,44 @@ async def create_support_megagroup(
                     "MTProto session is not authenticated; reply with your login steps from /gc."
                 )
 
-            mega = await _with_single_flood_retry(
-                "CreateChannelRequest",
+            seed_user = await _resolve_seed_user_for_create_chat(
+                client,
+                player_user=player_user,
+                invite_targets=invite_targets,
+            )
+            if seed_user is None:
+                raise RuntimeError(
+                    "Cannot create a support group: Telegram requires at least one user to "
+                    "invite. Add GC_USERS_* / GC_BOT_ACCOUNT or use /gc @player."
+                )
+
+            created = await _with_single_flood_retry(
+                "CreateChatRequest",
                 lambda: client(
-                    CreateChannelRequest(
-                        title=title_for_channel,
-                        about="Support group",
-                        megagroup=True,
-                        broadcast=False,
+                    CreateChatRequest(
+                        users=[seed_user],
+                        title=title_for_group,
                     )
                 ),
             )
 
-            chan = mega.chats[0] if getattr(mega, "chats", None) else None
-            if not chan:
-                raise RuntimeError("CreateChannel succeeded but returned no channel.")
+            chat = created.chats[0] if getattr(created, "chats", None) else None
+            if not chat:
+                raise RuntimeError("CreateChat succeeded but returned no chat.")
 
-            channel_ent = await client.get_entity(chan)
-            if not getattr(channel_ent, "access_hash", None):
-                raise RuntimeError("Created channel lacks access_hash; cannot finalize setup.")
+            group_ent = await client.get_entity(chat)
 
             try:
                 from telethon.utils import get_peer_id
 
-                chat_id_big = int(get_peer_id(channel_ent))
+                chat_id_big = int(get_peer_id(group_ent))
             except Exception:
                 chat_id_big = None
 
-            title_attr = getattr(channel_ent, "title", None) or getattr(chan, "title", None)
+            title_attr = getattr(group_ent, "title", None) or getattr(chat, "title", None)
             if isinstance(title_attr, str) and title_attr.strip():
                 title_out = title_attr.strip()
 
-            # Before inviting the bot (triggers ``my_chat_member``), mark suppression so
-            # ``on_my_chat_member_updated`` does not send the same preamble/welcome/TOS as
-            # ``send_post_gc_intro_bundle`` (race if the update is processed first).
             if chat_id_big is not None:
                 try:
                     from bot.handlers.groups import _mark_post_gc_bundle_window
@@ -622,42 +748,32 @@ async def create_support_megagroup(
 
             if player_user is not None:
                 player_direct_add_ok = False
-                ok_ent, err_ent = await _invite_user_entity(
-                    client, channel_ent, player_user
-                )
                 pm = _player_log_marker(player_user)
-                if ok_ent:
+                seed_was_player = int(getattr(seed_user, "id", 0)) == int(
+                    getattr(player_user, "id", 0)
+                )
+                if seed_was_player:
                     player_direct_add_ok = True
                     added_ok.append({"user": pm, "kind": "player"})
                 else:
-                    failed_ok.append(
-                        {"user": pm, "reason": err_ent or "unknown", "kind": "player"}
+                    ok_ent, err_ent = await _invite_user_entity(
+                        client, group_ent, player_user
                     )
-
-            raw_invites = list(get_gc_users_to_add(cfg))
-            if bot_label:
-                raw_invites.append(bot_label)
-            else:
-                warnings_local.append(
-                    "Skipping bot invite: bot has no username in Telegram and GC_BOT_ACCOUNT is unset."
-                )
-
-            invite_seen: set[str] = set()
-            invite_targets: list[str] = []
-            for raw in raw_invites:
-                marker = raw.strip()
-                if not marker:
-                    continue
-                norm = marker.lower().lstrip("@")
-                if norm in exclude_invites:
-                    continue
-                if norm in invite_seen:
-                    continue
-                invite_seen.add(norm)
-                invite_targets.append(marker)
+                    if ok_ent:
+                        player_direct_add_ok = True
+                        added_ok.append({"user": pm, "kind": "player"})
+                    else:
+                        failed_ok.append(
+                            {"user": pm, "reason": err_ent or "unknown", "kind": "player"}
+                        )
 
             for marker in invite_targets:
-                ok, err = await _invite_one(client, channel_ent, marker)
+                if player_user is not None and _marker_matches_user(marker, player_user):
+                    continue
+                if _marker_matches_user(marker, seed_user):
+                    continue
+
+                ok, err = await _invite_one(client, group_ent, marker)
 
                 bn = bot_label or ""
                 kind = (
@@ -674,14 +790,14 @@ async def create_support_megagroup(
 
             photo_ok = await apply_club_group_photo(
                 client,
-                channel_ent,
+                group_ent,
                 cfg,
                 warnings=warnings_local,
                 failed_users=failed_ok,
             )
 
             try:
-                invite_link = await _export_invite_link(client, channel_ent)
+                invite_link = await _export_invite_link(client, group_ent)
                 invite_link = normalize_invite_link(invite_link)
             except Exception as e:
 
@@ -700,7 +816,7 @@ async def create_support_megagroup(
             try:
                 await _with_single_flood_retry(
                     "send_message(inner)",
-                    lambda: client.send_message(channel_ent, inner),
+                    lambda: client.send_message(group_ent, inner),
                 )
                 initial_sent = True
             except Exception as e:
@@ -721,13 +837,13 @@ async def create_support_megagroup(
         link_join_cfg is not None
         and promote_marker
         and invite_link
-        and channel_ent is not None
+        and group_ent is not None
     ):
         from bot.services.mtproto_group_join import run_link_join_and_promote
 
         lj, prom, fail = await run_link_join_and_promote(
             creator_cfg,
-            channel_entity=channel_ent,
+            group_entity=group_ent,
             invite_link=invite_link,
             promote_marker=promote_marker,
             link_join_cfg=link_join_cfg,
@@ -737,12 +853,12 @@ async def create_support_megagroup(
         promoted_admins.extend(prom)
         link_join_failures.extend(fail)
 
-    mega_ok_out = chat_id_big is not None
+    group_ok_out = chat_id_big is not None
     ghint = None if chat_id_big is not None else "missing Telegram chat id after creation"
     group_photo_final = (not cfg.group_photo_path) or photo_ok
 
     return MtProtoGroupOutcome(
-        ok=mega_ok_out,
+        ok=group_ok_out,
         telegram_chat_id=chat_id_big,
         telegram_chat_title=title_out,
         invite_link=invite_link,
@@ -757,4 +873,21 @@ async def create_support_megagroup(
         link_joined_users=link_joined_users,
         promoted_admins=promoted_admins,
         link_join_failures=link_join_failures,
+    )
+
+
+async def create_support_megagroup(
+    cfg: ClubGcConfig,
+    *,
+    bot_dm_username: str | None,
+    player_user=None,
+    link_join_client: TelegramClient | None = None,
+) -> MtProtoGroupOutcome:
+    """Deprecated alias for :func:`create_support_group`."""
+
+    return await create_support_group(
+        cfg,
+        bot_dm_username=bot_dm_username,
+        player_user=player_user,
+        link_join_client=link_join_client,
     )

@@ -264,7 +264,7 @@ def is_round_table_elevate_recovery_enabled() -> bool:
 
 
 def resolve_group_creator_cfg(cfg: ClubGcConfig) -> ClubGcConfig:
-    """MTProto session that runs ``CreateChannelRequest`` (Elevate when enabled, else ``cfg``)."""
+    """MTProto session that runs ``CreateChatRequest`` (Elevate when enabled, else ``cfg``)."""
 
     if not cfg.group_creator_club_key:
         return cfg
@@ -386,7 +386,7 @@ def is_dm_gc_listener_enabled() -> bool:
 
 
 def is_dm_gc_new_groups_enabled() -> bool:
-    """Auto /gc may create new megagroups for unbound players unless explicitly disabled.
+    """Auto /gc may create new support groups for unbound players unless explicitly disabled.
 
     Default **on**. Set ``GC_DM_GC_NEW_GROUPS_ENABLED`` to ``false``, ``0``, ``no``, or ``off`` to
     skip ``CreateChannel`` for players with no ``support_group_chats`` row; existing bindings

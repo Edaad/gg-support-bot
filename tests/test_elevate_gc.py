@@ -6,6 +6,8 @@ import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from telethon.tl.types import Chat, User
+
 from bot.services.mtproto_group_join import parse_invite_hash
 from club_gc_settings import (
     ClubGcConfig,
@@ -119,7 +121,7 @@ class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
         mock_resolve_link: MagicMock,
         _mock_elevate_flag: MagicMock,
     ) -> None:
-        from bot.services.mtproto_group_create import create_support_megagroup
+        from bot.services.mtproto_group_create import create_support_group
 
         listener_cfg = self._listener_cfg()
         creator_cfg = self._creator_cfg()
@@ -137,22 +139,33 @@ class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
             [],
         )
 
+        seed_user = MagicMock(spec=User)
+        seed_user.id = 111
+
+        chat = MagicMock(spec=Chat)
+        chat.title = "RT / / @player"
+        chat.id = 999
+        created = MagicMock()
+        created.chats = [chat]
+
+        group_ent = MagicMock(spec=Chat)
+        group_ent.id = 999
+        group_ent.title = "RT / / @player"
+
         client = MagicMock()
         client.connect = AsyncMock()
         client.disconnect = AsyncMock()
         client.is_user_authorized = AsyncMock(return_value=True)
-
-        chan = MagicMock()
-        chan.title = "RT / / @player"
-        mega = MagicMock()
-        mega.chats = [chan]
-
-        channel_ent = MagicMock()
-        channel_ent.access_hash = 123
-        channel_ent.title = "RT / / @player"
-
-        client.get_entity = AsyncMock(return_value=channel_ent)
+        client.get_entity = AsyncMock(return_value=group_ent)
         client.send_message = AsyncMock()
+
+        async def flood_retry(tag: str, factory):
+            if tag == "CreateChatRequest":
+                return created
+            result = factory()
+            if hasattr(result, "__await__"):
+                return await result
+            return result
 
         async def export_link(_peer):
             return "https://t.me/+TestHash"
@@ -164,7 +177,12 @@ class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
             patch(
                 "bot.services.mtproto_group_create._with_single_flood_retry",
                 new_callable=AsyncMock,
-                side_effect=lambda _tag, factory: factory(),
+                side_effect=flood_retry,
+            ),
+            patch(
+                "bot.services.mtproto_group_create._resolve_seed_user_for_create_chat",
+                new_callable=AsyncMock,
+                return_value=seed_user,
             ),
             patch(
                 "bot.services.mtproto_group_create._invite_one",
@@ -181,9 +199,9 @@ class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
                 return_value=("@RoundTableSupport3",),
             ),
             patch("bot.handlers.groups._mark_post_gc_bundle_window"),
-            patch("telethon.utils.get_peer_id", return_value=-100999),
+            patch("telethon.utils.get_peer_id", return_value=-5287778428),
         ):
-            outcome = await create_support_megagroup(
+            outcome = await create_support_group(
                 listener_cfg,
                 bot_dm_username="Bot",
                 link_join_client=listener_client,
@@ -199,7 +217,7 @@ class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
 
 
 class TestRunLinkJoinAndPromote(unittest.IsolatedAsyncioTestCase):
-    @patch("bot.services.mtproto_group_join.promote_megagroup_admin", new_callable=AsyncMock)
+    @patch("bot.services.mtproto_group_join.promote_group_admin", new_callable=AsyncMock)
     @patch("bot.services.mtproto_group_join.join_chat_via_invite_link", new_callable=AsyncMock)
     @patch("bot.services.mtproto_group_join.make_client")
     @patch("bot.services.mtproto_group_join.get_mtproto_lock")
@@ -215,9 +233,9 @@ class TestRunLinkJoinAndPromote(unittest.IsolatedAsyncioTestCase):
         mock_lock.return_value.__aenter__ = AsyncMock(return_value=None)
         mock_lock.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        creator_channel = MagicMock(name="creator_channel")
-        join_channel = MagicMock(name="join_channel")
-        mock_join.return_value = (join_channel, None)
+        creator_group = MagicMock(name="creator_group")
+        join_group = MagicMock(name="join_group")
+        mock_join.return_value = (join_group, None)
         mock_promote.return_value = (True, None)
 
         join_client = MagicMock()
@@ -235,7 +253,7 @@ class TestRunLinkJoinAndPromote(unittest.IsolatedAsyncioTestCase):
 
         lj, prom, fail = await run_link_join_and_promote(
             creator_cfg,
-            channel_entity=creator_channel,
+            group_entity=creator_group,
             invite_link="https://t.me/+TestHash",
             promote_marker="@RoundTableSupport2",
             link_join_cfg=link_join_cfg,
@@ -247,8 +265,8 @@ class TestRunLinkJoinAndPromote(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fail, [])
         mock_promote.assert_awaited_once()
         promote_args = mock_promote.await_args
-        self.assertIs(promote_args.args[1], creator_channel)
-        self.assertIsNot(promote_args.args[1], join_channel)
+        self.assertIs(promote_args.args[1], creator_group)
+        self.assertIsNot(promote_args.args[1], join_group)
 
 
 if __name__ == "__main__":

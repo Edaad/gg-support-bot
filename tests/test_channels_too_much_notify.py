@@ -81,7 +81,7 @@ class TestFlowNewGroupChannelsTooMuch(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "bot.services.mtproto_dm_gc_listener.create_support_megagroup",
+                "bot.services.mtproto_dm_gc_listener.create_support_group",
                 new_callable=AsyncMock,
                 side_effect=ChannelsTooMuchError("too many"),
             ),

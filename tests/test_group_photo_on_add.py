@@ -19,12 +19,12 @@ class TestEnsurePlayerInSupportGroupPhoto(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "bot.services.mtproto_group_create._with_single_flood_retry",
+                "bot.services.mtproto_group_create._is_user_in_group",
                 new_callable=AsyncMock,
-                side_effect=Exception("UserNotParticipantError"),
+                return_value=False,
             ),
             patch(
-                "bot.services.mtproto_group_create._invite_user_entity",
+                "bot.services.mtproto_group_create._add_user_to_group",
                 new_callable=AsyncMock,
                 return_value=(True, None),
             ),
@@ -34,19 +34,7 @@ class TestEnsurePlayerInSupportGroupPhoto(unittest.IsolatedAsyncioTestCase):
                 return_value=True,
             ) as mock_photo,
         ):
-            # First _with_single_flood_retry call is GetParticipantRequest — simulate not a member.
-            from telethon.errors.rpcerrorlist import UserNotParticipantError
-
-            async def flood_side_effect(_tag, factory):
-                if _tag == "GetParticipantRequest":
-                    raise UserNotParticipantError(None)
-                return await factory()
-
-            with patch(
-                "bot.services.mtproto_group_create._with_single_flood_retry",
-                side_effect=flood_side_effect,
-            ):
-                result = await ensure_player_in_support_group(client, channel, player, cfg)
+            result = await ensure_player_in_support_group(client, channel, player, cfg)
 
         self.assertEqual(result, "invited_ok")
         mock_photo.assert_awaited_once_with(client, channel, cfg)
@@ -60,9 +48,9 @@ class TestEnsurePlayerInSupportGroupPhoto(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "bot.services.mtproto_group_create._with_single_flood_retry",
+                "bot.services.mtproto_group_create._is_user_in_group",
                 new_callable=AsyncMock,
-                return_value=None,
+                return_value=True,
             ),
             patch(
                 "bot.services.mtproto_group_create.apply_club_group_photo",
