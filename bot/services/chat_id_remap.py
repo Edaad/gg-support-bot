@@ -136,16 +136,16 @@ def remap_chat_id_in_db(old_id: int, new_id: int) -> dict[str, int]:
     return counts
 
 
-def find_legacy_group_chat_id(
+def find_all_legacy_group_chat_ids(
     *,
     new_chat_id: int,
     title: str | None,
     club_id: int | None,
-) -> int | None:
-    """Legacy ``groups.chat_id`` for the same club/title before supergroup migration."""
+) -> list[int]:
+    """All legacy ``groups.chat_id`` rows for the same club/title before supergroup migration."""
     name = (title or "").strip()
     if not name or club_id is None:
-        return None
+        return []
 
     with get_db() as session:
         rows = (
@@ -153,11 +153,27 @@ def find_legacy_group_chat_id(
             .filter(Group.club_id == int(club_id), Group.name == name)
             .all()
         )
+    out: list[int] = []
     for (raw_cid,) in rows:
         cid = int(raw_cid)
         if cid != int(new_chat_id) and is_legacy_basic_chat_id(cid):
-            return cid
-    return None
+            out.append(cid)
+    return sorted(set(out))
+
+
+def find_legacy_group_chat_id(
+    *,
+    new_chat_id: int,
+    title: str | None,
+    club_id: int | None,
+) -> int | None:
+    """First legacy ``groups.chat_id`` for the same club/title (compat)."""
+    ids = find_all_legacy_group_chat_ids(
+        new_chat_id=new_chat_id,
+        title=title,
+        club_id=club_id,
+    )
+    return ids[0] if ids else None
 
 
 def try_silent_supergroup_remap(

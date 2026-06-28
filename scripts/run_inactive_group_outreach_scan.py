@@ -61,7 +61,7 @@ async def _run_scan(args: argparse.Namespace) -> int:
         scan_outreach_row,
     )
     from bot.services.migration_group_readd import load_player_rows_by_chat
-    from bot.services.mtproto_group_activity import resolve_exclude_user_ids
+    from bot.services.migration_group_readd import load_player_rows_by_chat
     from bot.services.mtproto_group_create import is_client_authorized, make_client
     from db.connection import get_db
     from db.models import InactiveGroupOutreachRow
@@ -115,7 +115,6 @@ async def _run_scan(args: argparse.Namespace) -> int:
 
         me = await client.get_me()
         self_id = int(me.id) if me and getattr(me, "id", None) else None
-        exclude_user_ids = await resolve_exclude_user_ids(client, cfg, self_id or 0)
         history_limit = get_inactive_outreach_history_limit()
         player_map = load_player_rows_by_chat({row.telegram_chat_id})
 
@@ -124,7 +123,6 @@ async def _run_scan(args: argparse.Namespace) -> int:
             cfg,
             row,
             self_id=self_id,
-            exclude_user_ids=exclude_user_ids,
             history_limit=history_limit,
             player_map=player_map,
         )

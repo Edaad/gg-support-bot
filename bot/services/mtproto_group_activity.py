@@ -104,6 +104,58 @@ async def resolve_exclude_user_ids(client, cfg, me_id: int) -> frozenset[int]:
     return frozenset(exclude)
 
 
+async def last_eligible_player_message_at(
+    client,
+    entity,
+    cfg,
+    *,
+    self_id: int | None,
+    history_limit: int,
+) -> ExternalActivityResult:
+    """Return last message from an eligible player (not staff/bot/support)."""
+
+    from bot.services.mtproto_group_player import (
+        _eligible_player_filter_context,
+        is_eligible_player_user,
+    )
+
+    invite_ids, invite_usernames, skip_operators, skip_dashboard_admins = (
+        await _eligible_player_filter_context(client, cfg, self_id=self_id)
+    )
+
+    async def sender_is_eligible(msg: Any) -> bool:
+        if getattr(msg, "out", False):
+            return False
+        if not getattr(msg, "sender_id", None):
+            return False
+        try:
+            sender = await msg.get_sender()
+        except Exception:
+            return False
+        return is_eligible_player_user(
+            sender,
+            self_id=self_id,
+            invite_ids=invite_ids,
+            invite_usernames=invite_usernames,
+            skip_operators=skip_operators,
+            skip_dashboard_admins=skip_dashboard_admins,
+        )
+
+    latest = await client.get_messages(entity, limit=1)
+    if not latest:
+        return ExternalActivityResult(None, "empty")
+
+    msg = latest[0]
+    if await sender_is_eligible(msg):
+        return ExternalActivityResult(utc_dt(msg.date), "external")
+
+    async for msg in client.iter_messages(entity, limit=history_limit):
+        if await sender_is_eligible(msg):
+            return ExternalActivityResult(utc_dt(msg.date), "external")
+
+    return ExternalActivityResult(None, "support_only")
+
+
 async def last_external_message_at(
     client,
     entity,
@@ -199,42 +251,102 @@ def merge_external_activity(
     )
 
 
+def merge_external_activity_results(
+    results: list[ExternalActivityResult],
+) -> ExternalActivityResult:
+    """Merge multiple chat scans; keep the newest eligible-player activity timestamp."""
+
+    if not results:
+        return ExternalActivityResult(None, "none")
+
+    best_ts: datetime | None = None
+    best_basis = "none"
+    for result in results:
+        ts = utc_dt(result.last_external_message_at)
+        if ts is not None and (best_ts is None or ts >= best_ts):
+            best_ts = ts
+            best_basis = result.activity_basis
+
+    if best_ts is not None:
+        return ExternalActivityResult(best_ts, best_basis)
+
+    bases = {r.activity_basis for r in results}
+    if bases <= {"empty", "none"}:
+        return ExternalActivityResult(None, "empty")
+    if "support_only" in bases:
+        return ExternalActivityResult(None, "support_only")
+    if "entity_gone" in bases:
+        return ExternalActivityResult(None, "entity_gone")
+    return ExternalActivityResult(None, "support_only")
+
+
+def resolve_legacy_chat_ids(
+    *,
+    telegram_chat_id: int,
+    group_title: str,
+    club_id: int | None,
+    basic_groups_by_title: dict[str, list[int]] | dict[str, int] | None = None,
+) -> list[int]:
+    """All known pre-migration basic group ids for a supergroup outreach row."""
+
+    from bot.services.chat_id_remap import find_all_legacy_group_chat_ids
+    from db.connection import get_db
+    from db.models import MigratedGroupRecovery
+
+    supergroup_id = int(telegram_chat_id)
+    ids: set[int] = set()
+
+    with get_db() as session:
+        rows = (
+            session.query(MigratedGroupRecovery.old_chat_id)
+            .filter(MigratedGroupRecovery.telegram_chat_id == supergroup_id)
+            .all()
+        )
+    for (old_id,) in rows:
+        if old_id is None:
+            continue
+        cid = int(old_id)
+        if cid != supergroup_id:
+            ids.add(cid)
+
+    for cid in find_all_legacy_group_chat_ids(
+        new_chat_id=supergroup_id,
+        title=group_title,
+        club_id=club_id,
+    ):
+        ids.add(int(cid))
+
+    if basic_groups_by_title:
+        key = group_title.casefold()
+        raw = basic_groups_by_title.get(key)
+        if isinstance(raw, int):
+            candidates = [raw]
+        elif raw:
+            candidates = list(raw)
+        else:
+            candidates = []
+        for cid in candidates:
+            if int(cid) != supergroup_id:
+                ids.add(int(cid))
+
+    return sorted(ids)
+
+
 def resolve_legacy_chat_id(
     *,
     telegram_chat_id: int,
     group_title: str,
     club_id: int | None,
-    basic_groups_by_title: dict[str, int] | None = None,
+    basic_groups_by_title: dict[str, list[int]] | dict[str, int] | None = None,
 ) -> int | None:
-    """Resolve pre-migration basic group id for a supergroup outreach row."""
-
-    from bot.services.chat_id_remap import find_legacy_group_chat_id
-    from db.connection import get_db
-    from db.models import MigratedGroupRecovery
-
-    with get_db() as session:
-        row = (
-            session.query(MigratedGroupRecovery.old_chat_id)
-            .filter(MigratedGroupRecovery.telegram_chat_id == int(telegram_chat_id))
-            .first()
-        )
-    if row and row[0] is not None:
-        return int(row[0])
-
-    legacy = find_legacy_group_chat_id(
-        new_chat_id=int(telegram_chat_id),
-        title=group_title,
+    """Primary legacy basic group id (first resolved; compat)."""
+    ids = resolve_legacy_chat_ids(
+        telegram_chat_id=telegram_chat_id,
+        group_title=group_title,
         club_id=club_id,
+        basic_groups_by_title=basic_groups_by_title,
     )
-    if legacy is not None:
-        return int(legacy)
-
-    if basic_groups_by_title:
-        key = group_title.casefold()
-        cid = basic_groups_by_title.get(key)
-        if cid is not None and int(cid) != int(telegram_chat_id):
-            return int(cid)
-    return None
+    return ids[0] if ids else None
 
 
 def annotate_duplicate_titles(

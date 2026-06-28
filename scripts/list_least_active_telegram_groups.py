@@ -1,7 +1,9 @@
-"""List the least active Telegram groups/channels for a club MTProto account.
+"""List the least active Telegram support megagroups for a club MTProto account.
 
 Scans Telethon dialogs and sorts by last **non-support** message date (oldest
-first). Messages from the club MTProto account, ``GC_USERS_TO_INVITE`` staff, and
+first). By default only **megagroups** (``-100…`` supergroups) are included;
+legacy basic groups are skipped unless ``--include-basic-groups`` is passed.
+Messages from the club MTProto account, ``GC_USERS_TO_INVITE`` staff, and
 the configured ``/gc`` bot are ignored so cleanup targets groups with no recent
 player or third-party activity.
 
@@ -16,7 +18,7 @@ Usage:
   python scripts/list_least_active_telegram_groups.py
   python scripts/list_least_active_telegram_groups.py --club-key round_table
   python scripts/list_least_active_telegram_groups.py --limit 400 --output backups/rts2_cleanup.csv
-  python scripts/list_least_active_telegram_groups.py --groups-only
+  python scripts/list_least_active_telegram_groups.py --include-basic-groups
   python scripts/list_least_active_telegram_groups.py --history-limit 200
 """
 
@@ -289,6 +291,7 @@ def _annotate_duplicate_titles(rows: list[DialogActivityRow]) -> list[DialogActi
 async def _scan_dialogs(
     club_key: str,
     *,
+    include_basic_groups: bool,
     groups_only: bool,
     history_limit: int,
 ) -> tuple[str | None, int, list[DialogActivityRow]]:
@@ -328,6 +331,8 @@ async def _scan_dialogs(
             if kind is None:
                 continue
             if groups_only and kind == "channel":
+                continue
+            if kind != "megagroup" and not (include_basic_groups and kind == "basic_group"):
                 continue
 
             last_external, basis = await _last_external_message_at(
@@ -398,7 +403,7 @@ def _write_csv(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Export the least active Telegram groups/channels for a club MTProto account."
+        description="Export the least active Telegram support megagroups for a club MTProto account."
     )
     parser.add_argument(
         "--club-key",
@@ -419,9 +424,14 @@ def _parse_args() -> argparse.Namespace:
         help="Output CSV path (default: backups/least_active_groups_<club>_<ts>.csv).",
     )
     parser.add_argument(
+        "--include-basic-groups",
+        action="store_true",
+        help="Also scan legacy basic groups (default: megagroups only).",
+    )
+    parser.add_argument(
         "--groups-only",
         action="store_true",
-        help="Exclude broadcast channels (Telegram limits still count channels).",
+        help="With --include-basic-groups, exclude broadcast channels.",
     )
     parser.add_argument(
         "--history-limit",
@@ -455,13 +465,14 @@ def main() -> int:
     account_username, account_user_id, rows = asyncio.run(
         _scan_dialogs(
             args.club_key,
+            include_basic_groups=args.include_basic_groups,
             groups_only=args.groups_only,
             history_limit=args.history_limit,
         )
     )
 
     if not rows:
-        print("No group/channel dialogs found.", file=sys.stderr)
+        print("No megagroup dialogs found.", file=sys.stderr)
         return 1
 
     _write_csv(
@@ -475,7 +486,8 @@ def main() -> int:
     selected = min(args.limit, len(rows))
     account_label = f"@{account_username}" if account_username else str(account_user_id)
     print(f"Account: {account_label} ({account_user_id})")
-    print(f"Scanned: {len(rows)} dialogs")
+    scope = "megagroups + basic groups" if args.include_basic_groups else "megagroups"
+    print(f"Scanned: {len(rows)} {scope}")
     print(f"Wrote: {selected} rows → {output}")
 
     preview = rows[:5]

@@ -24,9 +24,9 @@ from bot.services.mtproto_group_activity import (
     annotate_duplicate_titles,
     compute_inactive_flags,
     merge_external_activity,
-    resolve_exclude_user_ids,
+    merge_external_activity_results,
     resolve_legacy_chat_id,
-    last_external_message_at,
+    resolve_legacy_chat_ids,
 )
 from bot.services.player_details import parse_tracking_title
 
@@ -76,31 +76,35 @@ def _dialog_kind(entity) -> str | None:
 async def _scan_chat_activity(
     client,
     entity,
+    cfg,
     *,
-    exclude_user_ids: frozenset[int],
+    self_id: int | None,
     history_limit: int,
 ) -> ExternalActivityResult:
     from bot.services.migration_group_readd import call_with_flood_retry
+    from bot.services.mtproto_group_activity import last_eligible_player_message_at
 
     async def _run():
-        return await last_external_message_at(
+        return await last_eligible_player_message_at(
             client,
             entity,
-            exclude_user_ids=exclude_user_ids,
+            cfg,
+            self_id=self_id,
             history_limit=history_limit,
         )
 
-    return await call_with_flood_retry(_run, label="inactive_outreach:last_external")
+    return await call_with_flood_retry(_run, label="inactive_outreach:last_player_msg")
 
 
-async def _dual_chat_activity(
+async def _multi_chat_activity(
     client,
+    cfg,
     *,
     telegram_chat_id: int,
-    legacy_chat_id: int | None,
-    exclude_user_ids: frozenset[int],
+    legacy_chat_ids: list[int],
+    self_id: int | None,
     history_limit: int,
-) -> tuple[ExternalActivityResult, ExternalActivityResult | None]:
+) -> tuple[ExternalActivityResult, ExternalActivityResult]:
     from bot.services.migration_group_readd import (
         call_with_flood_retry,
         is_entity_resolution_error,
@@ -115,41 +119,47 @@ async def _dual_chat_activity(
     except Exception as exc:
         if not is_entity_resolution_error(exc):
             raise
-        return ExternalActivityResult(None, "entity_gone"), None
-
-    supergroup = await _scan_chat_activity(
-        client,
-        supergroup_entity,
-        exclude_user_ids=exclude_user_ids,
-        history_limit=history_limit,
-    )
-
-    if legacy_chat_id is None:
-        return supergroup, None
-
-    legacy_entity = None
-    try:
-        legacy_entity = await call_with_flood_retry(
-            lambda: client.get_entity(int(legacy_chat_id)),
-            label=f"inactive_outreach:get_entity_legacy:{legacy_chat_id}",
+        supergroup = ExternalActivityResult(None, "entity_gone")
+    else:
+        supergroup = await _scan_chat_activity(
+            client,
+            supergroup_entity,
+            cfg,
+            self_id=self_id,
+            history_limit=history_limit,
         )
-    except Exception as exc:
-        if not is_entity_resolution_error(exc):
-            raise
-        logger.warning(
-            "inactive_outreach: legacy entity gone club_chat=%s legacy=%s",
-            telegram_chat_id,
-            legacy_chat_id,
-        )
-        return supergroup, ExternalActivityResult(None, "entity_gone")
 
-    legacy = await _scan_chat_activity(
-        client,
-        legacy_entity,
-        exclude_user_ids=exclude_user_ids,
-        history_limit=history_limit,
-    )
-    return supergroup, legacy
+    legacy_results: list[ExternalActivityResult] = []
+    for legacy_chat_id in legacy_chat_ids:
+        legacy_entity = None
+        try:
+            legacy_entity = await call_with_flood_retry(
+                lambda lid=int(legacy_chat_id): client.get_entity(lid),
+                label=f"inactive_outreach:get_entity_legacy:{legacy_chat_id}",
+            )
+        except Exception as exc:
+            if not is_entity_resolution_error(exc):
+                raise
+            logger.warning(
+                "inactive_outreach: legacy entity gone club_chat=%s legacy=%s",
+                telegram_chat_id,
+                legacy_chat_id,
+            )
+            legacy_results.append(ExternalActivityResult(None, "entity_gone"))
+            continue
+
+        legacy_results.append(
+            await _scan_chat_activity(
+                client,
+                legacy_entity,
+                cfg,
+                self_id=self_id,
+                history_limit=history_limit,
+            )
+        )
+
+    merged_legacy = merge_external_activity_results(legacy_results)
+    return supergroup, merged_legacy
 
 
 async def _discover_player_from_messages(
@@ -157,7 +167,7 @@ async def _discover_player_from_messages(
     cfg,
     *,
     telegram_chat_id: int,
-    legacy_chat_id: int | None,
+    legacy_chat_ids: list[int],
     self_id: int | None,
     history_limit: int,
 ) -> Any | None:
@@ -177,6 +187,9 @@ async def _discover_player_from_messages(
         if not is_entity_resolution_error(exc):
             raise
 
+    if legacy_chat_ids is None:
+        legacy_chat_ids = []
+
     scan_limit = min(history_limit, 50)
     if current_entity is not None:
         user = await find_latest_eligible_message_sender(
@@ -189,27 +202,29 @@ async def _discover_player_from_messages(
         if user is not None:
             return user
 
-    if legacy_chat_id is None:
-        return None
+    for legacy_chat_id in legacy_chat_ids:
+        old_entity = None
+        try:
+            old_entity = await call_with_flood_retry(
+                lambda lid=int(legacy_chat_id): client.get_entity(lid),
+                label=f"inactive_outreach:player_entity_legacy:{legacy_chat_id}",
+            )
+        except Exception as exc:
+            if not is_entity_resolution_error(exc):
+                raise
+            continue
 
-    old_entity = None
-    try:
-        old_entity = await call_with_flood_retry(
-            lambda: client.get_entity(int(legacy_chat_id)),
-            label=f"inactive_outreach:player_entity_legacy:{legacy_chat_id}",
+        user = await find_latest_eligible_message_sender(
+            client,
+            old_entity,
+            cfg,
+            self_id=self_id,
+            limit=scan_limit,
         )
-    except Exception as exc:
-        if not is_entity_resolution_error(exc):
-            raise
-        return None
+        if user is not None:
+            return user
 
-    return await find_latest_eligible_message_sender(
-        client,
-        old_entity,
-        cfg,
-        self_id=self_id,
-        limit=scan_limit,
-    )
+    return None
 
 
 async def _resolve_player_for_row(
@@ -242,11 +257,16 @@ async def _resolve_player_for_row(
         player_source = "support_group_chats"
 
     if player_id is None:
+        legacy_chat_ids = resolve_legacy_chat_ids(
+            telegram_chat_id=int(row.telegram_chat_id),
+            group_title=row.group_title,
+            club_id=int(cfg.link_club_id),
+        )
         user = await _discover_player_from_messages(
             client,
             cfg,
             telegram_chat_id=int(row.telegram_chat_id),
-            legacy_chat_id=row.legacy_chat_id,
+            legacy_chat_ids=legacy_chat_ids,
             self_id=self_id,
             history_limit=history_limit,
         )
@@ -305,7 +325,6 @@ async def scan_outreach_row(
     row: OutreachScanRow,
     *,
     self_id: int | None,
-    exclude_user_ids: frozenset[int],
     history_limit: int,
     player_map: dict[int, tuple[int | None, str | None, str | None]],
     resolve_player: bool = True,
@@ -313,11 +332,17 @@ async def scan_outreach_row(
     """Scan one outreach row; return field dict for DB upsert."""
 
     now = datetime.now(timezone.utc)
-    supergroup, legacy = await _dual_chat_activity(
-        client,
+    legacy_chat_ids = resolve_legacy_chat_ids(
         telegram_chat_id=int(row.telegram_chat_id),
-        legacy_chat_id=row.legacy_chat_id,
-        exclude_user_ids=exclude_user_ids,
+        group_title=row.group_title,
+        club_id=int(cfg.link_club_id),
+    )
+    supergroup, legacy = await _multi_chat_activity(
+        client,
+        cfg,
+        telegram_chat_id=int(row.telegram_chat_id),
+        legacy_chat_ids=legacy_chat_ids,
+        self_id=self_id,
         history_limit=history_limit,
     )
     merged = merge_external_activity(supergroup, legacy)
@@ -326,7 +351,10 @@ async def scan_outreach_row(
         now=now,
     )
 
+    primary_legacy_id = legacy_chat_ids[0] if legacy_chat_ids else None
+
     payload: dict[str, Any] = {
+        "legacy_chat_id": primary_legacy_id,
         "last_external_message_at": merged.last_external_message_at,
         "activity_basis": merged.activity_basis,
         "last_external_supergroup_at": merged.last_external_supergroup_at,
@@ -533,14 +561,14 @@ async def seed_outreach_targets() -> int:
             chat_id = int(get_peer_id(dialog.entity))
             dialogs.append((dialog.entity, title, chat_id, kind))
 
-        basic_by_title: dict[str, int] = {}
+        basic_by_title: dict[str, list[int]] = {}
         megagroup_snapshots: list[DialogActivitySnapshot] = []
         for _entity, title, chat_id, kind in dialogs:
             if kind != "basic_group":
                 continue
             if not parse_tracking_title(title):
                 continue
-            basic_by_title[title.casefold()] = chat_id
+            basic_by_title.setdefault(title.casefold(), []).append(chat_id)
 
         for _entity, title, chat_id, kind in dialogs:
             if kind != "megagroup":
@@ -562,14 +590,16 @@ async def seed_outreach_targets() -> int:
             for snap in annotated:
                 parsed = parse_tracking_title(snap.title)
                 gg_player_id = parsed[1] if parsed else None
-                legacy_id = resolve_legacy_chat_id(
+                legacy_ids = resolve_legacy_chat_ids(
                     telegram_chat_id=snap.chat_id,
                     group_title=snap.title,
                     club_id=club_id,
                     basic_groups_by_title=basic_by_title,
                 )
+                legacy_id = legacy_ids[0] if legacy_ids else None
                 if snap.duplicate_title and legacy_id is None:
-                    legacy_id = basic_by_title.get(snap.title.casefold())
+                    basics = basic_by_title.get(snap.title.casefold(), [])
+                    legacy_id = basics[0] if basics else None
 
                 existing = (
                     session.query(InactiveGroupOutreachRow)
@@ -727,7 +757,6 @@ async def tick_async() -> dict[str, int]:
         except Exception:
             logger.warning("inactive_outreach: get_me failed club=%s", club_key)
 
-        exclude_user_ids = await resolve_exclude_user_ids(client, cfg, self_id or 0)
         player_map = load_player_rows_by_chat({r.telegram_chat_id for r in rows})
 
         for row in rows:
@@ -737,7 +766,6 @@ async def tick_async() -> dict[str, int]:
                     cfg,
                     row,
                     self_id=self_id,
-                    exclude_user_ids=exclude_user_ids,
                     history_limit=history_limit,
                     player_map=player_map,
                 )

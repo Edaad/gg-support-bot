@@ -11,7 +11,9 @@ from bot.services.mtproto_group_activity import (
     ExternalActivityResult,
     compute_inactive_flags,
     merge_external_activity,
+    merge_external_activity_results,
     resolve_legacy_chat_id,
+    resolve_legacy_chat_ids,
 )
 
 
@@ -68,17 +70,73 @@ class TestMergeExternalActivity(unittest.TestCase):
         self.assertEqual(merged.activity_merged_from, "none")
 
 
+class TestMergeLegacyActivityResults(unittest.TestCase):
+    def test_picks_newest_player_message_across_legacy_chats(self) -> None:
+        april = datetime(2025, 4, 26, tzinfo=timezone.utc)
+        merged = merge_external_activity_results(
+            [
+                ExternalActivityResult(None, "empty"),
+                ExternalActivityResult(april, "external"),
+            ]
+        )
+        self.assertEqual(merged.last_external_message_at, april)
+        self.assertEqual(merged.activity_basis, "external")
+
+    def test_supergroup_support_only_plus_second_legacy_player(self) -> None:
+        """CC / 6217-2220 / J pattern: first legacy empty, second has April player msg."""
+        april = datetime(2025, 4, 26, 15, 24, tzinfo=timezone.utc)
+        supergroup = ExternalActivityResult(None, "support_only")
+        legacy_merged = merge_external_activity_results(
+            [
+                ExternalActivityResult(None, "empty"),
+                ExternalActivityResult(april, "external"),
+            ]
+        )
+        merged = merge_external_activity(supergroup, legacy_merged)
+        self.assertEqual(merged.last_external_message_at, april)
+        self.assertEqual(merged.activity_merged_from, "legacy")
+        i90, i180 = compute_inactive_flags(
+            merged.last_external_message_at,
+            now=datetime(2026, 6, 28, tzinfo=timezone.utc),
+        )
+        self.assertTrue(i90)
+        self.assertTrue(i180)
+
+
 class TestResolveLegacyChatId(unittest.TestCase):
-    @patch("bot.services.chat_id_remap.find_legacy_group_chat_id")
+    @patch("bot.services.chat_id_remap.find_all_legacy_group_chat_ids")
+    @patch("db.connection.get_db")
+    def test_returns_all_migrated_and_groups_legacy_ids(
+        self,
+        mock_get_db: MagicMock,
+        mock_find_all: MagicMock,
+    ) -> None:
+        session = MagicMock()
+        mock_get_db.return_value.__enter__.return_value = session
+        session.query.return_value.filter.return_value.all.return_value = [
+            (-4931698679,),
+            (-5252124913,),
+        ]
+        mock_find_all.return_value = [-4931698679, -5252124913]
+
+        ids = resolve_legacy_chat_ids(
+            telegram_chat_id=-1003858810553,
+            group_title="CC / 6217-2220 / J",
+            club_id=3,
+        )
+        self.assertEqual(ids, [-5252124913, -4931698679])
+
+    @patch("bot.services.chat_id_remap.find_all_legacy_group_chat_ids")
     @patch("db.connection.get_db")
     def test_prefers_migrated_group_recovery(
         self,
         mock_get_db: MagicMock,
-        mock_find_legacy: MagicMock,
+        mock_find_all: MagicMock,
     ) -> None:
         session = MagicMock()
         mock_get_db.return_value.__enter__.return_value = session
-        session.query.return_value.filter.return_value.first.return_value = (-555,)
+        session.query.return_value.filter.return_value.all.return_value = [(-555,)]
+        mock_find_all.return_value = []
 
         legacy = resolve_legacy_chat_id(
             telegram_chat_id=-100999,
@@ -86,26 +144,63 @@ class TestResolveLegacyChatId(unittest.TestCase):
             club_id=2,
         )
         self.assertEqual(legacy, -555)
-        mock_find_legacy.assert_not_called()
+        mock_find_all.assert_called_once()
 
-    @patch("bot.services.chat_id_remap.find_legacy_group_chat_id", return_value=None)
+    @patch("bot.services.chat_id_remap.find_all_legacy_group_chat_ids", return_value=[])
     @patch("db.connection.get_db")
     def test_falls_back_to_basic_group_title_map(
         self,
         mock_get_db: MagicMock,
-        mock_find_legacy: MagicMock,
+        mock_find_all: MagicMock,
     ) -> None:
         session = MagicMock()
         mock_get_db.return_value.__enter__.return_value = session
-        session.query.return_value.filter.return_value.first.return_value = None
+        session.query.return_value.filter.return_value.all.return_value = []
 
-        legacy = resolve_legacy_chat_id(
+        ids = resolve_legacy_chat_ids(
             telegram_chat_id=-100999,
             group_title="RT / 1234-5678 / Name",
             club_id=2,
-            basic_groups_by_title={"rt / 1234-5678 / name": -777},
+            basic_groups_by_title={"rt / 1234-5678 / name": [-777, -888]},
         )
-        self.assertEqual(legacy, -777)
+        self.assertEqual(ids, [-888, -777])
+
+
+class TestPlayerOnlyActivity(unittest.IsolatedAsyncioTestCase):
+    async def test_staff_message_does_not_count_as_activity(self) -> None:
+        from bot.services.mtproto_group_activity import last_eligible_player_message_at
+
+        staff_user = MagicMock(id=42, bot=False, username="staff")
+        staff_msg = MagicMock(
+            date=datetime(2026, 6, 20, tzinfo=timezone.utc),
+            sender_id=42,
+            out=False,
+        )
+        staff_msg.get_sender = AsyncMock(return_value=staff_user)
+
+        client = MagicMock()
+        client.get_messages = AsyncMock(return_value=[staff_msg])
+        client.iter_messages = MagicMock(return_value=self._async_iter([]))
+        cfg = MagicMock()
+
+        with patch(
+            "bot.services.mtproto_group_player._eligible_player_filter_context",
+            new_callable=AsyncMock,
+            return_value=(frozenset({42}), frozenset(), frozenset(), frozenset()),
+        ), patch(
+            "bot.services.mtproto_group_player.is_eligible_player_user",
+            return_value=False,
+        ):
+            result = await last_eligible_player_message_at(
+                client, MagicMock(), cfg, self_id=1, history_limit=50
+            )
+
+        self.assertIsNone(result.last_external_message_at)
+        self.assertEqual(result.activity_basis, "support_only")
+
+    async def _async_iter(self, items):
+        for item in items:
+            yield item
 
 
 class TestPlayerSourcePriority(unittest.IsolatedAsyncioTestCase):
@@ -129,7 +224,10 @@ class TestPlayerSourcePriority(unittest.IsolatedAsyncioTestCase):
             return result
 
         with patch(
-            "bot.services.inactive_group_outreach._dual_chat_activity",
+            "bot.services.inactive_group_outreach.resolve_legacy_chat_ids",
+            return_value=[-456],
+        ), patch(
+            "bot.services.inactive_group_outreach._multi_chat_activity",
             new_callable=AsyncMock,
             return_value=(
                 ExternalActivityResult(None, "support_only"),
@@ -157,7 +255,6 @@ class TestPlayerSourcePriority(unittest.IsolatedAsyncioTestCase):
                 cfg,
                 row,
                 self_id=1,
-                exclude_user_ids=frozenset({1}),
                 history_limit=200,
                 player_map=player_map,
             )
