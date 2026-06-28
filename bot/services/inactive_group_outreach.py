@@ -696,6 +696,7 @@ async def tick_async() -> dict[str, int]:
         except Exception as exc:
             logger.exception("inactive_outreach: seed failed")
             _set_control_status("failed", last_error=str(exc), mark_completed=True)
+            remove_inactive_outreach_job()
             await _notify_completion_slack(failed=True)
             return summary
 
@@ -770,11 +771,20 @@ def remove_inactive_outreach_job() -> None:
         job.schedule_removal()
 
 
-def inactive_outreach_job_callback(context) -> None:
-    loop = getattr(context.application, "loop", None) or asyncio.get_event_loop()
-    if loop is None:
+def schedule_inactive_outreach_tick() -> None:
+    """Run tick on the dm_gc listener Telethon loop (not the PTB job-queue loop)."""
+
+    from bot.services.mtproto_dm_gc_listener import _loop_holder
+
+    loop = _loop_holder.get("loop")
+    if loop is None or not loop.is_running():
+        logger.warning("inactive_outreach: listener loop not running; skipping tick")
         return
     asyncio.run_coroutine_threadsafe(tick_async(), loop)
+
+
+def inactive_outreach_job_callback(context) -> None:
+    schedule_inactive_outreach_tick()
 
 
 def setup_inactive_group_outreach_job(app) -> None:

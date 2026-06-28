@@ -6,6 +6,7 @@ import {
   type TradeRecordUploadReport,
   type TradeRecordUploadSummary,
 } from '../api/auditClient'
+import { formatEasternDateTime } from '../lib/easternTime'
 
 export default function Audit({ token }: { token: string }) {
   const exportDateId = useId()
@@ -180,7 +181,7 @@ export default function Audit({ token }: { token: string }) {
                   <th className="px-2 py-2 font-medium">Date</th>
                   <th className="px-2 py-2 font-medium">File</th>
                   <th className="px-2 py-2 font-medium">Rows</th>
-                  <th className="px-2 py-2 font-medium">Uploaded</th>
+                  <th className="px-2 py-2 font-medium">Uploaded (ET)</th>
                 </tr>
               </thead>
               <tbody>
@@ -190,7 +191,7 @@ export default function Audit({ token }: { token: string }) {
                     <td className="px-2 py-2">{row.audit_date}</td>
                     <td className="px-2 py-2">{row.filename}</td>
                     <td className="px-2 py-2">{row.transaction_count}</td>
-                    <td className="px-2 py-2">{new Date(row.created_at).toLocaleString()}</td>
+                    <td className="px-2 py-2">{formatEasternDateTime(row.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
