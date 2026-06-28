@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from bot.handlers.inactive_outreach_send import _parse_start_args
+from telegram.constants import ChatType
+
+from bot.handlers.inactive_outreach_send import (
+    IO_STEP_KEY,
+    _parse_start_args,
+    sendinactive_flow_active,
+    sendinactive_message_handler,
+)
 from bot.services.inactive_group_outreach_dm import arm_dm_campaign, is_dm_batch_running
 from db.models import InactiveGroupOutreachControl, InactiveGroupOutreachRow
 
@@ -66,6 +73,38 @@ class _FakeDmSession:
 
     def commit(self):
         return None
+
+
+class TestSendinactivePriorityHandler(unittest.IsolatedAsyncioTestCase):
+  async def test_compose_handler_runs_when_step_compose(self) -> None:
+      update = MagicMock()
+      update.message = MagicMock()
+      update.message.text = "Hello inactive players"
+      update.effective_chat = MagicMock()
+      update.effective_chat.type = ChatType.PRIVATE
+      update.effective_user = MagicMock()
+      update.effective_user.id = 493310710
+
+      context = MagicMock()
+      context.user_data = {IO_STEP_KEY: "compose", "io_recipient_count": 1}
+
+      with patch(
+          "bot.handlers.inactive_outreach_send._can_use_sendinactive",
+          return_value=True,
+      ), patch(
+          "bot.handlers.inactive_outreach_send.sendinactive_compose",
+          new_callable=AsyncMock,
+      ) as mock_compose:
+          from telegram.ext import ApplicationHandlerStop
+
+          with self.assertRaises(ApplicationHandlerStop):
+              await sendinactive_message_handler(update, context)
+          mock_compose.assert_awaited_once_with(update, context)
+
+  def test_flow_active_during_compose(self) -> None:
+      context = MagicMock()
+      context.user_data = {IO_STEP_KEY: "compose"}
+      self.assertTrue(sendinactive_flow_active(context))
 
 
 class TestArmDmCampaign(unittest.TestCase):

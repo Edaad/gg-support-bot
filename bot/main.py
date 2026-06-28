@@ -153,7 +153,11 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
     from bot.handlers.cashapp import cashapp_handler
     from bot.handlers.stripe import stripe_handler
     from bot.handlers.teststripe import teststripe_handler
-    from bot.handlers.inactive_outreach_send import get_sendinactive_handler
+    from bot.handlers.inactive_outreach_send import (
+        get_sendinactive_handler,
+        sendinactive_callback_handler,
+        sendinactive_message_handler,
+    )
     from bot.handlers.inactive_outreach_stage import (
         stageinactive_handler,
         stagedinactive_handler,
@@ -217,6 +221,8 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         unstageinactive_handler=unstageinactive_handler,
         stagedinactive_handler=stagedinactive_handler,
         get_sendinactive_handler=get_sendinactive_handler,
+        sendinactive_message_handler=sendinactive_message_handler,
+        sendinactive_callback_handler=sendinactive_callback_handler,
         deposit_amount_priority_handler=deposit_amount_priority_handler,
         cancel_deposit_reminder_on_customer_msg=cancel_deposit_reminder_on_customer_msg,
         cancel_deposit_reminder_on_group_activity=cancel_deposit_reminder_on_group_activity,
@@ -264,6 +270,20 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     )
     app.add_handler(
         CallbackQueryHandler(h.bonus_callback_handler, pattern=r"^b(type:|club:)"),
+        group=-1,
+    )
+    app.add_handler(
+        MessageHandler(
+            filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+            h.sendinactive_message_handler,
+        ),
+        group=-1,
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            h.sendinactive_callback_handler,
+            pattern=r"^io_send_(confirm|cancel)$",
+        ),
         group=-1,
     )
 

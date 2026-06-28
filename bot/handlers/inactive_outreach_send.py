@@ -7,6 +7,7 @@ import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatType
 from telegram.ext import (
+    ApplicationHandlerStop,
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
@@ -29,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 (IO_COMPOSE, IO_CONFIRM) = range(2)
 
+IO_STEP_KEY = "io_step"
+
 _IO_USER_KEYS = (
     "io_club_key",
     "io_row_id",
@@ -36,7 +39,12 @@ _IO_USER_KEYS = (
     "io_message",
     "io_admin_id",
     "io_recipient_count",
+    IO_STEP_KEY,
 )
+
+
+def sendinactive_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    return context.user_data.get(IO_STEP_KEY) in ("compose", "confirm")
 
 
 def _can_use_sendinactive(user_id: int) -> bool:
@@ -148,6 +156,16 @@ async def sendinactive_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if limit is not None:
         scope += f" limit={limit}"
 
+    context.user_data[IO_STEP_KEY] = "compose"
+    logger.info(
+        "sendinactive start user_id=%s club=%s row_id=%s limit=%s recipients=%s",
+        user.id,
+        club_key,
+        row_id,
+        limit,
+        count,
+    )
+
     await message.reply_text(
         f"Inactive outreach DM ({scope})\n"
         f"Recipients: {count}\n\n"
@@ -156,9 +174,56 @@ async def sendinactive_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return IO_COMPOSE
 
 
+async def sendinactive_message_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """High-priority private text handler while /sendinactive compose is in progress."""
+    if not update.message or not update.effective_chat or not update.effective_user:
+        return
+    if update.effective_chat.type != ChatType.PRIVATE:
+        return
+    if context.user_data.get(IO_STEP_KEY) != "compose":
+        return
+    if not _can_use_sendinactive(update.effective_user.id):
+        return
+
+    logger.info(
+        "sendinactive compose user_id=%s text_len=%s",
+        update.effective_user.id,
+        len(update.message.text or ""),
+    )
+    await sendinactive_compose(update, context)
+    raise ApplicationHandlerStop()
+
+
+async def sendinactive_callback_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """High-priority callback handler for outreach preview Confirm/Cancel."""
+    query = update.callback_query
+    if not query or not query.data:
+        return
+    if context.user_data.get(IO_STEP_KEY) != "confirm":
+        return
+    if not query.data.startswith("io_send_"):
+        return
+    if not update.effective_user or not _can_use_sendinactive(update.effective_user.id):
+        return
+
+    logger.info(
+        "sendinactive confirm user_id=%s action=%s",
+        update.effective_user.id,
+        query.data,
+    )
+    await sendinactive_confirm(update, context)
+    raise ApplicationHandlerStop()
+
+
 async def sendinactive_compose(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
-    if not message or not message.text:
+    if not message:
+        return IO_COMPOSE
+    if not message.text:
         await message.reply_text("Please send a text message for the outreach copy.")
         return IO_COMPOSE
 
@@ -178,6 +243,7 @@ async def sendinactive_compose(update: Update, context: ContextTypes.DEFAULT_TYP
     if len(preview) > 4096:
         preview = preview[:4090] + "…"
 
+    context.user_data[IO_STEP_KEY] = "confirm"
     await message.reply_text(preview, reply_markup=_confirm_keyboard())
     return IO_CONFIRM
 
@@ -257,5 +323,7 @@ def get_sendinactive_handler() -> ConversationHandler:
             ],
         },
         fallbacks=[CommandHandler("cancel", sendinactive_cancel)],
+        per_chat=False,
+        per_user=True,
         allow_reentry=True,
     )

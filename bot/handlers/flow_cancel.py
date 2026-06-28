@@ -71,6 +71,10 @@ def issue_report_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
 
 
 def inactive_outreach_send_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    from bot.handlers.inactive_outreach_send import sendinactive_flow_active
+
+    if sendinactive_flow_active(context):
+        return True
     return any(k in context.user_data for k in _INACTIVE_OUTREACH_SEND_KEYS)
 
 
