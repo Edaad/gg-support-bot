@@ -54,6 +54,7 @@ from bot.services.mtproto_track_contact import (
 from bot.services.mtproto_group_cash import handle_group_cash_outgoing
 from bot.services.mtproto_group_delete import handle_group_delete_outgoing
 from bot.services.support_group_chats import (
+    fetch_outreach_pending_reply,
     fetch_support_group_chat_by_club_player,
     fetch_support_group_chat_by_telegram_chat_id,
     persist_support_group_chat_row,
@@ -711,6 +712,32 @@ async def handle_dm_gc_incoming(
         _telethon_user_label(player),
         snippet + ("..." if len(snippet) >= 400 else ""),
     )
+
+    outreach_row = fetch_outreach_pending_reply(cfg.club_key, int(player.id))
+    if outreach_row is not None:
+        from bot.services.inactive_group_outreach_reonboard import run_inactive_outreach_reonboard
+
+        lock_sess, acquired = try_pg_advisory_lock_club_player(cfg.club_key, int(player.id))
+        if not acquired:
+            logger.warning(
+                "dm_gc inactive_outreach_reonboard: advisory_lock_busy club_key=%s player=%s",
+                cfg.club_key,
+                _telethon_user_label(player),
+            )
+            return
+        try:
+            await run_inactive_outreach_reonboard(
+                client=event.client,
+                cfg=cfg,
+                player=player,
+                outreach_row=outreach_row,
+                bot_dm_username=bot_dm_username,
+                ptb_bot=ptb_bot,
+                listener_label=listener_label,
+            )
+        finally:
+            pg_advisory_unlock_session(lock_sess, cfg.club_key, int(player.id))
+        return
 
     await _run_gc_flow_for_player(
         event,

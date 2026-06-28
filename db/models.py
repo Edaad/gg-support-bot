@@ -829,6 +829,12 @@ class InactiveGroupOutreachControl(Base):
     entity_resolvable_count = Column(Integer, nullable=False, default=0)
     last_error = Column(Text, nullable=True)
     last_tick_at = Column(DateTime(timezone=True), nullable=True)
+    dm_campaign_message = Column(Text, nullable=True)
+    dm_batch_status = Column(String(32), nullable=True)
+    dm_campaign_started_at = Column(DateTime(timezone=True), nullable=True)
+    dm_campaign_started_by_telegram_user_id = Column(BigInteger, nullable=True)
+    dm_sent_count = Column(Integer, nullable=False, default=0)
+    dm_failed_count = Column(Integer, nullable=False, default=0)
 
 
 class InactiveGroupOutreachRow(Base):
@@ -846,6 +852,12 @@ class InactiveGroupOutreachRow(Base):
             "ix_inactive_group_outreach_rows_stage_status",
             "stage_status",
             "club_key",
+        ),
+        Index(
+            "ix_inactive_group_outreach_rows_dm_lookup",
+            "club_key",
+            "player_telegram_user_id",
+            "dm_status",
         ),
     )
 
@@ -882,6 +894,10 @@ class InactiveGroupOutreachRow(Base):
     staged_at = Column(DateTime(timezone=True), nullable=True)
     staged_by_telegram_user_id = Column(BigInteger, nullable=True)
     stage_note = Column(Text, nullable=True)
+    reply_received_at = Column(DateTime(timezone=True), nullable=True)
+    reonboard_new_chat_id = Column(BigInteger, nullable=True)
+    reonboard_error = Column(Text, nullable=True)
+    old_group_erased_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),

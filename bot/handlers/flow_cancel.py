@@ -7,7 +7,7 @@ from typing import Literal
 from telegram import Update
 from telegram.ext import ContextTypes
 
-FlowName = Literal["deposit", "cashout", "bonus", "issue_report"]
+FlowName = Literal["deposit", "cashout", "bonus", "issue_report", "inactive_outreach_send"]
 
 ACTIVE_FLOW_KEY = "active_bot_flow"
 
@@ -37,6 +37,11 @@ _ISSUE_REPORT_ACTIVE_KEYS = (
     "ir_title",
     "ir_details",
 )
+_INACTIVE_OUTREACH_SEND_KEYS = (
+    "io_club_key",
+    "io_message",
+    "io_admin_id",
+)
 
 
 def mark_active_flow(context: ContextTypes.DEFAULT_TYPE, flow: FlowName) -> None:
@@ -65,13 +70,17 @@ def issue_report_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return any(k in context.user_data for k in _ISSUE_REPORT_ACTIVE_KEYS)
 
 
+def inactive_outreach_send_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    return any(k in context.user_data for k in _INACTIVE_OUTREACH_SEND_KEYS)
+
+
 def _cancel_order(context: ContextTypes.DEFAULT_TYPE) -> list[FlowName]:
     """Prefer the flow the user started most recently, then other active flows."""
     latest = context.user_data.get(ACTIVE_FLOW_KEY)
     order: list[FlowName] = []
-    if latest in ("deposit", "cashout", "bonus", "issue_report"):
+    if latest in ("deposit", "cashout", "bonus", "issue_report", "inactive_outreach_send"):
         order.append(latest)
-    for name in ("bonus", "issue_report", "deposit", "cashout"):
+    for name in ("bonus", "issue_report", "inactive_outreach_send", "deposit", "cashout"):
         if name not in order:
             order.append(name)
     return order
@@ -83,6 +92,11 @@ async def flow_cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     for flow in _cancel_order(context):
+        if flow == "inactive_outreach_send" and inactive_outreach_send_flow_active(context):
+            from bot.handlers.inactive_outreach_send import sendinactive_cancel
+
+            await sendinactive_cancel(update, context)
+            return
         if flow == "issue_report" and issue_report_flow_active(context):
             from bot.handlers.issue_reports import issue_report_cancel
 
@@ -106,6 +120,6 @@ async def flow_cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     clear_active_flow(context)
     await update.message.reply_text(
-        "No active deposit, cashout, bonus, or issue report to cancel.\n\n"
+        "No active deposit, cashout, bonus, issue report, or inactive outreach send to cancel.\n\n"
         "If you already finished, you are all set — nothing else to do."
     )

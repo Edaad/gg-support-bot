@@ -90,6 +90,10 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
 
         setup_inactive_group_outreach_job(app)
 
+        from bot.services.inactive_group_outreach_dm import setup_inactive_group_outreach_dm_job
+
+        setup_inactive_group_outreach_dm_job(app)
+
         from bot.services.issue_report_reminders import schedule_issue_report_reminder_job
 
         schedule_issue_report_reminder_job(app)
@@ -149,6 +153,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
     from bot.handlers.cashapp import cashapp_handler
     from bot.handlers.stripe import stripe_handler
     from bot.handlers.teststripe import teststripe_handler
+    from bot.handlers.inactive_outreach_send import get_sendinactive_handler
     from bot.handlers.inactive_outreach_stage import (
         stageinactive_handler,
         stagedinactive_handler,
@@ -211,6 +216,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         stageinactive_handler=stageinactive_handler,
         unstageinactive_handler=unstageinactive_handler,
         stagedinactive_handler=stagedinactive_handler,
+        get_sendinactive_handler=get_sendinactive_handler,
         deposit_amount_priority_handler=deposit_amount_priority_handler,
         cancel_deposit_reminder_on_customer_msg=cancel_deposit_reminder_on_customer_msg,
         cancel_deposit_reminder_on_group_activity=cancel_deposit_reminder_on_group_activity,
@@ -305,6 +311,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
             filters=filters.ChatType.PRIVATE,
         )
     )
+    app.add_handler(h.get_sendinactive_handler())
 
     if test_mode and h.deposit_amount_priority_handler is not None:
         app.add_handler(

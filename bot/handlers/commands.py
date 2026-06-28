@@ -34,6 +34,7 @@ RESERVED_CMDS = {
     "mycmds", "deposit", "cashout", "list", "botwelcome",
     "gc", "add", "cash", "refresh", "unbindmethod", "whosnext",
     "stripe", "cashapp", "stageinactive", "unstageinactive", "stagedinactive",
+    "sendinactive",
 }
 
 SET_NAME, SET_MESSAGE = range(2)

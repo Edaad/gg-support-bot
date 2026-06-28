@@ -630,6 +630,7 @@ async def create_support_group(
     bot_dm_username: str | None,
     player_user=None,
     link_join_client: TelegramClient | None = None,
+    title_override: str | None = None,
 ) -> MtProtoGroupOutcome:
     """
     Create a basic Telegram group for ``cfg`` via MTProto, invite users + bot,
@@ -650,7 +651,9 @@ async def create_support_group(
     initial_sent = False
     invite_link: str | None = None
     chat_id_big: int | None = None
-    title_for_group = build_support_megagroup_title(cfg, player_user)
+    title_for_group = (title_override or "").strip() or build_support_megagroup_title(
+        cfg, player_user
+    )
     title_out = title_for_group
     player_direct_add_ok: bool | None = None
 

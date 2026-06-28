@@ -395,3 +395,52 @@ def pg_advisory_unlock_session(session, club_key: str, player_telegram_user_id: 
         session.commit()
     finally:
         session.close()
+
+
+def supersede_support_group_chat_binding(
+    *,
+    club_key: str,
+    telegram_chat_id: int,
+    reason: str | None = None,
+) -> bool:
+    """Soft-unbind player from an old support group row (inactive outreach re-onboard)."""
+
+    with get_db() as session:
+        row = (
+            session.query(SupportGroupChat)
+            .filter(
+                SupportGroupChat.club_key == club_key,
+                SupportGroupChat.telegram_chat_id == int(telegram_chat_id),
+            )
+            .order_by(SupportGroupChat.created_at.desc())
+            .first()
+        )
+        if row is None:
+            return False
+        note = (reason or f"superseded inactive outreach chat {telegram_chat_id}")[:2000]
+        row.player_telegram_user_id = None
+        row.player_dm_status = "superseded_inactive_outreach"
+        row.last_error_message = note
+        session.commit()
+        return True
+
+
+def fetch_outreach_pending_reply(club_key: str, player_telegram_user_id: int):
+    """Return outreach row awaiting player reply (dm_status=sent), if any."""
+
+    from db.models import InactiveGroupOutreachRow
+
+    with get_db() as session:
+        row = (
+            session.query(InactiveGroupOutreachRow)
+            .filter(
+                InactiveGroupOutreachRow.club_key == club_key,
+                InactiveGroupOutreachRow.player_telegram_user_id == int(player_telegram_user_id),
+                InactiveGroupOutreachRow.dm_status == "sent",
+            )
+            .order_by(InactiveGroupOutreachRow.dm_sent_at.desc().nullslast())
+            .first()
+        )
+        if row is not None:
+            session.expunge(row)
+        return row

@@ -285,6 +285,7 @@ Scans all three clubs' support megagroups for **last non-support player message*
 ```bash
 heroku run -a YOUR_APP -- python migrate_inactive_group_outreach.py
 heroku run -a YOUR_APP -- python migrate_inactive_group_outreach_staging.py
+heroku run -a YOUR_APP -- python migrate_inactive_group_outreach_dm.py
 ```
 
 **Enable** on the worker dyno:
@@ -334,6 +335,32 @@ TRUNCATE inactive_group_outreach_rows;
 Then set `GC_INACTIVE_OUTREACH_SCAN_ENABLED=true` and restart the worker.
 
 Local single-group debug: [`scripts/run_inactive_group_outreach_scan.py`](../scripts/run_inactive_group_outreach_scan.py) (`--chat-id` / `--row-id`, default dry-run). Uses a dedicated MTProto session — do not run against a club session held by the worker.
+
+### Inactive outreach DM batch (phase 3)
+
+After staging groups and resolving players (`entity_resolvable=true`), staff compose outreach copy via **`/sendinactive`** in a private DM with the support bot (preview + Confirm/Cancel). The worker sends DMs from the club MTProto account when:
+
+```bash
+heroku config:set GC_INACTIVE_OUTREACH_DM_ENABLED=true -a YOUR_APP
+heroku restart worker -a YOUR_APP
+```
+
+Knobs: `GC_INACTIVE_OUTREACH_DM_BATCH_SIZE` (default `5`), `GC_INACTIVE_OUTREACH_DM_INTERVAL_SEC` (default `90`), `GC_INACTIVE_OUTREACH_DM_DELAY_SEC` (default `1.5` between sends), `GC_INACTIVE_OUTREACH_DM_FIRST_DELAY_SEC` (default `5`).
+
+Monitor:
+
+```sql
+SELECT dm_batch_status, dm_sent_count, dm_failed_count,
+       dm_campaign_started_at, dm_campaign_started_by_telegram_user_id
+FROM inactive_group_outreach_control WHERE id = 1;
+
+SELECT dm_status, COUNT(*) FROM inactive_group_outreach_rows
+WHERE stage_status = 'staged' GROUP BY dm_status;
+```
+
+Test one row first: `/sendinactive row <outreach_row_id>` then confirm. Local dry-run: [`scripts/run_inactive_outreach_dm.py`](../scripts/run_inactive_outreach_dm.py).
+
+Player replies to the club MTProto DM after `dm_status=sent` trigger re-onboard (erase old megagroup, fresh basic group with same title). See [`docs/GC.md`](GC.md) phase 3–4.
 
 ## Notification bot (`notification` dyno)
 

@@ -332,3 +332,33 @@ def get_bound_players(*, club_id: int, chat_id: int) -> List[str]:
         ).fetchall()
         return [r[0] for r in rows if r and r[0]]
 
+
+def remove_chat_id_from_club_bindings(*, club_id: int, chat_id: int) -> None:
+    """Surgically drop a retired megagroup chat id from groups + player_details."""
+
+    cid = int(chat_id)
+    club = int(club_id)
+    remove_stmt = text(
+        """
+        UPDATE player_details
+        SET chat_ids = COALESCE(
+            (
+                SELECT ARRAY(
+                    SELECT x
+                    FROM unnest(chat_ids) AS x
+                    WHERE x <> :chat_id
+                    ORDER BY 1
+                )
+            ),
+            '{}'::bigint[]
+        )
+        WHERE club_id = :club_id
+          AND chat_ids @> ARRAY[:chat_id]::bigint[]
+        """
+    )
+    delete_group_stmt = text("DELETE FROM groups WHERE chat_id = :chat_id")
+    with get_db() as session:
+        session.execute(remove_stmt, {"chat_id": cid, "club_id": club})
+        session.execute(delete_group_stmt, {"chat_id": cid})
+        session.commit()
+

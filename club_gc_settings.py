@@ -48,7 +48,7 @@ def _link_club_id_for_gc(env_key: str, *, default_dashboard_id: int) -> int:
 # Default `/gc` staff invitees (also excluded when finding the sole player).
 # `config.py` re-exports this; keep in sync when editing invite lists.
 GC_USERS_TO_INVITE: dict[str, tuple[str, ...]] = {
-    "round_table": ("@RoundTableSupport3", "@YTranslateBot"),
+    "round_table": ("@RoundTableSupport3", "@YTranslateBot", "@playggsupport"),
     "creator_club": ("@CreatorClubSupport3", "@twocardcashier", "@YTranslateBot"),
     "clubgto": ("@ClubGTOAdmin", "@YTranslateBot"),
 }
@@ -582,6 +582,28 @@ def get_inactive_outreach_history_limit() -> int:
 
 def get_inactive_outreach_first_delay_sec() -> float:
     return max(0.0, _env_float("GC_INACTIVE_OUTREACH_FIRST_DELAY_SEC", 300.0))
+
+
+def is_inactive_outreach_dm_enabled() -> bool:
+    """Worker batch DM send for staged inactive outreach (armed via /sendinactive)."""
+
+    return _env_bool("GC_INACTIVE_OUTREACH_DM_ENABLED", default=False)
+
+
+def get_inactive_outreach_dm_batch_size() -> int:
+    return max(1, min(_env_int("GC_INACTIVE_OUTREACH_DM_BATCH_SIZE", 5), 25))
+
+
+def get_inactive_outreach_dm_interval_sec() -> int:
+    return max(30, _env_int("GC_INACTIVE_OUTREACH_DM_INTERVAL_SEC", 90))
+
+
+def get_inactive_outreach_dm_delay_sec() -> float:
+    return max(0.0, _env_float("GC_INACTIVE_OUTREACH_DM_DELAY_SEC", 1.5))
+
+
+def get_inactive_outreach_dm_first_delay_sec() -> float:
+    return max(0.0, _env_float("GC_INACTIVE_OUTREACH_DM_FIRST_DELAY_SEC", 5.0))
 
 
 def get_dm_gc_listener_restart_config() -> tuple[float, float, float]:

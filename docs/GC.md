@@ -118,7 +118,7 @@ If neither is available, `/gc` will still create the group and log a warning tha
 When **`GC_ELEVATE_CREATOR_ROUND_TABLE=true`**:
 
 1. **Elevate Admin** MTProto session creates the group (not the `round_table` listener session).
-2. Player, bot, and other staff (`@RoundTableSupport3`, `@YTranslateBot`, etc.) are **direct-invited** — **`@RoundTableSupport2` is excluded** from direct invite.
+2. Player, bot, and other staff (`@RoundTableSupport3`, `@YTranslateBot`, `@playggsupport`, etc.) are **direct-invited** — **`@RoundTableSupport2` is excluded** from direct invite.
 3. Elevate exports an invite link.
 4. The **Round Table** MTProto session (same account as `@RoundTableSupport2` and the DM listener) joins via `ImportChatInviteRequest` **automatically in the worker** (reuses the live listener client when connected — no account-manager action).
 5. Elevate promotes Support2 to group admin via `EditAdminRequest`.
@@ -282,6 +282,36 @@ heroku run -a YOUR_APP -- python migrate_inactive_group_outreach_staging.py
 Pipeline: scan → manual review → **stage** → (phase 2) entity resolution → (phase 3) custom DM → (phase 4) player DM reply triggers existing auto-GC listener.
 
 Implementation: [`bot/services/inactive_group_outreach_staging.py`](../bot/services/inactive_group_outreach_staging.py), handler [`bot/handlers/inactive_outreach_stage.py`](../bot/handlers/inactive_outreach_stage.py).
+
+### Outreach DM + re-onboard (phase 3–4)
+
+**Migrations** (run once):
+
+```bash
+heroku run -a YOUR_APP -- python migrate_inactive_group_outreach_dm.py
+```
+
+**Enable worker DM batch** (after migration):
+
+```bash
+heroku config:set GC_INACTIVE_OUTREACH_DM_ENABLED=true -a YOUR_APP
+```
+
+**Send outreach** (global admins + MTProto operators, private DM with bot):
+
+| Command | Action |
+|---------|--------|
+| `/sendinactive [club_key]` | Compose message → preview → Confirm/Cancel; arms worker batch |
+| `/sendinactive row <id>` | Single outreach row only (test first) |
+| `/sendinactive limit 1` | Cap batch to one recipient |
+
+Knobs: `GC_INACTIVE_OUTREACH_DM_BATCH_SIZE` (default `5`), `GC_INACTIVE_OUTREACH_DM_INTERVAL_SEC` (default `90`), `GC_INACTIVE_OUTREACH_DM_DELAY_SEC` (default `1.5`), `GC_INACTIVE_OUTREACH_DM_FIRST_DELAY_SEC` (default `5`).
+
+**Reply flow:** Any inbound DM to the club MTProto account after `dm_status=sent` triggers re-onboard: soft-unbind old `support_group_chats`, erase old megagroup, create fresh basic group with **exact prior title**, RT photo, and full staff invite list (including `@playggsupport`).
+
+Implementation: [`bot/services/inactive_group_outreach_dm.py`](../bot/services/inactive_group_outreach_dm.py), [`bot/handlers/inactive_outreach_send.py`](../bot/handlers/inactive_outreach_send.py), [`bot/services/inactive_group_outreach_reonboard.py`](../bot/services/inactive_group_outreach_reonboard.py).
+
+Local single-target debug: [`scripts/run_inactive_outreach_dm.py`](../scripts/run_inactive_outreach_dm.py) (`--row-id` / `--chat-id`, default dry-run).
 
 ## Troubleshooting
 
