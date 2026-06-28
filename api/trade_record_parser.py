@@ -12,16 +12,16 @@ from zoneinfo import ZoneInfo
 
 from openpyxl import load_workbook
 
-from api.club_slug import CLUB_LABEL_TO_SLUG, CLUB_SLUG_TO_NAME
+from api.club_slug import CLUB_LABEL_TO_SLUG, CLUB_SLUG_TO_NAME, slug_for_club_name
 
 SHEET_NAME = "Trade Record"
 DATA_START_ROW = 6
 _EASTERN = ZoneInfo("America/New_York")
 _GG_ID_RE = re.compile(r"^[0-9]{1,48}-[0-9]{1,48}$")
 
-# Column indices (1-based) — validated against Aces-21.xlsx layout (KAN-6)
-COL_TIME = 2  # B
-COL_AMOUNT = 6  # F
+# Column indices (1-based) — Aces-21.xlsx Trade Record layout
+COL_TIME = 1  # A Date
+COL_AMOUNT = 7  # G Amount (F=Before, H=After)
 COL_SA_ID = 11  # K
 COL_SA_NICK = 12  # L
 COL_AGENT_ID = 13  # M
@@ -41,6 +41,7 @@ ROLE_COLUMNS: dict[Role, tuple[int, int]] = {
 @dataclass(frozen=True)
 class TradeRecordMetadata:
     club_text: str
+    club_id_text: str
     date_text: str
 
 
@@ -65,6 +66,8 @@ class ParsedTransaction:
 @dataclass
 class TradeRecordParseResult:
     metadata: TradeRecordMetadata
+    audit_date: date
+    club_slug: str
     identities: list[ParsedIdentity] = field(default_factory=list)
     transactions: list[ParsedTransaction] = field(default_factory=list)
     skipped_rows: list[str] = field(default_factory=list)
@@ -151,34 +154,62 @@ def _parse_row_datetime(raw: Any, audit_date: date) -> datetime | None:
     return None
 
 
+def _row_cells(ws, row: int, max_col: int = 20) -> list[str]:
+    return [_cell_str(ws.cell(row=row, column=c).value) for c in range(1, max_col + 1)]
+
+
+def _split_label_value(text: str) -> tuple[str, str]:
+    raw = text.strip()
+    if not raw:
+        return "", ""
+    if ":" in raw:
+        label, _, value = raw.partition(":")
+        return label.strip(), value.strip()
+    return "", raw
+
+
 def _metadata_from_sheet(ws) -> TradeRecordMetadata:
     club_text = ""
+    club_id_text = ""
     date_text = ""
-    fallback_parts: list[str] = []
 
     for row in range(1, 4):
-        label = _cell_str(ws.cell(row=row, column=1).value).lower()
-        value = _cell_str(ws.cell(row=row, column=2).value)
-        if value:
-            fallback_parts.append(value)
-        if "club" in label and value:
-            club_text = value
-        elif "date" in label and value:
-            date_text = value
+        cells = _row_cells(ws, row)
+        non_empty = [v for v in cells if v]
+        if not non_empty:
+            continue
 
-    if not club_text and fallback_parts:
-        club_text = fallback_parts[0]
-    if not date_text and len(fallback_parts) > 1:
-        date_text = fallback_parts[1]
-    elif not date_text and fallback_parts:
-        date_text = fallback_parts[-1]
+        label = ""
+        value = ""
+        if len(non_empty) == 1:
+            label, value = _split_label_value(non_empty[0])
+            if not label:
+                value = non_empty[0]
+        else:
+            label = non_empty[0]
+            value = non_empty[1]
+
+        ll = label.lower()
+        if "club name" in ll or ll == "club":
+            club_text = value or club_text
+        elif "club id" in ll:
+            club_id_text = value or club_id_text
+        elif "period" in ll or "date" in ll:
+            date_text = value or date_text
+
+        if not club_text and row == 1 and not label and value:
+            club_text = value
 
     if not club_text:
         raise TradeRecordParseError("Trade Record metadata rows 1–3 are empty")
     if not date_text:
-        date_text = club_text
+        raise TradeRecordParseError("Trade Record Period metadata is missing in rows 1–3")
 
-    return TradeRecordMetadata(club_text=club_text, date_text=date_text)
+    return TradeRecordMetadata(
+        club_text=club_text,
+        club_id_text=club_id_text,
+        date_text=date_text,
+    )
 
 
 # Display labels for trade-record metadata validation (match dashboard clubMap.ts)
@@ -188,32 +219,6 @@ CLUB_SLUG_DISPLAY_LABELS: dict[str, str] = {
     "aces-table": "Aces Table",
     "creator-club": "Creator Club",
 }
-
-
-def _club_labels_for_slug(club_slug: str) -> set[str]:
-    slug = club_slug.strip().lower()
-    labels: set[str] = {slug}
-    display = CLUB_SLUG_DISPLAY_LABELS.get(slug) or CLUB_SLUG_TO_NAME.get(slug)
-    if display:
-        labels.add(display)
-        labels.add(display.lower())
-    full = CLUB_SLUG_TO_NAME.get(slug)
-    if full:
-        labels.add(full)
-        labels.add(full.lower())
-    for label, mapped in CLUB_LABEL_TO_SLUG.items():
-        if mapped == slug:
-            labels.add(label)
-            labels.add(label.title())
-    if slug == "aces-table":
-        labels.update({"aces", "Aces"})
-    return {x.strip().lower() for x in labels if x.strip()}
-
-
-def _metadata_matches_club(metadata: TradeRecordMetadata, club_slug: str) -> bool:
-    hay = metadata.club_text.lower()
-    labels = _club_labels_for_slug(club_slug)
-    return any(label in hay for label in labels)
 
 
 def _parse_metadata_date(text: str) -> date | None:
@@ -234,33 +239,53 @@ def _parse_metadata_date(text: str) -> date | None:
     return None
 
 
-def _metadata_matches_date(metadata: TradeRecordMetadata, audit_date: date) -> bool:
-    combined = f"{metadata.club_text} {metadata.date_text}"
-    parsed = _parse_metadata_date(metadata.date_text) or _parse_metadata_date(combined)
+def extract_audit_date_from_metadata(metadata: TradeRecordMetadata) -> date:
+    """Parse ET audit day from Period row (e.g. 2026-06-21 ~ 2026-06-21 (UTC-5:00))."""
+    combined = metadata.date_text.strip()
+    if not combined:
+        raise TradeRecordValidationError("Trade Record Period metadata is empty")
+
+    dates_in_text = re.findall(r"(\d{4})-(\d{2})-(\d{2})", combined)
+    if dates_in_text:
+        found = [date(int(y), int(m), int(d)) for y, m, d in dates_in_text]
+        if len(found) >= 2 and found[0] != found[-1]:
+            raise TradeRecordValidationError(
+                f"Period spans multiple days ({found[0].isoformat()} to {found[-1].isoformat()}); "
+                "upload one calendar day at a time."
+            )
+        return found[0]
+
+    parsed = _parse_metadata_date(combined)
     if parsed:
-        return parsed == audit_date
-    # Filename-style fallback: day number in metadata
-    return str(audit_date.day) in combined and str(audit_date.year) in combined
+        return parsed
+
+    raise TradeRecordValidationError(
+        f"Could not parse audit date from Period metadata {metadata.date_text!r}."
+    )
 
 
-def validate_metadata(
-    metadata: TradeRecordMetadata,
-    *,
-    club_slug: str,
-    audit_date: date,
-) -> None:
-    if not _metadata_matches_club(metadata, club_slug):
-        expected = CLUB_SLUG_DISPLAY_LABELS.get(
-            club_slug.strip().lower(),
-            CLUB_SLUG_TO_NAME.get(club_slug.strip().lower(), club_slug),
-        )
-        raise TradeRecordValidationError(
-            f"File club metadata {metadata.club_text!r} does not match selected club {expected!r}."
-        )
-    if not _metadata_matches_date(metadata, audit_date):
-        raise TradeRecordValidationError(
-            f"File date metadata {metadata.date_text!r} does not match selected date {audit_date.isoformat()}."
-        )
+def resolve_club_slug_from_metadata(metadata: TradeRecordMetadata) -> str:
+    """Map Club Name metadata to a known gg-computer club slug."""
+    raw = metadata.club_text.strip()
+    if not raw:
+        raise TradeRecordValidationError("Trade Record Club Name metadata is empty")
+
+    key = raw.lower()
+    if key in CLUB_LABEL_TO_SLUG:
+        return CLUB_LABEL_TO_SLUG[key]
+
+    slug = slug_for_club_name(raw)
+    if slug and slug in CLUB_SLUG_TO_NAME:
+        return slug
+
+    for label, mapped in CLUB_LABEL_TO_SLUG.items():
+        if label in key or key in label:
+            return mapped
+
+    raise TradeRecordValidationError(
+        f"Unknown club in file metadata: {raw!r}. "
+        f"Expected one of: {', '.join(sorted(CLUB_SLUG_DISPLAY_LABELS.values()))}."
+    )
 
 
 def _row_is_blank(ws, row: int) -> bool:
@@ -272,8 +297,6 @@ def _row_is_blank(ws, row: int) -> bool:
 
 def parse_trade_record_workbook(
     source: BinaryIO | bytes,
-    *,
-    audit_date: date,
 ) -> TradeRecordParseResult:
     if isinstance(source, bytes):
         stream: BinaryIO = io.BytesIO(source)
@@ -281,13 +304,15 @@ def parse_trade_record_workbook(
         stream = source
         stream.seek(0)
 
-    wb = load_workbook(stream, read_only=True, data_only=True)
+    wb = load_workbook(stream, read_only=False, data_only=True)
     if SHEET_NAME not in wb.sheetnames:
         wb.close()
         raise TradeRecordParseError(f'Missing "{SHEET_NAME}" sheet')
 
     ws = wb[SHEET_NAME]
     metadata = _metadata_from_sheet(ws)
+    audit_date = extract_audit_date_from_metadata(metadata)
+    club_slug = resolve_club_slug_from_metadata(metadata)
 
     identities_by_key: dict[tuple[Role, str], ParsedIdentity] = {}
     transactions: list[ParsedTransaction] = []
@@ -348,6 +373,8 @@ def parse_trade_record_workbook(
 
     return TradeRecordParseResult(
         metadata=metadata,
+        audit_date=audit_date,
+        club_slug=club_slug,
         identities=list(identities_by_key.values()),
         transactions=transactions,
         skipped_rows=skipped_rows,

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useId, useState } from 'react'
-import { CLUB_OPTIONS, displayLabelForSlug } from '../config/clubMap'
 import {
   downloadAuditExport,
   listTradeRecordUploads,
@@ -9,13 +8,9 @@ import {
 } from '../api/auditClient'
 
 export default function Audit({ token }: { token: string }) {
-  const clubSelectId = useId()
-  const auditDateId = useId()
   const exportDateId = useId()
   const fileInputId = useId()
 
-  const [clubSlug, setClubSlug] = useState(CLUB_OPTIONS[0]?.slug ?? 'round-table')
-  const [auditDate, setAuditDate] = useState('')
   const [exportDate, setExportDate] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -26,22 +21,18 @@ export default function Audit({ token }: { token: string }) {
 
   const loadHistory = useCallback(async () => {
     try {
-      const rows = await listTradeRecordUploads(token, { clubSlug })
+      const rows = await listTradeRecordUploads(token)
       setHistory(rows)
     } catch {
       setHistory([])
     }
-  }, [token, clubSlug])
+  }, [token])
 
   useEffect(() => {
     void loadHistory()
   }, [loadHistory])
 
   const onUpload = async () => {
-    if (!auditDate) {
-      setErr('Select an audit date.')
-      return
-    }
     if (!file) {
       setErr('Choose a trade record .xlsx file.')
       return
@@ -50,7 +41,7 @@ export default function Audit({ token }: { token: string }) {
     setErr('')
     setReport(null)
     try {
-      const result = await uploadTradeRecord(token, clubSlug, auditDate, file)
+      const result = await uploadTradeRecord(token, file)
       setReport(result)
       setFile(null)
       await loadHistory()
@@ -90,39 +81,11 @@ export default function Audit({ token }: { token: string }) {
       <section className="panel mb-6">
         <h2 className="mb-2 text-lg font-semibold text-ink">Trade record upload</h2>
         <p className="mb-4 text-sm text-ink-muted">
-          Upload one ClubGG trade record per club and US Eastern calendar day. Identity is synced
-          to Postgres and gg-computer; transactions are stored for a later reconcile pass.
+          Upload a ClubGG trade record (.xlsx). Club and audit date are read from the
+          sheet metadata (Club Name, Club ID, Period in rows 1–3). Identity is synced to
+          Postgres and gg-computer; transactions are stored for a later reconcile pass.
         </p>
         <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label htmlFor={clubSelectId} className="label-field-xs">
-              Club
-            </label>
-            <select
-              id={clubSelectId}
-              value={clubSlug}
-              onChange={(e) => setClubSlug(e.target.value)}
-              className="input-field-sm min-w-[12rem]"
-            >
-              {CLUB_OPTIONS.map((c) => (
-                <option key={c.slug} value={c.slug}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor={auditDateId} className="label-field-xs">
-              ET audit date
-            </label>
-            <input
-              id={auditDateId}
-              type="date"
-              value={auditDate}
-              onChange={(e) => setAuditDate(e.target.value)}
-              className="input-field-sm"
-            />
-          </div>
           <div>
             <label htmlFor={fileInputId} className="label-field-xs">
               Trade record (.xlsx)
@@ -137,7 +100,7 @@ export default function Audit({ token }: { token: string }) {
           </div>
           <button
             type="button"
-            disabled={uploading || !auditDate || !file}
+            disabled={uploading || !file}
             onClick={() => void onUpload()}
             className="btn-primary-sm disabled:opacity-40"
           >
@@ -208,11 +171,12 @@ export default function Audit({ token }: { token: string }) {
 
       {history.length > 0 ? (
         <section className="panel">
-          <h2 className="mb-3 text-lg font-semibold text-ink">Recent uploads ({displayLabelForSlug(clubSlug)})</h2>
+          <h2 className="mb-3 text-lg font-semibold text-ink">Recent uploads</h2>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-ink-muted">
+                  <th className="px-2 py-2 font-medium">Club</th>
                   <th className="px-2 py-2 font-medium">Date</th>
                   <th className="px-2 py-2 font-medium">File</th>
                   <th className="px-2 py-2 font-medium">Rows</th>
@@ -222,6 +186,7 @@ export default function Audit({ token }: { token: string }) {
               <tbody>
                 {history.map((row) => (
                   <tr key={row.id} className="border-b border-border/60">
+                    <td className="px-2 py-2">{row.club_name}</td>
                     <td className="px-2 py-2">{row.audit_date}</td>
                     <td className="px-2 py-2">{row.filename}</td>
                     <td className="px-2 py-2">{row.transaction_count}</td>

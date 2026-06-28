@@ -47,13 +47,9 @@ async function parseError(res: Response): Promise<string> {
 
 export async function uploadTradeRecord(
   token: string,
-  clubSlug: string,
-  auditDate: string,
   file: File,
 ): Promise<TradeRecordUploadReport> {
   const form = new FormData()
-  form.append('club_slug', clubSlug)
-  form.append('audit_date', auditDate)
   form.append('file', file)
 
   const res = await fetch(apiUrl('/api/audit/trade-records/upload'), {

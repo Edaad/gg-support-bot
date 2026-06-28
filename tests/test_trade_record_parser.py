@@ -8,8 +8,9 @@ from datetime import date
 from api.trade_record_parser import (
     TradeRecordParseError,
     TradeRecordValidationError,
+    extract_audit_date_from_metadata,
     parse_trade_record_workbook,
-    validate_metadata,
+    resolve_club_slug_from_metadata,
 )
 from tests.fixtures.trade_record_xlsx import build_sample_trade_record_xlsx
 
@@ -17,8 +18,10 @@ from tests.fixtures.trade_record_xlsx import build_sample_trade_record_xlsx
 class TradeRecordParserTestCase(unittest.TestCase):
     def test_parse_extracts_identities_and_transactions(self):
         raw = build_sample_trade_record_xlsx(audit_date=date(2026, 6, 21))
-        parsed = parse_trade_record_workbook(raw, audit_date=date(2026, 6, 21))
+        parsed = parse_trade_record_workbook(raw)
 
+        self.assertEqual(parsed.audit_date, date(2026, 6, 21))
+        self.assertEqual(parsed.club_slug, "aces-table")
         self.assertEqual(len(parsed.transactions), 2)
         self.assertEqual(parsed.transactions[0].member_gg_player_id, "3011-9668")
         self.assertEqual(parsed.transactions[0].amount, 100)
@@ -29,37 +32,53 @@ class TradeRecordParserTestCase(unittest.TestCase):
         self.assertIn(("agent", "2000-2001"), ids)
         self.assertIn(("superAgent", "1000-1001"), ids)
 
-    def test_validate_metadata_accepts_matching_club_and_date(self):
+    def test_extracts_club_and_date_from_metadata(self):
         raw = build_sample_trade_record_xlsx(
             club_label="Aces Table",
             audit_date=date(2026, 6, 21),
         )
-        parsed = parse_trade_record_workbook(raw, audit_date=date(2026, 6, 21))
-        validate_metadata(
-            parsed.metadata,
-            club_slug="aces-table",
-            audit_date=date(2026, 6, 21),
+        parsed = parse_trade_record_workbook(raw)
+
+        self.assertEqual(parsed.metadata.club_text, "Aces Table")
+        self.assertEqual(parsed.metadata.club_id_text, "983183")
+        self.assertIn("2026-06-21", parsed.metadata.date_text)
+        self.assertEqual(
+            extract_audit_date_from_metadata(parsed.metadata),
+            date(2026, 6, 21),
         )
+        self.assertEqual(resolve_club_slug_from_metadata(parsed.metadata), "aces-table")
 
-    def test_validate_metadata_rejects_club_mismatch(self):
-        raw = build_sample_trade_record_xlsx(club_label="ClubGTO")
-        parsed = parse_trade_record_workbook(raw, audit_date=date(2026, 6, 21))
+    def test_rejects_unknown_club(self):
+        raw = build_sample_trade_record_xlsx(club_label="Unknown Club")
         with self.assertRaises(TradeRecordValidationError):
-            validate_metadata(
-                parsed.metadata,
-                club_slug="aces-table",
-                audit_date=date(2026, 6, 21),
-            )
+            parse_trade_record_workbook(raw)
 
-    def test_validate_metadata_rejects_date_mismatch(self):
-        raw = build_sample_trade_record_xlsx(audit_date=date(2026, 6, 21))
-        parsed = parse_trade_record_workbook(raw, audit_date=date(2026, 6, 21))
+    def test_extract_audit_date_accepts_period_range(self):
+        raw = build_sample_trade_record_xlsx(
+            club_label="Aces Table",
+            audit_date=date(2024, 6, 21),
+        )
+        parsed = parse_trade_record_workbook(raw)
+        self.assertEqual(parsed.audit_date, date(2024, 6, 21))
+        self.assertIn("2024-06-21", parsed.metadata.date_text)
+
+    def test_rejects_multi_day_period(self):
+        from openpyxl import Workbook
+        import io
+
+        from api.trade_record_parser import SHEET_NAME
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = SHEET_NAME
+        ws.cell(row=1, column=1, value="Club Name")
+        ws.cell(row=1, column=2, value="Aces Table")
+        ws.cell(row=3, column=1, value="Period")
+        ws.cell(row=3, column=2, value="2024-06-20 ~ 2024-06-21 (UTC-5:00)")
+        buf = io.BytesIO()
+        wb.save(buf)
         with self.assertRaises(TradeRecordValidationError):
-            validate_metadata(
-                parsed.metadata,
-                club_slug="aces-table",
-                audit_date=date(2026, 6, 22),
-            )
+            parse_trade_record_workbook(buf.getvalue())
 
     def test_missing_sheet_raises(self):
         from openpyxl import Workbook
@@ -69,7 +88,7 @@ class TradeRecordParserTestCase(unittest.TestCase):
         buf = io.BytesIO()
         wb.save(buf)
         with self.assertRaises(TradeRecordParseError):
-            parse_trade_record_workbook(buf.getvalue(), audit_date=date(2026, 6, 21))
+            parse_trade_record_workbook(buf.getvalue())
 
 
 if __name__ == "__main__":

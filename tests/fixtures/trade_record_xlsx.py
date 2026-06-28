@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from datetime import date
+from datetime import date, datetime
 
 from openpyxl import Workbook
 
@@ -26,19 +26,31 @@ def build_sample_trade_record_xlsx(
     club_label: str = "Aces Table",
     audit_date: date | None = None,
     include_second_row: bool = True,
+    aces_layout: bool = True,
 ) -> bytes:
+    """Build a fixture workbook. Default uses real Aces-21 metadata + column layout."""
     d = audit_date or date(2026, 6, 21)
     wb = Workbook()
     ws = wb.active
     ws.title = SHEET_NAME
 
-    ws.cell(row=1, column=1, value="Club")
-    ws.cell(row=1, column=2, value=club_label)
-    ws.cell(row=2, column=1, value="Date")
-    ws.cell(row=2, column=2, value=d.isoformat())
+    if aces_layout:
+        ws.cell(row=1, column=1, value="Club Name")
+        ws.cell(row=1, column=2, value=club_label)
+        ws.cell(row=2, column=1, value="Club ID")
+        ws.cell(row=2, column=2, value="983183")
+        ws.cell(row=3, column=1, value="Period")
+        ws.cell(row=3, column=2, value=f"{d.isoformat()} ~ {d.isoformat()} (UTC-5:00)")
+        ws.cell(row=5, column=1, value="Date")
+        ws.cell(row=5, column=7, value="Amount")
+    else:
+        ws.cell(row=1, column=1, value="Club")
+        ws.cell(row=1, column=2, value=club_label)
+        ws.cell(row=2, column=1, value="Date")
+        ws.cell(row=2, column=2, value=d.isoformat())
 
     row = DATA_START_ROW
-    ws.cell(row=row, column=COL_TIME, value="14:30:00")
+    ws.cell(row=row, column=COL_TIME, value=datetime(d.year, d.month, d.day, 14, 30, 0))
     ws.cell(row=row, column=COL_AMOUNT, value=100)
     ws.cell(row=row, column=COL_SA_ID, value="1000-1001")
     ws.cell(row=row, column=COL_SA_NICK, value="SuperOne")
@@ -49,7 +61,7 @@ def build_sample_trade_record_xlsx(
 
     if include_second_row:
         row2 = DATA_START_ROW + 1
-        ws.cell(row=row2, column=COL_TIME, value="15:00:00")
+        ws.cell(row=row2, column=COL_TIME, value=datetime(d.year, d.month, d.day, 15, 0, 0))
         ws.cell(row=row2, column=COL_AMOUNT, value=-50)
         ws.cell(row=row2, column=COL_MEMBER_ID, value="3011-9668")
         ws.cell(row=row2, column=COL_MEMBER_NICK, value="MemberOne")

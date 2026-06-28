@@ -19,14 +19,6 @@ from tests.fixtures.trade_record_xlsx import build_sample_trade_record_xlsx
 TOKEN = create_token()
 
 
-class _FakeResult:
-    def __init__(self, row=None):
-        self._row = row
-
-    def first(self):
-        return self._row
-
-
 class AuditUploadApiTestCase(unittest.TestCase):
     def setUp(self):
         self.env_patch = patch.dict(os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False)
@@ -112,10 +104,6 @@ class AuditUploadApiTestCase(unittest.TestCase):
         response = self.client.post(
             "/api/audit/trade-records/upload",
             headers={"Authorization": f"Bearer {TOKEN}"},
-            data={
-                "club_slug": "aces-table",
-                "audit_date": "2026-06-21",
-            },
             files={
                 "file": (
                     "Aces-21.xlsx",
@@ -129,6 +117,7 @@ class AuditUploadApiTestCase(unittest.TestCase):
         self.assertEqual(body["transaction_rows_parsed"], 2)
         self.assertEqual(body["identities_extracted"], 3)
         self.assertEqual(body["club_slug"], "aces-table")
+        self.assertEqual(body["audit_date"], "2026-06-21")
         self.assertTrue(len(self.line_rows) >= 2)
 
     def test_upload_requires_auth(self):
@@ -137,24 +126,19 @@ class AuditUploadApiTestCase(unittest.TestCase):
         client = TestClient(app)
         response = client.post(
             "/api/audit/trade-records/upload",
-            data={"club_slug": "aces-table", "audit_date": "2026-06-21"},
             files={"file": ("x.xlsx", b"bad", "application/octet-stream")},
         )
         self.assertIn(response.status_code, (401, 403))
 
     @patch("api.routes.audit.resolve_club_id", return_value=2)
-    def test_upload_rejects_metadata_mismatch(self, _resolve):
+    def test_upload_rejects_unknown_club(self, _resolve):
         raw = build_sample_trade_record_xlsx(
-            club_label="ClubGTO",
+            club_label="Unknown Club",
             audit_date=date(2026, 6, 21),
         )
         response = self.client.post(
             "/api/audit/trade-records/upload",
             headers={"Authorization": f"Bearer {TOKEN}"},
-            data={
-                "club_slug": "aces-table",
-                "audit_date": "2026-06-21",
-            },
             files={
                 "file": (
                     "bad.xlsx",

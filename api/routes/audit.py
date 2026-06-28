@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -17,7 +17,6 @@ from api.trade_record_parser import (
     TradeRecordParseError,
     TradeRecordValidationError,
     parse_trade_record_workbook,
-    validate_metadata,
 )
 from api.trade_record_sync import sync_identities
 from db.connection import get_db_dependency
@@ -42,19 +41,9 @@ def _parse_audit_date(raw: str) -> date:
 
 @router.post("/trade-records/upload", response_model=TradeRecordUploadReport)
 async def upload_trade_record(
-    club_slug: str = Form(...),
-    audit_date: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db_dependency),
 ):
-    slug = club_slug.strip().lower()
-    if slug not in CLUB_SLUG_TO_NAME:
-        raise HTTPException(400, f"Unknown club slug: {club_slug!r}")
-
-    parsed_date = _parse_audit_date(audit_date)
-    club_id = resolve_club_id(db, slug)
-    club_name = CLUB_SLUG_TO_NAME[slug]
-
     filename = (file.filename or "upload.xlsx").strip()
     if not filename.lower().endswith(".xlsx"):
         raise HTTPException(400, "File must be an .xlsx workbook")
@@ -66,16 +55,16 @@ async def upload_trade_record(
         raise HTTPException(400, "Empty file")
 
     try:
-        parsed = parse_trade_record_workbook(raw, audit_date=parsed_date)
-        validate_metadata(
-            parsed.metadata,
-            club_slug=slug,
-            audit_date=parsed_date,
-        )
+        parsed = parse_trade_record_workbook(raw)
     except TradeRecordValidationError as exc:
         raise HTTPException(400, str(exc)) from exc
     except TradeRecordParseError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+    slug = parsed.club_slug
+    parsed_date = parsed.audit_date
+    club_id = resolve_club_id(db, slug)
+    club_name = CLUB_SLUG_TO_NAME[slug]
 
     existing = (
         db.query(TradeRecordUpload)
@@ -99,6 +88,7 @@ async def upload_trade_record(
         metadata_json=json.dumps(
             {
                 "club_text": parsed.metadata.club_text,
+                "club_id_text": parsed.metadata.club_id_text,
                 "date_text": parsed.metadata.date_text,
             }
         ),
