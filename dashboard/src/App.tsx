@@ -10,6 +10,7 @@ import TelegramLogin from './pages/TelegramLogin'
 import BonusTypes from './pages/BonusTypes'
 import CashoutRecords from './pages/CashoutRecords'
 import Payments from './pages/Payments'
+import Audit from './pages/Audit'
 import Layout from './components/Layout'
 import { ConfirmProvider } from './components/ConfirmProvider'
 
@@ -39,6 +40,7 @@ export default function App() {
         <Route path="/bonus-types" element={<BonusTypes token={token} />} />
         <Route path="/cashout-records" element={<CashoutRecords token={token} />} />
         <Route path="/payments" element={<Payments token={token} />} />
+        <Route path="/audit" element={<Audit token={token} />} />
         <Route
           path="/analytics"
           element={

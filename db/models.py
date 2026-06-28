@@ -6,6 +6,7 @@ from sqlalchemy import (
     Text,
     Boolean,
     Numeric,
+    Date,
     DateTime,
     ForeignKey,
     UniqueConstraint,
@@ -1574,3 +1575,64 @@ class PlayerSupportNote(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     issue = relationship("PlayerSupportIssue", back_populates="notes")
+
+
+class TradeRecordUpload(Base):
+    """One trade record XLSX ingest per club + ET audit day."""
+
+    __tablename__ = "trade_record_uploads"
+    __table_args__ = (
+        UniqueConstraint(
+            "club_id",
+            "audit_date",
+            name="uq_trade_record_uploads_club_date",
+        ),
+        Index("ix_trade_record_uploads_club_id", "club_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    audit_date = Column(Date, nullable=False)
+    filename = Column(String(512), nullable=False)
+    metadata_json = Column(Text, nullable=True)
+    replaced_upload_id = Column(
+        Integer,
+        ForeignKey("trade_record_uploads.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at = Column(DateTime, server_default=func.now())
+
+    club = relationship("Club")
+    lines = relationship(
+        "TradeRecordLine",
+        back_populates="upload",
+        cascade="all, delete-orphan",
+    )
+
+
+class TradeRecordLine(Base):
+    """Parsed chip movement line from a trade record upload."""
+
+    __tablename__ = "trade_record_lines"
+    __table_args__ = (
+        Index("ix_trade_record_lines_upload_id", "upload_id"),
+        Index("ix_trade_record_lines_member_gg_player_id", "member_gg_player_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    upload_id = Column(
+        Integer,
+        ForeignKey("trade_record_uploads.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sheet_row = Column(Integer, nullable=False)
+    occurred_at = Column(DateTime(timezone=True), nullable=True)
+    amount = Column(Numeric(14, 2), nullable=False)
+    member_gg_player_id = Column(String(255), nullable=True)
+    member_nickname = Column(String(255), nullable=True)
+    agent_gg_player_id = Column(String(255), nullable=True)
+    super_agent_gg_player_id = Column(String(255), nullable=True)
+
+    upload = relationship("TradeRecordUpload", back_populates="lines")

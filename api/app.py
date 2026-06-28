@@ -93,6 +93,7 @@ def create_app() -> FastAPI:
     from api.routes.crypto_payments import router as crypto_payments_router
     from api.routes.v2_payment import router as v2_payment_router
     from api.routes.issue_reports import router as issue_reports_router
+    from api.routes.audit import router as audit_router
 
     app.include_router(weekly_stats_proxy_router)
     app.include_router(stripe_deposit_router)
@@ -112,7 +113,18 @@ def create_app() -> FastAPI:
     app.include_router(bonus_router)
     app.include_router(cashout_records_router)
     app.include_router(payments_router)
+    app.include_router(audit_router)
     app.include_router(issue_reports_router)
+
+    @app.api_route(
+        "/api/{rest_of_path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+    )
+    def api_not_found(rest_of_path: str):
+        """Unmatched /api/* — return 404 for any method (avoids SPA GET catch-all → 405 on POST)."""
+        from fastapi import HTTPException
+
+        raise HTTPException(404, "Not Found")
 
     # ── Serve React dashboard (production build) ─────────────────────────
     # Only mount if a real Vite build exists (dist/assets + index.html). Heroku/API-only

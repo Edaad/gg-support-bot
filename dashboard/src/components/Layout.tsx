@@ -5,6 +5,7 @@ import ThemeToggle from './ThemeToggle'
 const NAV = [
   { to: '/clubs', label: 'Clubs' },
   { to: '/payments', label: 'Payments' },
+  { to: '/audit', label: 'Audit' },
   { to: '/analytics', label: 'Analytics' },
   { to: '/bonus-types', label: 'Bonus types' },
   { to: '/cashout-records', label: 'Cashout records' },

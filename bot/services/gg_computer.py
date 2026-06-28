@@ -88,6 +88,41 @@ def batch_player_details(
     return found, missing
 
 
+def bulk_upsert_player_details(
+    club_slug: str,
+    items: List[dict[str, Any]],
+    *,
+    timeout: float = 120.0,
+) -> dict[str, Any]:
+    """POST /player-details/bulk-upsert. Returns counts dict."""
+    base = gg_computer_base_url()
+    if not base:
+        raise ValueError("gg_computer_not_configured")
+    slug = club_slug.strip().lower()
+    payload_items = []
+    for item in items:
+        gg_id = (item.get("gg_id") or "").strip()
+        nickname = (item.get("nickname") or "").strip()
+        if not gg_id or not nickname:
+            continue
+        _validate_gg_id(gg_id)
+        row: dict[str, Any] = {"gg_id": gg_id, "nickname": nickname}
+        agent = item.get("agent")
+        if isinstance(agent, str) and agent.strip():
+            row["agent"] = agent.strip()
+        payload_items.append(row)
+    if not payload_items:
+        return {"upserted": 0, "modified": 0, "matched": 0, "skipped": 0}
+    with httpx.Client(timeout=timeout) as client:
+        res = client.post(
+            f"{base}/player-details/bulk-upsert",
+            json={"clubId": slug, "items": payload_items},
+        )
+        res.raise_for_status()
+        body = res.json()
+        return body if isinstance(body, dict) else {}
+
+
 def nickname_from_player_details_payload(data: dict[str, Any]) -> Optional[str]:
     """Extract nickname from single-club GET /player-details response."""
     nick = data.get("nickname")

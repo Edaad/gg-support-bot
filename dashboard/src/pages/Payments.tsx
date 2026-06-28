@@ -6,7 +6,6 @@ import {
   bindCashAppPayment,
   bindPayPalPayment,
   bindCryptoPayment,
-  downloadAuditExport,
   fetchAllStripeCustomers,
   fetchAllStripeSessions,
   fetchAllVenmoPayers,
@@ -125,7 +124,6 @@ export default function Payments({ token }: { token: string }) {
   const searchId = useId()
   const fromDateId = useId()
   const toDateId = useId()
-  const auditDateId = useId()
   const bindTitleId = useId()
 
   const [tab, setTab] = useState<Tab>('Payments')
@@ -140,8 +138,6 @@ export default function Payments({ token }: { token: string }) {
   const [appliedSearch, setAppliedSearch] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
-  const [auditDate, setAuditDate] = useState('')
-  const [auditExporting, setAuditExporting] = useState(false)
   const [appliedFrom, setAppliedFrom] = useState('')
   const [appliedTo, setAppliedTo] = useState('')
 
@@ -711,22 +707,6 @@ export default function Payments({ token }: { token: string }) {
     }
   }
 
-  const exportAuditXlsx = async () => {
-    if (!auditDate) {
-      setErr('Select a date for the audit export.')
-      return
-    }
-    setAuditExporting(true)
-    setErr('')
-    try {
-      await downloadAuditExport(token, auditDate)
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Audit export failed.')
-    } finally {
-      setAuditExporting(false)
-    }
-  }
-
   const customerPages = Math.max(1, Math.ceil(customerTotal / PAGE_SIZE))
   const sessionPages = Math.max(1, Math.ceil(sessionTotal / PAGE_SIZE))
   const venmoPaymentPages = Math.max(1, Math.ceil(venmoPaymentTotal / PAGE_SIZE))
@@ -735,37 +715,6 @@ export default function Payments({ token }: { token: string }) {
   return (
     <div>
       <h1 className="mb-6 text-2xl font-bold">Payments</h1>
-
-      <section className="panel mb-6">
-        <h2 className="mb-2 text-lg font-semibold text-ink">Export audit data</h2>
-        <p className="mb-4 text-sm text-ink-muted">
-          Download receipt-style deposit transactions across every club for one day. One XLSX file
-          with tabs for Stripe, Zelle, Venmo, Cash App, PayPal, plus blank bonus and early rakeback
-          sheets for manual entry. Date uses US Eastern (ET).
-        </p>
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label htmlFor={auditDateId} className="label-field-xs">
-              Date
-            </label>
-            <input
-              id={auditDateId}
-              type="date"
-              value={auditDate}
-              onChange={(e) => setAuditDate(e.target.value)}
-              className="input-field-sm"
-            />
-          </div>
-          <button
-            type="button"
-            disabled={auditExporting || !auditDate}
-            onClick={() => void exportAuditXlsx()}
-            className="btn-primary-sm disabled:opacity-40"
-          >
-            {auditExporting ? 'Exporting…' : 'Export XLSX'}
-          </button>
-        </div>
-      </section>
 
       <div className="mb-6 flex flex-wrap items-end gap-4">
         <div>
