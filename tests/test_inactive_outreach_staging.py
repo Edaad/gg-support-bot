@@ -17,6 +17,43 @@ from bot.services.inactive_group_outreach_staging import (
 from db.models import InactiveGroupOutreachRow
 
 
+class _FakeStagingSession:
+    """Minimal session stub for stage_inactive_group upsert tests."""
+
+    def __init__(self) -> None:
+        self._rows: dict[tuple[str, int], InactiveGroupOutreachRow] = {}
+        self._filter: dict[str, object] = {}
+
+    def query(self, model: type) -> _FakeStagingSession:
+        assert model is InactiveGroupOutreachRow
+        return self
+
+    def filter_by(self, **kwargs: object) -> _FakeStagingSession:
+        self._filter = dict(kwargs)
+        return self
+
+    def first(self) -> InactiveGroupOutreachRow | None:
+        club_key = str(self._filter["club_key"])
+        chat_id = int(self._filter["telegram_chat_id"])  # type: ignore[arg-type]
+        return self._rows.get((club_key, chat_id))
+
+    def add(self, row: InactiveGroupOutreachRow) -> None:
+        key = (str(row.club_key), int(row.telegram_chat_id))
+        if row.id is None:
+            row.id = len(self._rows) + 1
+        self._rows[key] = row
+
+    def refresh(self, row: InactiveGroupOutreachRow) -> None:
+        return None
+
+    def commit(self) -> None:
+        return None
+
+    def seed(self, row: InactiveGroupOutreachRow) -> None:
+        key = (str(row.club_key), int(row.telegram_chat_id))
+        self._rows[key] = row
+
+
 class TestMegagroupValidation(unittest.TestCase):
     def test_accepts_supergroup_ids(self) -> None:
         self.assertTrue(is_megagroup_chat_id(-1003931597118))
@@ -26,44 +63,9 @@ class TestMegagroupValidation(unittest.TestCase):
 
 
 class TestStageInactiveGroup(unittest.TestCase):
-    def _mock_session(self) -> MagicMock:
-        session = MagicMock()
-        session._store = {}
-
-        def query(model):
-            assert model is InactiveGroupOutreachRow
-            q = MagicMock()
-
-            def filter_by(**kwargs):
-                key = (kwargs["club_key"], int(kwargs["telegram_chat_id"]))
-                row = session._store.get(key)
-
-                result = MagicMock()
-
-                def first():
-                    return row
-
-                result.first = first
-                return result
-
-            q.filter_by = filter_by
-            return q
-
-        def add(row):
-            key = (row.club_key, int(row.telegram_chat_id))
-            if row.id is None:
-                row.id = len(session._store) + 1
-            session._store[key] = row
-
-        session.query = query
-        session.add = add
-        session.refresh = lambda row: None
-        session.commit = lambda: None
-        return session
-
     @patch("bot.services.inactive_group_outreach_staging.get_db")
     def test_creates_staged_row(self, mock_get_db: MagicMock) -> None:
-        session = self._mock_session()
+        session = _FakeStagingSession()
         mock_get_db.return_value.__enter__.return_value = session
 
         result = stage_inactive_group(
@@ -77,7 +79,7 @@ class TestStageInactiveGroup(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertFalse(result.already_staged)
         self.assertFalse(result.has_scan_data)
-        row = session._store[("round_table", -1003931597118)]
+        row = session._rows[("round_table", -1003931597118)]
         self.assertEqual(row.stage_status, STAGE_STATUS_STAGED)
         self.assertEqual(row.staged_by_telegram_user_id, 99)
         self.assertEqual(row.stage_note, "reviewed")
@@ -86,7 +88,7 @@ class TestStageInactiveGroup(unittest.TestCase):
 
     @patch("bot.services.inactive_group_outreach_staging.get_db")
     def test_restage_preserves_scan_fields(self, mock_get_db: MagicMock) -> None:
-        session = self._mock_session()
+        session = _FakeStagingSession()
         existing = InactiveGroupOutreachRow(
             id=7,
             club_key="round_table",
@@ -98,7 +100,7 @@ class TestStageInactiveGroup(unittest.TestCase):
             scanned_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
             stage_status=STAGE_STATUS_UNSTAGED,
         )
-        session._store = {("round_table", -1003931597118): existing}
+        session.seed(existing)
         mock_get_db.return_value.__enter__.return_value = session
 
         result = stage_inactive_group(
@@ -116,7 +118,7 @@ class TestStageInactiveGroup(unittest.TestCase):
 
     @patch("bot.services.inactive_group_outreach_staging.get_db")
     def test_already_staged_is_idempotent(self, mock_get_db: MagicMock) -> None:
-        session = self._mock_session()
+        session = _FakeStagingSession()
         existing = InactiveGroupOutreachRow(
             id=3,
             club_key="round_table",
@@ -126,7 +128,7 @@ class TestStageInactiveGroup(unittest.TestCase):
             staged_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
             staged_by_telegram_user_id=1,
         )
-        session._store = {("round_table", -1003931597118): existing}
+        session.seed(existing)
         mock_get_db.return_value.__enter__.return_value = session
 
         result = stage_inactive_group(
