@@ -12,7 +12,7 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from api.auth import get_current_admin
-from api.audit_export import build_audit_workbook, eastern_audit_end_utc, eastern_day_bounds_utc
+from api.audit_export import build_audit_workbook, audit_day_window_utc
 from api.payments_helpers import (
     apply_analytics_chat_exclusion,
     apply_customer_search,
@@ -248,19 +248,15 @@ def list_providers():
 
 @router.get("/audit-export")
 def audit_export(
-    from_dt: str = Query(..., alias="from"),
-    to_dt: str = Query(..., alias="to"),
+    date: str = Query(...),
     db: Session = Depends(get_db_dependency),
 ):
-    if not from_dt.strip() or not to_dt.strip():
-        raise HTTPException(400, "Both from and to dates are required.")
+    if not date.strip():
+        raise HTTPException(400, "date is required.")
     try:
-        parsed_from, _ = eastern_day_bounds_utc(from_dt)
-        parsed_to = eastern_audit_end_utc(to_dt)
+        parsed_from, parsed_to = audit_day_window_utc(date)
     except ValueError as e:
         raise HTTPException(400, f"Invalid date: {e}") from e
-    if parsed_from > parsed_to:
-        raise HTTPException(400, "from must be on or before to.")
 
     try:
         content = build_audit_workbook(db, parsed_from, parsed_to)
@@ -268,9 +264,8 @@ def audit_export(
         _raise_db_schema_error(exc)
         raise
 
-    from_label = from_dt.strip()[:10]
-    to_label = to_dt.strip()[:10]
-    filename = f"audit-export-{from_label}-{to_label}.xlsx"
+    date_label = date.strip()[:10]
+    filename = f"audit-export-{date_label}.xlsx"
     return StreamingResponse(
         iter([content]),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

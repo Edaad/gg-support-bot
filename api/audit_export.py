@@ -24,6 +24,7 @@ from api.payments_helpers import (
     build_zelle_payment_read,
     lookup_gg_nickname,
     resolve_group_title,
+    resolve_method_display,
 )
 from config import CLUB_SHORTHAND_TO_NAME
 from db.models import (
@@ -36,20 +37,20 @@ from db.models import (
     ZellePayment,
 )
 
-STRIPE_LAYOUT = ["Amount", "Player", "Group", "Club", "Time"]
+STRIPE_LAYOUT = ["Amount", "Player", "Method", "Group", "Club", "Time"]
 MANUAL_LAYOUT = ["Amount", "Name", "Group", "Club", "Time"]
-VENMO_LAYOUT = ["Amount", "Name", "Tag", "Group", "Club", "Time"]
+TAGGED_MANUAL_LAYOUT = ["Amount", "Name", "Tag", "Group", "Club", "Time"]
 
-SheetLayout = Literal["stripe", "manual", "venmo"]
+SheetLayout = Literal["stripe", "manual", "tagged_manual"]
 
 _EASTERN = ZoneInfo("America/New_York")
 _HEADER_FILL = PatternFill("solid", fgColor="38761D")
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _CURRENCY_FORMAT = "$#,##0.00"
 _COLUMN_WIDTHS: dict[SheetLayout, list[float]] = {
-    "stripe": [14, 28, 40, 18, 28],
+    "stripe": [14, 28, 22, 40, 18, 28],
     "manual": [14, 28, 40, 18, 28],
-    "venmo": [14, 28, 18, 40, 18, 28],
+    "tagged_manual": [14, 28, 22, 40, 18, 28],
 }
 
 
@@ -62,10 +63,10 @@ class SheetSpec:
 
 SHEET_SPECS: list[SheetSpec] = [
     SheetSpec("Stripe", STRIPE_LAYOUT, "stripe"),
-    SheetSpec("Zelle", MANUAL_LAYOUT, "manual"),
-    SheetSpec("Venmo", VENMO_LAYOUT, "venmo"),
-    SheetSpec("Cash App", MANUAL_LAYOUT, "manual"),
-    SheetSpec("PayPal", MANUAL_LAYOUT, "manual"),
+    SheetSpec("Zelle", TAGGED_MANUAL_LAYOUT, "tagged_manual"),
+    SheetSpec("Venmo", TAGGED_MANUAL_LAYOUT, "tagged_manual"),
+    SheetSpec("Cash App", TAGGED_MANUAL_LAYOUT, "tagged_manual"),
+    SheetSpec("PayPal", TAGGED_MANUAL_LAYOUT, "tagged_manual"),
     SheetSpec("Bonus", MANUAL_LAYOUT, "manual"),
     SheetSpec("Early Rakeback", STRIPE_LAYOUT, "stripe"),
 ]
@@ -75,6 +76,7 @@ SHEET_SPECS: list[SheetSpec] = [
 class StripeAuditRow:
     amount_usd: float
     player: str
+    method_label: str
     group_title: str
     club_label: str
     time_label: str
@@ -91,10 +93,10 @@ class ManualAuditRow:
 
 
 @dataclass(frozen=True)
-class VenmoAuditRow:
+class TaggedManualAuditRow:
     amount_usd: float
     payer_name: str
-    venmo_tag: str
+    account_tag: str
     group_title: str
     club_label: str
     time_label: str
@@ -139,6 +141,13 @@ def eastern_audit_end_utc(date_str: str) -> datetime:
         tzinfo=_EASTERN,
     ) - timedelta(microseconds=1)
     return end_et.astimezone(timezone.utc)
+
+
+def audit_day_window_utc(date_str: str) -> tuple[datetime, datetime]:
+    """UTC bounds for one audit export day (Eastern calendar day + first hour of next)."""
+    parsed_from, _ = eastern_day_bounds_utc(date_str)
+    parsed_to = eastern_audit_end_utc(date_str)
+    return parsed_from, parsed_to
 
 
 def _to_eastern(dt: datetime) -> datetime:
@@ -283,7 +292,7 @@ def _write_formatted_sheet(
     spec: SheetSpec,
     stripe_rows: list[StripeAuditRow] | None = None,
     manual_rows: list[ManualAuditRow] | None = None,
-    venmo_rows: list[VenmoAuditRow] | None = None,
+    tagged_manual_rows: list[TaggedManualAuditRow] | None = None,
 ) -> None:
     ws.append(spec.headers)
     for col_idx, header in enumerate(spec.headers, start=1):
@@ -300,6 +309,7 @@ def _write_formatted_sheet(
                 [
                     row.amount_usd,
                     row.player,
+                    row.method_label,
                     row.group_title,
                     row.club_label,
                     row.time_label,
@@ -313,14 +323,14 @@ def _write_formatted_sheet(
                 f"Stripe fee: ${fee:.2f}",
                 "audit-export",
             )
-    elif spec.layout == "venmo":
-        rows = venmo_rows or []
+    elif spec.layout == "tagged_manual":
+        rows = tagged_manual_rows or []
         for row_idx, row in enumerate(rows, start=data_row_start):
             ws.append(
                 [
                     row.amount_usd,
                     row.payer_name,
-                    row.venmo_tag,
+                    row.account_tag,
                     row.group_title,
                     row.club_label,
                     row.time_label,
@@ -359,39 +369,45 @@ def build_audit_workbook(session: Session, from_dt: datetime, to_dt: datetime) -
     wb.remove(wb.active)
 
     stripe_rows = _fetch_stripe_rows(session, club_names, from_dt, to_dt)
-    zelle_rows = _fetch_manual_rows(
+    zelle_rows = _fetch_tagged_manual_rows(
         session,
         ZellePayment,
         build_zelle_payment_read,
         club_names,
         from_dt,
         to_dt,
+        tag_field="zelle_recipient",
     )
-    venmo_rows = _fetch_venmo_rows(
+    venmo_rows = _fetch_tagged_manual_rows(
         session,
+        VenmoPayment,
+        build_venmo_payment_read,
         club_names,
         from_dt,
         to_dt,
+        tag_field="venmo_handle",
     )
-    cashapp_rows = _fetch_manual_rows(
+    cashapp_rows = _fetch_tagged_manual_rows(
         session,
         CashAppPayment,
         build_cashapp_payment_read,
         club_names,
         from_dt,
         to_dt,
+        tag_field="cashapp_handle",
     )
-    paypal_rows = _fetch_manual_rows(
+    paypal_rows = _fetch_tagged_manual_rows(
         session,
         PayPalPayment,
         build_paypal_payment_read,
         club_names,
         from_dt,
         to_dt,
+        tag_field="paypal_email",
     )
 
     sheet_rows: list[
-        list[StripeAuditRow] | list[ManualAuditRow] | list[VenmoAuditRow]
+        list[StripeAuditRow] | list[ManualAuditRow] | list[TaggedManualAuditRow]
     ] = [
         stripe_rows,
         zelle_rows,
@@ -406,8 +422,8 @@ def build_audit_workbook(session: Session, from_dt: datetime, to_dt: datetime) -
         ws = wb.create_sheet(title=spec.title)
         if spec.layout == "stripe":
             _write_formatted_sheet(ws, spec, stripe_rows=rows)  # type: ignore[arg-type]
-        elif spec.layout == "venmo":
-            _write_formatted_sheet(ws, spec, venmo_rows=rows)  # type: ignore[arg-type]
+        elif spec.layout == "tagged_manual":
+            _write_formatted_sheet(ws, spec, tagged_manual_rows=rows)  # type: ignore[arg-type]
         else:
             _write_formatted_sheet(ws, spec, manual_rows=rows)  # type: ignore[arg-type]
 
@@ -454,6 +470,9 @@ def _fetch_stripe_rows(
         nickname = lookup_gg_nickname(session, row.club_id, gg_id) or ""
         completed = row.completed_at or row.created_at
         club_label = _club_name(club_names, row.club_id)
+        method_label, _ = resolve_method_display(
+            session, int(row.club_id), row.payment_method_id
+        )
         out.append(
             StripeAuditRow(
                 amount_usd=float(row.amount_cents) / 100.0,
@@ -463,6 +482,7 @@ def _fetch_stripe_rows(
                     gg_player_id=gg_id,
                     gg_nickname=nickname,
                 ),
+                method_label=(method_label or "").strip(),
                 group_title=(title or "").strip(),
                 club_label=club_label,
                 time_label=_fmt_stripe_audit_time(completed),
@@ -472,33 +492,42 @@ def _fetch_stripe_rows(
     return out
 
 
-def _fetch_venmo_rows(
+def _fetch_tagged_manual_rows(
     session: Session,
+    payment_cls,
+    build_read: Callable,
     club_names: dict[int, str],
     from_dt: datetime,
     to_dt: datetime,
-) -> list[VenmoAuditRow]:
+    *,
+    tag_field: str,
+) -> list[TaggedManualAuditRow]:
     query = _apply_audit_manual_filters(
         session,
-        session.query(VenmoPayment),
-        VenmoPayment,
+        session.query(payment_cls),
+        payment_cls,
         from_dt=from_dt,
         to_dt=to_dt,
     )
-    rows = query.order_by(VenmoPayment.created_at.desc(), VenmoPayment.id.desc()).all()
-    return [_venmo_row(build_venmo_payment_read(session, row), club_names) for row in rows]
+    rows = query.order_by(payment_cls.created_at.desc(), payment_cls.id.desc()).all()
+    return [
+        _tagged_manual_row(build_read(session, row), club_names, tag_field=tag_field)
+        for row in rows
+    ]
 
 
-def _venmo_row(data: dict, club_names: dict[int, str]) -> VenmoAuditRow:
+def _tagged_manual_row(
+    data: dict, club_names: dict[int, str], *, tag_field: str
+) -> TaggedManualAuditRow:
     amount = data["amount_usd"]
     if isinstance(amount, Decimal):
         amount_usd = float(amount)
     else:
         amount_usd = float(amount)
-    return VenmoAuditRow(
+    return TaggedManualAuditRow(
         amount_usd=amount_usd,
         payer_name=str(data["payer_name"]),
-        venmo_tag=str(data.get("venmo_handle") or "").strip(),
+        account_tag=str(data.get(tag_field) or "").strip(),
         group_title=_manual_group_cell(data),
         club_label=_manual_club_name(data, club_names),
         time_label=_fmt_manual_audit_time(data["created_at"]),

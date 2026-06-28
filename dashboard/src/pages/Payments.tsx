@@ -125,8 +125,7 @@ export default function Payments({ token }: { token: string }) {
   const searchId = useId()
   const fromDateId = useId()
   const toDateId = useId()
-  const auditFromDateId = useId()
-  const auditToDateId = useId()
+  const auditDateId = useId()
   const bindTitleId = useId()
 
   const [tab, setTab] = useState<Tab>('Payments')
@@ -141,8 +140,7 @@ export default function Payments({ token }: { token: string }) {
   const [appliedSearch, setAppliedSearch] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
-  const [auditFromDate, setAuditFromDate] = useState('')
-  const [auditToDate, setAuditToDate] = useState('')
+  const [auditDate, setAuditDate] = useState('')
   const [auditExporting, setAuditExporting] = useState(false)
   const [appliedFrom, setAppliedFrom] = useState('')
   const [appliedTo, setAppliedTo] = useState('')
@@ -714,18 +712,14 @@ export default function Payments({ token }: { token: string }) {
   }
 
   const exportAuditXlsx = async () => {
-    if (!auditFromDate || !auditToDate) {
-      setErr('Select both from and to dates for the audit export.')
-      return
-    }
-    if (auditFromDate > auditToDate) {
-      setErr('From date must be on or before to date.')
+    if (!auditDate) {
+      setErr('Select a date for the audit export.')
       return
     }
     setAuditExporting(true)
     setErr('')
     try {
-      await downloadAuditExport(token, auditFromDate, auditToDate)
+      await downloadAuditExport(token, auditDate)
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Audit export failed.')
     } finally {
@@ -745,38 +739,26 @@ export default function Payments({ token }: { token: string }) {
       <section className="panel mb-6">
         <h2 className="mb-2 text-lg font-semibold text-ink">Export audit data</h2>
         <p className="mb-4 text-sm text-ink-muted">
-          Download receipt-style deposit transactions across every club for a date range. One XLSX
-          file with tabs for Stripe, Zelle, venmo, cashapp, PayPal, plus blank bonus and early
-          rakeback sheets for manual entry. Dates use US Eastern (ET).
+          Download receipt-style deposit transactions across every club for one day. One XLSX file
+          with tabs for Stripe, Zelle, Venmo, Cash App, PayPal, plus blank bonus and early rakeback
+          sheets for manual entry. Date uses US Eastern (ET).
         </p>
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            <label htmlFor={auditFromDateId} className="label-field-xs">
-              From
+            <label htmlFor={auditDateId} className="label-field-xs">
+              Date
             </label>
             <input
-              id={auditFromDateId}
+              id={auditDateId}
               type="date"
-              value={auditFromDate}
-              onChange={(e) => setAuditFromDate(e.target.value)}
-              className="input-field-sm"
-            />
-          </div>
-          <div>
-            <label htmlFor={auditToDateId} className="label-field-xs">
-              To
-            </label>
-            <input
-              id={auditToDateId}
-              type="date"
-              value={auditToDate}
-              onChange={(e) => setAuditToDate(e.target.value)}
+              value={auditDate}
+              onChange={(e) => setAuditDate(e.target.value)}
               className="input-field-sm"
             />
           </div>
           <button
             type="button"
-            disabled={auditExporting || !auditFromDate || !auditToDate}
+            disabled={auditExporting || !auditDate}
             onClick={() => void exportAuditXlsx()}
             className="btn-primary-sm disabled:opacity-40"
           >

@@ -961,12 +961,10 @@ function filenameFromContentDisposition(header: string | null, fallback: string)
 
 export async function downloadAuditExport(
   token: string,
-  from: string,
-  to: string,
+  date: string,
 ): Promise<void> {
   const q = new URLSearchParams()
-  q.set('from', from)
-  q.set('to', to)
+  q.set('date', date)
 
   const res = await fetch(apiUrl(`${BASE}/audit-export?${q}`), {
     headers: { Authorization: `Bearer ${token}` },
@@ -997,7 +995,7 @@ export async function downloadAuditExport(
   const blob = await res.blob()
   const filename = filenameFromContentDisposition(
     res.headers.get('Content-Disposition'),
-    `audit-export-${from}-${to}.xlsx`,
+    `audit-export-${date}.xlsx`,
   )
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
