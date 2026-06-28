@@ -149,6 +149,11 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
     from bot.handlers.cashapp import cashapp_handler
     from bot.handlers.stripe import stripe_handler
     from bot.handlers.teststripe import teststripe_handler
+    from bot.handlers.inactive_outreach_stage import (
+        stageinactive_handler,
+        stagedinactive_handler,
+        unstageinactive_handler,
+    )
     from bot.handlers.issue_reports import register_issue_report_handlers
     from bot.handlers.whosnext import whosnext_handler
     from bot.handlers.unbind_method import unbindmethod_handler
@@ -203,6 +208,9 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         register_issue_report_handlers=register_issue_report_handlers,
         whosnext_handler=whosnext_handler,
         unbindmethod_handler=unbindmethod_handler,
+        stageinactive_handler=stageinactive_handler,
+        unstageinactive_handler=unstageinactive_handler,
+        stagedinactive_handler=stagedinactive_handler,
         deposit_amount_priority_handler=deposit_amount_priority_handler,
         cancel_deposit_reminder_on_customer_msg=cancel_deposit_reminder_on_customer_msg,
         cancel_deposit_reminder_on_group_activity=cancel_deposit_reminder_on_group_activity,
@@ -288,6 +296,15 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(CommandHandler("teststripe", h.teststripe_handler))
 
     app.add_handler(CommandHandler("unbindmethod", h.unbindmethod_handler))
+    app.add_handler(CommandHandler("stageinactive", h.stageinactive_handler))
+    app.add_handler(CommandHandler("unstageinactive", h.unstageinactive_handler))
+    app.add_handler(
+        CommandHandler(
+            "stagedinactive",
+            h.stagedinactive_handler,
+            filters=filters.ChatType.PRIVATE,
+        )
+    )
 
     if test_mode and h.deposit_amount_priority_handler is not None:
         app.add_handler(

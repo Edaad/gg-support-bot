@@ -259,6 +259,30 @@ python scripts/run_inactive_group_outreach_scan.py --club-key round_table --chat
 
 See [`docs/HEROKU.md`](HEROKU.md) for SQL query examples and reset instructions.
 
+### Manual staging (phase 1)
+
+After reviewing inactive groups (CSV, Telegram, or outreach scan), staff can queue megagroups for a future outreach DM pipeline. **Staging does not resolve players or send DMs.**
+
+**Migration** (run once before using commands):
+
+```bash
+heroku run -a YOUR_APP -- python migrate_inactive_group_outreach_staging.py
+```
+
+**Commands** (global admins + MTProto operators):
+
+| Command | Where | Action |
+|---------|-------|--------|
+| `/stageinactive` | Inside megagroup | Stage current chat |
+| `/stageinactive <chat_id> [note]` | DM | Stage by chat id |
+| `/stageinactive row <id> [note]` | DM | Stage existing outreach row |
+| `/unstageinactive` | Group or DM | Remove from staged queue |
+| `/stagedinactive [round_table]` | DM | List staged groups |
+
+Pipeline: scan → manual review → **stage** → (phase 2) entity resolution → (phase 3) custom DM → (phase 4) player DM reply triggers existing auto-GC listener.
+
+Implementation: [`bot/services/inactive_group_outreach_staging.py`](../bot/services/inactive_group_outreach_staging.py), handler [`bot/handlers/inactive_outreach_stage.py`](../bot/handlers/inactive_outreach_stage.py).
+
 ## Troubleshooting
 
 - **Unauthorized**: Your Telegram user id does not match any `command_admin_user_id` in `club_gc_settings.py`.

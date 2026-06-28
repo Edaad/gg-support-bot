@@ -33,7 +33,7 @@ RESERVED_CMDS = {
     "start", "help", "whoami", "set", "cancel", "delete",
     "mycmds", "deposit", "cashout", "list", "botwelcome",
     "gc", "add", "cash", "refresh", "unbindmethod", "whosnext",
-    "stripe", "cashapp",
+    "stripe", "cashapp", "stageinactive", "unstageinactive", "stagedinactive",
 }
 
 SET_NAME, SET_MESSAGE = range(2)

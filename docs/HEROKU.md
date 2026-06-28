@@ -284,6 +284,7 @@ Scans all three clubs' support megagroups for **last non-support player message*
 
 ```bash
 heroku run -a YOUR_APP -- python migrate_inactive_group_outreach.py
+heroku run -a YOUR_APP -- python migrate_inactive_group_outreach_staging.py
 ```
 
 **Enable** on the worker dyno:

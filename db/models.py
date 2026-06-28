@@ -832,7 +832,7 @@ class InactiveGroupOutreachControl(Base):
 
 
 class InactiveGroupOutreachRow(Base):
-    """Per-megagroup audit row for inactive outreach scan (entity resolution only in v1)."""
+    """Per-megagroup audit row for inactive outreach scan and manual staging."""
 
     __tablename__ = "inactive_group_outreach_rows"
     __table_args__ = (
@@ -842,6 +842,11 @@ class InactiveGroupOutreachRow(Base):
             name="uq_inactive_group_outreach_club_chat",
         ),
         Index("ix_inactive_group_outreach_rows_scan_status", "scan_status", "club_key"),
+        Index(
+            "ix_inactive_group_outreach_rows_stage_status",
+            "stage_status",
+            "club_key",
+        ),
     )
 
     id = Column(Integer, primary_key=True)
@@ -873,6 +878,10 @@ class InactiveGroupOutreachRow(Base):
     dm_status = Column(String(32), nullable=True)
     dm_error = Column(Text, nullable=True)
     dm_sent_at = Column(DateTime(timezone=True), nullable=True)
+    stage_status = Column(String(32), nullable=True)
+    staged_at = Column(DateTime(timezone=True), nullable=True)
+    staged_by_telegram_user_id = Column(BigInteger, nullable=True)
+    stage_note = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),
