@@ -19,6 +19,10 @@ from bot.services.club import (
     is_club_primary_owner,
     is_club_staff,
 )
+from bot.handlers.group_checkout_commands import (
+    GROUP_CHECKOUT_DM_MESSAGE,
+    GROUP_ONLY_CHECKOUT_COMMANDS,
+)
 from bot.handlers.response_utils import send_response_messages
 from db.connection import get_db
 from db.models import CustomCommand
@@ -29,6 +33,7 @@ RESERVED_CMDS = {
     "start", "help", "whoami", "set", "cancel", "delete",
     "mycmds", "deposit", "cashout", "list", "botwelcome",
     "gc", "add", "cash", "refresh", "unbindmethod", "whosnext",
+    "stripe", "cashapp",
 }
 
 SET_NAME, SET_MESSAGE = range(2)
@@ -273,10 +278,15 @@ async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     text = update.message.text or ""
     cmd = text.split()[0].lstrip("/").split("@")[0].lower()
+    chat = update.effective_chat
+
+    if cmd in GROUP_ONLY_CHECKOUT_COMMANDS and chat.type == "private":
+        await update.message.reply_text(GROUP_CHECKOUT_DM_MESSAGE)
+        return
+
     if cmd in RESERVED_CMDS:
         return
 
-    chat = update.effective_chat
     uid = update.effective_user.id
 
     if chat.type in ("group", "supergroup"):

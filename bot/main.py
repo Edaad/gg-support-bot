@@ -142,6 +142,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         bonus_entry,
         bonus_message_handler,
     )
+    from bot.handlers.cashapp import cashapp_handler
     from bot.handlers.stripe import stripe_handler
     from bot.handlers.teststripe import teststripe_handler
     from bot.handlers.issue_reports import register_issue_report_handlers
@@ -192,6 +193,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         bonus_entry=bonus_entry,
         bonus_message_handler=bonus_message_handler,
         bonus_callback_handler=bonus_callback_handler,
+        cashapp_handler=cashapp_handler,
         stripe_handler=stripe_handler,
         teststripe_handler=teststripe_handler,
         register_issue_report_handlers=register_issue_report_handlers,
@@ -277,6 +279,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(CommandHandler("findgc", h.findgc_handler))
     app.add_handler(CommandHandler("refresh", h.refresh_handler))
     app.add_handler(CommandHandler("checkplayer", h.checkplayer_handler))
+    app.add_handler(CommandHandler("cashapp", h.cashapp_handler))
     app.add_handler(CommandHandler("stripe", h.stripe_handler))
     app.add_handler(CommandHandler("teststripe", h.teststripe_handler))
 
