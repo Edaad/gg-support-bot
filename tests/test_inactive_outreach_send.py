@@ -102,6 +102,34 @@ class TestSendinactivePriorityHandler(unittest.IsolatedAsyncioTestCase):
               await sendinactive_message_handler(update, context)
           mock_compose.assert_awaited_once_with(update, context)
 
+  async def test_compose_handler_skipped_when_bonus_is_active_flow(self) -> None:
+      from bot.handlers.flow_cancel import ACTIVE_FLOW_KEY
+
+      update = MagicMock()
+      update.message = MagicMock()
+      update.message.text = "LPONLOCK"
+      update.effective_chat = MagicMock()
+      update.effective_chat.type = ChatType.PRIVATE
+      update.effective_user = MagicMock()
+      update.effective_user.id = 493310710
+
+      context = MagicMock()
+      context.user_data = {
+          ACTIVE_FLOW_KEY: "bonus",
+          IO_STEP_KEY: "compose",
+          "io_club_key": "round_table",
+      }
+
+      with patch(
+          "bot.handlers.inactive_outreach_send._can_use_sendinactive",
+          return_value=True,
+      ), patch(
+          "bot.handlers.inactive_outreach_send.sendinactive_compose",
+          new_callable=AsyncMock,
+      ) as mock_compose:
+          await sendinactive_message_handler(update, context)
+          mock_compose.assert_not_called()
+
   def test_flow_active_during_compose(self) -> None:
       context = MagicMock()
       context.user_data = {IO_STEP_KEY: "compose"}

@@ -259,12 +259,28 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         .build()
     )
 
-    # /sendinactive and /bonus — group -1 so other flows cannot swallow follow-up messages
+    # /sendinactive and /bonus — group -1, block=False on text handlers so the first
+    # handler that does not match its flow can fall through to the other (PTB runs
+    # only one handler per group when block=True, even if that handler returns immediately).
+    app.add_handler(CommandHandler("bonus", h.bonus_entry), group=-1)
+    app.add_handler(
+        MessageHandler(
+            filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+            h.bonus_message_handler,
+            block=False,
+        ),
+        group=-1,
+    )
+    app.add_handler(
+        CallbackQueryHandler(h.bonus_callback_handler, pattern=r"^b(type:|club:)"),
+        group=-1,
+    )
     app.add_handler(CommandHandler("sendinactive", h.sendinactive_entry), group=-1)
     app.add_handler(
         MessageHandler(
             filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
             h.sendinactive_message_handler,
+            block=False,
         ),
         group=-1,
     )
@@ -273,18 +289,6 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
             h.sendinactive_callback_handler,
             pattern=r"^io_send_(confirm|cancel)$",
         ),
-        group=-1,
-    )
-    app.add_handler(CommandHandler("bonus", h.bonus_entry), group=-1)
-    app.add_handler(
-        MessageHandler(
-            filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
-            h.bonus_message_handler,
-        ),
-        group=-1,
-    )
-    app.add_handler(
-        CallbackQueryHandler(h.bonus_callback_handler, pattern=r"^b(type:|club:)"),
         group=-1,
     )
 
