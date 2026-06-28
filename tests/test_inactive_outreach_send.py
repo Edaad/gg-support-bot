@@ -10,6 +10,7 @@ from telegram.constants import ChatType
 from bot.handlers.inactive_outreach_send import (
     IO_STEP_KEY,
     _parse_start_args,
+    sendinactive_compose_active,
     sendinactive_flow_active,
     sendinactive_message_handler,
 )
@@ -105,6 +106,11 @@ class TestSendinactivePriorityHandler(unittest.IsolatedAsyncioTestCase):
       context = MagicMock()
       context.user_data = {IO_STEP_KEY: "compose"}
       self.assertTrue(sendinactive_flow_active(context))
+
+  def test_compose_active_with_club_key_only(self) -> None:
+      context = MagicMock()
+      context.user_data = {"io_club_key": "round_table"}
+      self.assertTrue(sendinactive_compose_active(context))
 
 
 class TestArmDmCampaign(unittest.TestCase):

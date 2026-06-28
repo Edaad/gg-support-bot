@@ -154,8 +154,8 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
     from bot.handlers.stripe import stripe_handler
     from bot.handlers.teststripe import teststripe_handler
     from bot.handlers.inactive_outreach_send import (
-        get_sendinactive_handler,
         sendinactive_callback_handler,
+        sendinactive_entry,
         sendinactive_message_handler,
     )
     from bot.handlers.inactive_outreach_stage import (
@@ -220,7 +220,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         stageinactive_handler=stageinactive_handler,
         unstageinactive_handler=unstageinactive_handler,
         stagedinactive_handler=stagedinactive_handler,
-        get_sendinactive_handler=get_sendinactive_handler,
+        sendinactive_entry=sendinactive_entry,
         sendinactive_message_handler=sendinactive_message_handler,
         sendinactive_callback_handler=sendinactive_callback_handler,
         deposit_amount_priority_handler=deposit_amount_priority_handler,
@@ -259,19 +259,8 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         .build()
     )
 
-    # /bonus — register first (group -1) so other flows cannot swallow follow-up messages
-    app.add_handler(CommandHandler("bonus", h.bonus_entry), group=-1)
-    app.add_handler(
-        MessageHandler(
-            filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
-            h.bonus_message_handler,
-        ),
-        group=-1,
-    )
-    app.add_handler(
-        CallbackQueryHandler(h.bonus_callback_handler, pattern=r"^b(type:|club:)"),
-        group=-1,
-    )
+    # /sendinactive and /bonus — group -1 so other flows cannot swallow follow-up messages
+    app.add_handler(CommandHandler("sendinactive", h.sendinactive_entry), group=-1)
     app.add_handler(
         MessageHandler(
             filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
@@ -284,6 +273,18 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
             h.sendinactive_callback_handler,
             pattern=r"^io_send_(confirm|cancel)$",
         ),
+        group=-1,
+    )
+    app.add_handler(CommandHandler("bonus", h.bonus_entry), group=-1)
+    app.add_handler(
+        MessageHandler(
+            filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+            h.bonus_message_handler,
+        ),
+        group=-1,
+    )
+    app.add_handler(
+        CallbackQueryHandler(h.bonus_callback_handler, pattern=r"^b(type:|club:)"),
         group=-1,
     )
 
@@ -331,8 +332,6 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
             filters=filters.ChatType.PRIVATE,
         )
     )
-    app.add_handler(h.get_sendinactive_handler())
-
     if test_mode and h.deposit_amount_priority_handler is not None:
         app.add_handler(
             MessageHandler(

@@ -8,12 +8,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatType
 from telegram.ext import (
     ApplicationHandlerStop,
-    CallbackQueryHandler,
-    CommandHandler,
     ContextTypes,
-    ConversationHandler,
-    MessageHandler,
-    filters,
 )
 
 from club_gc_settings import INACTIVE_OUTREACH_CLUB_KEYS, gc_mtproto_operator_telegram_user_ids
@@ -27,8 +22,6 @@ from bot.services.inactive_group_outreach_dm import (
 )
 
 logger = logging.getLogger(__name__)
-
-(IO_COMPOSE, IO_CONFIRM) = range(2)
 
 IO_STEP_KEY = "io_step"
 
@@ -45,6 +38,16 @@ _IO_USER_KEYS = (
 
 def sendinactive_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return context.user_data.get(IO_STEP_KEY) in ("compose", "confirm")
+
+
+def sendinactive_compose_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if context.user_data.get(IO_STEP_KEY) == "compose":
+        return True
+    return (
+        "io_club_key" in context.user_data
+        and "io_message" not in context.user_data
+        and context.user_data.get(IO_STEP_KEY) != "confirm"
+    )
 
 
 def _can_use_sendinactive(user_id: int) -> bool:
@@ -108,31 +111,31 @@ def _parse_start_args(text: str | None) -> tuple[str, int | None, int | None, st
     return club_key, row_id, limit, None
 
 
-async def sendinactive_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def sendinactive_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     user = update.effective_user
     chat = update.effective_chat
     if not message or not user or not chat:
-        return ConversationHandler.END
+        return
 
     if chat.type != ChatType.PRIVATE:
         await message.reply_text("Use /sendinactive in a private DM with the bot.")
-        return ConversationHandler.END
+        raise ApplicationHandlerStop()
 
     if not _can_use_sendinactive(user.id):
         await message.reply_text("You are not authorized to send inactive outreach DMs.")
-        return ConversationHandler.END
+        raise ApplicationHandlerStop()
 
     if is_dm_batch_running():
         await message.reply_text(
             "A DM batch is already running. Wait for it to finish before starting another."
         )
-        return ConversationHandler.END
+        raise ApplicationHandlerStop()
 
     club_key, row_id, limit, err = _parse_start_args(message.text)
     if err:
         await message.reply_text(err)
-        return ConversationHandler.END
+        raise ApplicationHandlerStop()
 
     count = count_dm_eligible_recipients(club_key=club_key, row_id=row_id, limit=limit)
     if count == 0:
@@ -140,7 +143,7 @@ async def sendinactive_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"No eligible staged recipients for {club_key} "
             f"(staged + entity_resolvable + not yet sent)."
         )
-        return ConversationHandler.END
+        raise ApplicationHandlerStop()
 
     _cleanup_send_flow(context)
     mark_active_flow(context, "inactive_outreach_send")
@@ -149,6 +152,7 @@ async def sendinactive_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data["io_limit"] = limit
     context.user_data["io_admin_id"] = int(user.id)
     context.user_data["io_recipient_count"] = count
+    context.user_data[IO_STEP_KEY] = "compose"
 
     scope = f"club={club_key}"
     if row_id is not None:
@@ -156,7 +160,6 @@ async def sendinactive_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if limit is not None:
         scope += f" limit={limit}"
 
-    context.user_data[IO_STEP_KEY] = "compose"
     logger.info(
         "sendinactive start user_id=%s club=%s row_id=%s limit=%s recipients=%s",
         user.id,
@@ -171,7 +174,7 @@ async def sendinactive_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"Recipients: {count}\n\n"
         "Send the message you want inactive players to receive."
     )
-    return IO_COMPOSE
+    raise ApplicationHandlerStop()
 
 
 async def sendinactive_message_handler(
@@ -182,16 +185,11 @@ async def sendinactive_message_handler(
         return
     if update.effective_chat.type != ChatType.PRIVATE:
         return
-    if context.user_data.get(IO_STEP_KEY) != "compose":
+    if not sendinactive_compose_active(context):
         return
     if not _can_use_sendinactive(update.effective_user.id):
         return
 
-    logger.info(
-        "sendinactive compose user_id=%s text_len=%s",
-        update.effective_user.id,
-        len(update.message.text or ""),
-    )
     await sendinactive_compose(update, context)
     raise ApplicationHandlerStop()
 
@@ -210,27 +208,22 @@ async def sendinactive_callback_handler(
     if not update.effective_user or not _can_use_sendinactive(update.effective_user.id):
         return
 
-    logger.info(
-        "sendinactive confirm user_id=%s action=%s",
-        update.effective_user.id,
-        query.data,
-    )
     await sendinactive_confirm(update, context)
     raise ApplicationHandlerStop()
 
 
-async def sendinactive_compose(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def sendinactive_compose(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     if not message:
-        return IO_COMPOSE
+        return
     if not message.text:
         await message.reply_text("Please send a text message for the outreach copy.")
-        return IO_COMPOSE
+        return
 
     body = message.text.strip()
     if not body:
         await message.reply_text("Message cannot be empty. Try again.")
-        return IO_COMPOSE
+        return
 
     context.user_data["io_message"] = body
     count = int(context.user_data.get("io_recipient_count") or 0)
@@ -244,20 +237,25 @@ async def sendinactive_compose(update: Update, context: ContextTypes.DEFAULT_TYP
         preview = preview[:4090] + "…"
 
     context.user_data[IO_STEP_KEY] = "confirm"
+    logger.info(
+        "sendinactive compose user_id=%s recipients=%s text_len=%s",
+        update.effective_user.id if update.effective_user else None,
+        count,
+        len(body),
+    )
     await message.reply_text(preview, reply_markup=_confirm_keyboard())
-    return IO_CONFIRM
 
 
-async def sendinactive_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def sendinactive_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if not query:
-        return IO_CONFIRM
+        return
     await query.answer()
 
     if query.data == "io_send_cancel":
         _cleanup_send_flow(context)
         await query.edit_message_text("Cancelled.")
-        return ConversationHandler.END
+        return
 
     club_key = str(context.user_data.get("io_club_key") or "round_table")
     message = str(context.user_data.get("io_message") or "").strip()
@@ -268,7 +266,14 @@ async def sendinactive_confirm(update: Update, context: ContextTypes.DEFAULT_TYP
     if not message or not admin_id:
         _cleanup_send_flow(context)
         await query.edit_message_text("Session expired. Run /sendinactive again.")
-        return ConversationHandler.END
+        return
+
+    logger.info(
+        "sendinactive confirm user_id=%s action=%s recipients=%s",
+        admin_id,
+        query.data,
+        context.user_data.get("io_recipient_count"),
+    )
 
     ok, err, armed_count = arm_dm_campaign(
         club_key=club_key,
@@ -281,7 +286,7 @@ async def sendinactive_confirm(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if not ok:
         await query.edit_message_text(err or "Failed to arm campaign.")
-        return ConversationHandler.END
+        return
 
     if context.application is not None:
         start_dm_batch_job_if_armed(context.application)
@@ -290,40 +295,9 @@ async def sendinactive_confirm(update: Update, context: ContextTypes.DEFAULT_TYP
         f"Sending to {armed_count} player(s)…\n"
         "You will get a summary here when the batch finishes."
     )
-    return ConversationHandler.END
 
 
-async def sendinactive_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def sendinactive_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _cleanup_send_flow(context)
     if update.message:
         await update.message.reply_text("Inactive outreach send cancelled.")
-    return ConversationHandler.END
-
-
-def get_sendinactive_handler() -> ConversationHandler:
-    return ConversationHandler(
-        entry_points=[
-            CommandHandler(
-                "sendinactive",
-                sendinactive_start,
-                filters=filters.ChatType.PRIVATE,
-            )
-        ],
-        states={
-            IO_COMPOSE: [
-                MessageHandler(
-                    filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
-                    sendinactive_compose,
-                ),
-                CommandHandler("cancel", sendinactive_cancel),
-            ],
-            IO_CONFIRM: [
-                CallbackQueryHandler(sendinactive_confirm, pattern=r"^io_send_(confirm|cancel)$"),
-                CommandHandler("cancel", sendinactive_cancel),
-            ],
-        },
-        fallbacks=[CommandHandler("cancel", sendinactive_cancel)],
-        per_chat=False,
-        per_user=True,
-        allow_reentry=True,
-    )

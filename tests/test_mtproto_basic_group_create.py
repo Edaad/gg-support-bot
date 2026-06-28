@@ -9,10 +9,12 @@ from telethon.tl.types import Channel, Chat, User
 
 from bot.services.mtproto_group_create import (
     _add_user_to_group,
+    _export_invite_link,
     _is_channel_entity,
     _marker_matches_user,
     _resolve_seed_user_for_create_chat,
     ensure_player_in_support_group,
+    export_invite_link_for_peer,
 )
 
 
@@ -152,6 +154,41 @@ class TestEnsurePlayerInSupportGroup(unittest.IsolatedAsyncioTestCase):
         ):
             st = await ensure_player_in_support_group(client, chat, player, cfg)
         self.assertEqual(st, "invited_ok")
+
+
+class TestExportInviteLink(unittest.IsolatedAsyncioTestCase):
+    async def test_revoke_previous_uses_legacy_flag(self) -> None:
+        client = MagicMock()
+        client.get_input_entity = AsyncMock(return_value="inp")
+        inv = MagicMock(link="https://t.me/+fresh")
+        client.export_chat_invite_link = AsyncMock()
+
+        with patch(
+            "bot.services.mtproto_group_create._with_single_flood_retry",
+            new_callable=AsyncMock,
+            return_value=inv,
+        ) as mock_retry:
+            link = await _export_invite_link(
+                client, MagicMock(), revoke_previous=True
+            )
+
+        self.assertEqual(link, "https://t.me/+fresh")
+        client.export_chat_invite_link.assert_not_awaited()
+        req = mock_retry.await_args_list[0].args[1]()
+        self.assertTrue(req.legacy_revoke_permanent)
+
+    async def test_export_invite_link_for_peer_without_revoke(self) -> None:
+        client = MagicMock()
+        with patch(
+            "bot.services.mtproto_group_create._export_invite_link",
+            new_callable=AsyncMock,
+            return_value="https://t.me/+abc",
+        ) as mock_export:
+            link = await export_invite_link_for_peer(client, MagicMock())
+        self.assertEqual(link, "https://t.me/+abc")
+        mock_export.assert_awaited_once_with(
+            client, mock_export.await_args.args[1], revoke_previous=False
+        )
 
 
 if __name__ == "__main__":

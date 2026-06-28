@@ -88,6 +88,48 @@ def batch_player_details(
     return found, missing
 
 
+def list_player_details_for_club(
+    club_slug: str,
+    *,
+    timeout: float = 120.0,
+) -> List[dict[str, Any]]:
+    """List Mongo player_details for a club via API, with Mongo URI fallback."""
+    from bot.services.gg_computer_mongo import (
+        gg_computer_mongodb_uri,
+        list_player_details_from_mongo,
+    )
+
+    slug = club_slug.strip().lower()
+    base = gg_computer_base_url()
+
+    if base:
+        with httpx.Client(timeout=timeout) as client:
+            res = client.get(f"{base}/player-details/by-club", params={"clubId": slug})
+        if res.status_code == 404:
+            if gg_computer_mongodb_uri():
+                return list_player_details_from_mongo(slug)
+            raise ValueError(
+                "gg-computer /player-details/by-club not deployed; set "
+                "GG_COMPUTER_MONGODB_URI or MONGODB_URI for direct Mongo read"
+            )
+        res.raise_for_status()
+        body = res.json()
+        if not isinstance(body, dict):
+            return []
+        players = body.get("players")
+        if not isinstance(players, list):
+            return []
+        return [row for row in players if isinstance(row, dict)]
+
+    if gg_computer_mongodb_uri():
+        return list_player_details_from_mongo(slug)
+
+    raise ValueError(
+        "gg_computer_not_configured: set GG_COMPUTER_BASE_URL or "
+        "GG_COMPUTER_MONGODB_URI / MONGODB_URI"
+    )
+
+
 def bulk_upsert_player_details(
     club_slug: str,
     items: List[dict[str, Any]],

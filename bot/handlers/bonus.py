@@ -189,6 +189,11 @@ async def bonus_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if update.effective_chat.type != ChatType.PRIVATE:
         return
 
+    from bot.handlers.inactive_outreach_send import sendinactive_compose_active
+
+    if sendinactive_compose_active(context):
+        return
+
     step = context.user_data.get(BONUS_STEP_KEY)
     if step not in _TEXT_STEPS:
         return

@@ -264,6 +264,71 @@ class TestPlayerSourcePriority(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fields["player_source"], "support_group_chats")
         self.assertTrue(fields["entity_resolvable"])
 
+    async def test_message_scan_when_stored_id_not_resolvable(self) -> None:
+        row = OutreachScanRow(
+            id=1,
+            club_key="round_table",
+            telegram_chat_id=-100123,
+            group_title="RT / 123 / player",
+            legacy_chat_id=-456,
+            gg_player_id="123",
+        )
+        client = MagicMock()
+        cfg = MagicMock()
+        player_map = {-100123: (999, "@bound", "round_table")}
+
+        async def _fake_flood(factory, **_kwargs):
+            result = factory()
+            if hasattr(result, "__await__"):
+                return await result
+            return result
+
+        scan_user = MagicMock(id=111, deleted=False)
+
+        with patch(
+            "bot.services.inactive_group_outreach.resolve_legacy_chat_ids",
+            return_value=[-456],
+        ), patch(
+            "bot.services.inactive_group_outreach._multi_chat_activity",
+            new_callable=AsyncMock,
+            return_value=(
+                ExternalActivityResult(None, "support_only"),
+                ExternalActivityResult(
+                    datetime(2025, 1, 1, tzinfo=timezone.utc),
+                    "external",
+                ),
+            ),
+        ), patch(
+            "bot.services.inactive_group_outreach._discover_player_from_messages",
+            new_callable=AsyncMock,
+            return_value=scan_user,
+        ) as mock_discover, patch(
+            "bot.services.migration_group_readd.call_with_flood_retry",
+            side_effect=_fake_flood,
+        ), patch(
+            "scripts.triage_recovery_tier3_pending.account_check_from_resolved_user",
+            side_effect=lambda user, **_: "not_found"
+            if getattr(user, "id", None) == 999
+            else "alive",
+        ):
+            dead_user = MagicMock(id=999, deleted=False)
+            alive_user = MagicMock(id=111, deleted=False)
+            client.get_entity = AsyncMock(side_effect=[dead_user, alive_user])
+
+            fields = await scan_outreach_row(
+                client,
+                cfg,
+                row,
+                self_id=1,
+                history_limit=200,
+                player_map=player_map,
+            )
+
+        mock_discover.assert_called_once()
+        self.assertEqual(fields["player_telegram_user_id"], 111)
+        self.assertEqual(fields["player_source"], "message_scan")
+        self.assertTrue(fields["entity_resolvable"])
+
 
 if __name__ == "__main__":
     unittest.main()

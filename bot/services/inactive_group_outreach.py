@@ -227,67 +227,20 @@ async def _discover_player_from_messages(
     return None
 
 
-async def _resolve_player_for_row(
+async def _verify_player_entity(
     client,
-    cfg,
-    row: OutreachScanRow,
+    player_id: int,
     *,
-    self_id: int | None,
-    history_limit: int,
-    player_map: dict[int, tuple[int | None, str | None, str | None]],
+    player_username: str | None = None,
+    player_display_name: str | None = None,
 ) -> dict[str, Any]:
+    """Resolve a candidate id via get_entity; entity_resolvable only when account is alive."""
     from bot.services.migration_group_readd import (
         call_with_flood_retry,
         is_entity_resolution_error,
     )
     from bot.services.mtproto_group_player import format_telegram_user_display
     from scripts.triage_recovery_tier3_pending import account_check_from_resolved_user
-
-    bound = player_map.get(int(row.telegram_chat_id))
-    player_id: int | None = None
-    player_username: str | None = None
-    player_display_name: str | None = None
-    player_source = "none"
-    account_check: str | None = None
-    entity_resolvable = False
-
-    if bound and bound[0] is not None:
-        player_id = int(bound[0])
-        player_username = bound[1]
-        player_source = "support_group_chats"
-
-    if player_id is None:
-        legacy_chat_ids = resolve_legacy_chat_ids(
-            telegram_chat_id=int(row.telegram_chat_id),
-            group_title=row.group_title,
-            club_id=int(cfg.link_club_id),
-        )
-        user = await _discover_player_from_messages(
-            client,
-            cfg,
-            telegram_chat_id=int(row.telegram_chat_id),
-            legacy_chat_ids=legacy_chat_ids,
-            self_id=self_id,
-            history_limit=history_limit,
-        )
-        if user is not None:
-            uid = getattr(user, "id", None)
-            if uid is not None:
-                player_id = int(uid)
-                display, un = format_telegram_user_display(user)
-                player_display_name = display
-                player_username = (un or "").lstrip("@") or None
-                player_source = "message_scan"
-
-    if player_id is None:
-        return {
-            "player_telegram_user_id": None,
-            "player_username": None,
-            "player_display_name": None,
-            "player_source": "none",
-            "account_check": None,
-            "entity_resolvable": False,
-        }
 
     resolved_user = None
     try:
@@ -303,6 +256,7 @@ async def _resolve_player_for_row(
         resolved_user,
         expected_user_id=player_id,
     )
+    entity_resolvable = False
     if resolved_user is not None and account_check == "alive":
         display, un = format_telegram_user_display(resolved_user)
         player_display_name = player_display_name or display
@@ -313,10 +267,80 @@ async def _resolve_player_for_row(
         "player_telegram_user_id": player_id,
         "player_username": player_username,
         "player_display_name": player_display_name,
-        "player_source": player_source,
         "account_check": account_check,
         "entity_resolvable": entity_resolvable,
     }
+
+
+def _empty_player_resolution() -> dict[str, Any]:
+    return {
+        "player_telegram_user_id": None,
+        "player_username": None,
+        "player_display_name": None,
+        "player_source": "none",
+        "account_check": None,
+        "entity_resolvable": False,
+    }
+
+
+async def _resolve_player_for_row(
+    client,
+    cfg,
+    row: OutreachScanRow,
+    *,
+    self_id: int | None,
+    history_limit: int,
+    player_map: dict[int, tuple[int | None, str | None, str | None]],
+) -> dict[str, Any]:
+    from bot.services.mtproto_group_player import format_telegram_user_display
+
+    bound = player_map.get(int(row.telegram_chat_id))
+    stored_id = int(bound[0]) if bound and bound[0] is not None else None
+    stored_username = bound[1] if bound else None
+    stored_failed: dict[str, Any] | None = None
+
+    if stored_id is not None:
+        verified = await _verify_player_entity(
+            client,
+            stored_id,
+            player_username=stored_username,
+        )
+        if verified["entity_resolvable"]:
+            verified["player_source"] = "support_group_chats"
+            return verified
+        stored_failed = verified
+
+    legacy_chat_ids = resolve_legacy_chat_ids(
+        telegram_chat_id=int(row.telegram_chat_id),
+        group_title=row.group_title,
+        club_id=int(cfg.link_club_id),
+    )
+    user = await _discover_player_from_messages(
+        client,
+        cfg,
+        telegram_chat_id=int(row.telegram_chat_id),
+        legacy_chat_ids=legacy_chat_ids,
+        self_id=self_id,
+        history_limit=history_limit,
+    )
+    if user is not None:
+        uid = getattr(user, "id", None)
+        if uid is not None:
+            display, un = format_telegram_user_display(user)
+            verified = await _verify_player_entity(
+                client,
+                int(uid),
+                player_username=(un or "").lstrip("@") or None,
+                player_display_name=display,
+            )
+            verified["player_source"] = "message_scan"
+            return verified
+
+    if stored_failed is not None:
+        stored_failed["player_source"] = "support_group_chats"
+        return stored_failed
+
+    return _empty_player_resolution()
 
 
 async def scan_outreach_row(

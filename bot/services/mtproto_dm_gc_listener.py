@@ -190,8 +190,23 @@ async def _flow_existing_group(
         return
 
     st = await ensure_player_in_support_group(client, channel, player, cfg)
-    exported = await export_invite_link_for_peer(client, channel)
-    new_link = exported or row.invite_link
+    exported = await export_invite_link_for_peer(
+        client, channel, revoke_previous=True
+    )
+    if not exported and row.telegram_chat_id is not None:
+        from bot.services.group_chat_invite_links import export_invite_link_via_bot_api
+
+        exported, bot_err = await export_invite_link_via_bot_api(int(row.telegram_chat_id))
+        if not exported and bot_err:
+            logger.warning(
+                "dm_gc /gc invite export failed club_key=%s listener=%s chat_id=%s "
+                "mtproto+bot: %s",
+                cfg.club_key,
+                listener_label,
+                row.telegram_chat_id,
+                bot_err,
+            )
+    new_link = exported
     link = (new_link or "").strip()
 
     # After a manual /bind, we want every subsequent incoming DM or /gc invocation

@@ -497,9 +497,28 @@ async def ensure_player_in_support_group(
     return "invited_ok" if ok else "invite_failed"
 
 
-async def _export_invite_link(client: TelegramClient, peer) -> str:
+async def _export_invite_link(
+    client: TelegramClient,
+    peer,
+    *,
+    revoke_previous: bool = False,
+) -> str:
     export_fn = getattr(client, "export_chat_invite_link", None)
     if callable(export_fn):
+        if revoke_previous:
+            from telethon.tl import functions
+
+            inp = await client.get_input_entity(peer)
+            inv = await _with_single_flood_retry(
+                "ExportChatInvite(revoke)",
+                lambda: client(
+                    functions.messages.ExportChatInviteRequest(
+                        peer=inp,
+                        legacy_revoke_permanent=True,
+                    )
+                ),
+            )
+            return inv.link
         return await export_fn(peer)
 
     from telethon.tl import functions
@@ -507,17 +526,33 @@ async def _export_invite_link(client: TelegramClient, peer) -> str:
     inp = await client.get_input_entity(peer)
     inv = await _with_single_flood_retry(
         "ExportChatInvite",
-        lambda: client(functions.messages.ExportChatInviteRequest(peer=inp)),
+        lambda: client(
+            functions.messages.ExportChatInviteRequest(
+                peer=inp,
+                legacy_revoke_permanent=True if revoke_previous else None,
+            )
+        ),
     )
     return inv.link
 
 
-async def export_invite_link_for_peer(client: TelegramClient, peer) -> str | None:
+async def export_invite_link_for_peer(
+    client: TelegramClient,
+    peer,
+    *,
+    revoke_previous: bool = False,
+) -> str | None:
     """Best-effort invite link for a group or channel entity."""
     try:
-        return normalize_invite_link(await _export_invite_link(client, peer))
+        return normalize_invite_link(
+            await _export_invite_link(client, peer, revoke_previous=revoke_previous)
+        )
     except Exception as e:
-        logger.info("export_invite_link_for_peer: %s", type(e).__name__)
+        logger.info(
+            "export_invite_link_for_peer: %s revoke_previous=%s",
+            type(e).__name__,
+            revoke_previous,
+        )
         return None
 
 
