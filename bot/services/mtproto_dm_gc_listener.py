@@ -26,7 +26,6 @@ from bot.services.club import find_group_chat_id_by_name, get_group_title_for_ch
 from bot.services.mtproto_group_create import (
     create_support_group,
     ensure_player_in_support_group,
-    export_invite_link_for_peer,
     is_client_authorized,
     make_client,
 )
@@ -230,7 +229,7 @@ async def _flow_existing_group(
     *,
     listener_label: str,
     trigger: str = "incoming_dm",
-) -> None:
+) -> str | None:
     player_label_existing = _telethon_user_label(player)
     try:
         channel = await client.get_entity(row.telegram_chat_id)
@@ -250,26 +249,34 @@ async def _flow_existing_group(
             player_label=player_label_existing,
             message=f"cannot load group chat_id={row.telegram_chat_id} ({type(e).__name__})",
         )
-        return
+        return None
 
     st = await ensure_player_in_support_group(client, channel, player, cfg)
-    exported = await export_invite_link_for_peer(
-        client, channel, revoke_previous=True
-    )
-    if not exported and row.telegram_chat_id is not None:
-        from bot.services.group_chat_invite_links import export_invite_link_via_bot_api
+    from bot.services.group_chat_invite_links import resolve_support_group_invite_link
 
-        exported, bot_err = await export_invite_link_via_bot_api(int(row.telegram_chat_id))
-        if not exported and bot_err:
-            logger.warning(
-                "dm_gc /gc invite export failed club_key=%s listener=%s chat_id=%s "
-                "mtproto+bot: %s",
-                cfg.club_key,
-                listener_label,
-                row.telegram_chat_id,
-                bot_err,
-            )
-    new_link = exported
+    stored = getattr(row, "invite_link", None)
+    new_link, link_source = await resolve_support_group_invite_link(
+        client,
+        chat_id=int(row.telegram_chat_id),
+        peer=channel,
+        stored_link=stored if isinstance(stored, str) else None,
+    )
+    if link_source != "stored_valid":
+        _dm_gc_verbose_info(
+            "dm_gc invite refreshed club_key=%s listener=%s chat_id=%s source=%s",
+            cfg.club_key,
+            listener_label,
+            row.telegram_chat_id,
+            link_source,
+        )
+    elif not new_link:
+        logger.warning(
+            "dm_gc /gc invite unavailable club_key=%s listener=%s chat_id=%s source=%s",
+            cfg.club_key,
+            listener_label,
+            row.telegram_chat_id,
+            link_source,
+        )
     link = (new_link or "").strip()
 
     # After a manual /bind, we want every subsequent incoming DM or /gc invocation
@@ -317,23 +324,47 @@ async def _flow_existing_group(
     extra: list[str] = []
     if not dm_ok and dm_err:
         extra.append(f"Player DM failed: {dm_err}")
-    await _send_staff_gc_confirmation(
-        client,
-        player,
-        trigger=trigger,
-        text=_format_staff_gc_confirmation(
-            title=title,
-            invite_link=link or None,
-            player_label=player_label_existing,
-            extra_lines=extra or None,
-        ),
-    )
+    # Outgoing staff /gc shares the player DM thread — on success the templated invite
+    # message is enough; a second operator-style confirmation duplicates the link.
+    if not dm_ok:
+        await _send_staff_gc_confirmation(
+            client,
+            player,
+            trigger=trigger,
+            text=_format_staff_gc_confirmation(
+                title=title,
+                invite_link=link or None,
+                player_label=player_label_existing,
+                extra_lines=extra or None,
+            ),
+        )
     _dm_gc_verbose_info(
         "dm_gc /gc finished existing_support_group club_key=%s listener=%s player=%s status=%s",
         cfg.club_key,
         listener_label,
         player_label_existing,
         dm_status,
+    )
+    return link or None
+
+
+async def run_existing_support_group_gc(
+    client: TelegramClient,
+    cfg,
+    row,
+    player: User,
+    *,
+    listener_label: str,
+    trigger: str,
+) -> str | None:
+    """Reuse an existing support group: refresh invite if expired, DM player."""
+    return await _flow_existing_group(
+        client,
+        cfg,
+        row,
+        player,
+        listener_label=listener_label,
+        trigger=trigger,
     )
 
 
@@ -405,7 +436,28 @@ async def _flow_new_group(
         )
         return
 
-    link = (outcome.invite_link or "").strip()
+    invite_link_out = outcome.invite_link
+    if not outcome.player_direct_add_ok and cid:
+        try:
+            channel = await client.get_entity(int(cid))
+            from bot.services.group_chat_invite_links import resolve_support_group_invite_link
+
+            invite_link_out, _link_source = await resolve_support_group_invite_link(
+                client,
+                chat_id=int(cid),
+                peer=channel,
+                stored_link=outcome.invite_link,
+            )
+            outcome.invite_link = invite_link_out
+        except Exception as e:
+            logger.info(
+                "dm_gc new group invite resolve failed club_key=%s chat_id=%s: %s",
+                cfg.club_key,
+                cid,
+                type(e).__name__,
+            )
+
+    link = (invite_link_out or "").strip()
     if outcome.player_direct_add_ok:
         dm_body = PLAYER_ADDED_SUCCESS_MESSAGE
         dm_status = "player_added_success"
@@ -527,19 +579,19 @@ async def _flow_new_group(
     player_dm_note = None
     if not dm_ok:
         player_dm_note = f"Player DM failed: {dm_err}" if dm_err else "Player DM failed"
-    await _send_staff_gc_confirmation(
-        client,
-        player,
-        trigger=trigger,
-        text=_compose_status_text(
-            cfg,
-            outcome,
-            pk,
-            perr,
-            player_marker=player_label,
-            player_dm_note=player_dm_note,
-        ),
-    )
+        await _send_staff_gc_confirmation(
+            client,
+            player,
+            trigger=trigger,
+            text=_compose_status_text(
+                cfg,
+                outcome,
+                pk,
+                perr,
+                player_marker=player_label,
+                player_dm_note=player_dm_note,
+            ),
+        )
     _dm_gc_verbose_info(
         "dm_gc /gc finished new_support_group club_key=%s listener=%s player=%s chat_id=%s row_id=%s",
         cfg.club_key,

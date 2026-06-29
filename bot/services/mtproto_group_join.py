@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from telethon import TelegramClient
-from telethon.errors import RPCError
+from telethon.errors import InviteHashExpiredError, InviteHashInvalidError, RPCError
 from telethon.tl.functions.channels import EditAdminRequest
 from telethon.tl.functions.messages import EditChatAdminRequest
 from telethon.tl.types import ChatAdminRights
@@ -52,6 +52,43 @@ def parse_invite_hash(invite_link: str) -> str | None:
         hash_part = s[1:]
     hash_part = hash_part.strip()
     return hash_part or None
+
+
+async def is_invite_link_valid(
+    client: TelegramClient,
+    invite_link: str,
+    *,
+    expected_chat_id: int | None = None,
+) -> bool:
+    """Return True when ``CheckChatInvite`` succeeds (link not expired/revoked)."""
+
+    from telethon.tl import functions
+    from telethon.utils import get_peer_id
+
+    hash_part = parse_invite_hash(invite_link)
+    if not hash_part:
+        return False
+
+    try:
+        checked = await _with_single_flood_retry(
+            "CheckChatInviteRequest",
+            lambda: client(functions.messages.CheckChatInviteRequest(hash_part)),
+        )
+    except (InviteHashExpiredError, InviteHashInvalidError):
+        return False
+    except Exception as e:
+        logger.info("is_invite_link_valid failed: %s", type(e).__name__)
+        return False
+
+    if expected_chat_id is not None:
+        chat = getattr(checked, "chat", None)
+        if chat is not None:
+            try:
+                if int(get_peer_id(chat)) != int(expected_chat_id):
+                    return False
+            except Exception:
+                return False
+    return True
 
 
 async def join_chat_via_invite_link(

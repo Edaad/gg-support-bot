@@ -183,6 +183,73 @@ _EXPIRED_REPLY = (
 )
 
 
+async def _run_existing_player_gc(
+    update: Update,
+    cfg: ClubGcConfig,
+    existing,
+    player_user,
+) -> None:
+    """Refresh stored invite if expired, DM player, reply to operator."""
+    assert update.message is not None
+
+    from bot.services.mtproto_dm_gc_listener import (
+        get_listener_client,
+        run_existing_support_group_gc,
+    )
+
+    client = get_listener_client(cfg.club_key)
+    if client is None:
+        await update.message.reply_text(
+            "Club MTProto listener is offline — cannot refresh the invite link. Try again shortly."
+        )
+        return
+
+    link = await run_existing_support_group_gc(
+        client,
+        cfg,
+        existing,
+        player_user,
+        listener_label="bot /gc",
+        trigger="bot_gc",
+    )
+    title = (getattr(existing, "telegram_chat_title", None) or "").strip() or "(untitled)"
+    await update.message.reply_text(
+        "This player already has a support group — invite checked and player DM sent.\n\n"
+        f"{title}\n"
+        f"{link or '(invite link unavailable)'}"
+    )
+
+
+async def _resolve_outcome_invite_link(cfg: ClubGcConfig, outcome: MtProtoGroupOutcome) -> None:
+    """Ensure ``outcome.invite_link`` is valid before DM/export; refresh via API if expired."""
+    cid = outcome.telegram_chat_id
+    if cid is None or outcome.player_direct_add_ok:
+        return
+
+    try:
+        from bot.services.group_chat_invite_links import resolve_support_group_invite_link
+        from bot.services.mtproto_dm_gc_listener import get_listener_client
+
+        client = get_listener_client(cfg.club_key)
+        if client is None:
+            return
+        channel = await client.get_entity(int(cid))
+        refreshed, _source = await resolve_support_group_invite_link(
+            client,
+            chat_id=int(cid),
+            peer=channel,
+            stored_link=outcome.invite_link,
+        )
+        outcome.invite_link = refreshed
+    except Exception as e:
+        logger.info(
+            "/gc invite resolve failed club_key=%s chat_id=%s: %s",
+            cfg.club_key,
+            cid,
+            type(e).__name__,
+        )
+
+
 async def _finish_gc_creation(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -200,6 +267,7 @@ async def _finish_gc_creation(
     extra_errors: list[str] = []
 
     if player_user is not None and outcome.telegram_chat_id is not None:
+        await _resolve_outcome_invite_link(cfg, outcome)
         if outcome.player_direct_add_ok:
             dm_body = PLAYER_ADDED_SUCCESS_MESSAGE
             player_dm_status = "player_added_success"
@@ -229,11 +297,7 @@ async def _finish_gc_creation(
     if persist_err == "duplicate_club_player" and player_user is not None:
         existing = fetch_support_group_chat_by_club_player(cfg.club_key, int(player_user.id))
         if existing:
-            await update.message.reply_text(
-                "This player already has a support group.\n\n"
-                f"{existing.telegram_chat_title}\n"
-                f"{existing.invite_link or '(no invite link stored)'}"
-            )
+            await _run_existing_player_gc(update, cfg, existing, player_user)
             return
 
     cid = outcome.telegram_chat_id
@@ -309,11 +373,7 @@ async def gc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         existing = fetch_support_group_chat_by_club_player(cfg.club_key, int(player_user.id))
         if existing:
-            await update.message.reply_text(
-                "This player already has a support group.\n\n"
-                f"{existing.telegram_chat_title}\n"
-                f"{existing.invite_link or '(no invite link stored)'}"
-            )
+            await _run_existing_player_gc(update, cfg, existing, player_user)
             return
 
     authorized = await is_client_authorized(cfg)

@@ -85,6 +85,45 @@ async def export_invite_link_via_bot_api(chat_id: int) -> tuple[str | None, str 
     return None, last_reason
 
 
+async def resolve_support_group_invite_link(
+    mtproto_client: TelegramClient,
+    *,
+    chat_id: int,
+    peer,
+    stored_link: str | None,
+) -> tuple[str | None, str]:
+    """Return ``(link, source)`` for /gc flows.
+
+    Reuses ``stored_link`` when still valid. Otherwise exports a fresh link via
+    MTProto (revoking the old primary link), then Bot API ``exportChatInviteLink``.
+    """
+
+    from bot.services.mtproto_group_create import export_invite_link_for_peer
+    from bot.services.mtproto_group_join import is_invite_link_valid
+
+    link = _normalize_invite_link(stored_link)
+    if link and await is_invite_link_valid(
+        mtproto_client,
+        link,
+        expected_chat_id=int(chat_id),
+    ):
+        return link, "stored_valid"
+
+    exported = await export_invite_link_for_peer(
+        mtproto_client,
+        peer,
+        revoke_previous=True,
+    )
+    if exported:
+        return exported, "mtproto_export"
+
+    bot_link, bot_err = await export_invite_link_via_bot_api(int(chat_id))
+    if bot_link:
+        return bot_link, "bot_api_export"
+
+    return None, bot_err or "unavailable"
+
+
 async def resolve_group_chat_notification_url(
     *,
     telegram_chat_id: int,
