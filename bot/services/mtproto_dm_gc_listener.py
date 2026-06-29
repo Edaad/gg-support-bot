@@ -168,6 +168,60 @@ async def _send_player_dm_safe(client: TelegramClient, player: User, text: str) 
         return False, type(e).__name__
 
 
+def _is_outgoing_gc_command(trigger: str) -> bool:
+    return trigger == "outgoing_gc_command"
+
+
+def _format_staff_gc_confirmation(
+    *,
+    title: str,
+    invite_link: str | None,
+    player_label: str | None = None,
+    extra_lines: list[str] | None = None,
+) -> str:
+    chunks: list[str] = []
+    if player_label:
+        chunks.append(f"Player: {player_label}")
+    chunks.append(title.strip() or "(untitled)")
+    chunks.append((invite_link or "").strip() or "(invite link unavailable)")
+    if extra_lines:
+        chunks.append("")
+        chunks.extend(extra_lines)
+    return "\n".join(chunks)
+
+
+async def _send_staff_gc_confirmation(
+    client: TelegramClient,
+    player: User,
+    *,
+    trigger: str,
+    text: str,
+) -> None:
+    if not _is_outgoing_gc_command(trigger):
+        return
+    try:
+        await client.send_message(player, text)
+    except Exception as e:
+        logger.warning("dm_gc staff /gc confirmation failed: %s", type(e).__name__)
+
+
+async def _send_staff_gc_failure(
+    client: TelegramClient,
+    player: User,
+    *,
+    trigger: str,
+    player_label: str,
+    message: str,
+) -> None:
+    body = (message or "").strip() or "unknown error"
+    await _send_staff_gc_confirmation(
+        client,
+        player,
+        trigger=trigger,
+        text=f"/gc failed for {player_label}\n{body}",
+    )
+
+
 async def _flow_existing_group(
     client: TelegramClient,
     cfg,
@@ -175,7 +229,9 @@ async def _flow_existing_group(
     player: User,
     *,
     listener_label: str,
+    trigger: str = "incoming_dm",
 ) -> None:
+    player_label_existing = _telethon_user_label(player)
     try:
         channel = await client.get_entity(row.telegram_chat_id)
     except Exception as e:
@@ -186,6 +242,13 @@ async def _flow_existing_group(
             listener_label,
             row.telegram_chat_id,
             type(e).__name__,
+        )
+        await _send_staff_gc_failure(
+            client,
+            player,
+            trigger=trigger,
+            player_label=player_label_existing,
+            message=f"cannot load group chat_id={row.telegram_chat_id} ({type(e).__name__})",
         )
         return
 
@@ -222,7 +285,6 @@ async def _flow_existing_group(
         dm_status = "existing_invite_fallback"
 
     dm_ok, dm_err = await _send_player_dm_safe(client, player, dm_body)
-    player_label_existing = _telethon_user_label(player)
     if not dm_ok:
         logger.warning(
             "dm_gc /gc player_dm_issue club_key=%s listener=%s player=%s err=%s template=%s(flow=existing)",
@@ -244,6 +306,27 @@ async def _flow_existing_group(
         player_display_name=dname,
         player_dm_status=dm_status + ("_dm_failed" if not dm_ok else ""),
         last_error_message=err_extra if err_extra else "",
+    )
+
+    title_raw = getattr(row, "telegram_chat_title", None)
+    title = (
+        title_raw.strip()
+        if isinstance(title_raw, str) and title_raw.strip()
+        else "(untitled)"
+    )
+    extra: list[str] = []
+    if not dm_ok and dm_err:
+        extra.append(f"Player DM failed: {dm_err}")
+    await _send_staff_gc_confirmation(
+        client,
+        player,
+        trigger=trigger,
+        text=_format_staff_gc_confirmation(
+            title=title,
+            invite_link=link or None,
+            player_label=player_label_existing,
+            extra_lines=extra or None,
+        ),
     )
     _dm_gc_verbose_info(
         "dm_gc /gc finished existing_support_group club_key=%s listener=%s player=%s status=%s",
@@ -292,6 +375,13 @@ async def _flow_new_group(
                 player_label=player_label,
                 trigger=trigger,
             )
+        await _send_staff_gc_failure(
+            client,
+            player,
+            trigger=trigger,
+            player_label=player_label,
+            message=str(e).strip()[:500] or err_name,
+        )
         return
 
     cid = outcome.telegram_chat_id
@@ -305,6 +395,13 @@ async def _flow_new_group(
             player_label,
             outcome.error_hint or "(none)",
             warn_tail[:500] if warn_tail else "(none)",
+        )
+        await _send_staff_gc_failure(
+            client,
+            player,
+            trigger=trigger,
+            player_label=player_label,
+            message=outcome.error_hint or warn_tail or "missing chat id",
         )
         return
 
@@ -334,7 +431,17 @@ async def _flow_new_group(
         errs.append(outcome.error_hint)
     if not dm_ok and dm_err:
         errs.append(f"player_dm:{dm_err}")
+    for row in outcome.link_join_failures:
+        errs.append(
+            f"link_join:{row.get('user') or '?'}:{row.get('reason') or 'unknown'}"
+        )
     last_err = "; ".join(errs) if errs else None
+
+    added_users = list(outcome.added_users)
+    added_users.extend(outcome.link_joined_users)
+    added_users.extend(outcome.promoted_admins)
+    failed_users = list(outcome.failed_users)
+    failed_users.extend(outcome.link_join_failures)
 
     pk, perr = persist_support_group_chat_row(
         club_key=cfg.club_key,
@@ -344,8 +451,8 @@ async def _flow_new_group(
         invite_link=outcome.invite_link,
         created_by_telegram_user_id=admin_id,
         mtproto_session_name=cfg.mtproto_session,
-        added_users=outcome.added_users,
-        failed_users=outcome.failed_users,
+        added_users=added_users,
+        failed_users=failed_users,
         group_photo_path=cfg.group_photo_path,
         initial_group_message_sent=outcome.initial_message_sent,
         last_error_message=last_err,
@@ -365,7 +472,12 @@ async def _flow_new_group(
         existing = fetch_support_group_chat_by_club_player(cfg.club_key, player.id)
         if existing:
             await _flow_existing_group(
-                client, cfg, existing, player, listener_label=listener_label
+                client,
+                cfg,
+                existing,
+                player,
+                listener_label=listener_label,
+                trigger=trigger,
             )
         return
 
@@ -377,6 +489,13 @@ async def _flow_new_group(
             listener_label,
             player_label,
             perr or "unknown",
+        )
+        await _send_staff_gc_failure(
+            client,
+            player,
+            trigger=trigger,
+            player_label=player_label,
+            message=perr or "support_group_chats save failed",
         )
         return
 
@@ -402,6 +521,25 @@ async def _flow_new_group(
                 cid,
                 type(e).__name__,
             )
+
+    from bot.handlers.group_create import _compose_status_text
+
+    player_dm_note = None
+    if not dm_ok:
+        player_dm_note = f"Player DM failed: {dm_err}" if dm_err else "Player DM failed"
+    await _send_staff_gc_confirmation(
+        client,
+        player,
+        trigger=trigger,
+        text=_compose_status_text(
+            cfg,
+            outcome,
+            pk,
+            perr,
+            player_marker=player_label,
+            player_dm_note=player_dm_note,
+        ),
+    )
     _dm_gc_verbose_info(
         "dm_gc /gc finished new_support_group club_key=%s listener=%s player=%s chat_id=%s row_id=%s",
         cfg.club_key,
@@ -464,7 +602,12 @@ async def _run_gc_flow_for_player(
         existing = fetch_support_group_chat_by_club_player(cfg.club_key, player_id)
         if existing:
             await _flow_existing_group(
-                client, cfg, existing, player, listener_label=listener_label
+                client,
+                cfg,
+                existing,
+                player,
+                listener_label=listener_label,
+                trigger=trigger,
             )
         elif is_dm_gc_new_groups_enabled():
             await _flow_new_group(
@@ -649,6 +792,7 @@ async def _run_bind_flow_for_player(
             player_telegram_user_id=player_id,
             player_username=uname,
             player_display_name=dname,
+            allow_player_rebind=True,
         )
 
         if row_id and link:

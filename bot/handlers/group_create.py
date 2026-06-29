@@ -76,7 +76,17 @@ def _persist_row(
         errs.append(outcome.error_hint)
     if extra_errors:
         errs.extend(extra_errors)
+    for row in outcome.link_join_failures:
+        errs.append(
+            f"link_join:{row.get('user') or '?'}:{row.get('reason') or 'unknown'}"
+        )
     err_msg = "; ".join(errs) if errs else None
+
+    added_users = list(outcome.added_users)
+    added_users.extend(outcome.link_joined_users)
+    added_users.extend(outcome.promoted_admins)
+    failed_users = list(outcome.failed_users)
+    failed_users.extend(outcome.link_join_failures)
 
     cid = outcome.telegram_chat_id
     if cid is None:
@@ -96,8 +106,8 @@ def _persist_row(
         invite_link=outcome.invite_link,
         created_by_telegram_user_id=commander_id,
         mtproto_session_name=cfg.mtproto_session,
-        added_users=outcome.added_users,
-        failed_users=outcome.failed_users,
+        added_users=added_users,
+        failed_users=failed_users,
         group_photo_path=cfg.group_photo_path,
         initial_group_message_sent=outcome.initial_message_sent,
         last_error_message=err_msg,
@@ -314,11 +324,20 @@ async def gc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     me = await context.bot.get_me()
     bot_username = me.username.strip() if me and me.username else None
 
+    link_join_client = None
+    try:
+        from bot.services.mtproto_dm_gc_listener import get_listener_client
+
+        link_join_client = get_listener_client(cfg.club_key)
+    except Exception:
+        link_join_client = None
+
     try:
         outcome = await create_support_group(
             cfg,
             bot_dm_username=bot_username,
             player_user=player_user,
+            link_join_client=link_join_client,
         )
     except Exception as e:
         hint = type(e).__name__

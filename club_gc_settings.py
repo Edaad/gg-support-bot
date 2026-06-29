@@ -48,8 +48,18 @@ def _link_club_id_for_gc(env_key: str, *, default_dashboard_id: int) -> int:
 # Default `/gc` staff invitees (also excluded when finding the sole player).
 # `config.py` re-exports this; keep in sync when editing invite lists.
 GC_USERS_TO_INVITE: dict[str, tuple[str, ...]] = {
-    "round_table": ("@RoundTableSupport3", "@YTranslateBot", "@playggsupport"),
-    "creator_club": ("@CreatorClubSupport3", "@twocardcashier", "@YTranslateBot"),
+    "round_table": (
+        "@RoundTableSupport2",
+        "@RoundTableSupport3",
+        "@YTranslateBot",
+        "@playggsupport",
+    ),
+    "creator_club": (
+        "@CreatorClubSupport3",
+        "@twocardcashier",
+        "@YTranslateBot",
+        "@playggsupport",
+    ),
     "clubgto": ("@ClubGTOAdmin", "@YTranslateBot"),
 }
 
@@ -110,7 +120,7 @@ def _round_table_elevate_kwargs() -> dict[str, object]:
     if not _elevate_creator_round_table_enabled():
         return {}
     exclude_raw = _env_csv_tuple("GC_LINK_JOIN_EXCLUDE_ROUND_TABLE")
-    exclude = exclude_raw if exclude_raw else ("@RoundTableSupport2",)
+    exclude = exclude_raw
     promote = _env_optional("GC_PROMOTE_ADMIN_ROUND_TABLE") or "@RoundTableSupport2"
     return {
         "group_creator_club_key": "elevate_admin",

@@ -252,6 +252,7 @@ def update_support_group_chat_row(
     initial_group_message_sent: bool | None = None,
     telegram_chat_title: str | None = None,
     player_telegram_user_id: int | None = None,
+    telegram_chat_id: int | None = None,
 ) -> tuple[bool, str | None]:
     """Update an existing row by primary key. Returns (ok, error)."""
     try:
@@ -279,6 +280,8 @@ def update_support_group_chat_row(
                 row.telegram_chat_title = telegram_chat_title[:5000]
             if player_telegram_user_id is not None:
                 row.player_telegram_user_id = int(player_telegram_user_id)
+            if telegram_chat_id is not None:
+                row.telegram_chat_id = int(telegram_chat_id)
         return True, None
     except Exception as e:
         logger.exception("support_group_chats update failed (%s)", type(e).__name__)
@@ -294,12 +297,16 @@ def bind_player_for_gc_reuse(
     player_telegram_user_id: int,
     player_username: str | None = None,
     player_display_name: str | None = None,
+    allow_player_rebind: bool = False,
 ) -> tuple[str, int | None]:
     """Link a megagroup to a player so ``/gc`` reuses it instead of creating a new group.
 
     Returns ``(status, row_id)`` where status is one of:
-    ``already_bound``, ``updated``, ``inserted``, ``player_bound_elsewhere``,
+    ``already_bound``, ``updated``, ``inserted``, ``rebound``, ``player_bound_elsewhere``,
     ``chat_other_player``, ``duplicate_club_player``, ``error``.
+
+    When ``allow_player_rebind`` is true (staff ``/bind``), an existing player row is
+    repointed to ``telegram_chat_id`` instead of returning ``player_bound_elsewhere``.
     """
     pid = int(player_telegram_user_id)
     cid = int(telegram_chat_id)
@@ -312,6 +319,24 @@ def bind_player_for_gc_reuse(
     if by_player is not None:
         if int(by_player.telegram_chat_id) == cid:
             return ("already_bound", by_player.id)
+        if allow_player_rebind:
+            by_chat = fetch_support_group_chat_by_telegram_chat_id(cid)
+            if by_chat is not None and int(by_chat.id) != int(by_player.id):
+                existing_pid = by_chat.player_telegram_user_id
+                if existing_pid is not None and int(existing_pid) != pid:
+                    return ("chat_other_player", by_chat.id)
+            ok, err = update_support_group_chat_row(
+                by_player.id,
+                telegram_chat_id=cid,
+                telegram_chat_title=title,
+                player_username=player_username,
+                player_display_name=player_display_name,
+                player_dm_status="bind_rebound",
+                last_error_message="",
+            )
+            if not ok:
+                return ("error", by_player.id if err != "not_found" else None)
+            return ("rebound", by_player.id)
         return ("player_bound_elsewhere", by_player.id)
 
     by_chat = fetch_support_group_chat_by_telegram_chat_id(cid)

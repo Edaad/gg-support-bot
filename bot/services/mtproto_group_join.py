@@ -246,8 +246,8 @@ async def run_link_join_and_promote(
                         "kind": "link_join",
                     }
                 )
-                return link_joined, promoted, failures
-            link_joined.append({"user": promote_marker, "kind": "link_join"})
+            else:
+                link_joined.append({"user": promote_marker, "kind": "link_join"})
         finally:
             if owns_connection:
                 await join_client.disconnect()

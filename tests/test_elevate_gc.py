@@ -13,6 +13,7 @@ from club_gc_settings import (
     ClubGcConfig,
     build_auxiliary_mtproto_config,
     build_club_gc_config,
+    get_gc_users_to_add,
     link_join_exclude_normalized,
     resolve_group_creator_cfg,
 )
@@ -58,7 +59,9 @@ class TestElevateConfig(unittest.TestCase):
             self.assertEqual(cfg.link_join_club_key, "round_table")
             self.assertEqual(cfg.promote_admin_marker, "@RoundTableSupport2")
             exclude = link_join_exclude_normalized(cfg)
-            self.assertIn("roundtablesupport2", exclude)
+            self.assertNotIn("roundtablesupport2", exclude)
+            users = get_gc_users_to_add(cfg)
+            self.assertIn("@RoundTableSupport2", users)
             with patch("club_gc_settings._elevate_creator_round_table_enabled", return_value=True):
                 creator = resolve_group_creator_cfg(cfg)
             self.assertEqual(creator.club_key, "elevate_admin")
@@ -80,14 +83,17 @@ class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
             mtproto_phone_number=None,
             group_title="RT / New Player",
             group_photo_path=None,
-            users_to_add=("@RoundTableSupport3",),
+            users_to_add=(
+                "@RoundTableSupport2",
+                "@RoundTableSupport3",
+            ),
             bot_account="@Bot",
             initial_group_message_template="link: {invite_link}",
             link_club_id=2,
             group_creator_club_key="elevate_admin",
             link_join_club_key="round_table",
             promote_admin_marker="@RoundTableSupport2",
-            link_join_exclude_markers=("@RoundTableSupport2",),
+            link_join_exclude_markers=(),
         )
 
     def _creator_cfg(self) -> ClubGcConfig:
@@ -196,7 +202,10 @@ class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
             ),
             patch(
                 "bot.services.mtproto_group_create.get_gc_users_to_add",
-                return_value=("@RoundTableSupport3",),
+                return_value=(
+                    "@RoundTableSupport2",
+                    "@RoundTableSupport3",
+                ),
             ),
             patch("bot.handlers.groups._mark_post_gc_bundle_window"),
             patch("telethon.utils.get_peer_id", return_value=-5287778428),
@@ -213,7 +222,7 @@ class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(outcome.link_joined_users[0]["kind"], "link_join")
         self.assertEqual(outcome.promoted_admins[0]["kind"], "admin")
         invite_markers = [u["user"] for u in outcome.added_users]
-        self.assertNotIn("@RoundTableSupport2", invite_markers)
+        self.assertIn("@RoundTableSupport2", invite_markers)
 
 
 class TestRunLinkJoinAndPromote(unittest.IsolatedAsyncioTestCase):

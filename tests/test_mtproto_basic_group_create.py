@@ -5,14 +5,18 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from telethon.tl.types import Channel, Chat, User
+from telethon.tl.types import Channel, Chat, MessageActionChatCreate, User
+from telethon.tl.types.messages import InvitedUsers
 
 from bot.services.mtproto_group_create import (
     _add_user_to_group,
+    _chat_id_from_create_updates,
     _export_invite_link,
+    _first_chat_from_create_updates,
     _is_channel_entity,
     _marker_matches_user,
     _resolve_seed_user_for_create_chat,
+    _unwrap_create_chat_updates,
     ensure_player_in_support_group,
     export_invite_link_for_peer,
 )
@@ -22,6 +26,39 @@ class TestEntityHelpers(unittest.TestCase):
     def test_is_channel_entity(self) -> None:
         self.assertTrue(_is_channel_entity(MagicMock(spec=Channel)))
         self.assertFalse(_is_channel_entity(MagicMock(spec=Chat)))
+
+    def test_unwrap_create_chat_invited_users(self) -> None:
+        chat = MagicMock(spec=Chat)
+        updates = MagicMock()
+        updates.chats = [chat]
+        invited = InvitedUsers(updates=updates, missing_invitees=[])
+
+        self.assertIs(_unwrap_create_chat_updates(invited), updates)
+        self.assertIs(_first_chat_from_create_updates(updates), chat)
+
+    def test_unwrap_create_chat_legacy_updates(self) -> None:
+        chat = MagicMock(spec=Chat)
+        updates = MagicMock()
+        updates.chats = [chat]
+        updates.updates = []
+
+        self.assertIs(_unwrap_create_chat_updates(updates), updates)
+        self.assertIs(_first_chat_from_create_updates(updates), chat)
+
+    def test_chat_id_from_create_updates_fallback(self) -> None:
+        action = MessageActionChatCreate(title="CC / / player", users=[1])
+        peer = MagicMock()
+        peer.chat_id = 4242
+        msg = MagicMock()
+        msg.action = action
+        msg.peer_id = peer
+        upd = MagicMock()
+        upd.message = msg
+        updates = MagicMock()
+        updates.chats = []
+        updates.updates = [upd]
+
+        self.assertEqual(_chat_id_from_create_updates(updates), 4242)
 
     def test_marker_matches_user(self) -> None:
         user = MagicMock(spec=User)

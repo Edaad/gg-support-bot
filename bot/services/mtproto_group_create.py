@@ -18,7 +18,8 @@ from telethon.tl.functions.channels import (
     InviteToChannelRequest,
 )
 from telethon.tl.functions.messages import AddChatUserRequest, CreateChatRequest, EditChatPhotoRequest
-from telethon.tl.types import Channel, Chat, InputChatUploadedPhoto, User
+from telethon.tl.types import Channel, Chat, InputChatUploadedPhoto, MessageActionChatCreate, User
+from telethon.tl.types.messages import InvitedUsers
 
 from club_gc_settings import (
     ClubGcConfig,
@@ -276,6 +277,38 @@ async def authenticate_mtproto_password(cfg: ClubGcConfig, *, password: str) -> 
 
 def _is_channel_entity(entity: Any) -> bool:
     return isinstance(entity, Channel)
+
+
+def _unwrap_create_chat_updates(created: Any) -> Any:
+    """Normalize ``CreateChatRequest`` result (``Updates`` or ``messages.InvitedUsers``)."""
+
+    if isinstance(created, InvitedUsers):
+        return created.updates
+    return created
+
+
+def _first_chat_from_create_updates(updates: Any) -> Any | None:
+    chats = getattr(updates, "chats", None) or []
+    if chats:
+        return chats[0]
+    return None
+
+
+def _chat_id_from_create_updates(updates: Any) -> int | None:
+    """Fallback when ``Updates.chats`` is empty but the create service message is present."""
+
+    for upd in getattr(updates, "updates", None) or []:
+        msg = getattr(upd, "message", None)
+        if msg is None:
+            continue
+        action = getattr(msg, "action", None)
+        if not isinstance(action, MessageActionChatCreate):
+            continue
+        peer = getattr(msg, "peer_id", None)
+        chat_id = getattr(peer, "chat_id", None)
+        if chat_id is not None:
+            return int(chat_id)
+    return None
 
 
 async def _is_user_in_group(
@@ -573,15 +606,14 @@ async def _invite_user_entity(
 async def _invite_one(
     client: TelegramClient, group_entity, marker: str
 ) -> tuple[bool, str | None]:
+    m = (marker or "").strip()
+    if not m:
+        return False, "empty_marker"
     try:
         ent = await _with_single_flood_retry(
-            f"get_entity:{marker}",
-            lambda: client.get_entity(marker.strip()),
+            f"get_input_entity:{m}",
+            lambda: client.get_input_entity(m),
         )
-        if not _looks_like_invitable_user(ent):
-            return False, "not_a_user"
-        if not getattr(ent, "access_hash", None):
-            return False, "missing access_hash"
         return await _add_user_to_group(client, group_entity, ent)
     except Exception as e:
         low = repr(e).lower()
@@ -593,7 +625,7 @@ async def _invite_one(
         if "privacy" in low or "user_privacy" in low:
             readable = "privacy restricted"
         readable = readable[:500]
-        logger.info("Invite skipped for %s: %s", marker, type(e).__name__)
+        logger.warning("Invite failed for %s: %s", m, readable)
         return False, readable
 
 
@@ -755,8 +787,21 @@ async def create_support_group(
                 ),
             )
 
-            chat = created.chats[0] if getattr(created, "chats", None) else None
-            if not chat:
+            missing_invitees = getattr(created, "missing_invitees", None) or []
+            if missing_invitees:
+                logger.info(
+                    "CreateChat missing_invitees count=%s club=%s",
+                    len(missing_invitees),
+                    cfg.club_key,
+                )
+
+            updates = _unwrap_create_chat_updates(created)
+            chat = _first_chat_from_create_updates(updates)
+            if chat is None:
+                fallback_chat_id = _chat_id_from_create_updates(updates)
+                if fallback_chat_id is not None:
+                    chat = await client.get_entity(fallback_chat_id)
+            if chat is None:
                 raise RuntimeError("CreateChat succeeded but returned no chat.")
 
             group_ent = await client.get_entity(chat)
