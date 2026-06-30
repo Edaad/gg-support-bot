@@ -985,8 +985,8 @@
     "semantic_hash": "d0b88fcd554ad3bcec77a1a6dc8f5b63"
   },
   "bot/handlers/group_create.py": {
-    "mtime": 1782696075.976791,
-    "ast_hash": "2072183f4832b6118d362ae9edb717c7",
+    "mtime": 1782697400.611862,
+    "ast_hash": "4406b4756516ed5d00427c02d010ea84",
     "semantic_hash": ""
   },
   "bot/handlers/groups.py": {
@@ -1095,8 +1095,8 @@
     "semantic_hash": ""
   },
   "bot/services/group_chat_invite_links.py": {
-    "mtime": 1781060150.720882,
-    "ast_hash": "b228584ed169b7a157a036a9efe28460",
+    "mtime": 1782697338.566236,
+    "ast_hash": "bbe354a3e3d24a62e27aa50ea5c85e8d",
     "semantic_hash": ""
   },
   "bot/services/heroku_restart.py": {
@@ -1120,8 +1120,8 @@
     "semantic_hash": "563bb7e4bf87c4a7e0a2622d3109b5b4"
   },
   "bot/services/mtproto_dm_gc_listener.py": {
-    "mtime": 1782696667.8232532,
-    "ast_hash": "21f4eb5fa704fa45185becab2fb4bea3",
+    "mtime": 1782697410.0535057,
+    "ast_hash": "fe6ef2aa01ef1f284f1f4a4a36568220",
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_add.py": {
@@ -3155,8 +3155,8 @@
     "semantic_hash": ""
   },
   "bot/services/mtproto_group_join.py": {
-    "mtime": 1782696038.9144022,
-    "ast_hash": "0bd851f228f376e989b3dd522e0b836f",
+    "mtime": 1782697333.8347797,
+    "ast_hash": "fb6a8beb5119404301bf775101eb0b94",
     "semantic_hash": ""
   },
   "tests/test_elevate_gc.py": {
@@ -3524,11 +3524,6 @@
     "ast_hash": "0abc774657725a7a2ac7be17c2511c8a",
     "semantic_hash": ""
   },
-  "tests/test_dm_gc_existing_invite.py": {
-    "mtime": 1782680901.8706782,
-    "ast_hash": "972d5a1dfe55d1904d33129b6afa1d58",
-    "semantic_hash": ""
-  },
   "tests/test_gg_computer_mongo.py": {
     "mtime": 1782680736.1772192,
     "ast_hash": "8af6e3a81fe3436c356811dd7cb99302",
@@ -3537,6 +3532,11 @@
   "tests/test_bind_player_gc_reuse.py": {
     "mtime": 1782696680.5049446,
     "ast_hash": "357a59a76e951578df79920d1ba0e5c0",
+    "semantic_hash": ""
+  },
+  "tests/test_support_group_invite_resolve.py": {
+    "mtime": 1782697430.98631,
+    "ast_hash": "13fc4affaec007c2ed85d3775a54d4c9",
     "semantic_hash": ""
   }
 }

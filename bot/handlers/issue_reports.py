@@ -8,6 +8,7 @@ from io import BytesIO
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatType
 from telegram.ext import (
+    ApplicationHandlerStop,
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
@@ -81,6 +82,20 @@ _TRIAGE_MODE_EVIDENCE = "evidence"
 _TRIAGE_MODE_RESOLVE_NOTES = "resolve_notes"
 _TRIAGE_MODE_RESOLVE_EVIDENCE = "resolve_evidence"
 
+_WIZARD_ONLY_KEYS = (
+    "ir_draft_id",
+    "ir_club_id",
+    "ir_group_title",
+    "ir_telegram_chat_id",
+    "ir_notify_tags",
+    "ir_title",
+    "ir_details",
+    "ir_evidence",
+    "ir_admin_id",
+)
+
+_report_conversation: ConversationHandler | None = None
+
 
 def _can_use_issue_reports(user_id: int) -> bool:
     if user_id in ADMIN_USER_IDS:
@@ -107,6 +122,25 @@ def sync_report_conv_state(
         conversation._conversations.pop(key, None)
     else:
         conversation._conversations[key] = new_state
+
+
+def _cleanup_report_wizard(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clear /report wizard keys without touching /reports triage state."""
+    if context.user_data.get("active_bot_flow") == "issue_report":
+        clear_active_flow(context)
+    for key in _WIZARD_ONLY_KEYS:
+        context.user_data.pop(key, None)
+
+
+def _prepare_triage_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """End a stale /report wizard so triage follow-ups are not swallowed."""
+    _cleanup_report_wizard(context)
+    if _report_conversation is not None:
+        sync_report_conv_state(_report_conversation, update, ConversationHandler.END)
+
+
+def issue_report_triage_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    return bool(context.user_data.get("ir_triage_mode"))
 
 
 async def _reply_long(message, text: str) -> None:
@@ -157,19 +191,21 @@ def _resolve_evidence_keyboard() -> InlineKeyboardMarkup:
 
 async def _start_resolve_flow(
     *,
+    update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     report_id: int,
     send,
 ) -> None:
     with get_db() as session:
         report = get_issue_report(session, report_id)
-    if not report:
-        await send(f"Report #{report_id} not found.")
-        return
-    if report.status == "resolved":
-        await send(f"Report #{report_id} is already resolved.")
-        return
+        if not report:
+            await send(f"Report #{report_id} not found.")
+            return
+        if report.status == "resolved":
+            await send(f"Report #{report_id} is already resolved.")
+            return
 
+    _prepare_triage_flow(update, context)
     context.user_data["ir_triage_report_id"] = report_id
     context.user_data["ir_triage_mode"] = _TRIAGE_MODE_RESOLVE_NOTES
     context.user_data["ir_resolve_notes"] = None
@@ -185,12 +221,18 @@ async def _finish_resolve(
     context: ContextTypes.DEFAULT_TYPE,
     *,
     reply,
+    reply_fallback=None,
 ) -> None:
     report_id = context.user_data.get("ir_triage_report_id")
     notes = context.user_data.get("ir_resolve_notes")
     files = list(context.user_data.get("ir_resolve_evidence") or [])
     user = update.effective_user
     if not report_id or not user:
+        message = "Resolve flow expired. Send /reports ID resolve again."
+        if reply_fallback is not None:
+            await reply_fallback(message)
+        else:
+            await reply(message)
         return
 
     try:
@@ -210,7 +252,13 @@ async def _finish_resolve(
     context.user_data.pop("ir_triage_report_id", None)
     context.user_data.pop("ir_resolve_notes", None)
     context.user_data.pop("ir_resolve_evidence", None)
-    await reply(format_resolve_result(result))
+    try:
+        await reply(format_resolve_result(result))
+    except Exception:
+        if reply_fallback is not None:
+            await reply_fallback(format_resolve_result(result))
+        else:
+            raise
 
 
 async def resolve_evidence_callback(
@@ -229,13 +277,31 @@ async def resolve_evidence_callback(
         await query.edit_message_text("Resolve cancelled.")
         return
 
-    if context.user_data.get("ir_triage_mode") != _TRIAGE_MODE_RESOLVE_EVIDENCE:
+    mode = context.user_data.get("ir_triage_mode")
+    if mode == _TRIAGE_MODE_RESOLVE_NOTES:
+        await query.edit_message_text(
+            "Enter how the issue was resolved first, then tap Skip or Done."
+        )
+        return
+    if mode != _TRIAGE_MODE_RESOLVE_EVIDENCE:
+        await query.edit_message_text(
+            "Resolve flow expired. Send /reports ID resolve again."
+        )
         return
 
     async def reply(text: str) -> None:
         await query.edit_message_text(text)
 
-    await _finish_resolve(update, context, reply=reply)
+    async def reply_fallback(text: str) -> None:
+        if query.message:
+            await query.message.reply_text(text)
+
+    await _finish_resolve(
+        update,
+        context,
+        reply=reply,
+        reply_fallback=reply_fallback,
+    )
 
 
 def _detail_keyboard(report_id: int, *, status: str) -> InlineKeyboardMarkup:
@@ -731,6 +797,7 @@ async def reports_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         if len(args) >= 2 and args[1].lower() == "resolve":
             await _start_resolve_flow(
+                update=update,
                 context=context,
                 report_id=report_id,
                 send=update.message.reply_text,
@@ -742,6 +809,7 @@ async def reports_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             if not report:
                 await update.message.reply_text(f"Report #{report_id} not found.")
                 return
+            _prepare_triage_flow(update, context)
             context.user_data["ir_triage_report_id"] = report_id
             context.user_data["ir_triage_mode"] = _TRIAGE_MODE_EDIT
             await update.message.reply_text(
@@ -754,6 +822,7 @@ async def reports_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             if not report:
                 await update.message.reply_text(f"Report #{report_id} not found.")
                 return
+            _prepare_triage_flow(update, context)
             context.user_data["ir_triage_report_id"] = report_id
             context.user_data["ir_triage_mode"] = _TRIAGE_MODE_EVIDENCE
             await update.message.reply_text(
@@ -803,6 +872,7 @@ async def triage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     with get_db() as session:
         if action == "resolve":
             await _start_resolve_flow(
+                update=update,
                 context=context,
                 report_id=report_id,
                 send=query.edit_message_text,
@@ -814,6 +884,7 @@ async def triage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             if not report:
                 await query.edit_message_text(f"Report #{report_id} not found.")
                 return
+            _prepare_triage_flow(update, context)
             context.user_data["ir_triage_report_id"] = report_id
             context.user_data["ir_triage_mode"] = _TRIAGE_MODE_EDIT
             await query.edit_message_text(
@@ -826,6 +897,7 @@ async def triage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             if not report:
                 await query.edit_message_text(f"Report #{report_id} not found.")
                 return
+            _prepare_triage_flow(update, context)
             context.user_data["ir_triage_report_id"] = report_id
             context.user_data["ir_triage_mode"] = _TRIAGE_MODE_EVIDENCE
             await query.edit_message_text(
@@ -857,6 +929,13 @@ async def triage_followup_message(
             context.user_data.pop("ir_triage_report_id", None)
             context.user_data.pop("ir_triage_evidence", None)
             await update.message.reply_text(f"Evidence saved for report #{report_id}.")
+            return
+        if mode == _TRIAGE_MODE_RESOLVE_EVIDENCE:
+            async def reply(text: str) -> None:
+                await update.message.reply_text(text)
+
+            await _finish_resolve(update, context, reply=reply)
+            return
         return
 
     if mode == _TRIAGE_MODE_RESOLVE_NOTES and update.message.text:
@@ -991,9 +1070,29 @@ def get_report_conversation_handler() -> ConversationHandler:
     )
 
 
+async def triage_followup_priority(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Run triage follow-ups before other private DM handlers."""
+    if not issue_report_triage_active(context):
+        return
+    await triage_followup_message(update, context)
+    raise ApplicationHandlerStop()
+
+
+async def resolve_evidence_priority(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle resolve Skip/Done/Cancel before other callback handlers."""
+    await resolve_evidence_callback(update, context)
+    raise ApplicationHandlerStop()
+
+
 def register_issue_report_handlers(app) -> None:
     """Register escalate, draft cancel, wizard, triage, and follow-up handlers."""
+    global _report_conversation
     conv = get_report_conversation_handler()
+    _report_conversation = conv
 
     async def on_draft_continue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         try:
@@ -1014,6 +1113,21 @@ def register_issue_report_handlers(app) -> None:
     app.add_handler(CallbackQueryHandler(on_draft_continue, pattern=r"^ir_draft:\d+$"))
     app.add_handler(
         CallbackQueryHandler(draft_cancel_callback, pattern=r"^ir_draft_cancel:\d+$")
+    )
+    app.add_handler(
+        MessageHandler(
+            filters.ChatType.PRIVATE & (filters.TEXT | filters.PHOTO) & ~filters.COMMAND,
+            triage_followup_priority,
+            block=True,
+        ),
+        group=-1,
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            resolve_evidence_priority,
+            pattern=r"^ir_resolve_(skip|done|cancel)$",
+        ),
+        group=-1,
     )
     app.add_handler(conv)
     app.add_handler(CommandHandler("reports", reports_handler))
