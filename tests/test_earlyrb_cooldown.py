@@ -35,7 +35,7 @@ class EarlyrbEligibilityTestCase(unittest.TestCase):
         self.assertIsNotNone(msg)
         assert msg is not None
         self.assertIn("early rakeback requests", msg)
-        self.assertIn("/earlyrb", msg)
+        self.assertIn("50 minimum", msg)
 
     @patch("bot.services.club.get_last_activity_by_type")
     @patch("bot.services.club.get_cooldown_settings")

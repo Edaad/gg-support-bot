@@ -1000,6 +1000,13 @@ def _format_cooldown_wait(
     return False, wait_str, eligible_at_est
 
 
+EARLYRB_COOLDOWN_DENIAL_MESSAGE = (
+    "Sorry, you must wait 24 hours between early rakeback requests. "
+    "Inquiries are limited to once every 24 hours. "
+    "If you don't meet the 50 minimum, you'll need to wait another 24 hours before trying again."
+)
+
+
 def check_earlyrb_eligibility(
     club_id: int, chat_id: int
 ) -> tuple[bool, Optional[str]]:
@@ -1012,23 +1019,11 @@ def check_earlyrb_eligibility(
     if last is None:
         return True, None
 
-    cooldown_passed, wait_str, eligible_at_est = _format_cooldown_wait(
-        last, cooldown_hours, now_utc
-    )
+    cooldown_passed, _, _ = _format_cooldown_wait(last, cooldown_hours, now_utc)
     if cooldown_passed:
         return True, None
 
-    elig_time = eligible_at_est.strftime("%-I:%M %p") if eligible_at_est else ""
-    elig_day = (
-        _day_label(eligible_at_est.date(), now_utc.astimezone(EST).date())
-        if eligible_at_est
-        else ""
-    )
-    return False, (
-        f"Sorry, you must wait {cooldown_hours} hours between early rakeback requests! "
-        f"Your remaining waiting time is {wait_str}.\n\n"
-        f"You can use /earlyrb again at {elig_time} EST {elig_day}."
-    )
+    return False, EARLYRB_COOLDOWN_DENIAL_MESSAGE
 
 
 def check_cashout_eligibility(
