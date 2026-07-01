@@ -3245,8 +3245,8 @@
     "semantic_hash": ""
   },
   "bot/handlers/issue_reports.py": {
-    "mtime": 1782787432.8430605,
-    "ast_hash": "2bf34ff488dc916a98eb5e7acfbee3f2",
+    "mtime": 1782818618.885591,
+    "ast_hash": "b98dacfedb8b901a203e464861e8c465",
     "semantic_hash": ""
   },
   "bot/services/issue_report_drafts.py": {
@@ -3537,6 +3537,11 @@
   "tests/test_support_group_invite_resolve.py": {
     "mtime": 1782697514.1224396,
     "ast_hash": "7ed25f5c81298f48a50b5e91b537ceaf",
+    "semantic_hash": ""
+  },
+  "tests/test_issue_report_triage_resolve.py": {
+    "mtime": 1782818673.4238539,
+    "ast_hash": "efcf3e091ac2e0507dac2662405ed29e",
     "semantic_hash": ""
   }
 }

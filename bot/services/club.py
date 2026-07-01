@@ -827,6 +827,12 @@ def cancel_last_cashout_activity(club_id: int, chat_id: int) -> None:
             activity.cancelled = True
 
 
+def _normalize_activity_timestamp(ts: datetime) -> datetime:
+    if ts.tzinfo is None:
+        return ts.replace(tzinfo=timezone.utc)
+    return ts
+
+
 def get_last_activity(club_id: int, chat_id: int) -> Optional[datetime]:
     """Return created_at (UTC) of the latest non-cancelled deposit or cashout in this group, or None."""
     with get_db() as session:
@@ -841,10 +847,28 @@ def get_last_activity(club_id: int, chat_id: int) -> Optional[datetime]:
             .first()
         )
         if activity and activity.created_at:
-            ts = activity.created_at
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
-            return ts
+            return _normalize_activity_timestamp(activity.created_at)
+    return None
+
+
+def get_last_activity_by_type(
+    club_id: int, chat_id: int, activity_type: str
+) -> Optional[datetime]:
+    """Return created_at (UTC) of the latest non-cancelled activity of the given type, or None."""
+    with get_db() as session:
+        activity = (
+            session.query(PlayerActivity)
+            .filter_by(
+                club_id=club_id,
+                chat_id=chat_id,
+                activity_type=activity_type,
+                cancelled=False,
+            )
+            .order_by(PlayerActivity.created_at.desc())
+            .first()
+        )
+        if activity and activity.created_at:
+            return _normalize_activity_timestamp(activity.created_at)
     return None
 
 
@@ -948,6 +972,65 @@ def _hours_range_str(settings: dict) -> str:
     return f"{fmt_s} - {fmt_e}"
 
 
+def _format_cooldown_wait(
+    last: datetime,
+    cooldown_hours: int,
+    now_utc: datetime,
+) -> tuple[bool, str, Optional[datetime]]:
+    """Return (cooldown_passed, wait_str, eligible_at_est). eligible_at_est set when in cooldown."""
+    eligible_at_utc = last + timedelta(hours=cooldown_hours)
+    if now_utc >= eligible_at_utc:
+        return True, "", None
+
+    eligible_at_est = eligible_at_utc.astimezone(EST)
+    remaining = eligible_at_utc - now_utc
+    hours_left = int(remaining.total_seconds() // 3600)
+    mins_left = int((remaining.total_seconds() % 3600) // 60)
+
+    if hours_left > 0 and mins_left > 0:
+        wait_str = (
+            f"{hours_left} hour{'s' if hours_left != 1 else ''} and "
+            f"{mins_left} minute{'s' if mins_left != 1 else ''}"
+        )
+    elif hours_left > 0:
+        wait_str = f"{hours_left} hour{'s' if hours_left != 1 else ''}"
+    else:
+        wait_str = f"{mins_left} minute{'s' if mins_left != 1 else ''}"
+
+    return False, wait_str, eligible_at_est
+
+
+def check_earlyrb_eligibility(
+    club_id: int, chat_id: int
+) -> tuple[bool, Optional[str]]:
+    """Check early-rakeback cooldown for this support group. Returns (eligible, denial_message)."""
+    settings = get_cooldown_settings(club_id)
+    cooldown_hours = (settings or {}).get("cooldown_hours") or 24
+
+    now_utc = datetime.now(timezone.utc)
+    last = get_last_activity_by_type(club_id, chat_id, "earlyrb")
+    if last is None:
+        return True, None
+
+    cooldown_passed, wait_str, eligible_at_est = _format_cooldown_wait(
+        last, cooldown_hours, now_utc
+    )
+    if cooldown_passed:
+        return True, None
+
+    elig_time = eligible_at_est.strftime("%-I:%M %p") if eligible_at_est else ""
+    elig_day = (
+        _day_label(eligible_at_est.date(), now_utc.astimezone(EST).date())
+        if eligible_at_est
+        else ""
+    )
+    return False, (
+        f"Sorry, you must wait {cooldown_hours} hours between early rakeback requests! "
+        f"Your remaining waiting time is {wait_str}.\n\n"
+        f"You can use /earlyrb again at {elig_time} EST {elig_day}."
+    )
+
+
 def check_cashout_eligibility(
     club_id: int, chat_id: int
 ) -> tuple[bool, Optional[str]]:
@@ -971,22 +1054,11 @@ def check_cashout_eligibility(
         if not bypass:
             last = get_last_activity(club_id, chat_id)
             if last is not None:
-                cooldown_td = timedelta(hours=settings["cooldown_hours"])
-                eligible_at_utc = last + cooldown_td
-
-                if now_utc < eligible_at_utc:
+                passed, wait_str, eligible_at_est = _format_cooldown_wait(
+                    last, settings["cooldown_hours"], now_utc
+                )
+                if not passed:
                     cooldown_passed = False
-                    eligible_at_est = eligible_at_utc.astimezone(EST)
-                    remaining = eligible_at_utc - now_utc
-                    hours_left = int(remaining.total_seconds() // 3600)
-                    mins_left = int((remaining.total_seconds() % 3600) // 60)
-
-                    if hours_left > 0 and mins_left > 0:
-                        wait_str = f"{hours_left} hour{'s' if hours_left != 1 else ''} and {mins_left} minute{'s' if mins_left != 1 else ''}"
-                    elif hours_left > 0:
-                        wait_str = f"{hours_left} hour{'s' if hours_left != 1 else ''}"
-                    else:
-                        wait_str = f"{mins_left} minute{'s' if mins_left != 1 else ''}"
 
     # ── Eligible + within business hours → allow ──────────────────────────
     if cooldown_passed and (not hours_on or _is_within_hours(now_est, settings["hours_start"], settings["hours_end"])):

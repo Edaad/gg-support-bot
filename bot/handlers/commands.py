@@ -36,6 +36,7 @@ RESERVED_CMDS = {
     "stripe", "cashapp", "stageinactive", "unstageinactive", "stagedinactive",
     "sendinactive",
     "bonus",
+    "earlyrb",
 }
 
 SET_NAME, SET_MESSAGE = range(2)

@@ -126,6 +126,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
     )
     from bot.handlers.deposit import get_deposit_handler
     from bot.handlers.cashout import get_cashout_handler
+    from bot.handlers.earlyrb import earlyrb_handler
     from bot.handlers.flow_cancel import flow_cancel_handler
     from bot.handlers.list_cmd import list_handler
     from bot.handlers.groups import (
@@ -187,6 +188,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         command_router=command_router,
         get_deposit_handler=get_deposit_handler,
         get_cashout_handler=get_cashout_handler,
+        earlyrb_handler=earlyrb_handler,
         flow_cancel_handler=flow_cancel_handler,
         list_handler=list_handler,
         on_chat_migrate_from=on_chat_migrate_from,
@@ -348,6 +350,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(h.get_set_handler())
     app.add_handler(h.get_deposit_handler())
     app.add_handler(h.get_cashout_handler())
+    app.add_handler(CommandHandler("earlyrb", h.earlyrb_handler))
     app.add_handler(CommandHandler("cancel", h.flow_cancel_handler))
     app.add_handler(h.get_gc_handler())
 
