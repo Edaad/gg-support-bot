@@ -2,6 +2,8 @@
 
 PLAYER_ADDED_SUCCESS_MESSAGE = (
     "🎉 You’ve been added to your personal dedicated support group chat with our entire support staff!\n\n"
+    "Here is your group invite link:\n"
+    "{invite_link}\n\n"
     "Please message us there for all communication going forward so our team can help you quickly and properly. 🚀"
 )
 

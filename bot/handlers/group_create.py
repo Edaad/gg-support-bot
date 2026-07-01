@@ -269,7 +269,8 @@ async def _finish_gc_creation(
     if player_user is not None and outcome.telegram_chat_id is not None:
         await _resolve_outcome_invite_link(cfg, outcome)
         if outcome.player_direct_add_ok:
-            dm_body = PLAYER_ADDED_SUCCESS_MESSAGE
+            link = (outcome.invite_link or "").strip() or "(invite link unavailable)"
+            dm_body = PLAYER_ADDED_SUCCESS_MESSAGE.format(invite_link=link)
             player_dm_status = "player_added_success"
         else:
             link = (outcome.invite_link or "").strip() or "(invite link unavailable)"

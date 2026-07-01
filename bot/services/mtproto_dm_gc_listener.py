@@ -459,7 +459,9 @@ async def _flow_new_group(
 
     link = (invite_link_out or "").strip()
     if outcome.player_direct_add_ok:
-        dm_body = PLAYER_ADDED_SUCCESS_MESSAGE
+        dm_body = PLAYER_ADDED_SUCCESS_MESSAGE.format(
+            invite_link=link or "(invite link unavailable)"
+        )
         dm_status = "player_added_success"
     else:
         dm_body = PLAYER_INVITE_FALLBACK_MESSAGE.format(
