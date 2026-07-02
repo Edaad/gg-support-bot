@@ -12,9 +12,9 @@ Design goals:
 - **Idempotent.** ``request_id`` is derived from the Telegram message id so the
   same ``/add`` can never double-send (and the two internal /add code paths can
   never both fire a deposit).
-- **Round Table vs Aces Table** uses the customer's last ``/deposit`` union choice
-  when one exists (even if stale). If the customer never picked RT/AT, defaults to
-  **RT** (Round Table / TMT).
+- **Round Table vs Aces Table** uses the group title prefix when it is only ``RT`` or
+  only ``AT``. When the title shows both (``RT AT / …``), uses the customer's last
+  ``/deposit`` union choice (defaults to **RT** if they never picked).
 
 All configuration is via environment variables (see ``.env.example``). The
 per-club on/off switch lives in the database (``clubs.auto_chip_adding_enabled``).
@@ -40,8 +40,8 @@ from bot.services.club import (
     get_group_title_for_chat,
     get_last_deposit_union,
 )
-from bot.services.player_details import gg_player_id_from_title
-from bot.services.round_table_unions import ROUND_TABLE_CLUB_NAME
+from bot.services.player_details import gg_player_id_from_title, parse_group_title_parts
+from bot.services.round_table_unions import ROUND_TABLE_CLUB_NAME, ROUND_TABLE_UNION_SHORTHANDS
 
 logger = logging.getLogger(__name__)
 
@@ -326,6 +326,28 @@ def _resolve_round_table_union_shorthand(union_shorthand: Optional[str]) -> str:
     return "RT"
 
 
+def _round_table_union_shorthands_in_title(title: Optional[str]) -> frozenset[str]:
+    parsed = parse_group_title_parts(title)
+    if not parsed:
+        return frozenset()
+    return frozenset(
+        s for s in parsed.shorthands if s in ROUND_TABLE_UNION_SHORTHANDS
+    )
+
+
+def _resolve_round_table_union_for_auto_chip_add(
+    title: Optional[str],
+    stored_union: Optional[str],
+) -> str:
+    """Pick RT vs AT for Round Table auto chip-add from title prefix and deposit history."""
+    title_unions = _round_table_union_shorthands_in_title(title)
+    if title_unions == frozenset({"AT"}):
+        return "AT"
+    if title_unions == frozenset({"RT"}):
+        return "RT"
+    return _resolve_round_table_union_shorthand(stored_union)
+
+
 async def _run_single_deposit(
     cfg: _Config,
     client: httpx.AsyncClient,
@@ -427,21 +449,54 @@ async def trigger_auto_chip_add(
         club = await asyncio.to_thread(get_club_by_id, int(club_id))
         club_name = club.name if club else None
 
-        # Round Table: use stored RT/AT when present (even if stale); else default RT.
+        # Round Table: title-only AT/RT, or deposit union when title has both.
         union_shorthand: Optional[str] = None
         if (club_name or "").strip().lower() == ROUND_TABLE_CLUB_NAME.strip().lower():
             stored_union, recorded_at = await asyncio.to_thread(
                 get_last_deposit_union, int(chat_id)
             )
-            union_shorthand = _resolve_round_table_union_shorthand(stored_union)
-            if not (stored_union or "").strip():
+            title_unions = _round_table_union_shorthands_in_title(title)
+            union_shorthand = _resolve_round_table_union_for_auto_chip_add(
+                title, stored_union
+            )
+            if title_unions == frozenset({"AT"}):
                 logger.info(
-                    "auto_chip_add: no RT/AT union on chat %s; defaulting to RT",
+                    "auto_chip_add: title prefix AT only on chat %s -> Aces Table",
+                    chat_id,
+                )
+            elif title_unions == frozenset({"RT"}):
+                logger.info(
+                    "auto_chip_add: title prefix RT only on chat %s -> Round Table",
+                    chat_id,
+                )
+            elif title_unions >= frozenset({"RT", "AT"}):
+                if not (stored_union or "").strip():
+                    logger.info(
+                        "auto_chip_add: title RT+AT on chat %s; no deposit union; "
+                        "defaulting to RT",
+                        chat_id,
+                    )
+                elif not _union_is_fresh(recorded_at, cfg.union_max_age_hours):
+                    logger.info(
+                        "auto_chip_add: title RT+AT on chat %s; using stale deposit "
+                        "union %s",
+                        chat_id,
+                        union_shorthand,
+                    )
+                else:
+                    logger.info(
+                        "auto_chip_add: title RT+AT on chat %s; using deposit union %s",
+                        chat_id,
+                        union_shorthand,
+                    )
+            elif not (stored_union or "").strip():
+                logger.info(
+                    "auto_chip_add: no RT/AT in title on chat %s; defaulting to RT",
                     chat_id,
                 )
             elif not _union_is_fresh(recorded_at, cfg.union_max_age_hours):
                 logger.info(
-                    "auto_chip_add: using stale RT/AT union %s for chat %s",
+                    "auto_chip_add: using stale RT/AT deposit union %s for chat %s",
                     union_shorthand,
                     chat_id,
                 )

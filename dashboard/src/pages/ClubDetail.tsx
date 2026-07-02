@@ -294,8 +294,9 @@ function GeneralTab({
           </label>
           <p className="ml-6 text-xs text-ink-muted">
             When enabled, an admin /add in a linked group also sends the chips to ClubGG
-            automatically (player id + amount from the group; Round Table vs Aces Table from
-            the customer's last deposit choice, or Round Table if they never picked).
+            automatically (player id + amount from the group). Round Table vs Aces Table:
+            title prefix AT only → Aces; RT only → Round Table; RT AT → customer's last
+            /deposit union choice (Round Table if they never picked).
             The /add confirmation the customer sees is unchanged. When disabled, /add behaves
             exactly as before. Requires the deposit-bot API to be configured on the worker.
           </p>

@@ -1,6 +1,7 @@
 import unittest
 
 from bot.services.clubgg_deposit_api import (
+    _resolve_round_table_union_for_auto_chip_add,
     _resolve_round_table_union_shorthand,
     resolve_clubgg_club_name,
 )
@@ -20,6 +21,66 @@ class TestRoundTableUnionResolution(unittest.TestCase):
 
     def test_invalid_stored_union_defaults_rt(self) -> None:
         self.assertEqual(_resolve_round_table_union_shorthand("XX"), "RT")
+
+    def test_title_at_only_routes_to_aces(self) -> None:
+        self.assertEqual(
+            _resolve_round_table_union_for_auto_chip_add(
+                "AT / 1234-5678 / Player", None
+            ),
+            "AT",
+        )
+        self.assertEqual(
+            _resolve_round_table_union_for_auto_chip_add(
+                "AT / 1234-5678 / Player", "RT"
+            ),
+            "AT",
+        )
+
+    def test_title_rt_only_routes_to_round_table(self) -> None:
+        self.assertEqual(
+            _resolve_round_table_union_for_auto_chip_add(
+                "RT / 1234-5678 / Player", None
+            ),
+            "RT",
+        )
+        self.assertEqual(
+            _resolve_round_table_union_for_auto_chip_add(
+                "RT / 1234-5678 / Player", "AT"
+            ),
+            "RT",
+        )
+
+    def test_title_both_uses_deposit_union(self) -> None:
+        self.assertEqual(
+            _resolve_round_table_union_for_auto_chip_add(
+                "RT AT / 1234-5678 / Player", "AT"
+            ),
+            "AT",
+        )
+        self.assertEqual(
+            _resolve_round_table_union_for_auto_chip_add(
+                "RT AT / 8190-5287 / ThePirate343", "RT"
+            ),
+            "RT",
+        )
+        self.assertEqual(
+            _resolve_round_table_union_for_auto_chip_add(
+                "RT AT / 1234-5678 / Player", None
+            ),
+            "RT",
+        )
+
+    def test_no_title_unions_falls_back_to_deposit_union(self) -> None:
+        self.assertEqual(
+            _resolve_round_table_union_for_auto_chip_add(None, "AT"),
+            "AT",
+        )
+        self.assertEqual(
+            _resolve_round_table_union_for_auto_chip_add(
+                "GTO / 1234-5678 / Player", "AT"
+            ),
+            "AT",
+        )
 
     def test_resolve_clubgg_club_name_round_table(self) -> None:
         self.assertEqual(
