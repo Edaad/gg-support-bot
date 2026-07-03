@@ -2,7 +2,9 @@ import { useCallback, useEffect, useId, useState } from 'react'
 import {
   downloadAuditExport,
   listTradeRecordUploads,
+  syncEarlyRakeback,
   uploadTradeRecord,
+  type EarlyRakebackSyncReport,
   type TradeRecordUploadReport,
   type TradeRecordUploadSummary,
 } from '../api/auditClient'
@@ -16,8 +18,10 @@ export default function Audit({ token }: { token: string }) {
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [syncingEarlyRb, setSyncingEarlyRb] = useState(false)
   const [err, setErr] = useState('')
   const [report, setReport] = useState<TradeRecordUploadReport | null>(null)
+  const [earlyRbReport, setEarlyRbReport] = useState<EarlyRakebackSyncReport | null>(null)
   const [history, setHistory] = useState<TradeRecordUploadSummary[]>([])
 
   const loadHistory = useCallback(async () => {
@@ -66,6 +70,24 @@ export default function Audit({ token }: { token: string }) {
       setErr(e instanceof Error ? e.message : 'Audit export failed.')
     } finally {
       setExporting(false)
+    }
+  }
+
+  const onSyncEarlyRb = async () => {
+    if (!exportDate) {
+      setErr('Select a date before syncing early rakeback.')
+      return
+    }
+    setSyncingEarlyRb(true)
+    setErr('')
+    setEarlyRbReport(null)
+    try {
+      const result = await syncEarlyRakeback(token, exportDate)
+      setEarlyRbReport(result)
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Early rakeback sync failed.')
+    } finally {
+      setSyncingEarlyRb(false)
     }
   }
 
@@ -143,8 +165,8 @@ export default function Audit({ token }: { token: string }) {
         <h2 className="mb-2 text-lg font-semibold text-ink">Export audit data</h2>
         <p className="mb-4 text-sm text-ink-muted">
           Download receipt-style deposit transactions across every club for one day. One XLSX file
-          with tabs for Stripe, Zelle, Venmo, Cash App, PayPal, plus blank bonus and early
-          rakeback sheets for manual entry. Date uses US Eastern (ET).
+          with tabs for Stripe, Zelle, Venmo, Cash App, PayPal, plus bonus and early rakeback
+          sheets. Sync early RB from aon-beta before export; the export reads stored rows only.
         </p>
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -161,6 +183,14 @@ export default function Audit({ token }: { token: string }) {
           </div>
           <button
             type="button"
+            disabled={syncingEarlyRb || !exportDate}
+            onClick={() => void onSyncEarlyRb()}
+            className="btn-primary-sm disabled:opacity-40"
+          >
+            {syncingEarlyRb ? 'Syncing…' : 'Sync early RB'}
+          </button>
+          <button
+            type="button"
             disabled={exporting || !exportDate}
             onClick={() => void onExport()}
             className="btn-primary-sm disabled:opacity-40"
@@ -168,6 +198,26 @@ export default function Audit({ token }: { token: string }) {
             {exporting ? 'Exporting…' : 'Export XLSX'}
           </button>
         </div>
+
+        {earlyRbReport ? (
+          <div className="mt-4 rounded-md border border-border bg-surface-raised p-4 text-sm">
+            <p className="mb-2 font-semibold text-ink">Early RB sync complete</p>
+            <ul className="space-y-1 text-ink-muted">
+              <li>
+                {earlyRbReport.audit_date}: {earlyRbReport.total_lines_stored} line(s) stored
+                across {earlyRbReport.clubs_synced} club(s)
+              </li>
+              {earlyRbReport.total_lines_skipped_unmapped > 0 ? (
+                <li>
+                  Skipped unmapped: {earlyRbReport.total_lines_skipped_unmapped}
+                </li>
+              ) : null}
+              {earlyRbReport.warnings.length > 0 ? (
+                <li>Warnings: {earlyRbReport.warnings.join('; ')}</li>
+              ) : null}
+            </ul>
+          </div>
+        ) : null}
       </section>
 
       {history.length > 0 ? (

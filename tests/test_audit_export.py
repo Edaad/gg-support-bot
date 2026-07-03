@@ -19,6 +19,7 @@ from api.audit_export import (
     ManualAuditRow,
     StripeAuditRow,
     TaggedManualAuditRow,
+    _bonus_group_cell,
     _fmt_manual_audit_time,
     _fmt_stripe_audit_time,
     _manual_club_name,
@@ -35,7 +36,7 @@ from api.payments_helpers import build_crypto_payment_read
 from api.routes.payments import router
 from bot.services.crypto_payments import ALERT_SCOPE_LABELS, ALERT_SCOPE_CLUBGTO
 from db.connection import get_db_dependency
-from db.models import CryptoPayment
+from db.models import BonusRecord, BonusType, CryptoPayment
 
 TOKEN = create_token()
 
@@ -92,6 +93,18 @@ class AuditExportFormattingTestCase(unittest.TestCase):
         dt = datetime(2026, 6, 19, 4, 34, tzinfo=timezone.utc)
         self.assertEqual(_fmt_manual_audit_time(dt), "June 19, 2026 at 12:34 AM")
 
+    def test_fmt_manual_audit_time_clubgto_shows_new_york_time(self):
+        """Display is always Eastern; club policy affects bucketing only."""
+        dt = datetime(2026, 7, 4, 2, 30, tzinfo=timezone.utc)
+        self.assertEqual(
+            _fmt_manual_audit_time(dt, club_slug="clubgto"),
+            "July 3, 2026 at 10:30 PM",
+        )
+        self.assertEqual(
+            _fmt_manual_audit_time(dt, club_slug="round-table"),
+            "July 3, 2026 at 10:30 PM",
+        )
+
     def test_stripe_player_cell_uses_group_title_when_present(self):
         self.assertEqual(
             _stripe_player_cell(
@@ -119,6 +132,31 @@ class AuditExportFormattingTestCase(unittest.TestCase):
             _manual_group_cell({"group_title": "GTO / 3011-9668 / Pvtenis"}),
             "GTO / 3011-9668 / Pvtenis",
         )
+
+    def test_bonus_group_cell_uses_type_name(self):
+        record = BonusRecord(
+            player_username="@player",
+            amount=Decimal("50.00"),
+            bonus_type=BonusType(name="Referral"),
+        )
+        self.assertEqual(_bonus_group_cell(record), "Referral")
+
+    def test_bonus_group_cell_uses_custom_description_for_other(self):
+        record = BonusRecord(
+            player_username="@player",
+            amount=Decimal("25.00"),
+            custom_description="Birthday promo",
+        )
+        self.assertEqual(_bonus_group_cell(record), "Birthday promo")
+
+    def test_bonus_group_cell_combines_type_and_description(self):
+        record = BonusRecord(
+            player_username="@player",
+            amount=Decimal("10.00"),
+            bonus_type=BonusType(name="VIP"),
+            custom_description="Extra comp",
+        )
+        self.assertEqual(_bonus_group_cell(record), "VIP — Extra comp")
 
     def test_manual_group_cell_empty_when_unbound(self):
         self.assertEqual(_manual_group_cell({}), "")
@@ -244,16 +282,18 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         self.assertEqual(data["alert_scope_label"], ALERT_SCOPE_LABELS[ALERT_SCOPE_CLUBGTO])
         self.assertIn("0xfrom", data["from_label"])
 
+    @patch("api.audit_export._fetch_early_rakeback_rows", return_value=[])
     @patch("api.audit_export._fetch_stripe_rows", return_value=[])
     @patch("api.audit_export._fetch_tagged_manual_rows", return_value=[])
-    @patch("api.audit_export._fetch_manual_rows", return_value=[])
+    @patch("api.audit_export._fetch_bonus_rows", return_value=[])
     @patch("api.audit_export._club_name_map", return_value={})
     def test_build_audit_workbook_has_seven_sheets_with_headers(
         self,
         _club_map,
-        _manual,
+        _bonus,
         _tagged,
         _stripe,
+        _early_rb,
     ):
         session = MagicMock()
         content = build_audit_workbook(session, "2026-01-31")
@@ -263,10 +303,11 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
             ws = wb[spec.title]
             self.assertEqual([cell.value for cell in ws[1]], spec.headers)
 
+    @patch("api.audit_export._fetch_early_rakeback_rows", return_value=[])
     @patch("api.audit_export._fetch_tagged_manual_rows", return_value=[])
-    @patch("api.audit_export._fetch_manual_rows", return_value=[])
+    @patch("api.audit_export._fetch_bonus_rows", return_value=[])
     @patch("api.audit_export._club_name_map", return_value={})
-    def test_build_audit_workbook_styles_stripe_sheet(self, _club_map, _manual, _tagged):
+    def test_build_audit_workbook_styles_stripe_sheet(self, _club_map, _bonus, _tagged, _early_rb):
         stripe_rows = [
             StripeAuditRow(
                 amount_usd=42.0,
@@ -307,6 +348,7 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         zelle_ws = wb["Zelle"]
         self.assertEqual(zelle_ws.max_row, 1)
 
+    @patch("api.audit_export._fetch_early_rakeback_rows", return_value=[])
     @patch("api.audit_export._fetch_stripe_rows", return_value=[])
     @patch("api.audit_export._fetch_tagged_manual_rows", return_value=[])
     @patch("api.audit_export._club_name_map", return_value={})
@@ -315,6 +357,7 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         _club_map,
         _tagged,
         _stripe,
+        _early_rb,
     ):
         tagged_rows = [
             TaggedManualAuditRow(
@@ -357,9 +400,9 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         self.assertEqual(zelle_ws["F2"].value, "June 21, 2026 at 11:57 PM")
 
     @patch("api.audit_export._fetch_stripe_rows", return_value=[])
-    @patch("api.audit_export._fetch_manual_rows", return_value=[])
+    @patch("api.audit_export._fetch_bonus_rows", return_value=[])
     @patch("api.audit_export._club_name_map", return_value={})
-    def test_build_audit_workbook_writes_venmo_tag_column(self, _club_map, _manual, _stripe):
+    def test_build_audit_workbook_writes_venmo_tag_column(self, _club_map, _bonus, _stripe):
         venmo_rows = [
             TaggedManualAuditRow(
                 amount_usd=100.0,
@@ -396,6 +439,36 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         self.assertEqual(venmo_ws["C2"].value, "@godfather4444")
         self.assertEqual(venmo_ws["D2"].value, "GTO / 3011-9668 / Pvtenis")
         self.assertEqual(venmo_ws["E2"].value, "ClubGTO")
+
+    @patch("api.audit_export._fetch_early_rakeback_rows", return_value=[])
+    @patch("api.audit_export._fetch_stripe_rows", return_value=[])
+    @patch("api.audit_export._fetch_tagged_manual_rows", return_value=[])
+    @patch("api.audit_export._club_name_map", return_value={})
+    def test_build_audit_workbook_writes_bonus_sheet(self, _club_map, _tagged, _stripe, _early_rb):
+        bonus_rows = [
+            ManualAuditRow(
+                amount_usd=75.0,
+                payer_name="@luckyplayer",
+                group_title="Referral",
+                club_label="ClubGTO",
+                time_label="June 21, 2026 at 11:57 PM",
+            )
+        ]
+
+        with patch("api.audit_export._fetch_bonus_rows", return_value=bonus_rows):
+            content = build_audit_workbook(MagicMock(), "2026-06-21")
+
+        wb = load_workbook(io.BytesIO(content))
+        bonus_ws = wb["Bonus"]
+        self.assertEqual(
+            [cell.value for cell in bonus_ws[1]],
+            ["Amount", "Name", "Group", "Club", "Time"],
+        )
+        self.assertEqual(bonus_ws["A2"].value, 75.0)
+        self.assertEqual(bonus_ws["B2"].value, "@luckyplayer")
+        self.assertEqual(bonus_ws["C2"].value, "Referral")
+        self.assertEqual(bonus_ws["D2"].value, "ClubGTO")
+        self.assertEqual(bonus_ws["E2"].value, "June 21, 2026 at 11:57 PM")
 
 
 class AuditExportApiTestCase(unittest.TestCase):

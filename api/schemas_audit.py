@@ -39,3 +39,36 @@ class TradeRecordUploadSummary(BaseModel):
     filename: str
     transaction_count: int
     created_at: datetime
+
+
+class EarlyRakebackClubSyncResult(BaseModel):
+    club_slug: str
+    club_name: str
+    snapshot_id: Optional[int] = None
+    lines_fetched: int = 0
+    lines_stored: int = 0
+    lines_skipped_unmapped: int = 0
+    skipped_nicknames: List[str] = Field(default_factory=list)
+    error: Optional[str] = None
+
+
+class EarlyRakebackSyncReport(BaseModel):
+    audit_date: date
+    clubs_synced: int = 0
+    clubs_failed: int = 0
+    total_lines_fetched: int = 0
+    total_lines_stored: int = 0
+    total_lines_skipped_unmapped: int = 0
+    clubs: List[EarlyRakebackClubSyncResult] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+
+
+class EarlyRakebackSnapshotSummary(BaseModel):
+    id: int
+    club_slug: str
+    club_name: str
+    audit_date: date
+    lines_fetched: int
+    lines_stored: int
+    lines_skipped_unmapped: int
+    synced_at: datetime

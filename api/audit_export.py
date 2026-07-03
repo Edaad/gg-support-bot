@@ -22,7 +22,7 @@ from api.club_audit_timezone import (
     union_audit_day_window_utc,
     zone_for_slug,
 )
-from api.club_slug import slug_for_club_id
+from api.club_slug import CLUB_SLUG_TO_NAME, slug_for_club_id
 
 from api.payments_helpers import (
     apply_analytics_payment_exclusion,
@@ -36,8 +36,11 @@ from api.payments_helpers import (
 )
 from config import CLUB_SHORTHAND_TO_NAME
 from db.models import (
+    BonusRecord,
     CashAppPayment,
     Club,
+    EarlyRakebackLine,
+    EarlyRakebackSnapshot,
     PayPalPayment,
     StripeCheckoutSession,
     StripeCustomer,
@@ -137,6 +140,19 @@ def _to_club_local(dt: datetime, club_slug: str) -> datetime:
     return dt.astimezone(zone_for_slug(club_slug))
 
 
+def _to_audit_display_local(dt: datetime) -> datetime:
+    """Audit export Time column: always US Eastern (America/New_York).
+
+    Per-club timezone policies apply only to audit-day bucketing (and trade
+    records), not to payment timestamps shown on the sheet.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.astimezone(zone_for_slug("round-table"))
+
+
 def _to_eastern(dt: datetime) -> datetime:
     return _to_club_local(dt, "round-table")
 
@@ -152,7 +168,7 @@ def _ordinal_day(day: int) -> str:
 def _fmt_stripe_audit_time(value: datetime | None, club_slug: str = "round-table") -> str:
     if value is None:
         return ""
-    dt = _to_club_local(value, club_slug)
+    dt = _to_audit_display_local(value)
     month = dt.strftime("%b")
     day = _ordinal_day(dt.day)
     year = dt.year
@@ -163,7 +179,7 @@ def _fmt_stripe_audit_time(value: datetime | None, club_slug: str = "round-table
 def _fmt_manual_audit_time(value: datetime | None, club_slug: str = "round-table") -> str:
     if value is None:
         return ""
-    dt = _to_club_local(value, club_slug)
+    dt = _to_audit_display_local(value)
     month = dt.strftime("%B")
     day = dt.day
     year = dt.year
@@ -388,6 +404,65 @@ def _payment_in_audit_day(
     return occurred_at_in_audit_day(occurred_at, slug, audit_date)
 
 
+def _parse_audit_date_str(audit_date: str):
+    from datetime import date as date_cls
+
+    return date_cls.fromisoformat(str(audit_date).strip()[:10])
+
+
+def _fetch_early_rakeback_rows(
+    session: Session,
+    audit_date: str,
+) -> list[StripeAuditRow]:
+    """Read synced early-rakeback lines from Postgres (no live aon-beta call)."""
+    parsed_date = _parse_audit_date_str(audit_date)
+    snapshots = (
+        session.query(EarlyRakebackSnapshot)
+        .filter(EarlyRakebackSnapshot.audit_date == parsed_date)
+        .all()
+    )
+    if not snapshots:
+        return []
+
+    snapshot_ids = [s.id for s in snapshots]
+    slug_by_snapshot = {s.id: (s.club_slug or "round-table") for s in snapshots}
+
+    lines = (
+        session.query(EarlyRakebackLine)
+        .filter(EarlyRakebackLine.snapshot_id.in_(snapshot_ids))
+        .order_by(
+            EarlyRakebackLine.occurred_at.desc().nullslast(),
+            EarlyRakebackLine.id.desc(),
+        )
+        .all()
+    )
+
+    out: list[StripeAuditRow] = []
+    for line in lines:
+        club_slug = slug_by_snapshot.get(line.snapshot_id, "round-table")
+        club_label = CLUB_SLUG_TO_NAME.get(club_slug, club_slug)
+        nickname = (line.member_nickname or "").strip()
+        player = _stripe_player_cell(
+            group_title="",
+            club_name=club_label,
+            gg_player_id=line.gg_player_id,
+            gg_nickname=nickname or None,
+        )
+        amount = float(line.amount_usd) if line.amount_usd is not None else 0.0
+        out.append(
+            StripeAuditRow(
+                amount_usd=amount,
+                player=player,
+                method_label="Early RB",
+                group_title=nickname,
+                club_label=club_label,
+                time_label=_fmt_stripe_audit_time(line.occurred_at, club_slug),
+                stripe_fee_usd=Decimal(0),
+            )
+        )
+    return out
+
+
 def build_audit_workbook(session: Session, audit_date: str) -> bytes:
     from_dt, to_dt = union_audit_day_window_utc(audit_date)
     club_names = _club_name_map(session)
@@ -437,6 +512,10 @@ def build_audit_workbook(session: Session, audit_date: str) -> bytes:
         audit_date=audit_date,
         tag_field="paypal_email",
     )
+    bonus_rows = _fetch_bonus_rows(
+        session, club_names, from_dt, to_dt, audit_date=audit_date
+    )
+    early_rb_rows = _fetch_early_rakeback_rows(session, audit_date)
 
     sheet_rows: list[
         list[StripeAuditRow] | list[ManualAuditRow] | list[TaggedManualAuditRow]
@@ -446,8 +525,8 @@ def build_audit_workbook(session: Session, audit_date: str) -> bytes:
         venmo_rows,
         cashapp_rows,
         paypal_rows,
-        [],
-        [],
+        bonus_rows,
+        early_rb_rows,
     ]
 
     for spec, rows in zip(SHEET_SPECS, sheet_rows):
@@ -622,6 +701,55 @@ def _fetch_manual_rows(
         ):
             continue
         out.append(_manual_row(session, data, club_names))
+    return out
+
+
+def _bonus_group_cell(record: BonusRecord) -> str:
+    type_name = (record.bonus_type.name if record.bonus_type else "").strip()
+    desc = (record.custom_description or "").strip()
+    if type_name and desc:
+        return f"{type_name} — {desc}"
+    return type_name or desc
+
+
+def _fetch_bonus_rows(
+    session: Session,
+    club_names: dict[int, str],
+    from_dt: datetime,
+    to_dt: datetime,
+    *,
+    audit_date: str,
+) -> list[ManualAuditRow]:
+    rows = (
+        session.query(BonusRecord)
+        .filter(
+            BonusRecord.created_at >= from_dt,
+            BonusRecord.created_at <= to_dt,
+        )
+        .order_by(BonusRecord.created_at.desc(), BonusRecord.id.desc())
+        .all()
+    )
+    out: list[ManualAuditRow] = []
+    for row in rows:
+        if not _payment_in_audit_day(
+            session,
+            audit_date=audit_date,
+            club_id=row.club_id,
+            occurred_at=row.created_at,
+        ):
+            continue
+        club_slug = _slug_for_payment_club(session, row.club_id)
+        amount = row.amount
+        amount_usd = float(amount) if amount is not None else 0.0
+        out.append(
+            ManualAuditRow(
+                amount_usd=amount_usd,
+                payer_name=str(row.player_username).strip(),
+                group_title=_bonus_group_cell(row),
+                club_label=_club_name(club_names, row.club_id),
+                time_label=_fmt_manual_audit_time(row.created_at, club_slug),
+            )
+        )
     return out
 
 

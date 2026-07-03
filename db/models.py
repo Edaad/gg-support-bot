@@ -1732,3 +1732,68 @@ class TradeRecordLine(Base):
     super_agent_gg_player_id = Column(String(255), nullable=True)
 
     upload = relationship("TradeRecordUpload", back_populates="lines")
+
+
+class EarlyRakebackSnapshot(Base):
+    """One early-rakeback sync per club slug + local audit day (re-sync replaces)."""
+
+    __tablename__ = "early_rakeback_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "club_slug",
+            "audit_date",
+            name="uq_early_rakeback_snapshots_slug_date",
+        ),
+        Index("ix_early_rakeback_snapshots_club_id", "club_id"),
+        Index("ix_early_rakeback_snapshots_club_slug", "club_slug"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    club_slug = Column(String(64), nullable=False)
+    audit_date = Column(Date, nullable=False)
+    fetch_from_utc = Column(DateTime(timezone=True), nullable=False)
+    fetch_to_utc = Column(DateTime(timezone=True), nullable=False)
+    lines_fetched = Column(Integer, nullable=False, default=0)
+    lines_stored = Column(Integer, nullable=False, default=0)
+    lines_skipped_unmapped = Column(Integer, nullable=False, default=0)
+    skipped_nicknames = Column(Text, nullable=True)
+    synced_at = Column(DateTime, server_default=func.now())
+
+    club = relationship("Club")
+    lines = relationship(
+        "EarlyRakebackLine",
+        back_populates="snapshot",
+        cascade="all, delete-orphan",
+    )
+
+
+class EarlyRakebackLine(Base):
+    """One early-rakeback payout record with resolved gg_player_id."""
+
+    __tablename__ = "early_rakeback_lines"
+    __table_args__ = (
+        Index("ix_early_rakeback_lines_snapshot_id", "snapshot_id"),
+        Index("ix_early_rakeback_lines_gg_player_id", "gg_player_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    snapshot_id = Column(
+        Integer,
+        ForeignKey("early_rakeback_snapshots.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_entry_id = Column(String(64), nullable=False)
+    source_record_id = Column(String(64), nullable=False)
+    gg_player_id = Column(String(255), nullable=False)
+    member_nickname = Column(String(255), nullable=True)
+    member_type = Column(String(32), nullable=True)
+    amount_usd = Column(Numeric(14, 2), nullable=False)
+    rake = Column(Numeric(14, 2), nullable=True)
+    pl = Column(Numeric(14, 2), nullable=True)
+    rakeback_percentage = Column(Numeric(8, 4), nullable=True)
+    occurred_at = Column(DateTime(timezone=True), nullable=True)
+
+    snapshot = relationship("EarlyRakebackSnapshot", back_populates="lines")

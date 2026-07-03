@@ -17,15 +17,22 @@ from api.club_audit_timezone import (
     audit_timezone_label,
 )
 from api.club_slug import CLUB_SLUG_TO_NAME, resolve_club_id, slug_for_club_id
-from api.schemas_audit import TradeRecordUploadReport, TradeRecordUploadSummary
+from api.schemas_audit import (
+    EarlyRakebackSnapshotSummary,
+    EarlyRakebackSyncReport,
+    TradeRecordUploadReport,
+    TradeRecordUploadSummary,
+)
 from api.trade_record_parser import (
     TradeRecordParseError,
     TradeRecordValidationError,
     parse_trade_record_workbook,
 )
 from api.trade_record_sync import sync_identities
+from api.aon_beta_client import AonBetaConfigError
+from api.early_rakeback_sync import sync_early_rakeback_for_date
 from db.connection import get_db_dependency
-from db.models import TradeRecordLine, TradeRecordUpload
+from db.models import EarlyRakebackSnapshot, TradeRecordLine, TradeRecordUpload
 
 router = APIRouter(
     prefix="/api/audit",
@@ -218,6 +225,107 @@ def list_trade_record_uploads(
                 filename=upload.filename,
                 transaction_count=int(line_count or 0),
                 created_at=upload.created_at or datetime.utcnow(),
+            )
+        )
+    return out
+
+
+@router.post("/early-rakeback/sync", response_model=EarlyRakebackSyncReport)
+def sync_early_rakeback(
+    audit_date: str = Query(..., description="Local audit calendar day (YYYY-MM-DD)"),
+    club_slug: str | None = Query(None, description="Optional single club slug"),
+    db: Session = Depends(get_db_dependency),
+):
+    parsed_date = _parse_audit_date(audit_date)
+    club_slugs: list[str] | None = None
+    if club_slug:
+        slug = club_slug.strip().lower()
+        if slug not in CLUB_SLUG_TO_NAME:
+            raise HTTPException(400, f"Unknown club slug: {club_slug!r}")
+        club_slugs = [slug]
+
+    try:
+        report = sync_early_rakeback_for_date(
+            db, parsed_date, club_slugs=club_slugs
+        )
+    except AonBetaConfigError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+    if report.clubs_synced == 0 and report.clubs_failed > 0:
+        first_error = next(
+            (c.error for c in report.clubs if c.error),
+            "Early rakeback sync failed for all clubs",
+        )
+        if isinstance(first_error, str) and "AON_BETA" in first_error:
+            raise HTTPException(503, first_error)
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Sync conflict for this club and date") from exc
+
+    return EarlyRakebackSyncReport(
+        audit_date=report.audit_date,
+        clubs_synced=report.clubs_synced,
+        clubs_failed=report.clubs_failed,
+        total_lines_fetched=report.total_lines_fetched,
+        total_lines_stored=report.total_lines_stored,
+        total_lines_skipped_unmapped=report.total_lines_skipped_unmapped,
+        clubs=[
+            {
+                "club_slug": c.club_slug,
+                "club_name": c.club_name,
+                "snapshot_id": c.snapshot_id,
+                "lines_fetched": c.lines_fetched,
+                "lines_stored": c.lines_stored,
+                "lines_skipped_unmapped": c.lines_skipped_unmapped,
+                "skipped_nicknames": c.skipped_nicknames,
+                "error": c.error,
+            }
+            for c in report.clubs
+        ],
+        warnings=report.warnings,
+    )
+
+
+@router.get("/early-rakeback/snapshots", response_model=list[EarlyRakebackSnapshotSummary])
+def list_early_rakeback_snapshots(
+    club_slug: str | None = Query(None),
+    audit_date: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db_dependency),
+):
+    q = db.query(EarlyRakebackSnapshot)
+
+    if club_slug:
+        slug = club_slug.strip().lower()
+        if slug not in CLUB_SLUG_TO_NAME:
+            raise HTTPException(400, f"Unknown club slug: {club_slug!r}")
+        q = q.filter(EarlyRakebackSnapshot.club_slug == slug)
+
+    if audit_date:
+        q = q.filter(EarlyRakebackSnapshot.audit_date == _parse_audit_date(audit_date))
+
+    rows = (
+        q.order_by(EarlyRakebackSnapshot.synced_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    out: list[EarlyRakebackSnapshotSummary] = []
+    for snap in rows:
+        slug = snap.club_slug or slug_for_club_id(db, snap.club_id) or ""
+        out.append(
+            EarlyRakebackSnapshotSummary(
+                id=snap.id,
+                club_slug=slug,
+                club_name=CLUB_SLUG_TO_NAME.get(slug, slug),
+                audit_date=snap.audit_date,
+                lines_fetched=int(snap.lines_fetched or 0),
+                lines_stored=int(snap.lines_stored or 0),
+                lines_skipped_unmapped=int(snap.lines_skipped_unmapped or 0),
+                synced_at=snap.synced_at or datetime.utcnow(),
             )
         )
     return out
