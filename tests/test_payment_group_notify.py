@@ -24,6 +24,15 @@ class FormatPaymentReceivedMessageTestCase(unittest.TestCase):
         text = pgn.format_payment_received_message(123400)
         self.assertIn("$1,234", text)
 
+    def test_goods_services_refund_message(self):
+        text = pgn.format_payment_goods_services_refund_message(8000)
+        self.assertEqual(
+            text,
+            "We have received your payment for $80. "
+            "Since it was sent as Goods & Services, we will refund it — "
+            "please resend as Friends & Family.",
+        )
+
 
 class NotifyPlayerGroupPaymentReceivedTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_sends_message_with_support_bot(self):
@@ -44,6 +53,28 @@ class NotifyPlayerGroupPaymentReceivedTestCase(unittest.IsolatedAsyncioTestCase)
             text=(
                 "We have received your payment for $50, "
                 "chips will be loaded to your account shortly!!"
+            ),
+        )
+
+    async def test_goods_services_sends_refund_message(self):
+        mock_bot = MagicMock()
+        mock_bot.send_message = AsyncMock()
+        with (
+            patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "prod-token"}, clear=False),
+            patch.object(pgn, "Bot", return_value=mock_bot),
+        ):
+            ok = await pgn.notify_player_group_payment_received(
+                telegram_chat_id=CHAT_ID,
+                amount_cents=8000,
+                goods_or_services=True,
+            )
+        self.assertTrue(ok)
+        mock_bot.send_message.assert_awaited_once_with(
+            chat_id=CHAT_ID,
+            text=(
+                "We have received your payment for $80. "
+                "Since it was sent as Goods & Services, we will refund it — "
+                "please resend as Friends & Family."
             ),
         )
 
@@ -177,6 +208,26 @@ class MaybeNotifyPlayerOnAutoBoundTestCase(unittest.IsolatedAsyncioTestCase):
             telegram_chat_id=CHAT_ID,
             amount_cents=5000,
             is_test=False,
+            goods_or_services=False,
+        )
+
+    async def test_notifies_goods_services_on_auto_bound(self):
+        with patch.object(
+            pgn,
+            "notify_player_group_payment_received",
+            new=AsyncMock(return_value=True),
+        ) as notify_mock:
+            await pgn.maybe_notify_player_on_auto_bound(
+                telegram_chat_id=CHAT_ID,
+                amount_cents=8000,
+                auto_bound=True,
+                goods_or_services=True,
+            )
+        notify_mock.assert_awaited_once_with(
+            telegram_chat_id=CHAT_ID,
+            amount_cents=8000,
+            is_test=False,
+            goods_or_services=True,
         )
 
 

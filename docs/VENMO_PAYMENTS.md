@@ -26,6 +26,21 @@ We have received your payment for $50, chips will be loaded to your account shor
 
 Amount is whole dollars. **Manual** staff binds (notification reply or dashboard) do **not** send this message — settlement happens before binding. The same auto-bind behavior applies to Zelle, Crypto, Cash App, and PayPal ingest.
 
+### Goods & Services payments
+
+When Zapier sends `"goods_or_services": true` (player sent as Goods & Services, not Friends & Family):
+
+1. **Staff notification** — includes `⚠️ DO NOT ADD — Goods/Services payment` above the group line (plus `Goods/Services: True`).
+2. **Player group message** (auto-bind or confirm-bind only) — refund copy instead of chip-loading:
+
+```text
+We have received your payment for $80. Since it was sent as Goods & Services, we will refund it — please resend as Friends & Family.
+```
+
+3. **Issue report** — auto-creates a deposit ticket (`category: deposit`, notify: head admin) in Postgres + Slack issue-report channel. Visible in `/reports` triage. Reporter shows as `GG Support Bot` (`reporter_source: venmo_ingest`). Unbound G&S payments still get a ticket (group unknown until staff bind).
+
+Do **not** add chips for G&S payments — refund and have the player resend as Friends & Family.
+
 Test payments (`test: true` on ingest) try `TELEGRAM_TEST_BOT_TOKEN` first, then fall back to `TELEGRAM_BOT_TOKEN`. Production payments try production first, then test. Set both tokens on the **web/API** dyno.
 
 ### Test multi-candidate workflow
@@ -112,6 +127,20 @@ Amount: $200.00
 Memo: 🍕
 Method: @godfather4444
 Goods/Services: False
+```
+
+Goods & Services (`Goods/Services: True`):
+
+```
+🔔 Venmo Payment Notification
+⚠️ DO NOT ADD — Goods/Services payment
+
+Group Chat: RT / 6485-8168 / Angus Mcgoon
+
+Name: Jackson Taylor
+Amount: $80
+Method: @godfather4444
+Goods/Services: True
 ```
 
 (`Memo` is omitted when Zapier does not send `memo` or the payment has no caption.)

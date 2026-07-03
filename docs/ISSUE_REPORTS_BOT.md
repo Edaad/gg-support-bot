@@ -10,6 +10,10 @@ Staff-only bot commands for centralized issue reporting. Reports go to Postgres 
 
 Or DM the bot directly: **`/report`**
 
+### System-generated reports
+
+Venmo ingest auto-creates issue reports when a payment is flagged **Goods & Services** (`goods_or_services: true` on the Zapier POST). These tickets notify **Head admin**, include payment details and **DO NOT ADD — refund required**, and appear in `/reports` like any other deposit report. No staff action is needed to open the ticket.
+
 ### Fields
 
 | Field | Required |

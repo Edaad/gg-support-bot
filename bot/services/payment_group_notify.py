@@ -34,6 +34,16 @@ def format_payment_received_message(amount_cents: int) -> str:
     )
 
 
+def format_payment_goods_services_refund_message(amount_cents: int) -> str:
+    """Player message when Venmo payment was sent as Goods & Services."""
+    amount = _format_amount_dollars(amount_cents)
+    return (
+        f"We have received your payment for {amount}. "
+        "Since it was sent as Goods & Services, we will refund it — "
+        "please resend as Friends & Family."
+    )
+
+
 def resolve_support_bot_token(*, is_test: bool = False) -> str:
     """Return the preferred support-bot token for the payment context."""
     tokens = support_bot_tokens_to_try(is_test=is_test)
@@ -65,6 +75,7 @@ async def notify_player_group_payment_received(
     telegram_chat_id: int,
     amount_cents: int,
     is_test: bool = False,
+    goods_or_services: bool = False,
 ) -> bool:
     """Post payment confirmation in the linked GC via the support bot."""
     tokens = support_bot_tokens_to_try(is_test=is_test)
@@ -76,7 +87,10 @@ async def notify_player_group_payment_received(
         )
         return False
 
-    text = format_payment_received_message(amount_cents)
+    if goods_or_services:
+        text = format_payment_goods_services_refund_message(amount_cents)
+    else:
+        text = format_payment_received_message(amount_cents)
     last_error: Exception | None = None
     for token in tokens:
         try:
@@ -123,6 +137,7 @@ async def maybe_notify_player_on_auto_bound(
     amount_cents: int,
     auto_bound: bool,
     is_test: bool = False,
+    goods_or_services: bool = False,
 ) -> None:
     """Notify the player's GC when ingest auto-bound the payment."""
     if not auto_bound or telegram_chat_id is None:
@@ -131,4 +146,5 @@ async def maybe_notify_player_on_auto_bound(
         telegram_chat_id=int(telegram_chat_id),
         amount_cents=amount_cents,
         is_test=is_test,
+        goods_or_services=goods_or_services,
     )

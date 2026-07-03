@@ -109,6 +109,28 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         self.assertLess(text.index("Amount:"), text.index("Memo:"))
         self.assertLess(text.index("Memo:"), text.index("Method:"))
 
+    def test_format_notification_goods_services_shows_do_not_add(self):
+        payment = VenmoPayment(
+            payer_name="Jackson Taylor",
+            amount_cents=8000,
+            venmo_handle="@godfather4444",
+            goods_or_services=True,
+        )
+        text = vp.format_notification_text(payment)
+        self.assertIn("DO NOT ADD", text)
+        self.assertIn("Goods/Services: True", text)
+
+    def test_format_notification_non_goods_services_no_do_not_add(self):
+        payment = VenmoPayment(
+            payer_name="Harry Chen",
+            amount_cents=10000,
+            venmo_handle="@jagger4444",
+            goods_or_services=False,
+        )
+        text = vp.format_notification_text(payment)
+        self.assertNotIn("DO NOT ADD", text)
+        self.assertIn("Goods/Services: False", text)
+
     def test_format_setup_already_linked_warning(self):
         from datetime import datetime, timezone
 
@@ -424,6 +446,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             amount_cents=20000,
             auto_bound=True,
             is_test=False,
+            goods_or_services=False,
         )
 
     async def test_ingest_auto_binds_known_payer_different_recipient_handle(self):
@@ -576,6 +599,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             amount_cents=20000,
             auto_bound=False,
             is_test=True,
+            goods_or_services=False,
         )
         payment_text = send_mock.await_args.kwargs.get("text") or send_mock.await_args.args[0]
         self.assertIn(AMBIGUOUS_GROUP_CHAT_LINE, payment_text)
@@ -657,6 +681,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             amount_cents=20000,
             auto_bound=True,
             is_test=True,
+            goods_or_services=False,
         )
 
     async def test_ingest_idempotent_reject_logs_and_skips_telegram(self):

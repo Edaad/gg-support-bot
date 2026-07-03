@@ -274,6 +274,7 @@ async def confirm_bind_payment(
             telegram_chat_id=int(target_chat_id),
             amount_cents=int(refreshed.amount_cents),
             is_test=bool(getattr(refreshed, "is_test", False)),
+            goods_or_services=bool(getattr(refreshed, "goods_or_services", False)),
         )
     return True, None
 
