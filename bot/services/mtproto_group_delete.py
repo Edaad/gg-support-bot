@@ -1,10 +1,10 @@
-"""MTProto ``/delete confirm`` in support groups: kick participants and delete the megagroup.
+"""MTProto ``/delete confirm`` in support groups: kick participants and delete the group.
 
 Outgoing-only (staff type on the club MTProto account). Requires a linked group for that club.
 Does not remove Postgres rows (``groups``, ``player_details``, ``support_group_chats``, etc.).
 
-Megagroups created via ``/gc`` are usually deletable because the MTProto account is the creator.
-Older groups where that account is not creator/admin may fail ``DeleteChannelRequest``.
+Basic groups (``/gc`` since 2026-06) and legacy megagroups are both supported. The MTProto
+account should be the creator; older groups where that account lacks admin may still fail.
 """
 
 from __future__ import annotations
@@ -24,13 +24,15 @@ from telethon.errors.rpcerrorlist import (
     ChatAdminRequiredError,
 )
 from telethon.tl.functions.channels import DeleteChannelRequest, EditBannedRequest
-from telethon.tl.functions.messages import DeleteChatRequest
+from telethon.tl.functions.messages import DeleteChatRequest, DeleteChatUserRequest
 from telethon.tl.types import Channel, Chat, ChatBannedRights
 from telethon.utils import get_input_channel
 
 from club_gc_settings import ClubGcConfig
 from bot.services.club import get_club_for_chat
 from bot.services.mtproto_group_create import _with_single_flood_retry, get_mtproto_lock
+from bot.services.support_group_chats import fetch_support_group_chat_row_for_chat
+from notification.chat_id import telegram_chat_id_variants
 
 logger = logging.getLogger(__name__)
 
@@ -72,11 +74,31 @@ async def _notify_delete_failure(
 
 
 async def _resolve_group_entity(client: Any, chat_id: int) -> Channel | Chat:
-    """Full entity with access_hash; ``event.get_chat()`` may be the wrong TL type."""
-    entity = await client.get_entity(int(chat_id))
-    if isinstance(entity, (Channel, Chat)):
-        return entity
-    raise TypeError(f"Cannot delete entity type {type(entity).__name__}")
+    """Full entity with access_hash; tries equivalent Bot API chat id forms."""
+    last_exc: Exception | None = None
+    for cid in sorted(telegram_chat_id_variants(int(chat_id)), key=lambda x: str(x)):
+        try:
+            entity = await client.get_entity(int(cid))
+            if isinstance(entity, (Channel, Chat)):
+                return entity
+            raise TypeError(f"Cannot delete entity type {type(entity).__name__}")
+        except Exception as exc:
+            last_exc = exc
+    detail = type(last_exc).__name__ if last_exc else "unknown"
+    raise RuntimeError(f"Could not resolve chat_id {chat_id} ({detail})")
+
+
+def _resolve_club_id_for_delete(chat_id: int, cfg: ClubGcConfig) -> int | None:
+    """Return dashboard club id when this chat belongs to ``cfg``, else None."""
+    for cid in telegram_chat_id_variants(int(chat_id)):
+        club_id = get_club_for_chat(int(cid))
+        if club_id is not None:
+            return int(club_id) if int(club_id) == int(cfg.link_club_id) else None
+
+    row = fetch_support_group_chat_row_for_chat(int(chat_id), club_key=cfg.club_key)
+    if row is not None and row.club_key == cfg.club_key:
+        return int(cfg.link_club_id)
+    return None
 
 
 async def _kick_all_participants(
@@ -84,7 +106,7 @@ async def _kick_all_participants(
 ) -> tuple[int, int]:
     """Kick every participant except ``self_id``. Returns (kicked, failed)."""
     if isinstance(entity, Chat):
-        return 0, 0
+        return await _kick_all_basic_chat_participants(client, entity, self_id)
 
     kicked = 0
     failed = 0
@@ -120,6 +142,52 @@ async def _kick_all_participants(
                 )
 
     await _with_single_flood_retry("iter_participants_delete", walk)
+    return kicked, failed
+
+
+async def _kick_all_basic_chat_participants(
+    client: Any, entity: Chat, self_id: int
+) -> tuple[int, int]:
+    """Remove every member from a legacy basic group except ``self_id``."""
+    kicked = 0
+    failed = 0
+    chat_id = int(entity.id)
+
+    async def walk():
+        nonlocal kicked, failed
+        async for user in client.iter_participants(entity):
+            uid = getattr(user, "id", None)
+            if uid is None:
+                continue
+            uid = int(uid)
+            if uid == self_id:
+                continue
+
+            async def do_kick(u=user):
+                await client(
+                    DeleteChatUserRequest(
+                        chat_id=chat_id,
+                        user_id=u,
+                        revoke_history=True,
+                    )
+                )
+
+            try:
+                await _with_single_flood_retry(
+                    f"kick_basic_participant:{uid}",
+                    do_kick,
+                )
+                kicked += 1
+            except Exception as e:
+                failed += 1
+                logger.warning(
+                    "group_delete: basic kick failed chat=%s user=%s err=%s",
+                    chat_id,
+                    uid,
+                    type(e).__name__,
+                )
+
+    await _with_single_flood_retry("iter_participants_delete_basic", walk)
     return kicked, failed
 
 
@@ -248,24 +316,20 @@ async def handle_group_delete_outgoing(
         )
         return
 
-    club_id = await asyncio.to_thread(get_club_for_chat, chat_id)
+    club_id = await asyncio.to_thread(_resolve_club_id_for_delete, chat_id, cfg)
     if club_id is None:
+        reason = (
+            f"This group is not linked to {cfg.club_display_name} "
+            f"(chat_id={chat_id}). Run /gc or /bind first, or check groups table."
+        )
         logger.warning(
             "group_delete: group not linked club=%s listener=%s chat_id=%s",
             cfg.club_key,
             listener_label,
             chat_id,
         )
-        return
-    if int(club_id) != int(cfg.link_club_id):
-        logger.warning(
-            "group_delete: club_id mismatch club=%s listener=%s chat_id=%s "
-            "group_club_id=%s expected=%s",
-            cfg.club_key,
-            listener_label,
-            chat_id,
-            club_id,
-            cfg.link_club_id,
+        await _notify_delete_failure(
+            event.client, cfg=cfg, chat_id=chat_id, reason=reason
         )
         return
 
