@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Any
 from zoneinfo import ZoneInfo
 
+_FIXED_UTC_MINUS_4 = timezone(timedelta(hours=-4))
 _FIXED_UTC_MINUS_5 = timezone(timedelta(hours=-5))
 _AMERICA_NEW_YORK = ZoneInfo("America/New_York")
 
@@ -18,7 +19,8 @@ _PERIOD_TZ_SUFFIX_RE = re.compile(
 
 
 class AuditTimezonePolicy(str, Enum):
-    AMERICA_NEW_YORK = "AMERICA_NEW_YORK"
+    AMERICA_NEW_YORK = "AMERICA_NEW_YORK"  # legacy / payment display only
+    FIXED_UTC_MINUS_4 = "FIXED_UTC_MINUS_4"
     FIXED_UTC_MINUS_5 = "FIXED_UTC_MINUS_5"
 
 
@@ -27,14 +29,15 @@ class UnknownClubSlugError(ValueError):
 
 
 SLUG_TO_POLICY: dict[str, AuditTimezonePolicy] = {
-    "round-table": AuditTimezonePolicy.AMERICA_NEW_YORK,
-    "creator-club": AuditTimezonePolicy.AMERICA_NEW_YORK,
+    "round-table": AuditTimezonePolicy.FIXED_UTC_MINUS_4,
+    "creator-club": AuditTimezonePolicy.FIXED_UTC_MINUS_4,
     "clubgto": AuditTimezonePolicy.FIXED_UTC_MINUS_5,
     "aces-table": AuditTimezonePolicy.FIXED_UTC_MINUS_5,
 }
 
 POLICY_LABELS: dict[AuditTimezonePolicy, str] = {
     AuditTimezonePolicy.AMERICA_NEW_YORK: "ET",
+    AuditTimezonePolicy.FIXED_UTC_MINUS_4: "UTC-4",
     AuditTimezonePolicy.FIXED_UTC_MINUS_5: "UTC-5",
 }
 
@@ -50,7 +53,14 @@ def zone_for_slug(slug: str):
 def _zone_for_policy(policy: AuditTimezonePolicy):
     if policy == AuditTimezonePolicy.AMERICA_NEW_YORK:
         return _AMERICA_NEW_YORK
+    if policy == AuditTimezonePolicy.FIXED_UTC_MINUS_4:
+        return _FIXED_UTC_MINUS_4
     return _FIXED_UTC_MINUS_5
+
+
+def zone_for_payment_display():
+    """America/New_York for payment timestamps in audit export (all clubs)."""
+    return _AMERICA_NEW_YORK
 
 
 def audit_timezone_for_slug(slug: str) -> AuditTimezonePolicy:
@@ -213,6 +223,8 @@ def period_timezone_warning(
     policy = audit_timezone_for_slug(slug)
     if policy == AuditTimezonePolicy.FIXED_UTC_MINUS_5:
         expected_minutes = -5 * 60
+    elif policy == AuditTimezonePolicy.FIXED_UTC_MINUS_4:
+        expected_minutes = -4 * 60
     else:
         # America/New_York varies with DST; suffix is informational only.
         return None

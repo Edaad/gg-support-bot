@@ -22,7 +22,13 @@ class ClubAuditTimezoneTestCase(unittest.TestCase):
     def test_audit_timezone_for_slug_round_table(self):
         self.assertEqual(
             audit_timezone_for_slug("round-table"),
-            AuditTimezonePolicy.AMERICA_NEW_YORK,
+            AuditTimezonePolicy.FIXED_UTC_MINUS_4,
+        )
+
+    def test_audit_timezone_for_slug_creator_club(self):
+        self.assertEqual(
+            audit_timezone_for_slug("creator-club"),
+            AuditTimezonePolicy.FIXED_UTC_MINUS_4,
         )
 
     def test_audit_timezone_for_slug_clubgto(self):
@@ -37,31 +43,37 @@ class ClubAuditTimezoneTestCase(unittest.TestCase):
 
     def test_audit_timezone_labels(self):
         self.assertEqual(
-            audit_timezone_label(AuditTimezonePolicy.AMERICA_NEW_YORK),
-            "ET",
+            audit_timezone_label(AuditTimezonePolicy.FIXED_UTC_MINUS_4),
+            "UTC-4",
         )
         self.assertEqual(
             audit_timezone_label(AuditTimezonePolicy.FIXED_UTC_MINUS_5),
             "UTC-5",
         )
 
-    def test_america_new_york_bounds_edt(self):
-        start, end = audit_day_bounds_utc("round-table", "2026-06-19")
-        self.assertEqual(start, datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc))
-        self.assertEqual(end, datetime(2026, 6, 20, 3, 59, 59, 999999, tzinfo=timezone.utc))
-
-    def test_america_new_york_bounds_est(self):
-        start, end = audit_day_bounds_utc("round-table", "2026-01-15")
-        self.assertEqual(start, datetime(2026, 1, 15, 5, 0, tzinfo=timezone.utc))
-        self.assertEqual(end, datetime(2026, 1, 16, 4, 59, 59, 999999, tzinfo=timezone.utc))
+    def test_fixed_utc_minus_4_no_dst_shift(self):
+        summer_start, summer_end = audit_day_bounds_utc("round-table", "2026-06-19")
+        winter_start, winter_end = audit_day_bounds_utc("round-table", "2026-01-15")
+        self.assertEqual(summer_start, datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc))
+        self.assertEqual(winter_start, datetime(2026, 1, 15, 4, 0, tzinfo=timezone.utc))
+        self.assertEqual(
+            summer_end, datetime(2026, 6, 20, 3, 59, 59, 999999, tzinfo=timezone.utc)
+        )
+        self.assertEqual(
+            winter_end, datetime(2026, 1, 16, 3, 59, 59, 999999, tzinfo=timezone.utc)
+        )
 
     def test_fixed_utc_minus_5_no_dst_shift(self):
         summer_start, summer_end = audit_day_bounds_utc("clubgto", "2026-06-19")
         winter_start, winter_end = audit_day_bounds_utc("clubgto", "2026-01-15")
         self.assertEqual(summer_start, datetime(2026, 6, 19, 5, 0, tzinfo=timezone.utc))
         self.assertEqual(winter_start, datetime(2026, 1, 15, 5, 0, tzinfo=timezone.utc))
-        self.assertEqual(summer_end, datetime(2026, 6, 20, 4, 59, 59, 999999, tzinfo=timezone.utc))
-        self.assertEqual(winter_end, datetime(2026, 1, 16, 4, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(
+            summer_end, datetime(2026, 6, 20, 4, 59, 59, 999999, tzinfo=timezone.utc)
+        )
+        self.assertEqual(
+            winter_end, datetime(2026, 1, 16, 4, 59, 59, 999999, tzinfo=timezone.utc)
+        )
 
     def test_summer_date_round_table_vs_clubgto_differ_by_one_hour(self):
         rt_start, _ = audit_day_window_utc("round-table", "2026-06-21")
@@ -100,7 +112,7 @@ class ClubAuditTimezoneTestCase(unittest.TestCase):
         self.assertEqual(parsed.tzinfo, timezone.utc)
         self.assertEqual(parsed, datetime(2026, 6, 21, 19, 30, tzinfo=timezone.utc))
 
-    def test_period_timezone_warning_on_mismatch(self):
+    def test_period_timezone_warning_on_mismatch_clubgto(self):
         warning = period_timezone_warning(
             "2026-06-21 ~ 2026-06-21 (UTC-4:00)",
             "clubgto",
@@ -109,12 +121,26 @@ class ClubAuditTimezoneTestCase(unittest.TestCase):
         assert warning is not None
         self.assertIn("clubgto", warning)
 
+    def test_period_timezone_warning_on_mismatch_round_table(self):
+        warning = period_timezone_warning(
+            "2026-06-21 ~ 2026-06-21 (UTC-5:00)",
+            "round-table",
+        )
+        self.assertIsNotNone(warning)
+        assert warning is not None
+        self.assertIn("round-table", warning)
+
     def test_period_timezone_warning_none_when_matches(self):
         warning = period_timezone_warning(
             "2026-06-21 ~ 2026-06-21 (UTC-5:00)",
             "clubgto",
         )
         self.assertIsNone(warning)
+        warning_rt = period_timezone_warning(
+            "2026-06-21 ~ 2026-06-21 (UTC-4:00)",
+            "round-table",
+        )
+        self.assertIsNone(warning_rt)
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ from api.club_audit_timezone import (
     audit_day_window_utc as club_audit_day_window_utc,
     occurred_at_in_audit_day,
     union_audit_day_window_utc,
+    zone_for_payment_display,
     zone_for_slug,
 )
 from api.club_slug import CLUB_SLUG_TO_NAME, slug_for_club_id
@@ -150,11 +151,11 @@ def _to_audit_display_local(dt: datetime) -> datetime:
         dt = dt.replace(tzinfo=timezone.utc)
     else:
         dt = dt.astimezone(timezone.utc)
-    return dt.astimezone(zone_for_slug("round-table"))
+    return dt.astimezone(zone_for_payment_display())
 
 
 def _to_eastern(dt: datetime) -> datetime:
-    return _to_club_local(dt, "round-table")
+    return dt.astimezone(zone_for_payment_display())
 
 
 def _ordinal_day(day: int) -> str:

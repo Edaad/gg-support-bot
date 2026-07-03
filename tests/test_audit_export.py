@@ -69,8 +69,8 @@ class AuditExportFormattingTestCase(unittest.TestCase):
 
     def test_eastern_day_bounds_utc_est(self):
         start, end = eastern_day_bounds_utc("2026-01-15")
-        self.assertEqual(start, datetime(2026, 1, 15, 5, 0, tzinfo=timezone.utc))
-        self.assertEqual(end, datetime(2026, 1, 16, 4, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(start, datetime(2026, 1, 15, 4, 0, tzinfo=timezone.utc))
+        self.assertEqual(end, datetime(2026, 1, 16, 3, 59, 59, 999999, tzinfo=timezone.utc))
 
     def test_eastern_day_bounds_utc_accepts_iso_prefix(self):
         start, end = eastern_day_bounds_utc("2026-06-19T00:00:00Z")
@@ -83,7 +83,7 @@ class AuditExportFormattingTestCase(unittest.TestCase):
 
     def test_eastern_audit_end_utc_est(self):
         end = eastern_audit_end_utc("2026-01-15")
-        self.assertEqual(end, datetime(2026, 1, 16, 5, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(end, datetime(2026, 1, 16, 4, 59, 59, 999999, tzinfo=timezone.utc))
 
     def test_fmt_stripe_audit_time_uses_ordinal_eastern(self):
         dt = datetime(2026, 6, 19, 4, 58, tzinfo=timezone.utc)
@@ -94,7 +94,7 @@ class AuditExportFormattingTestCase(unittest.TestCase):
         self.assertEqual(_fmt_manual_audit_time(dt), "June 19, 2026 at 12:34 AM")
 
     def test_fmt_manual_audit_time_clubgto_shows_new_york_time(self):
-        """Display is always Eastern; club policy affects bucketing only."""
+        """Display is always America/New_York; club policy affects bucketing only."""
         dt = datetime(2026, 7, 4, 2, 30, tzinfo=timezone.utc)
         self.assertEqual(
             _fmt_manual_audit_time(dt, club_slug="clubgto"),
@@ -103,6 +103,14 @@ class AuditExportFormattingTestCase(unittest.TestCase):
         self.assertEqual(
             _fmt_manual_audit_time(dt, club_slug="round-table"),
             "July 3, 2026 at 10:30 PM",
+        )
+
+    def test_fmt_manual_audit_time_uses_new_york_dst_in_winter(self):
+        """Payment display follows America/New_York (EST in January)."""
+        dt = datetime(2026, 1, 15, 17, 0, tzinfo=timezone.utc)
+        self.assertEqual(
+            _fmt_manual_audit_time(dt, club_slug="round-table"),
+            "January 15, 2026 at 12:00 PM",
         )
 
     def test_stripe_player_cell_uses_group_title_when_present(self):
