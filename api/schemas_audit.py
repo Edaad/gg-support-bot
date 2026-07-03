@@ -13,6 +13,8 @@ class TradeRecordUploadReport(BaseModel):
     club_slug: str
     club_name: str
     audit_date: date
+    audit_timezone_policy: str
+    audit_timezone_label: str
     filename: str
     replaced_previous: bool = False
     transaction_rows_parsed: int
@@ -24,6 +26,7 @@ class TradeRecordUploadReport(BaseModel):
     gg_computer_skipped: int = 0
     gg_computer_error: Optional[str] = None
     skipped_rows: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
 
 
 class TradeRecordUploadSummary(BaseModel):
@@ -31,6 +34,8 @@ class TradeRecordUploadSummary(BaseModel):
     club_slug: str
     club_name: str
     audit_date: date
+    audit_timezone_policy: Optional[str] = None
+    audit_timezone_label: Optional[str] = None
     filename: str
     transaction_count: int
     created_at: datetime

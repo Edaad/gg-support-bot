@@ -155,6 +155,7 @@ class AuditExportFormattingTestCase(unittest.TestCase):
     def test_manual_row_includes_group_and_club(self):
         created = datetime(2026, 6, 22, 1, 51, tzinfo=timezone.utc)
         row = _manual_row(
+            MagicMock(),
             {
                 "amount_usd": Decimal("100.00"),
                 "payer_name": "Jackson Taylor",
@@ -173,6 +174,7 @@ class AuditExportFormattingTestCase(unittest.TestCase):
     def test_tagged_manual_row_includes_account_tag(self):
         created = datetime(2026, 6, 22, 1, 51, tzinfo=timezone.utc)
         row = _tagged_manual_row(
+            MagicMock(),
             {
                 "amount_usd": Decimal("50.00"),
                 "payer_name": "Jane Doe",
@@ -191,6 +193,7 @@ class AuditExportFormattingTestCase(unittest.TestCase):
     def test_tagged_manual_row_reads_zelle_recipient(self):
         created = datetime(2026, 6, 22, 1, 51, tzinfo=timezone.utc)
         row = _tagged_manual_row(
+            MagicMock(),
             {
                 "amount_usd": Decimal("100.00"),
                 "payer_name": "MR ROHIT KOTHLAPURAM",
@@ -253,9 +256,7 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         _stripe,
     ):
         session = MagicMock()
-        from_dt = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        to_dt = datetime(2026, 1, 31, 23, 59, 59, tzinfo=timezone.utc)
-        content = build_audit_workbook(session, from_dt, to_dt)
+        content = build_audit_workbook(session, "2026-01-31")
         wb = load_workbook(io.BytesIO(content))
         self.assertEqual(wb.sheetnames, [spec.title for spec in SHEET_SPECS])
         for spec in SHEET_SPECS:
@@ -279,11 +280,7 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         ]
 
         with patch("api.audit_export._fetch_stripe_rows", return_value=stripe_rows):
-            content = build_audit_workbook(
-                MagicMock(),
-                datetime(2026, 1, 1, tzinfo=timezone.utc),
-                datetime(2026, 1, 31, tzinfo=timezone.utc),
-            )
+            content = build_audit_workbook(MagicMock(), "2026-01-31")
 
         wb = load_workbook(io.BytesIO(content))
         ws = wb["Stripe"]
@@ -331,7 +328,7 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         ]
 
         def tagged_side_effect(
-            session, payment_cls, build_read, club_names, from_dt, to_dt, *, tag_field
+            session, payment_cls, build_read, club_names, from_dt, to_dt, *, audit_date, tag_field
         ):
             if payment_cls.__name__ == "ZellePayment":
                 return tagged_rows
@@ -343,8 +340,7 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         ):
             content = build_audit_workbook(
                 MagicMock(),
-                datetime(2026, 6, 21, 4, 0, tzinfo=timezone.utc),
-                datetime(2026, 6, 22, 3, 59, 59, 999999, tzinfo=timezone.utc),
+                "2026-06-21",
             )
 
         wb = load_workbook(io.BytesIO(content))
@@ -376,7 +372,7 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         ]
 
         def tagged_side_effect(
-            session, payment_cls, build_read, club_names, from_dt, to_dt, *, tag_field
+            session, payment_cls, build_read, club_names, from_dt, to_dt, *, audit_date, tag_field
         ):
             if payment_cls.__name__ == "VenmoPayment":
                 return venmo_rows
@@ -388,8 +384,7 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         ):
             content = build_audit_workbook(
                 MagicMock(),
-                datetime(2026, 6, 21, 4, 0, tzinfo=timezone.utc),
-                datetime(2026, 6, 22, 3, 59, 59, 999999, tzinfo=timezone.utc),
+                "2026-06-21",
             )
 
         wb = load_workbook(io.BytesIO(content))
@@ -447,7 +442,7 @@ class AuditExportApiTestCase(unittest.TestCase):
         mock_build.assert_called_once()
 
     @patch("api.routes.payments.build_audit_workbook")
-    def test_audit_export_uses_eastern_day_bounds(self, mock_build):
+    def test_audit_export_uses_audit_date(self, mock_build):
         mock_build.return_value = b"fake-xlsx"
         response = self.client.get(
             "/api/payments/audit-export",
@@ -456,9 +451,8 @@ class AuditExportApiTestCase(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         mock_build.assert_called_once()
-        _, from_dt, to_dt = mock_build.call_args[0]
-        self.assertEqual(from_dt, datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc))
-        self.assertEqual(to_dt, datetime(2026, 6, 20, 4, 59, 59, 999999, tzinfo=timezone.utc))
+        _, audit_date = mock_build.call_args[0]
+        self.assertEqual(audit_date, "2026-06-19")
 
 
 if __name__ == "__main__":

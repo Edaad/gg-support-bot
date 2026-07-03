@@ -11,6 +11,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.auth import get_current_admin
+from api.club_audit_timezone import (
+    AuditTimezonePolicy,
+    audit_timezone_for_slug,
+    audit_timezone_label,
+)
 from api.club_slug import CLUB_SLUG_TO_NAME, resolve_club_id, slug_for_club_id
 from api.schemas_audit import TradeRecordUploadReport, TradeRecordUploadSummary
 from api.trade_record_parser import (
@@ -65,12 +70,23 @@ async def upload_trade_record(
     parsed_date = parsed.audit_date
     club_id = resolve_club_id(db, slug)
     club_name = CLUB_SLUG_TO_NAME[slug]
+    timezone_policy = audit_timezone_for_slug(slug)
 
     existing = (
         db.query(TradeRecordUpload)
-        .filter_by(club_id=club_id, audit_date=parsed_date)
+        .filter_by(club_slug=slug, audit_date=parsed_date)
         .first()
     )
+    if existing is None:
+        existing = (
+            db.query(TradeRecordUpload)
+            .filter_by(club_id=club_id, audit_date=parsed_date)
+            .filter(
+                (TradeRecordUpload.club_slug.is_(None))
+                | (TradeRecordUpload.club_slug == slug)
+            )
+            .first()
+        )
     replaced_previous = existing is not None
     metadata_json = json.dumps(
         {
@@ -86,11 +102,15 @@ async def upload_trade_record(
         )
         existing.filename = filename
         existing.metadata_json = metadata_json
+        existing.club_slug = slug
+        existing.audit_timezone_policy = timezone_policy.value
         upload = existing
         db.flush()
     else:
         upload = TradeRecordUpload(
             club_id=club_id,
+            club_slug=slug,
+            audit_timezone_policy=timezone_policy.value,
             audit_date=parsed_date,
             filename=filename,
             metadata_json=metadata_json,
@@ -132,6 +152,8 @@ async def upload_trade_record(
         club_slug=slug,
         club_name=club_name,
         audit_date=parsed_date,
+        audit_timezone_policy=timezone_policy.value,
+        audit_timezone_label=audit_timezone_label(timezone_policy),
         filename=filename,
         replaced_previous=replaced_previous,
         transaction_rows_parsed=len(parsed.transactions),
@@ -143,6 +165,7 @@ async def upload_trade_record(
         gg_computer_skipped=sync_report.gg_computer_skipped,
         gg_computer_error=sync_report.gg_computer_error,
         skipped_rows=parsed.skipped_rows,
+        warnings=parsed.warnings,
     )
 
 
@@ -162,8 +185,7 @@ def list_trade_record_uploads(
         slug = club_slug.strip().lower()
         if slug not in CLUB_SLUG_TO_NAME:
             raise HTTPException(400, f"Unknown club slug: {club_slug!r}")
-        club_id = resolve_club_id(db, slug)
-        q = q.filter(TradeRecordUpload.club_id == club_id)
+        q = q.filter(TradeRecordUpload.club_slug == slug)
 
     if audit_date:
         q = q.filter(TradeRecordUpload.audit_date == _parse_audit_date(audit_date))
@@ -177,13 +199,22 @@ def list_trade_record_uploads(
 
     out: list[TradeRecordUploadSummary] = []
     for upload, line_count in rows:
-        slug = slug_for_club_id(db, upload.club_id) or ""
+        slug = upload.club_slug or slug_for_club_id(db, upload.club_id) or ""
+        policy_value = upload.audit_timezone_policy
+        tz_label = None
+        if policy_value:
+            try:
+                tz_label = audit_timezone_label(AuditTimezonePolicy(policy_value))
+            except ValueError:
+                tz_label = None
         out.append(
             TradeRecordUploadSummary(
                 id=upload.id,
                 club_slug=slug,
                 club_name=CLUB_SLUG_TO_NAME.get(slug, slug),
                 audit_date=upload.audit_date,
+                audit_timezone_policy=policy_value,
+                audit_timezone_label=tz_label,
                 filename=upload.filename,
                 transaction_count=int(line_count or 0),
                 created_at=upload.created_at or datetime.utcnow(),

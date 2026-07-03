@@ -85,10 +85,20 @@ class AuditUploadApiTestCase(unittest.TestCase):
 
     def _existing_upload(self, **kwargs):
         for row in self.upload_rows:
-            if row.club_id == kwargs.get("club_id") and row.audit_date == kwargs.get(
-                "audit_date"
+            if kwargs.get("club_slug") is not None and row.club_slug == kwargs.get(
+                "club_slug"
             ):
-                return row
+                if row.audit_date == kwargs.get("audit_date"):
+                    return row
+            if kwargs.get("club_id") is not None and row.club_id == kwargs.get(
+                "club_id"
+            ):
+                if row.audit_date == kwargs.get("audit_date"):
+                    if kwargs.get("club_slug") is None or row.club_slug in (
+                        None,
+                        kwargs.get("club_slug"),
+                    ):
+                        return row
         return None
 
     @patch("api.routes.audit.sync_identities")
@@ -122,6 +132,8 @@ class AuditUploadApiTestCase(unittest.TestCase):
         self.assertEqual(body["transaction_rows_parsed"], 2)
         self.assertEqual(body["identities_extracted"], 3)
         self.assertEqual(body["club_slug"], "aces-table")
+        self.assertEqual(body["audit_timezone_policy"], "FIXED_UTC_MINUS_5")
+        self.assertEqual(body["audit_timezone_label"], "UTC-5")
         self.assertEqual(body["audit_date"], "2026-06-21")
         self.assertTrue(len(self.line_rows) >= 2)
 
@@ -134,6 +146,7 @@ class AuditUploadApiTestCase(unittest.TestCase):
         existing = TradeRecordUpload(
             id=1,
             club_id=2,
+            club_slug="aces-table",
             audit_date=date(2026, 6, 21),
             filename="old.xlsx",
             metadata_json="{}",

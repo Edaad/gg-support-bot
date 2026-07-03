@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Callable, Literal
-from zoneinfo import ZoneInfo
 
 from openpyxl import Workbook
 from openpyxl.comments import Comment
@@ -15,6 +14,15 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+
+from api.club_audit_timezone import (
+    audit_day_bounds_utc as club_audit_day_bounds_utc,
+    audit_day_window_utc as club_audit_day_window_utc,
+    occurred_at_in_audit_day,
+    union_audit_day_window_utc,
+    zone_for_slug,
+)
+from api.club_slug import slug_for_club_id
 
 from api.payments_helpers import (
     apply_analytics_payment_exclusion,
@@ -43,7 +51,6 @@ TAGGED_MANUAL_LAYOUT = ["Amount", "Name", "Tag", "Group", "Club", "Time"]
 
 SheetLayout = Literal["stripe", "manual", "tagged_manual"]
 
-_EASTERN = ZoneInfo("America/New_York")
 _HEADER_FILL = PatternFill("solid", fgColor="38761D")
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _CURRENCY_FORMAT = "$#,##0.00"
@@ -107,55 +114,31 @@ def _stripe_fee_usd(amount_cents: int) -> Decimal:
 
 
 def eastern_day_bounds_utc(date_str: str) -> tuple[datetime, datetime]:
-    """Return (start, end) of a US Eastern calendar day as UTC datetimes."""
-    raw = date_str.strip()[:10]
-    local_date = datetime.strptime(raw, "%Y-%m-%d").date()
-    start_et = datetime(
-        local_date.year,
-        local_date.month,
-        local_date.day,
-        tzinfo=_EASTERN,
-    )
-    next_day = local_date + timedelta(days=1)
-    end_et = datetime(
-        next_day.year,
-        next_day.month,
-        next_day.day,
-        tzinfo=_EASTERN,
-    ) - timedelta(microseconds=1)
-    return start_et.astimezone(timezone.utc), end_et.astimezone(timezone.utc)
+    """Return (start, end) of round-table local calendar day as UTC datetimes."""
+    return club_audit_day_bounds_utc("round-table", date_str)
 
 
 def eastern_audit_end_utc(date_str: str) -> datetime:
-    """UTC end of audit window for one Eastern calendar day + first hour of next day."""
-    raw = date_str.strip()[:10]
-    local_date = datetime.strptime(raw, "%Y-%m-%d").date()
-    next_day = local_date + timedelta(days=1)
-    end_et = datetime(
-        next_day.year,
-        next_day.month,
-        next_day.day,
-        1,
-        0,
-        0,
-        tzinfo=_EASTERN,
-    ) - timedelta(microseconds=1)
-    return end_et.astimezone(timezone.utc)
+    """UTC end of round-table audit export window (day + first hour of next)."""
+    _, end = club_audit_day_window_utc("round-table", date_str)
+    return end
 
 
 def audit_day_window_utc(date_str: str) -> tuple[datetime, datetime]:
-    """UTC bounds for one audit export day (Eastern calendar day + first hour of next)."""
-    parsed_from, _ = eastern_day_bounds_utc(date_str)
-    parsed_to = eastern_audit_end_utc(date_str)
-    return parsed_from, parsed_to
+    """UTC bounds for round-table audit export day (backward-compatible default)."""
+    return club_audit_day_window_utc("round-table", date_str)
 
 
-def _to_eastern(dt: datetime) -> datetime:
+def _to_club_local(dt: datetime, club_slug: str) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     else:
         dt = dt.astimezone(timezone.utc)
-    return dt.astimezone(_EASTERN)
+    return dt.astimezone(zone_for_slug(club_slug))
+
+
+def _to_eastern(dt: datetime) -> datetime:
+    return _to_club_local(dt, "round-table")
 
 
 def _ordinal_day(day: int) -> str:
@@ -166,10 +149,10 @@ def _ordinal_day(day: int) -> str:
     return f"{day}{suffix}"
 
 
-def _fmt_stripe_audit_time(value: datetime | None) -> str:
+def _fmt_stripe_audit_time(value: datetime | None, club_slug: str = "round-table") -> str:
     if value is None:
         return ""
-    dt = _to_eastern(value)
+    dt = _to_club_local(value, club_slug)
     month = dt.strftime("%b")
     day = _ordinal_day(dt.day)
     year = dt.year
@@ -177,10 +160,10 @@ def _fmt_stripe_audit_time(value: datetime | None) -> str:
     return f"{month} {day} {year}, {clock}"
 
 
-def _fmt_manual_audit_time(value: datetime | None) -> str:
+def _fmt_manual_audit_time(value: datetime | None, club_slug: str = "round-table") -> str:
     if value is None:
         return ""
-    dt = _to_eastern(value)
+    dt = _to_club_local(value, club_slug)
     month = dt.strftime("%B")
     day = dt.day
     year = dt.year
@@ -363,12 +346,57 @@ def _write_formatted_sheet(
         ws.auto_filter.ref = ws.dimensions
 
 
-def build_audit_workbook(session: Session, from_dt: datetime, to_dt: datetime) -> bytes:
+def _slug_for_payment_club(
+    session: Session,
+    club_id: int | None,
+    data: dict | None = None,
+) -> str:
+    if club_id is not None:
+        slug = slug_for_club_id(session, int(club_id))
+        if slug:
+            return slug
+    if data:
+        title = str(data.get("group_title") or "").strip()
+        if title:
+            from bot.services.player_details import parse_group_title_parts
+
+            parsed = parse_group_title_parts(title)
+            if parsed:
+                for token in sorted(parsed.shorthands):
+                    if token == "AT":
+                        return "aces-table"
+                    if token == "RT":
+                        return "round-table"
+                    if token == "GTO":
+                        return "clubgto"
+                    if token == "CC":
+                        return "creator-club"
+    return "round-table"
+
+
+def _payment_in_audit_day(
+    session: Session,
+    *,
+    audit_date: str,
+    club_id: int | None,
+    occurred_at: datetime | None,
+    data: dict | None = None,
+) -> bool:
+    if occurred_at is None:
+        return False
+    slug = _slug_for_payment_club(session, club_id, data)
+    return occurred_at_in_audit_day(occurred_at, slug, audit_date)
+
+
+def build_audit_workbook(session: Session, audit_date: str) -> bytes:
+    from_dt, to_dt = union_audit_day_window_utc(audit_date)
     club_names = _club_name_map(session)
     wb = Workbook()
     wb.remove(wb.active)
 
-    stripe_rows = _fetch_stripe_rows(session, club_names, from_dt, to_dt)
+    stripe_rows = _fetch_stripe_rows(
+        session, club_names, from_dt, to_dt, audit_date=audit_date
+    )
     zelle_rows = _fetch_tagged_manual_rows(
         session,
         ZellePayment,
@@ -376,6 +404,7 @@ def build_audit_workbook(session: Session, from_dt: datetime, to_dt: datetime) -
         club_names,
         from_dt,
         to_dt,
+        audit_date=audit_date,
         tag_field="zelle_recipient",
     )
     venmo_rows = _fetch_tagged_manual_rows(
@@ -385,6 +414,7 @@ def build_audit_workbook(session: Session, from_dt: datetime, to_dt: datetime) -
         club_names,
         from_dt,
         to_dt,
+        audit_date=audit_date,
         tag_field="venmo_handle",
     )
     cashapp_rows = _fetch_tagged_manual_rows(
@@ -394,6 +424,7 @@ def build_audit_workbook(session: Session, from_dt: datetime, to_dt: datetime) -
         club_names,
         from_dt,
         to_dt,
+        audit_date=audit_date,
         tag_field="cashapp_handle",
     )
     paypal_rows = _fetch_tagged_manual_rows(
@@ -403,6 +434,7 @@ def build_audit_workbook(session: Session, from_dt: datetime, to_dt: datetime) -
         club_names,
         from_dt,
         to_dt,
+        audit_date=audit_date,
         tag_field="paypal_email",
     )
 
@@ -437,6 +469,8 @@ def _fetch_stripe_rows(
     club_names: dict[int, str],
     from_dt: datetime,
     to_dt: datetime,
+    *,
+    audit_date: str,
 ) -> list[StripeAuditRow]:
     query = _apply_audit_stripe_filters(
         session.query(StripeCheckoutSession),
@@ -461,6 +495,15 @@ def _fetch_stripe_rows(
 
     out: list[StripeAuditRow] = []
     for row in rows:
+        completed = row.completed_at or row.created_at
+        if not _payment_in_audit_day(
+            session,
+            audit_date=audit_date,
+            club_id=row.club_id,
+            occurred_at=completed,
+        ):
+            continue
+
         cust = customer_by_stripe_id.get(row.stripe_customer_id)
         title, gg_id = resolve_group_title(
             session,
@@ -468,8 +511,8 @@ def _fetch_stripe_rows(
             fallback_gg_player_id=cust.gg_player_id if cust else None,
         )
         nickname = lookup_gg_nickname(session, row.club_id, gg_id) or ""
-        completed = row.completed_at or row.created_at
         club_label = _club_name(club_names, row.club_id)
+        club_slug = _slug_for_payment_club(session, row.club_id)
         method_label, _ = resolve_method_display(
             session, int(row.club_id), row.payment_method_id
         )
@@ -485,7 +528,7 @@ def _fetch_stripe_rows(
                 method_label=(method_label or "").strip(),
                 group_title=(title or "").strip(),
                 club_label=club_label,
-                time_label=_fmt_stripe_audit_time(completed),
+                time_label=_fmt_stripe_audit_time(completed, club_slug),
                 stripe_fee_usd=_stripe_fee_usd(row.amount_cents),
             )
         )
@@ -500,6 +543,7 @@ def _fetch_tagged_manual_rows(
     from_dt: datetime,
     to_dt: datetime,
     *,
+    audit_date: str,
     tag_field: str,
 ) -> list[TaggedManualAuditRow]:
     query = _apply_audit_manual_filters(
@@ -510,27 +554,41 @@ def _fetch_tagged_manual_rows(
         to_dt=to_dt,
     )
     rows = query.order_by(payment_cls.created_at.desc(), payment_cls.id.desc()).all()
-    return [
-        _tagged_manual_row(build_read(session, row), club_names, tag_field=tag_field)
-        for row in rows
-    ]
+    out: list[TaggedManualAuditRow] = []
+    for row in rows:
+        data = build_read(session, row)
+        if not _payment_in_audit_day(
+            session,
+            audit_date=audit_date,
+            club_id=data.get("club_id"),
+            occurred_at=data.get("created_at"),
+            data=data,
+        ):
+            continue
+        out.append(_tagged_manual_row(session, data, club_names, tag_field=tag_field))
+    return out
 
 
 def _tagged_manual_row(
-    data: dict, club_names: dict[int, str], *, tag_field: str
+    session: Session,
+    data: dict,
+    club_names: dict[int, str],
+    *,
+    tag_field: str,
 ) -> TaggedManualAuditRow:
     amount = data["amount_usd"]
     if isinstance(amount, Decimal):
         amount_usd = float(amount)
     else:
         amount_usd = float(amount)
+    club_slug = _slug_for_payment_club(session, data.get("club_id"), data)
     return TaggedManualAuditRow(
         amount_usd=amount_usd,
         payer_name=str(data["payer_name"]),
         account_tag=str(data.get(tag_field) or "").strip(),
         group_title=_manual_group_cell(data),
         club_label=_manual_club_name(data, club_names),
-        time_label=_fmt_manual_audit_time(data["created_at"]),
+        time_label=_fmt_manual_audit_time(data["created_at"], club_slug),
     )
 
 
@@ -541,6 +599,8 @@ def _fetch_manual_rows(
     club_names: dict[int, str],
     from_dt: datetime,
     to_dt: datetime,
+    *,
+    audit_date: str,
 ) -> list[ManualAuditRow]:
     query = _apply_audit_manual_filters(
         session,
@@ -550,19 +610,32 @@ def _fetch_manual_rows(
         to_dt=to_dt,
     )
     rows = query.order_by(payment_cls.created_at.desc(), payment_cls.id.desc()).all()
-    return [_manual_row(build_read(session, row), club_names) for row in rows]
+    out: list[ManualAuditRow] = []
+    for row in rows:
+        data = build_read(session, row)
+        if not _payment_in_audit_day(
+            session,
+            audit_date=audit_date,
+            club_id=data.get("club_id"),
+            occurred_at=data.get("created_at"),
+            data=data,
+        ):
+            continue
+        out.append(_manual_row(session, data, club_names))
+    return out
 
 
-def _manual_row(data: dict, club_names: dict[int, str]) -> ManualAuditRow:
+def _manual_row(session: Session, data: dict, club_names: dict[int, str]) -> ManualAuditRow:
     amount = data["amount_usd"]
     if isinstance(amount, Decimal):
         amount_usd = float(amount)
     else:
         amount_usd = float(amount)
+    club_slug = _slug_for_payment_club(session, data.get("club_id"), data)
     return ManualAuditRow(
         amount_usd=amount_usd,
         payer_name=str(data["payer_name"]),
         group_title=_manual_group_cell(data),
         club_label=_manual_club_name(data, club_names),
-        time_label=_fmt_manual_audit_time(data["created_at"]),
+        time_label=_fmt_manual_audit_time(data["created_at"], club_slug),
     )

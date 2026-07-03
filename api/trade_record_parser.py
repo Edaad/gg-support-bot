@@ -8,15 +8,18 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, BinaryIO, Literal
-from zoneinfo import ZoneInfo
 
 from openpyxl import load_workbook
 
+from api.club_audit_timezone import (
+    audit_timezone_for_slug,
+    parse_row_datetime as audit_parse_row_datetime,
+    period_timezone_warning,
+)
 from api.club_slug import CLUB_LABEL_TO_SLUG, CLUB_SLUG_TO_NAME, slug_for_club_name
 
 SHEET_NAME = "Trade Record"
 DATA_START_ROW = 6
-_EASTERN = ZoneInfo("America/New_York")
 _GG_ID_RE = re.compile(r"^[0-9]{1,48}-[0-9]{1,48}$")
 
 # Column indices (1-based) — Aces-21.xlsx Trade Record layout
@@ -71,6 +74,7 @@ class TradeRecordParseResult:
     identities: list[ParsedIdentity] = field(default_factory=list)
     transactions: list[ParsedTransaction] = field(default_factory=list)
     skipped_rows: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 class TradeRecordParseError(ValueError):
@@ -110,48 +114,6 @@ def _parse_amount(raw: Any) -> Decimal | None:
         return Decimal(s)
     except InvalidOperation:
         return None
-
-
-def _parse_row_datetime(raw: Any, audit_date: date) -> datetime | None:
-    if isinstance(raw, datetime):
-        dt = raw
-        if dt.tzinfo is None:
-            return dt.replace(tzinfo=_EASTERN)
-        return dt.astimezone(_EASTERN)
-    s = _cell_str(raw)
-    if not s:
-        return None
-    for fmt in (
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d %H:%M",
-        "%m/%d/%Y %H:%M:%S",
-        "%m/%d/%Y %H:%M",
-        "%Y-%m-%d",
-        "%m/%d/%Y",
-    ):
-        try:
-            parsed = datetime.strptime(s[:19] if " " in s else s, fmt)
-            if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=_EASTERN)
-            return parsed
-        except ValueError:
-            continue
-    # Time-only on audit day
-    for fmt in ("%H:%M:%S", "%H:%M"):
-        try:
-            t = datetime.strptime(s, fmt).time()
-            return datetime(
-                audit_date.year,
-                audit_date.month,
-                audit_date.day,
-                t.hour,
-                t.minute,
-                t.second,
-                tzinfo=_EASTERN,
-            )
-        except ValueError:
-            continue
-    return None
 
 
 def _row_cells(ws, row: int, max_col: int = 20) -> list[str]:
@@ -313,6 +275,11 @@ def parse_trade_record_workbook(
     metadata = _metadata_from_sheet(ws)
     audit_date = extract_audit_date_from_metadata(metadata)
     club_slug = resolve_club_slug_from_metadata(metadata)
+    timezone_policy = audit_timezone_for_slug(club_slug)
+    warnings: list[str] = []
+    tz_warning = period_timezone_warning(metadata.date_text, club_slug)
+    if tz_warning:
+        warnings.append(tz_warning)
 
     identities_by_key: dict[tuple[Role, str], ParsedIdentity] = {}
     transactions: list[ParsedTransaction] = []
@@ -334,9 +301,10 @@ def parse_trade_record_workbook(
             row += 1
             continue
 
-        occurred_at = _parse_row_datetime(
+        occurred_at = audit_parse_row_datetime(
             ws.cell(row=row, column=COL_TIME).value,
             audit_date,
+            timezone_policy,
         )
 
         for role, (id_col, nick_col) in ROLE_COLUMNS.items():
@@ -378,4 +346,5 @@ def parse_trade_record_workbook(
         identities=list(identities_by_key.values()),
         transactions=transactions,
         skipped_rows=skipped_rows,
+        warnings=warnings,
     )

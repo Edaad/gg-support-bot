@@ -80,6 +80,21 @@ class TradeRecordParserTestCase(unittest.TestCase):
         with self.assertRaises(TradeRecordValidationError):
             parse_trade_record_workbook(buf.getvalue())
 
+    def test_occurred_at_stored_as_utc_for_fixed_offset_club(self):
+        raw = build_sample_trade_record_xlsx(
+            club_label="Aces Table",
+            audit_date=date(2026, 6, 21),
+        )
+        parsed = parse_trade_record_workbook(raw)
+        occurred = parsed.transactions[0].occurred_at
+        self.assertIsNotNone(occurred)
+        assert occurred is not None
+        from datetime import timezone
+
+        self.assertEqual(occurred.tzinfo, timezone.utc)
+        self.assertEqual(occurred.hour, 19)
+        self.assertEqual(occurred.minute, 30)
+
     def test_missing_sheet_raises(self):
         from openpyxl import Workbook
         import io

@@ -1671,7 +1671,7 @@ class PlayerSupportNote(Base):
 
 
 class TradeRecordUpload(Base):
-    """One trade record XLSX ingest per club + ET audit day."""
+    """One trade record XLSX ingest per club slug + local audit day."""
 
     __tablename__ = "trade_record_uploads"
     __table_args__ = (
@@ -1681,12 +1681,15 @@ class TradeRecordUpload(Base):
             name="uq_trade_record_uploads_club_date",
         ),
         Index("ix_trade_record_uploads_club_id", "club_id"),
+        Index("ix_trade_record_uploads_club_slug", "club_slug"),
     )
 
     id = Column(Integer, primary_key=True)
     club_id = Column(
         Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
     )
+    club_slug = Column(String(64), nullable=True)
+    audit_timezone_policy = Column(String(32), nullable=True)
     audit_date = Column(Date, nullable=False)
     filename = Column(String(512), nullable=False)
     metadata_json = Column(Text, nullable=True)

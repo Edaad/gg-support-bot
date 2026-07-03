@@ -12,7 +12,7 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from api.auth import get_current_admin
-from api.audit_export import build_audit_workbook, audit_day_window_utc
+from api.audit_export import build_audit_workbook
 from api.payments_helpers import (
     apply_analytics_chat_exclusion,
     apply_customer_search,
@@ -253,18 +253,15 @@ def audit_export(
 ):
     if not date.strip():
         raise HTTPException(400, "date is required.")
+    date_label = date.strip()[:10]
     try:
-        parsed_from, parsed_to = audit_day_window_utc(date)
+        content = build_audit_workbook(db, date_label)
     except ValueError as e:
         raise HTTPException(400, f"Invalid date: {e}") from e
-
-    try:
-        content = build_audit_workbook(db, parsed_from, parsed_to)
     except ProgrammingError as exc:
         _raise_db_schema_error(exc)
         raise
 
-    date_label = date.strip()[:10]
     filename = f"audit-export-{date_label}.xlsx"
     return StreamingResponse(
         iter([content]),
