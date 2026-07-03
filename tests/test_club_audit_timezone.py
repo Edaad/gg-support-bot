@@ -8,6 +8,7 @@ from datetime import date, datetime, timezone
 from api.club_audit_timezone import (
     AuditTimezonePolicy,
     UnknownClubSlugError,
+    audit_date_for_occurred_at,
     audit_day_bounds_utc,
     audit_day_window_utc,
     audit_timezone_for_slug,
@@ -99,6 +100,21 @@ class ClubAuditTimezoneTestCase(unittest.TestCase):
         self.assertIsNotNone(rt_parsed)
         assert rt_parsed is not None
         self.assertTrue(occurred_at_in_audit_day(rt_parsed, "round-table", audit_d))
+
+    def test_audit_date_for_occurred_at_grace_hour_belongs_to_prior_day(self):
+        # 00:30 UTC-4 on July 4 → audit day July 3
+        ts = datetime(2026, 7, 4, 4, 30, tzinfo=timezone.utc)
+        self.assertEqual(audit_date_for_occurred_at(ts, "round-table"), date(2026, 7, 3))
+
+    def test_audit_date_for_occurred_at_after_grace_hour_same_day(self):
+        ts = datetime(2026, 7, 4, 5, 0, tzinfo=timezone.utc)
+        self.assertEqual(audit_date_for_occurred_at(ts, "round-table"), date(2026, 7, 4))
+
+    def test_audit_date_round_trip_with_occurred_at_in_audit_day(self):
+        audit_d = date(2026, 6, 21)
+        ts = datetime(2026, 6, 22, 3, 30, tzinfo=timezone.utc)
+        self.assertEqual(audit_date_for_occurred_at(ts, "round-table"), audit_d)
+        self.assertTrue(occurred_at_in_audit_day(ts, "round-table", audit_d))
 
     def test_parse_row_datetime_returns_utc(self):
         policy = audit_timezone_for_slug("clubgto")

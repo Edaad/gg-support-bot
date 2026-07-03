@@ -94,6 +94,7 @@ def create_app() -> FastAPI:
     from api.routes.v2_payment import router as v2_payment_router
     from api.routes.issue_reports import router as issue_reports_router
     from api.routes.audit import router as audit_router
+    from api.routes.early_rakeback_webhook import router as early_rakeback_webhook_router
 
     app.include_router(weekly_stats_proxy_router)
     app.include_router(stripe_deposit_router)
@@ -113,6 +114,7 @@ def create_app() -> FastAPI:
     app.include_router(bonus_router)
     app.include_router(cashout_records_router)
     app.include_router(payments_router)
+    app.include_router(early_rakeback_webhook_router)
     app.include_router(audit_router)
     app.include_router(issue_reports_router)
 

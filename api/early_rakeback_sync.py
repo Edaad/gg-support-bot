@@ -12,7 +12,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from api.aon_beta_client import AonBetaConfigError, fetch_early_rakeback_entries
-from api.club_audit_timezone import audit_day_window_utc
+from api.club_audit_timezone import audit_date_for_occurred_at, audit_day_window_utc
 from api.club_slug import ALL_GG_COMPUTER_CLUB_SLUGS, CLUB_SLUG_TO_NAME, resolve_club_id
 from db.models import EarlyRakebackLine, EarlyRakebackSnapshot
 
@@ -193,6 +193,24 @@ def _replace_snapshot(
         )
 
     return snapshot
+
+
+def trigger_early_rakeback_sync_for_occurred_at(
+    session: Session,
+    club_slug: str,
+    occurred_at: datetime | None = None,
+) -> EarlyRakebackSyncReport:
+    """Sync one club for the audit day containing occurred_at (defaults to now UTC)."""
+    slug = club_slug.strip().lower()
+    if slug not in CLUB_SLUG_TO_NAME:
+        raise ValueError(f"Unknown club slug: {club_slug!r}")
+    ts = occurred_at or datetime.now(timezone.utc)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    else:
+        ts = ts.astimezone(timezone.utc)
+    audit_date = audit_date_for_occurred_at(ts, slug)
+    return sync_early_rakeback_for_date(session, audit_date, club_slugs=[slug])
 
 
 def sync_early_rakeback_for_date(

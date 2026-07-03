@@ -206,6 +206,18 @@ def occurred_at_in_audit_day(
     return start <= ts <= end
 
 
+def audit_date_for_occurred_at(ts: datetime, slug: str) -> date:
+    """Map a UTC timestamp to the club audit calendar day (00:00–00:59 → prior day)."""
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    else:
+        ts = ts.astimezone(timezone.utc)
+    local = ts.astimezone(zone_for_slug(slug))
+    if local.hour == 0:
+        return local.date() - timedelta(days=1)
+    return local.date()
+
+
 def period_timezone_warning(
     period_text: str,
     slug: str,
