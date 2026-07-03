@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 from telegram.ext import ConversationHandler
 
+from bot.handlers import cashout as co
 from bot.handlers import deposit as dep
 from bot.handlers import flow_staleness as fs
 
@@ -76,6 +77,34 @@ class TestFlowStalenessHelpers(unittest.TestCase):
         username_msg = SimpleNamespace(text="TakeYourStack")
         self.assertTrue(fs.AMOUNT_TEXT.filter(amount_msg))
         self.assertFalse(fs.AMOUNT_TEXT.filter(username_msg))
+
+    def test_deposit_amount_actor_admin_initiated(self):
+        ctx = SimpleNamespace(
+            chat_data={
+                "deposit_admin_initiated": True,
+                "deposit_admin_user_id": 7516419496,
+            }
+        )
+        self.assertTrue(
+            fs.deposit_amount_actor_allowed(ctx, sender_id=8132930521, text="100")
+        )
+        self.assertFalse(
+            fs.deposit_amount_actor_allowed(ctx, sender_id=7516419496, text="100")
+        )
+
+    def test_cashout_amount_actor_admin_initiated(self):
+        ctx = SimpleNamespace(
+            chat_data={
+                "cashout_admin_initiated": True,
+                "cashout_admin_user_id": 7516419496,
+            }
+        )
+        self.assertTrue(
+            fs.cashout_amount_actor_allowed(ctx, sender_id=8132930521, text="100")
+        )
+        self.assertFalse(
+            fs.cashout_amount_actor_allowed(ctx, sender_id=7516419496, text="100")
+        )
 
     def test_is_update_too_old_rejects_four_minute_backlog(self):
         update = _message_update(age_seconds=240)
@@ -152,12 +181,28 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
         "get_methods_for_amount",
         return_value=[{"id": 29, "slug": "applepay", "name": "Apple Pay"}],
     )
-    async def test_admin_amount_still_accepted(self, *_mocks):
+    async def test_admin_amount_is_silent(self, *_mocks):
         update = _message_update(age_seconds=5, text="40", user_id=7516419496)
+        context = self._admin_context()
+        result = await dep.deposit_amount_received(update, context)
+        self.assertEqual(result, dep.DEPOSIT_AMOUNT)
+        update.message.reply_text.assert_not_called()
+        self.assertNotIn("deposit_amount", context.chat_data)
+
+    @patch.object(dep, "_prompt_deposit_methods", new_callable=AsyncMock)
+    @patch.object(dep, "is_round_table_club", return_value=False)
+    @patch.object(
+        dep,
+        "get_methods_for_amount",
+        return_value=[{"id": 29, "slug": "applepay", "name": "Apple Pay"}],
+    )
+    async def test_customer_amount_accepted(self, *_mocks):
+        update = _message_update(age_seconds=5, text="40", user_id=8132930521)
         context = self._admin_context()
         result = await dep.deposit_amount_received(update, context)
         self.assertEqual(result, dep.DEPOSIT_CHOOSE)
         self.assertEqual(context.chat_data["deposit_amount"], Decimal("40"))
+        self.assertEqual(context.chat_data["deposit_user_id"], 8132930521)
 
     async def test_stale_amount_update_is_silent(self):
         update = _message_update(age_seconds=240, text="40", user_id=7516419496)
@@ -165,6 +210,39 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
         result = await dep.deposit_amount_received(update, context)
         self.assertEqual(result, ConversationHandler.END)
         update.message.reply_text.assert_not_called()
+
+
+class TestCashoutAmountActorGating(unittest.IsolatedAsyncioTestCase):
+    def _admin_context(self):
+        return SimpleNamespace(
+            chat_data={
+                "cashout_club_id": 4,
+                "cashout_chat_id": -1003978131309,
+                "cashout_admin_initiated": True,
+                "cashout_admin_user_id": 7516419496,
+            },
+            user_data={},
+        )
+
+    async def test_admin_amount_is_silent(self):
+        update = _message_update(age_seconds=5, text="40", user_id=7516419496)
+        context = self._admin_context()
+        result = await co.cashout_amount_received(update, context)
+        self.assertEqual(result, co.CASHOUT_AMOUNT)
+        update.message.reply_text.assert_not_called()
+        self.assertNotIn("cashout_amount", context.chat_data)
+
+    @patch.object(co, "check_cashout_eligibility", return_value=(True, ""))
+    @patch.object(co, "is_club_staff", return_value=False)
+    @patch.object(co, "get_cashout_max_amount", return_value=None)
+    @patch.object(co, "_show_method_keyboard", new_callable=AsyncMock, return_value=co.CASHOUT_CHOOSE)
+    async def test_customer_amount_accepted(self, *_mocks):
+        update = _message_update(age_seconds=5, text="40", user_id=8132930521)
+        context = self._admin_context()
+        result = await co.cashout_amount_received(update, context)
+        self.assertEqual(result, co.CASHOUT_CHOOSE)
+        self.assertEqual(context.chat_data["cashout_amount"], Decimal("40"))
+        self.assertEqual(context.chat_data["cashout_user_id"], 8132930521)
 
 
 class TestDepositCallbackStaleness(unittest.IsolatedAsyncioTestCase):

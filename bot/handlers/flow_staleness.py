@@ -11,6 +11,8 @@ from decimal import Decimal, InvalidOperation
 from telegram import Update
 from telegram.ext import ContextTypes, filters
 
+from config import ADMIN_USER_IDS
+
 logger = logging.getLogger(__name__)
 
 _STALE_CALLBACK_ALERT = "This session expired — use {flow_command} again."
@@ -103,7 +105,8 @@ def deposit_amount_actor_allowed(
     if sender_id is None or not looks_like_amount(text):
         return False
     if context.chat_data.get("deposit_admin_initiated"):
-        return sender_id == context.chat_data.get("deposit_admin_user_id")
+        # Admin starts /deposit; the customer (not a global admin) enters the amount.
+        return sender_id not in ADMIN_USER_IDS
     depositor_id = context.chat_data.get("deposit_user_id")
     return depositor_id is not None and sender_id == depositor_id
 
@@ -117,7 +120,8 @@ def cashout_amount_actor_allowed(
     if sender_id is None or not looks_like_amount(text):
         return False
     if context.chat_data.get("cashout_admin_initiated"):
-        return sender_id == context.chat_data.get("cashout_admin_user_id")
+        # Admin starts /cashout; the customer (not a global admin) enters the amount.
+        return sender_id not in ADMIN_USER_IDS
     cashouter_id = context.chat_data.get("cashout_user_id")
     return cashouter_id is not None and sender_id == cashouter_id
 
