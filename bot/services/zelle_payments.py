@@ -83,6 +83,8 @@ def format_setup_already_linked_warning(
     setup_chat_title: str,
 ) -> str:
     """Staff warning when a first-time setup payment matches an already-linked payer/group."""
+    from notification.formatting import format_setup_blocked_header_lines
+
     titles = already_bound_group_titles or [already_bound_group_title]
     titles = [t for t in titles if (t or "").strip()] or [already_bound_group_title]
 
@@ -92,12 +94,16 @@ def format_setup_already_linked_warning(
         else "Last deposit: No prior bound deposits found"
     )
 
-    lines = [
-        "⚠️ First-time Zelle setup warning",
-        "",
-        f"Auto-bind attempt from {escape_notification_html(setup_chat_title)} blocked.",
-        "Payer name already has possible match(es):",
-    ]
+    lines = format_setup_blocked_header_lines(
+        single_title_preamble="⚠️ First-time Zelle setup warning",
+        multi_candidate=len(titles) > 1,
+    )
+    lines.extend(
+        [
+            f"Auto-bind attempt from {escape_notification_html(setup_chat_title)} blocked.",
+            "Payer name already has possible match(es):",
+        ]
+    )
     for title in titles:
         lines.append(f"• {escape_notification_html(title)}")
     player_line = format_player_id_line(titles[0])

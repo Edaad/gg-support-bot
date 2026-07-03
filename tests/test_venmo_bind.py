@@ -158,6 +158,29 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         self.assertIn("Setup chat: RT / 9999-0000 / New Setup", text)
         self.assertNotIn("Open group chat", text)
 
+    def test_format_setup_already_linked_warning_multi_candidate(self):
+        from datetime import datetime, timezone
+
+        payment = VenmoPayment(
+            payer_name="Vito Corleone",
+            amount_cents=500,
+            venmo_handle="@michaelc4444",
+            goods_or_services=False,
+        )
+        other_title = "RT / 1111-2222 / Other Player"
+        text = vp.format_setup_already_linked_warning(
+            payment,
+            already_bound_group_title=GROUP_TITLE,
+            already_bound_group_titles=[GROUP_TITLE, other_title],
+            last_deposit_at=datetime(2026, 6, 4, 23, 27, tzinfo=timezone.utc),
+            setup_chat_title="RT / 9999-0000 / New Setup",
+        )
+        self.assertIn("FIRST-TIME SETUP WARNING — VERIFY BEFORE BINDING", text)
+        self.assertIn("MULTIPLE GROUPS", text)
+        self.assertIn("FIRST-DEPOSIT BONUS", text)
+        self.assertIn(GROUP_TITLE, text)
+        self.assertIn(other_title, text)
+
     def test_format_setup_already_linked_warning_no_prior_deposit(self):
         payment = VenmoPayment(
             payer_name="Vito Corleone",

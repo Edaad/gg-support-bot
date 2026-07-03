@@ -17,6 +17,29 @@ UNBOUND_GROUP_CHAT_LINE = (
 AMBIGUOUS_GROUP_CHAT_LINE = "Group Chat: Unbound — select group below"
 
 
+def format_setup_blocked_header_lines(
+    *,
+    single_title_preamble: str,
+    multi_candidate: bool,
+) -> list[str]:
+    """Opening lines for staff first-time setup blocked warnings (HTML)."""
+    if multi_candidate:
+        return [
+            "<b>🚨 FIRST-TIME SETUP WARNING — VERIFY BEFORE BINDING</b>",
+            "",
+            "<b>THIS PAYER NAME ALREADY MATCHES MULTIPLE GROUPS.</b>",
+            (
+                "THE PLAYER MAY BE TRYING TO CLAIM A <b>FIRST-DEPOSIT BONUS</b> "
+                "FROM A NEW GROUP — CONFIRM IDENTITY BEFORE BINDING."
+            ),
+            "",
+        ]
+    return [
+        single_title_preamble,
+        "",
+    ]
+
+
 def format_player_id_line(group_title: str | None) -> str | None:
     """Tap-to-copy Player ID line for HTML payment notifications."""
     from bot.services.player_details import gg_player_id_from_title

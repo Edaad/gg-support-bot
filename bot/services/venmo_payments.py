@@ -235,6 +235,8 @@ def format_setup_already_linked_warning(
     if not method.startswith("@"):
         method = f"@{method.lstrip('@')}"
 
+    from notification.formatting import format_setup_blocked_header_lines
+
     titles = already_bound_group_titles or [already_bound_group_title]
     titles = [t for t in titles if (t or "").strip()]
     if not titles:
@@ -246,12 +248,16 @@ def format_setup_already_linked_warning(
         else "Last deposit: No prior bound deposits found"
     )
 
-    lines = [
-        "⚠️ First-time setup warning",
-        "",
-        f"Auto-bind attempt from {escape_notification_html(setup_chat_title)} blocked.",
-        f"Payer name already has possible match(es):",
-    ]
+    lines = format_setup_blocked_header_lines(
+        single_title_preamble="⚠️ First-time setup warning",
+        multi_candidate=len(titles) > 1,
+    )
+    lines.extend(
+        [
+            f"Auto-bind attempt from {escape_notification_html(setup_chat_title)} blocked.",
+            "Payer name already has possible match(es):",
+        ]
+    )
     for title in titles:
         lines.append(f"• {escape_notification_html(title)}")
     player_line = format_player_id_line(titles[0])
