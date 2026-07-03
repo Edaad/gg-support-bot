@@ -24,10 +24,17 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
             venmo_handle="@alice",
             goods_or_services=False,
         )
-        with patch(
-            "bot.services.issue_reports.create_issue_report",
-            new=AsyncMock(),
-        ) as create_mock:
+        mock_session = MagicMock()
+        mock_session.query.return_value.filter_by.return_value.one.return_value = payment
+        with (
+            patch("bot.services.venmo_payments.get_db") as mock_get_db,
+            patch(
+                "bot.services.issue_reports.create_issue_report",
+                new=AsyncMock(),
+            ) as create_mock,
+        ):
+            mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
             await vp.maybe_create_venmo_goods_services_issue_report(payment)
         create_mock.assert_not_awaited()
 
@@ -44,6 +51,7 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
         )
         create_mock = AsyncMock()
         mock_session = MagicMock()
+        mock_session.query.return_value.filter_by.return_value.one.return_value = payment
         with (
             patch("bot.services.venmo_payments.get_db") as mock_get_db,
             patch(
@@ -174,6 +182,82 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertFalse(result.created)
+        report_mock.assert_not_awaited()
+
+    async def test_ingest_returns_after_notification_session_closes(self):
+        """Regression: ingest must not read ORM attrs after the update session closes."""
+        payment_obj = VenmoPayment(
+            id=55,
+            payer_name="Brayden solberg",
+            amount_cents=25000,
+            venmo_handle="@godfather4444",
+            goods_or_services=False,
+        )
+
+        def _query(model):
+            q = MagicMock()
+            if model is VenmoPayment:
+                q.filter_by.return_value.one_or_none.return_value = None
+                q.filter_by.return_value.one.return_value = payment_obj
+            return q
+
+        mock_session = MagicMock()
+        mock_session.query.side_effect = _query
+
+        def _add(obj):
+            if isinstance(obj, VenmoPayment) and obj.id is None:
+                obj.id = 55
+
+        mock_session.add.side_effect = _add
+        mock_session.flush = MagicMock()
+
+        with (
+            patch("bot.services.venmo_payments.get_db") as mock_get_db,
+            patch(
+                "bot.services.venmo_payments.send_telegram_notification",
+                new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
+            ),
+            patch(
+                "bot.services.venmo_payments.match_pending_memo_setup_in_session",
+                return_value=None,
+            ),
+            patch(
+                "bot.services.venmo_payments.match_pending_venmo_setup_in_session",
+                return_value=None,
+            ),
+            patch(
+                "bot.services.payment_bind_candidates.candidates_for_payment",
+                return_value=[],
+            ),
+            patch("bot.services.venmo_payments.track_ingest_notification"),
+            patch(
+                "bot.services.venmo_payments.maybe_notify_player_on_auto_bound",
+                new=AsyncMock(),
+            ) as notify_mock,
+            patch(
+                "bot.services.venmo_payments.maybe_create_venmo_goods_services_issue_report",
+                new=AsyncMock(),
+            ) as report_mock,
+        ):
+            mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = await vp.ingest_venmo_payment(
+                payer_name="Brayden solberg",
+                amount="250.00",
+                venmo_handle="@godfather4444",
+                goods_or_services=False,
+            )
+
+        self.assertTrue(result.created)
+        self.assertEqual(result.payment_id, 55)
+        notify_mock.assert_awaited_once_with(
+            telegram_chat_id=payment_obj.telegram_chat_id,
+            amount_cents=25000,
+            auto_bound=False,
+            is_test=False,
+            goods_or_services=False,
+        )
         report_mock.assert_not_awaited()
 
 

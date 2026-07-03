@@ -381,24 +381,26 @@ def _format_goods_services_issue_report_description(
 
 
 async def maybe_create_venmo_goods_services_issue_report(
-    payment: VenmoPayment,
+    payment: VenmoPayment | int,
     *,
     group_title: Optional[str] = None,
     notification_chat_id: Optional[int] = None,
     notification_message_id: Optional[int] = None,
 ) -> None:
     """Auto-create a deposit issue report for Goods & Services Venmo payments."""
-    if not payment.goods_or_services:
-        return
+    payment_id = int(payment if isinstance(payment, int) else payment.id)
     try:
         from bot.services.issue_reports import create_issue_report
 
         with get_db() as session:
+            row = session.query(VenmoPayment).filter_by(id=payment_id).one()
+            if not row.goods_or_services:
+                return
             await create_issue_report(
                 session,
-                title=_format_goods_services_issue_report_title(payment),
+                title=_format_goods_services_issue_report_title(row),
                 description=_format_goods_services_issue_report_description(
-                    payment,
+                    row,
                     group_title=group_title,
                     notification_chat_id=notification_chat_id,
                     notification_message_id=notification_message_id,
@@ -407,20 +409,20 @@ async def maybe_create_venmo_goods_services_issue_report(
                 notify_tags=["head_admin"],
                 reporter_name="GG Support Bot",
                 reporter_source="venmo_ingest",
-                club_id=int(payment.club_id) if payment.club_id is not None else None,
+                club_id=int(row.club_id) if row.club_id is not None else None,
                 group_title=group_title,
-                telegram_chat_id=int(payment.telegram_chat_id)
-                if payment.telegram_chat_id is not None
+                telegram_chat_id=int(row.telegram_chat_id)
+                if row.telegram_chat_id is not None
                 else None,
             )
         logger.info(
             "venmo ingest: goods/services issue report created payment_id=%s",
-            payment.id,
+            payment_id,
         )
     except Exception:
         logger.exception(
             "venmo ingest: goods/services issue report failed payment_id=%s",
-            payment.id,
+            payment_id,
         )
 
 
@@ -861,6 +863,7 @@ async def ingest_venmo_payment(
         bound_chat_id = payment.telegram_chat_id
         bound_club_id = payment.club_id
         bound_title = payment.bound_group_title_at_bind
+        goods_or_services_flag = bool(payment.goods_or_services)
 
     track_ingest_notification(
         payment_method_slug="venmo",
@@ -879,12 +882,12 @@ async def ingest_venmo_payment(
         amount_cents=amount_cents,
         auto_bound=auto_bound,
         is_test=bool(test),
-        goods_or_services=bool(payment.goods_or_services),
+        goods_or_services=goods_or_services_flag,
     )
 
-    if payment.goods_or_services:
+    if goods_or_services_flag:
         await maybe_create_venmo_goods_services_issue_report(
-            payment,
+            payment_id,
             group_title=bound_title or group_title,
             notification_chat_id=notif_chat_id,
             notification_message_id=notif_message_id,
