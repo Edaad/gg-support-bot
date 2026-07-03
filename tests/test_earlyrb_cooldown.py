@@ -25,17 +25,18 @@ class EarlyrbEligibilityTestCase(unittest.TestCase):
 
     @patch("bot.services.club.get_last_activity_by_type")
     @patch("bot.services.club.get_cooldown_settings")
-    def test_denied_within_cooldown(self, mock_settings, mock_last):
+    def test_denied_within_cooldown_includes_countdown(self, mock_settings, mock_last):
         mock_settings.return_value = {"cooldown_hours": 24}
         mock_last.return_value = datetime.now(timezone.utc) - timedelta(hours=2)
 
         eligible, msg = check_earlyrb_eligibility(club_id=1, chat_id=100)
 
         self.assertFalse(eligible)
-        self.assertIsNotNone(msg)
         assert msg is not None
         self.assertIn("early rakeback requests", msg)
         self.assertIn("50 minimum", msg)
+        self.assertIn("/earlyrb again at", msg)
+        self.assertIn(" EST ", msg)
 
     @patch("bot.services.club.get_last_activity_by_type")
     @patch("bot.services.club.get_cooldown_settings")
@@ -59,6 +60,7 @@ class EarlyrbEligibilityTestCase(unittest.TestCase):
         self.assertFalse(eligible)
         assert msg is not None
         self.assertIn("24 hours", msg)
+        self.assertIn("/earlyrb again at", msg)
 
 
 class EarlyrbHandlerTestCase(unittest.IsolatedAsyncioTestCase):

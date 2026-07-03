@@ -1019,11 +1019,22 @@ def check_earlyrb_eligibility(
     if last is None:
         return True, None
 
-    cooldown_passed, _, _ = _format_cooldown_wait(last, cooldown_hours, now_utc)
+    cooldown_passed, _, eligible_at_est = _format_cooldown_wait(
+        last, cooldown_hours, now_utc
+    )
     if cooldown_passed:
         return True, None
 
-    return False, EARLYRB_COOLDOWN_DENIAL_MESSAGE
+    elig_time = eligible_at_est.strftime("%-I:%M %p") if eligible_at_est else ""
+    elig_day = (
+        _day_label(eligible_at_est.date(), now_utc.astimezone(EST).date())
+        if eligible_at_est
+        else ""
+    )
+    return False, (
+        f"{EARLYRB_COOLDOWN_DENIAL_MESSAGE}\n\n"
+        f"You can use /earlyrb again at {elig_time} EST {elig_day}."
+    )
 
 
 def check_cashout_eligibility(
