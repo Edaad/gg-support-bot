@@ -51,16 +51,14 @@ GC_USERS_TO_INVITE: dict[str, tuple[str, ...]] = {
     "round_table": (
         "@RoundTableSupport2",
         "@RoundTableSupport3",
-        "@YTranslateBot",
         "@playggsupport",
     ),
     "creator_club": (
         "@CreatorClubSupport3",
         "@twocardcashier",
-        "@YTranslateBot",
         "@playggsupport",
     ),
-    "clubgto": ("@ClubGTOAdmin", "@YTranslateBot"),
+    "clubgto": ("@ClubGTOAdmin",),
 }
 
 _GC_USERS_ENV_BY_CLUB_KEY: dict[str, str] = {
