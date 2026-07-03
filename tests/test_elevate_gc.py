@@ -14,7 +14,6 @@ from club_gc_settings import (
     build_auxiliary_mtproto_config,
     build_club_gc_config,
     get_gc_users_to_add,
-    link_join_exclude_normalized,
     resolve_group_creator_cfg,
 )
 
@@ -48,23 +47,19 @@ class TestElevateConfig(unittest.TestCase):
             self.assertIsNone(cfg.group_creator_club_key)
             self.assertEqual(resolve_group_creator_cfg(cfg).club_key, "round_table")
 
-    def test_elevate_enabled_uses_round_table_for_link_join(self) -> None:
+    def test_elevate_env_ignored_round_table_always_creates(self) -> None:
+        """Round Table MTProto session creates groups; Elevate is not the creator."""
         env = {
             "GC_ELEVATE_CREATOR_ROUND_TABLE": "true",
             "GC_PROMOTE_ADMIN_ROUND_TABLE": "@RoundTableSupport2",
         }
         with patch.dict(os.environ, env, clear=False):
             cfg = build_club_gc_config()["round_table"]
-            self.assertEqual(cfg.group_creator_club_key, "elevate_admin")
-            self.assertEqual(cfg.link_join_club_key, "round_table")
-            self.assertEqual(cfg.promote_admin_marker, "@RoundTableSupport2")
-            exclude = link_join_exclude_normalized(cfg)
-            self.assertNotIn("roundtablesupport2", exclude)
+            self.assertIsNone(cfg.group_creator_club_key)
+            self.assertIsNone(cfg.link_join_club_key)
+            self.assertEqual(resolve_group_creator_cfg(cfg).club_key, "round_table")
             users = get_gc_users_to_add(cfg)
             self.assertIn("@RoundTableSupport2", users)
-            with patch("club_gc_settings._elevate_creator_round_table_enabled", return_value=True):
-                creator = resolve_group_creator_cfg(cfg)
-            self.assertEqual(creator.club_key, "elevate_admin")
 
     def test_auxiliary_profiles_elevate_only(self) -> None:
         aux = build_auxiliary_mtproto_config()

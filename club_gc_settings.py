@@ -114,22 +114,6 @@ def _elevate_creator_round_table_enabled() -> bool:
     return str(raw).strip().lower() not in ("0", "false", "no", "off")
 
 
-def _round_table_elevate_kwargs() -> dict[str, object]:
-    """Optional Elevate Admin creator + RTS2 link-join when ``GC_ELEVATE_CREATOR_ROUND_TABLE`` is on."""
-
-    if not _elevate_creator_round_table_enabled():
-        return {}
-    exclude_raw = _env_csv_tuple("GC_LINK_JOIN_EXCLUDE_ROUND_TABLE")
-    exclude = exclude_raw
-    promote = _env_optional("GC_PROMOTE_ADMIN_ROUND_TABLE") or "@RoundTableSupport2"
-    return {
-        "group_creator_club_key": "elevate_admin",
-        "link_join_club_key": "round_table",
-        "promote_admin_marker": promote,
-        "link_join_exclude_markers": exclude,
-    }
-
-
 @dataclass(frozen=True)
 class ClubGcConfig:
     club_key: str
@@ -180,7 +164,6 @@ def build_auxiliary_mtproto_config() -> Mapping[str, ClubGcConfig]:
 
 def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
     bot_account = _env_optional("GC_BOT_ACCOUNT")
-    rt_elevate = _round_table_elevate_kwargs()
 
     return {
         "round_table": ClubGcConfig(
@@ -202,7 +185,6 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
                 "Group created. Invite link: {invite_link}",
             ),
             link_club_id=_link_club_id_for_gc("GC_LINK_CLUB_ID_ROUND_TABLE", default_dashboard_id=2),
-            **rt_elevate,
         ),
         "creator_club": ClubGcConfig(
             club_key="creator_club",
