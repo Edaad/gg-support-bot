@@ -63,3 +63,24 @@ def fetch_early_rakeback_entries(
     if not isinstance(data, list):
         raise ValueError(f"Unexpected early-rakeback response type: {type(data)!r}")
     return [row for row in data if isinstance(row, dict)]
+
+
+def fetch_early_rakeback_archives(
+    club_slug: str,
+    *,
+    timeout: float = 60.0,
+) -> list[dict[str, Any]]:
+    """GET /{club_slug}/early-rakeback/archives (reset history)."""
+    base, key = _require_config()
+    slug = club_slug.strip().lower()
+    headers = {"X-Internal-Api-Key": key}
+    with httpx.Client(timeout=timeout) as client:
+        res = client.get(
+            f"{base}/{slug}/early-rakeback/archives",
+            headers=headers,
+        )
+    res.raise_for_status()
+    data = res.json()
+    if not isinstance(data, list):
+        raise ValueError(f"Unexpected early-rakeback archives type: {type(data)!r}")
+    return [row for row in data if isinstance(row, dict)]

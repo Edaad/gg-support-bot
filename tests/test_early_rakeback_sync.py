@@ -8,7 +8,11 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from api.early_rakeback_sync import sync_early_rakeback_for_date
+from api.early_rakeback_sync import (
+    _flatten_archive_entries,
+    backfill_early_rakeback_from_archives,
+    sync_early_rakeback_for_date,
+)
 from db.models import Club, EarlyRakebackLine, EarlyRakebackSnapshot
 
 
@@ -109,12 +113,14 @@ class EarlyRakebackSyncTestCase(unittest.TestCase):
         },
         clear=False,
     )
+    @patch("api.early_rakeback_sync.fetch_early_rakeback_archives", return_value=[])
     @patch("api.early_rakeback_sync.fetch_early_rakeback_entries")
     @patch("api.early_rakeback_sync.audit_day_window_utc")
     def test_sync_flattens_and_skips_unmapped(
         self,
         mock_window,
         mock_fetch,
+        _mock_archives,
     ):
         mock_window.return_value = (
             datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc),
@@ -148,12 +154,14 @@ class EarlyRakebackSyncTestCase(unittest.TestCase):
         },
         clear=False,
     )
+    @patch("api.early_rakeback_sync.fetch_early_rakeback_archives", return_value=[])
     @patch("api.early_rakeback_sync.fetch_early_rakeback_entries")
     @patch("api.early_rakeback_sync.audit_day_window_utc")
     def test_sync_replaces_existing_snapshot(
         self,
         mock_window,
         mock_fetch,
+        _mock_archives,
     ):
         mock_window.return_value = (
             datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc),
@@ -196,6 +204,135 @@ class EarlyRakebackSyncTestCase(unittest.TestCase):
         self.assertEqual(self.snapshots[0].id, first_snapshot_id)
         self.assertEqual(len(self.lines), 1)
         self.assertEqual(self.lines[0].gg_player_id, "3011-9999")
+
+    def test_flatten_archive_entries_filters_by_window(self):
+        from_utc = datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc)
+        to_utc = datetime(2026, 6, 20, 4, 59, 59, 999999, tzinfo=timezone.utc)
+        archives = [
+            {
+                "_id": "arch1",
+                "entries": [
+                    {
+                        "memberNickname": "Carol",
+                        "memberType": "player",
+                        "gg_player_id": "3011-1111",
+                        "records": [
+                            {
+                                "calculatedAmount": 15,
+                                "timestamp": "2026-06-19T18:00:00.000Z",
+                            },
+                            {
+                                "calculatedAmount": 99,
+                                "timestamp": "2026-06-18T18:00:00.000Z",
+                            },
+                        ],
+                    }
+                ],
+            }
+        ]
+        lines, skipped, nicknames = _flatten_archive_entries(archives, from_utc, to_utc)
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(lines[0]["gg_player_id"], "3011-1111")
+        self.assertEqual(lines[0]["source_entry_id"], "archive:arch1:0")
+        self.assertEqual(lines[0]["amount_usd"], Decimal("15"))
+        self.assertEqual(skipped, 0)
+        self.assertEqual(nicknames, [])
+
+    @patch.dict(
+        os.environ,
+        {
+            "AON_BETA_BASE_URL": "https://api.example.com/api",
+            "AON_BETA_INTERNAL_API_KEY": "test-key",
+        },
+        clear=False,
+    )
+    @patch("api.early_rakeback_sync.fetch_early_rakeback_archives")
+    @patch("api.early_rakeback_sync.fetch_early_rakeback_entries", return_value=[])
+    @patch("api.early_rakeback_sync.audit_day_window_utc")
+    def test_sync_merges_archive_lines(
+        self,
+        mock_window,
+        _mock_fetch,
+        mock_archives,
+    ):
+        mock_window.return_value = (
+            datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc),
+            datetime(2026, 6, 20, 4, 59, 59, 999999, tzinfo=timezone.utc),
+        )
+        mock_archives.return_value = [
+            {
+                "_id": "arch1",
+                "entries": [
+                    {
+                        "memberNickname": "Carol",
+                        "memberType": "player",
+                        "gg_player_id": "3011-1111",
+                        "records": [
+                            {
+                                "calculatedAmount": 15,
+                                "timestamp": "2026-06-19T18:00:00.000Z",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+
+        report = sync_early_rakeback_for_date(
+            self.mock_db,
+            date(2026, 6, 19),
+            club_slugs=["round-table"],
+        )
+
+        self.assertEqual(report.total_lines_stored, 1)
+        self.assertEqual(self.lines[0].source_entry_id, "archive:arch1:0")
+
+    @patch.dict(
+        os.environ,
+        {
+            "AON_BETA_BASE_URL": "https://api.example.com/api",
+            "AON_BETA_INTERNAL_API_KEY": "test-key",
+        },
+        clear=False,
+    )
+    @patch("api.early_rakeback_sync.sync_early_rakeback_for_date")
+    @patch("api.early_rakeback_sync.fetch_early_rakeback_archives")
+    def test_backfill_calls_sync_for_archive_dates(
+        self,
+        mock_archives,
+        mock_sync,
+    ):
+        mock_archives.return_value = [
+            {
+                "_id": "arch1",
+                "entries": [
+                    {
+                        "memberNickname": "Carol",
+                        "memberType": "player",
+                        "gg_player_id": "3011-1111",
+                        "records": [
+                            {
+                                "calculatedAmount": 15,
+                                "timestamp": "2026-06-19T18:00:00.000Z",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+        mock_sync.return_value = MagicMock()
+
+        reports = backfill_early_rakeback_from_archives(
+            self.mock_db,
+            club_slugs=["round-table"],
+        )
+
+        self.assertEqual(len(reports), 1)
+        mock_sync.assert_called_once_with(
+            self.mock_db,
+            date(2026, 6, 19),
+            club_slugs=["round-table"],
+        )
 
 
 class EarlyRakebackExportTestCase(unittest.TestCase):

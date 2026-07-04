@@ -11,7 +11,11 @@ from typing import Any
 import httpx
 from sqlalchemy.orm import Session
 
-from api.aon_beta_client import AonBetaConfigError, fetch_early_rakeback_entries
+from api.aon_beta_client import (
+    AonBetaConfigError,
+    fetch_early_rakeback_archives,
+    fetch_early_rakeback_entries,
+)
 from api.club_audit_timezone import audit_date_for_occurred_at, audit_day_window_utc
 from api.club_slug import ALL_GG_COMPUTER_CLUB_SLUGS, CLUB_SLUG_TO_NAME, resolve_club_id
 from db.models import EarlyRakebackLine, EarlyRakebackSnapshot
@@ -124,6 +128,144 @@ def _flatten_entries(
     return stored, skipped, skipped_nicknames
 
 
+def _flatten_archive_entries(
+    archives: list[dict[str, Any]],
+    from_utc: datetime,
+    to_utc: datetime,
+) -> tuple[list[dict[str, Any]], int, list[str]]:
+    """Flatten archived early-RB records whose timestamps fall in [from_utc, to_utc]."""
+    stored: list[dict[str, Any]] = []
+    skipped = 0
+    skipped_nicknames: list[str] = []
+
+    for archive in archives:
+        archive_id = str(archive.get("_id") or archive.get("id") or "")
+        entries = archive.get("entries") or []
+        for entry_index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                continue
+            gg_player_id = (entry.get("gg_player_id") or "").strip()
+            member_nickname = (entry.get("memberNickname") or "").strip()
+            member_type = (entry.get("memberType") or "").strip()
+            records = entry.get("records") or []
+            entry_id = f"archive:{archive_id}:{entry_index}"
+
+            if not gg_player_id:
+                in_window = 0
+                for record in records:
+                    if not isinstance(record, dict):
+                        continue
+                    occurred_at = _parse_timestamp(record.get("timestamp"))
+                    if occurred_at and from_utc <= occurred_at <= to_utc:
+                        in_window += 1
+                if in_window:
+                    skipped += in_window
+                    if member_nickname and member_nickname not in skipped_nicknames:
+                        skipped_nicknames.append(member_nickname)
+                continue
+
+            for record_index, record in enumerate(records):
+                if not isinstance(record, dict):
+                    continue
+                occurred_at = _parse_timestamp(record.get("timestamp"))
+                if occurred_at is None or not (from_utc <= occurred_at <= to_utc):
+                    continue
+                amount = record.get("calculatedAmount")
+                if amount is None:
+                    continue
+                stored.append(
+                    {
+                        "source_entry_id": entry_id,
+                        "source_record_id": str(record_index),
+                        "gg_player_id": gg_player_id,
+                        "member_nickname": member_nickname or None,
+                        "member_type": member_type or None,
+                        "amount_usd": Decimal(str(amount)),
+                        "rake": _decimal_or_none(record.get("rake")),
+                        "pl": _decimal_or_none(record.get("pl")),
+                        "rakeback_percentage": _decimal_or_none(
+                            record.get("rakebackPercentage")
+                        ),
+                        "occurred_at": occurred_at,
+                    }
+                )
+
+    return stored, skipped, skipped_nicknames
+
+
+def _merge_skipped_nicknames(
+    left: list[str], right: list[str]
+) -> list[str]:
+    out = list(left)
+    for name in right:
+        if name not in out:
+            out.append(name)
+    return out
+
+
+def _audit_dates_in_archives(
+    archives: list[dict[str, Any]],
+    club_slug: str,
+    *,
+    from_date: date | None = None,
+    to_date: date | None = None,
+) -> set[date]:
+    dates: set[date] = set()
+    for archive in archives:
+        for entry in archive.get("entries") or []:
+            if not isinstance(entry, dict):
+                continue
+            for record in entry.get("records") or []:
+                if not isinstance(record, dict):
+                    continue
+                occurred_at = _parse_timestamp(record.get("timestamp"))
+                if occurred_at is None:
+                    continue
+                audit_d = audit_date_for_occurred_at(occurred_at, club_slug)
+                if from_date and audit_d < from_date:
+                    continue
+                if to_date and audit_d > to_date:
+                    continue
+                dates.add(audit_d)
+    return dates
+
+
+def backfill_early_rakeback_from_archives(
+    session: Session,
+    *,
+    club_slugs: list[str] | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
+) -> list[EarlyRakebackSyncReport]:
+    """Sync every audit day that has archived early-RB records (plus live for each day)."""
+    slugs = club_slugs or list(ALL_GG_COMPUTER_CLUB_SLUGS)
+    dates_by_slug: dict[str, set[date]] = {}
+
+    for slug in slugs:
+        slug = slug.strip().lower()
+        try:
+            archives = fetch_early_rakeback_archives(slug)
+        except Exception:
+            continue
+        dates_by_slug[slug] = _audit_dates_in_archives(
+            archives, slug, from_date=from_date, to_date=to_date
+        )
+
+    all_dates: set[date] = set()
+    for dates in dates_by_slug.values():
+        all_dates.update(dates)
+
+    reports: list[EarlyRakebackSyncReport] = []
+    for audit_d in sorted(all_dates):
+        active_slugs = [s for s in slugs if audit_d in dates_by_slug.get(s, set())]
+        if not active_slugs:
+            continue
+        reports.append(
+            sync_early_rakeback_for_date(session, audit_d, club_slugs=active_slugs)
+        )
+    return reports
+
+
 def _replace_snapshot(
     session: Session,
     *,
@@ -231,10 +373,20 @@ def sync_early_rakeback_for_date(
             club_id = resolve_club_id(session, slug)
             from_utc, to_utc = audit_day_window_utc(slug, audit_date)
             entries = fetch_early_rakeback_entries(slug, from_utc, to_utc)
-            lines_fetched = sum(
+            archives = fetch_early_rakeback_archives(slug)
+            lines, skipped, skipped_nicknames = _flatten_entries(entries)
+            archive_lines, arch_skipped, arch_nicknames = _flatten_archive_entries(
+                archives, from_utc, to_utc
+            )
+            live_fetched = sum(
                 len(e.get("records") or []) for e in entries if isinstance(e, dict)
             )
-            lines, skipped, skipped_nicknames = _flatten_entries(entries)
+            lines = lines + archive_lines
+            skipped += arch_skipped
+            skipped_nicknames = _merge_skipped_nicknames(
+                skipped_nicknames, arch_nicknames
+            )
+            lines_fetched = live_fetched + len(archive_lines) + arch_skipped
             snapshot = _replace_snapshot(
                 session,
                 club_id=club_id,
