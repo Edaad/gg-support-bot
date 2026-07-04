@@ -400,11 +400,12 @@ heroku config:set ISSUE_REPORT_TAG_MENTIONS='{"head_admin":"<!subteam^S_HEAD>","
 
 **Issue reports (AMs):** `/escalate` (group) and `/report` (DM) — see [`docs/ISSUE_REPORTS_BOT.md`](ISSUE_REPORTS_BOT.md). Run `python migrate_issue_reports_v2.py`, `python migrate_issue_report_drafts.py`, and `python migrate_issue_reports_resolve.py` once after deploy.
 
-**Staff cashout records + bonus tables:** Editable GGCashier cashout history lives in `staff_cashout_records` / `staff_cashout_payments`; `/bonus` uses `bonus_records`. Run once after deploy:
+**Staff cashout records + bonus tables:** Editable GGCashier cashout history lives in `staff_cashout_records` / `staff_cashout_payments`; `/bonus` uses `bonus_records`. `/add` with a bonus amount DMs staff a **Continue bonus** wizard (pending rows in `bonus_drafts`). Run once after deploy:
 
 ```bash
 heroku run -a YOUR_APP -- python migrate_staff_cashout_records.py
 heroku run -a YOUR_APP -- python migrate_bonus_records.py
+heroku run -a YOUR_APP -- python migrate_bonus_drafts.py
 # optional: backfill completed cashier jobs into staff_cashout_records
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py --apply

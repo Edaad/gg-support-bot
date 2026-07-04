@@ -26,6 +26,7 @@ from bot.services.mtproto_group_add import (
     parse_add_command,
     schedule_send_add_confirmation_from_club,
 )
+from bot.services.bonus_from_add import maybe_start_bonus_recording_from_add
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,20 @@ async def _add_bot_api_path(
         bonus=bonus,
         group_title=chat.title,
     )
+
+    if bonus is not None:
+        context.application.create_task(
+            maybe_start_bonus_recording_from_add(
+                context.bot,
+                staff_user_id=update.effective_user.id,
+                club_id=club_id,
+                chat_id=chat.id,
+                group_title=chat.title,
+                bonus_amount=bonus,
+                player_name=name,
+            ),
+            name=f"bonus-from-add-{chat.id}",
+        )
 
 
 async def _add_telethon_fallback(

@@ -13,6 +13,7 @@ from telegram.ext import ApplicationHandlerStop, ContextTypes
 
 from config import ADMIN_USER_IDS
 from bot.handlers.flow_cancel import ACTIVE_FLOW_KEY, clear_active_flow, mark_active_flow
+from bot.services.bonus_drafts import cancel_draft, draft_to_context, get_pending_draft, mark_draft_submitted
 from db.connection import get_db
 from db.models import BonusType, BonusRecord, Club
 
@@ -45,6 +46,25 @@ def _get_clubs():
             .all()
         )
         return [{"id": r.id, "name": r.name} for r in rows]
+
+
+def _club_name_for_id(club_id: int) -> str:
+    return next((c["name"] for c in _get_clubs() if c["id"] == club_id), "Unknown")
+
+
+def _type_keyboard_markup() -> InlineKeyboardMarkup:
+    types = _get_bonus_types()
+    buttons = []
+    row = []
+    for t in types:
+        row.append(InlineKeyboardButton(t["name"], callback_data=f"btype:{t['id']}"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton("Other", callback_data="btype:other")])
+    return InlineKeyboardMarkup(buttons)
 
 
 def _save_record(data: dict) -> int:
@@ -140,6 +160,7 @@ def _cleanup(context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.pop(BONUS_STEP_KEY, None)
     for key in (
         "bonus_admin_id",
+        "bonus_draft_id",
         "bonus_player",
         "bonus_amount",
         "bonus_type_id",
@@ -156,6 +177,60 @@ def _is_bonus_admin(update: Update) -> bool:
         update.effective_user
         and update.effective_user.id in ADMIN_USER_IDS
     )
+
+
+def _is_bonus_actor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if not update.effective_user:
+        return False
+    admin_id = context.user_data.get("bonus_admin_id")
+    return admin_id is not None and update.effective_user.id == admin_id
+
+
+async def _finalize_bonus_record(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    query=None,
+    chat=None,
+) -> None:
+    club_id = context.user_data.get("bonus_club_id")
+    club_name = context.user_data.get("bonus_club_name") or (
+        _club_name_for_id(int(club_id)) if club_id else "Unknown"
+    )
+    player = context.user_data.get("bonus_player", "?")
+    amount = context.user_data.get("bonus_amount", "?")
+    type_name = context.user_data.get("bonus_type_name", "?")
+
+    record_data = {
+        "player_username": player,
+        "amount": amount,
+        "bonus_type_id": context.user_data.get("bonus_type_id"),
+        "custom_description": context.user_data.get("bonus_custom_desc"),
+        "club_id": club_id,
+        "club_name": club_name,
+        "bonus_type_name": type_name,
+        "admin_user_id": context.user_data.get("bonus_admin_id"),
+    }
+
+    _save_record(record_data)
+    await _fire_zapier_webhook(record_data)
+
+    draft_id = context.user_data.get("bonus_draft_id")
+    if draft_id:
+        with get_db() as session:
+            mark_draft_submitted(session, int(draft_id))
+
+    summary = (
+        f"Bonus recorded!\n\n"
+        f"Player: {player}\n"
+        f"Amount: ${amount}\n"
+        f"Type: {type_name}\n"
+        f"Club: {club_name}"
+    )
+    if query:
+        await query.edit_message_text(summary)
+    elif chat:
+        await chat.send_message(summary)
+    _cleanup(context)
 
 
 async def bonus_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -186,6 +261,101 @@ async def bonus_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     raise ApplicationHandlerStop()
 
 
+async def bonus_draft_continue_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    query = update.callback_query
+    if not query or not query.data or not update.effective_user:
+        return
+
+    await query.answer()
+
+    try:
+        draft_id = int(query.data.split(":", 1)[1])
+    except ValueError:
+        await query.edit_message_text("Invalid draft. Send /bonus to start again.")
+        raise ApplicationHandlerStop()
+
+    try:
+        with get_db() as session:
+            draft = get_pending_draft(
+                session,
+                draft_id,
+                staff_telegram_user_id=update.effective_user.id,
+            )
+            draft_ctx = draft_to_context(draft) if draft else None
+    except Exception:
+        logger.exception(
+            "bonus: draft lookup failed draft_id=%s user_id=%s",
+            draft_id,
+            update.effective_user.id,
+        )
+        await query.edit_message_text(
+            "Could not load bonus draft. Send /bonus to start again."
+        )
+        raise ApplicationHandlerStop()
+
+    if not draft_ctx:
+        await query.edit_message_text(
+            "Bonus draft expired. Send /bonus to start again."
+        )
+        raise ApplicationHandlerStop()
+
+    from bot.handlers.inactive_outreach_send import _cleanup_send_flow
+
+    _cleanup_send_flow(context)
+    _cleanup(context)
+
+    user_id = update.effective_user.id
+    context.user_data["bonus_admin_id"] = user_id
+    context.user_data["bonus_draft_id"] = draft_ctx.id
+    context.user_data["bonus_amount"] = draft_ctx.amount
+    if draft_ctx.player_username:
+        context.user_data["bonus_player"] = draft_ctx.player_username
+    if draft_ctx.club_id is not None:
+        context.user_data["bonus_club_id"] = draft_ctx.club_id
+        context.user_data["bonus_club_name"] = _club_name_for_id(draft_ctx.club_id)
+
+    mark_active_flow(context, "bonus")
+    _schedule_bonus_timeout(
+        context,
+        chat_id=user_id,
+        user_id=user_id,
+    )
+
+    if draft_ctx.player_username and draft_ctx.amount is not None:
+        context.user_data[BONUS_STEP_KEY] = "type"
+        await query.edit_message_text(
+            "Select Bonus Type:",
+            reply_markup=_type_keyboard_markup(),
+        )
+    else:
+        context.user_data[BONUS_STEP_KEY] = "username"
+        await query.edit_message_text("Player Username:")
+
+    raise ApplicationHandlerStop()
+
+
+async def bonus_draft_cancel_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    query = update.callback_query
+    if not query or not query.data:
+        return
+
+    await query.answer()
+    try:
+        draft_id = int(query.data.split(":", 1)[1])
+    except ValueError:
+        await query.edit_message_text("Cancelled.")
+        raise ApplicationHandlerStop()
+
+    with get_db() as session:
+        cancel_draft(session, draft_id)
+    await query.edit_message_text("Bonus recording cancelled.")
+    raise ApplicationHandlerStop()
+
+
 async def bonus_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """High-priority private text handler while /bonus is in progress."""
     if not update.message or not update.effective_chat or not update.effective_user:
@@ -199,7 +369,7 @@ async def bonus_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
     step = context.user_data.get(BONUS_STEP_KEY)
     if step not in _TEXT_STEPS:
         return
-    if not _is_bonus_admin(update):
+    if not _is_bonus_actor(update, context):
         return
 
     logger.info("bonus step=%s user_id=%s text=%r", step, update.effective_user.id, (update.message.text or "")[:40])
@@ -223,12 +393,12 @@ async def bonus_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     step = context.user_data.get(BONUS_STEP_KEY)
     data = query.data
     if step == "type" and data.startswith("btype:"):
-        if not _is_bonus_admin(update):
+        if not _is_bonus_actor(update, context):
             return
         await _handle_type_chosen(update, context)
         raise ApplicationHandlerStop()
     if step == "club" and data.startswith("bclub:"):
-        if not _is_bonus_admin(update):
+        if not _is_bonus_actor(update, context):
             return
         await _handle_club_chosen(update, context)
         raise ApplicationHandlerStop()
@@ -241,8 +411,15 @@ async def _handle_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text("Please enter a valid username.")
         return
     context.user_data["bonus_player"] = username
-    context.user_data[BONUS_STEP_KEY] = "amount"
-    await update.message.reply_text("Amount ($):")
+    if context.user_data.get("bonus_amount") is not None:
+        context.user_data[BONUS_STEP_KEY] = "type"
+        await update.message.reply_text(
+            "Select Bonus Type:",
+            reply_markup=_type_keyboard_markup(),
+        )
+    else:
+        context.user_data[BONUS_STEP_KEY] = "amount"
+        await update.message.reply_text("Amount ($):")
 
 
 async def _handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -259,21 +436,9 @@ async def _handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data["bonus_amount"] = amount
     context.user_data[BONUS_STEP_KEY] = "type"
 
-    types = _get_bonus_types()
-    buttons = []
-    row = []
-    for t in types:
-        row.append(InlineKeyboardButton(t["name"], callback_data=f"btype:{t['id']}"))
-        if len(row) == 2:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
-    buttons.append([InlineKeyboardButton("Other", callback_data="btype:other")])
-
     await update.message.reply_text(
         "Select Bonus Type:",
-        reply_markup=InlineKeyboardMarkup(buttons),
+        reply_markup=_type_keyboard_markup(),
     )
 
 
@@ -298,7 +463,10 @@ async def _handle_type_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data["bonus_type_id"] = type_id
     context.user_data["bonus_type_name"] = type_name
     await query.edit_message_text(f"Bonus Type: {type_name}")
-    await _ask_club(query.message.chat, context)
+    if context.user_data.get("bonus_club_id"):
+        await _finalize_bonus_record(context, query=query)
+    else:
+        await _ask_club(query.message.chat, context)
 
 
 async def _handle_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -309,7 +477,10 @@ async def _handle_description(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     context.user_data["bonus_custom_desc"] = desc
     context.user_data["bonus_type_name"] = f"Other — {desc}"
-    await _ask_club(update.message.chat, context)
+    if context.user_data.get("bonus_club_id"):
+        await _finalize_bonus_record(context, chat=update.message.chat)
+    else:
+        await _ask_club(update.message.chat, context)
 
 
 async def _ask_club(chat, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -342,41 +513,17 @@ async def _handle_club_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await query.answer()
     club_id = int(query.data.split(":")[1])
-    clubs = _get_clubs()
-    club_name = next((c["name"] for c in clubs if c["id"] == club_id), "Unknown")
+    club_name = _club_name_for_id(club_id)
     context.user_data["bonus_club_id"] = club_id
     context.user_data["bonus_club_name"] = club_name
-
-    player = context.user_data.get("bonus_player", "?")
-    amount = context.user_data.get("bonus_amount", "?")
-    type_name = context.user_data.get("bonus_type_name", "?")
-
-    record_data = {
-        "player_username": player,
-        "amount": amount,
-        "bonus_type_id": context.user_data.get("bonus_type_id"),
-        "custom_description": context.user_data.get("bonus_custom_desc"),
-        "club_id": club_id,
-        "club_name": club_name,
-        "bonus_type_name": type_name,
-        "admin_user_id": context.user_data.get("bonus_admin_id"),
-    }
-
-    _save_record(record_data)
-    await _fire_zapier_webhook(record_data)
-
-    summary = (
-        f"Bonus recorded!\n\n"
-        f"Player: {player}\n"
-        f"Amount: ${amount}\n"
-        f"Type: {type_name}\n"
-        f"Club: {club_name}"
-    )
-    await query.edit_message_text(summary)
-    _cleanup(context)
+    await _finalize_bonus_record(context, query=query)
 
 
 async def bonus_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    draft_id = context.user_data.get("bonus_draft_id")
+    if draft_id:
+        with get_db() as session:
+            cancel_draft(session, int(draft_id))
     if update.message:
         await update.message.reply_text("Bonus recording cancelled.")
     _cleanup(context)

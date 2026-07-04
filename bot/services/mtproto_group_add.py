@@ -343,3 +343,32 @@ async def handle_group_add_outgoing(
             club_id,
             event.chat_id,
         )
+
+    if bonus is not None and ptb_bot is not None:
+        invoker_user_id = event.sender_id
+        if invoker_user_id is None:
+            logger.warning(
+                "group_add: no sender_id for bonus draft chat_id=%s",
+                event.chat_id,
+            )
+        else:
+            from bot.services.bonus_from_add import maybe_start_bonus_recording_from_add
+
+            group_title = "Unknown group"
+            try:
+                chat = await event.get_chat()
+                group_title = getattr(chat, "title", None) or group_title
+            except Exception:
+                pass
+            asyncio.create_task(
+                maybe_start_bonus_recording_from_add(
+                    ptb_bot,
+                    staff_user_id=int(invoker_user_id),
+                    club_id=int(club_id),
+                    chat_id=int(event.chat_id),
+                    group_title=group_title,
+                    bonus_amount=bonus,
+                    player_name=name,
+                ),
+                name=f"bonus-from-add-{event.chat_id}",
+            )

@@ -148,6 +148,8 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
     from bot.handlers.group_create import get_gc_handler
     from bot.handlers.bonus import (
         bonus_callback_handler,
+        bonus_draft_cancel_handler,
+        bonus_draft_continue_handler,
         bonus_entry,
         bonus_message_handler,
     )
@@ -213,6 +215,8 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         bonus_entry=bonus_entry,
         bonus_message_handler=bonus_message_handler,
         bonus_callback_handler=bonus_callback_handler,
+        bonus_draft_continue_handler=bonus_draft_continue_handler,
+        bonus_draft_cancel_handler=bonus_draft_cancel_handler,
         cashapp_handler=cashapp_handler,
         stripe_handler=stripe_handler,
         teststripe_handler=teststripe_handler,
@@ -275,6 +279,14 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     )
     app.add_handler(
         CallbackQueryHandler(h.bonus_callback_handler, pattern=r"^b(type:|club:)"),
+        group=-1,
+    )
+    app.add_handler(
+        CallbackQueryHandler(h.bonus_draft_continue_handler, pattern=r"^bonus_draft:\d+$"),
+        group=-1,
+    )
+    app.add_handler(
+        CallbackQueryHandler(h.bonus_draft_cancel_handler, pattern=r"^bonus_draft_cancel:\d+$"),
         group=-1,
     )
     app.add_handler(CommandHandler("sendinactive", h.sendinactive_entry), group=-1)
