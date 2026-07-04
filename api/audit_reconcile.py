@@ -251,6 +251,103 @@ def _report_to_json(report: AuditReconcileReport) -> str:
     return json.dumps(payload, default=_default)
 
 
+def _decimal(value: Any) -> Decimal:
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
+
+def _ledger_breakdown_from_dict(raw: dict[str, Any]) -> LedgerBreakdown:
+    return LedgerBreakdown(
+        deposits=_decimal(raw.get("deposits", 0)),
+        early_rb=_decimal(raw.get("early_rb", 0)),
+        bonuses=_decimal(raw.get("bonuses", 0)),
+        monday=_decimal(raw.get("monday", 0)),
+        glide=_decimal(raw.get("glide", 0)),
+        cashouts=_decimal(raw.get("cashouts", 0)),
+    )
+
+
+def report_from_json(raw: str, *, run_id: int | None = None) -> AuditReconcileReport:
+    """Deserialize a persisted reconcile report_json payload."""
+    data = json.loads(raw)
+    players = [
+        AuditReconcilePlayerResult(
+            gg_player_id=str(p["gg_player_id"]),
+            net_trade_record=_decimal(p["net_trade_record"]),
+            net_ledger=_decimal(p["net_ledger"]),
+            delta=_decimal(p["delta"]),
+            ledger_breakdown=_ledger_breakdown_from_dict(p.get("ledger_breakdown") or {}),
+            status=p["status"],
+        )
+        for p in data.get("players") or []
+    ]
+    unmatched_trade = [
+        UnmatchedTradeRow(
+            line_id=int(u["line_id"]),
+            amount=_decimal(u["amount"]),
+            member_nickname=u.get("member_nickname"),
+            sheet_row=int(u["sheet_row"]),
+        )
+        for u in data.get("unmatched_trade") or []
+    ]
+    unmatched_ledger = [
+        UnmatchedLedgerEvent(
+            source=str(u["source"]),
+            amount_usd=_decimal(u["amount_usd"]),
+            external_id=str(u["external_id"]),
+            detail=u.get("detail"),
+        )
+        for u in data.get("unmatched_ledger") or []
+    ]
+    matched = [p for p in players if p.status == "match"]
+    failed = [p for p in players if p.status == "mismatch"]
+    return AuditReconcileReport(
+        audit_date=date.fromisoformat(str(data["audit_date"])[:10]),
+        club_slug=str(data["club_slug"]),
+        club_name=str(data.get("club_name") or CLUB_SLUG_TO_NAME.get(data["club_slug"], data["club_slug"])),
+        status=data["status"],
+        run_id=run_id,
+        trade_upload_id=data.get("trade_upload_id"),
+        early_rb_snapshot_id=data.get("early_rb_snapshot_id"),
+        players=players,
+        unmatched_trade=unmatched_trade,
+        unmatched_ledger=unmatched_ledger,
+        warnings=list(data.get("warnings") or []),
+        blocked_reason=data.get("blocked_reason"),
+        players_matched=len(matched),
+        players_failed=len(failed),
+        unmatched_trade_count=len(unmatched_trade),
+        unmatched_ledger_count=len(unmatched_ledger),
+    )
+
+
+def load_stored_reconcile_report(
+    session: Session,
+    *,
+    club_slug: str,
+    audit_date: date,
+) -> AuditReconcileReport | None:
+    slug = club_slug.strip().lower()
+    run = (
+        session.query(AuditReconcileRun)
+        .filter_by(club_slug=slug, audit_date=audit_date)
+        .first()
+    )
+    if run is None or not run.report_json:
+        return None
+    report = report_from_json(run.report_json, run_id=int(run.id))
+    report.players_matched = int(run.players_matched or report.players_matched)
+    report.players_failed = int(run.players_failed or report.players_failed)
+    report.unmatched_trade_count = int(
+        run.unmatched_trade_count or report.unmatched_trade_count
+    )
+    report.unmatched_ledger_count = int(
+        run.unmatched_ledger_count or report.unmatched_ledger_count
+    )
+    return report
+
+
 def _replace_run(
     session: Session,
     *,

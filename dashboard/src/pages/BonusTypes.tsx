@@ -193,7 +193,8 @@ export default function BonusTypes({ token }: { token: string }) {
               <table className="min-w-[36rem] text-left">
                 <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
                   <tr>
-                    <th className="px-4 py-3">Player</th>
+                    <th className="px-4 py-3">Group</th>
+                    <th className="px-4 py-3">Player ID</th>
                     <th className="px-4 py-3">Amount</th>
                     <th className="px-4 py-3">Type</th>
                     <th className="px-4 py-3">Club</th>
@@ -203,7 +204,8 @@ export default function BonusTypes({ token }: { token: string }) {
                 <tbody className="divide-y divide-border">
                   {records.map((r) => (
                     <tr key={r.id} className="hover:bg-surface/50">
-                      <td className="px-4 py-3 font-medium text-ink">{r.player_username}</td>
+                      <td className="px-4 py-3 font-medium text-ink">{r.group_title || r.player_username}</td>
+                      <td className="px-4 py-3 text-ink-muted">{r.gg_player_id || '—'}</td>
                       <td className="px-4 py-3">${Number(r.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                       <td className="px-4 py-3">
                         {r.bonus_type_name || '—'}

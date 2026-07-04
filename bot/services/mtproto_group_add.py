@@ -368,7 +368,6 @@ async def handle_group_add_outgoing(
                     chat_id=int(event.chat_id),
                     group_title=group_title,
                     bonus_amount=bonus,
-                    player_name=name,
                 ),
                 name=f"bonus-from-add-{event.chat_id}",
             )

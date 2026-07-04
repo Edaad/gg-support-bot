@@ -71,14 +71,23 @@ def list_bonus_records(db: Session = Depends(get_db_dependency)):
     )
     results = []
     for r in rows:
+        display_name = r.player_username
+        if r.group_title:
+            from cashier.services.zapier import build_zapier_name
+
+            display_name = build_zapier_name(r.group_title) or r.group_title
         results.append(
             BonusRecordRead(
                 id=r.id,
-                player_username=r.player_username,
+                player_username=display_name,
                 amount=r.amount,
                 bonus_type_name=r.bonus_type.name if r.bonus_type else None,
                 custom_description=r.custom_description,
                 club_name=r.club.name if r.club else None,
+                gg_player_id=r.gg_player_id,
+                group_title=r.group_title,
+                chat_id=int(r.chat_id) if r.chat_id is not None else None,
+                player_details_id=r.player_details_id,
                 admin_telegram_user_id=r.admin_telegram_user_id,
                 created_at=r.created_at,
             )

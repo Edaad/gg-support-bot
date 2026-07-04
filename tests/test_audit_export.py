@@ -20,6 +20,7 @@ from api.audit_export import (
     StripeAuditRow,
     TaggedManualAuditRow,
     _bonus_group_cell,
+    _bonus_payer_display,
     _fmt_manual_audit_time,
     _fmt_stripe_audit_time,
     _manual_club_name,
@@ -148,6 +149,24 @@ class AuditExportFormattingTestCase(unittest.TestCase):
             bonus_type=BonusType(name="Referral"),
         )
         self.assertEqual(_bonus_group_cell(record), "Referral")
+
+    def test_bonus_payer_display_prefers_group_title(self):
+        record = BonusRecord(
+            player_username="legacy",
+            amount=Decimal("50.00"),
+            group_title="GTO / 3011-9668 / Pvtenis",
+        )
+        self.assertEqual(
+            _bonus_payer_display(record),
+            "GTO / 3011-9668 / Pvtenis",
+        )
+
+    def test_bonus_payer_display_falls_back_to_player_username(self):
+        record = BonusRecord(
+            player_username="CC / 1111-2222 / Old",
+            amount=Decimal("50.00"),
+        )
+        self.assertEqual(_bonus_payer_display(record), "CC / 1111-2222 / Old")
 
     def test_bonus_group_cell_uses_custom_description_for_other(self):
         record = BonusRecord(

@@ -28,7 +28,8 @@ _CASHOUT_ACTIVE_KEYS = (
 _BONUS_ACTIVE_KEYS = (
     "bonus_admin_id",
     "bonus_draft_id",
-    "bonus_player",
+    "bonus_group_title",
+    "bonus_gg_player_id",
     "bonus_amount",
 )
 _ISSUE_REPORT_ACTIVE_KEYS = (

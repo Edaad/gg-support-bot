@@ -705,6 +705,16 @@ def _fetch_manual_rows(
     return out
 
 
+def _bonus_payer_display(record: BonusRecord) -> str:
+    title = (record.group_title or "").strip()
+    if title:
+        from cashier.services.zapier import build_zapier_name
+
+        formatted = build_zapier_name(title)
+        return formatted or title
+    return str(record.player_username).strip()
+
+
 def _bonus_group_cell(record: BonusRecord) -> str:
     type_name = (record.bonus_type.name if record.bonus_type else "").strip()
     desc = (record.custom_description or "").strip()
@@ -745,7 +755,7 @@ def _fetch_bonus_rows(
         out.append(
             ManualAuditRow(
                 amount_usd=amount_usd,
-                payer_name=str(row.player_username).strip(),
+                payer_name=_bonus_payer_display(row),
                 group_title=_bonus_group_cell(row),
                 club_label=_club_name(club_names, row.club_id),
                 time_label=_fmt_manual_audit_time(row.created_at, club_slug),

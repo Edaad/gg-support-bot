@@ -19,7 +19,8 @@ class BonusDraftContext:
     club_id: int | None
     group_title: str | None
     telegram_chat_id: int | None
-    player_username: str | None
+    gg_player_id: str | None
+    player_details_id: int | None
     amount: Decimal
 
 
@@ -30,7 +31,10 @@ def draft_to_context(draft: BonusDraft) -> BonusDraftContext:
         club_id=int(draft.club_id) if draft.club_id is not None else None,
         group_title=draft.group_title,
         telegram_chat_id=draft.telegram_chat_id,
-        player_username=draft.player_username,
+        gg_player_id=draft.gg_player_id,
+        player_details_id=(
+            int(draft.player_details_id) if draft.player_details_id is not None else None
+        ),
         amount=Decimal(str(draft.amount)),
     )
 
@@ -48,7 +52,8 @@ def create_draft(
     club_id: int | None = None,
     group_title: str | None = None,
     telegram_chat_id: int | None = None,
-    player_username: str | None = None,
+    gg_player_id: str | None = None,
+    player_details_id: int | None = None,
     amount: Decimal,
 ) -> BonusDraft:
     now = datetime.now(timezone.utc)
@@ -57,7 +62,8 @@ def create_draft(
         club_id=club_id,
         group_title=(group_title or "").strip() or None,
         telegram_chat_id=telegram_chat_id,
-        player_username=(player_username or "").strip() or None,
+        gg_player_id=(gg_player_id or "").strip() or None,
+        player_details_id=player_details_id,
         amount=amount,
         status="pending",
         expires_at=now + timedelta(minutes=DRAFT_TTL_MINUTES),

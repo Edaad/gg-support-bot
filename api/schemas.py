@@ -535,6 +535,10 @@ class BonusRecordRead(BaseModel):
     bonus_type_name: Optional[str] = None
     custom_description: Optional[str] = None
     club_name: Optional[str] = None
+    gg_player_id: Optional[str] = None
+    group_title: Optional[str] = None
+    chat_id: Optional[int] = None
+    player_details_id: Optional[int] = None
     admin_telegram_user_id: int
     created_at: Optional[datetime]
 

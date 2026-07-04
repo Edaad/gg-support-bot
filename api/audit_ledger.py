@@ -385,9 +385,10 @@ def fetch_bonus_events(
             occurred_at=row.created_at,
         ):
             continue
-        gg_id = _resolve_bonus_gg_player_id(
+        gg_id = (row.gg_player_id or "").strip() or _resolve_bonus_gg_player_id(
             session, row.club_id, str(row.player_username)
         )
+        detail = (row.group_title or str(row.player_username)).strip()
         out.append(
             LedgerEvent(
                 source="bonus",
@@ -395,7 +396,7 @@ def fetch_bonus_events(
                 amount_usd=Decimal(str(row.amount)),
                 occurred_at_utc=row.created_at,
                 external_id=f"bonus:{row.id}",
-                detail=str(row.player_username),
+                detail=detail,
             )
         )
     return out
