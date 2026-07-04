@@ -62,18 +62,68 @@ export type EarlyRakebackSnapshotSummary = {
   synced_at: string
 }
 
+export type LedgerBreakdown = {
+  deposits: string
+  early_rb: string
+  bonuses: string
+  monday: string
+  glide: string
+  cashouts: string
+}
+
+export type AuditReconcilePlayerResult = {
+  gg_player_id: string
+  net_trade_record: string
+  net_ledger: string
+  delta: string
+  ledger_breakdown: LedgerBreakdown
+  status: string
+}
+
+export type UnmatchedTradeRow = {
+  line_id: number
+  amount: string
+  member_nickname: string | null
+  sheet_row: number
+}
+
+export type UnmatchedLedgerEvent = {
+  source: string
+  amount_usd: string
+  external_id: string
+  detail: string | null
+}
+
 export type AuditReconcileReport = {
   audit_date: string
   club_slug: string
   club_name: string
   status: string
   run_id: number | null
+  trade_upload_id: number | null
+  early_rb_snapshot_id: number | null
+  players: AuditReconcilePlayerResult[]
+  unmatched_trade: UnmatchedTradeRow[]
+  unmatched_ledger: UnmatchedLedgerEvent[]
+  warnings: string[]
+  blocked_reason: string | null
   players_matched: number
   players_failed: number
   unmatched_trade_count: number
   unmatched_ledger_count: number
-  warnings: string[]
-  blocked_reason: string | null
+}
+
+export type AuditReconcileRunSummary = {
+  id: number
+  club_slug: string
+  club_name: string
+  audit_date: string
+  status: string
+  players_matched: number
+  players_failed: number
+  unmatched_trade_count: number
+  unmatched_ledger_count: number
+  created_at: string
 }
 
 async function parseError(res: Response): Promise<string> {
@@ -212,6 +262,101 @@ export async function reconcileAudit(
     throw new Error(await parseError(res))
   }
   return res.json() as Promise<AuditReconcileReport>
+}
+
+function filenameFromContentDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback
+  const match = /filename="([^"]+)"/.exec(header)
+  return match?.[1] ?? fallback
+}
+
+export async function getReconcileReport(
+  token: string,
+  auditDate: string,
+  clubSlug: string,
+): Promise<AuditReconcileReport | null> {
+  const q = new URLSearchParams({
+    audit_date: auditDate,
+    club_slug: clubSlug,
+  })
+
+  const res = await fetch(apiUrl(`/api/audit/reconcile/report?${q}`), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
+  if (res.status === 401) {
+    localStorage.removeItem('token')
+    window.location.href = '/'
+    throw new Error('Unauthorized')
+  }
+  if (res.status === 404) {
+    return null
+  }
+  if (!res.ok) {
+    throw new Error(await parseError(res))
+  }
+  return res.json() as Promise<AuditReconcileReport>
+}
+
+export async function listReconcileRuns(
+  token: string,
+  params?: { clubSlug?: string; auditDate?: string; limit?: number },
+): Promise<AuditReconcileRunSummary[]> {
+  const q = new URLSearchParams()
+  if (params?.clubSlug) q.set('club_slug', params.clubSlug)
+  if (params?.auditDate) q.set('audit_date', params.auditDate)
+  if (params?.limit) q.set('limit', String(params.limit))
+  const suffix = q.toString() ? `?${q}` : ''
+
+  const res = await fetch(apiUrl(`/api/audit/reconcile/runs${suffix}`), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
+  if (res.status === 401) {
+    localStorage.removeItem('token')
+    window.location.href = '/'
+    throw new Error('Unauthorized')
+  }
+  if (!res.ok) {
+    throw new Error(await parseError(res))
+  }
+  return res.json() as Promise<AuditReconcileRunSummary[]>
+}
+
+export async function downloadReconcileExport(
+  token: string,
+  auditDate: string,
+  clubSlug: string,
+): Promise<void> {
+  const q = new URLSearchParams({
+    audit_date: auditDate,
+    club_slug: clubSlug,
+  })
+
+  const res = await fetch(apiUrl(`/api/audit/reconcile/export?${q}`), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
+  if (res.status === 401) {
+    localStorage.removeItem('token')
+    window.location.href = '/'
+    throw new Error('Unauthorized')
+  }
+  if (!res.ok) {
+    throw new Error(await parseError(res))
+  }
+
+  const blob = await res.blob()
+  const filename = filenameFromContentDisposition(
+    res.headers.get('Content-Disposition'),
+    `reconcile-${clubSlug}-${auditDate}.xlsx`,
+  )
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 export async function downloadAuditExport(token: string, date: string): Promise<void> {

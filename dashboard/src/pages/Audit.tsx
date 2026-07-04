@@ -2,14 +2,13 @@ import { useCallback, useEffect, useId, useState } from 'react'
 import {
   downloadAuditExport,
   listTradeRecordUploads,
-  reconcileAudit,
   syncEarlyRakeback,
   uploadTradeRecord,
-  type AuditReconcileReport,
   type EarlyRakebackSyncReport,
   type TradeRecordUploadReport,
   type TradeRecordUploadSummary,
 } from '../api/auditClient'
+import AuditReconcilePanel from '../components/AuditReconcilePanel'
 import { formatEasternDateTime } from '../lib/easternTime'
 
 export default function Audit({ token }: { token: string }) {
@@ -21,12 +20,9 @@ export default function Audit({ token }: { token: string }) {
   const [uploading, setUploading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [syncingEarlyRb, setSyncingEarlyRb] = useState(false)
-  const [reconciling, setReconciling] = useState(false)
-  const [reconcileClubSlug, setReconcileClubSlug] = useState('round-table')
   const [err, setErr] = useState('')
   const [report, setReport] = useState<TradeRecordUploadReport | null>(null)
   const [earlyRbReport, setEarlyRbReport] = useState<EarlyRakebackSyncReport | null>(null)
-  const [reconcileReport, setReconcileReport] = useState<AuditReconcileReport | null>(null)
   const [history, setHistory] = useState<TradeRecordUploadSummary[]>([])
 
   const loadHistory = useCallback(async () => {
@@ -96,22 +92,8 @@ export default function Audit({ token }: { token: string }) {
     }
   }
 
-  const onReconcile = async () => {
-    if (!exportDate) {
-      setErr('Select a date before running reconcile.')
-      return
-    }
-    setReconciling(true)
-    setErr('')
-    setReconcileReport(null)
-    try {
-      const result = await reconcileAudit(token, exportDate, reconcileClubSlug)
-      setReconcileReport(result)
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Reconcile failed.')
-    } finally {
-      setReconciling(false)
-    }
+  const onSelectReconcileRun = (_clubSlug: string, auditDate: string) => {
+    setExportDate(auditDate)
   }
 
   return (
@@ -222,33 +204,6 @@ export default function Audit({ token }: { token: string }) {
           </button>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-border pt-4">
-          <div>
-            <label htmlFor="reconcile-club" className="label-field-xs">
-              Reconcile club
-            </label>
-            <select
-              id="reconcile-club"
-              value={reconcileClubSlug}
-              onChange={(e) => setReconcileClubSlug(e.target.value)}
-              className="input-field-sm"
-            >
-              <option value="round-table">Round Table</option>
-              <option value="creator-club">Creator Club</option>
-              <option value="clubgto">ClubGTO</option>
-              <option value="aces-table">Aces Table</option>
-            </select>
-          </div>
-          <button
-            type="button"
-            disabled={reconciling || !exportDate}
-            onClick={() => void onReconcile()}
-            className="btn-primary-sm disabled:opacity-40"
-          >
-            {reconciling ? 'Reconciling…' : 'Run reconcile'}
-          </button>
-        </div>
-
         {earlyRbReport ? (
           <div className="mt-4 rounded-md border border-border bg-surface-raised p-4 text-sm">
             <p className="mb-2 font-semibold text-ink">Early RB sync complete</p>
@@ -269,28 +224,12 @@ export default function Audit({ token }: { token: string }) {
           </div>
         ) : null}
 
-        {reconcileReport ? (
-          <div className="mt-4 rounded-md border border-border bg-surface-raised p-4 text-sm">
-            <p className="mb-2 font-semibold text-ink">
-              Reconcile: {reconcileReport.status.toUpperCase()}
-            </p>
-            <ul className="space-y-1 text-ink-muted">
-              <li>
-                {reconcileReport.club_name} · {reconcileReport.audit_date}
-              </li>
-              <li>
-                Matched: {reconcileReport.players_matched}, failed:{' '}
-                {reconcileReport.players_failed}
-              </li>
-              {reconcileReport.blocked_reason ? (
-                <li className="text-danger">{reconcileReport.blocked_reason}</li>
-              ) : null}
-              {reconcileReport.warnings.length > 0 ? (
-                <li>Warnings: {reconcileReport.warnings.join('; ')}</li>
-              ) : null}
-            </ul>
-          </div>
-        ) : null}
+        <AuditReconcilePanel
+          token={token}
+          auditDate={exportDate}
+          onError={setErr}
+          onSelectRun={onSelectReconcileRun}
+        />
       </section>
 
       {history.length > 0 ? (

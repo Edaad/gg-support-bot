@@ -9,18 +9,25 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from api.audit_ledger import (
+    LedgerBreakdown,
     LedgerEvent,
     aggregate_ledger_by_player,
 )
 from api.audit_reconcile import (
     RECONCILE_MATCH_TOLERANCE_USD,
+    AuditReconcilePlayerResult,
+    AuditReconcileReport,
     aggregate_trade_record,
+    load_stored_reconcile_report,
+    report_from_json,
     run_audit_reconcile,
+    _report_to_json,
     _within_match_tolerance,
 )
 from api.glide_audit_sync import dedupe_glide_events
 from api.gg_computer_settlement import is_monday_audit_date
 from db.models import (
+    AuditReconcileRun,
     Club,
     EarlyRakebackSnapshot,
     TradeRecordLine,
@@ -324,6 +331,93 @@ class MondaySettlementTestCase(unittest.TestCase):
 
         with self.assertRaises(SettlementFetchError):
             fetch_settlement_events(club_slug="round-table", audit_date=date(2026, 6, 22))
+
+
+class ReportJsonRoundTripTestCase(unittest.TestCase):
+    def test_report_json_round_trip(self):
+        report = AuditReconcileReport(
+            audit_date=date(2026, 6, 18),
+            club_slug="round-table",
+            club_name="Round Table",
+            status="fail",
+            trade_upload_id=10,
+            early_rb_snapshot_id=5,
+            players=[
+                AuditReconcilePlayerResult(
+                    gg_player_id="3011-9668",
+                    net_trade_record=Decimal("100"),
+                    net_ledger=Decimal("90"),
+                    delta=Decimal("10"),
+                    ledger_breakdown=LedgerBreakdown(
+                        deposits=Decimal("90"),
+                        early_rb=Decimal("0"),
+                        bonuses=Decimal("0"),
+                        monday=Decimal("0"),
+                        glide=Decimal("0"),
+                        cashouts=Decimal("0"),
+                    ),
+                    status="mismatch",
+                )
+            ],
+            warnings=["Non-Monday audit day; monday_settlement = 0"],
+            players_matched=0,
+            players_failed=1,
+        )
+        raw = _report_to_json(report)
+        restored = report_from_json(raw, run_id=42)
+        self.assertEqual(restored.audit_date, report.audit_date)
+        self.assertEqual(restored.club_slug, report.club_slug)
+        self.assertEqual(restored.status, report.status)
+        self.assertEqual(restored.run_id, 42)
+        self.assertEqual(len(restored.players), 1)
+        self.assertEqual(restored.players[0].gg_player_id, "3011-9668")
+        self.assertEqual(restored.players[0].delta, Decimal("10"))
+        self.assertEqual(restored.players[0].ledger_breakdown.deposits, Decimal("90"))
+        self.assertEqual(restored.warnings, report.warnings)
+        self.assertEqual(restored.players_failed, 1)
+
+    def test_load_stored_reconcile_report_returns_none_when_missing(self):
+        session = MagicMock()
+        session.query.return_value.filter_by.return_value.first.return_value = None
+        result = load_stored_reconcile_report(
+            session,
+            club_slug="round-table",
+            audit_date=date(2026, 6, 18),
+        )
+        self.assertIsNone(result)
+
+    def test_load_stored_reconcile_report_deserializes_run(self):
+        report = AuditReconcileReport(
+            audit_date=date(2026, 6, 18),
+            club_slug="round-table",
+            club_name="Round Table",
+            status="pass",
+            players_matched=1,
+            players_failed=0,
+        )
+        run = AuditReconcileRun(
+            id=7,
+            club_slug="round-table",
+            audit_date=date(2026, 6, 18),
+            status="pass",
+            players_matched=1,
+            players_failed=0,
+            unmatched_trade_count=0,
+            unmatched_ledger_count=0,
+            report_json=_report_to_json(report),
+        )
+        session = MagicMock()
+        session.query.return_value.filter_by.return_value.first.return_value = run
+        loaded = load_stored_reconcile_report(
+            session,
+            club_slug="round-table",
+            audit_date=date(2026, 6, 18),
+        )
+        self.assertIsNotNone(loaded)
+        assert loaded is not None
+        self.assertEqual(loaded.run_id, 7)
+        self.assertEqual(loaded.status, "pass")
+        self.assertEqual(loaded.players_matched, 1)
 
 
 if __name__ == "__main__":

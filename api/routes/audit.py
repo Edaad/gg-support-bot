@@ -34,7 +34,11 @@ from api.trade_record_parser import (
 from api.trade_record_sync import sync_identities
 from api.aon_beta_client import AonBetaConfigError
 from api.early_rakeback_sync import sync_early_rakeback_for_date
-from api.audit_reconcile import AuditReconcileReport, run_audit_reconcile
+from api.audit_reconcile import (
+    AuditReconcileReport,
+    load_stored_reconcile_report,
+    run_audit_reconcile,
+)
 from api.audit_reconcile_export import build_reconcile_workbook_from_report
 from db.connection import get_db_dependency
 from db.models import AuditReconcileRun, EarlyRakebackSnapshot, TradeRecordLine, TradeRecordUpload
@@ -409,6 +413,27 @@ def reconcile_audit(
         db.rollback()
         raise HTTPException(409, "Reconcile conflict for this club and date") from exc
 
+    return _report_to_schema(report)
+
+
+@router.get("/reconcile/report", response_model=AuditReconcileReportSchema)
+def get_reconcile_report(
+    club_slug: str = Query(..., description="Club slug (required)"),
+    audit_date: str = Query(..., description="Local audit calendar day (YYYY-MM-DD)"),
+    db: Session = Depends(get_db_dependency),
+):
+    slug = club_slug.strip().lower()
+    if slug not in CLUB_SLUG_TO_NAME:
+        raise HTTPException(400, f"Unknown club slug: {club_slug!r}")
+    parsed_date = _parse_audit_date(audit_date)
+
+    report = load_stored_reconcile_report(
+        db, club_slug=slug, audit_date=parsed_date
+    )
+    if report is None:
+        raise HTTPException(
+            404, "No reconcile run stored for this club and audit date"
+        )
     return _report_to_schema(report)
 
 
