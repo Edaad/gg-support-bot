@@ -62,6 +62,20 @@ export type EarlyRakebackSnapshotSummary = {
   synced_at: string
 }
 
+export type AuditReconcileReport = {
+  audit_date: string
+  club_slug: string
+  club_name: string
+  status: string
+  run_id: number | null
+  players_matched: number
+  players_failed: number
+  unmatched_trade_count: number
+  unmatched_ledger_count: number
+  warnings: string[]
+  blocked_reason: string | null
+}
+
 async function parseError(res: Response): Promise<string> {
   const body = (await res.json().catch(() => ({}))) as { detail?: unknown }
   const d = body.detail
@@ -172,6 +186,32 @@ export async function listEarlyRakebackSnapshots(
     throw new Error(await parseError(res))
   }
   return res.json() as Promise<EarlyRakebackSnapshotSummary[]>
+}
+
+export async function reconcileAudit(
+  token: string,
+  auditDate: string,
+  clubSlug: string,
+): Promise<AuditReconcileReport> {
+  const q = new URLSearchParams({
+    audit_date: auditDate,
+    club_slug: clubSlug,
+  })
+
+  const res = await fetch(apiUrl(`/api/audit/reconcile?${q}`), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
+  if (res.status === 401) {
+    localStorage.removeItem('token')
+    window.location.href = '/'
+    throw new Error('Unauthorized')
+  }
+  if (!res.ok) {
+    throw new Error(await parseError(res))
+  }
+  return res.json() as Promise<AuditReconcileReport>
 }
 
 export async function downloadAuditExport(token: string, date: string): Promise<void> {
