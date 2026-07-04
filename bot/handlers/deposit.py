@@ -52,6 +52,7 @@ from bot.handlers.flow_staleness import (
     AMOUNT_TEXT,
     answer_stale_callback,
     deposit_amount_actor_allowed,
+    deposit_amount_show_validation_error,
     is_update_too_old,
     log_stale_update,
     looks_like_amount,
@@ -1195,7 +1196,9 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         if amount <= 0:
             raise InvalidOperation()
     except (InvalidOperation, Exception):
-        if looks_like_amount(message_text):
+        if looks_like_amount(message_text) and deposit_amount_show_validation_error(
+            context, sender_id=sender_id
+        ):
             await update.message.reply_text(
                 "Please enter a valid dollar amount (Example: 50 or 100.00)."
             )

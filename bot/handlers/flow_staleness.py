@@ -105,10 +105,21 @@ def deposit_amount_actor_allowed(
     if sender_id is None or not looks_like_amount(text):
         return False
     if context.chat_data.get("deposit_admin_initiated"):
-        # Admin starts /deposit; the customer (not a global admin) enters the amount.
-        return sender_id not in ADMIN_USER_IDS
+        # Admin-initiated: player or support account may enter the amount.
+        return True
     depositor_id = context.chat_data.get("deposit_user_id")
     return depositor_id is not None and sender_id == depositor_id
+
+
+def deposit_amount_show_validation_error(context, *, sender_id: int | None) -> bool:
+    """Players get parse errors; support accounts in admin-initiated flow do not."""
+    if (
+        context.chat_data.get("deposit_admin_initiated")
+        and sender_id is not None
+        and sender_id in ADMIN_USER_IDS
+    ):
+        return False
+    return True
 
 
 def cashout_amount_actor_allowed(

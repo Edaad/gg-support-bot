@@ -88,7 +88,7 @@ class TestFlowStalenessHelpers(unittest.TestCase):
         self.assertTrue(
             fs.deposit_amount_actor_allowed(ctx, sender_id=8132930521, text="100")
         )
-        self.assertFalse(
+        self.assertTrue(
             fs.deposit_amount_actor_allowed(ctx, sender_id=7516419496, text="100")
         )
 
@@ -181,8 +181,17 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
         "get_methods_for_amount",
         return_value=[{"id": 29, "slug": "applepay", "name": "Apple Pay"}],
     )
-    async def test_admin_amount_is_silent(self, *_mocks):
+    async def test_admin_amount_accepted(self, *_mocks):
         update = _message_update(age_seconds=5, text="40", user_id=7516419496)
+        context = self._admin_context()
+        result = await dep.deposit_amount_received(update, context)
+        self.assertEqual(result, dep.DEPOSIT_CHOOSE)
+        self.assertEqual(context.chat_data["deposit_amount"], Decimal("40"))
+        self.assertNotIn("deposit_user_id", context.chat_data)
+
+    @patch.object(dep, "ADMIN_USER_IDS", {7516419496})
+    async def test_admin_invalid_amount_is_silent(self):
+        update = _message_update(age_seconds=5, text="0", user_id=7516419496)
         context = self._admin_context()
         result = await dep.deposit_amount_received(update, context)
         self.assertEqual(result, dep.DEPOSIT_AMOUNT)
