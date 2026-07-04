@@ -23,7 +23,7 @@ async def notify_staff_bonus_draft(
     draft_id: int,
     group_title: str | None,
     amount: Decimal,
-    player_username: str | None = None,
+    gg_player_id: str | None = None,
 ) -> bool:
     group_line = group_title or "Unknown group"
     lines = [
@@ -31,8 +31,8 @@ async def notify_staff_bonus_draft(
         f"Group: {group_line}",
         f"Amount: {_format_amount(amount)}",
     ]
-    if player_username:
-        lines.append(f"Player: {player_username}")
+    if gg_player_id:
+        lines.append(f"Player ID: {gg_player_id}")
     lines.append("")
     lines.append("Tap below to complete the bonus recording.")
     text = "\n".join(lines)

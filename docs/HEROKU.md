@@ -406,6 +406,7 @@ heroku config:set ISSUE_REPORT_TAG_MENTIONS='{"head_admin":"<!subteam^S_HEAD>","
 heroku run -a YOUR_APP -- python migrate_staff_cashout_records.py
 heroku run -a YOUR_APP -- python migrate_bonus_records.py
 heroku run -a YOUR_APP -- python migrate_bonus_drafts.py
+heroku run -a YOUR_APP -- python migrate_bonus_records_player_details.py
 # optional: backfill completed cashier jobs into staff_cashout_records
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py --apply

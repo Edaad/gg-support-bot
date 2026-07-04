@@ -125,7 +125,6 @@ async def _add_bot_api_path(
                 chat_id=chat.id,
                 group_title=chat.title,
                 bonus_amount=bonus,
-                player_name=name,
             ),
             name=f"bonus-from-add-{chat.id}",
         )

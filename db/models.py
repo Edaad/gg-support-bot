@@ -575,6 +575,10 @@ class BonusRecord(Base):
     """Individual bonus entries recorded via /bonus by admins."""
 
     __tablename__ = "bonus_records"
+    __table_args__ = (
+        Index("ix_bonus_records_gg_player_id", "gg_player_id"),
+        Index("ix_bonus_records_player_details_id", "player_details_id"),
+    )
 
     id = Column(Integer, primary_key=True)
     player_username = Column(String(255), nullable=False)
@@ -586,11 +590,20 @@ class BonusRecord(Base):
     club_id = Column(
         Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
     )
+    player_details_id = Column(
+        Integer,
+        ForeignKey("player_details.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    gg_player_id = Column(String(255), nullable=True)
+    chat_id = Column(BigInteger, nullable=True)
+    group_title = Column(String(512), nullable=True)
     admin_telegram_user_id = Column(BigInteger, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
 
     bonus_type = relationship("BonusType")
     club = relationship("Club")
+    player_details = relationship("PlayerDetails")
 
 
 class BonusDraft(Base):
@@ -608,12 +621,19 @@ class BonusDraft(Base):
     group_title = Column(String(512), nullable=True)
     telegram_chat_id = Column(BigInteger, nullable=True)
     player_username = Column(String(255), nullable=True)
+    gg_player_id = Column(String(255), nullable=True)
+    player_details_id = Column(
+        Integer,
+        ForeignKey("player_details.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     amount = Column(Numeric(12, 2), nullable=False)
     status = Column(String(32), nullable=False, server_default="pending")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=False)
 
     club = relationship("Club")
+    player_details = relationship("PlayerDetails")
 
 
 class MtProtoSessionCredential(Base):

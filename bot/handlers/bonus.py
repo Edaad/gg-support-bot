@@ -14,6 +14,7 @@ from telegram.ext import ApplicationHandlerStop, ContextTypes
 from config import ADMIN_USER_IDS
 from bot.handlers.flow_cancel import ACTIVE_FLOW_KEY, clear_active_flow, mark_active_flow
 from bot.services.bonus_drafts import cancel_draft, draft_to_context, get_pending_draft, mark_draft_submitted
+from bot.services.bonus_player_resolve import BonusPlayerContext, resolve_bonus_player
 from db.connection import get_db
 from db.models import BonusType, BonusRecord, Club
 
@@ -23,7 +24,15 @@ BONUS_STEP_KEY = "bonus_step"
 BONUS_TIMEOUT_SECONDS = 300
 ZAPIER_WEBHOOK_ENV = "ZAPIER_BONUS_WEBHOOK_URL"
 
-_TEXT_STEPS = frozenset({"username", "amount", "description"})
+_TEXT_STEPS = frozenset({"group_title", "amount", "description"})
+
+_GROUP_TITLE_PROMPT = (
+    "Enter group title (e.g. CC / 8190-5287 / Jacob):"
+)
+_GROUP_TITLE_INVALID = (
+    "Invalid group title. Use format: CLUB / PLAYER_ID / NAME\n"
+    "Example: CC / 8190-5287 / Jacob"
+)
 
 
 def _get_bonus_types():
@@ -67,6 +76,18 @@ def _type_keyboard_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
+def _apply_player_context(
+    context: ContextTypes.DEFAULT_TYPE, player_ctx: BonusPlayerContext
+) -> None:
+    context.user_data["bonus_group_title"] = player_ctx.group_title
+    context.user_data["bonus_gg_player_id"] = player_ctx.gg_player_id
+    context.user_data["bonus_chat_id"] = player_ctx.chat_id
+    context.user_data["bonus_player_details_id"] = player_ctx.player_details_id
+    context.user_data["bonus_zapier_name"] = player_ctx.zapier_name
+    context.user_data["bonus_club_id"] = player_ctx.club_id
+    context.user_data["bonus_club_name"] = _club_name_for_id(player_ctx.club_id)
+
+
 def _save_record(data: dict) -> int:
     with get_db() as session:
         rec = BonusRecord(
@@ -75,6 +96,10 @@ def _save_record(data: dict) -> int:
             bonus_type_id=data.get("bonus_type_id"),
             custom_description=data.get("custom_description"),
             club_id=data["club_id"],
+            player_details_id=data.get("player_details_id"),
+            gg_player_id=data.get("gg_player_id"),
+            chat_id=data.get("chat_id"),
+            group_title=data.get("group_title"),
             admin_telegram_user_id=data["admin_user_id"],
         )
         session.add(rec)
@@ -88,6 +113,8 @@ async def _fire_zapier_webhook(data: dict):
         return
     payload = {
         "player_username": data["player_username"],
+        "gg_player_id": data.get("gg_player_id", ""),
+        "group_title": data.get("group_title", ""),
         "amount": str(data["amount"]),
         "bonus_type": data.get("bonus_type_name", ""),
         "description": data.get("custom_description", ""),
@@ -161,7 +188,11 @@ def _cleanup(context: ContextTypes.DEFAULT_TYPE) -> None:
     for key in (
         "bonus_admin_id",
         "bonus_draft_id",
-        "bonus_player",
+        "bonus_group_title",
+        "bonus_gg_player_id",
+        "bonus_chat_id",
+        "bonus_player_details_id",
+        "bonus_zapier_name",
         "bonus_amount",
         "bonus_type_id",
         "bonus_type_name",
@@ -196,12 +227,14 @@ async def _finalize_bonus_record(
     club_name = context.user_data.get("bonus_club_name") or (
         _club_name_for_id(int(club_id)) if club_id else "Unknown"
     )
-    player = context.user_data.get("bonus_player", "?")
+    display_name = context.user_data.get("bonus_zapier_name") or context.user_data.get(
+        "bonus_group_title", "?"
+    )
     amount = context.user_data.get("bonus_amount", "?")
     type_name = context.user_data.get("bonus_type_name", "?")
 
     record_data = {
-        "player_username": player,
+        "player_username": display_name,
         "amount": amount,
         "bonus_type_id": context.user_data.get("bonus_type_id"),
         "custom_description": context.user_data.get("bonus_custom_desc"),
@@ -209,6 +242,10 @@ async def _finalize_bonus_record(
         "club_name": club_name,
         "bonus_type_name": type_name,
         "admin_user_id": context.user_data.get("bonus_admin_id"),
+        "player_details_id": context.user_data.get("bonus_player_details_id"),
+        "gg_player_id": context.user_data.get("bonus_gg_player_id"),
+        "chat_id": context.user_data.get("bonus_chat_id"),
+        "group_title": context.user_data.get("bonus_group_title"),
     }
 
     _save_record(record_data)
@@ -221,7 +258,7 @@ async def _finalize_bonus_record(
 
     summary = (
         f"Bonus recorded!\n\n"
-        f"Player: {player}\n"
+        f"Group: {display_name}\n"
         f"Amount: ${amount}\n"
         f"Type: {type_name}\n"
         f"Club: {club_name}"
@@ -250,14 +287,14 @@ async def bonus_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     _cleanup(context)
     user_id = update.effective_user.id
     context.user_data["bonus_admin_id"] = user_id
-    context.user_data[BONUS_STEP_KEY] = "username"
+    context.user_data[BONUS_STEP_KEY] = "group_title"
     mark_active_flow(context, "bonus")
     _schedule_bonus_timeout(
         context,
         chat_id=update.effective_chat.id,
         user_id=user_id,
     )
-    await update.message.reply_text("Player Username:")
+    await update.message.reply_text(_GROUP_TITLE_PROMPT)
     raise ApplicationHandlerStop()
 
 
@@ -310,11 +347,19 @@ async def bonus_draft_continue_handler(
     context.user_data["bonus_admin_id"] = user_id
     context.user_data["bonus_draft_id"] = draft_ctx.id
     context.user_data["bonus_amount"] = draft_ctx.amount
-    if draft_ctx.player_username:
-        context.user_data["bonus_player"] = draft_ctx.player_username
-    if draft_ctx.club_id is not None:
-        context.user_data["bonus_club_id"] = draft_ctx.club_id
-        context.user_data["bonus_club_name"] = _club_name_for_id(draft_ctx.club_id)
+
+    player_ctx = resolve_bonus_player(
+        group_title=draft_ctx.group_title or "",
+        chat_id=draft_ctx.telegram_chat_id,
+        club_id=draft_ctx.club_id,
+    )
+    if player_ctx is None:
+        await query.edit_message_text(
+            "Could not resolve player from group title. Send /bonus to start again."
+        )
+        raise ApplicationHandlerStop()
+
+    _apply_player_context(context, player_ctx)
 
     mark_active_flow(context, "bonus")
     _schedule_bonus_timeout(
@@ -323,15 +368,11 @@ async def bonus_draft_continue_handler(
         user_id=user_id,
     )
 
-    if draft_ctx.player_username and draft_ctx.amount is not None:
-        context.user_data[BONUS_STEP_KEY] = "type"
-        await query.edit_message_text(
-            "Select Bonus Type:",
-            reply_markup=_type_keyboard_markup(),
-        )
-    else:
-        context.user_data[BONUS_STEP_KEY] = "username"
-        await query.edit_message_text("Player Username:")
+    context.user_data[BONUS_STEP_KEY] = "type"
+    await query.edit_message_text(
+        "Select Bonus Type:",
+        reply_markup=_type_keyboard_markup(),
+    )
 
     raise ApplicationHandlerStop()
 
@@ -374,8 +415,8 @@ async def bonus_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     logger.info("bonus step=%s user_id=%s text=%r", step, update.effective_user.id, (update.message.text or "")[:40])
 
-    if step == "username":
-        await _handle_username(update, context)
+    if step == "group_title":
+        await _handle_group_title(update, context)
     elif step == "amount":
         await _handle_amount(update, context)
     elif step == "description":
@@ -404,13 +445,20 @@ async def bonus_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         raise ApplicationHandlerStop()
 
 
-async def _handle_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_group_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message
-    username = (update.message.text or "").strip()
-    if not username:
-        await update.message.reply_text("Please enter a valid username.")
+    title = (update.message.text or "").strip()
+    if not title:
+        await update.message.reply_text(_GROUP_TITLE_INVALID)
         return
-    context.user_data["bonus_player"] = username
+
+    player_ctx = resolve_bonus_player(group_title=title, chat_id=None)
+    if player_ctx is None:
+        await update.message.reply_text(_GROUP_TITLE_INVALID)
+        return
+
+    _apply_player_context(context, player_ctx)
+
     if context.user_data.get("bonus_amount") is not None:
         context.user_data[BONUS_STEP_KEY] = "type"
         await update.message.reply_text(

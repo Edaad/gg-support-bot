@@ -429,6 +429,10 @@ export interface BonusRecordT {
   bonus_type_name: string | null
   custom_description: string | null
   club_name: string | null
+  gg_player_id: string | null
+  group_title: string | null
+  chat_id: number | null
+  player_details_id: number | null
   admin_telegram_user_id: number
   created_at: string | null
 }
