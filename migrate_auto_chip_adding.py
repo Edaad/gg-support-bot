@@ -1,7 +1,8 @@
-"""One-time migration: add auto chip-adding columns.
+"""One-time migration: add auto chip-adding / auto-claim columns.
 
 Adds:
     clubs.auto_chip_adding_enabled  — per-club toggle for /add → ClubGG deposit bot
+    clubs.auto_claim_enabled        — per-club toggle for /cash → ClubGG claim-back
     groups.last_deposit_union       — last customer-chosen RT/AT union ("RT"|"AT")
     groups.last_deposit_union_at    — when that union was last recorded
 
@@ -20,6 +21,8 @@ engine = init_engine()
 STATEMENTS = [
     "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS auto_chip_adding_enabled "
     "BOOLEAN NOT NULL DEFAULT FALSE;",
+    "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS auto_claim_enabled "
+    "BOOLEAN NOT NULL DEFAULT FALSE;",
     "ALTER TABLE groups ADD COLUMN IF NOT EXISTS last_deposit_union VARCHAR(2);",
     "ALTER TABLE groups ADD COLUMN IF NOT EXISTS last_deposit_union_at TIMESTAMPTZ;",
 ]
@@ -28,4 +31,4 @@ with engine.connect() as conn:
     for stmt in STATEMENTS:
         conn.execute(text(stmt))
     conn.commit()
-    print("auto chip-adding columns are ready.")
+    print("auto chip-adding / auto-claim columns are ready.")

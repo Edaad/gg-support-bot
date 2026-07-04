@@ -36,6 +36,7 @@ import httpx
 
 from bot.services.club import (
     get_auto_chip_adding_enabled,
+    get_auto_claim_enabled,
     get_club_by_id,
     get_group_title_for_chat,
     get_last_deposit_union,
@@ -237,16 +238,17 @@ async def _health_ok(cfg: _Config, client: httpx.AsyncClient) -> tuple[bool, str
     return True, "ok"
 
 
-async def _submit_deposit(
+async def _submit_operation(
     cfg: _Config,
     client: httpx.AsyncClient,
     *,
+    operation: str = "deposit",
     club: str,
     player_id: str,
     amount: str,
     request_id: str,
 ) -> tuple[Optional[str], Optional[str], Optional[str]]:
-    """POST /deposit. Returns (job_id, status, error_message)."""
+    """POST /deposit or /claim (same body). Returns (job_id, status, error_message)."""
     body: dict[str, Any] = {
         "club": club,
         "player_id": player_id,
@@ -261,7 +263,7 @@ async def _submit_deposit(
         body["expected_profile"] = cfg.expected_profile
     try:
         resp = await client.post(
-            f"{cfg.base_url}/deposit", headers=_auth_headers(cfg), json=body
+            f"{cfg.base_url}/{operation}", headers=_auth_headers(cfg), json=body
         )
     except Exception as exc:
         return None, None, f"request failed: {type(exc).__name__}"
@@ -373,9 +375,10 @@ async def _run_single_deposit(
         request_id,
     )
 
-    job_id, status, error = await _submit_deposit(
+    job_id, status, error = await _submit_operation(
         cfg,
         client,
+        operation="deposit",
         club=clubgg_club,
         player_id=player_id,
         amount=amount_str,
@@ -552,6 +555,150 @@ async def trigger_auto_chip_add(
                     return
     except Exception:
         logger.exception("auto_chip_add: unexpected error (chat_id=%s)", chat_id)
+
+
+@dataclass(frozen=True)
+class ClaimOutcome:
+    """Result of an auto claim-back attempt (never raised; always returned)."""
+
+    ok: bool
+    status: str
+    reason: str = ""
+    player_id: Optional[str] = None
+    clubgg_club: Optional[str] = None
+    amount_str: Optional[str] = None
+
+
+def deposit_api_configured() -> bool:
+    """True when the ClubGG deposit/claim API is configured on this worker."""
+    return load_config() is not None
+
+
+async def run_auto_claim(
+    *,
+    club_id: int,
+    chat_id: int,
+    job_id: int,
+    amount: Decimal,
+    group_title: Optional[str] = None,
+) -> ClaimOutcome:
+    """Claim chips back via the deposit bot's ``/claim`` endpoint.
+
+    Never raises. Player id + club/union are resolved from the group exactly like
+    ``/add`` auto chip-adding. ``request_id`` is derived from the cashout job id so a
+    given job can never double-claim. Returns a rich :class:`ClaimOutcome` the caller
+    uses to decide what to tell staff.
+    """
+    try:
+        cfg = load_config()
+        if cfg is None:
+            return ClaimOutcome(False, "not_configured", "deposit API not configured")
+
+        enabled = await asyncio.to_thread(get_auto_claim_enabled, int(club_id))
+        if not enabled:
+            return ClaimOutcome(False, "disabled", "auto-claim disabled for club")
+
+        title = group_title
+        if not title:
+            title, _cid = await asyncio.to_thread(get_group_title_for_chat, int(chat_id))
+        player_id = gg_player_id_from_title(title)
+        if not player_id:
+            return ClaimOutcome(
+                False, "no_player_id", "could not read a player id from the group title"
+            )
+
+        club = await asyncio.to_thread(get_club_by_id, int(club_id))
+        club_name = club.name if club else None
+
+        union_shorthand: Optional[str] = None
+        if (club_name or "").strip().lower() == ROUND_TABLE_CLUB_NAME.strip().lower():
+            stored_union, _recorded_at = await asyncio.to_thread(
+                get_last_deposit_union, int(chat_id)
+            )
+            union_shorthand = _resolve_round_table_union_for_auto_chip_add(
+                title, stored_union
+            )
+
+        clubgg_club = resolve_clubgg_club_name(club_name, union_shorthand)
+        if not clubgg_club:
+            return ClaimOutcome(
+                False,
+                "unmapped",
+                f"could not map club {club_name!r}/union {union_shorthand!r} to a ClubGG club",
+                player_id=player_id,
+            )
+
+        amount_str = _format_chip_amount(amount)
+        request_id = f"cash-claim-{int(job_id)}"
+        timeout = httpx.Timeout(cfg.timeout_sec)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            ok_health, detail = await _health_ok(cfg, client)
+            if not ok_health:
+                return ClaimOutcome(
+                    False,
+                    "no_machine",
+                    detail,
+                    player_id=player_id,
+                    clubgg_club=clubgg_club,
+                    amount_str=amount_str,
+                )
+
+            logger.info(
+                "auto_claim: submitting club=%s (id=%s) player=%s amount=%s dry_run=%s "
+                "request_id=%s",
+                clubgg_club,
+                CLUBGG_CLUB_IDS.get(clubgg_club),
+                player_id,
+                amount_str,
+                cfg.dry_run,
+                request_id,
+            )
+            remote_job_id, status, error = await _submit_operation(
+                cfg,
+                client,
+                operation="claim",
+                club=clubgg_club,
+                player_id=player_id,
+                amount=amount_str,
+                request_id=request_id,
+            )
+            if error or not remote_job_id:
+                return ClaimOutcome(
+                    False,
+                    "fail",
+                    error or "failed to queue claim",
+                    player_id=player_id,
+                    clubgg_club=clubgg_club,
+                    amount_str=amount_str,
+                )
+
+            if status and status.lower() in _TERMINAL_STATUSES:
+                job = {"status": status, "job_id": remote_job_id}
+            else:
+                job = await _poll_until_terminal(cfg, client, remote_job_id)
+
+            final = (job.get("status") or "unknown").lower()
+            reason = job.get("reason") or ""
+            logger.info(
+                "auto_claim: result club=%s player=%s status=%s reason=%s",
+                clubgg_club,
+                player_id,
+                final,
+                reason,
+            )
+            return ClaimOutcome(
+                ok=final in ("success", "dry_run", "skipped"),
+                status=final,
+                reason=reason,
+                player_id=player_id,
+                clubgg_club=clubgg_club,
+                amount_str=amount_str,
+            )
+    except Exception as exc:
+        logger.exception(
+            "auto_claim: unexpected error (chat_id=%s job_id=%s)", chat_id, job_id
+        )
+        return ClaimOutcome(False, "error", f"unexpected error: {type(exc).__name__}")
 
 
 async def _notify_result(

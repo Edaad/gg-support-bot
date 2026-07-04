@@ -572,6 +572,15 @@ def get_auto_chip_adding_enabled(club_id: int) -> bool:
         return bool(getattr(club, "auto_chip_adding_enabled", False))
 
 
+def get_auto_claim_enabled(club_id: int) -> bool:
+    """True if /cash should trigger ClubGG auto claim-back for this club."""
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club:
+            return False
+        return bool(getattr(club, "auto_claim_enabled", False))
+
+
 def set_last_deposit_union(chat_id: int, shorthand: str) -> None:
     """Record the customer's last Round Table deposit union ("RT"/"AT") for a group."""
     token = (shorthand or "").strip().upper()

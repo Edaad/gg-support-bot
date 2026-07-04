@@ -37,6 +37,7 @@ def _club_to_read(club: Club) -> ClubRead:
         allow_multi_cashout=club.allow_multi_cashout,
         allow_admin_commands=club.allow_admin_commands,
         auto_chip_adding_enabled=club.auto_chip_adding_enabled or False,
+        auto_claim_enabled=club.auto_claim_enabled or False,
         deposit_simple_mode=club.deposit_simple_mode or False,
         deposit_simple_type=club.deposit_simple_type,
         deposit_simple_text=club.deposit_simple_text,
