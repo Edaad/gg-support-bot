@@ -39,6 +39,13 @@ from db.models import (
 PlayerStatus = Literal["match", "mismatch", "trade_only", "ledger_only"]
 RunStatus = Literal["pass", "fail", "blocked"]
 
+# Pass when |net_trade_record − net_ledger| ≤ this amount (USD).
+RECONCILE_MATCH_TOLERANCE_USD = Decimal("2")
+
+
+def _within_match_tolerance(delta: Decimal) -> bool:
+    return abs(delta) <= RECONCILE_MATCH_TOLERANCE_USD
+
 
 @dataclass
 class UnmatchedTradeRow:
@@ -187,7 +194,9 @@ def _compare_players(
         delta = net_trade - net_ledger
 
         if gg_id in trade_by_player and gg_id in ledger_by_player:
-            status: PlayerStatus = "match" if delta == 0 else "mismatch"
+            status: PlayerStatus = (
+                "match" if _within_match_tolerance(delta) else "mismatch"
+            )
         elif gg_id in trade_by_player:
             status = "trade_only"
         else:

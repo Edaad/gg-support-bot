@@ -12,7 +12,12 @@ from api.audit_ledger import (
     LedgerEvent,
     aggregate_ledger_by_player,
 )
-from api.audit_reconcile import aggregate_trade_record, run_audit_reconcile
+from api.audit_reconcile import (
+    RECONCILE_MATCH_TOLERANCE_USD,
+    aggregate_trade_record,
+    run_audit_reconcile,
+    _within_match_tolerance,
+)
 from api.glide_audit_sync import dedupe_glide_events
 from api.gg_computer_settlement import is_monday_audit_date
 from db.models import (
@@ -88,6 +93,19 @@ class TradeRecordAggregationTestCase(unittest.TestCase):
         self.assertEqual(len(unmatched), 1)
         self.assertEqual(unmatched[0].amount, Decimal("10.00"))
         self.assertEqual(unmatched[0].member_nickname, "Ghost")
+
+
+class MatchToleranceTestCase(unittest.TestCase):
+    def test_tolerance_constant(self):
+        self.assertEqual(RECONCILE_MATCH_TOLERANCE_USD, Decimal("2"))
+
+    def test_within_two_dollar_band(self):
+        self.assertTrue(_within_match_tolerance(Decimal("0")))
+        self.assertTrue(_within_match_tolerance(Decimal("2")))
+        self.assertTrue(_within_match_tolerance(Decimal("-2")))
+        self.assertTrue(_within_match_tolerance(Decimal("1.99")))
+        self.assertFalse(_within_match_tolerance(Decimal("2.01")))
+        self.assertFalse(_within_match_tolerance(Decimal("-2.01")))
 
 
 class LedgerAggregationTestCase(unittest.TestCase):
@@ -230,6 +248,34 @@ class ReconcilePassFailTestCase(unittest.TestCase):
         self.assertEqual(report.status, "pass")
         self.assertEqual(report.players_matched, 1)
         self.assertEqual(report.players_failed, 0)
+
+    @patch("api.audit_reconcile.fetch_glide_ledger_events", return_value=([], []))
+    @patch("api.audit_reconcile.fetch_settlement_events", return_value=([], []))
+    @patch("api.audit_reconcile.fetch_cashout_events", return_value=[])
+    @patch("api.audit_reconcile.fetch_bonus_events", return_value=[])
+    @patch("api.audit_reconcile.fetch_early_rakeback_events", return_value=[])
+    @patch("api.audit_reconcile.fetch_deposit_events")
+    @patch("api.audit_reconcile.resolve_club_id", return_value=2)
+    @patch("api.audit_reconcile.is_monday_audit_date", return_value=False)
+    def test_pass_within_two_dollar_tolerance(
+        self,
+        _monday,
+        _resolve,
+        mock_deposits,
+        *_rest,
+    ):
+        mock_deposits.return_value = [
+            LedgerEvent("deposit_stripe", "3011-9668", Decimal("98.50"), None, "d:1"),
+        ]
+        report = run_audit_reconcile(
+            self.mock_db,
+            club_slug="round-table",
+            audit_date=date(2026, 6, 18),
+            persist=False,
+        )
+        self.assertEqual(report.status, "pass")
+        self.assertEqual(report.players[0].status, "match")
+        self.assertEqual(report.players[0].delta, Decimal("1.50"))
 
     @patch("api.audit_reconcile.fetch_glide_ledger_events", return_value=([], []))
     @patch("api.audit_reconcile.fetch_settlement_events", return_value=([], []))
