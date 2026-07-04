@@ -6,6 +6,7 @@ import json
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -18,6 +19,8 @@ from api.club_audit_timezone import (
 )
 from api.club_slug import CLUB_SLUG_TO_NAME, resolve_club_id, slug_for_club_id
 from api.schemas_audit import (
+    AuditReconcileReportSchema,
+    AuditReconcileRunSummary,
     EarlyRakebackSnapshotSummary,
     EarlyRakebackSyncReport,
     TradeRecordUploadReport,
@@ -31,8 +34,10 @@ from api.trade_record_parser import (
 from api.trade_record_sync import sync_identities
 from api.aon_beta_client import AonBetaConfigError
 from api.early_rakeback_sync import sync_early_rakeback_for_date
+from api.audit_reconcile import AuditReconcileReport, run_audit_reconcile
+from api.audit_reconcile_export import build_reconcile_workbook_from_report
 from db.connection import get_db_dependency
-from db.models import EarlyRakebackSnapshot, TradeRecordLine, TradeRecordUpload
+from db.models import AuditReconcileRun, EarlyRakebackSnapshot, TradeRecordLine, TradeRecordUpload
 
 router = APIRouter(
     prefix="/api/audit",
@@ -49,6 +54,60 @@ def _parse_audit_date(raw: str) -> date:
         return date.fromisoformat(text)
     except ValueError as exc:
         raise HTTPException(400, f"Invalid audit_date: {raw!r}") from exc
+
+
+def _report_to_schema(report: AuditReconcileReport) -> AuditReconcileReportSchema:
+    return AuditReconcileReportSchema(
+        audit_date=report.audit_date,
+        club_slug=report.club_slug,
+        club_name=report.club_name,
+        status=report.status,
+        run_id=report.run_id,
+        trade_upload_id=report.trade_upload_id,
+        early_rb_snapshot_id=report.early_rb_snapshot_id,
+        players=[
+            {
+                "gg_player_id": p.gg_player_id,
+                "net_trade_record": str(p.net_trade_record),
+                "net_ledger": str(p.net_ledger),
+                "delta": str(p.delta),
+                "ledger_breakdown": {
+                    "deposits": str(p.ledger_breakdown.deposits),
+                    "early_rb": str(p.ledger_breakdown.early_rb),
+                    "bonuses": str(p.ledger_breakdown.bonuses),
+                    "monday": str(p.ledger_breakdown.monday),
+                    "glide": str(p.ledger_breakdown.glide),
+                    "cashouts": str(p.ledger_breakdown.cashouts),
+                },
+                "status": p.status,
+            }
+            for p in report.players
+        ],
+        unmatched_trade=[
+            {
+                "line_id": u.line_id,
+                "amount": str(u.amount),
+                "member_nickname": u.member_nickname,
+                "sheet_row": u.sheet_row,
+            }
+            for u in report.unmatched_trade
+        ],
+        unmatched_ledger=[
+            {
+                "source": u.source,
+                "amount_usd": str(u.amount_usd),
+                "external_id": u.external_id,
+                "detail": u.detail,
+            }
+            for u in report.unmatched_ledger
+        ],
+        warnings=report.warnings,
+        blocked_reason=report.blocked_reason,
+        players_matched=report.players_matched,
+        players_failed=report.players_failed,
+        unmatched_trade_count=report.unmatched_trade_count,
+        unmatched_ledger_count=report.unmatched_ledger_count,
+    )
 
 
 @router.post("/trade-records/upload", response_model=TradeRecordUploadReport)
@@ -329,3 +388,92 @@ def list_early_rakeback_snapshots(
             )
         )
     return out
+
+
+@router.post("/reconcile", response_model=AuditReconcileReportSchema)
+def reconcile_audit(
+    club_slug: str = Query(..., description="Club slug (required)"),
+    audit_date: str = Query(..., description="Local audit calendar day (YYYY-MM-DD)"),
+    db: Session = Depends(get_db_dependency),
+):
+    slug = club_slug.strip().lower()
+    if slug not in CLUB_SLUG_TO_NAME:
+        raise HTTPException(400, f"Unknown club slug: {club_slug!r}")
+    parsed_date = _parse_audit_date(audit_date)
+
+    report = run_audit_reconcile(db, club_slug=slug, audit_date=parsed_date)
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Reconcile conflict for this club and date") from exc
+
+    return _report_to_schema(report)
+
+
+@router.get("/reconcile/runs", response_model=list[AuditReconcileRunSummary])
+def list_reconcile_runs(
+    club_slug: str | None = Query(None),
+    audit_date: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db_dependency),
+):
+    q = db.query(AuditReconcileRun)
+
+    if club_slug:
+        slug = club_slug.strip().lower()
+        if slug not in CLUB_SLUG_TO_NAME:
+            raise HTTPException(400, f"Unknown club slug: {club_slug!r}")
+        q = q.filter(AuditReconcileRun.club_slug == slug)
+
+    if audit_date:
+        q = q.filter(AuditReconcileRun.audit_date == _parse_audit_date(audit_date))
+
+    rows = (
+        q.order_by(AuditReconcileRun.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    out: list[AuditReconcileRunSummary] = []
+    for run in rows:
+        slug = run.club_slug or slug_for_club_id(db, run.club_id) or ""
+        out.append(
+            AuditReconcileRunSummary(
+                id=run.id,
+                club_slug=slug,
+                club_name=CLUB_SLUG_TO_NAME.get(slug, slug),
+                audit_date=run.audit_date,
+                status=run.status,
+                players_matched=int(run.players_matched or 0),
+                players_failed=int(run.players_failed or 0),
+                unmatched_trade_count=int(run.unmatched_trade_count or 0),
+                unmatched_ledger_count=int(run.unmatched_ledger_count or 0),
+                created_at=run.created_at or datetime.utcnow(),
+            )
+        )
+    return out
+
+
+@router.get("/reconcile/export")
+def export_reconcile(
+    club_slug: str = Query(..., description="Club slug (required)"),
+    audit_date: str = Query(..., description="Local audit calendar day (YYYY-MM-DD)"),
+    db: Session = Depends(get_db_dependency),
+):
+    slug = club_slug.strip().lower()
+    if slug not in CLUB_SLUG_TO_NAME:
+        raise HTTPException(400, f"Unknown club slug: {club_slug!r}")
+    parsed_date = _parse_audit_date(audit_date)
+
+    report = run_audit_reconcile(
+        db, club_slug=slug, audit_date=parsed_date, persist=False
+    )
+    content = build_reconcile_workbook_from_report(report)
+    filename = f"reconcile-{slug}-{parsed_date.isoformat()}.xlsx"
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

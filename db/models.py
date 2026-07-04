@@ -593,6 +593,29 @@ class BonusRecord(Base):
     club = relationship("Club")
 
 
+class BonusDraft(Base):
+    """Pending bonus recording started from a support group /add with a bonus amount."""
+
+    __tablename__ = "bonus_drafts"
+    __table_args__ = (
+        Index("ix_bonus_drafts_staff_user_id", "staff_telegram_user_id"),
+        Index("ix_bonus_drafts_status", "status"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    staff_telegram_user_id = Column(BigInteger, nullable=False)
+    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True)
+    group_title = Column(String(512), nullable=True)
+    telegram_chat_id = Column(BigInteger, nullable=True)
+    player_username = Column(String(255), nullable=True)
+    amount = Column(Numeric(12, 2), nullable=False)
+    status = Column(String(32), nullable=False, server_default="pending")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+
+    club = relationship("Club")
+
+
 class MtProtoSessionCredential(Base):
     """Portable Telethon StringSession payloads for MTProto (/gc); shared by web + worker."""
 
@@ -1797,3 +1820,68 @@ class EarlyRakebackLine(Base):
     occurred_at = Column(DateTime(timezone=True), nullable=True)
 
     snapshot = relationship("EarlyRakebackSnapshot", back_populates="lines")
+
+
+class AuditReconcileRun(Base):
+    """One net reconcile run per club slug + local audit day (re-run replaces)."""
+
+    __tablename__ = "audit_reconcile_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "club_slug",
+            "audit_date",
+            name="uq_audit_reconcile_runs_slug_date",
+        ),
+        Index("ix_audit_reconcile_runs_club_id", "club_id"),
+        Index("ix_audit_reconcile_runs_club_slug", "club_slug"),
+        Index("ix_audit_reconcile_runs_audit_date", "audit_date"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    club_slug = Column(String(64), nullable=False)
+    audit_date = Column(Date, nullable=False)
+    status = Column(String(16), nullable=False)
+    trade_upload_id = Column(
+        Integer,
+        ForeignKey("trade_record_uploads.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    early_rb_snapshot_id = Column(
+        Integer,
+        ForeignKey("early_rakeback_snapshots.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    players_matched = Column(Integer, nullable=False, default=0)
+    players_failed = Column(Integer, nullable=False, default=0)
+    unmatched_trade_count = Column(Integer, nullable=False, default=0)
+    unmatched_ledger_count = Column(Integer, nullable=False, default=0)
+    report_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    club = relationship("Club")
+    trade_upload = relationship("TradeRecordUpload")
+    early_rb_snapshot = relationship("EarlyRakebackSnapshot")
+
+
+class GlideAuditLine(Base):
+    """Optional snapshot of Glide RT Hub rows used in reconcile."""
+
+    __tablename__ = "glide_audit_lines"
+    __table_args__ = (
+        Index("ix_glide_audit_lines_club_slug", "club_slug"),
+        Index("ix_glide_audit_lines_audit_date", "audit_date"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    club_slug = Column(String(64), nullable=False)
+    audit_date = Column(Date, nullable=False)
+    glide_row_id = Column(String(128), nullable=False)
+    gg_player_id = Column(String(255), nullable=True)
+    amount_usd = Column(Numeric(14, 2), nullable=False)
+    event_type = Column(String(64), nullable=True)
+    occurred_at = Column(DateTime(timezone=True), nullable=True)
+    raw_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
