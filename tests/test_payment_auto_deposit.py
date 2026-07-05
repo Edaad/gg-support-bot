@@ -227,5 +227,103 @@ class PlayerLabelFromTitleTestCase(unittest.TestCase):
         self.assertIsNone(pad._player_label_from_title("CC / 1234-5678"))
 
 
+class CreatorStaffFooterTestCase(unittest.TestCase):
+    def _creator_club_patch(self):
+        return patch.object(
+            pad,
+            "get_club_by_id",
+            return_value=SimpleNamespace(name=pad.CREATOR_CLUB_NAME),
+        )
+
+    def test_eligible_footer(self) -> None:
+        with (
+            self._creator_club_patch(),
+            patch.object(pad, "get_auto_chip_adding_enabled", return_value=True),
+        ):
+            footer = pad.format_creator_club_staff_footer(
+                club_id=CLUB_ID_CREATOR,
+                telegram_chat_id=CHAT_ID,
+                auto_bound=True,
+            )
+        self.assertEqual(footer, pad.CREATOR_STAFF_FOOTER_AUTO)
+
+    def test_manual_footer_when_not_auto_bound(self) -> None:
+        with self._creator_club_patch():
+            footer = pad.format_creator_club_staff_footer(
+                club_id=CLUB_ID_CREATOR,
+                telegram_chat_id=CHAT_ID,
+                auto_bound=False,
+            )
+        self.assertEqual(footer, pad.CREATOR_STAFF_FOOTER_MANUAL)
+
+    def test_manual_footer_when_goods_and_services(self) -> None:
+        with (
+            self._creator_club_patch(),
+            patch.object(pad, "get_auto_chip_adding_enabled", return_value=True),
+        ):
+            footer = pad.format_creator_club_staff_footer(
+                club_id=CLUB_ID_CREATOR,
+                telegram_chat_id=CHAT_ID,
+                auto_bound=True,
+                goods_or_services=True,
+            )
+        self.assertEqual(footer, pad.CREATOR_STAFF_FOOTER_MANUAL)
+
+    def test_manual_footer_when_auto_add_disabled(self) -> None:
+        with (
+            self._creator_club_patch(),
+            patch.object(pad, "get_auto_chip_adding_enabled", return_value=False),
+        ):
+            footer = pad.format_creator_club_staff_footer(
+                club_id=CLUB_ID_CREATOR,
+                telegram_chat_id=CHAT_ID,
+                auto_bound=True,
+            )
+        self.assertEqual(footer, pad.CREATOR_STAFF_FOOTER_MANUAL)
+
+    def test_no_footer_for_round_table(self) -> None:
+        with patch.object(
+            pad,
+            "get_club_by_id",
+            return_value=SimpleNamespace(name="Round Table"),
+        ):
+            footer = pad.format_creator_club_staff_footer(
+                club_id=CLUB_ID_RT,
+                telegram_chat_id=CHAT_ID,
+                auto_bound=True,
+            )
+        self.assertIsNone(footer)
+
+    def test_append_preserves_body(self) -> None:
+        body = "🔔 Venmo Payment Notification\n\nAmount: $50"
+        with (
+            self._creator_club_patch(),
+            patch.object(pad, "get_auto_chip_adding_enabled", return_value=True),
+        ):
+            out = pad.append_creator_club_staff_footer(
+                body,
+                club_id=CLUB_ID_CREATOR,
+                telegram_chat_id=CHAT_ID,
+                auto_bound=True,
+            )
+        self.assertTrue(out.startswith(body))
+        self.assertIn(pad.CREATOR_STAFF_FOOTER_AUTO, out)
+
+    def test_append_unchanged_for_non_creator(self) -> None:
+        body = "🔔 Venmo Payment Notification"
+        with patch.object(
+            pad,
+            "get_club_by_id",
+            return_value=SimpleNamespace(name="ClubGTO"),
+        ):
+            out = pad.append_creator_club_staff_footer(
+                body,
+                club_id=2,
+                telegram_chat_id=CHAT_ID,
+                auto_bound=True,
+            )
+        self.assertEqual(out, body)
+
+
 if __name__ == "__main__":
     unittest.main()

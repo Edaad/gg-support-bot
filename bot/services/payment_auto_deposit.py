@@ -31,10 +31,75 @@ logger = logging.getLogger(__name__)
 
 CREATOR_CLUB_NAME = "Creator Club"
 
+CREATOR_STAFF_FOOTER_AUTO = (
+    "<b>Auto-add:</b> Fully automatic — chips will load and the player will be "
+    "notified. No action needed unless you receive an error alert; then /add manually."
+)
+CREATOR_STAFF_FOOTER_MANUAL = (
+    "<b>Manual action required</b> — bind and /add as usual."
+)
+
 
 def _is_creator_club(club_id: int) -> bool:
     club = get_club_by_id(int(club_id))
     return (club.name or "").strip() == CREATOR_CLUB_NAME if club else False
+
+
+def is_creator_club_auto_deposit_eligible(
+    *,
+    club_id: int | None,
+    telegram_chat_id: int | None,
+    auto_bound: bool,
+    goods_or_services: bool = False,
+) -> bool:
+    """True when Creator Club payment will run full auto chip-add on ingest."""
+    if not auto_bound or goods_or_services:
+        return False
+    if club_id is None or telegram_chat_id is None:
+        return False
+    if not _is_creator_club(int(club_id)):
+        return False
+    return get_auto_chip_adding_enabled(int(club_id))
+
+
+def format_creator_club_staff_footer(
+    *,
+    club_id: int | None,
+    telegram_chat_id: int | None,
+    auto_bound: bool,
+    goods_or_services: bool = False,
+) -> str | None:
+    """Return staff footer for Creator Club notifications, or None if not Creator Club."""
+    if club_id is None or not _is_creator_club(int(club_id)):
+        return None
+    if is_creator_club_auto_deposit_eligible(
+        club_id=club_id,
+        telegram_chat_id=telegram_chat_id,
+        auto_bound=auto_bound,
+        goods_or_services=goods_or_services,
+    ):
+        return CREATOR_STAFF_FOOTER_AUTO
+    return CREATOR_STAFF_FOOTER_MANUAL
+
+
+def append_creator_club_staff_footer(
+    text: str,
+    *,
+    club_id: int | None,
+    telegram_chat_id: int | None,
+    auto_bound: bool,
+    goods_or_services: bool = False,
+) -> str:
+    """Append Creator Club staff footer when applicable."""
+    footer = format_creator_club_staff_footer(
+        club_id=club_id,
+        telegram_chat_id=telegram_chat_id,
+        auto_bound=auto_bound,
+        goods_or_services=goods_or_services,
+    )
+    if not footer:
+        return text
+    return f"{text.rstrip()}\n\n{footer}"
 
 
 def _amount_from_cents(amount_cents: int) -> Decimal:
@@ -151,17 +216,12 @@ async def maybe_auto_deposit_from_payment(
     goods_or_services: bool = False,
 ) -> None:
     """Creator Club: auto chip-add on auto-bound payment; confirm on success."""
-    if not auto_bound:
-        return
-    if goods_or_services:
-        return
-    if club_id is None or telegram_chat_id is None:
-        return
-    if not _is_creator_club(int(club_id)):
-        return
-
-    enabled = await asyncio.to_thread(get_auto_chip_adding_enabled, int(club_id))
-    if not enabled:
+    if not is_creator_club_auto_deposit_eligible(
+        club_id=club_id,
+        telegram_chat_id=telegram_chat_id,
+        auto_bound=auto_bound,
+        goods_or_services=goods_or_services,
+    ):
         return
 
     title = (group_title or "").strip()

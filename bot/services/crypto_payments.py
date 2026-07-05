@@ -407,6 +407,7 @@ async def ingest_crypto_payment(
         group_title=group_title,
         group_chat_url=group_chat_url,
         ambiguous_candidates=ambiguous_candidates if not auto_bound else None,
+        auto_bound=auto_bound,
     )
 
     notif_markup: dict | None = None

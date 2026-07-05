@@ -100,6 +100,10 @@ def format_payment_notification(
     group_title: Optional[str] = None,
     group_chat_url: Optional[str] = None,
     ambiguous_candidates: list[CandidateGroup] | None = None,
+    club_id: Optional[int] = None,
+    telegram_chat_id: Optional[int] = None,
+    auto_bound: bool = False,
+    goods_or_services: bool = False,
 ) -> str:
     register_formatters()
     fmt = FORMATters[method_slug]
@@ -110,7 +114,21 @@ def format_payment_notification(
     )
     if ambiguous_candidates and len(ambiguous_candidates) > 1 and not group_title:
         text = inject_ambiguous_group_chat_line(text, ambiguous_candidates)
-    return text
+    from bot.services.payment_auto_deposit import append_creator_club_staff_footer
+
+    resolved_club_id = club_id
+    if resolved_club_id is None:
+        resolved_club_id = getattr(payment, "club_id", None)
+    resolved_chat_id = telegram_chat_id
+    if resolved_chat_id is None:
+        resolved_chat_id = getattr(payment, "telegram_chat_id", None)
+    return append_creator_club_staff_footer(
+        text,
+        club_id=int(resolved_club_id) if resolved_club_id is not None else None,
+        telegram_chat_id=int(resolved_chat_id) if resolved_chat_id is not None else None,
+        auto_bound=auto_bound,
+        goods_or_services=goods_or_services,
+    )
 
 
 def notification_keyboard_kind(

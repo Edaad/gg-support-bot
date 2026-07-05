@@ -516,6 +516,7 @@ def format_stripe_payment_notification_text(
     group_title: str,
     amount_cents: int,
     method_label: str,
+    club_id: int | None = None,
     telegram_chat_id: int | None = None,
     group_chat_url: str | None = None,
 ) -> str:
@@ -538,7 +539,15 @@ def format_stripe_payment_notification_text(
             f"Method: {escape_notification_html(method_label)}",
         ]
     )
-    return "\n".join(lines)
+    from bot.services.payment_auto_deposit import append_creator_club_staff_footer
+
+    body = "\n".join(lines)
+    return append_creator_club_staff_footer(
+        body,
+        club_id=int(club_id) if club_id is not None else None,
+        telegram_chat_id=int(telegram_chat_id) if telegram_chat_id is not None else None,
+        auto_bound=True,
+    )
 
 
 async def notify_stripe_payment_completed(checkout_obj: dict[str, Any]) -> None:
@@ -578,6 +587,7 @@ async def notify_stripe_payment_completed(checkout_obj: dict[str, Any]) -> None:
         group_title=group_title,
         amount_cents=amount_cents,
         method_label=method_label,
+        club_id=int(club_id),
         telegram_chat_id=int(chat_id),
         group_chat_url=group_chat_url,
     )

@@ -242,6 +242,7 @@ async def ingest_zelle_payment(
     ambiguous_candidates: list = []
     setup_target_chat_id: Optional[int] = None
     setup_target_title: Optional[str] = None
+    setup_club_id: Optional[int] = None
 
     with get_db() as session:
         if source_external_id:
@@ -286,6 +287,7 @@ async def ingest_zelle_payment(
             setup_attempt_id = int(setup_attempt.id)
             live_title = resolve_display_group_title(int(setup_attempt.telegram_chat_id))
             club_id_setup = int(setup_attempt.club_id)
+            setup_club_id = club_id_setup
             if live_title:
                 existing_link = find_existing_zelle_link_for_setup(
                     session,
@@ -392,6 +394,7 @@ async def ingest_zelle_payment(
         group_title=group_title,
         group_chat_url=group_chat_url,
         ambiguous_candidates=ambiguous_candidates if not auto_bound else None,
+        auto_bound=auto_bound,
     )
 
     notif_markup: dict | None = None
@@ -411,6 +414,14 @@ async def ingest_zelle_payment(
         notif_markup = candidate_picker_markup("zelle", int(payment.id), ambiguous_candidates)
 
     if setup_warning_text:
+        from bot.services.payment_auto_deposit import append_creator_club_staff_footer
+
+        setup_warning_text = append_creator_club_staff_footer(
+            setup_warning_text,
+            club_id=setup_club_id,
+            telegram_chat_id=setup_target_chat_id,
+            auto_bound=False,
+        )
         await send_telegram_notification(setup_warning_text)
 
     notif_chat_id, notif_message_id = await send_telegram_notification(
