@@ -45,6 +45,27 @@ def _is_creator_club(club_id: int) -> bool:
     return (club.name or "").strip() == CREATOR_CLUB_NAME if club else False
 
 
+def auto_deposit_ineligible_reason(
+    *,
+    club_id: int | None,
+    telegram_chat_id: int | None,
+    auto_bound: bool,
+    goods_or_services: bool = False,
+) -> str | None:
+    """Return why e2e auto-deposit was skipped, or None when eligible."""
+    if not auto_bound:
+        return "auto_bound_false"
+    if goods_or_services:
+        return "venmo_goods_and_services"
+    if club_id is None or telegram_chat_id is None:
+        return "missing_club_or_chat"
+    if not _is_creator_club(int(club_id)):
+        return "not_creator_club"
+    if not get_auto_deposit_on_payment_enabled(int(club_id)):
+        return "auto_deposit_on_payment_disabled"
+    return None
+
+
 def is_creator_club_auto_deposit_eligible(
     *,
     club_id: int | None,
@@ -53,13 +74,15 @@ def is_creator_club_auto_deposit_eligible(
     goods_or_services: bool = False,
 ) -> bool:
     """True when Creator Club payment will run full auto chip-add on ingest."""
-    if not auto_bound or goods_or_services:
-        return False
-    if club_id is None or telegram_chat_id is None:
-        return False
-    if not _is_creator_club(int(club_id)):
-        return False
-    return get_auto_deposit_on_payment_enabled(int(club_id))
+    return (
+        auto_deposit_ineligible_reason(
+            club_id=club_id,
+            telegram_chat_id=telegram_chat_id,
+            auto_bound=auto_bound,
+            goods_or_services=goods_or_services,
+        )
+        is None
+    )
 
 
 def format_creator_club_staff_footer(
@@ -216,12 +239,24 @@ async def maybe_auto_deposit_from_payment(
     goods_or_services: bool = False,
 ) -> None:
     """Creator Club: auto chip-add on auto-bound payment; confirm on success."""
-    if not is_creator_club_auto_deposit_eligible(
+    skip_reason = auto_deposit_ineligible_reason(
         club_id=club_id,
         telegram_chat_id=telegram_chat_id,
         auto_bound=auto_bound,
         goods_or_services=goods_or_services,
-    ):
+    )
+    if skip_reason is not None:
+        if skip_reason != "not_creator_club":
+            logger.info(
+                "payment_auto_deposit: skipped method=%s payment_id=%s "
+                "chat_id=%s club_id=%s auto_bound=%s reason=%s",
+                payment_method_slug,
+                payment_id,
+                telegram_chat_id,
+                club_id,
+                auto_bound,
+                skip_reason,
+            )
         return
 
     title = (group_title or "").strip()

@@ -30,6 +30,43 @@ class RequestIdPaymentTestCase(unittest.TestCase):
         )
 
 
+class AutoDepositIneligibleReasonTestCase(unittest.TestCase):
+    def test_eligible_returns_none(self) -> None:
+        with (
+            patch.object(
+                pad,
+                "get_club_by_id",
+                return_value=SimpleNamespace(name=pad.CREATOR_CLUB_NAME),
+            ),
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
+        ):
+            self.assertIsNone(
+                pad.auto_deposit_ineligible_reason(
+                    club_id=CLUB_ID_CREATOR,
+                    telegram_chat_id=CHAT_ID,
+                    auto_bound=True,
+                )
+            )
+
+    def test_toggle_off(self) -> None:
+        with (
+            patch.object(
+                pad,
+                "get_club_by_id",
+                return_value=SimpleNamespace(name=pad.CREATOR_CLUB_NAME),
+            ),
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=False),
+        ):
+            self.assertEqual(
+                pad.auto_deposit_ineligible_reason(
+                    club_id=CLUB_ID_CREATOR,
+                    telegram_chat_id=CHAT_ID,
+                    auto_bound=True,
+                ),
+                "auto_deposit_on_payment_disabled",
+            )
+
+
 class MaybeAutoDepositGatingTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_skips_when_not_auto_bound(self) -> None:
         with patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock) as mock_run:
@@ -42,6 +79,37 @@ class MaybeAutoDepositGatingTestCase(unittest.IsolatedAsyncioTestCase):
                 payment_id=1,
             )
         mock_run.assert_not_awaited()
+
+    async def test_logs_skip_reason_for_creator_club(self) -> None:
+        with (
+            patch.object(
+                pad,
+                "get_club_by_id",
+                return_value=SimpleNamespace(name=pad.CREATOR_CLUB_NAME),
+            ),
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=False),
+            patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock) as mock_run,
+            patch.object(pad.logger, "info") as mock_log,
+        ):
+            await pad.maybe_auto_deposit_from_payment(
+                club_id=CLUB_ID_CREATOR,
+                telegram_chat_id=CHAT_ID,
+                amount_cents=5000,
+                auto_bound=True,
+                payment_method_slug="zelle",
+                payment_id=1115,
+            )
+        mock_run.assert_not_awaited()
+        mock_log.assert_any_call(
+            "payment_auto_deposit: skipped method=%s payment_id=%s "
+            "chat_id=%s club_id=%s auto_bound=%s reason=%s",
+            "zelle",
+            1115,
+            CHAT_ID,
+            CLUB_ID_CREATOR,
+            True,
+            "auto_deposit_on_payment_disabled",
+        )
 
     async def test_skips_goods_and_services(self) -> None:
         with patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock) as mock_run:
