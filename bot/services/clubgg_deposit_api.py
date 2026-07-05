@@ -166,9 +166,19 @@ def _format_chip_amount(amount: Decimal) -> str:
 def request_id_for(chat_id: int, message_id: int, *, part: str = "base") -> str:
     """Stable idempotency key. Bonus is a separate transaction with its own id."""
     base = f"tg-{int(chat_id)}-{int(message_id)}"
+    return request_id_with_part(base, part=part)
+
+
+def request_id_for_payment(method_slug: str, payment_id: int, *, part: str = "base") -> str:
+    """Idempotency key for payment-ingest auto chip-add (distinct from /add message ids)."""
+    base = f"payment-{method_slug}-{int(payment_id)}"
+    return request_id_with_part(base, part=part)
+
+
+def request_id_with_part(base_request_id: str, *, part: str = "base") -> str:
     if part == "base":
-        return base
-    return f"{base}-{part}"
+        return base_request_id
+    return f"{base_request_id}-{part}"
 
 
 def _deposit_transactions(
@@ -405,6 +415,151 @@ async def _run_single_deposit(
     return status in ("success", "dry_run", "skipped")
 
 
+async def run_auto_chip_add(
+    *,
+    club_id: int,
+    chat_id: int,
+    amount: Decimal,
+    request_id: str,
+    bonus: Optional[Decimal] = None,
+    group_title: Optional[str] = None,
+    ptb_bot: Any | None = None,
+) -> bool:
+    """Submit chip-add to ClubGG and poll to terminal.
+
+    Returns True on success/dry_run/skipped for all transactions. Never raises.
+    Caller must claim ``request_id`` via ``_claim_request`` when idempotency matters.
+    """
+    cfg = load_config()
+    if cfg is None:
+        return False
+
+    if not _claim_request(request_id):
+        return False
+
+    transactions = _deposit_transactions(amount, bonus)
+
+    title = group_title
+    if not title:
+        title, _cid = await asyncio.to_thread(get_group_title_for_chat, int(chat_id))
+    player_id = gg_player_id_from_title(title)
+    if not player_id:
+        await _send_alert(
+            cfg,
+            ptb_bot,
+            f"Auto chip-add skipped (chat {chat_id}): could not read a player id "
+            f"from the group title. Add chips manually.",
+        )
+        return False
+
+    club = await asyncio.to_thread(get_club_by_id, int(club_id))
+    club_name = club.name if club else None
+
+    union_shorthand: Optional[str] = None
+    if (club_name or "").strip().lower() == ROUND_TABLE_CLUB_NAME.strip().lower():
+        stored_union, recorded_at = await asyncio.to_thread(
+            get_last_deposit_union, int(chat_id)
+        )
+        title_unions = _round_table_union_shorthands_in_title(title)
+        union_shorthand = _resolve_round_table_union_for_auto_chip_add(
+            title, stored_union
+        )
+        if title_unions == frozenset({"AT"}):
+            logger.info(
+                "auto_chip_add: title prefix AT only on chat %s -> Aces Table",
+                chat_id,
+            )
+        elif title_unions == frozenset({"RT"}):
+            logger.info(
+                "auto_chip_add: title prefix RT only on chat %s -> Round Table",
+                chat_id,
+            )
+        elif title_unions >= frozenset({"RT", "AT"}):
+            if not (stored_union or "").strip():
+                logger.info(
+                    "auto_chip_add: title RT+AT on chat %s; no deposit union; "
+                    "defaulting to RT",
+                    chat_id,
+                )
+            elif not _union_is_fresh(recorded_at, cfg.union_max_age_hours):
+                logger.info(
+                    "auto_chip_add: title RT+AT on chat %s; using stale deposit "
+                    "union %s",
+                    chat_id,
+                    union_shorthand,
+                )
+            else:
+                logger.info(
+                    "auto_chip_add: title RT+AT on chat %s; using deposit union %s",
+                    chat_id,
+                    union_shorthand,
+                )
+        elif not (stored_union or "").strip():
+            logger.info(
+                "auto_chip_add: no RT/AT in title on chat %s; defaulting to RT",
+                chat_id,
+            )
+        elif not _union_is_fresh(recorded_at, cfg.union_max_age_hours):
+            logger.info(
+                "auto_chip_add: using stale RT/AT deposit union %s for chat %s",
+                union_shorthand,
+                chat_id,
+            )
+
+    clubgg_club = resolve_clubgg_club_name(club_name, union_shorthand)
+    if not clubgg_club:
+        await _send_alert(
+            cfg,
+            ptb_bot,
+            f"Auto chip-add skipped for player {player_id} (chat {chat_id}): "
+            f"could not map club {club_name!r}/union {union_shorthand!r} to a "
+            f"ClubGG club. Add chips manually.",
+        )
+        return False
+
+    timeout = httpx.Timeout(cfg.timeout_sec)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        ok, detail = await _health_ok(cfg, client)
+        if not ok:
+            parts = " + ".join(
+                _format_chip_amount(amt) for _lbl, amt, _part in transactions
+            )
+            await _send_alert(
+                cfg,
+                ptb_bot,
+                f"Auto chip-add NOT sent for {clubgg_club} player {player_id} "
+                f"({parts} chips): {detail}. Add chips manually.",
+            )
+            return False
+
+        all_ok = True
+        for idx, (label, chip_amount, part) in enumerate(transactions):
+            if idx > 0:
+                await asyncio.sleep(cfg.poll_interval_sec)
+            tx_ok = await _run_single_deposit(
+                cfg,
+                client,
+                clubgg_club=clubgg_club,
+                player_id=player_id,
+                amount=chip_amount,
+                request_id=request_id_with_part(request_id, part=part),
+                label=label,
+                ptb_bot=ptb_bot,
+            )
+            if not tx_ok:
+                all_ok = False
+                if idx == 0 and len(transactions) > 1:
+                    await _send_alert(
+                        cfg,
+                        ptb_bot,
+                        f"Auto chip-add: deposit failed for {clubgg_club} player "
+                        f"{player_id}; bonus ({_format_chip_amount(transactions[1][1])}) "
+                        f"was not attempted. Add chips manually.",
+                    )
+                break
+        return all_ok
+
+
 async def trigger_auto_chip_add(
     *,
     club_id: int,
@@ -421,138 +576,19 @@ async def trigger_auto_chip_add(
     so the existing /add behaviour is never affected.
     """
     try:
-        cfg = load_config()
-        if cfg is None:
-            return  # feature not configured on this worker
-
         enabled = await asyncio.to_thread(get_auto_chip_adding_enabled, int(club_id))
         if not enabled:
             return
 
-        request_id = request_id_for(chat_id, message_id)
-        if not _claim_request(request_id):
-            return  # already handled by the other /add code path
-
-        transactions = _deposit_transactions(amount, bonus)
-
-        # Resolve player id from the group title.
-        title = group_title
-        if not title:
-            title, _cid = await asyncio.to_thread(get_group_title_for_chat, int(chat_id))
-        player_id = gg_player_id_from_title(title)
-        if not player_id:
-            await _send_alert(
-                cfg,
-                ptb_bot,
-                f"Auto chip-add skipped (chat {chat_id}): could not read a player id "
-                f"from the group title. Add chips manually.",
-            )
-            return
-
-        club = await asyncio.to_thread(get_club_by_id, int(club_id))
-        club_name = club.name if club else None
-
-        # Round Table: title-only AT/RT, or deposit union when title has both.
-        union_shorthand: Optional[str] = None
-        if (club_name or "").strip().lower() == ROUND_TABLE_CLUB_NAME.strip().lower():
-            stored_union, recorded_at = await asyncio.to_thread(
-                get_last_deposit_union, int(chat_id)
-            )
-            title_unions = _round_table_union_shorthands_in_title(title)
-            union_shorthand = _resolve_round_table_union_for_auto_chip_add(
-                title, stored_union
-            )
-            if title_unions == frozenset({"AT"}):
-                logger.info(
-                    "auto_chip_add: title prefix AT only on chat %s -> Aces Table",
-                    chat_id,
-                )
-            elif title_unions == frozenset({"RT"}):
-                logger.info(
-                    "auto_chip_add: title prefix RT only on chat %s -> Round Table",
-                    chat_id,
-                )
-            elif title_unions >= frozenset({"RT", "AT"}):
-                if not (stored_union or "").strip():
-                    logger.info(
-                        "auto_chip_add: title RT+AT on chat %s; no deposit union; "
-                        "defaulting to RT",
-                        chat_id,
-                    )
-                elif not _union_is_fresh(recorded_at, cfg.union_max_age_hours):
-                    logger.info(
-                        "auto_chip_add: title RT+AT on chat %s; using stale deposit "
-                        "union %s",
-                        chat_id,
-                        union_shorthand,
-                    )
-                else:
-                    logger.info(
-                        "auto_chip_add: title RT+AT on chat %s; using deposit union %s",
-                        chat_id,
-                        union_shorthand,
-                    )
-            elif not (stored_union or "").strip():
-                logger.info(
-                    "auto_chip_add: no RT/AT in title on chat %s; defaulting to RT",
-                    chat_id,
-                )
-            elif not _union_is_fresh(recorded_at, cfg.union_max_age_hours):
-                logger.info(
-                    "auto_chip_add: using stale RT/AT deposit union %s for chat %s",
-                    union_shorthand,
-                    chat_id,
-                )
-
-        clubgg_club = resolve_clubgg_club_name(club_name, union_shorthand)
-        if not clubgg_club:
-            await _send_alert(
-                cfg,
-                ptb_bot,
-                f"Auto chip-add skipped for player {player_id} (chat {chat_id}): "
-                f"could not map club {club_name!r}/union {union_shorthand!r} to a "
-                f"ClubGG club. Add chips manually.",
-            )
-            return
-
-        timeout = httpx.Timeout(cfg.timeout_sec)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            ok, detail = await _health_ok(cfg, client)
-            if not ok:
-                parts = " + ".join(
-                    _format_chip_amount(amt) for _lbl, amt, _part in transactions
-                )
-                await _send_alert(
-                    cfg,
-                    ptb_bot,
-                    f"Auto chip-add NOT sent for {clubgg_club} player {player_id} "
-                    f"({parts} chips): {detail}. Add chips manually.",
-                )
-                return
-
-            for idx, (label, chip_amount, part) in enumerate(transactions):
-                if idx > 0:
-                    # Deposit bot runs one job at a time; wait for the prior job to finish.
-                    await asyncio.sleep(cfg.poll_interval_sec)
-                ok = await _run_single_deposit(
-                    cfg,
-                    client,
-                    clubgg_club=clubgg_club,
-                    player_id=player_id,
-                    amount=chip_amount,
-                    request_id=request_id_for(chat_id, message_id, part=part),
-                    label=label,
-                    ptb_bot=ptb_bot,
-                )
-                if not ok and idx == 0 and len(transactions) > 1:
-                    await _send_alert(
-                        cfg,
-                        ptb_bot,
-                        f"Auto chip-add: deposit failed for {clubgg_club} player "
-                        f"{player_id}; bonus ({_format_chip_amount(transactions[1][1])}) "
-                        f"was not attempted. Add chips manually.",
-                    )
-                    return
+        await run_auto_chip_add(
+            club_id=club_id,
+            chat_id=chat_id,
+            amount=amount,
+            request_id=request_id_for(chat_id, message_id),
+            bonus=bonus,
+            group_title=group_title,
+            ptb_bot=ptb_bot,
+        )
     except Exception:
         logger.exception("auto_chip_add: unexpected error (chat_id=%s)", chat_id)
 

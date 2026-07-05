@@ -885,6 +885,19 @@ async def ingest_venmo_payment(
         goods_or_services=goods_or_services_flag,
     )
 
+    from bot.services.payment_auto_deposit import schedule_auto_deposit_from_payment
+
+    schedule_auto_deposit_from_payment(
+        club_id=int(bound_club_id) if bound_club_id is not None else None,
+        telegram_chat_id=int(bound_chat_id) if bound_chat_id is not None else None,
+        amount_cents=amount_cents,
+        auto_bound=auto_bound,
+        payment_method_slug="venmo",
+        payment_id=payment_id,
+        group_title=bound_title or group_title,
+        goods_or_services=goods_or_services_flag,
+    )
+
     if goods_or_services_flag:
         await maybe_create_venmo_goods_services_issue_report(
             payment_id,

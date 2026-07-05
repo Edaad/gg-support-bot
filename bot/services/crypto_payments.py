@@ -467,6 +467,18 @@ async def ingest_crypto_payment(
         is_test=bool(test),
     )
 
+    from bot.services.payment_auto_deposit import schedule_auto_deposit_from_payment
+
+    schedule_auto_deposit_from_payment(
+        club_id=int(bound_club_id) if bound_club_id is not None else None,
+        telegram_chat_id=int(bound_chat_id) if bound_chat_id is not None else None,
+        amount_cents=amount_cents,
+        auto_bound=auto_bound,
+        payment_method_slug="crypto",
+        payment_id=payment_id,
+        group_title=bound_title or group_title,
+    )
+
     status = "bound" if auto_bound else "unbound"
     logger.info(
         "crypto payment ingested id=%s amount_cents=%s token=%s chain=%s "

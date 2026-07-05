@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from bot.services.club import get_group_title_for_chat, update_group_name
 from bot.services.group_chat_invite_links import resolve_group_chat_notification_url
 from bot.services.payment_group_notify import notify_player_group_payment_received
+from bot.services.payment_auto_deposit import schedule_auto_deposit_from_payment
 from bot.services.player_details import parse_group_title_parts
 from bot.services.venmo_payments import (
     escape_notification_html,
@@ -585,6 +586,32 @@ async def notify_stripe_payment_completed(checkout_obj: dict[str, Any]) -> None:
         telegram_chat_id=int(chat_id),
         amount_cents=amount_cents,
     )
+
+    session_id = str(checkout_obj.get("id") or "").strip()
+    stripe_payment_id: int | None = None
+    if session_id:
+        with get_db() as session:
+            row = (
+                session.query(StripeCheckoutSession)
+                .filter(StripeCheckoutSession.stripe_checkout_session_id == session_id)
+                .one_or_none()
+            )
+            if row is not None:
+                stripe_payment_id = int(row.id)
+    if stripe_payment_id is None and session_id:
+        stripe_payment_id = abs(hash(f"stripe:{session_id}")) % (2**31 - 1)
+
+    if stripe_payment_id is not None:
+        schedule_auto_deposit_from_payment(
+            club_id=int(club_id),
+            telegram_chat_id=int(chat_id),
+            amount_cents=amount_cents,
+            auto_bound=True,
+            payment_method_slug="stripe",
+            payment_id=stripe_payment_id,
+            group_title=group_title,
+        )
+
     logger.info(
         "stripe webhook: notification sent chat_id=%s club_id=%s amount_cents=%s method=%r",
         chat_id,
