@@ -1066,6 +1066,15 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cancel_deposit_reminder(context, chat.id)
 
     user_id = update.effective_user.id
+    try:
+        record_activity(club_id, user_id, chat.id, "dep_cmd")
+    except Exception:
+        logger.warning(
+            "deposit_entry: record dep_cmd failed chat_id=%s club_id=%s",
+            chat.id,
+            club_id,
+            exc_info=True,
+        )
     is_bot_admin = user_id in ADMIN_USER_IDS
 
     if is_test_bot_worker():

@@ -36,7 +36,9 @@ ADD_CONFIRMATION_MESSAGES = (
 )
 
 _ADD_CMD_RE = re.compile(r"^/add(?:@\w+)?\s+(.+?)\s*$", re.IGNORECASE)
-_ADD_SHORTHAND_RE = re.compile(r"^/(\d+)(?:@\w+)?(?:\s+(.+?))?\s*$", re.IGNORECASE)
+_ADD_SHORTHAND_RE = re.compile(
+    r"^/(\d+(?:\.\d+)?)(?:@\w+)?(?:\s+(.+?))?\s*$", re.IGNORECASE
+)
 
 
 def _parse_money_token(raw: str) -> Decimal | None:
@@ -53,6 +55,16 @@ def _parse_money_token(raw: str) -> Decimal | None:
 def _format_money(amount: Decimal) -> str:
     """Whole dollars only, no decimal suffix (e.g. $500, $1,000)."""
     return f"${int(amount):,}"
+
+
+def _format_decimal_display(amount: Decimal) -> str:
+    """Comma-formatted amount; whole numbers omit decimals (e.g. 1,000, 21.1)."""
+    normalized = amount.normalize()
+    if normalized == normalized.to_integral_value():
+        return f"{int(normalized):,}"
+    text = format(normalized, "f")
+    int_part, frac_part = text.split(".", 1)
+    return f"{int(int_part):,}.{frac_part}"
 
 
 def parse_add_command(
@@ -105,8 +117,8 @@ def parse_add_amount(text: str) -> Decimal | None:
 
 
 def _format_chips(amount: Decimal) -> str:
-    """Whole chips count (e.g. 500 chips, 1,000 chips)."""
-    return f"{int(amount):,} chips"
+    """Chips count with decimals preserved when present (e.g. 500 chips, 21.1 chips)."""
+    return f"{_format_decimal_display(amount)} chips"
 
 
 def format_add_confirmation(
@@ -118,7 +130,7 @@ def format_add_confirmation(
     phrase = random.choice(ADD_CONFIRMATION_MESSAGES)
     amt = _format_chips(amount)
     if bonus is not None:
-        core = f"Added {amt} plus {int(bonus):,} bonus, {phrase}"
+        core = f"Added {amt} plus {_format_decimal_display(bonus)} bonus, {phrase}"
     else:
         core = f"Added {amt}, {phrase}"
     if name:

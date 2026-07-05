@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from decimal import Decimal
 
 from telegram import Update
@@ -243,7 +244,7 @@ async def try_add_shorthand_command(
 
     text = update.message.text or ""
     cmd = text.split()[0].lstrip("/").split("@")[0]
-    if not cmd.isdigit():
+    if not re.fullmatch(r"\d+(?:\.\d+)?", cmd):
         return False
 
     parsed = parse_add_command(text)

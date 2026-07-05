@@ -486,7 +486,7 @@ class PlayerActivity(Base):
     )
     telegram_user_id = Column(BigInteger, nullable=False)
     chat_id = Column(BigInteger, nullable=False)
-    activity_type = Column(String(10), nullable=False)  # "deposit", "cashout", or "earlyrb"
+    activity_type = Column(String(10), nullable=False)  # deposit, cashout, earlyrb, dep_cmd
     cancelled = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
 

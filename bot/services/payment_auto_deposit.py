@@ -12,6 +12,7 @@ from bot.services.club import (
     get_auto_deposit_on_payment_enabled,
     get_club_by_id,
     get_group_title_for_chat,
+    has_recent_deposit_command_in_chat,
     invalidate_pending_one_time_bypasses,
     record_activity_for_chat,
 )
@@ -30,6 +31,7 @@ from club_gc_settings import get_club_gc_config_by_link_club_id
 logger = logging.getLogger(__name__)
 
 CREATOR_CLUB_NAME = "Creator Club"
+DEPOSIT_COMMAND_WINDOW_MINUTES = 10
 
 CREATOR_STAFF_FOOTER_AUTO = (
     "<b>Auto-add:</b> Fully automatic — chips will load and the player will be "
@@ -37,6 +39,10 @@ CREATOR_STAFF_FOOTER_AUTO = (
 )
 CREATOR_STAFF_FOOTER_MANUAL = (
     "<b>Manual action required</b> — bind and /add as usual."
+)
+CREATOR_STAFF_FOOTER_NO_RECENT_DEPOSIT = (
+    "<b>Manual action required</b> — did not see /deposit in this group in the "
+    f"last {DEPOSIT_COMMAND_WINDOW_MINUTES} minutes. Bind and /add as usual."
 )
 
 
@@ -63,6 +69,11 @@ def auto_deposit_ineligible_reason(
         return "not_creator_club"
     if not get_auto_deposit_on_payment_enabled(int(club_id)):
         return "auto_deposit_on_payment_disabled"
+    if not has_recent_deposit_command_in_chat(
+        int(telegram_chat_id),
+        within_minutes=DEPOSIT_COMMAND_WINDOW_MINUTES,
+    ):
+        return "no_recent_deposit_command"
     return None
 
 
@@ -95,13 +106,16 @@ def format_creator_club_staff_footer(
     """Return staff footer for Creator Club notifications, or None if not Creator Club."""
     if club_id is None or not _is_creator_club(int(club_id)):
         return None
-    if is_creator_club_auto_deposit_eligible(
+    reason = auto_deposit_ineligible_reason(
         club_id=club_id,
         telegram_chat_id=telegram_chat_id,
         auto_bound=auto_bound,
         goods_or_services=goods_or_services,
-    ):
+    )
+    if reason is None:
         return CREATOR_STAFF_FOOTER_AUTO
+    if reason == "no_recent_deposit_command":
+        return CREATOR_STAFF_FOOTER_NO_RECENT_DEPOSIT
     return CREATOR_STAFF_FOOTER_MANUAL
 
 
