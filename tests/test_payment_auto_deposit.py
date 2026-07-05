@@ -75,14 +75,14 @@ class MaybeAutoDepositGatingTestCase(unittest.IsolatedAsyncioTestCase):
             )
         mock_run.assert_not_awaited()
 
-    async def test_skips_when_auto_chip_adding_disabled(self) -> None:
+    async def test_skips_when_auto_deposit_on_payment_disabled(self) -> None:
         with (
             patch.object(
                 pad,
                 "get_club_by_id",
                 return_value=SimpleNamespace(name=pad.CREATOR_CLUB_NAME),
             ),
-            patch.object(pad, "get_auto_chip_adding_enabled", return_value=False),
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=False),
             patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock) as mock_run,
         ):
             await pad.maybe_auto_deposit_from_payment(
@@ -116,7 +116,7 @@ class MaybeAutoDepositSuccessTestCase(unittest.IsolatedAsyncioTestCase):
                 "get_club_by_id",
                 return_value=SimpleNamespace(name=pad.CREATOR_CLUB_NAME),
             ),
-            patch.object(pad, "get_auto_chip_adding_enabled", return_value=True),
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
             patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock, return_value=True) as mock_run,
             patch.object(pad, "record_activity_for_chat") as mock_record,
             patch.object(pad, "invalidate_pending_one_time_bypasses") as mock_invalidate,
@@ -149,7 +149,7 @@ class MaybeAutoDepositSuccessTestCase(unittest.IsolatedAsyncioTestCase):
                 "get_club_by_id",
                 return_value=SimpleNamespace(name=pad.CREATOR_CLUB_NAME),
             ),
-            patch.object(pad, "get_auto_chip_adding_enabled", return_value=True),
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
             patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock, return_value=False),
             patch.object(pad, "record_activity_for_chat") as mock_record,
             patch.object(pad, "_send_add_confirmation", new_callable=AsyncMock) as mock_confirm,
@@ -238,7 +238,7 @@ class CreatorStaffFooterTestCase(unittest.TestCase):
     def test_eligible_footer(self) -> None:
         with (
             self._creator_club_patch(),
-            patch.object(pad, "get_auto_chip_adding_enabled", return_value=True),
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
         ):
             footer = pad.format_creator_club_staff_footer(
                 club_id=CLUB_ID_CREATOR,
@@ -259,7 +259,7 @@ class CreatorStaffFooterTestCase(unittest.TestCase):
     def test_manual_footer_when_goods_and_services(self) -> None:
         with (
             self._creator_club_patch(),
-            patch.object(pad, "get_auto_chip_adding_enabled", return_value=True),
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
         ):
             footer = pad.format_creator_club_staff_footer(
                 club_id=CLUB_ID_CREATOR,
@@ -269,10 +269,10 @@ class CreatorStaffFooterTestCase(unittest.TestCase):
             )
         self.assertEqual(footer, pad.CREATOR_STAFF_FOOTER_MANUAL)
 
-    def test_manual_footer_when_auto_add_disabled(self) -> None:
+    def test_manual_footer_when_auto_deposit_disabled(self) -> None:
         with (
             self._creator_club_patch(),
-            patch.object(pad, "get_auto_chip_adding_enabled", return_value=False),
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=False),
         ):
             footer = pad.format_creator_club_staff_footer(
                 club_id=CLUB_ID_CREATOR,
@@ -298,7 +298,7 @@ class CreatorStaffFooterTestCase(unittest.TestCase):
         body = "🔔 Venmo Payment Notification\n\nAmount: $50"
         with (
             self._creator_club_patch(),
-            patch.object(pad, "get_auto_chip_adding_enabled", return_value=True),
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
         ):
             out = pad.append_creator_club_staff_footer(
                 body,

@@ -31,6 +31,7 @@ class TradeRecordParserTestCase(unittest.TestCase):
         self.assertIn(("member", "3011-9668"), ids)
         self.assertIn(("agent", "2000-2001"), ids)
         self.assertIn(("superAgent", "1000-1001"), ids)
+        self.assertEqual(parsed.transactions[0].member_nickname, "MemberOne")
 
     def test_extracts_club_and_date_from_metadata(self):
         raw = build_sample_trade_record_xlsx(

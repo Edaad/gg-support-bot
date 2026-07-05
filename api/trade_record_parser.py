@@ -93,6 +93,14 @@ def _cell_str(value: Any) -> str:
     return str(value).strip()
 
 
+def _cell_nickname(value: Any) -> str:
+    """Normalize a nickname cell; treat ClubGG placeholder dashes as empty."""
+    text = _cell_str(value)
+    if text in ("-", "—", "–"):
+        return ""
+    return text
+
+
 def _normalize_gg_id(raw: Any) -> str | None:
     s = _cell_str(raw)
     if not s or s == "-":
@@ -261,17 +269,27 @@ def parse_trade_record_workbook(
     source: BinaryIO | bytes,
 ) -> TradeRecordParseResult:
     if isinstance(source, bytes):
-        stream: BinaryIO = io.BytesIO(source)
+        raw_bytes = source
+        stream: BinaryIO = io.BytesIO(raw_bytes)
     else:
-        stream = source
-        stream.seek(0)
+        raw_bytes = source.read()
+        stream = io.BytesIO(raw_bytes)
 
     wb = load_workbook(stream, read_only=False, data_only=True)
+    wb_raw = load_workbook(io.BytesIO(raw_bytes), read_only=False, data_only=False)
     if SHEET_NAME not in wb.sheetnames:
         wb.close()
+        wb_raw.close()
         raise TradeRecordParseError(f'Missing "{SHEET_NAME}" sheet')
 
     ws = wb[SHEET_NAME]
+    ws_raw = wb_raw[SHEET_NAME]
+
+    def _nick_at(row: int, col: int) -> str:
+        nick = _cell_nickname(ws.cell(row=row, column=col).value)
+        if nick:
+            return nick
+        return _cell_nickname(ws_raw.cell(row=row, column=col).value)
     metadata = _metadata_from_sheet(ws)
     audit_date = extract_audit_date_from_metadata(metadata)
     club_slug = resolve_club_slug_from_metadata(metadata)
@@ -291,7 +309,7 @@ def parse_trade_record_workbook(
             break
 
         member_id = _normalize_gg_id(ws.cell(row=row, column=COL_MEMBER_ID).value)
-        member_nick = _cell_str(ws.cell(row=row, column=COL_MEMBER_NICK).value)
+        member_nick = _nick_at(row, COL_MEMBER_NICK)
         agent_id = _normalize_gg_id(ws.cell(row=row, column=COL_AGENT_ID).value)
         sa_id = _normalize_gg_id(ws.cell(row=row, column=COL_SA_ID).value)
 
@@ -309,7 +327,7 @@ def parse_trade_record_workbook(
 
         for role, (id_col, nick_col) in ROLE_COLUMNS.items():
             gid = _normalize_gg_id(ws.cell(row=row, column=id_col).value)
-            nick = _cell_str(ws.cell(row=row, column=nick_col).value)
+            nick = _nick_at(row, nick_col)
             if not gid:
                 continue
             if not nick:
@@ -321,13 +339,19 @@ def parse_trade_record_workbook(
                 nickname=nick,
             )
 
+        resolved_member_nick = member_nick
+        if member_id and not resolved_member_nick:
+            member_identity = identities_by_key.get(("member", member_id))
+            if member_identity:
+                resolved_member_nick = member_identity.nickname
+
         transactions.append(
             ParsedTransaction(
                 sheet_row=row,
                 occurred_at=occurred_at,
                 amount=amount,
                 member_gg_player_id=member_id,
-                member_nickname=member_nick or None,
+                member_nickname=resolved_member_nick or None,
                 agent_gg_player_id=agent_id,
                 super_agent_gg_player_id=sa_id,
             )
@@ -335,6 +359,7 @@ def parse_trade_record_workbook(
         row += 1
 
     wb.close()
+    wb_raw.close()
 
     if not transactions:
         raise TradeRecordParseError("No transaction rows found from row 6")

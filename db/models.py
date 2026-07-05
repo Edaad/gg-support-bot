@@ -44,6 +44,9 @@ class Club(Base):
     auto_chip_adding_enabled = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
+    auto_deposit_on_payment_enabled = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
     auto_claim_enabled = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )

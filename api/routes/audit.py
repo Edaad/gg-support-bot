@@ -72,6 +72,7 @@ def _report_to_schema(report: AuditReconcileReport) -> AuditReconcileReportSchem
         players=[
             {
                 "gg_player_id": p.gg_player_id,
+                "member_nickname": p.member_nickname,
                 "net_trade_record": str(p.net_trade_record),
                 "net_ledger": str(p.net_ledger),
                 "delta": str(p.delta),

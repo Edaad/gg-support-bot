@@ -36,6 +36,7 @@ class ClubCreate(BaseModel):
     allow_multi_cashout: bool = True
     allow_admin_commands: bool = True
     auto_chip_adding_enabled: bool = False
+    auto_deposit_on_payment_enabled: bool = False
     auto_claim_enabled: bool = False
     deposit_simple_mode: bool = False
     deposit_simple_type: str = "text"
@@ -78,6 +79,7 @@ class ClubUpdate(BaseModel):
     allow_multi_cashout: Optional[bool] = None
     allow_admin_commands: Optional[bool] = None
     auto_chip_adding_enabled: Optional[bool] = None
+    auto_deposit_on_payment_enabled: Optional[bool] = None
     auto_claim_enabled: Optional[bool] = None
     deposit_simple_mode: Optional[bool] = None
     deposit_simple_type: Optional[str] = None
@@ -123,6 +125,7 @@ class ClubRead(BaseModel):
     allow_multi_cashout: bool
     allow_admin_commands: bool
     auto_chip_adding_enabled: bool = False
+    auto_deposit_on_payment_enabled: bool = False
     auto_claim_enabled: bool = False
     deposit_simple_mode: bool
     deposit_simple_type: Optional[str]

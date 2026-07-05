@@ -73,6 +73,7 @@ export type LedgerBreakdown = {
 
 export type AuditReconcilePlayerResult = {
   gg_player_id: string
+  member_nickname: string | null
   net_trade_record: string
   net_ledger: string
   delta: string
@@ -124,6 +125,21 @@ export type AuditReconcileRunSummary = {
   unmatched_trade_count: number
   unmatched_ledger_count: number
   created_at: string
+}
+
+export type AuditPipelineStep =
+  | 'uploading'
+  | 'syncingEarlyRb'
+  | 'reconciling'
+  | 'done'
+  | 'failed'
+
+export type AuditPipelineResult = {
+  upload: TradeRecordUploadReport
+  earlyRb: EarlyRakebackSyncReport | null
+  earlyRbError: string | null
+  reconcile: AuditReconcileReport | null
+  reconcileError: string | null
 }
 
 async function parseError(res: Response): Promise<string> {
@@ -361,4 +377,38 @@ export async function downloadReconcileExport(
 
 export async function downloadAuditExport(token: string, date: string): Promise<void> {
   return downloadPaymentsAuditExport(token, date)
+}
+
+export async function runAuditPipeline(
+  token: string,
+  file: File,
+  onStep?: (step: AuditPipelineStep) => void,
+): Promise<AuditPipelineResult> {
+  onStep?.('uploading')
+  const upload = await uploadTradeRecord(token, file)
+
+  let earlyRb: EarlyRakebackSyncReport | null = null
+  let earlyRbError: string | null = null
+
+  onStep?.('syncingEarlyRb')
+  try {
+    earlyRb = await syncEarlyRakeback(token, upload.audit_date, upload.club_slug)
+  } catch (e: unknown) {
+    earlyRbError = e instanceof Error ? e.message : 'Early rakeback sync failed.'
+  }
+
+  let reconcile: AuditReconcileReport | null = null
+  let reconcileError: string | null = null
+
+  onStep?.('reconciling')
+  try {
+    reconcile = await reconcileAudit(token, upload.audit_date, upload.club_slug)
+  } catch (e: unknown) {
+    reconcileError = e instanceof Error ? e.message : 'Reconcile failed.'
+  }
+
+  const failed = reconcileError !== null && reconcile === null
+  onStep?.(failed ? 'failed' : 'done')
+
+  return { upload, earlyRb, earlyRbError, reconcile, reconcileError }
 }

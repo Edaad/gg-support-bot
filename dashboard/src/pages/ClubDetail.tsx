@@ -295,6 +295,20 @@ function GeneralTab({
           <label className="flex items-center gap-2 text-sm text-ink">
             <input
               type="checkbox"
+              checked={form.auto_deposit_on_payment_enabled ?? false}
+              onChange={(e) => setField('auto_deposit_on_payment_enabled', e.target.checked)}
+              className="h-4 w-4 rounded border-border bg-control text-accent"
+            />
+            Auto chip adding on payment receipt (e2e)
+          </label>
+          <p className="ml-6 text-xs text-ink-muted">
+            When enabled, auto-bound payment notifications load chips via ClubGG, notify the
+            player, and start the cashout cooldown — without a manual /add. Creator Club only
+            today.
+          </p>
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
               checked={form.auto_claim_enabled ?? false}
               onChange={(e) => setField('auto_claim_enabled', e.target.checked)}
               className="h-4 w-4 rounded border-border bg-control text-accent"

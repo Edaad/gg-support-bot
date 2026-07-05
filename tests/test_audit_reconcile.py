@@ -29,7 +29,9 @@ from api.gg_computer_settlement import is_monday_audit_date
 from db.models import (
     AuditReconcileRun,
     Club,
+    EarlyRakebackLine,
     EarlyRakebackSnapshot,
+    PlayerDetails,
     TradeRecordLine,
     TradeRecordUpload,
 )
@@ -66,9 +68,32 @@ class TradeRecordAggregationTestCase(unittest.TestCase):
             lines
         )
 
-        by_player, _counts, unmatched = aggregate_trade_record(session, upload=upload)
+        by_player, _counts, unmatched, nicknames = aggregate_trade_record(session, upload=upload)
         self.assertEqual(by_player["3011-9668"], Decimal("74.50"))
         self.assertEqual(by_player["3011-9999"], Decimal("50.00"))
+        self.assertEqual(unmatched, [])
+        self.assertEqual(nicknames, {})
+
+    def test_collects_nickname_from_trade_lines(self):
+        upload = TradeRecordUpload(id=1, club_slug="round-table", audit_date=date(2026, 6, 19))
+        lines = [
+            TradeRecordLine(
+                id=1,
+                upload_id=1,
+                sheet_row=5,
+                amount=Decimal("100.00"),
+                member_gg_player_id="3011-9668",
+                member_nickname="AcePlayer",
+            ),
+        ]
+        session = MagicMock()
+        session.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = (
+            lines
+        )
+
+        by_player, _counts, unmatched, nicknames = aggregate_trade_record(session, upload=upload)
+        self.assertEqual(by_player["3011-9668"], Decimal("100.00"))
+        self.assertEqual(nicknames["3011-9668"], "AcePlayer")
         self.assertEqual(unmatched, [])
 
     def test_unmatched_trade_rows_without_gg_id(self):
@@ -95,7 +120,7 @@ class TradeRecordAggregationTestCase(unittest.TestCase):
             lines
         )
 
-        by_player, _counts, unmatched = aggregate_trade_record(session, upload=upload)
+        by_player, _counts, unmatched, _nicknames = aggregate_trade_record(session, upload=upload)
         self.assertEqual(by_player, {})
         self.assertEqual(len(unmatched), 1)
         self.assertEqual(unmatched[0].amount, Decimal("10.00"))
@@ -224,6 +249,12 @@ class ReconcilePassFailTestCase(unittest.TestCase):
             if model is EarlyRakebackSnapshot:
                 q.filter_by.return_value.first.return_value = None
                 return q
+            if model is EarlyRakebackLine:
+                q.filter_by.return_value.all.return_value = []
+                return q
+            if model is PlayerDetails:
+                q.filter.return_value.all.return_value = []
+                return q
             return q
 
         self.mock_db.query.side_effect = query_model
@@ -345,6 +376,7 @@ class ReportJsonRoundTripTestCase(unittest.TestCase):
             players=[
                 AuditReconcilePlayerResult(
                     gg_player_id="3011-9668",
+                    member_nickname="AcePlayer",
                     net_trade_record=Decimal("100"),
                     net_ledger=Decimal("90"),
                     delta=Decimal("10"),
@@ -371,6 +403,7 @@ class ReportJsonRoundTripTestCase(unittest.TestCase):
         self.assertEqual(restored.run_id, 42)
         self.assertEqual(len(restored.players), 1)
         self.assertEqual(restored.players[0].gg_player_id, "3011-9668")
+        self.assertEqual(restored.players[0].member_nickname, "AcePlayer")
         self.assertEqual(restored.players[0].delta, Decimal("10"))
         self.assertEqual(restored.players[0].ledger_breakdown.deposits, Decimal("90"))
         self.assertEqual(restored.warnings, report.warnings)

@@ -85,6 +85,7 @@ class LedgerBreakdownSchema(BaseModel):
 
 class AuditReconcilePlayerResultSchema(BaseModel):
     gg_player_id: str
+    member_nickname: Optional[str] = None
     net_trade_record: str
     net_ledger: str
     delta: str

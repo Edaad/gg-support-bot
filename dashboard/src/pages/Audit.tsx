@@ -1,178 +1,246 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import {
   downloadAuditExport,
-  listTradeRecordUploads,
+  runAuditPipeline,
   syncEarlyRakeback,
-  uploadTradeRecord,
-  type EarlyRakebackSyncReport,
-  type TradeRecordUploadReport,
-  type TradeRecordUploadSummary,
+  type AuditPipelineResult,
+  type AuditPipelineStep,
 } from '../api/auditClient'
 import AuditReconcilePanel from '../components/AuditReconcilePanel'
-import { formatEasternDateTime } from '../lib/easternTime'
+
+const PIPELINE_STEPS: { id: AuditPipelineStep; label: string }[] = [
+  { id: 'uploading', label: 'Upload trade record' },
+  { id: 'syncingEarlyRb', label: 'Sync early rakeback' },
+  { id: 'reconciling', label: 'Run net reconcile' },
+]
+
+const XLSX_ACCEPT =
+  '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+function stepIndex(step: AuditPipelineStep): number {
+  if (step === 'uploading') return 0
+  if (step === 'syncingEarlyRb') return 1
+  if (step === 'reconciling') return 2
+  return 3
+}
 
 export default function Audit({ token }: { token: string }) {
-  const exportDateId = useId()
   const fileInputId = useId()
+  const exportDateId = useId()
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const [pipelineStep, setPipelineStep] = useState<AuditPipelineStep | null>(null)
+  const [pipelineResult, setPipelineResult] = useState<AuditPipelineResult | null>(null)
   const [exportDate, setExportDate] = useState('')
-  const [file, setFile] = useState<File | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const [exporting, setExporting] = useState(false)
-  const [syncingEarlyRb, setSyncingEarlyRb] = useState(false)
-  const [err, setErr] = useState('')
-  const [report, setReport] = useState<TradeRecordUploadReport | null>(null)
-  const [earlyRbReport, setEarlyRbReport] = useState<EarlyRakebackSyncReport | null>(null)
-  const [history, setHistory] = useState<TradeRecordUploadSummary[]>([])
+  const [uploadErr, setUploadErr] = useState('')
+  const [exportErr, setExportErr] = useState('')
+  const [exportWarn, setExportWarn] = useState('')
+  const [depositExportPhase, setDepositExportPhase] = useState<'idle' | 'syncing' | 'exporting'>('idle')
+  const [dragOver, setDragOver] = useState(false)
 
-  const loadHistory = useCallback(async () => {
-    try {
-      const rows = await listTradeRecordUploads(token)
-      setHistory(rows)
-    } catch {
-      setHistory([])
-    }
-  }, [token])
+  const exportBusy = depositExportPhase !== 'idle'
+
+  const running = pipelineStep !== null && pipelineStep !== 'done' && pipelineStep !== 'failed'
 
   useEffect(() => {
-    void loadHistory()
-  }, [loadHistory])
+    if (pipelineResult?.upload.audit_date) {
+      setExportDate(pipelineResult.upload.audit_date)
+    }
+  }, [pipelineResult])
 
-  const onUpload = async () => {
-    if (!file) {
-      setErr('Choose a trade record .xlsx file.')
-      return
-    }
-    setUploading(true)
-    setErr('')
-    setReport(null)
-    try {
-      const result = await uploadTradeRecord(token, file)
-      setReport(result)
-      setFile(null)
-      await loadHistory()
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Upload failed.')
-    } finally {
-      setUploading(false)
-    }
+  const runPipeline = useCallback(
+    async (file: File) => {
+      if (!file.name.toLowerCase().endsWith('.xlsx')) {
+        setUploadErr('File must be a .xlsx workbook.')
+        return
+      }
+
+      setUploadErr('')
+      setPipelineResult(null)
+      setPipelineStep('uploading')
+
+      try {
+        const result = await runAuditPipeline(token, file, setPipelineStep)
+        setPipelineResult(result)
+      } catch (e: unknown) {
+        setUploadErr(e instanceof Error ? e.message : 'Upload failed.')
+        setPipelineStep('failed')
+      }
+    },
+    [token],
+  )
+
+  const onFileSelected = (file: File | null | undefined) => {
+    if (!file || running) return
+    void runPipeline(file)
   }
 
-  const onExport = async () => {
+  const onInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    onFileSelected(e.target.files?.[0])
+    e.target.value = ''
+  }
+
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    if (running) return
+    onFileSelected(e.dataTransfer.files?.[0])
+  }
+
+  const onDownloadDepositAudit = async () => {
     if (!exportDate) {
-      setErr('Select a date for the audit export.')
+      setExportErr('Select a date for the deposit audit export.')
       return
     }
-    setExporting(true)
-    setErr('')
+    setExportErr('')
+    setExportWarn('')
+
+    setDepositExportPhase('syncing')
+    try {
+      const syncReport = await syncEarlyRakeback(token, exportDate)
+      if (syncReport.clubs_failed > 0) {
+        const clubErrors = syncReport.clubs
+          .filter((c) => c.error)
+          .map((c) => `${c.club_name}: ${c.error}`)
+        const detail =
+          clubErrors.length > 0
+            ? clubErrors.join('; ')
+            : `${syncReport.clubs_failed} club(s) failed to sync`
+        setExportWarn(`Early RB sync partial: ${detail}. Export will use stored data where available.`)
+      } else if (syncReport.warnings.length > 0) {
+        setExportWarn(syncReport.warnings.join('; '))
+      }
+    } catch (e: unknown) {
+      setExportWarn(
+        `Early RB sync failed: ${e instanceof Error ? e.message : 'Unknown error'}. Export will use the last stored snapshot.`,
+      )
+    }
+
+    setDepositExportPhase('exporting')
     try {
       await downloadAuditExport(token, exportDate)
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Audit export failed.')
+      setExportErr(e instanceof Error ? e.message : 'Deposit audit download failed.')
     } finally {
-      setExporting(false)
+      setDepositExportPhase('idle')
     }
   }
 
-  const onSyncEarlyRb = async () => {
-    if (!exportDate) {
-      setErr('Select a date before syncing early rakeback.')
-      return
-    }
-    setSyncingEarlyRb(true)
-    setErr('')
-    setEarlyRbReport(null)
-    try {
-      const result = await syncEarlyRakeback(token, exportDate)
-      setEarlyRbReport(result)
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Early rakeback sync failed.')
-    } finally {
-      setSyncingEarlyRb(false)
-    }
-  }
+  const depositExportLabel =
+    depositExportPhase === 'syncing'
+      ? 'Syncing early RB…'
+      : depositExportPhase === 'exporting'
+        ? 'Exporting…'
+        : 'Export deposit audit XLSX'
 
-  const onSelectReconcileRun = (_clubSlug: string, auditDate: string) => {
-    setExportDate(auditDate)
-  }
+  const activeStepIdx = pipelineStep ? stepIndex(pipelineStep) : -1
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold">Audit</h1>
+      <h1 className="mb-2 text-2xl font-bold">Audit</h1>
+      <p className="mb-6 max-w-2xl text-sm text-ink-muted">
+        Upload a ClubGG trade record (.xlsx). Club, date, and timezone are read from the Club
+        Overview tab. The file is ingested, early rakeback is synced, and net reconcile runs
+        automatically.
+      </p>
 
-      {err ? (
-        <p className="mb-4 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
-          {err}
+      {uploadErr ? (
+        <p role="alert" className="alert-danger mb-4">
+          {uploadErr}
         </p>
       ) : null}
 
       <section className="panel mb-6">
-        <h2 className="mb-2 text-lg font-semibold text-ink">Trade record upload</h2>
-        <p className="mb-4 text-sm text-ink-muted">
-          Upload a ClubGG trade record (.xlsx). Club and audit date are read from the
-          sheet metadata (Club Name, Club ID, Period in rows 1–3). Identity is synced to
-          Postgres and gg-computer; transactions are stored for a later reconcile pass.
-        </p>
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label htmlFor={fileInputId} className="label-field-xs">
-              Trade record (.xlsx)
-            </label>
-            <input
-              id={fileInputId}
-              type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="block text-sm text-ink-muted file:mr-3 file:rounded-md file:border-0 file:bg-accent/12 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-accent"
-            />
-          </div>
-          <button
-            type="button"
-            disabled={uploading || !file}
-            onClick={() => void onUpload()}
-            className="btn-primary-sm disabled:opacity-40"
-          >
-            {uploading ? 'Uploading…' : 'Upload'}
-          </button>
+        <input
+          ref={fileInputRef}
+          id={fileInputId}
+          type="file"
+          accept={XLSX_ACCEPT}
+          onChange={onInputChange}
+          disabled={running}
+          className="sr-only"
+        />
+
+        <div
+          role="button"
+          tabIndex={running ? -1 : 0}
+          aria-disabled={running}
+          aria-labelledby={fileInputId}
+          onDragOver={(e) => {
+            e.preventDefault()
+            if (!running) setDragOver(true)
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+          onKeyDown={(e) => {
+            if (running) return
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              fileInputRef.current?.click()
+            }
+          }}
+          className={[
+            'flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-8 text-center transition',
+            running ? 'cursor-not-allowed opacity-60' : 'hover:border-accent/50 hover:bg-control/30',
+            dragOver ? 'border-accent bg-accent/5' : 'border-border bg-surface-raised/50',
+          ].join(' ')}
+          onClick={() => {
+            if (!running) fileInputRef.current?.click()
+          }}
+        >
+          <p className="text-sm font-medium text-ink">
+            {running ? 'Running audit pipeline…' : 'Drop trade record .xlsx here'}
+          </p>
+          <p className="mt-1 text-xs text-ink-muted">
+            {running ? 'Do not close this page.' : 'or click to choose a file'}
+          </p>
         </div>
 
-        {report ? (
-          <div className="mt-4 rounded-md border border-border bg-surface-raised p-4 text-sm">
-            <p className="mb-2 font-semibold text-ink">Upload complete</p>
-            <ul className="space-y-1 text-ink-muted">
-              <li>
-                {report.club_name} · {report.audit_date} · {report.filename}
-              </li>
-              {report.replaced_previous ? (
-                <li>Replaced a previous upload for this club and day.</li>
-              ) : null}
-              <li>Transaction rows parsed: {report.transaction_rows_parsed}</li>
-              <li>Identities synced: {report.identities_extracted}</li>
-              <li>
-                Postgres: {report.postgres_inserted} inserted, {report.postgres_updated} updated
-              </li>
-              <li>
-                gg-computer: {report.gg_computer_upserted} upserted,{' '}
-                {report.gg_computer_modified} modified
-                {report.gg_computer_error ? (
-                  <span className="text-danger"> — {report.gg_computer_error}</span>
-                ) : null}
-              </li>
-              {report.skipped_rows.length > 0 ? (
-                <li>Skipped rows: {report.skipped_rows.join('; ')}</li>
-              ) : null}
-            </ul>
-          </div>
+        {pipelineStep && pipelineStep !== 'done' && pipelineStep !== 'failed' ? (
+          <ol
+            className="pipeline-steps mt-4"
+            aria-live="polite"
+            aria-busy="true"
+            aria-label="Audit pipeline progress"
+          >
+            {PIPELINE_STEPS.map((step, idx) => {
+              const state =
+                idx < activeStepIdx
+                  ? 'complete'
+                  : idx === activeStepIdx
+                    ? 'active'
+                    : 'pending'
+              return (
+                <li key={step.id} className={`pipeline-step pipeline-step--${state}`}>
+                  <span className="pipeline-step__marker" aria-hidden />
+                  <span className="pipeline-step__label">{step.label}</span>
+                </li>
+              )
+            })}
+          </ol>
         ) : null}
       </section>
 
       <section className="panel mb-6">
-        <h2 className="mb-2 text-lg font-semibold text-ink">Export audit data</h2>
+        <h2 className="mb-2 text-lg font-semibold text-ink">Deposit audit export</h2>
         <p className="mb-4 text-sm text-ink-muted">
-          Download receipt-style deposit transactions across every club for one day. One XLSX file
-          with tabs for Stripe, Zelle, Venmo, Cash App, PayPal, plus bonus and early rakeback
-          sheets. Sync early RB from aon-beta before export; the export reads stored rows only.
+          Download receipt-style deposit transactions across every club for one day. One XLSX with
+          tabs for Stripe, Zelle, Venmo, Cash App, PayPal, plus bonus and early rakeback sheets.
+          Early RB is synced from aon-beta for all clubs before the file is generated.
         </p>
+
+        {exportErr ? (
+          <p role="alert" className="alert-danger mb-4">
+            {exportErr}
+          </p>
+        ) : null}
+
+        {exportWarn ? (
+          <p role="status" className="alert-warning mb-4">
+            {exportWarn}
+          </p>
+        ) : null}
+
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label htmlFor={exportDateId} className="label-field-xs">
@@ -182,83 +250,35 @@ export default function Audit({ token }: { token: string }) {
               id={exportDateId}
               type="date"
               value={exportDate}
-              onChange={(e) => setExportDate(e.target.value)}
+              onChange={(e) => {
+                setExportDate(e.target.value)
+                setExportErr('')
+                setExportWarn('')
+              }}
               className="input-field-sm"
             />
           </div>
           <button
             type="button"
-            disabled={syncingEarlyRb || !exportDate}
-            onClick={() => void onSyncEarlyRb()}
+            disabled={exportBusy || !exportDate}
+            onClick={() => void onDownloadDepositAudit()}
             className="btn-primary-sm disabled:opacity-40"
           >
-            {syncingEarlyRb ? 'Syncing…' : 'Sync early RB'}
-          </button>
-          <button
-            type="button"
-            disabled={exporting || !exportDate}
-            onClick={() => void onExport()}
-            className="btn-primary-sm disabled:opacity-40"
-          >
-            {exporting ? 'Exporting…' : 'Export XLSX'}
+            {depositExportLabel}
           </button>
         </div>
-
-        {earlyRbReport ? (
-          <div className="mt-4 rounded-md border border-border bg-surface-raised p-4 text-sm">
-            <p className="mb-2 font-semibold text-ink">Early RB sync complete</p>
-            <ul className="space-y-1 text-ink-muted">
-              <li>
-                {earlyRbReport.audit_date}: {earlyRbReport.total_lines_stored} line(s) stored
-                across {earlyRbReport.clubs_synced} club(s)
-              </li>
-              {earlyRbReport.total_lines_skipped_unmapped > 0 ? (
-                <li>
-                  Skipped unmapped: {earlyRbReport.total_lines_skipped_unmapped}
-                </li>
-              ) : null}
-              {earlyRbReport.warnings.length > 0 ? (
-                <li>Warnings: {earlyRbReport.warnings.join('; ')}</li>
-              ) : null}
-            </ul>
-          </div>
-        ) : null}
-
-        <AuditReconcilePanel
-          token={token}
-          auditDate={exportDate}
-          onError={setErr}
-          onSelectRun={onSelectReconcileRun}
-        />
       </section>
 
-      {history.length > 0 ? (
+      {pipelineResult ? (
         <section className="panel">
-          <h2 className="mb-3 text-lg font-semibold text-ink">Recent uploads</h2>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-ink-muted">
-                  <th className="px-2 py-2 font-medium">Club</th>
-                  <th className="px-2 py-2 font-medium">Date</th>
-                  <th className="px-2 py-2 font-medium">File</th>
-                  <th className="px-2 py-2 font-medium">Rows</th>
-                  <th className="px-2 py-2 font-medium">Uploaded (ET)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((row) => (
-                  <tr key={row.id} className="border-b border-border/60">
-                    <td className="px-2 py-2">{row.club_name}</td>
-                    <td className="px-2 py-2">{row.audit_date}</td>
-                    <td className="px-2 py-2">{row.filename}</td>
-                    <td className="px-2 py-2">{row.transaction_count}</td>
-                    <td className="px-2 py-2">{formatEasternDateTime(row.created_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <AuditReconcilePanel
+            token={token}
+            upload={pipelineResult.upload}
+            earlyRb={pipelineResult.earlyRb}
+            earlyRbError={pipelineResult.earlyRbError}
+            reconcile={pipelineResult.reconcile}
+            reconcileError={pipelineResult.reconcileError}
+          />
         </section>
       ) : null}
     </div>

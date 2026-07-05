@@ -294,6 +294,7 @@ export interface Club {
   allow_multi_cashout: boolean
   allow_admin_commands: boolean
   auto_chip_adding_enabled: boolean
+  auto_deposit_on_payment_enabled: boolean
   auto_claim_enabled: boolean
   deposit_simple_mode: boolean
   deposit_simple_type: string | null

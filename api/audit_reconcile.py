@@ -20,6 +20,7 @@ from api.audit_ledger import (
     fetch_early_rakeback_events,
 )
 from api.club_slug import CLUB_SLUG_TO_NAME, resolve_club_id
+from api.payments_helpers import lookup_gg_nickname
 from api.glide_audit_sync import (
     GlideConfigError,
     fetch_glide_ledger_events,
@@ -31,7 +32,9 @@ from api.gg_computer_settlement import (
 )
 from db.models import (
     AuditReconcileRun,
+    EarlyRakebackLine,
     EarlyRakebackSnapshot,
+    PlayerDetails,
     TradeRecordLine,
     TradeRecordUpload,
 )
@@ -66,6 +69,7 @@ class UnmatchedLedgerEvent:
 @dataclass
 class AuditReconcilePlayerResult:
     gg_player_id: str
+    member_nickname: str | None
     net_trade_record: Decimal
     net_ledger: Decimal
     delta: Decimal
@@ -97,7 +101,7 @@ def aggregate_trade_record(
     session: Session,
     *,
     upload: TradeRecordUpload,
-) -> tuple[dict[str, Decimal], dict[str, int], list[UnmatchedTradeRow]]:
+) -> tuple[dict[str, Decimal], dict[str, int], list[UnmatchedTradeRow], dict[str, str]]:
     lines = (
         session.query(TradeRecordLine)
         .filter_by(upload_id=upload.id)
@@ -106,6 +110,7 @@ def aggregate_trade_record(
     )
     by_player: dict[str, Decimal] = {}
     row_counts: dict[str, int] = {}
+    nicknames: dict[str, str] = {}
     unmatched: list[UnmatchedTradeRow] = []
 
     for line in lines:
@@ -125,8 +130,11 @@ def aggregate_trade_record(
             continue
         by_player[gg_id] = by_player.get(gg_id, Decimal(0)) + amount
         row_counts[gg_id] = row_counts.get(gg_id, 0) + 1
+        nick = (line.member_nickname or "").strip()
+        if nick and nick != gg_id and gg_id not in nicknames:
+            nicknames[gg_id] = nick
 
-    return by_player, row_counts, unmatched
+    return by_player, row_counts, unmatched, nicknames
 
 
 def _ledger_events_for_club(
@@ -180,9 +188,135 @@ def _ledger_events_for_club(
     return events, None
 
 
+def _trade_nicknames_from_upload(
+    session: Session,
+    upload_id: int | None,
+) -> dict[str, str]:
+    if not upload_id:
+        return {}
+    lines = (
+        session.query(TradeRecordLine)
+        .filter_by(upload_id=int(upload_id))
+        .order_by(TradeRecordLine.sheet_row.asc())
+        .all()
+    )
+    nicknames: dict[str, str] = {}
+    for line in lines:
+        gg_id = (line.member_gg_player_id or "").strip()
+        nick = (line.member_nickname or "").strip()
+        if gg_id and nick and nick != gg_id and gg_id not in nicknames:
+            nicknames[gg_id] = nick
+    return nicknames
+
+
+def _early_rb_nicknames_for_club_date(
+    session: Session,
+    *,
+    club_slug: str,
+    audit_date: date,
+) -> dict[str, str]:
+    snapshot = (
+        session.query(EarlyRakebackSnapshot)
+        .filter_by(club_slug=club_slug.strip().lower(), audit_date=audit_date)
+        .first()
+    )
+    if snapshot is None:
+        return {}
+    rows = (
+        session.query(EarlyRakebackLine)
+        .filter_by(snapshot_id=int(snapshot.id))
+        .all()
+    )
+    nicknames: dict[str, str] = {}
+    for line in rows:
+        gid = (line.gg_player_id or "").strip()
+        name = (line.member_nickname or "").strip()
+        if gid and name and gid not in nicknames:
+            nicknames[gid] = name
+    return nicknames
+
+
+def _player_details_nicknames(
+    session: Session,
+    *,
+    club_id: int,
+    gg_ids: set[str],
+) -> dict[str, str]:
+    if not gg_ids:
+        return {}
+    rows = (
+        session.query(PlayerDetails)
+        .filter(
+            PlayerDetails.club_id == int(club_id),
+            PlayerDetails.gg_player_id.in_(sorted(gg_ids)),
+        )
+        .all()
+    )
+    nicknames: dict[str, str] = {}
+    for row in rows:
+        gid = (row.gg_player_id or "").strip()
+        name = (row.gg_nickname or "").strip()
+        if gid and name and name != gid and gid not in nicknames:
+            nicknames[gid] = name
+    return nicknames
+
+
+def _nicknames_for_reconcile(
+    session: Session,
+    *,
+    club_slug: str,
+    audit_date: date,
+    trade_nicknames: dict[str, str],
+    gg_ids: set[str],
+    trade_upload_id: int | None = None,
+) -> dict[str, str | None]:
+    slug = club_slug.strip().lower()
+    club_id = resolve_club_id(session, slug)
+
+    merged: dict[str, str] = {}
+    merged.update(_trade_nicknames_from_upload(session, trade_upload_id))
+    merged.update(trade_nicknames)
+    merged.update(_early_rb_nicknames_for_club_date(session, club_slug=slug, audit_date=audit_date))
+    merged.update(
+        _player_details_nicknames(session, club_id=club_id, gg_ids=gg_ids)
+    )
+
+    result: dict[str, str | None] = {}
+    for gg_id in gg_ids:
+        nick = merged.get(gg_id)
+        if not nick:
+            fallback = lookup_gg_nickname(session, club_id, gg_id)
+            if fallback and fallback.strip() != gg_id:
+                nick = fallback
+        result[gg_id] = (nick or "").strip() or None
+    return result
+
+
+def enrich_report_nicknames(
+    session: Session,
+    report: AuditReconcileReport,
+) -> None:
+    """Fill missing player nicknames on stored or freshly built reports."""
+    missing = {p.gg_player_id for p in report.players if not p.member_nickname}
+    if not missing:
+        return
+    nicknames = _nicknames_for_reconcile(
+        session,
+        club_slug=report.club_slug,
+        audit_date=report.audit_date,
+        trade_nicknames={},
+        gg_ids=missing,
+        trade_upload_id=report.trade_upload_id,
+    )
+    for player in report.players:
+        if not player.member_nickname:
+            player.member_nickname = nicknames.get(player.gg_player_id)
+
+
 def _compare_players(
     trade_by_player: dict[str, Decimal],
     ledger_by_player: dict[str, LedgerBreakdown],
+    nicknames_by_player: dict[str, str | None],
 ) -> list[AuditReconcilePlayerResult]:
     all_ids = sorted(set(trade_by_player) | set(ledger_by_player))
     results: list[AuditReconcilePlayerResult] = []
@@ -205,6 +339,7 @@ def _compare_players(
         results.append(
             AuditReconcilePlayerResult(
                 gg_player_id=gg_id,
+                member_nickname=nicknames_by_player.get(gg_id),
                 net_trade_record=net_trade,
                 net_ledger=net_ledger,
                 delta=delta,
@@ -235,6 +370,7 @@ def _report_to_json(report: AuditReconcileReport) -> str:
         "players": [
             {
                 "gg_player_id": p.gg_player_id,
+                "member_nickname": p.member_nickname,
                 "net_trade_record": str(p.net_trade_record),
                 "net_ledger": str(p.net_ledger),
                 "delta": str(p.delta),
@@ -274,6 +410,7 @@ def report_from_json(raw: str, *, run_id: int | None = None) -> AuditReconcileRe
     players = [
         AuditReconcilePlayerResult(
             gg_player_id=str(p["gg_player_id"]),
+            member_nickname=p.get("member_nickname"),
             net_trade_record=_decimal(p["net_trade_record"]),
             net_ledger=_decimal(p["net_ledger"]),
             delta=_decimal(p["delta"]),
@@ -345,6 +482,7 @@ def load_stored_reconcile_report(
     report.unmatched_ledger_count = int(
         run.unmatched_ledger_count or report.unmatched_ledger_count
     )
+    enrich_report_nicknames(session, report)
     return report
 
 
@@ -411,7 +549,7 @@ def run_audit_reconcile(
             _replace_run(session, report=report, club_id=club_id)
         return report
 
-    trade_by_player, _row_counts, unmatched_trade = aggregate_trade_record(
+    trade_by_player, _row_counts, unmatched_trade, trade_nicknames = aggregate_trade_record(
         session, upload=upload
     )
 
@@ -448,7 +586,18 @@ def run_audit_reconcile(
         for e in unmatched_ledger_events
     ]
 
-    players = _compare_players(trade_by_player, ledger_by_player)
+    players = _compare_players(
+        trade_by_player,
+        ledger_by_player,
+        _nicknames_for_reconcile(
+            session,
+            club_slug=slug,
+            audit_date=audit_date,
+            trade_nicknames=trade_nicknames,
+            gg_ids=set(trade_by_player) | set(ledger_by_player),
+            trade_upload_id=int(upload.id),
+        ),
+    )
     mismatches = [p for p in players if p.status == "mismatch"]
     matched = [p for p in players if p.status == "match"]
 
@@ -476,6 +625,7 @@ def run_audit_reconcile(
         unmatched_trade_count=len(unmatched_trade),
         unmatched_ledger_count=len(unmatched_ledger),
     )
+    enrich_report_nicknames(session, report)
 
     if persist:
         club_id = resolve_club_id(session, slug)

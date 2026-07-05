@@ -9,7 +9,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from telegram import Bot
 
 from bot.services.club import (
-    get_auto_chip_adding_enabled,
+    get_auto_deposit_on_payment_enabled,
     get_club_by_id,
     get_group_title_for_chat,
     invalidate_pending_one_time_bypasses,
@@ -59,7 +59,7 @@ def is_creator_club_auto_deposit_eligible(
         return False
     if not _is_creator_club(int(club_id)):
         return False
-    return get_auto_chip_adding_enabled(int(club_id))
+    return get_auto_deposit_on_payment_enabled(int(club_id))
 
 
 def format_creator_club_staff_footer(

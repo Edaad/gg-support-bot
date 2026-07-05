@@ -194,11 +194,11 @@
 
 @layer components {
   .btn-primary {
-    @apply rounded-lg bg-accent px-4 py-2 text-sm font-medium text-on-accent transition hover:bg-accent-hover disabled:opacity-50;
+    @apply rounded-lg bg-accent px-4 py-2 text-sm font-medium text-on-accent transition hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50;
   }
 
   .btn-primary-sm {
-    @apply rounded-lg bg-accent px-4 py-1.5 text-xs font-medium text-on-accent transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50;
+    @apply rounded-lg bg-accent px-4 py-1.5 text-xs font-medium text-on-accent transition hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .btn-secondary {
@@ -206,7 +206,7 @@
   }
 
   .btn-secondary-sm {
-    @apply rounded-lg bg-control px-4 py-1.5 text-xs font-medium text-ink-muted transition hover:bg-control-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-50;
+    @apply rounded-lg bg-control px-4 py-1.5 text-xs font-medium text-ink-muted transition hover:bg-control-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .input-field {
@@ -302,11 +302,11 @@
   }
 
   .chip-neutral {
-    @apply rounded-md border border-border bg-control px-3 py-1 text-xs text-ink-muted;
+    @apply min-h-11 rounded-md border border-border bg-control px-3 py-1 text-xs text-ink-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface;
   }
 
   .chip-accent {
-    @apply rounded-md border border-accent/30 bg-control px-3 py-1 text-xs font-medium text-accent;
+    @apply min-h-11 rounded-md border border-accent/30 bg-control px-3 py-1 text-xs font-medium text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface;
   }
 
   .chip-success {
@@ -429,6 +429,38 @@
 
   .method-panel-focus {
     @apply outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg;
+  }
+
+  .pipeline-steps {
+    @apply flex flex-col gap-2 sm:flex-row sm:gap-4;
+  }
+
+  .pipeline-step {
+    @apply flex items-center gap-2 text-sm;
+  }
+
+  .pipeline-step__marker {
+    @apply h-2.5 w-2.5 shrink-0 rounded-full border-2 border-border bg-surface;
+  }
+
+  .pipeline-step--pending {
+    @apply text-ink-faint;
+  }
+
+  .pipeline-step--active {
+    @apply font-medium text-ink;
+  }
+
+  .pipeline-step--active .pipeline-step__marker {
+    @apply border-accent bg-accent;
+  }
+
+  .pipeline-step--complete {
+    @apply text-ink-muted;
+  }
+
+  .pipeline-step--complete .pipeline-step__marker {
+    @apply border-success-ink bg-success-ink;
   }
 }
 
