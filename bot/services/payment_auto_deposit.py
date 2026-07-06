@@ -25,7 +25,7 @@ from bot.services.mtproto_group_add import (
     format_add_confirmation,
 )
 from bot.services.payment_group_notify import support_bot_tokens_to_try
-from bot.services.player_details import parse_group_title_parts
+from bot.services.player_details import gg_player_id_from_title, parse_group_title_parts
 from club_gc_settings import get_club_gc_config_by_link_club_id
 
 logger = logging.getLogger(__name__)
@@ -57,6 +57,7 @@ def auto_deposit_ineligible_reason(
     telegram_chat_id: int | None,
     auto_bound: bool,
     goods_or_services: bool = False,
+    group_title: str | None = None,
 ) -> str | None:
     """Return why e2e auto-deposit was skipped, or None when eligible."""
     if not auto_bound:
@@ -67,6 +68,8 @@ def auto_deposit_ineligible_reason(
         return "missing_club_or_chat"
     if not _is_creator_club(int(club_id)):
         return "not_creator_club"
+    if group_title is not None and not gg_player_id_from_title(group_title):
+        return "no_player_id_in_title"
     if not get_auto_deposit_on_payment_enabled(int(club_id)):
         return "auto_deposit_on_payment_disabled"
     if not has_recent_deposit_command_in_chat(
@@ -83,6 +86,7 @@ def is_creator_club_auto_deposit_eligible(
     telegram_chat_id: int | None,
     auto_bound: bool,
     goods_or_services: bool = False,
+    group_title: str | None = None,
 ) -> bool:
     """True when Creator Club payment will run full auto chip-add on ingest."""
     return (
@@ -91,6 +95,7 @@ def is_creator_club_auto_deposit_eligible(
             telegram_chat_id=telegram_chat_id,
             auto_bound=auto_bound,
             goods_or_services=goods_or_services,
+            group_title=group_title,
         )
         is None
     )
@@ -102,6 +107,7 @@ def format_creator_club_staff_footer(
     telegram_chat_id: int | None,
     auto_bound: bool,
     goods_or_services: bool = False,
+    group_title: str | None = None,
 ) -> str | None:
     """Return staff footer for Creator Club notifications, or None if not Creator Club."""
     if club_id is None or not _is_creator_club(int(club_id)):
@@ -111,6 +117,7 @@ def format_creator_club_staff_footer(
         telegram_chat_id=telegram_chat_id,
         auto_bound=auto_bound,
         goods_or_services=goods_or_services,
+        group_title=group_title,
     )
     if reason is None:
         return CREATOR_STAFF_FOOTER_AUTO
@@ -126,6 +133,7 @@ def append_creator_club_staff_footer(
     telegram_chat_id: int | None,
     auto_bound: bool,
     goods_or_services: bool = False,
+    group_title: str | None = None,
 ) -> str:
     """Append Creator Club staff footer when applicable."""
     footer = format_creator_club_staff_footer(
@@ -133,6 +141,7 @@ def append_creator_club_staff_footer(
         telegram_chat_id=telegram_chat_id,
         auto_bound=auto_bound,
         goods_or_services=goods_or_services,
+        group_title=group_title,
     )
     if not footer:
         return text
@@ -253,14 +262,43 @@ async def maybe_auto_deposit_from_payment(
     goods_or_services: bool = False,
 ) -> None:
     """Creator Club: auto chip-add on auto-bound payment; confirm on success."""
-    skip_reason = auto_deposit_ineligible_reason(
+    title = (group_title or "").strip() or None
+
+    pre_reason = auto_deposit_ineligible_reason(
         club_id=club_id,
         telegram_chat_id=telegram_chat_id,
         auto_bound=auto_bound,
         goods_or_services=goods_or_services,
+        group_title=title,
     )
-    if skip_reason is not None:
-        if skip_reason != "not_creator_club":
+    if pre_reason is not None:
+        if pre_reason != "not_creator_club":
+            logger.info(
+                "payment_auto_deposit: skipped method=%s payment_id=%s "
+                "chat_id=%s club_id=%s auto_bound=%s reason=%s",
+                payment_method_slug,
+                payment_id,
+                telegram_chat_id,
+                club_id,
+                auto_bound,
+                pre_reason,
+            )
+        return
+
+    if not title:
+        title, _ = await asyncio.to_thread(
+            get_group_title_for_chat, int(telegram_chat_id)
+        )
+        title = (title or "").strip() or None
+
+        skip_reason = auto_deposit_ineligible_reason(
+            club_id=club_id,
+            telegram_chat_id=telegram_chat_id,
+            auto_bound=auto_bound,
+            goods_or_services=goods_or_services,
+            group_title=title,
+        )
+        if skip_reason is not None:
             logger.info(
                 "payment_auto_deposit: skipped method=%s payment_id=%s "
                 "chat_id=%s club_id=%s auto_bound=%s reason=%s",
@@ -271,14 +309,7 @@ async def maybe_auto_deposit_from_payment(
                 auto_bound,
                 skip_reason,
             )
-        return
-
-    title = (group_title or "").strip()
-    if not title:
-        title, _ = await asyncio.to_thread(
-            get_group_title_for_chat, int(telegram_chat_id)
-        )
-        title = (title or "").strip() or None
+            return
 
     amount = _amount_from_cents(amount_cents)
     request_id = request_id_for_payment(payment_method_slug, payment_id)

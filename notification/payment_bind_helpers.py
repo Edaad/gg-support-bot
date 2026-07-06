@@ -128,6 +128,7 @@ def format_payment_notification(
         telegram_chat_id=int(resolved_chat_id) if resolved_chat_id is not None else None,
         auto_bound=auto_bound,
         goods_or_services=goods_or_services,
+        group_title=group_title,
     )
 
 

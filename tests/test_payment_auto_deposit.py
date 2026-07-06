@@ -56,6 +56,7 @@ class AutoDepositIneligibleReasonTestCase(unittest.TestCase):
                     club_id=CLUB_ID_CREATOR,
                     telegram_chat_id=CHAT_ID,
                     auto_bound=True,
+                    group_title="CC / 1234-5678 / Jacob",
                 )
             )
 
@@ -92,8 +93,29 @@ class AutoDepositIneligibleReasonTestCase(unittest.TestCase):
                     club_id=CLUB_ID_CREATOR,
                     telegram_chat_id=CHAT_ID,
                     auto_bound=True,
+                    group_title="CC / 1234-5678 / Jacob",
                 ),
                 "no_recent_deposit_command",
+            )
+
+    def test_no_player_id_in_title(self) -> None:
+        with (
+            patch.object(
+                pad,
+                "get_club_by_id",
+                return_value=SimpleNamespace(name=pad.CREATOR_CLUB_NAME),
+            ),
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
+            patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
+        ):
+            self.assertEqual(
+                pad.auto_deposit_ineligible_reason(
+                    club_id=CLUB_ID_CREATOR,
+                    telegram_chat_id=CHAT_ID,
+                    auto_bound=True,
+                    group_title="CC / / @wywyrobro",
+                ),
+                "no_player_id_in_title",
             )
 
 
@@ -192,6 +214,39 @@ class MaybeAutoDepositGatingTestCase(unittest.IsolatedAsyncioTestCase):
                 payment_id=1,
             )
         mock_run.assert_not_awaited()
+
+    async def test_skips_when_no_player_id_in_title(self) -> None:
+        with (
+            patch.object(
+                pad,
+                "get_club_by_id",
+                return_value=SimpleNamespace(name=pad.CREATOR_CLUB_NAME),
+            ),
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
+            patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
+            patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock) as mock_run,
+            patch.object(pad.logger, "info") as mock_log,
+        ):
+            await pad.maybe_auto_deposit_from_payment(
+                club_id=CLUB_ID_CREATOR,
+                telegram_chat_id=CHAT_ID,
+                amount_cents=2000,
+                auto_bound=True,
+                payment_method_slug="stripe",
+                payment_id=77,
+                group_title="CC / / @wywyrobro",
+            )
+        mock_run.assert_not_awaited()
+        mock_log.assert_any_call(
+            "payment_auto_deposit: skipped method=%s payment_id=%s "
+            "chat_id=%s club_id=%s auto_bound=%s reason=%s",
+            "stripe",
+            77,
+            CHAT_ID,
+            CLUB_ID_CREATOR,
+            True,
+            "no_player_id_in_title",
+        )
 
     async def test_skips_when_ids_missing(self) -> None:
         with patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock) as mock_run:
@@ -335,6 +390,17 @@ class CreatorStaffFooterTestCase(unittest.TestCase):
             return_value=SimpleNamespace(name=pad.CREATOR_CLUB_NAME),
         )
 
+    def test_manual_footer_when_no_player_id_in_title(self) -> None:
+        with ExitStack() as stack:
+            _enter_creator_club_eligible(stack)
+            footer = pad.format_creator_club_staff_footer(
+                club_id=CLUB_ID_CREATOR,
+                telegram_chat_id=CHAT_ID,
+                auto_bound=True,
+                group_title="CC / / @wywyrobro",
+            )
+        self.assertEqual(footer, pad.CREATOR_STAFF_FOOTER_MANUAL)
+
     def test_eligible_footer(self) -> None:
         with ExitStack() as stack:
             _enter_creator_club_eligible(stack)
@@ -342,6 +408,7 @@ class CreatorStaffFooterTestCase(unittest.TestCase):
                 club_id=CLUB_ID_CREATOR,
                 telegram_chat_id=CHAT_ID,
                 auto_bound=True,
+                group_title="CC / 1234-5678 / Jacob",
             )
         self.assertEqual(footer, pad.CREATOR_STAFF_FOOTER_AUTO)
 
@@ -355,6 +422,7 @@ class CreatorStaffFooterTestCase(unittest.TestCase):
                 club_id=CLUB_ID_CREATOR,
                 telegram_chat_id=CHAT_ID,
                 auto_bound=True,
+                group_title="CC / 1234-5678 / Jacob",
             )
         self.assertEqual(footer, pad.CREATOR_STAFF_FOOTER_NO_RECENT_DEPOSIT)
 
@@ -389,6 +457,7 @@ class CreatorStaffFooterTestCase(unittest.TestCase):
                 club_id=CLUB_ID_CREATOR,
                 telegram_chat_id=CHAT_ID,
                 auto_bound=True,
+                group_title="CC / 1234-5678 / Jacob",
             )
         self.assertEqual(footer, pad.CREATOR_STAFF_FOOTER_MANUAL)
 
@@ -414,6 +483,7 @@ class CreatorStaffFooterTestCase(unittest.TestCase):
                 club_id=CLUB_ID_CREATOR,
                 telegram_chat_id=CHAT_ID,
                 auto_bound=True,
+                group_title="CC / 1234-5678 / Jacob",
             )
         self.assertTrue(out.startswith(body))
         self.assertIn(pad.CREATOR_STAFF_FOOTER_AUTO, out)

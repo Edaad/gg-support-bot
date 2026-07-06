@@ -547,6 +547,7 @@ def format_stripe_payment_notification_text(
         club_id=int(club_id) if club_id is not None else None,
         telegram_chat_id=int(telegram_chat_id) if telegram_chat_id is not None else None,
         auto_bound=True,
+        group_title=group_title,
     )
 
 
