@@ -52,6 +52,7 @@ from bot.services.mtproto_track_contact import (
 )
 from bot.services.mtproto_group_cash import handle_group_cash_outgoing
 from bot.services.mtproto_group_delete import handle_group_delete_outgoing
+from bot.services.mtproto_group_lmk import handle_group_lmk_outgoing
 from bot.services.support_group_chats import (
     fetch_outreach_pending_reply,
     fetch_support_group_chat_by_club_player,
@@ -1126,6 +1127,17 @@ def _register_club_event_handlers(
 
         return _handler
 
+    def _make_group_lmk_handler(label: str, club_cfg_inner):
+        async def _handler(event):
+            await handle_group_lmk_outgoing(
+                event,
+                club_cfg_inner,
+                listener_label=label,
+                ptb_bot=ptb_bot,
+            )
+
+        return _handler
+
     client.add_event_handler(
         _make_dm_gc_incoming_handler(listener_label, cfg),
         events.NewMessage(incoming=True, func=lambda e: e.is_private),
@@ -1144,6 +1156,10 @@ def _register_club_event_handlers(
     )
     client.add_event_handler(
         _make_group_delete_handler(listener_label, cfg),
+        events.NewMessage(outgoing=True),
+    )
+    client.add_event_handler(
+        _make_group_lmk_handler(listener_label, cfg),
         events.NewMessage(outgoing=True),
     )
 
