@@ -17,7 +17,14 @@ from api.club_audit_timezone import (
     audit_timezone_for_slug,
     audit_timezone_label,
 )
-from api.club_slug import CLUB_SLUG_TO_NAME, resolve_club_id, slug_for_club_id
+from api.club_slug import (
+    CLUB_SLUG_TO_NAME,
+    RECONCILE_CLUB_OPTIONS,
+    is_round_table_composite,
+    resolve_club_id,
+    slug_for_club_id,
+    trade_slugs_for_reconcile,
+)
 from api.schemas_audit import (
     AuditReconcileReportSchema,
     AuditReconcileRunSummary,
@@ -29,7 +36,9 @@ from api.schemas_audit import (
 from api.trade_record_parser import (
     TradeRecordParseError,
     TradeRecordValidationError,
+    parse_result_from_stored_upload,
     parse_trade_record_workbook,
+    validate_trade_upload_pair,
 )
 from api.trade_record_sync import sync_identities
 from api.aon_beta_client import AonBetaConfigError
@@ -68,6 +77,7 @@ def _report_to_schema(report: AuditReconcileReport) -> AuditReconcileReportSchem
         status=report.status,
         run_id=report.run_id,
         trade_upload_id=report.trade_upload_id,
+        trade_upload_ids=report.trade_upload_ids,
         early_rb_snapshot_id=report.early_rb_snapshot_id,
         players=[
             {
@@ -118,8 +128,29 @@ def _report_to_schema(report: AuditReconcileReport) -> AuditReconcileReportSchem
 @router.post("/trade-records/upload", response_model=TradeRecordUploadReport)
 async def upload_trade_record(
     file: UploadFile = File(...),
+    reconcile_club_slug: str = Query(
+        ...,
+        description="Reconcile club selected in UI (round-table, clubgto, creator-club)",
+    ),
+    expected_trade_slug: str = Query(
+        ...,
+        description="Trade slug for this upload slot (round-table, aces-table, clubgto, creator-club)",
+    ),
     db: Session = Depends(get_db_dependency),
 ):
+    reconcile_slug = reconcile_club_slug.strip().lower()
+    if reconcile_slug not in RECONCILE_CLUB_OPTIONS:
+        raise HTTPException(400, f"Unknown reconcile club slug: {reconcile_club_slug!r}")
+
+    expected_slug = expected_trade_slug.strip().lower()
+    allowed_trade_slugs = trade_slugs_for_reconcile(reconcile_slug)
+    if expected_slug not in allowed_trade_slugs:
+        raise HTTPException(
+            400,
+            f"expected_trade_slug {expected_trade_slug!r} is not valid for "
+            f"reconcile club {reconcile_club_slug!r}",
+        )
+
     filename = (file.filename or "upload.xlsx").strip()
     if not filename.lower().endswith(".xlsx"):
         raise HTTPException(400, "File must be an .xlsx workbook")
@@ -137,27 +168,44 @@ async def upload_trade_record(
     except TradeRecordParseError as exc:
         raise HTTPException(400, str(exc)) from exc
 
+    if parsed.club_slug != expected_slug:
+        expected_label = CLUB_SLUG_TO_NAME.get(expected_slug, expected_slug)
+        actual_label = CLUB_SLUG_TO_NAME.get(parsed.club_slug, parsed.club_slug)
+        raise HTTPException(
+            400,
+            f"File is for {actual_label!r}, expected {expected_label!r} for this upload slot.",
+        )
+
     slug = parsed.club_slug
     parsed_date = parsed.audit_date
     club_id = resolve_club_id(db, slug)
     club_name = CLUB_SLUG_TO_NAME[slug]
     timezone_policy = audit_timezone_for_slug(slug)
 
+    if is_round_table_composite(reconcile_slug):
+        other_slug = (
+            "aces-table" if expected_slug == "round-table" else "round-table"
+        )
+        other_upload = (
+            db.query(TradeRecordUpload)
+            .filter_by(club_slug=other_slug, audit_date=parsed_date)
+            .first()
+        )
+        if other_upload is not None:
+            other_parsed = parse_result_from_stored_upload(other_upload)
+            try:
+                if expected_slug == "round-table":
+                    validate_trade_upload_pair(parsed, other_parsed)
+                else:
+                    validate_trade_upload_pair(other_parsed, parsed)
+            except TradeRecordValidationError as exc:
+                raise HTTPException(400, str(exc)) from exc
+
     existing = (
         db.query(TradeRecordUpload)
         .filter_by(club_slug=slug, audit_date=parsed_date)
         .first()
     )
-    if existing is None:
-        existing = (
-            db.query(TradeRecordUpload)
-            .filter_by(club_id=club_id, audit_date=parsed_date)
-            .filter(
-                (TradeRecordUpload.club_slug.is_(None))
-                | (TradeRecordUpload.club_slug == slug)
-            )
-            .first()
-        )
     replaced_previous = existing is not None
     metadata_json = json.dumps(
         {

@@ -102,6 +102,7 @@ export type AuditReconcileReport = {
   status: string
   run_id: number | null
   trade_upload_id: number | null
+  trade_upload_ids: number[]
   early_rb_snapshot_id: number | null
   players: AuditReconcilePlayerResult[]
   unmatched_trade: UnmatchedTradeRow[]
@@ -135,11 +136,18 @@ export type AuditPipelineStep =
   | 'failed'
 
 export type AuditPipelineResult = {
+  reconcileClubSlug: string
+  uploads: TradeRecordUploadReport[]
   upload: TradeRecordUploadReport
   earlyRb: EarlyRakebackSyncReport | null
   earlyRbError: string | null
   reconcile: AuditReconcileReport | null
   reconcileError: string | null
+}
+
+export type UploadTradeRecordParams = {
+  reconcileClubSlug: string
+  expectedTradeSlug: string
 }
 
 async function parseError(res: Response): Promise<string> {
@@ -161,11 +169,17 @@ async function parseError(res: Response): Promise<string> {
 export async function uploadTradeRecord(
   token: string,
   file: File,
+  params: UploadTradeRecordParams,
 ): Promise<TradeRecordUploadReport> {
   const form = new FormData()
   form.append('file', file)
 
-  const res = await fetch(apiUrl('/api/audit/trade-records/upload'), {
+  const q = new URLSearchParams({
+    reconcile_club_slug: params.reconcileClubSlug,
+    expected_trade_slug: params.expectedTradeSlug,
+  })
+
+  const res = await fetch(apiUrl(`/api/audit/trade-records/upload?${q}`), {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: form,
@@ -379,20 +393,47 @@ export async function downloadAuditExport(token: string, date: string): Promise<
   return downloadPaymentsAuditExport(token, date)
 }
 
-export async function runAuditPipeline(
+function mergeEarlyRbReports(
+  auditDate: string,
+  reports: EarlyRakebackSyncReport[],
+): EarlyRakebackSyncReport {
+  const clubs = reports.flatMap((r) => r.clubs)
+  return {
+    audit_date: auditDate,
+    clubs_synced: clubs.filter((c) => !c.error).length,
+    clubs_failed: clubs.filter((c) => c.error).length,
+    total_lines_fetched: reports.reduce((n, r) => n + r.total_lines_fetched, 0),
+    total_lines_stored: reports.reduce((n, r) => n + r.total_lines_stored, 0),
+    total_lines_skipped_unmapped: reports.reduce(
+      (n, r) => n + r.total_lines_skipped_unmapped,
+      0,
+    ),
+    clubs,
+    warnings: reports.flatMap((r) => r.warnings),
+  }
+}
+
+export async function runReconcilePipeline(
   token: string,
-  file: File,
+  reconcileClubSlug: string,
+  uploads: TradeRecordUploadReport[],
   onStep?: (step: AuditPipelineStep) => void,
 ): Promise<AuditPipelineResult> {
-  onStep?.('uploading')
-  const upload = await uploadTradeRecord(token, file)
+  const primary = uploads[0]
+  const auditDate = primary.audit_date
 
   let earlyRb: EarlyRakebackSyncReport | null = null
   let earlyRbError: string | null = null
 
   onStep?.('syncingEarlyRb')
   try {
-    earlyRb = await syncEarlyRakeback(token, upload.audit_date, upload.club_slug)
+    if (reconcileClubSlug === 'round-table') {
+      const rtReport = await syncEarlyRakeback(token, auditDate, 'round-table')
+      const atReport = await syncEarlyRakeback(token, auditDate, 'aces-table')
+      earlyRb = mergeEarlyRbReports(auditDate, [rtReport, atReport])
+    } else {
+      earlyRb = await syncEarlyRakeback(token, auditDate, reconcileClubSlug)
+    }
   } catch (e: unknown) {
     earlyRbError = e instanceof Error ? e.message : 'Early rakeback sync failed.'
   }
@@ -402,7 +443,7 @@ export async function runAuditPipeline(
 
   onStep?.('reconciling')
   try {
-    reconcile = await reconcileAudit(token, upload.audit_date, upload.club_slug)
+    reconcile = await reconcileAudit(token, auditDate, reconcileClubSlug)
   } catch (e: unknown) {
     reconcileError = e instanceof Error ? e.message : 'Reconcile failed.'
   }
@@ -410,5 +451,25 @@ export async function runAuditPipeline(
   const failed = reconcileError !== null && reconcile === null
   onStep?.(failed ? 'failed' : 'done')
 
-  return { upload, earlyRb, earlyRbError, reconcile, reconcileError }
+  return {
+    reconcileClubSlug,
+    uploads,
+    upload: primary,
+    earlyRb,
+    earlyRbError,
+    reconcile,
+    reconcileError,
+  }
+}
+
+/** @deprecated Use upload + runReconcilePipeline separately from Audit page. */
+export async function runAuditPipeline(
+  token: string,
+  file: File,
+  params: UploadTradeRecordParams,
+  onStep?: (step: AuditPipelineStep) => void,
+): Promise<AuditPipelineResult> {
+  onStep?.('uploading')
+  const upload = await uploadTradeRecord(token, file, params)
+  return runReconcilePipeline(token, params.reconcileClubSlug, [upload], onStep)
 }

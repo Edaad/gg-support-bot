@@ -11,6 +11,7 @@ from api.trade_record_parser import (
     extract_audit_date_from_metadata,
     parse_trade_record_workbook,
     resolve_club_slug_from_metadata,
+    validate_trade_upload_pair,
 )
 from tests.fixtures.trade_record_xlsx import build_sample_trade_record_xlsx
 
@@ -105,6 +106,35 @@ class TradeRecordParserTestCase(unittest.TestCase):
         wb.save(buf)
         with self.assertRaises(TradeRecordParseError):
             parse_trade_record_workbook(buf.getvalue())
+
+    def test_validate_trade_upload_pair_matching_dates(self):
+        rt_raw = build_sample_trade_record_xlsx(
+            club_label="Round Table",
+            audit_date=date(2026, 6, 21),
+            period_tz="UTC-4:00",
+        )
+        at_raw = build_sample_trade_record_xlsx(
+            club_label="Aces Table",
+            audit_date=date(2026, 6, 21),
+        )
+        rt = parse_trade_record_workbook(rt_raw)
+        at = parse_trade_record_workbook(at_raw)
+        validate_trade_upload_pair(rt, at)
+
+    def test_validate_trade_upload_pair_rejects_mismatched_dates(self):
+        rt_raw = build_sample_trade_record_xlsx(
+            club_label="Round Table",
+            audit_date=date(2026, 6, 21),
+            period_tz="UTC-4:00",
+        )
+        at_raw = build_sample_trade_record_xlsx(
+            club_label="Aces Table",
+            audit_date=date(2026, 6, 22),
+        )
+        rt = parse_trade_record_workbook(rt_raw)
+        at = parse_trade_record_workbook(at_raw)
+        with self.assertRaises(TradeRecordValidationError):
+            validate_trade_upload_pair(rt, at)
 
 
 if __name__ == "__main__":

@@ -19,7 +19,12 @@ from api.audit_ledger import (
     fetch_deposit_events,
     fetch_early_rakeback_events,
 )
-from api.club_slug import CLUB_SLUG_TO_NAME, resolve_club_id
+from api.club_slug import (
+    CLUB_SLUG_TO_NAME,
+    ROUND_TABLE_TRADE_SLUGS,
+    is_round_table_composite,
+    resolve_club_id,
+)
 from api.payments_helpers import lookup_gg_nickname
 from api.glide_audit_sync import (
     GlideConfigError,
@@ -85,6 +90,7 @@ class AuditReconcileReport:
     status: RunStatus
     run_id: int | None = None
     trade_upload_id: int | None = None
+    trade_upload_ids: list[int] = field(default_factory=list)
     early_rb_snapshot_id: int | None = None
     players: list[AuditReconcilePlayerResult] = field(default_factory=list)
     unmatched_trade: list[UnmatchedTradeRow] = field(default_factory=list)
@@ -137,6 +143,29 @@ def aggregate_trade_record(
     return by_player, row_counts, unmatched, nicknames
 
 
+def aggregate_trade_records(
+    session: Session,
+    *,
+    uploads: list[TradeRecordUpload],
+) -> tuple[dict[str, Decimal], dict[str, int], list[UnmatchedTradeRow], dict[str, str]]:
+    by_player: dict[str, Decimal] = {}
+    row_counts: dict[str, int] = {}
+    nicknames: dict[str, str] = {}
+    unmatched: list[UnmatchedTradeRow] = []
+
+    for upload in uploads:
+        trade, counts, um, nicks = aggregate_trade_record(session, upload=upload)
+        for gg_id, amount in trade.items():
+            by_player[gg_id] = by_player.get(gg_id, Decimal(0)) + amount
+            row_counts[gg_id] = row_counts.get(gg_id, 0) + counts.get(gg_id, 0)
+        unmatched.extend(um)
+        for gg_id, nick in nicks.items():
+            if gg_id not in nicknames:
+                nicknames[gg_id] = nick
+
+    return by_player, row_counts, unmatched, nicknames
+
+
 def _ledger_events_for_club(
     session: Session,
     *,
@@ -177,6 +206,62 @@ def _ledger_events_for_club(
     try:
         glide_events, glide_warnings = fetch_glide_ledger_events(
             club_slug=slug,
+            audit_date=audit_date,
+            existing_events=events,
+        )
+        events.extend(glide_events)
+        warnings.extend(glide_warnings)
+    except GlideConfigError as exc:
+        return events, str(exc)
+
+    return events, None
+
+
+def _ledger_events_for_clubs(
+    session: Session,
+    *,
+    club_slugs: list[str],
+    audit_date: date,
+    warnings: list[str],
+) -> tuple[list[LedgerEvent], str | None]:
+    """Collect ledger events for one or more slugs (Round Table composite)."""
+    slugs = [s.strip().lower() for s in club_slugs]
+    events: list[LedgerEvent] = []
+
+    for slug in slugs:
+        events.extend(fetch_deposit_events(session, club_slug=slug, audit_date=audit_date))
+        events.extend(
+            fetch_early_rakeback_events(session, club_slug=slug, audit_date=audit_date)
+        )
+        events.extend(fetch_bonus_events(session, club_slug=slug, audit_date=audit_date))
+        events.extend(fetch_cashout_events(session, club_slug=slug, audit_date=audit_date))
+
+        snapshot = (
+            session.query(EarlyRakebackSnapshot)
+            .filter_by(club_slug=slug, audit_date=audit_date)
+            .first()
+        )
+        if snapshot is None:
+            warnings.append(
+                f"No early rakeback snapshot for {slug} on {audit_date}; early_rakeback = 0"
+            )
+
+        if is_monday_audit_date(slug, audit_date):
+            try:
+                settlement_events, settlement_warnings = fetch_settlement_events(
+                    club_slug=slug, audit_date=audit_date
+                )
+                events.extend(settlement_events)
+                warnings.extend(settlement_warnings)
+            except SettlementFetchError as exc:
+                return events, str(exc)
+        else:
+            warnings.append(f"Non-Monday audit day for {slug}; monday_settlement = 0")
+
+    glide_slug = "round-table" if "round-table" in slugs else slugs[0]
+    try:
+        glide_events, glide_warnings = fetch_glide_ledger_events(
+            club_slug=glide_slug,
             audit_date=audit_date,
             existing_events=events,
         )
@@ -261,6 +346,16 @@ def _player_details_nicknames(
     return nicknames
 
 
+def _trade_nicknames_from_uploads(
+    session: Session,
+    upload_ids: list[int],
+) -> dict[str, str]:
+    nicknames: dict[str, str] = {}
+    for upload_id in upload_ids:
+        nicknames.update(_trade_nicknames_from_upload(session, upload_id))
+    return nicknames
+
+
 def _nicknames_for_reconcile(
     session: Session,
     *,
@@ -269,14 +364,29 @@ def _nicknames_for_reconcile(
     trade_nicknames: dict[str, str],
     gg_ids: set[str],
     trade_upload_id: int | None = None,
+    trade_upload_ids: list[int] | None = None,
 ) -> dict[str, str | None]:
     slug = club_slug.strip().lower()
     club_id = resolve_club_id(session, slug)
 
     merged: dict[str, str] = {}
+    if trade_upload_ids:
+        merged.update(_trade_nicknames_from_uploads(session, trade_upload_ids))
     merged.update(_trade_nicknames_from_upload(session, trade_upload_id))
     merged.update(trade_nicknames)
-    merged.update(_early_rb_nicknames_for_club_date(session, club_slug=slug, audit_date=audit_date))
+    if is_round_table_composite(slug):
+        for trade_slug in ROUND_TABLE_TRADE_SLUGS:
+            merged.update(
+                _early_rb_nicknames_for_club_date(
+                    session, club_slug=trade_slug, audit_date=audit_date
+                )
+            )
+    else:
+        merged.update(
+            _early_rb_nicknames_for_club_date(
+                session, club_slug=slug, audit_date=audit_date
+            )
+        )
     merged.update(
         _player_details_nicknames(session, club_id=club_id, gg_ids=gg_ids)
     )
@@ -307,6 +417,7 @@ def enrich_report_nicknames(
         trade_nicknames={},
         gg_ids=missing,
         trade_upload_id=report.trade_upload_id,
+        trade_upload_ids=report.trade_upload_ids or None,
     )
     for player in report.players:
         if not player.member_nickname:
@@ -366,6 +477,7 @@ def _report_to_json(report: AuditReconcileReport) -> str:
         "club_name": report.club_name,
         "status": report.status,
         "trade_upload_id": report.trade_upload_id,
+        "trade_upload_ids": report.trade_upload_ids,
         "early_rb_snapshot_id": report.early_rb_snapshot_id,
         "players": [
             {
@@ -446,6 +558,7 @@ def report_from_json(raw: str, *, run_id: int | None = None) -> AuditReconcileRe
         status=data["status"],
         run_id=run_id,
         trade_upload_id=data.get("trade_upload_id"),
+        trade_upload_ids=list(data.get("trade_upload_ids") or []),
         early_rb_snapshot_id=data.get("early_rb_snapshot_id"),
         players=players,
         unmatched_trade=unmatched_trade,
@@ -531,38 +644,77 @@ def run_audit_reconcile(
     club_name = CLUB_SLUG_TO_NAME.get(slug, slug)
     warnings: list[str] = []
 
-    upload = (
-        session.query(TradeRecordUpload)
-        .filter_by(club_slug=slug, audit_date=audit_date)
-        .first()
-    )
-    if upload is None:
-        report = AuditReconcileReport(
-            audit_date=audit_date,
-            club_slug=slug,
-            club_name=club_name,
-            status="blocked",
-            blocked_reason="No trade record upload for this club and audit date",
+    if is_round_table_composite(slug):
+        uploads: list[TradeRecordUpload] = []
+        for trade_slug in ROUND_TABLE_TRADE_SLUGS:
+            row = (
+                session.query(TradeRecordUpload)
+                .filter_by(club_slug=trade_slug, audit_date=audit_date)
+                .first()
+            )
+            if row is None:
+                report = AuditReconcileReport(
+                    audit_date=audit_date,
+                    club_slug=slug,
+                    club_name=club_name,
+                    status="blocked",
+                    blocked_reason=(
+                        f"Missing trade record upload for {trade_slug} on {audit_date.isoformat()}"
+                    ),
+                )
+                if persist:
+                    club_id = resolve_club_id(session, slug)
+                    _replace_run(session, report=report, club_id=club_id)
+                return report
+            uploads.append(row)
+        trade_upload_ids = [int(u.id) for u in uploads]
+        rt_upload = uploads[0]
+        trade_by_player, _row_counts, unmatched_trade, trade_nicknames = (
+            aggregate_trade_records(session, uploads=uploads)
         )
-        if persist:
-            club_id = resolve_club_id(session, slug)
-            _replace_run(session, report=report, club_id=club_id)
-        return report
+        ledger_events, blocked_reason = _ledger_events_for_clubs(
+            session,
+            club_slugs=list(ROUND_TABLE_TRADE_SLUGS),
+            audit_date=audit_date,
+            warnings=warnings,
+        )
+        primary_upload_id = int(rt_upload.id)
+    else:
+        upload = (
+            session.query(TradeRecordUpload)
+            .filter_by(club_slug=slug, audit_date=audit_date)
+            .first()
+        )
+        if upload is None:
+            report = AuditReconcileReport(
+                audit_date=audit_date,
+                club_slug=slug,
+                club_name=club_name,
+                status="blocked",
+                blocked_reason="No trade record upload for this club and audit date",
+            )
+            if persist:
+                club_id = resolve_club_id(session, slug)
+                _replace_run(session, report=report, club_id=club_id)
+            return report
 
-    trade_by_player, _row_counts, unmatched_trade, trade_nicknames = aggregate_trade_record(
-        session, upload=upload
-    )
+        trade_upload_ids = [int(upload.id)]
+        primary_upload_id = int(upload.id)
+        trade_by_player, _row_counts, unmatched_trade, trade_nicknames = (
+            aggregate_trade_record(session, upload=upload)
+        )
+        ledger_events, blocked_reason = _ledger_events_for_club(
+            session, club_slug=slug, audit_date=audit_date, warnings=warnings
+        )
 
-    ledger_events, blocked_reason = _ledger_events_for_club(
-        session, club_slug=slug, audit_date=audit_date, warnings=warnings
-    )
     if blocked_reason:
         report = AuditReconcileReport(
             audit_date=audit_date,
             club_slug=slug,
             club_name=club_name,
             status="blocked",
-            trade_upload_id=int(upload.id),
+            trade_upload_id=primary_upload_id,
+            trade_upload_ids=trade_upload_ids,
             unmatched_trade=unmatched_trade,
             unmatched_trade_count=len(unmatched_trade),
             warnings=warnings,
@@ -595,7 +747,8 @@ def run_audit_reconcile(
             audit_date=audit_date,
             trade_nicknames=trade_nicknames,
             gg_ids=set(trade_by_player) | set(ledger_by_player),
-            trade_upload_id=int(upload.id),
+            trade_upload_id=primary_upload_id,
+            trade_upload_ids=trade_upload_ids,
         ),
     )
     mismatches = [p for p in players if p.status == "mismatch"]
@@ -606,6 +759,12 @@ def run_audit_reconcile(
         .filter_by(club_slug=slug, audit_date=audit_date)
         .first()
     )
+    if snapshot is None and is_round_table_composite(slug):
+        snapshot = (
+            session.query(EarlyRakebackSnapshot)
+            .filter_by(club_slug="round-table", audit_date=audit_date)
+            .first()
+        )
 
     status: RunStatus = "fail" if mismatches else "pass"
 
@@ -614,7 +773,8 @@ def run_audit_reconcile(
         club_slug=slug,
         club_name=club_name,
         status=status,
-        trade_upload_id=int(upload.id),
+        trade_upload_id=primary_upload_id,
+        trade_upload_ids=trade_upload_ids,
         early_rb_snapshot_id=int(snapshot.id) if snapshot else None,
         players=players,
         unmatched_trade=unmatched_trade,

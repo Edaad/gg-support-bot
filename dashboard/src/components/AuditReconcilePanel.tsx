@@ -6,6 +6,7 @@ import {
   type EarlyRakebackSyncReport,
   type TradeRecordUploadReport,
 } from '../api/auditClient'
+import { ROUND_TABLE_TRADE_SLUGS } from '../config/clubMap'
 import KpiStat from './KpiStat'
 
 const MATCH_TOLERANCE_USD = 2
@@ -14,7 +15,8 @@ type PlayerFilter = 'all' | 'match' | 'mismatch' | 'trade_only' | 'ledger_only'
 
 type Props = {
   token: string
-  upload: TradeRecordUploadReport
+  uploads: TradeRecordUploadReport[]
+  reconcileClubSlug: string
   earlyRb: EarlyRakebackSyncReport | null
   earlyRbError: string | null
   reconcile: AuditReconcileReport | null
@@ -77,7 +79,8 @@ function bannerClass(status: string): string {
 
 export default function AuditReconcilePanel({
   token,
-  upload,
+  uploads,
+  reconcileClubSlug,
   earlyRb,
   earlyRbError,
   reconcile,
@@ -125,7 +128,12 @@ export default function AuditReconcilePanel({
     { id: 'ledger_only', label: 'Ledger only' },
   ]
 
-  const clubEarlyRb = earlyRb?.clubs.find((c) => c.club_slug === upload.club_slug)
+  const earlyRbClubs =
+    reconcileClubSlug === 'round-table'
+      ? (earlyRb?.clubs.filter((c) =>
+          (ROUND_TABLE_TRADE_SLUGS as readonly string[]).includes(c.club_slug),
+        ) ?? [])
+      : earlyRb?.clubs.filter((c) => c.club_slug === reconcileClubSlug) ?? []
 
   const onExportReconcile = async () => {
     if (!reconcile) return
@@ -423,29 +431,31 @@ export default function AuditReconcilePanel({
 
       <div className="rounded-md border border-border bg-surface-raised p-4 text-sm">
         <p className="mb-2 font-semibold text-ink">Upload</p>
-        <ul className="space-y-1 text-ink-muted">
-          <li>
-            {upload.club_name} · {upload.audit_date} · {upload.filename}
-          </li>
-          {upload.replaced_previous ? (
-            <li>Replaced a previous upload for this club and day.</li>
-          ) : null}
-          <li>Transaction rows parsed: {upload.transaction_rows_parsed}</li>
-          <li>Identities synced: {upload.identities_extracted}</li>
-          <li>
-            Postgres: {upload.postgres_inserted} inserted, {upload.postgres_updated} updated
-          </li>
-          <li>
-            gg-computer: {upload.gg_computer_upserted} upserted, {upload.gg_computer_modified}{' '}
-            modified
-            {upload.gg_computer_error ? (
-              <span className="text-danger-ink"> — {upload.gg_computer_error}</span>
+        {uploads.map((upload) => (
+          <ul key={upload.upload_id} className="mb-4 space-y-1 text-ink-muted last:mb-0">
+            <li>
+              {upload.club_name} · {upload.audit_date} · {upload.filename}
+            </li>
+            {upload.replaced_previous ? (
+              <li>Replaced a previous upload for this club and day.</li>
             ) : null}
-          </li>
-          {upload.skipped_rows.length > 0 ? (
-            <li>Skipped rows: {upload.skipped_rows.join('; ')}</li>
-          ) : null}
-        </ul>
+            <li>Transaction rows parsed: {upload.transaction_rows_parsed}</li>
+            <li>Identities synced: {upload.identities_extracted}</li>
+            <li>
+              Postgres: {upload.postgres_inserted} inserted, {upload.postgres_updated} updated
+            </li>
+            <li>
+              gg-computer: {upload.gg_computer_upserted} upserted, {upload.gg_computer_modified}{' '}
+              modified
+              {upload.gg_computer_error ? (
+                <span className="text-danger-ink"> — {upload.gg_computer_error}</span>
+              ) : null}
+            </li>
+            {upload.skipped_rows.length > 0 ? (
+              <li>Skipped rows: {upload.skipped_rows.join('; ')}</li>
+            ) : null}
+          </ul>
+        ))}
       </div>
 
       <div className="rounded-md border border-border bg-surface-raised p-4 text-sm">
@@ -454,20 +464,27 @@ export default function AuditReconcilePanel({
           <p role="alert" className="text-danger-ink">
             {earlyRbError}
           </p>
-        ) : clubEarlyRb ? (
-          <ul className="space-y-1 text-ink-muted">
-            <li>
-              {clubEarlyRb.lines_stored} line(s) stored
-              {clubEarlyRb.lines_skipped_unmapped > 0
-                ? `, ${clubEarlyRb.lines_skipped_unmapped} skipped unmapped`
-                : ''}
-            </li>
-            {clubEarlyRb.error ? (
-              <li className="text-danger-ink">{clubEarlyRb.error}</li>
-            ) : null}
-            {clubEarlyRb.skipped_nicknames.length > 0 ? (
-              <li>Skipped nicknames: {clubEarlyRb.skipped_nicknames.join(', ')}</li>
-            ) : null}
+        ) : earlyRbClubs.length > 0 ? (
+          <ul className="space-y-3 text-ink-muted">
+            {earlyRbClubs.map((clubEarlyRb) => (
+              <li key={clubEarlyRb.club_slug}>
+                <p className="font-medium text-ink">{clubEarlyRb.club_name}</p>
+                <ul className="mt-1 space-y-0.5">
+                  <li>
+                    {clubEarlyRb.lines_stored} line(s) stored
+                    {clubEarlyRb.lines_skipped_unmapped > 0
+                      ? `, ${clubEarlyRb.lines_skipped_unmapped} skipped unmapped`
+                      : ''}
+                  </li>
+                  {clubEarlyRb.error ? (
+                    <li className="text-danger-ink">{clubEarlyRb.error}</li>
+                  ) : null}
+                  {clubEarlyRb.skipped_nicknames.length > 0 ? (
+                    <li>Skipped nicknames: {clubEarlyRb.skipped_nicknames.join(', ')}</li>
+                  ) : null}
+                </ul>
+              </li>
+            ))}
           </ul>
         ) : earlyRb ? (
           <p className="text-ink-muted">No early RB data returned for this club.</p>

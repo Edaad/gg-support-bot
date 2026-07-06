@@ -11,6 +11,20 @@ export const CLUB_OPTIONS: ClubOption[] = [
   { slug: 'creator-club', label: 'Creator Club' },
 ]
 
+/** Audit reconcile club picker (Round Table = combined RT + AT uploads). */
+export const RECONCILE_CLUB_OPTIONS: ClubOption[] = [
+  { slug: 'round-table', label: 'Round Table' },
+  { slug: 'clubgto', label: 'ClubGTO' },
+  { slug: 'creator-club', label: 'Creator Club' },
+]
+
+export const ROUND_TABLE_TRADE_SLUGS = ['round-table', 'aces-table'] as const
+
+export function tradeSlugsForReconcile(reconcileSlug: string): readonly string[] {
+  if (reconcileSlug === 'round-table') return ROUND_TABLE_TRADE_SLUGS
+  return [reconcileSlug]
+}
+
 export function displayLabelForSlug(slug: string): string {
   const row = CLUB_OPTIONS.find((c) => c.slug === slug)
   return row?.label ?? slug

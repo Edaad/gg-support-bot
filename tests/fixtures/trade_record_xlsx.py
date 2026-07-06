@@ -27,6 +27,7 @@ def build_sample_trade_record_xlsx(
     audit_date: date | None = None,
     include_second_row: bool = True,
     aces_layout: bool = True,
+    period_tz: str = "UTC-5:00",
 ) -> bytes:
     """Build a fixture workbook. Default uses real Aces-21 metadata + column layout."""
     d = audit_date or date(2026, 6, 21)
@@ -40,7 +41,7 @@ def build_sample_trade_record_xlsx(
         ws.cell(row=2, column=1, value="Club ID")
         ws.cell(row=2, column=2, value="983183")
         ws.cell(row=3, column=1, value="Period")
-        ws.cell(row=3, column=2, value=f"{d.isoformat()} ~ {d.isoformat()} (UTC-5:00)")
+        ws.cell(row=3, column=2, value=f"{d.isoformat()} ~ {d.isoformat()} ({period_tz})")
         ws.cell(row=5, column=1, value="Date")
         ws.cell(row=5, column=7, value="Amount")
     else:

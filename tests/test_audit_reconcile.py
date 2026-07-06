@@ -18,6 +18,7 @@ from api.audit_reconcile import (
     AuditReconcilePlayerResult,
     AuditReconcileReport,
     aggregate_trade_record,
+    aggregate_trade_records,
     load_stored_reconcile_report,
     report_from_json,
     run_audit_reconcile,
@@ -126,6 +127,62 @@ class TradeRecordAggregationTestCase(unittest.TestCase):
         self.assertEqual(unmatched[0].amount, Decimal("10.00"))
         self.assertEqual(unmatched[0].member_nickname, "Ghost")
 
+    def test_combined_uploads_sum_per_player(self):
+        rt_upload = TradeRecordUpload(id=1, club_slug="round-table", audit_date=date(2026, 6, 19))
+        at_upload = TradeRecordUpload(id=2, club_slug="aces-table", audit_date=date(2026, 6, 19))
+        rt_lines = [
+            TradeRecordLine(
+                id=1,
+                upload_id=1,
+                sheet_row=5,
+                amount=Decimal("100.00"),
+                member_gg_player_id="3011-9668",
+            ),
+        ]
+        at_lines = [
+            TradeRecordLine(
+                id=2,
+                upload_id=2,
+                sheet_row=5,
+                amount=Decimal("25.00"),
+                member_gg_player_id="3011-9668",
+            ),
+            TradeRecordLine(
+                id=3,
+                upload_id=2,
+                sheet_row=6,
+                amount=Decimal("10.00"),
+                member_gg_player_id="3011-9999",
+            ),
+        ]
+        session = MagicMock()
+
+        def query_model(model):
+            q = MagicMock()
+            if model is TradeRecordLine:
+                def filter_by(**kwargs):
+                    inner = MagicMock()
+                    uid = kwargs.get("upload_id")
+                    if uid == 1:
+                        inner.order_by.return_value.all.return_value = rt_lines
+                    elif uid == 2:
+                        inner.order_by.return_value.all.return_value = at_lines
+                    else:
+                        inner.order_by.return_value.all.return_value = []
+                    return inner
+
+                q.filter_by.side_effect = filter_by
+            return q
+
+        session.query.side_effect = query_model
+
+        by_player, _counts, unmatched, _nicknames = aggregate_trade_records(
+            session, uploads=[rt_upload, at_upload]
+        )
+        self.assertEqual(by_player["3011-9668"], Decimal("125.00"))
+        self.assertEqual(by_player["3011-9999"], Decimal("10.00"))
+        self.assertEqual(unmatched, [])
+
 
 class MatchToleranceTestCase(unittest.TestCase):
     def test_tolerance_constant(self):
@@ -217,10 +274,16 @@ class ReconcileBlockedTestCase(unittest.TestCase):
 class ReconcilePassFailTestCase(unittest.TestCase):
     def setUp(self):
         self.club = Club(id=2, name="Round Table", telegram_user_id=1)
-        self.upload = TradeRecordUpload(
+        self.rt_upload = TradeRecordUpload(
             id=10,
             club_id=2,
             club_slug="round-table",
+            audit_date=date(2026, 6, 18),
+        )
+        self.at_upload = TradeRecordUpload(
+            id=11,
+            club_id=2,
+            club_slug="aces-table",
             audit_date=date(2026, 6, 18),
         )
         self.lines = [
@@ -241,10 +304,30 @@ class ReconcilePassFailTestCase(unittest.TestCase):
                 q.filter.return_value.first.return_value = self.club
                 return q
             if model is TradeRecordUpload:
-                q.filter_by.return_value.first.return_value = self.upload
+                def filter_by(**kwargs):
+                    inner = MagicMock()
+                    slug = kwargs.get("club_slug")
+                    if slug == "round-table":
+                        inner.first.return_value = self.rt_upload
+                    elif slug == "aces-table":
+                        inner.first.return_value = self.at_upload
+                    else:
+                        inner.first.return_value = None
+                    return inner
+
+                q.filter_by.side_effect = filter_by
                 return q
             if model is TradeRecordLine:
-                q.filter_by.return_value.order_by.return_value.all.return_value = self.lines
+                def filter_by(**kwargs):
+                    inner = MagicMock()
+                    uid = kwargs.get("upload_id")
+                    if uid == 10:
+                        inner.order_by.return_value.all.return_value = self.lines
+                    else:
+                        inner.order_by.return_value.all.return_value = []
+                    return inner
+
+                q.filter_by.side_effect = filter_by
                 return q
             if model is EarlyRakebackSnapshot:
                 q.filter_by.return_value.first.return_value = None
@@ -258,6 +341,14 @@ class ReconcilePassFailTestCase(unittest.TestCase):
             return q
 
         self.mock_db.query.side_effect = query_model
+
+    @staticmethod
+    def _deposits_for_rt_only(_session, club_slug, audit_date, amount):
+        if club_slug == "round-table":
+            return [
+                LedgerEvent("deposit_stripe", "3011-9668", amount, None, "d:1"),
+            ]
+        return []
 
     @patch("api.audit_reconcile.fetch_glide_ledger_events", return_value=([], []))
     @patch("api.audit_reconcile.fetch_settlement_events", return_value=([], []))
@@ -274,9 +365,9 @@ class ReconcilePassFailTestCase(unittest.TestCase):
         mock_deposits,
         *_rest,
     ):
-        mock_deposits.return_value = [
-            LedgerEvent("deposit_stripe", "3011-9668", Decimal("100"), None, "d:1"),
-        ]
+        mock_deposits.side_effect = lambda s, **kw: self._deposits_for_rt_only(
+            s, kw["club_slug"], kw["audit_date"], Decimal("100")
+        )
         report = run_audit_reconcile(
             self.mock_db,
             club_slug="round-table",
@@ -302,9 +393,9 @@ class ReconcilePassFailTestCase(unittest.TestCase):
         mock_deposits,
         *_rest,
     ):
-        mock_deposits.return_value = [
-            LedgerEvent("deposit_stripe", "3011-9668", Decimal("98.50"), None, "d:1"),
-        ]
+        mock_deposits.side_effect = lambda s, **kw: self._deposits_for_rt_only(
+            s, kw["club_slug"], kw["audit_date"], Decimal("98.50")
+        )
         report = run_audit_reconcile(
             self.mock_db,
             club_slug="round-table",
@@ -330,9 +421,9 @@ class ReconcilePassFailTestCase(unittest.TestCase):
         mock_deposits,
         *_rest,
     ):
-        mock_deposits.return_value = [
-            LedgerEvent("deposit_stripe", "3011-9668", Decimal("90"), None, "d:1"),
-        ]
+        mock_deposits.side_effect = lambda s, **kw: self._deposits_for_rt_only(
+            s, kw["club_slug"], kw["audit_date"], Decimal("90")
+        )
         report = run_audit_reconcile(
             self.mock_db,
             club_slug="round-table",

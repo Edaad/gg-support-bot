@@ -24,6 +24,15 @@ ALL_GG_COMPUTER_CLUB_SLUGS: tuple[str, ...] = (
     "creator-club",
 )
 
+# Audit reconcile picker (dashboard Audit page)
+RECONCILE_CLUB_OPTIONS: tuple[str, ...] = (
+    "round-table",
+    "clubgto",
+    "creator-club",
+)
+
+ROUND_TABLE_TRADE_SLUGS: tuple[str, ...] = ("round-table", "aces-table")
+
 # Explicit labels for clubs whose DB name differs from CLUB_SLUG_TO_NAME value
 CLUB_LABEL_TO_SLUG: dict[str, str] = {
     "clubgto": "clubgto",
@@ -31,6 +40,19 @@ CLUB_LABEL_TO_SLUG: dict[str, str] = {
     "aces table": "aces-table",
     "creator club": "creator-club",
 }
+
+
+def is_round_table_composite(reconcile_slug: str) -> bool:
+    return reconcile_slug.strip().lower() == "round-table"
+
+
+def trade_slugs_for_reconcile(reconcile_slug: str) -> tuple[str, ...]:
+    key = reconcile_slug.strip().lower()
+    if key == "round-table":
+        return ROUND_TABLE_TRADE_SLUGS
+    if key in RECONCILE_CLUB_OPTIONS:
+        return (key,)
+    raise HTTPException(400, f"Unknown reconcile club slug: {reconcile_slug!r}")
 
 
 def slug_for_club_name(name: str) -> str | None:

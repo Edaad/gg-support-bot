@@ -114,6 +114,7 @@ class AuditReconcileReportSchema(BaseModel):
     status: str
     run_id: Optional[int] = None
     trade_upload_id: Optional[int] = None
+    trade_upload_ids: List[int] = Field(default_factory=list)
     early_rb_snapshot_id: Optional[int] = None
     players: List[AuditReconcilePlayerResultSchema] = Field(default_factory=list)
     unmatched_trade: List[UnmatchedTradeRowSchema] = Field(default_factory=list)

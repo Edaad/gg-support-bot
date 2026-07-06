@@ -117,7 +117,8 @@ class AuditUploadApiTestCase(unittest.TestCase):
             audit_date=date(2026, 6, 21),
         )
         response = self.client.post(
-            "/api/audit/trade-records/upload",
+            "/api/audit/trade-records/upload"
+            "?reconcile_club_slug=round-table&expected_trade_slug=aces-table",
             headers={"Authorization": f"Bearer {TOKEN}"},
             files={
                 "file": (
@@ -158,7 +159,8 @@ class AuditUploadApiTestCase(unittest.TestCase):
             audit_date=date(2026, 6, 21),
         )
         response = self.client.post(
-            "/api/audit/trade-records/upload",
+            "/api/audit/trade-records/upload"
+            "?reconcile_club_slug=round-table&expected_trade_slug=aces-table",
             headers={"Authorization": f"Bearer {TOKEN}"},
             files={
                 "file": (
@@ -180,7 +182,8 @@ class AuditUploadApiTestCase(unittest.TestCase):
         app.include_router(router)
         client = TestClient(app)
         response = client.post(
-            "/api/audit/trade-records/upload",
+            "/api/audit/trade-records/upload"
+            "?reconcile_club_slug=round-table&expected_trade_slug=aces-table",
             files={"file": ("x.xlsx", b"bad", "application/octet-stream")},
         )
         self.assertIn(response.status_code, (401, 403))
@@ -192,7 +195,8 @@ class AuditUploadApiTestCase(unittest.TestCase):
             audit_date=date(2026, 6, 21),
         )
         response = self.client.post(
-            "/api/audit/trade-records/upload",
+            "/api/audit/trade-records/upload"
+            "?reconcile_club_slug=round-table&expected_trade_slug=aces-table",
             headers={"Authorization": f"Bearer {TOKEN}"},
             files={
                 "file": (
@@ -203,6 +207,79 @@ class AuditUploadApiTestCase(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 400)
+
+    @patch("api.routes.audit.sync_identities")
+    @patch("api.routes.audit.resolve_club_id", return_value=2)
+    def test_upload_rejects_wrong_slot_club(self, _resolve, mock_sync):
+        from api.trade_record_sync import IdentitySyncReport
+
+        mock_sync.return_value = IdentitySyncReport(identities_extracted=3)
+        raw = build_sample_trade_record_xlsx(
+            club_label="Aces Table",
+            audit_date=date(2026, 6, 21),
+        )
+        response = self.client.post(
+            "/api/audit/trade-records/upload"
+            "?reconcile_club_slug=round-table&expected_trade_slug=round-table",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+            files={
+                "file": (
+                    "Aces-21.xlsx",
+                    raw,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("expected", response.json()["detail"].lower())
+
+    @patch("api.routes.audit.sync_identities")
+    @patch("api.routes.audit.resolve_club_id", return_value=2)
+    def test_rt_and_at_same_day_both_persist(self, _resolve, mock_sync):
+        from api.trade_record_sync import IdentitySyncReport
+
+        mock_sync.return_value = IdentitySyncReport(identities_extracted=3)
+
+        rt_raw = build_sample_trade_record_xlsx(
+            club_label="Round Table",
+            audit_date=date(2026, 6, 21),
+            period_tz="UTC-4:00",
+        )
+        rt_resp = self.client.post(
+            "/api/audit/trade-records/upload"
+            "?reconcile_club_slug=round-table&expected_trade_slug=round-table",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+            files={
+                "file": (
+                    "RT-21.xlsx",
+                    rt_raw,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+        self.assertEqual(rt_resp.status_code, 200, rt_resp.text)
+        self.assertEqual(rt_resp.json()["club_slug"], "round-table")
+
+        at_raw = build_sample_trade_record_xlsx(
+            club_label="Aces Table",
+            audit_date=date(2026, 6, 21),
+        )
+        at_resp = self.client.post(
+            "/api/audit/trade-records/upload"
+            "?reconcile_club_slug=round-table&expected_trade_slug=aces-table",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+            files={
+                "file": (
+                    "AT-21.xlsx",
+                    at_raw,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+        self.assertEqual(at_resp.status_code, 200, at_resp.text)
+        self.assertEqual(at_resp.json()["club_slug"], "aces-table")
+        slugs = {row.club_slug for row in self.upload_rows}
+        self.assertEqual(slugs, {"round-table", "aces-table"})
 
 
 if __name__ == "__main__":

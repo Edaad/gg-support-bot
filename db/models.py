@@ -1725,9 +1725,9 @@ class TradeRecordUpload(Base):
     __tablename__ = "trade_record_uploads"
     __table_args__ = (
         UniqueConstraint(
-            "club_id",
+            "club_slug",
             "audit_date",
-            name="uq_trade_record_uploads_club_date",
+            name="uq_trade_record_uploads_slug_date",
         ),
         Index("ix_trade_record_uploads_club_id", "club_id"),
         Index("ix_trade_record_uploads_club_slug", "club_slug"),

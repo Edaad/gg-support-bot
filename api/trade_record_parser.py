@@ -5,16 +5,18 @@ from __future__ import annotations
 import io
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, BinaryIO, Literal
 
 from openpyxl import load_workbook
 
 from api.club_audit_timezone import (
+    audit_day_bounds_utc,
     audit_timezone_for_slug,
     parse_row_datetime as audit_parse_row_datetime,
     period_timezone_warning,
+    zone_for_policy,
 )
 from api.club_slug import CLUB_LABEL_TO_SLUG, CLUB_SLUG_TO_NAME, slug_for_club_name
 
@@ -255,6 +257,91 @@ def resolve_club_slug_from_metadata(metadata: TradeRecordMetadata) -> str:
     raise TradeRecordValidationError(
         f"Unknown club in file metadata: {raw!r}. "
         f"Expected one of: {', '.join(sorted(CLUB_SLUG_DISPLAY_LABELS.values()))}."
+    )
+
+
+def period_bounds_utc_from_metadata(
+    metadata: TradeRecordMetadata,
+    slug: str,
+) -> tuple[datetime, datetime]:
+    """Parse Period metadata start/end as UTC using the club slug's timezone policy."""
+    policy = audit_timezone_for_slug(slug)
+    tz = zone_for_policy(policy)
+    combined = metadata.date_text.strip()
+    dates_in_text = re.findall(r"(\d{4})-(\d{2})-(\d{2})", combined)
+    if dates_in_text:
+        start_d = date(int(dates_in_text[0][0]), int(dates_in_text[0][1]), int(dates_in_text[0][2]))
+        last = dates_in_text[-1]
+        end_d = date(int(last[0]), int(last[1]), int(last[2]))
+    else:
+        start_d = extract_audit_date_from_metadata(metadata)
+        end_d = start_d
+
+    start_local = datetime(start_d.year, start_d.month, start_d.day, tzinfo=tz)
+    end_local = datetime(
+        end_d.year, end_d.month, end_d.day, 23, 59, 59, tzinfo=tz
+    )
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
+
+def _validate_period_in_audit_day(
+    metadata: TradeRecordMetadata,
+    slug: str,
+    audit_date: date,
+) -> None:
+    """Block when Period metadata falls outside the slug's audit-day UTC window."""
+    period_start, period_end = period_bounds_utc_from_metadata(metadata, slug)
+    day_start, day_end = audit_day_bounds_utc(slug, audit_date)
+    if period_start < day_start or period_end > day_end:
+        label = CLUB_SLUG_DISPLAY_LABELS.get(slug, slug)
+        raise TradeRecordValidationError(
+            f"{label} Period {metadata.date_text!r} falls outside audit day "
+            f"{audit_date.isoformat()} ({slug} timezone policy)."
+        )
+
+
+def validate_trade_upload_pair(
+    rt_parsed: TradeRecordParseResult,
+    at_parsed: TradeRecordParseResult,
+) -> None:
+    """Ensure RT + AT trade uploads refer to the same reconcile audit day."""
+    if rt_parsed.club_slug != "round-table":
+        raise TradeRecordValidationError(
+            f"Round Table slot expected round-table file, got {rt_parsed.club_slug!r}"
+        )
+    if at_parsed.club_slug != "aces-table":
+        raise TradeRecordValidationError(
+            f"Aces Table slot expected aces-table file, got {at_parsed.club_slug!r}"
+        )
+    if rt_parsed.audit_date != at_parsed.audit_date:
+        raise TradeRecordValidationError(
+            f"Round Table audit date {rt_parsed.audit_date.isoformat()} does not match "
+            f"Aces Table {at_parsed.audit_date.isoformat()}. Upload both files for the same day."
+        )
+    _validate_period_in_audit_day(
+        rt_parsed.metadata, "round-table", rt_parsed.audit_date
+    )
+    _validate_period_in_audit_day(
+        at_parsed.metadata, "aces-table", at_parsed.audit_date
+    )
+
+
+def parse_result_from_stored_upload(upload) -> TradeRecordParseResult:
+    """Rebuild minimal parse result from a persisted upload (for pair validation)."""
+    import json
+
+    meta_raw = upload.metadata_json or "{}"
+    data = json.loads(meta_raw)
+    metadata = TradeRecordMetadata(
+        club_text=str(data.get("club_text") or ""),
+        club_id_text=str(data.get("club_id_text") or ""),
+        date_text=str(data.get("date_text") or ""),
+    )
+    slug = (upload.club_slug or "").strip().lower()
+    return TradeRecordParseResult(
+        metadata=metadata,
+        audit_date=upload.audit_date,
+        club_slug=slug,
     )
 
 
