@@ -1088,6 +1088,26 @@ async def resolve_evidence_priority(
     raise ApplicationHandlerStop()
 
 
+async def report_evidence_priority(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle /report evidence Done/Cancel when ConversationHandler state is stale."""
+    if not issue_report_awaiting_evidence(context):
+        return
+    query = update.callback_query
+    if not query or not query.data:
+        return
+    if query.data == "ir_evidence_done":
+        new_state = await evidence_done(update, context)
+    elif query.data == "ir_cancel":
+        new_state = await report_cancel(update, context)
+    else:
+        return
+    if _report_conversation is not None:
+        sync_report_conv_state(_report_conversation, update, new_state)
+    raise ApplicationHandlerStop()
+
+
 def register_issue_report_handlers(app) -> None:
     """Register escalate, draft cancel, wizard, triage, and follow-up handlers."""
     global _report_conversation
@@ -1126,6 +1146,13 @@ def register_issue_report_handlers(app) -> None:
         CallbackQueryHandler(
             resolve_evidence_priority,
             pattern=r"^ir_resolve_(skip|done|cancel)$",
+        ),
+        group=-1,
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            report_evidence_priority,
+            pattern=r"^ir_(evidence_done|cancel)$",
         ),
         group=-1,
     )
