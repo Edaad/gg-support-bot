@@ -7,7 +7,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func
+from sqlalchemy import func, case
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,7 @@ from api.auth import get_current_admin
 from api.audit_export import build_audit_workbook
 from api.payments_helpers import (
     apply_analytics_chat_exclusion,
+    apply_analytics_payment_exclusion,
     apply_customer_search,
     apply_session_filters,
     apply_venmo_payment_filters,
@@ -42,6 +43,12 @@ from api.payments_helpers import (
     stripe_dashboard_session_url,
 )
 from api.schemas_payments import (
+    AutoDepositEventListResponse,
+    AutoDepositEventRead,
+    AutoDepositFunnel,
+    AutoDepositClubSummary,
+    AutoDepositSkipReasonCount,
+    AutoDepositSummaryResponse,
     BindAttemptListResponse,
     BindAttemptRead,
     BindKindCount,
@@ -100,6 +107,7 @@ from db.models import (
     ClubPaymentTierVariant,
     GroupPaymentMethodBinding,
     PaymentMethodBindAttempt,
+    PaymentAutoDepositEvent,
     StripeCheckoutSession,
     StripeCustomer,
     VenmoPayment,
@@ -132,6 +140,9 @@ _CRYPTO_MIGRATION_HINT = (
 )
 _BINDINGS_MIGRATION_HINT = (
     "Run: python migrate_payment_method_bindings.py (or heroku run … on the web dyno)"
+)
+_AUTO_DEPOSIT_EVENTS_MIGRATION_HINT = (
+    "Run: python migrate_payment_auto_deposit_events.py (or heroku run … on the web dyno)"
 )
 
 BOUND_VIA_FILTER_ALIASES: dict[str, tuple[str, ...]] = {
@@ -231,7 +242,95 @@ def _raise_db_schema_error(exc: ProgrammingError) -> None:
                 503,
                 f"Payment method binding tables are missing. {_BINDINGS_MIGRATION_HINT}",
             ) from exc
+    if "payment_auto_deposit_events" in low:
+        if "does not exist" in low or "undefinedcolumn" in low.replace(" ", ""):
+            raise HTTPException(
+                503,
+                f"Auto-deposit analytics table is missing. {_AUTO_DEPOSIT_EVENTS_MIGRATION_HINT}",
+            ) from exc
     raise HTTPException(503, f"Database schema error: {msg}") from exc
+
+
+def _auto_deposit_events_query(
+    db: Session,
+    *,
+    slug: str,
+    club_id: int | None,
+    dt_from: datetime | None,
+    dt_to: datetime | None,
+    exclude_test_chats: bool,
+    status: str | None = None,
+    skip_reason: str | None = None,
+):
+    q = db.query(PaymentAutoDepositEvent).filter(
+        PaymentAutoDepositEvent.payment_method_slug == slug,
+        PaymentAutoDepositEvent.club_auto_deposit_enabled.is_(True),
+    )
+    if club_id is not None:
+        q = q.filter(PaymentAutoDepositEvent.club_id == club_id)
+    if dt_from is not None:
+        q = q.filter(PaymentAutoDepositEvent.payment_at >= dt_from)
+    if dt_to is not None:
+        q = q.filter(PaymentAutoDepositEvent.payment_at <= dt_to)
+    if status and status.strip().lower() != "all":
+        st = status.strip().lower()
+        if st == "eligible":
+            q = q.filter(
+                PaymentAutoDepositEvent.status.in_(("succeeded", "failed"))
+            )
+        else:
+            q = q.filter(PaymentAutoDepositEvent.status == st)
+    if skip_reason and skip_reason.strip():
+        q = q.filter(PaymentAutoDepositEvent.skip_reason == skip_reason.strip())
+    if exclude_test_chats:
+        q = apply_analytics_payment_exclusion(
+            db, q, PaymentAutoDepositEvent.telegram_chat_id
+        )
+    return q
+
+
+def _auto_deposit_funnel_from_counts(
+    total: int,
+    succeeded: int,
+    failed: int,
+    skipped: int,
+) -> AutoDepositFunnel:
+    eligible = int(succeeded) + int(failed)
+    success_rate = (succeeded / eligible) if eligible else None
+    return AutoDepositFunnel(
+        total_payments=int(total),
+        eligible=eligible,
+        succeeded=int(succeeded),
+        failed=int(failed),
+        skipped=int(skipped),
+        success_rate=success_rate,
+    )
+
+
+def _auto_deposit_event_read(
+    row: PaymentAutoDepositEvent,
+    club_name: str | None,
+) -> AutoDepositEventRead:
+    amount_cents = int(row.amount_cents)
+    return AutoDepositEventRead(
+        id=int(row.id),
+        payment_method_slug=str(row.payment_method_slug),
+        payment_id=int(row.payment_id),
+        club_id=int(row.club_id) if row.club_id is not None else None,
+        club_name=club_name,
+        telegram_chat_id=int(row.telegram_chat_id)
+        if row.telegram_chat_id is not None
+        else None,
+        amount_cents=amount_cents,
+        amount_usd=cents_to_usd(amount_cents),
+        auto_bound=bool(row.auto_bound),
+        group_title=row.group_title,
+        gg_player_id=row.gg_player_id,
+        status=str(row.status),
+        skip_reason=row.skip_reason,
+        chip_add_status=row.chip_add_status,
+        payment_at=row.payment_at,
+    )
 
 
 @router.get("/providers", response_model=List[PaymentProviderRead])
@@ -1351,4 +1450,181 @@ def list_bind_attempts(
 
     return BindAttemptListResponse(
         items=items, total=int(total), limit=limit, offset=offset
+    )
+
+
+@router.get("/auto-deposits/summary", response_model=AutoDepositSummaryResponse)
+def auto_deposits_summary(
+    method: str = Query("venmo", description="payment_method_slug"),
+    club_id: int | None = Query(None),
+    from_dt: str | None = Query(None, alias="from"),
+    to_dt: str | None = Query(None, alias="to"),
+    exclude_test_chats: bool = Query(False),
+    db: Session = Depends(get_db_dependency),
+):
+    slug = (method or "venmo").strip().lower()
+    if club_id is not None:
+        _get_club_or_404(db, club_id)
+
+    dt_from = _parse_dt(from_dt)
+    dt_to = _parse_dt(to_dt)
+
+    try:
+        base_q = _auto_deposit_events_query(
+            db,
+            slug=slug,
+            club_id=club_id,
+            dt_from=dt_from,
+            dt_to=dt_to,
+            exclude_test_chats=exclude_test_chats,
+        )
+
+        succeeded = case(
+            (PaymentAutoDepositEvent.status == "succeeded", 1),
+            else_=0,
+        )
+        failed = case((PaymentAutoDepositEvent.status == "failed", 1), else_=0)
+        skipped = case((PaymentAutoDepositEvent.status == "skipped", 1), else_=0)
+
+        total, succ, fail, skip = (
+            base_q.with_entities(
+                func.count(PaymentAutoDepositEvent.id),
+                func.sum(succeeded),
+                func.sum(failed),
+                func.sum(skipped),
+            )
+            .one()
+        )
+        total = int(total or 0)
+        succ = int(succ or 0)
+        fail = int(fail or 0)
+        skip = int(skip or 0)
+
+        reason_rows = (
+            base_q.with_entities(
+                PaymentAutoDepositEvent.skip_reason,
+                func.count(PaymentAutoDepositEvent.id),
+            )
+            .filter(PaymentAutoDepositEvent.status == "skipped")
+            .filter(PaymentAutoDepositEvent.skip_reason.isnot(None))
+            .group_by(PaymentAutoDepositEvent.skip_reason)
+            .all()
+        )
+
+        by_club: list[AutoDepositClubSummary] = []
+        if club_id is None:
+            club_rows = (
+                base_q.with_entities(
+                    PaymentAutoDepositEvent.club_id,
+                    func.count(PaymentAutoDepositEvent.id),
+                    func.sum(succeeded),
+                    func.sum(failed),
+                    func.sum(skipped),
+                )
+                .filter(PaymentAutoDepositEvent.club_id.isnot(None))
+                .group_by(PaymentAutoDepositEvent.club_id)
+                .all()
+            )
+            club_names: dict[int, str | None] = {}
+            for row in club_rows:
+                cid = int(row[0])
+                if cid not in club_names:
+                    club = db.query(Club).filter(Club.id == cid).first()
+                    club_names[cid] = club.name if club else None
+                c_total = int(row[1] or 0)
+                c_succ = int(row[2] or 0)
+                c_fail = int(row[3] or 0)
+                c_skip = int(row[4] or 0)
+                funnel = _auto_deposit_funnel_from_counts(
+                    c_total, c_succ, c_fail, c_skip
+                )
+                by_club.append(
+                    AutoDepositClubSummary(
+                        club_id=cid,
+                        club_name=club_names.get(cid),
+                        total_payments=funnel.total_payments,
+                        eligible=funnel.eligible,
+                        succeeded=funnel.succeeded,
+                        failed=funnel.failed,
+                        skipped=funnel.skipped,
+                        success_rate=funnel.success_rate,
+                    )
+                )
+            by_club.sort(key=lambda row: (-row.total_payments, row.club_id))
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
+        raise
+
+    return AutoDepositSummaryResponse(
+        payment_method_slug=slug,
+        club_id=club_id,
+        funnel=_auto_deposit_funnel_from_counts(total, succ, fail, skip),
+        skipped_by_reason=[
+            AutoDepositSkipReasonCount(skip_reason=str(row[0]), count=int(row[1]))
+            for row in reason_rows
+        ],
+        by_club=by_club,
+    )
+
+
+@router.get("/auto-deposits", response_model=AutoDepositEventListResponse)
+def list_auto_deposit_events(
+    method: str = Query("venmo"),
+    club_id: int | None = Query(None),
+    status: str | None = Query(None),
+    skip_reason: str | None = Query(None),
+    from_dt: str | None = Query(None, alias="from"),
+    to_dt: str | None = Query(None, alias="to"),
+    limit: int = Query(_DEFAULT_LIMIT),
+    offset: int = Query(0, ge=0),
+    exclude_test_chats: bool = Query(False),
+    db: Session = Depends(get_db_dependency),
+):
+    slug = (method or "venmo").strip().lower()
+    if club_id is not None:
+        _get_club_or_404(db, club_id)
+
+    dt_from = _parse_dt(from_dt)
+    dt_to = _parse_dt(to_dt)
+    limit = _clamp_limit(limit)
+
+    try:
+        q = _auto_deposit_events_query(
+            db,
+            slug=slug,
+            club_id=club_id,
+            dt_from=dt_from,
+            dt_to=dt_to,
+            exclude_test_chats=exclude_test_chats,
+            status=status,
+            skip_reason=skip_reason,
+        )
+        total = q.count()
+        rows = (
+            q.order_by(PaymentAutoDepositEvent.payment_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
+        raise
+
+    club_names: dict[int, str | None] = {}
+    items: list[AutoDepositEventRead] = []
+    for row in rows:
+        cname: str | None = None
+        if row.club_id is not None:
+            cid = int(row.club_id)
+            if cid not in club_names:
+                club = db.query(Club).filter(Club.id == cid).first()
+                club_names[cid] = club.name if club else None
+            cname = club_names.get(cid)
+        items.append(_auto_deposit_event_read(row, cname))
+
+    return AutoDepositEventListResponse(
+        items=items,
+        total=int(total),
+        limit=limit,
+        offset=offset,
     )

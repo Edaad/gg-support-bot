@@ -24,6 +24,7 @@ from bot.services.mtproto_group_add import (
     _send_add_confirmation_once,
     format_add_confirmation,
 )
+from bot.services.payment_auto_deposit_events import record_auto_deposit_event
 from bot.services.payment_group_notify import support_bot_tokens_to_try
 from bot.services.player_details import gg_player_id_from_title, parse_group_title_parts
 from club_gc_settings import get_club_gc_config_by_link_club_id
@@ -250,6 +251,32 @@ def schedule_auto_deposit_from_payment(
     )
 
 
+def _record_skip_event(
+    *,
+    payment_method_slug: str,
+    payment_id: int,
+    club_id: int | None,
+    telegram_chat_id: int | None,
+    amount_cents: int,
+    auto_bound: bool,
+    goods_or_services: bool,
+    group_title: str | None,
+    skip_reason: str,
+) -> None:
+    record_auto_deposit_event(
+        payment_method_slug=payment_method_slug,
+        payment_id=payment_id,
+        club_id=club_id,
+        telegram_chat_id=telegram_chat_id,
+        amount_cents=amount_cents,
+        auto_bound=auto_bound,
+        goods_or_services=goods_or_services,
+        group_title=group_title,
+        status="skipped",
+        skip_reason=skip_reason,
+    )
+
+
 async def maybe_auto_deposit_from_payment(
     *,
     club_id: int | None,
@@ -283,6 +310,17 @@ async def maybe_auto_deposit_from_payment(
                 auto_bound,
                 pre_reason,
             )
+        _record_skip_event(
+            payment_method_slug=payment_method_slug,
+            payment_id=payment_id,
+            club_id=club_id,
+            telegram_chat_id=telegram_chat_id,
+            amount_cents=amount_cents,
+            auto_bound=auto_bound,
+            goods_or_services=goods_or_services,
+            group_title=title,
+            skip_reason=pre_reason,
+        )
         return
 
     if not title:
@@ -309,6 +347,17 @@ async def maybe_auto_deposit_from_payment(
                 auto_bound,
                 skip_reason,
             )
+            _record_skip_event(
+                payment_method_slug=payment_method_slug,
+                payment_id=payment_id,
+                club_id=club_id,
+                telegram_chat_id=telegram_chat_id,
+                amount_cents=amount_cents,
+                auto_bound=auto_bound,
+                goods_or_services=goods_or_services,
+                group_title=title,
+                skip_reason=skip_reason,
+            )
             return
 
     amount = _amount_from_cents(amount_cents)
@@ -325,7 +374,7 @@ async def maybe_auto_deposit_from_payment(
     )
 
     try:
-        ok = await run_auto_chip_add(
+        ok, chip_status = await run_auto_chip_add(
             club_id=int(club_id),
             chat_id=int(telegram_chat_id),
             amount=amount,
@@ -340,6 +389,19 @@ async def maybe_auto_deposit_from_payment(
             payment_id,
             telegram_chat_id,
         )
+        record_auto_deposit_event(
+            payment_method_slug=payment_method_slug,
+            payment_id=payment_id,
+            club_id=club_id,
+            telegram_chat_id=telegram_chat_id,
+            amount_cents=amount_cents,
+            auto_bound=auto_bound,
+            goods_or_services=goods_or_services,
+            group_title=title,
+            status="failed",
+            skip_reason="chip_add_failed",
+            chip_add_status="unexpected_error",
+        )
         return
 
     if not ok:
@@ -347,6 +409,19 @@ async def maybe_auto_deposit_from_payment(
             "payment_auto_deposit: chip-add failed or skipped payment_id=%s chat_id=%s",
             payment_id,
             telegram_chat_id,
+        )
+        record_auto_deposit_event(
+            payment_method_slug=payment_method_slug,
+            payment_id=payment_id,
+            club_id=club_id,
+            telegram_chat_id=telegram_chat_id,
+            amount_cents=amount_cents,
+            auto_bound=auto_bound,
+            goods_or_services=goods_or_services,
+            group_title=title,
+            status="failed",
+            skip_reason="chip_add_failed",
+            chip_add_status=chip_status,
         )
         return
 
@@ -374,6 +449,19 @@ async def maybe_auto_deposit_from_payment(
         telegram_chat_id=int(telegram_chat_id),
         amount=amount,
         group_title=title,
+    )
+
+    record_auto_deposit_event(
+        payment_method_slug=payment_method_slug,
+        payment_id=payment_id,
+        club_id=club_id,
+        telegram_chat_id=telegram_chat_id,
+        amount_cents=amount_cents,
+        auto_bound=auto_bound,
+        goods_or_services=goods_or_services,
+        group_title=title,
+        status="succeeded",
+        chip_add_status=chip_status,
     )
 
     logger.info(

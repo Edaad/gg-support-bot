@@ -770,6 +770,14 @@ export const LINKING_METHOD_OPTIONS: { value: LinkingMethodSlug; label: string }
   { value: 'paypal', label: 'PayPal' },
 ]
 
+export type AutoDepositMethodSlug = LinkingMethodSlug | 'stripe' | 'crypto'
+
+export const AUTO_DEPOSIT_METHOD_OPTIONS: { value: AutoDepositMethodSlug; label: string }[] = [
+  ...LINKING_METHOD_OPTIONS,
+  { value: 'stripe', label: 'Stripe' },
+  { value: 'crypto', label: 'Crypto' },
+]
+
 export type BoundViaFilter =
   | 'all'
   | 'special_amount'
@@ -819,6 +827,107 @@ export function fetchBindingSummary(
   if (params.to) q.set('to', params.to)
   if (params.excludeTestChats) q.set('exclude_test_chats', 'true')
   return request<BindingSummary>(`/bindings/summary?${q}`, {}, token)
+}
+
+export type AutoDepositFunnel = {
+  total_payments: number
+  eligible: number
+  succeeded: number
+  failed: number
+  skipped: number
+  success_rate: number | null
+}
+
+export type AutoDepositSkipReasonCount = { skip_reason: string; count: number }
+
+export type AutoDepositClubSummary = {
+  club_id: number
+  club_name: string | null
+  total_payments: number
+  eligible: number
+  succeeded: number
+  failed: number
+  skipped: number
+  success_rate: number | null
+}
+
+export type AutoDepositSummary = {
+  payment_method_slug: string
+  club_id: number | null
+  funnel: AutoDepositFunnel
+  skipped_by_reason: AutoDepositSkipReasonCount[]
+  by_club: AutoDepositClubSummary[]
+}
+
+export function fetchAutoDepositSummary(
+  token: string,
+  params: {
+    method?: string
+    clubId?: number
+    from?: string
+    to?: string
+    excludeTestChats?: boolean
+  },
+) {
+  const q = new URLSearchParams()
+  q.set('method', params.method ?? 'venmo')
+  if (params.clubId != null) q.set('club_id', String(params.clubId))
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  if (params.excludeTestChats) q.set('exclude_test_chats', 'true')
+  return request<AutoDepositSummary>(`/auto-deposits/summary?${q}`, {}, token)
+}
+
+export type AutoDepositEventRow = {
+  id: number
+  payment_method_slug: string
+  payment_id: number
+  club_id: number | null
+  club_name: string | null
+  telegram_chat_id: number | null
+  amount_cents: number
+  amount_usd: string
+  auto_bound: boolean
+  group_title: string | null
+  gg_player_id: string | null
+  status: string
+  skip_reason: string | null
+  chip_add_status: string | null
+  payment_at: string
+}
+
+export type AutoDepositEventList = {
+  items: AutoDepositEventRow[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export function listAutoDepositEvents(
+  token: string,
+  params: {
+    method?: string
+    clubId?: number
+    status?: string
+    skipReason?: string
+    from?: string
+    to?: string
+    limit?: number
+    offset?: number
+    excludeTestChats?: boolean
+  },
+) {
+  const q = new URLSearchParams()
+  q.set('method', params.method ?? 'venmo')
+  if (params.clubId != null) q.set('club_id', String(params.clubId))
+  if (params.status) q.set('status', params.status)
+  if (params.skipReason) q.set('skip_reason', params.skipReason)
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  if (params.excludeTestChats) q.set('exclude_test_chats', 'true')
+  return request<AutoDepositEventList>(`/auto-deposits?${q}`, {}, token)
 }
 
 export type GroupBindingRow = {

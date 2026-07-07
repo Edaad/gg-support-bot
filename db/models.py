@@ -1384,6 +1384,44 @@ class ZellePayerBinding(Base):
     club = relationship("Club")
 
 
+class PaymentAutoDepositEvent(Base):
+    """E2E auto-deposit outcome for a single ingested payment (forward-only analytics)."""
+
+    __tablename__ = "payment_auto_deposit_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "payment_method_slug",
+            "payment_id",
+            name="uq_pade_method_payment",
+        ),
+        Index("ix_pade_club_payment_at", "club_id", "payment_at"),
+        Index("ix_pade_method_payment_at", "payment_method_slug", "payment_at"),
+        Index("ix_pade_status", "status"),
+        Index("ix_pade_telegram_chat_id", "telegram_chat_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    payment_method_slug = Column(String(32), nullable=False)
+    payment_id = Column(Integer, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    telegram_chat_id = Column(BigInteger, nullable=True)
+    amount_cents = Column(Integer, nullable=False)
+    auto_bound = Column(Boolean, nullable=False, default=False)
+    goods_or_services = Column(Boolean, nullable=False, default=False)
+    group_title = Column(String(255), nullable=True)
+    gg_player_id = Column(String(64), nullable=True)
+    club_auto_deposit_enabled = Column(Boolean, nullable=False, default=False)
+    status = Column(String(32), nullable=False)
+    skip_reason = Column(String(64), nullable=True)
+    chip_add_status = Column(String(32), nullable=True)
+    payment_at = Column(DateTime(timezone=True), nullable=False)
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    club = relationship("Club")
+
+
 class PaymentMethodBindAttempt(Base):
     """In-flight first-time payment method setup (special amount or memo emoji)."""
 

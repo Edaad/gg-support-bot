@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
@@ -300,6 +301,115 @@ class PaymentsApiTestCase(unittest.TestCase):
             headers={"Authorization": f"Bearer {TOKEN}"},
         )
         self.assertEqual(response.status_code, 404)
+
+    def test_auto_deposits_summary_funnel(self):
+        mock_funnel_q = MagicMock()
+        mock_funnel_q.one.return_value = (10, 7, 2, 1)
+
+        mock_reason_q = MagicMock()
+        mock_reason_q.all.return_value = [("no_recent_deposit_command", 1)]
+
+        call_count = {"n": 0}
+
+        def with_entities_side(*_args, **_kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return mock_funnel_q
+            mock_chain = MagicMock()
+            mock_chain.filter.return_value.filter.return_value.group_by.return_value = (
+                mock_reason_q
+            )
+            return mock_chain
+
+        mock_base_q = MagicMock()
+        mock_base_q.with_entities.side_effect = with_entities_side
+
+        mock_db = MagicMock()
+        mock_club = MagicMock()
+        mock_club.name = "Creator Club"
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_club
+
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_current_admin] = lambda: "admin"
+
+        def override_db():
+            yield mock_db
+
+        app.dependency_overrides[get_db_dependency] = override_db
+        client = TestClient(app)
+
+        with patch(
+            "api.routes.payments._auto_deposit_events_query",
+            return_value=mock_base_q,
+        ):
+            response = client.get(
+                "/api/payments/auto-deposits/summary?method=venmo&club_id=3",
+                headers={"Authorization": f"Bearer {TOKEN}"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["funnel"]["total_payments"], 10)
+        self.assertEqual(data["funnel"]["eligible"], 9)
+        self.assertEqual(data["funnel"]["succeeded"], 7)
+        self.assertEqual(data["funnel"]["failed"], 2)
+        self.assertEqual(data["funnel"]["skipped"], 1)
+        self.assertAlmostEqual(data["funnel"]["success_rate"], 7 / 9)
+        self.assertEqual(len(data["skipped_by_reason"]), 1)
+
+    def test_auto_deposits_list_status_filter(self):
+        mock_event = MagicMock()
+        mock_event.id = 1
+        mock_event.payment_method_slug = "venmo"
+        mock_event.payment_id = 42
+        mock_event.club_id = 3
+        mock_event.telegram_chat_id = -1001
+        mock_event.amount_cents = 5000
+        mock_event.auto_bound = True
+        mock_event.group_title = "CC / 1234-5678 / Player"
+        mock_event.gg_player_id = "1234-5678"
+        mock_event.status = "succeeded"
+        mock_event.skip_reason = None
+        mock_event.chip_add_status = "success"
+        mock_event.payment_at = datetime.fromisoformat("2026-01-15T12:00:00+00:00")
+
+        mock_q = MagicMock()
+        mock_q.count.return_value = 1
+        mock_q.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [
+            mock_event
+        ]
+
+        mock_db = MagicMock()
+        mock_club = MagicMock()
+        mock_club.name = "Creator Club"
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_club
+
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_current_admin] = lambda: "admin"
+
+        def override_db():
+            yield mock_db
+
+        app.dependency_overrides[get_db_dependency] = override_db
+        client = TestClient(app)
+
+        with patch(
+            "api.routes.payments._auto_deposit_events_query",
+            return_value=mock_q,
+        ) as mock_filter:
+            response = client.get(
+                "/api/payments/auto-deposits?method=venmo&status=succeeded&club_id=3",
+                headers={"Authorization": f"Bearer {TOKEN}"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["total"], 1)
+        self.assertEqual(data["items"][0]["status"], "succeeded")
+        mock_filter.assert_called_once()
+        self.assertEqual(mock_filter.call_args.kwargs["status"], "succeeded")
 
 
 if __name__ == "__main__":

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { listClubs, type Club } from '../api/client'
 import {
-  LINKING_METHOD_OPTIONS,
+  AUTO_DEPOSIT_METHOD_OPTIONS,
+  type AutoDepositMethodSlug,
   type BoundViaFilter,
   type LinkingMethodSlug,
 } from '../api/paymentsClient'
 import PaymentMethodLinkingAnalytics from '../components/PaymentMethodLinkingAnalytics'
+import AutoDepositAnalytics from '../components/AutoDepositAnalytics'
 
 const SOURCE_FILTER_OPTIONS: { value: BoundViaFilter; label: string }[] = [
   { value: 'all', label: 'All sources' },
@@ -24,12 +26,12 @@ export default function Analytics({ token }: { token: string }) {
   const toDateId = useId()
 
   const [clubs, setClubs] = useState<Club[]>([])
-  const [method, setMethod] = useState<LinkingMethodSlug>('venmo')
+  const [method, setMethod] = useState<AutoDepositMethodSlug>('venmo')
   const [clubId, setClubId] = useState<number | 'all'>('all')
   const [sourceFilter, setSourceFilter] = useState<BoundViaFilter>('all')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
-  const [appliedMethod, setAppliedMethod] = useState<LinkingMethodSlug>('venmo')
+  const [appliedMethod, setAppliedMethod] = useState<AutoDepositMethodSlug>('venmo')
   const [appliedSource, setAppliedSource] = useState<BoundViaFilter>('all')
   const [appliedClubId, setAppliedClubId] = useState<number | 'all'>('all')
   const [appliedFrom, setAppliedFrom] = useState('')
@@ -59,6 +61,15 @@ export default function Analytics({ token }: { token: string }) {
       appliedTo,
     }),
     [appliedClubId, appliedSource, appliedFrom, appliedTo],
+  )
+
+  const appliedAutoDepositFilters = useMemo(
+    () => ({
+      appliedClubId,
+      appliedFrom,
+      appliedTo,
+    }),
+    [appliedClubId, appliedFrom, appliedTo],
   )
 
   const filtersDirty =
@@ -113,9 +124,9 @@ export default function Analytics({ token }: { token: string }) {
             id={methodSelectId}
             className="input-field-sm min-w-[8rem]"
             value={method}
-            onChange={(e) => setMethod(e.target.value as LinkingMethodSlug)}
+            onChange={(e) => setMethod(e.target.value as AutoDepositMethodSlug)}
           >
-            {LINKING_METHOD_OPTIONS.map((opt) => (
+            {AUTO_DEPOSIT_METHOD_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
@@ -187,10 +198,19 @@ export default function Analytics({ token }: { token: string }) {
       <div className={`panel transition-opacity ${filtersDirty ? 'opacity-80' : ''}`}>
         <PaymentMethodLinkingAnalytics
           token={token}
-          method={appliedMethod}
+          method={appliedMethod as LinkingMethodSlug}
           excludeTestChats
           embedded
           filters={appliedFilters}
+          onError={handleLinkingError}
+        />
+        <AutoDepositAnalytics
+          token={token}
+          method={appliedMethod}
+          excludeTestChats
+          embedded
+          dividerTop
+          filters={appliedAutoDepositFilters}
           onError={handleLinkingError}
         />
       </div>

@@ -461,3 +461,61 @@ class BindAttemptListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class AutoDepositSkipReasonCount(BaseModel):
+    skip_reason: str
+    count: int
+
+
+class AutoDepositFunnel(BaseModel):
+    total_payments: int
+    eligible: int
+    succeeded: int
+    failed: int
+    skipped: int
+    success_rate: Optional[float] = None
+
+
+class AutoDepositClubSummary(BaseModel):
+    club_id: int
+    club_name: Optional[str] = None
+    total_payments: int
+    eligible: int
+    succeeded: int
+    failed: int
+    skipped: int
+    success_rate: Optional[float] = None
+
+
+class AutoDepositSummaryResponse(BaseModel):
+    payment_method_slug: str
+    club_id: Optional[int] = None
+    funnel: AutoDepositFunnel
+    skipped_by_reason: list[AutoDepositSkipReasonCount]
+    by_club: list[AutoDepositClubSummary] = []
+
+
+class AutoDepositEventRead(BaseModel):
+    id: int
+    payment_method_slug: str
+    payment_id: int
+    club_id: Optional[int] = None
+    club_name: Optional[str] = None
+    telegram_chat_id: Optional[int] = None
+    amount_cents: int
+    amount_usd: Decimal
+    auto_bound: bool
+    group_title: Optional[str] = None
+    gg_player_id: Optional[str] = None
+    status: str
+    skip_reason: Optional[str] = None
+    chip_add_status: Optional[str] = None
+    payment_at: datetime
+
+
+class AutoDepositEventListResponse(BaseModel):
+    items: list[AutoDepositEventRead]
+    total: int
+    limit: int
+    offset: int

@@ -370,8 +370,8 @@ async def _run_single_deposit(
     request_id: str,
     label: str,
     ptb_bot: Any | None,
-) -> bool:
-    """Submit one deposit, poll to terminal, notify. Returns True on success/dry_run/skipped."""
+) -> tuple[bool, str]:
+    """Submit one deposit, poll to terminal, notify. Returns (ok, terminal_status)."""
     amount_str = _format_chip_amount(amount)
     logger.info(
         "auto_chip_add: submitting %s club=%s (id=%s) player=%s amount=%s dry_run=%s "
@@ -401,7 +401,7 @@ async def _run_single_deposit(
             f"Auto chip-add FAILED to queue ({label}) for {clubgg_club} player "
             f"{player_id} ({amount_str}): {error}. Add chips manually.",
         )
-        return False
+        return False, "queue_failed"
 
     if status and status.lower() in _TERMINAL_STATUSES:
         job = {"status": status, "job_id": job_id}
@@ -411,8 +411,8 @@ async def _run_single_deposit(
     await _notify_result(
         cfg, ptb_bot, job, clubgg_club, player_id, amount_str, label=label
     )
-    status = (job.get("status") or "unknown").lower()
-    return status in ("success", "dry_run", "skipped")
+    terminal = (job.get("status") or "unknown").lower()
+    return terminal in ("success", "dry_run", "skipped"), terminal
 
 
 async def run_auto_chip_add(
@@ -424,18 +424,18 @@ async def run_auto_chip_add(
     bonus: Optional[Decimal] = None,
     group_title: Optional[str] = None,
     ptb_bot: Any | None = None,
-) -> bool:
+) -> tuple[bool, str]:
     """Submit chip-add to ClubGG and poll to terminal.
 
-    Returns True on success/dry_run/skipped for all transactions. Never raises.
+    Returns (ok, status) where ok is True on success/dry_run/skipped. Never raises.
     Caller must claim ``request_id`` via ``_claim_request`` when idempotency matters.
     """
     cfg = load_config()
     if cfg is None:
-        return False
+        return False, "config_missing"
 
     if not _claim_request(request_id):
-        return False
+        return False, "request_claim_failed"
 
     transactions = _deposit_transactions(amount, bonus)
 
@@ -450,7 +450,7 @@ async def run_auto_chip_add(
             f"Auto chip-add skipped (chat {chat_id}): could not read a player id "
             f"from the group title. Add chips manually.",
         )
-        return False
+        return False, "no_player_id"
 
     club = await asyncio.to_thread(get_club_by_id, int(club_id))
     club_name = club.name if club else None
@@ -515,7 +515,7 @@ async def run_auto_chip_add(
             f"could not map club {club_name!r}/union {union_shorthand!r} to a "
             f"ClubGG club. Add chips manually.",
         )
-        return False
+        return False, "club_mapping_failed"
 
     timeout = httpx.Timeout(cfg.timeout_sec)
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -530,13 +530,14 @@ async def run_auto_chip_add(
                 f"Auto chip-add NOT sent for {clubgg_club} player {player_id} "
                 f"({parts} chips): {detail}. Add chips manually.",
             )
-            return False
+            return False, "health_failed"
 
         all_ok = True
+        last_status = "failed"
         for idx, (label, chip_amount, part) in enumerate(transactions):
             if idx > 0:
                 await asyncio.sleep(cfg.poll_interval_sec)
-            tx_ok = await _run_single_deposit(
+            tx_ok, tx_status = await _run_single_deposit(
                 cfg,
                 client,
                 clubgg_club=clubgg_club,
@@ -546,6 +547,7 @@ async def run_auto_chip_add(
                 label=label,
                 ptb_bot=ptb_bot,
             )
+            last_status = tx_status
             if not tx_ok:
                 all_ok = False
                 if idx == 0 and len(transactions) > 1:
@@ -557,7 +559,7 @@ async def run_auto_chip_add(
                         f"was not attempted. Add chips manually.",
                     )
                 break
-        return all_ok
+        return all_ok, last_status
 
 
 async def trigger_auto_chip_add(

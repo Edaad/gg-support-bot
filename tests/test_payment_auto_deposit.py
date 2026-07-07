@@ -120,6 +120,13 @@ class AutoDepositIneligibleReasonTestCase(unittest.TestCase):
 
 
 class MaybeAutoDepositGatingTestCase(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._record_event_patch = patch.object(pad, "record_auto_deposit_event")
+        self._record_event_patch.start()
+
+    def tearDown(self) -> None:
+        self._record_event_patch.stop()
+
     async def test_skips_when_not_auto_bound(self) -> None:
         with patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock) as mock_run:
             await pad.maybe_auto_deposit_from_payment(
@@ -271,7 +278,8 @@ class MaybeAutoDepositSuccessTestCase(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
             patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
-            patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock, return_value=True) as mock_run,
+            patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock, return_value=(True, "success")) as mock_run,
+            patch.object(pad, "record_auto_deposit_event") as mock_record_event,
             patch.object(pad, "record_activity_for_chat") as mock_record,
             patch.object(pad, "invalidate_pending_one_time_bypasses") as mock_invalidate,
             patch.object(pad, "_send_add_confirmation", new_callable=AsyncMock) as mock_confirm,
@@ -295,6 +303,10 @@ class MaybeAutoDepositSuccessTestCase(unittest.IsolatedAsyncioTestCase):
         mock_record.assert_called_once_with(CLUB_ID_CREATOR, CHAT_ID, "deposit")
         mock_invalidate.assert_called_once_with(CLUB_ID_CREATOR, CHAT_ID)
         mock_confirm.assert_awaited_once()
+        mock_record_event.assert_called_once()
+        event_kwargs = mock_record_event.call_args.kwargs
+        self.assertEqual(event_kwargs["status"], "succeeded")
+        self.assertEqual(event_kwargs["chip_add_status"], "success")
 
     async def test_failure_skips_activity_and_confirmation(self) -> None:
         with (
@@ -305,7 +317,13 @@ class MaybeAutoDepositSuccessTestCase(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
             patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
-            patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock, return_value=False),
+            patch.object(
+                pad,
+                "run_auto_chip_add",
+                new_callable=AsyncMock,
+                return_value=(False, "failed"),
+            ),
+            patch.object(pad, "record_auto_deposit_event") as mock_record_event,
             patch.object(pad, "record_activity_for_chat") as mock_record,
             patch.object(pad, "_send_add_confirmation", new_callable=AsyncMock) as mock_confirm,
         ):
@@ -321,6 +339,32 @@ class MaybeAutoDepositSuccessTestCase(unittest.IsolatedAsyncioTestCase):
 
         mock_record.assert_not_called()
         mock_confirm.assert_not_awaited()
+        mock_record_event.assert_called_once()
+        event_kwargs = mock_record_event.call_args.kwargs
+        self.assertEqual(event_kwargs["status"], "failed")
+        self.assertEqual(event_kwargs["skip_reason"], "chip_add_failed")
+
+
+class RecordAutoDepositEventOnSkipTestCase(unittest.IsolatedAsyncioTestCase):
+    async def test_skip_records_event(self) -> None:
+        with (
+            patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock) as mock_run,
+            patch.object(pad, "record_auto_deposit_event") as mock_record_event,
+        ):
+            await pad.maybe_auto_deposit_from_payment(
+                club_id=CLUB_ID_CREATOR,
+                telegram_chat_id=CHAT_ID,
+                amount_cents=5000,
+                auto_bound=False,
+                payment_method_slug="venmo",
+                payment_id=42,
+            )
+        mock_run.assert_not_awaited()
+        mock_record_event.assert_called_once()
+        event_kwargs = mock_record_event.call_args.kwargs
+        self.assertEqual(event_kwargs["status"], "skipped")
+        self.assertEqual(event_kwargs["skip_reason"], "auto_bound_false")
+        self.assertEqual(event_kwargs["payment_id"], 42)
 
 
 class SendAddConfirmationTestCase(unittest.IsolatedAsyncioTestCase):
