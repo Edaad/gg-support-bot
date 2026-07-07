@@ -81,14 +81,32 @@ class TestNotifySlackIssueReport(unittest.IsolatedAsyncioTestCase):
         msg_resp.raise_for_status = MagicMock()
         msg_resp.json.return_value = {"ok": True, "ts": "1234.5678"}
 
-        file_resp = MagicMock()
-        file_resp.status_code = 200
-        file_resp.raise_for_status = MagicMock()
-        file_resp.json.return_value = {"ok": True, "file": {"id": "F001"}}
+        get_url_resp = MagicMock()
+        get_url_resp.status_code = 200
+        get_url_resp.raise_for_status = MagicMock()
+        get_url_resp.json.return_value = {
+            "ok": True,
+            "upload_url": "https://files.slack.com/upload/v1/test",
+            "file_id": "F001",
+        }
+
+        upload_resp = MagicMock()
+        upload_resp.status_code = 200
+        upload_resp.raise_for_status = MagicMock()
+
+        complete_resp = MagicMock()
+        complete_resp.status_code = 200
+        complete_resp.raise_for_status = MagicMock()
+        complete_resp.json.return_value = {
+            "ok": True,
+            "files": [{"id": "F001", "title": "shot.png"}],
+        }
 
         mock_client = AsyncMock()
         mock_client.__aenter__.return_value = mock_client
-        mock_client.post = AsyncMock(side_effect=[msg_resp, file_resp])
+        mock_client.post = AsyncMock(
+            side_effect=[msg_resp, get_url_resp, upload_resp, complete_resp]
+        )
         mock_client_cls.return_value = mock_client
 
         ok, ts, file_ids = await notify_slack_issue_report(
@@ -112,10 +130,17 @@ class TestNotifySlackIssueReport(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         self.assertEqual(ts, "1234.5678")
         self.assertEqual(file_ids, ["F001"])
-        self.assertEqual(mock_client.post.await_count, 2)
+        self.assertEqual(mock_client.post.await_count, 4)
         message_call = mock_client.post.await_args_list[0]
         self.assertIn("<@U999>", message_call.kwargs["json"]["text"])
         self.assertEqual(message_call.kwargs["json"]["channel"], "C123")
+        complete_call = mock_client.post.await_args_list[3]
+        self.assertEqual(
+            complete_call.kwargs["json"]["files"],
+            [{"id": "F001", "title": "shot.png"}],
+        )
+        self.assertEqual(complete_call.kwargs["json"]["channel_id"], "C123")
+        self.assertEqual(complete_call.kwargs["json"]["thread_ts"], "1234.5678")
 
 
 if __name__ == "__main__":

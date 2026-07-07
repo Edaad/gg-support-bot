@@ -23,7 +23,12 @@ SLACK_ISSUE_REPORT_CHANNEL_ID_ENV = "SLACK_ISSUE_REPORT_CHANNEL_ID"
 SLACK_ISSUE_REPORT_WEBHOOK_URL_ENV = "SLACK_ISSUE_REPORT_WEBHOOK_URL"
 
 SLACK_CHAT_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage"
-SLACK_FILES_UPLOAD_URL = "https://slack.com/api/files.upload"
+SLACK_FILES_GET_UPLOAD_URL_EXTERNAL = (
+    "https://slack.com/api/files.getUploadURLExternal"
+)
+SLACK_FILES_COMPLETE_UPLOAD_EXTERNAL = (
+    "https://slack.com/api/files.completeUploadExternal"
+)
 
 _MAX_SLACK_TEXT_LEN = 3000
 _HTTP_TIMEOUT_SEC = 5.0
@@ -213,37 +218,92 @@ async def _upload_slack_file(
     content_type: str,
     thread_ts: str | None = None,
 ) -> str | None:
-    headers = {"Authorization": f"Bearer {token}"}
-    data: dict[str, str] = {"channels": channel, "filename": filename}
-    if thread_ts:
-        data["thread_ts"] = thread_ts
-    files = {"file": (filename, content, content_type)}
+    """Upload a file via files.getUploadURLExternal + files.completeUploadExternal."""
+
+    auth_headers = {"Authorization": f"Bearer {token}"}
     try:
         resp = await client.post(
-            SLACK_FILES_UPLOAD_URL,
-            headers=headers,
-            data=data,
-            files=files,
+            SLACK_FILES_GET_UPLOAD_URL_EXTERNAL,
+            headers=auth_headers,
+            data={"filename": filename, "length": str(len(content))},
         )
         resp.raise_for_status()
         payload = resp.json()
     except Exception:
         logger.warning(
-            "slack_ops: files.upload failed filename=%s",
+            "slack_ops: files.getUploadURLExternal failed filename=%s",
             filename,
             exc_info=True,
         )
         return None
     if not payload.get("ok"):
         logger.warning(
-            "slack_ops: files.upload not ok filename=%s error=%s",
+            "slack_ops: files.getUploadURLExternal not ok filename=%s error=%s",
             filename,
             payload.get("error"),
         )
         return None
-    file_obj = payload.get("file") or {}
-    file_id = file_obj.get("id")
-    return str(file_id) if file_id else None
+
+    upload_url = payload.get("upload_url")
+    file_id = payload.get("file_id")
+    if not upload_url or not file_id:
+        logger.warning(
+            "slack_ops: files.getUploadURLExternal missing upload_url/file_id filename=%s",
+            filename,
+        )
+        return None
+
+    try:
+        upload_resp = await client.post(
+            upload_url,
+            files={"file": (filename, content, content_type)},
+        )
+        upload_resp.raise_for_status()
+    except Exception:
+        logger.warning(
+            "slack_ops: external file upload failed filename=%s",
+            filename,
+            exc_info=True,
+        )
+        return None
+
+    complete_payload: dict = {
+        "channel_id": channel,
+        "files": [{"id": file_id, "title": filename}],
+    }
+    if thread_ts:
+        complete_payload["thread_ts"] = thread_ts
+
+    try:
+        resp = await client.post(
+            SLACK_FILES_COMPLETE_UPLOAD_EXTERNAL,
+            headers={
+                **auth_headers,
+                "Content-Type": "application/json; charset=utf-8",
+            },
+            json=complete_payload,
+        )
+        resp.raise_for_status()
+        complete_data = resp.json()
+    except Exception:
+        logger.warning(
+            "slack_ops: files.completeUploadExternal failed filename=%s",
+            filename,
+            exc_info=True,
+        )
+        return None
+    if not complete_data.get("ok"):
+        logger.warning(
+            "slack_ops: files.completeUploadExternal not ok filename=%s error=%s",
+            filename,
+            complete_data.get("error"),
+        )
+        return None
+
+    files = complete_data.get("files") or []
+    if files and files[0].get("id"):
+        return str(files[0]["id"])
+    return str(file_id)
 
 
 async def notify_slack_issue_report(
