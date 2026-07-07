@@ -210,13 +210,53 @@ class LedgerAggregationTestCase(unittest.TestCase):
         by_player, unmatched = aggregate_ledger_by_player(events)
         self.assertEqual(unmatched, [])
         bd = by_player["3011-9668"]
-        self.assertEqual(bd.deposits, Decimal("100"))
-        self.assertEqual(bd.early_rb, Decimal("25"))
-        self.assertEqual(bd.bonuses, Decimal("10"))
-        self.assertEqual(bd.monday, Decimal("5"))
+        self.assertEqual(bd.deposits, Decimal("-100"))
+        self.assertEqual(bd.early_rb, Decimal("-25"))
+        self.assertEqual(bd.bonuses, Decimal("-10"))
+        self.assertEqual(bd.monday, Decimal("-5"))
         self.assertEqual(bd.glide, Decimal("3"))
         self.assertEqual(bd.cashouts, Decimal("40"))
-        self.assertEqual(bd.net, Decimal("103"))
+        self.assertEqual(bd.net, Decimal("-97"))
+
+    def test_howsyabox1_deposit_sign_matches_trade_record(self):
+        from api.audit_reconcile import _compare_players
+
+        events = [
+            LedgerEvent("deposit_stripe", "3689-9514", Decimal("1000"), None, "d:1"),
+        ]
+        by_player, unmatched = aggregate_ledger_by_player(events)
+        self.assertEqual(unmatched, [])
+        results = _compare_players(
+            {"3689-9514": Decimal("-1000")},
+            by_player,
+            {"3689-9514": "Howsyabox1"},
+        )
+        player = results[0]
+        self.assertEqual(player.ledger_breakdown.deposits, Decimal("-1000"))
+        self.assertEqual(player.net_ledger, Decimal("-1000"))
+        self.assertEqual(player.net_trade_record, Decimal("-1000"))
+        self.assertEqual(player.delta, Decimal("0"))
+        self.assertEqual(player.status, "match")
+
+    def test_cashout_sign_matches_trade_record(self):
+        from api.audit_reconcile import _compare_players
+
+        events = [
+            LedgerEvent("cashout", "1513-7766", Decimal("1000"), None, "c:1"),
+        ]
+        by_player, unmatched = aggregate_ledger_by_player(events)
+        self.assertEqual(unmatched, [])
+        results = _compare_players(
+            {"1513-7766": Decimal("1000")},
+            by_player,
+            {"1513-7766": "P1513-7766"},
+        )
+        player = results[0]
+        self.assertEqual(player.ledger_breakdown.cashouts, Decimal("1000"))
+        self.assertEqual(player.net_ledger, Decimal("1000"))
+        self.assertEqual(player.net_trade_record, Decimal("1000"))
+        self.assertEqual(player.delta, Decimal("0"))
+        self.assertEqual(player.status, "match")
 
     def test_unmatched_ledger_without_gg_id(self):
         events = [
@@ -291,7 +331,7 @@ class ReconcilePassFailTestCase(unittest.TestCase):
                 id=1,
                 upload_id=10,
                 sheet_row=5,
-                amount=Decimal("100.00"),
+                amount=Decimal("-100.00"),
                 member_gg_player_id="3011-9668",
             ),
         ]
@@ -404,7 +444,7 @@ class ReconcilePassFailTestCase(unittest.TestCase):
         )
         self.assertEqual(report.status, "pass")
         self.assertEqual(report.players[0].status, "match")
-        self.assertEqual(report.players[0].delta, Decimal("1.50"))
+        self.assertEqual(report.players[0].delta, Decimal("-1.50"))
 
     @patch("api.audit_reconcile.fetch_glide_ledger_events", return_value=([], []))
     @patch("api.audit_reconcile.fetch_settlement_events", return_value=([], []))
@@ -432,7 +472,7 @@ class ReconcilePassFailTestCase(unittest.TestCase):
         )
         self.assertEqual(report.status, "fail")
         self.assertEqual(report.players_failed, 1)
-        self.assertEqual(report.players[0].delta, Decimal("10"))
+        self.assertEqual(report.players[0].delta, Decimal("-10"))
 
 
 class MondaySettlementTestCase(unittest.TestCase):

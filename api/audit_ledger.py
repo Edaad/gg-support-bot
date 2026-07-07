@@ -1,4 +1,11 @@
-"""Shared ledger event fetchers for audit reconcile and export."""
+"""Shared ledger event fetchers for audit reconcile and export.
+
+Reconcile ledger signs match ClubGG trade record (club chip-ledger perspective):
+negative = chips/money sent to the player; positive = chips claimed back.
+Postgres payment rows store positive USD magnitudes; aggregate_ledger_by_player
+negates club-to-player outflows (deposits, RB, bonuses) and keeps cashouts positive
+(player returning chips to the club).
+"""
 
 from __future__ import annotations
 
@@ -80,8 +87,18 @@ class LedgerBreakdown:
             + self.bonuses
             + self.monday
             + self.glide
-            - self.cashouts
+            + self.cashouts
         )
+
+
+def _club_outflow_usd(amount: Decimal) -> Decimal:
+    """Club-to-player outflow as a negative reconcile amount."""
+    return -abs(amount)
+
+
+def _club_inflow_usd(amount: Decimal) -> Decimal:
+    """Player-to-club inflow (cashout) as a positive reconcile amount."""
+    return abs(amount)
 
 
 def slug_for_payment_club(
@@ -468,7 +485,7 @@ def aggregate_ledger_by_player(
         amount = event.amount_usd
         if event.source.startswith("deposit_"):
             current = LedgerBreakdown(
-                deposits=current.deposits + amount,
+                deposits=current.deposits + _club_outflow_usd(amount),
                 early_rb=current.early_rb,
                 bonuses=current.bonuses,
                 monday=current.monday,
@@ -478,7 +495,7 @@ def aggregate_ledger_by_player(
         elif event.source == "early_rakeback":
             current = LedgerBreakdown(
                 deposits=current.deposits,
-                early_rb=current.early_rb + amount,
+                early_rb=current.early_rb + _club_outflow_usd(amount),
                 bonuses=current.bonuses,
                 monday=current.monday,
                 glide=current.glide,
@@ -488,7 +505,7 @@ def aggregate_ledger_by_player(
             current = LedgerBreakdown(
                 deposits=current.deposits,
                 early_rb=current.early_rb,
-                bonuses=current.bonuses + amount,
+                bonuses=current.bonuses + _club_outflow_usd(amount),
                 monday=current.monday,
                 glide=current.glide,
                 cashouts=current.cashouts,
@@ -498,7 +515,7 @@ def aggregate_ledger_by_player(
                 deposits=current.deposits,
                 early_rb=current.early_rb,
                 bonuses=current.bonuses,
-                monday=current.monday + amount,
+                monday=current.monday + _club_outflow_usd(amount),
                 glide=current.glide,
                 cashouts=current.cashouts,
             )
@@ -519,7 +536,7 @@ def aggregate_ledger_by_player(
                 bonuses=current.bonuses,
                 monday=current.monday,
                 glide=current.glide,
-                cashouts=current.cashouts + amount,
+                cashouts=current.cashouts + _club_inflow_usd(amount),
             )
         by_player[pid] = current
 
