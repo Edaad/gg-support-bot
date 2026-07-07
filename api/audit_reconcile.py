@@ -13,7 +13,9 @@ from sqlalchemy.orm import Session
 from api.audit_ledger import (
     LedgerBreakdown,
     LedgerEvent,
+    LedgerLine,
     aggregate_ledger_by_player,
+    build_ledger_lines,
     fetch_bonus_events,
     fetch_cashout_events,
     fetch_deposit_events,
@@ -26,10 +28,6 @@ from api.club_slug import (
     resolve_club_id,
 )
 from api.payments_helpers import lookup_gg_nickname
-from api.glide_audit_sync import (
-    GlideConfigError,
-    fetch_glide_ledger_events,
-)
 from api.gg_computer_settlement import (
     SettlementFetchError,
     fetch_settlement_events,
@@ -95,6 +93,7 @@ class AuditReconcileReport:
     players: list[AuditReconcilePlayerResult] = field(default_factory=list)
     unmatched_trade: list[UnmatchedTradeRow] = field(default_factory=list)
     unmatched_ledger: list[UnmatchedLedgerEvent] = field(default_factory=list)
+    ledger_lines: list[LedgerLine] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     blocked_reason: str | None = None
     players_matched: int = 0
@@ -203,17 +202,6 @@ def _ledger_events_for_club(
     else:
         warnings.append("Non-Monday audit day; monday_settlement = 0")
 
-    try:
-        glide_events, glide_warnings = fetch_glide_ledger_events(
-            club_slug=slug,
-            audit_date=audit_date,
-            existing_events=events,
-        )
-        events.extend(glide_events)
-        warnings.extend(glide_warnings)
-    except GlideConfigError as exc:
-        return events, str(exc)
-
     return events, None
 
 
@@ -257,18 +245,6 @@ def _ledger_events_for_clubs(
                 return events, str(exc)
         else:
             warnings.append(f"Non-Monday audit day for {slug}; monday_settlement = 0")
-
-    glide_slug = "round-table" if "round-table" in slugs else slugs[0]
-    try:
-        glide_events, glide_warnings = fetch_glide_ledger_events(
-            club_slug=glide_slug,
-            audit_date=audit_date,
-            existing_events=events,
-        )
-        events.extend(glide_events)
-        warnings.extend(glide_warnings)
-    except GlideConfigError as exc:
-        return events, str(exc)
 
     return events, None
 
@@ -493,6 +469,21 @@ def _report_to_json(report: AuditReconcileReport) -> str:
         ],
         "unmatched_trade": [asdict(u) for u in report.unmatched_trade],
         "unmatched_ledger": [asdict(u) for u in report.unmatched_ledger],
+        "ledger_lines": [
+            {
+                "gg_player_id": line.gg_player_id,
+                "member_nickname": line.member_nickname,
+                "source": line.source,
+                "source_label": line.source_label,
+                "amount_signed": str(line.amount_signed),
+                "occurred_at": line.occurred_at_utc.isoformat()
+                if line.occurred_at_utc
+                else None,
+                "external_id": line.external_id,
+                "detail": line.detail,
+            }
+            for line in report.ledger_lines
+        ],
         "warnings": report.warnings,
         "blocked_reason": report.blocked_reason,
     }
@@ -511,8 +502,24 @@ def _ledger_breakdown_from_dict(raw: dict[str, Any]) -> LedgerBreakdown:
         early_rb=_decimal(raw.get("early_rb", 0)),
         bonuses=_decimal(raw.get("bonuses", 0)),
         monday=_decimal(raw.get("monday", 0)),
-        glide=_decimal(raw.get("glide", 0)),
         cashouts=_decimal(raw.get("cashouts", 0)),
+    )
+
+
+def _ledger_line_from_dict(raw: dict[str, Any]) -> LedgerLine:
+    occurred_raw = raw.get("occurred_at")
+    occurred_at: datetime | None = None
+    if occurred_raw:
+        occurred_at = datetime.fromisoformat(str(occurred_raw).replace("Z", "+00:00"))
+    return LedgerLine(
+        gg_player_id=raw.get("gg_player_id") or None,
+        member_nickname=raw.get("member_nickname"),
+        source=str(raw.get("source") or ""),
+        source_label=str(raw.get("source_label") or raw.get("source") or ""),
+        amount_signed=_decimal(raw.get("amount_signed", 0)),
+        occurred_at_utc=occurred_at,
+        external_id=str(raw.get("external_id") or ""),
+        detail=raw.get("detail"),
     )
 
 
@@ -549,6 +556,9 @@ def report_from_json(raw: str, *, run_id: int | None = None) -> AuditReconcileRe
         )
         for u in data.get("unmatched_ledger") or []
     ]
+    ledger_lines = [
+        _ledger_line_from_dict(line) for line in data.get("ledger_lines") or []
+    ]
     matched = [p for p in players if p.status == "match"]
     failed = [p for p in players if p.status == "mismatch"]
     return AuditReconcileReport(
@@ -563,6 +573,7 @@ def report_from_json(raw: str, *, run_id: int | None = None) -> AuditReconcileRe
         players=players,
         unmatched_trade=unmatched_trade,
         unmatched_ledger=unmatched_ledger,
+        ledger_lines=ledger_lines,
         warnings=list(data.get("warnings") or []),
         blocked_reason=data.get("blocked_reason"),
         players_matched=len(matched),
@@ -738,18 +749,26 @@ def run_audit_reconcile(
         for e in unmatched_ledger_events
     ]
 
+    gg_ids: set[str] = set(trade_by_player) | set(ledger_by_player)
+    for event in ledger_events:
+        gid = (event.gg_player_id or "").strip()
+        if gid:
+            gg_ids.add(gid)
+
+    nicknames_map = _nicknames_for_reconcile(
+        session,
+        club_slug=slug,
+        audit_date=audit_date,
+        trade_nicknames=trade_nicknames,
+        gg_ids=gg_ids,
+        trade_upload_id=primary_upload_id,
+        trade_upload_ids=trade_upload_ids,
+    )
+
     players = _compare_players(
         trade_by_player,
         ledger_by_player,
-        _nicknames_for_reconcile(
-            session,
-            club_slug=slug,
-            audit_date=audit_date,
-            trade_nicknames=trade_nicknames,
-            gg_ids=set(trade_by_player) | set(ledger_by_player),
-            trade_upload_id=primary_upload_id,
-            trade_upload_ids=trade_upload_ids,
-        ),
+        nicknames_map,
     )
     mismatches = [p for p in players if p.status == "mismatch"]
     matched = [p for p in players if p.status == "match"]
@@ -779,6 +798,7 @@ def run_audit_reconcile(
         players=players,
         unmatched_trade=unmatched_trade,
         unmatched_ledger=unmatched_ledger,
+        ledger_lines=build_ledger_lines(ledger_events, nicknames_map),
         warnings=warnings,
         players_matched=len(matched),
         players_failed=len(mismatches),

@@ -48,7 +48,15 @@ CREATOR_STAFF_FOOTER_NO_RECENT_DEPOSIT = (
 
 
 def _is_creator_club(club_id: int) -> bool:
-    club = get_club_by_id(int(club_id))
+    try:
+        club = get_club_by_id(int(club_id))
+    except Exception:
+        logger.debug(
+            "payment_auto_deposit: could not load club_id=%s for creator check",
+            club_id,
+            exc_info=True,
+        )
+        return False
     return (club.name or "").strip() == CREATOR_CLUB_NAME if club else False
 
 

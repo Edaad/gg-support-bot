@@ -79,8 +79,18 @@ class LedgerBreakdownSchema(BaseModel):
     early_rb: str = "0"
     bonuses: str = "0"
     monday: str = "0"
-    glide: str = "0"
     cashouts: str = "0"
+
+
+class LedgerLineSchema(BaseModel):
+    gg_player_id: Optional[str] = None
+    member_nickname: Optional[str] = None
+    source: str
+    source_label: str
+    amount_signed: str
+    occurred_at: Optional[str] = None
+    external_id: str
+    detail: Optional[str] = None
 
 
 class AuditReconcilePlayerResultSchema(BaseModel):
@@ -119,6 +129,7 @@ class AuditReconcileReportSchema(BaseModel):
     players: List[AuditReconcilePlayerResultSchema] = Field(default_factory=list)
     unmatched_trade: List[UnmatchedTradeRowSchema] = Field(default_factory=list)
     unmatched_ledger: List[UnmatchedLedgerEventSchema] = Field(default_factory=list)
+    ledger_lines: List[LedgerLineSchema] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
     blocked_reason: Optional[str] = None
     players_matched: int = 0

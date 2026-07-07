@@ -67,8 +67,18 @@ export type LedgerBreakdown = {
   early_rb: string
   bonuses: string
   monday: string
-  glide: string
   cashouts: string
+}
+
+export type LedgerLine = {
+  gg_player_id: string | null
+  member_nickname: string | null
+  source: string
+  source_label: string
+  amount_signed: string
+  occurred_at: string | null
+  external_id: string
+  detail: string | null
 }
 
 export type AuditReconcilePlayerResult = {
@@ -107,6 +117,7 @@ export type AuditReconcileReport = {
   players: AuditReconcilePlayerResult[]
   unmatched_trade: UnmatchedTradeRow[]
   unmatched_ledger: UnmatchedLedgerEvent[]
+  ledger_lines: LedgerLine[]
   warnings: string[]
   blocked_reason: string | null
   players_matched: number

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 import unittest
-from datetime import date
+import json
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +13,7 @@ from api.audit_ledger import (
     LedgerBreakdown,
     LedgerEvent,
     aggregate_ledger_by_player,
+    build_ledger_lines,
 )
 from api.audit_reconcile import (
     RECONCILE_MATCH_TOLERANCE_USD,
@@ -25,7 +27,6 @@ from api.audit_reconcile import (
     _report_to_json,
     _within_match_tolerance,
 )
-from api.glide_audit_sync import dedupe_glide_events
 from api.gg_computer_settlement import is_monday_audit_date
 from db.models import (
     AuditReconcileRun,
@@ -204,7 +205,6 @@ class LedgerAggregationTestCase(unittest.TestCase):
             LedgerEvent("early_rakeback", "3011-9668", Decimal("25"), None, "e:1"),
             LedgerEvent("bonus", "3011-9668", Decimal("10"), None, "b:1"),
             LedgerEvent("monday_settlement", "3011-9668", Decimal("5"), None, "m:1"),
-            LedgerEvent("glide", "3011-9668", Decimal("3"), None, "g:1"),
             LedgerEvent("cashout", "3011-9668", Decimal("40"), None, "c:1"),
         ]
         by_player, unmatched = aggregate_ledger_by_player(events)
@@ -214,9 +214,8 @@ class LedgerAggregationTestCase(unittest.TestCase):
         self.assertEqual(bd.early_rb, Decimal("-25"))
         self.assertEqual(bd.bonuses, Decimal("-10"))
         self.assertEqual(bd.monday, Decimal("-5"))
-        self.assertEqual(bd.glide, Decimal("3"))
         self.assertEqual(bd.cashouts, Decimal("40"))
-        self.assertEqual(bd.net, Decimal("-97"))
+        self.assertEqual(bd.net, Decimal("-100"))
 
     def test_howsyabox1_deposit_sign_matches_trade_record(self):
         from api.audit_reconcile import _compare_players
@@ -265,20 +264,6 @@ class LedgerAggregationTestCase(unittest.TestCase):
         by_player, unmatched = aggregate_ledger_by_player(events)
         self.assertEqual(by_player, {})
         self.assertEqual(len(unmatched), 1)
-
-
-class GlideDedupeTestCase(unittest.TestCase):
-    def test_drops_matching_postgres_deposit(self):
-        existing = [
-            LedgerEvent("deposit_stripe", "3011-9668", Decimal("100"), None, "d:1"),
-        ]
-        glide = [
-            LedgerEvent("glide", "3011-9668", Decimal("100"), None, "g:1"),
-            LedgerEvent("glide", "3011-9668", Decimal("5"), None, "g:2"),
-        ]
-        deduped = dedupe_glide_events(glide, existing)
-        self.assertEqual(len(deduped), 1)
-        self.assertEqual(deduped[0].amount_usd, Decimal("5"))
 
 
 class ReconcileBlockedTestCase(unittest.TestCase):
@@ -390,7 +375,6 @@ class ReconcilePassFailTestCase(unittest.TestCase):
             ]
         return []
 
-    @patch("api.audit_reconcile.fetch_glide_ledger_events", return_value=([], []))
     @patch("api.audit_reconcile.fetch_settlement_events", return_value=([], []))
     @patch("api.audit_reconcile.fetch_cashout_events", return_value=[])
     @patch("api.audit_reconcile.fetch_bonus_events", return_value=[])
@@ -418,7 +402,6 @@ class ReconcilePassFailTestCase(unittest.TestCase):
         self.assertEqual(report.players_matched, 1)
         self.assertEqual(report.players_failed, 0)
 
-    @patch("api.audit_reconcile.fetch_glide_ledger_events", return_value=([], []))
     @patch("api.audit_reconcile.fetch_settlement_events", return_value=([], []))
     @patch("api.audit_reconcile.fetch_cashout_events", return_value=[])
     @patch("api.audit_reconcile.fetch_bonus_events", return_value=[])
@@ -446,7 +429,6 @@ class ReconcilePassFailTestCase(unittest.TestCase):
         self.assertEqual(report.players[0].status, "match")
         self.assertEqual(report.players[0].delta, Decimal("-1.50"))
 
-    @patch("api.audit_reconcile.fetch_glide_ledger_events", return_value=([], []))
     @patch("api.audit_reconcile.fetch_settlement_events", return_value=([], []))
     @patch("api.audit_reconcile.fetch_cashout_events", return_value=[])
     @patch("api.audit_reconcile.fetch_bonus_events", return_value=[])
@@ -516,7 +498,6 @@ class ReportJsonRoundTripTestCase(unittest.TestCase):
                         early_rb=Decimal("0"),
                         bonuses=Decimal("0"),
                         monday=Decimal("0"),
-                        glide=Decimal("0"),
                         cashouts=Decimal("0"),
                     ),
                     status="mismatch",
@@ -539,6 +520,49 @@ class ReportJsonRoundTripTestCase(unittest.TestCase):
         self.assertEqual(restored.players[0].ledger_breakdown.deposits, Decimal("90"))
         self.assertEqual(restored.warnings, report.warnings)
         self.assertEqual(restored.players_failed, 1)
+
+    def test_build_ledger_lines_signed_amounts(self):
+        events = [
+            LedgerEvent("deposit_stripe", "3011-9668", Decimal("100"), None, "d:1"),
+            LedgerEvent("cashout", "3011-9668", Decimal("40"), None, "c:1"),
+        ]
+        lines = build_ledger_lines(events, {"3011-9668": "AcePlayer"})
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(lines[0].amount_signed, Decimal("-100"))
+        self.assertEqual(lines[1].amount_signed, Decimal("40"))
+        self.assertEqual(lines[0].source_label, "Stripe")
+
+    def test_report_json_includes_ledger_lines(self):
+        from datetime import datetime, timezone
+
+        occurred = datetime(2026, 6, 18, 12, 0, tzinfo=timezone.utc)
+        events = [
+            LedgerEvent("deposit_stripe", "3011-9668", Decimal("100"), occurred, "d:1"),
+        ]
+        lines = build_ledger_lines(events, {"3011-9668": "AcePlayer"})
+        report = AuditReconcileReport(
+            audit_date=date(2026, 6, 18),
+            club_slug="round-table",
+            club_name="Round Table",
+            status="pass",
+            ledger_lines=lines,
+        )
+        restored = report_from_json(_report_to_json(report))
+        self.assertEqual(len(restored.ledger_lines), 1)
+        self.assertEqual(restored.ledger_lines[0].amount_signed, Decimal("-100"))
+        self.assertEqual(restored.ledger_lines[0].member_nickname, "AcePlayer")
+
+    def test_report_json_missing_ledger_lines_defaults_empty(self):
+        report = AuditReconcileReport(
+            audit_date=date(2026, 6, 18),
+            club_slug="round-table",
+            club_name="Round Table",
+            status="pass",
+        )
+        payload = json.loads(_report_to_json(report))
+        del payload["ledger_lines"]
+        restored = report_from_json(json.dumps(payload))
+        self.assertEqual(restored.ledger_lines, [])
 
     def test_load_stored_reconcile_report_returns_none_when_missing(self):
         session = MagicMock()

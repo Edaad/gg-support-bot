@@ -4,6 +4,7 @@ import {
   type AuditReconcilePlayerResult,
   type AuditReconcileReport,
   type EarlyRakebackSyncReport,
+  type LedgerLine,
   type TradeRecordUploadReport,
 } from '../api/auditClient'
 import { ROUND_TABLE_TRADE_SLUGS } from '../config/clubMap'
@@ -12,6 +13,36 @@ import KpiStat from './KpiStat'
 const MATCH_TOLERANCE_USD = 2
 
 type PlayerFilter = 'all' | 'match' | 'mismatch' | 'trade_only' | 'ledger_only'
+
+const DEPOSIT_METHOD_ORDER = [
+  'deposit_stripe',
+  'deposit_zelle',
+  'deposit_venmo',
+  'deposit_cashapp',
+  'deposit_paypal',
+  'deposit_crypto',
+] as const
+
+const DEPOSIT_METHOD_LABELS: Record<string, string> = {
+  deposit_stripe: 'Stripe',
+  deposit_zelle: 'Zelle',
+  deposit_venmo: 'Venmo',
+  deposit_cashapp: 'Cash App',
+  deposit_paypal: 'PayPal',
+  deposit_crypto: 'Crypto',
+}
+
+function fmtOccurredAt(value: string | null): string {
+  if (!value) return '—'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return value
+  return d.toLocaleString()
+}
+
+function ledgerReference(line: LedgerLine): string {
+  const parts = [line.external_id, line.detail].filter(Boolean)
+  return parts.join(' — ') || '—'
+}
 
 type Props = {
   token: string
@@ -89,11 +120,15 @@ export default function AuditReconcilePanel({
   const searchId = useId()
   const unmatchedTradePanelId = useId()
   const unmatchedLedgerPanelId = useId()
+  const netLedgerPanelId = useId()
+  const depositsPanelId = useId()
 
   const [playerFilter, setPlayerFilter] = useState<PlayerFilter>('all')
   const [playerSearch, setPlayerSearch] = useState('')
   const [showUnmatchedTrade, setShowUnmatchedTrade] = useState(true)
   const [showUnmatchedLedger, setShowUnmatchedLedger] = useState(true)
+  const [showNetLedger, setShowNetLedger] = useState(false)
+  const [showDeposits, setShowDeposits] = useState(false)
   const [exportingReconcile, setExportingReconcile] = useState(false)
   const [reconcileExportErr, setReconcileExportErr] = useState('')
 
@@ -119,6 +154,34 @@ export default function AuditReconcilePanel({
     })
     return rows
   }, [playerFilter, playerSearch, reconcile])
+
+  const ledgerLines = reconcile?.ledger_lines ?? []
+
+  const sortedLedgerLines = useMemo(() => {
+    return [...ledgerLines].sort((a, b) => {
+      const aUnmatched = a.gg_player_id ? 0 : 1
+      const bUnmatched = b.gg_player_id ? 0 : 1
+      if (aUnmatched !== bUnmatched) return aUnmatched - bUnmatched
+      const aId = a.gg_player_id ?? ''
+      const bId = b.gg_player_id ?? ''
+      if (aId !== bId) return aId.localeCompare(bId)
+      return a.source.localeCompare(b.source)
+    })
+  }, [ledgerLines])
+
+  const depositLinesByMethod = useMemo(() => {
+    const byMethod = new Map<string, LedgerLine[]>()
+    for (const method of DEPOSIT_METHOD_ORDER) {
+      byMethod.set(method, [])
+    }
+    for (const line of ledgerLines) {
+      if (!line.source.startsWith('deposit_')) continue
+      const bucket = byMethod.get(line.source) ?? []
+      bucket.push(line)
+      byMethod.set(line.source, bucket)
+    }
+    return byMethod
+  }, [ledgerLines])
 
   const filterButtons: { id: PlayerFilter; label: string }[] = [
     { id: 'all', label: 'All' },
@@ -278,7 +341,6 @@ export default function AuditReconcilePanel({
                       <th scope="col" className="px-2 py-2 font-medium text-right">Early RB</th>
                       <th scope="col" className="px-2 py-2 font-medium text-right">Bonuses</th>
                       <th scope="col" className="px-2 py-2 font-medium text-right">RB settlement (Monday)</th>
-                      <th scope="col" className="px-2 py-2 font-medium text-right">Glide</th>
                       <th scope="col" className="px-2 py-2 font-medium text-right">Cashouts</th>
                       <th scope="col" className="px-2 py-2 font-medium text-right">Net ledger</th>
                       <th scope="col" className="px-2 py-2 font-medium text-right">Net trade</th>
@@ -289,7 +351,7 @@ export default function AuditReconcilePanel({
                   <tbody>
                     {filteredPlayers.length === 0 ? (
                       <tr>
-                        <td colSpan={12} className="px-2 py-6 text-center text-ink-muted">
+                        <td colSpan={11} className="px-2 py-6 text-center text-ink-muted">
                           No players match this filter.
                         </td>
                       </tr>
@@ -314,7 +376,6 @@ export default function AuditReconcilePanel({
                             <td className="table-num px-2 py-2">${fmtMoney(bd.early_rb)}</td>
                             <td className="table-num px-2 py-2">${fmtMoney(bd.bonuses)}</td>
                             <td className="table-num px-2 py-2">${fmtMoney(bd.monday)}</td>
-                            <td className="table-num px-2 py-2">${fmtMoney(bd.glide)}</td>
                             <td className="table-num px-2 py-2">${fmtMoney(bd.cashouts)}</td>
                             <td className="table-num px-2 py-2">${fmtMoney(p.net_ledger)}</td>
                             <td className="table-num px-2 py-2">${fmtMoney(p.net_trade_record)}</td>
@@ -333,6 +394,121 @@ export default function AuditReconcilePanel({
                   </tbody>
                 </table>
               </div>
+            </div>
+          ) : null}
+
+          {ledgerLines.length > 0 ? (
+            <div className="rounded-md border border-border bg-surface-raised p-3">
+              <button
+                type="button"
+                aria-expanded={showNetLedger}
+                aria-controls={netLedgerPanelId}
+                onClick={() => setShowNetLedger((v) => !v)}
+                className="mb-2 text-sm font-medium text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
+              >
+                Net ledger ({ledgerLines.length}){' '}
+                <span aria-hidden>{showNetLedger ? '▾' : '▸'}</span>
+              </button>
+              {showNetLedger ? (
+                <div id={netLedgerPanelId} className="table-scroll">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-ink-muted">
+                        <th scope="col" className="px-2 py-1 font-medium">Source</th>
+                        <th scope="col" className="px-2 py-1 font-medium">Player ID</th>
+                        <th scope="col" className="px-2 py-1 font-medium">Nickname</th>
+                        <th scope="col" className="px-2 py-1 font-medium text-right">Amount</th>
+                        <th scope="col" className="px-2 py-1 font-medium">Time</th>
+                        <th scope="col" className="px-2 py-1 font-medium">Reference</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedLedgerLines.map((line) => (
+                        <tr
+                          key={`${line.source}-${line.external_id}`}
+                          className="table-row-hover"
+                        >
+                          <td className="px-2 py-1">{line.source_label}</td>
+                          <td className="px-2 py-1 font-mono text-xs">
+                            {line.gg_player_id ?? '—'}
+                          </td>
+                          <td className="px-2 py-1">{line.member_nickname ?? '—'}</td>
+                          <td className="table-num px-2 py-1">
+                            ${fmtMoney(line.amount_signed)}
+                          </td>
+                          <td className="px-2 py-1">{fmtOccurredAt(line.occurred_at)}</td>
+                          <td className="max-w-[16rem] truncate px-2 py-1" title={ledgerReference(line)}>
+                            {ledgerReference(line)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {ledgerLines.some((line) => line.source.startsWith('deposit_')) ? (
+            <div className="rounded-md border border-border bg-surface-raised p-3">
+              <button
+                type="button"
+                aria-expanded={showDeposits}
+                aria-controls={depositsPanelId}
+                onClick={() => setShowDeposits((v) => !v)}
+                className="mb-2 text-sm font-medium text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
+              >
+                Deposits by method{' '}
+                <span aria-hidden>{showDeposits ? '▾' : '▸'}</span>
+              </button>
+              {showDeposits ? (
+                <div id={depositsPanelId} className="space-y-4">
+                  {DEPOSIT_METHOD_ORDER.map((method) => {
+                    const methodLines = depositLinesByMethod.get(method) ?? []
+                    if (methodLines.length === 0) return null
+                    return (
+                      <div key={method}>
+                        <p className="mb-1 text-sm font-semibold text-ink">
+                          {DEPOSIT_METHOD_LABELS[method] ?? method}
+                        </p>
+                        <div className="table-scroll">
+                          <table className="min-w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-ink-muted">
+                                <th scope="col" className="px-2 py-1 font-medium">Player ID</th>
+                                <th scope="col" className="px-2 py-1 font-medium">Nickname</th>
+                                <th scope="col" className="px-2 py-1 font-medium text-right">Amount</th>
+                                <th scope="col" className="px-2 py-1 font-medium">Group / detail</th>
+                                <th scope="col" className="px-2 py-1 font-medium">Time</th>
+                                <th scope="col" className="px-2 py-1 font-medium">Reference</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {methodLines.map((line) => (
+                                <tr
+                                  key={`${method}-${line.external_id}`}
+                                  className="table-row-hover"
+                                >
+                                  <td className="px-2 py-1 font-mono text-xs">
+                                    {line.gg_player_id ?? '—'}
+                                  </td>
+                                  <td className="px-2 py-1">{line.member_nickname ?? '—'}</td>
+                                  <td className="table-num px-2 py-1">
+                                    ${fmtMoney(line.amount_signed)}
+                                  </td>
+                                  <td className="px-2 py-1">{line.detail ?? '—'}</td>
+                                  <td className="px-2 py-1">{fmtOccurredAt(line.occurred_at)}</td>
+                                  <td className="px-2 py-1 font-mono text-xs">{line.external_id}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : null}
             </div>
           ) : null}
 

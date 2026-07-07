@@ -20,6 +20,14 @@ from db.models import (
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_group_title(group_title: object | None) -> str | None:
+    if not isinstance(group_title, str):
+        return None
+    cleaned = group_title.strip()
+    return cleaned or None
+
+
 _PAYMENT_MODELS = {
     "venmo": VenmoPayment,
     "zelle": ZellePayment,
@@ -64,13 +72,18 @@ def record_auto_deposit_event(
     payment_at: datetime | None = None,
 ) -> None:
     """Upsert one auto-deposit analytics row (idempotent per payment)."""
-    title = (group_title or "").strip() or None
+    title = _normalize_group_title(group_title)
     gg_player_id = gg_player_id_from_title(title) if title else None
-    club_enabled = (
-        bool(get_auto_deposit_on_payment_enabled(int(club_id)))
-        if club_id is not None
-        else False
-    )
+    club_enabled = False
+    if club_id is not None:
+        try:
+            club_enabled = bool(get_auto_deposit_on_payment_enabled(int(club_id)))
+        except Exception:
+            logger.debug(
+                "record_auto_deposit_event: could not read club toggle club_id=%s",
+                club_id,
+                exc_info=True,
+            )
     occurred_at = payment_at
     if occurred_at is None:
         occurred_at = _payment_at_for(payment_method_slug, payment_id)

@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import io
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.worksheet import Worksheet
 
+from api.audit_ledger import (
+    DEPOSIT_METHOD_ORDER,
+    LEDGER_SOURCE_LABELS,
+    LedgerLine,
+)
 from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport
+from api.club_audit_timezone import zone_for_slug
 
 _HEADER_FILL = PatternFill("solid", fgColor="38761D")
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
@@ -30,18 +37,35 @@ DETAIL_HEADERS = [
     "Early RB",
     "Bonuses",
     "RB settlement (Monday)",
-    "Glide",
     "Cashouts",
     "Net Trade Record",
     "Net Ledger",
     "Delta",
 ]
 
+NET_LEDGER_HEADERS = [
+    "Player ID",
+    "Nickname",
+    "Source",
+    "Amount",
+    "Time",
+    "Reference",
+]
+
+DEPOSIT_HEADERS = [
+    "Player ID",
+    "Nickname",
+    "Amount",
+    "Group / detail",
+    "Time",
+    "Reference",
+]
+
 OVERVIEW_CURRENCY_COLS = (3, 4)
-DETAIL_CURRENCY_COLS = (3, 4, 5, 6, 7, 8, 9, 10, 11)
+DETAIL_CURRENCY_COLS = (3, 4, 5, 6, 7, 8, 9, 10)
 
 OVERVIEW_WIDTHS = [22, 16, 18, 18]
-DETAIL_WIDTHS = [22, 16, 14, 14, 14, 22, 14, 14, 18, 18, 14]
+DETAIL_WIDTHS = [22, 16, 14, 14, 14, 22, 14, 18, 18, 14]
 
 
 def _decimal_cell(value: Decimal) -> float:
@@ -93,6 +117,60 @@ def _set_column_widths(ws: Worksheet, widths: list[int]) -> None:
         ws.column_dimensions[letter].width = width
 
 
+def _format_time(club_slug: str, occurred_at: datetime | None) -> str:
+    if occurred_at is None:
+        return ""
+    dt = occurred_at
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    local = dt.astimezone(zone_for_slug(club_slug))
+    return local.strftime("%Y-%m-%d %H:%M")
+
+
+def _reference_text(line: LedgerLine) -> str:
+    parts: list[str] = []
+    if line.external_id:
+        parts.append(line.external_id)
+    if line.detail:
+        parts.append(line.detail)
+    return " — ".join(parts)
+
+
+def deposit_lines_by_method(
+    lines: list[LedgerLine],
+) -> dict[str, list[LedgerLine]]:
+    by_method: dict[str, list[LedgerLine]] = {m: [] for m in DEPOSIT_METHOD_ORDER}
+    for line in lines:
+        if line.source.startswith("deposit_"):
+            by_method.setdefault(line.source, []).append(line)
+    return by_method
+
+
+def _sort_net_ledger_lines(lines: list[LedgerLine]) -> list[LedgerLine]:
+    def sort_key(line: LedgerLine) -> tuple:
+        unmatched = 0 if line.gg_player_id else 1
+        return (
+            unmatched,
+            line.gg_player_id or "",
+            line.source,
+            line.occurred_at_utc or datetime.min,
+        )
+
+    return sorted(lines, key=sort_key)
+
+
+def _sort_deposit_lines(lines: list[LedgerLine]) -> list[LedgerLine]:
+    return sorted(
+        lines,
+        key=lambda line: (
+            line.occurred_at_utc or datetime.min,
+            line.gg_player_id or "",
+        ),
+    )
+
+
 def _overview_row(player: AuditReconcilePlayerResult) -> list[str | float]:
     return [
         player.member_nickname or "",
@@ -111,7 +189,6 @@ def _detail_row(player: AuditReconcilePlayerResult) -> list[str | float]:
         _decimal_cell(bd.early_rb),
         _decimal_cell(bd.bonuses),
         _decimal_cell(bd.monday),
-        _decimal_cell(bd.glide),
         _decimal_cell(bd.cashouts),
         _decimal_cell(player.net_trade_record),
         _decimal_cell(player.net_ledger),
@@ -149,6 +226,66 @@ def _write_player_sections(
             _format_currency_cells(ws, data_start, row - 1, currency_cols)
 
 
+def _write_net_ledger_sheet(
+    ws: Worksheet,
+    report: AuditReconcileReport,
+) -> None:
+    _style_header_row(ws, 1, NET_LEDGER_HEADERS)
+    row_idx = 2
+    for line in _sort_net_ledger_lines(report.ledger_lines):
+        ws.cell(row=row_idx, column=1, value=line.gg_player_id or "")
+        ws.cell(row=row_idx, column=2, value=line.member_nickname or "")
+        ws.cell(row=row_idx, column=3, value=line.source_label)
+        cell = ws.cell(
+            row=row_idx,
+            column=4,
+            value=_decimal_cell(line.amount_signed),
+        )
+        cell.number_format = _CURRENCY_FORMAT
+        ws.cell(
+            row=row_idx,
+            column=5,
+            value=_format_time(report.club_slug, line.occurred_at_utc),
+        )
+        ws.cell(row=row_idx, column=6, value=_reference_text(line))
+        row_idx += 1
+
+
+def _write_deposits_sheet(
+    ws: Worksheet,
+    report: AuditReconcileReport,
+) -> None:
+    by_method = deposit_lines_by_method(report.ledger_lines)
+    row_idx = 1
+    for method in DEPOSIT_METHOD_ORDER:
+        method_lines = _sort_deposit_lines(by_method.get(method, []))
+        if not method_lines:
+            continue
+        label = LEDGER_SOURCE_LABELS.get(method, method)
+        ws.cell(row=row_idx, column=1, value=label).font = _SECTION_FONT
+        row_idx += 1
+        _style_header_row(ws, row_idx, DEPOSIT_HEADERS)
+        row_idx += 1
+        for line in method_lines:
+            ws.cell(row=row_idx, column=1, value=line.gg_player_id or "")
+            ws.cell(row=row_idx, column=2, value=line.member_nickname or "")
+            cell = ws.cell(
+                row=row_idx,
+                column=3,
+                value=_decimal_cell(line.amount_signed),
+            )
+            cell.number_format = _CURRENCY_FORMAT
+            ws.cell(row=row_idx, column=4, value=line.detail or "")
+            ws.cell(
+                row=row_idx,
+                column=5,
+                value=_format_time(report.club_slug, line.occurred_at_utc),
+            )
+            ws.cell(row=row_idx, column=6, value=line.external_id)
+            row_idx += 1
+        row_idx += 1
+
+
 def build_reconcile_workbook_from_report(report: AuditReconcileReport) -> bytes:
     matched, mismatched = _partition_players(report.players)
 
@@ -156,6 +293,8 @@ def build_reconcile_workbook_from_report(report: AuditReconcileReport) -> bytes:
     overview = wb.active
     overview.title = "Overview"
     details = wb.create_sheet("Details")
+    net_ledger = wb.create_sheet("Net Ledger")
+    deposits = wb.create_sheet("Deposits")
 
     _write_player_sections(
         overview,
@@ -173,6 +312,8 @@ def build_reconcile_workbook_from_report(report: AuditReconcileReport) -> bytes:
         matched=matched,
         mismatched=mismatched,
     )
+    _write_net_ledger_sheet(net_ledger, report)
+    _write_deposits_sheet(deposits, report)
 
     _set_column_widths(overview, OVERVIEW_WIDTHS)
     _set_column_widths(details, DETAIL_WIDTHS)

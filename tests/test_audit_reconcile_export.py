@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import io
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from openpyxl import load_workbook
 
-from api.audit_ledger import LedgerBreakdown
+from api.audit_ledger import LedgerBreakdown, LedgerLine
 from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport
 from api.audit_reconcile_export import (
     DETAIL_HEADERS,
@@ -38,7 +38,6 @@ def _player(
             early_rb=Decimal("0"),
             bonuses=Decimal("0"),
             monday=Decimal("0"),
-            glide=Decimal("0"),
             cashouts=Decimal("0"),
         ),
         status=status,
@@ -46,7 +45,8 @@ def _player(
 
 
 class ReconcileExportTestCase(unittest.TestCase):
-    def test_workbook_has_overview_and_details_tabs(self):
+    def test_workbook_has_four_tabs_without_glide(self):
+        occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
         report = AuditReconcileReport(
             audit_date=date(2026, 7, 3),
             club_slug="aces-table",
@@ -70,10 +70,42 @@ class ReconcileExportTestCase(unittest.TestCase):
                     status="mismatch",
                 ),
             ],
+            ledger_lines=[
+                LedgerLine(
+                    gg_player_id="3011-9668",
+                    member_nickname="AcePlayer",
+                    source="deposit_stripe",
+                    source_label="Stripe",
+                    amount_signed=Decimal("-100"),
+                    occurred_at_utc=occurred,
+                    external_id="deposit_stripe:1",
+                    detail=None,
+                ),
+                LedgerLine(
+                    gg_player_id="3011-9668",
+                    member_nickname="AcePlayer",
+                    source="cashout",
+                    source_label="Cashout",
+                    amount_signed=Decimal("40"),
+                    occurred_at_utc=occurred,
+                    external_id="cashout:1",
+                    detail=None,
+                ),
+                LedgerLine(
+                    gg_player_id=None,
+                    member_nickname=None,
+                    source="deposit_zelle",
+                    source_label="Zelle",
+                    amount_signed=Decimal("-25"),
+                    occurred_at_utc=occurred,
+                    external_id="deposit_zelle:2",
+                    detail="Unknown group",
+                ),
+            ],
         )
 
         wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
-        self.assertEqual(wb.sheetnames, ["Overview", "Details"])
+        self.assertEqual(wb.sheetnames, ["Overview", "Details", "Net Ledger", "Deposits"])
 
         overview = wb["Overview"]
         self.assertEqual(overview["A1"].value, "Matched")
@@ -93,11 +125,22 @@ class ReconcileExportTestCase(unittest.TestCase):
         details = wb["Details"]
         self.assertEqual(details["A1"].value, "Matched")
         self.assertEqual(
-            [details.cell(row=2, column=c).value for c in range(1, 12)],
+            [details.cell(row=2, column=c).value for c in range(1, 11)],
             DETAIL_HEADERS,
         )
+        self.assertNotIn("Glide", DETAIL_HEADERS)
         self.assertEqual(details["A5"].value, "Mismatched")
-        self.assertEqual(details["K7"].value, 10.0)
+        self.assertEqual(details["J7"].value, 10.0)
+
+        net_ledger = wb["Net Ledger"]
+        self.assertEqual(net_ledger["C2"].value, "Cashout")
+        self.assertEqual(net_ledger["C3"].value, "Stripe")
+        self.assertEqual(net_ledger["D2"].value, 40.0)
+
+        deposits = wb["Deposits"]
+        self.assertEqual(deposits["A1"].value, "Stripe")
+        self.assertEqual(deposits["A5"].value, "Zelle")
+        self.assertEqual(deposits["A7"].value, None)
 
 
 if __name__ == "__main__":

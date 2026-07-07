@@ -56,8 +56,29 @@ LedgerSource = Literal[
     "bonus",
     "cashout",
     "monday_settlement",
-    "glide",
 ]
+
+LEDGER_SOURCE_LABELS: dict[str, str] = {
+    "deposit_stripe": "Stripe",
+    "deposit_zelle": "Zelle",
+    "deposit_venmo": "Venmo",
+    "deposit_cashapp": "Cash App",
+    "deposit_paypal": "PayPal",
+    "deposit_crypto": "Crypto",
+    "early_rakeback": "Early RB",
+    "bonus": "Bonus",
+    "monday_settlement": "RB settlement (Monday)",
+    "cashout": "Cashout",
+}
+
+DEPOSIT_METHOD_ORDER: tuple[str, ...] = (
+    "deposit_stripe",
+    "deposit_zelle",
+    "deposit_venmo",
+    "deposit_cashapp",
+    "deposit_paypal",
+    "deposit_crypto",
+)
 
 
 @dataclass(frozen=True)
@@ -76,7 +97,6 @@ class LedgerBreakdown:
     early_rb: Decimal = Decimal(0)
     bonuses: Decimal = Decimal(0)
     monday: Decimal = Decimal(0)
-    glide: Decimal = Decimal(0)
     cashouts: Decimal = Decimal(0)
 
     @property
@@ -86,9 +106,20 @@ class LedgerBreakdown:
             + self.early_rb
             + self.bonuses
             + self.monday
-            + self.glide
             + self.cashouts
         )
+
+
+@dataclass(frozen=True)
+class LedgerLine:
+    gg_player_id: str | None
+    member_nickname: str | None
+    source: str
+    source_label: str
+    amount_signed: Decimal
+    occurred_at_utc: datetime | None
+    external_id: str
+    detail: str | None = None
 
 
 def _club_outflow_usd(amount: Decimal) -> Decimal:
@@ -99,6 +130,45 @@ def _club_outflow_usd(amount: Decimal) -> Decimal:
 def _club_inflow_usd(amount: Decimal) -> Decimal:
     """Player-to-club inflow (cashout) as a positive reconcile amount."""
     return abs(amount)
+
+
+def ledger_source_label(source: str) -> str:
+    return LEDGER_SOURCE_LABELS.get(source, source.replace("_", " ").title())
+
+
+def signed_reconcile_amount(source: str, amount_usd: Decimal) -> Decimal:
+    if source == "cashout":
+        return _club_inflow_usd(amount_usd)
+    if source.startswith("deposit_") or source in (
+        "early_rakeback",
+        "bonus",
+        "monday_settlement",
+    ):
+        return _club_outflow_usd(amount_usd)
+    return amount_usd
+
+
+def build_ledger_lines(
+    events: list[LedgerEvent],
+    nicknames: dict[str, str | None] | None = None,
+) -> list[LedgerLine]:
+    nickname_map = nicknames or {}
+    lines: list[LedgerLine] = []
+    for event in events:
+        gid = (event.gg_player_id or "").strip() or None
+        lines.append(
+            LedgerLine(
+                gg_player_id=gid,
+                member_nickname=nickname_map.get(gid) if gid else None,
+                source=event.source,
+                source_label=ledger_source_label(event.source),
+                amount_signed=signed_reconcile_amount(event.source, event.amount_usd),
+                occurred_at_utc=event.occurred_at_utc,
+                external_id=event.external_id,
+                detail=event.detail,
+            )
+        )
+    return lines
 
 
 def slug_for_payment_club(
@@ -482,32 +552,29 @@ def aggregate_ledger_by_player(
             continue
         pid = event.gg_player_id
         current = by_player.get(pid, LedgerBreakdown())
-        amount = event.amount_usd
+        signed = signed_reconcile_amount(event.source, event.amount_usd)
         if event.source.startswith("deposit_"):
             current = LedgerBreakdown(
-                deposits=current.deposits + _club_outflow_usd(amount),
+                deposits=current.deposits + signed,
                 early_rb=current.early_rb,
                 bonuses=current.bonuses,
                 monday=current.monday,
-                glide=current.glide,
                 cashouts=current.cashouts,
             )
         elif event.source == "early_rakeback":
             current = LedgerBreakdown(
                 deposits=current.deposits,
-                early_rb=current.early_rb + _club_outflow_usd(amount),
+                early_rb=current.early_rb + signed,
                 bonuses=current.bonuses,
                 monday=current.monday,
-                glide=current.glide,
                 cashouts=current.cashouts,
             )
         elif event.source == "bonus":
             current = LedgerBreakdown(
                 deposits=current.deposits,
                 early_rb=current.early_rb,
-                bonuses=current.bonuses + _club_outflow_usd(amount),
+                bonuses=current.bonuses + signed,
                 monday=current.monday,
-                glide=current.glide,
                 cashouts=current.cashouts,
             )
         elif event.source == "monday_settlement":
@@ -515,18 +582,7 @@ def aggregate_ledger_by_player(
                 deposits=current.deposits,
                 early_rb=current.early_rb,
                 bonuses=current.bonuses,
-                monday=current.monday + _club_outflow_usd(amount),
-                glide=current.glide,
-                cashouts=current.cashouts,
-            )
-        elif event.source == "glide":
-            signed = amount
-            current = LedgerBreakdown(
-                deposits=current.deposits,
-                early_rb=current.early_rb,
-                bonuses=current.bonuses,
-                monday=current.monday,
-                glide=current.glide + signed,
+                monday=current.monday + signed,
                 cashouts=current.cashouts,
             )
         elif event.source == "cashout":
@@ -535,9 +591,10 @@ def aggregate_ledger_by_player(
                 early_rb=current.early_rb,
                 bonuses=current.bonuses,
                 monday=current.monday,
-                glide=current.glide,
-                cashouts=current.cashouts + _club_inflow_usd(amount),
+                cashouts=current.cashouts + signed,
             )
+        else:
+            continue
         by_player[pid] = current
 
     return by_player, unmatched

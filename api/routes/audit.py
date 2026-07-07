@@ -91,7 +91,6 @@ def _report_to_schema(report: AuditReconcileReport) -> AuditReconcileReportSchem
                     "early_rb": str(p.ledger_breakdown.early_rb),
                     "bonuses": str(p.ledger_breakdown.bonuses),
                     "monday": str(p.ledger_breakdown.monday),
-                    "glide": str(p.ledger_breakdown.glide),
                     "cashouts": str(p.ledger_breakdown.cashouts),
                 },
                 "status": p.status,
@@ -115,6 +114,21 @@ def _report_to_schema(report: AuditReconcileReport) -> AuditReconcileReportSchem
                 "detail": u.detail,
             }
             for u in report.unmatched_ledger
+        ],
+        ledger_lines=[
+            {
+                "gg_player_id": line.gg_player_id,
+                "member_nickname": line.member_nickname,
+                "source": line.source,
+                "source_label": line.source_label,
+                "amount_signed": str(line.amount_signed),
+                "occurred_at": line.occurred_at_utc.isoformat()
+                if line.occurred_at_utc
+                else None,
+                "external_id": line.external_id,
+                "detail": line.detail,
+            }
+            for line in report.ledger_lines
         ],
         warnings=report.warnings,
         blocked_reason=report.blocked_reason,
