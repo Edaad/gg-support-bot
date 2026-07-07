@@ -214,12 +214,14 @@ def _fetch_manual_deposit_events(
             continue
         gg_id = (data.get("gg_player_id") or "").strip() or None
         if not gg_id:
-            _, resolved = resolve_group_title(
-                session,
-                data.get("telegram_chat_id"),
-                fallback_gg_player_id=None,
-            )
-            gg_id = (resolved or "").strip() or None
+            chat_id = data.get("telegram_chat_id")
+            if chat_id is not None:
+                _, resolved = resolve_group_title(
+                    session,
+                    chat_id,
+                    fallback_gg_player_id=None,
+                )
+                gg_id = (resolved or "").strip() or None
         amount = data.get("amount_usd")
         amount_usd = Decimal(str(amount)) if amount is not None else Decimal(0)
         out.append(
@@ -274,11 +276,15 @@ def fetch_deposit_events(
         ):
             continue
         cust = customer_by_stripe_id.get(row.stripe_customer_id)
-        _, gg_id = resolve_group_title(
-            session,
-            row.telegram_chat_id,
-            fallback_gg_player_id=cust.gg_player_id if cust else None,
-        )
+        fallback_gg = cust.gg_player_id if cust else None
+        if row.telegram_chat_id is not None:
+            _, gg_id = resolve_group_title(
+                session,
+                row.telegram_chat_id,
+                fallback_gg_player_id=fallback_gg,
+            )
+        else:
+            gg_id = fallback_gg
         events.append(
             LedgerEvent(
                 source="deposit_stripe",
