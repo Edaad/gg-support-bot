@@ -18,6 +18,17 @@ const SOURCE_FILTER_OPTIONS: { value: BoundViaFilter; label: string }[] = [
   { value: 'test', label: 'Test' },
 ]
 
+const ANALYTICS_SECTIONS = [
+  { id: 'gc_binding', label: 'GC binding' },
+  { id: 'full_auto_deposit', label: 'Full auto deposit' },
+] as const
+
+type AnalyticsSection = (typeof ANALYTICS_SECTIONS)[number]['id']
+
+function analyticsSectionTabId(section: AnalyticsSection): string {
+  return `analytics-section-${section}`
+}
+
 export default function Analytics({ token }: { token: string }) {
   const clubSelectId = useId()
   const methodSelectId = useId()
@@ -36,6 +47,7 @@ export default function Analytics({ token }: { token: string }) {
   const [appliedClubId, setAppliedClubId] = useState<number | 'all'>('all')
   const [appliedFrom, setAppliedFrom] = useState('')
   const [appliedTo, setAppliedTo] = useState('')
+  const [section, setSection] = useState<AnalyticsSection>('gc_binding')
   const [err, setErr] = useState('')
 
   useEffect(() => {
@@ -75,7 +87,7 @@ export default function Analytics({ token }: { token: string }) {
   const filtersDirty =
     method !== appliedMethod ||
     clubId !== appliedClubId ||
-    sourceFilter !== appliedSource ||
+    (section === 'gc_binding' && sourceFilter !== appliedSource) ||
     fromDate !== appliedFrom ||
     toDate !== appliedTo
 
@@ -85,7 +97,30 @@ export default function Analytics({ token }: { token: string }) {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-ink text-balance">Analytics</h1>
+      <h1 className="mb-4 text-2xl font-bold text-ink text-balance">Analytics</h1>
+
+      <div
+        role="tablist"
+        aria-label="Analytics sections"
+        className="mb-6 flex gap-1 overflow-x-auto rounded-lg bg-surface p-1"
+      >
+        {ANALYTICS_SECTIONS.map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            role="tab"
+            id={analyticsSectionTabId(opt.id)}
+            aria-selected={section === opt.id}
+            aria-controls="analytics-section-panel"
+            onClick={() => setSection(opt.id)}
+            className={`shrink-0 rounded-md px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+              section === opt.id ? 'bg-surface-raised text-ink' : 'text-ink-muted hover:text-ink'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
 
       <form
         className="mb-6 flex flex-wrap items-end gap-4"
@@ -134,23 +169,25 @@ export default function Analytics({ token }: { token: string }) {
           </select>
         </div>
 
-        <div>
-          <label htmlFor={sourceSelectId} className="label-field-xs">
-            Linking source
-          </label>
-          <select
-            id={sourceSelectId}
-            className="input-field-sm min-w-[12rem]"
-            value={sourceFilter}
-            onChange={(e) => setSourceFilter(e.target.value as BoundViaFilter)}
-          >
-            {SOURCE_FILTER_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        {section === 'gc_binding' && (
+          <div>
+            <label htmlFor={sourceSelectId} className="label-field-xs">
+              Linking source
+            </label>
+            <select
+              id={sourceSelectId}
+              className="input-field-sm min-w-[12rem]"
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value as BoundViaFilter)}
+            >
+              {SOURCE_FILTER_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div>
           <label htmlFor={fromDateId} className="label-field-xs">
@@ -195,24 +232,31 @@ export default function Analytics({ token }: { token: string }) {
         </p>
       )}
 
-      <div className={`panel transition-opacity ${filtersDirty ? 'opacity-80' : ''}`}>
-        <PaymentMethodLinkingAnalytics
-          token={token}
-          method={appliedMethod as LinkingMethodSlug}
-          excludeTestChats
-          embedded
-          filters={appliedFilters}
-          onError={handleLinkingError}
-        />
-        <AutoDepositAnalytics
-          token={token}
-          method={appliedMethod}
-          excludeTestChats
-          embedded
-          dividerTop
-          filters={appliedAutoDepositFilters}
-          onError={handleLinkingError}
-        />
+      <div
+        id="analytics-section-panel"
+        role="tabpanel"
+        aria-labelledby={analyticsSectionTabId(section)}
+        className={`panel transition-opacity ${filtersDirty ? 'opacity-80' : ''}`}
+      >
+        {section === 'gc_binding' ? (
+          <PaymentMethodLinkingAnalytics
+            token={token}
+            method={appliedMethod as LinkingMethodSlug}
+            excludeTestChats
+            embedded
+            filters={appliedFilters}
+            onError={handleLinkingError}
+          />
+        ) : (
+          <AutoDepositAnalytics
+            token={token}
+            method={appliedMethod}
+            excludeTestChats
+            embedded
+            filters={appliedAutoDepositFilters}
+            onError={handleLinkingError}
+          />
+        )}
       </div>
     </div>
   )
