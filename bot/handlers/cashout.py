@@ -36,11 +36,12 @@ from bot.services.club import (
 from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
 from bot.handlers.flow_staleness import (
     AMOUNT_TEXT,
-    answer_stale_callback,
     cashout_amount_actor_allowed,
     is_update_too_old,
     log_stale_update,
     looks_like_amount,
+    reject_stale_flow_callback,
+    track_flow_callback_message,
 )
 from bot.handlers.response_utils import send_response_messages
 
@@ -319,13 +320,15 @@ async def _show_method_keyboard(update, context, first_pick=False):
         text = "Select another cashout method, or tap Done to submit:"
 
     if first_pick and update.message:
-        await update.message.reply_text(
+        sent = await update.message.reply_text(
             text, reply_markup=InlineKeyboardMarkup(buttons)
         )
+        track_flow_callback_message(context, "cashout", sent.message_id)
     elif update.callback_query:
-        await update.callback_query.message.chat.send_message(
+        sent = await update.callback_query.message.chat.send_message(
             text, reply_markup=InlineKeyboardMarkup(buttons)
         )
+        track_flow_callback_message(context, "cashout", sent.message_id)
     return CASHOUT_CHOOSE
 
 
@@ -333,10 +336,12 @@ async def cashout_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     if not update.callback_query:
         return ConversationHandler.END
     query = update.callback_query
-    if is_update_too_old(update):
-        log_stale_update(update, handler="cashout_method_chosen")
-        await answer_stale_callback(update, context, flow_command="/cashout")
-        _cleanup(context)
+    stale = await reject_stale_flow_callback(
+        update, context, handler="cashout_method_chosen", flow="cashout"
+    )
+    if stale:
+        if stale == "expired":
+            _cleanup(context)
         return ConversationHandler.END
     await query.answer()
 
@@ -404,10 +409,12 @@ async def cashout_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not update.callback_query:
         return ConversationHandler.END
     query = update.callback_query
-    if is_update_too_old(update):
-        log_stale_update(update, handler="cashout_sub_chosen")
-        await answer_stale_callback(update, context, flow_command="/cashout")
-        _cleanup(context)
+    stale = await reject_stale_flow_callback(
+        update, context, handler="cashout_sub_chosen", flow="cashout"
+    )
+    if stale:
+        if stale == "expired":
+            _cleanup(context)
         return ConversationHandler.END
     await query.answer()
 
@@ -508,6 +515,7 @@ def _cleanup(context):
         "cashout_simple_data",
         "cashout_admin_initiated",
         "cashout_admin_user_id",
+        "cashout_callback_message_ids",
     ):
         context.chat_data.pop(key, None)
 

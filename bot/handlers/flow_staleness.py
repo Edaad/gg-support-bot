@@ -7,6 +7,7 @@ import os
 import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from typing import Literal
 
 from telegram import Update
 from telegram.ext import ContextTypes, filters
@@ -16,9 +17,33 @@ from config import ADMIN_USER_IDS
 logger = logging.getLogger(__name__)
 
 _STALE_CALLBACK_ALERT = "This session expired — use {flow_command} again."
+_ORPHAN_CALLBACK_ALERT = (
+    "That button is from an earlier {flow_label} — use the latest message or "
+    "run {flow_command} again."
+)
 
 _DEFAULT_MAX_AGE_SECONDS = 60
 _NON_AMOUNT_TEXT_RE = re.compile(r"[a-zA-Z]")
+
+FlowKind = Literal["deposit", "cashout"]
+FlowCallbackStaleness = Literal["fresh", "orphaned", "expired"]
+
+_FLOW_AMOUNT_KEY = {
+    "deposit": "deposit_amount",
+    "cashout": "cashout_amount",
+}
+_FLOW_CALLBACK_IDS_KEY = {
+    "deposit": "deposit_callback_message_ids",
+    "cashout": "cashout_callback_message_ids",
+}
+_FLOW_COMMAND = {
+    "deposit": "/deposit",
+    "cashout": "/cashout",
+}
+_FLOW_LABEL = {
+    "deposit": "deposit",
+    "cashout": "cashout",
+}
 
 
 def update_max_age_seconds() -> int:
@@ -72,6 +97,83 @@ def log_stale_update(update: Update, *, handler: str) -> None:
         update_max_age_seconds(),
         chat_id,
     )
+
+
+def log_stale_flow_callback(
+    update: Update,
+    *,
+    handler: str,
+    flow: FlowKind,
+    kind: FlowCallbackStaleness,
+) -> None:
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    age = update_age_seconds(update)
+    logger.info(
+        "stale flow callback ignored handler=%s flow=%s kind=%s age=%ss chat_id=%s",
+        handler,
+        flow,
+        kind,
+        f"{age:.1f}" if age is not None else "?",
+        chat_id,
+    )
+
+
+def track_flow_callback_message(
+    context,
+    flow: FlowKind,
+    message_id: int | None,
+) -> None:
+    if message_id is None:
+        return
+    key = _FLOW_CALLBACK_IDS_KEY[flow]
+    ids = context.chat_data.setdefault(key, [])
+    mid = int(message_id)
+    if mid not in ids:
+        ids.append(mid)
+
+
+def clear_flow_callback_messages(context, flow: FlowKind) -> None:
+    context.chat_data.pop(_FLOW_CALLBACK_IDS_KEY[flow], None)
+
+
+def _tracked_flow_callback_message_ids(context, flow: FlowKind) -> set[int]:
+    raw = context.chat_data.get(_FLOW_CALLBACK_IDS_KEY[flow]) or []
+    return {int(mid) for mid in raw}
+
+
+def classify_flow_callback(
+    update: Update,
+    context,
+    *,
+    flow: FlowKind,
+    now: datetime | None = None,
+) -> FlowCallbackStaleness:
+    """Classify an in-flow inline button tap.
+
+    fresh — active session and callback targets the current flow UI (or no
+    tracked ids yet). Not limited by message post age.
+
+    orphaned — active session but callback is on an older inline keyboard.
+
+    expired — no active session and update is older than the deploy-backlog
+    cutoff.
+    """
+    amount_key = _FLOW_AMOUNT_KEY[flow]
+    has_session = context.chat_data.get(amount_key) is not None
+
+    query = update.callback_query
+    if query is None:
+        return "expired" if is_update_too_old(update, now=now) else "fresh"
+
+    msg_id = query.message.message_id if query.message else None
+    tracked = _tracked_flow_callback_message_ids(context, flow)
+
+    if has_session:
+        if not tracked or (msg_id is not None and msg_id in tracked):
+            return "fresh"
+        return "orphaned"
+
+    return "expired" if is_update_too_old(update, now=now) else "fresh"
 
 
 class _AmountTextFilter(filters.MessageFilter):
@@ -142,14 +244,42 @@ async def answer_stale_callback(
     _context: ContextTypes.DEFAULT_TYPE,
     *,
     flow_command: str,
+    orphaned: bool = False,
 ) -> None:
     query = update.callback_query
     if query is None:
         return
-    try:
-        await query.answer(
-            _STALE_CALLBACK_ALERT.format(flow_command=flow_command),
-            show_alert=True,
+    flow_label = flow_command.lstrip("/")
+    alert = (
+        _ORPHAN_CALLBACK_ALERT.format(
+            flow_label=flow_label,
+            flow_command=flow_command,
         )
+        if orphaned
+        else _STALE_CALLBACK_ALERT.format(flow_command=flow_command)
+    )
+    try:
+        await query.answer(alert, show_alert=True)
     except Exception:
         pass
+
+
+async def reject_stale_flow_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    handler: str,
+    flow: FlowKind,
+) -> FlowCallbackStaleness | None:
+    """If callback is stale, answer the user and return the staleness kind."""
+    kind = classify_flow_callback(update, context, flow=flow)
+    if kind == "fresh":
+        return None
+    log_stale_flow_callback(update, handler=handler, flow=flow, kind=kind)
+    await answer_stale_callback(
+        update,
+        context,
+        flow_command=_FLOW_COMMAND[flow],
+        orphaned=kind == "orphaned",
+    )
+    return kind

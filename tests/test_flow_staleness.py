@@ -254,18 +254,86 @@ class TestCashoutAmountActorGating(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.chat_data["cashout_user_id"], 8132930521)
 
 
+class TestFlowCallbackClassification(unittest.TestCase):
+    def test_active_session_accepts_old_message_age_when_tracked(self):
+        update = _callback_update(age_seconds=240)
+        context = SimpleNamespace(
+            chat_data={
+                "deposit_amount": Decimal("40"),
+                "deposit_callback_message_ids": [99],
+            }
+        )
+        self.assertEqual(
+            fs.classify_flow_callback(update, context, flow="deposit"),
+            "fresh",
+        )
+
+    def test_active_session_rejects_untracked_message(self):
+        update = _callback_update(age_seconds=5)
+        context = SimpleNamespace(
+            chat_data={
+                "deposit_amount": Decimal("40"),
+                "deposit_callback_message_ids": [100],
+            }
+        )
+        self.assertEqual(
+            fs.classify_flow_callback(update, context, flow="deposit"),
+            "orphaned",
+        )
+
+    def test_no_session_rejects_deploy_backlog(self):
+        update = _callback_update(age_seconds=240)
+        context = SimpleNamespace(chat_data={})
+        now = datetime.now(timezone.utc)
+        self.assertEqual(
+            fs.classify_flow_callback(update, context, flow="deposit", now=now),
+            "expired",
+        )
+
+
 class TestDepositCallbackStaleness(unittest.IsolatedAsyncioTestCase):
+    @patch.object(dep, "is_chat_method_bound", return_value=True)
+    @patch.object(dep, "bind_mode_for_method", return_value=None)
     @patch.object(dep, "get_method_by_id", return_value={"id": 29, "name": "Apple Pay", "slug": "applepay", "has_sub_options": False})
     @patch.object(dep, "_run_normal_deposit_from_choice", new_callable=AsyncMock, return_value=ConversationHandler.END)
-    async def test_stale_method_callback_rejected(self, *_mocks):
+    async def test_active_session_accepts_old_method_picker(self, *_mocks):
         update = _callback_update(age_seconds=240)
         context = SimpleNamespace(
             chat_data={
                 "deposit_club_id": 4,
                 "deposit_amount": Decimal("40"),
+                "deposit_callback_message_ids": [99],
             },
             user_data={},
         )
+        result = await dep.deposit_method_chosen(update, context)
+        self.assertEqual(result, ConversationHandler.END)
+        dep._run_normal_deposit_from_choice.assert_awaited_once()
+
+    @patch.object(dep, "get_method_by_id", return_value={"id": 29, "name": "Apple Pay", "slug": "applepay", "has_sub_options": False})
+    @patch.object(dep, "_run_normal_deposit_from_choice", new_callable=AsyncMock, return_value=ConversationHandler.END)
+    async def test_orphaned_method_callback_rejected_without_cleanup(self, *_mocks):
+        update = _callback_update(age_seconds=240)
+        context = SimpleNamespace(
+            chat_data={
+                "deposit_club_id": 4,
+                "deposit_amount": Decimal("40"),
+                "deposit_callback_message_ids": [100],
+            },
+            user_data={},
+        )
+        result = await dep.deposit_method_chosen(update, context)
+        self.assertEqual(result, ConversationHandler.END)
+        update.callback_query.answer.assert_awaited_once()
+        self.assertIn("earlier", update.callback_query.answer.await_args.args[0].lower())
+        dep._run_normal_deposit_from_choice.assert_not_awaited()
+        self.assertEqual(context.chat_data["deposit_amount"], Decimal("40"))
+
+    @patch.object(dep, "get_method_by_id", return_value={"id": 29, "name": "Apple Pay", "slug": "applepay", "has_sub_options": False})
+    @patch.object(dep, "_run_normal_deposit_from_choice", new_callable=AsyncMock, return_value=ConversationHandler.END)
+    async def test_expired_callback_without_session_rejected(self, *_mocks):
+        update = _callback_update(age_seconds=240)
+        context = SimpleNamespace(chat_data={}, user_data={})
         result = await dep.deposit_method_chosen(update, context)
         self.assertEqual(result, ConversationHandler.END)
         update.callback_query.answer.assert_awaited_once()
