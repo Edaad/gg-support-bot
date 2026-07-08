@@ -1,4 +1,4 @@
-"""Creator Club auto-deposit: chip-add on non-ambiguous payment auto-bind."""
+"""E2e auto-deposit: chip-add on non-ambiguous payment auto-bind when club toggle is on."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from telegram import Bot
 
 from bot.services.club import (
     get_auto_deposit_on_payment_enabled,
-    get_club_by_id,
     get_group_title_for_chat,
     has_recent_deposit_command_in_chat,
     invalidate_pending_one_time_bypasses,
@@ -31,7 +30,6 @@ from club_gc_settings import get_club_gc_config_by_link_club_id
 
 logger = logging.getLogger(__name__)
 
-CREATOR_CLUB_NAME = "Creator Club"
 DEPOSIT_COMMAND_WINDOW_MINUTES = 10
 
 CREATOR_STAFF_FOOTER_AUTO = (
@@ -45,19 +43,6 @@ CREATOR_STAFF_FOOTER_NO_RECENT_DEPOSIT = (
     "<b>Manual action required</b> — did not see /deposit in this group in the "
     f"last {DEPOSIT_COMMAND_WINDOW_MINUTES} minutes. Bind and /add as usual."
 )
-
-
-def _is_creator_club(club_id: int) -> bool:
-    try:
-        club = get_club_by_id(int(club_id))
-    except Exception:
-        logger.debug(
-            "payment_auto_deposit: could not load club_id=%s for creator check",
-            club_id,
-            exc_info=True,
-        )
-        return False
-    return (club.name or "").strip() == CREATOR_CLUB_NAME if club else False
 
 
 def auto_deposit_ineligible_reason(
@@ -75,12 +60,10 @@ def auto_deposit_ineligible_reason(
         return "venmo_goods_and_services"
     if club_id is None or telegram_chat_id is None:
         return "missing_club_or_chat"
-    if not _is_creator_club(int(club_id)):
-        return "not_creator_club"
-    if group_title is not None and not gg_player_id_from_title(group_title):
-        return "no_player_id_in_title"
     if not get_auto_deposit_on_payment_enabled(int(club_id)):
         return "auto_deposit_on_payment_disabled"
+    if group_title is not None and not gg_player_id_from_title(group_title):
+        return "no_player_id_in_title"
     if not has_recent_deposit_command_in_chat(
         int(telegram_chat_id),
         within_minutes=DEPOSIT_COMMAND_WINDOW_MINUTES,
@@ -97,7 +80,7 @@ def is_creator_club_auto_deposit_eligible(
     goods_or_services: bool = False,
     group_title: str | None = None,
 ) -> bool:
-    """True when Creator Club payment will run full auto chip-add on ingest."""
+    """True when payment will run full auto chip-add on ingest."""
     return (
         auto_deposit_ineligible_reason(
             club_id=club_id,
@@ -118,8 +101,8 @@ def format_creator_club_staff_footer(
     goods_or_services: bool = False,
     group_title: str | None = None,
 ) -> str | None:
-    """Return staff footer for Creator Club notifications, or None if not Creator Club."""
-    if club_id is None or not _is_creator_club(int(club_id)):
+    """Return staff footer when e2e auto-deposit is enabled for the club."""
+    if club_id is None or not get_auto_deposit_on_payment_enabled(int(club_id)):
         return None
     reason = auto_deposit_ineligible_reason(
         club_id=club_id,
@@ -144,7 +127,7 @@ def append_creator_club_staff_footer(
     goods_or_services: bool = False,
     group_title: str | None = None,
 ) -> str:
-    """Append Creator Club staff footer when applicable."""
+    """Append e2e auto-deposit staff footer when applicable."""
     footer = format_creator_club_staff_footer(
         club_id=club_id,
         telegram_chat_id=telegram_chat_id,
@@ -296,7 +279,10 @@ async def maybe_auto_deposit_from_payment(
     group_title: str | None = None,
     goods_or_services: bool = False,
 ) -> None:
-    """Creator Club: auto chip-add on auto-bound payment; confirm on success."""
+    """Auto chip-add on auto-bound payment when club e2e toggle is on."""
+    if club_id is not None and not get_auto_deposit_on_payment_enabled(int(club_id)):
+        return
+
     title = (group_title or "").strip() or None
 
     pre_reason = auto_deposit_ineligible_reason(
@@ -307,17 +293,16 @@ async def maybe_auto_deposit_from_payment(
         group_title=title,
     )
     if pre_reason is not None:
-        if pre_reason != "not_creator_club":
-            logger.info(
-                "payment_auto_deposit: skipped method=%s payment_id=%s "
-                "chat_id=%s club_id=%s auto_bound=%s reason=%s",
-                payment_method_slug,
-                payment_id,
-                telegram_chat_id,
-                club_id,
-                auto_bound,
-                pre_reason,
-            )
+        logger.info(
+            "payment_auto_deposit: skipped method=%s payment_id=%s "
+            "chat_id=%s club_id=%s auto_bound=%s reason=%s",
+            payment_method_slug,
+            payment_id,
+            telegram_chat_id,
+            club_id,
+            auto_bound,
+            pre_reason,
+        )
         _record_skip_event(
             payment_method_slug=payment_method_slug,
             payment_id=payment_id,

@@ -303,8 +303,8 @@ function GeneralTab({
           </label>
           <p className="ml-6 text-xs text-ink-muted">
             When enabled, auto-bound payment notifications load chips via ClubGG, notify the
-            player, and start the cashout cooldown — without a manual /add. Creator Club only
-            today.
+            player, and start the cashout cooldown — without a manual /add. Off by default;
+            enable per club when ready.
           </p>
           <label className="flex items-center gap-2 text-sm text-ink">
             <input
