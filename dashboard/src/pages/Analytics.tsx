@@ -56,6 +56,7 @@ export default function Analytics({ token }: { token: string }) {
 
   const [clubs, setClubs] = useState<Club[]>([])
   const [method, setMethod] = useState<AutoDepositMethodSlug>('venmo')
+  const [autoMethod, setAutoMethod] = useState<AutoDepositMethodSlug | 'all'>('all')
   const [funnelMethod, setFunnelMethod] = useState<AutoDepositMethodSlug | 'all'>('all')
   const [clubId, setClubId] = useState<number | 'all'>('all')
   const [sourceFilter, setSourceFilter] = useState<BoundViaFilter>('all')
@@ -64,6 +65,8 @@ export default function Analytics({ token }: { token: string }) {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [appliedMethod, setAppliedMethod] = useState<AutoDepositMethodSlug>('venmo')
+  const [appliedAutoMethod, setAppliedAutoMethod] =
+    useState<AutoDepositMethodSlug | 'all'>('all')
   const [appliedFunnelMethod, setAppliedFunnelMethod] =
     useState<AutoDepositMethodSlug | 'all'>('all')
   const [appliedSource, setAppliedSource] = useState<BoundViaFilter>('all')
@@ -86,6 +89,7 @@ export default function Analytics({ token }: { token: string }) {
   const applyFilters = useCallback(() => {
     setErr('')
     setAppliedMethod(method)
+    setAppliedAutoMethod(autoMethod)
     setAppliedFunnelMethod(funnelMethod)
     setAppliedClubId(clubId)
     setAppliedSource(sourceFilter)
@@ -93,7 +97,7 @@ export default function Analytics({ token }: { token: string }) {
     setAppliedMethodSetup(methodSetupFilter)
     setAppliedFrom(fromDate)
     setAppliedTo(toDate)
-  }, [method, funnelMethod, clubId, sourceFilter, firstDepositFilter, methodSetupFilter, fromDate, toDate])
+  }, [method, autoMethod, funnelMethod, clubId, sourceFilter, firstDepositFilter, methodSetupFilter, fromDate, toDate])
 
   const appliedFilters = useMemo(
     () => ({
@@ -134,7 +138,11 @@ export default function Analytics({ token }: { token: string }) {
   )
 
   const filtersDirty =
-    (section === 'deposit_funnel' ? funnelMethod !== appliedFunnelMethod : method !== appliedMethod) ||
+    (section === 'deposit_funnel'
+      ? funnelMethod !== appliedFunnelMethod
+      : section === 'full_auto_deposit'
+        ? autoMethod !== appliedAutoMethod
+        : method !== appliedMethod) ||
     clubId !== appliedClubId ||
     (section === 'gc_binding' && sourceFilter !== appliedSource) ||
     (section === 'deposit_funnel' &&
@@ -148,9 +156,16 @@ export default function Analytics({ token }: { token: string }) {
   }, [])
 
   const methodOptions =
-    section === 'deposit_funnel'
+    section === 'deposit_funnel' || section === 'full_auto_deposit'
       ? [{ value: 'all', label: 'All methods' }, ...AUTO_DEPOSIT_METHOD_OPTIONS]
       : AUTO_DEPOSIT_METHOD_OPTIONS
+
+  const selectedMethod =
+    section === 'deposit_funnel'
+      ? funnelMethod
+      : section === 'full_auto_deposit'
+        ? autoMethod
+        : method
 
   return (
     <div>
@@ -215,11 +230,13 @@ export default function Analytics({ token }: { token: string }) {
           <select
             id={methodSelectId}
             className="input-field-sm min-w-[8rem]"
-            value={section === 'deposit_funnel' ? funnelMethod : method}
+            value={selectedMethod}
             onChange={(e) => {
               const v = e.target.value as AutoDepositMethodSlug | 'all'
               if (section === 'deposit_funnel') {
                 setFunnelMethod(v)
+              } else if (section === 'full_auto_deposit') {
+                setAutoMethod(v)
               } else {
                 setMethod(v as AutoDepositMethodSlug)
               }
@@ -365,7 +382,7 @@ export default function Analytics({ token }: { token: string }) {
         ) : (
           <AutoDepositAnalytics
             token={token}
-            method={appliedMethod}
+            method={appliedAutoMethod}
             excludeTestChats
             embedded
             filters={appliedAutoDepositFilters}

@@ -1,5 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  fetchDepositFunnelLatencySummary,
+  type DepositFunnelLatencySummary,
+} from '../api/depositFunnelClient'
+import {
   fetchAutoDepositSummary,
   type AutoDepositMethodSlug,
   type AutoDepositSummary,
@@ -28,7 +32,7 @@ type Filters = {
 
 type Props = {
   token: string
-  method: AutoDepositMethodSlug
+  method: AutoDepositMethodSlug | 'all'
   excludeTestChats?: boolean
   filters: Filters
   onError?: (message: string) => void
@@ -42,11 +46,69 @@ type DrilldownState = {
 }
 
 type KpiPanelProps = {
-  method: AutoDepositMethodSlug
+  method: AutoDepositMethodSlug | 'all'
   summary: AutoDepositSummary
   showByClub: boolean
   onDrilldown: (category: AutoDepositKpiCategory, skipReason?: string) => void
 }
+
+function formatLatency(seconds: number | null | undefined): string {
+  if (seconds == null) return '—'
+  if (seconds < 60) return `${seconds.toFixed(1)}s`
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.round(seconds % 60)
+  return `${mins}m ${secs.toString().padStart(2, '0')}s`
+}
+
+const LatencyFunnelStepBar = memo(function LatencyFunnelStepBar({
+  step,
+  count,
+  started,
+  maxCount,
+  unionBreakdown,
+}: {
+  step: {
+    step: string
+    label: string
+    count: number
+    conversion_rate: number | null
+    avg_latency_seconds: number | null
+  }
+  count: number
+  started: number
+  maxCount: number
+  unionBreakdown?: { round_table: number; aces_table: number } | null
+}) {
+  const widthPct = maxCount > 0 ? Math.max(4, (count / maxCount) * 100) : 0
+  const conversion =
+    step.conversion_rate != null ? `${(step.conversion_rate * 100).toFixed(1)}%` : '—'
+  const latency = formatLatency(step.avg_latency_seconds)
+
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
+        <span className="font-medium text-ink">{step.label}</span>
+        <span className="shrink-0 text-ink-muted">
+          {count}
+          {started > 0 && step.step !== 'deposit_started' ? ` · ${conversion}` : ''}
+          {step.step !== 'deposit_started' ? ` · avg ${latency}` : ''}
+        </span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-surface-raised">
+        <div
+          className="h-full rounded-full bg-accent transition-all"
+          style={{ width: `${widthPct}%` }}
+        />
+      </div>
+      {step.step === 'union_chosen' && unionBreakdown && (
+        <p className="mt-1 text-xs text-ink-muted">
+          Round Table (RT): {unionBreakdown.round_table} · Aces Table (AT):{' '}
+          {unionBreakdown.aces_table}
+        </p>
+      )}
+    </div>
+  )
+})
 
 const AutoDepositKpiPanel = memo(function AutoDepositKpiPanel({
   method,
@@ -55,7 +117,8 @@ const AutoDepositKpiPanel = memo(function AutoDepositKpiPanel({
   onDrilldown,
 }: KpiPanelProps) {
   const funnel = summary.funnel
-  const methodLabel = METHOD_SECTION_LABELS[method]
+  const methodLabel =
+    method === 'all' ? 'All methods' : METHOD_SECTION_LABELS[method]
 
   return (
     <>
@@ -184,15 +247,29 @@ function AutoDepositAnalytics({
   const [summary, setSummary] = useState<AutoDepositSummary | null>(null)
   const [summaryLoading, setSummaryLoading] = useState(true)
   const [summaryFailed, setSummaryFailed] = useState(false)
+  const [latencySummary, setLatencySummary] = useState<DepositFunnelLatencySummary | null>(null)
+  const [latencyLoading, setLatencyLoading] = useState(true)
   const [drilldown, setDrilldown] = useState<DrilldownState | null>(null)
 
   const queryClubId = filters.appliedClubId === 'all' ? undefined : filters.appliedClubId
-  const methodLabel = METHOD_SECTION_LABELS[method]
+  const methodLabel =
+    method === 'all' ? 'All methods' : METHOD_SECTION_LABELS[method]
 
   const listParams = useMemo<AutoDepositListParams>(
     () => ({
       method,
       clubId: queryClubId,
+      from: filters.appliedFrom ? `${filters.appliedFrom}T00:00:00Z` : undefined,
+      to: filters.appliedTo ? `${filters.appliedTo}T23:59:59Z` : undefined,
+      excludeTestChats,
+    }),
+    [method, queryClubId, filters.appliedFrom, filters.appliedTo, excludeTestChats],
+  )
+
+  const latencyParams = useMemo(
+    () => ({
+      clubId: queryClubId,
+      method: method === 'all' ? undefined : method,
       from: filters.appliedFrom ? `${filters.appliedFrom}T00:00:00Z` : undefined,
       to: filters.appliedTo ? `${filters.appliedTo}T23:59:59Z` : undefined,
       excludeTestChats,
@@ -228,6 +305,28 @@ function AutoDepositAnalytics({
   }, [token, listParams, onError])
 
   useEffect(() => {
+    let cancelled = false
+    setLatencyLoading(true)
+
+    fetchDepositFunnelLatencySummary(token, latencyParams)
+      .then((data) => {
+        if (!cancelled) setLatencySummary(data)
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return
+        setLatencySummary(null)
+        onError?.(e instanceof Error ? e.message : 'Could not load e2e funnel latency.')
+      })
+      .finally(() => {
+        if (!cancelled) setLatencyLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [token, latencyParams, onError])
+
+  useEffect(() => {
     setDrilldown(null)
   }, [filters.appliedClubId, filters.appliedFrom, filters.appliedTo, method])
 
@@ -241,6 +340,11 @@ function AutoDepositAnalytics({
   const closeDrilldown = useCallback(() => {
     setDrilldown(null)
   }, [])
+
+  const latencyMaxCount = useMemo(() => {
+    if (!latencySummary) return 0
+    return Math.max(...latencySummary.steps.map((s) => s.count), 0)
+  }, [latencySummary])
 
   const content = (
     <>
@@ -267,6 +371,35 @@ function AutoDepositAnalytics({
       ) : (
         <p className="text-sm text-ink-faint">No auto-deposit data for these filters.</p>
       )}
+
+      <div className="mt-8 border-t border-border pt-6">
+        <h2 className="section-label mb-4">E2E funnel latency</h2>
+        <p className="mb-4 text-sm text-ink-muted">
+          Full auto-deposit sessions only (no bind setup). Average time from the previous step.
+        </p>
+        {latencyLoading ? (
+          <p className="text-sm text-ink-muted">Loading funnel latency…</p>
+        ) : !latencySummary || latencySummary.started === 0 ? (
+          <p className="text-sm text-ink-faint">
+            No completed full auto-deposit sessions for these filters yet.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {latencySummary.steps.map((step) => (
+              <LatencyFunnelStepBar
+                key={step.step}
+                step={step}
+                count={step.count}
+                started={latencySummary.started}
+                maxCount={latencyMaxCount}
+                unionBreakdown={
+                  step.step === 'union_chosen' ? latencySummary.union_breakdown : null
+                }
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       {drilldown && (
         <AutoDepositDrilldownModal

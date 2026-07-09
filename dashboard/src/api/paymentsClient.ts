@@ -870,7 +870,8 @@ export function fetchAutoDepositSummary(
   },
 ) {
   const q = new URLSearchParams()
-  q.set('method', params.method ?? 'venmo')
+  const method = params.method ?? 'all'
+  q.set('method', method)
   if (params.clubId != null) q.set('club_id', String(params.clubId))
   if (params.from) q.set('from', params.from)
   if (params.to) q.set('to', params.to)
@@ -918,7 +919,7 @@ export function listAutoDepositEvents(
   },
 ) {
   const q = new URLSearchParams()
-  q.set('method', params.method ?? 'venmo')
+  q.set('method', params.method ?? 'all')
   if (params.clubId != null) q.set('club_id', String(params.clubId))
   if (params.status) q.set('status', params.status)
   if (params.skipReason) q.set('skip_reason', params.skipReason)

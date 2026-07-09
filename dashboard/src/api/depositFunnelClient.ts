@@ -42,10 +42,29 @@ export type DepositFunnelStepCount = {
   conversion_rate: number | null
 }
 
+export type DepositFunnelUnionBreakdown = {
+  round_table: number
+  aces_table: number
+}
+
 export type DepositFunnelSummary = {
   club_id: number | null
   started: number
   steps: DepositFunnelStepCount[]
+  show_union_step: boolean
+  union_breakdown: DepositFunnelUnionBreakdown | null
+}
+
+export type DepositFunnelLatencyStep = DepositFunnelStepCount & {
+  avg_latency_seconds: number | null
+}
+
+export type DepositFunnelLatencySummary = {
+  club_id: number | null
+  started: number
+  steps: DepositFunnelLatencyStep[]
+  show_union_step: boolean
+  union_breakdown: DepositFunnelUnionBreakdown | null
 }
 
 export type DepositFunnelEventRow = {
@@ -99,6 +118,22 @@ export function fetchDepositFunnelSummary(
   if (params.to) q.set('to', params.to)
   if (params.excludeTestChats !== false) q.set('exclude_test_chats', 'true')
   return request<DepositFunnelSummary>(`/summary?${q}`, {}, token)
+}
+
+export function fetchDepositFunnelLatencySummary(
+  token: string,
+  params: Pick<
+    DepositFunnelSummaryParams,
+    'clubId' | 'method' | 'from' | 'to' | 'excludeTestChats'
+  >,
+) {
+  const q = new URLSearchParams()
+  if (params.clubId != null) q.set('club_id', String(params.clubId))
+  if (params.method) q.set('method', params.method)
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  if (params.excludeTestChats !== false) q.set('exclude_test_chats', 'true')
+  return request<DepositFunnelLatencySummary>(`/latency-summary?${q}`, {}, token)
 }
 
 export function listDepositFunnelEvents(

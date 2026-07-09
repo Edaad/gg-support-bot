@@ -411,6 +411,56 @@ class PaymentsApiTestCase(unittest.TestCase):
         mock_filter.assert_called_once()
         self.assertEqual(mock_filter.call_args.kwargs["status"], "succeeded")
 
+    def test_auto_deposits_summary_all_methods(self):
+        mock_funnel_q = MagicMock()
+        mock_funnel_q.one.return_value = (12, 8, 1, 3)
+
+        mock_reason_q = MagicMock()
+        mock_reason_q.all.return_value = []
+
+        call_count = {"n": 0}
+
+        def with_entities_side(*_args, **_kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return mock_funnel_q
+            mock_chain = MagicMock()
+            mock_chain.filter.return_value.filter.return_value.group_by.return_value = (
+                mock_reason_q
+            )
+            return mock_chain
+
+        mock_base_q = MagicMock()
+        mock_base_q.with_entities.side_effect = with_entities_side
+
+        mock_db = MagicMock()
+
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_current_admin] = lambda: "admin"
+
+        def override_db():
+            yield mock_db
+
+        app.dependency_overrides[get_db_dependency] = override_db
+        client = TestClient(app)
+
+        with patch(
+            "api.routes.payments._auto_deposit_events_query",
+            return_value=mock_base_q,
+        ) as mock_filter:
+            response = client.get(
+                "/api/payments/auto-deposits/summary?method=all",
+                headers={"Authorization": f"Bearer {TOKEN}"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["payment_method_slug"], "all")
+        self.assertEqual(data["funnel"]["total_payments"], 12)
+        mock_filter.assert_called_once()
+        self.assertEqual(mock_filter.call_args.kwargs["slug"], "all")
+
 
 if __name__ == "__main__":
     unittest.main()

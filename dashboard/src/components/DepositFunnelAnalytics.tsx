@@ -33,6 +33,7 @@ type DrilldownState = {
 const CORE_STEPS = new Set([
   'deposit_started',
   'amount_entered',
+  'union_chosen',
   'method_chosen',
   'instructions_sent',
   'payment_received',
@@ -64,12 +65,14 @@ const FunnelStepBar = memo(function FunnelStepBar({
   started,
   maxCount,
   onDrilldown,
+  unionBreakdown,
 }: {
   step: { step: string; label: string; count: number; conversion_rate: number | null }
   count: number
   started: number
   maxCount: number
   onDrilldown: (step: string, label: string) => void
+  unionBreakdown?: { round_table: number; aces_table: number } | null
 }) {
   const widthPct = maxCount > 0 ? Math.max(4, (count / maxCount) * 100) : 0
   const conversion =
@@ -98,6 +101,12 @@ const FunnelStepBar = memo(function FunnelStepBar({
           style={{ width: `${widthPct}%` }}
         />
       </div>
+      {step.step === 'union_chosen' && unionBreakdown && (
+        <p className="mt-1 text-xs text-ink-muted">
+          Round Table (RT): {unionBreakdown.round_table} · Aces Table (AT):{' '}
+          {unionBreakdown.aces_table}
+        </p>
+      )}
     </div>
   )
 })
@@ -226,6 +235,9 @@ export default function DepositFunnelAnalytics({
               started={summary.started}
               maxCount={maxCount}
               onDrilldown={openDrilldown}
+              unionBreakdown={
+                step.step === 'union_chosen' ? summary.union_breakdown : null
+              }
             />
           ))}
         </div>
@@ -299,4 +311,4 @@ export default function DepositFunnelAnalytics({
   )
 }
 
-export { AUTO_DEPOSIT_METHOD_OPTIONS }
+export { AUTO_DEPOSIT_METHOD_OPTIONS, FunnelStepBar }

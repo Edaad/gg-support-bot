@@ -20,7 +20,7 @@ const KPI_DRILLDOWN_TITLES = {
 export type AutoDepositKpiCategory = keyof typeof KPI_DRILLDOWN_TITLES
 
 export type AutoDepositListParams = {
-  method: AutoDepositMethodSlug
+  method: AutoDepositMethodSlug | 'all'
   clubId?: number
   from?: string
   to?: string

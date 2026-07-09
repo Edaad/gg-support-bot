@@ -254,7 +254,7 @@ def _raise_db_schema_error(exc: ProgrammingError) -> None:
 def _auto_deposit_events_query(
     db: Session,
     *,
-    slug: str,
+    slug: str | None,
     club_id: int | None,
     dt_from: datetime | None,
     dt_to: datetime | None,
@@ -263,9 +263,11 @@ def _auto_deposit_events_query(
     skip_reason: str | None = None,
 ):
     q = db.query(PaymentAutoDepositEvent).filter(
-        PaymentAutoDepositEvent.payment_method_slug == slug,
         PaymentAutoDepositEvent.club_auto_deposit_enabled.is_(True),
     )
+    method_slug = (slug or "").strip().lower()
+    if method_slug and method_slug != "all":
+        q = q.filter(PaymentAutoDepositEvent.payment_method_slug == method_slug)
     if club_id is not None:
         q = q.filter(PaymentAutoDepositEvent.club_id == club_id)
     if dt_from is not None:
@@ -1455,14 +1457,14 @@ def list_bind_attempts(
 
 @router.get("/auto-deposits/summary", response_model=AutoDepositSummaryResponse)
 def auto_deposits_summary(
-    method: str = Query("venmo", description="payment_method_slug"),
+    method: str = Query("all", description="payment_method_slug or all"),
     club_id: int | None = Query(None),
     from_dt: str | None = Query(None, alias="from"),
     to_dt: str | None = Query(None, alias="to"),
     exclude_test_chats: bool = Query(False),
     db: Session = Depends(get_db_dependency),
 ):
-    slug = (method or "venmo").strip().lower()
+    slug = (method or "all").strip().lower() or "all"
     if club_id is not None:
         _get_club_or_404(db, club_id)
 
@@ -1569,7 +1571,7 @@ def auto_deposits_summary(
 
 @router.get("/auto-deposits", response_model=AutoDepositEventListResponse)
 def list_auto_deposit_events(
-    method: str = Query("venmo"),
+    method: str = Query("all"),
     club_id: int | None = Query(None),
     status: str | None = Query(None),
     skip_reason: str | None = Query(None),
@@ -1580,7 +1582,7 @@ def list_auto_deposit_events(
     exclude_test_chats: bool = Query(False),
     db: Session = Depends(get_db_dependency),
 ):
-    slug = (method or "venmo").strip().lower()
+    slug = (method or "all").strip().lower() or "all"
     if club_id is not None:
         _get_club_or_404(db, club_id)
 

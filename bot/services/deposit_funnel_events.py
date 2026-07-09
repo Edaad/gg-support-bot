@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 CORRELATION_WINDOW_MINUTES = 60
 
 STEP_DEPOSIT_STARTED = "deposit_started"
-STEP_REFERRAL_COMPLETED = "referral_completed"
 STEP_AMOUNT_ENTERED = "amount_entered"
 STEP_UNION_CHOSEN = "union_chosen"
 STEP_METHOD_CHOSEN = "method_chosen"
@@ -30,7 +29,6 @@ STEP_CHIPS_CONFIRMED = "chips_confirmed"
 
 FUNNEL_STEP_ORDER: tuple[str, ...] = (
     STEP_DEPOSIT_STARTED,
-    STEP_REFERRAL_COMPLETED,
     STEP_AMOUNT_ENTERED,
     STEP_UNION_CHOSEN,
     STEP_METHOD_CHOSEN,
@@ -41,6 +39,22 @@ FUNNEL_STEP_ORDER: tuple[str, ...] = (
     STEP_CHIPS_CREDITED,
     STEP_CHIPS_CONFIRMED,
 )
+
+
+def display_funnel_step_order(
+    *,
+    show_union_step: bool = False,
+    include_bind_setup: bool = True,
+) -> tuple[str, ...]:
+    """Steps shown in dashboard funnels (union/bind optional)."""
+    steps: list[str] = []
+    for step in FUNNEL_STEP_ORDER:
+        if step == STEP_UNION_CHOSEN and not show_union_step:
+            continue
+        if step == STEP_BIND_SETUP_COMPLETED and not include_bind_setup:
+            continue
+        steps.append(step)
+    return tuple(steps)
 
 
 def new_deposit_session_id() -> str:

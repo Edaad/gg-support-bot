@@ -528,10 +528,33 @@ class DepositFunnelStepCount(BaseModel):
     conversion_rate: Optional[float] = None
 
 
+class DepositFunnelUnionBreakdown(BaseModel):
+    round_table: int = 0
+    aces_table: int = 0
+
+
 class DepositFunnelSummaryResponse(BaseModel):
     club_id: Optional[int] = None
     started: int
     steps: list[DepositFunnelStepCount]
+    show_union_step: bool = False
+    union_breakdown: Optional[DepositFunnelUnionBreakdown] = None
+
+
+class DepositFunnelLatencyStep(BaseModel):
+    step: str
+    label: str
+    count: int
+    conversion_rate: Optional[float] = None
+    avg_latency_seconds: Optional[float] = None
+
+
+class DepositFunnelLatencySummaryResponse(BaseModel):
+    club_id: Optional[int] = None
+    started: int
+    steps: list[DepositFunnelLatencyStep]
+    show_union_step: bool = False
+    union_breakdown: Optional[DepositFunnelUnionBreakdown] = None
 
 
 class DepositFunnelEventRead(BaseModel):

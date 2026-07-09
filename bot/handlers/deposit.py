@@ -85,7 +85,6 @@ from bot.services.deposit_funnel_events import (
     STEP_DEPOSIT_STARTED,
     STEP_INSTRUCTIONS_SENT,
     STEP_METHOD_CHOSEN,
-    STEP_REFERRAL_COMPLETED,
     STEP_UNION_CHOSEN,
     new_deposit_session_id,
     record_deposit_funnel_event,
@@ -1228,7 +1227,6 @@ async def deposit_referral_received(update: Update, context: ContextTypes.DEFAUL
     if simple:
         return await _finish_simple_deposit(update.message, context)
 
-    _record_funnel_from_context(context, STEP_REFERRAL_COMPLETED)
     return await _ask_deposit_amount(update.message, context)
 
 
