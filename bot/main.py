@@ -127,7 +127,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
     from bot.handlers.deposit import get_deposit_handler
     from bot.handlers.cashout import get_cashout_handler
     from bot.handlers.earlyrb import earlyrb_handler
-    from bot.handlers.flow_cancel import flow_cancel_handler
+    from bot.handlers.flow_cancel import dm_flow_cancel_priority, flow_cancel_handler
     from bot.handlers.list_cmd import list_handler
     from bot.handlers.groups import (
         on_chat_migrate_from,
@@ -192,6 +192,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         get_cashout_handler=get_cashout_handler,
         earlyrb_handler=earlyrb_handler,
         flow_cancel_handler=flow_cancel_handler,
+        dm_flow_cancel_priority=dm_flow_cancel_priority,
         list_handler=list_handler,
         on_chat_migrate_from=on_chat_migrate_from,
         on_my_chat_member_updated=on_my_chat_member_updated,
@@ -265,9 +266,9 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         .build()
     )
 
-    # /sendinactive and /bonus — group -1, block=False on text handlers so the first
-    # handler that does not match its flow can fall through to the other (PTB runs
-    # only one handler per group when block=True, even if that handler returns immediately).
+    # DM staff flows — group -1. Priority /cancel runs first so stale ConversationHandler
+    # state does not block aborting /bonus, /report, /sendinactive, or /note.
+    app.add_handler(CommandHandler("cancel", h.dm_flow_cancel_priority), group=-1)
     app.add_handler(CommandHandler("bonus", h.bonus_entry), group=-1)
     app.add_handler(
         MessageHandler(

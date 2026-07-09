@@ -12,7 +12,12 @@ from telegram.constants import ChatType
 from telegram.ext import ApplicationHandlerStop, ContextTypes
 
 from config import ADMIN_USER_IDS
-from bot.handlers.flow_cancel import ACTIVE_FLOW_KEY, clear_active_flow, mark_active_flow
+from bot.handlers.flow_cancel import (
+    ACTIVE_FLOW_KEY,
+    block_if_dm_flow_active,
+    clear_active_flow,
+    mark_active_flow,
+)
 from bot.services.bonus_drafts import cancel_draft, draft_to_context, get_pending_draft, mark_draft_submitted
 from bot.services.bonus_player_resolve import BonusPlayerContext, resolve_bonus_player
 from db.connection import get_db
@@ -281,9 +286,9 @@ async def bonus_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not _is_bonus_admin(update):
         return
 
-    from bot.handlers.inactive_outreach_send import _cleanup_send_flow
+    if await block_if_dm_flow_active(update, context, starting="bonus"):
+        raise ApplicationHandlerStop()
 
-    _cleanup_send_flow(context)
     _cleanup(context)
     user_id = update.effective_user.id
     context.user_data["bonus_admin_id"] = user_id
@@ -338,9 +343,9 @@ async def bonus_draft_continue_handler(
         )
         raise ApplicationHandlerStop()
 
-    from bot.handlers.inactive_outreach_send import _cleanup_send_flow
+    if await block_if_dm_flow_active(update, context, starting="bonus"):
+        raise ApplicationHandlerStop()
 
-    _cleanup_send_flow(context)
     _cleanup(context)
 
     user_id = update.effective_user.id

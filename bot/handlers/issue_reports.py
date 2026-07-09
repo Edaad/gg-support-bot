@@ -19,7 +19,11 @@ from telegram.ext import (
 
 from club_gc_settings import gc_mtproto_operator_telegram_user_ids
 from config import ADMIN_USER_IDS
-from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
+from bot.handlers.flow_cancel import (
+    block_if_dm_flow_active,
+    clear_active_flow,
+    mark_active_flow,
+)
 from bot.services.club import get_club_for_chat, is_any_club_staff, is_club_staff
 from bot.services.issue_report_drafts import (
     DraftContext,
@@ -438,6 +442,9 @@ async def report_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await update.message.reply_text("You are not allowed to file issue reports.")
         return ConversationHandler.END
 
+    if await block_if_dm_flow_active(update, context, starting="issue_report"):
+        return ConversationHandler.END
+
     _cleanup_report_flow(context)
     return await _begin_dm_report_flow(update, context)
 
@@ -487,6 +494,9 @@ async def draft_continue_entry(update: Update, context: ContextTypes.DEFAULT_TYP
             update.effective_user.id,
         )
         await query.edit_message_text("Report draft expired. Send /report to start again.")
+        return ConversationHandler.END
+
+    if await block_if_dm_flow_active(update, context, starting="issue_report"):
         return ConversationHandler.END
 
     _cleanup_report_flow(context)

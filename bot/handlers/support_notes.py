@@ -17,7 +17,11 @@ from telegram.ext import (
 
 from club_gc_settings import gc_mtproto_operator_telegram_user_ids
 from config import ADMIN_USER_IDS
-from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
+from bot.handlers.flow_cancel import (
+    block_if_dm_flow_active,
+    clear_active_flow,
+    mark_active_flow,
+)
 from bot.services.club import get_club_for_chat, is_any_club_staff, is_club_staff
 from bot.services.player_details import gg_player_id_from_title, resolve_club_id_from_shorthand
 from bot.services.player_support_notes import (
@@ -185,6 +189,9 @@ async def note_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         except SupportNoteValidationError as exc:
             await update.message.reply_text(str(exc))
             return ConversationHandler.END
+
+    if await block_if_dm_flow_active(update, context, starting="support_note"):
+        return ConversationHandler.END
 
     _cleanup_note_flow(context)
     return await _begin_dm_note_flow(update, context, gg_player_id=gg_player_id)

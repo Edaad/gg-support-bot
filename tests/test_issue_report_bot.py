@@ -90,6 +90,7 @@ class TestReportEntry(unittest.IsolatedAsyncioTestCase):
         update._effective_user = user
         update._effective_chat = chat
         context = MagicMock()
+        context.user_data = {}
         result = await report_entry(update, context)
         self.assertEqual(result, 0)
         mock_begin.assert_awaited_once()
