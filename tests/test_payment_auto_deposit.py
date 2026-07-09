@@ -29,6 +29,9 @@ def _enter_eligible(stack: ExitStack) -> None:
     stack.enter_context(
         patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True)
     )
+    stack.enter_context(
+        patch.object(pad, "has_recent_add_command_in_chat", return_value=False)
+    )
 
 
 class RequestIdPaymentTestCase(unittest.TestCase):
@@ -85,6 +88,7 @@ class AutoDepositIneligibleReasonTestCase(unittest.TestCase):
         with (
             patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
             patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
+            patch.object(pad, "has_recent_add_command_in_chat", return_value=False),
         ):
             self.assertEqual(
                 pad.auto_deposit_ineligible_reason(
@@ -94,6 +98,22 @@ class AutoDepositIneligibleReasonTestCase(unittest.TestCase):
                     group_title="CC / / @wywyrobro",
                 ),
                 "no_player_id_in_title",
+            )
+
+    def test_recent_add_command(self) -> None:
+        with (
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
+            patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
+            patch.object(pad, "has_recent_add_command_in_chat", return_value=True),
+        ):
+            self.assertEqual(
+                pad.auto_deposit_ineligible_reason(
+                    club_id=CLUB_ID_CREATOR,
+                    telegram_chat_id=CHAT_ID,
+                    auto_bound=True,
+                    group_title="CC / 1234-5678 / Jacob",
+                ),
+                "recent_add_command",
             )
 
 
@@ -168,6 +188,7 @@ class MaybeAutoDepositGatingTestCase(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
             patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
+            patch.object(pad, "has_recent_add_command_in_chat", return_value=False),
             patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock, return_value=(True, "success")) as mock_run,
             patch.object(pad, "record_auto_deposit_event"),
             patch.object(pad, "record_activity_for_chat"),
@@ -230,6 +251,35 @@ class MaybeAutoDepositGatingTestCase(unittest.IsolatedAsyncioTestCase):
             "no_player_id_in_title",
         )
 
+    async def test_skips_when_recent_add_command(self) -> None:
+        with (
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
+            patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
+            patch.object(pad, "has_recent_add_command_in_chat", return_value=True),
+            patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock) as mock_run,
+            patch.object(pad.logger, "info") as mock_log,
+        ):
+            await pad.maybe_auto_deposit_from_payment(
+                club_id=CLUB_ID_CREATOR,
+                telegram_chat_id=CHAT_ID,
+                amount_cents=5000,
+                auto_bound=True,
+                payment_method_slug="venmo",
+                payment_id=88,
+                group_title="CC / 1234-5678 / Jacob",
+            )
+        mock_run.assert_not_awaited()
+        mock_log.assert_any_call(
+            "payment_auto_deposit: skipped method=%s payment_id=%s "
+            "chat_id=%s club_id=%s auto_bound=%s reason=%s",
+            "venmo",
+            88,
+            CHAT_ID,
+            CLUB_ID_CREATOR,
+            True,
+            "recent_add_command",
+        )
+
     async def test_skips_when_ids_missing(self) -> None:
         with patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock) as mock_run:
             await pad.maybe_auto_deposit_from_payment(
@@ -248,6 +298,7 @@ class MaybeAutoDepositSuccessTestCase(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
             patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
+            patch.object(pad, "has_recent_add_command_in_chat", return_value=False),
             patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock, return_value=(True, "success")) as mock_run,
             patch.object(pad, "record_auto_deposit_event") as mock_record_event,
             patch.object(pad, "record_activity_for_chat") as mock_record,
@@ -282,6 +333,7 @@ class MaybeAutoDepositSuccessTestCase(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
             patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
+            patch.object(pad, "has_recent_add_command_in_chat", return_value=False),
             patch.object(
                 pad,
                 "run_auto_chip_add",
@@ -331,6 +383,29 @@ class RecordAutoDepositEventOnSkipTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event_kwargs["status"], "skipped")
         self.assertEqual(event_kwargs["skip_reason"], "auto_bound_false")
         self.assertEqual(event_kwargs["payment_id"], 42)
+
+    async def test_skip_records_event_for_recent_add(self) -> None:
+        with (
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
+            patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
+            patch.object(pad, "has_recent_add_command_in_chat", return_value=True),
+            patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock) as mock_run,
+            patch.object(pad, "record_auto_deposit_event") as mock_record_event,
+        ):
+            await pad.maybe_auto_deposit_from_payment(
+                club_id=CLUB_ID_CREATOR,
+                telegram_chat_id=CHAT_ID,
+                amount_cents=5000,
+                auto_bound=True,
+                payment_method_slug="venmo",
+                payment_id=43,
+                group_title="CC / 1234-5678 / Jacob",
+            )
+        mock_run.assert_not_awaited()
+        mock_record_event.assert_called_once()
+        event_kwargs = mock_record_event.call_args.kwargs
+        self.assertEqual(event_kwargs["status"], "skipped")
+        self.assertEqual(event_kwargs["skip_reason"], "recent_add_command")
 
 
 class SendAddConfirmationTestCase(unittest.IsolatedAsyncioTestCase):
@@ -427,6 +502,20 @@ class CreatorStaffFooterTestCase(unittest.TestCase):
                 group_title="CC / 1234-5678 / Jacob",
             )
         self.assertEqual(footer, pad.CREATOR_STAFF_FOOTER_NO_RECENT_DEPOSIT)
+
+    def test_recent_add_footer(self) -> None:
+        with (
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
+            patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
+            patch.object(pad, "has_recent_add_command_in_chat", return_value=True),
+        ):
+            footer = pad.format_creator_club_staff_footer(
+                club_id=CLUB_ID_CREATOR,
+                telegram_chat_id=CHAT_ID,
+                auto_bound=True,
+                group_title="CC / 1234-5678 / Jacob",
+            )
+        self.assertEqual(footer, pad.CREATOR_STAFF_FOOTER_RECENT_ADD)
 
     def test_manual_footer_when_not_auto_bound(self) -> None:
         with patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True):

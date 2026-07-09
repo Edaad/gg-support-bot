@@ -11,6 +11,7 @@ from telegram import Bot
 from bot.services.club import (
     get_auto_deposit_on_payment_enabled,
     get_group_title_for_chat,
+    has_recent_add_command_in_chat,
     has_recent_deposit_command_in_chat,
     invalidate_pending_one_time_bypasses,
     record_activity_for_chat,
@@ -47,6 +48,11 @@ CREATOR_STAFF_FOOTER_NO_RECENT_DEPOSIT = (
     "<b>Manual action required</b> — did not see /deposit in this group in the "
     f"last {DEPOSIT_COMMAND_WINDOW_MINUTES} minutes. Bind and /add as usual."
 )
+CREATOR_STAFF_FOOTER_RECENT_ADD = (
+    "<b>Auto-add skipped</b> — /add was used in this group in the "
+    f"last {DEPOSIT_COMMAND_WINDOW_MINUTES} minutes. Chips may already have been "
+    "added for this payment; verify before acting."
+)
 
 
 def auto_deposit_ineligible_reason(
@@ -73,6 +79,11 @@ def auto_deposit_ineligible_reason(
         within_minutes=DEPOSIT_COMMAND_WINDOW_MINUTES,
     ):
         return "no_recent_deposit_command"
+    if has_recent_add_command_in_chat(
+        int(telegram_chat_id),
+        within_minutes=DEPOSIT_COMMAND_WINDOW_MINUTES,
+    ):
+        return "recent_add_command"
     return None
 
 
@@ -119,6 +130,8 @@ def format_creator_club_staff_footer(
         return CREATOR_STAFF_FOOTER_AUTO
     if reason == "no_recent_deposit_command":
         return CREATOR_STAFF_FOOTER_NO_RECENT_DEPOSIT
+    if reason == "recent_add_command":
+        return CREATOR_STAFF_FOOTER_RECENT_ADD
     return CREATOR_STAFF_FOOTER_MANUAL
 
 

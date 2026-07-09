@@ -915,6 +915,31 @@ def has_recent_deposit_command_in_chat(
     return chat_has_deposit_command_since(chat_id, since)
 
 
+def chat_has_add_command_since(chat_id: int, since: datetime) -> bool:
+    """True if /add was invoked in this group at or after since (UTC)."""
+    since_utc = since if since.tzinfo else since.replace(tzinfo=timezone.utc)
+    with get_db() as session:
+        row = (
+            session.query(PlayerActivity)
+            .filter(
+                PlayerActivity.chat_id == int(chat_id),
+                PlayerActivity.activity_type == "add_cmd",
+                PlayerActivity.cancelled.is_(False),
+                PlayerActivity.created_at >= since_utc,
+            )
+            .first()
+        )
+        return row is not None
+
+
+def has_recent_add_command_in_chat(
+    chat_id: int, *, within_minutes: int = 10
+) -> bool:
+    """True if /add was invoked in this group within the last N minutes."""
+    since = datetime.now(timezone.utc) - timedelta(minutes=int(within_minutes))
+    return chat_has_add_command_since(chat_id, since)
+
+
 def check_and_consume_bypass(club_id: int, chat_id: int) -> Optional[str]:
     """Check for a bypass on this support group. Returns 'permanent', 'one_time' (and consumes it), or None."""
     with get_db() as session:

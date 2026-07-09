@@ -321,6 +321,12 @@ async def handle_group_add_outgoing(
             "deposit",
         )
         await asyncio.to_thread(
+            record_activity_for_chat,
+            int(club_id),
+            int(event.chat_id),
+            "add_cmd",
+        )
+        await asyncio.to_thread(
             invalidate_pending_one_time_bypasses,
             int(club_id),
             int(event.chat_id),

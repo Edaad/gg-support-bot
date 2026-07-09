@@ -180,6 +180,7 @@ async def _execute_add(
 
     try:
         record_activity_for_chat(club_id, chat.id, "deposit")
+        record_activity_for_chat(club_id, chat.id, "add_cmd")
         invalidate_pending_one_time_bypasses(club_id, chat.id)
     except Exception:
         logger.exception(
