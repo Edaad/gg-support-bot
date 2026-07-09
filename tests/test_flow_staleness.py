@@ -254,91 +254,90 @@ class TestCashoutAmountActorGating(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.chat_data["cashout_user_id"], 8132930521)
 
 
-class TestFlowCallbackClassification(unittest.TestCase):
-    def test_active_session_accepts_old_message_age_when_tracked(self):
+class TestFlowCallbackStaleness(unittest.TestCase):
+    def test_active_deposit_callback_ignores_message_age(self):
         update = _callback_update(age_seconds=240)
         context = SimpleNamespace(
             chat_data={
+                "deposit_club_id": 4,
                 "deposit_amount": Decimal("40"),
-                "deposit_callback_message_ids": [99],
-            }
+                "deposit_flow_message_ids": {99},
+            },
+            user_data={},
         )
-        self.assertEqual(
-            fs.classify_flow_callback(update, context, flow="deposit"),
-            "fresh",
+        self.assertFalse(
+            fs.is_flow_callback_stale(
+                update, context, flow="deposit", handler="deposit_method_chosen"
+            )
         )
 
-    def test_active_session_rejects_untracked_message(self):
+    def test_orphan_deposit_callback_rejected_with_active_session(self):
         update = _callback_update(age_seconds=5)
         context = SimpleNamespace(
             chat_data={
+                "deposit_club_id": 4,
                 "deposit_amount": Decimal("40"),
-                "deposit_callback_message_ids": [100],
-            }
+                "deposit_flow_message_ids": {100},
+            },
+            user_data={},
         )
-        self.assertEqual(
-            fs.classify_flow_callback(update, context, flow="deposit"),
-            "orphaned",
+        self.assertTrue(
+            fs.is_flow_callback_stale(
+                update, context, flow="deposit", handler="deposit_method_chosen"
+            )
         )
 
-    def test_no_session_rejects_deploy_backlog(self):
+    def test_inactive_deposit_callback_uses_age_gate(self):
         update = _callback_update(age_seconds=240)
-        context = SimpleNamespace(chat_data={})
+        context = SimpleNamespace(chat_data={}, user_data={})
         now = datetime.now(timezone.utc)
-        self.assertEqual(
-            fs.classify_flow_callback(update, context, flow="deposit", now=now),
-            "expired",
+        self.assertTrue(
+            fs.is_flow_callback_stale(
+                update,
+                context,
+                flow="deposit",
+                handler="deposit_method_chosen",
+                now=now,
+            )
         )
 
 
 class TestDepositCallbackStaleness(unittest.IsolatedAsyncioTestCase):
-    @patch.object(dep, "is_chat_method_bound", return_value=True)
-    @patch.object(dep, "bind_mode_for_method", return_value=None)
     @patch.object(dep, "get_method_by_id", return_value={"id": 29, "name": "Apple Pay", "slug": "applepay", "has_sub_options": False})
     @patch.object(dep, "_run_normal_deposit_from_choice", new_callable=AsyncMock, return_value=ConversationHandler.END)
-    async def test_active_session_accepts_old_method_picker(self, *_mocks):
+    async def test_orphan_method_callback_rejected(self, *_mocks):
         update = _callback_update(age_seconds=240)
         context = SimpleNamespace(
             chat_data={
                 "deposit_club_id": 4,
                 "deposit_amount": Decimal("40"),
-                "deposit_callback_message_ids": [99],
+                "deposit_flow_message_ids": {100},
             },
             user_data={},
         )
-        result = await dep.deposit_method_chosen(update, context)
-        self.assertEqual(result, ConversationHandler.END)
-        dep._run_normal_deposit_from_choice.assert_awaited_once()
-
-    @patch.object(dep, "get_method_by_id", return_value={"id": 29, "name": "Apple Pay", "slug": "applepay", "has_sub_options": False})
-    @patch.object(dep, "_run_normal_deposit_from_choice", new_callable=AsyncMock, return_value=ConversationHandler.END)
-    async def test_orphaned_method_callback_rejected_without_cleanup(self, *_mocks):
-        update = _callback_update(age_seconds=240)
-        context = SimpleNamespace(
-            chat_data={
-                "deposit_club_id": 4,
-                "deposit_amount": Decimal("40"),
-                "deposit_callback_message_ids": [100],
-            },
-            user_data={},
-        )
-        result = await dep.deposit_method_chosen(update, context)
-        self.assertEqual(result, ConversationHandler.END)
-        update.callback_query.answer.assert_awaited_once()
-        self.assertIn("earlier", update.callback_query.answer.await_args.args[0].lower())
-        dep._run_normal_deposit_from_choice.assert_not_awaited()
-        self.assertEqual(context.chat_data["deposit_amount"], Decimal("40"))
-
-    @patch.object(dep, "get_method_by_id", return_value={"id": 29, "name": "Apple Pay", "slug": "applepay", "has_sub_options": False})
-    @patch.object(dep, "_run_normal_deposit_from_choice", new_callable=AsyncMock, return_value=ConversationHandler.END)
-    async def test_expired_callback_without_session_rejected(self, *_mocks):
-        update = _callback_update(age_seconds=240)
-        context = SimpleNamespace(chat_data={}, user_data={})
         result = await dep.deposit_method_chosen(update, context)
         self.assertEqual(result, ConversationHandler.END)
         update.callback_query.answer.assert_awaited_once()
         self.assertIn("expired", update.callback_query.answer.await_args.args[0].lower())
         dep._run_normal_deposit_from_choice.assert_not_awaited()
+
+    @patch.object(dep, "is_chat_method_bound", return_value=True)
+    @patch.object(dep, "bind_mode_for_method", return_value=None)
+    @patch.object(dep, "get_method_by_id", return_value={"id": 29, "name": "Apple Pay", "slug": "applepay", "has_sub_options": False})
+    @patch.object(dep, "_run_normal_deposit_from_choice", new_callable=AsyncMock, return_value=ConversationHandler.END)
+    async def test_current_session_method_callback_accepted(self, *_mocks):
+        update = _callback_update(age_seconds=240)
+        context = SimpleNamespace(
+            chat_data={
+                "deposit_club_id": 4,
+                "deposit_amount": Decimal("40"),
+                "deposit_flow_message_ids": {99},
+            },
+            user_data={},
+        )
+        await dep.deposit_method_chosen(update, context)
+        dep._run_normal_deposit_from_choice.assert_awaited_once()
+        update.callback_query.answer.assert_awaited()
 
 
 if __name__ == "__main__":

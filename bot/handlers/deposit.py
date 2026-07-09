@@ -52,11 +52,12 @@ from bot.handlers.flow_staleness import (
     AMOUNT_TEXT,
     deposit_amount_actor_allowed,
     deposit_amount_show_validation_error,
+    handle_stale_flow_callback,
     is_update_too_old,
     log_stale_update,
     looks_like_amount,
-    reject_stale_flow_callback,
-    track_flow_callback_message,
+    register_flow_callback_message,
+    reset_flow_callback_messages,
 )
 from bot.handlers.response_utils import send_response_messages
 from bot.services.stripe_deposit import (
@@ -541,6 +542,7 @@ async def _send_first_time_method_setup(
     )
     if query.message:
         _track_deposit_info_message(int(chat_id), query.message.message_id)
+        register_flow_callback_message(context, query.message.message_id, flow="deposit")
 
     context.chat_data["deposit_setup_attempt_id"] = attempt.id
     context.chat_data["deposit_setup_response_data"] = _prepare_deposit_response_data(
@@ -553,7 +555,7 @@ async def _send_first_time_method_setup(
 
     chat = query.message.chat
     if bind_kind == BIND_KIND_MEMO_EMOJI and attempt.setup_emoji:
-        ack_msg = await _deposit_send_html_or_plain(
+        setup_msg = await _deposit_send_html_or_plain(
             chat,
             int(chat_id),
             html_text=format_first_time_memo_instructions_message(
@@ -569,12 +571,9 @@ async def _send_first_time_method_setup(
             log_label="memo_setup_instructions",
             reply_markup=_first_time_setup_ack_markup(attempt_id=attempt.id),
         )
-        track_flow_callback_message(
-            context, "deposit", ack_msg.message_id if ack_msg else None
-        )
     else:
         assert deposit_amount_cents is not None and attempt.amount_cents is not None
-        ack_msg = await _deposit_send_html_or_plain(
+        setup_msg = await _deposit_send_html_or_plain(
             chat,
             int(chat_id),
             html_text=format_first_time_special_amount_setup_message(
@@ -592,8 +591,9 @@ async def _send_first_time_method_setup(
             log_label="amount_setup",
             reply_markup=_first_time_setup_ack_markup(attempt_id=attempt.id),
         )
-        track_flow_callback_message(
-            context, "deposit", ack_msg.message_id if ack_msg else None
+    if setup_msg is not None:
+        register_flow_callback_message(
+            context, setup_msg.message_id, flow="deposit"
         )
 
     _schedule_deposit_reminder(context, club_id, int(chat_id), user_id)
@@ -1272,12 +1272,13 @@ async def deposit_union_chosen(update: Update, context: ContextTypes.DEFAULT_TYP
     if not update.callback_query:
         return ConversationHandler.END
     query = update.callback_query
-    stale = await reject_stale_flow_callback(
-        update, context, handler="deposit_union_chosen", flow="deposit"
-    )
-    if stale:
-        if stale == "expired":
-            _cleanup(context)
+    if await handle_stale_flow_callback(
+        update,
+        context,
+        flow="deposit",
+        handler="deposit_union_chosen",
+        cleanup=_cleanup,
+    ):
         return ConversationHandler.END
     await query.answer()
 
@@ -1335,7 +1336,7 @@ async def _prompt_deposit_union(message, context) -> None:
         "Which club would you like your deposit to be added to?",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
-    track_flow_callback_message(context, "deposit", sent.message_id)
+    register_flow_callback_message(context, sent.message_id, flow="deposit")
 
 
 async def _prompt_deposit_methods(
@@ -1358,13 +1359,13 @@ async def _prompt_deposit_methods(
     markup = InlineKeyboardMarkup(_deposit_method_buttons(methods))
     if edit_message is not None:
         await edit_message.edit_message_text(text, reply_markup=markup)
-        if edit_message.message:
-            track_flow_callback_message(
-                context, "deposit", edit_message.message.message_id
+        if edit_message.message is not None:
+            register_flow_callback_message(
+                context, edit_message.message.message_id, flow="deposit"
             )
     else:
         sent = await message.reply_text(text, reply_markup=markup)
-        track_flow_callback_message(context, "deposit", sent.message_id)
+        register_flow_callback_message(context, sent.message_id, flow="deposit")
 
 
 async def _run_first_time_method_setup_from_choice(
@@ -1484,12 +1485,13 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     if not update.callback_query:
         return ConversationHandler.END
     query = update.callback_query
-    stale = await reject_stale_flow_callback(
-        update, context, handler="deposit_method_chosen", flow="deposit"
-    )
-    if stale:
-        if stale == "expired":
-            _cleanup(context)
+    if await handle_stale_flow_callback(
+        update,
+        context,
+        flow="deposit",
+        handler="deposit_method_chosen",
+        cleanup=_cleanup,
+    ):
         return ConversationHandler.END
     await query.answer()
 
@@ -1575,12 +1577,13 @@ async def deposit_setup_ack(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.callback_query:
         return ConversationHandler.END
     query = update.callback_query
-    stale = await reject_stale_flow_callback(
-        update, context, handler="deposit_setup_ack", flow="deposit"
-    )
-    if stale:
-        if stale == "expired":
-            _cleanup(context)
+    if await handle_stale_flow_callback(
+        update,
+        context,
+        flow="deposit",
+        handler="deposit_setup_ack",
+        cleanup=_cleanup,
+    ):
         return ConversationHandler.END
     data = query.data or ""
     if not data.startswith("depft:"):
@@ -1642,12 +1645,13 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not update.callback_query:
         return ConversationHandler.END
     query = update.callback_query
-    stale = await reject_stale_flow_callback(
-        update, context, handler="deposit_sub_chosen", flow="deposit"
-    )
-    if stale:
-        if stale == "expired":
-            _cleanup(context)
+    if await handle_stale_flow_callback(
+        update,
+        context,
+        flow="deposit",
+        handler="deposit_sub_chosen",
+        cleanup=_cleanup,
+    ):
         return ConversationHandler.END
     await query.answer()
 
@@ -2193,6 +2197,7 @@ def _cleanup(context):
     chat_id = context.chat_data.get("deposit_chat_id")
     if chat_id is not None:
         _DEPOSIT_AWAITING_CHATS.discard(int(chat_id))
+    reset_flow_callback_messages(context, flow="deposit")
     clear_active_flow(context)
     for key in (
         "deposit_club_id",
@@ -2211,7 +2216,6 @@ def _cleanup(context):
         "deposit_union_label",
         "deposit_setup_attempt_id",
         "deposit_setup_response_data",
-        "deposit_callback_message_ids",
     ):
         context.chat_data.pop(key, None)
 
