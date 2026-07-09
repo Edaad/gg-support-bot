@@ -519,3 +519,40 @@ class AutoDepositEventListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class DepositFunnelStepCount(BaseModel):
+    step: str
+    label: str
+    count: int
+    conversion_rate: Optional[float] = None
+
+
+class DepositFunnelSummaryResponse(BaseModel):
+    club_id: Optional[int] = None
+    started: int
+    steps: list[DepositFunnelStepCount]
+
+
+class DepositFunnelEventRead(BaseModel):
+    id: int
+    deposit_session_id: str
+    step: str
+    club_id: Optional[int] = None
+    club_name: Optional[str] = None
+    telegram_user_id: Optional[int] = None
+    telegram_chat_id: int
+    method_slug: Optional[str] = None
+    amount_cents: Optional[int] = None
+    amount_usd: Optional[Decimal] = None
+    is_first_deposit: bool
+    requires_method_setup: bool
+    metadata: Optional[dict] = None
+    created_at: datetime
+
+
+class DepositFunnelEventListResponse(BaseModel):
+    items: list[DepositFunnelEventRead]
+    total: int
+    limit: int
+    offset: int

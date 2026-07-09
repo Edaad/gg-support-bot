@@ -8,6 +8,7 @@ import {
 } from '../api/paymentsClient'
 import PaymentMethodLinkingAnalytics from '../components/PaymentMethodLinkingAnalytics'
 import AutoDepositAnalytics from '../components/AutoDepositAnalytics'
+import DepositFunnelAnalytics from '../components/DepositFunnelAnalytics'
 
 const SOURCE_FILTER_OPTIONS: { value: BoundViaFilter; label: string }[] = [
   { value: 'all', label: 'All sources' },
@@ -18,12 +19,27 @@ const SOURCE_FILTER_OPTIONS: { value: BoundViaFilter; label: string }[] = [
   { value: 'test', label: 'Test' },
 ]
 
+const FIRST_DEPOSIT_FILTER_OPTIONS = [
+  { value: 'all', label: 'All deposits' },
+  { value: 'first', label: 'First deposit only' },
+  { value: 'repeat', label: 'Repeat only' },
+] as const
+
+const METHOD_SETUP_FILTER_OPTIONS = [
+  { value: 'all', label: 'All bind paths' },
+  { value: 'yes', label: 'Required method setup' },
+  { value: 'no', label: 'No method setup' },
+] as const
+
 const ANALYTICS_SECTIONS = [
+  { id: 'deposit_funnel', label: 'Deposit funnel' },
   { id: 'gc_binding', label: 'GC binding' },
   { id: 'full_auto_deposit', label: 'Full auto deposit' },
 ] as const
 
 type AnalyticsSection = (typeof ANALYTICS_SECTIONS)[number]['id']
+type FirstDepositFilter = (typeof FIRST_DEPOSIT_FILTER_OPTIONS)[number]['value']
+type MethodSetupFilter = (typeof METHOD_SETUP_FILTER_OPTIONS)[number]['value']
 
 function analyticsSectionTabId(section: AnalyticsSection): string {
   return `analytics-section-${section}`
@@ -33,21 +49,32 @@ export default function Analytics({ token }: { token: string }) {
   const clubSelectId = useId()
   const methodSelectId = useId()
   const sourceSelectId = useId()
+  const firstDepositSelectId = useId()
+  const methodSetupSelectId = useId()
   const fromDateId = useId()
   const toDateId = useId()
 
   const [clubs, setClubs] = useState<Club[]>([])
   const [method, setMethod] = useState<AutoDepositMethodSlug>('venmo')
+  const [funnelMethod, setFunnelMethod] = useState<AutoDepositMethodSlug | 'all'>('all')
   const [clubId, setClubId] = useState<number | 'all'>('all')
   const [sourceFilter, setSourceFilter] = useState<BoundViaFilter>('all')
+  const [firstDepositFilter, setFirstDepositFilter] = useState<FirstDepositFilter>('all')
+  const [methodSetupFilter, setMethodSetupFilter] = useState<MethodSetupFilter>('all')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [appliedMethod, setAppliedMethod] = useState<AutoDepositMethodSlug>('venmo')
+  const [appliedFunnelMethod, setAppliedFunnelMethod] =
+    useState<AutoDepositMethodSlug | 'all'>('all')
   const [appliedSource, setAppliedSource] = useState<BoundViaFilter>('all')
   const [appliedClubId, setAppliedClubId] = useState<number | 'all'>('all')
+  const [appliedFirstDeposit, setAppliedFirstDeposit] =
+    useState<FirstDepositFilter>('all')
+  const [appliedMethodSetup, setAppliedMethodSetup] =
+    useState<MethodSetupFilter>('all')
   const [appliedFrom, setAppliedFrom] = useState('')
   const [appliedTo, setAppliedTo] = useState('')
-  const [section, setSection] = useState<AnalyticsSection>('gc_binding')
+  const [section, setSection] = useState<AnalyticsSection>('deposit_funnel')
   const [err, setErr] = useState('')
 
   useEffect(() => {
@@ -59,11 +86,14 @@ export default function Analytics({ token }: { token: string }) {
   const applyFilters = useCallback(() => {
     setErr('')
     setAppliedMethod(method)
+    setAppliedFunnelMethod(funnelMethod)
     setAppliedClubId(clubId)
     setAppliedSource(sourceFilter)
+    setAppliedFirstDeposit(firstDepositFilter)
+    setAppliedMethodSetup(methodSetupFilter)
     setAppliedFrom(fromDate)
     setAppliedTo(toDate)
-  }, [method, clubId, sourceFilter, fromDate, toDate])
+  }, [method, funnelMethod, clubId, sourceFilter, firstDepositFilter, methodSetupFilter, fromDate, toDate])
 
   const appliedFilters = useMemo(
     () => ({
@@ -84,16 +114,43 @@ export default function Analytics({ token }: { token: string }) {
     [appliedClubId, appliedFrom, appliedTo],
   )
 
+  const appliedDepositFunnelFilters = useMemo(
+    () => ({
+      appliedClubId,
+      appliedMethod: appliedFunnelMethod,
+      appliedFirstDeposit,
+      appliedMethodSetup,
+      appliedFrom,
+      appliedTo,
+    }),
+    [
+      appliedClubId,
+      appliedFunnelMethod,
+      appliedFirstDeposit,
+      appliedMethodSetup,
+      appliedFrom,
+      appliedTo,
+    ],
+  )
+
   const filtersDirty =
-    method !== appliedMethod ||
+    (section === 'deposit_funnel' ? funnelMethod !== appliedFunnelMethod : method !== appliedMethod) ||
     clubId !== appliedClubId ||
     (section === 'gc_binding' && sourceFilter !== appliedSource) ||
+    (section === 'deposit_funnel' &&
+      (firstDepositFilter !== appliedFirstDeposit ||
+        methodSetupFilter !== appliedMethodSetup)) ||
     fromDate !== appliedFrom ||
     toDate !== appliedTo
 
   const handleLinkingError = useCallback((message: string) => {
     setErr(message)
   }, [])
+
+  const methodOptions =
+    section === 'deposit_funnel'
+      ? [{ value: 'all', label: 'All methods' }, ...AUTO_DEPOSIT_METHOD_OPTIONS]
+      : AUTO_DEPOSIT_METHOD_OPTIONS
 
   return (
     <div>
@@ -158,10 +215,17 @@ export default function Analytics({ token }: { token: string }) {
           <select
             id={methodSelectId}
             className="input-field-sm min-w-[8rem]"
-            value={method}
-            onChange={(e) => setMethod(e.target.value as AutoDepositMethodSlug)}
+            value={section === 'deposit_funnel' ? funnelMethod : method}
+            onChange={(e) => {
+              const v = e.target.value as AutoDepositMethodSlug | 'all'
+              if (section === 'deposit_funnel') {
+                setFunnelMethod(v)
+              } else {
+                setMethod(v as AutoDepositMethodSlug)
+              }
+            }}
           >
-            {AUTO_DEPOSIT_METHOD_OPTIONS.map((opt) => (
+            {methodOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
@@ -187,6 +251,49 @@ export default function Analytics({ token }: { token: string }) {
               ))}
             </select>
           </div>
+        )}
+
+        {section === 'deposit_funnel' && (
+          <>
+            <div>
+              <label htmlFor={firstDepositSelectId} className="label-field-xs">
+                Deposit type
+              </label>
+              <select
+                id={firstDepositSelectId}
+                className="input-field-sm min-w-[10rem]"
+                value={firstDepositFilter}
+                onChange={(e) =>
+                  setFirstDepositFilter(e.target.value as FirstDepositFilter)
+                }
+              >
+                {FIRST_DEPOSIT_FILTER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor={methodSetupSelectId} className="label-field-xs">
+                Method setup
+              </label>
+              <select
+                id={methodSetupSelectId}
+                className="input-field-sm min-w-[10rem]"
+                value={methodSetupFilter}
+                onChange={(e) =>
+                  setMethodSetupFilter(e.target.value as MethodSetupFilter)
+                }
+              >
+                {METHOD_SETUP_FILTER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
         )}
 
         <div>
@@ -238,7 +345,15 @@ export default function Analytics({ token }: { token: string }) {
         aria-labelledby={analyticsSectionTabId(section)}
         className={`panel transition-opacity ${filtersDirty ? 'opacity-80' : ''}`}
       >
-        {section === 'gc_binding' ? (
+        {section === 'deposit_funnel' ? (
+          <DepositFunnelAnalytics
+            token={token}
+            excludeTestChats
+            embedded
+            filters={appliedDepositFunnelFilters}
+            onError={handleLinkingError}
+          />
+        ) : section === 'gc_binding' ? (
           <PaymentMethodLinkingAnalytics
             token={token}
             method={appliedMethod as LinkingMethodSlug}

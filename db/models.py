@@ -1422,6 +1422,40 @@ class PaymentAutoDepositEvent(Base):
     club = relationship("Club")
 
 
+class DepositFunnelEvent(Base):
+    """Append-only /deposit → chips funnel step (one row per session + step)."""
+
+    __tablename__ = "deposit_funnel_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "deposit_session_id",
+            "step",
+            name="uq_dfe_session_step",
+        ),
+        Index("ix_dfe_club_created_at", "club_id", "created_at"),
+        Index("ix_dfe_chat_created_at", "telegram_chat_id", "created_at"),
+        Index("ix_dfe_step_created_at", "step", "created_at"),
+        Index("ix_dfe_session_id", "deposit_session_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    deposit_session_id = Column(String(64), nullable=False)
+    step = Column(String(64), nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    telegram_user_id = Column(BigInteger, nullable=True)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    method_slug = Column(String(32), nullable=True)
+    amount_cents = Column(Integer, nullable=True)
+    is_first_deposit = Column(Boolean, nullable=False, default=False)
+    requires_method_setup = Column(Boolean, nullable=False, default=False)
+    metadata_json = Column("metadata", JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    club = relationship("Club")
+
+
 class PaymentMethodBindAttempt(Base):
     """In-flight first-time payment method setup (special amount or memo emoji)."""
 

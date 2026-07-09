@@ -85,6 +85,7 @@ def create_app() -> FastAPI:
     from api.routes.bonus import router as bonus_router
     from api.routes.cashout_records import router as cashout_records_router
     from api.routes.payments import router as payments_router
+    from api.routes.deposit_funnel import router as deposit_funnel_router
     from api.routes.stripe_deposit import router as stripe_deposit_router
     from api.routes.venmo_payments import router as venmo_payments_router
     from api.routes.zelle_payments import router as zelle_payments_router
@@ -114,6 +115,7 @@ def create_app() -> FastAPI:
     app.include_router(bonus_router)
     app.include_router(cashout_records_router)
     app.include_router(payments_router)
+    app.include_router(deposit_funnel_router)
     app.include_router(early_rakeback_webhook_router)
     app.include_router(audit_router)
     app.include_router(issue_reports_router)

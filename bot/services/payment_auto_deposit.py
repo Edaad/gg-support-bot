@@ -24,6 +24,10 @@ from bot.services.mtproto_group_add import (
     format_add_confirmation,
 )
 from bot.services.payment_auto_deposit_events import record_auto_deposit_event
+from bot.services.deposit_funnel_events import (
+    record_chips_credited_funnel,
+    record_payment_funnel_from_ingest,
+)
 from bot.services.payment_group_notify import support_bot_tokens_to_try
 from bot.services.player_details import gg_player_id_from_title, parse_group_title_parts
 from club_gc_settings import get_club_gc_config_by_link_club_id
@@ -219,6 +223,21 @@ def schedule_auto_deposit_from_payment(
     goods_or_services: bool = False,
 ) -> None:
     """Schedule background auto-deposit if eligible (non-blocking for ingest)."""
+    try:
+        record_payment_funnel_from_ingest(
+            telegram_chat_id=telegram_chat_id,
+            club_id=club_id,
+            amount_cents=amount_cents,
+            payment_method_slug=payment_method_slug,
+            payment_id=payment_id,
+            auto_bound=auto_bound,
+        )
+    except Exception:
+        logger.debug(
+            "payment_auto_deposit: funnel ingest record failed payment_id=%s",
+            payment_id,
+            exc_info=True,
+        )
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -456,6 +475,22 @@ async def maybe_auto_deposit_from_payment(
         status="succeeded",
         chip_add_status=chip_status,
     )
+    try:
+        record_chips_credited_funnel(
+            telegram_chat_id=int(telegram_chat_id),
+            club_id=club_id,
+            amount_cents=amount_cents,
+            payment_method_slug=payment_method_slug,
+            payment_id=payment_id,
+            chip_add_status=chip_status,
+            path="e2e_auto_deposit",
+        )
+    except Exception:
+        logger.debug(
+            "payment_auto_deposit: funnel chips_credited failed payment_id=%s",
+            payment_id,
+            exc_info=True,
+        )
 
     logger.info(
         "payment_auto_deposit: completed payment_id=%s chat_id=%s amount=%s",

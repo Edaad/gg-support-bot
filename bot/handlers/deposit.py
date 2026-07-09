@@ -79,6 +79,17 @@ from bot.services.payment_method_binding import (
     start_bind_attempt,
 )
 from bot.services.payment_method_binding import expire_attempt as expire_bind_attempt
+from bot.services.deposit_funnel_events import (
+    STEP_AMOUNT_ENTERED,
+    STEP_BIND_SETUP_COMPLETED,
+    STEP_DEPOSIT_STARTED,
+    STEP_INSTRUCTIONS_SENT,
+    STEP_METHOD_CHOSEN,
+    STEP_REFERRAL_COMPLETED,
+    STEP_UNION_CHOSEN,
+    new_deposit_session_id,
+    record_deposit_funnel_event,
+)
 from bot.runtime_config import is_test_bot_worker, use_payment_v2
 from db.connection import get_db
 from db.models import (
@@ -95,6 +106,59 @@ from db.models import (
 logger = logging.getLogger(__name__)
 
 DEPOSIT_REFERRAL, DEPOSIT_AMOUNT, DEPOSIT_UNION, DEPOSIT_CHOOSE, DEPOSIT_SUB, DEPOSIT_SETUP_ACK = range(6)
+
+
+def _ensure_deposit_session(context: ContextTypes.DEFAULT_TYPE) -> str:
+    session_id = context.chat_data.get("deposit_session_id")
+    if not session_id:
+        session_id = new_deposit_session_id()
+        context.chat_data["deposit_session_id"] = session_id
+    return str(session_id)
+
+
+def _funnel_amount_cents(context: ContextTypes.DEFAULT_TYPE) -> int | None:
+    amount = context.chat_data.get("deposit_amount")
+    if not isinstance(amount, Decimal):
+        return None
+    try:
+        return deposit_amount_to_cents(amount)
+    except Exception:
+        return None
+
+
+def _record_funnel_from_context(
+    context: ContextTypes.DEFAULT_TYPE,
+    step: str,
+    *,
+    method_slug: str | None = None,
+    metadata: dict | None = None,
+) -> None:
+    chat_id = context.chat_data.get("deposit_chat_id")
+    if chat_id is None:
+        return
+    try:
+        record_deposit_funnel_event(
+            deposit_session_id=_ensure_deposit_session(context),
+            step=step,
+            telegram_chat_id=int(chat_id),
+            club_id=context.chat_data.get("deposit_club_id"),
+            telegram_user_id=context.chat_data.get("deposit_user_id"),
+            method_slug=method_slug,
+            amount_cents=_funnel_amount_cents(context),
+            is_first_deposit=bool(context.chat_data.get("deposit_is_first", False)),
+            requires_method_setup=bool(
+                context.chat_data.get("deposit_requires_method_setup", False)
+            ),
+            metadata=metadata,
+        )
+    except Exception:
+        logger.debug(
+            "deposit funnel record failed step=%s chat_id=%s",
+            step,
+            chat_id,
+            exc_info=True,
+        )
+
 
 # Test-bot fallback when chat_data does not persist between updates (group chats).
 _DEPOSIT_AWAITING_CHATS: set[int] = set()
@@ -1088,17 +1152,21 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.chat_data.pop("deposit_admin_initiated", None)
         context.chat_data.pop("deposit_admin_user_id", None)
 
+    context.chat_data["deposit_club_id"] = club_id
+    context.chat_data["deposit_chat_id"] = chat.id
+
     if is_bot_admin and not is_test_bot_worker():
         if not get_club_allows_admin_commands(club_id):
             return ConversationHandler.END
-        context.chat_data["deposit_club_id"] = club_id
-        context.chat_data["deposit_chat_id"] = chat.id
         context.chat_data["deposit_admin_initiated"] = True
         context.chat_data["deposit_admin_user_id"] = user_id
+        _ensure_deposit_session(context)
+        _record_funnel_from_context(context, STEP_DEPOSIT_STARTED)
 
         simple = get_club_simple_mode(club_id, "deposit")
         if simple:
             await _send_simple_response(update.message, simple)
+            _record_funnel_from_context(context, STEP_INSTRUCTIONS_SENT)
             _schedule_deposit_reminder(context, club_id, chat.id, user_id=None)
             _cleanup(context)
             return ConversationHandler.END
@@ -1120,6 +1188,8 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.chat_data["deposit_user_id"] = user_id
     context.chat_data["deposit_is_first"] = first
     context.chat_data["deposit_fd_settings"] = settings
+    _ensure_deposit_session(context)
+    _record_funnel_from_context(context, STEP_DEPOSIT_STARTED)
 
     simple = get_club_simple_mode(club_id, "deposit")
     if simple:
@@ -1158,6 +1228,7 @@ async def deposit_referral_received(update: Update, context: ContextTypes.DEFAUL
     if simple:
         return await _finish_simple_deposit(update.message, context)
 
+    _record_funnel_from_context(context, STEP_REFERRAL_COMPLETED)
     return await _ask_deposit_amount(update.message, context)
 
 
@@ -1221,6 +1292,7 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         return DEPOSIT_AMOUNT
 
     context.chat_data["deposit_amount"] = amount
+    _record_funnel_from_context(context, STEP_AMOUNT_ENTERED)
     try:
         methods = get_methods_for_amount(club_id, "deposit", amount)
     except Exception:
@@ -1294,6 +1366,11 @@ async def deposit_union_chosen(update: Update, context: ContextTypes.DEFAULT_TYP
 
     context.chat_data["deposit_union_shorthand"] = shorthand
     context.chat_data["deposit_union_label"] = label
+    _record_funnel_from_context(
+        context,
+        STEP_UNION_CHOSEN,
+        metadata={"union_shorthand": shorthand, "union_label": label},
+    )
 
     amount = context.chat_data.get("deposit_amount")
     if not isinstance(amount, Decimal):
@@ -1539,6 +1616,8 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
             )
             return DEPOSIT_SUB
 
+    _record_funnel_from_context(context, STEP_METHOD_CHOSEN, method_slug=method_slug)
+
     amount = context.chat_data.get("deposit_amount", "?")
     chat_id = query.message.chat.id if query.message else None
 
@@ -1555,6 +1634,7 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
     if bind_kind and chat_id is not None and not chat_bound:
+        context.chat_data["deposit_requires_method_setup"] = True
         return await _run_first_time_method_setup_from_choice(
             query,
             context,
@@ -1638,6 +1718,11 @@ async def deposit_setup_ack(update: Update, context: ContextTypes.DEFAULT_TYPE):
         int(chat_id),
         response_data=response_data,
     )
+    _record_funnel_from_context(
+        context,
+        STEP_BIND_SETUP_COMPLETED,
+        metadata={"bind_attempt_id": attempt_id},
+    )
     return await _complete_deposit_flow(query.message.chat, context)
 
 
@@ -1688,6 +1773,12 @@ async def deposit_sub_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
         parent_slug,
         _stripe_checkout_enabled(response_data),
     )
+    _record_funnel_from_context(
+        context,
+        STEP_METHOD_CHOSEN,
+        method_slug=parent_slug or sub_slug,
+        metadata={"sub_option_id": sub_id, "sub_slug": sub_slug},
+    )
 
     ok = await _send_deposit_method_response(
         query,
@@ -1718,6 +1809,8 @@ async def _finish_simple_deposit(message, context):
 
     if simple:
         await _send_simple_response(message, simple)
+
+    _record_funnel_from_context(context, STEP_INSTRUCTIONS_SENT)
 
     try:
         record_activity(club_id, user_id, chat_id, "deposit")
@@ -1793,6 +1886,17 @@ async def _complete_deposit_flow(chat, context: ContextTypes.DEFAULT_TYPE):
     club_id = context.chat_data.get("deposit_club_id")
     chat_id = context.chat_data.get("deposit_chat_id")
     customer_uid = context.chat_data.get("deposit_user_id")
+    method_id = context.chat_data.get("deposit_method_id")
+    method_slug = None
+    if method_id:
+        method = get_method_by_id(int(method_id))
+        if method:
+            method_slug = (method.get("slug") or "").strip().lower() or None
+    _record_funnel_from_context(
+        context,
+        STEP_INSTRUCTIONS_SENT,
+        method_slug=method_slug,
+    )
     _record_deposit(context)
     _persist_deposit_union(context)
     await _send_union_chips_message(chat, context)
@@ -2216,6 +2320,8 @@ def _cleanup(context):
         "deposit_union_label",
         "deposit_setup_attempt_id",
         "deposit_setup_response_data",
+        "deposit_session_id",
+        "deposit_requires_method_setup",
     ):
         context.chat_data.pop(key, None)
 

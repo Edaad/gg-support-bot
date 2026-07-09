@@ -332,6 +332,26 @@ async def handle_group_add_outgoing(
             event.chat_id,
         )
 
+    try:
+        from bot.services.deposit_funnel_events import record_chips_credited_funnel
+        from bot.services.payment_method_binding import deposit_amount_to_cents
+
+        await asyncio.to_thread(
+            record_chips_credited_funnel,
+            telegram_chat_id=int(event.chat_id),
+            club_id=int(club_id),
+            amount_cents=deposit_amount_to_cents(amount),
+            chip_add_status=None,
+            path="manual_add",
+        )
+    except Exception:
+        logger.debug(
+            "group_add: funnel chips_credited failed club_id=%s chat_id=%s",
+            club_id,
+            event.chat_id,
+            exc_info=True,
+        )
+
     # Optional ClubGG auto chip-adding (no-op unless enabled + configured).
     try:
         from bot.services.clubgg_deposit_api import trigger_auto_chip_add

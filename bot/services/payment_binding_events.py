@@ -101,7 +101,7 @@ def record_payment_bound(
     bind_attempt_id: int | None = None,
 ) -> int:
     event_type = EVENT_PAYMENT_AUTO_BOUND if auto_bound else EVENT_PAYMENT_BOUND
-    return record_binding_event(
+    event_id = record_binding_event(
         BindingEventRecord(
             event_type=event_type,
             payment_method_slug=payment_method_slug,
@@ -118,6 +118,25 @@ def record_payment_bound(
             previous_telegram_chat_id=previous_telegram_chat_id,
         )
     )
+    if not auto_bound:
+        try:
+            from bot.services.deposit_funnel_events import (
+                record_payment_funnel_on_manual_bind_from_event,
+            )
+
+            record_payment_funnel_on_manual_bind_from_event(
+                payment_method_slug=payment_method_slug,
+                payment_id=payment_id,
+                telegram_chat_id=int(telegram_chat_id),
+                club_id=int(club_id) if club_id is not None else None,
+            )
+        except Exception:
+            logger.debug(
+                "record_payment_bound: funnel manual bind failed payment_id=%s",
+                payment_id,
+                exc_info=True,
+            )
+    return event_id
 
 
 def record_group_binding_event(
