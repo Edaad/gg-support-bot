@@ -22,6 +22,15 @@ _STALE_CALLBACK_ALERT = "This session expired — use {flow_command} again."
 _DEFAULT_MAX_AGE_SECONDS = 60
 _NON_AMOUNT_TEXT_RE = re.compile(r"[a-zA-Z]")
 
+DEPOSIT_AMOUNT_PROMPT = (
+    "How much would you like to deposit?\n\n"
+    "Enter an amount, e.g. 200 or $200."
+)
+DEPOSIT_AMOUNT_INVALID_REPLY = (
+    "That doesn't look like a valid amount. "
+    "Enter numbers only, e.g. 200 or $200."
+)
+
 
 def update_max_age_seconds() -> int:
     raw = (os.getenv("BOT_UPDATE_MAX_AGE_SECONDS") or "").strip()
@@ -177,16 +186,44 @@ class _AmountTextFilter(filters.MessageFilter):
 AMOUNT_TEXT = _AmountTextFilter()
 
 
+def parse_deposit_amount(text: str | None) -> Decimal | None:
+    """Parse a single deposit dollar amount from player text."""
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    cleaned = raw.replace("$", "").replace(",", "").strip()
+    if not cleaned:
+        return None
+    try:
+        amount = Decimal(cleaned)
+    except (InvalidOperation, Exception):
+        return None
+    if amount <= 0:
+        return None
+    return amount
+
+
 def looks_like_amount(text: str | None) -> bool:
     """True when the full message is a single numeric amount (no extra words)."""
-    raw = (text or "").strip().replace("$", "").replace(",", "")
-    if not raw or _NON_AMOUNT_TEXT_RE.search(raw):
+    raw = (text or "").strip()
+    if not raw:
         return False
-    try:
-        Decimal(raw)
-    except (InvalidOperation, Exception):
+    normalized = raw.replace("$", "").replace(",", "")
+    if _NON_AMOUNT_TEXT_RE.search(normalized):
         return False
-    return True
+    return parse_deposit_amount(raw) is not None
+
+
+def _looks_like_amount_attempt(text: str | None) -> bool:
+    """True when a group message might be someone trying to enter a deposit amount."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    if parse_deposit_amount(raw) is not None:
+        return True
+    if "$" in raw:
+        return True
+    return bool(re.search(r"\d", raw))
 
 
 def deposit_amount_actor_allowed(
@@ -195,11 +232,16 @@ def deposit_amount_actor_allowed(
     sender_id: int | None,
     text: str | None,
 ) -> bool:
-    if sender_id is None or not looks_like_amount(text):
+    if sender_id is None:
+        return False
+    raw = (text or "").strip()
+    if not raw:
         return False
     if context.chat_data.get("deposit_admin_initiated"):
-        # Admin-initiated: player or support account may enter the amount.
-        return True
+        if sender_id in ADMIN_USER_IDS:
+            return True
+        # In admin-initiated groups, ignore unrelated chatter without digits/$.
+        return _looks_like_amount_attempt(raw)
     depositor_id = context.chat_data.get("deposit_user_id")
     return depositor_id is not None and sender_id == depositor_id
 

@@ -62,10 +62,22 @@ def _callback_update(*, age_seconds: float, chat_id: int = -1003978131309):
 
 
 class TestFlowStalenessHelpers(unittest.TestCase):
+    def test_parse_deposit_amount(self):
+        self.assertEqual(fs.parse_deposit_amount("40"), Decimal("40"))
+        self.assertEqual(fs.parse_deposit_amount("$200"), Decimal("200"))
+        self.assertEqual(fs.parse_deposit_amount("$ 200"), Decimal("200"))
+        self.assertEqual(fs.parse_deposit_amount("1,000"), Decimal("1000"))
+        self.assertEqual(fs.parse_deposit_amount("100.50"), Decimal("100.50"))
+        self.assertIsNone(fs.parse_deposit_amount("0"))
+        self.assertIsNone(fs.parse_deposit_amount("-5"))
+        self.assertIsNone(fs.parse_deposit_amount("abc"))
+        self.assertIsNone(fs.parse_deposit_amount("40 debit card"))
+
     def test_looks_like_amount(self):
         self.assertTrue(fs.looks_like_amount("40"))
         self.assertTrue(fs.looks_like_amount("$100.50"))
-        self.assertTrue(fs.looks_like_amount("0"))
+        self.assertTrue(fs.looks_like_amount("1,000"))
+        self.assertFalse(fs.looks_like_amount("0"))
         self.assertFalse(fs.looks_like_amount("40 debit card"))
         self.assertFalse(fs.looks_like_amount("It keeps saying link expired"))
         self.assertFalse(fs.looks_like_amount("abc"))
@@ -89,7 +101,15 @@ class TestFlowStalenessHelpers(unittest.TestCase):
             fs.deposit_amount_actor_allowed(ctx, sender_id=8132930521, text="100")
         )
         self.assertTrue(
+            fs.deposit_amount_actor_allowed(ctx, sender_id=8132930521, text="$200")
+        )
+        self.assertTrue(
             fs.deposit_amount_actor_allowed(ctx, sender_id=7516419496, text="100")
+        )
+        self.assertFalse(
+            fs.deposit_amount_actor_allowed(
+                ctx, sender_id=8132930521, text="It keeps saying link expired"
+            )
         )
 
     def test_cashout_amount_actor_admin_initiated(self):
@@ -212,6 +232,37 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, dep.DEPOSIT_CHOOSE)
         self.assertEqual(context.chat_data["deposit_amount"], Decimal("40"))
         self.assertEqual(context.chat_data["deposit_user_id"], 8132930521)
+
+    @patch.object(dep, "_prompt_deposit_methods", new_callable=AsyncMock)
+    @patch.object(dep, "is_round_table_club", return_value=False)
+    @patch.object(
+        dep,
+        "get_methods_for_amount",
+        return_value=[{"id": 29, "slug": "applepay", "name": "Apple Pay"}],
+    )
+    async def test_customer_dollar_amount_accepted(self, *_mocks):
+        update = _message_update(age_seconds=5, text="$200", user_id=8132930521)
+        context = self._admin_context()
+        result = await dep.deposit_amount_received(update, context)
+        self.assertEqual(result, dep.DEPOSIT_CHOOSE)
+        self.assertEqual(context.chat_data["deposit_amount"], Decimal("200"))
+
+    @patch.object(dep, "ADMIN_USER_IDS", {7516419496})
+    async def test_customer_invalid_amount_gets_retry_message(self):
+        context = SimpleNamespace(
+            chat_data={
+                "deposit_club_id": 4,
+                "deposit_chat_id": -1003978131309,
+                "deposit_user_id": 8132930521,
+                "deposit_awaiting_amount": True,
+            },
+            user_data={},
+        )
+        update = _message_update(age_seconds=5, text="two hundred", user_id=8132930521)
+        result = await dep.deposit_amount_received(update, context)
+        self.assertEqual(result, dep.DEPOSIT_AMOUNT)
+        update.message.reply_text.assert_awaited_once_with(fs.DEPOSIT_AMOUNT_INVALID_REPLY)
+        self.assertNotIn("deposit_amount", context.chat_data)
 
     async def test_stale_amount_update_is_silent(self):
         update = _message_update(age_seconds=240, text="40", user_id=7516419496)
