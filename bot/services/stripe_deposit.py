@@ -276,6 +276,7 @@ def create_stripe_checkout_session(
     checkout_min_usd: Decimal | float | int | str | None = None,
     checkout_max_usd: Decimal | float | int | str | None = None,
     checkout_preset_usd: Decimal | float | int | str | None = None,
+    deposit_session_id: str | None = None,
 ) -> StripeCheckoutResult:
     """Create a Checkout Session where the player picks amount on Stripe.
 
@@ -321,6 +322,8 @@ def create_stripe_checkout_session(
         session_metadata["gg_player_id"] = gg_player_id
     if effective_title:
         session_metadata["group_title_snapshot"] = effective_title[:500]
+    if deposit_session_id:
+        session_metadata["deposit_session_id"] = str(deposit_session_id)
 
     min_cents = max_cents = preset_cents = None
     if not no_minimum:
@@ -437,6 +440,9 @@ def record_completed_checkout_payment(
     amount_total = checkout_obj.get("amount_total")
     amount_cents = int(amount_total) if amount_total is not None else 0
     payment_method_id = _metadata_int(meta, "payment_method_id")
+    deposit_session_id = meta.get("deposit_session_id")
+    if deposit_session_id is not None:
+        deposit_session_id = str(deposit_session_id).strip() or None
     pi = _extract_payment_intent_id(checkout_obj.get("payment_intent"))
 
     with get_db() as db:
@@ -448,6 +454,8 @@ def record_completed_checkout_payment(
         if existing is not None:
             if existing.status == "complete":
                 return False
+            if deposit_session_id and not existing.deposit_session_id:
+                existing.deposit_session_id = deposit_session_id
             mark_checkout_session_paid(
                 existing,
                 amount_total=amount_total,
@@ -467,6 +475,7 @@ def record_completed_checkout_payment(
             status="complete",
             payment_method_id=payment_method_id,
             stripe_payment_intent_id=pi,
+            deposit_session_id=deposit_session_id,
             completed_at=now,
             updated_at=now,
         )
@@ -621,6 +630,7 @@ async def notify_stripe_payment_completed(checkout_obj: dict[str, Any]) -> None:
             payment_method_slug="stripe",
             payment_id=stripe_payment_id,
             group_title=group_title,
+            stripe_checkout_session_id=session_id,
         )
 
     logger.info(

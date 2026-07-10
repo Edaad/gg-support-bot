@@ -30,8 +30,8 @@ from bot.services.deposit_funnel_events import (
     new_deposit_session_id,
     record_deposit_funnel_event,
     record_payment_funnel_from_ingest,
-    resolve_deposit_session_for_chat,
 )
+from bot.services.flow_sessions import ResolvedDepositSession
 from db.connection import get_db_dependency
 from db.models import DepositFunnelEvent
 
@@ -165,34 +165,13 @@ class DepositFunnelEventsServiceTest(unittest.TestCase):
         )
         self.assertEqual(session.add.call_count, 1)
 
-    @patch("bot.services.deposit_funnel_events.get_db")
-    def test_resolve_session_prefers_instructions_sent(self, mock_get_db):
-        session = MagicMock()
-        mock_get_db.return_value.__enter__.return_value = session
-        anchor = DepositFunnelEvent(
-            deposit_session_id="sess-1",
-            step=STEP_INSTRUCTIONS_SENT,
-            telegram_chat_id=-1001,
-            club_id=1,
-            is_first_deposit=False,
-            requires_method_setup=False,
-        )
-        session.query.return_value.filter.return_value.order_by.return_value.first.return_value = (
-            anchor
-        )
-        resolved = resolve_deposit_session_for_chat(-1001)
-        self.assertIsNotNone(resolved)
-        self.assertEqual(resolved.deposit_session_id, "sess-1")
-
-    @patch("bot.services.deposit_funnel_events.resolve_deposit_session_for_chat")
+    @patch("bot.services.deposit_funnel_events.resolve_deposit_session_id")
     @patch("bot.services.deposit_funnel_events.record_deposit_funnel_event")
     def test_payment_ingest_records_bound_when_auto_bound(
         self, mock_record, mock_resolve
     ):
-        mock_resolve.return_value = DepositFunnelEvent(
+        mock_resolve.return_value = ResolvedDepositSession(
             deposit_session_id="sess-2",
-            step=STEP_INSTRUCTIONS_SENT,
-            telegram_chat_id=-1002,
             club_id=2,
             telegram_user_id=7,
             is_first_deposit=True,
@@ -210,7 +189,7 @@ class DepositFunnelEventsServiceTest(unittest.TestCase):
         self.assertIn(STEP_PAYMENT_RECEIVED, steps)
         self.assertIn(STEP_PAYMENT_BOUND, steps)
 
-    @patch("bot.services.deposit_funnel_events.resolve_deposit_session_for_chat")
+    @patch("bot.services.deposit_funnel_events.resolve_deposit_session_id")
     @patch("bot.services.deposit_funnel_events.record_deposit_funnel_event")
     def test_payment_ingest_skips_without_anchor(self, mock_record, mock_resolve):
         mock_resolve.return_value = None
@@ -242,14 +221,16 @@ class DepositFunnelApiTest(unittest.TestCase):
         response = client.get("/api/deposits/funnel/summary")
         self.assertIn(response.status_code, (401, 403))
 
-    def test_summary_returns_steps(self):
-        mock_db = MagicMock()
-        mock_db.query.return_value.filter.return_value.with_entities.return_value.group_by.return_value.all.return_value = [
-            ("deposit_started", 10),
-            ("instructions_sent", 8),
-            ("chips_credited", 5),
-        ]
-        client = TestClient(_make_app(mock_db))
+    @patch("api.routes.deposit_funnel._step_counts_for_sessions")
+    @patch("api.routes.deposit_funnel._started_session_ids", return_value={"s1", "s2"})
+    def test_summary_returns_steps(self, _mock_started, mock_counts):
+        display_steps = display_funnel_step_order(show_union_step=False)
+        counts = {step: 0 for step in display_steps}
+        counts[STEP_DEPOSIT_STARTED] = 10
+        counts[STEP_INSTRUCTIONS_SENT] = 8
+        counts[STEP_CHIPS_CREDITED] = 5
+        mock_counts.return_value = counts
+        client = TestClient(_make_app(MagicMock()))
         response = client.get(
             "/api/deposits/funnel/summary",
             headers={"Authorization": f"Bearer {TOKEN}"},
@@ -272,18 +253,18 @@ class DepositFunnelApiTest(unittest.TestCase):
 
     @patch("api.routes.deposit_funnel.is_round_table_club", return_value=True)
     @patch("api.routes.deposit_funnel._union_breakdown")
-    @patch("api.routes.deposit_funnel._funnel_events_query")
+    @patch("api.routes.deposit_funnel._step_counts_for_sessions")
+    @patch("api.routes.deposit_funnel._started_session_ids", return_value={"s1"})
     def test_summary_round_table_includes_union_breakdown(
-        self, mock_funnel_q, mock_union, _mock_rt
+        self, _mock_started, mock_counts, mock_union, _mock_rt
     ):
         from api.schemas_payments import DepositFunnelUnionBreakdown
 
-        mock_base = MagicMock()
-        mock_base.with_entities.return_value.group_by.return_value.all.return_value = [
-            ("deposit_started", 4),
-            ("union_chosen", 3),
-        ]
-        mock_funnel_q.return_value = mock_base
+        display_steps = display_funnel_step_order(show_union_step=True)
+        counts = {step: 0 for step in display_steps}
+        counts[STEP_DEPOSIT_STARTED] = 4
+        counts[STEP_UNION_CHOSEN] = 3
+        mock_counts.return_value = counts
         mock_union.return_value = DepositFunnelUnionBreakdown(
             round_table=2,
             aces_table=1,
@@ -303,9 +284,10 @@ class DepositFunnelApiTest(unittest.TestCase):
 
     @patch("api.routes.deposit_funnel._compute_step_latencies")
     @patch("api.routes.deposit_funnel._step_counts_for_sessions")
+    @patch("api.routes.deposit_funnel._started_session_ids", return_value={"sess-1"})
     @patch("api.routes.deposit_funnel._full_auto_e2e_session_ids", return_value={"sess-1"})
     def test_latency_summary_returns_avg_seconds(
-        self, _mock_sessions, mock_counts, mock_latencies
+        self, _mock_e2e, _mock_started, mock_counts, mock_latencies
     ):
         display_steps = display_funnel_step_order(
             show_union_step=False,

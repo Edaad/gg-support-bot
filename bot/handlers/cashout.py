@@ -34,6 +34,11 @@ from bot.services.club import (
     update_group_name,
 )
 from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
+from bot.services.flow_sessions import (
+    END_REASON_SUPERSEDED,
+    abandon_flow_session,
+    get_active_session,
+)
 from bot.handlers.flow_staleness import (
     AMOUNT_TEXT,
     cashout_amount_actor_allowed,
@@ -68,6 +73,10 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     update_group_name(chat.id, chat.title)
+
+    active = get_active_session(chat.id)
+    if active is not None and active.flow_type == "deposit":
+        abandon_flow_session(active.session_uuid, end_reason=END_REASON_SUPERSEDED)
 
     user_id = update.effective_user.id
     is_bot_admin = user_id in ADMIN_USER_IDS

@@ -1001,9 +1001,11 @@ class StripeCheckoutSession(Base):
         ),
         Index("ix_stripe_checkout_sessions_club_created", "club_id", "created_at"),
         Index("ix_stripe_checkout_sessions_club_status", "club_id", "status"),
+        Index("ix_stripe_checkout_deposit_session_id", "deposit_session_id"),
     )
 
     id = Column(Integer, primary_key=True)
+    deposit_session_id = Column(String(64), nullable=True)
     stripe_checkout_session_id = Column(String(255), unique=True, nullable=False)
     stripe_customer_id = Column(
         String(255),
@@ -1422,6 +1424,36 @@ class PaymentAutoDepositEvent(Base):
     club = relationship("Club")
 
 
+class BotFlowSession(Base):
+    """One active deposit/cashout flow per support group chat (UUID lifecycle)."""
+
+    __tablename__ = "bot_flow_sessions"
+    __table_args__ = (
+        Index("ix_bfs_chat_status", "telegram_chat_id", "status"),
+        Index("ix_bfs_flow_type_status", "flow_type", "status"),
+        Index(
+            "uq_bfs_active_chat",
+            "telegram_chat_id",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+        ),
+    )
+
+    session_uuid = Column(String(64), primary_key=True)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    flow_type = Column(String(16), nullable=False)
+    status = Column(String(16), nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    telegram_user_id = Column(BigInteger, nullable=True)
+    started_at = Column(DateTime(timezone=True), server_default=func.now())
+    ended_at = Column(DateTime(timezone=True), nullable=True)
+    end_reason = Column(String(32), nullable=True)
+
+    club = relationship("Club")
+
+
 class DepositFunnelEvent(Base):
     """Append-only /deposit → chips funnel step (one row per session + step)."""
 
@@ -1469,6 +1501,7 @@ class PaymentMethodBindAttempt(Base):
             "status",
         ),
         Index("ix_pmba_created_at", "created_at"),
+        Index("ix_pmba_deposit_session_id", "deposit_session_id"),
         Index(
             "uq_pmba_pending_variant_amount",
             "variant_id",
@@ -1506,6 +1539,7 @@ class PaymentMethodBindAttempt(Base):
         ForeignKey("club_payment_tier_variants.id", ondelete="CASCADE"),
         nullable=False,
     )
+    deposit_session_id = Column(String(64), nullable=True)
     bind_kind = Column(String(32), nullable=False, default="special_amount")
     amount_cents = Column(Integer, nullable=True)
     setup_emoji = Column(String(32), nullable=True)

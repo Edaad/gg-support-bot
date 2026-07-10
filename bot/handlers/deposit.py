@@ -4,7 +4,7 @@ import html
 import logging
 import re
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -49,13 +49,14 @@ from bot.services.round_table_unions import (
 )
 from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
 from bot.handlers.flow_staleness import (
-    AMOUNT_TEXT,
+    DEPOSIT_AMOUNT_INVALID_REPLY,
+    DEPOSIT_AMOUNT_PROMPT,
     deposit_amount_actor_allowed,
     deposit_amount_show_validation_error,
     handle_stale_flow_callback,
     is_update_too_old,
     log_stale_update,
-    looks_like_amount,
+    parse_deposit_amount,
     register_flow_callback_message,
     reset_flow_callback_messages,
 )
@@ -79,6 +80,12 @@ from bot.services.payment_method_binding import (
     start_bind_attempt,
 )
 from bot.services.payment_method_binding import expire_attempt as expire_bind_attempt
+from bot.services.flow_sessions import (
+    END_REASON_CANCELLED,
+    END_REASON_TIMEOUT,
+    abandon_flow_session,
+    start_flow_session,
+)
 from bot.services.deposit_funnel_events import (
     STEP_AMOUNT_ENTERED,
     STEP_BIND_SETUP_COMPLETED,
@@ -86,7 +93,6 @@ from bot.services.deposit_funnel_events import (
     STEP_INSTRUCTIONS_SENT,
     STEP_METHOD_CHOSEN,
     STEP_UNION_CHOSEN,
-    new_deposit_session_id,
     record_deposit_funnel_event,
 )
 from bot.runtime_config import is_test_bot_worker, use_payment_v2
@@ -107,12 +113,31 @@ logger = logging.getLogger(__name__)
 DEPOSIT_REFERRAL, DEPOSIT_AMOUNT, DEPOSIT_UNION, DEPOSIT_CHOOSE, DEPOSIT_SUB, DEPOSIT_SETUP_ACK = range(6)
 
 
-def _ensure_deposit_session(context: ContextTypes.DEFAULT_TYPE) -> str:
+def _init_deposit_flow_session(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    club_id: int,
+    chat_id: int,
+    user_id: int | None,
+) -> str:
+    session_uuid = start_flow_session(
+        telegram_chat_id=int(chat_id),
+        flow_type="deposit",
+        club_id=int(club_id),
+        telegram_user_id=int(user_id) if user_id is not None else None,
+    )
+    context.chat_data["deposit_session_id"] = session_uuid
+    return session_uuid
+
+
+def _abandon_deposit_flow_session(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    end_reason: str,
+) -> None:
     session_id = context.chat_data.get("deposit_session_id")
-    if not session_id:
-        session_id = new_deposit_session_id()
-        context.chat_data["deposit_session_id"] = session_id
-    return str(session_id)
+    if session_id:
+        abandon_flow_session(str(session_id), end_reason=end_reason)
 
 
 def _funnel_amount_cents(context: ContextTypes.DEFAULT_TYPE) -> int | None:
@@ -135,9 +160,17 @@ def _record_funnel_from_context(
     chat_id = context.chat_data.get("deposit_chat_id")
     if chat_id is None:
         return
+    session_id = context.chat_data.get("deposit_session_id")
+    if not session_id:
+        logger.debug(
+            "deposit funnel skip step=%s chat_id=%s: no deposit_session_id",
+            step,
+            chat_id,
+        )
+        return
     try:
         record_deposit_funnel_event(
-            deposit_session_id=_ensure_deposit_session(context),
+            deposit_session_id=str(session_id),
             step=step,
             telegram_chat_id=int(chat_id),
             club_id=context.chat_data.get("deposit_club_id"),
@@ -592,6 +625,7 @@ async def _send_first_time_method_setup(
             bind_kind=bind_kind,
             deposit_amount_cents=deposit_amount_cents,
             initiated_by_telegram_user_id=int(user_id) if user_id else None,
+            deposit_session_id=context.chat_data.get("deposit_session_id"),
         )
     except ValueError as e:
         await query.edit_message_text(str(e))
@@ -1032,7 +1066,7 @@ def _is_awaiting_amount(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> boo
 
 async def _ask_deposit_amount(message, context: ContextTypes.DEFAULT_TYPE) -> int:
     _mark_awaiting_amount(context)
-    await message.reply_text("How much would you like to deposit?")
+    await message.reply_text(DEPOSIT_AMOUNT_PROMPT)
     return DEPOSIT_AMOUNT
 
 
@@ -1159,7 +1193,9 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
         context.chat_data["deposit_admin_initiated"] = True
         context.chat_data["deposit_admin_user_id"] = user_id
-        _ensure_deposit_session(context)
+        _init_deposit_flow_session(
+            context, club_id=club_id, chat_id=chat.id, user_id=user_id
+        )
         _record_funnel_from_context(context, STEP_DEPOSIT_STARTED)
 
         simple = get_club_simple_mode(club_id, "deposit")
@@ -1187,7 +1223,9 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.chat_data["deposit_user_id"] = user_id
     context.chat_data["deposit_is_first"] = first
     context.chat_data["deposit_fd_settings"] = settings
-    _ensure_deposit_session(context)
+    _init_deposit_flow_session(
+        context, club_id=club_id, chat_id=chat.id, user_id=user_id
+    )
     _record_funnel_from_context(context, STEP_DEPOSIT_STARTED)
 
     simple = get_club_simple_mode(club_id, "deposit")
@@ -1275,18 +1313,10 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         )
         return ConversationHandler.END
 
-    raw = message_text.strip().replace("$", "").replace(",", "")
-    try:
-        amount = Decimal(raw)
-        if amount <= 0:
-            raise InvalidOperation()
-    except (InvalidOperation, Exception):
-        if looks_like_amount(message_text) and deposit_amount_show_validation_error(
-            context, sender_id=sender_id
-        ):
-            await update.message.reply_text(
-                "Please enter a valid dollar amount (Example: 50 or 100.00)."
-            )
+    amount = parse_deposit_amount(message_text)
+    if amount is None:
+        if deposit_amount_show_validation_error(context, sender_id=sender_id):
+            await update.message.reply_text(DEPOSIT_AMOUNT_INVALID_REPLY)
         return DEPOSIT_AMOUNT
 
     context.chat_data["deposit_amount"] = amount
@@ -2039,6 +2069,7 @@ async def _send_deposit_method_response(
                 checkout_min_usd=response_data.get("checkout_min_amount"),
                 checkout_max_usd=response_data.get("checkout_max_amount"),
                 checkout_preset_usd=amount if isinstance(amount, Decimal) else None,
+                deposit_session_id=context.chat_data.get("deposit_session_id"),
             )
             _reset_deposit_info_messages(int(chat_id))
             await query.edit_message_text(f"Deposit via {display_name}")
@@ -2327,6 +2358,7 @@ def _cleanup(context):
 async def deposit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await update.message.reply_text("Deposit cancelled.")
+    _abandon_deposit_flow_session(context, end_reason=END_REASON_CANCELLED)
     _cleanup(context)
     return ConversationHandler.END
 
@@ -2352,6 +2384,7 @@ async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=chat_id, text=text)
         except Exception:
             pass
+    _abandon_deposit_flow_session(context, end_reason=END_REASON_TIMEOUT)
     _cleanup(context)
 
 
@@ -2374,7 +2407,7 @@ def get_deposit_handler() -> ConversationHandler:
             ],
             DEPOSIT_AMOUNT: [
                 MessageHandler(
-                    filters.TEXT & ~filters.COMMAND & AMOUNT_TEXT,
+                    filters.TEXT & ~filters.COMMAND,
                     deposit_amount_received,
                 ),
                 _DEPOSIT_CANCEL,

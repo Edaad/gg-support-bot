@@ -129,6 +129,7 @@ def record_payment_bound(
                 payment_id=payment_id,
                 telegram_chat_id=int(telegram_chat_id),
                 club_id=int(club_id) if club_id is not None else None,
+                bind_attempt_id=bind_attempt_id,
             )
         except Exception:
             logger.debug(

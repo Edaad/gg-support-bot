@@ -909,6 +909,7 @@ async def ingest_venmo_payment(
         payment_id=payment_id,
         group_title=bound_title or group_title,
         goods_or_services=goods_or_services_flag,
+        bind_attempt_id=setup_attempt_id,
     )
 
     if goods_or_services_flag:

@@ -156,6 +156,32 @@ def _funnel_events_query(
     return q
 
 
+def _started_session_ids(
+    db: Session,
+    *,
+    club_id: int | None,
+    method_slug: str | None,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+    is_first_deposit: bool | None,
+    requires_method_setup: bool | None,
+    exclude_test_chats: bool,
+) -> set[str]:
+    q = _funnel_events_query(
+        db,
+        club_id=club_id,
+        method_slug=method_slug,
+        from_dt=from_dt,
+        to_dt=to_dt,
+        is_first_deposit=is_first_deposit,
+        requires_method_setup=requires_method_setup,
+        step=STEP_DEPOSIT_STARTED,
+        exclude_test_chats=exclude_test_chats,
+    )
+    rows = q.with_entities(DepositFunnelEvent.deposit_session_id).distinct().all()
+    return {str(row[0]) for row in rows}
+
+
 def _union_breakdown(
     db: Session,
     *,
@@ -390,7 +416,7 @@ def deposit_funnel_summary(
     show_union = _show_union_step(club_id)
     display_steps = display_funnel_step_order(show_union_step=show_union)
     try:
-        base_q = _funnel_events_query(
+        valid_session_ids = _started_session_ids(
             db,
             club_id=club_id,
             method_slug=method,
@@ -398,18 +424,11 @@ def deposit_funnel_summary(
             to_dt=dt_to,
             is_first_deposit=is_first_deposit,
             requires_method_setup=requires_method_setup,
-            step=None,
             exclude_test_chats=exclude_test_chats,
         )
-        counts_by_step = {
-            str(row[0]): int(row[1] or 0)
-            for row in base_q.with_entities(
-                DepositFunnelEvent.step,
-                func.count(func.distinct(DepositFunnelEvent.deposit_session_id)),
-            )
-            .group_by(DepositFunnelEvent.step)
-            .all()
-        }
+        counts_by_step = _step_counts_for_sessions(
+            db, valid_session_ids, display_steps
+        )
     except ProgrammingError as exc:
         _raise_db_schema_error(exc)
         raise
@@ -453,6 +472,16 @@ def deposit_funnel_latency_summary(
         include_bind_setup=False,
     )
     try:
+        valid_started = _started_session_ids(
+            db,
+            club_id=club_id,
+            method_slug=method,
+            from_dt=dt_from,
+            to_dt=dt_to,
+            is_first_deposit=None,
+            requires_method_setup=None,
+            exclude_test_chats=exclude_test_chats,
+        )
         session_ids = _full_auto_e2e_session_ids(
             db,
             club_id=club_id,
@@ -460,7 +489,7 @@ def deposit_funnel_latency_summary(
             from_dt=dt_from,
             to_dt=dt_to,
             exclude_test_chats=exclude_test_chats,
-        )
+        ) & valid_started
         counts_by_step = _step_counts_for_sessions(db, session_ids, display_steps)
         events = (
             db.query(DepositFunnelEvent)

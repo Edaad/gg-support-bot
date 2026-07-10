@@ -547,6 +547,7 @@ async def ingest_cashapp_payment(
         payment_method_slug="cashapp",
         payment_id=payment_id,
         group_title=bound_title or group_title,
+        bind_attempt_id=setup_attempt_id,
     )
 
     status = "bound" if auto_bound else "unbound"

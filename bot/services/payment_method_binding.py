@@ -651,6 +651,7 @@ def start_bind_attempt(
     bind_kind: str,
     deposit_amount_cents: int | None = None,
     initiated_by_telegram_user_id: int | None,
+    deposit_session_id: str | None = None,
 ) -> BindAttemptInfo:
     slug = (payment_method_slug or "").strip().lower()
     kind = (bind_kind or BIND_KIND_SPECIAL_AMOUNT).strip().lower()
@@ -692,6 +693,7 @@ def start_bind_attempt(
             status=ATTEMPT_STATUS_PENDING,
             bound_via=bound_via,
             initiated_by_telegram_user_id=initiated_by_telegram_user_id,
+            deposit_session_id=str(deposit_session_id) if deposit_session_id else None,
             expires_at=expires_at,
         )
         session.add(attempt)

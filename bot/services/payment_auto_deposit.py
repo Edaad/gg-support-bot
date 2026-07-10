@@ -234,6 +234,8 @@ def schedule_auto_deposit_from_payment(
     payment_id: int,
     group_title: str | None = None,
     goods_or_services: bool = False,
+    bind_attempt_id: int | None = None,
+    stripe_checkout_session_id: str | None = None,
 ) -> None:
     """Schedule background auto-deposit if eligible (non-blocking for ingest)."""
     try:
@@ -244,6 +246,8 @@ def schedule_auto_deposit_from_payment(
             payment_method_slug=payment_method_slug,
             payment_id=payment_id,
             auto_bound=auto_bound,
+            bind_attempt_id=bind_attempt_id,
+            stripe_checkout_session_id=stripe_checkout_session_id,
         )
     except Exception:
         logger.debug(
@@ -269,6 +273,8 @@ def schedule_auto_deposit_from_payment(
             payment_id=payment_id,
             group_title=group_title,
             goods_or_services=goods_or_services,
+            bind_attempt_id=bind_attempt_id,
+            stripe_checkout_session_id=stripe_checkout_session_id,
         ),
         name=f"payment-auto-deposit-{payment_method_slug}-{payment_id}",
     )
@@ -310,6 +316,8 @@ async def maybe_auto_deposit_from_payment(
     payment_id: int,
     group_title: str | None = None,
     goods_or_services: bool = False,
+    bind_attempt_id: int | None = None,
+    stripe_checkout_session_id: str | None = None,
 ) -> None:
     """Auto chip-add on auto-bound payment when club e2e toggle is on."""
     if club_id is not None and not get_auto_deposit_on_payment_enabled(int(club_id)):
@@ -497,6 +505,8 @@ async def maybe_auto_deposit_from_payment(
             payment_id=payment_id,
             chip_add_status=chip_status,
             path="e2e_auto_deposit",
+            bind_attempt_id=bind_attempt_id,
+            stripe_checkout_session_id=stripe_checkout_session_id,
         )
     except Exception:
         logger.debug(
