@@ -409,7 +409,9 @@ async def bonus_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if update.effective_chat.type != ChatType.PRIVATE:
         return
 
-    if context.user_data.get(ACTIVE_FLOW_KEY) == "inactive_outreach_send":
+    # Other DM flows own later handler groups; only stop propagation when we act.
+    active = context.user_data.get(ACTIVE_FLOW_KEY)
+    if active in ("inactive_outreach_send", "deposit_access", "issue_report", "support_note"):
         return
 
     step = context.user_data.get(BONUS_STEP_KEY)

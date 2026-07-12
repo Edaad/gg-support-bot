@@ -276,58 +276,60 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         .build()
     )
 
-    # DM staff flows — group -1. Priority /cancel runs first so stale ConversationHandler
-    # state does not block aborting /bonus, /report, /sendinactive, or /note.
-    app.add_handler(CommandHandler("cancel", h.dm_flow_cancel_priority), group=-1)
-    app.add_handler(CommandHandler("bonus", h.bonus_entry), group=-1)
+    # DM staff flows. PTB runs at most ONE handler per group, so private TEXT
+    # handlers that share the same filter must live in separate groups (lower
+    # group number = higher priority). /cancel stays first.
+    #   -5 cancel | -4 bonus | -3 sendinactive | -2 depositaccess | -1 issue triage
+    app.add_handler(CommandHandler("cancel", h.dm_flow_cancel_priority), group=-5)
+
+    app.add_handler(CommandHandler("bonus", h.bonus_entry), group=-4)
     app.add_handler(
         MessageHandler(
             filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
             h.bonus_message_handler,
-            block=False,
         ),
-        group=-1,
+        group=-4,
     )
     app.add_handler(
         CallbackQueryHandler(h.bonus_callback_handler, pattern=r"^b(type:|club:)"),
-        group=-1,
+        group=-4,
     )
     app.add_handler(
         CallbackQueryHandler(h.bonus_draft_continue_handler, pattern=r"^bonus_draft:\d+$"),
-        group=-1,
+        group=-4,
     )
     app.add_handler(
         CallbackQueryHandler(h.bonus_draft_cancel_handler, pattern=r"^bonus_draft_cancel:\d+$"),
-        group=-1,
+        group=-4,
     )
-    app.add_handler(CommandHandler("sendinactive", h.sendinactive_entry), group=-1)
+
+    app.add_handler(CommandHandler("sendinactive", h.sendinactive_entry), group=-3)
     app.add_handler(
         MessageHandler(
             filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
             h.sendinactive_message_handler,
-            block=False,
         ),
-        group=-1,
+        group=-3,
     )
     app.add_handler(
         CallbackQueryHandler(
             h.sendinactive_callback_handler,
             pattern=r"^io_send_(confirm|cancel)$",
         ),
-        group=-1,
+        group=-3,
     )
-    app.add_handler(CommandHandler("depositaccess", h.depositaccess_entry), group=-1)
+
+    app.add_handler(CommandHandler("depositaccess", h.depositaccess_entry), group=-2)
     app.add_handler(
         MessageHandler(
             filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
             h.depositaccess_message_handler,
-            block=False,
         ),
-        group=-1,
+        group=-2,
     )
     app.add_handler(
         CallbackQueryHandler(h.depositaccess_callback_handler, pattern=r"^da:"),
-        group=-1,
+        group=-2,
     )
     app.add_handler(
         CommandHandler(
@@ -335,7 +337,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
             h.listdepositaccess_handler,
             filters=filters.ChatType.PRIVATE,
         ),
-        group=-1,
+        group=-2,
     )
     # Alias for the common /depositaccesslist typo
     app.add_handler(
@@ -344,7 +346,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
             h.listdepositaccess_handler,
             filters=filters.ChatType.PRIVATE,
         ),
-        group=-1,
+        group=-2,
     )
 
     app.add_handler(CommandHandler("start", h.start_handler))

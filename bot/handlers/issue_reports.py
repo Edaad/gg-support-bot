@@ -1144,11 +1144,11 @@ def register_issue_report_handlers(app) -> None:
     app.add_handler(
         CallbackQueryHandler(draft_cancel_callback, pattern=r"^ir_draft_cancel:\d+$")
     )
+    # group=-1: after bonus/sendinactive/depositaccess (-4/-3/-2); see bot/main.py
     app.add_handler(
         MessageHandler(
             filters.ChatType.PRIVATE & (filters.TEXT | filters.PHOTO) & ~filters.COMMAND,
             triage_followup_priority,
-            block=True,
         ),
         group=-1,
     )

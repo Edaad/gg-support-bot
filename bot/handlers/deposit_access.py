@@ -182,9 +182,10 @@ async def depositaccess_message_handler(
 
     title = (update.message.text or "").strip()
     logger.info(
-        "depositaccess group_title user_id=%s title=%r",
+        "depositaccess group_title user_id=%s title=%r step=%s",
         update.effective_user.id,
         title[:80],
+        context.user_data.get(STEP_KEY),
     )
     resolved = resolve_bound_group(title)
     if not resolved.ok or not resolved.bound_group:

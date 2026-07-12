@@ -193,7 +193,12 @@ async def sendinactive_message_handler(
         return
     if update.effective_chat.type != ChatType.PRIVATE:
         return
-    if context.user_data.get(ACTIVE_FLOW_KEY) == "bonus":
+    if context.user_data.get(ACTIVE_FLOW_KEY) in (
+        "bonus",
+        "deposit_access",
+        "issue_report",
+        "support_note",
+    ):
         return
     if not sendinactive_compose_active(context):
         return
