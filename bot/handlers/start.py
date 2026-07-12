@@ -32,6 +32,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• /delete <name> — Remove a custom command",
             "• /whoami — Show your user ID",
             "• /whosnext — Next 10 GCs in migration recovery queue (DM)",
+            "• /depositaccess — Blacklist/whitelist deposit methods for a group (DM)",
+            "• /listdepositaccess — View deposit method access entries (DM)",
         ]
     )
     await update.message.reply_text("\n".join(lines))

@@ -98,6 +98,7 @@ export interface V2Method {
   max_amount: number | null
   has_sub_options: boolean
   is_active: boolean
+  is_public: boolean
   sort_order: number
   deposit_limit: number | null
   accumulated_amount: number | null

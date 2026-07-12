@@ -14,9 +14,16 @@ FlowName = Literal[
     "issue_report",
     "inactive_outreach_send",
     "support_note",
+    "deposit_access",
 ]
 
-DmFlowName = Literal["bonus", "issue_report", "inactive_outreach_send", "support_note"]
+DmFlowName = Literal[
+    "bonus",
+    "issue_report",
+    "inactive_outreach_send",
+    "support_note",
+    "deposit_access",
+]
 
 ACTIVE_FLOW_KEY = "active_bot_flow"
 
@@ -25,6 +32,7 @@ _DM_FLOW_COMMANDS: dict[DmFlowName, str] = {
     "issue_report": "/report",
     "inactive_outreach_send": "/sendinactive",
     "support_note": "/note",
+    "deposit_access": "/depositaccess",
 }
 
 _DEPOSIT_ACTIVE_KEYS = (
@@ -72,12 +80,22 @@ _SUPPORT_NOTE_ACTIVE_KEYS = (
     "support_note_actions",
     "support_note_source_chat_id",
 )
+_DEPOSIT_ACCESS_ACTIVE_KEYS = (
+    "deposit_access_step",
+    "deposit_access_admin_id",
+    "deposit_access_chat_id",
+    "deposit_access_club_id",
+    "deposit_access_group_title",
+    "deposit_access_action",
+    "deposit_access_method_id",
+)
 
 _DM_FLOW_CHECKERS: tuple[tuple[DmFlowName, str], ...] = (
     ("bonus", "bonus_flow_active"),
     ("issue_report", "issue_report_flow_active"),
     ("inactive_outreach_send", "inactive_outreach_send_flow_active"),
     ("support_note", "support_note_flow_active"),
+    ("deposit_access", "deposit_access_flow_active"),
 )
 
 
@@ -123,6 +141,14 @@ def support_note_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return any(k in context.user_data for k in _SUPPORT_NOTE_ACTIVE_KEYS)
 
 
+def deposit_access_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    from bot.handlers.deposit_access import deposit_access_flow_active as _active
+
+    if _active(context):
+        return True
+    return any(k in context.user_data for k in _DEPOSIT_ACCESS_ACTIVE_KEYS)
+
+
 def _dm_flow_is_active(context: ContextTypes.DEFAULT_TYPE, flow: DmFlowName) -> bool:
     if flow == "bonus":
         return bonus_flow_active(context)
@@ -132,6 +158,8 @@ def _dm_flow_is_active(context: ContextTypes.DEFAULT_TYPE, flow: DmFlowName) -> 
         return inactive_outreach_send_flow_active(context)
     if flow == "support_note":
         return support_note_flow_active(context)
+    if flow == "deposit_access":
+        return deposit_access_flow_active(context)
     return False
 
 
@@ -228,6 +256,12 @@ async def cancel_active_dm_flow(
         await support_note_cancel(update, context)
         return True
 
+    if flow == "deposit_access":
+        from bot.handlers.deposit_access import depositaccess_cancel
+
+        await depositaccess_cancel(update, context)
+        return True
+
     return False
 
 
@@ -242,6 +276,7 @@ def _cancel_order(context: ContextTypes.DEFAULT_TYPE) -> list[FlowName]:
         "issue_report",
         "inactive_outreach_send",
         "support_note",
+        "deposit_access",
     ):
         order.append(latest)
     for name in (
@@ -249,6 +284,7 @@ def _cancel_order(context: ContextTypes.DEFAULT_TYPE) -> list[FlowName]:
         "issue_report",
         "inactive_outreach_send",
         "support_note",
+        "deposit_access",
         "deposit",
         "cashout",
     ):

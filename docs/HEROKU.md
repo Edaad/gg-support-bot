@@ -428,6 +428,16 @@ This creates `payment_binding_events`, an append-only log of binds, group-link u
 heroku run -a YOUR_APP -- python scripts/audit_payment_notification_sync.py --method zelle
 ```
 
+## Per-group deposit method access
+
+After deploying deposit method public/blacklist/whitelist:
+
+```bash
+heroku run -a YOUR_APP -- python migrate_group_deposit_method_access.py
+```
+
+Adds `club_payment_methods.is_public` (default true) and `group_deposit_method_access`. Staff manage rows via bot DM `/depositaccess` / `/listdepositaccess`; flip Public in Club Detail → Deposit Methods.
+
 ## Payments page (Stripe tables)
 
 After deploying the Payments dashboard feature, run migrations on production once:

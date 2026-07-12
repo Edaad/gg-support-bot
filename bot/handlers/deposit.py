@@ -42,6 +42,10 @@ from bot.services.club import (
 )
 from bot.services.mtproto_group_rename import rename_support_group_title
 from bot.services.player_details import merge_union_prefix
+from bot.services.deposit_method_access import (
+    filter_deposit_methods_for_chat,
+    is_deposit_method_allowed_for_chat,
+)
 from bot.services.round_table_unions import (
     ROUND_TABLE_DEPOSIT_UNIONS,
     is_round_table_club,
@@ -1323,6 +1327,7 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
     _record_funnel_from_context(context, STEP_AMOUNT_ENTERED)
     try:
         methods = get_methods_for_amount(club_id, "deposit", amount)
+        methods = filter_deposit_methods_for_chat(update.effective_chat.id, methods)
     except Exception:
         logger.exception(
             "deposit_amount_received: failed loading methods club_id=%s amount=%s v2=%s",
@@ -1453,6 +1458,11 @@ async def _prompt_deposit_methods(
 ) -> None:
     club_id = context.chat_data.get("deposit_club_id")
     methods = get_methods_for_amount(club_id, "deposit", amount)
+    chat_id = getattr(message, "chat_id", None) or getattr(
+        getattr(message, "chat", None), "id", None
+    )
+    if chat_id is not None:
+        methods = filter_deposit_methods_for_chat(int(chat_id), methods)
     if not methods:
         text = _no_deposit_methods_message(club_id, amount)
         if edit_message is not None:
@@ -1608,6 +1618,15 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     method = get_method_by_id(method_id)
     if not method:
         await query.edit_message_text("That method is no longer available.")
+        return ConversationHandler.END
+
+    chat_id = query.message.chat.id if query.message else None
+    if chat_id is not None and not is_deposit_method_allowed_for_chat(
+        int(chat_id), method_id
+    ):
+        await query.edit_message_text(
+            "That payment method is not available for this group."
+        )
         return ConversationHandler.END
 
     method_slug = (method.get("slug") or "").strip().lower()

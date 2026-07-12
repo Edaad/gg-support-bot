@@ -27,6 +27,7 @@ def _method_dict(m: ClubPaymentMethod) -> dict:
         "min_amount": m.min_amount,
         "max_amount": m.max_amount,
         "has_sub_options": m.has_sub_options,
+        "is_public": bool(getattr(m, "is_public", True)),
         "response_type": None,
         "response_text": None,
         "response_file_id": None,

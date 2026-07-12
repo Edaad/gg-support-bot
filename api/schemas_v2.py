@@ -161,6 +161,7 @@ class ClubPaymentMethodCreate(BaseModel):
     max_amount: Optional[Decimal] = None
     has_sub_options: bool = False
     is_active: bool = True
+    is_public: bool = True
     sort_order: int = 0
     deposit_limit: Optional[Decimal] = None
     first_time_linking_enabled: bool = False
@@ -175,6 +176,7 @@ class ClubPaymentMethodUpdate(BaseModel):
     max_amount: Optional[Decimal] = None
     has_sub_options: Optional[bool] = None
     is_active: Optional[bool] = None
+    is_public: Optional[bool] = None
     sort_order: Optional[int] = None
     deposit_limit: Optional[Decimal] = None
     first_time_linking_enabled: Optional[bool] = None
@@ -193,6 +195,7 @@ class ClubPaymentMethodRead(BaseModel):
     max_amount: Optional[Decimal]
     has_sub_options: bool
     is_active: bool
+    is_public: bool = True
     sort_order: int
     deposit_limit: Optional[Decimal] = None
     accumulated_amount: Optional[Decimal] = None

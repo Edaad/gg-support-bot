@@ -169,6 +169,12 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
     from bot.handlers.issue_reports import register_issue_report_handlers
     from bot.handlers.whosnext import whosnext_handler
     from bot.handlers.unbind_method import unbindmethod_handler
+    from bot.handlers.deposit_access import (
+        depositaccess_callback_handler,
+        depositaccess_entry,
+        depositaccess_message_handler,
+        listdepositaccess_handler,
+    )
     from bot.handlers.deposit import (
         cancel_deposit_reminder_on_customer_msg,
         cancel_deposit_reminder_on_group_activity,
@@ -224,6 +230,10 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         register_issue_report_handlers=register_issue_report_handlers,
         whosnext_handler=whosnext_handler,
         unbindmethod_handler=unbindmethod_handler,
+        depositaccess_entry=depositaccess_entry,
+        depositaccess_message_handler=depositaccess_message_handler,
+        depositaccess_callback_handler=depositaccess_callback_handler,
+        listdepositaccess_handler=listdepositaccess_handler,
         stageinactive_handler=stageinactive_handler,
         unstageinactive_handler=unstageinactive_handler,
         stagedinactive_handler=stagedinactive_handler,
@@ -305,6 +315,26 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
             pattern=r"^io_send_(confirm|cancel)$",
         ),
         group=-1,
+    )
+    app.add_handler(CommandHandler("depositaccess", h.depositaccess_entry), group=-1)
+    app.add_handler(
+        MessageHandler(
+            filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+            h.depositaccess_message_handler,
+            block=False,
+        ),
+        group=-1,
+    )
+    app.add_handler(
+        CallbackQueryHandler(h.depositaccess_callback_handler, pattern=r"^da:"),
+        group=-1,
+    )
+    app.add_handler(
+        CommandHandler(
+            "listdepositaccess",
+            h.listdepositaccess_handler,
+            filters=filters.ChatType.PRIVATE,
+        )
     )
 
     app.add_handler(CommandHandler("start", h.start_handler))

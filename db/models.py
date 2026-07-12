@@ -257,6 +257,9 @@ class ClubPaymentMethod(Base):
     max_amount = Column(Numeric(12, 2), nullable=True)
     has_sub_options = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
+    is_public = Column(
+        Boolean, nullable=False, server_default=text("true"), default=True
+    )
     sort_order = Column(Integer, nullable=False, default=0)
     deposit_limit = Column(Numeric(12, 2), nullable=True)
     accumulated_amount = Column(Numeric(12, 2), nullable=False, default=0)
@@ -287,6 +290,11 @@ class ClubPaymentMethod(Base):
         back_populates="method",
         cascade="all, delete-orphan",
         order_by="ClubPaymentTierVariant.sort_order",
+    )
+    deposit_method_access = relationship(
+        "GroupDepositMethodAccess",
+        back_populates="method",
+        cascade="all, delete-orphan",
     )
 
 
@@ -1576,6 +1584,45 @@ class PaymentMethodBindAttempt(Base):
     zelle_payment = relationship("ZellePayment")
     cashapp_payment = relationship("CashAppPayment")
     paypal_payment = relationship("PayPalPayment")
+
+
+class GroupDepositMethodAccess(Base):
+    """Per-support-group blacklist or whitelist for a deposit ClubPaymentMethod."""
+
+    __tablename__ = "group_deposit_method_access"
+    __table_args__ = (
+        UniqueConstraint(
+            "telegram_chat_id",
+            "club_payment_method_id",
+            name="uq_gdma_chat_method",
+        ),
+        CheckConstraint(
+            "access_type IN ('blacklist', 'whitelist')",
+            name="ck_gdma_access_type",
+        ),
+        Index("ix_gdma_telegram_chat_id", "telegram_chat_id"),
+        Index("ix_gdma_club_id", "club_id"),
+        Index("ix_gdma_method_id", "club_payment_method_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    club_payment_method_id = Column(
+        Integer,
+        ForeignKey("club_payment_methods.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    access_type = Column(String(16), nullable=False)
+    created_by_telegram_user_id = Column(BigInteger, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    club = relationship("Club")
+    method = relationship(
+        "ClubPaymentMethod", back_populates="deposit_method_access"
+    )
 
 
 class GroupPaymentMethodBinding(Base):
