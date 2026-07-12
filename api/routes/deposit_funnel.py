@@ -362,7 +362,9 @@ def _build_step_counts(
     counts_by_step: dict[str, int],
     display_steps: tuple[str, ...],
     started: int,
+    avg_latencies: dict[str, float | None] | None = None,
 ) -> list[DepositFunnelStepCount]:
+    latencies = avg_latencies or {}
     steps: list[DepositFunnelStepCount] = []
     for step in display_steps:
         count = counts_by_step.get(step, 0)
@@ -373,6 +375,7 @@ def _build_step_counts(
                 label=_STEP_LABELS.get(step, step),
                 count=count,
                 conversion_rate=conversion,
+                avg_latency_seconds=latencies.get(step),
             )
         )
     return steps
@@ -429,12 +432,22 @@ def deposit_funnel_summary(
         counts_by_step = _step_counts_for_sessions(
             db, valid_session_ids, display_steps
         )
+        events = (
+            db.query(DepositFunnelEvent)
+            .filter(DepositFunnelEvent.deposit_session_id.in_(valid_session_ids))
+            .all()
+            if valid_session_ids
+            else []
+        )
+        avg_latencies = _compute_step_latencies(events, display_steps)
     except ProgrammingError as exc:
         _raise_db_schema_error(exc)
         raise
 
     started = counts_by_step.get(STEP_DEPOSIT_STARTED, 0)
-    steps = _build_step_counts(counts_by_step, display_steps, started)
+    steps = _build_step_counts(
+        counts_by_step, display_steps, started, avg_latencies=avg_latencies
+    )
 
     union_breakdown: DepositFunnelUnionBreakdown | None = None
     if show_union and club_id is not None:

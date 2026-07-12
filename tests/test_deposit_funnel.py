@@ -221,16 +221,23 @@ class DepositFunnelApiTest(unittest.TestCase):
         response = client.get("/api/deposits/funnel/summary")
         self.assertIn(response.status_code, (401, 403))
 
+    @patch("api.routes.deposit_funnel._compute_step_latencies")
     @patch("api.routes.deposit_funnel._step_counts_for_sessions")
     @patch("api.routes.deposit_funnel._started_session_ids", return_value={"s1", "s2"})
-    def test_summary_returns_steps(self, _mock_started, mock_counts):
+    def test_summary_returns_steps(self, _mock_started, mock_counts, mock_latencies):
         display_steps = display_funnel_step_order(show_union_step=False)
         counts = {step: 0 for step in display_steps}
         counts[STEP_DEPOSIT_STARTED] = 10
         counts[STEP_INSTRUCTIONS_SENT] = 8
         counts[STEP_CHIPS_CREDITED] = 5
         mock_counts.return_value = counts
-        client = TestClient(_make_app(MagicMock()))
+        latencies = {step: None for step in display_steps}
+        latencies[STEP_INSTRUCTIONS_SENT] = 45.0
+        latencies[STEP_CHIPS_CREDITED] = 120.5
+        mock_latencies.return_value = latencies
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+        client = TestClient(_make_app(mock_db))
         response = client.get(
             "/api/deposits/funnel/summary",
             headers={"Authorization": f"Bearer {TOKEN}"},
@@ -245,18 +252,25 @@ class DepositFunnelApiTest(unittest.TestCase):
         self.assertNotIn("union_chosen", step_ids)
         started_row = next(row for row in data["steps"] if row["step"] == "deposit_started")
         chips_row = next(row for row in data["steps"] if row["step"] == "chips_credited")
+        instructions_row = next(
+            row for row in data["steps"] if row["step"] == "instructions_sent"
+        )
         self.assertEqual(started_row["count"], 10)
+        self.assertIsNone(started_row["avg_latency_seconds"])
         self.assertEqual(chips_row["count"], 5)
         self.assertAlmostEqual(chips_row["conversion_rate"], 0.5)
+        self.assertAlmostEqual(chips_row["avg_latency_seconds"], 120.5)
+        self.assertAlmostEqual(instructions_row["avg_latency_seconds"], 45.0)
         self.assertFalse(data["show_union_step"])
         self.assertIsNone(data["union_breakdown"])
 
     @patch("api.routes.deposit_funnel.is_round_table_club", return_value=True)
     @patch("api.routes.deposit_funnel._union_breakdown")
+    @patch("api.routes.deposit_funnel._compute_step_latencies")
     @patch("api.routes.deposit_funnel._step_counts_for_sessions")
     @patch("api.routes.deposit_funnel._started_session_ids", return_value={"s1"})
     def test_summary_round_table_includes_union_breakdown(
-        self, _mock_started, mock_counts, mock_union, _mock_rt
+        self, _mock_started, mock_counts, mock_latencies, mock_union, _mock_rt
     ):
         from api.schemas_payments import DepositFunnelUnionBreakdown
 
@@ -265,12 +279,15 @@ class DepositFunnelApiTest(unittest.TestCase):
         counts[STEP_DEPOSIT_STARTED] = 4
         counts[STEP_UNION_CHOSEN] = 3
         mock_counts.return_value = counts
+        mock_latencies.return_value = {step: None for step in display_steps}
         mock_union.return_value = DepositFunnelUnionBreakdown(
             round_table=2,
             aces_table=1,
         )
 
-        client = TestClient(_make_app(MagicMock()))
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+        client = TestClient(_make_app(mock_db))
         response = client.get(
             "/api/deposits/funnel/summary?club_id=1",
             headers={"Authorization": f"Bearer {TOKEN}"},

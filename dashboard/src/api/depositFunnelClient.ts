@@ -40,6 +40,7 @@ export type DepositFunnelStepCount = {
   label: string
   count: number
   conversion_rate: number | null
+  avg_latency_seconds?: number | null
 }
 
 export type DepositFunnelUnionBreakdown = {

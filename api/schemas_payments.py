@@ -526,6 +526,7 @@ class DepositFunnelStepCount(BaseModel):
     label: str
     count: int
     conversion_rate: Optional[float] = None
+    avg_latency_seconds: Optional[float] = None
 
 
 class DepositFunnelUnionBreakdown(BaseModel):

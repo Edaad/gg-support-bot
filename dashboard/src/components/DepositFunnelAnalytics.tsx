@@ -41,6 +41,14 @@ const CORE_STEPS = new Set([
   'chips_credited',
 ])
 
+function formatLatency(seconds: number | null | undefined): string {
+  if (seconds == null) return '—'
+  if (seconds < 60) return `${seconds.toFixed(1)}s`
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.round(seconds % 60)
+  return `${mins}m ${secs.toString().padStart(2, '0')}s`
+}
+
 function summaryParams(filters: Filters, excludeTestChats: boolean) {
   return {
     clubId: filters.appliedClubId === 'all' ? undefined : filters.appliedClubId,
@@ -67,7 +75,7 @@ const FunnelStepBar = memo(function FunnelStepBar({
   onDrilldown,
   unionBreakdown,
 }: {
-  step: { step: string; label: string; count: number; conversion_rate: number | null }
+  step: { step: string; label: string; count: number; conversion_rate: number | null; avg_latency_seconds?: number | null }
   count: number
   started: number
   maxCount: number
@@ -78,6 +86,7 @@ const FunnelStepBar = memo(function FunnelStepBar({
   const conversion =
     step.conversion_rate != null ? `${(step.conversion_rate * 100).toFixed(1)}%` : '—'
   const isCore = CORE_STEPS.has(step.step)
+  const latency = formatLatency(step.avg_latency_seconds)
 
   return (
     <div className={isCore ? '' : 'opacity-80'}>
@@ -93,6 +102,7 @@ const FunnelStepBar = memo(function FunnelStepBar({
         <span className="shrink-0 text-ink-muted">
           {count}
           {started > 0 && step.step !== 'deposit_started' ? ` · ${conversion}` : ''}
+          {step.step !== 'deposit_started' ? ` · avg ${latency}` : ''}
         </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-surface-raised">
