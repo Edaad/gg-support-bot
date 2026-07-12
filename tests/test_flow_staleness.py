@@ -194,6 +194,7 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, dep.DEPOSIT_AMOUNT)
         update.message.reply_text.assert_not_called()
 
+    @patch.object(dep, "filter_deposit_methods_for_chat", side_effect=lambda _cid, ms: ms)
     @patch.object(dep, "_prompt_deposit_methods", new_callable=AsyncMock)
     @patch.object(dep, "is_round_table_club", return_value=False)
     @patch.object(
@@ -218,6 +219,7 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
         update.message.reply_text.assert_not_called()
         self.assertNotIn("deposit_amount", context.chat_data)
 
+    @patch.object(dep, "filter_deposit_methods_for_chat", side_effect=lambda _cid, ms: ms)
     @patch.object(dep, "_prompt_deposit_methods", new_callable=AsyncMock)
     @patch.object(dep, "is_round_table_club", return_value=False)
     @patch.object(
@@ -233,6 +235,7 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.chat_data["deposit_amount"], Decimal("40"))
         self.assertEqual(context.chat_data["deposit_user_id"], 8132930521)
 
+    @patch.object(dep, "filter_deposit_methods_for_chat", side_effect=lambda _cid, ms: ms)
     @patch.object(dep, "_prompt_deposit_methods", new_callable=AsyncMock)
     @patch.object(dep, "is_round_table_club", return_value=False)
     @patch.object(
@@ -372,6 +375,7 @@ class TestDepositCallbackStaleness(unittest.IsolatedAsyncioTestCase):
         self.assertIn("expired", update.callback_query.answer.await_args.args[0].lower())
         dep._run_normal_deposit_from_choice.assert_not_awaited()
 
+    @patch.object(dep, "is_deposit_method_allowed_for_chat", return_value=True)
     @patch.object(dep, "is_chat_method_bound", return_value=True)
     @patch.object(dep, "bind_mode_for_method", return_value=None)
     @patch.object(dep, "get_method_by_id", return_value={"id": 29, "name": "Apple Pay", "slug": "applepay", "has_sub_options": False})

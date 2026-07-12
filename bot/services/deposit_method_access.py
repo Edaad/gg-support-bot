@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Iterable, List, Literal, Optional, Sequence
 
@@ -9,6 +10,8 @@ from config import ADMIN_USER_IDS
 from db.connection import get_db
 from db.models import Club, ClubLinkedAccount, ClubPaymentMethod, GroupDepositMethodAccess
 from bot.services.club import get_group_title_for_chat, is_club_staff
+
+logger = logging.getLogger(__name__)
 
 AccessType = Literal["blacklist", "whitelist"]
 AccessAction = Literal["blacklist", "whitelist", "remove"]
@@ -115,22 +118,30 @@ def filter_deposit_methods_for_chat(
     if not methods:
         return []
     method_ids = [int(m["id"]) for m in methods if m.get("id") is not None]
-    with get_db() as session:
-        access = _access_map_for_chat(session, chat_id)
-        # Prefer is_public on dict; fall back to DB for older callers.
-        missing_ids = [
-            mid
-            for mid, m in zip(method_ids, methods)
-            if "is_public" not in m
-        ]
-        public_by_id: dict[int, bool] = {}
-        if missing_ids:
-            rows = (
-                session.query(ClubPaymentMethod.id, ClubPaymentMethod.is_public)
-                .filter(ClubPaymentMethod.id.in_(missing_ids))
-                .all()
-            )
-            public_by_id = {int(r[0]): bool(r[1]) for r in rows}
+    try:
+        with get_db() as session:
+            access = _access_map_for_chat(session, chat_id)
+            # Prefer is_public on dict; fall back to DB for older callers.
+            missing_ids = [
+                mid
+                for mid, m in zip(method_ids, methods)
+                if "is_public" not in m
+            ]
+            public_by_id: dict[int, bool] = {}
+            if missing_ids:
+                rows = (
+                    session.query(ClubPaymentMethod.id, ClubPaymentMethod.is_public)
+                    .filter(ClubPaymentMethod.id.in_(missing_ids))
+                    .all()
+                )
+                public_by_id = {int(r[0]): bool(r[1]) for r in rows}
+    except Exception:
+        # Migration not applied yet, or table missing — do not block deposits.
+        logger.exception(
+            "filter_deposit_methods_for_chat failed chat_id=%s; showing all methods",
+            chat_id,
+        )
+        return list(methods)
 
     result: List[dict] = []
     for m in methods:
@@ -145,15 +156,23 @@ def filter_deposit_methods_for_chat(
 
 
 def is_deposit_method_allowed_for_chat(chat_id: int, method_id: int) -> bool:
-    with get_db() as session:
-        method = session.query(ClubPaymentMethod).get(int(method_id))
-        if not method or method.direction != "deposit" or not method.is_active:
-            return False
-        access = _access_map_for_chat(session, chat_id)
-        return method_visible_for_chat(
-            is_public=bool(getattr(method, "is_public", True)),
-            access_type=access.get(int(method_id)),
+    try:
+        with get_db() as session:
+            method = session.query(ClubPaymentMethod).get(int(method_id))
+            if not method or method.direction != "deposit" or not method.is_active:
+                return False
+            access = _access_map_for_chat(session, chat_id)
+            return method_visible_for_chat(
+                is_public=bool(getattr(method, "is_public", True)),
+                access_type=access.get(int(method_id)),
+            )
+    except Exception:
+        logger.exception(
+            "is_deposit_method_allowed_for_chat failed chat_id=%s method_id=%s; allowing",
+            chat_id,
+            method_id,
         )
+        return True
 
 
 def methods_for_action(
