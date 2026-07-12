@@ -202,9 +202,22 @@ class ReconcileExportTestCase(unittest.TestCase):
         matching = wb["Matching"]
         self.assertEqual(matching["A1"].value, "Matching")
         self.assertIn("Best effort match", matching["A4"].value or "")
+        header_row = SHEET_INTRO_DATA_START_ROW
+        sub_row = header_row + 1
+        self.assertEqual(matching.cell(row=header_row, column=1).value, "Time")
         self.assertEqual(
-            matching.cell(row=SHEET_INTRO_DATA_START_ROW, column=1).value,
-            "Time",
+            matching.cell(row=header_row, column=5).value,
+            "Best effort match",
+        )
+        self.assertEqual(matching.cell(row=sub_row, column=5).value, "Name")
+        self.assertEqual(matching.cell(row=sub_row, column=6).value, "Source")
+        self.assertEqual(matching.cell(row=sub_row, column=7).value, "Time")
+        self.assertEqual(matching.cell(row=sub_row, column=8).value, "$")
+        self.assertEqual(matching.cell(row=header_row, column=9).value, "Variant")
+        # No single concatenated best-effort data column at E
+        self.assertNotEqual(
+            matching.cell(row=sub_row, column=5).value,
+            "Best effort match",
         )
 
 

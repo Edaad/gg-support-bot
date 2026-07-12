@@ -71,8 +71,25 @@ MATCHING_HEADERS = [
     "Amount",
     "Player ID",
     "Nickname",
-    "Best effort match",
+    "Name",
+    "Source",
+    "Time",
+    "$",
     "Variant",
+]
+
+MATCHING_TRADE_HEADERS = [
+    "Time",
+    "Amount",
+    "Player ID",
+    "Nickname",
+]
+
+MATCHING_SUB_HEADERS = [
+    "Name",
+    "Source",
+    "Time",
+    "$",
 ]
 
 # (what it shows, how it works, column glossary)
@@ -130,11 +147,12 @@ SHEET_INTROS: dict[str, tuple[str, str, str]] = {
         "from our internal ledger (same deposit/RB/bonus/cashout events as "
         "Net Ledger).",
         "Same player preferred, whole-dollar rounding, ±15 minutes, sign-aware; "
-        "each ledger event used once. Variant is bonus type only.",
-        "Columns: Time — trade time (club-local); Amount — ClubGG trade amount "
-        "(signed); Player ID; Nickname; Best effort match — suggested ledger "
-        "event (label, source, time, $); Variant — bonus type/description when "
-        "matched to a bonus, otherwise blank.",
+        "each ledger event used once. Variant holds account tags "
+        "(Zelle recipient, Venmo/Cash App handle, PayPal email, crypto token) "
+        "or bonus type when matched.",
+        "Columns: Time / Amount / Player ID / Nickname — ClubGG trade line; "
+        "Best effort match — Name (payer/nick/id), Source, Time, $; "
+        "Variant — payment account tag or bonus type, blank when none.",
     ),
 }
 
@@ -146,7 +164,7 @@ OVERVIEW_WIDTHS = [22, 16, 18, 18, 3, 22, 16, 18, 18]
 DETAIL_WIDTHS = [22, 16, 14, 14, 14, 22, 14, 18, 18, 16]
 NET_LEDGER_WIDTHS = [16, 22, 18, 14, 18, 40]
 DEPOSIT_WIDTHS = [16, 22, 14, 40, 18, 28]
-MATCHING_WIDTHS = [18, 12, 16, 22, 48, 28]
+MATCHING_WIDTHS = [18, 12, 16, 22, 22, 14, 18, 10, 22]
 
 
 def _decimal_cell(value: Decimal) -> float:
@@ -478,14 +496,52 @@ def _write_matching_sheet(
     ws: Worksheet,
     report: AuditReconcileReport,
 ) -> None:
-    start = _write_sheet_intro(ws, "Matching", merge_cols=6)
-    _style_header_row(ws, start, MATCHING_HEADERS)
+    start = _write_sheet_intro(ws, "Matching", merge_cols=9)
+    group_row = start
+    sub_row = start + 1
+
+    # Trade columns + Variant: vertically merge across the two header rows.
+    for col, header in enumerate(MATCHING_TRADE_HEADERS, start=1):
+        cell = ws.cell(row=group_row, column=col, value=header)
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+        ws.merge_cells(
+            start_row=group_row,
+            start_column=col,
+            end_row=sub_row,
+            end_column=col,
+        )
+
+    group_cell = ws.cell(row=group_row, column=5, value="Best effort match")
+    group_cell.fill = _HEADER_FILL
+    group_cell.font = _HEADER_FONT
+    group_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.merge_cells(start_row=group_row, start_column=5, end_row=group_row, end_column=8)
+
+    for offset, header in enumerate(MATCHING_SUB_HEADERS):
+        cell = ws.cell(row=sub_row, column=5 + offset, value=header)
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+
+    variant_cell = ws.cell(row=group_row, column=9, value="Variant")
+    variant_cell.fill = _HEADER_FILL
+    variant_cell.font = _HEADER_FONT
+    variant_cell.alignment = Alignment(horizontal="left", vertical="center")
+    ws.merge_cells(
+        start_row=group_row,
+        start_column=9,
+        end_row=sub_row,
+        end_column=9,
+    )
+
     matched_rows = match_trade_lines_to_ledger(
         report.trade_lines,
         report.ledger_lines,
         club_slug=report.club_slug,
     )
-    row_idx = start + 1
+    row_idx = sub_row + 1
     for matched in matched_rows:
         trade = matched.trade
         ws.cell(
@@ -501,8 +557,11 @@ def _write_matching_sheet(
         cell.number_format = _CURRENCY_FORMAT
         ws.cell(row=row_idx, column=3, value=trade.member_gg_player_id or "")
         ws.cell(row=row_idx, column=4, value=trade.member_nickname or "")
-        ws.cell(row=row_idx, column=5, value=matched.match_text)
-        ws.cell(row=row_idx, column=6, value=matched.variant)
+        ws.cell(row=row_idx, column=5, value=matched.match_name)
+        ws.cell(row=row_idx, column=6, value=matched.match_source)
+        ws.cell(row=row_idx, column=7, value=matched.match_time)
+        ws.cell(row=row_idx, column=8, value=matched.match_amount)
+        ws.cell(row=row_idx, column=9, value=matched.variant)
         row_idx += 1
 
 

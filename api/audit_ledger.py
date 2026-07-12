@@ -80,6 +80,15 @@ DEPOSIT_METHOD_ORDER: tuple[str, ...] = (
     "deposit_crypto",
 )
 
+# Audit-export Tag column fields for Matching Variant.
+_MANUAL_DEPOSIT_TAG_FIELDS: dict[str, str] = {
+    "deposit_zelle": "zelle_recipient",
+    "deposit_venmo": "venmo_handle",
+    "deposit_cashapp": "cashapp_handle",
+    "deposit_paypal": "paypal_email",
+    "deposit_crypto": "token_symbol",
+}
+
 
 @dataclass(frozen=True)
 class LedgerEvent:
@@ -320,6 +329,10 @@ def _fetch_manual_deposit_events(
         payer = (
             str(data.get("payer_name") or data.get("from_label") or "").strip() or None
         )
+        tag_field = _MANUAL_DEPOSIT_TAG_FIELDS.get(source)
+        tag = (
+            str(data.get(tag_field) or "").strip() or None if tag_field else None
+        )
         out.append(
             LedgerEvent(
                 source=source,
@@ -328,6 +341,7 @@ def _fetch_manual_deposit_events(
                 occurred_at_utc=occurred_at,
                 external_id=f"{source}:{row.id}",
                 display_name=payer,
+                variant=tag,
             )
         )
     return out

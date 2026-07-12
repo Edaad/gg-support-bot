@@ -17,7 +17,10 @@ _WHOLE = Decimal("1")
 @dataclass(frozen=True)
 class MatchedTradeRow:
     trade: TradeLineForMatch
-    match_text: str
+    match_name: str
+    match_source: str
+    match_time: str
+    match_amount: str
     variant: str
 
 
@@ -63,13 +66,26 @@ def _match_label(line: LedgerLine) -> str:
     return ""
 
 
-def format_match_text(club_slug: str, line: LedgerLine) -> str:
-    label = _match_label(line)
+def _match_fields(
+    club_slug: str,
+    line: LedgerLine,
+) -> tuple[str, str, str, str]:
+    name = _match_label(line)
     source = (line.source_label or line.source or "").strip()
     time_label = _format_match_time(club_slug, line.occurred_at_utc)
-    dollars = int(round_whole_usd(line.amount_signed))
-    parts = [p for p in (label, source, time_label, f"${dollars}") if p]
-    return ", ".join(parts)
+    dollars = f"${int(round_whole_usd(line.amount_signed))}"
+    return name, source, time_label, dollars
+
+
+def _empty_match_row(trade: TradeLineForMatch) -> MatchedTradeRow:
+    return MatchedTradeRow(
+        trade=trade,
+        match_name="",
+        match_source="",
+        match_time="",
+        match_amount="",
+        variant="",
+    )
 
 
 def _candidate_score(
@@ -118,19 +134,20 @@ def match_trade_lines_to_ledger(
                 best_idx = idx
 
         if best_idx is None:
-            rows.append(MatchedTradeRow(trade=trade, match_text="", variant=""))
+            rows.append(_empty_match_row(trade))
             continue
 
         used.add(best_idx)
         ledger = ledger_lines[best_idx]
-        variant = ""
-        if ledger.source == "bonus":
-            variant = (ledger.variant or "").strip()
+        name, source, time_label, dollars = _match_fields(club_slug, ledger)
         rows.append(
             MatchedTradeRow(
                 trade=trade,
-                match_text=format_match_text(club_slug, ledger),
-                variant=variant,
+                match_name=name,
+                match_source=source,
+                match_time=time_label,
+                match_amount=dollars,
+                variant=(ledger.variant or "").strip(),
             )
         )
 

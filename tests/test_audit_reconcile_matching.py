@@ -88,20 +88,20 @@ class MatchTradeLinesTestCase(unittest.TestCase):
             club_slug="aces-table",
         )
         self.assertEqual(len(rows), 1)
-        self.assertIn("Jane Doe", rows[0].match_text)
-        self.assertIn("Stripe", rows[0].match_text)
-        self.assertIn("$100", rows[0].match_text)
+        self.assertEqual(rows[0].match_name, "Jane Doe")
+        self.assertEqual(rows[0].match_source, "Stripe")
+        self.assertEqual(rows[0].match_amount, "$100")
         self.assertEqual(rows[0].variant, "")
 
-        # Second trade cannot reuse the first ledger event
         trade2 = _trade(line_id=2, occurred=self.t0, amount="-100", sheet_row=2)
         rows2 = match_trade_lines_to_ledger(
             [trade, trade2],
             [ledger],
             club_slug="aces-table",
         )
-        self.assertTrue(rows2[0].match_text)
-        self.assertEqual(rows2[1].match_text, "")
+        self.assertEqual(rows2[0].match_name, "Jane Doe")
+        self.assertEqual(rows2[1].match_name, "")
+        self.assertEqual(rows2[1].match_source, "")
 
     def test_fallback_amount_time_without_player_id(self):
         trade = _trade(gg_id="9999-0000", occurred=self.t0, amount="-50")
@@ -114,14 +114,16 @@ class MatchTradeLinesTestCase(unittest.TestCase):
             source_label="Zelle",
             display_name="Miah Xeshan",
             external_id="deposit_zelle:1",
+            variant="gto zelle",
         )
         rows = match_trade_lines_to_ledger(
             [trade],
             [ledger],
             club_slug="aces-table",
         )
-        self.assertIn("Miah Xeshan", rows[0].match_text)
-        self.assertIn("Zelle", rows[0].match_text)
+        self.assertEqual(rows[0].match_name, "Miah Xeshan")
+        self.assertEqual(rows[0].match_source, "Zelle")
+        self.assertEqual(rows[0].variant, "gto zelle")
 
     def test_sign_mismatch_rejected(self):
         trade = _trade(occurred=self.t0, amount="-100")
@@ -137,7 +139,8 @@ class MatchTradeLinesTestCase(unittest.TestCase):
             [ledger],
             club_slug="aces-table",
         )
-        self.assertEqual(rows[0].match_text, "")
+        self.assertEqual(rows[0].match_name, "")
+        self.assertEqual(rows[0].match_amount, "")
 
     def test_outside_window_blank(self):
         trade = _trade(occurred=self.t0, amount="-100")
@@ -150,7 +153,7 @@ class MatchTradeLinesTestCase(unittest.TestCase):
             [ledger],
             club_slug="aces-table",
         )
-        self.assertEqual(rows[0].match_text, "")
+        self.assertEqual(rows[0].match_name, "")
 
     def test_rounding_half_up_matches(self):
         trade = _trade(occurred=self.t0, amount="-99.50")
@@ -160,7 +163,7 @@ class MatchTradeLinesTestCase(unittest.TestCase):
             [ledger],
             club_slug="aces-table",
         )
-        self.assertIn("$100", rows[0].match_text)
+        self.assertEqual(rows[0].match_amount, "$100")
 
     def test_bonus_fills_variant(self):
         trade = _trade(occurred=self.t0, amount="-25")
@@ -178,10 +181,10 @@ class MatchTradeLinesTestCase(unittest.TestCase):
             [ledger],
             club_slug="aces-table",
         )
-        self.assertIn("Bonus", rows[0].match_text)
+        self.assertEqual(rows[0].match_source, "Bonus")
         self.assertEqual(rows[0].variant, "Welcome — first deposit")
 
-    def test_non_bonus_variant_blank(self):
+    def test_zelle_tag_fills_variant(self):
         trade = _trade(occurred=self.t0, amount="-20")
         ledger = _ledger(
             occurred=self.t0,
@@ -190,7 +193,22 @@ class MatchTradeLinesTestCase(unittest.TestCase):
             source_label="Zelle",
             external_id="deposit_zelle:9",
             display_name="Payer",
-            variant="should-not-show",
+            variant="gto-zelle-inbox",
+        )
+        rows = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="aces-table",
+        )
+        self.assertEqual(rows[0].variant, "gto-zelle-inbox")
+
+    def test_stripe_variant_blank(self):
+        trade = _trade(occurred=self.t0, amount="-20")
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-20",
+            display_name="Stripe Player",
+            variant=None,
         )
         rows = match_trade_lines_to_ledger(
             [trade],
