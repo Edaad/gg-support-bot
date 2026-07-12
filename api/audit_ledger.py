@@ -89,6 +89,8 @@ class LedgerEvent:
     occurred_at_utc: datetime | None
     external_id: str
     detail: str | None = None
+    display_name: str | None = None
+    variant: str | None = None
 
 
 @dataclass(frozen=True)
@@ -120,6 +122,8 @@ class LedgerLine:
     occurred_at_utc: datetime | None
     external_id: str
     detail: str | None = None
+    display_name: str | None = None
+    variant: str | None = None
 
 
 def _club_outflow_usd(amount: Decimal) -> Decimal:
@@ -166,6 +170,8 @@ def build_ledger_lines(
                 occurred_at_utc=event.occurred_at_utc,
                 external_id=event.external_id,
                 detail=event.detail,
+                display_name=event.display_name,
+                variant=event.variant,
             )
         )
     return lines
@@ -311,6 +317,9 @@ def _fetch_manual_deposit_events(
                 gg_id = (resolved or "").strip() or None
         amount = data.get("amount_usd")
         amount_usd = Decimal(str(amount)) if amount is not None else Decimal(0)
+        payer = (
+            str(data.get("payer_name") or data.get("from_label") or "").strip() or None
+        )
         out.append(
             LedgerEvent(
                 source=source,
@@ -318,6 +327,7 @@ def _fetch_manual_deposit_events(
                 amount_usd=amount_usd,
                 occurred_at_utc=occurred_at,
                 external_id=f"{source}:{row.id}",
+                display_name=payer,
             )
         )
     return out
@@ -449,6 +459,24 @@ def fetch_early_rakeback_events(
     ]
 
 
+def _bonus_display_name(record: BonusRecord) -> str:
+    title = (record.group_title or "").strip()
+    if title:
+        from cashier.services.zapier import build_zapier_name
+
+        formatted = build_zapier_name(title)
+        return formatted or title
+    return str(record.player_username).strip()
+
+
+def _bonus_variant_cell(record: BonusRecord) -> str:
+    type_name = (record.bonus_type.name if record.bonus_type else "").strip()
+    desc = (record.custom_description or "").strip()
+    if type_name and desc:
+        return f"{type_name} — {desc}"
+    return type_name or desc
+
+
 def fetch_bonus_events(
     session: Session,
     *,
@@ -482,6 +510,8 @@ def fetch_bonus_events(
             session, row.club_id, str(row.player_username)
         )
         detail = (row.group_title or str(row.player_username)).strip()
+        display = _bonus_display_name(row)
+        variant = _bonus_variant_cell(row) or None
         out.append(
             LedgerEvent(
                 source="bonus",
@@ -490,6 +520,8 @@ def fetch_bonus_events(
                 occurred_at_utc=row.created_at,
                 external_id=f"bonus:{row.id}",
                 detail=detail,
+                display_name=display or None,
+                variant=variant,
             )
         )
     return out

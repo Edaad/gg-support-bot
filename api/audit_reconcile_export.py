@@ -16,12 +16,17 @@ from api.audit_ledger import (
     LedgerLine,
 )
 from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport
+from api.audit_reconcile_matching import match_trade_lines_to_ledger
 from api.club_audit_timezone import zone_for_slug
 
 _HEADER_FILL = PatternFill("solid", fgColor="38761D")
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _SECTION_FONT = Font(bold=True, size=12)
+_TITLE_FONT = Font(bold=True, size=14)
 _CURRENCY_FORMAT = "$#,##0.00"
+
+# Intro: title (1), what (2), how (3), columns (4); blank spacer (5); tables from 6.
+SHEET_INTRO_DATA_START_ROW = 6
 
 OVERVIEW_HEADERS = [
     "Nickname",
@@ -40,7 +45,7 @@ DETAIL_HEADERS = [
     "Cashouts",
     "Net Trade Record",
     "Net Ledger",
-    "Delta",
+    "Discrepancy",
 ]
 
 NET_LEDGER_HEADERS = [
@@ -61,11 +66,87 @@ DEPOSIT_HEADERS = [
     "Reference",
 ]
 
+MATCHING_HEADERS = [
+    "Time",
+    "Amount",
+    "Player ID",
+    "Nickname",
+    "Best effort match",
+    "Variant",
+]
+
+# (what it shows, how it works, column glossary)
+SHEET_INTROS: dict[str, tuple[str, str, str]] = {
+    "Overview": (
+        "Net ClubGG trade totals vs our internal ledger by player. "
+        "The ledger is Round Table’s own record of chip/money movements for the "
+        "audit day — not ClubGG’s trade export — built from deposits "
+        "(Stripe, Zelle, Venmo, Cash App, PayPal, Crypto), early rakeback, "
+        "bonuses, Monday RB settlement, and staff cashouts.",
+        "For each player we sum trade lines and sum signed ledger events, then "
+        "compare. Players within $2 are Matched (left); everyone else is "
+        "Mismatched (right).",
+        "Columns: Nickname — ClubGG nick; Player ID — GG player id; "
+        "Net Trade Record — sum of ClubGG trade lines for the day; "
+        "Net Ledger — sum of signed internal ledger events for the day "
+        "(deposits/early RB/bonuses/Monday settlement as club outflows; "
+        "cashouts as club inflows).",
+    ),
+    "Details": (
+        "Same players as Overview, with the internal ledger broken into "
+        "components (deposits, early RB, bonuses, Monday settlement, cashouts) "
+        "alongside ClubGG net trade.",
+        "Mismatched first, then Matched. Discrepancy is net trade − net ledger "
+        "(how far ClubGG and our ledger disagree for that player).",
+        "Columns: Nickname; Player ID; Deposits — signed total of payment "
+        "deposits in our ledger; Early RB — early rakeback issued; Bonuses; "
+        "RB settlement (Monday) — weekly settlement from gg-computer when "
+        "applicable; Cashouts — staff cashouts in our ledger; "
+        "Net Trade Record — ClubGG sum; Net Ledger — sum of those ledger "
+        "parts; Discrepancy — net trade − net ledger.",
+    ),
+    "Net Ledger": (
+        "Line-by-line view of our internal ledger for the audit day — every "
+        "deposit, early RB, bonus, Monday settlement, and cashout event we "
+        "recorded (the same events that roll up into Net Ledger on Overview).",
+        "Amounts use club chip-ledger signs: money/chips we send to the player "
+        "(deposits, RB, bonuses, Monday settlement) are negative; cashouts "
+        "(player returning chips) are positive — matching ClubGG trade signs.",
+        "Columns: Player ID; Nickname; Source — ledger event type "
+        "(Stripe, Zelle, Bonus, Cashout, etc.); Amount — signed USD; "
+        "Time — club-local; Reference — external id / detail from our system.",
+    ),
+    "Deposits": (
+        "Deposit subset of our internal ledger only (payment methods), "
+        "grouped by provider. Early RB, bonuses, Monday settlement, and "
+        "cashouts are not listed here.",
+        "Sections in Stripe → Zelle → Venmo → Cash App → PayPal → Crypto order.",
+        "Columns: Player ID; Nickname; Amount — signed USD (club outflow); "
+        "Group / detail — group title or note; Time — club-local; "
+        "Reference — external payment id in our DB.",
+    ),
+    "Matching": (
+        "One row per ClubGG trade-record line with a best-effort suggestion "
+        "from our internal ledger (same deposit/RB/bonus/cashout events as "
+        "Net Ledger).",
+        "Same player preferred, whole-dollar rounding, ±15 minutes, sign-aware; "
+        "each ledger event used once. Variant is bonus type only.",
+        "Columns: Time — trade time (club-local); Amount — ClubGG trade amount "
+        "(signed); Player ID; Nickname; Best effort match — suggested ledger "
+        "event (label, source, time, $); Variant — bonus type/description when "
+        "matched to a bonus, otherwise blank.",
+    ),
+}
+
 OVERVIEW_CURRENCY_COLS = (3, 4)
 DETAIL_CURRENCY_COLS = (3, 4, 5, 6, 7, 8, 9, 10)
+OVERVIEW_RIGHT_CURRENCY_COLS = (8, 9)
 
-OVERVIEW_WIDTHS = [22, 16, 18, 18]
-DETAIL_WIDTHS = [22, 16, 14, 14, 14, 22, 14, 18, 18, 14]
+OVERVIEW_WIDTHS = [22, 16, 18, 18, 3, 22, 16, 18, 18]
+DETAIL_WIDTHS = [22, 16, 14, 14, 14, 22, 14, 18, 18, 16]
+NET_LEDGER_WIDTHS = [16, 22, 18, 14, 18, 40]
+DEPOSIT_WIDTHS = [16, 22, 14, 40, 18, 28]
+MATCHING_WIDTHS = [18, 12, 16, 22, 48, 28]
 
 
 def _decimal_cell(value: Decimal) -> float:
@@ -84,17 +165,61 @@ def _partition_players(
     return matched, mismatched
 
 
-def _style_header_row(ws: Worksheet, row: int, headers: list[str]) -> None:
-    for col_idx, header in enumerate(headers, start=1):
-        cell = ws.cell(row=row, column=col_idx, value=header)
+def _style_header_row(
+    ws: Worksheet,
+    row: int,
+    headers: list[str],
+    *,
+    start_col: int = 1,
+) -> None:
+    for offset, header in enumerate(headers):
+        cell = ws.cell(row=row, column=start_col + offset, value=header)
         cell.fill = _HEADER_FILL
         cell.font = _HEADER_FONT
         cell.alignment = Alignment(horizontal="left", vertical="center")
 
 
-def _style_section_title(ws: Worksheet, row: int, title: str) -> None:
-    cell = ws.cell(row=row, column=1, value=title)
+def _style_section_title(
+    ws: Worksheet,
+    row: int,
+    title: str,
+    *,
+    col: int = 1,
+) -> None:
+    cell = ws.cell(row=row, column=col, value=title)
     cell.font = _SECTION_FONT
+
+
+def _write_sheet_intro(
+    ws: Worksheet,
+    title: str,
+    *,
+    merge_cols: int = 6,
+) -> int:
+    """Write title / what / how / columns at rows 1–4. Returns first data row."""
+    what, how, columns = SHEET_INTROS[title]
+    title_cell = ws.cell(row=1, column=1, value=title)
+    title_cell.font = _TITLE_FONT
+
+    what_cell = ws.cell(row=2, column=1, value=what)
+    what_cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+    how_cell = ws.cell(row=3, column=1, value=how)
+    how_cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+    columns_cell = ws.cell(row=4, column=1, value=columns)
+    columns_cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+    if merge_cols > 1:
+        end_letter = ws.cell(row=1, column=merge_cols).column_letter
+        ws.merge_cells(f"A2:{end_letter}2")
+        ws.merge_cells(f"A3:{end_letter}3")
+        ws.merge_cells(f"A4:{end_letter}4")
+
+    ws.row_dimensions[2].height = 48
+    ws.row_dimensions[3].height = 48
+    ws.row_dimensions[4].height = 72
+    return SHEET_INTRO_DATA_START_ROW
 
 
 def _format_currency_cells(
@@ -196,6 +321,40 @@ def _detail_row(player: AuditReconcilePlayerResult) -> list[str | float]:
     ]
 
 
+def _write_overview_sheet(
+    ws: Worksheet,
+    *,
+    matched: list[AuditReconcilePlayerResult],
+    mismatched: list[AuditReconcilePlayerResult],
+) -> None:
+    start = _write_sheet_intro(ws, "Overview", merge_cols=9)
+    left_col = 1
+    right_col = 6
+
+    _style_section_title(ws, start, "Matched", col=left_col)
+    _style_section_title(ws, start, "Mismatched", col=right_col)
+
+    header_row = start + 1
+    _style_header_row(ws, header_row, OVERVIEW_HEADERS, start_col=left_col)
+    _style_header_row(ws, header_row, OVERVIEW_HEADERS, start_col=right_col)
+
+    data_start = header_row + 1
+    row_count = max(len(matched), len(mismatched))
+    for i in range(row_count):
+        row = data_start + i
+        if i < len(matched):
+            for offset, value in enumerate(_overview_row(matched[i])):
+                ws.cell(row=row, column=left_col + offset, value=value)
+        if i < len(mismatched):
+            for offset, value in enumerate(_overview_row(mismatched[i])):
+                ws.cell(row=row, column=right_col + offset, value=value)
+
+    if row_count:
+        data_end = data_start + row_count - 1
+        _format_currency_cells(ws, data_start, data_end, OVERVIEW_CURRENCY_COLS)
+        _format_currency_cells(ws, data_start, data_end, OVERVIEW_RIGHT_CURRENCY_COLS)
+
+
 def _write_player_sections(
     ws: Worksheet,
     *,
@@ -204,12 +363,20 @@ def _write_player_sections(
     currency_cols: tuple[int, ...],
     matched: list[AuditReconcilePlayerResult],
     mismatched: list[AuditReconcilePlayerResult],
+    start_row: int = 1,
+    mismatch_first: bool = False,
 ) -> None:
-    row = 1
-    sections = (
-        ("Matched", matched),
-        ("Mismatched", mismatched),
-    )
+    row = start_row
+    if mismatch_first:
+        sections = (
+            ("Mismatched", mismatched),
+            ("Matched", matched),
+        )
+    else:
+        sections = (
+            ("Matched", matched),
+            ("Mismatched", mismatched),
+        )
     for section_idx, (title, players) in enumerate(sections):
         if section_idx > 0:
             row += 1
@@ -226,12 +393,32 @@ def _write_player_sections(
             _format_currency_cells(ws, data_start, row - 1, currency_cols)
 
 
+def _write_details_sheet(
+    ws: Worksheet,
+    *,
+    matched: list[AuditReconcilePlayerResult],
+    mismatched: list[AuditReconcilePlayerResult],
+) -> None:
+    start = _write_sheet_intro(ws, "Details", merge_cols=10)
+    _write_player_sections(
+        ws,
+        headers=DETAIL_HEADERS,
+        row_builder=_detail_row,
+        currency_cols=DETAIL_CURRENCY_COLS,
+        matched=matched,
+        mismatched=mismatched,
+        start_row=start,
+        mismatch_first=True,
+    )
+
+
 def _write_net_ledger_sheet(
     ws: Worksheet,
     report: AuditReconcileReport,
 ) -> None:
-    _style_header_row(ws, 1, NET_LEDGER_HEADERS)
-    row_idx = 2
+    start = _write_sheet_intro(ws, "Net Ledger", merge_cols=6)
+    _style_header_row(ws, start, NET_LEDGER_HEADERS)
+    row_idx = start + 1
     for line in _sort_net_ledger_lines(report.ledger_lines):
         ws.cell(row=row_idx, column=1, value=line.gg_player_id or "")
         ws.cell(row=row_idx, column=2, value=line.member_nickname or "")
@@ -255,8 +442,9 @@ def _write_deposits_sheet(
     ws: Worksheet,
     report: AuditReconcileReport,
 ) -> None:
+    start = _write_sheet_intro(ws, "Deposits", merge_cols=6)
     by_method = deposit_lines_by_method(report.ledger_lines)
-    row_idx = 1
+    row_idx = start
     for method in DEPOSIT_METHOD_ORDER:
         method_lines = _sort_deposit_lines(by_method.get(method, []))
         if not method_lines:
@@ -286,6 +474,38 @@ def _write_deposits_sheet(
         row_idx += 1
 
 
+def _write_matching_sheet(
+    ws: Worksheet,
+    report: AuditReconcileReport,
+) -> None:
+    start = _write_sheet_intro(ws, "Matching", merge_cols=6)
+    _style_header_row(ws, start, MATCHING_HEADERS)
+    matched_rows = match_trade_lines_to_ledger(
+        report.trade_lines,
+        report.ledger_lines,
+        club_slug=report.club_slug,
+    )
+    row_idx = start + 1
+    for matched in matched_rows:
+        trade = matched.trade
+        ws.cell(
+            row=row_idx,
+            column=1,
+            value=_format_time(report.club_slug, trade.occurred_at),
+        )
+        cell = ws.cell(
+            row=row_idx,
+            column=2,
+            value=_decimal_cell(trade.amount),
+        )
+        cell.number_format = _CURRENCY_FORMAT
+        ws.cell(row=row_idx, column=3, value=trade.member_gg_player_id or "")
+        ws.cell(row=row_idx, column=4, value=trade.member_nickname or "")
+        ws.cell(row=row_idx, column=5, value=matched.match_text)
+        ws.cell(row=row_idx, column=6, value=matched.variant)
+        row_idx += 1
+
+
 def build_reconcile_workbook_from_report(report: AuditReconcileReport) -> bytes:
     matched, mismatched = _partition_players(report.players)
 
@@ -295,28 +515,19 @@ def build_reconcile_workbook_from_report(report: AuditReconcileReport) -> bytes:
     details = wb.create_sheet("Details")
     net_ledger = wb.create_sheet("Net Ledger")
     deposits = wb.create_sheet("Deposits")
+    matching = wb.create_sheet("Matching")
 
-    _write_player_sections(
-        overview,
-        headers=OVERVIEW_HEADERS,
-        row_builder=_overview_row,
-        currency_cols=OVERVIEW_CURRENCY_COLS,
-        matched=matched,
-        mismatched=mismatched,
-    )
-    _write_player_sections(
-        details,
-        headers=DETAIL_HEADERS,
-        row_builder=_detail_row,
-        currency_cols=DETAIL_CURRENCY_COLS,
-        matched=matched,
-        mismatched=mismatched,
-    )
+    _write_overview_sheet(overview, matched=matched, mismatched=mismatched)
+    _write_details_sheet(details, matched=matched, mismatched=mismatched)
     _write_net_ledger_sheet(net_ledger, report)
     _write_deposits_sheet(deposits, report)
+    _write_matching_sheet(matching, report)
 
     _set_column_widths(overview, OVERVIEW_WIDTHS)
     _set_column_widths(details, DETAIL_WIDTHS)
+    _set_column_widths(net_ledger, NET_LEDGER_WIDTHS)
+    _set_column_widths(deposits, DEPOSIT_WIDTHS)
+    _set_column_widths(matching, MATCHING_WIDTHS)
 
     buf = io.BytesIO()
     wb.save(buf)

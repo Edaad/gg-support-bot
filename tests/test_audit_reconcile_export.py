@@ -14,6 +14,7 @@ from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport
 from api.audit_reconcile_export import (
     DETAIL_HEADERS,
     OVERVIEW_HEADERS,
+    SHEET_INTRO_DATA_START_ROW,
     build_reconcile_workbook_from_report,
 )
 
@@ -45,7 +46,7 @@ def _player(
 
 
 class ReconcileExportTestCase(unittest.TestCase):
-    def test_workbook_has_four_tabs_without_glide(self):
+    def test_workbook_layout_and_intros(self):
         occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
         report = AuditReconcileReport(
             audit_date=date(2026, 7, 3),
@@ -105,42 +106,106 @@ class ReconcileExportTestCase(unittest.TestCase):
         )
 
         wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
-        self.assertEqual(wb.sheetnames, ["Overview", "Details", "Net Ledger", "Deposits"])
+        self.assertEqual(
+            wb.sheetnames,
+            ["Overview", "Details", "Net Ledger", "Deposits", "Matching"],
+        )
 
         overview = wb["Overview"]
-        self.assertEqual(overview["A1"].value, "Matched")
+        self.assertEqual(overview["A1"].value, "Overview")
+        self.assertTrue(overview["A2"].value)
+        self.assertTrue(overview["A3"].value)
+        self.assertIn("Columns:", overview["A4"].value or "")
+        self.assertIn("Net Trade Record", overview["A4"].value or "")
+        self.assertIn("internal ledger", (overview["A2"].value or "").lower())
+        self.assertIn("deposits", (overview["A2"].value or "").lower())
+        section_row = SHEET_INTRO_DATA_START_ROW
+        self.assertEqual(overview.cell(row=section_row, column=1).value, "Matched")
+        self.assertEqual(overview.cell(row=section_row, column=6).value, "Mismatched")
+        header_row = section_row + 1
         self.assertEqual(
-            [overview.cell(row=2, column=c).value for c in range(1, 5)],
+            [overview.cell(row=header_row, column=c).value for c in range(1, 5)],
             OVERVIEW_HEADERS,
         )
-        self.assertEqual(overview["A3"].value, "AcePlayer")
-        self.assertEqual(overview["B3"].value, "3011-9668")
-        self.assertEqual(overview["A5"].value, "Mismatched")
         self.assertEqual(
-            [overview.cell(row=6, column=c).value for c in range(1, 5)],
+            [overview.cell(row=header_row, column=c).value for c in range(6, 10)],
             OVERVIEW_HEADERS,
         )
-        self.assertEqual(overview["A7"].value, "BadPlayer")
+        data_row = header_row + 1
+        self.assertEqual(overview.cell(row=data_row, column=1).value, "AcePlayer")
+        self.assertEqual(overview.cell(row=data_row, column=2).value, "3011-9668")
+        self.assertEqual(overview.cell(row=data_row, column=6).value, "BadPlayer")
+        self.assertEqual(overview.cell(row=data_row, column=7).value, "3011-9999")
 
         details = wb["Details"]
-        self.assertEqual(details["A1"].value, "Matched")
+        self.assertEqual(details["A1"].value, "Details")
+        self.assertIn("Discrepancy", details["A4"].value or "")
         self.assertEqual(
-            [details.cell(row=2, column=c).value for c in range(1, 11)],
+            details.cell(row=SHEET_INTRO_DATA_START_ROW, column=1).value,
+            "Mismatched",
+        )
+        self.assertEqual(
+            [
+                details.cell(row=SHEET_INTRO_DATA_START_ROW + 1, column=c).value
+                for c in range(1, 11)
+            ],
             DETAIL_HEADERS,
         )
+        self.assertIn("Discrepancy", DETAIL_HEADERS)
+        self.assertNotIn("Delta", DETAIL_HEADERS)
         self.assertNotIn("Glide", DETAIL_HEADERS)
-        self.assertEqual(details["A5"].value, "Mismatched")
-        self.assertEqual(details["J7"].value, 10.0)
+        # Mismatched data then blank spacer then Matched section
+        self.assertEqual(
+            details.cell(row=SHEET_INTRO_DATA_START_ROW + 2, column=1).value,
+            "BadPlayer",
+        )
+        self.assertEqual(
+            details.cell(row=SHEET_INTRO_DATA_START_ROW + 2, column=10).value,
+            10.0,
+        )
+        self.assertEqual(
+            details.cell(row=SHEET_INTRO_DATA_START_ROW + 4, column=1).value,
+            "Matched",
+        )
+        self.assertEqual(
+            details.cell(row=SHEET_INTRO_DATA_START_ROW + 6, column=1).value,
+            "AcePlayer",
+        )
 
         net_ledger = wb["Net Ledger"]
-        self.assertEqual(net_ledger["C2"].value, "Cashout")
-        self.assertEqual(net_ledger["C3"].value, "Stripe")
-        self.assertEqual(net_ledger["D2"].value, 40.0)
+        self.assertEqual(net_ledger["A1"].value, "Net Ledger")
+        self.assertEqual(
+            net_ledger.cell(row=SHEET_INTRO_DATA_START_ROW, column=1).value,
+            "Player ID",
+        )
+        # Cashout then Stripe after header (same sort as before, offset by intro)
+        self.assertEqual(
+            net_ledger.cell(row=SHEET_INTRO_DATA_START_ROW + 1, column=3).value,
+            "Cashout",
+        )
+        self.assertEqual(
+            net_ledger.cell(row=SHEET_INTRO_DATA_START_ROW + 2, column=3).value,
+            "Stripe",
+        )
+        self.assertEqual(
+            net_ledger.cell(row=SHEET_INTRO_DATA_START_ROW + 1, column=4).value,
+            40.0,
+        )
 
         deposits = wb["Deposits"]
-        self.assertEqual(deposits["A1"].value, "Stripe")
-        self.assertEqual(deposits["A5"].value, "Zelle")
-        self.assertEqual(deposits["A7"].value, None)
+        self.assertEqual(deposits["A1"].value, "Deposits")
+        self.assertEqual(
+            deposits.cell(row=SHEET_INTRO_DATA_START_ROW, column=1).value,
+            "Stripe",
+        )
+
+        matching = wb["Matching"]
+        self.assertEqual(matching["A1"].value, "Matching")
+        self.assertIn("Best effort match", matching["A4"].value or "")
+        self.assertEqual(
+            matching.cell(row=SHEET_INTRO_DATA_START_ROW, column=1).value,
+            "Time",
+        )
 
 
 if __name__ == "__main__":

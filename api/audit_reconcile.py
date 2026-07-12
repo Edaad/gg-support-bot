@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -69,6 +69,16 @@ class UnmatchedLedgerEvent:
     detail: str | None = None
 
 
+@dataclass(frozen=True)
+class TradeLineForMatch:
+    line_id: int
+    occurred_at: datetime | None
+    amount: Decimal
+    member_gg_player_id: str | None
+    member_nickname: str | None
+    sheet_row: int
+
+
 @dataclass
 class AuditReconcilePlayerResult:
     gg_player_id: str
@@ -94,12 +104,54 @@ class AuditReconcileReport:
     unmatched_trade: list[UnmatchedTradeRow] = field(default_factory=list)
     unmatched_ledger: list[UnmatchedLedgerEvent] = field(default_factory=list)
     ledger_lines: list[LedgerLine] = field(default_factory=list)
+    trade_lines: list[TradeLineForMatch] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     blocked_reason: str | None = None
     players_matched: int = 0
     players_failed: int = 0
     unmatched_trade_count: int = 0
     unmatched_ledger_count: int = 0
+
+
+def load_trade_lines_for_match(
+    session: Session,
+    *,
+    upload_ids: list[int],
+) -> list[TradeLineForMatch]:
+    """Non-zero trade lines for Matching tab, chronological (null times last)."""
+    if not upload_ids:
+        return []
+    rows = (
+        session.query(TradeRecordLine)
+        .filter(TradeRecordLine.upload_id.in_(upload_ids))
+        .order_by(TradeRecordLine.sheet_row.asc())
+        .all()
+    )
+    out: list[TradeLineForMatch] = []
+    for line in rows:
+        amount = Decimal(str(line.amount))
+        if amount == 0:
+            continue
+        out.append(
+            TradeLineForMatch(
+                line_id=int(line.id),
+                occurred_at=line.occurred_at,
+                amount=amount,
+                member_gg_player_id=(line.member_gg_player_id or "").strip() or None,
+                member_nickname=line.member_nickname,
+                sheet_row=int(line.sheet_row),
+            )
+        )
+
+    def sort_key(row: TradeLineForMatch) -> tuple:
+        null_time = 1 if row.occurred_at is None else 0
+        occurred = row.occurred_at or datetime.min.replace(tzinfo=timezone.utc)
+        if occurred.tzinfo is None:
+            occurred = occurred.replace(tzinfo=timezone.utc)
+        return (null_time, occurred, row.sheet_row)
+
+    out.sort(key=sort_key)
+    return out
 
 
 def aggregate_trade_record(
@@ -481,8 +533,21 @@ def _report_to_json(report: AuditReconcileReport) -> str:
                 else None,
                 "external_id": line.external_id,
                 "detail": line.detail,
+                "display_name": line.display_name,
+                "variant": line.variant,
             }
             for line in report.ledger_lines
+        ],
+        "trade_lines": [
+            {
+                "line_id": t.line_id,
+                "occurred_at": t.occurred_at.isoformat() if t.occurred_at else None,
+                "amount": str(t.amount),
+                "member_gg_player_id": t.member_gg_player_id,
+                "member_nickname": t.member_nickname,
+                "sheet_row": t.sheet_row,
+            }
+            for t in report.trade_lines
         ],
         "warnings": report.warnings,
         "blocked_reason": report.blocked_reason,
@@ -520,6 +585,23 @@ def _ledger_line_from_dict(raw: dict[str, Any]) -> LedgerLine:
         occurred_at_utc=occurred_at,
         external_id=str(raw.get("external_id") or ""),
         detail=raw.get("detail"),
+        display_name=raw.get("display_name"),
+        variant=raw.get("variant"),
+    )
+
+
+def _trade_line_from_dict(raw: dict[str, Any]) -> TradeLineForMatch:
+    occurred_raw = raw.get("occurred_at")
+    occurred_at: datetime | None = None
+    if occurred_raw:
+        occurred_at = datetime.fromisoformat(str(occurred_raw).replace("Z", "+00:00"))
+    return TradeLineForMatch(
+        line_id=int(raw["line_id"]),
+        occurred_at=occurred_at,
+        amount=_decimal(raw["amount"]),
+        member_gg_player_id=raw.get("member_gg_player_id") or None,
+        member_nickname=raw.get("member_nickname"),
+        sheet_row=int(raw["sheet_row"]),
     )
 
 
@@ -559,6 +641,9 @@ def report_from_json(raw: str, *, run_id: int | None = None) -> AuditReconcileRe
     ledger_lines = [
         _ledger_line_from_dict(line) for line in data.get("ledger_lines") or []
     ]
+    trade_lines = [
+        _trade_line_from_dict(line) for line in data.get("trade_lines") or []
+    ]
     matched = [p for p in players if p.status == "match"]
     failed = [p for p in players if p.status == "mismatch"]
     return AuditReconcileReport(
@@ -574,6 +659,7 @@ def report_from_json(raw: str, *, run_id: int | None = None) -> AuditReconcileRe
         unmatched_trade=unmatched_trade,
         unmatched_ledger=unmatched_ledger,
         ledger_lines=ledger_lines,
+        trade_lines=trade_lines,
         warnings=list(data.get("warnings") or []),
         blocked_reason=data.get("blocked_reason"),
         players_matched=len(matched),
@@ -799,6 +885,7 @@ def run_audit_reconcile(
         unmatched_trade=unmatched_trade,
         unmatched_ledger=unmatched_ledger,
         ledger_lines=build_ledger_lines(ledger_events, nicknames_map),
+        trade_lines=load_trade_lines_for_match(session, upload_ids=trade_upload_ids),
         warnings=warnings,
         players_matched=len(matched),
         players_failed=len(mismatches),
