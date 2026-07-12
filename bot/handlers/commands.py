@@ -37,6 +37,9 @@ RESERVED_CMDS = {
     "sendinactive",
     "bonus",
     "earlyrb",
+    "depositaccess",
+    "listdepositaccess",
+    "depositaccesslist",  # common typo alias; real handler is /listdepositaccess
 }
 
 SET_NAME, SET_MESSAGE = range(2)

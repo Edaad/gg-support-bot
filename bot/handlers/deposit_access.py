@@ -112,23 +112,24 @@ async def depositaccess_entry(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(
             "Use /depositaccess in a private chat with this bot."
         )
-        return
+        raise ApplicationHandlerStop()
 
     uid = int(update.effective_user.id)
     if not can_use_deposit_access_commands(uid):
         await update.message.reply_text(
             "You are not allowed to manage deposit method access."
         )
-        return
+        raise ApplicationHandlerStop()
 
     if await block_if_dm_flow_active(update, context, starting="deposit_access"):
-        return
+        raise ApplicationHandlerStop()
 
     _cleanup(context)
     mark_active_flow(context, "deposit_access")
     context.user_data[STEP_KEY] = "group_title"
     context.user_data["deposit_access_admin_id"] = uid
     await update.message.reply_text(_GROUP_TITLE_PROMPT)
+    raise ApplicationHandlerStop()
 
 
 async def listdepositaccess_handler(
@@ -141,20 +142,20 @@ async def listdepositaccess_handler(
         await update.message.reply_text(
             "Use /listdepositaccess in a private chat with this bot."
         )
-        return
+        raise ApplicationHandlerStop()
 
     uid = int(update.effective_user.id)
     if not can_use_deposit_access_commands(uid):
         await update.message.reply_text(
             "You are not allowed to view deposit method access."
         )
-        return
+        raise ApplicationHandlerStop()
 
     text = format_access_list(list_access_entries(uid))
     # Telegram message limit ~4096
     if len(text) <= 4000:
         await update.message.reply_text(text)
-        return
+        raise ApplicationHandlerStop()
     chunk = ""
     for line in text.splitlines(keepends=True):
         if len(chunk) + len(line) > 4000:
@@ -164,6 +165,7 @@ async def listdepositaccess_handler(
             chunk += line
     if chunk:
         await update.message.reply_text(chunk)
+    raise ApplicationHandlerStop()
 
 
 async def depositaccess_message_handler(
@@ -179,8 +181,18 @@ async def depositaccess_message_handler(
         return
 
     title = (update.message.text or "").strip()
+    logger.info(
+        "depositaccess group_title user_id=%s title=%r",
+        update.effective_user.id,
+        title[:80],
+    )
     resolved = resolve_bound_group(title)
     if not resolved.ok or not resolved.bound_group:
+        logger.info(
+            "depositaccess resolve failed user_id=%s error=%s",
+            update.effective_user.id,
+            resolved.error,
+        )
         await update.message.reply_text(
             resolved.error or "Could not resolve that group title."
         )
@@ -199,6 +211,12 @@ async def depositaccess_message_handler(
     context.user_data["deposit_access_club_id"] = int(group.club_id)
     context.user_data["deposit_access_group_title"] = group.group_title
     context.user_data[STEP_KEY] = "action"
+    logger.info(
+        "depositaccess resolved user_id=%s chat_id=%s club_id=%s",
+        uid,
+        group.telegram_chat_id,
+        group.club_id,
+    )
     await update.message.reply_text(
         f"Group: {group.group_title}\nWhat would you like to do?",
         reply_markup=_action_keyboard(),

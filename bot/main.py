@@ -334,7 +334,17 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
             "listdepositaccess",
             h.listdepositaccess_handler,
             filters=filters.ChatType.PRIVATE,
-        )
+        ),
+        group=-1,
+    )
+    # Alias for the common /depositaccesslist typo
+    app.add_handler(
+        CommandHandler(
+            "depositaccesslist",
+            h.listdepositaccess_handler,
+            filters=filters.ChatType.PRIVATE,
+        ),
+        group=-1,
     )
 
     app.add_handler(CommandHandler("start", h.start_handler))
