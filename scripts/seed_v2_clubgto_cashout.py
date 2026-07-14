@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Seed ClubGTO cashout methods into greenfield club_payment_* tables.
 
-Idempotent upserts for Crypto (12 sub-options), Cashapp (min $13), Zelle, and Venmo.
+Idempotent upserts for Crypto (12 sub-options), Cashapp, Zelle, and Venmo (all min $50).
 Player copy on sub-options (crypto) or Default variants (text methods).
 
 Usage (dry run — no writes):
     python scripts/seed_v2_clubgto_cashout.py
 
-Apply + verify via /api/v2:
+Apply + verify seeded rows in DB:
     python scripts/seed_v2_clubgto_cashout.py --apply
 """
 
@@ -45,7 +45,6 @@ CLUB_NAME = "ClubGTO"
 DIRECTION = "cashout"
 DEFAULT_TIER_LABEL = "Default"
 DEFAULT_MIN_AMOUNT = Decimal("50")
-CASHAPP_MIN_AMOUNT = Decimal("13")
 ZERO_ACCUMULATED = Decimal("0")
 
 CRYPTO_SUB_OPTIONS: list[dict[str, str]] = [
@@ -92,7 +91,7 @@ TEXT_METHODS: list[dict] = [
         "slug": "cashapp",
         "name": "Cashapp",
         "sort_order": 0,
-        "min_amount": CASHAPP_MIN_AMOUNT,
+        "min_amount": DEFAULT_MIN_AMOUNT,
         "response_text": CASHAPP_RESPONSE_TEXT,
     },
     {
@@ -348,28 +347,60 @@ def _verify_text_method(method: dict, slug: str) -> None:
         raise SystemExit(f"Expected non-empty response_text on {slug} Default variant")
 
 
-def verify_via_api(club_id: int) -> None:
-    from fastapi.testclient import TestClient
-
-    from api.app import create_app
-    from api.auth import create_token
-
-    client = TestClient(create_app())
-    token = create_token()
-    resp = client.get(
-        f"/api/v2/clubs/{club_id}/methods?direction={DIRECTION}",
-        headers={"Authorization": f"Bearer {token}"},
+def _method_payload(session: Session, method: ClubPaymentMethod) -> dict:
+    """Shape matching the v2 methods API enough for seed verification."""
+    tiers = (
+        session.query(ClubPaymentTier)
+        .filter_by(method_id=method.id)
+        .order_by(ClubPaymentTier.sort_order, ClubPaymentTier.id)
+        .all()
     )
-    if resp.status_code != 200:
-        raise SystemExit(f"API verify failed: HTTP {resp.status_code} — {resp.text}")
+    tier_payloads = []
+    for tier in tiers:
+        variants = (
+            session.query(ClubPaymentTierVariant)
+            .filter_by(tier_id=tier.id)
+            .order_by(ClubPaymentTierVariant.sort_order, ClubPaymentTierVariant.id)
+            .all()
+        )
+        tier_payloads.append(
+            {
+                "label": tier.label,
+                "min_amount": tier.min_amount,
+                "response_text": tier.response_text,
+                "variants": [
+                    {"label": v.label, "response_text": v.response_text} for v in variants
+                ],
+            }
+        )
+    subs = (
+        session.query(ClubPaymentSubOption)
+        .filter_by(method_id=method.id, is_active=True)
+        .order_by(ClubPaymentSubOption.sort_order, ClubPaymentSubOption.id)
+        .all()
+    )
+    return {
+        "slug": method.slug,
+        "has_sub_options": method.has_sub_options,
+        "min_amount": method.min_amount,
+        "accumulated_amount": method.accumulated_amount,
+        "tiers": tier_payloads,
+        "sub_options": [{"slug": s.slug} for s in subs],
+    }
 
-    methods = resp.json()
-    by_slug = {m.get("slug"): m for m in methods}
+
+def verify_seeded(session: Session, club_id: int) -> None:
+    methods = (
+        session.query(ClubPaymentMethod)
+        .filter_by(club_id=club_id, direction=DIRECTION, is_active=True)
+        .all()
+    )
+    by_slug = {m.slug: _method_payload(session, m) for m in methods}
 
     expected_slugs = {"crypto"} | EXPECTED_TEXT_SLUGS
     missing = expected_slugs - set(by_slug)
     if missing:
-        raise SystemExit(f"Missing cashout methods in API response: {missing}")
+        raise SystemExit(f"Missing cashout methods after seed: {missing}")
 
     _verify_crypto_method(by_slug["crypto"])
     for slug in sorted(EXPECTED_TEXT_SLUGS):
@@ -381,7 +412,7 @@ def main() -> None:
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="Write to database and verify via GET /api/v2/...",
+        help="Write to database and verify seeded rows in DB",
     )
     args = parser.parse_args()
 
@@ -404,10 +435,10 @@ def main() -> None:
             for slug, (method, _tier, _variant) in result["text"].items():
                 min_amt = TEXT_MIN_BY_SLUG[slug]
                 print(f"  {slug}: method_id={method.id}, min=${min_amt}")
-            verify_via_api(club.id)
+            verify_seeded(session, club.id)
             print(
-                "API verification passed: 4 methods (crypto + cashapp + zelle + venmo), "
-                "direction=cashout."
+                "DB verification passed: 4 methods (crypto + cashapp + zelle + venmo), "
+                "direction=cashout, all min=$50."
             )
         else:
             session.rollback()

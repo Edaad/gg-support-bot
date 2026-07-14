@@ -260,6 +260,13 @@ async def cashout_simple_amount_received(update: Update, context: ContextTypes.D
         )
         return CASHOUT_SIMPLE_AMOUNT
 
+    lowest = get_lowest_minimum(club_id, "cashout")
+    if lowest is not None and amount < lowest:
+        await update.message.reply_text(
+            f"Sorry! The minimum cashout amount is ${lowest:,.2f}."
+        )
+        return CASHOUT_SIMPLE_AMOUNT
+
     simple_data = context.chat_data.get("cashout_simple_data")
     user_id = context.chat_data.get("cashout_user_id")
     chat_id = context.chat_data.get("cashout_chat_id")

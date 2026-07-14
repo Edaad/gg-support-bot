@@ -308,6 +308,52 @@ class TestCashoutAmountActorGating(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.chat_data["cashout_user_id"], 8132930521)
 
 
+class TestCashoutSimpleMinAmount(unittest.IsolatedAsyncioTestCase):
+    def _context(self):
+        return SimpleNamespace(
+            chat_data={
+                "cashout_club_id": 4,
+                "cashout_chat_id": -1003978131309,
+                "cashout_user_id": 8132930521,
+                "cashout_simple_data": {
+                    "type": "text",
+                    "text": "Minimum cashout is $50 for all methods",
+                },
+            },
+            user_data={},
+        )
+
+    @patch.object(co, "get_cashout_max_amount", return_value=None)
+    @patch.object(co, "get_lowest_minimum", return_value=Decimal("50"))
+    @patch.object(co, "_send_simple_response", new_callable=AsyncMock)
+    @patch.object(co, "record_activity")
+    async def test_below_minimum_is_rejected(self, record_activity, send_simple, *_mocks):
+        update = _message_update(age_seconds=5, text="30", user_id=8132930521)
+        context = self._context()
+        result = await co.cashout_simple_amount_received(update, context)
+        self.assertEqual(result, co.CASHOUT_SIMPLE_AMOUNT)
+        update.message.reply_text.assert_awaited_once_with(
+            "Sorry! The minimum cashout amount is $50.00."
+        )
+        send_simple.assert_not_awaited()
+        record_activity.assert_not_called()
+
+    @patch.object(co, "get_cashout_soft_limit", return_value=None)
+    @patch.object(co, "get_cashout_max_amount", return_value=None)
+    @patch.object(co, "get_lowest_minimum", return_value=Decimal("50"))
+    @patch.object(co, "_send_simple_response", new_callable=AsyncMock)
+    @patch.object(co, "record_activity")
+    @patch.object(co, "_cleanup")
+    async def test_at_minimum_is_accepted(self, _cleanup, record_activity, send_simple, *_mocks):
+        update = _message_update(age_seconds=5, text="50", user_id=8132930521)
+        context = self._context()
+        result = await co.cashout_simple_amount_received(update, context)
+        self.assertEqual(result, ConversationHandler.END)
+        send_simple.assert_awaited_once()
+        record_activity.assert_called_once()
+        update.message.reply_text.assert_not_called()
+
+
 class TestFlowCallbackStaleness(unittest.TestCase):
     def test_active_deposit_callback_ignores_message_age(self):
         update = _callback_update(age_seconds=240)
