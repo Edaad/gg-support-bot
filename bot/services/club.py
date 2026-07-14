@@ -856,10 +856,11 @@ def get_last_activity(club_id: int, chat_id: int) -> Optional[datetime]:
     with get_db() as session:
         activity = (
             session.query(PlayerActivity)
-            .filter_by(
-                club_id=club_id,
-                chat_id=chat_id,
-                cancelled=False,
+            .filter(
+                PlayerActivity.club_id == club_id,
+                PlayerActivity.chat_id == chat_id,
+                PlayerActivity.cancelled.is_(False),
+                PlayerActivity.activity_type.in_(("deposit", "cashout")),
             )
             .order_by(PlayerActivity.created_at.desc())
             .first()
