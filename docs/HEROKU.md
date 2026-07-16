@@ -428,6 +428,23 @@ This creates `payment_binding_events`, an append-only log of binds, group-link u
 heroku run -a YOUR_APP -- python scripts/audit_payment_notification_sync.py --method zelle
 ```
 
+## Daily support-group activity tracking
+
+After deploying daily active-group instrumentation, run once on production Postgres:
+
+```bash
+heroku run -a YOUR_APP -- python migrate_group_chat_daily_activity.py
+```
+
+The production bot worker records one rollup row per club-linked support group per America/New_York calendar day when a non-bot message arrives. Query active groups for a day:
+
+```sql
+SELECT chat_id, club_id, non_bot_message_count, first_message_at, last_message_at
+FROM group_chat_daily_activity
+WHERE activity_date = '2026-07-16'
+ORDER BY club_id, chat_id;
+```
+
 ## Per-group deposit method access
 
 After deploying deposit method public/blacklist/whitelist:

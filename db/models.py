@@ -1462,6 +1462,39 @@ class BotFlowSession(Base):
     club = relationship("Club")
 
 
+class GroupChatDailyActivity(Base):
+    """Daily rollup of non-bot messages in club-linked support groups."""
+
+    __tablename__ = "group_chat_daily_activity"
+    __table_args__ = (
+        UniqueConstraint(
+            "activity_date",
+            "chat_id",
+            name="uq_gcda_activity_date_chat_id",
+        ),
+        Index("ix_gcda_club_activity_date", "club_id", "activity_date"),
+        Index("ix_gcda_activity_date", "activity_date"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    activity_date = Column(Date, nullable=False)
+    chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    non_bot_message_count = Column(Integer, nullable=False, default=1)
+    first_message_at = Column(DateTime(timezone=True), nullable=False)
+    last_message_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    club = relationship("Club")
+
+
 class DepositFunnelEvent(Base):
     """Append-only /deposit → chips funnel step (one row per session + step)."""
 

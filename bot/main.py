@@ -451,6 +451,17 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         group=2,
     )
 
+    from bot.services.group_chat_daily_activity import record_group_chat_daily_activity
+
+    app.add_handler(
+        MessageHandler(
+            filters.ChatType.GROUPS & filters.ALL & ~filters.StatusUpdate.ALL,
+            record_group_chat_daily_activity,
+            block=False,
+        ),
+        group=3,
+    )
+
     from bot.runtime_config import is_test_bot_worker, use_payment_v2
 
     if test_mode:
