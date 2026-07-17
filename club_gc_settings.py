@@ -552,6 +552,12 @@ def is_migration_recovery_slack_summary_enabled() -> bool:
 INACTIVE_OUTREACH_CLUB_KEYS: tuple[str, ...] = MIGRATION_RECOVERY_CLUB_KEYS
 
 
+def is_group_transcript_cron_enabled() -> bool:
+    """Nightly T+1 group-chat transcript extraction (3am ET). Default off."""
+
+    return _env_bool("GROUP_TRANSCRIPT_CRON_ENABLED", default=False)
+
+
 def is_inactive_outreach_scan_enabled() -> bool:
     """One-shot worker batch scan for inactive support megagroups (entity resolution only)."""
 

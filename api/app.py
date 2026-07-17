@@ -96,6 +96,7 @@ def create_app() -> FastAPI:
     from api.routes.issue_reports import router as issue_reports_router
     from api.routes.audit import router as audit_router
     from api.routes.early_rakeback_webhook import router as early_rakeback_webhook_router
+    from api.routes.group_chat_activity import router as group_chat_activity_router
 
     app.include_router(weekly_stats_proxy_router)
     app.include_router(stripe_deposit_router)
@@ -119,6 +120,7 @@ def create_app() -> FastAPI:
     app.include_router(early_rakeback_webhook_router)
     app.include_router(audit_router)
     app.include_router(issue_reports_router)
+    app.include_router(group_chat_activity_router)
 
     @app.api_route(
         "/api/{rest_of_path:path}",

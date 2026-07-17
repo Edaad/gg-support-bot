@@ -79,6 +79,20 @@ _listener_metrics: dict[str, Any] = {
     "last_disconnect_reason": None,
     "running": False,
 }
+# When True, planned maintenance (e.g. nightly transcript cron) must not DM admins
+# about MTProto disconnects — Slack already covers the outage window.
+_planned_mtproto_pause: bool = False
+
+
+def set_planned_mtproto_pause(active: bool) -> None:
+    """Suppress Telegram admin disconnect DMs during a planned listener pause."""
+
+    global _planned_mtproto_pause
+    _planned_mtproto_pause = bool(active)
+
+
+def is_planned_mtproto_pause() -> bool:
+    return _planned_mtproto_pause
 
 
 def _dm_gc_verbose_info(msg: str, *args) -> None:
@@ -95,7 +109,7 @@ async def _report_club_health(
     await asyncio.to_thread(persist_club_health, club_key, **kwargs)
 
     cfg = CLUB_GC_CONFIG.get(club_key)
-    if cfg is None or not notify_on_disconnect:
+    if cfg is None or not notify_on_disconnect or _planned_mtproto_pause:
         return
 
     status = kwargs.get("status")

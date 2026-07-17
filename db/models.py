@@ -1495,6 +1495,43 @@ class GroupChatDailyActivity(Base):
     club = relationship("Club")
 
 
+class GroupChatDailyTranscript(Base):
+    """Previous-day support-group conversation blob (MTProto nightly extract)."""
+
+    __tablename__ = "group_chat_daily_transcripts"
+    __table_args__ = (
+        UniqueConstraint(
+            "activity_date",
+            "chat_id",
+            name="uq_gcdt_activity_date_chat_id",
+        ),
+        Index("ix_gcdt_club_activity_date", "club_id", "activity_date"),
+        Index("ix_gcdt_activity_date", "activity_date"),
+        Index("ix_gcdt_status", "status"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    activity_date = Column(Date, nullable=False)
+    chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    status = Column(String(16), nullable=False, default="pending")
+    message_count = Column(Integer, nullable=False, default=0)
+    messages = Column(JSONB, nullable=True)
+    error = Column(Text, nullable=True)
+    attempt_count = Column(Integer, nullable=False, default=0)
+    fetched_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    club = relationship("Club")
+
+
 class DepositFunnelEvent(Base):
     """Append-only /deposit → chips funnel step (one row per session + step)."""
 

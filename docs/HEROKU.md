@@ -395,8 +395,10 @@ heroku config:set SLACK_OPS_MENTION='<@UYOUR_SLACK_USER_ID>' -a YOUR_APP   # opt
 ```bash
 heroku config:set SLACK_ISSUE_REPORT_BOT_TOKEN=xoxb-... -a YOUR_APP
 heroku config:set SLACK_ISSUE_REPORT_CHANNEL_ID=C... -a YOUR_APP
-heroku config:set ISSUE_REPORT_TAG_MENTIONS='{"head_admin":"<!subteam^S_HEAD>","engineer":"<!subteam^S_ENG>"}' -a YOUR_APP
+heroku config:set ISSUE_REPORT_TAG_MENTIONS='{"head_admin":"<!subteam^S_HEAD>","engineer":"<!subteam^S_ENG>","account_managers":"<!subteam^S_ACC>"}' -a YOUR_APP
 ```
+
+Include an `account_managers` key (Slack user-group mention for `@accmanagers`) so the nightly transcript cron can ping AMs on start/finish.
 
 **Issue reports (AMs):** `/escalate` (group) and `/report` (DM) — see [`docs/ISSUE_REPORTS_BOT.md`](ISSUE_REPORTS_BOT.md). Run `python migrate_issue_reports_v2.py`, `python migrate_issue_report_drafts.py`, and `python migrate_issue_reports_resolve.py` once after deploy.
 
@@ -444,6 +446,35 @@ FROM group_chat_daily_activity
 WHERE activity_date = '2026-07-16'
 ORDER BY club_id, chat_id;
 ```
+
+JWT (dashboard) reads:
+
+- `GET /api/group-chat-daily-activity?activity_date=YYYY-MM-DD[&club_id=]`
+
+## Nightly group-chat transcript extraction
+
+Stores previous-day conversation history (JSONB) for each active support group. Runs on the **worker** at **3:00 AM America/New_York**, pauses the MTProto dm_gc listener for up to 30 minutes, and posts start/done notices to the issue-report Slack channel (mentions `account_managers` from `ISSUE_REPORT_TAG_MENTIONS`).
+
+After deploy, run the migration once:
+
+```bash
+heroku run -a YOUR_APP -- python migrate_group_chat_daily_transcripts.py
+```
+
+Feature flag (default **off**). Enable only after validating one chat:
+
+```bash
+# leave off until single-group validation succeeds
+heroku config:set GROUP_TRANSCRIPT_CRON_ENABLED=false -a YOUR_APP
+# when ready:
+heroku config:set GROUP_TRANSCRIPT_CRON_ENABLED=true -a YOUR_APP
+heroku restart worker -a YOUR_APP
+```
+
+JWT reads (metadata list omits `messages`; detail includes full blob):
+
+- `GET /api/group-chat-transcripts?activity_date=YYYY-MM-DD[&club_id=][&status=complete]`
+- `GET /api/group-chat-transcripts/{chat_id}?activity_date=YYYY-MM-DD`
 
 ## Per-group deposit method access
 

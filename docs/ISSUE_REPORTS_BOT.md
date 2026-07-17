@@ -50,9 +50,12 @@ Set `ISSUE_REPORT_TAG_MENTIONS` JSON to @mention the right audience in Slack:
 {
   "head_admin": "<!subteam^S_HEAD>",
   "engineer": "<!subteam^S_ENG>",
-  "rb_admin": "<!subteam^S_RB>"
+  "rb_admin": "<!subteam^S_RB>",
+  "account_managers": "<!subteam^S_ACC>"
 }
 ```
+
+`account_managers` is used by the nightly group-chat transcript cron (start/done notices), not by `/report` categories.
 
 Slack messages show **For:** Head admin, Engineer, etc., plus subteam/user mentions when configured.
 
