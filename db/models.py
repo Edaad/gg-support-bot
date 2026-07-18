@@ -1508,6 +1508,8 @@ class GroupChatDailyTranscript(Base):
         Index("ix_gcdt_club_activity_date", "club_id", "activity_date"),
         Index("ix_gcdt_activity_date", "activity_date"),
         Index("ix_gcdt_status", "status"),
+        Index("ix_gcdt_analysis_status", "analysis_status"),
+        Index("ix_gcdt_activity_date_analysis_status", "activity_date", "analysis_status"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -1522,6 +1524,52 @@ class GroupChatDailyTranscript(Base):
     error = Column(Text, nullable=True)
     attempt_count = Column(Integer, nullable=False, default=0)
     fetched_at = Column(DateTime(timezone=True), nullable=True)
+    analysis_status = Column(String(16), nullable=False, default="pending")
+    analysis_error = Column(Text, nullable=True)
+    analysis_attempt_count = Column(Integer, nullable=False, default=0)
+    analyzed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    club = relationship("Club")
+
+
+class GroupChatTicket(Base):
+    """Segmented + classified support ticket for one chat-day."""
+
+    __tablename__ = "group_chat_tickets"
+    __table_args__ = (
+        UniqueConstraint(
+            "activity_date",
+            "chat_id",
+            "ticket_index",
+            name="uq_gct_activity_date_chat_id_ticket_index",
+        ),
+        Index("ix_gct_club_activity_date", "club_id", "activity_date"),
+        Index("ix_gct_activity_date", "activity_date"),
+        Index("ix_gct_category", "category"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    activity_date = Column(Date, nullable=False)
+    chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    ticket_index = Column(Integer, nullable=False)
+    start_msg_id = Column(BigInteger, nullable=False)
+    end_msg_id = Column(BigInteger, nullable=False)
+    message_ids = Column(JSONB, nullable=False)
+    brief_summary = Column(Text, nullable=True)
+    category = Column(String(32), nullable=False)
+    events = Column(JSONB, nullable=True)
+    summary = Column(Text, nullable=True)
+    prompt_version = Column(String(32), nullable=False)
+    model = Column(String(128), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),

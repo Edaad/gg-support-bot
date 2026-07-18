@@ -118,6 +118,14 @@ class CronPauseResumeTest(unittest.IsolatedAsyncioTestCase):
                 "previous_et_activity_date",
                 return_value=date(2026, 7, 16),
             ),
+            patch.object(
+                cron,
+                "analyze_with_retries",
+                new_callable=AsyncMock,
+                return_value=SimpleNamespace(
+                    complete=2, failed=0, timed_out=0
+                ),
+            ) as analyze_mock,
         ):
             fetch_mock.return_value = summary
             result = await cron.run_group_chat_transcript_extraction(
@@ -127,6 +135,8 @@ class CronPauseResumeTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["complete"], 2)
         self.assertEqual(result["failed"], 1)
+        self.assertEqual(result["analysis_complete"], 2)
+        analyze_mock.assert_awaited_once()
         stop.assert_called_once()
         start.assert_called_once_with("tok-123")
         self.assertEqual(set_pause.call_args_list[0].args[0], True)
@@ -142,6 +152,8 @@ class CronPauseResumeTest(unittest.IsolatedAsyncioTestCase):
             slack.await_args_list[0].kwargs.get("tags"),
             ["account_managers"],
         )
+        # Analysis runs after Slack done (second notify), then analyze.
+        self.assertGreaterEqual(analyze_mock.await_count, 1)
 
     async def test_resumes_listener_even_when_fetch_raises(self):
         with (
@@ -168,6 +180,12 @@ class CronPauseResumeTest(unittest.IsolatedAsyncioTestCase):
                 cron,
                 "previous_et_activity_date",
                 return_value=date(2026, 7, 16),
+            ),
+            patch.object(
+                cron,
+                "analyze_with_retries",
+                new_callable=AsyncMock,
+                return_value=SimpleNamespace(complete=0, failed=0, timed_out=0),
             ),
         ):
             await cron.run_group_chat_transcript_extraction(bot_token="tok-123")

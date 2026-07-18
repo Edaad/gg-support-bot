@@ -7,6 +7,7 @@ from datetime import time as dt_time
 from zoneinfo import ZoneInfo
 
 from club_gc_settings import is_group_transcript_cron_enabled
+from bot.services.group_chat_analysis import analyze_with_retries
 from bot.services.group_chat_transcript_fetch import (
     fetch_with_retries,
     previous_et_activity_date,
@@ -19,6 +20,7 @@ _ET = ZoneInfo("America/New_York")
 _CRON_HOUR = 3
 _CRON_MINUTE = 0
 _BUDGET_SECONDS = 30 * 60
+_ANALYSIS_BUDGET_SECONDS = 30 * 60
 _JOB_NAME = "group_chat_transcript_extraction"
 _SLACK_TAGS = ["account_managers"]
 
@@ -116,11 +118,49 @@ async def run_group_chat_transcript_extraction(
         tags=_SLACK_TAGS,
     )
     logger.info(
-        "group_transcript_cron: done activity_date=%s complete=%s failed=%s timed_out=%s",
+        "group_transcript_cron: extract done activity_date=%s complete=%s failed=%s timed_out=%s",
         summary_dict["activity_date"],
         summary_dict["complete"],
         summary_dict["failed"],
         summary_dict["timed_out"],
+    )
+
+    # Analysis does not need MTProto — run after resume + Slack done notice.
+    analysis_dict = {
+        "complete": 0,
+        "failed": 0,
+        "timed_out": 0,
+    }
+    try:
+        analysis = await analyze_with_retries(
+            activity_date,
+            chat_id=chat_id,
+            club_id=club_id,
+            budget_seconds=budget_seconds
+            if budget_seconds != _BUDGET_SECONDS
+            else _ANALYSIS_BUDGET_SECONDS,
+        )
+        analysis_dict = {
+            "complete": analysis.complete,
+            "failed": analysis.failed,
+            "timed_out": analysis.timed_out,
+        }
+    except Exception:
+        logger.exception(
+            "group_transcript_cron: analysis crashed activity_date=%s",
+            activity_date,
+        )
+        analysis_dict["failed"] = max(int(analysis_dict["failed"]), 1)
+
+    summary_dict["analysis_complete"] = int(analysis_dict["complete"])
+    summary_dict["analysis_failed"] = int(analysis_dict["failed"])
+    summary_dict["analysis_timed_out"] = int(analysis_dict["timed_out"])
+    logger.info(
+        "group_transcript_cron: analysis done activity_date=%s complete=%s failed=%s timed_out=%s",
+        summary_dict["activity_date"],
+        summary_dict["analysis_complete"],
+        summary_dict["analysis_failed"],
+        summary_dict["analysis_timed_out"],
     )
     return summary_dict
 

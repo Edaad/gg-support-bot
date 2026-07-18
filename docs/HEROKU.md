@@ -476,6 +476,41 @@ JWT reads (metadata list omits `messages`; detail includes full blob):
 - `GET /api/group-chat-transcripts?activity_date=YYYY-MM-DD[&club_id=][&status=complete]`
 - `GET /api/group-chat-transcripts/{chat_id}?activity_date=YYYY-MM-DD`
 
+### Ticket analysis (segment + classify)
+
+After extract resumes MTProto and posts the “commands available” Slack notice, the same job segments each complete transcript into tickets and classifies them with Claude (Sonnet, temp 0). Results land in `group_chat_tickets`. Analysis does **not** extend the MTProto pause.
+
+After deploy, run:
+
+```bash
+heroku run -a YOUR_APP -- python migrate_group_chat_tickets.py
+heroku config:set ANTHROPIC_API_KEY=sk-ant-... -a YOUR_APP
+# optional model override (default claude-sonnet-4-5):
+# heroku config:set ANTHROPIC_MODEL=claude-sonnet-4-5 -a YOUR_APP
+```
+
+JWT reads:
+
+- `GET /api/group-chat-tickets?activity_date=YYYY-MM-DD[&club_id=][&category=deposit]` — enriched with `club_name`, `group_name`, `customer_first_message`, `duration_seconds`, `duration_source`
+- `GET /api/group-chat-tickets/{chat_id}?activity_date=YYYY-MM-DD`
+- `GET /api/group-chat-tickets/by-id/{ticket_id}/messages` — sliced transcript messages with `role` (`customer` | `admin` | `bot`)
+
+Dashboard: **Tickets** nav item at `/tickets` (single-day picker, club/category filters, detail modal with chat bubbles).
+
+Categories: `auto_deposit`, `deposit`, `cashout`, `early_rakeback`, `rakeback`, `bonus`, `other`.
+
+Manual re-run for a day (upserts tickets; chats run in parallel by default):
+
+```bash
+# one chat first
+python scripts/run_group_chat_analysis.py --activity-date 2026-07-17 --chat-id -100123
+# full day (all chats concurrent; --concurrency N to cap)
+python scripts/run_group_chat_analysis.py --activity-date 2026-07-17
+heroku run -a YOUR_APP -- python scripts/run_group_chat_analysis.py --activity-date 2026-07-17 --chat-id -100123
+```
+
+Optional: `GROUP_CHAT_ANALYSIS_CONCURRENCY=10` (default `0` = unlimited).
+
 ## Per-group deposit method access
 
 After deploying deposit method public/blacklist/whitelist:
