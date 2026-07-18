@@ -272,6 +272,26 @@ class AuditExportFormattingTestCase(unittest.TestCase):
         )
         self.assertEqual(row.account_tag, "clubgto1234@gmail.com")
 
+    def test_tagged_manual_row_uses_crypto_from_label_and_token(self):
+        created = datetime(2026, 6, 21, 3, 57, tzinfo=timezone.utc)
+        row = _tagged_manual_row(
+            MagicMock(),
+            {
+                "amount_usd": Decimal("122.00"),
+                "from_label": "Binance (0x8894…D4E3)",
+                "token_symbol": "USDC",
+                "group_title": "GTO / 3011-9668 / Pvtenis",
+                "club_id": 1,
+                "created_at": created,
+            },
+            {1: "ClubGTO"},
+            tag_field="token_symbol",
+        )
+        self.assertEqual(row.payer_name, "Binance (0x8894…D4E3)")
+        self.assertEqual(row.account_tag, "USDC")
+        self.assertEqual(row.group_title, "GTO / 3011-9668 / Pvtenis")
+        self.assertEqual(row.club_label, "ClubGTO")
+
 
 class AuditExportWorkbookTestCase(unittest.TestCase):
     def test_alert_scope_labels_importable(self):
@@ -286,6 +306,7 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
                 "Venmo",
                 "Cash App",
                 "PayPal",
+                "Crypto",
                 "Bonus",
                 "Early Rakeback",
             ],
@@ -314,7 +335,7 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
     @patch("api.audit_export._fetch_tagged_manual_rows", return_value=[])
     @patch("api.audit_export._fetch_bonus_rows", return_value=[])
     @patch("api.audit_export._club_name_map", return_value={})
-    def test_build_audit_workbook_has_seven_sheets_with_headers(
+    def test_build_audit_workbook_has_eight_sheets_with_headers(
         self,
         _club_map,
         _bonus,
@@ -466,6 +487,50 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         self.assertEqual(venmo_ws["C2"].value, "@godfather4444")
         self.assertEqual(venmo_ws["D2"].value, "GTO / 3011-9668 / Pvtenis")
         self.assertEqual(venmo_ws["E2"].value, "ClubGTO")
+
+    @patch("api.audit_export._fetch_early_rakeback_rows", return_value=[])
+    @patch("api.audit_export._fetch_stripe_rows", return_value=[])
+    @patch("api.audit_export._fetch_bonus_rows", return_value=[])
+    @patch("api.audit_export._club_name_map", return_value={})
+    def test_build_audit_workbook_writes_crypto_sheet(self, _club_map, _bonus, _stripe, _early_rb):
+        crypto_rows = [
+            TaggedManualAuditRow(
+                amount_usd=122.0,
+                payer_name="Binance (0x8894…D4E3)",
+                account_tag="USDC",
+                group_title="GTO / 3011-9668 / Pvtenis",
+                club_label="ClubGTO",
+                time_label="June 21, 2026 at 11:57 PM",
+            )
+        ]
+
+        def tagged_side_effect(
+            session, payment_cls, build_read, club_names, from_dt, to_dt, *, audit_date, tag_field
+        ):
+            if payment_cls.__name__ == "CryptoPayment":
+                return crypto_rows
+            return []
+
+        with patch(
+            "api.audit_export._fetch_tagged_manual_rows",
+            side_effect=tagged_side_effect,
+        ):
+            content = build_audit_workbook(
+                MagicMock(),
+                "2026-06-21",
+            )
+
+        wb = load_workbook(io.BytesIO(content))
+        crypto_ws = wb["Crypto"]
+        self.assertEqual(
+            [cell.value for cell in crypto_ws[1]],
+            ["Amount", "Name", "Tag", "Group", "Club", "Time"],
+        )
+        self.assertEqual(crypto_ws["A2"].value, 122.0)
+        self.assertEqual(crypto_ws["B2"].value, "Binance (0x8894…D4E3)")
+        self.assertEqual(crypto_ws["C2"].value, "USDC")
+        self.assertEqual(crypto_ws["D2"].value, "GTO / 3011-9668 / Pvtenis")
+        self.assertEqual(crypto_ws["E2"].value, "ClubGTO")
 
     @patch("api.audit_export._fetch_early_rakeback_rows", return_value=[])
     @patch("api.audit_export._fetch_stripe_rows", return_value=[])

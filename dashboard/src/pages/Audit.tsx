@@ -380,8 +380,8 @@ export default function Audit({ token }: { token: string }) {
         <h2 className="mb-2 text-lg font-semibold text-ink">Deposit audit export</h2>
         <p className="mb-4 text-sm text-ink-muted">
           Download receipt-style deposit transactions across every club for one day. One XLSX with
-          tabs for Stripe, Zelle, Venmo, Cash App, PayPal, plus bonus and early rakeback sheets.
-          Early RB is synced from aon-beta for all clubs before the file is generated.
+          tabs for Stripe, Zelle, Venmo, Cash App, PayPal, Crypto, plus bonus and early rakeback
+          sheets. Early RB is synced from aon-beta for all clubs before the file is generated.
         </p>
 
         {exportErr ? (

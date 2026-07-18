@@ -28,6 +28,7 @@ from api.club_slug import CLUB_SLUG_TO_NAME, slug_for_club_id
 from api.payments_helpers import (
     apply_analytics_payment_exclusion,
     build_cashapp_payment_read,
+    build_crypto_payment_read,
     build_paypal_payment_read,
     build_venmo_payment_read,
     build_zelle_payment_read,
@@ -40,6 +41,7 @@ from db.models import (
     BonusRecord,
     CashAppPayment,
     Club,
+    CryptoPayment,
     EarlyRakebackLine,
     EarlyRakebackSnapshot,
     PayPalPayment,
@@ -78,6 +80,7 @@ SHEET_SPECS: list[SheetSpec] = [
     SheetSpec("Venmo", TAGGED_MANUAL_LAYOUT, "tagged_manual"),
     SheetSpec("Cash App", TAGGED_MANUAL_LAYOUT, "tagged_manual"),
     SheetSpec("PayPal", TAGGED_MANUAL_LAYOUT, "tagged_manual"),
+    SheetSpec("Crypto", TAGGED_MANUAL_LAYOUT, "tagged_manual"),
     SheetSpec("Bonus", MANUAL_LAYOUT, "manual"),
     SheetSpec("Early Rakeback", STRIPE_LAYOUT, "stripe"),
 ]
@@ -522,6 +525,16 @@ def build_audit_workbook(session: Session, audit_date: str) -> bytes:
         audit_date=audit_date,
         tag_field="paypal_email",
     )
+    crypto_rows = _fetch_tagged_manual_rows(
+        session,
+        CryptoPayment,
+        build_crypto_payment_read,
+        club_names,
+        from_dt,
+        to_dt,
+        audit_date=audit_date,
+        tag_field="token_symbol",
+    )
     bonus_rows = _fetch_bonus_rows(
         session, club_names, from_dt, to_dt, audit_date=audit_date
     )
@@ -535,6 +548,7 @@ def build_audit_workbook(session: Session, audit_date: str) -> bytes:
         venmo_rows,
         cashapp_rows,
         paypal_rows,
+        crypto_rows,
         bonus_rows,
         early_rb_rows,
     ]
@@ -671,9 +685,10 @@ def _tagged_manual_row(
     else:
         amount_usd = float(amount)
     club_slug = _slug_for_payment_club(session, data.get("club_id"), data)
+    payer = str(data.get("payer_name") or data.get("from_label") or "").strip()
     return TaggedManualAuditRow(
         amount_usd=amount_usd,
-        payer_name=str(data["payer_name"]),
+        payer_name=payer,
         account_tag=str(data.get(tag_field) or "").strip(),
         group_title=_manual_group_cell(data),
         club_label=_manual_club_name(data, club_names),
