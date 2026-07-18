@@ -649,14 +649,28 @@ export default function AuditReconcilePanel({
                   <li>
                     {clubEarlyRb.lines_stored} line(s) stored
                     {clubEarlyRb.lines_skipped_unmapped > 0
-                      ? `, ${clubEarlyRb.lines_skipped_unmapped} skipped unmapped`
+                      ? `, ${clubEarlyRb.lines_skipped_unmapped} unmapped (included in export)`
                       : ''}
                   </li>
                   {clubEarlyRb.error ? (
                     <li className="text-danger-ink">{clubEarlyRb.error}</li>
                   ) : null}
-                  {clubEarlyRb.skipped_nicknames.length > 0 ? (
-                    <li>Skipped nicknames: {clubEarlyRb.skipped_nicknames.join(', ')}</li>
+                  {(clubEarlyRb.skips?.length ?? 0) > 0 ? (
+                    <li>
+                      Unmapped (no GG player ID, still in Early RB export):{' '}
+                      {clubEarlyRb.skips
+                        .map((skip) => {
+                          const who = skip.nickname || '(no nickname)'
+                          const why = skip.reason_label || skip.reason
+                          return `${who} — ${why} (×${skip.count})`
+                        })
+                        .join('; ')}
+                    </li>
+                  ) : clubEarlyRb.skipped_nicknames.length > 0 ? (
+                    <li>
+                      Unmapped nicknames (no GG player ID):{' '}
+                      {clubEarlyRb.skipped_nicknames.join(', ')}
+                    </li>
                   ) : null}
                 </ul>
               </li>

@@ -29,6 +29,13 @@ export type TradeRecordUploadSummary = {
   created_at: string
 }
 
+export type EarlyRakebackSkip = {
+  nickname: string
+  reason: string
+  count: number
+  reason_label?: string | null
+}
+
 export type EarlyRakebackClubSyncResult = {
   club_slug: string
   club_name: string
@@ -37,6 +44,7 @@ export type EarlyRakebackClubSyncResult = {
   lines_stored: number
   lines_skipped_unmapped: number
   skipped_nicknames: string[]
+  skips: EarlyRakebackSkip[]
   error: string | null
 }
 
@@ -59,6 +67,8 @@ export type EarlyRakebackSnapshotSummary = {
   lines_fetched: number
   lines_stored: number
   lines_skipped_unmapped: number
+  skipped_nicknames: string[]
+  skips: EarlyRakebackSkip[]
   synced_at: string
 }
 

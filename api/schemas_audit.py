@@ -41,6 +41,13 @@ class TradeRecordUploadSummary(BaseModel):
     created_at: datetime
 
 
+class EarlyRakebackSkipSchema(BaseModel):
+    nickname: str = ""
+    reason: str
+    count: int = 1
+    reason_label: Optional[str] = None
+
+
 class EarlyRakebackClubSyncResult(BaseModel):
     club_slug: str
     club_name: str
@@ -49,6 +56,7 @@ class EarlyRakebackClubSyncResult(BaseModel):
     lines_stored: int = 0
     lines_skipped_unmapped: int = 0
     skipped_nicknames: List[str] = Field(default_factory=list)
+    skips: List[EarlyRakebackSkipSchema] = Field(default_factory=list)
     error: Optional[str] = None
 
 
@@ -71,6 +79,8 @@ class EarlyRakebackSnapshotSummary(BaseModel):
     lines_fetched: int
     lines_stored: int
     lines_skipped_unmapped: int
+    skipped_nicknames: List[str] = Field(default_factory=list)
+    skips: List[EarlyRakebackSkipSchema] = Field(default_factory=list)
     synced_at: datetime
 
 

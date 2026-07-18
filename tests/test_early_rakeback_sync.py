@@ -9,8 +9,10 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from api.early_rakeback_sync import (
+    SKIP_REASON_MISSING_GG_PLAYER_ID,
     _flatten_archive_entries,
     backfill_early_rakeback_from_archives,
+    parse_skipped_nicknames_json,
     sync_early_rakeback_for_date,
 )
 from db.models import Club, EarlyRakebackLine, EarlyRakebackSnapshot
@@ -135,16 +137,30 @@ class EarlyRakebackSyncTestCase(unittest.TestCase):
         )
 
         self.assertEqual(report.clubs_synced, 1)
-        self.assertEqual(report.total_lines_stored, 1)
+        self.assertEqual(report.total_lines_stored, 2)
         self.assertEqual(report.total_lines_skipped_unmapped, 1)
-        self.assertEqual(len(self.lines), 1)
-        line = self.lines[0]
-        self.assertEqual(line.gg_player_id, "3011-9668")
-        self.assertEqual(line.amount_usd, Decimal("25.5"))
-        self.assertEqual(line.member_nickname, "Alice")
+        self.assertEqual(len(self.lines), 2)
+        by_nick = {line.member_nickname: line for line in self.lines}
+        self.assertEqual(by_nick["Alice"].gg_player_id, "3011-9668")
+        self.assertEqual(by_nick["Alice"].amount_usd, Decimal("25.5"))
+        self.assertEqual(by_nick["Unknown"].gg_player_id, "")
+        self.assertEqual(by_nick["Unknown"].amount_usd, Decimal("5"))
         self.assertEqual(len(self.snapshots), 1)
-        self.assertEqual(self.snapshots[0].lines_stored, 1)
+        self.assertEqual(self.snapshots[0].lines_stored, 2)
         self.assertEqual(self.snapshots[0].lines_skipped_unmapped, 1)
+        club = report.clubs[0]
+        self.assertEqual(club.skipped_nicknames, ["Unknown"])
+        self.assertEqual(len(club.skips), 1)
+        self.assertEqual(club.skips[0].nickname, "Unknown")
+        self.assertEqual(club.skips[0].reason, SKIP_REASON_MISSING_GG_PLAYER_ID)
+        self.assertEqual(club.skips[0].count, 1)
+        stored_skips = parse_skipped_nicknames_json(
+            self.snapshots[0].skipped_nicknames
+        )
+        self.assertEqual(len(stored_skips), 1)
+        self.assertEqual(stored_skips[0].reason, SKIP_REASON_MISSING_GG_PLAYER_ID)
+        self.assertIn("unmapped", report.warnings[0].lower())
+        self.assertIn("included in the export", report.warnings[0].lower())
 
     @patch.dict(
         os.environ,
@@ -230,13 +246,27 @@ class EarlyRakebackSyncTestCase(unittest.TestCase):
                 ],
             }
         ]
-        lines, skipped, nicknames = _flatten_archive_entries(archives, from_utc, to_utc)
+        lines, skips = _flatten_archive_entries(archives, from_utc, to_utc)
         self.assertEqual(len(lines), 1)
         self.assertEqual(lines[0]["gg_player_id"], "3011-1111")
         self.assertEqual(lines[0]["source_entry_id"], "archive:arch1:0")
         self.assertEqual(lines[0]["amount_usd"], Decimal("15"))
-        self.assertEqual(skipped, 0)
-        self.assertEqual(nicknames, [])
+        self.assertEqual(skips, [])
+
+    def test_parse_skipped_nicknames_json_legacy_strings(self):
+        skips = parse_skipped_nicknames_json('["Alice", "Bob"]')
+        self.assertEqual(len(skips), 2)
+        self.assertEqual(skips[0].nickname, "Alice")
+        self.assertEqual(skips[0].reason, SKIP_REASON_MISSING_GG_PLAYER_ID)
+        self.assertEqual(skips[1].nickname, "Bob")
+
+    def test_parse_skipped_nicknames_json_objects(self):
+        skips = parse_skipped_nicknames_json(
+            '[{"nickname":"X","reason":"missing_gg_player_id","count":3}]'
+        )
+        self.assertEqual(len(skips), 1)
+        self.assertEqual(skips[0].nickname, "X")
+        self.assertEqual(skips[0].count, 3)
 
     @patch.dict(
         os.environ,
@@ -393,6 +423,63 @@ class EarlyRakebackExportTestCase(unittest.TestCase):
         self.assertEqual(ws["C2"].value, "Early RB")
         self.assertEqual(ws["A2"].value, 25.5)
         self.assertIn("3011-9668", str(ws["B2"].value))
+
+    @patch("api.audit_export._fetch_stripe_rows", return_value=[])
+    @patch("api.audit_export._fetch_tagged_manual_rows", return_value=[])
+    @patch("api.audit_export._club_name_map", return_value={})
+    def test_export_marks_unmapped_early_rakeback(
+        self,
+        _club_map,
+        _tagged,
+        _stripe,
+    ):
+        from api.audit_export import build_audit_workbook
+        import io
+        from openpyxl import load_workbook
+
+        snapshot = EarlyRakebackSnapshot(
+            id=1,
+            club_id=2,
+            club_slug="creator-club",
+            audit_date=date(2026, 7, 16),
+            fetch_from_utc=datetime(2026, 7, 16, 4, 0, tzinfo=timezone.utc),
+            fetch_to_utc=datetime(2026, 7, 17, 4, 59, 59, tzinfo=timezone.utc),
+            lines_fetched=1,
+            lines_stored=1,
+            lines_skipped_unmapped=1,
+        )
+        line = EarlyRakebackLine(
+            id=1,
+            snapshot_id=1,
+            source_entry_id="e2",
+            source_record_id="r2",
+            gg_player_id="",
+            member_nickname="Bigfish212121",
+            member_type="player",
+            amount_usd=Decimal("10.00"),
+            occurred_at=datetime(2026, 7, 16, 16, 0, tzinfo=timezone.utc),
+        )
+
+        session = MagicMock()
+
+        def query_model(model):
+            q = MagicMock()
+            if model is EarlyRakebackSnapshot:
+                q.filter.return_value.all.return_value = [snapshot]
+                return q
+            if model is EarlyRakebackLine:
+                q.filter.return_value.order_by.return_value.all.return_value = [line]
+                return q
+            return q
+
+        session.query.side_effect = query_model
+
+        content = build_audit_workbook(session, "2026-07-16")
+        wb = load_workbook(io.BytesIO(content))
+        ws = wb["Early Rakeback"]
+        self.assertEqual(ws["C2"].value, "Early RB (unmapped)")
+        self.assertIn("UNMAPPED", str(ws["B2"].value))
+        self.assertIn("Bigfish212121", str(ws["B2"].value))
 
 
 if __name__ == "__main__":

@@ -42,7 +42,11 @@ from api.trade_record_parser import (
 )
 from api.trade_record_sync import sync_identities
 from api.aon_beta_client import AonBetaConfigError
-from api.early_rakeback_sync import sync_early_rakeback_for_date
+from api.early_rakeback_sync import (
+    parse_skipped_nicknames_json,
+    sync_early_rakeback_for_date,
+    sync_report_to_dict,
+)
 from api.audit_reconcile import (
     AuditReconcileReport,
     load_stored_reconcile_report,
@@ -391,28 +395,7 @@ def sync_early_rakeback(
         db.rollback()
         raise HTTPException(409, "Sync conflict for this club and date") from exc
 
-    return EarlyRakebackSyncReport(
-        audit_date=report.audit_date,
-        clubs_synced=report.clubs_synced,
-        clubs_failed=report.clubs_failed,
-        total_lines_fetched=report.total_lines_fetched,
-        total_lines_stored=report.total_lines_stored,
-        total_lines_skipped_unmapped=report.total_lines_skipped_unmapped,
-        clubs=[
-            {
-                "club_slug": c.club_slug,
-                "club_name": c.club_name,
-                "snapshot_id": c.snapshot_id,
-                "lines_fetched": c.lines_fetched,
-                "lines_stored": c.lines_stored,
-                "lines_skipped_unmapped": c.lines_skipped_unmapped,
-                "skipped_nicknames": c.skipped_nicknames,
-                "error": c.error,
-            }
-            for c in report.clubs
-        ],
-        warnings=report.warnings,
-    )
+    return EarlyRakebackSyncReport(**sync_report_to_dict(report))
 
 
 @router.get("/early-rakeback/snapshots", response_model=list[EarlyRakebackSnapshotSummary])
@@ -442,6 +425,7 @@ def list_early_rakeback_snapshots(
     out: list[EarlyRakebackSnapshotSummary] = []
     for snap in rows:
         slug = snap.club_slug or slug_for_club_id(db, snap.club_id) or ""
+        skips = parse_skipped_nicknames_json(snap.skipped_nicknames)
         out.append(
             EarlyRakebackSnapshotSummary(
                 id=snap.id,
@@ -451,6 +435,18 @@ def list_early_rakeback_snapshots(
                 lines_fetched=int(snap.lines_fetched or 0),
                 lines_stored=int(snap.lines_stored or 0),
                 lines_skipped_unmapped=int(snap.lines_skipped_unmapped or 0),
+                skipped_nicknames=[
+                    skip.nickname for skip in skips if skip.nickname
+                ],
+                skips=[
+                    {
+                        "nickname": skip.nickname,
+                        "reason": skip.reason,
+                        "count": skip.count,
+                        "reason_label": skip.reason_label,
+                    }
+                    for skip in skips
+                ],
                 synced_at=snap.synced_at or datetime.utcnow(),
             )
         )

@@ -443,18 +443,27 @@ def _fetch_early_rakeback_rows(
         club_slug = slug_by_snapshot.get(line.snapshot_id, "round-table")
         club_label = CLUB_SLUG_TO_NAME.get(club_slug, club_slug)
         nickname = (line.member_nickname or "").strip()
-        player = _stripe_player_cell(
-            group_title="",
-            club_name=club_label,
-            gg_player_id=line.gg_player_id,
-            gg_nickname=nickname or None,
-        )
+        gg_id = (line.gg_player_id or "").strip()
+        unmapped = not gg_id
+        if unmapped:
+            shorthand = _shorthand_for_club_name(club_label)
+            parts = [part for part in (shorthand, "UNMAPPED", nickname) if part]
+            player = " / ".join(parts) if parts else "UNMAPPED"
+            method_label = "Early RB (unmapped)"
+        else:
+            player = _stripe_player_cell(
+                group_title="",
+                club_name=club_label,
+                gg_player_id=gg_id,
+                gg_nickname=nickname or None,
+            )
+            method_label = "Early RB"
         amount = float(line.amount_usd) if line.amount_usd is not None else 0.0
         out.append(
             StripeAuditRow(
                 amount_usd=amount,
                 player=player,
-                method_label="Early RB",
+                method_label=method_label,
                 group_title=nickname,
                 club_label=club_label,
                 time_label=_fmt_stripe_audit_time(line.occurred_at, club_slug),

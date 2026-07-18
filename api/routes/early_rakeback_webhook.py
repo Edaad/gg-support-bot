@@ -13,7 +13,10 @@ from sqlalchemy.orm import Session
 
 from api.aon_beta_client import AonBetaConfigError, aon_beta_api_key
 from api.club_slug import CLUB_SLUG_TO_NAME
-from api.early_rakeback_sync import trigger_early_rakeback_sync_for_occurred_at
+from api.early_rakeback_sync import (
+    sync_report_to_dict,
+    trigger_early_rakeback_sync_for_occurred_at,
+)
 from api.schemas_audit import EarlyRakebackSyncReport
 from db.connection import get_db_dependency
 
@@ -104,25 +107,4 @@ def early_rakeback_webhook(
             club_result.error,
         )
 
-    return EarlyRakebackSyncReport(
-        audit_date=report.audit_date,
-        clubs_synced=report.clubs_synced,
-        clubs_failed=report.clubs_failed,
-        total_lines_fetched=report.total_lines_fetched,
-        total_lines_stored=report.total_lines_stored,
-        total_lines_skipped_unmapped=report.total_lines_skipped_unmapped,
-        clubs=[
-            {
-                "club_slug": c.club_slug,
-                "club_name": c.club_name,
-                "snapshot_id": c.snapshot_id,
-                "lines_fetched": c.lines_fetched,
-                "lines_stored": c.lines_stored,
-                "lines_skipped_unmapped": c.lines_skipped_unmapped,
-                "skipped_nicknames": c.skipped_nicknames,
-                "error": c.error,
-            }
-            for c in report.clubs
-        ],
-        warnings=report.warnings,
-    )
+    return EarlyRakebackSyncReport(**sync_report_to_dict(report))
