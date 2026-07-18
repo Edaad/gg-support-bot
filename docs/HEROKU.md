@@ -495,7 +495,7 @@ JWT reads:
 - `GET /api/group-chat-tickets/{chat_id}?activity_date=YYYY-MM-DD`
 - `GET /api/group-chat-tickets/by-id/{ticket_id}/messages` — sliced transcript messages with `role` (`customer` | `admin` | `bot`)
 
-Dashboard: **Tickets** nav item at `/tickets` (single-day picker, club/category filters, detail modal with chat bubbles).
+Dashboard: Analytics → **Tickets** tab (single-day picker, club/category filters, detail modal with chat bubbles). `/tickets` redirects there.
 
 Categories: `auto_deposit`, `deposit`, `cashout`, `early_rakeback`, `rakeback`, `bonus`, `other`.
 

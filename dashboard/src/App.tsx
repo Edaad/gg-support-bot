@@ -11,7 +11,6 @@ import BonusTypes from './pages/BonusTypes'
 import CashoutRecords from './pages/CashoutRecords'
 import Payments from './pages/Payments'
 import Audit from './pages/Audit'
-import Tickets from './pages/Tickets'
 import Layout from './components/Layout'
 import { ConfirmProvider } from './components/ConfirmProvider'
 
@@ -50,7 +49,7 @@ export default function App() {
             </Suspense>
           }
         />
-        <Route path="/tickets" element={<Tickets token={token} />} />
+        <Route path="/tickets" element={<Navigate to="/analytics" replace />} />
         <Route path="/weekly-stats" element={<WeeklyStats token={token} />} />
       </Routes>
         </Layout>

@@ -9,6 +9,7 @@ import {
 import PaymentMethodLinkingAnalytics from '../components/PaymentMethodLinkingAnalytics'
 import AutoDepositAnalytics from '../components/AutoDepositAnalytics'
 import DepositFunnelAnalytics from '../components/DepositFunnelAnalytics'
+import Tickets from './Tickets'
 
 const SOURCE_FILTER_OPTIONS: { value: BoundViaFilter; label: string }[] = [
   { value: 'all', label: 'All sources' },
@@ -35,6 +36,7 @@ const ANALYTICS_SECTIONS = [
   { id: 'deposit_funnel', label: 'Deposit funnel' },
   { id: 'gc_binding', label: 'GC binding' },
   { id: 'full_auto_deposit', label: 'Full auto deposit' },
+  { id: 'tickets', label: 'Tickets' },
 ] as const
 
 type AnalyticsSection = (typeof ANALYTICS_SECTIONS)[number]['id']
@@ -138,18 +140,19 @@ export default function Analytics({ token }: { token: string }) {
   )
 
   const filtersDirty =
-    (section === 'deposit_funnel'
+    section !== 'tickets' &&
+    ((section === 'deposit_funnel'
       ? funnelMethod !== appliedFunnelMethod
       : section === 'full_auto_deposit'
         ? autoMethod !== appliedAutoMethod
         : method !== appliedMethod) ||
-    clubId !== appliedClubId ||
-    (section === 'gc_binding' && sourceFilter !== appliedSource) ||
-    (section === 'deposit_funnel' &&
-      (firstDepositFilter !== appliedFirstDeposit ||
-        methodSetupFilter !== appliedMethodSetup)) ||
-    fromDate !== appliedFrom ||
-    toDate !== appliedTo
+      clubId !== appliedClubId ||
+      (section === 'gc_binding' && sourceFilter !== appliedSource) ||
+      (section === 'deposit_funnel' &&
+        (firstDepositFilter !== appliedFirstDeposit ||
+          methodSetupFilter !== appliedMethodSetup)) ||
+      fromDate !== appliedFrom ||
+      toDate !== appliedTo)
 
   const handleLinkingError = useCallback((message: string) => {
     setErr(message)
@@ -194,155 +197,157 @@ export default function Analytics({ token }: { token: string }) {
         ))}
       </div>
 
-      <form
-        className="mb-6 flex flex-wrap items-end gap-4"
-        onSubmit={(e) => {
-          e.preventDefault()
-          applyFilters()
-        }}
-      >
-        <div>
-          <label htmlFor={clubSelectId} className="label-field-xs">
-            Club
-          </label>
-          <select
-            id={clubSelectId}
-            className="input-field-sm min-w-[10rem]"
-            value={clubId === 'all' ? 'all' : String(clubId)}
-            onChange={(e) => {
-              const v = e.target.value
-              setClubId(v === 'all' ? 'all' : Number(v))
-            }}
-          >
-            <option value="all">All clubs</option>
-            {clubs.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label htmlFor={methodSelectId} className="label-field-xs">
-            Method
-          </label>
-          <select
-            id={methodSelectId}
-            className="input-field-sm min-w-[8rem]"
-            value={selectedMethod}
-            onChange={(e) => {
-              const v = e.target.value as AutoDepositMethodSlug | 'all'
-              if (section === 'deposit_funnel') {
-                setFunnelMethod(v)
-              } else if (section === 'full_auto_deposit') {
-                setAutoMethod(v)
-              } else {
-                setMethod(v as AutoDepositMethodSlug)
-              }
-            }}
-          >
-            {methodOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {section === 'gc_binding' && (
+      {section !== 'tickets' && (
+        <form
+          className="mb-6 flex flex-wrap items-end gap-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            applyFilters()
+          }}
+        >
           <div>
-            <label htmlFor={sourceSelectId} className="label-field-xs">
-              Linking source
+            <label htmlFor={clubSelectId} className="label-field-xs">
+              Club
             </label>
             <select
-              id={sourceSelectId}
-              className="input-field-sm min-w-[12rem]"
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value as BoundViaFilter)}
+              id={clubSelectId}
+              className="input-field-sm min-w-[10rem]"
+              value={clubId === 'all' ? 'all' : String(clubId)}
+              onChange={(e) => {
+                const v = e.target.value
+                setClubId(v === 'all' ? 'all' : Number(v))
+              }}
             >
-              {SOURCE_FILTER_OPTIONS.map((opt) => (
+              <option value="all">All clubs</option>
+              {clubs.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor={methodSelectId} className="label-field-xs">
+              Method
+            </label>
+            <select
+              id={methodSelectId}
+              className="input-field-sm min-w-[8rem]"
+              value={selectedMethod}
+              onChange={(e) => {
+                const v = e.target.value as AutoDepositMethodSlug | 'all'
+                if (section === 'deposit_funnel') {
+                  setFunnelMethod(v)
+                } else if (section === 'full_auto_deposit') {
+                  setAutoMethod(v)
+                } else {
+                  setMethod(v as AutoDepositMethodSlug)
+                }
+              }}
+            >
+              {methodOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
               ))}
             </select>
           </div>
-        )}
 
-        {section === 'deposit_funnel' && (
-          <>
+          {section === 'gc_binding' && (
             <div>
-              <label htmlFor={firstDepositSelectId} className="label-field-xs">
-                Deposit type
+              <label htmlFor={sourceSelectId} className="label-field-xs">
+                Linking source
               </label>
               <select
-                id={firstDepositSelectId}
-                className="input-field-sm min-w-[10rem]"
-                value={firstDepositFilter}
-                onChange={(e) =>
-                  setFirstDepositFilter(e.target.value as FirstDepositFilter)
-                }
+                id={sourceSelectId}
+                className="input-field-sm min-w-[12rem]"
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value as BoundViaFilter)}
               >
-                {FIRST_DEPOSIT_FILTER_OPTIONS.map((opt) => (
+                {SOURCE_FILTER_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>
                 ))}
               </select>
             </div>
-            <div>
-              <label htmlFor={methodSetupSelectId} className="label-field-xs">
-                Method setup
-              </label>
-              <select
-                id={methodSetupSelectId}
-                className="input-field-sm min-w-[10rem]"
-                value={methodSetupFilter}
-                onChange={(e) =>
-                  setMethodSetupFilter(e.target.value as MethodSetupFilter)
-                }
-              >
-                {METHOD_SETUP_FILTER_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </>
-        )}
+          )}
 
-        <div>
-          <label htmlFor={fromDateId} className="label-field-xs">
-            From
-          </label>
-          <input
-            id={fromDateId}
-            type="date"
-            className="input-field-sm"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-          />
-        </div>
+          {section === 'deposit_funnel' && (
+            <>
+              <div>
+                <label htmlFor={firstDepositSelectId} className="label-field-xs">
+                  Deposit type
+                </label>
+                <select
+                  id={firstDepositSelectId}
+                  className="input-field-sm min-w-[10rem]"
+                  value={firstDepositFilter}
+                  onChange={(e) =>
+                    setFirstDepositFilter(e.target.value as FirstDepositFilter)
+                  }
+                >
+                  {FIRST_DEPOSIT_FILTER_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor={methodSetupSelectId} className="label-field-xs">
+                  Method setup
+                </label>
+                <select
+                  id={methodSetupSelectId}
+                  className="input-field-sm min-w-[10rem]"
+                  value={methodSetupFilter}
+                  onChange={(e) =>
+                    setMethodSetupFilter(e.target.value as MethodSetupFilter)
+                  }
+                >
+                  {METHOD_SETUP_FILTER_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
 
-        <div>
-          <label htmlFor={toDateId} className="label-field-xs">
-            To
-          </label>
-          <input
-            id={toDateId}
-            type="date"
-            className="input-field-sm"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-          />
-        </div>
+          <div>
+            <label htmlFor={fromDateId} className="label-field-xs">
+              From
+            </label>
+            <input
+              id={fromDateId}
+              type="date"
+              className="input-field-sm"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+            />
+          </div>
 
-        <button type="submit" className="btn-primary min-h-11">
-          Apply filters
-        </button>
-      </form>
+          <div>
+            <label htmlFor={toDateId} className="label-field-xs">
+              To
+            </label>
+            <input
+              id={toDateId}
+              type="date"
+              className="input-field-sm"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+            />
+          </div>
+
+          <button type="submit" className="btn-primary min-h-11">
+            Apply filters
+          </button>
+        </form>
+      )}
 
       {filtersDirty && (
         <p className="alert-warning mb-4" role="status">
@@ -350,7 +355,7 @@ export default function Analytics({ token }: { token: string }) {
         </p>
       )}
 
-      {err && (
+      {err && section !== 'tickets' && (
         <p className="alert-danger mb-4" role="alert">
           {err}
         </p>
@@ -360,7 +365,11 @@ export default function Analytics({ token }: { token: string }) {
         id="analytics-section-panel"
         role="tabpanel"
         aria-labelledby={analyticsSectionTabId(section)}
-        className={`panel transition-opacity ${filtersDirty ? 'opacity-80' : ''}`}
+        className={
+          section === 'tickets'
+            ? undefined
+            : `panel transition-opacity ${filtersDirty ? 'opacity-80' : ''}`
+        }
       >
         {section === 'deposit_funnel' ? (
           <DepositFunnelAnalytics
@@ -379,7 +388,7 @@ export default function Analytics({ token }: { token: string }) {
             filters={appliedFilters}
             onError={handleLinkingError}
           />
-        ) : (
+        ) : section === 'full_auto_deposit' ? (
           <AutoDepositAnalytics
             token={token}
             method={appliedAutoMethod}
@@ -388,6 +397,8 @@ export default function Analytics({ token }: { token: string }) {
             filters={appliedAutoDepositFilters}
             onError={handleLinkingError}
           />
+        ) : (
+          <Tickets token={token} embedded />
         )}
       </div>
     </div>

@@ -7,7 +7,6 @@ const NAV = [
   { to: '/payments', label: 'Payments' },
   { to: '/audit', label: 'Audit' },
   { to: '/analytics', label: 'Analytics' },
-  { to: '/tickets', label: 'Tickets' },
   { to: '/bonus-types', label: 'Bonus types' },
   { to: '/cashout-records', label: 'Cashout records' },
   { to: '/telegram-login', label: 'Telegram login' },
