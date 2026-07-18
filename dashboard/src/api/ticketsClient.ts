@@ -37,8 +37,10 @@ async function request<T>(path: string, opts: RequestInit = {}, token?: string):
 
 export const TICKET_CATEGORIES = [
   'auto_deposit',
-  'deposit',
+  'manual_deposit',
+  'unfinished_deposit',
   'cashout',
+  'unfinished_cashout',
   'early_rakeback',
   'rakeback',
   'bonus',

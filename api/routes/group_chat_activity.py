@@ -338,11 +338,23 @@ def get_group_chat_ticket_messages(
     if transcript is None:
         raise HTTPException(404, "Transcript not found")
 
+    group = (
+        db.query(Group)
+        .filter(Group.chat_id == int(ticket.chat_id))
+        .one_or_none()
+    )
+    group_name = (
+        str(group.name).strip()
+        if group is not None and (group.name or "").strip()
+        else None
+    )
+
     message_ids = ticket.message_ids if isinstance(ticket.message_ids, list) else []
     sliced = slice_ticket_messages(
         messages=transcript.messages if isinstance(transcript.messages, list) else [],
         message_ids=message_ids,
         club_id=int(ticket.club_id),
+        group_name=group_name,
     )
     return GroupChatTicketMessagesRead(
         ticket_id=int(ticket.id),

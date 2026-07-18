@@ -16,6 +16,8 @@ from api.routes.group_chat_activity import router
 from bot.services import group_chat_analysis as analysis
 from bot.services import group_chat_analysis_claude as claude
 from bot.services.group_chat_analysis_prompts import (
+    PROMPT_VERSION,
+    SEGMENTATION_SYSTEM,
     TICKET_CATEGORIES,
     build_classification_system,
 )
@@ -30,14 +32,24 @@ class PromptSchemaTest(unittest.TestCase):
             set(TICKET_CATEGORIES),
             {
                 "auto_deposit",
-                "deposit",
+                "manual_deposit",
+                "unfinished_deposit",
                 "cashout",
+                "unfinished_cashout",
                 "early_rakeback",
                 "rakeback",
                 "bonus",
                 "other",
             },
         )
+
+    def test_prompt_version_bumped_for_quality_rules(self):
+        self.assertEqual(PROMPT_VERSION, "2.3.0")
+
+    def test_segmentation_splits_early_rakeback_from_deposit(self):
+        self.assertIn("Early rakeback must be its own ticket", SEGMENTATION_SYSTEM)
+        self.assertIn("Do **not** fold", SEGMENTATION_SYSTEM)
+        self.assertIn("/earlyrb", SEGMENTATION_SYSTEM)
 
     def test_classification_system_injects_admin_and_bot_roles(self):
         text = build_classification_system(
@@ -49,6 +61,11 @@ class PromptSchemaTest(unittest.TestCase):
         self.assertIn("admin_first_response", text)
         self.assertIn("never a bot", text.lower())
         self.assertIn("`auto_deposit`", text)
+        self.assertIn("`manual_deposit`", text)
+        self.assertIn("`unfinished_deposit`", text)
+        self.assertIn("`unfinished_cashout`", text)
+        self.assertIn("deposit fulfillment line", text)
+        self.assertIn("24-hour wait", text)
 
     def test_validate_classification_rejects_unknown_category(self):
         with self.assertRaises(ValueError):
@@ -135,7 +152,7 @@ class AnalyzeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 "classify_ticket",
                 new_callable=AsyncMock,
                 return_value={
-                    "category": "deposit",
+                    "category": "manual_deposit",
                     "events": {
                         "customer_first_message": "2026-07-17T12:00:00+00:00",
                         "admin_first_response": "2026-07-17T12:01:00+00:00",
@@ -427,6 +444,55 @@ class RoleAssignTest(unittest.TestCase):
             "customer",
         )
 
+    def test_display_name_matches_staff_username(self):
+        from api.group_chat_ticket_helpers import assign_message_role
+
+        self.assertEqual(
+            assign_message_role(
+                {
+                    "is_bot": False,
+                    "username": None,
+                    "sender_name": "Creator Club Support",
+                },
+                admin_names=["CreatorClubSupport2", "CreatorClubSupport3"],
+                bot_names=[],
+            ),
+            "admin",
+        )
+
+    def test_support_in_display_name_is_admin(self):
+        from api.group_chat_ticket_helpers import assign_message_role
+
+        self.assertEqual(
+            assign_message_role(
+                {
+                    "is_bot": False,
+                    "username": None,
+                    "sender_name": "Creator Club Support",
+                },
+                admin_names=[],
+                bot_names=[],
+            ),
+            "admin",
+        )
+
+    def test_group_title_sender_is_customer(self):
+        from api.group_chat_ticket_helpers import assign_message_role
+
+        self.assertEqual(
+            assign_message_role(
+                {
+                    "is_bot": False,
+                    "username": None,
+                    "sender_name": "CC / 9446-6280 / Batuhan",
+                },
+                admin_names=["CreatorClubSupport2"],
+                bot_names=[],
+                group_name="CC / 9446-6280 / Batuhan",
+            ),
+            "customer",
+        )
+
 
 class TicketRestTest(unittest.TestCase):
     def setUp(self):
@@ -455,13 +521,13 @@ class TicketRestTest(unittest.TestCase):
             end_msg_id=2,
             message_ids=[1, 2],
             brief_summary="deposit",
-            category="deposit",
+            category="manual_deposit",
             events={
                 "customer_first_message": "2026-07-17T14:00:00+00:00",
                 "resolution": "2026-07-17T14:05:00+00:00",
             },
             summary="done",
-            prompt_version="2.1.0",
+            prompt_version="2.3.0",
             model="claude-sonnet-4-5",
             created_at=None,
             updated_at=None,
@@ -519,7 +585,7 @@ class TicketRestTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
         self.assertEqual(len(body), 1)
-        self.assertEqual(body[0]["category"], "deposit")
+        self.assertEqual(body[0]["category"], "manual_deposit")
         self.assertEqual(body[0]["club_name"], "Test Club")
         self.assertEqual(body[0]["group_name"], "Player Group")
         self.assertEqual(body[0]["duration_seconds"], 300)
@@ -592,12 +658,20 @@ class TicketRestTest(unittest.TestCase):
         transcript_q.filter.return_value = transcript_q
         transcript_q.one_or_none.return_value = transcript
 
+        group_q = MagicMock()
+        group_q.filter.return_value = group_q
+        group_q.one_or_none.return_value = SimpleNamespace(
+            chat_id=-1001, name="Player Group"
+        )
+
         def _query(model):
             name = getattr(model, "__name__", str(model))
             if name == "GroupChatTicket":
                 return ticket_q
             if name == "GroupChatDailyTranscript":
                 return transcript_q
+            if name == "Group":
+                return group_q
             return MagicMock()
 
         self.db.query.side_effect = _query

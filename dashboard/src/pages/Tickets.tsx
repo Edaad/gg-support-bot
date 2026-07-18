@@ -9,14 +9,17 @@ import {
 import KpiStat from '../components/KpiStat'
 import TicketDetailModal from '../components/TicketDetailModal'
 import {
+  formatDurationSeconds,
   formatEasternTime,
   yesterdayEasternDateString,
 } from '../lib/easternTime'
 
 const CATEGORY_LABELS: Record<TicketCategory, string> = {
   auto_deposit: 'Auto deposit',
-  deposit: 'Deposit',
+  manual_deposit: 'Manual deposit',
+  unfinished_deposit: 'Unfinished deposit',
   cashout: 'Cashout',
+  unfinished_cashout: 'Unfinished cashout',
   early_rakeback: 'Early rakeback',
   rakeback: 'Rakeback',
   bonus: 'Bonus',
@@ -191,6 +194,7 @@ export default function Tickets({
                     <th className="px-4 py-3">Group</th>
                     <th className="px-4 py-3">Category</th>
                     <th className="px-4 py-3">First message</th>
+                    <th className="px-4 py-3">Duration</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -217,6 +221,9 @@ export default function Tickets({
                       <td className="px-4 py-3 text-ink-muted">{t.category}</td>
                       <td className="px-4 py-3 text-ink-muted">
                         {formatEasternTime(t.customer_first_message)}
+                      </td>
+                      <td className="px-4 py-3 text-ink-muted tabular-nums">
+                        {formatDurationSeconds(t.duration_seconds)}
                       </td>
                     </tr>
                   ))}

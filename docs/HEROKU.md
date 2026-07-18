@@ -497,7 +497,9 @@ JWT reads:
 
 Dashboard: Analytics → **Tickets** tab (single-day picker, club/category filters, detail modal with chat bubbles). `/tickets` redirects there.
 
-Categories: `auto_deposit`, `deposit`, `cashout`, `early_rakeback`, `rakeback`, `bonus`, `other`.
+Categories: `auto_deposit`, `manual_deposit`, `unfinished_deposit`, `cashout`, `unfinished_cashout`, `early_rakeback`, `rakeback`, `bonus`, `other`.
+
+Prompt version `2.3.0` (stored on each ticket): unfinished deposit/cashout categories; `deposit` renamed to `manual_deposit`; early rakeback split from deposit threads; auto vs manual uses who posts the chips fulfillment line. Re-analyze with `--force` after prompt bumps.
 
 Manual re-run for a day (upserts tickets; chats run in parallel by default):
 
