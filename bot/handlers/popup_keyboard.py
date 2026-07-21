@@ -42,7 +42,9 @@ async def popup_keyboard_activity_handler(
 
     # While deposit/cashout is active, only cancel idle — restore after flow exit.
     if deposit_flow_active(context) or cashout_flow_active(context):
-        pk.cancel_popup_keyboard_idle(chat.id, job_queue=context.job_queue)
+        pk.cancel_popup_keyboard_idle(
+            chat.id, job_queue=getattr(context, "job_queue", None)
+        )
         return
 
     pk.schedule_popup_keyboard_idle(context, chat.id)
@@ -81,7 +83,9 @@ async def popup_keyboard_other_handler(
     pk.remember_player_message(
         context, user_id=user.id, message_id=message.message_id
     )
-    pk.cancel_popup_keyboard_idle(chat.id, job_queue=context.job_queue)
+    pk.cancel_popup_keyboard_idle(
+        chat.id, job_queue=getattr(context, "job_queue", None)
+    )
 
     await message.reply_text(
         pk.OTHER_ACK,

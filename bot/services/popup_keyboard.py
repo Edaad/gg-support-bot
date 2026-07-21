@@ -218,10 +218,17 @@ def schedule_popup_keyboard_idle(
         last_uid = fetch_player_telegram_user_id_for_chat(int(chat_id))
 
     try:
+        job_queue = getattr(context, "job_queue", None)
+        if job_queue is None:
+            logger.debug(
+                "popup_keyboard: no job_queue; skip idle schedule chat_id=%s",
+                chat_id,
+            )
+            return
         name = _idle_job_name(chat_id)
-        for job in context.job_queue.get_jobs_by_name(name):
+        for job in job_queue.get_jobs_by_name(name):
             job.schedule_removal()
-        context.job_queue.run_once(
+        job_queue.run_once(
             _popup_keyboard_idle_callback,
             when=POPUP_IDLE_SECONDS,
             chat_id=int(chat_id),
@@ -351,7 +358,9 @@ def on_flow_entry_cancel_idle(
 ) -> None:
     if chat_id is None:
         return
-    cancel_popup_keyboard_idle(chat_id, job_queue=context.job_queue)
+    cancel_popup_keyboard_idle(
+        chat_id, job_queue=getattr(context, "job_queue", None)
+    )
 
 
 def mark_strip_keyboard(context: ContextTypes.DEFAULT_TYPE) -> None:
