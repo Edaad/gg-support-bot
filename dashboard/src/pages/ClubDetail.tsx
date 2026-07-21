@@ -318,6 +318,20 @@ function GeneralTab({
           <label className="flex items-center gap-2 text-sm text-ink">
             <input
               type="checkbox"
+              checked={form.enable_popup_keyboard ?? false}
+              onChange={(e) => setField('enable_popup_keyboard', e.target.checked)}
+              className="h-4 w-4 rounded border-border bg-control text-accent"
+            />
+            Enable pop up keyboard
+          </label>
+          <p className="ml-6 text-xs text-ink-muted">
+            When enabled, players in support groups get a Deposit / Cashout / Other reply
+            keyboard after quiet periods. Off by default for the main bot; TestGGSupportBot
+            always has this on for its GC groups.
+          </p>
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
               checked={form.is_active ?? true}
               onChange={(e) => setField('is_active', e.target.checked)}
               className="h-4 w-4 rounded border-border bg-control text-accent"

@@ -296,6 +296,7 @@ export interface Club {
   auto_chip_adding_enabled: boolean
   auto_deposit_on_payment_enabled: boolean
   auto_claim_enabled: boolean
+  enable_popup_keyboard: boolean
   deposit_simple_mode: boolean
   deposit_simple_type: string | null
   deposit_simple_text: string | null

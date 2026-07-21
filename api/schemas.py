@@ -38,6 +38,7 @@ class ClubCreate(BaseModel):
     auto_chip_adding_enabled: bool = False
     auto_deposit_on_payment_enabled: bool = False
     auto_claim_enabled: bool = False
+    enable_popup_keyboard: bool = False
     deposit_simple_mode: bool = False
     deposit_simple_type: str = "text"
     deposit_simple_text: Optional[str] = None
@@ -81,6 +82,7 @@ class ClubUpdate(BaseModel):
     auto_chip_adding_enabled: Optional[bool] = None
     auto_deposit_on_payment_enabled: Optional[bool] = None
     auto_claim_enabled: Optional[bool] = None
+    enable_popup_keyboard: Optional[bool] = None
     deposit_simple_mode: Optional[bool] = None
     deposit_simple_type: Optional[str] = None
     deposit_simple_text: Optional[str] = None
@@ -127,6 +129,7 @@ class ClubRead(BaseModel):
     auto_chip_adding_enabled: bool = False
     auto_deposit_on_payment_enabled: bool = False
     auto_claim_enabled: bool = False
+    enable_popup_keyboard: bool = False
     deposit_simple_mode: bool
     deposit_simple_type: Optional[str]
     deposit_simple_text: Optional[str]

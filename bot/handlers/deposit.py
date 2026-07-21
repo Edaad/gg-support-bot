@@ -65,6 +65,7 @@ from bot.handlers.flow_staleness import (
     reset_flow_callback_messages,
 )
 from bot.handlers.response_utils import send_response_messages
+from bot.services import popup_keyboard as popup_keyboard_svc
 from bot.services.stripe_deposit import (
     create_stripe_checkout_session,
     stripe_configured,
@@ -1070,7 +1071,11 @@ def _is_awaiting_amount(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> boo
 
 async def _ask_deposit_amount(message, context: ContextTypes.DEFAULT_TYPE) -> int:
     _mark_awaiting_amount(context)
-    await message.reply_text(DEPOSIT_AMOUNT_PROMPT)
+    kwargs = {}
+    strip = popup_keyboard_svc.pop_strip_reply_markup(context)
+    if strip is not None:
+        kwargs["reply_markup"] = strip
+    await message.reply_text(DEPOSIT_AMOUNT_PROMPT, **kwargs)
     return DEPOSIT_AMOUNT
 
 
@@ -1172,6 +1177,9 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     update_group_name(chat.id, chat.title)
     _cancel_deposit_reminder(context, chat.id)
+    popup_keyboard_svc.prepare_flow_entry_keyboard(
+        context, chat.id, club_id=club_id, title=chat.title
+    )
 
     user_id = update.effective_user.id
     try:
@@ -1204,10 +1212,17 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         simple = get_club_simple_mode(club_id, "deposit")
         if simple:
+            strip = popup_keyboard_svc.pop_strip_reply_markup(context)
+            if strip is not None:
+                try:
+                    await update.message.reply_text("\u200b", reply_markup=strip)
+                except Exception:
+                    pass
             await _send_simple_response(update.message, simple)
             _record_funnel_from_context(context, STEP_INSTRUCTIONS_SENT)
             _schedule_deposit_reminder(context, club_id, chat.id, user_id=None)
             _cleanup(context)
+            popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat.id)
             return ConversationHandler.END
 
         mark_active_flow(context, "deposit")
@@ -1238,9 +1253,14 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if first and settings and settings["referral_enabled"]:
         mark_active_flow(context, "deposit")
+        kwargs = {}
+        strip = popup_keyboard_svc.pop_strip_reply_markup(context)
+        if strip is not None:
+            kwargs["reply_markup"] = strip
         await update.message.reply_text(
             "Welcome to the club! How did you hear about us? "
-            "If it was a player, please type their GG username."
+            "If it was a player, please type their GG username.",
+            **kwargs,
         )
         return DEPOSIT_REFERRAL
 
@@ -1854,6 +1874,13 @@ async def _finish_simple_deposit(message, context):
     user_id = context.chat_data.get("deposit_user_id")
     chat_id = context.chat_data.get("deposit_chat_id")
 
+    strip = popup_keyboard_svc.pop_strip_reply_markup(context)
+    if strip is not None:
+        try:
+            await message.reply_text("\u200b", reply_markup=strip)
+        except Exception:
+            pass
+
     if simple:
         await _send_simple_response(message, simple)
 
@@ -1878,6 +1905,7 @@ async def _finish_simple_deposit(message, context):
 
     _schedule_deposit_reminder(context, club_id, chat_id, user_id=user_id)
     _cleanup(context)
+    popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
     return ConversationHandler.END
 
 
@@ -1951,6 +1979,7 @@ async def _complete_deposit_flow(chat, context: ContextTypes.DEFAULT_TYPE):
     await _send_bonus_message(chat, context)
     _schedule_deposit_reminder(context, club_id, chat_id, user_id=customer_uid)
     _cleanup(context)
+    popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
     return ConversationHandler.END
 
 
@@ -2375,10 +2404,16 @@ def _cleanup(context):
 
 
 async def deposit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = context.chat_data.get("deposit_chat_id")
     if update.message:
-        await update.message.reply_text("Deposit cancelled.")
+        kwargs = {}
+        strip = popup_keyboard_svc.pop_strip_reply_markup(context)
+        if strip is not None:
+            kwargs["reply_markup"] = strip
+        await update.message.reply_text("Deposit cancelled.", **kwargs)
     _abandon_deposit_flow_session(context, end_reason=END_REASON_CANCELLED)
     _cleanup(context)
+    popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
     return ConversationHandler.END
 
 
@@ -2400,11 +2435,16 @@ async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         try:
-            await context.bot.send_message(chat_id=chat_id, text=text)
+            kwargs = {}
+            strip = popup_keyboard_svc.pop_strip_reply_markup(context)
+            if strip is not None:
+                kwargs["reply_markup"] = strip
+            await context.bot.send_message(chat_id=chat_id, text=text, **kwargs)
         except Exception:
             pass
     _abandon_deposit_flow_session(context, end_reason=END_REASON_TIMEOUT)
     _cleanup(context)
+    popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
 
 
 TIMEOUT_SECONDS = 600
@@ -2412,11 +2452,45 @@ TIMEOUT_SECONDS = 600
 _DEPOSIT_CANCEL = CommandHandler("cancel", deposit_cancel)
 
 
+async def deposit_entry_from_popup_button(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Reply-keyboard Deposit tap — same as /deposit for eligible non-support players."""
+    message = update.message
+    chat = update.effective_chat
+    user = update.effective_user
+    if not message or not chat or not user:
+        return ConversationHandler.END
+    club_id = get_club_for_chat(chat.id)
+    if club_id is None:
+        return ConversationHandler.END
+    if not popup_keyboard_svc.popup_keyboard_eligible(
+        chat.id, club_id=club_id, title=chat.title
+    ):
+        return ConversationHandler.END
+    if popup_keyboard_svc.is_support_sender(user, club_id):
+        return ConversationHandler.END
+    popup_keyboard_svc.upsert_player_telegram_user_id(chat.id, user.id)
+    popup_keyboard_svc.remember_player_message(
+        context, user_id=user.id, message_id=message.message_id
+    )
+    return await deposit_entry(update, context)
+
+
 def get_deposit_handler() -> ConversationHandler:
     # Test bot: per_user=True so the admin testing solo stays in the same conversation key.
     per_user = is_test_bot_worker()
     return ConversationHandler(
-        entry_points=[CommandHandler("deposit", deposit_entry)],
+        entry_points=[
+            CommandHandler("deposit", deposit_entry),
+            MessageHandler(
+                filters.ChatType.GROUPS
+                & filters.TEXT
+                & ~filters.COMMAND
+                & filters.Regex(f"^{popup_keyboard_svc.BTN_DEPOSIT}$"),
+                deposit_entry_from_popup_button,
+            ),
+        ],
         states={
             DEPOSIT_REFERRAL: [
                 MessageHandler(

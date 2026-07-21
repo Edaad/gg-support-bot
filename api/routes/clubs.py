@@ -39,6 +39,7 @@ def _club_to_read(club: Club) -> ClubRead:
         auto_chip_adding_enabled=club.auto_chip_adding_enabled or False,
         auto_deposit_on_payment_enabled=club.auto_deposit_on_payment_enabled or False,
         auto_claim_enabled=club.auto_claim_enabled or False,
+        enable_popup_keyboard=club.enable_popup_keyboard or False,
         deposit_simple_mode=club.deposit_simple_mode or False,
         deposit_simple_type=club.deposit_simple_type,
         deposit_simple_text=club.deposit_simple_text,

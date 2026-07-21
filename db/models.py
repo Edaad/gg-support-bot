@@ -50,6 +50,9 @@ class Club(Base):
     auto_claim_enabled = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
+    enable_popup_keyboard = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
     deposit_simple_mode = Column(Boolean, default=False)
     deposit_simple_type = Column(String(10), default="text")
     deposit_simple_text = Column(Text)
