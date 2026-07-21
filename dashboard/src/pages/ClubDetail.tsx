@@ -325,9 +325,9 @@ function GeneralTab({
             Enable pop up keyboard
           </label>
           <p className="ml-6 text-xs text-ink-muted">
-            When enabled, players in support groups get a Deposit / Cashout / Other reply
-            keyboard after quiet periods. Off by default for the main bot; TestGGSupportBot
-            always has this on for its GC groups.
+            When enabled, players in support groups get a /deposit /cashout reply keyboard
+            after quiet periods. Free messages dismiss it. Off by default for the main bot;
+            TestGGSupportBot always has this on for its GC groups.
           </p>
           <label className="flex items-center gap-2 text-sm text-ink">
             <input

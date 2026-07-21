@@ -814,6 +814,9 @@ class SupportGroupChat(Base):
     initial_group_message_sent = Column(Boolean, nullable=False, default=False)
     player_dm_status = Column(Text, nullable=True)
     last_error_message = Column(Text, nullable=True)
+    popup_keyboard_installed = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),

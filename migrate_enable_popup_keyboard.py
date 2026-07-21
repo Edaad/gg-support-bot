@@ -1,7 +1,7 @@
 """One-time migration: add popup reply keyboard toggle per club.
 
 Adds:
-    clubs.enable_popup_keyboard — player Deposit/Cashout/Other reply keyboard
+    clubs.enable_popup_keyboard — player /deposit /cashout reply keyboard
 
 Usage:
     DATABASE_URL=... python migrate_enable_popup_keyboard.py

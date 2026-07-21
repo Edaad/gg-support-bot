@@ -2452,44 +2452,12 @@ TIMEOUT_SECONDS = 600
 _DEPOSIT_CANCEL = CommandHandler("cancel", deposit_cancel)
 
 
-async def deposit_entry_from_popup_button(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-):
-    """Reply-keyboard Deposit tap — same as /deposit for eligible non-support players."""
-    message = update.message
-    chat = update.effective_chat
-    user = update.effective_user
-    if not message or not chat or not user:
-        return ConversationHandler.END
-    club_id = get_club_for_chat(chat.id)
-    if club_id is None:
-        return ConversationHandler.END
-    if not popup_keyboard_svc.popup_keyboard_eligible(
-        chat.id, club_id=club_id, title=chat.title
-    ):
-        return ConversationHandler.END
-    if popup_keyboard_svc.is_support_sender(user, club_id):
-        return ConversationHandler.END
-    popup_keyboard_svc.upsert_player_telegram_user_id(chat.id, user.id)
-    popup_keyboard_svc.remember_player_message(
-        context, user_id=user.id, message_id=message.message_id
-    )
-    return await deposit_entry(update, context)
-
-
 def get_deposit_handler() -> ConversationHandler:
     # Test bot: per_user=True so the admin testing solo stays in the same conversation key.
     per_user = is_test_bot_worker()
     return ConversationHandler(
         entry_points=[
             CommandHandler("deposit", deposit_entry),
-            MessageHandler(
-                filters.ChatType.GROUPS
-                & filters.TEXT
-                & ~filters.COMMAND
-                & filters.Regex(f"^{popup_keyboard_svc.BTN_DEPOSIT}$"),
-                deposit_entry_from_popup_button,
-            ),
         ],
         states={
             DEPOSIT_REFERRAL: [

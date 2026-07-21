@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.services import popup_keyboard as pk
 
@@ -94,10 +94,36 @@ class ScheduleIdleTests(unittest.TestCase):
         context.job_queue.run_once.assert_called_once()
         kwargs = context.job_queue.run_once.call_args.kwargs
         self.assertEqual(kwargs["name"], "popup_keyboard_idle_-100")
-        self.assertEqual(kwargs["when"], pk.POPUP_IDLE_SECONDS)
+        self.assertEqual(kwargs["when"], pk.popup_idle_seconds())
         self.assertEqual(kwargs["data"]["chat_id"], -100)
         self.assertEqual(kwargs["data"]["reply_to_message_id"], 9)
         self.assertEqual(kwargs["data"]["player_user_id"], 5)
+
+    def test_schedule_uses_30s_on_test_bot(self):
+        context = MagicMock()
+        context.job_queue.get_jobs_by_name.return_value = []
+        context.chat_data = {}
+
+        with patch.object(pk, "popup_keyboard_eligible", return_value=True):
+            with patch.object(pk, "is_test_bot_worker", return_value=True):
+                with patch.object(pk, "fetch_player_telegram_user_id_for_chat", return_value=5):
+                    pk.schedule_popup_keyboard_idle(context, chat_id=-100)
+
+        kwargs = context.job_queue.run_once.call_args.kwargs
+        self.assertEqual(kwargs["when"], 30)
+
+    def test_schedule_uses_5min_on_main_bot(self):
+        context = MagicMock()
+        context.job_queue.get_jobs_by_name.return_value = []
+        context.chat_data = {}
+
+        with patch.object(pk, "popup_keyboard_eligible", return_value=True):
+            with patch.object(pk, "is_test_bot_worker", return_value=False):
+                with patch.object(pk, "fetch_player_telegram_user_id_for_chat", return_value=5):
+                    pk.schedule_popup_keyboard_idle(context, chat_id=-100)
+
+        kwargs = context.job_queue.run_once.call_args.kwargs
+        self.assertEqual(kwargs["when"], 300)
 
     def test_schedule_skipped_when_not_eligible(self):
         context = MagicMock()
@@ -108,10 +134,84 @@ class ScheduleIdleTests(unittest.TestCase):
 
 class ButtonLabelTests(unittest.TestCase):
     def test_labels(self):
-        self.assertEqual(pk.BTN_DEPOSIT, "Deposit")
-        self.assertEqual(pk.BTN_CASHOUT, "Cashout")
-        self.assertEqual(pk.BTN_OTHER, "Other")
-        self.assertEqual(pk.BUTTON_LABELS, {"Deposit", "Cashout", "Other"})
+        self.assertEqual(pk.BTN_DEPOSIT, "/deposit")
+        self.assertEqual(pk.BTN_CASHOUT, "/cashout")
+        self.assertEqual(pk.BUTTON_LABELS, {"/deposit", "/cashout"})
+        self.assertNotIn("Other", pk.BUTTON_LABELS)
+        self.assertFalse(hasattr(pk, "BTN_OTHER"))
+        self.assertFalse(hasattr(pk, "INSTALL_COPY"))
+        self.assertFalse(hasattr(pk, "OTHER_ACK"))
+
+
+class FlowCommandTextTests(unittest.TestCase):
+    def test_deposit_cashout_withdraw(self):
+        self.assertTrue(pk.is_flow_command_text("/deposit"))
+        self.assertTrue(pk.is_flow_command_text("/cashout"))
+        self.assertTrue(pk.is_flow_command_text("/withdraw"))
+        self.assertTrue(pk.is_flow_command_text("/deposit@MyBot"))
+        self.assertFalse(pk.is_flow_command_text("hello"))
+        self.assertFalse(pk.is_flow_command_text(None))
+
+
+class SelectiveInstallPayloadTests(unittest.TestCase):
+    def test_uses_at_username_when_present(self):
+        text, entities = pk._selective_install_payload(
+            player_user_id=42, username="playerone"
+        )
+        self.assertTrue(text.startswith("@playerone\n"))
+        self.assertIn(pk.ZWSP, text)
+        self.assertIsNone(entities)
+
+    def test_uses_text_mention_without_username(self):
+        text, entities = pk._selective_install_payload(
+            player_user_id=42, username=None
+        )
+        self.assertEqual(text, pk.ZWSP)
+        self.assertIsNotNone(entities)
+        self.assertEqual(len(entities), 1)
+        self.assertEqual(entities[0].type, "text_mention")
+        self.assertEqual(entities[0].user.id, 42)
+
+
+class InstalledFlagTests(unittest.TestCase):
+    def test_get_false_without_row(self):
+        with patch.object(pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            self.assertFalse(pk.get_popup_keyboard_installed(-1))
+
+    def test_get_reads_row(self):
+        row = SimpleNamespace(popup_keyboard_installed=True)
+        with patch.object(pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=row):
+            self.assertTrue(pk.get_popup_keyboard_installed(-1))
+
+    def test_set_fails_without_row(self):
+        with patch.object(pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            self.assertFalse(pk.set_popup_keyboard_installed(-1, True))
+
+    def test_set_updates_row(self):
+        row = SimpleNamespace(id=7, popup_keyboard_installed=False)
+        with patch.object(pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=row):
+            with patch.object(pk, "update_support_group_chat_row", return_value=(True, None)) as upd:
+                self.assertTrue(pk.set_popup_keyboard_installed(-1, True))
+                upd.assert_called_once_with(7, popup_keyboard_installed=True)
+
+
+class InstallSkipTests(unittest.IsolatedAsyncioTestCase):
+    async def test_install_skips_without_support_group_row(self):
+        bot = AsyncMock()
+        with patch.object(pk, "popup_keyboard_eligible", return_value=True):
+            with patch.object(
+                pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+            ):
+                ok = await pk.install_popup_keyboard(bot, chat_id=-100)
+        self.assertFalse(ok)
+        bot.send_message.assert_not_called()
+
+    async def test_silent_strip_noop_when_not_installed(self):
+        bot = AsyncMock()
+        with patch.object(pk, "get_popup_keyboard_installed", return_value=False):
+            ok = await pk.silent_strip_if_installed(bot, chat_id=-100)
+        self.assertFalse(ok)
+        bot.send_message.assert_not_called()
 
 
 if __name__ == "__main__":

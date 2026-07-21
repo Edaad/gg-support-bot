@@ -1,4 +1,4 @@
-"""Player-only Deposit/Cashout/Other reply keyboard (popup keyboard)."""
+"""Player-only /deposit /cashout reply keyboard (popup keyboard)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Any
 
 from telegram import (
     KeyboardButton,
+    MessageEntity,
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
     User,
@@ -28,22 +29,28 @@ from db.models import Club
 
 logger = logging.getLogger(__name__)
 
-POPUP_IDLE_SECONDS = 300  # 5 minutes
-BTN_DEPOSIT = "Deposit"
-BTN_CASHOUT = "Cashout"
-BTN_OTHER = "Other"
-BUTTON_LABELS = frozenset({BTN_DEPOSIT, BTN_CASHOUT, BTN_OTHER})
+POPUP_IDLE_SECONDS = 300  # 5 minutes (main bot)
+POPUP_IDLE_SECONDS_TEST = 30  # faster restore for TestGGSupportBot
+BTN_DEPOSIT = "/deposit"
+BTN_CASHOUT = "/cashout"
+BUTTON_LABELS = frozenset({BTN_DEPOSIT, BTN_CASHOUT})
+# Typed cashout alias — never strip when player sends this (starts cashout flow).
+FLOW_COMMAND_TEXTS = frozenset({BTN_DEPOSIT, BTN_CASHOUT, "/withdraw"})
 
-INSTALL_COPY = (
-    "Looks like your request was handled. Feel free to reach back out anytime!"
-)
-OTHER_ACK = "Got it — type your message."
+ZWSP = "\u200b"
 
 CHAT_DATA_LAST_PLAYER_MSG = "popup_kb_last_player_message_id"
 CHAT_DATA_LAST_PLAYER_UID = "popup_kb_last_player_user_id"
 CHAT_DATA_STRIP = "popup_kb_strip"
 
 _popup_keyboard_app: Any | None = None
+
+
+def popup_idle_seconds() -> int:
+    """Quiet period before installing/restoring the reply keyboard."""
+    if is_test_bot_worker():
+        return POPUP_IDLE_SECONDS_TEST
+    return POPUP_IDLE_SECONDS
 
 
 def _idle_job_name(chat_id: int | str) -> str:
@@ -129,17 +136,45 @@ def is_support_sender(user: User | None, club_id: int) -> bool:
     return False
 
 
-def upsert_player_telegram_user_id(chat_id: int, user_id: int) -> bool:
+def is_flow_command_text(text: str | None) -> bool:
+    """True when message text is a deposit/cashout command (including bot_command form)."""
+    if not text:
+        return False
+    raw = text.strip()
+    if not raw:
+        return False
+    # "/deposit@BotName" → "/deposit"
+    cmd = raw.split()[0].split("@", 1)[0].lower()
+    return cmd in {c.lower() for c in FLOW_COMMAND_TEXTS}
+
+
+def upsert_player_telegram_user_id(
+    chat_id: int,
+    user_id: int,
+    *,
+    username: str | None = None,
+) -> bool:
     """Overwrite SupportGroupChat.player_telegram_user_id when a row exists."""
     row = fetch_support_group_chat_by_telegram_chat_id(int(chat_id))
     if row is None:
         return False
     existing = row.player_telegram_user_id
-    if existing is not None and int(existing) == int(user_id):
-        return True
-    ok, err = update_support_group_chat_row(
-        int(row.id), player_telegram_user_id=int(user_id)
+    uname = (username or "").strip().lstrip("@") or None
+    same_id = existing is not None and int(existing) == int(user_id)
+    same_un = (
+        uname is None
+        or (row.player_username or "").strip().lstrip("@").lower() == uname.lower()
     )
+    if same_id and same_un:
+        return True
+    kwargs: dict[str, Any] = {}
+    if not same_id:
+        kwargs["player_telegram_user_id"] = int(user_id)
+    if uname is not None:
+        kwargs["player_username"] = uname
+    if not kwargs:
+        return True
+    ok, err = update_support_group_chat_row(int(row.id), **kwargs)
     if not ok:
         logger.warning(
             "popup_keyboard: failed to upsert player tg id chat_id=%s err=%s",
@@ -149,13 +184,68 @@ def upsert_player_telegram_user_id(chat_id: int, user_id: int) -> bool:
     return ok
 
 
+def get_popup_keyboard_installed(chat_id: int) -> bool:
+    row = fetch_support_group_chat_by_telegram_chat_id(int(chat_id))
+    if row is None:
+        return False
+    return bool(getattr(row, "popup_keyboard_installed", False))
+
+
+def set_popup_keyboard_installed(chat_id: int, installed: bool) -> bool:
+    """Persist installed flag. Returns False if no support_group_chats row."""
+    row = fetch_support_group_chat_by_telegram_chat_id(int(chat_id))
+    if row is None:
+        return False
+    if bool(getattr(row, "popup_keyboard_installed", False)) == bool(installed):
+        return True
+    ok, err = update_support_group_chat_row(
+        int(row.id), popup_keyboard_installed=bool(installed)
+    )
+    if not ok:
+        logger.warning(
+            "popup_keyboard: failed to set installed=%s chat_id=%s err=%s",
+            installed,
+            chat_id,
+            err,
+        )
+    return ok
+
+
+def _player_username_for_chat(chat_id: int) -> str | None:
+    row = fetch_support_group_chat_by_telegram_chat_id(int(chat_id))
+    if row is None or not row.player_username:
+        return None
+    un = str(row.player_username).strip().lstrip("@")
+    return un or None
+
+
+def _selective_install_payload(
+    *,
+    player_user_id: int,
+    username: str | None = None,
+) -> tuple[str, list[MessageEntity] | None]:
+    """Build near-silent text + entities for selective targeting on mobile."""
+    un = (username or "").strip().lstrip("@")
+    if un:
+        mention = f"@{un}"
+        return f"{mention}\n{ZWSP}", None
+
+    label = ZWSP
+    entity = MessageEntity(
+        type=MessageEntity.TEXT_MENTION,
+        offset=0,
+        length=len(label),
+        user=User(id=int(player_user_id), is_bot=False, first_name="player"),
+    )
+    return label, [entity]
+
+
 def keyboard_markup() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             [
                 KeyboardButton(BTN_DEPOSIT),
                 KeyboardButton(BTN_CASHOUT),
-                KeyboardButton(BTN_OTHER),
             ]
         ],
         resize_keyboard=True,
@@ -173,9 +263,14 @@ def remember_player_message(
     *,
     user_id: int,
     message_id: int,
+    username: str | None = None,
 ) -> None:
     context.chat_data[CHAT_DATA_LAST_PLAYER_UID] = int(user_id)
     context.chat_data[CHAT_DATA_LAST_PLAYER_MSG] = int(message_id)
+    if username:
+        context.chat_data["popup_kb_last_player_username"] = (
+            str(username).strip().lstrip("@")
+        )
 
 
 def cancel_popup_keyboard_idle(
@@ -204,7 +299,7 @@ def schedule_popup_keyboard_idle(
     reply_to_message_id: int | None = None,
     player_user_id: int | None = None,
 ) -> None:
-    """Cancel any pending idle job and schedule install after POPUP_IDLE_SECONDS."""
+    """Cancel any pending idle job and schedule install after the quiet period."""
     if not popup_keyboard_eligible(int(chat_id)):
         return
 
@@ -217,6 +312,7 @@ def schedule_popup_keyboard_idle(
     if last_uid is None:
         last_uid = fetch_player_telegram_user_id_for_chat(int(chat_id))
 
+    idle_when = popup_idle_seconds()
     try:
         job_queue = getattr(context, "job_queue", None)
         if job_queue is None:
@@ -230,7 +326,7 @@ def schedule_popup_keyboard_idle(
             job.schedule_removal()
         job_queue.run_once(
             _popup_keyboard_idle_callback,
-            when=POPUP_IDLE_SECONDS,
+            when=idle_when,
             chat_id=int(chat_id),
             data={
                 "chat_id": int(chat_id),
@@ -242,7 +338,7 @@ def schedule_popup_keyboard_idle(
         logger.info(
             "popup_keyboard idle scheduled chat_id=%s in %ss",
             chat_id,
-            POPUP_IDLE_SECONDS,
+            idle_when,
         )
     except Exception:
         logger.warning(
@@ -268,6 +364,77 @@ async def _popup_keyboard_idle_callback(context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
+def _resolve_player_targeting(
+    chat_id: int,
+    *,
+    reply_to_message_id: int | None = None,
+    player_user_id: int | None = None,
+    context: ContextTypes.DEFAULT_TYPE | None = None,
+) -> tuple[int | None, int | None, str | None]:
+    """Return (player_uid, reply_to, username) for selective messages."""
+    player_uid = player_user_id
+    if player_uid is None and context is not None:
+        player_uid = context.chat_data.get(CHAT_DATA_LAST_PLAYER_UID)
+    if player_uid is None:
+        player_uid = fetch_player_telegram_user_id_for_chat(int(chat_id))
+
+    reply_to = reply_to_message_id
+    if reply_to is None and context is not None:
+        reply_to = context.chat_data.get(CHAT_DATA_LAST_PLAYER_MSG)
+
+    username = None
+    if context is not None:
+        username = context.chat_data.get("popup_kb_last_player_username")
+    if not username:
+        username = _player_username_for_chat(int(chat_id))
+    return (
+        int(player_uid) if player_uid else None,
+        int(reply_to) if reply_to else None,
+        username,
+    )
+
+
+async def _send_and_delete(
+    bot: Any,
+    *,
+    chat_id: int,
+    text: str,
+    reply_markup: Any,
+    entities: list[MessageEntity] | None = None,
+    reply_to_message_id: int | None = None,
+) -> bool:
+    kwargs: dict[str, Any] = {
+        "chat_id": int(chat_id),
+        "text": text,
+        "reply_markup": reply_markup,
+    }
+    if entities:
+        kwargs["entities"] = entities
+    if reply_to_message_id:
+        kwargs["reply_to_message_id"] = int(reply_to_message_id)
+        kwargs["allow_sending_without_reply"] = True
+
+    try:
+        msg = await bot.send_message(**kwargs)
+    except Exception:
+        logger.warning(
+            "popup_keyboard send failed chat_id=%s", chat_id, exc_info=True
+        )
+        return False
+
+    try:
+        mid = getattr(msg, "message_id", None)
+        if mid is not None:
+            await bot.delete_message(chat_id=int(chat_id), message_id=int(mid))
+    except Exception:
+        logger.debug(
+            "popup_keyboard: delete silent message failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+    return True
+
+
 async def install_popup_keyboard(
     bot: Any,
     chat_id: int,
@@ -276,15 +443,24 @@ async def install_popup_keyboard(
     player_user_id: int | None = None,
     context: ContextTypes.DEFAULT_TYPE | None = None,
 ) -> bool:
-    """Send selective install message with reply keyboard. Returns True if sent."""
+    """Send selective install (silent), set durable flag. Returns True if sent."""
     if not popup_keyboard_eligible(int(chat_id)):
         return False
 
-    player_uid = player_user_id
-    if player_uid is None and context is not None:
-        player_uid = context.chat_data.get(CHAT_DATA_LAST_PLAYER_UID)
-    if player_uid is None:
-        player_uid = fetch_player_telegram_user_id_for_chat(int(chat_id))
+    row = fetch_support_group_chat_by_telegram_chat_id(int(chat_id))
+    if row is None:
+        logger.info(
+            "popup_keyboard install skipped chat_id=%s: no support_group_chats row",
+            chat_id,
+        )
+        return False
+
+    player_uid, reply_to, username = _resolve_player_targeting(
+        int(chat_id),
+        reply_to_message_id=reply_to_message_id,
+        player_user_id=player_user_id,
+        context=context,
+    )
     if player_uid is None:
         logger.info(
             "popup_keyboard install skipped chat_id=%s: no player_telegram_user_id",
@@ -292,33 +468,30 @@ async def install_popup_keyboard(
         )
         return False
 
-    reply_to = reply_to_message_id
-    if reply_to is None and context is not None:
-        reply_to = context.chat_data.get(CHAT_DATA_LAST_PLAYER_MSG)
-
-    kwargs: dict[str, Any] = {
-        "chat_id": int(chat_id),
-        "text": INSTALL_COPY,
-        "reply_markup": keyboard_markup(),
-    }
-    if reply_to:
-        kwargs["reply_to_message_id"] = int(reply_to)
-        kwargs["allow_sending_without_reply"] = True
-
-    try:
-        await bot.send_message(**kwargs)
-        logger.info(
-            "popup_keyboard installed chat_id=%s player_uid=%s reply_to=%s",
-            chat_id,
-            player_uid,
-            reply_to,
-        )
-        return True
-    except Exception:
-        logger.warning(
-            "popup_keyboard install failed chat_id=%s", chat_id, exc_info=True
-        )
+    text, entities = _selective_install_payload(
+        player_user_id=int(player_uid),
+        username=username,
+    )
+    ok = await _send_and_delete(
+        bot,
+        chat_id=int(chat_id),
+        text=text,
+        reply_markup=keyboard_markup(),
+        entities=entities,
+        reply_to_message_id=reply_to,
+    )
+    if not ok:
         return False
+
+    set_popup_keyboard_installed(int(chat_id), True)
+    logger.info(
+        "popup_keyboard installed chat_id=%s player_uid=%s reply_to=%s username=%s",
+        chat_id,
+        player_uid,
+        reply_to,
+        username,
+    )
+    return True
 
 
 async def remove_popup_keyboard(
@@ -328,15 +501,42 @@ async def remove_popup_keyboard(
     reply_to_message_id: int | None = None,
     text: str | None = None,
     context: ContextTypes.DEFAULT_TYPE | None = None,
+    silent: bool = False,
 ) -> bool:
-    """Send selective ReplyKeyboardRemove. Returns True if sent."""
-    reply_to = reply_to_message_id
-    if reply_to is None and context is not None:
-        reply_to = context.chat_data.get(CHAT_DATA_LAST_PLAYER_MSG)
+    """Send selective ReplyKeyboardRemove. Returns True if sent.
+
+    When silent=True (or text is None), send ZWSP + delete and clear durable flag.
+    """
+    player_uid, reply_to, username = _resolve_player_targeting(
+        int(chat_id),
+        reply_to_message_id=reply_to_message_id,
+        context=context,
+    )
+
+    use_silent = silent or text is None
+    if use_silent:
+        if player_uid is not None:
+            payload, entities = _selective_install_payload(
+                player_user_id=int(player_uid),
+                username=username,
+            )
+        else:
+            payload, entities = ZWSP, None
+        ok = await _send_and_delete(
+            bot,
+            chat_id=int(chat_id),
+            text=payload,
+            reply_markup=remove_markup(),
+            entities=entities,
+            reply_to_message_id=reply_to,
+        )
+        if ok:
+            set_popup_keyboard_installed(int(chat_id), False)
+        return ok
 
     kwargs: dict[str, Any] = {
         "chat_id": int(chat_id),
-        "text": text or "\u200b",  # zero-width space if no copy
+        "text": text,
         "reply_markup": remove_markup(),
     }
     if reply_to:
@@ -345,12 +545,27 @@ async def remove_popup_keyboard(
 
     try:
         await bot.send_message(**kwargs)
+        set_popup_keyboard_installed(int(chat_id), False)
         return True
     except Exception:
         logger.warning(
             "popup_keyboard remove failed chat_id=%s", chat_id, exc_info=True
         )
         return False
+
+
+async def silent_strip_if_installed(
+    bot: Any,
+    chat_id: int,
+    *,
+    context: ContextTypes.DEFAULT_TYPE | None = None,
+) -> bool:
+    """If durable flag is set, silently remove keyboard and clear flag."""
+    if not get_popup_keyboard_installed(int(chat_id)):
+        return False
+    return await remove_popup_keyboard(
+        bot, int(chat_id), context=context, silent=True
+    )
 
 
 def on_flow_entry_cancel_idle(
@@ -382,9 +597,10 @@ def prepare_flow_entry_keyboard(
     club_id: int | None = None,
     title: str | None = None,
 ) -> None:
-    """Cancel idle and mark strip when feature is eligible for this group."""
+    """Cancel idle, clear durable flag, mark strip when feature is eligible."""
     on_flow_entry_cancel_idle(context, chat_id)
     if popup_keyboard_eligible(chat_id, club_id=club_id, title=title):
+        set_popup_keyboard_installed(int(chat_id), False)
         mark_strip_keyboard(context)
 
 
