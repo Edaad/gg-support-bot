@@ -48,6 +48,7 @@ type Props = {
   token: string
   uploads: TradeRecordUploadReport[]
   reconcileClubSlug: string
+  weekSyncError: string | null
   earlyRb: EarlyRakebackSyncReport | null
   earlyRbError: string | null
   reconcile: AuditReconcileReport | null
@@ -112,6 +113,7 @@ export default function AuditReconcilePanel({
   token,
   uploads,
   reconcileClubSlug,
+  weekSyncError,
   earlyRb,
   earlyRbError,
   reconcile,
@@ -632,6 +634,23 @@ export default function AuditReconcilePanel({
             ) : null}
           </ul>
         ))}
+      </div>
+
+      <div className="rounded-md border border-border bg-surface-raised p-4 text-sm">
+        <p className="mb-2 font-semibold text-ink">Week process / sync</p>
+        {weekSyncError ? (
+          <p role="alert" className="text-danger-ink">
+            {weekSyncError}
+          </p>
+        ) : (
+          <p className="text-ink-muted">
+            gg-computer process-week/sync completed for{' '}
+            {reconcileClubSlug === 'round-table'
+              ? 'Round Table and Aces Table'
+              : uploads[0]?.club_name ?? reconcileClubSlug}
+            .
+          </p>
+        )}
       </div>
 
       <div className="rounded-md border border-border bg-surface-raised p-4 text-sm">

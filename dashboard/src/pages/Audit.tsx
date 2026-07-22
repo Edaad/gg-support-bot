@@ -17,6 +17,7 @@ import {
 
 const PIPELINE_STEPS: { id: AuditPipelineStep; label: string }[] = [
   { id: 'uploading', label: 'Upload trade record' },
+  { id: 'syncingWeek', label: 'Process / sync week' },
   { id: 'syncingEarlyRb', label: 'Sync early rakeback' },
   { id: 'reconciling', label: 'Run net reconcile' },
 ]
@@ -26,9 +27,10 @@ const XLSX_ACCEPT =
 
 function stepIndex(step: AuditPipelineStep): number {
   if (step === 'uploading') return 0
-  if (step === 'syncingEarlyRb') return 1
-  if (step === 'reconciling') return 2
-  return 3
+  if (step === 'syncingWeek') return 1
+  if (step === 'syncingEarlyRb') return 2
+  if (step === 'reconciling') return 3
+  return 4
 }
 
 function uploadLabelForSlug(tradeSlug: string): string {
@@ -169,7 +171,7 @@ export default function Audit({ token }: { token: string }) {
 
   const runPipelineForUploads = useCallback(
     async (uploads: TradeRecordUploadReport[]) => {
-      setPipelineStep('syncingEarlyRb')
+      setPipelineStep('syncingWeek')
       try {
         const result = await runReconcilePipeline(
           token,
@@ -292,8 +294,8 @@ export default function Audit({ token }: { token: string }) {
       <h1 className="mb-2 text-2xl font-bold">Audit</h1>
       <p className="mb-6 max-w-2xl text-sm text-ink-muted">
         Choose a club, then upload trade record (.xlsx) files from the Trade Record sheet.
-        Date and timezone are read from each file. Early rakeback sync and net reconcile run
-        automatically when all required uploads are present.
+        Date and timezone are read from each file. Week process/sync, early rakeback sync, and
+        net reconcile run automatically when all required uploads are present.
       </p>
 
       <section className="panel mb-6">
@@ -430,6 +432,7 @@ export default function Audit({ token }: { token: string }) {
             token={token}
             uploads={pipelineResult.uploads}
             reconcileClubSlug={pipelineResult.reconcileClubSlug}
+            weekSyncError={pipelineResult.weekSyncError}
             earlyRb={pipelineResult.earlyRb}
             earlyRbError={pipelineResult.earlyRbError}
             reconcile={pipelineResult.reconcile}

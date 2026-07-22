@@ -1,5 +1,8 @@
 import { apiUrl } from './apiBase'
+import { syncWeeklyPlayerNicknames } from './client'
 import { downloadAuditExport as downloadPaymentsAuditExport } from './paymentsClient'
+import { processWeekSync } from './weeklyStats'
+import { tradeSlugsForReconcile } from '../config/clubMap'
 
 export type TradeRecordUploadReport = {
   upload_id: number
@@ -151,6 +154,7 @@ export type AuditReconcileRunSummary = {
 
 export type AuditPipelineStep =
   | 'uploading'
+  | 'syncingWeek'
   | 'syncingEarlyRb'
   | 'reconciling'
   | 'done'
@@ -160,6 +164,7 @@ export type AuditPipelineResult = {
   reconcileClubSlug: string
   uploads: TradeRecordUploadReport[]
   upload: TradeRecordUploadReport
+  weekSyncError: string | null
   earlyRb: EarlyRakebackSyncReport | null
   earlyRbError: string | null
   reconcile: AuditReconcileReport | null
@@ -434,6 +439,35 @@ function mergeEarlyRbReports(
   }
 }
 
+/**
+ * Ensure gg-computer has processed weeks for the reconcile club(s).
+ * Needed so Monday settlement can load `weekly_profits` during net reconcile.
+ * Nickname backfill is best-effort (same as Weekly Stats).
+ */
+async function syncProcessWeekForReconcile(
+  token: string,
+  reconcileClubSlug: string,
+): Promise<string | null> {
+  const slugs = tradeSlugsForReconcile(reconcileClubSlug)
+  const errors: string[] = []
+
+  for (const slug of slugs) {
+    try {
+      await processWeekSync(slug)
+      try {
+        await syncWeeklyPlayerNicknames(token, slug)
+      } catch {
+        /* nickname backfill is best-effort */
+      }
+    } catch (e: unknown) {
+      const detail = e instanceof Error ? e.message : 'process-week/sync failed'
+      errors.push(`${slug}: ${detail}`)
+    }
+  }
+
+  return errors.length > 0 ? errors.join('; ') : null
+}
+
 export async function runReconcilePipeline(
   token: string,
   reconcileClubSlug: string,
@@ -442,6 +476,9 @@ export async function runReconcilePipeline(
 ): Promise<AuditPipelineResult> {
   const primary = uploads[0]
   const auditDate = primary.audit_date
+
+  onStep?.('syncingWeek')
+  const weekSyncError = await syncProcessWeekForReconcile(token, reconcileClubSlug)
 
   let earlyRb: EarlyRakebackSyncReport | null = null
   let earlyRbError: string | null = null
@@ -476,6 +513,7 @@ export async function runReconcilePipeline(
     reconcileClubSlug,
     uploads,
     upload: primary,
+    weekSyncError,
     earlyRb,
     earlyRbError,
     reconcile,
