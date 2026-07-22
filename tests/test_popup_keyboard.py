@@ -139,8 +139,8 @@ class ButtonLabelTests(unittest.TestCase):
         self.assertEqual(pk.BUTTON_LABELS, {"/deposit", "/cashout"})
         self.assertNotIn("Other", pk.BUTTON_LABELS)
         self.assertFalse(hasattr(pk, "BTN_OTHER"))
-        self.assertFalse(hasattr(pk, "INSTALL_COPY"))
-        self.assertFalse(hasattr(pk, "OTHER_ACK"))
+        self.assertIn("request was handled", pk.INSTALL_COPY)
+        self.assertEqual(pk.STRIP_COPY, "We'll be with you in just a second.")
 
 
 class FlowCommandTextTests(unittest.TestCase):
@@ -154,57 +154,114 @@ class FlowCommandTextTests(unittest.TestCase):
 
 
 class SelectiveInstallPayloadTests(unittest.TestCase):
-    def test_uses_at_username_when_present(self):
-        text, entities = pk._selective_install_payload(
-            player_user_id=42, username="playerone"
-        )
-        self.assertTrue(text.startswith("@playerone\n"))
-        self.assertIn(pk.ZWSP, text)
-        self.assertIsNone(entities)
-
-    def test_uses_text_mention_without_username(self):
-        text, entities = pk._selective_install_payload(
-            player_user_id=42, username=None
-        )
-        self.assertEqual(text, pk.ZWSP)
-        self.assertIsNotNone(entities)
-        self.assertEqual(len(entities), 1)
-        self.assertEqual(entities[0].type, "text_mention")
-        self.assertEqual(entities[0].user.id, 42)
+    def test_install_and_strip_copy(self):
+        self.assertIn("request was handled", pk.INSTALL_COPY)
+        self.assertEqual(pk.STRIP_COPY, "We'll be with you in just a second.")
+        self.assertNotIn("@", pk.INSTALL_COPY)
+        self.assertNotIn("@", pk.STRIP_COPY)
 
 
 class InstalledFlagTests(unittest.TestCase):
+    def setUp(self):
+        pk.clear_installed_memory_for_tests()
+
+    def tearDown(self):
+        pk.clear_installed_memory_for_tests()
+
     def test_get_false_without_row(self):
-        with patch.object(pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
-            self.assertFalse(pk.get_popup_keyboard_installed(-1))
+        with patch.object(pk, "is_test_bot_worker", return_value=False):
+            with patch.object(
+                pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+            ):
+                self.assertFalse(pk.get_popup_keyboard_installed(-1))
 
     def test_get_reads_row(self):
         row = SimpleNamespace(popup_keyboard_installed=True)
-        with patch.object(pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=row):
-            self.assertTrue(pk.get_popup_keyboard_installed(-1))
+        with patch.object(pk, "is_test_bot_worker", return_value=False):
+            with patch.object(
+                pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=row
+            ):
+                self.assertTrue(pk.get_popup_keyboard_installed(-1))
 
     def test_set_fails_without_row(self):
-        with patch.object(pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
-            self.assertFalse(pk.set_popup_keyboard_installed(-1, True))
+        with patch.object(pk, "is_test_bot_worker", return_value=False):
+            with patch.object(
+                pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+            ):
+                self.assertFalse(pk.set_popup_keyboard_installed(-1, True))
 
     def test_set_updates_row(self):
         row = SimpleNamespace(id=7, popup_keyboard_installed=False)
-        with patch.object(pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=row):
-            with patch.object(pk, "update_support_group_chat_row", return_value=(True, None)) as upd:
-                self.assertTrue(pk.set_popup_keyboard_installed(-1, True))
-                upd.assert_called_once_with(7, popup_keyboard_installed=True)
+        with patch.object(pk, "is_test_bot_worker", return_value=False):
+            with patch.object(
+                pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=row
+            ):
+                with patch.object(
+                    pk, "update_support_group_chat_row", return_value=(True, None)
+                ) as upd:
+                    self.assertTrue(pk.set_popup_keyboard_installed(-1, True))
+                    upd.assert_called_once_with(7, popup_keyboard_installed=True)
+
+    def test_test_bot_uses_memory_flag(self):
+        with patch.object(pk, "is_test_bot_worker", return_value=True):
+            with patch.object(pk, "update_support_group_chat_row") as upd:
+                self.assertFalse(pk.get_popup_keyboard_installed(-5234716365))
+                self.assertTrue(pk.set_popup_keyboard_installed(-5234716365, True))
+                self.assertTrue(pk.get_popup_keyboard_installed(-5234716365))
+                self.assertTrue(pk.set_popup_keyboard_installed(-5234716365, False))
+                self.assertFalse(pk.get_popup_keyboard_installed(-5234716365))
+                upd.assert_not_called()
+
+
+class UpsertIntegrityTests(unittest.TestCase):
+    def test_test_bot_skips_db_upsert(self):
+        with patch.object(pk, "is_test_bot_worker", return_value=True):
+            with patch.object(pk, "update_support_group_chat_row") as upd:
+                with patch.object(pk, "fetch_support_group_chat_by_telegram_chat_id") as fetch:
+                    self.assertTrue(
+                        pk.upsert_player_telegram_user_id(
+                            -5234716365, 5821458817, username="jz034"
+                        )
+                    )
+                    fetch.assert_not_called()
+                    upd.assert_not_called()
 
 
 class InstallSkipTests(unittest.IsolatedAsyncioTestCase):
     async def test_install_skips_without_support_group_row(self):
         bot = AsyncMock()
         with patch.object(pk, "popup_keyboard_eligible", return_value=True):
-            with patch.object(
-                pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
-            ):
-                ok = await pk.install_popup_keyboard(bot, chat_id=-100)
+            with patch.object(pk, "is_test_bot_worker", return_value=False):
+                with patch.object(
+                    pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+                ):
+                    ok = await pk.install_popup_keyboard(bot, chat_id=-100)
         self.assertFalse(ok)
         bot.send_message.assert_not_called()
+
+    async def test_test_bot_install_without_row_when_player_known(self):
+        bot = AsyncMock()
+        bot.send_message = AsyncMock(return_value=SimpleNamespace(message_id=1))
+        bot.delete_message = AsyncMock()
+        ctx = MagicMock()
+        ctx.chat_data = {
+            "popup_kb_last_player_user_id": 42,
+            "popup_kb_last_player_message_id": 7,
+            "popup_kb_last_player_username": "me",
+        }
+        pk.clear_installed_memory_for_tests()
+        with patch.object(pk, "popup_keyboard_eligible", return_value=True):
+            with patch.object(pk, "is_test_bot_worker", return_value=True):
+                with patch.object(
+                    pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+                ):
+                    ok = await pk.install_popup_keyboard(
+                        bot, chat_id=-100, context=ctx
+                    )
+                    self.assertTrue(ok)
+                    self.assertTrue(pk.get_popup_keyboard_installed(-100))
+        pk.clear_installed_memory_for_tests()
+
 
     async def test_silent_strip_noop_when_not_installed(self):
         bot = AsyncMock()
@@ -212,6 +269,22 @@ class InstallSkipTests(unittest.IsolatedAsyncioTestCase):
             ok = await pk.silent_strip_if_installed(bot, chat_id=-100)
         self.assertFalse(ok)
         bot.send_message.assert_not_called()
+
+
+class SendSilentMarkupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_send_does_not_delete(self):
+        bot = AsyncMock()
+        bot.send_message = AsyncMock(return_value=SimpleNamespace(message_id=99))
+        bot.delete_message = AsyncMock()
+        ok = await pk._send_silent_markup(
+            bot,
+            chat_id=-100,
+            text=pk.INSTALL_COPY,
+            reply_markup=pk.keyboard_markup(),
+        )
+        self.assertTrue(ok)
+        bot.send_message.assert_called_once()
+        bot.delete_message.assert_not_called()
 
 
 if __name__ == "__main__":
