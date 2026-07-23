@@ -5,6 +5,8 @@ TestGGSupportBot (`run_test_bot.py` / `BOT_TEST_WORKER=1`) always has the featur
 
 Players get a selective persistent reply keyboard with **`/deposit`** and **`/cashout`**. Any other player message (text or media) while the keyboard is installed silently removes it.
 
+Idle install may omit **`/cashout`** when cashout would be denied by the group’s cooldown timer or outside cashout hours (read-only check; one-time bypass is ignored for the button). Groups with a **permanent** cashout bypass always get both buttons. Typed `/cashout` is unchanged.
+
 Install posts: *Looks like your request was handled…*  
 Free-text strip posts: *We'll be with you in just a second.*  
 Both stay in chat (deleting the carrier message clears the keyboard on clients).

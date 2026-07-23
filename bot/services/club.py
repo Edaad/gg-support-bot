@@ -941,6 +941,21 @@ def has_recent_add_command_in_chat(
     return chat_has_add_command_since(chat_id, since)
 
 
+def has_permanent_cashout_bypass(club_id: int, chat_id: int) -> bool:
+    """True when this support group has a permanent cashout cooldown bypass."""
+    with get_db() as session:
+        perm = (
+            session.query(CooldownBypass)
+            .filter_by(
+                club_id=int(club_id),
+                chat_id=int(chat_id),
+                bypass_type="permanent",
+            )
+            .first()
+        )
+        return perm is not None
+
+
 def check_and_consume_bypass(club_id: int, chat_id: int) -> Optional[str]:
     """Check for a bypass on this support group. Returns 'permanent', 'one_time' (and consumes it), or None."""
     with get_db() as session:
@@ -1104,6 +1119,49 @@ def check_earlyrb_eligibility(
         f"{EARLYRB_COOLDOWN_DENIAL_MESSAGE}\n\n"
         f"You can use /earlyrb again at {elig_time} EST {elig_day}."
     )
+
+
+def cashout_shown_on_popup_keyboard(club_id: int, chat_id: int) -> bool:
+    """Whether idle popup install should include /cashout (read-only).
+
+    Hides cashout when the raw cooldown timer or cashout hours would block.
+    Permanent bypass always shows cashout. One-time bypass is ignored here
+    (still applies on real /cashout via check_cashout_eligibility). Fail open.
+    """
+    try:
+        if has_permanent_cashout_bypass(int(club_id), int(chat_id)):
+            return True
+        settings = get_cooldown_settings(int(club_id))
+        if not settings:
+            return True
+
+        now_utc = datetime.now(timezone.utc)
+        now_est = now_utc.astimezone(EST)
+        cooldown_on = settings["cooldown_enabled"]
+        hours_on = settings["hours_enabled"]
+
+        if cooldown_on:
+            last = get_last_activity(int(club_id), int(chat_id))
+            if last is not None:
+                passed, _, _ = _format_cooldown_wait(
+                    last, settings["cooldown_hours"], now_utc
+                )
+                if not passed:
+                    return False
+
+        if hours_on and not _is_within_hours(
+            now_est, settings["hours_start"], settings["hours_end"]
+        ):
+            return False
+        return True
+    except Exception:
+        logger.warning(
+            "cashout_shown_on_popup_keyboard failed club_id=%s chat_id=%s; fail open",
+            club_id,
+            chat_id,
+            exc_info=True,
+        )
+        return True
 
 
 def check_cashout_eligibility(

@@ -255,11 +255,12 @@ class InstallSkipTests(unittest.IsolatedAsyncioTestCase):
                 with patch.object(
                     pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
                 ):
-                    ok = await pk.install_popup_keyboard(
-                        bot, chat_id=-100, context=ctx
-                    )
-                    self.assertTrue(ok)
-                    self.assertTrue(pk.get_popup_keyboard_installed(-100))
+                    with patch.object(pk, "get_club_for_chat", return_value=None):
+                        ok = await pk.install_popup_keyboard(
+                            bot, chat_id=-100, context=ctx
+                        )
+                        self.assertTrue(ok)
+                        self.assertTrue(pk.get_popup_keyboard_installed(-100))
         pk.clear_installed_memory_for_tests()
 
 

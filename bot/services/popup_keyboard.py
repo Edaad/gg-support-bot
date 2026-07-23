@@ -14,7 +14,12 @@ from telegram import (
 from telegram.ext import ContextTypes
 
 from bot.runtime_config import is_test_bot_worker
-from bot.services.club import get_club_for_chat, get_group_name, is_club_staff
+from bot.services.club import (
+    cashout_shown_on_popup_keyboard,
+    get_club_for_chat,
+    get_group_name,
+    is_club_staff,
+)
 from bot.services.player_details import gg_player_id_from_title
 from bot.services.support_group_chats import (
     fetch_player_telegram_user_id_for_chat,
@@ -237,14 +242,12 @@ def clear_installed_memory_for_tests() -> None:
     _installed_memory.clear()
 
 
-def keyboard_markup() -> ReplyKeyboardMarkup:
+def keyboard_markup(*, include_cashout: bool = True) -> ReplyKeyboardMarkup:
+    row = [KeyboardButton(BTN_DEPOSIT)]
+    if include_cashout:
+        row.append(KeyboardButton(BTN_CASHOUT))
     return ReplyKeyboardMarkup(
-        [
-            [
-                KeyboardButton(BTN_DEPOSIT),
-                KeyboardButton(BTN_CASHOUT),
-            ]
-        ],
+        [row],
         resize_keyboard=True,
         is_persistent=True,
         selective=True,
@@ -446,11 +449,33 @@ async def install_popup_keyboard(
         )
         return False
 
+    club_id = None
+    include_cashout = True
+    try:
+        club_id = get_club_for_chat(int(chat_id))
+        if club_id is not None:
+            include_cashout = cashout_shown_on_popup_keyboard(
+                int(club_id), int(chat_id)
+            )
+    except Exception:
+        logger.warning(
+            "popup_keyboard: cashout button check failed chat_id=%s; fail open",
+            chat_id,
+            exc_info=True,
+        )
+        include_cashout = True
+    if not include_cashout:
+        logger.info(
+            "popup_keyboard deposit-only install chat_id=%s club_id=%s",
+            chat_id,
+            club_id,
+        )
+
     ok = await _send_silent_markup(
         bot,
         chat_id=int(chat_id),
         text=INSTALL_COPY,
-        reply_markup=keyboard_markup(),
+        reply_markup=keyboard_markup(include_cashout=include_cashout),
         reply_to_message_id=reply_to,
     )
     if not ok:
@@ -458,10 +483,11 @@ async def install_popup_keyboard(
 
     set_popup_keyboard_installed(int(chat_id), True)
     logger.info(
-        "popup_keyboard installed chat_id=%s player_uid=%s reply_to=%s",
+        "popup_keyboard installed chat_id=%s player_uid=%s reply_to=%s include_cashout=%s",
         chat_id,
         player_uid,
         reply_to,
+        include_cashout,
     )
     return True
 
