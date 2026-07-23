@@ -1,5 +1,6 @@
 """Deposit conversation: amount first, then filtered method selection, then optional crypto sub-option."""
 
+import asyncio
 import html
 import logging
 import re
@@ -8,6 +9,7 @@ from decimal import Decimal
 from typing import Any
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import TimedOut
 from telegram.ext import (
     ApplicationHandlerStop,
     ContextTypes,
@@ -1070,12 +1072,25 @@ def _is_awaiting_amount(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> boo
 
 
 async def _ask_deposit_amount(message, context: ContextTypes.DEFAULT_TYPE) -> int:
-    _mark_awaiting_amount(context)
     kwargs = {}
     strip = popup_keyboard_svc.pop_strip_reply_markup(context)
     if strip is not None:
         kwargs["reply_markup"] = strip
-    await message.reply_text(DEPOSIT_AMOUNT_PROMPT, **kwargs)
+    # Telegram occasionally times out on the first send; retry once before failing.
+    for attempt in range(2):
+        try:
+            await message.reply_text(DEPOSIT_AMOUNT_PROMPT, **kwargs)
+            break
+        except TimedOut:
+            if attempt == 0:
+                logger.warning(
+                    "deposit amount prompt TimedOut chat_id=%s; retrying",
+                    getattr(getattr(message, "chat", None), "id", None),
+                )
+                await asyncio.sleep(1.0)
+                continue
+            raise
+    _mark_awaiting_amount(context)
     return DEPOSIT_AMOUNT
 
 

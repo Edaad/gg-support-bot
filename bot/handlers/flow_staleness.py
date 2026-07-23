@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 _STALE_CALLBACK_ALERT = "This session expired — use {flow_command} again."
 
-_DEFAULT_MAX_AGE_SECONDS = 60
+# 60s was too tight under brief Telegram/worker lag: /deposit arrived, sat ~65s,
+# then was silently dropped while the player kept retrying.
+_DEFAULT_MAX_AGE_SECONDS = 120
 _NON_AMOUNT_TEXT_RE = re.compile(r"[a-zA-Z]")
 
 DEPOSIT_AMOUNT_PROMPT = (
