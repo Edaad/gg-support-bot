@@ -447,6 +447,7 @@ async def send_telegram_notification(
     text: str,
     *,
     reply_markup: dict | None = None,
+    reply_to_message_id: int | None = None,
 ) -> tuple[int, int]:
     """Post notification to staff group. Returns (chat_id, message_id)."""
     token = _notification_bot_token()
@@ -463,6 +464,8 @@ async def send_telegram_notification(
     }
     if reply_markup is not None:
         payload["reply_markup"] = reply_markup
+    if reply_to_message_id is not None:
+        payload["reply_to_message_id"] = int(reply_to_message_id)
 
     if reply_markup is not None:
         row_count = len(reply_markup.get("inline_keyboard") or [])
@@ -898,6 +901,19 @@ async def ingest_venmo_payment(
         goods_or_services=goods_or_services_flag,
     )
 
+    if auto_bound and bound_chat_id is not None:
+        from bot.services.payment_multi_payer_warning import maybe_warn_multi_payer
+
+        await maybe_warn_multi_payer(
+            payment_method_slug="venmo",
+            payment_id=payment_id,
+            telegram_chat_id=int(bound_chat_id),
+            payer_name=payer,
+            group_title=bound_title or group_title,
+            notification_message_id=notif_message_id,
+            is_test=bool(test),
+        )
+
     from bot.services.payment_auto_deposit import schedule_auto_deposit_from_payment
 
     schedule_auto_deposit_from_payment(
@@ -1059,6 +1075,18 @@ async def bind_venmo_payment_by_id(
                 notif_chat_id,
                 notif_message_id,
             )
+
+    from bot.services.payment_multi_payer_warning import maybe_warn_multi_payer
+
+    await maybe_warn_multi_payer(
+        payment_method_slug="venmo",
+        payment_id=payment_id,
+        telegram_chat_id=int(group.telegram_chat_id),
+        payer_name=payment.payer_name,
+        group_title=live_title,
+        notification_message_id=notif_message_id,
+        is_test=bool(getattr(payment, "is_test", False)),
+    )
 
     return BindResult(
         ok=True,

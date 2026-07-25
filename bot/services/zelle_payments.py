@@ -474,6 +474,19 @@ async def ingest_zelle_payment(
         is_test=bool(test),
     )
 
+    if auto_bound and bound_chat_id is not None:
+        from bot.services.payment_multi_payer_warning import maybe_warn_multi_payer
+
+        await maybe_warn_multi_payer(
+            payment_method_slug="zelle",
+            payment_id=payment_id,
+            telegram_chat_id=int(bound_chat_id),
+            payer_name=payer,
+            group_title=bound_title or group_title,
+            notification_message_id=notif_message_id,
+            is_test=bool(test),
+        )
+
     from bot.services.payment_auto_deposit import schedule_auto_deposit_from_payment
 
     schedule_auto_deposit_from_payment(
@@ -626,6 +639,18 @@ async def bind_zelle_payment_by_id(
                 notif_chat_id,
                 notif_message_id,
             )
+
+    from bot.services.payment_multi_payer_warning import maybe_warn_multi_payer
+
+    await maybe_warn_multi_payer(
+        payment_method_slug="zelle",
+        payment_id=payment_id,
+        telegram_chat_id=int(group.telegram_chat_id),
+        payer_name=payment.payer_name,
+        group_title=live_title,
+        notification_message_id=notif_message_id,
+        is_test=bool(getattr(payment, "is_test", False)),
+    )
 
     return BindResult(
         ok=True,

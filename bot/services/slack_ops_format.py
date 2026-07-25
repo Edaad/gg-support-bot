@@ -10,6 +10,7 @@ SOURCE_HEADERS: dict[str, str] = {
     "issue_report": ":ticket: *Issue Report*",
     "recovery_membership_audit": ":mag: *Recovery Membership Audit*",
     "recovery_triage": ":clipboard: *Recovery Triage*",
+    "multi_payer_warning": ":warning: *Multi-Payer Warning*",
 }
 
 
