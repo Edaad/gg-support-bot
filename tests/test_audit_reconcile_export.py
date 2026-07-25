@@ -16,6 +16,7 @@ from api.audit_reconcile_export import (
     MATCHING_HEADERS,
     OVERVIEW_HEADERS,
     SHEET_INTRO_DATA_START_ROW,
+    _CURRENCY_FORMAT,
     _EXCEL_TIME_FORMAT,
     build_all_clubs_matching_workbook,
     build_reconcile_workbook_from_report,
@@ -222,15 +223,47 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(matching.cell(row=1, column=2).value, "Manager")
         self.assertEqual(matching.cell(row=2, column=2).value, "TrafficLight7")
         self.assertEqual(matching.cell(row=2, column=10).value, "2133729202")
+        self.assertEqual(
+            matching.cell(row=2, column=3).number_format,
+            _CURRENCY_FORMAT,
+        )
+        self.assertIn("[Red]", _CURRENCY_FORMAT)
         self.assertIsInstance(matching.cell(row=2, column=1).value, datetime)
         self.assertEqual(matching.cell(row=2, column=1).number_format, _EXCEL_TIME_FORMAT)
         self.assertIsInstance(matching.cell(row=2, column=8).value, datetime)
         self.assertEqual(matching.cell(row=2, column=8).number_format, _EXCEL_TIME_FORMAT)
-        # No Vaughn method column; tally on right for ClubGTO
+        # Vaughn tally uses live formulas over Matching Source / Variant / Amount
         self.assertEqual(matching.cell(row=1, column=12).value, "Vaughn methods")
         self.assertEqual(matching.cell(row=2, column=12).value, "Method")
         self.assertEqual(matching.cell(row=3, column=12).value, "Zelle")
-        self.assertEqual(matching.cell(row=3, column=15).value, 50.0)
+        self.assertEqual(matching.cell(row=3, column=13).value, "2133729202")
+        zelle_count = matching.cell(row=3, column=14).value
+        zelle_total = matching.cell(row=3, column=15).value
+        self.assertIsInstance(zelle_count, str)
+        self.assertTrue(zelle_count.startswith("="))
+        self.assertIn("Matching_clubgto[Source]", zelle_count)
+        self.assertIn("2133729202", zelle_count)
+        self.assertIsInstance(zelle_total, str)
+        self.assertIn("SUMPRODUCT", zelle_total)
+        self.assertIn("Matching_clubgto[Amount]", zelle_total)
+        self.assertEqual(matching.cell(row=4, column=12).value, "Venmo")
+        self.assertEqual(matching.cell(row=5, column=12).value, "Crypto")
+        self.assertEqual(matching.cell(row=6, column=12).value, "Stripe")
+        self.assertEqual(matching.cell(row=7, column=12).value, "Total")
+        self.assertTrue(str(matching.cell(row=7, column=14).value).startswith("=SUM("))
+        self.assertIn("Matching_clubgto", matching.tables)
+        self.assertEqual(matching.tables["Matching_clubgto"].ref, "A1:J2")
+        self.assertIn("_DV_clubgto", wb.sheetnames)
+        self.assertEqual(wb["_DV_clubgto"].sheet_state, "hidden")
+        self.assertIn("dv_clubgto_Zelle", wb.defined_names)
+        self.assertIn("dv_clubgto_Venmo", wb.defined_names)
+        validations = list(matching.data_validations.dataValidation)
+        self.assertEqual(len(validations), 2)
+        source_dv = next(dv for dv in validations if "Stripe" in (dv.formula1 or ""))
+        self.assertIn("F2:F2", source_dv.sqref)
+        variant_dv = next(dv for dv in validations if "INDIRECT" in (dv.formula1 or ""))
+        self.assertIn("J2:J2", variant_dv.sqref)
+        self.assertIn("dv_clubgto_", variant_dv.formula1)
 
     def test_matching_vaughn_tally_only_clubgto(self):
         report = _empty_report(club_slug="round-table", club_name="Round Table")
@@ -249,6 +282,8 @@ class ReconcileExportTestCase(unittest.TestCase):
         wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
         matching = wb["Matching"]
         self.assertIsNone(matching.cell(row=1, column=12).value)
+        self.assertIn("Matching_round_table", matching.tables)
+        self.assertEqual(matching.tables["Matching_round_table"].ref, "A1:J1")
 
     def test_all_clubs_matching_workbook_sheet_order(self):
         reports = {
@@ -267,6 +302,9 @@ class ReconcileExportTestCase(unittest.TestCase):
             self.assertEqual(wb[name].cell(row=1, column=2).value, "Manager")
         self.assertEqual(wb["ClubGTO"].cell(row=1, column=12).value, "Vaughn methods")
         self.assertIsNone(wb["Round Table"].cell(row=1, column=12).value)
+        self.assertIn("Matching_round_table", wb["Round Table"].tables)
+        self.assertIn("Matching_clubgto", wb["ClubGTO"].tables)
+        self.assertIn("Matching_creator_club", wb["Creator Club"].tables)
 
 
 if __name__ == "__main__":

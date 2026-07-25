@@ -29,12 +29,13 @@ def is_vaughn_method(
     club_slug: str,
 ) -> bool:
     """True when this ledger deposit belongs to Vaughn's ClubGTO accounts."""
-    if (source or "").strip() == "deposit_crypto":
+    src = (source or "").strip()
+    if src in ("deposit_crypto", "deposit_stripe"):
         return club_slug.strip().lower() == _VAUGHN_CLUB_SLUG
     tag = (variant or "").strip()
-    if source == "deposit_zelle":
+    if src == "deposit_zelle":
         return normalize_zelle_recipient(tag) in VAUGHN_ZELLE_RECIPIENTS
-    if source == "deposit_venmo":
+    if src == "deposit_venmo":
         return normalize_venmo_handle(tag) in VAUGHN_VENMO_HANDLES
     return False
 
@@ -58,6 +59,8 @@ def _bucket_key(line: LedgerLine) -> tuple[str, str, str] | None:
         return ("2_venmo", "Venmo", f"@{handle}" if handle else tag)
     if source == "deposit_crypto":
         return ("3_crypto", "Crypto", "(all ClubGTO)")
+    if source == "deposit_stripe":
+        return ("4_stripe", "Stripe", "(all ClubGTO)")
     return None
 
 

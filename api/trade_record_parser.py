@@ -330,6 +330,65 @@ def validate_trade_upload_pair(
     )
 
 
+def validate_all_clubs_trade_uploads(
+    parsed_list: list[TradeRecordParseResult],
+) -> dict[str, TradeRecordParseResult]:
+    """Require exactly one file per All clubs trade slug, same audit day.
+
+    Returns slug → parse result.
+    """
+    from api.club_slug import ALL_CLUBS_TRADE_SLUGS
+
+    if len(parsed_list) != len(ALL_CLUBS_TRADE_SLUGS):
+        raise TradeRecordValidationError(
+            f"Expected exactly {len(ALL_CLUBS_TRADE_SLUGS)} trade record files "
+            f"(Round Table, Aces Table, ClubGTO, Creator Club), got {len(parsed_list)}."
+        )
+
+    by_slug: dict[str, TradeRecordParseResult] = {}
+    for parsed in parsed_list:
+        slug = parsed.club_slug
+        if slug in by_slug:
+            label = CLUB_SLUG_DISPLAY_LABELS.get(slug, slug)
+            raise TradeRecordValidationError(
+                f"Duplicate trade record for {label}. "
+                "Upload one file each for Round Table, Aces Table, ClubGTO, and Creator Club."
+            )
+        by_slug[slug] = parsed
+
+    missing = [s for s in ALL_CLUBS_TRADE_SLUGS if s not in by_slug]
+    if missing:
+        labels = [CLUB_SLUG_DISPLAY_LABELS.get(s, s) for s in missing]
+        raise TradeRecordValidationError(
+            "Missing trade record(s) for: " + ", ".join(labels) + "."
+        )
+
+    unexpected = [s for s in by_slug if s not in ALL_CLUBS_TRADE_SLUGS]
+    if unexpected:
+        raise TradeRecordValidationError(
+            "Unexpected club(s) in upload: "
+            + ", ".join(CLUB_SLUG_DISPLAY_LABELS.get(s, s) for s in unexpected)
+            + "."
+        )
+
+    dates = {p.audit_date for p in by_slug.values()}
+    if len(dates) != 1:
+        detail = ", ".join(
+            f"{CLUB_SLUG_DISPLAY_LABELS.get(s, s)}={by_slug[s].audit_date.isoformat()}"
+            for s in ALL_CLUBS_TRADE_SLUGS
+        )
+        raise TradeRecordValidationError(
+            "All four trade records must share the same audit day. Got: " + detail + "."
+        )
+
+    audit_day = next(iter(dates))
+    for slug, parsed in by_slug.items():
+        _validate_period_in_audit_day(parsed.metadata, slug, audit_day)
+
+    validate_trade_upload_pair(by_slug["round-table"], by_slug["aces-table"])
+    return by_slug
+
+
 def parse_result_from_stored_upload(upload) -> TradeRecordParseResult:
     """Rebuild minimal parse result from a persisted upload (for pair validation)."""
     import json

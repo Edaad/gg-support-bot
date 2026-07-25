@@ -8,6 +8,10 @@ from decimal import Decimal
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
+from openpyxl.workbook.defined_name import DefinedName
+from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
 
 from api.audit_ledger import (
@@ -18,13 +22,16 @@ from api.audit_ledger import (
 from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport
 from api.audit_reconcile_matching import match_trade_lines_to_ledger
 from api.club_audit_timezone import zone_for_slug
-from api.vaughn_methods import tally_vaughn_methods
+from api.vaughn_methods import (
+    VAUGHN_VENMO_HANDLES,
+    VAUGHN_ZELLE_RECIPIENTS,
+)
 
 _HEADER_FILL = PatternFill("solid", fgColor="38761D")
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _SECTION_FONT = Font(bold=True, size=12)
 _TITLE_FONT = Font(bold=True, size=14)
-_CURRENCY_FORMAT = "$#,##0.00"
+_CURRENCY_FORMAT = '$#,##0.00;[Red]-$#,##0.00'
 
 # Intro: title (1), what (2), how (3), columns (4); blank spacer (5); tables from 6.
 SHEET_INTRO_DATA_START_ROW = 6
@@ -73,8 +80,8 @@ MATCHING_HEADERS = [
     "Amount",
     "Player ID",
     "Nickname",
-    "Name",
     "Source",
+    "Name",
     "Match Time",
     "$",
     "Variant",
@@ -150,10 +157,151 @@ OVERVIEW_WIDTHS = [22, 16, 18, 18, 3, 22, 16, 18, 18]
 DETAIL_WIDTHS = [22, 16, 14, 14, 14, 22, 14, 18, 18, 16]
 NET_LEDGER_WIDTHS = [16, 22, 18, 14, 18, 40]
 DEPOSIT_WIDTHS = [16, 22, 14, 40, 18, 28]
-MATCHING_WIDTHS = [14, 18, 12, 16, 22, 22, 14, 14, 10, 22, 3, 12, 18, 10, 14]
+MATCHING_WIDTHS = [14, 18, 12, 16, 22, 14, 22, 14, 10, 22, 3, 12, 18, 10, 14]
 
 # Matching sheet: left table cols 1–10; spacer 11; Vaughn tally starts at 12.
 _MATCHING_TALLY_START_COL = 12
+_MATCHING_TABLE_COLS = len(MATCHING_HEADERS)
+_MATCHING_SOURCE_COL = 6  # Source (after Nickname)
+_MATCHING_VARIANT_COL = 10  # Variant
+
+MATCHING_SOURCE_OPTIONS: tuple[str, ...] = tuple(LEDGER_SOURCE_LABELS.values())
+
+
+def _matching_table_display_name(club_slug: str) -> str:
+    """Excel table names: unique per workbook, no spaces/hyphens."""
+    safe = "".join(ch if ch.isalnum() else "_" for ch in club_slug.strip().lower())
+    return f"Matching_{safe or 'sheet'}"
+
+
+def _dv_token(text: str) -> str:
+    """Sanitize label/slug for Excel defined-name suffixes."""
+    return "".join(ch if ch.isalnum() else "_" for ch in text)
+
+
+def _excel_sanitize_source_ref(cell_ref: str) -> str:
+    """Excel formula mirroring _dv_token for Matching Source labels."""
+    return (
+        f'SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE({cell_ref}," ","_"),'
+        f'"-","_"),"(","_"),")","_")'
+    )
+
+
+def _variant_options_by_source(
+    ledger_lines: list[LedgerLine],
+) -> dict[str, list[str]]:
+    buckets: dict[str, set[str]] = {label: set() for label in MATCHING_SOURCE_OPTIONS}
+    for line in ledger_lines:
+        label = (line.source_label or LEDGER_SOURCE_LABELS.get(line.source, "")).strip()
+        if not label:
+            continue
+        buckets.setdefault(label, set())
+        tag = (line.variant or "").strip()
+        if tag:
+            buckets[label].add(tag)
+    return {label: sorted(tags) for label, tags in buckets.items()}
+
+
+def _add_excel_table(
+    ws: Worksheet,
+    *,
+    display_name: str,
+    header_row: int,
+    last_row: int,
+    num_cols: int,
+) -> None:
+    """Register an Excel Table over header+data (filters + structured range)."""
+    end_col = get_column_letter(num_cols)
+    end_row = max(last_row, header_row)
+    tab = Table(
+        displayName=display_name,
+        ref=f"A{header_row}:{end_col}{end_row}",
+    )
+    tab.tableStyleInfo = TableStyleInfo(
+        name="TableStyleMedium2",
+        showFirstColumn=False,
+        showLastColumn=False,
+        showRowStripes=True,
+        showColumnStripes=False,
+    )
+    ws.add_table(tab)
+
+
+def _add_matching_source_variant_dropdowns(
+    ws: Worksheet,
+    report: AuditReconcileReport,
+    *,
+    first_row: int,
+    last_row: int,
+) -> None:
+    """Source list + Variant list dependent on Source (Excel data validation)."""
+    if last_row < first_row:
+        return
+
+    wb = ws.parent
+    assert wb is not None
+    slug_token = _dv_token(report.club_slug.strip().lower())
+    lists_title = f"_DV_{slug_token}"
+    if lists_title in wb.sheetnames:
+        del wb[lists_title]
+    lists = wb.create_sheet(lists_title)
+    lists.sheet_state = "hidden"
+
+    by_source = _variant_options_by_source(report.ledger_lines)
+    # Stable column order: known ledger labels first, then any extras.
+    source_columns = list(MATCHING_SOURCE_OPTIONS)
+    for label in by_source:
+        if label not in source_columns:
+            source_columns.append(label)
+
+    for col_idx, source in enumerate(source_columns, start=1):
+        lists.cell(row=1, column=col_idx, value=source)
+        options = by_source.get(source) or []
+        if options:
+            for row_i, opt in enumerate(options, start=2):
+                lists.cell(row=row_i, column=col_idx, value=opt)
+            end_row = 1 + len(options)
+        else:
+            lists.cell(row=2, column=col_idx, value="")
+            end_row = 2
+
+        col_letter = get_column_letter(col_idx)
+        name = f"dv_{slug_token}_{_dv_token(source)}"
+        attr_text = f"'{lists_title}'!${col_letter}$2:${col_letter}${end_row}"
+        if name in wb.defined_names:
+            del wb.defined_names[name]
+        wb.defined_names.add(DefinedName(name=name, attr_text=attr_text))
+
+    source_letter = get_column_letter(_MATCHING_SOURCE_COL)
+    variant_letter = get_column_letter(_MATCHING_VARIANT_COL)
+    source_sqref = f"{source_letter}{first_row}:{source_letter}{last_row}"
+    variant_sqref = f"{variant_letter}{first_row}:{variant_letter}{last_row}"
+
+    # showDropDown=False is the openpyxl quirk that *shows* the in-cell dropdown.
+    dv_source = DataValidation(
+        type="list",
+        formula1='"' + ",".join(MATCHING_SOURCE_OPTIONS) + '"',
+        allow_blank=True,
+        showDropDown=False,
+        showErrorMessage=False,
+    )
+    dv_source.add(source_sqref)
+    ws.add_data_validation(dv_source)
+
+    first_source = f"{source_letter}{first_row}"
+    variant_formula = (
+        f'=INDIRECT("dv_{slug_token}_"&{_excel_sanitize_source_ref(first_source)})'
+    )
+    dv_variant = DataValidation(
+        type="list",
+        formula1=variant_formula,
+        allow_blank=True,
+        showDropDown=False,
+        showErrorMessage=False,
+    )
+    dv_variant.add(variant_sqref)
+    ws.add_data_validation(dv_variant)
+
 
 ALL_CLUBS_MATCHING_SHEET_ORDER: tuple[tuple[str, str], ...] = (
     ("round-table", "Round Table"),
@@ -513,45 +661,117 @@ def _write_deposits_sheet(
         row_idx += 1
 
 
+def _zelle_variant_aliases(digits: str) -> tuple[str, ...]:
+    aliases = [digits]
+    if len(digits) == 10 and digits.isdigit():
+        aliases.append(f"{digits[:3]}-{digits[3:6]}-{digits[6:]}")
+    return tuple(dict.fromkeys(aliases))
+
+
+def _venmo_variant_aliases(handle: str) -> tuple[str, ...]:
+    bare = handle.lstrip("@").lower()
+    return tuple(dict.fromkeys([f"@{bare}", bare]))
+
+
+def _vaughn_countifs_formula(
+    table_name: str,
+    *,
+    source: str,
+    variants: tuple[str, ...] | None,
+) -> str:
+    """Count Matching rows for a Vaughn method from Source / Variant columns."""
+    if not variants:
+        return f'=COUNTIF({table_name}[Source],"{source}")'
+    parts = [
+        f'COUNTIFS({table_name}[Source],"{source}",{table_name}[Variant],"{tag}")'
+        for tag in variants
+    ]
+    return "=" + "+".join(parts)
+
+
+def _vaughn_sum_abs_formula(
+    table_name: str,
+    *,
+    source: str,
+    variants: tuple[str, ...] | None,
+) -> str:
+    """Sum abs(Amount) for Matching rows matching Source / Variant."""
+    src = f'({table_name}[Source]="{source}")'
+    if not variants:
+        return f"=SUMPRODUCT({src}*ABS({table_name}[Amount]))"
+    variant_or = "+".join(
+        f'({table_name}[Variant]="{tag}")' for tag in variants
+    )
+    return f"=SUMPRODUCT({src}*({variant_or})*ABS({table_name}[Amount]))"
+
+
 def _write_vaughn_tally(
     ws: Worksheet,
-    report: AuditReconcileReport,
     *,
+    table_name: str,
     section_row: int,
     start_col: int,
 ) -> None:
+    """Vaughn totals as live Excel formulas over Matching Source/Variant/Amount."""
     _style_section_title(ws, section_row, "Vaughn methods", col=start_col)
     header_row = section_row + 1
     _style_header_row(ws, header_row, VAUGHN_TALLY_HEADERS, start_col=start_col)
 
-    tallies = tally_vaughn_methods(
-        report.ledger_lines,
-        club_slug=report.club_slug,
-    )
-    row_idx = header_row + 1
-    total_count = 0
-    total_usd = Decimal(0)
-    for tally in tallies:
-        ws.cell(row=row_idx, column=start_col, value=tally.method_label)
-        ws.cell(row=row_idx, column=start_col + 1, value=tally.tag)
-        ws.cell(row=row_idx, column=start_col + 2, value=tally.count)
-        cell = ws.cell(
+    method_rows: list[tuple[str, str, str, tuple[str, ...] | None]] = []
+    for digits in sorted(VAUGHN_ZELLE_RECIPIENTS):
+        method_rows.append(
+            ("Zelle", digits, "Zelle", _zelle_variant_aliases(digits))
+        )
+    for handle in sorted(VAUGHN_VENMO_HANDLES):
+        method_rows.append(
+            (
+                "Venmo",
+                f"@{handle}",
+                "Venmo",
+                _venmo_variant_aliases(handle),
+            )
+        )
+    method_rows.append(("Crypto", "(all ClubGTO)", "Crypto", None))
+    method_rows.append(("Stripe", "(all ClubGTO)", "Stripe", None))
+
+    first_data = header_row + 1
+    row_idx = first_data
+    for method_label, tag, source_label, variants in method_rows:
+        ws.cell(row=row_idx, column=start_col, value=method_label)
+        ws.cell(row=row_idx, column=start_col + 1, value=tag)
+        ws.cell(
+            row=row_idx,
+            column=start_col + 2,
+            value=_vaughn_countifs_formula(
+                table_name, source=source_label, variants=variants
+            ),
+        )
+        total_cell = ws.cell(
             row=row_idx,
             column=start_col + 3,
-            value=_decimal_cell(tally.total_usd),
+            value=_vaughn_sum_abs_formula(
+                table_name, source=source_label, variants=variants
+            ),
         )
-        cell.number_format = _CURRENCY_FORMAT
-        total_count += tally.count
-        total_usd += tally.total_usd
+        total_cell.number_format = _CURRENCY_FORMAT
         row_idx += 1
+
+    last_data = row_idx - 1
+    count_letter = get_column_letter(start_col + 2)
+    total_letter = get_column_letter(start_col + 3)
 
     total_label = ws.cell(row=row_idx, column=start_col, value="Total")
     total_label.font = Font(bold=True)
-    ws.cell(row=row_idx, column=start_col + 2, value=total_count).font = Font(bold=True)
+    count_total = ws.cell(
+        row=row_idx,
+        column=start_col + 2,
+        value=f"=SUM({count_letter}{first_data}:{count_letter}{last_data})",
+    )
+    count_total.font = Font(bold=True)
     total_cell = ws.cell(
         row=row_idx,
         column=start_col + 3,
-        value=_decimal_cell(total_usd),
+        value=f"=SUM({total_letter}{first_data}:{total_letter}{last_data})",
     )
     total_cell.number_format = _CURRENCY_FORMAT
     total_cell.font = Font(bold=True)
@@ -589,8 +809,8 @@ def _write_matching_sheet(
         cell.number_format = _CURRENCY_FORMAT
         ws.cell(row=row_idx, column=4, value=trade.member_gg_player_id or "")
         ws.cell(row=row_idx, column=5, value=trade.member_nickname or "")
-        ws.cell(row=row_idx, column=6, value=matched.match_name)
-        ws.cell(row=row_idx, column=7, value=matched.match_source)
+        ws.cell(row=row_idx, column=6, value=matched.match_source)
+        ws.cell(row=row_idx, column=7, value=matched.match_name)
         _write_excel_time_cell(
             ws, row_idx, 8, report.club_slug, matched.match_occurred_at
         )
@@ -598,10 +818,25 @@ def _write_matching_sheet(
         ws.cell(row=row_idx, column=10, value=matched.variant)
         row_idx += 1
 
+    last_data_row = row_idx - 1
+    _add_excel_table(
+        ws,
+        display_name=_matching_table_display_name(report.club_slug),
+        header_row=header_row,
+        last_row=last_data_row,
+        num_cols=_MATCHING_TABLE_COLS,
+    )
+    _add_matching_source_variant_dropdowns(
+        ws,
+        report,
+        first_row=header_row + 1,
+        last_row=last_data_row,
+    )
+
     if report.club_slug.strip().lower() == "clubgto":
         _write_vaughn_tally(
             ws,
-            report,
+            table_name=_matching_table_display_name(report.club_slug),
             section_row=header_row,
             start_col=_MATCHING_TALLY_START_COL,
         )

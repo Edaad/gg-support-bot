@@ -38,9 +38,11 @@ from api.schemas_audit import (
 )
 from api.trade_record_parser import (
     TradeRecordParseError,
+    TradeRecordParseResult,
     TradeRecordValidationError,
     parse_result_from_stored_upload,
     parse_trade_record_workbook,
+    validate_all_clubs_trade_uploads,
     validate_trade_upload_pair,
 )
 from api.trade_record_sync import sync_identities
@@ -77,6 +79,100 @@ def _parse_audit_date(raw: str) -> date:
         return date.fromisoformat(text)
     except ValueError as exc:
         raise HTTPException(400, f"Invalid audit_date: {raw!r}") from exc
+
+
+def _persist_parsed_trade_upload(
+    db: Session,
+    *,
+    parsed: TradeRecordParseResult,
+    filename: str,
+) -> TradeRecordUploadReport:
+    slug = parsed.club_slug
+    parsed_date = parsed.audit_date
+    club_id = resolve_club_id(db, slug)
+    club_name = CLUB_SLUG_TO_NAME[slug]
+    timezone_policy = audit_timezone_for_slug(slug)
+
+    existing = (
+        db.query(TradeRecordUpload)
+        .filter_by(club_slug=slug, audit_date=parsed_date)
+        .first()
+    )
+    replaced_previous = existing is not None
+    metadata_json = json.dumps(
+        {
+            "club_text": parsed.metadata.club_text,
+            "club_id_text": parsed.metadata.club_id_text,
+            "date_text": parsed.metadata.date_text,
+        }
+    )
+
+    if existing:
+        db.query(TradeRecordLine).filter_by(upload_id=existing.id).delete(
+            synchronize_session=False
+        )
+        existing.filename = filename
+        existing.metadata_json = metadata_json
+        existing.club_slug = slug
+        existing.audit_timezone_policy = timezone_policy.value
+        upload = existing
+        db.flush()
+    else:
+        upload = TradeRecordUpload(
+            club_id=club_id,
+            club_slug=slug,
+            audit_timezone_policy=timezone_policy.value,
+            audit_date=parsed_date,
+            filename=filename,
+            metadata_json=metadata_json,
+        )
+        db.add(upload)
+        db.flush()
+
+    for tx in parsed.transactions:
+        db.add(
+            TradeRecordLine(
+                upload_id=upload.id,
+                sheet_row=tx.sheet_row,
+                occurred_at=tx.occurred_at,
+                amount=tx.amount,
+                member_gg_player_id=tx.member_gg_player_id,
+                member_nickname=tx.member_nickname,
+                agent_gg_player_id=tx.agent_gg_player_id,
+                super_agent_gg_player_id=tx.super_agent_gg_player_id,
+                manager_nickname=tx.manager_nickname,
+            )
+        )
+
+    sync_report = sync_identities(
+        db,
+        club_id=club_id,
+        club_slug=slug,
+        identities=parsed.identities,
+    )
+    db.flush()
+    db.refresh(upload)
+
+    return TradeRecordUploadReport(
+        upload_id=upload.id,
+        club_slug=slug,
+        club_name=club_name,
+        audit_date=parsed_date,
+        audit_timezone_policy=timezone_policy.value,
+        audit_timezone_label=audit_timezone_label(timezone_policy),
+        filename=filename,
+        replaced_previous=replaced_previous,
+        transaction_rows_parsed=len(parsed.transactions),
+        identities_extracted=sync_report.identities_extracted,
+        postgres_inserted=sync_report.postgres_inserted,
+        postgres_updated=sync_report.postgres_updated,
+        gg_computer_upserted=sync_report.gg_computer_upserted,
+        gg_computer_modified=sync_report.gg_computer_modified,
+        gg_computer_skipped=sync_report.gg_computer_skipped,
+        gg_computer_error=sync_report.gg_computer_error,
+        skipped_rows=parsed.skipped_rows,
+        warnings=parsed.warnings,
+    )
 
 
 def _report_to_schema(report: AuditReconcileReport) -> AuditReconcileReportSchema:
@@ -200,12 +296,6 @@ async def upload_trade_record(
             f"File is for {actual_label!r}, expected {expected_label!r} for this upload slot.",
         )
 
-    slug = parsed.club_slug
-    parsed_date = parsed.audit_date
-    club_id = resolve_club_id(db, slug)
-    club_name = CLUB_SLUG_TO_NAME[slug]
-    timezone_policy = audit_timezone_for_slug(slug)
-
     if is_round_table_composite(reconcile_slug) or (
         is_all_clubs_reconcile(reconcile_slug)
         and expected_slug in ("round-table", "aces-table")
@@ -215,7 +305,7 @@ async def upload_trade_record(
         )
         other_upload = (
             db.query(TradeRecordUpload)
-            .filter_by(club_slug=other_slug, audit_date=parsed_date)
+            .filter_by(club_slug=other_slug, audit_date=parsed.audit_date)
             .first()
         )
         if other_upload is not None:
@@ -228,92 +318,80 @@ async def upload_trade_record(
             except TradeRecordValidationError as exc:
                 raise HTTPException(400, str(exc)) from exc
 
-    existing = (
-        db.query(TradeRecordUpload)
-        .filter_by(club_slug=slug, audit_date=parsed_date)
-        .first()
-    )
-    replaced_previous = existing is not None
-    metadata_json = json.dumps(
-        {
-            "club_text": parsed.metadata.club_text,
-            "club_id_text": parsed.metadata.club_id_text,
-            "date_text": parsed.metadata.date_text,
-        }
-    )
-
-    if existing:
-        db.query(TradeRecordLine).filter_by(upload_id=existing.id).delete(
-            synchronize_session=False
-        )
-        existing.filename = filename
-        existing.metadata_json = metadata_json
-        existing.club_slug = slug
-        existing.audit_timezone_policy = timezone_policy.value
-        upload = existing
-        db.flush()
-    else:
-        upload = TradeRecordUpload(
-            club_id=club_id,
-            club_slug=slug,
-            audit_timezone_policy=timezone_policy.value,
-            audit_date=parsed_date,
-            filename=filename,
-            metadata_json=metadata_json,
-        )
-        db.add(upload)
-        db.flush()
-
-    for tx in parsed.transactions:
-        db.add(
-            TradeRecordLine(
-                upload_id=upload.id,
-                sheet_row=tx.sheet_row,
-                occurred_at=tx.occurred_at,
-                amount=tx.amount,
-                member_gg_player_id=tx.member_gg_player_id,
-                member_nickname=tx.member_nickname,
-                agent_gg_player_id=tx.agent_gg_player_id,
-                super_agent_gg_player_id=tx.super_agent_gg_player_id,
-                manager_nickname=tx.manager_nickname,
-            )
-        )
-
-    sync_report = sync_identities(
-        db,
-        club_id=club_id,
-        club_slug=slug,
-        identities=parsed.identities,
-    )
-
     try:
+        report = _persist_parsed_trade_upload(db, parsed=parsed, filename=filename)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(409, "Upload conflict for this club and date") from exc
 
-    db.refresh(upload)
+    return report
 
-    return TradeRecordUploadReport(
-        upload_id=upload.id,
-        club_slug=slug,
-        club_name=club_name,
-        audit_date=parsed_date,
-        audit_timezone_policy=timezone_policy.value,
-        audit_timezone_label=audit_timezone_label(timezone_policy),
-        filename=filename,
-        replaced_previous=replaced_previous,
-        transaction_rows_parsed=len(parsed.transactions),
-        identities_extracted=sync_report.identities_extracted,
-        postgres_inserted=sync_report.postgres_inserted,
-        postgres_updated=sync_report.postgres_updated,
-        gg_computer_upserted=sync_report.gg_computer_upserted,
-        gg_computer_modified=sync_report.gg_computer_modified,
-        gg_computer_skipped=sync_report.gg_computer_skipped,
-        gg_computer_error=sync_report.gg_computer_error,
-        skipped_rows=parsed.skipped_rows,
-        warnings=parsed.warnings,
-    )
+
+@router.post(
+    "/trade-records/upload-all",
+    response_model=list[TradeRecordUploadReport],
+)
+async def upload_all_trade_records(
+    files: list[UploadFile] = File(
+        ...,
+        description="Exactly four Trade Record .xlsx files (RT, AT, GTO, CC)",
+    ),
+    db: Session = Depends(get_db_dependency),
+):
+    """Parse four files, validate clubs + same audit day, then persist all."""
+    if len(files) != 4:
+        raise HTTPException(
+            400,
+            f"Expected exactly 4 trade record files, got {len(files)}.",
+        )
+
+    parsed_with_names: list[tuple[str, TradeRecordParseResult]] = []
+    for file in files:
+        filename = (file.filename or "upload.xlsx").strip()
+        if not filename.lower().endswith(".xlsx"):
+            raise HTTPException(400, f"{filename!r} must be an .xlsx workbook")
+        raw = await file.read()
+        if len(raw) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(400, f"{filename!r} exceeds 20MB limit")
+        if not raw:
+            raise HTTPException(400, f"{filename!r} is empty")
+        try:
+            parsed = parse_trade_record_workbook(raw)
+        except TradeRecordValidationError as exc:
+            raise HTTPException(400, f"{filename}: {exc}") from exc
+        except TradeRecordParseError as exc:
+            raise HTTPException(400, f"{filename}: {exc}") from exc
+        parsed_with_names.append((filename, parsed))
+
+    try:
+        by_slug = validate_all_clubs_trade_uploads(
+            [p for _, p in parsed_with_names]
+        )
+    except TradeRecordValidationError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    # Preserve filename associated with each slug
+    filename_by_slug: dict[str, str] = {}
+    for filename, parsed in parsed_with_names:
+        filename_by_slug[parsed.club_slug] = filename
+
+    reports: list[TradeRecordUploadReport] = []
+    try:
+        for slug in ALL_CLUBS_TRADE_SLUGS:
+            reports.append(
+                _persist_parsed_trade_upload(
+                    db,
+                    parsed=by_slug[slug],
+                    filename=filename_by_slug[slug],
+                )
+            )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Upload conflict for this club and date") from exc
+
+    return reports
 
 
 @router.get("/trade-records", response_model=list[TradeRecordUploadSummary])

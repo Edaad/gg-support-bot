@@ -3,6 +3,7 @@ import {
   downloadAuditExport,
   runReconcilePipeline,
   syncEarlyRakeback,
+  uploadAllTradeRecords,
   uploadTradeRecord,
   type AuditPipelineResult,
   type AuditPipelineStep,
@@ -136,6 +137,100 @@ function UploadSlot({
   )
 }
 
+type AllClubsUploadProps = {
+  uploads: TradeRecordUploadReport[]
+  error: string | undefined
+  disabled: boolean
+  onUpload: (files: File[]) => void
+}
+
+function AllClubsUploadZone({ uploads, error, disabled, onUpload }: AllClubsUploadProps) {
+  const inputId = useId()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [dragOver, setDragOver] = useState(false)
+
+  const takeFiles = (list: FileList | null | undefined) => {
+    if (!list || disabled) return
+    const files = Array.from(list).filter((f) => f.name.toLowerCase().endsWith('.xlsx'))
+    onUpload(files)
+  }
+
+  return (
+    <div>
+      <input
+        ref={inputRef}
+        id={inputId}
+        type="file"
+        accept={XLSX_ACCEPT}
+        multiple
+        disabled={disabled}
+        className="sr-only"
+        onChange={(e) => {
+          takeFiles(e.target.files)
+          e.target.value = ''
+        }}
+      />
+
+      {error ? (
+        <p role="alert" className="alert-danger mb-2 text-sm">
+          {error}
+        </p>
+      ) : null}
+
+      <div
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled}
+        aria-labelledby={inputId}
+        onDragOver={(e) => {
+          e.preventDefault()
+          if (!disabled) setDragOver(true)
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragOver(false)
+          if (!disabled) takeFiles(e.dataTransfer.files)
+        }}
+        onKeyDown={(e) => {
+          if (disabled) return
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            inputRef.current?.click()
+          }
+        }}
+        className={[
+          'flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-6 text-center transition',
+          disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-accent/50 hover:bg-control/30',
+          dragOver ? 'border-accent bg-accent/5' : 'border-border bg-surface-raised/50',
+        ].join(' ')}
+        onClick={() => {
+          if (!disabled) inputRef.current?.click()
+        }}
+      >
+        <p className="text-sm font-medium text-ink">
+          Upload all 4 trade records
+        </p>
+        <p className="mt-1 text-xs text-ink-muted">
+          {disabled
+            ? 'Pipeline running…'
+            : 'Drop or choose exactly four .xlsx files (Round Table, Aces Table, ClubGTO, Creator Club). Same audit day required.'}
+        </p>
+        {uploads.length > 0 ? (
+          <ul className="mt-3 space-y-1 text-left text-xs text-success-ink">
+            {uploads.map((u) => (
+              <li key={u.club_slug}>
+                {displayLabelForSlug(u.club_slug)} — {u.filename} · {u.audit_date} ·{' '}
+                {u.transaction_rows_parsed} rows
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export default function Audit({ token }: { token: string }) {
   const reconcileClubId = useId()
   const exportDateId = useId()
@@ -191,6 +286,37 @@ export default function Audit({ token }: { token: string }) {
     [token, reconcileClubSlug],
   )
 
+  const onAllClubsUpload = useCallback(
+    async (files: File[]) => {
+      if (files.length !== 4) {
+        setSlotErrors({
+          all: `Select exactly 4 .xlsx files (got ${files.length}).`,
+        })
+        return
+      }
+
+      setSlotErrors({})
+      setPipelineStep('uploading')
+
+      try {
+        const reports = await uploadAllTradeRecords(token, files)
+        const nextUploads: Record<string, TradeRecordUploadReport> = {}
+        for (const report of reports) {
+          nextUploads[report.club_slug] = report
+        }
+        setSlotUploads(nextUploads)
+        const ordered = tradeSlugsForReconcile('all-clubs').map((slug) => nextUploads[slug]!)
+        await runPipelineForUploads(ordered)
+      } catch (e: unknown) {
+        setSlotErrors({
+          all: e instanceof Error ? e.message : 'Upload failed.',
+        })
+        setPipelineStep('failed')
+      }
+    },
+    [token, runPipelineForUploads],
+  )
+
   const onSlotUpload = useCallback(
     async (tradeSlug: string, file: File) => {
       if (!file.name.toLowerCase().endsWith('.xlsx')) {
@@ -223,24 +349,6 @@ export default function Audit({ token }: { token: string }) {
           const at = tradeSlug === 'aces-table' ? report : nextUploads['aces-table']
           if (rt && at && rt.audit_date === at.audit_date) {
             await runPipelineForUploads([rt, at])
-          } else {
-            setPipelineStep(null)
-          }
-        } else if (reconcileClubSlug === 'all-clubs') {
-          const required = tradeSlugsForReconcile('all-clubs')
-          const ready = required.every((slug) => nextUploads[slug])
-          if (ready) {
-            const dates = required.map((slug) => nextUploads[slug]!.audit_date)
-            if (dates.every((d) => d === dates[0])) {
-              await runPipelineForUploads(required.map((slug) => nextUploads[slug]!))
-            } else {
-              setSlotErrors((prev) => ({
-                ...prev,
-                _pipeline:
-                  'All clubs uploads must share the same audit date from the trade sheets.',
-              }))
-              setPipelineStep('failed')
-            }
           } else {
             setPipelineStep(null)
           }
@@ -312,8 +420,8 @@ export default function Audit({ token }: { token: string }) {
       <h1 className="mb-2 text-2xl font-bold">Audit</h1>
       <p className="mb-6 max-w-2xl text-sm text-ink-muted">
         Choose a club, then upload trade record (.xlsx) files from the Trade Record sheet.
-        Date and timezone are read from each file. Week process/sync, early rakeback sync, and
-        net reconcile run automatically when all required uploads are present.
+        For All clubs, drop all four files at once — clubs and audit day are checked before
+        reconcile runs. Date and timezone are read from each file.
       </p>
 
       <section className="panel mb-6">
@@ -342,25 +450,34 @@ export default function Audit({ token }: { token: string }) {
           </p>
         ) : null}
 
-        <div
-          className={
-            reconcileClubSlug === 'round-table' || reconcileClubSlug === 'all-clubs'
-              ? 'grid gap-4 sm:grid-cols-2'
-              : 'space-y-4'
-          }
-        >
-          {tradeSlugs.map((tradeSlug) => (
-            <UploadSlot
-              key={tradeSlug}
-              tradeSlug={tradeSlug}
-              reconcileClubSlug={reconcileClubSlug}
-              upload={slotUploads[tradeSlug]}
-              error={slotErrors[tradeSlug]}
-              disabled={running}
-              onUpload={(slug, file) => void onSlotUpload(slug, file)}
-            />
-          ))}
-        </div>
+        {reconcileClubSlug === 'all-clubs' ? (
+          <AllClubsUploadZone
+            uploads={tradeSlugs
+              .map((slug) => slotUploads[slug])
+              .filter((u): u is TradeRecordUploadReport => Boolean(u))}
+            error={slotErrors.all}
+            disabled={running}
+            onUpload={(files) => void onAllClubsUpload(files)}
+          />
+        ) : (
+          <div
+            className={
+              reconcileClubSlug === 'round-table' ? 'grid gap-4 sm:grid-cols-2' : 'space-y-4'
+            }
+          >
+            {tradeSlugs.map((tradeSlug) => (
+              <UploadSlot
+                key={tradeSlug}
+                tradeSlug={tradeSlug}
+                reconcileClubSlug={reconcileClubSlug}
+                upload={slotUploads[tradeSlug]}
+                error={slotErrors[tradeSlug]}
+                disabled={running}
+                onUpload={(slug, file) => void onSlotUpload(slug, file)}
+              />
+            ))}
+          </div>
+        )}
 
         {reconcileClubSlug === 'round-table' &&
         Object.keys(slotUploads).length === 1 &&
@@ -368,16 +485,6 @@ export default function Audit({ token }: { token: string }) {
           <p className="mt-3 text-sm text-ink-muted">
             Upload the second trade record to run reconcile for Round Table (RT + Aces Table
             combined).
-          </p>
-        ) : null}
-
-        {reconcileClubSlug === 'all-clubs' &&
-        Object.keys(slotUploads).length > 0 &&
-        Object.keys(slotUploads).length < tradeSlugs.length &&
-        !running ? (
-          <p className="mt-3 text-sm text-ink-muted">
-            Upload all four trade records (Round Table, Aces Table, ClubGTO, Creator Club) to
-            run All clubs reconcile and download the Matching workbook.
           </p>
         ) : null}
 

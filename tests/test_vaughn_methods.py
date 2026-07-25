@@ -96,12 +96,19 @@ class IsVaughnMethodTestCase(unittest.TestCase):
             )
         )
 
-    def test_stripe_never(self):
-        self.assertFalse(
+    def test_stripe_clubgto_only(self):
+        self.assertTrue(
             is_vaughn_method(
                 source="deposit_stripe",
                 variant=None,
                 club_slug="clubgto",
+            )
+        )
+        self.assertFalse(
+            is_vaughn_method(
+                source="deposit_stripe",
+                variant=None,
+                club_slug="round-table",
             )
         )
 
@@ -115,6 +122,8 @@ class TallyVaughnMethodsTestCase(unittest.TestCase):
             _line(source="deposit_crypto", variant="USDT", amount="-10"),
             _line(source="deposit_zelle", variant="other", amount="-99"),
             _line(source="deposit_crypto", variant="SOL", amount="-5"),
+            _line(source="deposit_stripe", variant=None, amount="-30"),
+            _line(source="deposit_stripe", variant=None, amount="-20"),
         ]
         tallies = tally_vaughn_methods(lines, club_slug="clubgto")
         self.assertEqual(
@@ -123,6 +132,7 @@ class TallyVaughnMethodsTestCase(unittest.TestCase):
                 ("Zelle", "2133729202", 2, Decimal("75")),
                 ("Venmo", "@janseashells", 1, Decimal("40")),
                 ("Crypto", "(all ClubGTO)", 2, Decimal("15")),
+                ("Stripe", "(all ClubGTO)", 2, Decimal("50")),
             ],
         )
 

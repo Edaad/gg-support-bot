@@ -229,6 +229,35 @@ export async function uploadTradeRecord(
   return res.json() as Promise<TradeRecordUploadReport>
 }
 
+export async function uploadAllTradeRecords(
+  token: string,
+  files: File[],
+): Promise<TradeRecordUploadReport[]> {
+  if (files.length !== 4) {
+    throw new Error(`Expected exactly 4 trade record files, got ${files.length}.`)
+  }
+  const form = new FormData()
+  for (const file of files) {
+    form.append('files', file)
+  }
+
+  const res = await fetch(apiUrl('/api/audit/trade-records/upload-all'), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  })
+
+  if (res.status === 401) {
+    localStorage.removeItem('token')
+    window.location.href = '/'
+    throw new Error('Unauthorized')
+  }
+  if (!res.ok) {
+    throw new Error(await parseError(res))
+  }
+  return res.json() as Promise<TradeRecordUploadReport[]>
+}
+
 export async function listTradeRecordUploads(
   token: string,
   params?: { clubSlug?: string; auditDate?: string },

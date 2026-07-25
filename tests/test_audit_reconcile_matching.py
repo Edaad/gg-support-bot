@@ -169,6 +169,30 @@ class MatchTradeLinesTestCase(unittest.TestCase):
         )
         self.assertFalse(rows_rt[0].vaughn_method)
 
+    def test_vaughn_stripe_clubgto(self):
+        trade = _trade(occurred=self.t0, amount="-40")
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-40",
+            source="deposit_stripe",
+            source_label="Stripe",
+            external_id="deposit_stripe:1",
+            display_name="Card",
+            variant=None,
+        )
+        rows = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="clubgto",
+        )
+        self.assertTrue(rows[0].vaughn_method)
+        rows_rt = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="round-table",
+        )
+        self.assertFalse(rows_rt[0].vaughn_method)
+
     def test_sign_mismatch_rejected(self):
         trade = _trade(occurred=self.t0, amount="-100")
         ledger = _ledger(

@@ -26,10 +26,10 @@ ALL_GG_COMPUTER_CLUB_SLUGS: tuple[str, ...] = (
 
 # Audit reconcile picker (dashboard Audit page)
 RECONCILE_CLUB_OPTIONS: tuple[str, ...] = (
+    "all-clubs",
     "round-table",
     "clubgto",
     "creator-club",
-    "all-clubs",
 )
 
 ALL_CLUBS_RECONCILE_UNITS: tuple[str, ...] = (

@@ -11,6 +11,7 @@ from api.trade_record_parser import (
     extract_audit_date_from_metadata,
     parse_trade_record_workbook,
     resolve_club_slug_from_metadata,
+    validate_all_clubs_trade_uploads,
     validate_trade_upload_pair,
 )
 from tests.fixtures.trade_record_xlsx import build_sample_trade_record_xlsx
@@ -137,6 +138,51 @@ class TradeRecordParserTestCase(unittest.TestCase):
         at = parse_trade_record_workbook(at_raw)
         with self.assertRaises(TradeRecordValidationError):
             validate_trade_upload_pair(rt, at)
+
+    def _four_club_parses(self, *, gto_date: date | None = None):
+        day = date(2026, 6, 21)
+        specs = [
+            ("Round Table", "UTC-4:00", day),
+            ("Aces Table", "UTC-5:00", day),
+            ("ClubGTO", "UTC-5:00", gto_date or day),
+            ("Creator Club", "UTC-4:00", day),
+        ]
+        return [
+            parse_trade_record_workbook(
+                build_sample_trade_record_xlsx(
+                    club_label=label,
+                    audit_date=d,
+                    period_tz=tz,
+                )
+            )
+            for label, tz, d in specs
+        ]
+
+    def test_validate_all_clubs_accepts_four_same_day(self):
+        by_slug = validate_all_clubs_trade_uploads(self._four_club_parses())
+        self.assertEqual(
+            set(by_slug),
+            {"round-table", "aces-table", "clubgto", "creator-club"},
+        )
+
+    def test_validate_all_clubs_rejects_wrong_count(self):
+        three = self._four_club_parses()[:3]
+        with self.assertRaises(TradeRecordValidationError) as ctx:
+            validate_all_clubs_trade_uploads(three)
+        self.assertIn("Expected exactly 4", str(ctx.exception))
+
+    def test_validate_all_clubs_rejects_duplicate_club(self):
+        parses = self._four_club_parses()
+        parses[2] = parses[0]  # duplicate Round Table
+        with self.assertRaises(TradeRecordValidationError) as ctx:
+            validate_all_clubs_trade_uploads(parses)
+        self.assertIn("Duplicate", str(ctx.exception))
+
+    def test_validate_all_clubs_rejects_mismatched_dates(self):
+        parses = self._four_club_parses(gto_date=date(2026, 6, 22))
+        with self.assertRaises(TradeRecordValidationError) as ctx:
+            validate_all_clubs_trade_uploads(parses)
+        self.assertIn("same audit day", str(ctx.exception))
 
 
 if __name__ == "__main__":
