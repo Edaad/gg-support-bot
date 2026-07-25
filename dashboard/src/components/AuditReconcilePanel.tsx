@@ -1,13 +1,14 @@
 import { useId, useMemo, useState } from 'react'
 import {
   downloadReconcileExport,
+  downloadReconcileExportAll,
   type AuditReconcilePlayerResult,
   type AuditReconcileReport,
   type EarlyRakebackSyncReport,
   type LedgerLine,
   type TradeRecordUploadReport,
 } from '../api/auditClient'
-import { ROUND_TABLE_TRADE_SLUGS } from '../config/clubMap'
+import { ROUND_TABLE_TRADE_SLUGS, displayLabelForSlug } from '../config/clubMap'
 import KpiStat from './KpiStat'
 
 const MATCH_TOLERANCE_USD = 2
@@ -53,6 +54,7 @@ type Props = {
   earlyRbError: string | null
   reconcile: AuditReconcileReport | null
   reconcileError: string | null
+  allClubReports?: AuditReconcileReport[] | null
 }
 
 function fmtMoney(value: string | number): string {
@@ -118,6 +120,7 @@ export default function AuditReconcilePanel({
   earlyRbError,
   reconcile,
   reconcileError,
+  allClubReports = null,
 }: Props) {
   const searchId = useId()
   const unmatchedTradePanelId = useId()
@@ -194,23 +197,122 @@ export default function AuditReconcilePanel({
   ]
 
   const earlyRbClubs =
-    reconcileClubSlug === 'round-table'
-      ? (earlyRb?.clubs.filter((c) =>
-          (ROUND_TABLE_TRADE_SLUGS as readonly string[]).includes(c.club_slug),
-        ) ?? [])
-      : earlyRb?.clubs.filter((c) => c.club_slug === reconcileClubSlug) ?? []
+    reconcileClubSlug === 'all-clubs'
+      ? (earlyRb?.clubs ?? [])
+      : reconcileClubSlug === 'round-table'
+        ? (earlyRb?.clubs.filter((c) =>
+            (ROUND_TABLE_TRADE_SLUGS as readonly string[]).includes(c.club_slug),
+          ) ?? [])
+        : earlyRb?.clubs.filter((c) => c.club_slug === reconcileClubSlug) ?? []
 
   const onExportReconcile = async () => {
-    if (!reconcile) return
     setExportingReconcile(true)
     setReconcileExportErr('')
     try {
-      await downloadReconcileExport(token, reconcile.audit_date, reconcile.club_slug)
+      if (reconcileClubSlug === 'all-clubs') {
+        const auditDate =
+          reconcile?.audit_date ??
+          allClubReports?.[0]?.audit_date ??
+          uploads[0]?.audit_date
+        if (!auditDate) throw new Error('No audit date for export.')
+        await downloadReconcileExportAll(token, auditDate)
+      } else {
+        if (!reconcile) return
+        await downloadReconcileExport(token, reconcile.audit_date, reconcile.club_slug)
+      }
     } catch (e: unknown) {
       setReconcileExportErr(e instanceof Error ? e.message : 'Reconcile export failed.')
     } finally {
       setExportingReconcile(false)
     }
+  }
+
+  if (reconcileClubSlug === 'all-clubs') {
+    const reports = allClubReports ?? []
+    const auditDate =
+      reports[0]?.audit_date ?? reconcile?.audit_date ?? uploads[0]?.audit_date ?? '—'
+    return (
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold text-ink">All clubs reconcile</h2>
+
+        {reconcileError ? (
+          <p role="alert" className="alert-danger">
+            {reconcileError}
+          </p>
+        ) : null}
+
+        {weekSyncError ? (
+          <p role="status" className="alert-warning">
+            Week sync: {weekSyncError}
+          </p>
+        ) : null}
+
+        {earlyRbError ? (
+          <p role="status" className="alert-warning">
+            Early RB: {earlyRbError}
+          </p>
+        ) : null}
+
+        {reconcileExportErr ? (
+          <p role="alert" className="alert-danger">
+            {reconcileExportErr}
+          </p>
+        ) : null}
+
+        <p className="text-sm text-ink-muted">
+          Matching-only workbook for {auditDate}. Run auto-downloads when all four trade sheets
+          are present; Export re-downloads the same file.
+        </p>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={exportingReconcile || reports.length === 0}
+            onClick={() => void onExportReconcile()}
+            className="btn-primary-sm disabled:opacity-40"
+          >
+            {exportingReconcile ? 'Exporting…' : 'Export Matching XLSX'}
+          </button>
+        </div>
+
+        {reports.length > 0 ? (
+          <div className="table-scroll">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-ink-muted">
+                  <th scope="col" className="px-2 py-1 font-medium">
+                    Club
+                  </th>
+                  <th scope="col" className="px-2 py-1 font-medium">
+                    Status
+                  </th>
+                  <th scope="col" className="px-2 py-1 font-medium text-right">
+                    Matched
+                  </th>
+                  <th scope="col" className="px-2 py-1 font-medium text-right">
+                    Failed
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {reports.map((r) => (
+                  <tr key={r.club_slug} className="table-row-hover">
+                    <td className="px-2 py-1">
+                      {r.club_name || displayLabelForSlug(r.club_slug)}
+                    </td>
+                    <td className="px-2 py-1">
+                      <span className={statusChipClass(r.status)}>{r.status}</span>
+                    </td>
+                    <td className="table-num px-2 py-1">{r.players_matched}</td>
+                    <td className="table-num px-2 py-1">{r.players_failed}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </div>
+    )
   }
 
   return (

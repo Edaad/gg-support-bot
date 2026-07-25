@@ -226,6 +226,24 @@ export default function Audit({ token }: { token: string }) {
           } else {
             setPipelineStep(null)
           }
+        } else if (reconcileClubSlug === 'all-clubs') {
+          const required = tradeSlugsForReconcile('all-clubs')
+          const ready = required.every((slug) => nextUploads[slug])
+          if (ready) {
+            const dates = required.map((slug) => nextUploads[slug]!.audit_date)
+            if (dates.every((d) => d === dates[0])) {
+              await runPipelineForUploads(required.map((slug) => nextUploads[slug]!))
+            } else {
+              setSlotErrors((prev) => ({
+                ...prev,
+                _pipeline:
+                  'All clubs uploads must share the same audit date from the trade sheets.',
+              }))
+              setPipelineStep('failed')
+            }
+          } else {
+            setPipelineStep(null)
+          }
         } else {
           await runPipelineForUploads([report])
         }
@@ -326,7 +344,7 @@ export default function Audit({ token }: { token: string }) {
 
         <div
           className={
-            reconcileClubSlug === 'round-table'
+            reconcileClubSlug === 'round-table' || reconcileClubSlug === 'all-clubs'
               ? 'grid gap-4 sm:grid-cols-2'
               : 'space-y-4'
           }
@@ -350,6 +368,16 @@ export default function Audit({ token }: { token: string }) {
           <p className="mt-3 text-sm text-ink-muted">
             Upload the second trade record to run reconcile for Round Table (RT + Aces Table
             combined).
+          </p>
+        ) : null}
+
+        {reconcileClubSlug === 'all-clubs' &&
+        Object.keys(slotUploads).length > 0 &&
+        Object.keys(slotUploads).length < tradeSlugs.length &&
+        !running ? (
+          <p className="mt-3 text-sm text-ink-muted">
+            Upload all four trade records (Round Table, Aces Table, ClubGTO, Creator Club) to
+            run All clubs reconcile and download the Matching workbook.
           </p>
         ) : null}
 
@@ -437,6 +465,7 @@ export default function Audit({ token }: { token: string }) {
             earlyRbError={pipelineResult.earlyRbError}
             reconcile={pipelineResult.reconcile}
             reconcileError={pipelineResult.reconcileError}
+            allClubReports={pipelineResult.allClubReports}
           />
         </section>
       ) : null}

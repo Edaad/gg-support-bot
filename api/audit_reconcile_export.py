@@ -68,30 +68,16 @@ DEPOSIT_HEADERS = [
 ]
 
 MATCHING_HEADERS = [
-    "Time",
+    "Trade Time",
+    "Manager",
     "Amount",
     "Player ID",
     "Nickname",
     "Name",
     "Source",
-    "Time",
+    "Match Time",
     "$",
     "Variant",
-    "Vaughn method",
-]
-
-MATCHING_TRADE_HEADERS = [
-    "Time",
-    "Amount",
-    "Player ID",
-    "Nickname",
-]
-
-MATCHING_SUB_HEADERS = [
-    "Name",
-    "Source",
-    "Time",
-    "$",
 ]
 
 VAUGHN_TALLY_HEADERS = [
@@ -100,6 +86,9 @@ VAUGHN_TALLY_HEADERS = [
     "Count",
     "Total",
 ]
+
+# Excel Time number format (underlying value is full datetime).
+_EXCEL_TIME_FORMAT = "h:mm:ss AM/PM"
 
 # (what it shows, how it works, column glossary)
 SHEET_INTROS: dict[str, tuple[str, str, str]] = {
@@ -151,22 +140,6 @@ SHEET_INTROS: dict[str, tuple[str, str, str]] = {
         "Group / detail — group title or note; Time — club-local; "
         "Reference — external payment id in our DB.",
     ),
-    "Matching": (
-        "One row per ClubGG trade-record line with a best-effort suggestion "
-        "from our internal ledger (same deposit/RB/bonus/cashout events as "
-        "Net Ledger).",
-        "Same player preferred, whole-dollar rounding, ±15 minutes, sign-aware; "
-        "each ledger event used once. Variant holds account tags "
-        "(Zelle recipient, Venmo/Cash App handle, PayPal email, crypto token) "
-        "or bonus type when matched. Vaughn method is TRUE for ClubGTO crypto "
-        "plus Zelle 2133729202 (Starship V LLC) and Venmo @janseashells. "
-        "Right side tallies those Vaughn deposit ledger lines by method.",
-        "Columns: Time / Amount / Player ID / Nickname — ClubGG trade line; "
-        "Best effort match — Name (payer/nick/id), Source, Time, $; "
-        "Variant — payment account tag or bonus type, blank when none; "
-        "Vaughn method — TRUE/FALSE for Vaughn-owned accounts. "
-        "Right: Vaughn methods — Method / Tag / Count / Total (abs USD).",
-    ),
 }
 
 OVERVIEW_CURRENCY_COLS = (3, 4)
@@ -177,11 +150,16 @@ OVERVIEW_WIDTHS = [22, 16, 18, 18, 3, 22, 16, 18, 18]
 DETAIL_WIDTHS = [22, 16, 14, 14, 14, 22, 14, 18, 18, 16]
 NET_LEDGER_WIDTHS = [16, 22, 18, 14, 18, 40]
 DEPOSIT_WIDTHS = [16, 22, 14, 40, 18, 28]
-MATCHING_WIDTHS = [18, 12, 16, 22, 22, 14, 18, 10, 22, 14, 3, 12, 18, 10, 14]
+MATCHING_WIDTHS = [14, 18, 12, 16, 22, 22, 14, 14, 10, 22, 3, 12, 18, 10, 14]
 
 # Matching sheet: left table cols 1–10; spacer 11; Vaughn tally starts at 12.
-_MATCHING_VAUGHN_COL = 10
 _MATCHING_TALLY_START_COL = 12
+
+ALL_CLUBS_MATCHING_SHEET_ORDER: tuple[tuple[str, str], ...] = (
+    ("round-table", "Round Table"),
+    ("clubgto", "ClubGTO"),
+    ("creator-club", "Creator Club"),
+)
 
 
 def _decimal_cell(value: Decimal) -> float:
@@ -280,13 +258,39 @@ def _set_column_widths(ws: Worksheet, widths: list[int]) -> None:
 def _format_time(club_slug: str, occurred_at: datetime | None) -> str:
     if occurred_at is None:
         return ""
+    local = _local_datetime(club_slug, occurred_at)
+    if local is None:
+        return ""
+    return local.strftime("%Y-%m-%d %H:%M")
+
+
+def _local_datetime(club_slug: str, occurred_at: datetime | None) -> datetime | None:
+    """Club-local naive datetime suitable for Excel cells."""
+    if occurred_at is None:
+        return None
     dt = occurred_at
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     else:
         dt = dt.astimezone(timezone.utc)
     local = dt.astimezone(zone_for_slug(club_slug))
-    return local.strftime("%Y-%m-%d %H:%M")
+    return local.replace(tzinfo=None)
+
+
+def _write_excel_time_cell(
+    ws: Worksheet,
+    row: int,
+    col: int,
+    club_slug: str,
+    occurred_at: datetime | None,
+) -> None:
+    cell = ws.cell(row=row, column=col)
+    local = _local_datetime(club_slug, occurred_at)
+    if local is None:
+        cell.value = None
+        return
+    cell.value = local
+    cell.number_format = _EXCEL_TIME_FORMAT
 
 
 def _reference_text(line: LedgerLine) -> str:
@@ -556,90 +560,51 @@ def _write_vaughn_tally(
 def _write_matching_sheet(
     ws: Worksheet,
     report: AuditReconcileReport,
+    *,
+    sheet_title: str | None = None,
 ) -> None:
-    start = _write_sheet_intro(ws, "Matching", merge_cols=10)
-    group_row = start
-    sub_row = start + 1
+    if sheet_title:
+        ws.title = sheet_title
 
-    # Trade columns + Variant + Vaughn: vertically merge across the two header rows.
-    for col, header in enumerate(MATCHING_TRADE_HEADERS, start=1):
-        cell = ws.cell(row=group_row, column=col, value=header)
-        cell.fill = _HEADER_FILL
-        cell.font = _HEADER_FONT
-        cell.alignment = Alignment(horizontal="left", vertical="center")
-        ws.merge_cells(
-            start_row=group_row,
-            start_column=col,
-            end_row=sub_row,
-            end_column=col,
-        )
-
-    group_cell = ws.cell(row=group_row, column=5, value="Best effort match")
-    group_cell.fill = _HEADER_FILL
-    group_cell.font = _HEADER_FONT
-    group_cell.alignment = Alignment(horizontal="center", vertical="center")
-    ws.merge_cells(start_row=group_row, start_column=5, end_row=group_row, end_column=8)
-
-    for offset, header in enumerate(MATCHING_SUB_HEADERS):
-        cell = ws.cell(row=sub_row, column=5 + offset, value=header)
-        cell.fill = _HEADER_FILL
-        cell.font = _HEADER_FONT
-        cell.alignment = Alignment(horizontal="left", vertical="center")
-
-    for col, header in (
-        (9, "Variant"),
-        (_MATCHING_VAUGHN_COL, "Vaughn method"),
-    ):
-        cell = ws.cell(row=group_row, column=col, value=header)
-        cell.fill = _HEADER_FILL
-        cell.font = _HEADER_FONT
-        cell.alignment = Alignment(horizontal="left", vertical="center")
-        ws.merge_cells(
-            start_row=group_row,
-            start_column=col,
-            end_row=sub_row,
-            end_column=col,
-        )
+    header_row = 1
+    _style_header_row(ws, header_row, MATCHING_HEADERS)
 
     matched_rows = match_trade_lines_to_ledger(
         report.trade_lines,
         report.ledger_lines,
         club_slug=report.club_slug,
     )
-    row_idx = sub_row + 1
+    row_idx = header_row + 1
     for matched in matched_rows:
         trade = matched.trade
-        ws.cell(
-            row=row_idx,
-            column=1,
-            value=_format_time(report.club_slug, trade.occurred_at),
+        _write_excel_time_cell(
+            ws, row_idx, 1, report.club_slug, trade.occurred_at
         )
+        ws.cell(row=row_idx, column=2, value=trade.manager_nickname or "")
         cell = ws.cell(
             row=row_idx,
-            column=2,
+            column=3,
             value=_decimal_cell(trade.amount),
         )
         cell.number_format = _CURRENCY_FORMAT
-        ws.cell(row=row_idx, column=3, value=trade.member_gg_player_id or "")
-        ws.cell(row=row_idx, column=4, value=trade.member_nickname or "")
-        ws.cell(row=row_idx, column=5, value=matched.match_name)
-        ws.cell(row=row_idx, column=6, value=matched.match_source)
-        ws.cell(row=row_idx, column=7, value=matched.match_time)
-        ws.cell(row=row_idx, column=8, value=matched.match_amount)
-        ws.cell(row=row_idx, column=9, value=matched.variant)
-        ws.cell(
-            row=row_idx,
-            column=_MATCHING_VAUGHN_COL,
-            value="TRUE" if matched.vaughn_method else "FALSE",
+        ws.cell(row=row_idx, column=4, value=trade.member_gg_player_id or "")
+        ws.cell(row=row_idx, column=5, value=trade.member_nickname or "")
+        ws.cell(row=row_idx, column=6, value=matched.match_name)
+        ws.cell(row=row_idx, column=7, value=matched.match_source)
+        _write_excel_time_cell(
+            ws, row_idx, 8, report.club_slug, matched.match_occurred_at
         )
+        ws.cell(row=row_idx, column=9, value=matched.match_amount)
+        ws.cell(row=row_idx, column=10, value=matched.variant)
         row_idx += 1
 
-    _write_vaughn_tally(
-        ws,
-        report,
-        section_row=group_row,
-        start_col=_MATCHING_TALLY_START_COL,
-    )
+    if report.club_slug.strip().lower() == "clubgto":
+        _write_vaughn_tally(
+            ws,
+            report,
+            section_row=header_row,
+            start_col=_MATCHING_TALLY_START_COL,
+        )
 
 
 def build_reconcile_workbook_from_report(report: AuditReconcileReport) -> bytes:
@@ -664,6 +629,27 @@ def build_reconcile_workbook_from_report(report: AuditReconcileReport) -> bytes:
     _set_column_widths(net_ledger, NET_LEDGER_WIDTHS)
     _set_column_widths(deposits, DEPOSIT_WIDTHS)
     _set_column_widths(matching, MATCHING_WIDTHS)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def build_all_clubs_matching_workbook(
+    reports_by_slug: dict[str, AuditReconcileReport],
+) -> bytes:
+    """Matching-only workbook: Round Table, ClubGTO, Creator Club tabs."""
+    wb = Workbook()
+    first = True
+    for slug, title in ALL_CLUBS_MATCHING_SHEET_ORDER:
+        report = reports_by_slug[slug]
+        if first:
+            ws = wb.active
+            first = False
+        else:
+            ws = wb.create_sheet()
+        _write_matching_sheet(ws, report, sheet_title=title)
+        _set_column_widths(ws, MATCHING_WIDTHS)
 
     buf = io.BytesIO()
     wb.save(buf)

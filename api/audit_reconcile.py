@@ -77,6 +77,7 @@ class TradeLineForMatch:
     member_gg_player_id: str | None
     member_nickname: str | None
     sheet_row: int
+    manager_nickname: str | None = None
 
 
 @dataclass
@@ -140,6 +141,7 @@ def load_trade_lines_for_match(
                 member_gg_player_id=(line.member_gg_player_id or "").strip() or None,
                 member_nickname=line.member_nickname,
                 sheet_row=int(line.sheet_row),
+                manager_nickname=(line.manager_nickname or "").strip() or None,
             )
         )
 
@@ -546,6 +548,7 @@ def _report_to_json(report: AuditReconcileReport) -> str:
                 "member_gg_player_id": t.member_gg_player_id,
                 "member_nickname": t.member_nickname,
                 "sheet_row": t.sheet_row,
+                "manager_nickname": t.manager_nickname,
             }
             for t in report.trade_lines
         ],
@@ -602,6 +605,7 @@ def _trade_line_from_dict(raw: dict[str, Any]) -> TradeLineForMatch:
         member_gg_player_id=raw.get("member_gg_player_id") or None,
         member_nickname=raw.get("member_nickname"),
         sheet_row=int(raw["sheet_row"]),
+        manager_nickname=raw.get("manager_nickname") or None,
     )
 
 

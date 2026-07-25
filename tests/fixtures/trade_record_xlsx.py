@@ -11,6 +11,7 @@ from api.trade_record_parser import (
     COL_AGENT_ID,
     COL_AGENT_NICK,
     COL_AMOUNT,
+    COL_MANAGER_NICK,
     COL_MEMBER_ID,
     COL_MEMBER_NICK,
     COL_SA_ID,
@@ -53,6 +54,7 @@ def build_sample_trade_record_xlsx(
     row = DATA_START_ROW
     ws.cell(row=row, column=COL_TIME, value=datetime(d.year, d.month, d.day, 14, 30, 0))
     ws.cell(row=row, column=COL_AMOUNT, value=100)
+    ws.cell(row=row, column=COL_MANAGER_NICK, value="TrafficLight7")
     ws.cell(row=row, column=COL_SA_ID, value="1000-1001")
     ws.cell(row=row, column=COL_SA_NICK, value="SuperOne")
     ws.cell(row=row, column=COL_AGENT_ID, value="2000-2001")
@@ -64,6 +66,7 @@ def build_sample_trade_record_xlsx(
         row2 = DATA_START_ROW + 1
         ws.cell(row=row2, column=COL_TIME, value=datetime(d.year, d.month, d.day, 15, 0, 0))
         ws.cell(row=row2, column=COL_AMOUNT, value=-50)
+        ws.cell(row=row2, column=COL_MANAGER_NICK, value="name021021")
         ws.cell(row=row2, column=COL_MEMBER_ID, value="3011-9668")
         ws.cell(row=row2, column=COL_MEMBER_NICK, value="MemberOne")
         ws.cell(row=row2, column=COL_AGENT_ID, value="-")

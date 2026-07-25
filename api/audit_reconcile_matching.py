@@ -24,6 +24,7 @@ class MatchedTradeRow:
     match_amount: str
     variant: str
     vaughn_method: bool = False
+    match_occurred_at: datetime | None = None
 
 
 def round_whole_usd(amount: Decimal) -> Decimal:
@@ -88,6 +89,7 @@ def _empty_match_row(trade: TradeLineForMatch) -> MatchedTradeRow:
         match_amount="",
         variant="",
         vaughn_method=False,
+        match_occurred_at=None,
     )
 
 
@@ -157,6 +159,7 @@ def match_trade_lines_to_ledger(
                     variant=variant,
                     club_slug=club_slug,
                 ),
+                match_occurred_at=ledger.occurred_at_utc,
             )
         )
 

@@ -2056,6 +2056,7 @@ class TradeRecordLine(Base):
     member_nickname = Column(String(255), nullable=True)
     agent_gg_player_id = Column(String(255), nullable=True)
     super_agent_gg_player_id = Column(String(255), nullable=True)
+    manager_nickname = Column(String(255), nullable=True)
 
     upload = relationship("TradeRecordUpload", back_populates="lines")
 

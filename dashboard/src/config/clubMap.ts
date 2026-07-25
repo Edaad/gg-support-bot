@@ -16,16 +16,37 @@ export const RECONCILE_CLUB_OPTIONS: ClubOption[] = [
   { slug: 'round-table', label: 'Round Table' },
   { slug: 'clubgto', label: 'ClubGTO' },
   { slug: 'creator-club', label: 'Creator Club' },
+  { slug: 'all-clubs', label: 'All clubs' },
 ]
 
 export const ROUND_TABLE_TRADE_SLUGS = ['round-table', 'aces-table'] as const
 
+export const ALL_CLUBS_TRADE_SLUGS = [
+  'round-table',
+  'aces-table',
+  'clubgto',
+  'creator-club',
+] as const
+
+export const ALL_CLUBS_RECONCILE_UNITS = [
+  'round-table',
+  'clubgto',
+  'creator-club',
+] as const
+
 export function tradeSlugsForReconcile(reconcileSlug: string): readonly string[] {
+  if (reconcileSlug === 'all-clubs') return ALL_CLUBS_TRADE_SLUGS
   if (reconcileSlug === 'round-table') return ROUND_TABLE_TRADE_SLUGS
   return [reconcileSlug]
 }
 
+export function reconcileUnitsForSlug(reconcileSlug: string): readonly string[] {
+  if (reconcileSlug === 'all-clubs') return ALL_CLUBS_RECONCILE_UNITS
+  return [reconcileSlug]
+}
+
 export function displayLabelForSlug(slug: string): string {
+  if (slug === 'all-clubs') return 'All clubs'
   const row = CLUB_OPTIONS.find((c) => c.slug === slug)
   return row?.label ?? slug
 }

@@ -10,11 +10,14 @@ from decimal import Decimal
 from openpyxl import load_workbook
 
 from api.audit_ledger import LedgerBreakdown, LedgerLine
-from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport
+from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport, TradeLineForMatch
 from api.audit_reconcile_export import (
     DETAIL_HEADERS,
+    MATCHING_HEADERS,
     OVERVIEW_HEADERS,
     SHEET_INTRO_DATA_START_ROW,
+    _EXCEL_TIME_FORMAT,
+    build_all_clubs_matching_workbook,
     build_reconcile_workbook_from_report,
 )
 
@@ -42,6 +45,16 @@ def _player(
             cashouts=Decimal("0"),
         ),
         status=status,
+    )
+
+
+def _empty_report(*, club_slug: str, club_name: str) -> AuditReconcileReport:
+    return AuditReconcileReport(
+        audit_date=date(2026, 7, 3),
+        club_slug=club_slug,
+        club_name=club_name,
+        status="pass",
+        players=[],
     )
 
 
@@ -151,96 +164,17 @@ class ReconcileExportTestCase(unittest.TestCase):
             ],
             DETAIL_HEADERS,
         )
-        self.assertIn("Discrepancy", DETAIL_HEADERS)
-        self.assertNotIn("Delta", DETAIL_HEADERS)
-        self.assertNotIn("Glide", DETAIL_HEADERS)
-        # Mismatched data then blank spacer then Matched section
-        self.assertEqual(
-            details.cell(row=SHEET_INTRO_DATA_START_ROW + 2, column=1).value,
-            "BadPlayer",
-        )
-        self.assertEqual(
-            details.cell(row=SHEET_INTRO_DATA_START_ROW + 2, column=10).value,
-            10.0,
-        )
-        self.assertEqual(
-            details.cell(row=SHEET_INTRO_DATA_START_ROW + 4, column=1).value,
-            "Matched",
-        )
-        self.assertEqual(
-            details.cell(row=SHEET_INTRO_DATA_START_ROW + 6, column=1).value,
-            "AcePlayer",
-        )
-
-        net_ledger = wb["Net Ledger"]
-        self.assertEqual(net_ledger["A1"].value, "Net Ledger")
-        self.assertEqual(
-            net_ledger.cell(row=SHEET_INTRO_DATA_START_ROW, column=1).value,
-            "Player ID",
-        )
-        # Cashout then Stripe after header (same sort as before, offset by intro)
-        self.assertEqual(
-            net_ledger.cell(row=SHEET_INTRO_DATA_START_ROW + 1, column=3).value,
-            "Cashout",
-        )
-        self.assertEqual(
-            net_ledger.cell(row=SHEET_INTRO_DATA_START_ROW + 2, column=3).value,
-            "Stripe",
-        )
-        self.assertEqual(
-            net_ledger.cell(row=SHEET_INTRO_DATA_START_ROW + 1, column=4).value,
-            40.0,
-        )
-
-        deposits = wb["Deposits"]
-        self.assertEqual(deposits["A1"].value, "Deposits")
-        self.assertEqual(
-            deposits.cell(row=SHEET_INTRO_DATA_START_ROW, column=1).value,
-            "Stripe",
-        )
 
         matching = wb["Matching"]
-        self.assertEqual(matching["A1"].value, "Matching")
-        self.assertIn("Best effort match", matching["A4"].value or "")
-        self.assertIn("Vaughn method", matching["A4"].value or "")
-        header_row = SHEET_INTRO_DATA_START_ROW
-        sub_row = header_row + 1
-        self.assertEqual(matching.cell(row=header_row, column=1).value, "Time")
         self.assertEqual(
-            matching.cell(row=header_row, column=5).value,
-            "Best effort match",
+            [matching.cell(row=1, column=c).value for c in range(1, 11)],
+            MATCHING_HEADERS,
         )
-        self.assertEqual(matching.cell(row=sub_row, column=5).value, "Name")
-        self.assertEqual(matching.cell(row=sub_row, column=6).value, "Source")
-        self.assertEqual(matching.cell(row=sub_row, column=7).value, "Time")
-        self.assertEqual(matching.cell(row=sub_row, column=8).value, "$")
-        self.assertEqual(matching.cell(row=header_row, column=9).value, "Variant")
-        self.assertEqual(
-            matching.cell(row=header_row, column=10).value,
-            "Vaughn method",
-        )
-        # No single concatenated best-effort data column at E
-        self.assertNotEqual(
-            matching.cell(row=sub_row, column=5).value,
-            "Best effort match",
-        )
-        # Right-side Vaughn tally
-        self.assertEqual(
-            matching.cell(row=header_row, column=12).value,
-            "Vaughn methods",
-        )
-        self.assertEqual(
-            matching.cell(row=sub_row, column=12).value,
-            "Method",
-        )
-        self.assertEqual(matching.cell(row=sub_row, column=13).value, "Tag")
-        self.assertEqual(matching.cell(row=sub_row, column=14).value, "Count")
-        self.assertEqual(matching.cell(row=sub_row, column=15).value, "Total")
+        self.assertIsNone(matching.cell(row=2, column=1).value)
+        self.assertNotEqual(matching.cell(row=1, column=1).value, "Matching")
 
-    def test_matching_vaughn_column_and_tally(self):
+    def test_matching_flat_headers_manager_and_time_format(self):
         occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
-        from api.audit_reconcile import TradeLineForMatch
-
         report = AuditReconcileReport(
             audit_date=date(2026, 7, 3),
             club_slug="clubgto",
@@ -255,6 +189,7 @@ class ReconcileExportTestCase(unittest.TestCase):
                     member_gg_player_id="1111-2222",
                     member_nickname="P1",
                     sheet_row=1,
+                    manager_nickname="TrafficLight7",
                 ),
             ],
             ledger_lines=[
@@ -283,26 +218,55 @@ class ReconcileExportTestCase(unittest.TestCase):
         )
         wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
         matching = wb["Matching"]
-        data_row = SHEET_INTRO_DATA_START_ROW + 2
-        self.assertEqual(matching.cell(row=data_row, column=9).value, "2133729202")
-        self.assertEqual(matching.cell(row=data_row, column=10).value, "TRUE")
+        self.assertEqual(matching.cell(row=1, column=1).value, "Trade Time")
+        self.assertEqual(matching.cell(row=1, column=2).value, "Manager")
+        self.assertEqual(matching.cell(row=2, column=2).value, "TrafficLight7")
+        self.assertEqual(matching.cell(row=2, column=10).value, "2133729202")
+        self.assertIsInstance(matching.cell(row=2, column=1).value, datetime)
+        self.assertEqual(matching.cell(row=2, column=1).number_format, _EXCEL_TIME_FORMAT)
+        self.assertIsInstance(matching.cell(row=2, column=8).value, datetime)
+        self.assertEqual(matching.cell(row=2, column=8).number_format, _EXCEL_TIME_FORMAT)
+        # No Vaughn method column; tally on right for ClubGTO
+        self.assertEqual(matching.cell(row=1, column=12).value, "Vaughn methods")
+        self.assertEqual(matching.cell(row=2, column=12).value, "Method")
+        self.assertEqual(matching.cell(row=3, column=12).value, "Zelle")
+        self.assertEqual(matching.cell(row=3, column=15).value, 50.0)
 
-        tally_header = SHEET_INTRO_DATA_START_ROW + 1
-        first_tally = tally_header + 1
-        self.assertEqual(matching.cell(row=first_tally, column=12).value, "Zelle")
-        self.assertEqual(matching.cell(row=first_tally, column=13).value, "2133729202")
-        self.assertEqual(matching.cell(row=first_tally, column=14).value, 1)
-        self.assertEqual(matching.cell(row=first_tally, column=15).value, 50.0)
-        self.assertEqual(
-            matching.cell(row=first_tally + 1, column=12).value,
-            "Venmo",
-        )
-        self.assertEqual(
-            matching.cell(row=first_tally + 2, column=12).value,
-            "Total",
-        )
-        self.assertEqual(matching.cell(row=first_tally + 2, column=14).value, 2)
-        self.assertEqual(matching.cell(row=first_tally + 2, column=15).value, 70.0)
+    def test_matching_vaughn_tally_only_clubgto(self):
+        report = _empty_report(club_slug="round-table", club_name="Round Table")
+        report.ledger_lines = [
+            LedgerLine(
+                gg_player_id="1",
+                member_nickname="P",
+                source="deposit_zelle",
+                source_label="Zelle",
+                amount_signed=Decimal("-10"),
+                occurred_at_utc=None,
+                external_id="deposit_zelle:1",
+                variant="2133729202",
+            ),
+        ]
+        wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
+        matching = wb["Matching"]
+        self.assertIsNone(matching.cell(row=1, column=12).value)
+
+    def test_all_clubs_matching_workbook_sheet_order(self):
+        reports = {
+            "round-table": _empty_report(
+                club_slug="round-table", club_name="Round Table"
+            ),
+            "clubgto": _empty_report(club_slug="clubgto", club_name="ClubGTO"),
+            "creator-club": _empty_report(
+                club_slug="creator-club", club_name="Creator Club"
+            ),
+        }
+        wb = load_workbook(io.BytesIO(build_all_clubs_matching_workbook(reports)))
+        self.assertEqual(wb.sheetnames, ["Round Table", "ClubGTO", "Creator Club"])
+        for name in wb.sheetnames:
+            self.assertEqual(wb[name].cell(row=1, column=1).value, "Trade Time")
+            self.assertEqual(wb[name].cell(row=1, column=2).value, "Manager")
+        self.assertEqual(wb["ClubGTO"].cell(row=1, column=12).value, "Vaughn methods")
+        self.assertIsNone(wb["Round Table"].cell(row=1, column=12).value)
 
 
 if __name__ == "__main__":

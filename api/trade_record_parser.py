@@ -26,6 +26,9 @@ _GG_ID_RE = re.compile(r"^[0-9]{1,48}-[0-9]{1,48}$")
 
 # Column indices (1-based) — Aces-21.xlsx Trade Record layout
 COL_TIME = 1  # A Date
+COL_ROLE = 2  # B Role
+COL_MANAGER_ID = 3  # C ID (acting manager when Role=Manager)
+COL_MANAGER_NICK = 4  # D Nickname (acting manager)
 COL_AMOUNT = 7  # G Amount (F=Before, H=After)
 COL_SA_ID = 11  # K
 COL_SA_NICK = 12  # L
@@ -66,6 +69,7 @@ class ParsedTransaction:
     member_nickname: str | None
     agent_gg_player_id: str | None
     super_agent_gg_player_id: str | None
+    manager_nickname: str | None = None
 
 
 @dataclass
@@ -399,6 +403,7 @@ def parse_trade_record_workbook(
         member_nick = _nick_at(row, COL_MEMBER_NICK)
         agent_id = _normalize_gg_id(ws.cell(row=row, column=COL_AGENT_ID).value)
         sa_id = _normalize_gg_id(ws.cell(row=row, column=COL_SA_ID).value)
+        manager_nick = _nick_at(row, COL_MANAGER_NICK) or None
 
         amount = _parse_amount(ws.cell(row=row, column=COL_AMOUNT).value)
         if amount is None:
@@ -441,6 +446,7 @@ def parse_trade_record_workbook(
                 member_nickname=resolved_member_nick or None,
                 agent_gg_player_id=agent_id,
                 super_agent_gg_player_id=sa_id,
+                manager_nickname=manager_nick,
             )
         )
         row += 1

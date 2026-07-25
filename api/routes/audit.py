@@ -18,8 +18,11 @@ from api.club_audit_timezone import (
     audit_timezone_label,
 )
 from api.club_slug import (
+    ALL_CLUBS_RECONCILE_UNITS,
+    ALL_CLUBS_TRADE_SLUGS,
     CLUB_SLUG_TO_NAME,
     RECONCILE_CLUB_OPTIONS,
+    is_all_clubs_reconcile,
     is_round_table_composite,
     resolve_club_id,
     slug_for_club_id,
@@ -52,7 +55,10 @@ from api.audit_reconcile import (
     load_stored_reconcile_report,
     run_audit_reconcile,
 )
-from api.audit_reconcile_export import build_reconcile_workbook_from_report
+from api.audit_reconcile_export import (
+    build_all_clubs_matching_workbook,
+    build_reconcile_workbook_from_report,
+)
 from db.connection import get_db_dependency
 from db.models import AuditReconcileRun, EarlyRakebackSnapshot, TradeRecordLine, TradeRecordUpload
 
@@ -200,7 +206,10 @@ async def upload_trade_record(
     club_name = CLUB_SLUG_TO_NAME[slug]
     timezone_policy = audit_timezone_for_slug(slug)
 
-    if is_round_table_composite(reconcile_slug):
+    if is_round_table_composite(reconcile_slug) or (
+        is_all_clubs_reconcile(reconcile_slug)
+        and expected_slug in ("round-table", "aces-table")
+    ):
         other_slug = (
             "aces-table" if expected_slug == "round-table" else "round-table"
         )
@@ -266,6 +275,7 @@ async def upload_trade_record(
                 member_nickname=tx.member_nickname,
                 agent_gg_player_id=tx.agent_gg_player_id,
                 super_agent_gg_player_id=tx.super_agent_gg_player_id,
+                manager_nickname=tx.manager_nickname,
             )
         )
 
@@ -556,6 +566,53 @@ def export_reconcile(
     )
     content = build_reconcile_workbook_from_report(report)
     filename = f"reconcile-{slug}-{parsed_date.isoformat()}.xlsx"
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _missing_trade_upload_slugs(db: Session, audit_date: date) -> list[str]:
+    present = {
+        row.club_slug
+        for row in db.query(TradeRecordUpload.club_slug)
+        .filter(
+            TradeRecordUpload.audit_date == audit_date,
+            TradeRecordUpload.club_slug.in_(ALL_CLUBS_TRADE_SLUGS),
+        )
+        .all()
+        if row.club_slug
+    }
+    return [slug for slug in ALL_CLUBS_TRADE_SLUGS if slug not in present]
+
+
+@router.get("/reconcile/export-all")
+def export_reconcile_all_clubs(
+    audit_date: str = Query(..., description="Local audit calendar day (YYYY-MM-DD)"),
+    db: Session = Depends(get_db_dependency),
+):
+    """Matching-only workbook for Round Table, ClubGTO, and Creator Club."""
+    parsed_date = _parse_audit_date(audit_date)
+    missing = _missing_trade_upload_slugs(db, parsed_date)
+    if missing:
+        labels = [CLUB_SLUG_TO_NAME.get(s, s) for s in missing]
+        raise HTTPException(
+            400,
+            "All clubs export requires trade uploads for: " + ", ".join(labels),
+        )
+
+    reports_by_slug: dict[str, AuditReconcileReport] = {}
+    for unit_slug in ALL_CLUBS_RECONCILE_UNITS:
+        reports_by_slug[unit_slug] = run_audit_reconcile(
+            db,
+            club_slug=unit_slug,
+            audit_date=parsed_date,
+            persist=False,
+        )
+
+    content = build_all_clubs_matching_workbook(reports_by_slug)
+    filename = f"reconcile-all-clubs-{parsed_date.isoformat()}.xlsx"
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
