@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session, Query, joinedload
 
 from db.models import (
@@ -231,6 +231,41 @@ def apply_customer_search(query, q: str | None):
     )
 
 
+def group_or_player_match_clause(chat_id_column, club_id: int, term: str):
+    """Match live Group / SupportGroupChat title or PlayerDetails for a bound chat.
+
+    Aligns with dashboard Group / Player columns from ``resolve_group_title`` /
+    ``lookup_gg_nickname``. Unbound rows (NULL chat id) do not match.
+    """
+    pattern = f"%{term.strip()}%"
+    group_match = exists(
+        select(1).where(
+            Group.chat_id == chat_id_column,
+            Group.name.ilike(pattern),
+        )
+    )
+    sgc_match = exists(
+        select(1).where(
+            SupportGroupChat.telegram_chat_id == chat_id_column,
+            SupportGroupChat.telegram_chat_title.ilike(pattern),
+        )
+    )
+    player_match = exists(
+        select(1).where(
+            PlayerDetails.club_id == int(club_id),
+            chat_id_column == func.any(PlayerDetails.chat_ids),
+            or_(
+                PlayerDetails.gg_nickname.ilike(pattern),
+                PlayerDetails.gg_player_id.ilike(pattern),
+            ),
+        )
+    )
+    return and_(
+        chat_id_column.isnot(None),
+        or_(group_match, sgc_match, player_match),
+    )
+
+
 def apply_session_filters(
     query,
     *,
@@ -240,6 +275,7 @@ def apply_session_filters(
     manual_only: bool,
     from_dt: datetime | None,
     to_dt: datetime | None,
+    q: str | None = None,
 ):
     query = query.filter(StripeCheckoutSession.club_id == club_id)
     if status and status.strip().lower() != "all":
@@ -252,6 +288,28 @@ def apply_session_filters(
         query = query.filter(StripeCheckoutSession.created_at >= from_dt)
     if to_dt is not None:
         query = query.filter(StripeCheckoutSession.created_at <= to_dt)
+    if q and q.strip():
+        term = q.strip()
+        pattern = f"%{term}%"
+        customer_match = exists(
+            select(1).where(
+                StripeCustomer.stripe_customer_id
+                == StripeCheckoutSession.stripe_customer_id,
+                or_(
+                    StripeCustomer.stripe_customer_id.ilike(pattern),
+                    StripeCustomer.gg_player_id.ilike(pattern),
+                    StripeCustomer.player_display_name.ilike(pattern),
+                ),
+            )
+        )
+        query = query.filter(
+            or_(
+                group_or_player_match_clause(
+                    StripeCheckoutSession.telegram_chat_id, club_id, term
+                ),
+                customer_match,
+            )
+        )
     return query
 
 
@@ -331,12 +389,16 @@ def apply_venmo_payment_filters(
         query = query.filter(VenmoPayment.created_at <= to_dt)
 
     if q and q.strip():
-        term = f"%{q.strip()}%"
+        term = q.strip()
+        pattern = f"%{term}%"
         query = query.filter(
             or_(
-                VenmoPayment.payer_name.ilike(term),
-                VenmoPayment.venmo_handle.ilike(term),
-                VenmoPayment.bound_group_title_at_bind.ilike(term),
+                VenmoPayment.payer_name.ilike(pattern),
+                VenmoPayment.venmo_handle.ilike(pattern),
+                VenmoPayment.bound_group_title_at_bind.ilike(pattern),
+                group_or_player_match_clause(
+                    VenmoPayment.telegram_chat_id, club_id, term
+                ),
             )
         )
     return query
@@ -430,12 +492,16 @@ def apply_zelle_payment_filters(
         query = query.filter(ZellePayment.created_at <= to_dt)
 
     if q and q.strip():
-        term = f"%{q.strip()}%"
+        term = q.strip()
+        pattern = f"%{term}%"
         query = query.filter(
             or_(
-                ZellePayment.payer_name.ilike(term),
-                ZellePayment.zelle_recipient.ilike(term),
-                ZellePayment.bound_group_title_at_bind.ilike(term),
+                ZellePayment.payer_name.ilike(pattern),
+                ZellePayment.zelle_recipient.ilike(pattern),
+                ZellePayment.bound_group_title_at_bind.ilike(pattern),
+                group_or_player_match_clause(
+                    ZellePayment.telegram_chat_id, club_id, term
+                ),
             )
         )
     return query
@@ -594,12 +660,16 @@ def apply_cashapp_payment_filters(
         query = query.filter(CashAppPayment.created_at <= to_dt)
 
     if q and q.strip():
-        term = f"%{q.strip()}%"
+        term = q.strip()
+        pattern = f"%{term}%"
         query = query.filter(
             or_(
-                CashAppPayment.payer_name.ilike(term),
-                CashAppPayment.cashapp_handle.ilike(term),
-                CashAppPayment.bound_group_title_at_bind.ilike(term),
+                CashAppPayment.payer_name.ilike(pattern),
+                CashAppPayment.cashapp_handle.ilike(pattern),
+                CashAppPayment.bound_group_title_at_bind.ilike(pattern),
+                group_or_player_match_clause(
+                    CashAppPayment.telegram_chat_id, club_id, term
+                ),
             )
         )
     return query
@@ -692,12 +762,16 @@ def apply_paypal_payment_filters(
         query = query.filter(PayPalPayment.created_at <= to_dt)
 
     if q and q.strip():
-        term = f"%{q.strip()}%"
+        term = q.strip()
+        pattern = f"%{term}%"
         query = query.filter(
             or_(
-                PayPalPayment.payer_name.ilike(term),
-                PayPalPayment.paypal_email.ilike(term),
-                PayPalPayment.bound_group_title_at_bind.ilike(term),
+                PayPalPayment.payer_name.ilike(pattern),
+                PayPalPayment.paypal_email.ilike(pattern),
+                PayPalPayment.bound_group_title_at_bind.ilike(pattern),
+                group_or_player_match_clause(
+                    PayPalPayment.telegram_chat_id, club_id, term
+                ),
             )
         )
     return query
@@ -829,15 +903,19 @@ def apply_crypto_payment_filters(
         query = query.filter(CryptoPayment.created_at <= to_dt)
 
     if q and q.strip():
-        term = f"%{q.strip()}%"
+        term = q.strip()
+        pattern = f"%{term}%"
         query = query.filter(
             or_(
-                CryptoPayment.from_address.ilike(term),
-                CryptoPayment.from_entity_name.ilike(term),
-                CryptoPayment.to_address.ilike(term),
-                CryptoPayment.transaction_hash.ilike(term),
-                CryptoPayment.token_symbol.ilike(term),
-                CryptoPayment.bound_group_title_at_bind.ilike(term),
+                CryptoPayment.from_address.ilike(pattern),
+                CryptoPayment.from_entity_name.ilike(pattern),
+                CryptoPayment.to_address.ilike(pattern),
+                CryptoPayment.transaction_hash.ilike(pattern),
+                CryptoPayment.token_symbol.ilike(pattern),
+                CryptoPayment.bound_group_title_at_bind.ilike(pattern),
+                group_or_player_match_clause(
+                    CryptoPayment.telegram_chat_id, club_id, term
+                ),
             )
         )
     return query

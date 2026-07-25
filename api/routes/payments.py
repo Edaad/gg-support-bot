@@ -442,6 +442,7 @@ def list_stripe_sessions(
     manual_only: bool = Query(False, description="Sessions from /stripe (no payment_method_id)"),
     from_dt: str | None = Query(None, alias="from"),
     to_dt: str | None = Query(None, alias="to"),
+    q: str | None = Query(None, description="Search group title, player, or Stripe customer"),
     limit: int = Query(_DEFAULT_LIMIT),
     offset: int = Query(0),
     db: Session = Depends(get_db_dependency),
@@ -460,6 +461,7 @@ def list_stripe_sessions(
             manual_only=manual_only,
             from_dt=_parse_dt(from_dt),
             to_dt=_parse_dt(to_dt),
+            q=q,
         )
         total = base.count()
         rows = (

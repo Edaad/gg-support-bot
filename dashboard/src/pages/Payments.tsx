@@ -122,6 +122,7 @@ export default function Payments({ token }: { token: string }) {
   const methodSelectId = useId()
   const statusSelectId = useId()
   const searchId = useId()
+  const paymentSearchId = useId()
   const fromDateId = useId()
   const toDateId = useId()
   const bindTitleId = useId()
@@ -136,6 +137,8 @@ export default function Payments({ token }: { token: string }) {
 
   const [customerSearch, setCustomerSearch] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
+  const [paymentSearch, setPaymentSearch] = useState('')
+  const [appliedPaymentSearch, setAppliedPaymentSearch] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [appliedFrom, setAppliedFrom] = useState('')
@@ -251,8 +254,9 @@ export default function Payments({ token }: { token: string }) {
     if (appliedTo) base.to = `${appliedTo}T23:59:59Z`
     if (methodFilter === 'manual') base.manualOnly = true
     else if (typeof methodFilter === 'number') base.methodId = methodFilter
+    if (appliedPaymentSearch) base.q = appliedPaymentSearch
     return base
-  }, [clubId, sessionPage, appliedFrom, appliedTo, methodFilter])
+  }, [clubId, sessionPage, appliedFrom, appliedTo, methodFilter, appliedPaymentSearch])
 
   const sessionExportParams = useCallback(() => {
     const base: Parameters<typeof fetchAllStripeSessions>[1] = {
@@ -263,8 +267,9 @@ export default function Payments({ token }: { token: string }) {
     if (appliedTo) base.to = `${appliedTo}T23:59:59Z`
     if (methodFilter === 'manual') base.manualOnly = true
     else if (typeof methodFilter === 'number') base.methodId = methodFilter
+    if (appliedPaymentSearch) base.q = appliedPaymentSearch
     return base
-  }, [clubId, appliedFrom, appliedTo, methodFilter])
+  }, [clubId, appliedFrom, appliedTo, methodFilter, appliedPaymentSearch])
 
   const venmoPaymentQueryParams = useCallback(() => {
     const base: Parameters<typeof listVenmoPayments>[1] = {
@@ -275,8 +280,9 @@ export default function Payments({ token }: { token: string }) {
     }
     if (appliedFrom) base.from = `${appliedFrom}T00:00:00Z`
     if (appliedTo) base.to = `${appliedTo}T23:59:59Z`
+    if (appliedPaymentSearch) base.q = appliedPaymentSearch
     return base
-  }, [clubId, venmoPaymentPage, venmoStatus, appliedFrom, appliedTo])
+  }, [clubId, venmoPaymentPage, venmoStatus, appliedFrom, appliedTo, appliedPaymentSearch])
 
   const venmoPaymentExportParams = useCallback(() => {
     const base: Parameters<typeof fetchAllVenmoPayments>[1] = {
@@ -285,8 +291,9 @@ export default function Payments({ token }: { token: string }) {
     }
     if (appliedFrom) base.from = `${appliedFrom}T00:00:00Z`
     if (appliedTo) base.to = `${appliedTo}T23:59:59Z`
+    if (appliedPaymentSearch) base.q = appliedPaymentSearch
     return base
-  }, [clubId, venmoStatus, appliedFrom, appliedTo])
+  }, [clubId, venmoStatus, appliedFrom, appliedTo, appliedPaymentSearch])
 
   const loadCustomers = useCallback(() => {
     if (clubId == null) return
@@ -413,6 +420,12 @@ export default function Payments({ token }: { token: string }) {
     setAppliedSearch(customerSearch)
     setCustomerPage(0)
     setVenmoPayerPage(0)
+  }
+
+  const applyPaymentSearch = () => {
+    setAppliedPaymentSearch(paymentSearch.trim())
+    setSessionPage(0)
+    setVenmoPaymentPage(0)
   }
 
   const clubName = clubs.find((c) => c.id === clubId)?.name ?? 'club'
@@ -839,6 +852,23 @@ export default function Payments({ token }: { token: string }) {
       {provider === 'stripe' && tab === 'Payments' && (
         <div>
           <div className="mb-4 flex flex-wrap items-end gap-3">
+            <div className="min-w-[14rem] flex-1">
+              <label htmlFor={paymentSearchId} className="label-field-xs">
+                Search
+              </label>
+              <input
+                id={paymentSearchId}
+                type="search"
+                value={paymentSearch}
+                onChange={(e) => setPaymentSearch(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && applyPaymentSearch()}
+                placeholder="Search group or player…"
+                className="input-field-sm w-full"
+              />
+            </div>
+            <button type="button" onClick={applyPaymentSearch} className="btn-primary-sm">
+              Search
+            </button>
             <div>
               <label htmlFor={fromDateId} className="label-field-xs">
                 From
@@ -959,6 +989,23 @@ export default function Payments({ token }: { token: string }) {
       {isManualProvider && tab === 'Payments' && (
         <div>
           <div className="mb-4 flex flex-wrap items-end gap-3">
+            <div className="min-w-[14rem] flex-1">
+              <label htmlFor={paymentSearchId} className="label-field-xs">
+                Search
+              </label>
+              <input
+                id={paymentSearchId}
+                type="search"
+                value={paymentSearch}
+                onChange={(e) => setPaymentSearch(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && applyPaymentSearch()}
+                placeholder="Search group or player…"
+                className="input-field-sm w-full"
+              />
+            </div>
+            <button type="button" onClick={applyPaymentSearch} className="btn-primary-sm">
+              Search
+            </button>
             <div>
               <label htmlFor={fromDateId} className="label-field-xs">
                 From

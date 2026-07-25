@@ -112,6 +112,7 @@ export function listStripeSessions(
     manualOnly?: boolean
     from?: string
     to?: string
+    q?: string
     limit?: number
     offset?: number
   },
@@ -123,6 +124,7 @@ export function listStripeSessions(
   if (params.manualOnly) q.set('manual_only', 'true')
   if (params.from) q.set('from', params.from)
   if (params.to) q.set('to', params.to)
+  if (params.q?.trim()) q.set('q', params.q.trim())
   if (params.limit != null) q.set('limit', String(params.limit))
   if (params.offset != null) q.set('offset', String(params.offset))
   return request<Paginated<StripeSessionRow>>(`/stripe/sessions?${q}`, {}, token)
@@ -137,6 +139,7 @@ export type StripeSessionListParams = {
   manualOnly?: boolean
   from?: string
   to?: string
+  q?: string
 }
 
 export async function fetchAllStripeSessions(
