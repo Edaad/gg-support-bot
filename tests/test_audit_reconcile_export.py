@@ -407,6 +407,49 @@ class ReconcileExportTestCase(unittest.TestCase):
         )
         self.assertIn("Unresolved_all", unresolved.tables)
 
+    def test_all_clubs_unresolved_sorts_mixed_naive_aware_times(self):
+        """Regression: export-all 500'd on naive vs aware occurred_at compare."""
+        aware = datetime(2026, 7, 22, 4, 0, tzinfo=timezone.utc)
+        naive = datetime(2026, 7, 22, 5, 0)  # naive
+        reports = {
+            "round-table": _empty_report(
+                club_slug="round-table", club_name="Round Table"
+            ),
+            "clubgto": _empty_report(club_slug="clubgto", club_name="ClubGTO"),
+            "creator-club": _empty_report(
+                club_slug="creator-club", club_name="Creator Club"
+            ),
+        }
+        reports["clubgto"].ledger_lines = [
+            LedgerLine(
+                gg_player_id="1",
+                member_nickname="A",
+                source="deposit_stripe",
+                source_label="Stripe",
+                amount_signed=Decimal("-10"),
+                occurred_at_utc=aware,
+                external_id="deposit_stripe:1",
+                display_name="Aware",
+            ),
+        ]
+        reports["round-table"].ledger_lines = [
+            LedgerLine(
+                gg_player_id="2",
+                member_nickname="B",
+                source="deposit_venmo",
+                source_label="Venmo",
+                amount_signed=Decimal("-20"),
+                occurred_at_utc=naive,
+                external_id="deposit_venmo:1",
+                display_name="Naive",
+            ),
+        ]
+        # Must not raise TypeError on sort.
+        wb = load_workbook(io.BytesIO(build_all_clubs_matching_workbook(reports)))
+        unresolved = wb["Unresolved"]
+        self.assertEqual(unresolved.cell(row=2, column=3).value, "Aware")
+        self.assertEqual(unresolved.cell(row=3, column=3).value, "Naive")
+
 
 if __name__ == "__main__":
     unittest.main()

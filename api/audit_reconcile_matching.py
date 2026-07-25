@@ -45,6 +45,11 @@ def _as_utc(dt: datetime | None) -> datetime | None:
     return dt.astimezone(timezone.utc)
 
 
+def _sort_key_occurred_at(occurred_at: datetime | None) -> datetime:
+    """UTC-aware sort key so naive/aware ledger times can be compared."""
+    return _as_utc(occurred_at) or datetime.max.replace(tzinfo=timezone.utc)
+
+
 def _signs_compatible(trade_amount: Decimal, ledger: LedgerLine) -> bool:
     """Trade negative ↔ club outflows; trade positive ↔ cashout."""
     if trade_amount < 0:
@@ -177,8 +182,7 @@ def match_trade_lines_to_ledger(
     unmatched = [ledger for idx, ledger in available if idx not in used]
     unmatched.sort(
         key=lambda line: (
-            _as_utc(line.occurred_at_utc)
-            or datetime.max.replace(tzinfo=timezone.utc),
+            _sort_key_occurred_at(line.occurred_at_utc),
             line.external_id,
         )
     )

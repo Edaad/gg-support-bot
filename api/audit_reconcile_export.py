@@ -19,7 +19,10 @@ from api.audit_ledger import (
     LedgerLine,
 )
 from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport
-from api.audit_reconcile_matching import match_trade_lines_to_ledger
+from api.audit_reconcile_matching import (
+    _sort_key_occurred_at,
+    match_trade_lines_to_ledger,
+)
 from api.club_audit_timezone import zone_for_slug
 from api.vaughn_methods import (
     VAUGHN_VENMO_HANDLES,
@@ -980,8 +983,7 @@ def build_all_clubs_matching_workbook(
 
     unresolved_rows.sort(
         key=lambda item: (
-            item[0].occurred_at_utc
-            or datetime.max.replace(tzinfo=timezone.utc),
+            _sort_key_occurred_at(item[0].occurred_at_utc),
             item[2],
             item[0].external_id,
         )
