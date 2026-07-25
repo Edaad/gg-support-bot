@@ -519,22 +519,24 @@ async function syncProcessWeekForReconcile(
     reconcileClubSlug === 'all-clubs'
       ? ALL_CLUBS_TRADE_SLUGS
       : tradeSlugsForReconcile(reconcileClubSlug)
-  const errors: string[] = []
 
-  for (const slug of slugs) {
-    try {
-      await processWeekSync(slug)
+  const settled = await Promise.all(
+    slugs.map(async (slug) => {
       try {
-        await syncWeeklyPlayerNicknames(token, slug)
-      } catch {
-        /* nickname backfill is best-effort */
+        await processWeekSync(slug)
+        try {
+          await syncWeeklyPlayerNicknames(token, slug)
+        } catch {
+          /* nickname backfill is best-effort */
+        }
+        return null
+      } catch (e: unknown) {
+        const detail = e instanceof Error ? e.message : 'process-week/sync failed'
+        return `${slug}: ${detail}`
       }
-    } catch (e: unknown) {
-      const detail = e instanceof Error ? e.message : 'process-week/sync failed'
-      errors.push(`${slug}: ${detail}`)
-    }
-  }
-
+    }),
+  )
+  const errors = settled.filter((e): e is string => e !== null)
   return errors.length > 0 ? errors.join('; ') : null
 }
 
@@ -556,14 +558,17 @@ export async function runReconcilePipeline(
   onStep?.('syncingEarlyRb')
   try {
     if (reconcileClubSlug === 'all-clubs') {
-      const reports: EarlyRakebackSyncReport[] = []
-      for (const slug of ALL_CLUBS_TRADE_SLUGS) {
-        reports.push(await syncEarlyRakeback(token, auditDate, slug))
-      }
+      const reports = await Promise.all(
+        ALL_CLUBS_TRADE_SLUGS.map((slug) =>
+          syncEarlyRakeback(token, auditDate, slug),
+        ),
+      )
       earlyRb = mergeEarlyRbReports(auditDate, reports)
     } else if (reconcileClubSlug === 'round-table') {
-      const rtReport = await syncEarlyRakeback(token, auditDate, 'round-table')
-      const atReport = await syncEarlyRakeback(token, auditDate, 'aces-table')
+      const [rtReport, atReport] = await Promise.all([
+        syncEarlyRakeback(token, auditDate, 'round-table'),
+        syncEarlyRakeback(token, auditDate, 'aces-table'),
+      ])
       earlyRb = mergeEarlyRbReports(auditDate, [rtReport, atReport])
     } else {
       earlyRb = await syncEarlyRakeback(token, auditDate, reconcileClubSlug)
@@ -579,17 +584,28 @@ export async function runReconcilePipeline(
   onStep?.('reconciling')
   try {
     if (reconcileClubSlug === 'all-clubs') {
-      const reports: AuditReconcileReport[] = []
-      const errors: string[] = []
-      for (const unit of reconcileUnitsForSlug('all-clubs')) {
-        try {
-          reports.push(await reconcileAudit(token, auditDate, unit))
-        } catch (e: unknown) {
-          errors.push(
-            `${unit}: ${e instanceof Error ? e.message : 'Reconcile failed.'}`,
-          )
-        }
-      }
+      const units = reconcileUnitsForSlug('all-clubs')
+      const settled = await Promise.all(
+        units.map(async (unit) => {
+          try {
+            return {
+              report: await reconcileAudit(token, auditDate, unit),
+              error: null as string | null,
+            }
+          } catch (e: unknown) {
+            return {
+              report: null as AuditReconcileReport | null,
+              error: `${unit}: ${e instanceof Error ? e.message : 'Reconcile failed.'}`,
+            }
+          }
+        }),
+      )
+      const reports = settled
+        .map((s) => s.report)
+        .filter((r): r is AuditReconcileReport => r !== null)
+      const errors = settled
+        .map((s) => s.error)
+        .filter((e): e is string => e !== null)
       allClubReports = reports
       reconcile = reports[0] ?? null
       if (errors.length > 0) {
