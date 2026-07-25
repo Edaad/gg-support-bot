@@ -90,7 +90,7 @@ class MatchTradeLinesTestCase(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].match_name, "Jane Doe")
         self.assertEqual(rows[0].match_source, "Stripe")
-        self.assertEqual(rows[0].match_amount, "$100")
+        self.assertEqual(rows[0].match_amount, Decimal("100"))
         self.assertEqual(rows[0].variant, "")
         self.assertFalse(rows[0].vaughn_method)
 
@@ -208,7 +208,7 @@ class MatchTradeLinesTestCase(unittest.TestCase):
             club_slug="aces-table",
         )
         self.assertEqual(rows[0].match_name, "")
-        self.assertEqual(rows[0].match_amount, "")
+        self.assertEqual(rows[0].match_amount, None)
 
     def test_outside_window_blank(self):
         trade = _trade(occurred=self.t0, amount="-100")
@@ -231,7 +231,7 @@ class MatchTradeLinesTestCase(unittest.TestCase):
             [ledger],
             club_slug="aces-table",
         )
-        self.assertEqual(rows[0].match_amount, "$100")
+        self.assertEqual(rows[0].match_amount, Decimal("100"))
 
     def test_bonus_fills_variant(self):
         trade = _trade(occurred=self.t0, amount="-25")

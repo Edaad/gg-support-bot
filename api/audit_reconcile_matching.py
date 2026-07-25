@@ -21,7 +21,7 @@ class MatchedTradeRow:
     match_name: str
     match_source: str
     match_time: str
-    match_amount: str
+    match_amount: Decimal | None
     variant: str
     vaughn_method: bool = False
     match_occurred_at: datetime | None = None
@@ -72,11 +72,11 @@ def _match_label(line: LedgerLine) -> str:
 def _match_fields(
     club_slug: str,
     line: LedgerLine,
-) -> tuple[str, str, str, str]:
+) -> tuple[str, str, str, Decimal]:
     name = _match_label(line)
     source = (line.source_label or line.source or "").strip()
     time_label = _format_match_time(club_slug, line.occurred_at_utc)
-    dollars = f"${int(round_whole_usd(line.amount_signed))}"
+    dollars = round_whole_usd(line.amount_signed)
     return name, source, time_label, dollars
 
 
@@ -86,7 +86,7 @@ def _empty_match_row(trade: TradeLineForMatch) -> MatchedTradeRow:
         match_name="",
         match_source="",
         match_time="",
-        match_amount="",
+        match_amount=None,
         variant="",
         vaughn_method=False,
         match_occurred_at=None,

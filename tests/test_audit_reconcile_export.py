@@ -232,20 +232,21 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(matching.cell(row=2, column=1).number_format, _EXCEL_TIME_FORMAT)
         self.assertIsInstance(matching.cell(row=2, column=8).value, datetime)
         self.assertEqual(matching.cell(row=2, column=8).number_format, _EXCEL_TIME_FORMAT)
-        # Vaughn tally uses live formulas over Matching Source / Variant / Amount
+        # Vaughn tally uses live SUMIF/COUNTIF over Source / Variant / $ columns
         self.assertEqual(matching.cell(row=1, column=12).value, "Vaughn methods")
         self.assertEqual(matching.cell(row=2, column=12).value, "Method")
         self.assertEqual(matching.cell(row=3, column=12).value, "Zelle")
         self.assertEqual(matching.cell(row=3, column=13).value, "2133729202")
+        self.assertEqual(matching.cell(row=2, column=9).value, 50.0)
+        self.assertEqual(matching.cell(row=2, column=9).number_format, _CURRENCY_FORMAT)
         zelle_count = matching.cell(row=3, column=14).value
         zelle_total = matching.cell(row=3, column=15).value
         self.assertIsInstance(zelle_count, str)
         self.assertTrue(zelle_count.startswith("="))
-        self.assertIn("Matching_clubgto[Source]", zelle_count)
+        self.assertIn("COUNTIFS($F:$F", zelle_count)
         self.assertIn("2133729202", zelle_count)
         self.assertIsInstance(zelle_total, str)
-        self.assertIn("SUMPRODUCT", zelle_total)
-        self.assertIn("Matching_clubgto[Amount]", zelle_total)
+        self.assertIn("SUMIFS($I:$I", zelle_total)
         self.assertEqual(matching.cell(row=4, column=12).value, "Venmo")
         self.assertEqual(matching.cell(row=5, column=12).value, "Crypto")
         self.assertEqual(matching.cell(row=6, column=12).value, "Stripe")
@@ -253,17 +254,21 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertTrue(str(matching.cell(row=7, column=14).value).startswith("=SUM("))
         self.assertIn("Matching_clubgto", matching.tables)
         self.assertEqual(matching.tables["Matching_clubgto"].ref, "A1:J2")
-        self.assertIn("_DV_clubgto", wb.sheetnames)
-        self.assertEqual(wb["_DV_clubgto"].sheet_state, "hidden")
-        self.assertIn("dv_clubgto_Zelle", wb.defined_names)
-        self.assertIn("dv_clubgto_Venmo", wb.defined_names)
+        self.assertEqual(
+            matching.tables["Matching_clubgto"].tableStyleInfo.name,
+            "TableStyleLight1",
+        )
         validations = list(matching.data_validations.dataValidation)
         self.assertEqual(len(validations), 2)
         source_dv = next(dv for dv in validations if "Stripe" in (dv.formula1 or ""))
         self.assertIn("F2:F2", source_dv.sqref)
         variant_dv = next(dv for dv in validations if "INDIRECT" in (dv.formula1 or ""))
         self.assertIn("J2:J2", variant_dv.sqref)
-        self.assertIn("dv_clubgto_", variant_dv.formula1)
+        self.assertIn("MATCH(", variant_dv.formula1)
+        self.assertIn("ADDRESS(", variant_dv.formula1)
+        # Hidden per-source variant lists start at column 30
+        self.assertEqual(matching.cell(row=1, column=30).value, "Stripe")
+        self.assertTrue(matching.column_dimensions["AD"].hidden)
 
     def test_matching_vaughn_tally_only_clubgto(self):
         report = _empty_report(club_slug="round-table", club_name="Round Table")
