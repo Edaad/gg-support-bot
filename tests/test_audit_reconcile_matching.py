@@ -92,6 +92,7 @@ class MatchTradeLinesTestCase(unittest.TestCase):
         self.assertEqual(rows[0].match_source, "Stripe")
         self.assertEqual(rows[0].match_amount, "$100")
         self.assertEqual(rows[0].variant, "")
+        self.assertFalse(rows[0].vaughn_method)
 
         trade2 = _trade(line_id=2, occurred=self.t0, amount="-100", sheet_row=2)
         rows2 = match_trade_lines_to_ledger(
@@ -124,6 +125,49 @@ class MatchTradeLinesTestCase(unittest.TestCase):
         self.assertEqual(rows[0].match_name, "Miah Xeshan")
         self.assertEqual(rows[0].match_source, "Zelle")
         self.assertEqual(rows[0].variant, "gto zelle")
+        self.assertFalse(rows[0].vaughn_method)
+
+    def test_vaughn_zelle_flag(self):
+        trade = _trade(occurred=self.t0, amount="-50")
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-50",
+            source="deposit_zelle",
+            source_label="Zelle",
+            external_id="deposit_zelle:vaughn",
+            display_name="Payer",
+            variant="2133729202",
+        )
+        rows = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="clubgto",
+        )
+        self.assertTrue(rows[0].vaughn_method)
+
+    def test_vaughn_crypto_clubgto(self):
+        trade = _trade(occurred=self.t0, amount="-30")
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-30",
+            source="deposit_crypto",
+            source_label="Crypto",
+            external_id="deposit_crypto:1",
+            display_name="Wallet",
+            variant="USDT",
+        )
+        rows = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="clubgto",
+        )
+        self.assertTrue(rows[0].vaughn_method)
+        rows_rt = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="round-table",
+        )
+        self.assertFalse(rows_rt[0].vaughn_method)
 
     def test_sign_mismatch_rejected(self):
         trade = _trade(occurred=self.t0, amount="-100")

@@ -18,6 +18,7 @@ from api.audit_ledger import (
 from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport
 from api.audit_reconcile_matching import match_trade_lines_to_ledger
 from api.club_audit_timezone import zone_for_slug
+from api.vaughn_methods import tally_vaughn_methods
 
 _HEADER_FILL = PatternFill("solid", fgColor="38761D")
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
@@ -76,6 +77,7 @@ MATCHING_HEADERS = [
     "Time",
     "$",
     "Variant",
+    "Vaughn method",
 ]
 
 MATCHING_TRADE_HEADERS = [
@@ -90,6 +92,13 @@ MATCHING_SUB_HEADERS = [
     "Source",
     "Time",
     "$",
+]
+
+VAUGHN_TALLY_HEADERS = [
+    "Method",
+    "Tag",
+    "Count",
+    "Total",
 ]
 
 # (what it shows, how it works, column glossary)
@@ -149,10 +158,14 @@ SHEET_INTROS: dict[str, tuple[str, str, str]] = {
         "Same player preferred, whole-dollar rounding, ±15 minutes, sign-aware; "
         "each ledger event used once. Variant holds account tags "
         "(Zelle recipient, Venmo/Cash App handle, PayPal email, crypto token) "
-        "or bonus type when matched.",
+        "or bonus type when matched. Vaughn method is TRUE for ClubGTO crypto "
+        "plus Zelle 2133729202 (Starship V LLC) and Venmo @janseashells. "
+        "Right side tallies those Vaughn deposit ledger lines by method.",
         "Columns: Time / Amount / Player ID / Nickname — ClubGG trade line; "
         "Best effort match — Name (payer/nick/id), Source, Time, $; "
-        "Variant — payment account tag or bonus type, blank when none.",
+        "Variant — payment account tag or bonus type, blank when none; "
+        "Vaughn method — TRUE/FALSE for Vaughn-owned accounts. "
+        "Right: Vaughn methods — Method / Tag / Count / Total (abs USD).",
     ),
 }
 
@@ -164,7 +177,11 @@ OVERVIEW_WIDTHS = [22, 16, 18, 18, 3, 22, 16, 18, 18]
 DETAIL_WIDTHS = [22, 16, 14, 14, 14, 22, 14, 18, 18, 16]
 NET_LEDGER_WIDTHS = [16, 22, 18, 14, 18, 40]
 DEPOSIT_WIDTHS = [16, 22, 14, 40, 18, 28]
-MATCHING_WIDTHS = [18, 12, 16, 22, 22, 14, 18, 10, 22]
+MATCHING_WIDTHS = [18, 12, 16, 22, 22, 14, 18, 10, 22, 14, 3, 12, 18, 10, 14]
+
+# Matching sheet: left table cols 1–10; spacer 11; Vaughn tally starts at 12.
+_MATCHING_VAUGHN_COL = 10
+_MATCHING_TALLY_START_COL = 12
 
 
 def _decimal_cell(value: Decimal) -> float:
@@ -492,15 +509,59 @@ def _write_deposits_sheet(
         row_idx += 1
 
 
+def _write_vaughn_tally(
+    ws: Worksheet,
+    report: AuditReconcileReport,
+    *,
+    section_row: int,
+    start_col: int,
+) -> None:
+    _style_section_title(ws, section_row, "Vaughn methods", col=start_col)
+    header_row = section_row + 1
+    _style_header_row(ws, header_row, VAUGHN_TALLY_HEADERS, start_col=start_col)
+
+    tallies = tally_vaughn_methods(
+        report.ledger_lines,
+        club_slug=report.club_slug,
+    )
+    row_idx = header_row + 1
+    total_count = 0
+    total_usd = Decimal(0)
+    for tally in tallies:
+        ws.cell(row=row_idx, column=start_col, value=tally.method_label)
+        ws.cell(row=row_idx, column=start_col + 1, value=tally.tag)
+        ws.cell(row=row_idx, column=start_col + 2, value=tally.count)
+        cell = ws.cell(
+            row=row_idx,
+            column=start_col + 3,
+            value=_decimal_cell(tally.total_usd),
+        )
+        cell.number_format = _CURRENCY_FORMAT
+        total_count += tally.count
+        total_usd += tally.total_usd
+        row_idx += 1
+
+    total_label = ws.cell(row=row_idx, column=start_col, value="Total")
+    total_label.font = Font(bold=True)
+    ws.cell(row=row_idx, column=start_col + 2, value=total_count).font = Font(bold=True)
+    total_cell = ws.cell(
+        row=row_idx,
+        column=start_col + 3,
+        value=_decimal_cell(total_usd),
+    )
+    total_cell.number_format = _CURRENCY_FORMAT
+    total_cell.font = Font(bold=True)
+
+
 def _write_matching_sheet(
     ws: Worksheet,
     report: AuditReconcileReport,
 ) -> None:
-    start = _write_sheet_intro(ws, "Matching", merge_cols=9)
+    start = _write_sheet_intro(ws, "Matching", merge_cols=10)
     group_row = start
     sub_row = start + 1
 
-    # Trade columns + Variant: vertically merge across the two header rows.
+    # Trade columns + Variant + Vaughn: vertically merge across the two header rows.
     for col, header in enumerate(MATCHING_TRADE_HEADERS, start=1):
         cell = ws.cell(row=group_row, column=col, value=header)
         cell.fill = _HEADER_FILL
@@ -525,16 +586,20 @@ def _write_matching_sheet(
         cell.font = _HEADER_FONT
         cell.alignment = Alignment(horizontal="left", vertical="center")
 
-    variant_cell = ws.cell(row=group_row, column=9, value="Variant")
-    variant_cell.fill = _HEADER_FILL
-    variant_cell.font = _HEADER_FONT
-    variant_cell.alignment = Alignment(horizontal="left", vertical="center")
-    ws.merge_cells(
-        start_row=group_row,
-        start_column=9,
-        end_row=sub_row,
-        end_column=9,
-    )
+    for col, header in (
+        (9, "Variant"),
+        (_MATCHING_VAUGHN_COL, "Vaughn method"),
+    ):
+        cell = ws.cell(row=group_row, column=col, value=header)
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+        ws.merge_cells(
+            start_row=group_row,
+            start_column=col,
+            end_row=sub_row,
+            end_column=col,
+        )
 
     matched_rows = match_trade_lines_to_ledger(
         report.trade_lines,
@@ -562,7 +627,19 @@ def _write_matching_sheet(
         ws.cell(row=row_idx, column=7, value=matched.match_time)
         ws.cell(row=row_idx, column=8, value=matched.match_amount)
         ws.cell(row=row_idx, column=9, value=matched.variant)
+        ws.cell(
+            row=row_idx,
+            column=_MATCHING_VAUGHN_COL,
+            value="TRUE" if matched.vaughn_method else "FALSE",
+        )
         row_idx += 1
+
+    _write_vaughn_tally(
+        ws,
+        report,
+        section_row=group_row,
+        start_col=_MATCHING_TALLY_START_COL,
+    )
 
 
 def build_reconcile_workbook_from_report(report: AuditReconcileReport) -> bytes:

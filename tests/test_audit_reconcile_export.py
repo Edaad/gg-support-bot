@@ -202,6 +202,7 @@ class ReconcileExportTestCase(unittest.TestCase):
         matching = wb["Matching"]
         self.assertEqual(matching["A1"].value, "Matching")
         self.assertIn("Best effort match", matching["A4"].value or "")
+        self.assertIn("Vaughn method", matching["A4"].value or "")
         header_row = SHEET_INTRO_DATA_START_ROW
         sub_row = header_row + 1
         self.assertEqual(matching.cell(row=header_row, column=1).value, "Time")
@@ -214,11 +215,94 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(matching.cell(row=sub_row, column=7).value, "Time")
         self.assertEqual(matching.cell(row=sub_row, column=8).value, "$")
         self.assertEqual(matching.cell(row=header_row, column=9).value, "Variant")
+        self.assertEqual(
+            matching.cell(row=header_row, column=10).value,
+            "Vaughn method",
+        )
         # No single concatenated best-effort data column at E
         self.assertNotEqual(
             matching.cell(row=sub_row, column=5).value,
             "Best effort match",
         )
+        # Right-side Vaughn tally
+        self.assertEqual(
+            matching.cell(row=header_row, column=12).value,
+            "Vaughn methods",
+        )
+        self.assertEqual(
+            matching.cell(row=sub_row, column=12).value,
+            "Method",
+        )
+        self.assertEqual(matching.cell(row=sub_row, column=13).value, "Tag")
+        self.assertEqual(matching.cell(row=sub_row, column=14).value, "Count")
+        self.assertEqual(matching.cell(row=sub_row, column=15).value, "Total")
+
+    def test_matching_vaughn_column_and_tally(self):
+        occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
+        from api.audit_reconcile import TradeLineForMatch
+
+        report = AuditReconcileReport(
+            audit_date=date(2026, 7, 3),
+            club_slug="clubgto",
+            club_name="ClubGTO",
+            status="pass",
+            players=[],
+            trade_lines=[
+                TradeLineForMatch(
+                    line_id=1,
+                    occurred_at=occurred,
+                    amount=Decimal("-50"),
+                    member_gg_player_id="1111-2222",
+                    member_nickname="P1",
+                    sheet_row=1,
+                ),
+            ],
+            ledger_lines=[
+                LedgerLine(
+                    gg_player_id="1111-2222",
+                    member_nickname="P1",
+                    source="deposit_zelle",
+                    source_label="Zelle",
+                    amount_signed=Decimal("-50"),
+                    occurred_at_utc=occurred,
+                    external_id="deposit_zelle:1",
+                    display_name="Payer",
+                    variant="2133729202",
+                ),
+                LedgerLine(
+                    gg_player_id="1111-2222",
+                    member_nickname="P1",
+                    source="deposit_venmo",
+                    source_label="Venmo",
+                    amount_signed=Decimal("-20"),
+                    occurred_at_utc=occurred,
+                    external_id="deposit_venmo:1",
+                    variant="@janseashells",
+                ),
+            ],
+        )
+        wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
+        matching = wb["Matching"]
+        data_row = SHEET_INTRO_DATA_START_ROW + 2
+        self.assertEqual(matching.cell(row=data_row, column=9).value, "2133729202")
+        self.assertEqual(matching.cell(row=data_row, column=10).value, "TRUE")
+
+        tally_header = SHEET_INTRO_DATA_START_ROW + 1
+        first_tally = tally_header + 1
+        self.assertEqual(matching.cell(row=first_tally, column=12).value, "Zelle")
+        self.assertEqual(matching.cell(row=first_tally, column=13).value, "2133729202")
+        self.assertEqual(matching.cell(row=first_tally, column=14).value, 1)
+        self.assertEqual(matching.cell(row=first_tally, column=15).value, 50.0)
+        self.assertEqual(
+            matching.cell(row=first_tally + 1, column=12).value,
+            "Venmo",
+        )
+        self.assertEqual(
+            matching.cell(row=first_tally + 2, column=12).value,
+            "Total",
+        )
+        self.assertEqual(matching.cell(row=first_tally + 2, column=14).value, 2)
+        self.assertEqual(matching.cell(row=first_tally + 2, column=15).value, 70.0)
 
 
 if __name__ == "__main__":

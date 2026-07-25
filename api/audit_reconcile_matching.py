@@ -9,6 +9,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from api.audit_ledger import LedgerLine
 from api.audit_reconcile import TradeLineForMatch
 from api.club_audit_timezone import zone_for_slug
+from api.vaughn_methods import is_vaughn_method
 
 MATCH_WINDOW = timedelta(minutes=15)
 _WHOLE = Decimal("1")
@@ -22,6 +23,7 @@ class MatchedTradeRow:
     match_time: str
     match_amount: str
     variant: str
+    vaughn_method: bool = False
 
 
 def round_whole_usd(amount: Decimal) -> Decimal:
@@ -85,6 +87,7 @@ def _empty_match_row(trade: TradeLineForMatch) -> MatchedTradeRow:
         match_time="",
         match_amount="",
         variant="",
+        vaughn_method=False,
     )
 
 
@@ -140,6 +143,7 @@ def match_trade_lines_to_ledger(
         used.add(best_idx)
         ledger = ledger_lines[best_idx]
         name, source, time_label, dollars = _match_fields(club_slug, ledger)
+        variant = (ledger.variant or "").strip()
         rows.append(
             MatchedTradeRow(
                 trade=trade,
@@ -147,7 +151,12 @@ def match_trade_lines_to_ledger(
                 match_source=source,
                 match_time=time_label,
                 match_amount=dollars,
-                variant=(ledger.variant or "").strip(),
+                variant=variant,
+                vaughn_method=is_vaughn_method(
+                    source=ledger.source,
+                    variant=variant,
+                    club_slug=club_slug,
+                ),
             )
         )
 
