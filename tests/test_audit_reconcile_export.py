@@ -14,10 +14,16 @@ from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport
 from api.audit_reconcile_export import (
     DETAIL_HEADERS,
     MATCHING_HEADERS,
+    MATCHING_WIDTHS,
     OVERVIEW_HEADERS,
     SHEET_INTRO_DATA_START_ROW,
+    UNRESOLVED_HEADERS,
     _CURRENCY_FORMAT,
     _EXCEL_TIME_FORMAT,
+    _MATCHING_BAND_FILL,
+    _MATCHING_BODY_FONT,
+    _MATCHING_HEADER_FONT,
+    _MATCHING_ROW_HEIGHT,
     build_all_clubs_matching_workbook,
     build_reconcile_workbook_from_report,
 )
@@ -122,7 +128,7 @@ class ReconcileExportTestCase(unittest.TestCase):
         wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
         self.assertEqual(
             wb.sheetnames,
-            ["Overview", "Details", "Net Ledger", "Deposits", "Matching"],
+            ["Overview", "Details", "Net Ledger", "Deposits", "Matching", "Unresolved"],
         )
 
         overview = wb["Overview"]
@@ -232,7 +238,8 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(matching.cell(row=2, column=1).number_format, _EXCEL_TIME_FORMAT)
         self.assertIsInstance(matching.cell(row=2, column=8).value, datetime)
         self.assertEqual(matching.cell(row=2, column=8).number_format, _EXCEL_TIME_FORMAT)
-        # Vaughn tally uses live SUMIF/COUNTIF over Source / Variant / $ columns
+        self.assertEqual(matching.cell(row=2, column=6).value, "GTO Zelle")
+        # Vaughn tally keys off Source = GTO …
         self.assertEqual(matching.cell(row=1, column=12).value, "Vaughn methods")
         self.assertEqual(matching.cell(row=2, column=12).value, "Method")
         self.assertEqual(matching.cell(row=3, column=12).value, "Zelle")
@@ -243,10 +250,9 @@ class ReconcileExportTestCase(unittest.TestCase):
         zelle_total = matching.cell(row=3, column=15).value
         self.assertIsInstance(zelle_count, str)
         self.assertTrue(zelle_count.startswith("="))
-        self.assertIn("COUNTIFS($F:$F", zelle_count)
-        self.assertIn("2133729202", zelle_count)
+        self.assertIn('COUNTIF($F:$F,"GTO Zelle")', zelle_count)
         self.assertIsInstance(zelle_total, str)
-        self.assertIn("SUMIFS($I:$I", zelle_total)
+        self.assertIn('SUMIF($F:$F,"GTO Zelle",$I:$I)', zelle_total)
         self.assertEqual(matching.cell(row=4, column=12).value, "Venmo")
         self.assertEqual(matching.cell(row=5, column=12).value, "Crypto")
         self.assertEqual(matching.cell(row=6, column=12).value, "Stripe")
@@ -254,21 +260,102 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertTrue(str(matching.cell(row=7, column=14).value).startswith("=SUM("))
         self.assertIn("Matching_clubgto", matching.tables)
         self.assertEqual(matching.tables["Matching_clubgto"].ref, "A1:J2")
-        self.assertEqual(
-            matching.tables["Matching_clubgto"].tableStyleInfo.name,
-            "TableStyleLight1",
+        style = matching.tables["Matching_clubgto"].tableStyleInfo
+        self.assertEqual(style.name, "TableStyleLight1")
+        self.assertFalse(style.showRowStripes)
+        header_fill = matching.cell(row=1, column=1).fill.fgColor.rgb
+        self.assertTrue(str(header_fill).endswith("306A54"))
+        self.assertEqual(matching.cell(row=1, column=1).font.name, _MATCHING_HEADER_FONT.name)
+        self.assertEqual(matching.cell(row=1, column=1).font.size, _MATCHING_HEADER_FONT.size)
+        self.assertEqual(matching.cell(row=2, column=5).font.name, _MATCHING_BODY_FONT.name)
+        self.assertEqual(matching.cell(row=2, column=5).font.size, _MATCHING_BODY_FONT.size)
+        # First data row is not banded.
+        self.assertNotEqual(
+            (matching.cell(row=2, column=1).fill.fgColor or None)
+            and matching.cell(row=2, column=1).fill.fgColor.rgb,
+            _MATCHING_BAND_FILL.fgColor.rgb,
         )
+        self.assertEqual(matching.row_dimensions[1].height, _MATCHING_ROW_HEIGHT)
+        self.assertEqual(matching.row_dimensions[2].height, _MATCHING_ROW_HEIGHT)
+        self.assertEqual(matching.column_dimensions["A"].width, MATCHING_WIDTHS[0])
+        self.assertEqual(matching.column_dimensions["H"].width, MATCHING_WIDTHS[7])
+        self.assertGreaterEqual(MATCHING_WIDTHS[0], 18)
+        self.assertGreaterEqual(MATCHING_WIDTHS[7], 18)
         validations = list(matching.data_validations.dataValidation)
         self.assertEqual(len(validations), 2)
-        source_dv = next(dv for dv in validations if "Stripe" in (dv.formula1 or ""))
+        source_dv = next(dv for dv in validations if "GTO Stripe" in (dv.formula1 or ""))
         self.assertIn("F2:F2", source_dv.sqref)
         variant_dv = next(dv for dv in validations if "INDIRECT" in (dv.formula1 or ""))
         self.assertIn("J2:J2", variant_dv.sqref)
         self.assertIn("MATCH(", variant_dv.formula1)
         self.assertIn("ADDRESS(", variant_dv.formula1)
         # Hidden per-source variant lists start at column 30
-        self.assertEqual(matching.cell(row=1, column=30).value, "Stripe")
+        self.assertEqual(matching.cell(row=1, column=30).value, "GTO Stripe")
         self.assertTrue(matching.column_dimensions["AD"].hidden)
+
+    def test_unresolved_sheet_lists_unmatched_ledger(self):
+        occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
+        report = AuditReconcileReport(
+            audit_date=date(2026, 7, 3),
+            club_slug="clubgto",
+            club_name="ClubGTO",
+            status="pass",
+            players=[],
+            trade_lines=[
+                TradeLineForMatch(
+                    line_id=1,
+                    occurred_at=occurred,
+                    amount=Decimal("-50"),
+                    member_gg_player_id="1111-2222",
+                    member_nickname="P1",
+                    sheet_row=1,
+                    manager_nickname="Mgr",
+                ),
+            ],
+            ledger_lines=[
+                LedgerLine(
+                    gg_player_id="1111-2222",
+                    member_nickname="P1",
+                    source="deposit_zelle",
+                    source_label="Zelle",
+                    amount_signed=Decimal("-50"),
+                    occurred_at_utc=occurred,
+                    external_id="deposit_zelle:1",
+                    display_name="Matched Payer",
+                    variant="2133729202",
+                    detail="GTO / 1111-2222 / P1",
+                ),
+                LedgerLine(
+                    gg_player_id="3333-4444",
+                    member_nickname="LeftOver",
+                    source="deposit_stripe",
+                    source_label="Stripe",
+                    amount_signed=Decimal("-22"),
+                    occurred_at_utc=occurred,
+                    external_id="deposit_stripe:9",
+                    display_name="Charlie Kim",
+                    detail="GTO / 3333-4444 / Charlie Kim",
+                ),
+            ],
+        )
+        wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
+        unresolved = wb["Unresolved"]
+        self.assertEqual(
+            [unresolved.cell(row=1, column=c).value for c in range(1, 7)],
+            UNRESOLVED_HEADERS,
+        )
+        self.assertEqual(unresolved.cell(row=2, column=1).value, "Stripe")
+        self.assertEqual(unresolved.cell(row=2, column=2).value, 22.0)
+        self.assertEqual(unresolved.cell(row=2, column=3).value, "Charlie Kim")
+        self.assertEqual(
+            unresolved.cell(row=2, column=4).value,
+            "GTO / 3333-4444 / Charlie Kim",
+        )
+        self.assertEqual(unresolved.cell(row=2, column=5).value, "ClubGTO")
+        self.assertTrue(str(unresolved.cell(row=2, column=6).value).endswith("AM") or
+                        str(unresolved.cell(row=2, column=6).value).endswith("PM"))
+        self.assertIsNone(unresolved.cell(row=3, column=1).value)
+        self.assertIn("Unresolved_clubgto", unresolved.tables)
 
     def test_matching_vaughn_tally_only_clubgto(self):
         report = _empty_report(club_slug="round-table", club_name="Round Table")
@@ -301,8 +388,11 @@ class ReconcileExportTestCase(unittest.TestCase):
             ),
         }
         wb = load_workbook(io.BytesIO(build_all_clubs_matching_workbook(reports)))
-        self.assertEqual(wb.sheetnames, ["Round Table", "ClubGTO", "Creator Club"])
-        for name in wb.sheetnames:
+        self.assertEqual(
+            wb.sheetnames,
+            ["Round Table", "ClubGTO", "Creator Club", "Unresolved"],
+        )
+        for name in ("Round Table", "ClubGTO", "Creator Club"):
             self.assertEqual(wb[name].cell(row=1, column=1).value, "Trade Time")
             self.assertEqual(wb[name].cell(row=1, column=2).value, "Manager")
         self.assertEqual(wb["ClubGTO"].cell(row=1, column=12).value, "Vaughn methods")
@@ -310,6 +400,12 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertIn("Matching_round_table", wb["Round Table"].tables)
         self.assertIn("Matching_clubgto", wb["ClubGTO"].tables)
         self.assertIn("Matching_creator_club", wb["Creator Club"].tables)
+        unresolved = wb["Unresolved"]
+        self.assertEqual(
+            [unresolved.cell(row=1, column=c).value for c in range(1, 7)],
+            UNRESOLVED_HEADERS,
+        )
+        self.assertIn("Unresolved_all", unresolved.tables)
 
 
 if __name__ == "__main__":

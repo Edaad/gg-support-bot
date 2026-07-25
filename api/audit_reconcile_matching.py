@@ -9,7 +9,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from api.audit_ledger import LedgerLine
 from api.audit_reconcile import TradeLineForMatch
 from api.club_audit_timezone import zone_for_slug
-from api.vaughn_methods import is_vaughn_method
+from api.vaughn_methods import is_vaughn_method, matching_source_label
 
 MATCH_WINDOW = timedelta(minutes=15)
 _WHOLE = Decimal("1")
@@ -25,6 +25,12 @@ class MatchedTradeRow:
     variant: str
     vaughn_method: bool = False
     match_occurred_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class TradeLedgerMatchResult:
+    rows: list[MatchedTradeRow]
+    unmatched_ledger: list[LedgerLine]
 
 
 def round_whole_usd(amount: Decimal) -> Decimal:
@@ -74,7 +80,12 @@ def _match_fields(
     line: LedgerLine,
 ) -> tuple[str, str, str, Decimal]:
     name = _match_label(line)
-    source = (line.source_label or line.source or "").strip()
+    source = matching_source_label(
+        source=line.source,
+        variant=line.variant,
+        club_slug=club_slug,
+        source_label=line.source_label,
+    )
     time_label = _format_match_time(club_slug, line.occurred_at_utc)
     dollars = round_whole_usd(line.amount_signed)
     return name, source, time_label, dollars
@@ -119,7 +130,7 @@ def match_trade_lines_to_ledger(
     ledger_lines: list[LedgerLine],
     *,
     club_slug: str,
-) -> list[MatchedTradeRow]:
+) -> TradeLedgerMatchResult:
     """Greedy chronological matching; each ledger line used at most once."""
     available = list(enumerate(ledger_lines))
     used: set[int] = set()
@@ -163,4 +174,12 @@ def match_trade_lines_to_ledger(
             )
         )
 
-    return rows
+    unmatched = [ledger for idx, ledger in available if idx not in used]
+    unmatched.sort(
+        key=lambda line: (
+            _as_utc(line.occurred_at_utc)
+            or datetime.max.replace(tzinfo=timezone.utc),
+            line.external_id,
+        )
+    )
+    return TradeLedgerMatchResult(rows=rows, unmatched_ledger=unmatched)

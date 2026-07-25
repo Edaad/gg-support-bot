@@ -24,6 +24,8 @@ from api.club_audit_timezone import zone_for_slug
 from api.vaughn_methods import (
     VAUGHN_VENMO_HANDLES,
     VAUGHN_ZELLE_RECIPIENTS,
+    clubgto_matching_source_options,
+    matching_source_label,
 )
 
 _HEADER_FILL = PatternFill("solid", fgColor="38761D")
@@ -31,6 +33,13 @@ _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _SECTION_FONT = Font(bold=True, size=12)
 _TITLE_FONT = Font(bold=True, size=14)
 _CURRENCY_FORMAT = '$#,##0.00;[Red]-$#,##0.00'
+
+# Matching sheet look (aligned to native Sheets "Table1" reference).
+_MATCHING_HEADER_FILL = PatternFill("solid", fgColor="306A54")
+_MATCHING_BAND_FILL = PatternFill("solid", fgColor="F6F6F9")
+_MATCHING_HEADER_FONT = Font(name="Arial", bold=True, color="FFFFFF", size=11)
+_MATCHING_BODY_FONT = Font(name="Arial", size=11)
+_MATCHING_ROW_HEIGHT = 18
 
 # Intro: title (1), what (2), how (3), columns (4); blank spacer (5); tables from 6.
 SHEET_INTRO_DATA_START_ROW = 6
@@ -84,6 +93,15 @@ MATCHING_HEADERS = [
     "Match Time",
     "$",
     "Variant",
+]
+
+UNRESOLVED_HEADERS = [
+    "Source",
+    "Amount",
+    "Name / player",
+    "Group",
+    "Club",
+    "Time",
 ]
 
 VAUGHN_TALLY_HEADERS = [
@@ -156,7 +174,9 @@ OVERVIEW_WIDTHS = [22, 16, 18, 18, 3, 22, 16, 18, 18]
 DETAIL_WIDTHS = [22, 16, 14, 14, 14, 22, 14, 18, 18, 16]
 NET_LEDGER_WIDTHS = [16, 22, 18, 14, 18, 40]
 DEPOSIT_WIDTHS = [16, 22, 14, 40, 18, 28]
-MATCHING_WIDTHS = [14, 18, 12, 16, 22, 14, 22, 14, 10, 22, 3, 12, 18, 10, 14]
+# Trade Time / Match Time widened so headers are not truncated.
+MATCHING_WIDTHS = [18, 18, 12, 16, 22, 14, 22, 18, 10, 22, 3, 12, 18, 10, 14]
+UNRESOLVED_WIDTHS = [16, 12, 28, 40, 16, 24]
 
 # Matching sheet: left table cols 1–10; spacer 11; Vaughn tally starts at 12.
 _MATCHING_TALLY_START_COL = 12
@@ -176,10 +196,17 @@ def _matching_table_display_name(club_slug: str) -> str:
 
 def _variant_options_by_source(
     ledger_lines: list[LedgerLine],
+    *,
+    club_slug: str,
 ) -> dict[str, list[str]]:
-    buckets: dict[str, set[str]] = {label: set() for label in MATCHING_SOURCE_OPTIONS}
+    buckets: dict[str, set[str]] = {}
     for line in ledger_lines:
-        label = (line.source_label or LEDGER_SOURCE_LABELS.get(line.source, "")).strip()
+        label = matching_source_label(
+            source=line.source,
+            variant=line.variant,
+            club_slug=club_slug,
+            source_label=line.source_label,
+        )
         if not label:
             continue
         buckets.setdefault(label, set())
@@ -187,6 +214,12 @@ def _variant_options_by_source(
         if tag:
             buckets[label].add(tag)
     return {label: sorted(tags) for label, tags in buckets.items()}
+
+
+def _matching_source_dropdown_options(club_slug: str) -> tuple[str, ...]:
+    if club_slug.strip().lower() == "clubgto":
+        return clubgto_matching_source_options()
+    return MATCHING_SOURCE_OPTIONS
 
 
 def _add_excel_table(
@@ -197,27 +230,111 @@ def _add_excel_table(
     last_row: int,
     num_cols: int,
 ) -> None:
-    """Register an Excel Table over header+data (filters + structured range)."""
+    """Register an Excel Table over header+data (filters + Matching look)."""
     end_col = get_column_letter(num_cols)
     end_row = max(last_row, header_row)
     tab = Table(
         displayName=display_name,
         ref=f"A{header_row}:{end_col}{end_row}",
     )
-    # Light1 = grey/white banded rows (Medium2 is blue).
+    # Stripes off — we paint soft #F6F6F9 bands (TableStyleLight1 grey is too dark).
     tab.tableStyleInfo = TableStyleInfo(
         name="TableStyleLight1",
         showFirstColumn=False,
         showLastColumn=False,
-        showRowStripes=True,
+        showRowStripes=False,
         showColumnStripes=False,
     )
     ws.add_table(tab)
-    # Re-apply green header after table style (Light1 overwrites header fill).
+
+    ws.row_dimensions[header_row].height = _MATCHING_ROW_HEIGHT
     for col in range(1, num_cols + 1):
         cell = ws.cell(row=header_row, column=col)
-        cell.fill = _HEADER_FILL
-        cell.font = _HEADER_FONT
+        cell.fill = _MATCHING_HEADER_FILL
+        cell.font = _MATCHING_HEADER_FONT
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+
+    for row in range(header_row + 1, end_row + 1):
+        ws.row_dimensions[row].height = _MATCHING_ROW_HEIGHT
+        band = (row - header_row) % 2 == 0
+        for col in range(1, num_cols + 1):
+            cell = ws.cell(row=row, column=col)
+            cell.font = _MATCHING_BODY_FONT
+            if band:
+                cell.fill = _MATCHING_BAND_FILL
+
+
+def _unresolved_player_name(line: LedgerLine) -> str:
+    for candidate in (
+        line.display_name,
+        line.member_nickname,
+        line.gg_player_id,
+    ):
+        text = (candidate or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _format_unresolved_time(club_slug: str, occurred_at: datetime | None) -> str:
+    """Match audit unresolved sheet: 'Jul 21st 2026, 1:40 AM' (club-local)."""
+    local = _local_datetime(club_slug, occurred_at)
+    if local is None:
+        return ""
+    day = local.day
+    if 10 <= day % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    month = local.strftime("%b")
+    clock = local.strftime("%I:%M %p").lstrip("0")
+    return f"{month} {day}{suffix} {local.year}, {clock}"
+
+
+def _unresolved_table_display_name(suffix: str = "all") -> str:
+    safe = "".join(ch if ch.isalnum() else "_" for ch in suffix.strip().lower())
+    return f"Unresolved_{safe or 'all'}"
+
+
+def _write_unresolved_sheet(
+    ws: Worksheet,
+    rows: list[tuple[LedgerLine, str, str]],
+    *,
+    table_suffix: str = "all",
+) -> None:
+    """rows: (ledger_line, club_slug, club_name)."""
+    header_row = 1
+    _style_header_row(ws, header_row, UNRESOLVED_HEADERS)
+    row_idx = header_row + 1
+    for line, club_slug, club_name in rows:
+        ws.cell(row=row_idx, column=1, value=line.source_label)
+        amount_cell = ws.cell(
+            row=row_idx,
+            column=2,
+            value=_decimal_cell(abs(line.amount_signed)),
+        )
+        amount_cell.number_format = "0.##"
+        amount_cell.alignment = Alignment(horizontal="right")
+        ws.cell(row=row_idx, column=3, value=_unresolved_player_name(line))
+        ws.cell(row=row_idx, column=4, value=(line.detail or "").strip())
+        ws.cell(row=row_idx, column=5, value=(club_name or "").strip())
+        ws.cell(
+            row=row_idx,
+            column=6,
+            value=_format_unresolved_time(club_slug, line.occurred_at_utc),
+        )
+        row_idx += 1
+
+    last_data_row = row_idx - 1
+    _add_excel_table(
+        ws,
+        display_name=_unresolved_table_display_name(table_suffix),
+        header_row=header_row,
+        last_row=last_data_row,
+        num_cols=len(UNRESOLVED_HEADERS),
+    )
+    for row in range(header_row + 1, last_data_row + 1):
+        ws.cell(row=row, column=2).alignment = Alignment(horizontal="right")
 
 
 def _add_matching_source_variant_dropdowns(
@@ -231,8 +348,12 @@ def _add_matching_source_variant_dropdowns(
     if last_row < first_row:
         return
 
-    by_source = _variant_options_by_source(report.ledger_lines)
-    source_columns = list(MATCHING_SOURCE_OPTIONS)
+    by_source = _variant_options_by_source(
+        report.ledger_lines,
+        club_slug=report.club_slug,
+    )
+    source_options = list(_matching_source_dropdown_options(report.club_slug))
+    source_columns = list(source_options)
     for label in by_source:
         if label not in source_columns:
             source_columns.append(label)
@@ -269,7 +390,7 @@ def _add_matching_source_variant_dropdowns(
     # showDropDown=False is the openpyxl quirk that *shows* the in-cell dropdown.
     dv_source = DataValidation(
         type="list",
-        formula1='"' + ",".join(MATCHING_SOURCE_OPTIONS) + '"',
+        formula1='"' + ",".join(source_options) + '"',
         allow_blank=True,
         showDropDown=False,
         showErrorMessage=False,
@@ -653,54 +774,17 @@ def _write_deposits_sheet(
         row_idx += 1
 
 
-def _zelle_variant_aliases(digits: str) -> tuple[str, ...]:
-    aliases = [digits]
-    if len(digits) == 10 and digits.isdigit():
-        aliases.append(f"{digits[:3]}-{digits[3:6]}-{digits[6:]}")
-    return tuple(dict.fromkeys(aliases))
-
-
-def _venmo_variant_aliases(handle: str) -> tuple[str, ...]:
-    bare = handle.lstrip("@").lower()
-    return tuple(dict.fromkeys([f"@{bare}", bare]))
-
-
-def _vaughn_countifs_formula(
-    *,
-    source: str,
-    variants: tuple[str, ...] | None,
-) -> str:
-    """Count Matching rows for a Vaughn method from Source / Variant columns.
-
-    Whole-column refs so totals update in Excel and Google Sheets when
-    Source/Variant change (structured table refs often fail in Sheets).
-    """
+def _vaughn_countifs_formula(*, source: str) -> str:
+    """Count Matching rows whose Source is a GTO (Vaughn) method."""
     src_col = f"${get_column_letter(_MATCHING_SOURCE_COL)}:${get_column_letter(_MATCHING_SOURCE_COL)}"
-    var_col = f"${get_column_letter(_MATCHING_VARIANT_COL)}:${get_column_letter(_MATCHING_VARIANT_COL)}"
-    if not variants:
-        return f'=COUNTIF({src_col},"{source}")'
-    parts = [
-        f'COUNTIFS({src_col},"{source}",{var_col},"{tag}")' for tag in variants
-    ]
-    return "=" + "+".join(parts)
+    return f'=COUNTIF({src_col},"{source}")'
 
 
-def _vaughn_sum_dollar_formula(
-    *,
-    source: str,
-    variants: tuple[str, ...] | None,
-) -> str:
-    """Sum $ column for Matching rows matching Source / Variant."""
+def _vaughn_sum_dollar_formula(*, source: str) -> str:
+    """Sum $ column for Matching rows whose Source is a GTO (Vaughn) method."""
     src_col = f"${get_column_letter(_MATCHING_SOURCE_COL)}:${get_column_letter(_MATCHING_SOURCE_COL)}"
-    var_col = f"${get_column_letter(_MATCHING_VARIANT_COL)}:${get_column_letter(_MATCHING_VARIANT_COL)}"
     dollar_col = f"${get_column_letter(_MATCHING_DOLLAR_COL)}:${get_column_letter(_MATCHING_DOLLAR_COL)}"
-    if not variants:
-        return f'=SUMIF({src_col},"{source}",{dollar_col})'
-    parts = [
-        f'SUMIFS({dollar_col},{src_col},"{source}",{var_col},"{tag}")'
-        for tag in variants
-    ]
-    return "=" + "+".join(parts)
+    return f'=SUMIF({src_col},"{source}",{dollar_col})'
 
 
 def _write_vaughn_tally(
@@ -709,46 +793,34 @@ def _write_vaughn_tally(
     section_row: int,
     start_col: int,
 ) -> None:
-    """Vaughn totals as live formulas over Matching Source / Variant / $."""
+    """Vaughn totals: rows with Source starting GTO (GTO Zelle, GTO Venmo, …)."""
     _style_section_title(ws, section_row, "Vaughn methods", col=start_col)
     header_row = section_row + 1
     _style_header_row(ws, header_row, VAUGHN_TALLY_HEADERS, start_col=start_col)
 
-    method_rows: list[tuple[str, str, str, tuple[str, ...] | None]] = []
+    # Method / Tag are labels; Count/Total key only off Source = "GTO …".
+    method_rows: list[tuple[str, str, str]] = []
     for digits in sorted(VAUGHN_ZELLE_RECIPIENTS):
-        method_rows.append(
-            ("Zelle", digits, "Zelle", _zelle_variant_aliases(digits))
-        )
+        method_rows.append(("Zelle", digits, "GTO Zelle"))
     for handle in sorted(VAUGHN_VENMO_HANDLES):
-        method_rows.append(
-            (
-                "Venmo",
-                f"@{handle}",
-                "Venmo",
-                _venmo_variant_aliases(handle),
-            )
-        )
-    method_rows.append(("Crypto", "(all ClubGTO)", "Crypto", None))
-    method_rows.append(("Stripe", "(all ClubGTO)", "Stripe", None))
+        method_rows.append(("Venmo", f"@{handle}", "GTO Venmo"))
+    method_rows.append(("Crypto", "(all ClubGTO)", "GTO Crypto"))
+    method_rows.append(("Stripe", "(all ClubGTO)", "GTO Stripe"))
 
     first_data = header_row + 1
     row_idx = first_data
-    for method_label, tag, source_label, variants in method_rows:
+    for method_label, tag, source_label in method_rows:
         ws.cell(row=row_idx, column=start_col, value=method_label)
         ws.cell(row=row_idx, column=start_col + 1, value=tag)
         ws.cell(
             row=row_idx,
             column=start_col + 2,
-            value=_vaughn_countifs_formula(
-                source=source_label, variants=variants
-            ),
+            value=_vaughn_countifs_formula(source=source_label),
         )
         total_cell = ws.cell(
             row=row_idx,
             column=start_col + 3,
-            value=_vaughn_sum_dollar_formula(
-                source=source_label, variants=variants
-            ),
+            value=_vaughn_sum_dollar_formula(source=source_label),
         )
         total_cell.number_format = _CURRENCY_FORMAT
         row_idx += 1
@@ -779,18 +851,19 @@ def _write_matching_sheet(
     report: AuditReconcileReport,
     *,
     sheet_title: str | None = None,
-) -> None:
+) -> list[LedgerLine]:
     if sheet_title:
         ws.title = sheet_title
 
     header_row = 1
     _style_header_row(ws, header_row, MATCHING_HEADERS)
 
-    matched_rows = match_trade_lines_to_ledger(
+    match_result = match_trade_lines_to_ledger(
         report.trade_lines,
         report.ledger_lines,
         club_slug=report.club_slug,
     )
+    matched_rows = match_result.rows
     row_idx = header_row + 1
     for matched in matched_rows:
         trade = matched.trade
@@ -844,6 +917,7 @@ def _write_matching_sheet(
             section_row=header_row,
             start_col=_MATCHING_TALLY_START_COL,
         )
+    return match_result.unmatched_ledger
 
 
 def build_reconcile_workbook_from_report(report: AuditReconcileReport) -> bytes:
@@ -856,18 +930,28 @@ def build_reconcile_workbook_from_report(report: AuditReconcileReport) -> bytes:
     net_ledger = wb.create_sheet("Net Ledger")
     deposits = wb.create_sheet("Deposits")
     matching = wb.create_sheet("Matching")
+    unresolved = wb.create_sheet("Unresolved")
 
     _write_overview_sheet(overview, matched=matched, mismatched=mismatched)
     _write_details_sheet(details, matched=matched, mismatched=mismatched)
     _write_net_ledger_sheet(net_ledger, report)
     _write_deposits_sheet(deposits, report)
-    _write_matching_sheet(matching, report)
+    unmatched_ledger = _write_matching_sheet(matching, report)
+    _write_unresolved_sheet(
+        unresolved,
+        [
+            (line, report.club_slug, report.club_name)
+            for line in unmatched_ledger
+        ],
+        table_suffix=report.club_slug,
+    )
 
     _set_column_widths(overview, OVERVIEW_WIDTHS)
     _set_column_widths(details, DETAIL_WIDTHS)
     _set_column_widths(net_ledger, NET_LEDGER_WIDTHS)
     _set_column_widths(deposits, DEPOSIT_WIDTHS)
     _set_column_widths(matching, MATCHING_WIDTHS)
+    _set_column_widths(unresolved, UNRESOLVED_WIDTHS)
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -877,9 +961,10 @@ def build_reconcile_workbook_from_report(report: AuditReconcileReport) -> bytes:
 def build_all_clubs_matching_workbook(
     reports_by_slug: dict[str, AuditReconcileReport],
 ) -> bytes:
-    """Matching-only workbook: Round Table, ClubGTO, Creator Club tabs."""
+    """Matching sheets per club + shared Unresolved tab."""
     wb = Workbook()
     first = True
+    unresolved_rows: list[tuple[LedgerLine, str, str]] = []
     for slug, title in ALL_CLUBS_MATCHING_SHEET_ORDER:
         report = reports_by_slug[slug]
         if first:
@@ -887,8 +972,23 @@ def build_all_clubs_matching_workbook(
             first = False
         else:
             ws = wb.create_sheet()
-        _write_matching_sheet(ws, report, sheet_title=title)
+        unmatched = _write_matching_sheet(ws, report, sheet_title=title)
         _set_column_widths(ws, MATCHING_WIDTHS)
+        unresolved_rows.extend(
+            (line, report.club_slug, report.club_name) for line in unmatched
+        )
+
+    unresolved_rows.sort(
+        key=lambda item: (
+            item[0].occurred_at_utc
+            or datetime.max.replace(tzinfo=timezone.utc),
+            item[2],
+            item[0].external_id,
+        )
+    )
+    unresolved = wb.create_sheet("Unresolved")
+    _write_unresolved_sheet(unresolved, unresolved_rows, table_suffix="all")
+    _set_column_widths(unresolved, UNRESOLVED_WIDTHS)
 
     buf = io.BytesIO()
     wb.save(buf)

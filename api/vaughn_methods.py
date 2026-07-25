@@ -5,13 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from api.audit_ledger import LedgerLine
+from api.audit_ledger import DEPOSIT_METHOD_ORDER, LEDGER_SOURCE_LABELS, LedgerLine
 
 # Payment tags stored on ledger Variant (zelle_recipient / venmo_handle).
 VAUGHN_ZELLE_RECIPIENTS = frozenset({"2133729202"})
 VAUGHN_VENMO_HANDLES = frozenset({"janseashells"})
 
 _VAUGHN_CLUB_SLUG = "clubgto"
+_DEPOSIT_SOURCES = frozenset(DEPOSIT_METHOD_ORDER)
 
 
 def normalize_zelle_recipient(tag: str) -> str:
@@ -38,6 +39,48 @@ def is_vaughn_method(
     if src == "deposit_venmo":
         return normalize_venmo_handle(tag) in VAUGHN_VENMO_HANDLES
     return False
+
+
+def matching_source_label(
+    *,
+    source: str,
+    variant: str | None,
+    club_slug: str,
+    source_label: str | None = None,
+) -> str:
+    """Matching Source cell text. ClubGTO deposits use RT/GTO ownership prefix."""
+    base = (source_label or LEDGER_SOURCE_LABELS.get(source, "") or source).strip()
+    if not base:
+        return ""
+    if club_slug.strip().lower() != _VAUGHN_CLUB_SLUG:
+        return base
+    src = (source or "").strip()
+    if src not in _DEPOSIT_SOURCES:
+        return base
+    prefix = "GTO" if is_vaughn_method(
+        source=src, variant=variant, club_slug=club_slug
+    ) else "RT"
+    return f"{prefix} {base}"
+
+
+def clubgto_matching_source_options() -> tuple[str, ...]:
+    """Source dropdown values for ClubGTO Matching (GTO = Vaughn, RT = other)."""
+    deposit_labels: list[str] = []
+    for src in DEPOSIT_METHOD_ORDER:
+        base = LEDGER_SOURCE_LABELS[src]
+        if src in ("deposit_stripe", "deposit_crypto"):
+            deposit_labels.append(f"GTO {base}")
+        elif src in ("deposit_zelle", "deposit_venmo"):
+            deposit_labels.append(f"GTO {base}")
+            deposit_labels.append(f"RT {base}")
+        else:
+            deposit_labels.append(f"RT {base}")
+    non_deposit = [
+        label
+        for src, label in LEDGER_SOURCE_LABELS.items()
+        if src not in _DEPOSIT_SOURCES
+    ]
+    return tuple(deposit_labels + non_deposit)
 
 
 @dataclass(frozen=True)

@@ -315,15 +315,18 @@ def _fetch_manual_deposit_events(
         ):
             continue
         gg_id = (data.get("gg_player_id") or "").strip() or None
+        group_title = str(data.get("group_title") or "").strip() or None
         if not gg_id:
             chat_id = data.get("telegram_chat_id")
             if chat_id is not None:
-                _, resolved = resolve_group_title(
+                title, resolved = resolve_group_title(
                     session,
                     chat_id,
                     fallback_gg_player_id=None,
                 )
                 gg_id = (resolved or "").strip() or None
+                if not group_title:
+                    group_title = (title or "").strip() or None
         amount = data.get("amount_usd")
         amount_usd = Decimal(str(amount)) if amount is not None else Decimal(0)
         payer = (
@@ -340,6 +343,7 @@ def _fetch_manual_deposit_events(
                 amount_usd=amount_usd,
                 occurred_at_utc=occurred_at,
                 external_id=f"{source}:{row.id}",
+                detail=group_title,
                 display_name=payer,
                 variant=tag,
             )
@@ -388,12 +392,14 @@ def fetch_deposit_events(
             continue
         cust = customer_by_stripe_id.get(row.stripe_customer_id)
         fallback_gg = cust.gg_player_id if cust else None
+        group_title: str | None = None
         if row.telegram_chat_id is not None:
-            _, gg_id = resolve_group_title(
+            title, gg_id = resolve_group_title(
                 session,
                 row.telegram_chat_id,
                 fallback_gg_player_id=fallback_gg,
             )
+            group_title = (title or "").strip() or None
         else:
             gg_id = fallback_gg
         events.append(
@@ -403,6 +409,7 @@ def fetch_deposit_events(
                 amount_usd=Decimal(row.amount_cents) / Decimal(100),
                 occurred_at_utc=completed,
                 external_id=f"deposit_stripe:{row.id}",
+                detail=group_title,
             )
         )
 

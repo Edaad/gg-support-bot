@@ -6,7 +6,12 @@ import unittest
 from decimal import Decimal
 
 from api.audit_ledger import LedgerLine
-from api.vaughn_methods import is_vaughn_method, tally_vaughn_methods
+from api.vaughn_methods import (
+    clubgto_matching_source_options,
+    is_vaughn_method,
+    matching_source_label,
+    tally_vaughn_methods,
+)
 
 
 def _line(
@@ -111,6 +116,67 @@ class IsVaughnMethodTestCase(unittest.TestCase):
                 club_slug="round-table",
             )
         )
+
+
+class MatchingSourceLabelTestCase(unittest.TestCase):
+    def test_clubgto_prefixes(self):
+        self.assertEqual(
+            matching_source_label(
+                source="deposit_zelle",
+                variant="2133729202",
+                club_slug="clubgto",
+                source_label="Zelle",
+            ),
+            "GTO Zelle",
+        )
+        self.assertEqual(
+            matching_source_label(
+                source="deposit_zelle",
+                variant="coachingg444@gmail.com",
+                club_slug="clubgto",
+                source_label="Zelle",
+            ),
+            "RT Zelle",
+        )
+        self.assertEqual(
+            matching_source_label(
+                source="deposit_stripe",
+                variant=None,
+                club_slug="clubgto",
+            ),
+            "GTO Stripe",
+        )
+        self.assertEqual(
+            matching_source_label(
+                source="bonus",
+                variant="promo",
+                club_slug="clubgto",
+                source_label="Bonus",
+            ),
+            "Bonus",
+        )
+
+    def test_other_clubs_unprefixed(self):
+        self.assertEqual(
+            matching_source_label(
+                source="deposit_zelle",
+                variant="2133729202",
+                club_slug="round-table",
+                source_label="Zelle",
+            ),
+            "Zelle",
+        )
+
+    def test_clubgto_dropdown_options(self):
+        opts = clubgto_matching_source_options()
+        self.assertIn("GTO Zelle", opts)
+        self.assertIn("RT Zelle", opts)
+        self.assertIn("GTO Venmo", opts)
+        self.assertIn("RT Venmo", opts)
+        self.assertIn("GTO Stripe", opts)
+        self.assertIn("GTO Crypto", opts)
+        self.assertNotIn("RT Stripe", opts)
+        self.assertNotIn("Zelle", opts)
 
 
 class TallyVaughnMethodsTestCase(unittest.TestCase):
