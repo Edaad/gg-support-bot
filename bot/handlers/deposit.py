@@ -757,7 +757,7 @@ async def _send_first_time_method_setup(
 
     # Separate message so we don't overwrite I HAVE READ markup.
     await _maybe_offer_deposit_sent_button(
-        context.bot,
+        getattr(context, "bot", None),
         int(chat_id),
         club_id=int(club_id) if club_id is not None else None,
         method_slug=slug,
@@ -1974,7 +1974,7 @@ async def _finish_simple_deposit(message, context):
 
     if chat_id is not None:
         await _maybe_offer_deposit_sent_button(
-            context.bot,
+            getattr(context, "bot", None),
             int(chat_id),
             club_id=int(club_id) if club_id is not None else None,
             method_slug=None,
@@ -2357,7 +2357,7 @@ async def _send_deposit_method_response(
     await _send_response(query, response_data, amount, display_name)
     if chat_id is not None:
         await _maybe_offer_deposit_sent_button(
-            context.bot,
+            getattr(context, "bot", None),
             int(chat_id),
             club_id=int(club_id) if club_id is not None else None,
             method_slug=slug,
