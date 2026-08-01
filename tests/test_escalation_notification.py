@@ -43,12 +43,23 @@ class SilenceDetectionTests(unittest.TestCase):
     def setUp(self):
         ga.clear_activity_state_for_tests()
 
-    def test_cold_start_no_fire(self):
+    def test_null_last_human_player_fires(self):
+        """Virgin / post-migrate state: first player message may escalate."""
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
         with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
             with patch.object(ga, "_persist_activity_state"):
                 obs = ga.record_human_message(
                     1, role="player", now=t0, silence_seconds=600
+                )
+        self.assertTrue(obs.should_fire_idle)
+        self.assertTrue(obs.silence_elapsed)
+
+    def test_null_last_human_staff_does_not_fire(self):
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                obs = ga.record_human_message(
+                    1, role="staff", now=t0, silence_seconds=600
                 )
         self.assertFalse(obs.should_fire_idle)
 

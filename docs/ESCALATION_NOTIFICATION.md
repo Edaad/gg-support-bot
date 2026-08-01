@@ -12,7 +12,10 @@ On a **player idle** open (free text/media after ≥10 minutes of human silence 
 
 No *Looks like your request was handled…* from this feature. That copy stays tied to popup keyboard install only.
 
-Cold start: do not fire until activity is seen and then 10 minutes of silence elapse. Activity state is **durable** on `support_group_chats` (survives worker restarts).
+Cold start / worker restart: activity timestamps are **durable** on
+`support_group_chats`, so restarts do not wipe silence state. If
+`escalation_last_human_at` is unset (never recorded), the next **player**
+message may escalate (treated as already silent).
 
 AM/staff message then player reply **without** 10 minutes silence: no ack, no Slack.
 

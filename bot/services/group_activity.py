@@ -199,7 +199,9 @@ def record_human_message(
 ) -> ActivityObservation:
     """Update per-chat activity and decide whether idle escalation may fire.
 
-    Cold start: first observed human never fires (no prior timestamp).
+    When ``last_human_at`` is unset (never recorded), treat silence as already
+    elapsed so the first player message can escalate. Durable state covers
+    worker restarts; null is only virgin / post-migrate groups.
     After ``silence_seconds`` with no humans, the next player message may fire
     once per episode. Staff→player without that silence never fires idle.
     """
@@ -209,8 +211,9 @@ def record_human_message(
         ts = ts.replace(tzinfo=timezone.utc)
 
     previous_role = state.last_human_role
-    silence_elapsed = False
-    if state.last_human_at is not None:
+    if state.last_human_at is None:
+        silence_elapsed = True
+    else:
         delta = (ts - state.last_human_at).total_seconds()
         silence_elapsed = delta >= float(silence_seconds)
 
@@ -219,7 +222,6 @@ def record_human_message(
 
     should_fire_idle = (
         role == "player"
-        and state.last_human_at is not None
         and silence_elapsed
         and not state.idle_episode_fired
     )
