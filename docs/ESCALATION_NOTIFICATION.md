@@ -12,20 +12,31 @@ On a **player idle** open (free text/media after ≥10 minutes of human silence 
 
 No *Looks like your request was handled…* from this feature. That copy stays tied to popup keyboard install only.
 
-Cold start (no prior human activity observed in-process): do not fire until activity is seen and then 10 minutes of silence elapse. State is **in-memory** (resets on worker restart).
+Cold start: do not fire until activity is seen and then 10 minutes of silence elapse. Activity state is **durable** on `support_group_chats` (survives worker restarts).
 
 AM/staff message then player reply **without** 10 minutes silence: no ack, no Slack.
 
 Bare `/deposit` does **not** escalate. Allowed `/cashout` Slack-escalates without Telegram ack. Denied cashout (cooldown/hours): no escalate; a later player message may idle-fire under normal rules.
 
-## Deposit payment chase (Slack only)
+## Deposit payment chase
 
-After deposit **instructions** are posted:
+After non-Stripe deposit **instructions** are posted (including first-time setup), when escalation is enabled the bot shows an **inline** button:
 
-1. Player payment-confirm phrase **or any media** → arm a 5-minute wait (no Slack yet).
-2. No payment group notify in 5 minutes → Slack `deposit_sent_timeout`.
-3. Another player message before payment → Slack `deposit_sent_followup`.
-4. Payment notify (or deposit reminder cancel) → cancel the wait.
+> I have sent the payment
+
+**Stripe** instructions never get this button.
+
+On tap:
+
+1. Remove the button and reply:
+   > Thank you! Chips will be added as soon as we receive the payment.
+2. If the group has **no** `group_payment_method_bindings` row for the chosen method → Slack **Manual deposit request.** immediately.
+3. If **bound** → arm a durable 5-minute wait:
+   - No payment/`/add` in 5 minutes → Slack `deposit_sent_timeout` (**re-checks DB** so API payment notify cancels correctly across dynos).
+   - Another player message before payment → Slack `deposit_sent_followup`.
+   - Payment group notify clears the wait via durable columns.
+
+Typed “sent” / media no longer arm the chase (button only).
 
 ## Slack
 
@@ -38,7 +49,7 @@ SLACK_ESCALATION_CHANNEL_ID=C...
 # SLACK_ESCALATION_WEBHOOK_URL=https://hooks.slack.com/services/...
 ```
 
-Copy (no user id, no message body):
+Copy (no user id, no message body, no chat id):
 
 | Reason | Headline |
 |--------|----------|
@@ -46,13 +57,23 @@ Copy (no user id, no message body):
 | `cashout_started` | Cash out initiated. |
 | `deposit_sent_timeout` | Deposit payment not seen. |
 | `deposit_sent_followup` | Deposit follow-up after payment claim. |
+| `deposit_sent_unbound` | Manual deposit request. |
 
-Each post also includes `Club:` and `Group: {title} ({chat_id})`.
+Each post:
+
+```
+{headline}
+Club: {club name}
+`{gc title}`
+```
+
+GC title is a Slack code span (tap-to-copy on mobile).
 
 ## Migration
 
 ```bash
 DATABASE_URL=... python migrate_enable_escalation_notification.py
+DATABASE_URL=... python migrate_escalation_activity_state.py
 ```
 
 ## Overlap with popup keyboard

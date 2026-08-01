@@ -820,6 +820,16 @@ class SupportGroupChat(Base):
     popup_keyboard_installed = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
+    escalation_last_human_at = Column(DateTime(timezone=True), nullable=True)
+    escalation_last_human_role = Column(String(16), nullable=True)
+    escalation_idle_episode_fired = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    escalation_deposit_instructions_pending = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    escalation_deposit_method_slug = Column(String(64), nullable=True)
+    escalation_deposit_sent_armed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),

@@ -63,15 +63,11 @@ async def group_activity_handler(
 
         deposit_consumed = False
         if esc_on and not flow_cmd:
-            confirm = ga.is_payment_confirm_text(
-                message.text or message.caption
-            ) or ga.message_has_media(message)
-            deposit_consumed = await esc.handle_deposit_sent_player_signal(
+            deposit_consumed = await esc.handle_deposit_sent_player_followup(
                 context,
                 chat.id,
                 club_id=club_id,
                 title=chat.title,
-                is_confirm_signal=confirm,
             )
 
         idle_fired = False

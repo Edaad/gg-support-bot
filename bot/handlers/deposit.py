@@ -423,6 +423,43 @@ def _track_deposit_info_messages(chat_id: int, message_ids: list[int]) -> None:
         _track_deposit_info_message(chat_id, message_id)
 
 
+def _last_deposit_info_message_id(chat_id: int) -> int | None:
+    ids = _DEPOSIT_INFO_MESSAGE_IDS.get(int(chat_id)) or []
+    return int(ids[-1]) if ids else None
+
+
+async def _maybe_offer_deposit_sent_button(
+    bot,
+    chat_id: int,
+    *,
+    club_id: int | None,
+    method_slug: str | None,
+    title: str | None = None,
+    attach: bool = True,
+) -> None:
+    """Offer escalation 'I have sent the payment' button after non-Stripe instructions."""
+    if bot is None:
+        return
+    try:
+        from bot.services.escalation_notification import offer_deposit_sent_button
+
+        attach_id = _last_deposit_info_message_id(int(chat_id)) if attach else None
+        await offer_deposit_sent_button(
+            bot,
+            int(chat_id),
+            club_id=int(club_id) if club_id is not None else None,
+            method_slug=method_slug,
+            title=title,
+            attach_to_message_id=attach_id,
+        )
+    except Exception:
+        logger.debug(
+            "deposit: offer sent button failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+
+
 async def _delete_deposit_info_messages(bot, chat_id: int) -> None:
     message_ids = _DEPOSIT_INFO_MESSAGE_IDS.pop(int(chat_id), [])
     for message_id in message_ids:
@@ -569,6 +606,9 @@ async def _send_first_time_payment_destination(
     chat_id: int,
     *,
     response_data: dict,
+    bot=None,
+    club_id: int | None = None,
+    method_slug: str | None = None,
 ) -> bool:
     if not _response_data_has_content(response_data):
         logger.warning(
@@ -580,6 +620,21 @@ async def _send_first_time_payment_destination(
         int(chat_id),
         await send_response_messages(chat, response_data),
     )
+    bot_obj = bot
+    if bot_obj is None and hasattr(chat, "get_bot"):
+        try:
+            bot_obj = chat.get_bot()
+        except Exception:
+            bot_obj = None
+    if bot_obj is not None:
+        await _maybe_offer_deposit_sent_button(
+            bot_obj,
+            int(chat_id),
+            club_id=club_id,
+            method_slug=method_slug,
+            title=getattr(chat, "title", None),
+            attach=True,
+        )
     return True
 
 
@@ -699,6 +754,16 @@ async def _send_first_time_method_setup(
         register_flow_callback_message(
             context, setup_msg.message_id, flow="deposit"
         )
+
+    # Separate message so we don't overwrite I HAVE READ markup.
+    await _maybe_offer_deposit_sent_button(
+        context.bot,
+        int(chat_id),
+        club_id=int(club_id) if club_id is not None else None,
+        method_slug=slug,
+        title=getattr(query.message.chat, "title", None) if query.message else None,
+        attach=False,
+    )
 
     _schedule_deposit_reminder(context, club_id, int(chat_id), user_id)
     return "await_ack"
@@ -1799,6 +1864,12 @@ async def deposit_setup_ack(update: Update, context: ContextTypes.DEFAULT_TYPE):
         query.message.chat,
         int(chat_id),
         response_data=response_data,
+        bot=context.bot,
+        club_id=context.chat_data.get("deposit_club_id"),
+        method_slug=(
+            (attempt.payment_method_slug if attempt else None)
+            or context.chat_data.get("deposit_method_name")
+        ),
     )
     _record_funnel_from_context(
         context,
@@ -1900,6 +1971,16 @@ async def _finish_simple_deposit(message, context):
         await _send_simple_response(message, simple)
 
     _record_funnel_from_context(context, STEP_INSTRUCTIONS_SENT)
+
+    if chat_id is not None:
+        await _maybe_offer_deposit_sent_button(
+            context.bot,
+            int(chat_id),
+            club_id=int(club_id) if club_id is not None else None,
+            method_slug=None,
+            title=getattr(message.chat, "title", None) if message else None,
+            attach=True,
+        )
 
     try:
         record_activity(club_id, user_id, chat_id, "deposit")
@@ -2207,18 +2288,7 @@ async def _send_deposit_method_response(
                 expires_at=result.expires_at,
                 stripe_session_id=result.session_id,
             )
-            try:
-                from bot.services.escalation_notification import (
-                    on_deposit_instructions_sent,
-                )
-
-                on_deposit_instructions_sent(int(chat_id))
-            except Exception:
-                logger.debug(
-                    "deposit: escalation instructions mark failed chat_id=%s",
-                    chat_id,
-                    exc_info=True,
-                )
+            # Stripe: no "I have sent the payment" button / chase.
             return True
         except Exception as e:
             err_detail = _stripe_error_detail(e)
@@ -2286,18 +2356,14 @@ async def _send_deposit_method_response(
 
     await _send_response(query, response_data, amount, display_name)
     if chat_id is not None:
-        try:
-            from bot.services.escalation_notification import (
-                on_deposit_instructions_sent,
-            )
-
-            on_deposit_instructions_sent(int(chat_id))
-        except Exception:
-            logger.debug(
-                "deposit: escalation instructions mark failed chat_id=%s",
-                chat_id,
-                exc_info=True,
-            )
+        await _maybe_offer_deposit_sent_button(
+            context.bot,
+            int(chat_id),
+            club_id=int(club_id) if club_id is not None else None,
+            method_slug=slug,
+            title=getattr(query.message.chat, "title", None) if query.message else None,
+            attach=True,
+        )
     return True
 
 

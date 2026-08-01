@@ -192,6 +192,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         cancel_deposit_reminder_on_group_activity,
     )
     from bot.handlers.popup_keyboard import get_popup_keyboard_activity_handler
+    from bot.services.escalation_notification import get_deposit_sent_claim_handler
 
     deposit_amount_priority_handler = None
     if test_mode:
@@ -210,6 +211,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         get_deposit_handler=get_deposit_handler,
         get_cashout_handler=get_cashout_handler,
         get_popup_keyboard_activity_handler=get_popup_keyboard_activity_handler,
+        get_deposit_sent_claim_handler=get_deposit_sent_claim_handler,
         earlyrb_handler=earlyrb_handler,
         flow_cancel_handler=flow_cancel_handler,
         dm_flow_cancel_priority=dm_flow_cancel_priority,
@@ -418,6 +420,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
 
     app.add_handler(h.get_set_handler())
     app.add_handler(h.get_deposit_handler())
+    app.add_handler(h.get_deposit_sent_claim_handler())
     app.add_handler(h.get_cashout_handler())
     app.add_handler(CommandHandler("earlyrb", h.earlyrb_handler))
     app.add_handler(CommandHandler("cancel", h.flow_cancel_handler))

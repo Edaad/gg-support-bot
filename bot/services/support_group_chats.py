@@ -254,8 +254,18 @@ def update_support_group_chat_row(
     player_telegram_user_id: int | None = None,
     telegram_chat_id: int | None = None,
     popup_keyboard_installed: bool | None = None,
+    escalation_last_human_at: Any | None = ...,
+    escalation_last_human_role: str | None = ...,
+    escalation_idle_episode_fired: bool | None = None,
+    escalation_deposit_instructions_pending: bool | None = None,
+    escalation_deposit_method_slug: Any | None = ...,
+    escalation_deposit_sent_armed_at: Any | None = ...,
 ) -> tuple[bool, str | None]:
-    """Update an existing row by primary key. Returns (ok, error)."""
+    """Update an existing row by primary key. Returns (ok, error).
+
+    Escalation timestamp/slug fields use ``...`` as sentinel so callers can
+    explicitly clear them by passing ``None``.
+    """
     try:
         with get_db() as session:
             row = session.get(SupportGroupChat, row_id)
@@ -285,6 +295,20 @@ def update_support_group_chat_row(
                 row.telegram_chat_id = int(telegram_chat_id)
             if popup_keyboard_installed is not None:
                 row.popup_keyboard_installed = bool(popup_keyboard_installed)
+            if escalation_last_human_at is not ...:
+                row.escalation_last_human_at = escalation_last_human_at
+            if escalation_last_human_role is not ...:
+                row.escalation_last_human_role = escalation_last_human_role
+            if escalation_idle_episode_fired is not None:
+                row.escalation_idle_episode_fired = bool(escalation_idle_episode_fired)
+            if escalation_deposit_instructions_pending is not None:
+                row.escalation_deposit_instructions_pending = bool(
+                    escalation_deposit_instructions_pending
+                )
+            if escalation_deposit_method_slug is not ...:
+                row.escalation_deposit_method_slug = escalation_deposit_method_slug
+            if escalation_deposit_sent_armed_at is not ...:
+                row.escalation_deposit_sent_armed_at = escalation_deposit_sent_armed_at
         return True, None
     except Exception as e:
         logger.exception("support_group_chats update failed (%s)", type(e).__name__)

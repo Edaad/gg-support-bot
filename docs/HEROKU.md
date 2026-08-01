@@ -396,6 +396,7 @@ heroku config:set SLACK_OPS_MENTION='<@UYOUR_SLACK_USER_ID>' -a YOUR_APP   # opt
 
 ```bash
 heroku run -a YOUR_APP -- python migrate_enable_escalation_notification.py
+heroku run -a YOUR_APP -- python migrate_escalation_activity_state.py
 heroku config:set SLACK_ESCALATION_BOT_TOKEN=xoxb-... -a YOUR_APP
 heroku config:set SLACK_ESCALATION_CHANNEL_ID=C... -a YOUR_APP
 ```

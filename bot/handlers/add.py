@@ -177,6 +177,16 @@ async def _execute_add(
     assert chat is not None and update.message is not None
 
     cancel_deposit_reminder(context, chat.id)
+    try:
+        from bot.services.escalation_notification import (
+            on_payment_received_for_escalation,
+        )
+
+        on_payment_received_for_escalation(int(chat.id))
+    except Exception:
+        logger.debug(
+            "add: escalation cancel failed chat_id=%s", chat.id, exc_info=True
+        )
 
     try:
         record_activity_for_chat(club_id, chat.id, "deposit")

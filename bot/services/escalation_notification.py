@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
-from telegram.ext import ContextTypes
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import CallbackQueryHandler, ContextTypes
 
 from bot.runtime_config import is_test_bot_worker
 from bot.services.club import get_club_for_chat, get_group_name
@@ -29,13 +31,21 @@ REASON_PLAYER_IDLE = "player_idle"
 REASON_CASHOUT_STARTED = "cashout_started"
 REASON_DEPOSIT_SENT_TIMEOUT = "deposit_sent_timeout"
 REASON_DEPOSIT_SENT_FOLLOWUP = "deposit_sent_followup"
+REASON_DEPOSIT_SENT_UNBOUND = "deposit_sent_unbound"
 
 _HEADLINES = {
     REASON_PLAYER_IDLE: "A player just reached out.",
     REASON_CASHOUT_STARTED: "Cash out initiated.",
     REASON_DEPOSIT_SENT_TIMEOUT: "Deposit payment not seen.",
     REASON_DEPOSIT_SENT_FOLLOWUP: "Deposit follow-up after payment claim.",
+    REASON_DEPOSIT_SENT_UNBOUND: "Manual deposit request.",
 }
+
+DEPOSIT_SENT_ACK_COPY = (
+    "Thank you! Chips will be added as soon as we receive the payment."
+)
+DEPOSIT_SENT_BUTTON_LABEL = "I have sent the payment"
+DEPOSIT_SENT_CALLBACK_PREFIX = "depsent"
 
 _escalation_app: Any | None = None
 
@@ -43,6 +53,12 @@ _escalation_app: Any | None = None
 def register_escalation_notification_runtime(app: Any) -> None:
     global _escalation_app
     _escalation_app = app
+    try:
+        restore_deposit_sent_watches(getattr(app, "job_queue", None))
+    except Exception:
+        logger.warning(
+            "escalation: restore deposit sent watches failed", exc_info=True
+        )
 
 
 def _resolve_job_queue(job_queue: Any | None = None) -> Any | None:
@@ -96,6 +112,12 @@ def _club_display_name(club_id: int | None) -> str:
         return (club.name or "").strip() or f"club:{club_id}"
 
 
+def _slack_code_span(text: str) -> str:
+    """Wrap title in backticks for Slack mobile tap-to-copy; escape inner backticks."""
+    safe = (text or "").replace("`", "'")
+    return f"`{safe}`"
+
+
 def format_escalation_slack_text(
     reason: str,
     *,
@@ -106,11 +128,7 @@ def format_escalation_slack_text(
     headline = _HEADLINES.get(reason, reason)
     club = _club_display_name(club_id)
     group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
-    return (
-        f"{headline}\n"
-        f"Club: {club}\n"
-        f"Group: {group_title} ({chat_id})"
-    )
+    return f"{headline}\nClub: {club}\n{_slack_code_span(group_title)}"
 
 
 async def notify_escalation_slack(
@@ -194,6 +212,19 @@ async def notify_cashout_started(
     )
 
 
+def deposit_sent_button_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    DEPOSIT_SENT_BUTTON_LABEL,
+                    callback_data=DEPOSIT_SENT_CALLBACK_PREFIX,
+                )
+            ]
+        ]
+    )
+
+
 def cancel_deposit_sent_watch(
     chat_id: int | str,
     *,
@@ -214,15 +245,96 @@ def cancel_deposit_sent_watch(
         )
 
 
-def on_deposit_instructions_sent(chat_id: int) -> None:
-    """Arm detection so the next sent/media starts the 5-minute payment wait."""
-    ga.mark_deposit_instructions_pending(int(chat_id))
-    logger.info("escalation: deposit instructions pending chat_id=%s", chat_id)
+def on_deposit_instructions_sent(
+    chat_id: int,
+    *,
+    method_slug: str | None = None,
+) -> None:
+    """Mark instructions pending (button shown). Prefer offer_deposit_sent_button."""
+    ga.mark_deposit_instructions_pending(int(chat_id), method_slug=method_slug)
+    logger.info(
+        "escalation: deposit instructions pending chat_id=%s slug=%s",
+        chat_id,
+        method_slug,
+    )
+
+
+async def offer_deposit_sent_button(
+    bot: Any,
+    chat_id: int,
+    *,
+    club_id: int | None,
+    method_slug: str | None,
+    title: str | None = None,
+    attach_to_message_id: int | None = None,
+) -> bool:
+    """Show inline 'I have sent the payment' when escalation is on (non-Stripe).
+
+    Returns True if the button was offered.
+    """
+    if not escalation_notification_eligible(
+        int(chat_id), club_id=club_id, title=title
+    ):
+        return False
+
+    slug = (method_slug or "").strip().lower() or None
+    if slug == "stripe":
+        return False
+
+    on_deposit_instructions_sent(int(chat_id), method_slug=slug)
+    markup = deposit_sent_button_markup()
+
+    if attach_to_message_id is not None:
+        try:
+            await bot.edit_message_reply_markup(
+                chat_id=int(chat_id),
+                message_id=int(attach_to_message_id),
+                reply_markup=markup,
+            )
+            return True
+        except Exception:
+            logger.debug(
+                "escalation: attach sent button failed chat_id=%s msg=%s; "
+                "sending standalone",
+                chat_id,
+                attach_to_message_id,
+                exc_info=True,
+            )
+
+    try:
+        await bot.send_message(
+            chat_id=int(chat_id),
+            text="\u200b",
+            reply_markup=markup,
+        )
+        return True
+    except Exception:
+        logger.warning(
+            "escalation: send sent button failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+        return False
 
 
 def on_payment_received_for_escalation(chat_id: int) -> None:
-    """Payment notify landed — cancel deposit sent chase."""
+    """Payment notify landed — cancel deposit sent chase (DB-durable)."""
     cancel_deposit_sent_watch(int(chat_id))
+
+
+def _payment_seen_since_arm(chat_id: int, armed_at: datetime) -> bool:
+    """True if payment notify / Stripe complete / /add since arm (deposit reminder helpers)."""
+    try:
+        from bot.handlers.deposit import _should_skip_deposit_reminder
+
+        return bool(_should_skip_deposit_reminder(int(chat_id), armed_at))
+    except Exception:
+        logger.debug(
+            "escalation: payment-seen check failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+        return False
 
 
 async def _deposit_sent_timeout_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -233,8 +345,26 @@ async def _deposit_sent_timeout_callback(context: ContextTypes.DEFAULT_TYPE) -> 
     chat_id = int(data["chat_id"])
     club_id = data.get("club_id")
     title = data.get("title")
+
+    # Prefer durable DB state when a support_group_chats row exists (API may
+    # have cleared armed_at). Memory-only chats keep in-process state.
+    row = ga.fetch_support_group_chat_by_telegram_chat_id(chat_id)
+    if row is not None:
+        ga.reload_chat_activity_state(chat_id)
     if not ga.deposit_sent_watch_armed(chat_id):
         return
+
+    armed_at = ga.deposit_sent_armed_at(chat_id)
+    if armed_at is not None and _payment_seen_since_arm(chat_id, armed_at):
+        logger.info(
+            "escalation: deposit sent timeout skipped (payment seen) chat_id=%s",
+            chat_id,
+        )
+        cancel_deposit_sent_watch(
+            chat_id, job_queue=getattr(context, "job_queue", None)
+        )
+        return
+
     ga.clear_deposit_instructions_pending(chat_id)
     await notify_escalation_slack(
         REASON_DEPOSIT_SENT_TIMEOUT,
@@ -245,18 +375,25 @@ async def _deposit_sent_timeout_callback(context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 def schedule_deposit_sent_watch(
-    context: ContextTypes.DEFAULT_TYPE,
+    context: ContextTypes.DEFAULT_TYPE | None,
     chat_id: int,
     *,
     club_id: int | None,
     title: str | None = None,
+    armed_at: datetime | None = None,
+    when: float | None = None,
 ) -> None:
-    """Start 5-minute wait after player sent/media confirmation."""
-    jq = getattr(context, "job_queue", None) or _resolve_job_queue()
+    """Start 5-minute wait after bound-method payment claim button."""
+    jq = None
+    if context is not None:
+        jq = getattr(context, "job_queue", None)
+    jq = jq or _resolve_job_queue()
     if jq is None:
         logger.warning(
             "escalation: no job_queue for deposit sent watch chat_id=%s", chat_id
         )
+        # Still persist arm so restore / API cancel works.
+        ga.mark_deposit_sent_watch_armed(int(chat_id), armed_at=armed_at)
         return
 
     name = _sent_watch_job_name(chat_id)
@@ -266,10 +403,13 @@ def schedule_deposit_sent_watch(
     except Exception:
         pass
 
-    ga.mark_deposit_sent_watch_armed(int(chat_id))
+    ga.mark_deposit_sent_watch_armed(int(chat_id), armed_at=armed_at)
+    delay = float(when) if when is not None else float(deposit_sent_wait_seconds())
+    if delay < 0:
+        delay = 0.0
     jq.run_once(
         _deposit_sent_timeout_callback,
-        when=float(deposit_sent_wait_seconds()),
+        when=delay,
         data={
             "chat_id": int(chat_id),
             "club_id": int(club_id) if club_id is not None else None,
@@ -281,43 +421,169 @@ def schedule_deposit_sent_watch(
     logger.info(
         "escalation: deposit sent watch armed chat_id=%s wait_s=%s",
         chat_id,
-        deposit_sent_wait_seconds(),
+        delay,
     )
 
 
+def restore_deposit_sent_watches(job_queue: Any | None = None) -> None:
+    """Re-schedule or immediately fire armed watches after worker restart."""
+    jq = _resolve_job_queue(job_queue)
+    if jq is None:
+        return
+    now = datetime.now(timezone.utc)
+    wait = float(deposit_sent_wait_seconds())
+    for chat_id, armed_at in ga.list_armed_deposit_sent_chats():
+        if _payment_seen_since_arm(chat_id, armed_at):
+            cancel_deposit_sent_watch(chat_id, job_queue=jq)
+            continue
+        elapsed = (now - armed_at).total_seconds()
+        remaining = wait - elapsed
+        club_id = get_club_for_chat(chat_id)
+        title = get_group_name(chat_id)
+        ga.reload_chat_activity_state(int(chat_id))
+        schedule_deposit_sent_watch(
+            None,
+            int(chat_id),
+            club_id=club_id,
+            title=title,
+            armed_at=armed_at,
+            when=remaining,
+        )
+
+
+async def handle_deposit_sent_player_followup(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    *,
+    club_id: int | None,
+    title: str | None = None,
+) -> bool:
+    """If 5m wait is armed, escalate follow-up on another player message.
+
+    Returns True if consumed (caller should skip idle escalation).
+    """
+    if not ga.deposit_sent_watch_armed(chat_id):
+        return False
+
+    cancel_deposit_sent_watch(
+        chat_id, job_queue=getattr(context, "job_queue", None)
+    )
+    await notify_escalation_slack(
+        REASON_DEPOSIT_SENT_FOLLOWUP,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+    )
+    return True
+
+
+async def handle_deposit_sent_claim(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    """Callback for inline 'I have sent the payment' button."""
+    query = update.callback_query
+    if query is None:
+        return
+    data = (query.data or "").strip()
+    if data != DEPOSIT_SENT_CALLBACK_PREFIX:
+        return
+
+    message = query.message
+    chat = update.effective_chat
+    if message is None or chat is None:
+        await query.answer()
+        return
+
+    chat_id = int(chat.id)
+    club_id = get_club_for_chat(chat_id)
+    title = getattr(chat, "title", None)
+
+    await query.answer()
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        logger.debug(
+            "escalation: remove sent button failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+
+    try:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=DEPOSIT_SENT_ACK_COPY,
+        )
+    except Exception:
+        logger.warning(
+            "escalation: deposit sent ack failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+
+    if not escalation_notification_eligible(
+        chat_id, club_id=club_id, title=title
+    ):
+        ga.clear_deposit_instructions_pending(chat_id)
+        return
+
+    if not ga.deposit_instructions_pending(chat_id) and not ga.deposit_sent_watch_armed(
+        chat_id
+    ):
+        # Stale button after cancel; still acked above.
+        return
+
+    slug = ga.deposit_method_slug(chat_id)
+    bound = False
+    if slug:
+        try:
+            from bot.services.payment_method_binding import get_chat_binding
+
+            bound = get_chat_binding(chat_id, slug) is not None
+        except Exception:
+            logger.debug(
+                "escalation: binding lookup failed chat_id=%s slug=%s",
+                chat_id,
+                slug,
+                exc_info=True,
+            )
+
+    if not bound:
+        cancel_deposit_sent_watch(
+            chat_id, job_queue=getattr(context, "job_queue", None)
+        )
+        await notify_escalation_slack(
+            REASON_DEPOSIT_SENT_UNBOUND,
+            club_id=club_id,
+            chat_id=chat_id,
+            title=title,
+        )
+        return
+
+    schedule_deposit_sent_watch(
+        context, chat_id, club_id=club_id, title=title
+    )
+
+
+def get_deposit_sent_claim_handler() -> CallbackQueryHandler:
+    return CallbackQueryHandler(
+        handle_deposit_sent_claim,
+        pattern=rf"^{DEPOSIT_SENT_CALLBACK_PREFIX}$",
+    )
+
+
+# Back-compat name used by older tests / callers.
 async def handle_deposit_sent_player_signal(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     *,
     club_id: int | None,
     title: str | None = None,
-    is_confirm_signal: bool,
+    is_confirm_signal: bool = False,
 ) -> bool:
-    """Process player sent/media or follow-up while instructions pending.
-
-    Returns True if this message was consumed by the deposit-sent chase
-    (caller should skip idle escalation).
-    """
-    if not ga.deposit_instructions_pending(chat_id):
+    """Deprecated: regex/media path removed. Follow-up-only when armed."""
+    if is_confirm_signal and not ga.deposit_sent_watch_armed(chat_id):
         return False
-
-    if ga.deposit_sent_watch_armed(chat_id):
-        # Another player message after arm → follow-up escalate.
-        cancel_deposit_sent_watch(
-            chat_id, job_queue=getattr(context, "job_queue", None)
-        )
-        await notify_escalation_slack(
-            REASON_DEPOSIT_SENT_FOLLOWUP,
-            club_id=club_id,
-            chat_id=int(chat_id),
-            title=title,
-        )
-        return True
-
-    if is_confirm_signal:
-        schedule_deposit_sent_watch(
-            context, int(chat_id), club_id=club_id, title=title
-        )
-        return True
-
-    return False
+    return await handle_deposit_sent_player_followup(
+        context, chat_id, club_id=club_id, title=title
+    )

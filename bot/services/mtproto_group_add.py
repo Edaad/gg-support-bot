@@ -312,6 +312,18 @@ async def handle_group_add_outgoing(
     from bot.handlers.deposit import cancel_deposit_reminder_for_chat
 
     cancel_deposit_reminder_for_chat(int(event.chat_id))
+    try:
+        from bot.services.escalation_notification import (
+            on_payment_received_for_escalation,
+        )
+
+        on_payment_received_for_escalation(int(event.chat_id))
+    except Exception:
+        logger.debug(
+            "group_add: escalation cancel failed chat_id=%s",
+            event.chat_id,
+            exc_info=True,
+        )
 
     try:
         await asyncio.to_thread(
