@@ -360,6 +360,23 @@ async def _flow_existing_group(
         player_label_existing,
         dm_status,
     )
+    if trigger == "incoming_dm":
+        try:
+            from bot.services.escalation_notification import (
+                notify_player_dm_reached_out,
+            )
+
+            await notify_player_dm_reached_out(
+                club_id=int(cfg.link_club_id) if cfg.link_club_id else None,
+                display_name=dname,
+                username=uname,
+            )
+        except Exception:
+            logger.debug(
+                "dm_gc escalation dm-reach-out notify failed club_key=%s",
+                cfg.club_key,
+                exc_info=True,
+            )
     return link or None
 
 
@@ -617,6 +634,20 @@ async def _flow_new_group(
         cid,
         pk,
     )
+    try:
+        from bot.services.escalation_notification import notify_new_player_onboarded
+
+        await notify_new_player_onboarded(
+            club_id=int(cfg.link_club_id) if cfg.link_club_id else None,
+            chat_id=int(cid),
+            title=outcome.telegram_chat_title,
+        )
+    except Exception:
+        logger.debug(
+            "dm_gc escalation onboard notify failed chat_id=%s",
+            cid,
+            exc_info=True,
+        )
 
 
 async def _run_gc_flow_for_player(

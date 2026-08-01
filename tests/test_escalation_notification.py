@@ -179,6 +179,51 @@ class EscalationCopyTests(unittest.TestCase):
         self.assertIn("Manual deposit request.", text)
         self.assertIn("`CC / 9255-5089 / Justin`", text)
 
+    def test_new_player_onboarded_copy(self):
+        with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
+            text = esc.format_escalation_slack_text(
+                esc.REASON_NEW_PLAYER_ONBOARDED,
+                club_id=4,
+                chat_id=-100,
+                title="GTO / 4661-4582 / Btwn",
+            )
+        self.assertIn("New player onboarded.", text)
+        self.assertIn("Club: ClubGTO", text)
+        self.assertIn("`GTO / 4661-4582 / Btwn`", text)
+
+    def test_player_dm_reached_out_copy(self):
+        with patch.object(esc, "_club_display_name", return_value="Round Table"):
+            text = esc.format_escalation_slack_text(
+                esc.REASON_PLAYER_DM_REACHED_OUT,
+                club_id=2,
+                chat_id=0,
+                title="Btwn (@btwn)",
+            )
+        self.assertIn("A player reached out in DM.", text)
+        self.assertIn("`Btwn (@btwn)`", text)
+
+
+class PlayerContactLabelTests(unittest.TestCase):
+    def test_name_and_username(self):
+        self.assertEqual(
+            esc.format_player_contact_label(
+                display_name="Btwn", username="btwn"
+            ),
+            "Btwn (@btwn)",
+        )
+
+    def test_name_only(self):
+        self.assertEqual(
+            esc.format_player_contact_label(display_name="Btwn", username=None),
+            "Btwn",
+        )
+
+    def test_username_only(self):
+        self.assertEqual(
+            esc.format_player_contact_label(display_name="", username="@btwn"),
+            "@btwn",
+        )
+
 
 class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):

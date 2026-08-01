@@ -337,6 +337,22 @@ async def _finish_gc_creation(
         ),
     )
 
+    if player_user is not None and cid is not None:
+        try:
+            from bot.services.escalation_notification import notify_new_player_onboarded
+
+            await notify_new_player_onboarded(
+                club_id=int(dash_club_id) if dash_club_id else None,
+                chat_id=int(cid),
+                title=outcome.telegram_chat_title,
+            )
+        except Exception:
+            logger.debug(
+                "/gc escalation onboard notify failed chat_id=%s",
+                cid,
+                exc_info=True,
+            )
+
 
 async def gc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Create a basic support group when authorized; otherwise point operators to Dashboard login."""

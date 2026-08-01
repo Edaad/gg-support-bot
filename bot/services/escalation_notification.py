@@ -32,6 +32,8 @@ REASON_CASHOUT_STARTED = "cashout_started"
 REASON_DEPOSIT_SENT_TIMEOUT = "deposit_sent_timeout"
 REASON_DEPOSIT_SENT_FOLLOWUP = "deposit_sent_followup"
 REASON_DEPOSIT_SENT_UNBOUND = "deposit_sent_unbound"
+REASON_NEW_PLAYER_ONBOARDED = "new_player_onboarded"
+REASON_PLAYER_DM_REACHED_OUT = "player_dm_reached_out"
 
 _HEADLINES = {
     REASON_PLAYER_IDLE: "A player just reached out.",
@@ -39,6 +41,8 @@ _HEADLINES = {
     REASON_DEPOSIT_SENT_TIMEOUT: "Deposit payment not seen.",
     REASON_DEPOSIT_SENT_FOLLOWUP: "Deposit follow-up after payment claim.",
     REASON_DEPOSIT_SENT_UNBOUND: "Manual deposit request.",
+    REASON_NEW_PLAYER_ONBOARDED: "New player onboarded.",
+    REASON_PLAYER_DM_REACHED_OUT: "A player reached out in DM.",
 }
 
 DEPOSIT_SENT_ACK_COPY = (
@@ -209,6 +213,60 @@ async def notify_cashout_started(
         club_id=club_id,
         chat_id=int(chat_id),
         title=title,
+    )
+
+
+def format_player_contact_label(
+    *,
+    display_name: str | None = None,
+    username: str | None = None,
+) -> str:
+    """Slack-facing contact string: Name (@user), name-only, or @username."""
+    name = (display_name or "").strip()
+    un = (username or "").strip().lstrip("@")
+    if name and un:
+        return f"{name} (@{un})"
+    if name:
+        return name
+    if un:
+        return f"@{un}"
+    return "(unknown)"
+
+
+async def notify_new_player_onboarded(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None = None,
+) -> None:
+    """Slack when a new player-bound support group is created."""
+    if not escalation_notification_enabled(club_id):
+        return
+    await notify_escalation_slack(
+        REASON_NEW_PLAYER_ONBOARDED,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+    )
+
+
+async def notify_player_dm_reached_out(
+    *,
+    club_id: int | None,
+    display_name: str | None = None,
+    username: str | None = None,
+) -> None:
+    """Slack when an incoming player DM reuses an existing support group."""
+    if not escalation_notification_enabled(club_id):
+        return
+    contact = format_player_contact_label(
+        display_name=display_name, username=username
+    )
+    await notify_escalation_slack(
+        REASON_PLAYER_DM_REACHED_OUT,
+        club_id=club_id,
+        chat_id=0,
+        title=contact,
     )
 
 

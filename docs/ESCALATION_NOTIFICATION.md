@@ -21,6 +21,17 @@ AM/staff message then player reply **without** 10 minutes silence: no ack, no Sl
 
 Bare `/deposit` does **not** escalate. Allowed `/cashout` Slack-escalates without Telegram ack. Denied cashout (cooldown/hours): no escalate; a later player message may idle-fire under normal rules.
 
+## GC create / DM reach-out
+
+When **Escalation notification** is on:
+
+| Event | Headline | Code span |
+|--------|----------|-----------|
+| New player-bound GC (`/gc @user` or auto create) | New player onboarded. | GC title |
+| Incoming player DM reuses existing GC | A player reached out in DM. | `Name (@username)` |
+
+Skip: generic `/gc` (no player); staff `/gc` or outgoing MTProto `/gc` that only reuses an existing group.
+
 ## Deposit payment chase
 
 After non-Stripe deposit **instructions** are posted (including first-time setup), when escalation is enabled the bot shows an **inline** button:
@@ -61,16 +72,18 @@ Copy (no user id, no message body, no chat id):
 | `deposit_sent_timeout` | Deposit payment not seen. |
 | `deposit_sent_followup` | Deposit follow-up after payment claim. |
 | `deposit_sent_unbound` | Manual deposit request. |
+| `new_player_onboarded` | New player onboarded. |
+| `player_dm_reached_out` | A player reached out in DM. |
 
 Each post:
 
 ```
 {headline}
 Club: {club name}
-`{gc title}`
+`{gc title or contact}`
 ```
 
-GC title is a Slack code span (tap-to-copy on mobile).
+GC title / contact is a Slack code span (tap-to-copy on mobile).
 
 ## Migration
 
