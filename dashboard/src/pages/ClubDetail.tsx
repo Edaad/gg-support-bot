@@ -332,6 +332,20 @@ function GeneralTab({
           <label className="flex items-center gap-2 text-sm text-ink">
             <input
               type="checkbox"
+              checked={form.enable_escalation_notification ?? false}
+              onChange={(e) => setField('enable_escalation_notification', e.target.checked)}
+              className="h-4 w-4 rounded border-border bg-control text-accent"
+            />
+            Escalation notification
+          </label>
+          <p className="ml-6 text-xs text-ink-muted">
+            When enabled, player messages after 10 minutes of silence get a short ack and a
+            Slack alert. Allowed /cashout and deposit payment-chase events also post to Slack.
+            Off by default.
+          </p>
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
               checked={form.is_active ?? true}
               onChange={(e) => setField('is_active', e.target.checked)}
               className="h-4 w-4 rounded border-border bg-control text-accent"

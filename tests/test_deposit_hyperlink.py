@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -28,6 +29,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
             checkout_url="https://checkout.stripe.com/test?x=1&y=2",
             session_id="cs_test",
             customer_id="cus_test",
+            expires_at=datetime.now(timezone.utc),
         )
 
         response_data = {
@@ -70,6 +72,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
             checkout_url="https://checkout.stripe.com/test",
             session_id="cs_test",
             customer_id="cus_test",
+            expires_at=datetime.now(timezone.utc),
         )
 
         response_data = {
@@ -105,6 +108,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
             checkout_url="https://checkout.stripe.com/tier",
             session_id="cs_tier",
             customer_id="cus_tier",
+            expires_at=datetime.now(timezone.utc),
         )
 
         response_data = {
@@ -153,6 +157,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
             checkout_url="https://checkout.stripe.com/test",
             session_id="cs_test",
             customer_id="cus_test",
+            expires_at=datetime.now(timezone.utc),
         )
 
         response_data = {
@@ -193,6 +198,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
             checkout_url="https://checkout.stripe.com/test",
             session_id="cs_test",
             customer_id="cus_test",
+            expires_at=datetime.now(timezone.utc),
         )
 
         response_data = {
@@ -278,6 +284,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
             checkout_url="https://checkout.stripe.com/variant",
             session_id="cs_variant",
             customer_id="cus_variant",
+            expires_at=datetime.now(timezone.utc),
         )
 
         variant = {
@@ -329,6 +336,7 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
             checkout_url="https://checkout.stripe.com/cashapp",
             session_id="cs_cashapp",
             customer_id="cus_cashapp",
+            expires_at=datetime.now(timezone.utc),
         )
 
         tier = {

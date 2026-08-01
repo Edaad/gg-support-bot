@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -72,6 +73,7 @@ class GroupCheckoutDmTestCase(unittest.IsolatedAsyncioTestCase):
             checkout_url="https://checkout.stripe.com/group-session",
             session_id="cs_test",
             customer_id="cus_test",
+            expires_at=datetime.now(timezone.utc),
         )
 
         with (
@@ -99,6 +101,7 @@ class GroupCheckoutDmTestCase(unittest.IsolatedAsyncioTestCase):
             checkout_url="https://checkout.stripe.com/cashapp-session",
             session_id="cs_cashapp",
             customer_id="cus_cashapp",
+            expires_at=datetime.now(timezone.utc),
         )
 
         with (

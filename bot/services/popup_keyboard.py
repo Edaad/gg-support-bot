@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from telegram import (
     KeyboardButton,
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
-    User,
 )
 from telegram.ext import ContextTypes
 
@@ -18,16 +18,14 @@ from bot.services.club import (
     cashout_shown_on_popup_keyboard,
     get_club_for_chat,
     get_group_name,
-    is_club_staff,
 )
+from bot.services.group_activity import is_support_sender
 from bot.services.player_details import gg_player_id_from_title
 from bot.services.support_group_chats import (
     fetch_player_telegram_user_id_for_chat,
     fetch_support_group_chat_by_telegram_chat_id,
     update_support_group_chat_row,
 )
-from club_gc_settings import get_club_gc_config_by_link_club_id, get_gc_users_to_add
-from config import ADMIN_USER_IDS
 from db.connection import get_db
 from db.models import Club
 
@@ -35,6 +33,8 @@ logger = logging.getLogger(__name__)
 
 POPUP_IDLE_SECONDS = 300  # 5 minutes (main bot)
 POPUP_IDLE_SECONDS_TEST = 30  # faster restore for TestGGSupportBot
+# Poll while a Stripe checkout / bind attempt is still open (cross-dyno payment notify).
+PAYMENT_WINDOW_POLL_SECONDS = 30
 BTN_DEPOSIT = "/deposit"
 BTN_CASHOUT = "/cashout"
 BUTTON_LABELS = frozenset({BTN_DEPOSIT, BTN_CASHOUT})
@@ -71,10 +71,61 @@ def idle_job_name(chat_id: int | str) -> str:
     return _idle_job_name(chat_id)
 
 
+def _payment_window_job_name(chat_id: int | str) -> str:
+    return f"popup_keyboard_payment_window_{chat_id}"
+
+
+def payment_window_job_name(chat_id: int | str) -> str:
+    """Public name for tests."""
+    return _payment_window_job_name(chat_id)
+
+
 def register_popup_keyboard_runtime(app: Any) -> None:
     """Store Application for idle jobs outside handlers."""
     global _popup_keyboard_app
     _popup_keyboard_app = app
+
+
+def _resolve_job_queue(job_queue: Any | None = None) -> Any | None:
+    if job_queue is not None:
+        return job_queue
+    if _popup_keyboard_app is not None:
+        return getattr(_popup_keyboard_app, "job_queue", None)
+    return None
+
+
+def payment_window_gate_pending(
+    chat_id: int | str,
+    *,
+    job_queue: Any | None = None,
+) -> bool:
+    """True when a deposit payment window is still deferring the idle countdown."""
+    queue = _resolve_job_queue(job_queue)
+    if queue is None:
+        return False
+    try:
+        return bool(queue.get_jobs_by_name(_payment_window_job_name(chat_id)))
+    except Exception:
+        return False
+
+
+def cancel_payment_window_gate(
+    chat_id: int | str,
+    *,
+    job_queue: Any | None = None,
+) -> None:
+    queue = _resolve_job_queue(job_queue)
+    if queue is None:
+        return
+    try:
+        for job in queue.get_jobs_by_name(_payment_window_job_name(chat_id)):
+            job.schedule_removal()
+    except Exception:
+        logger.debug(
+            "popup_keyboard: cancel payment window failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
 
 
 def popup_keyboard_enabled(club_id: int | None) -> bool:
@@ -109,40 +160,6 @@ def popup_keyboard_eligible(
     if not popup_keyboard_enabled(cid):
         return False
     return group_has_gg_player_id(chat_id, title=title)
-
-
-def is_support_sender(user: User | None, club_id: int) -> bool:
-    """True for club staff, admins, and /gc invite accounts (never the player)."""
-    if user is None:
-        return True
-    if getattr(user, "is_bot", False):
-        return True
-    uid = int(user.id)
-    if uid in ADMIN_USER_IDS:
-        return True
-    if is_club_staff(uid, club_id):
-        return True
-
-    cfg = get_club_gc_config_by_link_club_id(int(club_id))
-    if cfg is None:
-        return False
-    if cfg.command_admin_user_id and uid == int(cfg.command_admin_user_id):
-        return True
-
-    markers: list[str] = list(get_gc_users_to_add(cfg))
-    if cfg.bot_account:
-        markers.append(str(cfg.bot_account))
-
-    un = (user.username or "").strip().lower().lstrip("@")
-    for raw in markers:
-        m = str(raw).strip()
-        if not m:
-            continue
-        if m.isdigit() and int(m) == uid:
-            return True
-        if un and m.lstrip("@").lower() == un:
-            return True
-    return False
 
 
 def is_flow_command_text(text: str | None) -> bool:
@@ -278,9 +295,7 @@ def cancel_popup_keyboard_idle(
     *,
     job_queue: Any | None = None,
 ) -> None:
-    queue = job_queue
-    if queue is None and _popup_keyboard_app is not None:
-        queue = getattr(_popup_keyboard_app, "job_queue", None)
+    queue = _resolve_job_queue(job_queue)
     if queue is None:
         return
     try:
@@ -292,6 +307,276 @@ def cancel_popup_keyboard_idle(
         )
 
 
+def _payment_window_closed(
+    *,
+    stripe_session_id: str | None,
+    bind_attempt_id: int | None,
+    expires_at: datetime,
+    now: datetime,
+) -> tuple[bool, str | None]:
+    """Return (closed, reason) when the deposit payment window has ended."""
+    if stripe_session_id:
+        from bot.services.stripe_deposit import checkout_session_is_complete
+
+        if checkout_session_is_complete(str(stripe_session_id)):
+            return True, "stripe_complete"
+    if bind_attempt_id is not None:
+        from bot.services.payment_method_binding import get_pending_bind_attempt
+
+        if get_pending_bind_attempt(int(bind_attempt_id)) is None:
+            return True, "bind_closed"
+    if now >= expires_at:
+        return True, "expired"
+    return False, None
+
+
+async def _payment_window_gate_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Poll until paid/expired, then start the normal quiet-period idle countdown."""
+    job = context.job
+    if job is None or not job.data:
+        return
+    data = job.data
+    chat_id = int(data["chat_id"])
+    try:
+        expires_at = datetime.fromisoformat(str(data["expires_at"]))
+    except (TypeError, ValueError):
+        logger.warning(
+            "popup_keyboard: bad expires_at in payment window job chat_id=%s",
+            chat_id,
+        )
+        schedule_popup_keyboard_idle(
+            context,
+            chat_id,
+            reply_to_message_id=data.get("reply_to_message_id"),
+            player_user_id=data.get("player_user_id"),
+        )
+        return
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    now = datetime.now(timezone.utc)
+    closed, reason = _payment_window_closed(
+        stripe_session_id=data.get("stripe_session_id"),
+        bind_attempt_id=data.get("bind_attempt_id"),
+        expires_at=expires_at,
+        now=now,
+    )
+    if closed:
+        logger.info(
+            "popup_keyboard payment window closed chat_id=%s reason=%s; starting idle",
+            chat_id,
+            reason,
+        )
+        schedule_popup_keyboard_idle(
+            context,
+            chat_id,
+            reply_to_message_id=data.get("reply_to_message_id"),
+            player_user_id=data.get("player_user_id"),
+        )
+        return
+
+    remaining = (expires_at - now).total_seconds()
+    delay = min(PAYMENT_WINDOW_POLL_SECONDS, max(1.0, remaining))
+    job_queue = getattr(context, "job_queue", None)
+    if job_queue is None:
+        return
+    name = _payment_window_job_name(chat_id)
+    try:
+        job_queue.run_once(
+            _payment_window_gate_callback,
+            when=delay,
+            chat_id=int(chat_id),
+            data=dict(data),
+            name=name,
+        )
+    except Exception:
+        logger.warning(
+            "popup_keyboard: failed to reschedule payment window chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+
+
+def schedule_payment_window_then_idle(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    *,
+    expires_at: datetime,
+    stripe_session_id: str | None = None,
+    bind_attempt_id: int | None = None,
+    reply_to_message_id: int | None = None,
+    player_user_id: int | None = None,
+) -> None:
+    """Defer idle until the payment window ends, then start the quiet-period countdown.
+
+    Used for Stripe checkout and first-time bind attempts so "request was handled"
+    does not fire while the player can still complete payment.
+    """
+    try:
+        if not popup_keyboard_eligible(int(chat_id)):
+            return
+    except Exception:
+        logger.debug(
+            "popup_keyboard: eligibility check failed; skip payment window chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+        return
+
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    last_msg = reply_to_message_id
+    if last_msg is None:
+        last_msg = context.chat_data.get(CHAT_DATA_LAST_PLAYER_MSG)
+    last_uid = player_user_id
+    if last_uid is None:
+        last_uid = context.chat_data.get(CHAT_DATA_LAST_PLAYER_UID)
+    if last_uid is None:
+        try:
+            last_uid = fetch_player_telegram_user_id_for_chat(int(chat_id))
+        except Exception:
+            last_uid = None
+
+    job_queue = getattr(context, "job_queue", None)
+    if job_queue is None:
+        logger.debug(
+            "popup_keyboard: no job_queue; skip payment window gate chat_id=%s",
+            chat_id,
+        )
+        return
+
+    cancel_popup_keyboard_idle(chat_id, job_queue=job_queue)
+    cancel_payment_window_gate(chat_id, job_queue=job_queue)
+
+    now = datetime.now(timezone.utc)
+    try:
+        closed, reason = _payment_window_closed(
+            stripe_session_id=stripe_session_id,
+            bind_attempt_id=bind_attempt_id,
+            expires_at=expires_at,
+            now=now,
+        )
+    except Exception:
+        logger.warning(
+            "popup_keyboard: payment window closed check failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+        closed, reason = False, None
+    if closed:
+        logger.info(
+            "popup_keyboard payment window already closed chat_id=%s reason=%s",
+            chat_id,
+            reason,
+        )
+        schedule_popup_keyboard_idle(
+            context,
+            int(chat_id),
+            reply_to_message_id=int(last_msg) if last_msg else None,
+            player_user_id=int(last_uid) if last_uid else None,
+        )
+        return
+
+    remaining = (expires_at - now).total_seconds()
+    delay = min(PAYMENT_WINDOW_POLL_SECONDS, max(1.0, remaining))
+    data = {
+        "chat_id": int(chat_id),
+        "expires_at": expires_at.isoformat(),
+        "stripe_session_id": str(stripe_session_id) if stripe_session_id else None,
+        "bind_attempt_id": int(bind_attempt_id) if bind_attempt_id is not None else None,
+        "reply_to_message_id": int(last_msg) if last_msg else None,
+        "player_user_id": int(last_uid) if last_uid else None,
+    }
+    try:
+        job_queue.run_once(
+            _payment_window_gate_callback,
+            when=delay,
+            chat_id=int(chat_id),
+            data=data,
+            name=_payment_window_job_name(chat_id),
+        )
+        logger.info(
+            "popup_keyboard payment window gate chat_id=%s poll_in=%ss expires_at=%s "
+            "stripe=%s bind=%s",
+            chat_id,
+            delay,
+            expires_at.isoformat(),
+            stripe_session_id,
+            bind_attempt_id,
+        )
+    except Exception:
+        logger.warning(
+            "popup_keyboard: failed to schedule payment window chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+
+
+def schedule_popup_keyboard_idle_for_chat(
+    chat_id: int,
+    *,
+    reply_to_message_id: int | None = None,
+    player_user_id: int | None = None,
+    job_queue: Any | None = None,
+) -> None:
+    """Schedule idle using the registered Application (webhook / non-handler paths)."""
+    if not popup_keyboard_eligible(int(chat_id)):
+        return
+
+    queue = _resolve_job_queue(job_queue)
+    if queue is None:
+        logger.debug(
+            "popup_keyboard: no job_queue; skip idle_for_chat chat_id=%s",
+            chat_id,
+        )
+        return
+
+    last_msg = reply_to_message_id
+    last_uid = player_user_id
+    if last_uid is None:
+        last_uid = fetch_player_telegram_user_id_for_chat(int(chat_id))
+
+    idle_when = popup_idle_seconds()
+    try:
+        name = _idle_job_name(chat_id)
+        for job in queue.get_jobs_by_name(name):
+            job.schedule_removal()
+        # Minimal stand-in so run_once callback receives chat targeting via job.data.
+        queue.run_once(
+            _popup_keyboard_idle_callback,
+            when=idle_when,
+            chat_id=int(chat_id),
+            data={
+                "chat_id": int(chat_id),
+                "reply_to_message_id": int(last_msg) if last_msg else None,
+                "player_user_id": int(last_uid) if last_uid else None,
+            },
+            name=name,
+        )
+        logger.info(
+            "popup_keyboard idle scheduled (for_chat) chat_id=%s in %ss",
+            chat_id,
+            idle_when,
+        )
+    except Exception:
+        logger.warning(
+            "popup_keyboard: failed to schedule idle_for_chat chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+
+
+def on_payment_window_closed(chat_id: int) -> None:
+    """Cancel payment-window deferral and start the quiet-period idle countdown.
+
+    Best-effort when called from the API dyno (no job_queue); the bot poll gate
+    still closes the window when it sees a completed Stripe row.
+    """
+    cancel_payment_window_gate(chat_id)
+    schedule_popup_keyboard_idle_for_chat(int(chat_id))
+
+
 def schedule_popup_keyboard_idle(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
@@ -300,7 +585,15 @@ def schedule_popup_keyboard_idle(
     player_user_id: int | None = None,
 ) -> None:
     """Cancel any pending idle job and schedule install after the quiet period."""
-    if not popup_keyboard_eligible(int(chat_id)):
+    try:
+        if not popup_keyboard_eligible(int(chat_id)):
+            return
+    except Exception:
+        logger.debug(
+            "popup_keyboard: eligibility check failed; skip idle chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
         return
 
     last_msg = reply_to_message_id
@@ -310,7 +603,10 @@ def schedule_popup_keyboard_idle(
     if last_uid is None:
         last_uid = context.chat_data.get(CHAT_DATA_LAST_PLAYER_UID)
     if last_uid is None:
-        last_uid = fetch_player_telegram_user_id_for_chat(int(chat_id))
+        try:
+            last_uid = fetch_player_telegram_user_id_for_chat(int(chat_id))
+        except Exception:
+            last_uid = None
 
     idle_when = popup_idle_seconds()
     try:
@@ -500,10 +796,12 @@ async def remove_popup_keyboard(
     text: str | None = None,
     context: ContextTypes.DEFAULT_TYPE | None = None,
     silent: bool = False,
+    post_copy: bool = True,
 ) -> bool:
     """Send selective ReplyKeyboardRemove. Returns True if sent.
 
-    When silent=True (or text is None), use STRIP_COPY and clear installed flag.
+    When silent=True (or text is None) and post_copy=True, use STRIP_COPY.
+    When post_copy=False, use a zero-width space (keyboard remove only).
     """
     _player_uid, reply_to = _resolve_player_targeting(
         int(chat_id),
@@ -512,11 +810,16 @@ async def remove_popup_keyboard(
     )
 
     use_default_strip = silent or text is None
-    body = STRIP_COPY if use_default_strip else text
+    if not post_copy:
+        body = "\u200b"
+    elif use_default_strip:
+        body = STRIP_COPY
+    else:
+        body = text or STRIP_COPY
     ok = await _send_silent_markup(
         bot,
         chat_id=int(chat_id),
-        text=body or STRIP_COPY,
+        text=body,
         reply_markup=remove_markup(),
         reply_to_message_id=reply_to,
     )
@@ -530,12 +833,13 @@ async def silent_strip_if_installed(
     chat_id: int,
     *,
     context: ContextTypes.DEFAULT_TYPE | None = None,
+    post_copy: bool = True,
 ) -> bool:
-    """If durable flag is set, silently remove keyboard and clear flag."""
+    """If durable flag is set, remove keyboard and clear flag."""
     if not get_popup_keyboard_installed(int(chat_id)):
         return False
     return await remove_popup_keyboard(
-        bot, int(chat_id), context=context, silent=True
+        bot, int(chat_id), context=context, silent=True, post_copy=post_copy
     )
 
 
@@ -544,9 +848,9 @@ def on_flow_entry_cancel_idle(
 ) -> None:
     if chat_id is None:
         return
-    cancel_popup_keyboard_idle(
-        chat_id, job_queue=getattr(context, "job_queue", None)
-    )
+    jq = getattr(context, "job_queue", None)
+    cancel_payment_window_gate(chat_id, job_queue=jq)
+    cancel_popup_keyboard_idle(chat_id, job_queue=jq)
 
 
 def mark_strip_keyboard(context: ContextTypes.DEFAULT_TYPE) -> None:

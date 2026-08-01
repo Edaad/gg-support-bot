@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -49,6 +49,7 @@ class StripeCheckoutResult:
     checkout_url: str
     session_id: str
     customer_id: str
+    expires_at: datetime
 
 
 @dataclass(frozen=True)
@@ -354,18 +355,49 @@ def create_stripe_checkout_session(
     if not checkout_url:
         raise RuntimeError("Stripe Checkout Session returned no URL")
 
+    expires_at = _checkout_expires_at(checkout)
+
     # Paid deposits are recorded when Stripe sends checkout.session.completed (webhook).
     logger.info(
-        "stripe checkout created chat_id=%s session_id=%s url_len=%s (custom $20-$100)",
+        "stripe checkout created chat_id=%s session_id=%s url_len=%s expires_at=%s",
         cid,
         session_id,
         len(checkout_url),
+        expires_at.isoformat(),
     )
     return StripeCheckoutResult(
         checkout_url=checkout_url,
         session_id=session_id,
         customer_id=stripe_customer_id,
+        expires_at=expires_at,
     )
+
+
+def _checkout_expires_at(checkout: Any) -> datetime:
+    """Parse Stripe Checkout Session expires_at (unix ts); default 24h from now."""
+    raw = getattr(checkout, "expires_at", None)
+    if raw is None and isinstance(checkout, dict):
+        raw = checkout.get("expires_at")
+    if raw is not None:
+        try:
+            return datetime.fromtimestamp(int(raw), tz=timezone.utc)
+        except (TypeError, ValueError, OSError):
+            pass
+    return datetime.now(timezone.utc) + timedelta(hours=24)
+
+
+def checkout_session_is_complete(session_id: str) -> bool:
+    """True when stripe_checkout_sessions has a completed row for this cs_ id."""
+    sid = (session_id or "").strip()
+    if not sid:
+        return False
+    with get_db() as session:
+        row = (
+            session.query(StripeCheckoutSession)
+            .filter(StripeCheckoutSession.stripe_checkout_session_id == sid)
+            .one_or_none()
+        )
+        return row is not None and str(row.status) == "complete"
 
 
 def _extract_payment_intent_id(value: Any) -> Optional[str]:

@@ -57,9 +57,13 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
     from bot.handlers.deposit import register_deposit_reminder_runtime
     from bot.services.mtproto_track_contact import set_contact_save_notify_bot
     from bot.services.popup_keyboard import register_popup_keyboard_runtime
+    from bot.services.escalation_notification import (
+        register_escalation_notification_runtime,
+    )
 
     register_deposit_reminder_runtime(app)
     register_popup_keyboard_runtime(app)
+    register_escalation_notification_runtime(app)
     set_contact_save_notify_bot(app.bot)
 
     if test_mode:

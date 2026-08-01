@@ -1993,8 +1993,23 @@ async def _complete_deposit_flow(chat, context: ContextTypes.DEFAULT_TYPE):
     await _maybe_rename_group_for_union(context)
     await _send_bonus_message(chat, context)
     _schedule_deposit_reminder(context, club_id, chat_id, user_id=customer_uid)
+
+    defer_popup = bool(context.chat_data.pop("deposit_defer_popup_idle", False))
+    setup_attempt_id = context.chat_data.get("deposit_setup_attempt_id")
+    if not defer_popup and setup_attempt_id is not None and chat_id is not None:
+        attempt = get_pending_bind_attempt(int(setup_attempt_id))
+        if attempt is not None:
+            popup_keyboard_svc.schedule_payment_window_then_idle(
+                context,
+                int(chat_id),
+                expires_at=attempt.expires_at,
+                bind_attempt_id=int(attempt.id),
+            )
+            defer_popup = True
+
     _cleanup(context)
-    popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
+    if not defer_popup:
+        popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
     return ConversationHandler.END
 
 
@@ -2185,6 +2200,25 @@ async def _send_deposit_method_response(
                 result.session_id,
                 result.customer_id,
             )
+            context.chat_data["deposit_defer_popup_idle"] = True
+            popup_keyboard_svc.schedule_payment_window_then_idle(
+                context,
+                int(chat_id),
+                expires_at=result.expires_at,
+                stripe_session_id=result.session_id,
+            )
+            try:
+                from bot.services.escalation_notification import (
+                    on_deposit_instructions_sent,
+                )
+
+                on_deposit_instructions_sent(int(chat_id))
+            except Exception:
+                logger.debug(
+                    "deposit: escalation instructions mark failed chat_id=%s",
+                    chat_id,
+                    exc_info=True,
+                )
             return True
         except Exception as e:
             err_detail = _stripe_error_detail(e)
@@ -2251,6 +2285,19 @@ async def _send_deposit_method_response(
         return False
 
     await _send_response(query, response_data, amount, display_name)
+    if chat_id is not None:
+        try:
+            from bot.services.escalation_notification import (
+                on_deposit_instructions_sent,
+            )
+
+            on_deposit_instructions_sent(int(chat_id))
+        except Exception:
+            logger.debug(
+                "deposit: escalation instructions mark failed chat_id=%s",
+                chat_id,
+                exc_info=True,
+            )
     return True
 
 

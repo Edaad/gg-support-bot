@@ -35,37 +35,51 @@ class PopupKeyboardEnabledTests(unittest.TestCase):
 
 class SupportSenderTests(unittest.TestCase):
     def test_admin_is_support(self):
+        from bot.services import group_activity as ga
+
         user = SimpleNamespace(id=111, is_bot=False, username="anyone")
-        with patch.object(pk, "ADMIN_USER_IDS", {111}):
-            with patch.object(pk, "is_club_staff", return_value=False):
-                with patch.object(pk, "get_club_gc_config_by_link_club_id", return_value=None):
+        with patch.object(ga, "ADMIN_USER_IDS", {111}):
+            with patch.object(ga, "is_club_staff", return_value=False):
+                with patch.object(
+                    ga, "get_club_gc_config_by_link_club_id", return_value=None
+                ):
                     self.assertTrue(pk.is_support_sender(user, club_id=2))
 
     def test_club_staff_is_support(self):
+        from bot.services import group_activity as ga
+
         user = SimpleNamespace(id=222, is_bot=False, username="am")
-        with patch.object(pk, "ADMIN_USER_IDS", set()):
-            with patch.object(pk, "is_club_staff", return_value=True):
+        with patch.object(ga, "ADMIN_USER_IDS", set()):
+            with patch.object(ga, "is_club_staff", return_value=True):
                 self.assertTrue(pk.is_support_sender(user, club_id=2))
 
     def test_gc_invite_username_is_support(self):
+        from bot.services import group_activity as ga
+
         user = SimpleNamespace(id=333, is_bot=False, username="RoundTableSupport2")
         cfg = SimpleNamespace(
             command_admin_user_id=0,
             bot_account=None,
         )
-        with patch.object(pk, "ADMIN_USER_IDS", set()):
-            with patch.object(pk, "is_club_staff", return_value=False):
-                with patch.object(pk, "get_club_gc_config_by_link_club_id", return_value=cfg):
+        with patch.object(ga, "ADMIN_USER_IDS", set()):
+            with patch.object(ga, "is_club_staff", return_value=False):
+                with patch.object(
+                    ga, "get_club_gc_config_by_link_club_id", return_value=cfg
+                ):
                     with patch.object(
-                        pk, "get_gc_users_to_add", return_value=("@RoundTableSupport2",)
+                        ga, "get_gc_users_to_add", return_value=("@RoundTableSupport2",)
                     ):
                         self.assertTrue(pk.is_support_sender(user, club_id=2))
 
     def test_player_is_not_support(self):
+        from bot.services import group_activity as ga
+
         user = SimpleNamespace(id=444, is_bot=False, username="playerone")
-        with patch.object(pk, "ADMIN_USER_IDS", set()):
-            with patch.object(pk, "is_club_staff", return_value=False):
-                with patch.object(pk, "get_club_gc_config_by_link_club_id", return_value=None):
+        with patch.object(ga, "ADMIN_USER_IDS", set()):
+            with patch.object(ga, "is_club_staff", return_value=False):
+                with patch.object(
+                    ga, "get_club_gc_config_by_link_club_id", return_value=None
+                ):
                     self.assertFalse(pk.is_support_sender(user, club_id=2))
 
     def test_bot_is_support(self):
@@ -130,6 +144,119 @@ class ScheduleIdleTests(unittest.TestCase):
         with patch.object(pk, "popup_keyboard_eligible", return_value=False):
             pk.schedule_popup_keyboard_idle(context, chat_id=-100)
         context.job_queue.run_once.assert_not_called()
+
+
+class PaymentWindowGateTests(unittest.TestCase):
+    def test_payment_window_job_name(self):
+        self.assertEqual(
+            pk.payment_window_job_name(-100),
+            "popup_keyboard_payment_window_-100",
+        )
+
+    def test_schedule_payment_window_defers_idle(self):
+        from datetime import datetime, timedelta, timezone
+
+        context = MagicMock()
+        context.job_queue.get_jobs_by_name.return_value = []
+        context.chat_data = {
+            "popup_kb_last_player_message_id": 9,
+            "popup_kb_last_player_user_id": 5,
+        }
+        expires = datetime.now(timezone.utc) + timedelta(hours=1)
+
+        with patch.object(pk, "popup_keyboard_eligible", return_value=True):
+            with patch.object(
+                pk,
+                "_payment_window_closed",
+                return_value=(False, None),
+            ):
+                pk.schedule_payment_window_then_idle(
+                    context,
+                    chat_id=-100,
+                    expires_at=expires,
+                    stripe_session_id="cs_test",
+                )
+
+        context.job_queue.run_once.assert_called_once()
+        kwargs = context.job_queue.run_once.call_args.kwargs
+        self.assertEqual(kwargs["name"], "popup_keyboard_payment_window_-100")
+        self.assertEqual(kwargs["data"]["stripe_session_id"], "cs_test")
+        self.assertLessEqual(kwargs["when"], pk.PAYMENT_WINDOW_POLL_SECONDS)
+
+    def test_payment_window_closed_starts_idle_immediately(self):
+        from datetime import datetime, timedelta, timezone
+
+        context = MagicMock()
+        context.job_queue.get_jobs_by_name.return_value = []
+        context.chat_data = {}
+        expires = datetime.now(timezone.utc) + timedelta(hours=1)
+
+        with patch.object(pk, "popup_keyboard_eligible", return_value=True):
+            with patch.object(
+                pk, "_payment_window_closed", return_value=(True, "stripe_complete")
+            ):
+                with patch.object(pk, "schedule_popup_keyboard_idle") as idle:
+                    with patch.object(pk, "fetch_player_telegram_user_id_for_chat", return_value=5):
+                        pk.schedule_payment_window_then_idle(
+                            context,
+                            chat_id=-100,
+                            expires_at=expires,
+                            stripe_session_id="cs_test",
+                        )
+                    idle.assert_called_once()
+                    context.job_queue.run_once.assert_not_called()
+
+    def test_gate_callback_starts_idle_when_expired(self):
+        from datetime import datetime, timedelta, timezone
+
+        past = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+        context = MagicMock()
+        context.job = MagicMock()
+        context.job.data = {
+            "chat_id": -100,
+            "expires_at": past,
+            "stripe_session_id": "cs_test",
+            "bind_attempt_id": None,
+            "reply_to_message_id": 9,
+            "player_user_id": 5,
+        }
+
+        with patch.object(
+            pk, "_payment_window_closed", return_value=(True, "expired")
+        ):
+            with patch.object(pk, "schedule_popup_keyboard_idle") as idle:
+                import asyncio
+
+                asyncio.run(pk._payment_window_gate_callback(context))
+                idle.assert_called_once()
+
+    def test_closed_helper_stripe_complete(self):
+        from datetime import datetime, timedelta, timezone
+        from bot.services import stripe_deposit as sd
+
+        future = datetime.now(timezone.utc) + timedelta(hours=1)
+        with patch.object(sd, "checkout_session_is_complete", return_value=True):
+            closed, reason = pk._payment_window_closed(
+                stripe_session_id="cs_x",
+                bind_attempt_id=None,
+                expires_at=future,
+                now=datetime.now(timezone.utc),
+            )
+        self.assertTrue(closed)
+        self.assertEqual(reason, "stripe_complete")
+
+    def test_closed_helper_expired(self):
+        from datetime import datetime, timedelta, timezone
+
+        past = datetime.now(timezone.utc) - timedelta(seconds=1)
+        closed, reason = pk._payment_window_closed(
+            stripe_session_id=None,
+            bind_attempt_id=None,
+            expires_at=past,
+            now=datetime.now(timezone.utc),
+        )
+        self.assertTrue(closed)
+        self.assertEqual(reason, "expired")
 
 
 class ButtonLabelTests(unittest.TestCase):

@@ -89,6 +89,7 @@ def _stripe_mocks():
     checkout = SimpleNamespace(
         id="cs_test",
         url="https://checkout.stripe.com/test",
+        expires_at=1_800_000_000,
     )
     return product, price, customer, checkout
 
@@ -186,6 +187,7 @@ class StripeDepositTestCase(unittest.TestCase):
         session_create.assert_called_once()
         self.assertEqual(session_create.call_args.kwargs["customer"], "cus_existing")
         self.assertEqual(result.customer_id, "cus_existing")
+        self.assertEqual(result.expires_at.year, 2027)  # from expires_at=1_800_000_000
         price_kwargs = price_create.call_args.kwargs
         self.assertEqual(
             price_kwargs["custom_unit_amount"]["minimum"], sd.STRIPE_CHECKOUT_MIN_CENTS
@@ -264,6 +266,7 @@ class StripeDepositTestCase(unittest.TestCase):
         checkout2 = SimpleNamespace(
             id="cs_test_2",
             url="https://checkout.stripe.com/test2",
+            expires_at=1_800_000_000,
         )
 
         with (

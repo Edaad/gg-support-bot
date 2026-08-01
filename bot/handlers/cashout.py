@@ -139,6 +139,14 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not eligible:
             await update.message.reply_text(deny_msg)
             return ConversationHandler.END
+        try:
+            from bot.services.escalation_notification import notify_cashout_started
+
+            await notify_cashout_started(
+                club_id=club_id, chat_id=chat.id, title=chat.title
+            )
+        except Exception:
+            pass
 
     popup_keyboard_svc.prepare_flow_entry_keyboard(
         context, chat.id, club_id=club_id, title=chat.title

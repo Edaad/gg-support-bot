@@ -9,7 +9,14 @@ Idle install may omit **`/cashout`** when cashout would be denied by the group�
 
 Install posts: *Looks like your request was handled…*  
 Free-text strip posts: *We'll be with you in just a second.*  
+(When **Escalation notification** is also on for the club, free-text strip removes the keyboard without that copy — escalation owns the ack.)
+
 Both stay in chat (deleting the carrier message clears the keyboard on clients).
+
+After `/deposit` with an open **Stripe checkout** or **first-time bind attempt**, the 5‑minute
+idle countdown does **not** start when instructions are sent. It starts when the payment
+window ends (paid, or checkout/bind expired) — whichever comes first — then waits the usual
+quiet period before installing.
 
 Installed state is stored on `support_group_chats.popup_keyboard_installed` (main bot).
 **TestGGSupportBot** keeps that flag **in memory** only (no DB write). Player TG id upsert is skipped on the test bot (unique club+player constraint); targeting uses chat_data.

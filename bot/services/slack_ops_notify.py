@@ -22,6 +22,11 @@ SLACK_ISSUE_REPORT_BOT_TOKEN_ENV = "SLACK_ISSUE_REPORT_BOT_TOKEN"
 SLACK_ISSUE_REPORT_CHANNEL_ID_ENV = "SLACK_ISSUE_REPORT_CHANNEL_ID"
 SLACK_ISSUE_REPORT_WEBHOOK_URL_ENV = "SLACK_ISSUE_REPORT_WEBHOOK_URL"
 
+# Escalation notification — dedicated channel (player idle / cashout / deposit chase).
+SLACK_ESCALATION_BOT_TOKEN_ENV = "SLACK_ESCALATION_BOT_TOKEN"
+SLACK_ESCALATION_CHANNEL_ID_ENV = "SLACK_ESCALATION_CHANNEL_ID"
+SLACK_ESCALATION_WEBHOOK_URL_ENV = "SLACK_ESCALATION_WEBHOOK_URL"
+
 SLACK_CHAT_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage"
 SLACK_FILES_GET_UPLOAD_URL_EXTERNAL = (
     "https://slack.com/api/files.getUploadURLExternal"
@@ -67,6 +72,21 @@ def _issue_report_channel_id() -> str | None:
 
 def _issue_report_webhook_url() -> str | None:
     raw = (os.getenv(SLACK_ISSUE_REPORT_WEBHOOK_URL_ENV) or "").strip()
+    return raw or None
+
+
+def _escalation_bot_token() -> str | None:
+    raw = (os.getenv(SLACK_ESCALATION_BOT_TOKEN_ENV) or "").strip()
+    return raw or None
+
+
+def _escalation_channel_id() -> str | None:
+    raw = (os.getenv(SLACK_ESCALATION_CHANNEL_ID_ENV) or "").strip()
+    return raw or None
+
+
+def _escalation_webhook_url() -> str | None:
+    raw = (os.getenv(SLACK_ESCALATION_WEBHOOK_URL_ENV) or "").strip()
     return raw or None
 
 
@@ -154,6 +174,62 @@ async def _post_issue_report_via_webhook(text: str) -> bool:
         return False
 
 
+async def _post_escalation_via_bot_api(text: str) -> bool:
+    token = _escalation_bot_token()
+    channel = _escalation_channel_id()
+    if not token or not channel:
+        return False
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+    payload = {"channel": channel, "text": text, "unfurl_links": False}
+
+    try:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SEC) as client:
+            resp = await client.post(
+                SLACK_CHAT_POST_MESSAGE_URL,
+                headers=headers,
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        if not data.get("ok"):
+            logger.warning(
+                "slack_escalation: chat.postMessage failed error=%s",
+                data.get("error"),
+            )
+            return False
+        logger.info(
+            "slack_escalation: chat.postMessage ok channel=%s ts=%s",
+            channel,
+            data.get("ts"),
+        )
+        return True
+    except Exception:
+        logger.warning(
+            "slack_escalation: chat.postMessage request failed", exc_info=True
+        )
+        return False
+
+
+async def _post_escalation_via_webhook(text: str) -> bool:
+    url = _escalation_webhook_url()
+    if not url:
+        return False
+
+    try:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SEC) as client:
+            resp = await client.post(url, json={"text": text})
+            resp.raise_for_status()
+        logger.info("slack_escalation: webhook posted status=%s", resp.status_code)
+        return True
+    except Exception:
+        logger.warning("slack_escalation: webhook post failed", exc_info=True)
+        return False
+
+
 async def notify_slack_ops(text: str, *, source: str) -> bool:
     """Post to Slack. Prefers custom-app bot token; falls back to webhook. Never raises."""
 
@@ -173,6 +249,36 @@ async def notify_slack_ops(text: str, *, source: str) -> bool:
 
     logger.warning(
         "slack_ops: skipped source=%s (set SLACK_OPS_BOT_TOKEN+SLACK_OPS_CHANNEL_ID or SLACK_OPS_WEBHOOK_URL)",
+        source,
+    )
+    return False
+
+
+async def notify_slack_escalation(text: str, *, source: str) -> bool:
+    """Post escalation alerts to the dedicated Slack channel. Never raises."""
+
+    message = (text or "").strip()
+    if not message:
+        return False
+    if len(message) > _MAX_SLACK_TEXT_LEN:
+        message = message[: _MAX_SLACK_TEXT_LEN - 1] + "…"
+
+    if _escalation_bot_token() and _escalation_channel_id():
+        ok = await _post_escalation_via_bot_api(message)
+        if ok:
+            return True
+        if _escalation_webhook_url():
+            logger.info("slack_escalation: bot API failed; trying webhook fallback")
+            return await _post_escalation_via_webhook(message)
+        return False
+
+    if _escalation_webhook_url():
+        return await _post_escalation_via_webhook(message)
+
+    logger.warning(
+        "slack_escalation: skipped source=%s "
+        "(set SLACK_ESCALATION_BOT_TOKEN+SLACK_ESCALATION_CHANNEL_ID "
+        "or SLACK_ESCALATION_WEBHOOK_URL)",
         source,
     )
     return False

@@ -116,9 +116,39 @@ async def notify_player_group_payment_received(
             is_test,
             token[-8:] if len(token) >= 8 else token,
         )
-        from bot.handlers.deposit import cancel_deposit_reminder_for_chat
+        try:
+            from bot.handlers.deposit import cancel_deposit_reminder_for_chat
 
-        cancel_deposit_reminder_for_chat(int(telegram_chat_id))
+            cancel_deposit_reminder_for_chat(int(telegram_chat_id))
+        except Exception:
+            logger.debug(
+                "payment_group_notify: cancel deposit reminder failed chat_id=%s",
+                telegram_chat_id,
+                exc_info=True,
+            )
+        try:
+            from bot.services.popup_keyboard import on_payment_window_closed
+
+            # Best-effort on API dyno (no job_queue); bot payment-window poll also closes.
+            on_payment_window_closed(int(telegram_chat_id))
+        except Exception:
+            logger.debug(
+                "payment_group_notify: payment window close failed chat_id=%s",
+                telegram_chat_id,
+                exc_info=True,
+            )
+        try:
+            from bot.services.escalation_notification import (
+                on_payment_received_for_escalation,
+            )
+
+            on_payment_received_for_escalation(int(telegram_chat_id))
+        except Exception:
+            logger.debug(
+                "payment_group_notify: escalation cancel failed chat_id=%s",
+                telegram_chat_id,
+                exc_info=True,
+            )
         return True
 
     logger.exception(
