@@ -34,16 +34,37 @@ REASON_DEPOSIT_SENT_FOLLOWUP = "deposit_sent_followup"
 REASON_DEPOSIT_SENT_UNBOUND = "deposit_sent_unbound"
 REASON_NEW_PLAYER_ONBOARDED = "new_player_onboarded"
 REASON_PLAYER_DM_REACHED_OUT = "player_dm_reached_out"
+REASON_EARLYRB_REQUESTED = "earlyrb_requested"
+REASON_RPA_DEPOSIT_FAILED = "rpa_deposit_failed"
+REASON_RPA_CASHOUT_FAILED = "rpa_cashout_failed"
 
 _HEADLINES = {
     REASON_PLAYER_IDLE: "A player just reached out.",
     REASON_CASHOUT_STARTED: "Cash out initiated.",
     REASON_DEPOSIT_SENT_TIMEOUT: "Deposit payment not seen.",
-    REASON_DEPOSIT_SENT_FOLLOWUP: "Deposit follow-up after payment claim.",
+    REASON_DEPOSIT_SENT_FOLLOWUP: (
+        "Player sent a message after confirming they sent the payment."
+    ),
     REASON_DEPOSIT_SENT_UNBOUND: "Manual deposit request.",
-    REASON_NEW_PLAYER_ONBOARDED: "New player onboarded.",
+    REASON_NEW_PLAYER_ONBOARDED: (
+        "Welcome the new player who just joined the group chat."
+    ),
     REASON_PLAYER_DM_REACHED_OUT: "A player reached out in DM.",
+    REASON_EARLYRB_REQUESTED: "Early rakeback requested.",
+    REASON_RPA_DEPOSIT_FAILED: "RPA deposit failed — add chips manually.",
+    REASON_RPA_CASHOUT_FAILED: "RPA cashout failed — claim chips manually.",
 }
+
+# Free-text / media escalations include the triggering player message body.
+_REASONS_WITH_MESSAGE_BODY = frozenset(
+    {
+        REASON_PLAYER_IDLE,
+        REASON_DEPOSIT_SENT_FOLLOWUP,
+    }
+)
+
+SLACK_MESSAGE_BODY_MAX_CHARS = 500
+MEDIA_ONLY_PLACEHOLDER = "(media)"
 
 DEPOSIT_SENT_ACK_COPY = (
     "Thank you! Chips will be added as soon as we receive the payment."
@@ -122,17 +143,49 @@ def _slack_code_span(text: str) -> str:
     return f"`{safe}`"
 
 
+def format_player_message_for_slack(message_text: str | None) -> str | None:
+    """Normalize / truncate player free-text for Slack; None means omit body."""
+    if message_text is None:
+        return None
+    body = (message_text or "").strip()
+    if not body:
+        return None
+    max_len = SLACK_MESSAGE_BODY_MAX_CHARS
+    if len(body) > max_len:
+        body = body[: max_len - 1].rstrip() + "…"
+    return body
+
+
+def extract_player_message_for_slack(message) -> str:
+    """Text, caption, or media placeholder from a Telegram message."""
+    if message is None:
+        return MEDIA_ONLY_PLACEHOLDER
+    text = (getattr(message, "text", None) or "").strip()
+    if text:
+        return text
+    caption = (getattr(message, "caption", None) or "").strip()
+    if caption:
+        return caption
+    return MEDIA_ONLY_PLACEHOLDER
+
+
 def format_escalation_slack_text(
     reason: str,
     *,
     club_id: int | None,
     chat_id: int,
     title: str | None = None,
+    message_text: str | None = None,
 ) -> str:
     headline = _HEADLINES.get(reason, reason)
     club = _club_display_name(club_id)
     group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
-    return f"{headline}\nClub: {club}\n{_slack_code_span(group_title)}"
+    lines = [headline, f"Club: {club}", _slack_code_span(group_title)]
+    if reason in _REASONS_WITH_MESSAGE_BODY:
+        body = format_player_message_for_slack(message_text)
+        if body:
+            lines.append(body)
+    return "\n".join(lines)
 
 
 async def notify_escalation_slack(
@@ -141,9 +194,14 @@ async def notify_escalation_slack(
     club_id: int | None,
     chat_id: int,
     title: str | None = None,
+    message_text: str | None = None,
 ) -> bool:
     text = format_escalation_slack_text(
-        reason, club_id=club_id, chat_id=chat_id, title=title
+        reason,
+        club_id=club_id,
+        chat_id=chat_id,
+        title=title,
+        message_text=message_text,
     )
     try:
         from bot.services.slack_ops_notify import notify_slack_escalation
@@ -187,6 +245,7 @@ async def fire_player_idle(
     *,
     club_id: int | None,
     title: str | None = None,
+    message_text: str | None = None,
 ) -> None:
     strip = get_popup_keyboard_installed(int(chat_id))
     await send_player_ack(bot, chat_id, strip_keyboard=strip)
@@ -195,6 +254,7 @@ async def fire_player_idle(
         club_id=club_id,
         chat_id=int(chat_id),
         title=title,
+        message_text=message_text,
     )
 
 
@@ -210,6 +270,59 @@ async def notify_cashout_started(
         return
     await notify_escalation_slack(
         REASON_CASHOUT_STARTED,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+    )
+
+
+async def notify_earlyrb_requested(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None = None,
+) -> None:
+    """Slack when /earlyrb is allowed (no 24h block)."""
+    if not escalation_notification_eligible(
+        int(chat_id), club_id=club_id, title=title
+    ):
+        return
+    await notify_escalation_slack(
+        REASON_EARLYRB_REQUESTED,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+    )
+
+
+async def notify_rpa_deposit_failed(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None = None,
+) -> None:
+    """Slack when ClubGG auto chip-add fails and chips need manual add."""
+    if not escalation_notification_enabled(club_id):
+        return
+    await notify_escalation_slack(
+        REASON_RPA_DEPOSIT_FAILED,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+    )
+
+
+async def notify_rpa_cashout_failed(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None = None,
+) -> None:
+    """Slack when ClubGG auto-claim fails and chips need manual claim."""
+    if not escalation_notification_enabled(club_id):
+        return
+    await notify_escalation_slack(
+        REASON_RPA_CASHOUT_FAILED,
         club_id=club_id,
         chat_id=int(chat_id),
         title=title,
@@ -515,6 +628,7 @@ async def handle_deposit_sent_player_followup(
     *,
     club_id: int | None,
     title: str | None = None,
+    message_text: str | None = None,
 ) -> bool:
     """If 5m wait is armed, escalate follow-up on another player message.
 
@@ -531,6 +645,7 @@ async def handle_deposit_sent_player_followup(
         club_id=club_id,
         chat_id=int(chat_id),
         title=title,
+        message_text=message_text,
     )
     return True
 
@@ -638,10 +753,15 @@ async def handle_deposit_sent_player_signal(
     club_id: int | None,
     title: str | None = None,
     is_confirm_signal: bool = False,
+    message_text: str | None = None,
 ) -> bool:
     """Deprecated: regex/media path removed. Follow-up-only when armed."""
     if is_confirm_signal and not ga.deposit_sent_watch_armed(chat_id):
         return False
     return await handle_deposit_sent_player_followup(
-        context, chat_id, club_id=club_id, title=title
+        context,
+        chat_id,
+        club_id=club_id,
+        title=title,
+        message_text=message_text,
     )

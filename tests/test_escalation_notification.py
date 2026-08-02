@@ -119,6 +119,21 @@ class SilenceDetectionTests(unittest.TestCase):
                     ).should_fire_idle
                 )
 
+    def test_reset_idle_episode_clears_flag(self):
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                ga.record_human_message(1, role="player", now=t0, silence_seconds=600)
+                t1 = t0 + timedelta(seconds=601)
+                self.assertTrue(
+                    ga.record_human_message(
+                        1, role="player", now=t1, silence_seconds=600
+                    ).should_fire_idle
+                )
+                self.assertTrue(ga.get_chat_activity_state(1).idle_episode_fired)
+                ga.reset_idle_episode(1)
+                self.assertFalse(ga.get_chat_activity_state(1).idle_episode_fired)
+
 
 class SupportSenderTests(unittest.TestCase):
     def test_admin_is_support(self):
@@ -149,13 +164,28 @@ class EscalationCopyTests(unittest.TestCase):
                     club_id=1,
                     chat_id=-100,
                     title="RT / 12345",
+                    message_text="Need help with my deposit",
                 )
         self.assertIn("A player just reached out.", text)
         self.assertIn("Club: Round Table", text)
         self.assertIn("`RT / 12345`", text)
+        self.assertIn("Need help with my deposit", text)
         self.assertNotIn("Group:", text)
         self.assertNotIn("-100", text)
         self.assertNotIn("user_id", text.lower())
+
+    def test_player_idle_truncates_long_message(self):
+        long = "x" * 600
+        with patch.object(esc, "_club_display_name", return_value="Round Table"):
+            text = esc.format_escalation_slack_text(
+                esc.REASON_PLAYER_IDLE,
+                club_id=1,
+                chat_id=-100,
+                title="RT / 1",
+                message_text=long,
+            )
+        self.assertIn("…", text)
+        self.assertLessEqual(len(text.split("\n")[-1]), esc.SLACK_MESSAGE_BODY_MAX_CHARS)
 
     def test_cashout_copy(self):
         with patch.object(esc, "_club_display_name", return_value="Aces"):
@@ -164,9 +194,11 @@ class EscalationCopyTests(unittest.TestCase):
                 club_id=2,
                 chat_id=-200,
                 title="AT / 9",
+                message_text="should not appear",
             )
         self.assertIn("Cash out initiated.", text)
         self.assertIn("`AT / 9`", text)
+        self.assertNotIn("should not appear", text)
 
     def test_unbound_manual_deposit_headline(self):
         with patch.object(esc, "_club_display_name", return_value="Creator Club"):
@@ -187,7 +219,9 @@ class EscalationCopyTests(unittest.TestCase):
                 chat_id=-100,
                 title="GTO / 4661-4582 / Btwn",
             )
-        self.assertIn("New player onboarded.", text)
+        self.assertIn(
+            "Welcome the new player who just joined the group chat.", text
+        )
         self.assertIn("Club: ClubGTO", text)
         self.assertIn("`GTO / 4661-4582 / Btwn`", text)
 
@@ -201,6 +235,55 @@ class EscalationCopyTests(unittest.TestCase):
             )
         self.assertIn("A player reached out in DM.", text)
         self.assertIn("`Btwn (@btwn)`", text)
+
+    def test_deposit_followup_copy_includes_message(self):
+        with patch.object(esc, "_club_display_name", return_value="Creator Club"):
+            text = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_SENT_FOLLOWUP,
+                club_id=3,
+                chat_id=-300,
+                title="CC / 1 / x",
+                message_text="still waiting",
+            )
+        self.assertIn(
+            "Player sent a message after confirming they sent the payment.",
+            text,
+        )
+        self.assertIn("still waiting", text)
+
+    def test_earlyrb_and_rpa_headlines(self):
+        with patch.object(esc, "_club_display_name", return_value="Creator Club"):
+            early = esc.format_escalation_slack_text(
+                esc.REASON_EARLYRB_REQUESTED,
+                club_id=3,
+                chat_id=-1,
+                title="CC / 1",
+            )
+            dep = esc.format_escalation_slack_text(
+                esc.REASON_RPA_DEPOSIT_FAILED,
+                club_id=3,
+                chat_id=-1,
+                title="CC / 1",
+            )
+            cash = esc.format_escalation_slack_text(
+                esc.REASON_RPA_CASHOUT_FAILED,
+                club_id=3,
+                chat_id=-1,
+                title="CC / 1",
+            )
+        self.assertIn("Early rakeback requested.", early)
+        self.assertIn("RPA deposit failed — add chips manually.", dep)
+        self.assertIn("RPA cashout failed — claim chips manually.", cash)
+
+    def test_extract_player_message_prefers_text(self):
+        msg = SimpleNamespace(text=" hello ", caption="cap", photo=None)
+        self.assertEqual(esc.extract_player_message_for_slack(msg), "hello")
+
+    def test_extract_player_message_media_placeholder(self):
+        msg = SimpleNamespace(text=None, caption=None)
+        self.assertEqual(
+            esc.extract_player_message_for_slack(msg), esc.MEDIA_ONLY_PLACEHOLDER
+        )
 
 
 class PlayerContactLabelTests(unittest.TestCase):

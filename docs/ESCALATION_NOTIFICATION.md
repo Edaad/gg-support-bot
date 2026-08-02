@@ -21,13 +21,21 @@ AM/staff message then player reply **without** 10 minutes silence: no ack, no Sl
 
 Bare `/deposit` does **not** escalate. Allowed `/cashout` Slack-escalates without Telegram ack. Denied cashout (cooldown/hours): no escalate; a later player message may idle-fire under normal rules.
 
+`/earlyrb` is treated like a flow command (no idle ack on the command itself):
+
+| Case | Telegram idle ack | Slack |
+|------|-------------------|-------|
+| Eligible (no 24h block) | No | `Early rakeback requested.` |
+| Denied (24h constraint) | No | No; idle episode reset so follow-up free text can idle-fire |
+| Follow-up free text after deny | Normal idle | Idle + player message body |
+
 ## GC create / DM reach-out
 
 When **Escalation notification** is on:
 
 | Event | Headline | Code span |
 |--------|----------|-----------|
-| New player-bound GC (`/gc @user` or auto create) | New player onboarded. | GC title |
+| New player-bound GC (`/gc @user` or auto create) | Welcome the new player who just joined the group chat. | GC title |
 | Incoming player DM reuses existing GC | A player reached out in DM. | `Name (@username)` |
 
 Skip: generic `/gc` (no player); staff `/gc` or outgoing MTProto `/gc` that only reuses an existing group.
@@ -47,10 +55,21 @@ On tap:
 2. If the group has **no** `group_payment_method_bindings` row for the chosen method → Slack **Manual deposit request.** immediately.
 3. If **bound** → arm a durable 5-minute wait:
    - No payment/`/add` in 5 minutes → Slack `deposit_sent_timeout` (**re-checks DB** so API payment notify cancels correctly across dynos).
-   - Another player message before payment → Slack `deposit_sent_followup`.
+   - Another player message before payment → Slack `deposit_sent_followup` **with the player message body**.
    - Payment group notify clears the wait via durable columns.
 
 Typed “sent” / media no longer arm the chase (button only).
+
+## RPA (ClubGG auto chip-add / auto-claim)
+
+When escalation is on and RPA was **attempted** but needs manual follow-up:
+
+| Event | Headline |
+|--------|----------|
+| Auto chip-add fail / manual skip (`/add` or payment auto-deposit) | RPA deposit failed — add chips manually. |
+| Auto-claim fail on `/cash` | RPA cashout failed — claim chips manually. |
+
+Skip Slack when auto is disabled / not configured, or when the request was never queued (idempotency claim miss). Existing Telegram staff alerts are unchanged.
 
 ## Slack
 
@@ -63,17 +82,20 @@ SLACK_ESCALATION_CHANNEL_ID=C...
 # SLACK_ESCALATION_WEBHOOK_URL=https://hooks.slack.com/services/...
 ```
 
-Copy (no user id, no message body, no chat id):
+Copy (no user id, no chat id):
 
-| Reason | Headline |
-|--------|----------|
-| `player_idle` | A player just reached out. |
-| `cashout_started` | Cash out initiated. |
-| `deposit_sent_timeout` | Deposit payment not seen. |
-| `deposit_sent_followup` | Deposit follow-up after payment claim. |
-| `deposit_sent_unbound` | Manual deposit request. |
-| `new_player_onboarded` | New player onboarded. |
-| `player_dm_reached_out` | A player reached out in DM. |
+| Reason | Headline | Player message body? |
+|--------|----------|----------------------|
+| `player_idle` | A player just reached out. | Yes |
+| `cashout_started` | Cash out initiated. | No |
+| `earlyrb_requested` | Early rakeback requested. | No |
+| `deposit_sent_timeout` | Deposit payment not seen. | No |
+| `deposit_sent_followup` | Player sent a message after confirming they sent the payment. | Yes |
+| `deposit_sent_unbound` | Manual deposit request. | No |
+| `new_player_onboarded` | Welcome the new player who just joined the group chat. | No |
+| `player_dm_reached_out` | A player reached out in DM. | No |
+| `rpa_deposit_failed` | RPA deposit failed — add chips manually. | No |
+| `rpa_cashout_failed` | RPA cashout failed — claim chips manually. | No |
 
 Each post:
 
@@ -81,9 +103,10 @@ Each post:
 {headline}
 Club: {club name}
 `{gc title or contact}`
+[{player message when included}]
 ```
 
-GC title / contact is a Slack code span (tap-to-copy on mobile).
+GC title / contact is a Slack code span (tap-to-copy on mobile). Free-text bodies are truncated (~500 chars); media with no caption uses `(media)`.
 
 ## Migration
 

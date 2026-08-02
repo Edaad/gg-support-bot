@@ -415,6 +415,28 @@ async def _run_single_deposit(
     return terminal in ("success", "dry_run", "skipped"), terminal
 
 
+async def _maybe_notify_rpa_deposit_failed(
+    *,
+    club_id: int,
+    chat_id: int,
+    title: str | None,
+) -> None:
+    try:
+        from bot.services.escalation_notification import notify_rpa_deposit_failed
+
+        await notify_rpa_deposit_failed(
+            club_id=int(club_id),
+            chat_id=int(chat_id),
+            title=title,
+        )
+    except Exception:
+        logger.debug(
+            "auto_chip_add: rpa deposit escalation failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+
+
 async def run_auto_chip_add(
     *,
     club_id: int,
@@ -449,6 +471,9 @@ async def run_auto_chip_add(
             ptb_bot,
             f"Auto chip-add skipped (chat {chat_id}): could not read a player id "
             f"from the group title. Add chips manually.",
+        )
+        await _maybe_notify_rpa_deposit_failed(
+            club_id=club_id, chat_id=chat_id, title=title
         )
         return False, "no_player_id"
 
@@ -515,6 +540,9 @@ async def run_auto_chip_add(
             f"could not map club {club_name!r}/union {union_shorthand!r} to a "
             f"ClubGG club. Add chips manually.",
         )
+        await _maybe_notify_rpa_deposit_failed(
+            club_id=club_id, chat_id=chat_id, title=title
+        )
         return False, "club_mapping_failed"
 
     timeout = httpx.Timeout(cfg.timeout_sec)
@@ -529,6 +557,9 @@ async def run_auto_chip_add(
                 ptb_bot,
                 f"Auto chip-add NOT sent for {clubgg_club} player {player_id} "
                 f"({parts} chips): {detail}. Add chips manually.",
+            )
+            await _maybe_notify_rpa_deposit_failed(
+                club_id=club_id, chat_id=chat_id, title=title
             )
             return False, "health_failed"
 
@@ -559,6 +590,10 @@ async def run_auto_chip_add(
                         f"was not attempted. Add chips manually.",
                     )
                 break
+        if not all_ok:
+            await _maybe_notify_rpa_deposit_failed(
+                club_id=club_id, chat_id=chat_id, title=title
+            )
         return all_ok, last_status
 
 

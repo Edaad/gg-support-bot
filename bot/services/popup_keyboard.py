@@ -37,9 +37,12 @@ POPUP_IDLE_SECONDS_TEST = 30  # faster restore for TestGGSupportBot
 PAYMENT_WINDOW_POLL_SECONDS = 30
 BTN_DEPOSIT = "/deposit"
 BTN_CASHOUT = "/cashout"
+BTN_EARLYRB = "/earlyrb"
 BUTTON_LABELS = frozenset({BTN_DEPOSIT, BTN_CASHOUT})
 # Typed cashout alias — never strip when player sends this (starts cashout flow).
-FLOW_COMMAND_TEXTS = frozenset({BTN_DEPOSIT, BTN_CASHOUT, "/withdraw"})
+FLOW_COMMAND_TEXTS = frozenset(
+    {BTN_DEPOSIT, BTN_CASHOUT, BTN_EARLYRB, "/withdraw"}
+)
 
 INSTALL_COPY = (
     "Looks like your request was handled. Feel free to reach back out anytime!"
@@ -163,7 +166,7 @@ def popup_keyboard_eligible(
 
 
 def is_flow_command_text(text: str | None) -> bool:
-    """True when message text is a deposit/cashout command (including bot_command form)."""
+    """True when message text is a deposit/cashout/earlyrb command (incl. bot_command form)."""
     if not text:
         return False
     raw = text.strip()

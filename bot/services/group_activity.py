@@ -47,6 +47,13 @@ def clear_activity_state_for_tests() -> None:
     _chat_state.clear()
 
 
+def reset_idle_episode(chat_id: int) -> None:
+    """Allow the next player message to idle-escalate (e.g. after denied /earlyrb)."""
+    state = get_chat_activity_state(int(chat_id))
+    state.idle_episode_fired = False
+    _persist_activity_state(int(chat_id), state)
+
+
 def _as_utc(ts: datetime | None) -> datetime | None:
     if ts is None:
         return None

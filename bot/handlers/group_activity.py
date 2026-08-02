@@ -60,6 +60,7 @@ async def group_activity_handler(
 
         flow_cmd = pk.is_flow_command_text(message.text)
         in_flow = deposit_flow_active(context) or cashout_flow_active(context)
+        player_msg = esc.extract_player_message_for_slack(message)
 
         deposit_consumed = False
         if esc_on and not flow_cmd:
@@ -68,6 +69,7 @@ async def group_activity_handler(
                 chat.id,
                 club_id=club_id,
                 title=chat.title,
+                message_text=player_msg,
             )
 
         idle_fired = False
@@ -83,6 +85,7 @@ async def group_activity_handler(
                 chat.id,
                 club_id=club_id,
                 title=chat.title,
+                message_text=player_msg,
             )
             idle_fired = True
 

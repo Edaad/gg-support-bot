@@ -274,6 +274,8 @@ class FlowCommandTextTests(unittest.TestCase):
     def test_deposit_cashout_withdraw(self):
         self.assertTrue(pk.is_flow_command_text("/deposit"))
         self.assertTrue(pk.is_flow_command_text("/cashout"))
+        self.assertTrue(pk.is_flow_command_text("/earlyrb"))
+        self.assertTrue(pk.is_flow_command_text("/earlyrb@MyBot"))
         self.assertTrue(pk.is_flow_command_text("/withdraw"))
         self.assertTrue(pk.is_flow_command_text("/deposit@MyBot"))
         self.assertFalse(pk.is_flow_command_text("hello"))
