@@ -755,15 +755,8 @@ async def _send_first_time_method_setup(
             context, setup_msg.message_id, flow="deposit"
         )
 
-    # Separate message so we don't overwrite I HAVE READ markup.
-    await _maybe_offer_deposit_sent_button(
-        getattr(context, "bot", None),
-        int(chat_id),
-        club_id=int(club_id) if club_id is not None else None,
-        method_slug=slug,
-        title=getattr(query.message.chat, "title", None) if query.message else None,
-        attach=False,
-    )
+    # Do not offer "I have sent the payment" until after the player acks and
+    # receives the payment destination (see _send_first_time_payment_destination).
 
     _schedule_deposit_reminder(context, club_id, int(chat_id), user_id)
     return "await_ack"
@@ -1742,6 +1735,7 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
 
     context.chat_data["deposit_method_name"] = method["name"]
     context.chat_data["deposit_method_id"] = method_id
+    context.chat_data["deposit_method_slug"] = method_slug
 
     if method["has_sub_options"]:
         subs = get_sub_options(method_id)
@@ -1868,7 +1862,7 @@ async def deposit_setup_ack(update: Update, context: ContextTypes.DEFAULT_TYPE):
         club_id=context.chat_data.get("deposit_club_id"),
         method_slug=(
             (attempt.payment_method_slug if attempt else None)
-            or context.chat_data.get("deposit_method_name")
+            or context.chat_data.get("deposit_method_slug")
         ),
     )
     _record_funnel_from_context(

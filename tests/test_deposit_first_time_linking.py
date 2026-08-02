@@ -280,3 +280,73 @@ class FirstTimeSetupFromChoiceTestCase(unittest.IsolatedAsyncioTestCase):
 
         normal_mock.assert_awaited_once()
         setup_mock.assert_not_awaited()
+
+
+class DepositSetupAckTestCase(unittest.IsolatedAsyncioTestCase):
+    async def test_ack_sends_destination_with_bind_attempt_slug(self):
+        """Regression: BindAttemptInfo must expose payment_method_slug for ack."""
+        from datetime import datetime, timezone
+
+        from bot.services.payment_method_binding import BindAttemptInfo
+
+        attempt = BindAttemptInfo(
+            id=605,
+            telegram_chat_id=-1003717107252,
+            club_id=3,
+            payment_method_slug="venmo",
+            variant_id=134,
+            bind_kind="special_amount",
+            amount_cents=9999,
+            setup_emoji=None,
+            expires_at=datetime.now(timezone.utc),
+        )
+        chat = SimpleNamespace(id=-1003717107252, title="CC / 8834-2222 / @jz034")
+        message = SimpleNamespace(chat=chat, message_id=42)
+        query = SimpleNamespace(
+            data="depft:605",
+            from_user=SimpleNamespace(id=5821458817),
+            message=message,
+            answer=AsyncMock(),
+            edit_message_reply_markup=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        update = SimpleNamespace(callback_query=query)
+        context = SimpleNamespace(
+            bot=AsyncMock(),
+            chat_data={
+                "deposit_chat_id": -1003717107252,
+                "deposit_club_id": 3,
+                "deposit_user_id": 5821458817,
+                "deposit_method_slug": "venmo",
+                "deposit_setup_response_data": {
+                    "response_type": "text",
+                    "response_text": "Venmo: https://venmo.com/u/test",
+                },
+            },
+        )
+
+        with (
+            patch.object(dep, "handle_stale_flow_callback", new_callable=AsyncMock, return_value=False),
+            patch.object(dep, "get_pending_bind_attempt", return_value=attempt),
+            patch.object(
+                dep,
+                "_send_first_time_payment_destination",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as dest_mock,
+            patch.object(
+                dep,
+                "_complete_deposit_flow",
+                new_callable=AsyncMock,
+                return_value=dep.ConversationHandler.END,
+            ),
+            patch.object(dep, "_record_funnel_from_context"),
+            patch.object(dep, "_cleanup"),
+        ):
+            result = await dep.deposit_setup_ack(update, context)
+
+        dest_mock.assert_awaited_once()
+        kwargs = dest_mock.await_args.kwargs
+        self.assertEqual(kwargs.get("method_slug"), "venmo")
+        self.assertEqual(result, dep.ConversationHandler.END)
+        query.edit_message_reply_markup.assert_awaited_once_with(reply_markup=None)

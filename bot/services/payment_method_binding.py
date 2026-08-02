@@ -238,6 +238,7 @@ class BindAttemptInfo:
     id: int
     telegram_chat_id: int
     club_id: int
+    payment_method_slug: str
     variant_id: int
     bind_kind: str
     amount_cents: int | None
@@ -715,6 +716,7 @@ def start_bind_attempt(
         id=attempt_id,
         telegram_chat_id=int(telegram_chat_id),
         club_id=int(club_id),
+        payment_method_slug=slug,
         variant_id=int(variant_id),
         bind_kind=kind,
         amount_cents=amount_cents,
@@ -759,6 +761,7 @@ def get_pending_bind_attempt(attempt_id: int) -> BindAttemptInfo | None:
             id=int(attempt.id),
             telegram_chat_id=int(attempt.telegram_chat_id),
             club_id=int(attempt.club_id),
+            payment_method_slug=str(attempt.payment_method_slug),
             variant_id=int(attempt.variant_id),
             bind_kind=str(attempt.bind_kind),
             amount_cents=int(attempt.amount_cents)
@@ -859,6 +862,7 @@ def complete_attempt_from_payment(
             id=int(attempt.id),
             telegram_chat_id=int(attempt.telegram_chat_id),
             club_id=int(attempt.club_id),
+            payment_method_slug=str(attempt.payment_method_slug),
             variant_id=int(attempt.variant_id),
             bind_kind=str(attempt.bind_kind),
             amount_cents=int(attempt.amount_cents)
