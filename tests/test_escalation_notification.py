@@ -166,7 +166,7 @@ class EscalationCopyTests(unittest.TestCase):
                     title="RT / 12345",
                     message_text="Need help with my deposit",
                 )
-        self.assertIn("A player just reached out.", text)
+        self.assertIn("*A player just reached out.*", text)
         self.assertIn("Club: Round Table", text)
         self.assertIn("`RT / 12345`", text)
         self.assertIn("Need help with my deposit", text)
@@ -196,7 +196,7 @@ class EscalationCopyTests(unittest.TestCase):
                 title="AT / 9",
                 message_text="should not appear",
             )
-        self.assertIn("Cash out initiated.", text)
+        self.assertIn("*Cash out initiated.*", text)
         self.assertIn("`AT / 9`", text)
         self.assertNotIn("should not appear", text)
 
@@ -208,7 +208,7 @@ class EscalationCopyTests(unittest.TestCase):
                 chat_id=-300,
                 title="CC / 9255-5089 / Justin",
             )
-        self.assertIn("Manual deposit request.", text)
+        self.assertIn("*Manual deposit request.*", text)
         self.assertIn("`CC / 9255-5089 / Justin`", text)
 
     def test_new_player_onboarded_copy(self):
@@ -220,7 +220,7 @@ class EscalationCopyTests(unittest.TestCase):
                 title="GTO / 4661-4582 / Btwn",
             )
         self.assertIn(
-            "Welcome the new player who just joined the group chat.", text
+            "*Welcome the new player who just joined the group chat.*", text
         )
         self.assertIn("Club: ClubGTO", text)
         self.assertIn("`GTO / 4661-4582 / Btwn`", text)
@@ -233,7 +233,7 @@ class EscalationCopyTests(unittest.TestCase):
                 chat_id=0,
                 title="Btwn (@btwn)",
             )
-        self.assertIn("A player reached out in DM.", text)
+        self.assertIn("*A player reached out in DM.*", text)
         self.assertIn("`Btwn (@btwn)`", text)
 
     def test_deposit_followup_copy_includes_message(self):
@@ -246,7 +246,7 @@ class EscalationCopyTests(unittest.TestCase):
                 message_text="still waiting",
             )
         self.assertIn(
-            "Player sent a message after confirming they sent the payment.",
+            "*Player sent a message after confirming they sent the payment.*",
             text,
         )
         self.assertIn("still waiting", text)
@@ -271,9 +271,9 @@ class EscalationCopyTests(unittest.TestCase):
                 chat_id=-1,
                 title="CC / 1",
             )
-        self.assertIn("Early rakeback requested.", early)
-        self.assertIn("RPA deposit failed — add chips manually.", dep)
-        self.assertIn("RPA cashout failed — claim chips manually.", cash)
+        self.assertIn("*Early rakeback requested.*", early)
+        self.assertIn("*RPA deposit failed — add chips manually.*", dep)
+        self.assertIn("*RPA cashout failed — claim chips manually.*", cash)
 
     def test_extract_player_message_prefers_text(self):
         msg = SimpleNamespace(text=" hello ", caption="cap", photo=None)

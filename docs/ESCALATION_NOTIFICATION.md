@@ -4,11 +4,9 @@ Per-club dashboard toggle **Escalation notification** (`clubs.enable_escalation_
 
 Uses shared group activity detection ([`bot/services/group_activity.py`](../bot/services/group_activity.py)). Popup keyboard remains a separate optional consumer of the same detection.
 
-## Player-facing ack
+## Player idle (silent in Telegram)
 
-On a **player idle** open (free text/media after ≥10 minutes of human silence in the group):
-
-> We'll be with you in just a second.
+On a **player idle** open (free text/media after ≥10 minutes of human silence in the group): **Slack only** — no bot message in the support group.
 
 No *Looks like your request was handled…* from this feature. That copy stays tied to popup keyboard install only.
 
@@ -17,17 +15,17 @@ Cold start / worker restart: activity timestamps are **durable** on
 `escalation_last_human_at` is unset (never recorded), the next **player**
 message may escalate (treated as already silent).
 
-AM/staff message then player reply **without** 10 minutes silence: no ack, no Slack.
+AM/staff message then player reply **without** 10 minutes silence: no Slack.
 
-Bare `/deposit` does **not** escalate. Allowed `/cashout` Slack-escalates without Telegram ack. Denied cashout (cooldown/hours): no escalate; a later player message may idle-fire under normal rules.
+Bare `/deposit` does **not** escalate. Allowed `/cashout` Slack-escalates without a Telegram message. Denied cashout (cooldown/hours): no escalate; a later player message may idle-fire under normal rules.
 
-`/earlyrb` is treated like a flow command (no idle ack on the command itself):
+`/earlyrb` is treated like a flow command (no idle escalate on the command itself):
 
-| Case | Telegram idle ack | Slack |
-|------|-------------------|-------|
+| Case | Telegram | Slack |
+|------|----------|-------|
 | Eligible (no 24h block) | No | `Early rakeback requested.` |
 | Denied (24h constraint) | No | No; idle episode reset so follow-up free text can idle-fire |
-| Follow-up free text after deny | Normal idle | Idle + player message body |
+| Follow-up free text after deny | Silent | Idle + player message body |
 
 ## GC create / DM reach-out
 
@@ -117,4 +115,4 @@ DATABASE_URL=... python migrate_escalation_activity_state.py
 
 ## Overlap with popup keyboard
 
-When both toggles are on: escalation owns the player-facing ack; popup keyboard only installs/removes the reply keyboard (strip without duplicate ack copy).
+When both toggles are on: escalation is Slack-only for player idle; popup keyboard owns its own install/remove Telegram copy independently.

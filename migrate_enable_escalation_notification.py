@@ -1,7 +1,7 @@
 """One-time migration: add escalation notification toggle per club.
 
 Adds:
-    clubs.enable_escalation_notification — player idle ack + Slack escalation
+    clubs.enable_escalation_notification — Slack escalation (silent in Telegram)
 
 Usage:
     DATABASE_URL=... python migrate_enable_escalation_notification.py

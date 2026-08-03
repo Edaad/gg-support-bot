@@ -1,4 +1,4 @@
-"""Escalation notification: player idle ack + Slack (separate from popup keyboard)."""
+"""Escalation notification: Slack alerts (separate from popup keyboard)."""
 
 from __future__ import annotations
 
@@ -12,18 +12,12 @@ from telegram.ext import CallbackQueryHandler, ContextTypes
 from bot.runtime_config import is_test_bot_worker
 from bot.services.club import get_club_for_chat, get_group_name
 from bot.services import group_activity as ga
-from bot.services.popup_keyboard import (
-    group_has_gg_player_id,
-    get_popup_keyboard_installed,
-    set_popup_keyboard_installed,
-    remove_markup,
-)
+from bot.services.popup_keyboard import group_has_gg_player_id
 from db.connection import get_db
 from db.models import Club
 
 logger = logging.getLogger(__name__)
 
-ACK_COPY = "We'll be with you in just a second."
 DEPOSIT_SENT_WAIT_SECONDS = 300  # 5 minutes
 DEPOSIT_SENT_WAIT_SECONDS_TEST = 30
 
@@ -180,7 +174,7 @@ def format_escalation_slack_text(
     headline = _HEADLINES.get(reason, reason)
     club = _club_display_name(club_id)
     group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
-    lines = [headline, f"Club: {club}", _slack_code_span(group_title)]
+    lines = [f"*{headline}*", f"Club: {club}", _slack_code_span(group_title)]
     if reason in _REASONS_WITH_MESSAGE_BODY:
         body = format_player_message_for_slack(message_text)
         if body:
@@ -217,38 +211,15 @@ async def notify_escalation_slack(
         return False
 
 
-async def send_player_ack(
-    bot: Any,
-    chat_id: int,
-    *,
-    strip_keyboard: bool = False,
-) -> bool:
-    """Post the player-facing ack; optionally attach ReplyKeyboardRemove."""
-    kwargs: dict[str, Any] = {"chat_id": int(chat_id), "text": ACK_COPY}
-    if strip_keyboard:
-        kwargs["reply_markup"] = remove_markup()
-    try:
-        await bot.send_message(**kwargs)
-        if strip_keyboard:
-            set_popup_keyboard_installed(int(chat_id), False)
-        return True
-    except Exception:
-        logger.warning(
-            "escalation: ack send failed chat_id=%s", chat_id, exc_info=True
-        )
-        return False
-
-
 async def fire_player_idle(
-    bot: Any,
+    _bot: Any,
     chat_id: int,
     *,
     club_id: int | None,
     title: str | None = None,
     message_text: str | None = None,
 ) -> None:
-    strip = get_popup_keyboard_installed(int(chat_id))
-    await send_player_ack(bot, chat_id, strip_keyboard=strip)
+    """Silent in the support group — Slack only."""
     await notify_escalation_slack(
         REASON_PLAYER_IDLE,
         club_id=club_id,

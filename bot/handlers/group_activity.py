@@ -72,7 +72,6 @@ async def group_activity_handler(
                 message_text=player_msg,
             )
 
-        idle_fired = False
         if (
             esc_on
             and observation.should_fire_idle
@@ -87,11 +86,10 @@ async def group_activity_handler(
                 title=chat.title,
                 message_text=player_msg,
             )
-            idle_fired = True
 
         # Popup keyboard strip on free text/media (not while in flow / commands).
-        if popup_on and not flow_cmd and not in_flow and not idle_fired:
-            # Escalation owns the player-facing ack; strip without STRIP_COPY.
+        # Escalation idle is Slack-only; strip here regardless of idle escalate.
+        if popup_on and not flow_cmd and not in_flow:
             await pk.silent_strip_if_installed(
                 context.bot,
                 chat.id,
