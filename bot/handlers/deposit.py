@@ -1999,16 +1999,6 @@ async def _finish_simple_deposit(message, context):
     return ConversationHandler.END
 
 
-async def _send_union_chips_message(chat, context) -> None:
-    label = context.chat_data.get("deposit_union_label")
-    if not label:
-        return
-    try:
-        await chat.send_message(f"Your chips will be added to {label}!")
-    except Exception:
-        pass
-
-
 async def _maybe_rename_group_for_union(context: ContextTypes.DEFAULT_TYPE) -> None:
     shorthand = context.chat_data.get("deposit_union_shorthand")
     chat_id = context.chat_data.get("deposit_chat_id")
@@ -2064,7 +2054,6 @@ async def _complete_deposit_flow(chat, context: ContextTypes.DEFAULT_TYPE):
     )
     _record_deposit(context)
     _persist_deposit_union(context)
-    await _send_union_chips_message(chat, context)
     await _maybe_rename_group_for_union(context)
     await _send_bonus_message(chat, context)
     _schedule_deposit_reminder(context, club_id, chat_id, user_id=customer_uid)
