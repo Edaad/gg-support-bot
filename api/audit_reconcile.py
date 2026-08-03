@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any, Literal
@@ -78,6 +78,7 @@ class TradeLineForMatch:
     member_nickname: str | None
     sheet_row: int
     manager_nickname: str | None = None
+    trade_club_slug: str | None = None
 
 
 @dataclass
@@ -122,6 +123,12 @@ def load_trade_lines_for_match(
     """Non-zero trade lines for Matching tab, chronological (null times last)."""
     if not upload_ids:
         return []
+    slug_by_upload_id = {
+        int(row.id): (row.club_slug or "").strip().lower() or "round-table"
+        for row in session.query(TradeRecordUpload)
+        .filter(TradeRecordUpload.id.in_(upload_ids))
+        .all()
+    }
     rows = (
         session.query(TradeRecordLine)
         .filter(TradeRecordLine.upload_id.in_(upload_ids))
@@ -142,6 +149,9 @@ def load_trade_lines_for_match(
                 member_nickname=line.member_nickname,
                 sheet_row=int(line.sheet_row),
                 manager_nickname=(line.manager_nickname or "").strip() or None,
+                trade_club_slug=slug_by_upload_id.get(
+                    int(line.upload_id), "round-table"
+                ),
             )
         )
 
@@ -219,6 +229,13 @@ def aggregate_trade_records(
     return by_player, row_counts, unmatched, nicknames
 
 
+def _stamp_ledger_events(
+    events: list[LedgerEvent], *, club_slug: str
+) -> list[LedgerEvent]:
+    slug = club_slug.strip().lower()
+    return [replace(event, club_slug=slug) for event in events]
+
+
 def _ledger_events_for_club(
     session: Session,
     *,
@@ -229,12 +246,32 @@ def _ledger_events_for_club(
     """Collect all ledger events; return (events, blocked_reason)."""
     slug = club_slug.strip().lower()
     events: list[LedgerEvent] = []
-    events.extend(fetch_deposit_events(session, club_slug=slug, audit_date=audit_date))
     events.extend(
-        fetch_early_rakeback_events(session, club_slug=slug, audit_date=audit_date)
+        _stamp_ledger_events(
+            fetch_deposit_events(session, club_slug=slug, audit_date=audit_date),
+            club_slug=slug,
+        )
     )
-    events.extend(fetch_bonus_events(session, club_slug=slug, audit_date=audit_date))
-    events.extend(fetch_cashout_events(session, club_slug=slug, audit_date=audit_date))
+    events.extend(
+        _stamp_ledger_events(
+            fetch_early_rakeback_events(
+                session, club_slug=slug, audit_date=audit_date
+            ),
+            club_slug=slug,
+        )
+    )
+    events.extend(
+        _stamp_ledger_events(
+            fetch_bonus_events(session, club_slug=slug, audit_date=audit_date),
+            club_slug=slug,
+        )
+    )
+    events.extend(
+        _stamp_ledger_events(
+            fetch_cashout_events(session, club_slug=slug, audit_date=audit_date),
+            club_slug=slug,
+        )
+    )
 
     snapshot = (
         session.query(EarlyRakebackSnapshot)
@@ -249,7 +286,9 @@ def _ledger_events_for_club(
             settlement_events, settlement_warnings = fetch_settlement_events(
                 club_slug=slug, audit_date=audit_date
             )
-            events.extend(settlement_events)
+            events.extend(
+                _stamp_ledger_events(settlement_events, club_slug=slug)
+            )
             warnings.extend(settlement_warnings)
         except SettlementFetchError as exc:
             return events, str(exc)
@@ -267,16 +306,35 @@ def _ledger_events_for_clubs(
     warnings: list[str],
 ) -> tuple[list[LedgerEvent], str | None]:
     """Collect ledger events for one or more slugs (Round Table composite)."""
-    slugs = [s.strip().lower() for s in club_slugs]
     events: list[LedgerEvent] = []
 
-    for slug in slugs:
-        events.extend(fetch_deposit_events(session, club_slug=slug, audit_date=audit_date))
+    for slug in [s.strip().lower() for s in club_slugs]:
         events.extend(
-            fetch_early_rakeback_events(session, club_slug=slug, audit_date=audit_date)
+            _stamp_ledger_events(
+                fetch_deposit_events(session, club_slug=slug, audit_date=audit_date),
+                club_slug=slug,
+            )
         )
-        events.extend(fetch_bonus_events(session, club_slug=slug, audit_date=audit_date))
-        events.extend(fetch_cashout_events(session, club_slug=slug, audit_date=audit_date))
+        events.extend(
+            _stamp_ledger_events(
+                fetch_early_rakeback_events(
+                    session, club_slug=slug, audit_date=audit_date
+                ),
+                club_slug=slug,
+            )
+        )
+        events.extend(
+            _stamp_ledger_events(
+                fetch_bonus_events(session, club_slug=slug, audit_date=audit_date),
+                club_slug=slug,
+            )
+        )
+        events.extend(
+            _stamp_ledger_events(
+                fetch_cashout_events(session, club_slug=slug, audit_date=audit_date),
+                club_slug=slug,
+            )
+        )
 
         snapshot = (
             session.query(EarlyRakebackSnapshot)
@@ -293,7 +351,9 @@ def _ledger_events_for_clubs(
                 settlement_events, settlement_warnings = fetch_settlement_events(
                     club_slug=slug, audit_date=audit_date
                 )
-                events.extend(settlement_events)
+                events.extend(
+                    _stamp_ledger_events(settlement_events, club_slug=slug)
+                )
                 warnings.extend(settlement_warnings)
             except SettlementFetchError as exc:
                 return events, str(exc)
@@ -537,6 +597,7 @@ def _report_to_json(report: AuditReconcileReport) -> str:
                 "detail": line.detail,
                 "display_name": line.display_name,
                 "variant": line.variant,
+                "club_slug": line.club_slug,
             }
             for line in report.ledger_lines
         ],
@@ -549,6 +610,7 @@ def _report_to_json(report: AuditReconcileReport) -> str:
                 "member_nickname": t.member_nickname,
                 "sheet_row": t.sheet_row,
                 "manager_nickname": t.manager_nickname,
+                "trade_club_slug": t.trade_club_slug,
             }
             for t in report.trade_lines
         ],
@@ -579,6 +641,10 @@ def _ledger_line_from_dict(raw: dict[str, Any]) -> LedgerLine:
     occurred_at: datetime | None = None
     if occurred_raw:
         occurred_at = datetime.fromisoformat(str(occurred_raw).replace("Z", "+00:00"))
+    club_slug_raw = raw.get("club_slug")
+    club_slug = (
+        str(club_slug_raw).strip().lower() or None if club_slug_raw is not None else None
+    )
     return LedgerLine(
         gg_player_id=raw.get("gg_player_id") or None,
         member_nickname=raw.get("member_nickname"),
@@ -590,6 +656,7 @@ def _ledger_line_from_dict(raw: dict[str, Any]) -> LedgerLine:
         detail=raw.get("detail"),
         display_name=raw.get("display_name"),
         variant=raw.get("variant"),
+        club_slug=club_slug,
     )
 
 
@@ -598,6 +665,12 @@ def _trade_line_from_dict(raw: dict[str, Any]) -> TradeLineForMatch:
     occurred_at: datetime | None = None
     if occurred_raw:
         occurred_at = datetime.fromisoformat(str(occurred_raw).replace("Z", "+00:00"))
+    trade_slug_raw = raw.get("trade_club_slug")
+    trade_club_slug = (
+        str(trade_slug_raw).strip().lower() or None
+        if trade_slug_raw is not None
+        else None
+    )
     return TradeLineForMatch(
         line_id=int(raw["line_id"]),
         occurred_at=occurred_at,
@@ -606,6 +679,7 @@ def _trade_line_from_dict(raw: dict[str, Any]) -> TradeLineForMatch:
         member_nickname=raw.get("member_nickname"),
         sheet_row=int(raw["sheet_row"]),
         manager_nickname=raw.get("manager_nickname") or None,
+        trade_club_slug=trade_club_slug,
     )
 
 

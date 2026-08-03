@@ -390,14 +390,22 @@ class ReconcileExportTestCase(unittest.TestCase):
         wb = load_workbook(io.BytesIO(build_all_clubs_matching_workbook(reports)))
         self.assertEqual(
             wb.sheetnames,
-            ["Round Table", "ClubGTO", "Creator Club", "Unresolved"],
+            [
+                "Round Table",
+                "Aces Table",
+                "ClubGTO",
+                "Creator Club",
+                "Unresolved",
+            ],
         )
-        for name in ("Round Table", "ClubGTO", "Creator Club"):
+        for name in ("Round Table", "Aces Table", "ClubGTO", "Creator Club"):
             self.assertEqual(wb[name].cell(row=1, column=1).value, "Trade Time")
             self.assertEqual(wb[name].cell(row=1, column=2).value, "Manager")
         self.assertEqual(wb["ClubGTO"].cell(row=1, column=12).value, "Vaughn methods")
         self.assertIsNone(wb["Round Table"].cell(row=1, column=12).value)
+        self.assertIsNone(wb["Aces Table"].cell(row=1, column=12).value)
         self.assertIn("Matching_round_table", wb["Round Table"].tables)
+        self.assertIn("Matching_aces_table", wb["Aces Table"].tables)
         self.assertIn("Matching_clubgto", wb["ClubGTO"].tables)
         self.assertIn("Matching_creator_club", wb["Creator Club"].tables)
         unresolved = wb["Unresolved"]
@@ -406,6 +414,88 @@ class ReconcileExportTestCase(unittest.TestCase):
             UNRESOLVED_HEADERS,
         )
         self.assertIn("Unresolved_all", unresolved.tables)
+
+    def test_all_clubs_splits_composite_match_by_trade_club_slug(self):
+        """Option C: one composite match, rows land on RT vs Aces by trade upload."""
+        occurred = datetime(2026, 7, 3, 15, 0, tzinfo=timezone.utc)
+        rt_report = _empty_report(club_slug="round-table", club_name="Round Table")
+        rt_report.trade_lines = [
+            TradeLineForMatch(
+                line_id=1,
+                occurred_at=occurred,
+                amount=Decimal("-50"),
+                member_gg_player_id="1111-1111",
+                member_nickname="RtPlayer",
+                sheet_row=1,
+                trade_club_slug="round-table",
+            ),
+            TradeLineForMatch(
+                line_id=2,
+                occurred_at=occurred,
+                amount=Decimal("-75"),
+                member_gg_player_id="2222-2222",
+                member_nickname="AtPlayer",
+                sheet_row=2,
+                trade_club_slug="aces-table",
+            ),
+        ]
+        rt_report.ledger_lines = [
+            LedgerLine(
+                gg_player_id="1111-1111",
+                member_nickname="RtPlayer",
+                source="deposit_stripe",
+                source_label="Stripe",
+                amount_signed=Decimal("-50"),
+                occurred_at_utc=occurred,
+                external_id="deposit_stripe:1",
+                display_name="RtPlayer",
+                club_slug="round-table",
+            ),
+            LedgerLine(
+                gg_player_id="2222-2222",
+                member_nickname="AtPlayer",
+                source="deposit_zelle",
+                source_label="Zelle",
+                amount_signed=Decimal("-75"),
+                occurred_at_utc=occurred,
+                external_id="deposit_zelle:1",
+                display_name="AtPlayer",
+                club_slug="aces-table",
+            ),
+            LedgerLine(
+                gg_player_id=None,
+                member_nickname=None,
+                source="deposit_venmo",
+                source_label="Venmo",
+                amount_signed=Decimal("-10"),
+                occurred_at_utc=occurred,
+                external_id="deposit_venmo:orphan",
+                display_name="Orphan AT",
+                club_slug="aces-table",
+            ),
+        ]
+        reports = {
+            "round-table": rt_report,
+            "clubgto": _empty_report(club_slug="clubgto", club_name="ClubGTO"),
+            "creator-club": _empty_report(
+                club_slug="creator-club", club_name="Creator Club"
+            ),
+        }
+        wb = load_workbook(io.BytesIO(build_all_clubs_matching_workbook(reports)))
+        rt_sheet = wb["Round Table"]
+        at_sheet = wb["Aces Table"]
+        self.assertEqual(rt_sheet.cell(row=2, column=4).value, "1111-1111")
+        self.assertEqual(rt_sheet.cell(row=2, column=5).value, "RtPlayer")
+        self.assertIsNone(rt_sheet.cell(row=3, column=4).value)
+        self.assertEqual(at_sheet.cell(row=2, column=4).value, "2222-2222")
+        self.assertEqual(at_sheet.cell(row=2, column=5).value, "AtPlayer")
+        self.assertIsNone(at_sheet.cell(row=3, column=4).value)
+
+        unresolved = wb["Unresolved"]
+        # Only the unmatched AT Venmo orphan (matched deposits consumed).
+        self.assertEqual(unresolved.cell(row=2, column=3).value, "Orphan AT")
+        self.assertEqual(unresolved.cell(row=2, column=5).value, "Aces Table")
+        self.assertIsNone(unresolved.cell(row=3, column=3).value)
 
     def test_all_clubs_unresolved_sorts_mixed_naive_aware_times(self):
         """Regression: export-all 500'd on naive vs aware occurred_at compare."""
@@ -442,6 +532,7 @@ class ReconcileExportTestCase(unittest.TestCase):
                 occurred_at_utc=naive,
                 external_id="deposit_venmo:1",
                 display_name="Naive",
+                club_slug="round-table",
             ),
         ]
         # Must not raise TypeError on sort.
@@ -449,6 +540,7 @@ class ReconcileExportTestCase(unittest.TestCase):
         unresolved = wb["Unresolved"]
         self.assertEqual(unresolved.cell(row=2, column=3).value, "Aware")
         self.assertEqual(unresolved.cell(row=3, column=3).value, "Naive")
+        self.assertEqual(unresolved.cell(row=3, column=5).value, "Round Table")
 
 
 if __name__ == "__main__":

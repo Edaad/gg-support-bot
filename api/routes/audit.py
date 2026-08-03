@@ -670,7 +670,7 @@ def export_reconcile_all_clubs(
     audit_date: str = Query(..., description="Local audit calendar day (YYYY-MM-DD)"),
     db: Session = Depends(get_db_dependency),
 ):
-    """Matching-only workbook for Round Table, ClubGTO, and Creator Club."""
+    """Matching-only workbook for Round Table, Aces Table, ClubGTO, and Creator Club."""
     parsed_date = _parse_audit_date(audit_date)
     missing = _missing_trade_upload_slugs(db, parsed_date)
     if missing:

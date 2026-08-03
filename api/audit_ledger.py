@@ -100,6 +100,7 @@ class LedgerEvent:
     detail: str | None = None
     display_name: str | None = None
     variant: str | None = None
+    club_slug: str | None = None
 
 
 @dataclass(frozen=True)
@@ -133,6 +134,7 @@ class LedgerLine:
     detail: str | None = None
     display_name: str | None = None
     variant: str | None = None
+    club_slug: str | None = None
 
 
 def _club_outflow_usd(amount: Decimal) -> Decimal:
@@ -181,6 +183,7 @@ def build_ledger_lines(
                 detail=event.detail,
                 display_name=event.display_name,
                 variant=event.variant,
+                club_slug=event.club_slug,
             )
         )
     return lines

@@ -20,6 +20,7 @@ from api.audit_ledger import (
 )
 from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport
 from api.audit_reconcile_matching import (
+    MatchedTradeRow,
     _sort_key_occurred_at,
     match_trade_lines_to_ledger,
 )
@@ -421,8 +422,16 @@ def _add_matching_source_variant_dropdowns(
 
 ALL_CLUBS_MATCHING_SHEET_ORDER: tuple[tuple[str, str], ...] = (
     ("round-table", "Round Table"),
+    ("aces-table", "Aces Table"),
     ("clubgto", "ClubGTO"),
     ("creator-club", "Creator Club"),
+)
+
+# Display labels for matching tabs / Unresolved (aces ≠ DB CLUB_SLUG_TO_NAME).
+MATCHING_CLUB_DISPLAY: dict[str, str] = dict(ALL_CLUBS_MATCHING_SHEET_ORDER)
+
+_ROUND_TABLE_COMPOSITE_SHEET_SLUGS: frozenset[str] = frozenset(
+    {"round-table", "aces-table"}
 )
 
 
@@ -849,29 +858,27 @@ def _write_vaughn_tally(
     total_cell.font = Font(bold=True)
 
 
-def _write_matching_sheet(
+def _write_matching_rows(
     ws: Worksheet,
-    report: AuditReconcileReport,
+    rows: list[MatchedTradeRow],
     *,
+    time_club_slug: str,
+    table_slug: str,
+    report_for_dropdowns: AuditReconcileReport,
     sheet_title: str | None = None,
-) -> list[LedgerLine]:
+    include_vaughn_tally: bool = False,
+) -> None:
     if sheet_title:
         ws.title = sheet_title
 
     header_row = 1
     _style_header_row(ws, header_row, MATCHING_HEADERS)
 
-    match_result = match_trade_lines_to_ledger(
-        report.trade_lines,
-        report.ledger_lines,
-        club_slug=report.club_slug,
-    )
-    matched_rows = match_result.rows
     row_idx = header_row + 1
-    for matched in matched_rows:
+    for matched in rows:
         trade = matched.trade
         _write_excel_time_cell(
-            ws, row_idx, 1, report.club_slug, trade.occurred_at
+            ws, row_idx, 1, time_club_slug, trade.occurred_at
         )
         ws.cell(row=row_idx, column=2, value=trade.manager_nickname or "")
         cell = ws.cell(
@@ -885,7 +892,7 @@ def _write_matching_sheet(
         ws.cell(row=row_idx, column=6, value=matched.match_source)
         ws.cell(row=row_idx, column=7, value=matched.match_name)
         _write_excel_time_cell(
-            ws, row_idx, 8, report.club_slug, matched.match_occurred_at
+            ws, row_idx, 8, time_club_slug, matched.match_occurred_at
         )
         if matched.match_amount is not None:
             dollar_cell = ws.cell(
@@ -902,25 +909,62 @@ def _write_matching_sheet(
     last_data_row = row_idx - 1
     _add_excel_table(
         ws,
-        display_name=_matching_table_display_name(report.club_slug),
+        display_name=_matching_table_display_name(table_slug),
         header_row=header_row,
         last_row=last_data_row,
         num_cols=_MATCHING_TABLE_COLS,
     )
     _add_matching_source_variant_dropdowns(
         ws,
-        report,
+        report_for_dropdowns,
         first_row=header_row + 1,
         last_row=last_data_row,
     )
 
-    if report.club_slug.strip().lower() == "clubgto":
+    if include_vaughn_tally:
         _write_vaughn_tally(
             ws,
             section_row=header_row,
             start_col=_MATCHING_TALLY_START_COL,
         )
+
+
+def _write_matching_sheet(
+    ws: Worksheet,
+    report: AuditReconcileReport,
+    *,
+    sheet_title: str | None = None,
+) -> list[LedgerLine]:
+    match_result = match_trade_lines_to_ledger(
+        report.trade_lines,
+        report.ledger_lines,
+        club_slug=report.club_slug,
+    )
+    _write_matching_rows(
+        ws,
+        match_result.rows,
+        time_club_slug=report.club_slug,
+        table_slug=report.club_slug,
+        report_for_dropdowns=report,
+        sheet_title=sheet_title,
+        include_vaughn_tally=report.club_slug.strip().lower() == "clubgto",
+    )
     return match_result.unmatched_ledger
+
+
+def _partition_composite_matching_rows(
+    rows: list[MatchedTradeRow],
+) -> dict[str, list[MatchedTradeRow]]:
+    by_slug: dict[str, list[MatchedTradeRow]] = {
+        "round-table": [],
+        "aces-table": [],
+    }
+    for matched in rows:
+        slug = (matched.trade.trade_club_slug or "round-table").strip().lower()
+        if slug not in by_slug:
+            slug = "round-table"
+        by_slug[slug].append(matched)
+    return by_slug
 
 
 def build_reconcile_workbook_from_report(report: AuditReconcileReport) -> bytes:
@@ -964,21 +1008,55 @@ def build_reconcile_workbook_from_report(report: AuditReconcileReport) -> bytes:
 def build_all_clubs_matching_workbook(
     reports_by_slug: dict[str, AuditReconcileReport],
 ) -> bytes:
-    """Matching sheets per club + shared Unresolved tab."""
+    """Matching sheets per club + shared Unresolved tab.
+
+    Round Table + Aces share one composite match (option C), then split by
+    trade upload slug onto two sheets.
+    """
     wb = Workbook()
     first = True
     unresolved_rows: list[tuple[LedgerLine, str, str]] = []
+
+    rt_report = reports_by_slug["round-table"]
+    rt_match = match_trade_lines_to_ledger(
+        rt_report.trade_lines,
+        rt_report.ledger_lines,
+        club_slug=rt_report.club_slug,
+    )
+    partitioned = _partition_composite_matching_rows(rt_match.rows)
+
     for slug, title in ALL_CLUBS_MATCHING_SHEET_ORDER:
-        report = reports_by_slug[slug]
         if first:
             ws = wb.active
             first = False
         else:
             ws = wb.create_sheet()
+
+        if slug in _ROUND_TABLE_COMPOSITE_SHEET_SLUGS:
+            _write_matching_rows(
+                ws,
+                partitioned[slug],
+                time_club_slug=slug,
+                table_slug=slug,
+                report_for_dropdowns=rt_report,
+                sheet_title=title,
+            )
+            _set_column_widths(ws, MATCHING_WIDTHS)
+            continue
+
+        report = reports_by_slug[slug]
         unmatched = _write_matching_sheet(ws, report, sheet_title=title)
         _set_column_widths(ws, MATCHING_WIDTHS)
         unresolved_rows.extend(
             (line, report.club_slug, report.club_name) for line in unmatched
+        )
+
+    for line in rt_match.unmatched_ledger:
+        line_slug = (line.club_slug or "round-table").strip().lower()
+        if line_slug not in MATCHING_CLUB_DISPLAY:
+            line_slug = "round-table"
+        unresolved_rows.append(
+            (line, line_slug, MATCHING_CLUB_DISPLAY[line_slug])
         )
 
     unresolved_rows.sort(
