@@ -70,6 +70,7 @@ async def group_activity_handler(
                 club_id=club_id,
                 title=chat.title,
                 message_text=player_msg,
+                message=message,
             )
 
         if (

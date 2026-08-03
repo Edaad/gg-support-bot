@@ -53,10 +53,11 @@ On tap:
 2. If the group has **no** `group_payment_method_bindings` row for the chosen method → Slack **Manual deposit request.** immediately.
 3. If **bound** → arm a durable 5-minute wait:
    - No payment/`/add` in 5 minutes → Slack `deposit_sent_timeout` (**re-checks DB** so API payment notify cancels correctly across dynos).
-   - Another player message before payment → Slack `deposit_sent_followup` **with the player message body**.
+   - Player message containing `sent` / `done` (case-insensitive) **or any media** → ignore (no Slack; wait stays armed).
+   - Any other player text before payment → Slack `deposit_sent_followup` **with the player message body** and cancel the wait.
    - Payment group notify clears the wait via durable columns.
 
-Typed “sent” / media no longer arm the chase (button only).
+Arming the chase is **button only** (typed “sent” / media do not start the wait).
 
 ## RPA (ClubGG auto chip-add / auto-claim)
 

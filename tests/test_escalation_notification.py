@@ -308,9 +308,74 @@ class PlayerContactLabelTests(unittest.TestCase):
         )
 
 
+class DepositFollowupIgnoreTests(unittest.TestCase):
+    def _text_msg(self, text: str):
+        return SimpleNamespace(
+            text=text,
+            caption=None,
+            photo=None,
+            video=None,
+            document=None,
+            animation=None,
+            voice=None,
+            video_note=None,
+            audio=None,
+            sticker=None,
+        )
+
+    def test_ignore_sent_and_done(self):
+        self.assertTrue(
+            esc.should_ignore_deposit_sent_followup(self._text_msg("Sent!"))
+        )
+        self.assertTrue(
+            esc.should_ignore_deposit_sent_followup(self._text_msg("done"))
+        )
+        self.assertTrue(
+            esc.should_ignore_deposit_sent_followup(
+                self._text_msg("I already sent it")
+            )
+        )
+
+    def test_flag_other_text(self):
+        self.assertFalse(
+            esc.should_ignore_deposit_sent_followup(
+                self._text_msg("where are my chips?")
+            )
+        )
+
+    def test_ignore_media(self):
+        msg = SimpleNamespace(
+            text=None,
+            caption="proof",
+            photo=[object()],
+            video=None,
+            document=None,
+            animation=None,
+            voice=None,
+            video_note=None,
+            audio=None,
+            sticker=None,
+        )
+        self.assertTrue(esc.should_ignore_deposit_sent_followup(msg))
+
+
 class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         ga.clear_activity_state_for_tests()
+
+    def _plain_text(self, text: str):
+        return SimpleNamespace(
+            text=text,
+            caption=None,
+            photo=None,
+            video=None,
+            document=None,
+            animation=None,
+            voice=None,
+            video_note=None,
+            audio=None,
+            sticker=None,
+        )
 
     async def test_followup_escalates_when_armed(self):
         with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
@@ -326,6 +391,8 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                             5,
                             club_id=1,
                             title="G",
+                            message_text="where are my chips?",
+                            message=self._plain_text("where are my chips?"),
                         )
                         self.assertTrue(consumed)
                         cancel.assert_called_once()
@@ -334,6 +401,28 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                             notify.await_args.args[0],
                             esc.REASON_DEPOSIT_SENT_FOLLOWUP,
                         )
+
+    async def test_followup_ignores_sent_keeps_armed(self):
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                ga.mark_deposit_sent_watch_armed(5)
+                context = MagicMock()
+                with patch.object(
+                    esc, "notify_escalation_slack", new_callable=AsyncMock
+                ) as notify:
+                    with patch.object(esc, "cancel_deposit_sent_watch") as cancel:
+                        consumed = await esc.handle_deposit_sent_player_followup(
+                            context,
+                            5,
+                            club_id=1,
+                            title="G",
+                            message_text="sent",
+                            message=self._plain_text("sent"),
+                        )
+                        self.assertTrue(consumed)
+                        cancel.assert_not_called()
+                        notify.assert_not_awaited()
+                        self.assertTrue(ga.deposit_sent_watch_armed(5))
 
     async def test_followup_noop_when_not_armed(self):
         with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):

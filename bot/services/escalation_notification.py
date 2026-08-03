@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -65,6 +66,9 @@ DEPOSIT_SENT_ACK_COPY = (
 )
 DEPOSIT_SENT_BUTTON_LABEL = "I have sent the payment"
 DEPOSIT_SENT_CALLBACK_PREFIX = "depsent"
+
+# While the 5m wait is armed: ignore expected payment acks / proofs.
+_DEPOSIT_FOLLOWUP_IGNORE_RE = re.compile(r"sent|done", re.IGNORECASE)
 
 _escalation_app: Any | None = None
 
@@ -161,6 +165,25 @@ def extract_player_message_for_slack(message) -> str:
     if caption:
         return caption
     return MEDIA_ONLY_PLACEHOLDER
+
+
+def should_ignore_deposit_sent_followup(message) -> bool:
+    """True for media or text/caption containing sent/done (expected ack)."""
+    if message is None:
+        return False
+    if ga.message_has_media(message):
+        return True
+    blob = " ".join(
+        part
+        for part in (
+            (getattr(message, "text", None) or "").strip(),
+            (getattr(message, "caption", None) or "").strip(),
+        )
+        if part
+    )
+    if not blob:
+        return False
+    return _DEPOSIT_FOLLOWUP_IGNORE_RE.search(blob) is not None
 
 
 def format_escalation_slack_text(
@@ -600,13 +623,20 @@ async def handle_deposit_sent_player_followup(
     club_id: int | None,
     title: str | None = None,
     message_text: str | None = None,
+    message: object | None = None,
 ) -> bool:
-    """If 5m wait is armed, escalate follow-up on another player message.
+    """If 5m wait is armed, escalate on non-ack player text.
+
+    Media or text/caption containing ``sent`` / ``done`` is ignored: no Slack,
+    wait stays armed. Any other text Slack-escalates and cancels the wait.
 
     Returns True if consumed (caller should skip idle escalation).
     """
     if not ga.deposit_sent_watch_armed(chat_id):
         return False
+
+    if should_ignore_deposit_sent_followup(message):
+        return True
 
     cancel_deposit_sent_watch(
         chat_id, job_queue=getattr(context, "job_queue", None)
@@ -725,8 +755,9 @@ async def handle_deposit_sent_player_signal(
     title: str | None = None,
     is_confirm_signal: bool = False,
     message_text: str | None = None,
+    message: object | None = None,
 ) -> bool:
-    """Deprecated: regex/media path removed. Follow-up-only when armed."""
+    """Deprecated alias: follow-up-only when armed (with sent/done/media ignore)."""
     if is_confirm_signal and not ga.deposit_sent_watch_armed(chat_id):
         return False
     return await handle_deposit_sent_player_followup(
@@ -735,4 +766,5 @@ async def handle_deposit_sent_player_signal(
         club_id=club_id,
         title=title,
         message_text=message_text,
+        message=message,
     )
