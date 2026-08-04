@@ -1031,7 +1031,9 @@ async def issue_report_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE
     return await report_cancel(update, context)
 
 
-_REPORT_CANCEL = CommandHandler("cancel", issue_report_cancel)
+_REPORT_CANCEL = CommandHandler(
+    "cancel", issue_report_cancel, filters=filters.ChatType.PRIVATE
+)
 _REPORT_CANCEL_CB = CallbackQueryHandler(report_cancel, pattern=r"^ir_cancel$")
 
 

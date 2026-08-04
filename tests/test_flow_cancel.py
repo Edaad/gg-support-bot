@@ -61,6 +61,25 @@ class TestIssueReportFlowDetection(unittest.TestCase):
         self.assertFalse(issue_report_flow_active(context))
 
 
+def _group_command_update(*, command_text: str = "/cancel", user_id: int = 100):
+    user = User(id=user_id, is_bot=False, first_name="Admin")
+    chat = Chat(id=-100123, type=ChatType.SUPERGROUP, title="GC")
+    message = MagicMock()
+    message.text = command_text
+    message.reply_text = AsyncMock()
+    message.chat = chat
+    update = MagicMock()
+    update.message = message
+    update.callback_query = None
+    update.effective_message = message
+    update.effective_user = user
+    update.effective_chat = chat
+    context = MagicMock()
+    context.user_data = {}
+    context.chat_data = {}
+    return update, context
+
+
 class TestDmFlowCancel(unittest.IsolatedAsyncioTestCase):
     async def test_priority_cancel_early_report_wizard(self) -> None:
         update, context = _private_command_update()
@@ -75,6 +94,19 @@ class TestDmFlowCancel(unittest.IsolatedAsyncioTestCase):
         update.message.reply_text.assert_awaited_once_with("Issue report cancelled.")
         self.assertNotIn("ir_admin_id", context.user_data)
         self.assertNotIn(ACTIVE_FLOW_KEY, context.user_data)
+
+    async def test_priority_cancel_skips_in_group(self) -> None:
+        update, context = _group_command_update()
+        context.user_data = {
+            ACTIVE_FLOW_KEY: "issue_report",
+            "ir_admin_id": 100,
+        }
+
+        await dm_flow_cancel_priority(update, context)
+
+        update.message.reply_text.assert_not_awaited()
+        self.assertEqual(context.user_data.get("ir_admin_id"), 100)
+        self.assertEqual(context.user_data.get(ACTIVE_FLOW_KEY), "issue_report")
 
     async def test_priority_cancel_with_title_but_no_conv_state(self) -> None:
         conv = get_report_conversation_handler()
@@ -108,6 +140,22 @@ class TestDmFlowCancel(unittest.IsolatedAsyncioTestCase):
 
         update.message.reply_text.assert_awaited_once_with("Issue report cancelled.")
         self.assertIsNone(get_active_dm_flow(context))
+
+    async def test_flow_cancel_in_group_does_not_kill_report(self) -> None:
+        update, context = _group_command_update()
+        context.user_data = {
+            ACTIVE_FLOW_KEY: "issue_report",
+            "ir_admin_id": 100,
+            "ir_title": "Bug",
+        }
+
+        await flow_cancel_handler(update, context)
+
+        update.message.reply_text.assert_awaited_once()
+        msg = update.message.reply_text.await_args.args[0]
+        self.assertIn("private chat", msg)
+        self.assertIn("ir_admin_id", context.user_data)
+        self.assertEqual(context.user_data.get(ACTIVE_FLOW_KEY), "issue_report")
 
     async def test_flow_cancel_handler_nothing_active(self) -> None:
         update, context = _private_command_update()

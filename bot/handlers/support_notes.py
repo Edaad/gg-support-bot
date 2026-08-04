@@ -415,7 +415,9 @@ async def resolve_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.message.reply_text(format_resolve_result(result))
 
 
-_NOTE_CANCEL = CommandHandler("cancel", support_note_cancel)
+_NOTE_CANCEL = CommandHandler(
+    "cancel", support_note_cancel, filters=filters.ChatType.PRIVATE
+)
 
 
 def get_note_conversation_handler() -> ConversationHandler:

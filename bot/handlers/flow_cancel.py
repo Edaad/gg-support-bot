@@ -297,10 +297,16 @@ async def dm_flow_cancel_priority(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    """Group -1 /cancel: abort DM flows even when ConversationHandler state is stale."""
+    """Group -1 /cancel: abort DM flows even when ConversationHandler state is stale.
+
+    Only runs in private chats — group /cancel must not kill a DM /report, etc.
+    """
     from telegram.ext import ApplicationHandlerStop
 
     if not update.message:
+        return
+    chat = update.effective_chat
+    if chat is None or getattr(chat, "type", None) != "private":
         return
 
     active = get_active_dm_flow(context)
@@ -312,14 +318,18 @@ async def dm_flow_cancel_priority(
 
 
 async def flow_cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Cancel the active deposit, cashout, bonus, or other staff flow."""
+    """Cancel deposit/cashout in this chat, or DM staff flows only in private."""
     if not update.message:
         return
 
-    active_dm = get_active_dm_flow(context)
-    if active_dm is not None:
-        await cancel_active_dm_flow(update, context, flow=active_dm)
-        return
+    chat = update.effective_chat
+    is_private = chat is not None and getattr(chat, "type", None) == "private"
+
+    if is_private:
+        active_dm = get_active_dm_flow(context)
+        if active_dm is not None:
+            await cancel_active_dm_flow(update, context, flow=active_dm)
+            return
 
     for flow in _cancel_order(context):
         if flow == "deposit" and deposit_flow_active(context):
@@ -332,6 +342,14 @@ async def flow_cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
             await cashout_cancel(update, context)
             return
+
+    if not is_private and get_active_dm_flow(context) is not None:
+        await update.message.reply_text(
+            "No active deposit or cashout in this group to cancel.\n\n"
+            "To cancel a staff flow (/report, /note, /bonus, …), send /cancel "
+            "in a private chat with this bot."
+        )
+        return
 
     clear_active_flow(context)
     await update.message.reply_text(
