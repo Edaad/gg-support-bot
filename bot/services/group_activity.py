@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 HumanRole = Literal["player", "staff"]
 
-ESCALATION_SILENCE_SECONDS = 600  # 10 minutes
+ESCALATION_SILENCE_SECONDS = 300  # 5 minutes
 
 
 @dataclass

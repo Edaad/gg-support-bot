@@ -6,7 +6,7 @@ Uses shared group activity detection ([`bot/services/group_activity.py`](../bot/
 
 ## Player idle (silent in Telegram)
 
-On a **player idle** open (free text/media after ≥10 minutes of human silence in the group): **Slack only** — no bot message in the support group.
+On a **player idle** open (free text/media after ≥5 minutes of human silence in the group): **Slack only** — no bot message in the support group.
 
 No *Looks like your request was handled…* from this feature. That copy stays tied to popup keyboard install only.
 
@@ -15,7 +15,7 @@ Cold start / worker restart: activity timestamps are **durable** on
 `escalation_last_human_at` is unset (never recorded), the next **player**
 message may escalate (treated as already silent).
 
-AM/staff message then player reply **without** 10 minutes silence: no Slack.
+AM/staff message then player reply **without** 5 minutes silence: no Slack.
 
 Bare `/deposit` does **not** escalate. Allowed `/cashout` Slack-escalates without a Telegram message. Denied cashout (cooldown/hours): no escalate; a later player message may idle-fire under normal rules.
 
@@ -53,8 +53,8 @@ On tap:
 2. If the group has **no** `group_payment_method_bindings` row for the chosen method → Slack **Manual deposit request.** immediately.
 3. If **bound** → arm a durable 5-minute wait:
    - No payment/`/add` in 5 minutes → Slack `deposit_sent_timeout` (**re-checks DB** so API payment notify cancels correctly across dynos).
-   - Player message containing `sent` / `done` (case-insensitive) **or any media** → ignore (no Slack; wait stays armed).
-   - Any other player text before payment → Slack `deposit_sent_followup` **with the player message body** and cancel the wait.
+   - Player message containing `sent` / `done` (case-insensitive) **or any media** → ignore for follow-up Slack (wait stays armed). Does **not** block `player_idle` if silence criteria are met.
+   - Any other player text before payment → Slack `deposit_sent_followup` **with the player message body** and cancel the wait (skips idle).
    - Payment group notify clears the wait via durable columns.
 
 Arming the chase is **button only** (typed “sent” / media do not start the wait).

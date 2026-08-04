@@ -43,91 +43,101 @@ class SilenceDetectionTests(unittest.TestCase):
     def setUp(self):
         ga.clear_activity_state_for_tests()
 
+    def test_silence_threshold_is_five_minutes(self):
+        self.assertEqual(ga.ESCALATION_SILENCE_SECONDS, 300)
+
     def test_null_last_human_player_fires(self):
         """Virgin / post-migrate state: first player message may escalate."""
+        silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
         with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
             with patch.object(ga, "_persist_activity_state"):
                 obs = ga.record_human_message(
-                    1, role="player", now=t0, silence_seconds=600
+                    1, role="player", now=t0, silence_seconds=silence
                 )
         self.assertTrue(obs.should_fire_idle)
         self.assertTrue(obs.silence_elapsed)
 
     def test_null_last_human_staff_does_not_fire(self):
+        silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
         with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
             with patch.object(ga, "_persist_activity_state"):
                 obs = ga.record_human_message(
-                    1, role="staff", now=t0, silence_seconds=600
+                    1, role="staff", now=t0, silence_seconds=silence
                 )
         self.assertFalse(obs.should_fire_idle)
 
     def test_player_after_silence_fires_once(self):
+        silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
         with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
             with patch.object(ga, "_persist_activity_state"):
-                ga.record_human_message(1, role="player", now=t0, silence_seconds=600)
-                t1 = t0 + timedelta(seconds=601)
+                ga.record_human_message(1, role="player", now=t0, silence_seconds=silence)
+                t1 = t0 + timedelta(seconds=silence + 1)
                 obs = ga.record_human_message(
-                    1, role="player", now=t1, silence_seconds=600
+                    1, role="player", now=t1, silence_seconds=silence
                 )
                 self.assertTrue(obs.should_fire_idle)
                 t2 = t1 + timedelta(seconds=30)
                 obs2 = ga.record_human_message(
-                    1, role="player", now=t2, silence_seconds=600
+                    1, role="player", now=t2, silence_seconds=silence
                 )
                 self.assertFalse(obs2.should_fire_idle)
 
     def test_staff_then_player_without_silence_no_fire(self):
+        silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
         with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
             with patch.object(ga, "_persist_activity_state"):
-                ga.record_human_message(1, role="staff", now=t0, silence_seconds=600)
+                ga.record_human_message(1, role="staff", now=t0, silence_seconds=silence)
                 t1 = t0 + timedelta(seconds=30)
                 obs = ga.record_human_message(
-                    1, role="player", now=t1, silence_seconds=600
+                    1, role="player", now=t1, silence_seconds=silence
                 )
                 self.assertFalse(obs.should_fire_idle)
 
     def test_staff_then_silence_then_player_fires(self):
+        silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
         with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
             with patch.object(ga, "_persist_activity_state"):
-                ga.record_human_message(1, role="staff", now=t0, silence_seconds=600)
-                t1 = t0 + timedelta(seconds=601)
+                ga.record_human_message(1, role="staff", now=t0, silence_seconds=silence)
+                t1 = t0 + timedelta(seconds=silence + 1)
                 obs = ga.record_human_message(
-                    1, role="player", now=t1, silence_seconds=600
+                    1, role="player", now=t1, silence_seconds=silence
                 )
                 self.assertTrue(obs.should_fire_idle)
 
     def test_episode_resets_after_silence(self):
+        silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
         with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
             with patch.object(ga, "_persist_activity_state"):
-                ga.record_human_message(1, role="player", now=t0, silence_seconds=600)
-                t1 = t0 + timedelta(seconds=601)
+                ga.record_human_message(1, role="player", now=t0, silence_seconds=silence)
+                t1 = t0 + timedelta(seconds=silence + 1)
                 self.assertTrue(
                     ga.record_human_message(
-                        1, role="player", now=t1, silence_seconds=600
+                        1, role="player", now=t1, silence_seconds=silence
                     ).should_fire_idle
                 )
-                t2 = t1 + timedelta(seconds=601)
+                t2 = t1 + timedelta(seconds=silence + 1)
                 self.assertTrue(
                     ga.record_human_message(
-                        1, role="player", now=t2, silence_seconds=600
+                        1, role="player", now=t2, silence_seconds=silence
                     ).should_fire_idle
                 )
 
     def test_reset_idle_episode_clears_flag(self):
+        silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
         with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
             with patch.object(ga, "_persist_activity_state"):
-                ga.record_human_message(1, role="player", now=t0, silence_seconds=600)
-                t1 = t0 + timedelta(seconds=601)
+                ga.record_human_message(1, role="player", now=t0, silence_seconds=silence)
+                t1 = t0 + timedelta(seconds=silence + 1)
                 self.assertTrue(
                     ga.record_human_message(
-                        1, role="player", now=t1, silence_seconds=600
+                        1, role="player", now=t1, silence_seconds=silence
                     ).should_fire_idle
                 )
                 self.assertTrue(ga.get_chat_activity_state(1).idle_episode_fired)
@@ -419,7 +429,42 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                             message_text="sent",
                             message=self._plain_text("sent"),
                         )
-                        self.assertTrue(consumed)
+                        # Not consumed: player-idle may still fire.
+                        self.assertFalse(consumed)
+                        cancel.assert_not_called()
+                        notify.assert_not_awaited()
+                        self.assertTrue(ga.deposit_sent_watch_armed(5))
+
+    async def test_followup_ignores_media_does_not_block_idle(self):
+        media_msg = SimpleNamespace(
+            text="I'm depositing 106$ more",
+            caption=None,
+            photo=[object()],
+            video=None,
+            document=None,
+            animation=None,
+            voice=None,
+            video_note=None,
+            audio=None,
+            sticker=None,
+        )
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                ga.mark_deposit_sent_watch_armed(5)
+                context = MagicMock()
+                with patch.object(
+                    esc, "notify_escalation_slack", new_callable=AsyncMock
+                ) as notify:
+                    with patch.object(esc, "cancel_deposit_sent_watch") as cancel:
+                        consumed = await esc.handle_deposit_sent_player_followup(
+                            context,
+                            5,
+                            club_id=1,
+                            title="G",
+                            message_text="I'm depositing 106$ more",
+                            message=media_msg,
+                        )
+                        self.assertFalse(consumed)
                         cancel.assert_not_called()
                         notify.assert_not_awaited()
                         self.assertTrue(ga.deposit_sent_watch_armed(5))

@@ -627,8 +627,10 @@ async def handle_deposit_sent_player_followup(
 ) -> bool:
     """If 5m wait is armed, escalate on non-ack player text.
 
-    Media or text/caption containing ``sent`` / ``done`` is ignored: no Slack,
-    wait stays armed. Any other text Slack-escalates and cancels the wait.
+    Media or text/caption containing ``sent`` / ``done`` is ignored: no Slack
+    for follow-up, wait stays armed, and returns False so player-idle can still
+    fire when silence criteria are met. Any other text Slack-escalates follow-up
+    and cancels the wait (returns True so idle is skipped).
 
     Returns True if consumed (caller should skip idle escalation).
     """
@@ -636,7 +638,7 @@ async def handle_deposit_sent_player_followup(
         return False
 
     if should_ignore_deposit_sent_followup(message):
-        return True
+        return False
 
     cancel_deposit_sent_watch(
         chat_id, job_queue=getattr(context, "job_queue", None)
