@@ -433,7 +433,8 @@ async def _telegram_api(
     token: str,
 ) -> dict[str, Any]:
     url = f"https://api.telegram.org/bot{token}/{method}"
-    async with httpx.AsyncClient(timeout=15) as client:
+    # Telegram occasionally takes 20–30s+ for this bot/chat; 15s caused ReadTimeout drops.
+    async with httpx.AsyncClient(timeout=45) as client:
         resp = await client.post(url, json=payload)
         resp.raise_for_status()
         data = resp.json()
