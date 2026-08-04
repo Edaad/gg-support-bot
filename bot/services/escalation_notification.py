@@ -523,7 +523,7 @@ async def offer_deposit_sent_button(
     title: str | None = None,
     attach_to_message_id: int | None = None,
 ) -> bool:
-    """Show inline 'I have sent the payment' when escalation is on (non-Stripe).
+    """Show inline 'I have sent the payment' when escalation is on.
 
     Returns True if the button was offered.
     """
@@ -533,8 +533,6 @@ async def offer_deposit_sent_button(
         return False
 
     slug = (method_slug or "").strip().lower() or None
-    if slug == "stripe":
-        return False
 
     on_deposit_instructions_sent(int(chat_id), method_slug=slug)
     markup = deposit_sent_button_markup()

@@ -689,6 +689,28 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                             notify.assert_not_awaited()
 
 
+    async def test_offer_button_allows_stripe(self):
+        bot = MagicMock()
+        bot.edit_message_reply_markup = AsyncMock()
+        bot.send_message = AsyncMock()
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                with patch.object(
+                    esc, "escalation_notification_eligible", return_value=True
+                ):
+                    offered = await esc.offer_deposit_sent_button(
+                        bot,
+                        42,
+                        club_id=1,
+                        method_slug="stripe",
+                        title="G",
+                        attach_to_message_id=7,
+                    )
+        self.assertTrue(offered)
+        bot.edit_message_reply_markup.assert_awaited_once()
+        self.assertTrue(ga.deposit_instructions_pending(42))
+
+
 class PersistenceReloadTests(unittest.TestCase):
     def setUp(self):
         ga.clear_activity_state_for_tests()

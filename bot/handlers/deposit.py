@@ -437,7 +437,7 @@ async def _maybe_offer_deposit_sent_button(
     title: str | None = None,
     attach: bool = True,
 ) -> None:
-    """Offer escalation 'I have sent the payment' button after non-Stripe instructions."""
+    """Offer escalation 'I have sent the payment' button after deposit instructions."""
     if bot is None:
         return
     try:
@@ -2271,7 +2271,14 @@ async def _send_deposit_method_response(
                 expires_at=result.expires_at,
                 stripe_session_id=result.session_id,
             )
-            # Stripe: no "I have sent the payment" button / chase.
+            await _maybe_offer_deposit_sent_button(
+                getattr(context, "bot", None),
+                int(chat_id),
+                club_id=int(club_id) if club_id is not None else None,
+                method_slug=slug or "stripe",
+                title=group_title,
+                attach=True,
+            )
             return True
         except Exception as e:
             err_detail = _stripe_error_detail(e)

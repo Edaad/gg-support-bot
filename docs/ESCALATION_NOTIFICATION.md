@@ -40,11 +40,9 @@ Skip: generic `/gc` (no player); staff `/gc` or outgoing MTProto `/gc` that only
 
 ## Deposit payment chase
 
-After non-Stripe deposit **instructions** are posted (including first-time setup), when escalation is enabled the bot shows an **inline** button:
+After deposit **instructions** are posted (including first-time setup and Stripe checkout), when escalation is enabled the bot shows an **inline** button:
 
 > I have sent the payment
-
-**Stripe** instructions never get this button.
 
 On tap:
 
