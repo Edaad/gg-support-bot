@@ -139,10 +139,10 @@ async def notify_player_group_payment_received(
             )
         try:
             from bot.services.escalation_notification import (
-                on_payment_received_for_escalation,
+                clear_deposit_chase_after_payment,
             )
 
-            on_payment_received_for_escalation(int(telegram_chat_id))
+            await clear_deposit_chase_after_payment(bot, int(telegram_chat_id))
         except Exception:
             logger.debug(
                 "payment_group_notify: escalation cancel failed chat_id=%s",

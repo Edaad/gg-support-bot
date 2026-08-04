@@ -260,6 +260,7 @@ def update_support_group_chat_row(
     escalation_deposit_instructions_pending: bool | None = None,
     escalation_deposit_method_slug: Any | None = ...,
     escalation_deposit_sent_armed_at: Any | None = ...,
+    escalation_deposit_sent_button_message_id: Any | None = ...,
 ) -> tuple[bool, str | None]:
     """Update an existing row by primary key. Returns (ok, error).
 
@@ -309,6 +310,10 @@ def update_support_group_chat_row(
                 row.escalation_deposit_method_slug = escalation_deposit_method_slug
             if escalation_deposit_sent_armed_at is not ...:
                 row.escalation_deposit_sent_armed_at = escalation_deposit_sent_armed_at
+            if escalation_deposit_sent_button_message_id is not ...:
+                row.escalation_deposit_sent_button_message_id = (
+                    escalation_deposit_sent_button_message_id
+                )
         return True, None
     except Exception as e:
         logger.exception("support_group_chats update failed (%s)", type(e).__name__)

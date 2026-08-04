@@ -709,6 +709,23 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(offered)
         bot.edit_message_reply_markup.assert_awaited_once()
         self.assertTrue(ga.deposit_instructions_pending(42))
+        self.assertEqual(ga.deposit_sent_button_message_id(42), 7)
+
+    async def test_payment_clears_chase_and_strips_button(self):
+        bot = MagicMock()
+        bot.edit_message_reply_markup = AsyncMock()
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                ga.mark_deposit_instructions_pending(55, method_slug="zelle")
+                ga.set_deposit_sent_button_message_id(55, 99)
+                await esc.clear_deposit_chase_after_payment(bot, 55)
+        self.assertFalse(ga.deposit_instructions_pending(55))
+        self.assertIsNone(ga.deposit_sent_button_message_id(55))
+        bot.edit_message_reply_markup.assert_awaited_once_with(
+            chat_id=55,
+            message_id=99,
+            reply_markup=None,
+        )
 
 
 class PersistenceReloadTests(unittest.TestCase):

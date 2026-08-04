@@ -544,6 +544,9 @@ async def offer_deposit_sent_button(
                 message_id=int(attach_to_message_id),
                 reply_markup=markup,
             )
+            ga.set_deposit_sent_button_message_id(
+                int(chat_id), int(attach_to_message_id)
+            )
             return True
         except Exception:
             logger.debug(
@@ -555,11 +558,14 @@ async def offer_deposit_sent_button(
             )
 
     try:
-        await bot.send_message(
+        sent = await bot.send_message(
             chat_id=int(chat_id),
             text="\u200b",
             reply_markup=markup,
         )
+        mid = getattr(sent, "message_id", None)
+        if mid is not None:
+            ga.set_deposit_sent_button_message_id(int(chat_id), int(mid))
         return True
     except Exception:
         logger.warning(
@@ -573,6 +579,32 @@ async def offer_deposit_sent_button(
 def on_payment_received_for_escalation(chat_id: int) -> None:
     """Payment notify landed — cancel deposit sent chase (DB-durable)."""
     cancel_deposit_sent_watch(int(chat_id))
+
+
+async def clear_deposit_chase_after_payment(
+    bot: Any | None,
+    chat_id: int,
+    *,
+    job_queue: Any | None = None,
+) -> None:
+    """Clear chase state and strip the sent button if we know its message id."""
+    msg_id = ga.deposit_sent_button_message_id(int(chat_id))
+    cancel_deposit_sent_watch(int(chat_id), job_queue=job_queue)
+    if bot is None or msg_id is None:
+        return
+    try:
+        await bot.edit_message_reply_markup(
+            chat_id=int(chat_id),
+            message_id=int(msg_id),
+            reply_markup=None,
+        )
+    except Exception:
+        logger.debug(
+            "escalation: strip sent button failed chat_id=%s msg=%s",
+            chat_id,
+            msg_id,
+            exc_info=True,
+        )
 
 
 def _payment_seen_since_arm(chat_id: int, armed_at: datetime) -> bool:

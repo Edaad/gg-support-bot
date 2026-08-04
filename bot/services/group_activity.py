@@ -35,6 +35,8 @@ class ChatActivityState:
     # After button (bound path): 5m payment wait armed.
     deposit_sent_watch_armed: bool = False
     deposit_sent_armed_at: datetime | None = None
+    # Telegram message_id carrying the "I have sent the payment" markup.
+    deposit_sent_button_message_id: int | None = None
     # support_group_chats.id when durable; None = memory-only fallback.
     support_row_id: int | None = None
 
@@ -68,6 +70,7 @@ def _state_from_row(row: object) -> ChatActivityState:
     if role_raw in ("player", "staff"):
         role = role_raw  # type: ignore[assignment]
     armed_at = _as_utc(getattr(row, "escalation_deposit_sent_armed_at", None))
+    button_mid = getattr(row, "escalation_deposit_sent_button_message_id", None)
     return ChatActivityState(
         last_human_at=_as_utc(getattr(row, "escalation_last_human_at", None)),
         last_human_role=role,
@@ -82,6 +85,9 @@ def _state_from_row(row: object) -> ChatActivityState:
         ),
         deposit_sent_watch_armed=armed_at is not None,
         deposit_sent_armed_at=armed_at,
+        deposit_sent_button_message_id=(
+            int(button_mid) if button_mid is not None else None
+        ),
         support_row_id=int(getattr(row, "id")),
     )
 
@@ -128,6 +134,7 @@ def _persist_activity_state(chat_id: int, state: ChatActivityState) -> None:
         ),
         escalation_deposit_method_slug=state.deposit_method_slug,
         escalation_deposit_sent_armed_at=state.deposit_sent_armed_at,
+        escalation_deposit_sent_button_message_id=state.deposit_sent_button_message_id,
     )
     if not ok:
         logger.debug(
@@ -258,6 +265,7 @@ def mark_deposit_instructions_pending(
     state.deposit_method_slug = (method_slug or "").strip().lower() or None
     state.deposit_sent_watch_armed = False
     state.deposit_sent_armed_at = None
+    state.deposit_sent_button_message_id = None
     _persist_activity_state(chat_id, state)
 
 
@@ -267,7 +275,21 @@ def clear_deposit_instructions_pending(chat_id: int) -> None:
     state.deposit_method_slug = None
     state.deposit_sent_watch_armed = False
     state.deposit_sent_armed_at = None
+    state.deposit_sent_button_message_id = None
     _persist_activity_state(chat_id, state)
+
+
+def set_deposit_sent_button_message_id(chat_id: int, message_id: int | None) -> None:
+    state = get_chat_activity_state(chat_id)
+    state.deposit_sent_button_message_id = (
+        int(message_id) if message_id is not None else None
+    )
+    _persist_activity_state(chat_id, state)
+
+
+def deposit_sent_button_message_id(chat_id: int) -> int | None:
+    mid = get_chat_activity_state(chat_id).deposit_sent_button_message_id
+    return int(mid) if mid is not None else None
 
 
 def mark_deposit_sent_watch_armed(

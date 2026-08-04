@@ -314,10 +314,19 @@ async def handle_group_add_outgoing(
     cancel_deposit_reminder_for_chat(int(event.chat_id))
     try:
         from bot.services.escalation_notification import (
+            clear_deposit_chase_after_payment,
             on_payment_received_for_escalation,
         )
+        from bot.services.payment_group_notify import support_bot_tokens_to_try
+        from telegram import Bot
 
-        on_payment_received_for_escalation(int(event.chat_id))
+        tokens = support_bot_tokens_to_try(is_test=False)
+        if tokens:
+            await clear_deposit_chase_after_payment(
+                Bot(token=tokens[0]), int(event.chat_id)
+            )
+        else:
+            on_payment_received_for_escalation(int(event.chat_id))
     except Exception:
         logger.debug(
             "group_add: escalation cancel failed chat_id=%s",

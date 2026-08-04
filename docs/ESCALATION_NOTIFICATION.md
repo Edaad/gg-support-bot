@@ -53,7 +53,8 @@ On tap:
    - No payment/`/add` in 5 minutes → Slack `deposit_sent_timeout` (**re-checks DB** so API payment notify cancels correctly across dynos).
    - Player message containing `sent` / `done` (case-insensitive) **or any media** → ignore for follow-up Slack (wait stays armed). Does **not** block `player_idle` if silence criteria are met.
    - Any other player text before payment → Slack `deposit_sent_followup` **with the player message body** and cancel the wait (skips idle).
-   - Payment group notify clears the wait via durable columns.
+   - Payment group notify clears the wait via durable columns and strips the
+     **I have sent the payment** button (even if it was never tapped).
 
 Arming the chase is **button only** (typed “sent” / media do not start the wait).
 
@@ -124,6 +125,7 @@ GC title / contact is a Slack code span (tap-to-copy on mobile). Free-text bodie
 ```bash
 DATABASE_URL=... python migrate_enable_escalation_notification.py
 DATABASE_URL=... python migrate_escalation_activity_state.py
+DATABASE_URL=... python migrate_escalation_deposit_sent_button_message_id.py
 ```
 
 ## Overlap with popup keyboard

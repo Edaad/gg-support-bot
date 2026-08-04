@@ -179,10 +179,14 @@ async def _execute_add(
     cancel_deposit_reminder(context, chat.id)
     try:
         from bot.services.escalation_notification import (
-            on_payment_received_for_escalation,
+            clear_deposit_chase_after_payment,
         )
 
-        on_payment_received_for_escalation(int(chat.id))
+        await clear_deposit_chase_after_payment(
+            getattr(context, "bot", None),
+            int(chat.id),
+            job_queue=getattr(context, "job_queue", None),
+        )
     except Exception:
         logger.debug(
             "add: escalation cancel failed chat_id=%s", chat.id, exc_info=True
