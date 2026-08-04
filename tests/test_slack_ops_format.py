@@ -75,6 +75,7 @@ class TestBeautifyIssueReport(unittest.TestCase):
         self.assertIn("*For:* Engineer", text)
         self.assertIn("*Details:*", text)
         self.assertIn("Deposit flow broken", text)
+        self.assertNotIn("*Reporter:*", text)
 
 
 class TestBeautifyNotificationReport(unittest.TestCase):

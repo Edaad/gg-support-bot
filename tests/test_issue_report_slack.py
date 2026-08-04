@@ -19,7 +19,6 @@ class TestIssueReportSlackFormat(unittest.TestCase):
                 "Ticket: #3",
                 "Title: Cashout stuck",
                 "Notify: Head admin, Engineer",
-                "Reporter: Alice (source=api)",
                 "Group: RT / 1234-5678 / player",
                 "",
                 "Details:",
@@ -32,6 +31,7 @@ class TestIssueReportSlackFormat(unittest.TestCase):
         self.assertIn("*Group:* RT / 1234-5678 / player", text)
         self.assertIn("*Details:*", text)
         self.assertIn("Player cannot cash out", text)
+        self.assertNotIn("*Reporter:*", text)
 
     def test_beautifies_legacy_description_block(self) -> None:
         body = "\n".join(
@@ -48,7 +48,9 @@ class TestIssueReportSlackFormat(unittest.TestCase):
             ]
         )
         text = beautify_slack_body(body, source="issue_report")
-        self.assertIn("`cashout`", text)
+        self.assertNotIn("*Reporter:*", text)
+        self.assertNotIn("`cashout`", text)
+        self.assertNotIn("*Tags:*", text)
         self.assertIn("Player cannot cash out", text)
 
 

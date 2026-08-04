@@ -174,28 +174,17 @@ def _notify_labels(notify_tags: list[str] | None) -> str:
 
 
 def format_issue_report_slack_body(report: IssueReport, *, session: Session | None = None) -> str:
-    reporter = report.reporter_name or "(unknown)"
-    if report.reporter_telegram_user_id:
-        reporter = f"{reporter} (tg:{report.reporter_telegram_user_id})"
     lines = [
         "Issue report",
         "",
         f"Ticket: #{report.id}",
         f"Title: {report.title}",
         f"Notify: {_notify_labels(list(report.notify_tags or []))}",
-        f"Reporter: {reporter} (source={report.reporter_source})",
     ]
-    if report.category:
-        lines.insert(5, f"Category: {_category_label(report)}")
     if report.group_title:
         lines.append(f"Group: {report.group_title}")
-    if report.telegram_chat_id:
-        lines.append(f"Chat ID: {report.telegram_chat_id}")
     if report.club_id and session is not None:
         lines.append(f"Club: {club_label_for_id(session, int(report.club_id))}")
-    legacy_tags = list(report.tags or [])
-    if legacy_tags and not report.category:
-        lines.append(f"Tags: {', '.join(legacy_tags)}")
     lines.extend(["", "Details:", report.description])
     return "\n".join(lines)
 
@@ -342,8 +331,6 @@ def format_reminder_slack_body(report: IssueReport) -> str:
         f"Notify: {_notify_labels(list(report.notify_tags or []))}",
         f"Open for: {age}",
     ]
-    if report.category:
-        lines.insert(5, f"Category: {_category_label(report)}")
     if report.group_title:
         lines.append(f"Group: {report.group_title}")
     lines.extend(["", "Details:", report.description])

@@ -283,13 +283,9 @@ def _beautify_issue_report(body: str) -> str:
     ticket_id = _field(body, r"Ticket:\s*#(\d+)")
     title = _field(body, r"Title:\s*(.+)")
     notify_raw = _field(body, r"Notify:\s*(.+)")
-    category = _field(body, r"Category:\s*(.+)")
-    reporter = _field(body, r"Reporter:\s*(.+)")
     group = _field(body, r"Group:\s*(.+)")
     club = _field(body, r"Club:\s*(.+)")
-    chat_id = _field(body, r"Chat ID:\s*(.+)")
     open_for = _field(body, r"Open for:\s*(.+)")
-    tags_raw = _field(body, r"Tags:\s*(.+)")
     details = _extract_block(
         body,
         "Details:",
@@ -319,22 +315,12 @@ def _beautify_issue_report(body: str) -> str:
         out.append(f"*Title:* {title.strip()}")
     if notify_raw and notify_raw.strip() not in ("(none)", ""):
         out.append(f"*For:* {notify_raw.strip()}")
-    if category and category.strip() not in ("(none)", ""):
-        out.append(f"*Category:* {category.strip()}")
     if open_for:
         out.append(f"*Open for:* {open_for.strip()}")
     if group:
         out.append(f"*Group:* {group.strip()}")
     if club:
         out.append(f"*Club:* {club.strip()}")
-    if chat_id:
-        out.append(f"*Chat ID:* `{chat_id.strip()}`")
-    if tags_raw and tags_raw.strip() not in ("(none)", ""):
-        tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
-        if tags:
-            out.append(f"*Tags:* {', '.join(f'`{t}`' for t in tags)}")
-    if reporter:
-        out.append(f"*Reporter:* {reporter.strip()}")
     if details:
         out.append("")
         out.append("*Details:*")

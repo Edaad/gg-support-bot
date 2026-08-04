@@ -78,10 +78,11 @@ class TestFormatIssueReportSlackBody(unittest.TestCase):
         self.assertIn("Ticket: #7", body)
         self.assertIn("Title: Broken deposit", body)
         self.assertIn("Notify: Head admin, Engineer", body)
-        self.assertIn("Reporter: Alice", body)
-        self.assertIn("Tags: deposit, bot_issue", body)
         self.assertIn("Nothing happens", body)
+        self.assertNotIn("Reporter:", body)
         self.assertNotIn("Category:", body)
+        self.assertNotIn("Tags:", body)
+        self.assertNotIn("Chat ID:", body)
 
 
 class TestCreateIssueReport(unittest.IsolatedAsyncioTestCase):
