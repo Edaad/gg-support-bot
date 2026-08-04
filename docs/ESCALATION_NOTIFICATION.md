@@ -59,6 +59,19 @@ On tap:
 
 Arming the chase is **button only** (typed “sent” / media do not start the wait).
 
+### Free text during /deposit (before button)
+
+When escalation is on, **immediate** Slack (`deposit_player_message`, no 5m silence) for player free text/media while a deposit is open — mid `/deposit` flow (e.g. method picker) **or** after instructions were shown but before payment / “I have sent the payment” arming:
+
+| Message | Slack? |
+|---------|--------|
+| Valid amount answer | No |
+| First-deposit referral answer | No |
+| Other text (e.g. “Is Venmo available?”) | Yes — *Player messaged during deposit.* + body |
+| Media before the button wait is armed | Yes |
+
+Does not cancel the bot conversation / timeout. After the button arms the 5m wait, sent/done/media handling stays on the follow-up path above.
+
 ## RPA (ClubGG auto chip-add / auto-claim)
 
 When escalation is on and RPA was **attempted** but needs manual follow-up:
@@ -91,6 +104,7 @@ Copy (no user id, no chat id):
 | `deposit_sent_timeout` | Deposit payment not seen. | No |
 | `deposit_sent_followup` | Player sent a message after confirming they sent the payment. | Yes |
 | `deposit_sent_unbound` | Manual deposit request. | No |
+| `deposit_player_message` | Player messaged during deposit. | Yes |
 | `new_player_onboarded` | Welcome the new player who just joined the group chat. | No |
 | `player_dm_reached_out` | A player reached out in DM. | No |
 | `rpa_deposit_failed` | RPA deposit failed — add chips manually. | No |

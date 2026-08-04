@@ -261,6 +261,18 @@ class EscalationCopyTests(unittest.TestCase):
         )
         self.assertIn("still waiting", text)
 
+    def test_deposit_player_message_copy(self):
+        with patch.object(esc, "_club_display_name", return_value="Creator Club"):
+            text = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_PLAYER_MESSAGE,
+                club_id=3,
+                chat_id=-300,
+                title="CC / 2514-2282 / Nick",
+                message_text="Is 30 Venmo available for deposit",
+            )
+        self.assertIn("*Player messaged during deposit.*", text)
+        self.assertIn("Is 30 Venmo available for deposit", text)
+
     def test_earlyrb_and_rpa_headlines(self):
         with patch.object(esc, "_club_display_name", return_value="Creator Club"):
             early = esc.format_escalation_slack_text(
@@ -316,6 +328,116 @@ class PlayerContactLabelTests(unittest.TestCase):
             esc.format_player_contact_label(display_name="", username="@btwn"),
             "@btwn",
         )
+
+
+class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        ga.clear_activity_state_for_tests()
+
+    def _text_msg(self, text: str):
+        return SimpleNamespace(
+            text=text,
+            caption=None,
+            photo=None,
+            video=None,
+            document=None,
+            animation=None,
+            voice=None,
+            video_note=None,
+            audio=None,
+            sticker=None,
+        )
+
+    def test_valid_amount_skipped(self):
+        context = MagicMock()
+        context.chat_data = {
+            "deposit_club_id": 1,
+            "deposit_awaiting_amount": True,
+        }
+        self.assertTrue(
+            esc.is_valid_deposit_flow_answer(context, self._text_msg("33"))
+        )
+
+    def test_venmo_question_not_valid_answer(self):
+        context = MagicMock()
+        context.chat_data = {
+            "deposit_club_id": 1,
+            "deposit_amount": 33,
+        }
+        self.assertFalse(
+            esc.is_valid_deposit_flow_answer(
+                context, self._text_msg("Is 30 Venmo available for deposit")
+            )
+        )
+
+    async def test_method_picker_question_escalates(self):
+        context = MagicMock()
+        context.chat_data = {
+            "deposit_club_id": 1,
+            "deposit_amount": 33,
+        }
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                with patch.object(
+                    esc, "notify_escalation_slack", new_callable=AsyncMock
+                ) as notify:
+                    consumed = await esc.handle_deposit_player_message(
+                        context,
+                        99,
+                        club_id=3,
+                        title="CC / 2514-2282 / Nick",
+                        message_text="Is 30 Venmo available for deposit",
+                        message=self._text_msg(
+                            "Is 30 Venmo available for deposit"
+                        ),
+                    )
+        self.assertTrue(consumed)
+        notify.assert_awaited_once()
+        self.assertEqual(
+            notify.await_args.args[0], esc.REASON_DEPOSIT_PLAYER_MESSAGE
+        )
+
+    async def test_valid_amount_does_not_escalate(self):
+        context = MagicMock()
+        context.chat_data = {
+            "deposit_club_id": 1,
+            "deposit_awaiting_amount": True,
+        }
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                with patch.object(
+                    esc, "notify_escalation_slack", new_callable=AsyncMock
+                ) as notify:
+                    consumed = await esc.handle_deposit_player_message(
+                        context,
+                        99,
+                        club_id=3,
+                        title="G",
+                        message_text="33",
+                        message=self._text_msg("33"),
+                    )
+        self.assertFalse(consumed)
+        notify.assert_not_awaited()
+
+    async def test_armed_wait_defers_to_followup_path(self):
+        context = MagicMock()
+        context.chat_data = {"deposit_club_id": 1, "deposit_amount": 33}
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                ga.mark_deposit_sent_watch_armed(99)
+                with patch.object(
+                    esc, "notify_escalation_slack", new_callable=AsyncMock
+                ) as notify:
+                    consumed = await esc.handle_deposit_player_message(
+                        context,
+                        99,
+                        club_id=3,
+                        title="G",
+                        message_text="where are chips",
+                        message=self._text_msg("where are chips"),
+                    )
+        self.assertFalse(consumed)
+        notify.assert_not_awaited()
 
 
 class DepositFollowupIgnoreTests(unittest.TestCase):

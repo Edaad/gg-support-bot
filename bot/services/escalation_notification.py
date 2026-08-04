@@ -27,6 +27,7 @@ REASON_CASHOUT_STARTED = "cashout_started"
 REASON_DEPOSIT_SENT_TIMEOUT = "deposit_sent_timeout"
 REASON_DEPOSIT_SENT_FOLLOWUP = "deposit_sent_followup"
 REASON_DEPOSIT_SENT_UNBOUND = "deposit_sent_unbound"
+REASON_DEPOSIT_PLAYER_MESSAGE = "deposit_player_message"
 REASON_NEW_PLAYER_ONBOARDED = "new_player_onboarded"
 REASON_PLAYER_DM_REACHED_OUT = "player_dm_reached_out"
 REASON_EARLYRB_REQUESTED = "earlyrb_requested"
@@ -41,6 +42,7 @@ _HEADLINES = {
         "Player sent a message after confirming they sent the payment."
     ),
     REASON_DEPOSIT_SENT_UNBOUND: "Manual deposit request.",
+    REASON_DEPOSIT_PLAYER_MESSAGE: "Player messaged during deposit.",
     REASON_NEW_PLAYER_ONBOARDED: (
         "Welcome the new player who just joined the group chat."
     ),
@@ -55,6 +57,7 @@ _REASONS_WITH_MESSAGE_BODY = frozenset(
     {
         REASON_PLAYER_IDLE,
         REASON_DEPOSIT_SENT_FOLLOWUP,
+        REASON_DEPOSIT_PLAYER_MESSAGE,
     }
 )
 
@@ -184,6 +187,93 @@ def should_ignore_deposit_sent_followup(message) -> bool:
     if not blob:
         return False
     return _DEPOSIT_FOLLOWUP_IGNORE_RE.search(blob) is not None
+
+
+def _deposit_awaiting_referral(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """True during first-deposit referral prompt (any text is a valid answer)."""
+    chat_data = getattr(context, "chat_data", None) or {}
+    if chat_data.get("deposit_amount") or chat_data.get("deposit_awaiting_amount"):
+        return False
+    if not chat_data.get("deposit_is_first"):
+        return False
+    settings = chat_data.get("deposit_fd_settings") or {}
+    if isinstance(settings, dict):
+        return bool(settings.get("referral_enabled"))
+    return bool(getattr(settings, "referral_enabled", False))
+
+
+def is_valid_deposit_flow_answer(
+    context: ContextTypes.DEFAULT_TYPE,
+    message: object | None,
+) -> bool:
+    """True when the message is a normal /deposit step answer (skip escalate)."""
+    if message is None:
+        return False
+    text = (getattr(message, "text", None) or "").strip()
+    if not text:
+        text = (getattr(message, "caption", None) or "").strip()
+
+    if _deposit_awaiting_referral(context):
+        return bool(text)
+
+    chat_data = getattr(context, "chat_data", None) or {}
+    awaiting_amount = bool(chat_data.get("deposit_awaiting_amount"))
+    amount_step = awaiting_amount or (
+        bool(chat_data.get("deposit_club_id"))
+        and not chat_data.get("deposit_amount")
+        and not _deposit_awaiting_referral(context)
+    )
+    if amount_step:
+        from bot.handlers.flow_staleness import looks_like_amount
+
+        return looks_like_amount(text)
+    return False
+
+
+def deposit_open_for_player_message_escalation(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+) -> bool:
+    """Deposit session before payment, excluding post-button armed wait.
+
+    Armed wait is owned by deposit_sent_followup (sent/done/media ignore).
+    """
+    if ga.deposit_sent_watch_armed(int(chat_id)):
+        return False
+    from bot.handlers.flow_cancel import deposit_flow_active
+
+    if deposit_flow_active(context):
+        return True
+    return ga.deposit_instructions_pending(int(chat_id))
+
+
+async def handle_deposit_player_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    *,
+    club_id: int | None,
+    title: str | None = None,
+    message_text: str | None = None,
+    message: object | None = None,
+) -> bool:
+    """Escalate free text/media during /deposit (no button / silence required).
+
+    Skips valid amount and referral answers. Returns True if Slack sent
+    (caller should skip idle).
+    """
+    if not deposit_open_for_player_message_escalation(context, chat_id):
+        return False
+    if is_valid_deposit_flow_answer(context, message):
+        return False
+
+    await notify_escalation_slack(
+        REASON_DEPOSIT_PLAYER_MESSAGE,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+        message_text=message_text,
+    )
+    return True
 
 
 def format_escalation_slack_text(

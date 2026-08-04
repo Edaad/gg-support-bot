@@ -72,6 +72,15 @@ async def group_activity_handler(
                 message_text=player_msg,
                 message=message,
             )
+            if not deposit_consumed:
+                deposit_consumed = await esc.handle_deposit_player_message(
+                    context,
+                    chat.id,
+                    club_id=club_id,
+                    title=chat.title,
+                    message_text=player_msg,
+                    message=message,
+                )
 
         if (
             esc_on
