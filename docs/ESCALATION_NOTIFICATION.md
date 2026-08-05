@@ -64,7 +64,7 @@ When escalation is on, **immediate** Slack (`deposit_player_message`, no 5m sile
 
 | Message | Slack? |
 |---------|--------|
-| Valid amount answer | No |
+| Valid amount answer (`100`, `$50`, …) | No — matched by amount shape even after the deposit handler stores `deposit_amount` (group_activity runs later) |
 | First-deposit referral answer | No |
 | Other text (e.g. “Is Venmo available?”) | Yes — *Player messaged during deposit.* + body |
 | Media before the button wait is armed | Yes |

@@ -206,7 +206,14 @@ def is_valid_deposit_flow_answer(
     context: ContextTypes.DEFAULT_TYPE,
     message: object | None,
 ) -> bool:
-    """True when the message is a normal /deposit step answer (skip escalate)."""
+    """True when the message is a normal /deposit step answer (skip escalate).
+
+    Plain amounts are always treated as flow answers while a deposit session is
+    open (caller gates on that). group_activity runs in handler group 4 *after*
+    deposit_amount_received has already cleared deposit_awaiting_amount and set
+    deposit_amount — if we required the pre-amount chat_data flags here, every
+    successful amount reply would false-positive escalate.
+    """
     if message is None:
         return False
     text = (getattr(message, "text", None) or "").strip()
@@ -216,18 +223,9 @@ def is_valid_deposit_flow_answer(
     if _deposit_awaiting_referral(context):
         return bool(text)
 
-    chat_data = getattr(context, "chat_data", None) or {}
-    awaiting_amount = bool(chat_data.get("deposit_awaiting_amount"))
-    amount_step = awaiting_amount or (
-        bool(chat_data.get("deposit_club_id"))
-        and not chat_data.get("deposit_amount")
-        and not _deposit_awaiting_referral(context)
-    )
-    if amount_step:
-        from bot.handlers.flow_staleness import looks_like_amount
+    from bot.handlers.flow_staleness import looks_like_amount
 
-        return looks_like_amount(text)
-    return False
+    return looks_like_amount(text)
 
 
 def deposit_open_for_player_message_escalation(

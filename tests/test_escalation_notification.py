@@ -358,6 +358,20 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
             esc.is_valid_deposit_flow_answer(context, self._text_msg("33"))
         )
 
+    def test_amount_still_valid_after_handler_stores_amount(self):
+        """group_activity runs after deposit_amount_received mutates chat_data."""
+        context = MagicMock()
+        context.chat_data = {
+            "deposit_club_id": 1,
+            "deposit_amount": 100,
+        }
+        self.assertTrue(
+            esc.is_valid_deposit_flow_answer(context, self._text_msg("100"))
+        )
+        self.assertTrue(
+            esc.is_valid_deposit_flow_answer(context, self._text_msg("100.00"))
+        )
+
     def test_venmo_question_not_valid_answer(self):
         context = MagicMock()
         context.chat_data = {
@@ -415,6 +429,28 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
                         title="G",
                         message_text="33",
                         message=self._text_msg("33"),
+                    )
+        self.assertFalse(consumed)
+        notify.assert_not_awaited()
+
+    async def test_amount_after_stored_does_not_escalate(self):
+        context = MagicMock()
+        context.chat_data = {
+            "deposit_club_id": 1,
+            "deposit_amount": 100,
+        }
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                with patch.object(
+                    esc, "notify_escalation_slack", new_callable=AsyncMock
+                ) as notify:
+                    consumed = await esc.handle_deposit_player_message(
+                        context,
+                        99,
+                        club_id=3,
+                        title="G",
+                        message_text="100",
+                        message=self._text_msg("100"),
                     )
         self.assertFalse(consumed)
         notify.assert_not_awaited()
