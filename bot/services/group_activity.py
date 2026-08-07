@@ -53,7 +53,7 @@ def reset_idle_episode(chat_id: int) -> None:
     """Allow the next player message to idle-escalate (e.g. after denied /earlyrb)."""
     state = get_chat_activity_state(int(chat_id))
     state.idle_episode_fired = False
-    _persist_activity_state(int(chat_id), state)
+    _persist_activity_state(int(chat_id), state, include_deposit_wait=False)
 
 
 def _as_utc(ts: datetime | None) -> datetime | None:
@@ -114,8 +114,18 @@ def get_chat_activity_state(chat_id: int) -> ChatActivityState:
     return state
 
 
-def _persist_activity_state(chat_id: int, state: ChatActivityState) -> None:
-    """Best-effort write of escalation fields to support_group_chats."""
+def _persist_activity_state(
+    chat_id: int,
+    state: ChatActivityState,
+    *,
+    include_deposit_wait: bool = True,
+) -> None:
+    """Best-effort write of escalation fields to support_group_chats.
+
+    Idle / last-human updates must use ``include_deposit_wait=False`` so a
+    dyno with a stale in-memory deposit-wait snapshot cannot overwrite a clear
+    that another process (e.g. payment notify on web) already wrote to Postgres.
+    """
     row_id = state.support_row_id
     if row_id is None:
         row = fetch_support_group_chat_by_telegram_chat_id(int(chat_id))
@@ -124,24 +134,67 @@ def _persist_activity_state(chat_id: int, state: ChatActivityState) -> None:
         row_id = int(row.id)
         state.support_row_id = row_id
 
-    ok, err = update_support_group_chat_row(
-        row_id,
-        escalation_last_human_at=state.last_human_at,
-        escalation_last_human_role=state.last_human_role,
-        escalation_idle_episode_fired=bool(state.idle_episode_fired),
-        escalation_deposit_instructions_pending=bool(
-            state.deposit_instructions_pending
-        ),
-        escalation_deposit_method_slug=state.deposit_method_slug,
-        escalation_deposit_sent_armed_at=state.deposit_sent_armed_at,
-        escalation_deposit_sent_button_message_id=state.deposit_sent_button_message_id,
-    )
+    kwargs: dict = {
+        "escalation_last_human_at": state.last_human_at,
+        "escalation_last_human_role": state.last_human_role,
+        "escalation_idle_episode_fired": bool(state.idle_episode_fired),
+    }
+    if include_deposit_wait:
+        kwargs.update(
+            {
+                "escalation_deposit_instructions_pending": bool(
+                    state.deposit_instructions_pending
+                ),
+                "escalation_deposit_method_slug": state.deposit_method_slug,
+                "escalation_deposit_sent_armed_at": state.deposit_sent_armed_at,
+                "escalation_deposit_sent_button_message_id": (
+                    state.deposit_sent_button_message_id
+                ),
+            }
+        )
+
+    ok, err = update_support_group_chat_row(row_id, **kwargs)
     if not ok:
         logger.debug(
             "group_activity: persist failed chat_id=%s err=%s",
             chat_id,
             err,
         )
+
+
+def _sync_deposit_wait_from_db(chat_id: int, state: ChatActivityState) -> None:
+    """Refresh deposit-wait fields from Postgres into memory (cross-dyno safe).
+
+    Memory-only chats (no support_group_chats row / no support_row_id yet) keep
+    process memory as the only store and skip the round-trip.
+    """
+    if state.support_row_id is None:
+        return
+    row = fetch_support_group_chat_by_telegram_chat_id(int(chat_id))
+    if row is None:
+        return
+    if state.support_row_id is None:
+        state.support_row_id = int(row.id)
+    armed_at = _as_utc(getattr(row, "escalation_deposit_sent_armed_at", None))
+    button_mid = getattr(row, "escalation_deposit_sent_button_message_id", None)
+    state.deposit_instructions_pending = bool(
+        getattr(row, "escalation_deposit_instructions_pending", False)
+    )
+    state.deposit_method_slug = (
+        getattr(row, "escalation_deposit_method_slug", None) or None
+    )
+    state.deposit_sent_watch_armed = armed_at is not None
+    state.deposit_sent_armed_at = armed_at
+    state.deposit_sent_button_message_id = (
+        int(button_mid) if button_mid is not None else None
+    )
+
+
+def _deposit_wait_state(chat_id: int) -> ChatActivityState:
+    """Activity state with deposit-wait fields refreshed from DB."""
+    state = get_chat_activity_state(chat_id)
+    _sync_deposit_wait_from_db(chat_id, state)
+    return state
 
 
 def is_support_sender(user: User | None, club_id: int) -> bool:
@@ -245,7 +298,7 @@ def record_human_message(
 
     state.last_human_at = ts
     state.last_human_role = role
-    _persist_activity_state(chat_id, state)
+    _persist_activity_state(chat_id, state, include_deposit_wait=False)
 
     return ActivityObservation(
         role=role,
@@ -288,7 +341,7 @@ def set_deposit_sent_button_message_id(chat_id: int, message_id: int | None) -> 
 
 
 def deposit_sent_button_message_id(chat_id: int) -> int | None:
-    mid = get_chat_activity_state(chat_id).deposit_sent_button_message_id
+    mid = _deposit_wait_state(chat_id).deposit_sent_button_message_id
     return int(mid) if mid is not None else None
 
 
@@ -316,22 +369,22 @@ def clear_deposit_sent_watch_armed(chat_id: int) -> None:
 
 
 def deposit_instructions_pending(chat_id: int) -> bool:
-    return bool(get_chat_activity_state(chat_id).deposit_instructions_pending)
+    return bool(_deposit_wait_state(chat_id).deposit_instructions_pending)
 
 
 def deposit_sent_watch_armed(chat_id: int) -> bool:
-    state = get_chat_activity_state(chat_id)
+    state = _deposit_wait_state(chat_id)
     if state.deposit_sent_armed_at is not None:
         return True
     return bool(state.deposit_sent_watch_armed)
 
 
 def deposit_sent_armed_at(chat_id: int) -> datetime | None:
-    return get_chat_activity_state(chat_id).deposit_sent_armed_at
+    return _deposit_wait_state(chat_id).deposit_sent_armed_at
 
 
 def deposit_method_slug(chat_id: int) -> str | None:
-    return get_chat_activity_state(chat_id).deposit_method_slug
+    return _deposit_wait_state(chat_id).deposit_method_slug
 
 
 def list_armed_deposit_sent_chats() -> list[tuple[int, datetime]]:

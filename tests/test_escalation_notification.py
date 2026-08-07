@@ -778,15 +778,16 @@ class PersistenceReloadTests(unittest.TestCase):
             escalation_deposit_instructions_pending=True,
             escalation_deposit_method_slug="zelle",
             escalation_deposit_sent_armed_at=armed,
+            escalation_deposit_sent_button_message_id=None,
         )
         with patch.object(
             ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=row
         ):
             state = ga.reload_chat_activity_state(99)
-        self.assertTrue(state.deposit_sent_watch_armed)
-        self.assertEqual(state.deposit_sent_armed_at, armed)
-        self.assertEqual(state.deposit_method_slug, "zelle")
-        self.assertTrue(ga.deposit_sent_watch_armed(99))
+            self.assertTrue(state.deposit_sent_watch_armed)
+            self.assertEqual(state.deposit_sent_armed_at, armed)
+            self.assertEqual(state.deposit_method_slug, "zelle")
+            self.assertTrue(ga.deposit_sent_watch_armed(99))
 
 
 if __name__ == "__main__":
