@@ -33,11 +33,10 @@ from bot.services.club import (
     get_cashout_soft_limit,
     update_group_name,
 )
-from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
-from bot.services.flow_sessions import (
-    END_REASON_SUPERSEDED,
-    abandon_flow_session,
-    get_active_session,
+from bot.handlers.flow_cancel import (
+    block_if_group_money_flow_active,
+    clear_active_flow,
+    mark_active_flow,
 )
 from bot.handlers.flow_staleness import (
     AMOUNT_TEXT,
@@ -69,11 +68,15 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_update_too_old(update):
         log_stale_update(update, handler="cashout_entry")
         return ConversationHandler.END
-    _cleanup(context)
     chat = update.effective_chat
     if chat.type not in ("group", "supergroup"):
         await update.message.reply_text("Use /cashout in a club group.")
         return ConversationHandler.END
+    if await block_if_group_money_flow_active(
+        update, context, starting="cashout", chat_id=chat.id
+    ):
+        return ConversationHandler.END
+    _cleanup(context)
     club_id = get_club_for_chat(chat.id)
     if club_id is None:
         await update.message.reply_text(
@@ -82,10 +85,6 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     update_group_name(chat.id, chat.title)
-
-    active = get_active_session(chat.id)
-    if active is not None and active.flow_type == "deposit":
-        abandon_flow_session(active.session_uuid, end_reason=END_REASON_SUPERSEDED)
 
     user_id = update.effective_user.id
     is_bot_admin = user_id in ADMIN_USER_IDS

@@ -276,6 +276,44 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         create_session.assert_not_called()
         send_response.assert_awaited()
 
+    async def test_hyperlink_without_group_checkout_shows_player_safe_error(self):
+        """{{hyperlink}} copy with checkout disabled must not leak ops config to players."""
+        query = _deposit_query()
+        context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
+
+        response_data = {
+            "response_type": "text",
+            "response_text": "Pay here\n\n{{hyperlink}}",
+            "use_group_checkout_link": False,
+            "group_checkout_provider": None,
+            "hyperlink_text": "PAY HERE",
+        }
+
+        with (
+            patch.object(dep, "stripe_configured", return_value=True),
+            patch.object(dep, "create_stripe_checkout_session") as create_session,
+            patch.object(dep, "send_response_messages", AsyncMock()) as send_response,
+        ):
+            ok = await dep._send_deposit_method_response(
+                query,
+                context,
+                amount=dep.Decimal("50"),
+                display_name="Debit Card",
+                method_id=31,
+                method_slug="debitcard",
+                response_data=response_data,
+                tier={"id": 99},
+            )
+
+        self.assertFalse(ok)
+        create_session.assert_not_called()
+        send_response.assert_not_awaited()
+        query.edit_message_text.assert_awaited_once()
+        msg = query.edit_message_text.await_args.args[0]
+        self.assertIn("Checkout link isn't available right now", msg)
+        self.assertNotIn("STRIPE_SECRET_KEY", msg)
+        self.assertNotIn("dashboard", msg.lower())
+
     async def test_variant_group_checkout_overrides_tier(self):
         query = _deposit_query()
         context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})

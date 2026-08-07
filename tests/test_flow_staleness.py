@@ -162,6 +162,11 @@ class TestDepositEntryStaleness(unittest.IsolatedAsyncioTestCase):
     @patch.object(dep, "get_club_for_chat", return_value=4)
     @patch.object(dep, "ADMIN_USER_IDS", {7516419496})
     @patch.object(dep, "is_test_bot_worker", return_value=False)
+    @patch.object(dep, "block_if_group_money_flow_active", new_callable=AsyncMock, return_value=False)
+    @patch.object(dep.popup_keyboard_svc, "prepare_flow_entry_keyboard")
+    @patch.object(dep, "record_activity")
+    @patch.object(dep, "_init_deposit_flow_session", return_value="session-test")
+    @patch.object(dep, "_record_funnel_from_context")
     async def test_fresh_deposit_entry_still_starts(self, *_mocks):
         update = _message_update(age_seconds=20, text="/deposit")
         context = SimpleNamespace(chat_data={}, user_data={})

@@ -53,7 +53,12 @@ from bot.services.round_table_unions import (
     is_round_table_club,
     union_label_for_shorthand,
 )
-from bot.handlers.flow_cancel import clear_active_flow, mark_active_flow
+from bot.handlers.flow_cancel import (
+    block_if_group_money_flow_active,
+    clear_active_flow,
+    clear_deposit_payment_wait,
+    mark_active_flow,
+)
 from bot.handlers.flow_staleness import (
     DEPOSIT_AMOUNT_INVALID_REPLY,
     DEPOSIT_AMOUNT_PROMPT,
@@ -1236,11 +1241,15 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_update_too_old(update):
         log_stale_update(update, handler="deposit_entry")
         return ConversationHandler.END
-    _cleanup(context)
     chat = update.effective_chat
     if chat.type not in ("group", "supergroup"):
         await update.message.reply_text("Use /deposit in a club group.")
         return ConversationHandler.END
+    if await block_if_group_money_flow_active(
+        update, context, starting="deposit", chat_id=chat.id
+    ):
+        return ConversationHandler.END
+    _cleanup(context)
     club_id = get_club_for_chat(chat.id)
     if club_id is None:
         await update.message.reply_text(
@@ -2315,19 +2324,38 @@ async def _send_deposit_method_response(
             return False
 
     if _response_has_hyperlink_placeholder(response_data):
+        hl_fields = [
+            field
+            for field in ("response_text", "response_caption")
+            if "{{hyperlink}}" in (response_data.get(field) or "")
+        ]
+        provider = response_data.get("group_checkout_provider")
         logger.warning(
             "deposit: {{hyperlink}} in response but Stripe checkout not used "
-            "chat_id=%s method_id=%s group_checkout=%s configured=%s",
+            "chat_id=%s club_id=%s method_id=%s slug=%r display_name=%r amount=%r "
+            "tier_id=%s use_group_checkout_link=%r group_checkout_provider=%r "
+            "use_stripe_checkout=%s stripe_configured=%s hyperlink_fields=%s "
+            "checkout_min_usd=%r checkout_max_usd=%r response_type=%r group_title=%r",
             chat_id,
+            club_id,
             method_id,
+            slug,
+            display_name,
+            amount,
+            tier.get("id") if tier else None,
             response_data.get("use_group_checkout_link"),
+            provider,
+            use_stripe_checkout,
             stripe_configured(),
+            hl_fields,
+            response_data.get("checkout_min_amount"),
+            response_data.get("checkout_max_amount"),
+            response_data.get("response_type"),
+            getattr(query.message.chat, "title", None) if query.message else None,
         )
         if stripe_configured() and club_id is not None:
             await query.edit_message_text(
-                "Checkout link could not be generated. Enable Use group specific link "
-                "on this tier in the dashboard, set STRIPE_SECRET_KEY on the worker, "
-                "and restart the bot."
+                "Checkout link isn't available right now. Please try again or contact support."
             )
             return False
 
@@ -2523,6 +2551,8 @@ def _cleanup(context):
 
 async def deposit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.chat_data.get("deposit_chat_id")
+    if chat_id is None and update.effective_chat is not None:
+        chat_id = update.effective_chat.id
     if update.message:
         kwargs = {}
         strip = popup_keyboard_svc.pop_strip_reply_markup(context)
@@ -2530,6 +2560,10 @@ async def deposit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
             kwargs["reply_markup"] = strip
         await update.message.reply_text("Deposit cancelled.", **kwargs)
     _abandon_deposit_flow_session(context, end_reason=END_REASON_CANCELLED)
+    await clear_deposit_payment_wait(
+        chat_id,
+        job_queue=getattr(context, "job_queue", None),
+    )
     _cleanup(context)
     popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
     return ConversationHandler.END
@@ -2561,6 +2595,10 @@ async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
     _abandon_deposit_flow_session(context, end_reason=END_REASON_TIMEOUT)
+    await clear_deposit_payment_wait(
+        chat_id,
+        job_queue=getattr(context, "job_queue", None),
+    )
     _cleanup(context)
     popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
 

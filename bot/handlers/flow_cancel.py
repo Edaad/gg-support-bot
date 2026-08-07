@@ -115,6 +115,96 @@ def cashout_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return any(k in context.chat_data for k in _CASHOUT_ACTIVE_KEYS)
 
 
+def deposit_payment_wait_active(chat_id: int | None) -> bool:
+    """True while post-instructions deposit chase is still open for this group."""
+    if chat_id is None:
+        return False
+    from bot.services import group_activity as ga
+
+    return ga.deposit_instructions_pending(int(chat_id))
+
+
+def deposit_blocking_active(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int | None = None,
+) -> bool:
+    """Wizard still open, or payment instructions wait not yet cleared."""
+    if deposit_flow_active(context):
+        return True
+    cid = chat_id
+    if cid is None:
+        cid = context.chat_data.get("deposit_chat_id")
+    return deposit_payment_wait_active(cid)
+
+
+def cashout_blocking_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    return cashout_flow_active(context)
+
+
+def format_group_flow_block_message(*, active: Literal["deposit", "cashout"]) -> str:
+    cmd = "/deposit" if active == "deposit" else "/cashout"
+    return (
+        f"You already have an active {cmd} in progress. "
+        "Send /cancel to abort it first."
+    )
+
+
+async def block_if_group_money_flow_active(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    starting: Literal["deposit", "cashout"],
+    chat_id: int | None = None,
+) -> bool:
+    """Block starting deposit/cashout when the other (or same) flow is still open.
+
+    Returns True when entry must abort (a reply was sent).
+    """
+    cid = chat_id
+    if cid is None and update.effective_chat is not None:
+        cid = update.effective_chat.id
+
+    deposit_open = deposit_blocking_active(context, cid)
+    cashout_open = cashout_blocking_active(context)
+
+    if starting == "deposit":
+        if cashout_open:
+            active: Literal["deposit", "cashout"] = "cashout"
+        elif deposit_open:
+            active = "deposit"
+        else:
+            return False
+    else:
+        if deposit_open:
+            active = "deposit"
+        elif cashout_open:
+            active = "cashout"
+        else:
+            return False
+
+    message = format_group_flow_block_message(active=active)
+    if update.message:
+        await update.message.reply_text(message)
+    return True
+
+
+async def clear_deposit_payment_wait(
+    chat_id: int | None,
+    *,
+    job_queue=None,
+) -> bool:
+    """Clear sticky post-instructions deposit wait. Returns True if it was active."""
+    if chat_id is None:
+        return False
+    from bot.services import escalation_notification as esc
+    from bot.services import group_activity as ga
+
+    if not ga.deposit_instructions_pending(int(chat_id)):
+        return False
+    esc.cancel_deposit_sent_watch(int(chat_id), job_queue=job_queue)
+    return True
+
+
 def bonus_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
     if context.user_data.get("bonus_step"):
         return True
@@ -341,6 +431,18 @@ async def flow_cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             from bot.handlers.cashout import cashout_cancel
 
             await cashout_cancel(update, context)
+            return
+
+    # Wizard already ended, but payment-wait flag still blocks /cashout|/deposit.
+    if not is_private and chat is not None:
+        cleared = await clear_deposit_payment_wait(
+            chat.id,
+            job_queue=getattr(context, "job_queue", None),
+        )
+        if cleared:
+            await update.message.reply_text(
+                "Deposit cancelled. You can start /deposit or /cashout again when ready."
+            )
             return
 
     if not is_private and get_active_dm_flow(context) is not None:
