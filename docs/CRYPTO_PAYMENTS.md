@@ -100,13 +100,14 @@ Unbound example:
 
 Group Chat: Unbound — reply to this message with the group title to bind
 
-Amount: $122 USDC
+Amount: $122
 Chain: BSC
 From: Binance (0x8894…D4E3)
-To: 0x7063760294b901CF56b34BEB6275A641B5178CDa
-Tx: 0xa64ed1c7ecf9dbd350f2738f9d8f0699625ee957e42a4bd6dc165c619936f6d3
-Paid: 2026-05-06T23:56:53Z
+Tx: <code>0xa64ed1c7ecf9dbd350f2738f9d8f0699625ee957e42a4bd6dc165c619936f6d3</code>
+Paid: May 06, 2026 07:56 PM EDT
 ```
+
+`Tx:` is the full transaction hash wrapped in Telegram HTML `<code>` so staff can tap-to-copy on mobile.
 
 When auto-bound from a known wallet, `Group Chat:` shows the support group title instead of "Unbound".
 
@@ -221,26 +222,41 @@ If you prefer a Code by Zapier step instead of an AI parser:
 const root = inputData;
 const t = root.transfer || {};
 const from = t.fromAddress || {};
+// Bitcoin/UTXO alerts use fromAddresses[]; EVM uses fromAddress
+const fromEntry = (t.fromAddresses && t.fromAddresses[0]) || {};
+const fromAddrObj = fromEntry.address || {};
 const to = t.toAddress || {};
-const entity = from.arkhamEntity || {};
+const entity = from.arkhamEntity || fromAddrObj.arkhamEntity || {};
 
 const usd = t.historicalUSD != null ? t.historicalUSD : t.unitValue;
 const amount = Number(usd).toFixed(2);
+const chain = (t.chain || '').toLowerCase();
+
+// Native BTC has no tokenSymbol — default BTC (do not leave blank; API requires it)
+let token_symbol = (t.tokenSymbol || '').toUpperCase();
+if (!token_symbol && chain === 'bitcoin') token_symbol = 'BTC';
+
+const from_address =
+  from.address ||
+  (typeof fromAddrObj === 'string' ? fromAddrObj : fromAddrObj.address) ||
+  '';
 
 return {
   amount,
-  token_symbol: (t.tokenSymbol || '').toUpperCase(),
-  token_name: t.tokenName || '',
-  chain: (t.chain || '').toLowerCase(),
-  from_address: from.address || '',
+  token_symbol,
+  token_name: t.tokenName || (token_symbol === 'BTC' ? 'Bitcoin' : ''),
+  chain,
+  from_address,
   from_entity_name: entity.name || '',
   to_address: to.address || '',
-  transaction_hash: t.transactionHash || '',
+  transaction_hash: t.transactionHash || t.txid || '',
   paid_at: t.blockTimestamp || '',
-  source_external_id: t.id || '',
+  source_external_id: t.id || root.id || '',
   alert_name: root.alertName || '',
 };
 ```
+
+**Bitcoin note:** Arkham sends `fromAddresses[].address.address` (nested), not `fromAddress.address`. Never POST if `from_address` or `token_symbol` is empty.
 
 You need **two Arkham alerts** (or two Zaps), one per `alertName` above, each posting to the same API endpoint.
 

@@ -195,10 +195,15 @@ def format_notification_text(
         [
             "",
             f"Amount: {amount_line}",
-        f"Chain: {chain}",
+            f"Chain: {chain}",
             f"From: {escape_notification_html(format_from_label(payment))}",
         ]
     )
+    tx_hash = (payment.transaction_hash or "").strip()
+    if tx_hash:
+        lines.append(
+            f"Tx: <code>{escape_notification_html(tx_hash)}</code>"
+        )
     if payment.paid_at:
         lines.append(f"Paid: {escape_notification_html(format_paid_at_display(payment.paid_at))}")
 

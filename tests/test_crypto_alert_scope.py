@@ -12,6 +12,7 @@ from bot.services.crypto_payments import (
     ALERT_SCOPE_RT_AT_CC,
     alert_scope_for_club_name,
     bind_crypto_payment_by_id,
+    format_notification_text,
     ingest_crypto_payment,
     normalize_from_address,
     resolve_alert_scope,
@@ -410,6 +411,26 @@ class CryptoManualBindUpsertTestCase(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(wallet_row.alert_scope, ALERT_SCOPE_CLUBGTO)
         self.assertEqual(wallet_row.telegram_chat_id, CHAT_ID)
+
+
+class FormatCryptoNotificationTestCase(unittest.TestCase):
+    def test_includes_tap_to_copy_tx_hash(self):
+        tx = "0xa64ed1c7ecf9dbd350f2738f9d8f0699625ee957e42a4bd6dc165c619936f6d3"
+        payment = CryptoPayment(
+            amount_cents=12200,
+            token_symbol="USDC",
+            chain="bsc",
+            from_address=FROM_ADDRESS,
+            from_entity_name="Binance",
+            to_address="0x7063760294b901CF56b34BEB6275A641B5178CDa",
+            transaction_hash=tx,
+            paid_at="2026-05-06T23:56:53Z",
+            alert_scope=ALERT_SCOPE_CLUBGTO,
+        )
+        text = format_notification_text(payment)
+        self.assertIn(f"Tx: <code>{tx}</code>", text)
+        self.assertLess(text.index("From:"), text.index("Tx:"))
+        self.assertLess(text.index("Tx:"), text.index("Paid:"))
 
 
 class FormatPaidAtDisplayTestCase(unittest.TestCase):
