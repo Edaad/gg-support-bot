@@ -1467,7 +1467,10 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         return DEPOSIT_AMOUNT
 
     context.chat_data["deposit_amount"] = amount
-    context.chat_data["deposit_amount_message_id"] = update.message.message_id
+    amount_msg = update.message or update.effective_message
+    mid = getattr(amount_msg, "message_id", None) if amount_msg is not None else None
+    if mid is not None:
+        context.chat_data["deposit_amount_message_id"] = int(mid)
     _record_funnel_from_context(context, STEP_AMOUNT_ENTERED)
     try:
         methods = get_methods_for_amount(club_id, "deposit", amount)
