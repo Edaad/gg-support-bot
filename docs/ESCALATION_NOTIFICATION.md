@@ -4,20 +4,35 @@ Per-club dashboard toggle **Escalation notification** (`clubs.enable_escalation_
 
 Uses shared group activity detection ([`bot/services/group_activity.py`](../bot/services/group_activity.py)). Popup keyboard remains a separate optional consumer of the same detection.
 
-## Player idle (silent in Telegram)
+## Player idle (in-group help prompt)
 
-On a **player idle** open (free text/media after ≥5 minutes of human silence in the group): **Slack only** — no bot message in the support group.
+On a **player idle** open (free text/media after ≥5 minutes of human silence in the group): the bot posts in the support group:
+
+> Thanks for reaching out — how can we help you?
+
+With inline buttons **Deposit**, **Cashout**, and **Talk to agent**.
+
+| Button | Behavior |
+|--------|----------|
+| Deposit | Same as `/deposit` (ConversationHandler entry) |
+| Cashout | Same as `/cashout` (including deny/cooldown copy) |
+| Talk to agent | Short ack *Got it — someone will be with you shortly.* + Slack `player_idle` (same copy as the old idle Slack, including the player message body) |
+
+Idle itself does **not** post to Slack. One prompt per idle episode (`idle_episode_fired`). After any button tap, the InlineKeyboard is removed.
+
+When **Escalation notification** is on, popup keyboard install and free-text strip are **suppressed** for that group so this prompt is the only CTA. Escalation-off clubs keep popup keyboard unchanged.
 
 No *Looks like your request was handled…* from this feature. That copy stays tied to popup keyboard install only.
 
 Cold start / worker restart: activity timestamps are **durable** on
 `support_group_chats`, so restarts do not wipe silence state. If
 `escalation_last_human_at` is unset (never recorded), the next **player**
-message may escalate (treated as already silent).
+message may idle-fire (treated as already silent). Pending idle-help stash
+(player message for Talk to agent) is in-memory `chat_data` only.
 
-AM/staff message then player reply **without** 5 minutes silence: no Slack.
+AM/staff message then player reply **without** 5 minutes silence: no prompt.
 
-Bare `/deposit` does **not** escalate. Allowed `/cashout` Slack-escalates without a Telegram message. Denied cashout (cooldown/hours): no escalate; a later player message may idle-fire under normal rules.
+Bare `/deposit` does **not** idle-fire. Allowed `/cashout` Slack-escalates without a Telegram idle prompt. Denied cashout (cooldown/hours): no idle; a later player message may idle-fire under normal rules.
 
 `/earlyrb` is treated like a flow command (no idle escalate on the command itself):
 
@@ -25,7 +40,7 @@ Bare `/deposit` does **not** escalate. Allowed `/cashout` Slack-escalates withou
 |------|----------|-------|
 | Eligible (no 24h block) | No | `Early rakeback requested.` |
 | Denied (24h constraint) | No | No; idle episode reset so follow-up free text can idle-fire |
-| Follow-up free text after deny | Silent | Idle + player message body |
+| Follow-up free text after deny | Idle help prompt | Only if they tap Talk to agent |
 
 ## GC create / DM reach-out
 
@@ -105,7 +120,7 @@ Copy (no user id, no chat id):
 
 | Reason | Headline | Player message body? |
 |--------|----------|----------------------|
-| `player_idle` | A player just reached out. | Yes |
+| `player_idle` | A player just reached out. | Yes (via Talk to agent only) |
 | `cashout_started` | Cash out initiated. | No |
 | `earlyrb_requested` | Early rakeback requested. | No |
 | `deposit_sent_timeout` | Deposit payment not seen. | No |

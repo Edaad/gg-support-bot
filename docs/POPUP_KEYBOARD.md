@@ -9,7 +9,7 @@ Idle install may omit **`/cashout`** when cashout would be denied by the group�
 
 Install posts: *Looks like your request was handled…*  
 Free-text strip posts: *We'll be with you in just a second.*  
-(When **Escalation notification** is also on for the club, free-text strip removes the keyboard without that copy — escalation owns the ack.)
+When **Escalation notification** is also on for the club, popup install and strip are **suppressed** — the idle help prompt (Deposit / Cashout / Talk to agent) owns the CTA instead. See [`docs/ESCALATION_NOTIFICATION.md`](ESCALATION_NOTIFICATION.md).
 
 Both stay in chat (deleting the carrier message clears the keyboard on clients).
 

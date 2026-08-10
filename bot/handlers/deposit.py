@@ -1236,14 +1236,16 @@ def _no_deposit_methods_message(club_id: int | None, amount: Decimal) -> str:
 
 
 async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.effective_chat or not update.effective_user:
+    message = update.effective_message
+    if not message or not update.effective_chat or not update.effective_user:
         return ConversationHandler.END
-    if is_update_too_old(update):
+    # Command messages only — idle-help button callbacks use the prompt's age.
+    if update.message and is_update_too_old(update):
         log_stale_update(update, handler="deposit_entry")
         return ConversationHandler.END
     chat = update.effective_chat
     if chat.type not in ("group", "supergroup"):
-        await update.message.reply_text("Use /deposit in a club group.")
+        await message.reply_text("Use /deposit in a club group.")
         return ConversationHandler.END
     if await block_if_group_money_flow_active(
         update, context, starting="deposit", chat_id=chat.id
@@ -1252,7 +1254,7 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup(context)
     club_id = get_club_for_chat(chat.id)
     if club_id is None:
-        await update.message.reply_text(
+        await message.reply_text(
             "This group isn't linked to a club yet. The club owner must add the bot."
         )
         return ConversationHandler.END
@@ -1297,10 +1299,10 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             strip = popup_keyboard_svc.pop_strip_reply_markup(context)
             if strip is not None:
                 try:
-                    await update.message.reply_text("\u200b", reply_markup=strip)
+                    await message.reply_text("\u200b", reply_markup=strip)
                 except Exception:
                     pass
-            await _send_simple_response(update.message, simple)
+            await _send_simple_response(message, simple)
             _record_funnel_from_context(context, STEP_INSTRUCTIONS_SENT)
             _schedule_deposit_reminder(context, club_id, chat.id, user_id=None)
             _cleanup(context)
@@ -1313,7 +1315,7 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat.id,
             user_id,
         )
-        return await _ask_deposit_amount(update.message, context)
+        return await _ask_deposit_amount(message, context)
 
     claimed = is_first_deposit_claimed(chat.id)
     first = False if claimed else is_first_deposit(club_id, user_id)
@@ -1339,7 +1341,7 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         strip = popup_keyboard_svc.pop_strip_reply_markup(context)
         if strip is not None:
             kwargs["reply_markup"] = strip
-        await update.message.reply_text(
+        await message.reply_text(
             "Welcome to the club! How did you hear about us? "
             "If it was a player, please type their GG username.",
             **kwargs,
@@ -1347,7 +1349,7 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return DEPOSIT_REFERRAL
 
     if simple:
-        return await _finish_simple_deposit(update.message, context)
+        return await _finish_simple_deposit(message, context)
 
     mark_active_flow(context, "deposit")
     logger.info(
@@ -1356,7 +1358,24 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id,
         is_test_bot_worker(),
     )
-    return await _ask_deposit_amount(update.message, context)
+    return await _ask_deposit_amount(message, context)
+
+
+async def idlehelp_deposit_entry(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Start /deposit from idle-help InlineKeyboard."""
+    query = update.callback_query
+    if query is not None:
+        await query.answer()
+        from bot.services.escalation_notification import (
+            clear_idle_help_stash,
+            strip_idle_help_markup,
+        )
+
+        await strip_idle_help_markup(query)
+        clear_idle_help_stash(context)
+    return await deposit_entry(update, context)
 
 
 async def deposit_referral_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2614,6 +2633,9 @@ def get_deposit_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler("deposit", deposit_entry),
+            CallbackQueryHandler(
+                idlehelp_deposit_entry, pattern=r"^idlehelp:deposit$"
+            ),
         ],
         states={
             DEPOSIT_REFERRAL: [

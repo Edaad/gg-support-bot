@@ -183,8 +183,9 @@ async def block_if_group_money_flow_active(
             return False
 
     message = format_group_flow_block_message(active=active)
-    if update.message:
-        await update.message.reply_text(message)
+    reply = update.effective_message
+    if reply is not None:
+        await reply.reply_text(message)
     return True
 
 

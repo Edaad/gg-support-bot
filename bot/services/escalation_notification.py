@@ -70,6 +70,18 @@ DEPOSIT_SENT_ACK_COPY = (
 DEPOSIT_SENT_BUTTON_LABEL = "I have sent the payment"
 DEPOSIT_SENT_CALLBACK_PREFIX = "depsent"
 
+IDLE_HELP_COPY = "Thanks for reaching out — how can we help you?"
+IDLE_HELP_AGENT_ACK = "Got it — someone will be with you shortly."
+IDLE_HELP_CALLBACK_PREFIX = "idlehelp"
+IDLE_HELP_CB_DEPOSIT = f"{IDLE_HELP_CALLBACK_PREFIX}:deposit"
+IDLE_HELP_CB_CASHOUT = f"{IDLE_HELP_CALLBACK_PREFIX}:cashout"
+IDLE_HELP_CB_AGENT = f"{IDLE_HELP_CALLBACK_PREFIX}:agent"
+
+_CHAT_DATA_IDLE_HELP_MESSAGE_TEXT = "idle_help_message_text"
+_CHAT_DATA_IDLE_HELP_PROMPT_MSG_ID = "idle_help_prompt_message_id"
+_CHAT_DATA_IDLE_HELP_CLUB_ID = "idle_help_club_id"
+_CHAT_DATA_IDLE_HELP_TITLE = "idle_help_title"
+
 # While the 5m wait is armed: ignore expected payment acks / proofs.
 _DEPOSIT_FOLLOWUP_IGNORE_RE = re.compile(r"sent|done", re.IGNORECASE)
 
@@ -341,20 +353,194 @@ async def notify_escalation_slack(
 
 
 async def fire_player_idle(
-    _bot: Any,
+    bot: Any,
     chat_id: int,
     *,
     club_id: int | None,
     title: str | None = None,
     message_text: str | None = None,
+    context: ContextTypes.DEFAULT_TYPE | None = None,
 ) -> None:
-    """Silent in the support group — Slack only."""
+    """Offer in-group help prompt (Slack only via Talk to agent)."""
+    await offer_idle_help_prompt(
+        bot,
+        chat_id,
+        club_id=club_id,
+        title=title,
+        message_text=message_text,
+        context=context,
+    )
+
+
+def idle_help_button_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Deposit", callback_data=IDLE_HELP_CB_DEPOSIT),
+                InlineKeyboardButton("Cashout", callback_data=IDLE_HELP_CB_CASHOUT),
+            ],
+            [
+                InlineKeyboardButton(
+                    "Talk to agent", callback_data=IDLE_HELP_CB_AGENT
+                ),
+            ],
+        ]
+    )
+
+
+def stash_idle_help_context(
+    context: ContextTypes.DEFAULT_TYPE | None,
+    *,
+    club_id: int | None,
+    title: str | None,
+    message_text: str | None,
+    prompt_message_id: int | None,
+) -> None:
+    if context is None:
+        return
+    chat_data = getattr(context, "chat_data", None)
+    if chat_data is None:
+        return
+    chat_data[_CHAT_DATA_IDLE_HELP_CLUB_ID] = club_id
+    chat_data[_CHAT_DATA_IDLE_HELP_TITLE] = title
+    chat_data[_CHAT_DATA_IDLE_HELP_MESSAGE_TEXT] = message_text
+    chat_data[_CHAT_DATA_IDLE_HELP_PROMPT_MSG_ID] = prompt_message_id
+
+
+def clear_idle_help_stash(context: ContextTypes.DEFAULT_TYPE | None) -> None:
+    if context is None:
+        return
+    chat_data = getattr(context, "chat_data", None)
+    if chat_data is None:
+        return
+    for key in (
+        _CHAT_DATA_IDLE_HELP_CLUB_ID,
+        _CHAT_DATA_IDLE_HELP_TITLE,
+        _CHAT_DATA_IDLE_HELP_MESSAGE_TEXT,
+        _CHAT_DATA_IDLE_HELP_PROMPT_MSG_ID,
+    ):
+        chat_data.pop(key, None)
+
+
+def peek_idle_help_stash(
+    context: ContextTypes.DEFAULT_TYPE | None,
+) -> dict[str, Any]:
+    if context is None:
+        return {}
+    chat_data = getattr(context, "chat_data", None) or {}
+    return {
+        "club_id": chat_data.get(_CHAT_DATA_IDLE_HELP_CLUB_ID),
+        "title": chat_data.get(_CHAT_DATA_IDLE_HELP_TITLE),
+        "message_text": chat_data.get(_CHAT_DATA_IDLE_HELP_MESSAGE_TEXT),
+        "prompt_message_id": chat_data.get(_CHAT_DATA_IDLE_HELP_PROMPT_MSG_ID),
+    }
+
+
+async def strip_idle_help_markup(query: Any) -> None:
+    """Remove InlineKeyboard from the idle help prompt. Never raises."""
+    if query is None:
+        return
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        logger.debug(
+            "escalation: strip idle help markup failed",
+            exc_info=True,
+        )
+
+
+async def offer_idle_help_prompt(
+    bot: Any,
+    chat_id: int,
+    *,
+    club_id: int | None,
+    title: str | None = None,
+    message_text: str | None = None,
+    context: ContextTypes.DEFAULT_TYPE | None = None,
+) -> bool:
+    """Send Deposit / Cashout / Talk to agent prompt. Returns True if sent."""
+    try:
+        sent = await bot.send_message(
+            chat_id=int(chat_id),
+            text=IDLE_HELP_COPY,
+            reply_markup=idle_help_button_markup(),
+        )
+    except Exception:
+        logger.warning(
+            "escalation: idle help prompt failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+        return False
+
+    mid = getattr(sent, "message_id", None)
+    stash_idle_help_context(
+        context,
+        club_id=club_id,
+        title=title,
+        message_text=message_text,
+        prompt_message_id=int(mid) if mid is not None else None,
+    )
+    return True
+
+
+async def handle_idle_help_agent(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    """Talk to agent — strip buttons, ack in group, Slack player_idle."""
+    query = update.callback_query
+    if query is None:
+        return
+    data = (query.data or "").strip()
+    if data != IDLE_HELP_CB_AGENT:
+        return
+
+    chat = update.effective_chat
+    await query.answer()
+    await strip_idle_help_markup(query)
+
+    if chat is None:
+        clear_idle_help_stash(context)
+        return
+
+    chat_id = int(chat.id)
+    stashed = peek_idle_help_stash(context)
+    club_id = stashed.get("club_id")
+    if club_id is None:
+        club_id = get_club_for_chat(chat_id)
+    title = stashed.get("title")
+    if not title:
+        title = getattr(chat, "title", None)
+    message_text = stashed.get("message_text")
+
+    try:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=IDLE_HELP_AGENT_ACK,
+        )
+    except Exception:
+        logger.warning(
+            "escalation: idle help agent ack failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+
+    clear_idle_help_stash(context)
+
     await notify_escalation_slack(
         REASON_PLAYER_IDLE,
         club_id=club_id,
-        chat_id=int(chat_id),
+        chat_id=chat_id,
         title=title,
         message_text=message_text,
+    )
+
+
+def get_idle_help_agent_handler() -> CallbackQueryHandler:
+    return CallbackQueryHandler(
+        handle_idle_help_agent,
+        pattern=rf"^{IDLE_HELP_CB_AGENT}$",
     )
 
 

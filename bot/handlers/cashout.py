@@ -63,14 +63,16 @@ def _cashout_amount_prompt_kwargs(context):
 
 
 async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.effective_chat or not update.effective_user:
+    message = update.effective_message
+    if not message or not update.effective_chat or not update.effective_user:
         return ConversationHandler.END
-    if is_update_too_old(update):
+    # Command messages only — idle-help button callbacks use the prompt's age.
+    if update.message and is_update_too_old(update):
         log_stale_update(update, handler="cashout_entry")
         return ConversationHandler.END
     chat = update.effective_chat
     if chat.type not in ("group", "supergroup"):
-        await update.message.reply_text("Use /cashout in a club group.")
+        await message.reply_text("Use /cashout in a club group.")
         return ConversationHandler.END
     if await block_if_group_money_flow_active(
         update, context, starting="cashout", chat_id=chat.id
@@ -79,7 +81,7 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup(context)
     club_id = get_club_for_chat(chat.id)
     if club_id is None:
-        await update.message.reply_text(
+        await message.reply_text(
             "This group isn't linked to a club yet. The club owner must add the bot."
         )
         return ConversationHandler.END
@@ -107,7 +109,7 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if max_amt is not None or soft_limit is not None:
                 context.chat_data["cashout_simple_data"] = simple
                 mark_active_flow(context, "cashout")
-                await update.message.reply_text(
+                await message.reply_text(
                     "How much would you like to cashout?",
                     **_cashout_amount_prompt_kwargs(context),
                 )
@@ -115,17 +117,17 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             strip = popup_keyboard_svc.pop_strip_reply_markup(context)
             if strip is not None:
                 try:
-                    await update.message.reply_text("\u200b", reply_markup=strip)
+                    await message.reply_text("\u200b", reply_markup=strip)
                 except Exception:
                     pass
-            await _send_simple_response(update.message, simple)
+            await _send_simple_response(message, simple)
             _cleanup_after_flow(context)
             return ConversationHandler.END
 
         context.chat_data["cashout_selected"] = []
         context.chat_data["cashout_multi"] = get_club_allows_multi_cashout(club_id)
         mark_active_flow(context, "cashout")
-        await update.message.reply_text(
+        await message.reply_text(
             "How much would you like to cashout?",
             **_cashout_amount_prompt_kwargs(context),
         )
@@ -136,7 +138,7 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_staff:
         eligible, deny_msg = check_cashout_eligibility(club_id, chat.id)
         if not eligible:
-            await update.message.reply_text(deny_msg)
+            await message.reply_text(deny_msg)
             return ConversationHandler.END
         try:
             from bot.services.escalation_notification import notify_cashout_started
@@ -161,7 +163,7 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.chat_data["cashout_user_id"] = user_id
             context.chat_data["cashout_simple_data"] = simple
             mark_active_flow(context, "cashout")
-            await update.message.reply_text(
+            await message.reply_text(
                 "How much would you like to cashout?",
                 **_cashout_amount_prompt_kwargs(context),
             )
@@ -170,10 +172,10 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         strip = popup_keyboard_svc.pop_strip_reply_markup(context)
         if strip is not None:
             try:
-                await update.message.reply_text("\u200b", reply_markup=strip)
+                await message.reply_text("\u200b", reply_markup=strip)
             except Exception:
                 pass
-        await _send_simple_response(update.message, simple)
+        await _send_simple_response(message, simple)
         try:
             record_activity(club_id, user_id, chat.id, "cashout")
         except Exception:
@@ -187,11 +189,28 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.chat_data["cashout_selected"] = []
     context.chat_data["cashout_multi"] = get_club_allows_multi_cashout(club_id)
     mark_active_flow(context, "cashout")
-    await update.message.reply_text(
+    await message.reply_text(
         "How much would you like to cashout?",
         **_cashout_amount_prompt_kwargs(context),
     )
     return CASHOUT_AMOUNT
+
+
+async def idlehelp_cashout_entry(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Start /cashout from idle-help InlineKeyboard."""
+    query = update.callback_query
+    if query is not None:
+        await query.answer()
+        from bot.services.escalation_notification import (
+            clear_idle_help_stash,
+            strip_idle_help_markup,
+        )
+
+        await strip_idle_help_markup(query)
+        clear_idle_help_stash(context)
+    return await cashout_entry(update, context)
 
 
 async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -632,6 +651,9 @@ def get_cashout_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler(["cashout", "withdraw"], cashout_entry),
+            CallbackQueryHandler(
+                idlehelp_cashout_entry, pattern=r"^idlehelp:cashout$"
+            ),
         ],
         states={
             CASHOUT_AMOUNT: [

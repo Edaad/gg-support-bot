@@ -95,19 +95,21 @@ async def group_activity_handler(
                 club_id=club_id,
                 title=chat.title,
                 message_text=player_msg,
+                context=context,
             )
 
         # Popup keyboard strip on free text/media (not while in flow / commands).
-        # Escalation idle is Slack-only; strip here regardless of idle escalate.
-        if popup_on and not flow_cmd and not in_flow:
+        # When escalation is on, idle help prompt owns the CTA — skip popup strip.
+        if popup_on and not esc_on and not flow_cmd and not in_flow:
             await pk.silent_strip_if_installed(
                 context.bot,
                 chat.id,
                 context=context,
-                post_copy=not esc_on,
+                post_copy=True,
             )
 
-    if not popup_on:
+    # When escalation is on, idle help prompt owns the CTA — skip popup install.
+    if not popup_on or esc_on:
         return
 
     if deposit_flow_active(context) or cashout_flow_active(context):
