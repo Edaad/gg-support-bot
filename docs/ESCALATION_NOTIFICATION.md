@@ -86,6 +86,8 @@ When escalation is on, **immediate** Slack (`deposit_player_message`, no 5m sile
 
 Does not cancel the bot conversation / timeout. After the button arms the 5m wait, sent/done/media handling stays on the follow-up path above.
 
+The **10-minute deposit reminder** clears `deposit_instructions_pending` when it runs (unless the payment-sent watch is still armed). Abandoned deposits no longer stay “open” overnight and block the idle help prompt.
+
 ## RPA (ClubGG auto chip-add / auto-claim)
 
 When escalation is on and RPA was **attempted** but needs manual follow-up:

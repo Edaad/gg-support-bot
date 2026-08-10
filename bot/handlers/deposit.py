@@ -859,6 +859,28 @@ async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None
     club_id = job_data.get("club_id")
     _PENDING_DEPOSIT_REMINDERS.pop(chat_id, None)
 
+    # Reminder = end of instructions chase window (10m). Clear escalation pending
+    # so abandoned deposits cannot block idle help forever. Leave alone if the
+    # "I have sent the payment" 5m watch is still armed.
+    try:
+        from bot.services import group_activity as ga
+        from bot.services.escalation_notification import (
+            clear_deposit_chase_after_payment,
+        )
+
+        if not ga.deposit_sent_watch_armed(chat_id):
+            await clear_deposit_chase_after_payment(
+                context.bot,
+                chat_id,
+                job_queue=getattr(context, "job_queue", None),
+            )
+    except Exception:
+        logger.warning(
+            "deposit_reminder: clear chase failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+
     scheduled_at = _parse_scheduled_at(job_data)
     if scheduled_at and _should_skip_deposit_reminder(chat_id, scheduled_at):
         logger.info(

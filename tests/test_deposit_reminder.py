@@ -32,8 +32,17 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
         deposit_module.get_deposit_method_names = MagicMock(return_value=["Venmo"])
 
         with patch.object(deposit_module, "_should_skip_deposit_reminder", return_value=False):
-            await deposit_module._deposit_reminder_callback(context)
+            with patch(
+                "bot.services.group_activity.deposit_sent_watch_armed",
+                return_value=False,
+            ):
+                with patch(
+                    "bot.services.escalation_notification.clear_deposit_chase_after_payment",
+                    new_callable=AsyncMock,
+                ) as clear_chase:
+                    await deposit_module._deposit_reminder_callback(context)
 
+        clear_chase.assert_awaited_once()
         self.assertEqual(bot.delete_message.await_count, 3)
         bot.delete_message.assert_any_await(chat_id=chat_id, message_id=11)
         bot.delete_message.assert_any_await(chat_id=chat_id, message_id=12)
@@ -61,8 +70,17 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
         context.bot = bot
 
         with patch.object(deposit_module, "_should_skip_deposit_reminder", return_value=True):
-            await deposit_module._deposit_reminder_callback(context)
+            with patch(
+                "bot.services.group_activity.deposit_sent_watch_armed",
+                return_value=False,
+            ):
+                with patch(
+                    "bot.services.escalation_notification.clear_deposit_chase_after_payment",
+                    new_callable=AsyncMock,
+                ) as clear_chase:
+                    await deposit_module._deposit_reminder_callback(context)
 
+        clear_chase.assert_awaited_once()
         bot.send_message.assert_not_awaited()
         bot.delete_message.assert_awaited_once_with(chat_id=chat_id, message_id=21)
         self.assertNotIn(chat_id, deposit_module._DEPOSIT_INFO_MESSAGE_IDS)
@@ -88,6 +106,14 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
             patch.object(deposit_module, "_chat_has_payment_bound_since", return_value=False),
             patch.object(
                 deposit_module, "_chat_has_stripe_checkout_completed_since", return_value=True
+            ),
+            patch(
+                "bot.services.group_activity.deposit_sent_watch_armed",
+                return_value=False,
+            ),
+            patch(
+                "bot.services.escalation_notification.clear_deposit_chase_after_payment",
+                new_callable=AsyncMock,
             ),
         ):
             await deposit_module._deposit_reminder_callback(context)
@@ -119,12 +145,53 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
                 deposit_module, "_chat_has_stripe_checkout_completed_since", return_value=False
             ),
             patch.object(deposit_module, "_chat_has_deposit_activity_since", return_value=True),
+            patch(
+                "bot.services.group_activity.deposit_sent_watch_armed",
+                return_value=False,
+            ),
+            patch(
+                "bot.services.escalation_notification.clear_deposit_chase_after_payment",
+                new_callable=AsyncMock,
+            ),
         ):
             await deposit_module._deposit_reminder_callback(context)
 
         bot.send_message.assert_not_awaited()
         bot.delete_message.assert_awaited_once_with(chat_id=chat_id, message_id=23)
         self.assertNotIn(chat_id, deposit_module._DEPOSIT_INFO_MESSAGE_IDS)
+
+    async def test_reminder_skips_chase_clear_when_sent_watch_armed(self):
+        chat_id = -100127
+        deposit_module._DEPOSIT_INFO_MESSAGE_IDS[chat_id] = [24]
+
+        bot = AsyncMock()
+        bot.send_message = AsyncMock()
+        bot.delete_message = AsyncMock()
+
+        job = MagicMock()
+        job.chat_id = chat_id
+        job.data = {
+            "club_id": 1,
+            "scheduled_at": datetime.now(timezone.utc).isoformat(),
+        }
+        context = MagicMock()
+        context.job = job
+        context.bot = bot
+        deposit_module.get_deposit_method_names = MagicMock(return_value=[])
+
+        with patch.object(deposit_module, "_should_skip_deposit_reminder", return_value=False):
+            with patch(
+                "bot.services.group_activity.deposit_sent_watch_armed",
+                return_value=True,
+            ):
+                with patch(
+                    "bot.services.escalation_notification.clear_deposit_chase_after_payment",
+                    new_callable=AsyncMock,
+                ) as clear_chase:
+                    await deposit_module._deposit_reminder_callback(context)
+
+        clear_chase.assert_not_awaited()
+        bot.send_message.assert_awaited_once()
 
     def test_cancel_reminder_clears_tracked_messages(self):
         chat_id = -100456
