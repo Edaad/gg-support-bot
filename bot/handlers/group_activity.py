@@ -46,8 +46,12 @@ async def group_activity_handler(
     is_staff = ga.is_support_sender(user, club_id)
     role = "staff" if is_staff else "player"
     observation = ga.record_human_message(chat.id, role=role)
+    job_queue = getattr(context, "job_queue", None)
 
-    if not is_staff:
+    if is_staff:
+        if esc_on:
+            esc.on_staff_during_awaiting_agent(chat.id, job_queue=job_queue)
+    else:
         pk.upsert_player_telegram_user_id(
             chat.id, user.id, username=user.username
         )
@@ -64,6 +68,7 @@ async def group_activity_handler(
 
         deposit_consumed = False
         idle_help_consumed = False
+        awaiting_agent_consumed = False
         if esc_on and not flow_cmd:
             deposit_consumed = await esc.handle_deposit_sent_player_followup(
                 context,
@@ -91,14 +96,26 @@ async def group_activity_handler(
                     title=chat.title,
                     message_text=player_msg,
                 )
+            # Free-text-as-agent seeds the episode; later player msgs debounce.
+            if not idle_help_consumed:
+                awaiting_agent_consumed = esc.on_player_during_awaiting_agent(
+                    chat.id,
+                    message_text=player_msg,
+                    job_queue=job_queue,
+                )
 
+        suppress_idle = (
+            deposit_consumed
+            or idle_help_consumed
+            or awaiting_agent_consumed
+            or esc.awaiting_agent_episode_active(chat.id)
+        )
         if (
             esc_on
             and observation.should_fire_idle
             and not in_flow
             and not flow_cmd
-            and not deposit_consumed
-            and not idle_help_consumed
+            and not suppress_idle
         ):
             await esc.fire_player_idle(
                 context.bot,

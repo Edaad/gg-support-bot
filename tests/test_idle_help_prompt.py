@@ -18,6 +18,7 @@ from telegram.ext import ConversationHandler
 class IdleHelpPromptTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         ga.clear_activity_state_for_tests()
+        esc.clear_awaiting_agent_state_for_tests()
 
     async def test_offer_sends_prompt_with_three_buttons_no_slack(self):
         bot = MagicMock()
@@ -104,6 +105,9 @@ class IdleHelpPromptTests(unittest.IsolatedAsyncioTestCase):
             "idle_help_prompt_message_id": 7,
         }
         context.bot.send_message = AsyncMock()
+        context.job_queue = MagicMock()
+        context.job_queue.get_jobs_by_name.return_value = []
+        context.job_queue.run_once = MagicMock()
 
         with patch.object(
             esc, "notify_escalation_slack", new_callable=AsyncMock
@@ -120,6 +124,7 @@ class IdleHelpPromptTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(slack.await_args.kwargs["message_text"], "need chips")
         self.assertEqual(slack.await_args.kwargs["club_id"], 3)
         self.assertNotIn("idle_help_message_text", context.chat_data)
+        self.assertTrue(esc.awaiting_agent_episode_active(99))
 
     async def test_talk_to_agent_ignores_other_callbacks(self):
         query = MagicMock()
@@ -145,6 +150,9 @@ class IdleHelpPromptTests(unittest.IsolatedAsyncioTestCase):
             "idle_help_message_text": "original reach out",
             "idle_help_prompt_message_id": 42,
         }
+        context.job_queue = MagicMock()
+        context.job_queue.get_jobs_by_name.return_value = []
+        context.job_queue.run_once = MagicMock()
 
         with patch.object(
             esc, "notify_escalation_slack", new_callable=AsyncMock
@@ -176,6 +184,7 @@ class IdleHelpPromptTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(slack.await_args.kwargs["club_id"], 3)
         self.assertNotIn("idle_help_message_text", context.chat_data)
         self.assertNotIn("idle_help_prompt_message_id", context.chat_data)
+        self.assertTrue(esc.awaiting_agent_episode_active(99))
 
     async def test_free_text_without_stash_does_not_slack(self):
         bot = MagicMock()
@@ -216,6 +225,9 @@ class IdleHelpPromptTests(unittest.IsolatedAsyncioTestCase):
             "idle_help_message_text": "old",
             "idle_help_prompt_message_id": 42,
         }
+        context.job_queue = MagicMock()
+        context.job_queue.get_jobs_by_name.return_value = []
+        context.job_queue.run_once = MagicMock()
 
         with patch.object(esc, "notify_escalation_slack", new_callable=AsyncMock):
             await esc.handle_idle_help_free_text(
@@ -249,6 +261,7 @@ class IdleHelpPromptTests(unittest.IsolatedAsyncioTestCase):
 class IdleHelpGroupActivityTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         ga.clear_activity_state_for_tests()
+        esc.clear_awaiting_agent_state_for_tests()
 
     async def test_esc_on_skips_popup_schedule_and_strip(self):
         user = SimpleNamespace(id=55, is_bot=False, username="p")

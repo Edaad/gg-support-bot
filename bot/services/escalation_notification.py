@@ -33,6 +33,7 @@ REASON_PLAYER_DM_REACHED_OUT = "player_dm_reached_out"
 REASON_EARLYRB_REQUESTED = "earlyrb_requested"
 REASON_RPA_DEPOSIT_FAILED = "rpa_deposit_failed"
 REASON_RPA_CASHOUT_FAILED = "rpa_cashout_failed"
+REASON_AWAITING_AGENT_TIMEOUT = "awaiting_agent_timeout"
 
 _HEADLINES = {
     REASON_PLAYER_IDLE: "A player just reached out.",
@@ -50,6 +51,9 @@ _HEADLINES = {
     REASON_EARLYRB_REQUESTED: "Early rakeback requested.",
     REASON_RPA_DEPOSIT_FAILED: "RPA deposit failed — add chips manually.",
     REASON_RPA_CASHOUT_FAILED: "RPA cashout failed — claim chips manually.",
+    REASON_AWAITING_AGENT_TIMEOUT: (
+        "Player responded in the group chat — no agent reply."
+    ),
 }
 
 # Free-text / media escalations include the triggering player message body.
@@ -58,8 +62,14 @@ _REASONS_WITH_MESSAGE_BODY = frozenset(
         REASON_PLAYER_IDLE,
         REASON_DEPOSIT_SENT_FOLLOWUP,
         REASON_DEPOSIT_PLAYER_MESSAGE,
+        REASON_AWAITING_AGENT_TIMEOUT,
     }
 )
+
+AWAITING_AGENT_DEBOUNCE_SECONDS = 60
+AWAITING_AGENT_DEBOUNCE_SECONDS_TEST = 5
+AWAITING_AGENT_EPISODE_SECONDS = 600  # 10 minutes
+AWAITING_AGENT_EPISODE_SECONDS_TEST = 60
 
 SLACK_MESSAGE_BODY_MAX_CHARS = 500
 MEDIA_ONLY_PLACEHOLDER = "(media)"
@@ -113,8 +123,237 @@ def deposit_sent_wait_seconds() -> int:
     return DEPOSIT_SENT_WAIT_SECONDS
 
 
+def awaiting_agent_debounce_seconds() -> int:
+    if is_test_bot_worker():
+        return AWAITING_AGENT_DEBOUNCE_SECONDS_TEST
+    return AWAITING_AGENT_DEBOUNCE_SECONDS
+
+
+def awaiting_agent_episode_seconds() -> int:
+    if is_test_bot_worker():
+        return AWAITING_AGENT_EPISODE_SECONDS_TEST
+    return AWAITING_AGENT_EPISODE_SECONDS
+
+
 def _sent_watch_job_name(chat_id: int | str) -> str:
     return f"escalation_deposit_sent_{chat_id}"
+
+
+def _awaiting_agent_debounce_job_name(chat_id: int | str) -> str:
+    return f"awaiting_agent_debounce_{int(chat_id)}"
+
+
+def _awaiting_agent_episode_job_name(chat_id: int | str) -> str:
+    return f"awaiting_agent_episode_{int(chat_id)}"
+
+
+# Memory-only: chat_id -> {club_id, title, burst: list[str]}
+_awaiting_agent_episodes: dict[int, dict[str, Any]] = {}
+
+
+def clear_awaiting_agent_state_for_tests() -> None:
+    _awaiting_agent_episodes.clear()
+
+
+def awaiting_agent_episode_active(chat_id: int) -> bool:
+    return int(chat_id) in _awaiting_agent_episodes
+
+
+def _cancel_awaiting_agent_jobs(
+    chat_id: int,
+    *,
+    job_queue: Any | None = None,
+    include_episode: bool = True,
+) -> None:
+    jq = _resolve_job_queue(job_queue)
+    if jq is None:
+        return
+    names = [_awaiting_agent_debounce_job_name(chat_id)]
+    if include_episode:
+        names.append(_awaiting_agent_episode_job_name(chat_id))
+    for name in names:
+        try:
+            jobs = jq.get_jobs_by_name(name)
+        except Exception:
+            continue
+        if not jobs:
+            continue
+        try:
+            job_list = list(jobs)
+        except TypeError:
+            continue
+        for job in job_list:
+            try:
+                job.schedule_removal()
+            except Exception:
+                logger.debug(
+                    "escalation: cancel awaiting-agent job failed name=%s",
+                    name,
+                    exc_info=True,
+                )
+
+
+def end_awaiting_agent_episode(
+    chat_id: int,
+    *,
+    job_queue: Any | None = None,
+) -> None:
+    """Hard-stop episode: cancel jobs and drop memory state."""
+    cid = int(chat_id)
+    _cancel_awaiting_agent_jobs(cid, job_queue=job_queue, include_episode=True)
+    _awaiting_agent_episodes.pop(cid, None)
+
+
+def _clear_awaiting_agent_burst(chat_id: int) -> None:
+    state = _awaiting_agent_episodes.get(int(chat_id))
+    if state is not None:
+        state["burst"] = []
+
+
+def _seed_or_append_burst(chat_id: int, message_text: str | None) -> None:
+    state = _awaiting_agent_episodes.get(int(chat_id))
+    if state is None:
+        return
+    body = (message_text or "").strip()
+    if not body:
+        return
+    burst = state.setdefault("burst", [])
+    if not burst or burst[-1] != body:
+        burst.append(body)
+
+
+def _burst_message_text(chat_id: int) -> str | None:
+    state = _awaiting_agent_episodes.get(int(chat_id))
+    if not state:
+        return None
+    parts = [p for p in (state.get("burst") or []) if (p or "").strip()]
+    if not parts:
+        return None
+    return "\n".join(parts)
+
+
+def _schedule_awaiting_agent_debounce(
+    chat_id: int,
+    *,
+    job_queue: Any | None = None,
+) -> None:
+    jq = _resolve_job_queue(job_queue)
+    if jq is None:
+        logger.warning(
+            "escalation: no job_queue for awaiting-agent debounce chat_id=%s",
+            chat_id,
+        )
+        return
+    name = _awaiting_agent_debounce_job_name(chat_id)
+    try:
+        for job in jq.get_jobs_by_name(name):
+            job.schedule_removal()
+    except Exception:
+        pass
+    jq.run_once(
+        _awaiting_agent_debounce_callback,
+        when=float(awaiting_agent_debounce_seconds()),
+        data={"chat_id": int(chat_id)},
+        name=name,
+        job_kwargs={"misfire_grace_time": 30},
+    )
+
+
+def start_awaiting_agent_episode(
+    chat_id: int,
+    *,
+    club_id: int | None,
+    title: str | None,
+    message_text: str | None = None,
+    job_queue: Any | None = None,
+) -> None:
+    """Open 10m episode and arm 1m debounce (seeded with opening message)."""
+    cid = int(chat_id)
+    jq = _resolve_job_queue(job_queue)
+    end_awaiting_agent_episode(cid, job_queue=jq)
+    _awaiting_agent_episodes[cid] = {
+        "club_id": club_id,
+        "title": title,
+        "burst": [],
+    }
+    _seed_or_append_burst(cid, message_text)
+    if jq is None:
+        logger.warning(
+            "escalation: no job_queue for awaiting-agent episode chat_id=%s",
+            cid,
+        )
+        return
+    episode_name = _awaiting_agent_episode_job_name(cid)
+    jq.run_once(
+        _awaiting_agent_episode_end_callback,
+        when=float(awaiting_agent_episode_seconds()),
+        data={"chat_id": cid},
+        name=episode_name,
+        job_kwargs={"misfire_grace_time": 60},
+    )
+    _schedule_awaiting_agent_debounce(cid, job_queue=jq)
+    logger.info(
+        "escalation: awaiting-agent episode started chat_id=%s debounce_s=%s episode_s=%s",
+        cid,
+        awaiting_agent_debounce_seconds(),
+        awaiting_agent_episode_seconds(),
+    )
+
+
+def on_player_during_awaiting_agent(
+    chat_id: int,
+    *,
+    message_text: str | None,
+    job_queue: Any | None = None,
+) -> bool:
+    """Append to burst and restart 1m debounce. True if episode was open."""
+    cid = int(chat_id)
+    if not awaiting_agent_episode_active(cid):
+        return False
+    _seed_or_append_burst(cid, message_text)
+    _schedule_awaiting_agent_debounce(cid, job_queue=job_queue)
+    return True
+
+
+def on_staff_during_awaiting_agent(
+    chat_id: int,
+    *,
+    job_queue: Any | None = None,
+) -> bool:
+    """Cancel current debounce + clear burst; leave 10m episode open."""
+    cid = int(chat_id)
+    if not awaiting_agent_episode_active(cid):
+        return False
+    _cancel_awaiting_agent_jobs(cid, job_queue=job_queue, include_episode=False)
+    _clear_awaiting_agent_burst(cid)
+    return True
+
+
+async def _awaiting_agent_debounce_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
+    data = context.job.data or {}
+    chat_id = int(data.get("chat_id") or context.job.chat_id)
+    state = _awaiting_agent_episodes.get(chat_id)
+    if state is None:
+        return
+    message_text = _burst_message_text(chat_id)
+    _clear_awaiting_agent_burst(chat_id)
+    await notify_escalation_slack(
+        REASON_AWAITING_AGENT_TIMEOUT,
+        club_id=state.get("club_id"),
+        chat_id=chat_id,
+        title=state.get("title"),
+        message_text=message_text,
+    )
+
+
+async def _awaiting_agent_episode_end_callback(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    data = context.job.data or {}
+    chat_id = int(data.get("chat_id") or context.job.chat_id)
+    end_awaiting_agent_episode(
+        chat_id, job_queue=getattr(context, "job_queue", None)
+    )
 
 
 def escalation_notification_enabled(club_id: int | None) -> bool:
@@ -543,6 +782,16 @@ async def complete_idle_help_as_agent(
         chat_id=int(chat_id),
         title=resolved_title,
         message_text=message_text,
+    )
+    jq = None
+    if context is not None:
+        jq = getattr(context, "job_queue", None)
+    start_awaiting_agent_episode(
+        int(chat_id),
+        club_id=resolved_club,
+        title=resolved_title,
+        message_text=message_text,
+        job_queue=jq,
     )
     return True
 

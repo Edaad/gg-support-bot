@@ -20,6 +20,17 @@ With inline buttons **Deposit**, **Cashout**, and **Talk to agent**.
 
 **Free text while the prompt is still up** (buttons not yet tapped): same as Talk to agent — strip buttons, ack, Slack `player_idle` using **this new message** body, then clear the in-memory stash. A later silence episode can offer a fresh thanks prompt; typing instead of tapping does not block future idle.
 
+### Awaiting agent (after Talk to agent)
+
+After Talk to agent **or** free-text-as-agent, a **10-minute** in-memory episode opens:
+
+1. Arm a **1-minute** quiet debounce (seeded with the message that opened agent help).
+2. Each further player free text/media **restarts** the 1m clock and **accumulates** that burst’s messages.
+3. If the 1m elapses with no club-staff / global-admin reply → Slack `awaiting_agent_timeout` (*Player responded in the group chat — no agent reply.*) with the accumulated burst body; clear the burst; episode stays open.
+4. Staff/admin reply cancels the current 1m job and clears the burst — does **not** end the 10m episode (later player bursts can fire again).
+5. At 10m from open, the episode ends quietly. Lost on worker restart (not durable).
+6. While the episode is open, another idle *Thanks for reaching out…* prompt is suppressed.
+
 Idle itself does **not** post to Slack. One prompt per idle episode (`idle_episode_fired`). After any button tap (or free-text-as-agent), the InlineKeyboard is removed.
 
 When **Escalation notification** is on, popup keyboard install and free-text strip are **suppressed** for that group so this prompt is the only CTA. Escalation-off clubs keep popup keyboard unchanged.
@@ -128,6 +139,7 @@ Copy (no user id, no chat id):
 | Reason | Headline | Player message body? |
 |--------|----------|----------------------|
 | `player_idle` | A player just reached out. | Yes (Talk to agent, or free text while idle help prompt is still up) |
+| `awaiting_agent_timeout` | Player responded in the group chat — no agent reply. | Yes (accumulated burst since last arm/reset) |
 | `cashout_started` | Cash out initiated. | No |
 | `earlyrb_requested` | Early rakeback requested. | No |
 | `deposit_sent_timeout` | Deposit payment not seen. | No |
