@@ -93,6 +93,14 @@ SLACK_ESCALATION_CHANNEL_ID=C...
 # SLACK_ESCALATION_WEBHOOK_URL=https://hooks.slack.com/services/...
 ```
 
+**Head-admin fan-out:** `rpa_deposit_failed` and `rpa_cashout_failed` also post the **same** text to a second channel, reusing `SLACK_ESCALATION_BOT_TOKEN`:
+
+```bash
+SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID=C...
+```
+
+If that env is unset, the normal escalation channel still works; head-admin post is skipped with a warning. Other reasons do not fan out.
+
 Copy (no user id, no chat id):
 
 | Reason | Headline | Player message body? |

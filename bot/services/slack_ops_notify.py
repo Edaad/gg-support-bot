@@ -26,6 +26,8 @@ SLACK_ISSUE_REPORT_WEBHOOK_URL_ENV = "SLACK_ISSUE_REPORT_WEBHOOK_URL"
 SLACK_ESCALATION_BOT_TOKEN_ENV = "SLACK_ESCALATION_BOT_TOKEN"
 SLACK_ESCALATION_CHANNEL_ID_ENV = "SLACK_ESCALATION_CHANNEL_ID"
 SLACK_ESCALATION_WEBHOOK_URL_ENV = "SLACK_ESCALATION_WEBHOOK_URL"
+# Head-admin fan-out — same bot token, separate channel (RPA failures).
+SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID_ENV = "SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID"
 
 SLACK_CHAT_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage"
 SLACK_FILES_GET_UPLOAD_URL_EXTERNAL = (
@@ -87,6 +89,11 @@ def _escalation_channel_id() -> str | None:
 
 def _escalation_webhook_url() -> str | None:
     raw = (os.getenv(SLACK_ESCALATION_WEBHOOK_URL_ENV) or "").strip()
+    return raw or None
+
+
+def _head_admin_escalation_channel_id() -> str | None:
+    raw = (os.getenv(SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID_ENV) or "").strip()
     return raw or None
 
 
@@ -174,9 +181,14 @@ async def _post_issue_report_via_webhook(text: str) -> bool:
         return False
 
 
-async def _post_escalation_via_bot_api(text: str) -> bool:
+async def _post_escalation_via_bot_api(
+    text: str,
+    *,
+    channel_id: str | None = None,
+    log_prefix: str = "slack_escalation",
+) -> bool:
     token = _escalation_bot_token()
-    channel = _escalation_channel_id()
+    channel = channel_id if channel_id is not None else _escalation_channel_id()
     if not token or not channel:
         return False
 
@@ -197,19 +209,23 @@ async def _post_escalation_via_bot_api(text: str) -> bool:
             data = resp.json()
         if not data.get("ok"):
             logger.warning(
-                "slack_escalation: chat.postMessage failed error=%s",
+                "%s: chat.postMessage failed error=%s",
+                log_prefix,
                 data.get("error"),
             )
             return False
         logger.info(
-            "slack_escalation: chat.postMessage ok channel=%s ts=%s",
+            "%s: chat.postMessage ok channel=%s ts=%s",
+            log_prefix,
             channel,
             data.get("ts"),
         )
         return True
     except Exception:
         logger.warning(
-            "slack_escalation: chat.postMessage request failed", exc_info=True
+            "%s: chat.postMessage request failed",
+            log_prefix,
+            exc_info=True,
         )
         return False
 
@@ -282,6 +298,33 @@ async def notify_slack_escalation(text: str, *, source: str) -> bool:
         source,
     )
     return False
+
+
+async def notify_slack_head_admin_escalation(text: str, *, source: str) -> bool:
+    """Post to head-admin escalation channel using escalation bot token. Never raises."""
+
+    message = (text or "").strip()
+    if not message:
+        return False
+    if len(message) > _MAX_SLACK_TEXT_LEN:
+        message = message[: _MAX_SLACK_TEXT_LEN - 1] + "…"
+
+    token = _escalation_bot_token()
+    channel = _head_admin_escalation_channel_id()
+    if not token or not channel:
+        logger.warning(
+            "slack_head_admin_escalation: skipped source=%s "
+            "(set SLACK_ESCALATION_BOT_TOKEN and "
+            "SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID)",
+            source,
+        )
+        return False
+
+    return await _post_escalation_via_bot_api(
+        message,
+        channel_id=channel,
+        log_prefix="slack_head_admin_escalation",
+    )
 
 
 def _issue_report_tag_mentions() -> dict[str, str]:

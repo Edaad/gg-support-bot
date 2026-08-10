@@ -308,10 +308,11 @@ async def notify_escalation_slack(
         title=title,
         message_text=message_text,
     )
+    ok = False
     try:
         from bot.services.slack_ops_notify import notify_slack_escalation
 
-        return await notify_slack_escalation(text, source=reason)
+        ok = await notify_slack_escalation(text, source=reason)
     except Exception:
         logger.warning(
             "escalation: slack failed reason=%s chat_id=%s",
@@ -319,7 +320,24 @@ async def notify_escalation_slack(
             chat_id,
             exc_info=True,
         )
-        return False
+        ok = False
+
+    # Independent fan-out for allowlisted reasons (RPA failures → head admin).
+    try:
+        from bot.services.head_admin_escalation import (
+            maybe_notify_head_admin_escalation,
+        )
+
+        await maybe_notify_head_admin_escalation(text, reason=reason)
+    except Exception:
+        logger.warning(
+            "escalation: head-admin fan-out failed reason=%s chat_id=%s",
+            reason,
+            chat_id,
+            exc_info=True,
+        )
+
+    return ok
 
 
 async def fire_player_idle(
