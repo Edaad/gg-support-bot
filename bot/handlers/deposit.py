@@ -994,7 +994,12 @@ def _can_cancel_reminder_as_staff(user_id: int, club_id: int) -> bool:
 async def cancel_deposit_reminder_on_customer_msg(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Group handler (group=2): cancel the pending reminder when the depositing customer responds."""
+    """Group handler (group=2): cancel the pending reminder when the depositing customer responds.
+
+    Also schedules a deferred chase clear (when=0) so group_activity (group=4) can still
+    Slack ``deposit_player_message`` for *this* update, while later messages are not stuck
+    behind ``deposit_instructions_pending`` after the 10m TTL job was cancelled.
+    """
     if not update.message or not update.effective_chat or not update.effective_user:
         return
     chat_id = update.effective_chat.id
@@ -1004,6 +1009,59 @@ async def cancel_deposit_reminder_on_customer_msg(
     if update.effective_user.id != expected_user:
         return
     _cancel_deposit_reminder(context, chat_id)
+    _schedule_deferred_deposit_chase_clear(context, chat_id)
+
+
+def _clear_chase_after_reminder_cancel_job_name(chat_id: int | str) -> str:
+    return f"clear_deposit_chase_after_reminder_cancel_{int(chat_id)}"
+
+
+async def _clear_deposit_chase_after_reminder_cancel_callback(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    chat_id = int(context.job.chat_id)
+    try:
+        from bot.services.escalation_notification import (
+            clear_deposit_chase_after_payment,
+        )
+
+        await clear_deposit_chase_after_payment(
+            context.bot,
+            chat_id,
+            job_queue=getattr(context, "job_queue", None),
+        )
+    except Exception:
+        logger.warning(
+            "deposit_reminder: deferred chase clear failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+
+
+def _schedule_deferred_deposit_chase_clear(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int | str,
+) -> None:
+    """Run clear after this update so mid-deposit Slack can still fire once."""
+    jq = getattr(context, "job_queue", None)
+    if jq is None:
+        return
+    try:
+        name = _clear_chase_after_reminder_cancel_job_name(chat_id)
+        for job in jq.get_jobs_by_name(name):
+            job.schedule_removal()
+        jq.run_once(
+            _clear_deposit_chase_after_reminder_cancel_callback,
+            when=0,
+            chat_id=int(chat_id),
+            name=name,
+        )
+    except Exception:
+        logger.warning(
+            "deposit_reminder: schedule deferred chase clear failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
 
 
 async def cancel_deposit_reminder_on_group_activity(

@@ -238,6 +238,58 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
         pending_job.schedule_removal.assert_called_once()
         self.assertNotIn(chat_id, deposit_module._PENDING_DEPOSIT_REMINDERS)
 
+    async def test_customer_msg_cancels_reminder_and_defers_chase_clear(self):
+        chat_id = -100455
+        pending_job = MagicMock()
+        context = MagicMock()
+        context.job_queue.get_jobs_by_name.return_value = [pending_job]
+        context.job_queue.run_once = MagicMock()
+        deposit_module._PENDING_DEPOSIT_REMINDERS[chat_id] = 77
+
+        update = MagicMock()
+        update.effective_chat = MagicMock(id=chat_id)
+        update.effective_user = MagicMock(id=77, is_bot=False)
+        update.message = MagicMock(text="where do i pay", caption=None)
+
+        await deposit_module.cancel_deposit_reminder_on_customer_msg(update, context)
+
+        pending_job.schedule_removal.assert_called()
+        self.assertNotIn(chat_id, deposit_module._PENDING_DEPOSIT_REMINDERS)
+        context.job_queue.run_once.assert_called_once()
+        kwargs = context.job_queue.run_once.call_args.kwargs
+        self.assertEqual(kwargs["when"], 0)
+        self.assertEqual(kwargs["chat_id"], chat_id)
+        self.assertEqual(
+            kwargs["name"],
+            deposit_module._clear_chase_after_reminder_cancel_job_name(chat_id),
+        )
+        self.assertIs(
+            context.job_queue.run_once.call_args.args[0],
+            deposit_module._clear_deposit_chase_after_reminder_cancel_callback,
+        )
+
+    async def test_deferred_chase_clear_callback_clears_chase(self):
+        chat_id = -100456
+        bot = AsyncMock()
+        job = MagicMock()
+        job.chat_id = chat_id
+        context = MagicMock()
+        context.job = job
+        context.bot = bot
+        context.job_queue = MagicMock()
+
+        with patch(
+            "bot.services.escalation_notification.clear_deposit_chase_after_payment",
+            new_callable=AsyncMock,
+        ) as clear_chase:
+            await deposit_module._clear_deposit_chase_after_reminder_cancel_callback(
+                context
+            )
+
+        clear_chase.assert_awaited_once_with(
+            bot, chat_id, job_queue=context.job_queue
+        )
+
     async def test_group_activity_cancels_on_bot_payment_received_message(self):
         chat_id = -100200
         pending_job = MagicMock()

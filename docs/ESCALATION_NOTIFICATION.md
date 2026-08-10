@@ -91,6 +91,8 @@ Does not cancel the bot conversation / timeout. After the button arms the 5m wai
 
 The **10-minute deposit reminder** clears `deposit_instructions_pending` when it runs (unless the payment-sent watch is still armed). Abandoned deposits no longer stay “open” overnight and block the idle help prompt.
 
+If the depositing player replies before 10m, that cancel of the reminder job **also** schedules a deferred chase clear (after the current update). The reply can still Slack *Player messaged during deposit.*; later free text is no longer stuck behind a cancelled TTL.
+
 ## RPA (ClubGG auto chip-add / auto-claim)
 
 When escalation is on and RPA was **attempted** but needs manual follow-up:
