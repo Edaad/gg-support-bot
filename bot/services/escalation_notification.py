@@ -220,11 +220,13 @@ def is_valid_deposit_flow_answer(
 ) -> bool:
     """True when the message is a normal /deposit step answer (skip escalate).
 
-    Plain amounts are always treated as flow answers while a deposit session is
-    open (caller gates on that). group_activity runs in handler group 4 *after*
-    deposit_amount_received has already cleared deposit_awaiting_amount and set
-    deposit_amount — if we required the pre-amount chat_data flags here, every
-    successful amount reply would false-positive escalate.
+    Amount answers are only skipped during the amount-entry step. Once amount is
+    stored (choose-method / sub / union / setup), free text — including bare
+    numbers — escalates as deposit_player_message.
+
+    The message that successfully stored deposit_amount is skipped via
+    deposit_amount_message_id so group_activity (handler group 4) does not
+    false-positive escalate that same update after deposit_amount_received.
     """
     if message is None:
         return False
@@ -232,12 +234,24 @@ def is_valid_deposit_flow_answer(
     if not text:
         text = (getattr(message, "caption", None) or "").strip()
 
+    chat_data = getattr(context, "chat_data", None) or {}
+    mid = getattr(message, "message_id", None)
+    if mid is not None and mid == chat_data.get("deposit_amount_message_id"):
+        return True
+
     if _deposit_awaiting_referral(context):
         return bool(text)
 
     from bot.handlers.flow_staleness import looks_like_amount
 
-    return looks_like_amount(text)
+    awaiting_amount = bool(chat_data.get("deposit_awaiting_amount"))
+    has_amount = chat_data.get("deposit_amount") is not None
+    in_amount_step = awaiting_amount or (
+        bool(chat_data.get("deposit_club_id")) and not has_amount
+    )
+    if in_amount_step:
+        return looks_like_amount(text)
+    return False
 
 
 def deposit_open_for_player_message_escalation(
@@ -436,6 +450,18 @@ def peek_idle_help_stash(
     }
 
 
+def idle_help_prompt_active(context: ContextTypes.DEFAULT_TYPE | None) -> bool:
+    """True while an unclicked idle help prompt stash is present."""
+    if context is None:
+        return False
+    chat_data = getattr(context, "chat_data", None) or {}
+    return (
+        _CHAT_DATA_IDLE_HELP_PROMPT_MSG_ID in chat_data
+        or _CHAT_DATA_IDLE_HELP_MESSAGE_TEXT in chat_data
+        or _CHAT_DATA_IDLE_HELP_CLUB_ID in chat_data
+    )
+
+
 async def strip_idle_help_markup(query: Any) -> None:
     """Remove InlineKeyboard from the idle help prompt. Never raises."""
     if query is None:
@@ -447,6 +473,103 @@ async def strip_idle_help_markup(query: Any) -> None:
             "escalation: strip idle help markup failed",
             exc_info=True,
         )
+
+
+async def strip_idle_help_markup_by_message(
+    bot: Any,
+    chat_id: int,
+    prompt_message_id: int | None,
+) -> None:
+    """Strip idle help buttons via chat_id + message_id. Never raises."""
+    if bot is None or prompt_message_id is None:
+        return
+    try:
+        await bot.edit_message_reply_markup(
+            chat_id=int(chat_id),
+            message_id=int(prompt_message_id),
+            reply_markup=None,
+        )
+    except Exception:
+        logger.debug(
+            "escalation: strip idle help markup by message failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+
+
+async def complete_idle_help_as_agent(
+    bot: Any,
+    chat_id: int,
+    context: ContextTypes.DEFAULT_TYPE | None,
+    *,
+    message_text: str | None,
+    club_id: int | None = None,
+    title: str | None = None,
+    query: Any | None = None,
+) -> bool:
+    """Strip prompt, ack in group, Slack player_idle, clear stash."""
+    stashed = peek_idle_help_stash(context)
+    if query is not None:
+        await strip_idle_help_markup(query)
+    else:
+        await strip_idle_help_markup_by_message(
+            bot,
+            chat_id,
+            stashed.get("prompt_message_id"),
+        )
+
+    resolved_club = club_id if club_id is not None else stashed.get("club_id")
+    if resolved_club is None:
+        resolved_club = get_club_for_chat(int(chat_id))
+    resolved_title = title or stashed.get("title")
+
+    try:
+        await bot.send_message(
+            chat_id=int(chat_id),
+            text=IDLE_HELP_AGENT_ACK,
+        )
+    except Exception:
+        logger.warning(
+            "escalation: idle help agent ack failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+
+    clear_idle_help_stash(context)
+
+    await notify_escalation_slack(
+        REASON_PLAYER_IDLE,
+        club_id=resolved_club,
+        chat_id=int(chat_id),
+        title=resolved_title,
+        message_text=message_text,
+    )
+    return True
+
+
+async def handle_idle_help_free_text(
+    bot: Any,
+    chat_id: int,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    club_id: int | None,
+    title: str | None = None,
+    message_text: str | None = None,
+) -> bool:
+    """If idle help prompt is still up, treat free text like Talk to agent.
+
+    Returns True when consumed (caller should skip idle re-fire).
+    """
+    if not idle_help_prompt_active(context):
+        return False
+    return await complete_idle_help_as_agent(
+        bot,
+        int(chat_id),
+        context,
+        message_text=message_text,
+        club_id=club_id,
+        title=title,
+    )
 
 
 async def offer_idle_help_prompt(
@@ -498,7 +621,6 @@ async def handle_idle_help_agent(
 
     chat = update.effective_chat
     await query.answer()
-    await strip_idle_help_markup(query)
 
     if chat is None:
         clear_idle_help_stash(context)
@@ -514,26 +636,14 @@ async def handle_idle_help_agent(
         title = getattr(chat, "title", None)
     message_text = stashed.get("message_text")
 
-    try:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=IDLE_HELP_AGENT_ACK,
-        )
-    except Exception:
-        logger.warning(
-            "escalation: idle help agent ack failed chat_id=%s",
-            chat_id,
-            exc_info=True,
-        )
-
-    clear_idle_help_stash(context)
-
-    await notify_escalation_slack(
-        REASON_PLAYER_IDLE,
-        club_id=club_id,
-        chat_id=chat_id,
-        title=title,
+    await complete_idle_help_as_agent(
+        context.bot,
+        chat_id,
+        context,
         message_text=message_text,
+        club_id=club_id,
+        title=title,
+        query=query,
     )
 
 

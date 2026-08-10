@@ -63,6 +63,7 @@ async def group_activity_handler(
         player_msg = esc.extract_player_message_for_slack(message)
 
         deposit_consumed = False
+        idle_help_consumed = False
         if esc_on and not flow_cmd:
             deposit_consumed = await esc.handle_deposit_sent_player_followup(
                 context,
@@ -81,6 +82,15 @@ async def group_activity_handler(
                     message_text=player_msg,
                     message=message,
                 )
+            if not deposit_consumed:
+                idle_help_consumed = await esc.handle_idle_help_free_text(
+                    context.bot,
+                    chat.id,
+                    context,
+                    club_id=club_id,
+                    title=chat.title,
+                    message_text=player_msg,
+                )
 
         if (
             esc_on
@@ -88,6 +98,7 @@ async def group_activity_handler(
             and not in_flow
             and not flow_cmd
             and not deposit_consumed
+            and not idle_help_consumed
         ):
             await esc.fire_player_idle(
                 context.bot,

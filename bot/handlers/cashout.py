@@ -138,6 +138,8 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_staff:
         eligible, deny_msg = check_cashout_eligibility(club_id, chat.id)
         if not eligible:
+            # Idle-help Cashout uses this to Slack player_idle after deny.
+            context.chat_data["cashout_entry_denied"] = True
             await message.reply_text(deny_msg)
             return ConversationHandler.END
         try:
@@ -199,18 +201,48 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def idlehelp_cashout_entry(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
-    """Start /cashout from idle-help InlineKeyboard."""
+    """Start /cashout from idle-help InlineKeyboard.
+
+    If cashout is denied (hours/cooldown), Slack the same player_idle alert as
+    Talk to agent — buttons were stripped and the idle episode is already spent.
+    """
+    from bot.services.escalation_notification import (
+        REASON_PLAYER_IDLE,
+        clear_idle_help_stash,
+        notify_escalation_slack,
+        peek_idle_help_stash,
+        strip_idle_help_markup,
+    )
+
     query = update.callback_query
+    stashed = peek_idle_help_stash(context)
     if query is not None:
         await query.answer()
-        from bot.services.escalation_notification import (
-            clear_idle_help_stash,
-            strip_idle_help_markup,
-        )
-
         await strip_idle_help_markup(query)
-        clear_idle_help_stash(context)
-    return await cashout_entry(update, context)
+
+    context.chat_data.pop("cashout_entry_denied", None)
+    result = await cashout_entry(update, context)
+    denied = bool(context.chat_data.pop("cashout_entry_denied", None))
+    if denied:
+        chat = update.effective_chat
+        club_id = stashed.get("club_id")
+        if club_id is None and chat is not None:
+            club_id = get_club_for_chat(chat.id)
+        title = stashed.get("title")
+        if not title and chat is not None:
+            title = getattr(chat, "title", None)
+        try:
+            await notify_escalation_slack(
+                REASON_PLAYER_IDLE,
+                club_id=club_id,
+                chat_id=int(chat.id) if chat is not None else 0,
+                title=title,
+                message_text=stashed.get("message_text"),
+            )
+        except Exception:
+            pass
+    clear_idle_help_stash(context)
+    return result
 
 
 async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):

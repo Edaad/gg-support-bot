@@ -364,13 +364,15 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
         context.chat_data = {
             "deposit_club_id": 1,
             "deposit_amount": 100,
+            "deposit_amount_message_id": 55,
         }
-        self.assertTrue(
-            esc.is_valid_deposit_flow_answer(context, self._text_msg("100"))
-        )
-        self.assertTrue(
-            esc.is_valid_deposit_flow_answer(context, self._text_msg("100.00"))
-        )
+        matched = self._text_msg("100")
+        matched.message_id = 55
+        self.assertTrue(esc.is_valid_deposit_flow_answer(context, matched))
+        # Different message after amount is stored (choose-method) is not a flow answer
+        other = self._text_msg("100.00")
+        other.message_id = 56
+        self.assertFalse(esc.is_valid_deposit_flow_answer(context, other))
 
     def test_venmo_question_not_valid_answer(self):
         context = MagicMock()
@@ -433,7 +435,8 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(consumed)
         notify.assert_not_awaited()
 
-    async def test_amount_after_stored_does_not_escalate(self):
+    async def test_amount_after_stored_at_choose_escalates(self):
+        """Bare numbers on choose-method are chatter, not amount answers."""
         context = MagicMock()
         context.chat_data = {
             "deposit_club_id": 1,
@@ -451,6 +454,35 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
                         title="G",
                         message_text="100",
                         message=self._text_msg("100"),
+                    )
+        self.assertTrue(consumed)
+        notify.assert_awaited_once()
+        self.assertEqual(
+            notify.await_args.args[0], esc.REASON_DEPOSIT_PLAYER_MESSAGE
+        )
+
+    async def test_amount_entry_message_id_does_not_escalate(self):
+        """Same update that stored deposit_amount must not Slack via group_activity."""
+        context = MagicMock()
+        context.chat_data = {
+            "deposit_club_id": 1,
+            "deposit_amount": 100,
+            "deposit_amount_message_id": 55,
+        }
+        msg = self._text_msg("100")
+        msg.message_id = 55
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                with patch.object(
+                    esc, "notify_escalation_slack", new_callable=AsyncMock
+                ) as notify:
+                    consumed = await esc.handle_deposit_player_message(
+                        context,
+                        99,
+                        club_id=3,
+                        title="G",
+                        message_text="100",
+                        message=msg,
                     )
         self.assertFalse(consumed)
         notify.assert_not_awaited()

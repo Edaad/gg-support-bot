@@ -1467,6 +1467,7 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         return DEPOSIT_AMOUNT
 
     context.chat_data["deposit_amount"] = amount
+    context.chat_data["deposit_amount_message_id"] = update.message.message_id
     _record_funnel_from_context(context, STEP_AMOUNT_ENTERED)
     try:
         methods = get_methods_for_amount(club_id, "deposit", amount)
@@ -2580,6 +2581,7 @@ def _cleanup(context):
         "deposit_admin_initiated",
         "deposit_admin_user_id",
         "deposit_awaiting_amount",
+        "deposit_amount_message_id",
         "deposit_union_shorthand",
         "deposit_union_label",
         "deposit_setup_attempt_id",

@@ -15,10 +15,12 @@ With inline buttons **Deposit**, **Cashout**, and **Talk to agent**.
 | Button | Behavior |
 |--------|----------|
 | Deposit | Same as `/deposit` (ConversationHandler entry) |
-| Cashout | Same as `/cashout` (including deny/cooldown copy) |
+| Cashout | Same as `/cashout`; if denied (hours/cooldown), also Slack `player_idle` |
 | Talk to agent | Short ack *Got it — someone will be with you shortly.* + Slack `player_idle` (same copy as the old idle Slack, including the player message body) |
 
-Idle itself does **not** post to Slack. One prompt per idle episode (`idle_episode_fired`). After any button tap, the InlineKeyboard is removed.
+**Free text while the prompt is still up** (buttons not yet tapped): same as Talk to agent — strip buttons, ack, Slack `player_idle` using **this new message** body, then clear the in-memory stash. A later silence episode can offer a fresh thanks prompt; typing instead of tapping does not block future idle.
+
+Idle itself does **not** post to Slack. One prompt per idle episode (`idle_episode_fired`). After any button tap (or free-text-as-agent), the InlineKeyboard is removed.
 
 When **Escalation notification** is on, popup keyboard install and free-text strip are **suppressed** for that group so this prompt is the only CTA. Escalation-off clubs keep popup keyboard unchanged.
 
@@ -32,7 +34,7 @@ message may idle-fire (treated as already silent). Pending idle-help stash
 
 AM/staff message then player reply **without** 5 minutes silence: no prompt.
 
-Bare `/deposit` does **not** idle-fire. Allowed `/cashout` Slack-escalates without a Telegram idle prompt. Denied cashout (cooldown/hours): no idle; a later player message may idle-fire under normal rules.
+Bare `/deposit` does **not** idle-fire. Allowed `/cashout` Slack-escalates without a Telegram idle prompt. Denied cashout (cooldown/hours) via **typed** `/cashout`: no Slack. Denied cashout from the idle-help **Cashout** button: Slack `player_idle` (same as Talk to agent) because the help buttons were already removed.
 
 `/earlyrb` is treated like a flow command (no idle escalate on the command itself):
 
@@ -40,7 +42,7 @@ Bare `/deposit` does **not** idle-fire. Allowed `/cashout` Slack-escalates witho
 |------|----------|-------|
 | Eligible (no 24h block) | No | `Early rakeback requested.` |
 | Denied (24h constraint) | No | No; idle episode reset so follow-up free text can idle-fire |
-| Follow-up free text after deny | Idle help prompt | Only if they tap Talk to agent |
+| Follow-up free text after deny | Idle help prompt | Only if they tap Talk to agent **or** type free text while that prompt is still up |
 
 ## GC create / DM reach-out
 
@@ -79,7 +81,8 @@ When escalation is on, **immediate** Slack (`deposit_player_message`, no 5m sile
 
 | Message | Slack? |
 |---------|--------|
-| Valid amount answer (`100`, `$50`, …) | No — matched by amount shape even after the deposit handler stores `deposit_amount` (group_activity runs later) |
+| Valid amount answer during amount step (`100`, `$50`, …) | No — including the same update after amount is stored (`deposit_amount_message_id`) |
+| Free text/media on choose-method / sub / union / setup (including bare numbers) | Yes — *Player messaged during deposit.* + body |
 | First-deposit referral answer | No |
 | Other text (e.g. “Is Venmo available?”) | Yes — *Player messaged during deposit.* + body |
 | Media before the button wait is armed | Yes |
@@ -122,7 +125,7 @@ Copy (no user id, no chat id):
 
 | Reason | Headline | Player message body? |
 |--------|----------|----------------------|
-| `player_idle` | A player just reached out. | Yes (via Talk to agent only) |
+| `player_idle` | A player just reached out. | Yes (Talk to agent, or free text while idle help prompt is still up) |
 | `cashout_started` | Cash out initiated. | No |
 | `earlyrb_requested` | Early rakeback requested. | No |
 | `deposit_sent_timeout` | Deposit payment not seen. | No |
