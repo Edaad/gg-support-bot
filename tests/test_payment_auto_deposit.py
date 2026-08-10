@@ -32,6 +32,13 @@ def _enter_eligible(stack: ExitStack) -> None:
     stack.enter_context(
         patch.object(pad, "has_recent_add_command_in_chat", return_value=False)
     )
+    stack.enter_context(
+        patch.object(
+            pad,
+            "_run_payment_chip_match_after_attempt",
+            new_callable=AsyncMock,
+        )
+    )
 
 
 class RequestIdPaymentTestCase(unittest.TestCase):
@@ -121,8 +128,15 @@ class MaybeAutoDepositGatingTestCase(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self._record_event_patch = patch.object(pad, "record_auto_deposit_event")
         self._record_event_patch.start()
+        self._chip_match_patch = patch.object(
+            pad,
+            "_run_payment_chip_match_after_attempt",
+            new_callable=AsyncMock,
+        )
+        self._chip_match_patch.start()
 
     def tearDown(self) -> None:
+        self._chip_match_patch.stop()
         self._record_event_patch.stop()
 
     async def test_skips_when_not_auto_bound(self) -> None:
@@ -300,6 +314,7 @@ class MaybeAutoDepositSuccessTestCase(unittest.IsolatedAsyncioTestCase):
             patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
             patch.object(pad, "has_recent_add_command_in_chat", return_value=False),
             patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock, return_value=(True, "success")) as mock_run,
+            patch.object(pad, "_run_payment_chip_match_after_attempt", new_callable=AsyncMock),
             patch.object(pad, "record_auto_deposit_event") as mock_record_event,
             patch.object(pad, "record_activity_for_chat") as mock_record,
             patch.object(pad, "invalidate_pending_one_time_bypasses") as mock_invalidate,
@@ -340,6 +355,7 @@ class MaybeAutoDepositSuccessTestCase(unittest.IsolatedAsyncioTestCase):
                 new_callable=AsyncMock,
                 return_value=(False, "failed"),
             ),
+            patch.object(pad, "_run_payment_chip_match_after_attempt", new_callable=AsyncMock),
             patch.object(pad, "record_auto_deposit_event") as mock_record_event,
             patch.object(pad, "record_activity_for_chat") as mock_record,
             patch.object(pad, "_send_add_confirmation", new_callable=AsyncMock) as mock_confirm,

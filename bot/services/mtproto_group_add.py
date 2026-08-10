@@ -403,6 +403,27 @@ async def handle_group_add_outgoing(
             event.chat_id,
         )
 
+    try:
+        from bot.services.payment_chip_match import (
+            VIA_ADD,
+            amount_decimal_to_cents,
+            schedule_payment_chip_match,
+        )
+
+        actor_id = int(event.sender_id) if event.sender_id is not None else None
+        schedule_payment_chip_match(
+            telegram_chat_id=int(event.chat_id),
+            amount_cents=amount_decimal_to_cents(amount),
+            via=VIA_ADD,
+            actor_telegram_user_id=actor_id,
+            club_id=int(club_id),
+        )
+    except Exception:
+        logger.exception(
+            "group_add: payment chip match schedule failed chat_id=%s",
+            event.chat_id,
+        )
+
     if bonus is not None and ptb_bot is not None:
         invoker_user_id = event.sender_id
         if invoker_user_id is None:

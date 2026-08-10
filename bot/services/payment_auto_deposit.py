@@ -306,6 +306,30 @@ def _record_skip_event(
     )
 
 
+async def _run_payment_chip_match_after_attempt(
+    *,
+    telegram_chat_id: int,
+    amount_cents: int,
+    club_id: int | None,
+    payment_method_slug: str,
+    payment_id: int,
+) -> None:
+    """Best-effort match after a chip-add attempt (independent of RPA outcome)."""
+    from bot.services.payment_chip_match import (
+        VIA_AUTO_DEPOSIT,
+        run_payment_chip_match,
+    )
+
+    await run_payment_chip_match(
+        telegram_chat_id=int(telegram_chat_id),
+        amount_cents=int(amount_cents),
+        via=VIA_AUTO_DEPOSIT,
+        club_id=int(club_id) if club_id is not None else None,
+        prefer_method_slug=(payment_method_slug or "").strip().lower() or None,
+        prefer_payment_id=int(payment_id),
+    )
+
+
 async def maybe_auto_deposit_from_payment(
     *,
     club_id: int | None,
@@ -436,6 +460,22 @@ async def maybe_auto_deposit_from_payment(
             chip_add_status="unexpected_error",
         )
         return
+
+    # Best-effort payment↔chip-add match (independent of RPA outcome).
+    try:
+        await _run_payment_chip_match_after_attempt(
+            telegram_chat_id=int(telegram_chat_id),
+            amount_cents=int(amount_cents),
+            club_id=club_id,
+            payment_method_slug=payment_method_slug,
+            payment_id=int(payment_id),
+        )
+    except Exception:
+        logger.exception(
+            "payment_auto_deposit: chip match failed payment_id=%s chat_id=%s",
+            payment_id,
+            telegram_chat_id,
+        )
 
     if not ok:
         logger.info(

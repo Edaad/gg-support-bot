@@ -30,6 +30,7 @@ Unknown `alert_name` values are rejected at ingest with HTTP 400.
 |-------|---------|
 | `crypto_payments` | One row per on-chain deposit; binding keyed by `telegram_chat_id` |
 | `crypto_wallet_bindings` | Normalized `from_address` + `alert_scope` → last bound support group |
+| `payment_chip_matches` | Best-effort `/add` or auto-deposit → payment link (all methods; crypto stores tx hash in `metadata`) |
 
 Migrations:
 
@@ -37,6 +38,7 @@ Migrations:
 DATABASE_URL=... python migrate_crypto_payments.py
 DATABASE_URL=... python migrate_crypto_wallet_bindings.py
 DATABASE_URL=... python migrate_payment_bind_multi_candidates.py
+DATABASE_URL=... python migrate_payment_chip_matches.py
 ```
 
 The wallet-bindings migration backfills from existing bound `crypto_payments` rows (most recent bind per address+scope).
@@ -112,6 +114,22 @@ Paid: May 06, 2026 07:56 PM EDT
 When auto-bound from a known wallet, `Group Chat:` shows the support group title instead of "Unbound".
 
 Bound group titles may be hyperlinked with member-only `https://t.me/c/…` deep links. Joinable invite links (`t.me/+…`) are never embedded in staff payment notifications.
+
+## Chip-add matching (`/add` and auto-deposit)
+
+When staff runs `/add` in a linked support group (Bot API or MTProto), or payment auto-deposit attempts a ClubGG chip-add, the bot best-effort matches that chip-add to a bound payment notification for **the same** support group:
+
+- Methods: crypto, Venmo, Zelle, Cash App, PayPal, Stripe (completed sessions)
+- Amount within **±$1**, payment reference time within **2 hours**
+- Prefer unmatched payments; then closest amount; then newest
+- Successful matches are stored in `payment_chip_matches` (unique per method + payment id). Crypto rows also store `metadata.transaction_hash` for a future `/cryptoadd` dedupe path
+- A **new** short message is posted to `PAYMENT_NOTIFICATION_CHAT_ID` (payment notification is not edited). Unmatched attempts are not persisted; the message lists up to 3 recent unmatched payments for that GC
+
+This is a **match link only** — not confirmation that ClubGG RPA settled.
+
+```bash
+DATABASE_URL=... python migrate_payment_chip_matches.py
+```
 
 ## Manual bind
 

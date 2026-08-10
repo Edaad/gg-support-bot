@@ -1452,6 +1452,36 @@ class PaymentAutoDepositEvent(Base):
     club = relationship("Club")
 
 
+class PaymentChipMatch(Base):
+    """Best-effort link from a chip-add (/add or auto-deposit) to a payment notification."""
+
+    __tablename__ = "payment_chip_matches"
+    __table_args__ = (
+        UniqueConstraint(
+            "payment_method_slug",
+            "payment_id",
+            name="uq_pcm_method_payment",
+        ),
+        Index("ix_pcm_telegram_chat_id", "telegram_chat_id"),
+        Index("ix_pcm_matched_at", "matched_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    payment_method_slug = Column(String(32), nullable=False)
+    payment_id = Column(Integer, nullable=False)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    amount_cents = Column(Integer, nullable=False)
+    via = Column(String(32), nullable=False)
+    actor_telegram_user_id = Column(BigInteger, nullable=True)
+    matched_at = Column(DateTime(timezone=True), server_default=func.now())
+    metadata_json = Column("metadata", JSONB, nullable=True)
+
+    club = relationship("Club")
+
+
 class BotFlowSession(Base):
     """One active deposit/cashout flow per support group chat (UUID lifecycle)."""
 

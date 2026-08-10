@@ -117,6 +117,29 @@ async def _add_bot_api_path(
         group_title=chat.title,
     )
 
+    try:
+        from bot.services.payment_chip_match import (
+            VIA_ADD,
+            amount_decimal_to_cents,
+            schedule_payment_chip_match,
+        )
+
+        schedule_payment_chip_match(
+            telegram_chat_id=int(chat.id),
+            amount_cents=amount_decimal_to_cents(amount),
+            via=VIA_ADD,
+            actor_telegram_user_id=(
+                int(update.effective_user.id) if update.effective_user else None
+            ),
+            club_id=int(club_id),
+            create_task=context.application.create_task,
+        )
+    except Exception:
+        logger.exception(
+            "add: payment chip match schedule failed chat_id=%s",
+            chat.id,
+        )
+
     if bonus is not None:
         context.application.create_task(
             maybe_start_bonus_recording_from_add(
