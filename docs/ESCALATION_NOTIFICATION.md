@@ -111,7 +111,9 @@ When escalation is on and RPA was **attempted** but needs manual follow-up:
 | Event | Headline |
 |--------|----------|
 | Auto chip-add fail / manual skip (`/add` or payment auto-deposit) | RPA deposit failed — add chips manually. |
+| Auto chip-add UNCERTAIN (OCR mismatch / unknown outcome) | Deposit UNCERTAIN — verify on ClubGG (do not retry). + machine reason |
 | Auto-claim fail on `/cash` | RPA cashout failed — claim chips manually. |
+| Auto-claim UNCERTAIN on `/cash` | Cashout UNCERTAIN — verify on ClubGG (do not re-claim). + machine reason |
 
 Skip Slack when auto is disabled / not configured, or when the request was never queued (idempotency claim miss). Existing Telegram staff alerts are unchanged.
 
@@ -126,13 +128,31 @@ SLACK_ESCALATION_CHANNEL_ID=C...
 # SLACK_ESCALATION_WEBHOOK_URL=https://hooks.slack.com/services/...
 ```
 
-**Head-admin fan-out:** `rpa_deposit_failed` and `rpa_cashout_failed` also post the **same** text to a second channel, reusing `SLACK_ESCALATION_BOT_TOKEN`:
+**Head-admin fan-out:** `rpa_deposit_failed`, `rpa_cashout_failed`, `rpa_deposit_uncertain`, and `rpa_cashout_uncertain` also post the **same** text to a second channel, reusing `SLACK_ESCALATION_BOT_TOKEN`:
 
 ```bash
 SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID=C...
 ```
 
 If that env is unset, the normal escalation channel still works; head-admin post is skipped with a warning. Other reasons do not fan out.
+
+### Inbound webhook (Make / Zapier → head-admin Slack)
+
+For external alerts (Hub cashout wait email, etc.) that should land in the **same** head-admin channel:
+
+```bash
+HEAD_ADMIN_ESCALATION_WEBHOOK_SECRET=generate-a-long-random-string
+```
+
+```http
+POST /api/head-admin-escalation
+X-Head-Admin-Escalation-Webhook-Secret: <secret>
+Content-Type: application/json
+
+{"message": "🚨 URGENT 🚨\n\nContact head admins immediately ..."}
+```
+
+Posts `message` verbatim (no club-toggle gate). Requires `SLACK_ESCALATION_BOT_TOKEN` + `SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`. Returns `{ "ok": true }` on success; `401` bad/missing secret; `503` if secret unset; `502` if Slack post fails.
 
 Copy (no user id, no chat id):
 
@@ -150,6 +170,8 @@ Copy (no user id, no chat id):
 | `player_dm_reached_out` | A player reached out in DM. | No |
 | `rpa_deposit_failed` | RPA deposit failed — add chips manually. | No |
 | `rpa_cashout_failed` | RPA cashout failed — claim chips manually. | No |
+| `rpa_deposit_uncertain` | Deposit UNCERTAIN — verify on ClubGG (do not retry). | Yes (OCR/reason detail) |
+| `rpa_cashout_uncertain` | Cashout UNCERTAIN — verify on ClubGG (do not re-claim). | Yes (OCR/reason detail) |
 
 Each post:
 

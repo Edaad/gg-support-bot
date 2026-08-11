@@ -33,6 +33,8 @@ REASON_PLAYER_DM_REACHED_OUT = "player_dm_reached_out"
 REASON_EARLYRB_REQUESTED = "earlyrb_requested"
 REASON_RPA_DEPOSIT_FAILED = "rpa_deposit_failed"
 REASON_RPA_CASHOUT_FAILED = "rpa_cashout_failed"
+REASON_RPA_DEPOSIT_UNCERTAIN = "rpa_deposit_uncertain"
+REASON_RPA_CASHOUT_UNCERTAIN = "rpa_cashout_uncertain"
 REASON_AWAITING_AGENT_TIMEOUT = "awaiting_agent_timeout"
 
 _HEADLINES = {
@@ -51,18 +53,27 @@ _HEADLINES = {
     REASON_EARLYRB_REQUESTED: "Early rakeback requested.",
     REASON_RPA_DEPOSIT_FAILED: "RPA deposit failed — add chips manually.",
     REASON_RPA_CASHOUT_FAILED: "RPA cashout failed — claim chips manually.",
+    REASON_RPA_DEPOSIT_UNCERTAIN: (
+        "Deposit UNCERTAIN — verify on ClubGG (do not retry)."
+    ),
+    REASON_RPA_CASHOUT_UNCERTAIN: (
+        "Cashout UNCERTAIN — verify on ClubGG (do not re-claim)."
+    ),
     REASON_AWAITING_AGENT_TIMEOUT: (
         "Player responded in the group chat — no agent reply."
     ),
 }
 
 # Free-text / media escalations include the triggering player message body.
+# RPA uncertain includes the machine OCR/reason detail the same way.
 _REASONS_WITH_MESSAGE_BODY = frozenset(
     {
         REASON_PLAYER_IDLE,
         REASON_DEPOSIT_SENT_FOLLOWUP,
         REASON_DEPOSIT_PLAYER_MESSAGE,
         REASON_AWAITING_AGENT_TIMEOUT,
+        REASON_RPA_DEPOSIT_UNCERTAIN,
+        REASON_RPA_CASHOUT_UNCERTAIN,
     }
 )
 
@@ -587,7 +598,7 @@ async def notify_escalation_slack(
         )
         ok = False
 
-    # Independent fan-out for allowlisted reasons (RPA failures → head admin).
+    # Independent fan-out for allowlisted reasons (RPA fail/uncertain → head admin).
     try:
         from bot.services.head_admin_escalation import (
             maybe_notify_head_admin_escalation,
@@ -957,6 +968,25 @@ async def notify_rpa_deposit_failed(
     )
 
 
+async def notify_rpa_deposit_uncertain(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None = None,
+    detail: str | None = None,
+) -> None:
+    """Slack when ClubGG auto chip-add is UNCERTAIN (OCR mismatch / unknown outcome)."""
+    if not escalation_notification_enabled(club_id):
+        return
+    await notify_escalation_slack(
+        REASON_RPA_DEPOSIT_UNCERTAIN,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+        message_text=detail,
+    )
+
+
 async def notify_rpa_cashout_failed(
     *,
     club_id: int | None,
@@ -971,6 +1001,25 @@ async def notify_rpa_cashout_failed(
         club_id=club_id,
         chat_id=int(chat_id),
         title=title,
+    )
+
+
+async def notify_rpa_cashout_uncertain(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None = None,
+    detail: str | None = None,
+) -> None:
+    """Slack when ClubGG auto-claim is UNCERTAIN (may have claimed — do not retry)."""
+    if not escalation_notification_enabled(club_id):
+        return
+    await notify_escalation_slack(
+        REASON_RPA_CASHOUT_UNCERTAIN,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+        message_text=detail,
     )
 
 

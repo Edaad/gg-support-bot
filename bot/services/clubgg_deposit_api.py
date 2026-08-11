@@ -370,8 +370,11 @@ async def _run_single_deposit(
     request_id: str,
     label: str,
     ptb_bot: Any | None,
-) -> tuple[bool, str]:
-    """Submit one deposit, poll to terminal, notify. Returns (ok, terminal_status)."""
+) -> tuple[bool, str, str]:
+    """Submit one deposit, poll to terminal, notify.
+
+    Returns (ok, terminal_status, reason).
+    """
     amount_str = _format_chip_amount(amount)
     logger.info(
         "auto_chip_add: submitting %s club=%s (id=%s) player=%s amount=%s dry_run=%s "
@@ -401,7 +404,7 @@ async def _run_single_deposit(
             f"Auto chip-add FAILED to queue ({label}) for {clubgg_club} player "
             f"{player_id} ({amount_str}): {error}. Add chips manually.",
         )
-        return False, "queue_failed"
+        return False, "queue_failed", (error or "")
 
     if status and status.lower() in _TERMINAL_STATUSES:
         job = {"status": status, "job_id": job_id}
@@ -412,7 +415,8 @@ async def _run_single_deposit(
         cfg, ptb_bot, job, clubgg_club, player_id, amount_str, label=label
     )
     terminal = (job.get("status") or "unknown").lower()
-    return terminal in ("success", "dry_run", "skipped"), terminal
+    reason = str(job.get("reason") or "")
+    return terminal in ("success", "dry_run", "skipped"), terminal, reason
 
 
 async def _maybe_notify_rpa_deposit_failed(
@@ -435,6 +439,37 @@ async def _maybe_notify_rpa_deposit_failed(
             chat_id,
             exc_info=True,
         )
+
+
+async def _maybe_notify_rpa_deposit_problem(
+    *,
+    club_id: int,
+    chat_id: int,
+    title: str | None,
+    status: str,
+    detail: str | None = None,
+) -> None:
+    """Escalate deposit RPA problem; uncertain gets its own Slack reason + detail."""
+    if (status or "").lower() == "uncertain":
+        try:
+            from bot.services.escalation_notification import notify_rpa_deposit_uncertain
+
+            await notify_rpa_deposit_uncertain(
+                club_id=int(club_id),
+                chat_id=int(chat_id),
+                title=title,
+                detail=detail,
+            )
+        except Exception:
+            logger.debug(
+                "auto_chip_add: rpa deposit uncertain escalation failed chat_id=%s",
+                chat_id,
+                exc_info=True,
+            )
+        return
+    await _maybe_notify_rpa_deposit_failed(
+        club_id=club_id, chat_id=chat_id, title=title
+    )
 
 
 async def run_auto_chip_add(
@@ -565,10 +600,11 @@ async def run_auto_chip_add(
 
         all_ok = True
         last_status = "failed"
+        last_reason = ""
         for idx, (label, chip_amount, part) in enumerate(transactions):
             if idx > 0:
                 await asyncio.sleep(cfg.poll_interval_sec)
-            tx_ok, tx_status = await _run_single_deposit(
+            tx_ok, tx_status, tx_reason = await _run_single_deposit(
                 cfg,
                 client,
                 clubgg_club=clubgg_club,
@@ -579,6 +615,7 @@ async def run_auto_chip_add(
                 ptb_bot=ptb_bot,
             )
             last_status = tx_status
+            last_reason = tx_reason
             if not tx_ok:
                 all_ok = False
                 if idx == 0 and len(transactions) > 1:
@@ -591,8 +628,12 @@ async def run_auto_chip_add(
                     )
                 break
         if not all_ok:
-            await _maybe_notify_rpa_deposit_failed(
-                club_id=club_id, chat_id=chat_id, title=title
+            await _maybe_notify_rpa_deposit_problem(
+                club_id=club_id,
+                chat_id=chat_id,
+                title=title,
+                status=last_status,
+                detail=last_reason or None,
             )
         return all_ok, last_status
 

@@ -54,6 +54,34 @@ class HeadAdminAllowlistTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         notify.assert_awaited_once()
 
+    async def test_rpa_deposit_uncertain_calls_slack(self) -> None:
+        with patch(
+            "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as notify:
+            ok = await ha.maybe_notify_head_admin_escalation(
+                "Deposit UNCERTAIN — verify on ClubGG (do not retry).\n"
+                "Club: ClubGTO\n"
+                "OCR mismatch on trade record amount: saw '', expected one of ['1']",
+                reason=esc.REASON_RPA_DEPOSIT_UNCERTAIN,
+            )
+        self.assertTrue(ok)
+        notify.assert_awaited_once()
+
+    async def test_rpa_cashout_uncertain_calls_slack(self) -> None:
+        with patch(
+            "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as notify:
+            ok = await ha.maybe_notify_head_admin_escalation(
+                "Cashout UNCERTAIN — verify on ClubGG (do not re-claim).\nClub: X",
+                reason=esc.REASON_RPA_CASHOUT_UNCERTAIN,
+            )
+        self.assertTrue(ok)
+        notify.assert_awaited_once()
+
 
 class NotifyEscalationSlackFanoutTests(unittest.IsolatedAsyncioTestCase):
     async def test_rpa_fans_out_identical_text(self) -> None:
@@ -168,6 +196,54 @@ class RpaGateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             notify.await_args.args[0], esc.REASON_RPA_DEPOSIT_FAILED
         )
+
+    async def test_rpa_deposit_uncertain_skipped_when_club_toggle_off(self) -> None:
+        with patch.object(esc, "escalation_notification_enabled", return_value=False):
+            with patch.object(
+                esc, "notify_escalation_slack", new_callable=AsyncMock
+            ) as notify:
+                await esc.notify_rpa_deposit_uncertain(
+                    club_id=1,
+                    chat_id=99,
+                    title="G",
+                    detail="OCR mismatch",
+                )
+        notify.assert_not_awaited()
+
+    async def test_rpa_deposit_uncertain_includes_detail(self) -> None:
+        with patch.object(esc, "escalation_notification_enabled", return_value=True):
+            with patch.object(
+                esc, "notify_escalation_slack", new_callable=AsyncMock
+            ) as notify:
+                await esc.notify_rpa_deposit_uncertain(
+                    club_id=1,
+                    chat_id=99,
+                    title="GTO / 1 / Nick",
+                    detail="OCR mismatch on trade record amount: saw '', expected one of ['1']",
+                )
+        notify.assert_awaited_once()
+        self.assertEqual(
+            notify.await_args.args[0], esc.REASON_RPA_DEPOSIT_UNCERTAIN
+        )
+        self.assertEqual(
+            notify.await_args.kwargs["message_text"],
+            "OCR mismatch on trade record amount: saw '', expected one of ['1']",
+        )
+
+    async def test_uncertain_format_includes_detail_body(self) -> None:
+        with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
+            text = esc.format_escalation_slack_text(
+                esc.REASON_RPA_DEPOSIT_UNCERTAIN,
+                club_id=1,
+                chat_id=99,
+                title="GTO / 1 / Nick",
+                message_text=(
+                    "OCR mismatch on trade record amount: saw '', expected one of ['1']"
+                ),
+            )
+        self.assertIn("Deposit UNCERTAIN", text)
+        self.assertIn("Club: ClubGTO", text)
+        self.assertIn("OCR mismatch on trade record amount", text)
 
 
 class NotifySlackHeadAdminEscalationTests(unittest.IsolatedAsyncioTestCase):

@@ -392,7 +392,7 @@ heroku config:set SLACK_OPS_MENTION='<@UYOUR_SLACK_USER_ID>' -a YOUR_APP   # opt
 
 **Issue reports (account managers):** Tickets are stored in Postgres (`issue_reports`). Create via `POST /api/issue-reports` (multipart) or `python scripts/create_issue_report.py`. Slack posts use a **dedicated** app/channel (`SLACK_ISSUE_REPORT_BOT_TOKEN` + `SLACK_ISSUE_REPORT_CHANNEL_ID`, or `SLACK_ISSUE_REPORT_WEBHOOK_URL`). Optional audience mentions via `ISSUE_REPORT_TAG_MENTIONS` JSON (e.g. `{"head_admin":"<!subteam^S_HEAD>","engineer":"<!subteam^S_ENG>"}`). Bot scopes: `chat:write`, `files:write`. Run `python migrate_issue_reports.py` once after deploy.
 
-**Escalation notification (player idle / cashout / deposit chase):** Club dashboard toggle **Escalation notification**. Slack uses a **dedicated** channel (`SLACK_ESCALATION_BOT_TOKEN` + `SLACK_ESCALATION_CHANNEL_ID`, or `SLACK_ESCALATION_WEBHOOK_URL`). RPA deposit/cashout failures also fan out identically to a head-admin channel (`SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`, same bot token). See [`docs/ESCALATION_NOTIFICATION.md`](ESCALATION_NOTIFICATION.md). Run once:
+**Escalation notification (player idle / cashout / deposit chase):** Club dashboard toggle **Escalation notification**. Slack uses a **dedicated** channel (`SLACK_ESCALATION_BOT_TOKEN` + `SLACK_ESCALATION_CHANNEL_ID`, or `SLACK_ESCALATION_WEBHOOK_URL`). RPA deposit/cashout failures and UNCERTAIN outcomes also fan out identically to a head-admin channel (`SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`, same bot token). External Make/Zapier can also `POST /api/head-admin-escalation` with header `X-Head-Admin-Escalation-Webhook-Secret` and body `{"message":"..."}` to that channel (`HEAD_ADMIN_ESCALATION_WEBHOOK_SECRET`). See [`docs/ESCALATION_NOTIFICATION.md`](ESCALATION_NOTIFICATION.md). Run once:
 
 ```bash
 heroku run -a YOUR_APP -- python migrate_enable_escalation_notification.py
@@ -400,6 +400,7 @@ heroku run -a YOUR_APP -- python migrate_escalation_activity_state.py
 heroku config:set SLACK_ESCALATION_BOT_TOKEN=xoxb-... -a YOUR_APP
 heroku config:set SLACK_ESCALATION_CHANNEL_ID=C... -a YOUR_APP
 heroku config:set SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID=C... -a YOUR_APP
+heroku config:set HEAD_ADMIN_ESCALATION_WEBHOOK_SECRET=generate-a-long-random-string -a YOUR_APP
 ```
 
 ```bash

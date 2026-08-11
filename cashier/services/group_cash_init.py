@@ -166,15 +166,27 @@ async def _claim_then_notify(
         note = _claim_failure_note(outcome)
         if outcome.status not in ("disabled", "not_configured"):
             try:
-                from bot.services.escalation_notification import (
-                    notify_rpa_cashout_failed,
-                )
+                if outcome.status == "uncertain":
+                    from bot.services.escalation_notification import (
+                        notify_rpa_cashout_uncertain,
+                    )
 
-                await notify_rpa_cashout_failed(
-                    club_id=int(club_id),
-                    chat_id=int(chat_id),
-                    title=group_title,
-                )
+                    await notify_rpa_cashout_uncertain(
+                        club_id=int(club_id),
+                        chat_id=int(chat_id),
+                        title=group_title,
+                        detail=outcome.reason or None,
+                    )
+                else:
+                    from bot.services.escalation_notification import (
+                        notify_rpa_cashout_failed,
+                    )
+
+                    await notify_rpa_cashout_failed(
+                        club_id=int(club_id),
+                        chat_id=int(chat_id),
+                        title=group_title,
+                    )
             except Exception:
                 logger.debug(
                     "group_cash: rpa cashout escalation failed chat_id=%s",
