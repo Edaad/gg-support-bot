@@ -2237,3 +2237,21 @@ class GlideAuditLine(Base):
     occurred_at = Column(DateTime(timezone=True), nullable=True)
     raw_json = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class WatchedGroupEscalationState(Base):
+    """Durable listen-only escalation episodes for env-allowlisted non-support groups."""
+
+    __tablename__ = "watched_group_escalation_state"
+
+    telegram_chat_id = Column(BigInteger, primary_key=True)
+    title = Column(Text, nullable=True)
+    episode_started_at = Column(DateTime(timezone=True), nullable=True)
+    last_message_at = Column(DateTime(timezone=True), nullable=True)
+    escalated_at = Column(DateTime(timezone=True), nullable=True)
+    burst_json = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )

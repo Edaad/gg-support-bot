@@ -109,6 +109,34 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
 
     _auto_link_attempted.discard(chat_id)
 
+    from bot.services.watched_group_escalation import (
+        is_env_allowlisted_chat,
+        is_support_group_chat,
+        notify_admins_non_support_group_join,
+    )
+
+    if not is_support_group_chat(chat_id):
+        try:
+            await notify_admins_non_support_group_join(
+                chat_id=chat_id,
+                title=chat_title,
+                bot=context.bot,
+            )
+        except Exception:
+            logger.warning(
+                "non-support join admin DM failed chat_id=%s",
+                chat_id,
+                exc_info=True,
+            )
+
+    if is_env_allowlisted_chat(chat_id):
+        logger.info(
+            "Skipping link/welcome (watched-group allowlist) chat_id=%s title=%r",
+            chat_id,
+            chat_title,
+        )
+        return
+
     if update.effective_chat.type == "supergroup":
         club = get_club_by_telegram_id(adder_uid)
         legacy_id = find_legacy_group_chat_id(
@@ -208,6 +236,11 @@ async def auto_link_group(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     chat_id = chat.id
+
+    from bot.services.watched_group_escalation import is_env_allowlisted_chat
+
+    if is_env_allowlisted_chat(chat_id):
+        return
 
     if chat_id in _auto_link_attempted:
         return

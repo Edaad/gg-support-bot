@@ -60,10 +60,14 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
     from bot.services.escalation_notification import (
         register_escalation_notification_runtime,
     )
+    from bot.services.watched_group_escalation import (
+        register_watched_group_escalation_runtime,
+    )
 
     register_deposit_reminder_runtime(app)
     register_popup_keyboard_runtime(app)
     register_escalation_notification_runtime(app)
+    register_watched_group_escalation_runtime(app)
     set_contact_save_notify_bot(app.bot)
 
     if test_mode:
@@ -294,6 +298,18 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         .post_init(lambda app: _post_init_dm_gc_listener(app, test_mode=test_mode))
         .post_shutdown(lambda app: _post_shutdown_dm_gc_listener(app, test_mode=test_mode))
         .build()
+    )
+
+    # Watched non-support groups: listen-only escalate before commands/auto-link.
+    # Lower group number = higher priority (-6 before DM staff groups and group 0).
+    from bot.services.watched_group_escalation import watched_group_message_gate
+
+    app.add_handler(
+        MessageHandler(
+            filters.ChatType.GROUPS & filters.ALL & ~filters.StatusUpdate.ALL,
+            watched_group_message_gate,
+        ),
+        group=-6,
     )
 
     # DM staff flows. PTB runs at most ONE handler per group, so private TEXT

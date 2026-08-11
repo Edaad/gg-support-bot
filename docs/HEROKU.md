@@ -401,6 +401,9 @@ heroku config:set SLACK_ESCALATION_BOT_TOKEN=xoxb-... -a YOUR_APP
 heroku config:set SLACK_ESCALATION_CHANNEL_ID=C... -a YOUR_APP
 heroku config:set SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID=C... -a YOUR_APP
 heroku config:set HEAD_ADMIN_ESCALATION_WEBHOOK_SECRET=generate-a-long-random-string -a YOUR_APP
+# Watch non-support groups (listen-only → head-admin Slack). Privacy Mode off required.
+heroku config:set WATCH_GROUP_ESCALATION_CHAT_IDS=-100123,-100456 -a YOUR_APP
+heroku run -a YOUR_APP -- python migrate_watched_group_escalation_state.py
 # After deploy that adds post-deposit idle: heroku run -a YOUR_APP -- python migrate_escalation_post_deposit_idle.py
 ```
 

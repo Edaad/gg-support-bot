@@ -142,6 +142,41 @@ SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID=C...
 
 If that env is unset, the normal escalation channel still works; head-admin post is skipped with a warning. Other reasons do not fan out.
 
+### Watched non-support groups (listen-only → head-admin)
+
+The bot can sit in **non-support** Telegram groups and escalate human activity to the **head-admin** channel only (not the normal escalation channel; not gated by the club toggle).
+
+```bash
+# Comma-separated Telegram chat ids. Empty/unset = feature off.
+WATCH_GROUP_ESCALATION_CHAT_IDS=-100123,-100456
+```
+
+**Telegram Privacy Mode must be off** (@BotFather → `/setprivacy` → Disable) so the bot receives free-text messages in those groups.
+
+Behavior:
+
+1. Allowlisted chat that is **not** a `support_group_chats` row.
+2. Any non-bot human text/media/caption/command opens or feeds a durable episode (table `watched_group_escalation_state`).
+3. Reuses awaiting-agent timings (1 minute quiet debounce, 10 minute episode).
+4. On debounce: one Slack post to head-admin, then quiet until the episode ends.
+5. No bot reply in the group; no club auto-link/welcome; commands are swallowed.
+6. When the bot joins any non-support group, it DMs `ADMIN_USER_IDS` with `chat_id` + title so you can fill the allowlist.
+
+Slack copy:
+
+```
+Watched group activity.
+Group: {title}
+From: {name} (@username)
+{message}
+```
+
+(no chat id, no numeric user id)
+
+```bash
+DATABASE_URL=... python migrate_watched_group_escalation_state.py
+```
+
 ### Inbound webhook (Make / Zapier → head-admin Slack)
 
 For external alerts (Hub cashout wait email, etc.) that should land in the **same** head-admin channel:
@@ -197,6 +232,7 @@ DATABASE_URL=... python migrate_enable_escalation_notification.py
 DATABASE_URL=... python migrate_escalation_activity_state.py
 DATABASE_URL=... python migrate_escalation_deposit_sent_button_message_id.py
 DATABASE_URL=... python migrate_escalation_post_deposit_idle.py
+DATABASE_URL=... python migrate_watched_group_escalation_state.py
 ```
 
 ## Overlap with popup keyboard
