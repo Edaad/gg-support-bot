@@ -285,6 +285,7 @@ def record_human_message(
     role: HumanRole,
     now: datetime | None = None,
     silence_seconds: int = ESCALATION_SILENCE_SECONDS,
+    allow_idle_fire: bool = True,
 ) -> ActivityObservation:
     """Update per-chat activity and decide whether idle escalation may fire.
 
@@ -294,6 +295,10 @@ def record_human_message(
     After ``silence_seconds`` with no humans, the next player message may fire
     once per episode. Staff→player without that silence never fires idle —
     except when ``post_deposit_idle_pending`` is armed (payment/chips-add).
+
+    Flow commands (``/cashout``, ``/deposit``, …) should pass
+    ``allow_idle_fire=False`` so they update activity timestamps without
+    consuming an idle episode or a silence-bypass pending flag.
     """
     state = get_chat_activity_state(chat_id)
     ts = now or datetime.now(timezone.utc)
@@ -312,7 +317,8 @@ def record_human_message(
 
     post_deposit = bool(state.post_deposit_idle_pending)
     should_fire_idle = (
-        role == "player"
+        bool(allow_idle_fire)
+        and role == "player"
         and not state.idle_episode_fired
         and (silence_elapsed or post_deposit)
     )

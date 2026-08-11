@@ -50,15 +50,15 @@ async def earlyrb_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     eligible, deny_msg = check_earlyrb_eligibility(club_id, chat.id)
     if not eligible:
-        # Command is a flow command (no idle ack). Clear consumed idle episode so a
-        # later free-text follow-up can take the normal idle path.
+        # Command is a flow command (no idle ack). Arm silence-bypass so a
+        # later free-text follow-up can take the normal idle-help path.
         try:
-            from bot.services.group_activity import reset_idle_episode
+            from bot.services.group_activity import mark_post_deposit_idle_pending
 
-            reset_idle_episode(int(chat.id))
+            mark_post_deposit_idle_pending(int(chat.id))
         except Exception:
             logger.debug(
-                "earlyrb: reset idle episode failed chat_id=%s",
+                "earlyrb: arm idle-help pending failed chat_id=%s",
                 chat.id,
                 exc_info=True,
             )

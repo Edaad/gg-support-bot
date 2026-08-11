@@ -632,5 +632,42 @@ class IdleHelpCashoutDenyTests(unittest.IsolatedAsyncioTestCase):
 
         slack.assert_not_awaited()
 
+
+class CashoutTypedDenyIdleArmTests(unittest.IsolatedAsyncioTestCase):
+    async def test_typed_cashout_deny_arms_idle_bypass(self):
+        from bot.handlers import cashout as co
+
+        update = MagicMock()
+        update.message = MagicMock()
+        update.message.reply_text = AsyncMock()
+        update.effective_message = update.message
+        update.effective_chat = SimpleNamespace(
+            id=-100, title="RT / 1680-2327 / Traph0use", type="supergroup"
+        )
+        update.effective_user = SimpleNamespace(id=55)
+        context = MagicMock()
+        context.chat_data = {}
+
+        with patch.object(co, "is_update_too_old", return_value=False):
+            with patch.object(co, "block_if_group_money_flow_active", new=AsyncMock(return_value=False)):
+                with patch.object(co, "get_club_for_chat", return_value=3):
+                    with patch.object(co, "update_group_name"):
+                        with patch.object(co, "is_club_staff", return_value=False):
+                            with patch.object(
+                                co,
+                                "check_cashout_eligibility",
+                                return_value=(False, "wait 24h"),
+                            ):
+                                with patch(
+                                    "bot.services.group_activity.mark_post_deposit_idle_pending"
+                                ) as arm:
+                                    result = await co.cashout_entry(update, context)
+
+        self.assertEqual(result, ConversationHandler.END)
+        self.assertTrue(context.chat_data.get("cashout_entry_denied"))
+        arm.assert_called_once_with(-100)
+        update.message.reply_text.assert_awaited_once_with("wait 24h")
+
+
 if __name__ == "__main__":
     unittest.main()

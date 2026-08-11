@@ -1,6 +1,7 @@
 """Cashout conversation: amount first, filtered methods, optional multi-method with inline Done button."""
 
 from decimal import Decimal, InvalidOperation
+import logging
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -50,6 +51,8 @@ from bot.handlers.flow_staleness import (
 )
 from bot.handlers.response_utils import send_response_messages
 from bot.services import popup_keyboard as popup_keyboard_svc
+
+logger = logging.getLogger(__name__)
 
 CASHOUT_AMOUNT, CASHOUT_CHOOSE, CASHOUT_SUB, CASHOUT_SIMPLE_AMOUNT = range(4)
 
@@ -140,6 +143,18 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not eligible:
             # Idle-help Cashout uses this to Slack player_idle after deny.
             context.chat_data["cashout_entry_denied"] = True
+            # Typed /cashout deny: arm silence-bypass so follow-up free text
+            # can take the normal idle-help path (same column as post-deposit).
+            try:
+                from bot.services.group_activity import mark_post_deposit_idle_pending
+
+                mark_post_deposit_idle_pending(int(chat.id))
+            except Exception:
+                logger.debug(
+                    "cashout: arm idle-help pending failed chat_id=%s",
+                    chat.id,
+                    exc_info=True,
+                )
             await message.reply_text(deny_msg)
             return ConversationHandler.END
         try:

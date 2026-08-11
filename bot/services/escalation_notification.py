@@ -436,7 +436,10 @@ def extract_player_message_for_slack(message) -> str:
 
 
 def should_ignore_deposit_sent_followup(message) -> bool:
-    """True for media or text/caption containing sent/done (expected ack)."""
+    """True for media or text/caption containing sent/done (expected ack).
+
+    Shared by deposit-sent chase follow-up and during-deposit free-text escalate.
+    """
     if message is None:
         return False
     if ga.message_has_media(message):
@@ -513,7 +516,8 @@ def deposit_open_for_player_message_escalation(
 ) -> bool:
     """Deposit session before payment, excluding post-button armed wait.
 
-    Armed wait is owned by deposit_sent_followup (sent/done/media ignore).
+    Armed wait is owned by deposit_sent_followup. During-deposit escalate
+    shares the same sent/done/media ignore helper.
     """
     if ga.deposit_sent_watch_armed(int(chat_id)):
         return False
@@ -535,12 +539,14 @@ async def handle_deposit_player_message(
 ) -> bool:
     """Escalate free text/media during /deposit (no button / silence required).
 
-    Skips valid amount and referral answers. Returns True if Slack sent
-    (caller should skip idle).
+    Skips valid amount and referral answers, and sent/done/media (same ignore
+    as the armed chase). Returns True if Slack sent (caller should skip idle).
     """
     if not deposit_open_for_player_message_escalation(context, chat_id):
         return False
     if is_valid_deposit_flow_answer(context, message):
+        return False
+    if should_ignore_deposit_sent_followup(message):
         return False
 
     await notify_escalation_slack(

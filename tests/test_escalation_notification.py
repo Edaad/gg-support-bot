@@ -123,6 +123,29 @@ class SilenceDetectionTests(unittest.TestCase):
                 )
                 self.assertFalse(obs2.should_fire_idle)
 
+    def test_flow_command_does_not_consume_idle_bypass(self):
+        """Denied /cashout arms bypass; the command itself must not consume it."""
+        silence = ga.ESCALATION_SILENCE_SECONDS
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                ga.mark_post_deposit_idle_pending(1)
+                obs_cmd = ga.record_human_message(
+                    1,
+                    role="player",
+                    now=t0,
+                    silence_seconds=silence,
+                    allow_idle_fire=False,
+                )
+                self.assertFalse(obs_cmd.should_fire_idle)
+                self.assertTrue(ga.post_deposit_idle_pending(1))
+                t1 = t0 + timedelta(seconds=5)
+                obs = ga.record_human_message(
+                    1, role="player", now=t1, silence_seconds=silence
+                )
+                self.assertTrue(obs.should_fire_idle)
+                self.assertFalse(ga.post_deposit_idle_pending(1))
+
     def test_staff_then_silence_then_player_fires(self):
         silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
@@ -561,6 +584,55 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
                         title="G",
                         message_text="where are chips",
                         message=self._text_msg("where are chips"),
+                    )
+        self.assertFalse(consumed)
+        notify.assert_not_awaited()
+
+    async def test_sent_ack_does_not_escalate(self):
+        context = MagicMock()
+        context.chat_data = {
+            "deposit_club_id": 1,
+            "deposit_amount": 33,
+        }
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                with patch.object(
+                    esc, "notify_escalation_slack", new_callable=AsyncMock
+                ) as notify:
+                    consumed = await esc.handle_deposit_player_message(
+                        context,
+                        99,
+                        club_id=3,
+                        title="GTO / 1399-7800 / @Andrew_2256",
+                        message_text="Sent",
+                        message=self._text_msg("Sent"),
+                    )
+        self.assertFalse(consumed)
+        notify.assert_not_awaited()
+
+    async def test_media_does_not_escalate(self):
+        context = MagicMock()
+        context.chat_data = {
+            "deposit_club_id": 1,
+            "deposit_amount": 33,
+        }
+        msg = MagicMock()
+        msg.text = None
+        msg.caption = None
+        msg.photo = [object()]
+        msg.message_id = 10
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                with patch.object(
+                    esc, "notify_escalation_slack", new_callable=AsyncMock
+                ) as notify:
+                    consumed = await esc.handle_deposit_player_message(
+                        context,
+                        99,
+                        club_id=3,
+                        title="G",
+                        message_text="(media)",
+                        message=msg,
                     )
         self.assertFalse(consumed)
         notify.assert_not_awaited()

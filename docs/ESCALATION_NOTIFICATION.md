@@ -49,14 +49,14 @@ which arms `post_deposit_idle_pending` so the next player free text gets the idl
 help prompt immediately (balance / “still owed?” follow-ups). Slack still only via
 Talk to agent or free text while that prompt is up.
 
-Bare `/deposit` does **not** idle-fire. Allowed `/cashout` Slack-escalates without a Telegram idle prompt. Denied cashout (cooldown/hours) via **typed** `/cashout`: no Slack. Denied cashout from the idle-help **Cashout** button: Slack `player_idle` (same as Talk to agent) because the help buttons were already removed.
+Bare `/deposit` does **not** idle-fire. Allowed `/cashout` Slack-escalates without a Telegram idle prompt. Denied cashout (cooldown/hours) via **typed** `/cashout`: no Slack; arms silence-bypass so the next player free text can idle-help (same pending flag as post-deposit). Denied cashout from the idle-help **Cashout** button: Slack `player_idle` (same as Talk to agent) because the help buttons were already removed.
 
 `/earlyrb` is treated like a flow command (no idle escalate on the command itself):
 
 | Case | Telegram | Slack |
 |------|----------|-------|
 | Eligible (no 24h block) | No | `Early rakeback requested.` |
-| Denied (24h constraint) | No | No; idle episode reset so follow-up free text can idle-fire |
+| Denied (24h constraint) | No | No; arms silence-bypass so follow-up free text can idle-fire |
 | Follow-up free text after deny | Idle help prompt | Only if they tap Talk to agent **or** type free text while that prompt is still up |
 
 ## GC create / DM reach-out
@@ -99,10 +99,11 @@ When escalation is on, **immediate** Slack (`deposit_player_message`, no 5m sile
 | Message | Slack? |
 |---------|--------|
 | Valid amount answer during amount step (`100`, `$50`, …) | No — including the same update after amount is stored (`deposit_amount_message_id`) |
-| Free text/media on choose-method / sub / union / setup (including bare numbers) | Yes — *Player messaged during deposit.* + body |
+| Free text on choose-method / sub / union / setup (including bare numbers) | Yes — *Player messaged during deposit.* + body |
 | First-deposit referral answer | No |
 | Other text (e.g. “Is Venmo available?”) | Yes — *Player messaged during deposit.* + body |
-| Media before the button wait is armed | Yes |
+| Text/caption containing `sent` / `done` (case-insensitive) | No — same ignore as armed chase; deposit flow unchanged |
+| Media (any attachment) | No — same ignore as armed chase |
 
 Does not cancel the bot conversation / timeout. After the button arms the 5m wait, sent/done/media handling stays on the follow-up path above.
 
