@@ -43,7 +43,11 @@ Cold start / worker restart: activity timestamps are **durable** on
 message may idle-fire (treated as already silent). Pending idle-help stash
 (player message for Talk to agent) is in-memory `chat_data` only.
 
-AM/staff message then player reply **without** 5 minutes silence: no prompt.
+AM/staff message then player reply **without** 5 minutes silence: no prompt —
+**except** after deposit completion (payment received or chips-add chase clear),
+which arms `post_deposit_idle_pending` so the next player free text gets the idle
+help prompt immediately (balance / “still owed?” follow-ups). Slack still only via
+Talk to agent or free text while that prompt is up.
 
 Bare `/deposit` does **not** idle-fire. Allowed `/cashout` Slack-escalates without a Telegram idle prompt. Denied cashout (cooldown/hours) via **typed** `/cashout`: no Slack. Denied cashout from the idle-help **Cashout** button: Slack `player_idle` (same as Talk to agent) because the help buttons were already removed.
 
@@ -192,6 +196,7 @@ GC title / contact is a Slack code span (tap-to-copy on mobile). Free-text bodie
 DATABASE_URL=... python migrate_enable_escalation_notification.py
 DATABASE_URL=... python migrate_escalation_activity_state.py
 DATABASE_URL=... python migrate_escalation_deposit_sent_button_message_id.py
+DATABASE_URL=... python migrate_escalation_post_deposit_idle.py
 ```
 
 ## Overlap with popup keyboard

@@ -97,6 +97,32 @@ class SilenceDetectionTests(unittest.TestCase):
                 )
                 self.assertFalse(obs.should_fire_idle)
 
+    def test_post_deposit_pending_fires_without_silence(self):
+        """Payment/chips-add arm → player idle-helps despite recent staff chips line."""
+        silence = ga.ESCALATION_SILENCE_SECONDS
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                ga.record_human_message(1, role="staff", now=t0, silence_seconds=silence)
+                ga.mark_post_deposit_idle_pending(1)
+                t_staff = t0 + timedelta(seconds=30)
+                ga.record_human_message(
+                    1, role="staff", now=t_staff, silence_seconds=silence
+                )
+                t_player = t0 + timedelta(minutes=1)
+                obs = ga.record_human_message(
+                    1, role="player", now=t_player, silence_seconds=silence
+                )
+                self.assertTrue(obs.should_fire_idle)
+                self.assertFalse(ga.post_deposit_idle_pending(1))
+                obs2 = ga.record_human_message(
+                    1,
+                    role="player",
+                    now=t_player + timedelta(seconds=30),
+                    silence_seconds=silence,
+                )
+                self.assertFalse(obs2.should_fire_idle)
+
     def test_staff_then_silence_then_player_fires(self):
         silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)

@@ -401,6 +401,7 @@ heroku config:set SLACK_ESCALATION_BOT_TOKEN=xoxb-... -a YOUR_APP
 heroku config:set SLACK_ESCALATION_CHANNEL_ID=C... -a YOUR_APP
 heroku config:set SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID=C... -a YOUR_APP
 heroku config:set HEAD_ADMIN_ESCALATION_WEBHOOK_SECRET=generate-a-long-random-string -a YOUR_APP
+# After deploy that adds post-deposit idle: heroku run -a YOUR_APP -- python migrate_escalation_post_deposit_idle.py
 ```
 
 ```bash

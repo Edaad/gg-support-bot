@@ -37,6 +37,8 @@ class ChatActivityState:
     deposit_sent_armed_at: datetime | None = None
     # Telegram message_id carrying the "I have sent the payment" markup.
     deposit_sent_button_message_id: int | None = None
+    # After payment/chips-add: next player free text may idle without 5m silence.
+    post_deposit_idle_pending: bool = False
     # support_group_chats.id when durable; None = memory-only fallback.
     support_row_id: int | None = None
 
@@ -54,6 +56,22 @@ def reset_idle_episode(chat_id: int) -> None:
     state = get_chat_activity_state(int(chat_id))
     state.idle_episode_fired = False
     _persist_activity_state(int(chat_id), state, include_deposit_wait=False)
+
+
+def mark_post_deposit_idle_pending(chat_id: int) -> None:
+    """Arm immediate idle-help on the next player free text after deposit done.
+
+    Survives follow-up staff “Added chips” lines so a balance question at +1m
+    still gets the idle help prompt.
+    """
+    state = get_chat_activity_state(int(chat_id))
+    state.post_deposit_idle_pending = True
+    state.idle_episode_fired = False
+    _persist_activity_state(int(chat_id), state, include_deposit_wait=False)
+
+
+def post_deposit_idle_pending(chat_id: int) -> bool:
+    return bool(get_chat_activity_state(int(chat_id)).post_deposit_idle_pending)
 
 
 def _as_utc(ts: datetime | None) -> datetime | None:
@@ -87,6 +105,9 @@ def _state_from_row(row: object) -> ChatActivityState:
         deposit_sent_armed_at=armed_at,
         deposit_sent_button_message_id=(
             int(button_mid) if button_mid is not None else None
+        ),
+        post_deposit_idle_pending=bool(
+            getattr(row, "escalation_post_deposit_idle_pending", False)
         ),
         support_row_id=int(getattr(row, "id")),
     )
@@ -138,6 +159,7 @@ def _persist_activity_state(
         "escalation_last_human_at": state.last_human_at,
         "escalation_last_human_role": state.last_human_role,
         "escalation_idle_episode_fired": bool(state.idle_episode_fired),
+        "escalation_post_deposit_idle_pending": bool(state.post_deposit_idle_pending),
     }
     if include_deposit_wait:
         kwargs.update(
@@ -270,7 +292,8 @@ def record_human_message(
     elapsed so the first player message can escalate. Durable state covers
     worker restarts; null is only virgin / post-migrate groups.
     After ``silence_seconds`` with no humans, the next player message may fire
-    once per episode. Staff→player without that silence never fires idle.
+    once per episode. Staff→player without that silence never fires idle —
+    except when ``post_deposit_idle_pending`` is armed (payment/chips-add).
     """
     state = get_chat_activity_state(chat_id)
     ts = now or datetime.now(timezone.utc)
@@ -287,14 +310,17 @@ def record_human_message(
     if silence_elapsed:
         state.idle_episode_fired = False
 
+    post_deposit = bool(state.post_deposit_idle_pending)
     should_fire_idle = (
         role == "player"
-        and silence_elapsed
         and not state.idle_episode_fired
+        and (silence_elapsed or post_deposit)
     )
 
     if should_fire_idle:
         state.idle_episode_fired = True
+        if post_deposit:
+            state.post_deposit_idle_pending = False
 
     state.last_human_at = ts
     state.last_human_role = role

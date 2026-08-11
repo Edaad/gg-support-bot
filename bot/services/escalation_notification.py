@@ -1206,6 +1206,7 @@ async def offer_deposit_sent_button(
 def on_payment_received_for_escalation(chat_id: int) -> None:
     """Payment notify landed — cancel deposit sent chase (DB-durable)."""
     cancel_deposit_sent_watch(int(chat_id))
+    ga.mark_post_deposit_idle_pending(int(chat_id))
 
 
 async def clear_deposit_chase_after_payment(
@@ -1217,6 +1218,7 @@ async def clear_deposit_chase_after_payment(
     """Clear chase state and strip the sent button if we know its message id."""
     msg_id = ga.deposit_sent_button_message_id(int(chat_id))
     cancel_deposit_sent_watch(int(chat_id), job_queue=job_queue)
+    ga.mark_post_deposit_idle_pending(int(chat_id))
     if bot is None or msg_id is None:
         return
     try:
