@@ -76,15 +76,17 @@ On tap:
 
 1. Remove the button and reply:
    > Thank you! Chips will be added as soon as we receive the payment.
-2. If the group has **no** `group_payment_method_bindings` row for the chosen method → Slack **Manual deposit request.** immediately.
+2. If the group has **no** `group_payment_method_bindings` row for the **selected** method (e.g. Venmo tap checks Venmo only) → Slack **Manual deposit request — no {method} binding for this group.** immediately.
 3. If **bound** → arm a durable 5-minute wait:
-   - No payment/`/add` in 5 minutes → Slack `deposit_sent_timeout` (**re-checks DB** so API payment notify cancels correctly across dynos).
+   - No payment/`/add` in 5 minutes → Slack `deposit_sent_timeout` (*5 minutes have passed since the player said they sent the payment — please look out for a payment in this group chat.*) (**re-checks DB** so API payment notify cancels correctly across dynos).
    - Player message containing `sent` / `done` (case-insensitive) **or any media** → ignore for follow-up Slack (wait stays armed). Does **not** block `player_idle` if silence criteria are met.
    - Any other player text before payment → Slack `deposit_sent_followup` **with the player message body** and cancel the wait (skips idle).
    - Payment group notify clears the wait via durable columns and strips the
      **I have sent the payment** button (even if it was never tapped).
 
 Arming the chase is **button only** (typed “sent” / media do not start the wait).
+
+**Stripe checkout** (CashApp/Apple Pay/Debit via `use_group_checkout_link` Stripe provider, including `/cashapp` `/stripe` group links): the chase button is **not** shown. Payment confirmation is via Stripe webhook; offering the button previously false-fired `deposit_sent_unbound` because those methods have no group handle binding.
 
 ### Free text during /deposit (before button)
 
@@ -162,9 +164,9 @@ Copy (no user id, no chat id):
 | `awaiting_agent_timeout` | Player responded in the group chat — no agent reply. | Yes (accumulated burst since last arm/reset) |
 | `cashout_started` | Cash out initiated. | No |
 | `earlyrb_requested` | Early rakeback requested. | No |
-| `deposit_sent_timeout` | Deposit payment not seen. | No |
+| `deposit_sent_timeout` | 5 minutes have passed since the player said they sent the payment — please look out for a payment in this group chat. | No |
 | `deposit_sent_followup` | Player sent a message after confirming they sent the payment. | Yes |
-| `deposit_sent_unbound` | Manual deposit request. | No |
+| `deposit_sent_unbound` | Manual deposit request — no {method} binding for this group. | No |
 | `deposit_player_message` | Player messaged during deposit. | Yes |
 | `new_player_onboarded` | Welcome the new player who just joined the group chat. | No |
 | `player_dm_reached_out` | A player reached out in DM. | No |

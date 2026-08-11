@@ -40,7 +40,10 @@ REASON_AWAITING_AGENT_TIMEOUT = "awaiting_agent_timeout"
 _HEADLINES = {
     REASON_PLAYER_IDLE: "A player just reached out.",
     REASON_CASHOUT_STARTED: "Cash out initiated.",
-    REASON_DEPOSIT_SENT_TIMEOUT: "Deposit payment not seen.",
+    REASON_DEPOSIT_SENT_TIMEOUT: (
+        "5 minutes have passed since the player said they sent the payment — "
+        "please look out for a payment in this group chat."
+    ),
     REASON_DEPOSIT_SENT_FOLLOWUP: (
         "Player sent a message after confirming they sent the payment."
     ),
@@ -557,8 +560,20 @@ def format_escalation_slack_text(
     chat_id: int,
     title: str | None = None,
     message_text: str | None = None,
+    method_slug: str | None = None,
 ) -> str:
     headline = _HEADLINES.get(reason, reason)
+    if reason == REASON_DEPOSIT_SENT_UNBOUND:
+        slug = (method_slug or "").strip().lower()
+        if slug:
+            headline = (
+                f"Manual deposit request — no {slug} binding for this group."
+            )
+        else:
+            headline = (
+                "Manual deposit request — no binding for the selected "
+                "payment method in this group."
+            )
     club = _club_display_name(club_id)
     group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
     lines = [f"*{headline}*", f"Club: {club}", _slack_code_span(group_title)]
@@ -576,6 +591,7 @@ async def notify_escalation_slack(
     chat_id: int,
     title: str | None = None,
     message_text: str | None = None,
+    method_slug: str | None = None,
 ) -> bool:
     text = format_escalation_slack_text(
         reason,
@@ -583,6 +599,7 @@ async def notify_escalation_slack(
         chat_id=chat_id,
         title=title,
         message_text=message_text,
+        method_slug=method_slug,
     )
     ok = False
     try:
@@ -1463,6 +1480,7 @@ async def handle_deposit_sent_claim(
             club_id=club_id,
             chat_id=chat_id,
             title=title,
+            method_slug=slug,
         )
         return
 

@@ -217,9 +217,41 @@ class EscalationCopyTests(unittest.TestCase):
                 club_id=3,
                 chat_id=-300,
                 title="CC / 9255-5089 / Justin",
+                method_slug="venmo",
             )
-        self.assertIn("*Manual deposit request.*", text)
+        self.assertIn(
+            "*Manual deposit request — no venmo binding for this group.*",
+            text,
+        )
         self.assertIn("`CC / 9255-5089 / Justin`", text)
+
+    def test_unbound_manual_deposit_headline_without_slug(self):
+        with patch.object(esc, "_club_display_name", return_value="Creator Club"):
+            text = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_SENT_UNBOUND,
+                club_id=3,
+                chat_id=-300,
+                title="CC / 1 / X",
+            )
+        self.assertIn(
+            "*Manual deposit request — no binding for the selected "
+            "payment method in this group.*",
+            text,
+        )
+
+    def test_deposit_sent_timeout_headline(self):
+        with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
+            text = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_SENT_TIMEOUT,
+                club_id=1,
+                chat_id=-100,
+                title="GTO / 1 / Nick",
+            )
+        self.assertIn(
+            "*5 minutes have passed since the player said they sent the payment — "
+            "please look out for a payment in this group chat.*",
+            text,
+        )
 
     def test_new_player_onboarded_copy(self):
         with patch.object(esc, "_club_display_name", return_value="ClubGTO"):

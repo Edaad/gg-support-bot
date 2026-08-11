@@ -2383,14 +2383,8 @@ async def _send_deposit_method_response(
                 expires_at=result.expires_at,
                 stripe_session_id=result.session_id,
             )
-            await _maybe_offer_deposit_sent_button(
-                getattr(context, "bot", None),
-                int(chat_id),
-                club_id=int(club_id) if club_id is not None else None,
-                method_slug=slug or "stripe",
-                title=group_title,
-                attach=True,
-            )
+            # Stripe checkout confirms via webhook — do not offer the
+            # "I have sent the payment" chase (would false-fire as unbound).
             return True
         except Exception as e:
             err_detail = _stripe_error_detail(e)
