@@ -8,7 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from telegram import Chat, Message, Update, User
 from telegram.constants import ChatType
 
-from bot.handlers.issue_reports import _report_group_stub, escalate_entry, report_entry
+from bot.handlers.issue_reports import (
+    _report_group_stub,
+    escalate_entry,
+    get_report_conversation_handler,
+    report_entry,
+)
 
 
 def _group_update(user_id: int = 100, chat_id: int = -123) -> Update:
@@ -104,6 +109,14 @@ class TestReportEntry(unittest.IsolatedAsyncioTestCase):
         result = await report_entry(update, context)
         self.assertEqual(result, ConversationHandler.END)
         mock_stub.assert_not_awaited()
+
+
+class TestReportConversationIsolation(unittest.TestCase):
+    def test_keyed_per_chat_and_user(self) -> None:
+        """DM /report must not continue from messages in another chat (e.g. support group)."""
+        conv = get_report_conversation_handler()
+        self.assertTrue(conv.per_chat)
+        self.assertTrue(conv.per_user)
 
 
 if __name__ == "__main__":

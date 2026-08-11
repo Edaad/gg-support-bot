@@ -1076,7 +1076,9 @@ def get_report_conversation_handler() -> ConversationHandler:
         fallbacks=[_REPORT_CANCEL_CB, _REPORT_CANCEL],
         conversation_timeout=600,
         name="issue_report_conv",
-        per_chat=False,
+        # Keep wizard replies in the chat where /report started (DM).
+        # per_chat=False keyed by user only and leaked steps into support groups.
+        per_chat=True,
         per_user=True,
         allow_reentry=True,
     )
