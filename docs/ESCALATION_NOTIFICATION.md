@@ -161,6 +161,7 @@ Behavior:
 4. On debounce: one Slack post to head-admin, then quiet until the episode ends.
 5. No bot reply in the group; no club auto-link/welcome; commands are swallowed.
 6. When the bot joins any non-support group, it DMs `ADMIN_USER_IDS` with `chat_id` + title so you can fill the allowlist.
+7. Club welcome/link on join runs only when the title parses as a GC title (`CLUB / PLAYER_ID / NAME`). Titles like `Round Table Support & GG Support` skip onboarding.
 
 Slack copy:
 

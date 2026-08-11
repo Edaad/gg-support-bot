@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.handlers import groups
+from bot.services import watched_group_escalation as wge
 
 CHAT_ID = -1003902137688
 
@@ -14,6 +16,29 @@ def _make_context() -> MagicMock:
     context = MagicMock()
     context.bot = MagicMock()
     return context
+
+
+class TestShouldSkipClubOnboarding(unittest.TestCase):
+    def tearDown(self) -> None:
+        os.environ.pop(wge.WATCH_GROUP_ESCALATION_CHAT_IDS_ENV, None)
+
+    def test_ops_title_skips(self) -> None:
+        self.assertTrue(
+            groups.should_skip_club_onboarding(
+                1, "Round Table Support & GG Support"
+            )
+        )
+
+    def test_valid_gc_title_allows(self) -> None:
+        self.assertFalse(
+            groups.should_skip_club_onboarding(1, "RT / 8190-5287 / Player")
+        )
+
+    def test_allowlisted_skips_even_with_gc_title(self) -> None:
+        os.environ[wge.WATCH_GROUP_ESCALATION_CHAT_IDS_ENV] = "42"
+        self.assertTrue(
+            groups.should_skip_club_onboarding(42, "RT / 8190-5287 / Player")
+        )
 
 
 class TestMaybeSendMemberJoinIntro(unittest.IsolatedAsyncioTestCase):
@@ -82,5 +107,35 @@ class TestMaybeSendMemberJoinIntro(unittest.IsolatedAsyncioTestCase):
         mock_deliver.assert_awaited_once_with(CHAT_ID, 4, context.bot)
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestOnMyChatMemberSkipsOpsWelcome(unittest.IsolatedAsyncioTestCase):
+    @patch("bot.handlers.groups.set_group_club")
+    @patch(
+        "bot.services.watched_group_escalation.notify_admins_non_support_group_join",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "bot.services.watched_group_escalation.is_support_group_chat",
+        return_value=False,
+    )
+    async def test_ops_title_skips_welcome(
+        self,
+        _support: MagicMock,
+        notify: AsyncMock,
+        set_club: MagicMock,
+    ) -> None:
+        update = MagicMock()
+        update.effective_chat.type = "supergroup"
+        update.effective_chat.id = -1001
+        update.effective_chat.title = "Round Table Support & GG Support"
+        update.effective_user.id = 493310710
+        update.my_chat_member.old_chat_member.status = "left"
+        update.my_chat_member.new_chat_member.status = "member"
+
+        context = _make_context()
+        await groups.on_my_chat_member_updated(update, context)
+
+        notify.assert_awaited_once()
+        set_club.assert_not_called()
+        context.bot.send_message.assert_not_called()
+        context.bot.send_photo.assert_not_called()
+        context.bot.send_document.assert_not_called()

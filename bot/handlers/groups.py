@@ -59,6 +59,20 @@ def _suppress_post_gc_redundant_recently(chat_id: int) -> bool:
     return True
 
 
+def should_skip_club_onboarding(chat_id: int, title: str | None) -> bool:
+    """True when join/auto-link must not club-link or send welcome.
+
+    Skip for watched-group allowlist and for titles that are not GC format
+    ``CLUB / PLAYER_ID / NAME``.
+    """
+    from bot.services.player_details import parse_group_title_parts
+    from bot.services.watched_group_escalation import is_env_allowlisted_chat
+
+    if is_env_allowlisted_chat(chat_id):
+        return True
+    return parse_group_title_parts(title) is None
+
+
 def _mark_post_gc_bundle_window(chat_id: int) -> None:
     """Call before awaited sends so parallel ``my_chat_member`` skips duplicate welcome."""
 
@@ -110,7 +124,6 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
     _auto_link_attempted.discard(chat_id)
 
     from bot.services.watched_group_escalation import (
-        is_env_allowlisted_chat,
         is_support_group_chat,
         notify_admins_non_support_group_join,
     )
@@ -129,9 +142,9 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
                 exc_info=True,
             )
 
-    if is_env_allowlisted_chat(chat_id):
+    if should_skip_club_onboarding(chat_id, chat_title):
         logger.info(
-            "Skipping link/welcome (watched-group allowlist) chat_id=%s title=%r",
+            "Skipping link/welcome chat_id=%s title=%r",
             chat_id,
             chat_title,
         )
@@ -237,9 +250,7 @@ async def auto_link_group(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     chat_id = chat.id
 
-    from bot.services.watched_group_escalation import is_env_allowlisted_chat
-
-    if is_env_allowlisted_chat(chat_id):
+    if should_skip_club_onboarding(chat_id, chat.title):
         return
 
     if chat_id in _auto_link_attempted:
