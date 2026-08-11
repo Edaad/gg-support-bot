@@ -189,6 +189,14 @@ class RunMatchFailSafeTestCase(unittest.IsolatedAsyncioTestCase):
             )
             notify.assert_awaited_once()
 
+    async def test_notify_skips_telegram_when_disabled(self) -> None:
+        with patch.object(pcm, "_CHIP_MATCH_STAFF_NOTIFY_ENABLED", False), patch(
+            "bot.services.venmo_payments.send_telegram_notification",
+            new_callable=AsyncMock,
+        ) as send:
+            await pcm.notify_payment_chip_match("Payment match — test")
+            send.assert_not_awaited()
+
 
 class PersistCryptoMetadataTestCase(unittest.TestCase):
     def test_crypto_metadata_includes_tx_hash(self) -> None:

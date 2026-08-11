@@ -451,7 +451,14 @@ def match_chip_add_sync(
         return picked, [], text
 
 
+# Temporarily off — staff PAYMENT_NOTIFICATION_CHAT_ID was too noisy.
+_CHIP_MATCH_STAFF_NOTIFY_ENABLED = False
+
+
 async def notify_payment_chip_match(text: str) -> None:
+    if not _CHIP_MATCH_STAFF_NOTIFY_ENABLED:
+        logger.info("payment_chip_match: staff notify disabled; skipping Telegram post")
+        return
     from bot.services.venmo_payments import send_telegram_notification
 
     await send_telegram_notification(text)
