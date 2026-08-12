@@ -45,7 +45,10 @@ async def group_activity_handler(
 
     is_staff = ga.is_support_sender(user, club_id)
     role = "staff" if is_staff else "player"
-    observation = ga.record_human_message(chat.id, role=role)
+    flow_cmd = pk.is_flow_command_text(message.text)
+    observation = ga.record_human_message(
+        chat.id, role=role, allow_idle_fire=not flow_cmd
+    )
 
     if not is_staff:
         pk.upsert_player_telegram_user_id(
@@ -58,7 +61,6 @@ async def group_activity_handler(
             username=user.username,
         )
 
-        flow_cmd = pk.is_flow_command_text(message.text)
         in_flow = deposit_flow_active(context) or cashout_flow_active(context)
         player_msg = esc.extract_player_message_for_slack(message)
 

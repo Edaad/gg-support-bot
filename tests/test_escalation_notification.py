@@ -144,6 +144,58 @@ class SilenceDetectionTests(unittest.TestCase):
                 ga.reset_idle_episode(1)
                 self.assertFalse(ga.get_chat_activity_state(1).idle_episode_fired)
 
+    def test_reset_idle_episode_arms_immediate_followup(self):
+        """After deny arm, next free text fires without waiting another silence window."""
+        silence = ga.ESCALATION_SILENCE_SECONDS
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                ga.record_human_message(1, role="player", now=t0, silence_seconds=silence)
+                t1 = t0 + timedelta(seconds=silence + 1)
+                self.assertTrue(
+                    ga.record_human_message(
+                        1, role="player", now=t1, silence_seconds=silence
+                    ).should_fire_idle
+                )
+                ga.reset_idle_episode(1, now=t1)
+                # Flow command must not consume the arm.
+                t_cmd = t1 + timedelta(seconds=1)
+                obs_cmd = ga.record_human_message(
+                    1,
+                    role="player",
+                    now=t_cmd,
+                    silence_seconds=silence,
+                    allow_idle_fire=False,
+                )
+                self.assertFalse(obs_cmd.should_fire_idle)
+                t_follow = t_cmd + timedelta(seconds=1)
+                self.assertTrue(
+                    ga.record_human_message(
+                        1, role="player", now=t_follow, silence_seconds=silence
+                    ).should_fire_idle
+                )
+
+    def test_flow_command_does_not_consume_idle_episode(self):
+        silence = ga.ESCALATION_SILENCE_SECONDS
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                t1 = t0 + timedelta(seconds=silence + 1)
+                obs = ga.record_human_message(
+                    1,
+                    role="player",
+                    now=t1,
+                    silence_seconds=silence,
+                    allow_idle_fire=False,
+                )
+                self.assertFalse(obs.should_fire_idle)
+                self.assertFalse(ga.get_chat_activity_state(1).idle_episode_fired)
+                self.assertTrue(
+                    ga.record_human_message(
+                        1, role="player", now=t1 + timedelta(seconds=1), silence_seconds=silence
+                    ).should_fire_idle
+                )
+
 
 class SupportSenderTests(unittest.TestCase):
     def test_admin_is_support(self):

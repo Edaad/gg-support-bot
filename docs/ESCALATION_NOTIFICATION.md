@@ -17,7 +17,7 @@ message may idle-fire (treated as already silent).
 
 AM/staff message then player reply **without** 5 minutes of silence: no Slack.
 
-Bare `/deposit` does **not** idle-fire. Allowed `/cashout` Slack-escalates (`cashout_started`) without an idle alert. Denied cashout (cooldown/hours) via typed `/cashout`: no Slack.
+Bare `/deposit` does **not** idle-fire. Allowed `/cashout` Slack-escalates (`cashout_started`) without an idle alert. Denied cashout (cooldown/hours) via typed `/cashout`: no Slack on the command; **idle episode reset** so a later free-text follow-up can Slack `player_idle` immediately (same as denied `/earlyrb`).
 
 `/earlyrb` is treated like a flow command (no idle escalate on the command itself):
 

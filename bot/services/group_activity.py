@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from telegram import User
@@ -49,10 +49,18 @@ def clear_activity_state_for_tests() -> None:
     _chat_state.clear()
 
 
-def reset_idle_episode(chat_id: int) -> None:
-    """Allow the next player message to idle-escalate (e.g. after denied /earlyrb)."""
+def reset_idle_episode(chat_id: int, *, now: datetime | None = None) -> None:
+    """Allow the next player free text to idle-escalate without waiting for silence.
+
+    Used after denied flow commands (``/earlyrb``, ``/cashout``) so a follow-up
+    question can Slack ``player_idle`` immediately.
+    """
     state = get_chat_activity_state(int(chat_id))
     state.idle_episode_fired = False
+    ts = now or datetime.now(timezone.utc)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    state.last_human_at = ts - timedelta(seconds=int(ESCALATION_SILENCE_SECONDS) + 1)
     _persist_activity_state(int(chat_id), state, include_deposit_wait=False)
 
 
@@ -263,6 +271,7 @@ def record_human_message(
     role: HumanRole,
     now: datetime | None = None,
     silence_seconds: int = ESCALATION_SILENCE_SECONDS,
+    allow_idle_fire: bool = True,
 ) -> ActivityObservation:
     """Update per-chat activity and decide whether idle escalation may fire.
 
@@ -271,6 +280,10 @@ def record_human_message(
     worker restarts; null is only virgin / post-migrate groups.
     After ``silence_seconds`` with no humans, the next player message may fire
     once per episode. Staff→player without that silence never fires idle.
+
+    Flow commands (``/cashout``, ``/deposit``, …) should pass
+    ``allow_idle_fire=False`` so they do not consume an idle episode or
+    overwrite a deny-time arm (``reset_idle_episode``).
     """
     state = get_chat_activity_state(chat_id)
     ts = now or datetime.now(timezone.utc)
@@ -283,6 +296,14 @@ def record_human_message(
     else:
         delta = (ts - state.last_human_at).total_seconds()
         silence_elapsed = delta >= float(silence_seconds)
+
+    if not allow_idle_fire:
+        return ActivityObservation(
+            role=role,
+            silence_elapsed=silence_elapsed,
+            should_fire_idle=False,
+            previous_role=previous_role,
+        )
 
     if silence_elapsed:
         state.idle_episode_fired = False

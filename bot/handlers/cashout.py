@@ -1,6 +1,7 @@
 """Cashout conversation: amount first, filtered methods, optional multi-method with inline Done button."""
 
 from decimal import Decimal, InvalidOperation
+import logging
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -50,6 +51,8 @@ from bot.handlers.flow_staleness import (
 )
 from bot.handlers.response_utils import send_response_messages
 from bot.services import popup_keyboard as popup_keyboard_svc
+
+logger = logging.getLogger(__name__)
 
 CASHOUT_AMOUNT, CASHOUT_CHOOSE, CASHOUT_SUB, CASHOUT_SIMPLE_AMOUNT = range(4)
 
@@ -138,6 +141,18 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_staff:
         eligible, deny_msg = check_cashout_eligibility(club_id, chat.id)
         if not eligible:
+            # Clear consumed idle episode / arm next free text for player_idle
+            # (same as denied /earlyrb).
+            try:
+                from bot.services.group_activity import reset_idle_episode
+
+                reset_idle_episode(int(chat.id))
+            except Exception:
+                logger.debug(
+                    "cashout: reset idle episode failed chat_id=%s",
+                    chat.id,
+                    exc_info=True,
+                )
             await message.reply_text(deny_msg)
             return ConversationHandler.END
         try:
