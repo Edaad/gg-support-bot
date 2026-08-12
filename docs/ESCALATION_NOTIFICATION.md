@@ -2,31 +2,51 @@
 
 Per-club dashboard toggle **Escalation notification** (`clubs.enable_escalation_notification`, default off).
 
-Uses shared group activity detection ([`bot/services/group_activity.py`](../bot/services/group_activity.py)). Popup keyboard remains a separate optional consumer of the same detection.
+Uses shared group activity detection ([`bot/services/group_activity.py`](../bot/services/group_activity.py)) for staff/player role and deposit-chase flags. Popup keyboard remains a separate optional consumer of the same detection.
 
-## Player idle (Slack only)
+## Modes (support groups)
 
-On a **player idle** open (free text/media after ≥5 minutes of human silence in the group), the bot posts a single `player_idle` alert to the Slack escalation channel (headline *A player just reached out.*, including the player's message body). It is **silent in the support group** — no in-group prompt, no buttons, no ack.
+Escalation is **observe-only** relative to `/deposit` and `/cashout` wizards (never cancels or blocks them).
 
-One alert per idle episode (`idle_episode_fired`); the episode re-arms after another ≥5 minutes of silence.
+| Mode | What happens |
+|------|----------------|
+| Mid `/deposit` (wizard or payment-wait) | Existing chase ignore + `deposit_player_message` / `deposit_sent_*` Slacks. Those Slacks also open/feed the idle episode (no second Slack). |
+| Mid `/cashout` | Unexpected free text opens/feeds the idle episode as `player_idle`. Method picks are callbacks (not seen by the message handler). Expected amount accepts are marked so activity skips escalate for that update. |
+| Everything else | Player free text/media opens or feeds a durable idle episode. |
 
-Cold start / worker restart: activity timestamps are **durable** on
-`support_group_chats`, so restarts do not wipe silence state. If
-`escalation_last_human_at` is unset (never recorded), the next **player**
-message may idle-fire (treated as already silent).
+`cashout_started` is unchanged and does **not** open an episode. Bare `/deposit` / flow commands do not open an episode.
 
-AM/staff message then player reply **without** 5 minutes of silence: no Slack.
+## Player idle episode (Slack only)
 
-**Exception — post-deposit:** when payment is received or chips-add clears the deposit chase (`clear_deposit_chase_after_payment` / `on_payment_received_for_escalation`), the bot arms `post_deposit_idle_pending`. The **next** player free text may Slack `player_idle` immediately, even if staff just posted “Added chips” (no 5m silence). The flag clears when that idle fires.
+Durable state: table `support_group_idle_episode_state` ([`bot/services/support_group_idle_episode.py`](../bot/services/support_group_idle_episode.py)).
 
-Bare `/deposit` does **not** idle-fire. Allowed `/cashout` Slack-escalates (`cashout_started`) without an idle alert. Denied cashout (cooldown/hours) via typed `/cashout`: no Slack on the command; **idle episode reset** so a later free-text follow-up can Slack `player_idle` immediately (same as denied `/earlyrb`).
+| Timer | Value |
+|-------|--------|
+| Open Slack | Immediate `player_idle` (*A player just reached out.*) with the player message |
+| Follow-up burst | After **1 minute** of quiet with a non-empty burst → `player_idle_followup` (*Player follow-up.*) |
+| Silence end | **5 minutes** with no human (player or staff) → close episode |
+| Hard cap | **30 minutes** from episode open → close episode |
 
-`/earlyrb` is treated like a flow command (no idle escalate on the command itself):
+Behavior:
+
+1. First player free text (not a flow command, not expected wizard input) **opens** an episode: Slack `player_idle`, call no-op in-group menu hook (`offer_idle_help_prompt` → false for now), arm silence + hard-cap timers.
+2. Further player messages while open **feed** the burst and reset the 1m debounce + 5m silence.
+3. Staff/AM message while open: clear burst, cancel 1m debounce, bump `last_human_at`, reschedule 5m silence; episode stays open.
+4. Flow end (deposit/cashout success, cancel, timeout): quietly `close_episode`; next free text opens a fresh episode.
+5. Denied `/cashout` / `/earlyrb`: no special arm — next free text opens a normal episode (no 5m silence gate).
+
+Worker restart: open episodes restore remaining debounce / silence / hard-cap delays.
+
+```bash
+DATABASE_URL=... python migrate_support_group_idle_episode_state.py
+```
+
+`/earlyrb`:
 
 | Case | Slack |
 |------|-------|
 | Eligible (no 24h block) | `Early rakeback requested.` |
-| Denied (24h constraint) | No; idle episode reset so a later free-text follow-up can idle-fire |
+| Denied (24h constraint) | No Slack on the command |
 
 ## GC create / DM reach-out
 
@@ -52,8 +72,8 @@ On tap:
 2. If the group has **no** `group_payment_method_bindings` row for the **selected** method (e.g. Venmo tap checks Venmo only) → Slack **Manual deposit request — no {method} binding for this group.** immediately.
 3. If **bound** → arm a durable 5-minute wait:
    - No payment/`/add` in 5 minutes → Slack `deposit_sent_timeout` (*5 minutes have passed since the player said they sent the payment — please look out for a payment in this group chat.*) (**re-checks DB** so API payment notify cancels correctly across dynos).
-   - Player message containing `sent` / `done` (case-insensitive) **or any media** → ignore for follow-up Slack (wait stays armed). Does **not** block `player_idle` if silence criteria are met.
-   - Any other player text before payment → Slack `deposit_sent_followup` **with the player message body** and cancel the wait (skips idle).
+   - Player message containing `sent` / `done` (case-insensitive) **or any media** → ignore for follow-up Slack (wait stays armed). Does **not** open/feed an idle episode.
+   - Any other player text before payment → Slack `deposit_sent_followup` **with the player message body**, cancel the wait, and open/feed the idle episode (no second Slack).
    - Payment group notify clears the wait via durable columns and strips the
      **I have sent the payment** button (even if it was never tapped).
 
@@ -74,9 +94,9 @@ When escalation is on, **immediate** Slack (`deposit_player_message`, no 5m sile
 | Text/caption containing `sent` / `done` (case-insensitive) | No — same ignore as armed chase; deposit flow unchanged |
 | Media (any attachment) | No — same ignore as armed chase |
 
-Does not cancel the bot conversation / timeout. After the button arms the 5m wait, sent/done/media handling stays on the follow-up path above.
+Does not cancel the bot conversation / timeout. Those Slacks also open/feed the idle episode. After the button arms the 5m wait, sent/done/media handling stays on the follow-up path above.
 
-The **10-minute deposit reminder** clears `deposit_instructions_pending` when it runs (unless the payment-sent watch is still armed). Abandoned deposits no longer stay “open” overnight and block `player_idle` escalation.
+The **10-minute deposit reminder** clears `deposit_instructions_pending` when it runs (unless the payment-sent watch is still armed). Abandoned deposits no longer stay “open” overnight and block deposit-chase attribution.
 
 If the depositing player replies before 10m, that cancel of the reminder job **also** schedules a deferred chase clear (after the current update). The reply can still Slack *Player messaged during deposit.*; later free text is no longer stuck behind a cancelled TTL.
 
@@ -171,6 +191,7 @@ Copy (no user id, no chat id):
 | Reason | Headline | Player message body? |
 |--------|----------|----------------------|
 | `player_idle` | A player just reached out. | Yes (the player's message that triggered idle) |
+| `player_idle_followup` | Player follow-up. | Yes (burst body after 1m quiet) |
 | `cashout_started` | Cash out initiated. | No |
 | `earlyrb_requested` | Early rakeback requested. | No |
 | `deposit_sent_timeout` | 5 minutes have passed since the player said they sent the payment — please look out for a payment in this group chat. | No |
@@ -202,6 +223,7 @@ DATABASE_URL=... python migrate_enable_escalation_notification.py
 DATABASE_URL=... python migrate_escalation_activity_state.py
 DATABASE_URL=... python migrate_escalation_deposit_sent_button_message_id.py
 DATABASE_URL=... python migrate_escalation_post_deposit_idle.py
+DATABASE_URL=... python migrate_support_group_idle_episode_state.py
 DATABASE_URL=... python migrate_watched_group_escalation_state.py
 ```
 

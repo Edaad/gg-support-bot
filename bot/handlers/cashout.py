@@ -141,18 +141,6 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_staff:
         eligible, deny_msg = check_cashout_eligibility(club_id, chat.id)
         if not eligible:
-            # Clear consumed idle episode / arm next free text for player_idle
-            # (same as denied /earlyrb).
-            try:
-                from bot.services.group_activity import reset_idle_episode
-
-                reset_idle_episode(int(chat.id))
-            except Exception:
-                logger.debug(
-                    "cashout: reset idle episode failed chat_id=%s",
-                    chat.id,
-                    exc_info=True,
-                )
             await message.reply_text(deny_msg)
             return ConversationHandler.END
         try:
@@ -268,6 +256,12 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
         return CASHOUT_AMOUNT
 
     context.chat_data["cashout_amount"] = amount
+    try:
+        from bot.services.support_group_idle_episode import mark_expected_flow_input
+
+        mark_expected_flow_input(context)
+    except Exception:
+        pass
     return await _show_method_keyboard(update, context, first_pick=True)
 
 
@@ -350,6 +344,12 @@ async def cashout_simple_amount_received(update: Update, context: ContextTypes.D
 
     try:
         record_activity(club_id, user_id, chat_id, "cashout")
+    except Exception:
+        pass
+    try:
+        from bot.services.support_group_idle_episode import mark_expected_flow_input
+
+        mark_expected_flow_input(context)
     except Exception:
         pass
     _cleanup_after_flow(context)
@@ -607,6 +607,20 @@ def _cleanup(context):
 def _cleanup_after_flow(context):
     chat_id = context.chat_data.get("cashout_chat_id")
     _cleanup(context)
+    if chat_id is not None:
+        try:
+            from bot.services.support_group_idle_episode import close_episode
+
+            close_episode(
+                int(chat_id),
+                job_queue=getattr(context, "job_queue", None),
+            )
+        except Exception:
+            logger.debug(
+                "cashout: close idle episode failed chat_id=%s",
+                chat_id,
+                exc_info=True,
+            )
     popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
 
 

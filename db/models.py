@@ -2255,3 +2255,20 @@ class WatchedGroupEscalationState(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class SupportGroupIdleEpisodeState(Base):
+    """Durable idle episodes for support groups (1m burst / 5m silence / 30m cap)."""
+
+    __tablename__ = "support_group_idle_episode_state"
+
+    telegram_chat_id = Column(BigInteger, primary_key=True)
+    title = Column(Text, nullable=True)
+    episode_started_at = Column(DateTime(timezone=True), nullable=True)
+    last_human_at = Column(DateTime(timezone=True), nullable=True)
+    burst_json = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )

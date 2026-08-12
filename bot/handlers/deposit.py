@@ -1449,6 +1449,13 @@ async def deposit_referral_received(update: Update, context: ContextTypes.DEFAUL
         _cleanup(context)
         return ConversationHandler.END
 
+    try:
+        from bot.services.support_group_idle_episode import mark_expected_flow_input
+
+        mark_expected_flow_input(context)
+    except Exception:
+        pass
+
     simple = context.chat_data.get("deposit_simple_data")
     if simple:
         return await _finish_simple_deposit(update.message, context)
@@ -1512,6 +1519,12 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
     mid = getattr(amount_msg, "message_id", None) if amount_msg is not None else None
     if mid is not None:
         context.chat_data["deposit_amount_message_id"] = int(mid)
+    try:
+        from bot.services.support_group_idle_episode import mark_expected_flow_input
+
+        mark_expected_flow_input(context)
+    except Exception:
+        pass
     _record_funnel_from_context(context, STEP_AMOUNT_ENTERED)
     try:
         methods = get_methods_for_amount(club_id, "deposit", amount)
@@ -2604,6 +2617,19 @@ def _cleanup(context):
     chat_id = context.chat_data.get("deposit_chat_id")
     if chat_id is not None:
         _DEPOSIT_AWAITING_CHATS.discard(int(chat_id))
+        try:
+            from bot.services.support_group_idle_episode import close_episode
+
+            close_episode(
+                int(chat_id),
+                job_queue=getattr(context, "job_queue", None),
+            )
+        except Exception:
+            logger.debug(
+                "deposit: close idle episode failed chat_id=%s",
+                chat_id,
+                exc_info=True,
+            )
     reset_flow_callback_messages(context, flow="deposit")
     clear_active_flow(context)
     for key in (

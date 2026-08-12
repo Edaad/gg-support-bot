@@ -23,6 +23,7 @@ DEPOSIT_SENT_WAIT_SECONDS = 300  # 5 minutes
 DEPOSIT_SENT_WAIT_SECONDS_TEST = 30
 
 REASON_PLAYER_IDLE = "player_idle"
+REASON_PLAYER_IDLE_FOLLOWUP = "player_idle_followup"
 REASON_CASHOUT_STARTED = "cashout_started"
 REASON_DEPOSIT_SENT_TIMEOUT = "deposit_sent_timeout"
 REASON_DEPOSIT_SENT_FOLLOWUP = "deposit_sent_followup"
@@ -38,6 +39,7 @@ REASON_RPA_CASHOUT_UNCERTAIN = "rpa_cashout_uncertain"
 
 _HEADLINES = {
     REASON_PLAYER_IDLE: "A player just reached out.",
+    REASON_PLAYER_IDLE_FOLLOWUP: "Player follow-up.",
     REASON_CASHOUT_STARTED: "Cash out initiated.",
     REASON_DEPOSIT_SENT_TIMEOUT: (
         "5 minutes have passed since the player said they sent the payment — "
@@ -68,6 +70,7 @@ _HEADLINES = {
 _REASONS_WITH_MESSAGE_BODY = frozenset(
     {
         REASON_PLAYER_IDLE,
+        REASON_PLAYER_IDLE_FOLLOWUP,
         REASON_DEPOSIT_SENT_FOLLOWUP,
         REASON_DEPOSIT_PLAYER_MESSAGE,
         REASON_RPA_DEPOSIT_UNCERTAIN,
@@ -103,6 +106,17 @@ def register_escalation_notification_runtime(app: Any) -> None:
     except Exception:
         logger.warning(
             "escalation: restore deposit sent watches failed", exc_info=True
+        )
+    try:
+        from bot.services.support_group_idle_episode import (
+            register_support_group_idle_episode_runtime,
+        )
+
+        register_support_group_idle_episode_runtime(app)
+    except Exception:
+        logger.warning(
+            "escalation: restore support-group idle episodes failed",
+            exc_info=True,
         )
 
 
@@ -405,6 +419,17 @@ async def notify_escalation_slack(
     return ok
 
 
+async def offer_idle_help_prompt(
+    _bot: Any,
+    chat_id: int,
+    *,
+    club_id: int | None = None,
+    title: str | None = None,
+) -> bool:
+    """Stub for a future in-group idle menu. Wired on episode open; no-op for now."""
+    return False
+
+
 async def fire_player_idle(
     _bot: Any,
     chat_id: int,
@@ -412,14 +437,20 @@ async def fire_player_idle(
     club_id: int | None,
     title: str | None = None,
     message_text: str | None = None,
+    job_queue: Any | None = None,
 ) -> None:
-    """Silent in the support group — Slack only."""
-    await notify_escalation_slack(
-        REASON_PLAYER_IDLE,
+    """Open/feed support-group idle episode (Slack on open; silent in-group)."""
+    from bot.services.support_group_idle_episode import on_player_reach_out
+
+    await on_player_reach_out(
+        int(chat_id),
         club_id=club_id,
-        chat_id=int(chat_id),
         title=title,
         message_text=message_text,
+        reason=REASON_PLAYER_IDLE,
+        slack_already_sent=False,
+        job_queue=job_queue if job_queue is not None else _resolve_job_queue(),
+        bot=_bot,
     )
 
 
