@@ -45,6 +45,7 @@ import {
 } from '../api/paymentsClient'
 import Modal from '../components/Modal'
 import { downloadCsv } from '../lib/csv'
+import { formatEasternDateTime } from '../lib/easternTime'
 
 const TABS = ['Payments', 'Customers'] as const
 type Tab = (typeof TABS)[number]
@@ -91,6 +92,16 @@ function fmtDate(iso: string | null | undefined): string {
     const month = d.toLocaleDateString('en-GB', { month: 'short' })
     const year = d.getFullYear()
     return `${day} ${month}, ${year}`
+  } catch {
+    return iso
+  }
+}
+
+/** Payment arrival time — Eastern, matching audit export. */
+function fmtPaymentAt(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  try {
+    return formatEasternDateTime(iso)
   } catch {
     return iso
   }
@@ -916,7 +927,7 @@ export default function Payments({ token }: { token: string }) {
               <table className="min-w-[56rem] text-left">
                 <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
                   <tr>
-                    <th className="px-4 py-3">Date</th>
+                    <th className="px-4 py-3">Time</th>
                     <th className="px-4 py-3">Group</th>
                     <th className="px-4 py-3">Player</th>
                     <th className="px-4 py-3">Method</th>
@@ -928,7 +939,7 @@ export default function Payments({ token }: { token: string }) {
                   {sessions.map((row) => (
                     <tr key={row.id} className="hover:bg-surface/80">
                       <td className="px-4 py-3 whitespace-nowrap">
-                        {fmtDate(row.completed_at || row.created_at)}
+                        {fmtPaymentAt(row.completed_at || row.created_at)}
                       </td>
                       <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                         {row.group_title || '—'}
@@ -1055,7 +1066,7 @@ export default function Payments({ token }: { token: string }) {
                 <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
                   {isCryptoProvider ? (
                     <tr>
-                      <th className="px-4 py-3">Date</th>
+                      <th className="px-4 py-3">Time</th>
                       <th className="px-4 py-3">Alert</th>
                       <th className="px-4 py-3">From</th>
                       <th className="px-4 py-3">Chain</th>
@@ -1070,7 +1081,7 @@ export default function Payments({ token }: { token: string }) {
                     </tr>
                   ) : (
                     <tr>
-                      <th className="px-4 py-3">Date</th>
+                      <th className="px-4 py-3">Time</th>
                       <th className="px-4 py-3">Payer</th>
                       <th className="px-4 py-3">{manualAccountColumnLabel(manualProvider)}</th>
                       <th className="px-4 py-3">Group</th>
@@ -1085,7 +1096,7 @@ export default function Payments({ token }: { token: string }) {
                   {manualPayments.map((row) =>
                     isCryptoProvider && isCryptoPaymentRow(row) ? (
                       <tr key={row.id} className="hover:bg-surface/80">
-                        <td className="px-4 py-3 whitespace-nowrap">{fmtDate(row.created_at)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(row.created_at)}</td>
                         <td className="px-4 py-3">{row.alert_scope_label}</td>
                         <td className="px-4 py-3 max-w-[12rem] truncate" title={row.from_label}>
                           {row.from_label}
@@ -1122,7 +1133,7 @@ export default function Payments({ token }: { token: string }) {
                       </tr>
                     ) : isVenmoOrZelleRow(row) ? (
                       <tr key={row.id} className="hover:bg-surface/80">
-                        <td className="px-4 py-3 whitespace-nowrap">{fmtDate(row.created_at)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(row.created_at)}</td>
                         <td className="px-4 py-3">{row.payer_name}</td>
                         <td className="px-4 py-3 font-mono text-xs">{paymentAccount(row)}</td>
                         <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
@@ -1338,7 +1349,7 @@ export default function Payments({ token }: { token: string }) {
                           ? `$${fmtMoney(row.total_deposited_usd)}`
                           : '—'}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">{fmtDate(row.last_payment_at)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(row.last_payment_at)}</td>
                     </tr>
                   ))}
                 </tbody>
