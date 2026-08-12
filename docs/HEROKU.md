@@ -397,6 +397,8 @@ heroku config:set SLACK_OPS_MENTION='<@UYOUR_SLACK_USER_ID>' -a YOUR_APP   # opt
 ```bash
 heroku run -a YOUR_APP -- python migrate_enable_escalation_notification.py
 heroku run -a YOUR_APP -- python migrate_escalation_activity_state.py
+# After deploy that adds post-deposit idle: next player free text after payment/chips
+heroku run -a YOUR_APP -- python migrate_escalation_post_deposit_idle.py
 heroku config:set SLACK_ESCALATION_BOT_TOKEN=xoxb-... -a YOUR_APP
 heroku config:set SLACK_ESCALATION_CHANNEL_ID=C... -a YOUR_APP
 heroku config:set SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID=C... -a YOUR_APP

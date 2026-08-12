@@ -261,6 +261,7 @@ def update_support_group_chat_row(
     escalation_deposit_method_slug: Any | None = ...,
     escalation_deposit_sent_armed_at: Any | None = ...,
     escalation_deposit_sent_button_message_id: Any | None = ...,
+    escalation_post_deposit_idle_pending: bool | None = None,
 ) -> tuple[bool, str | None]:
     """Update an existing row by primary key. Returns (ok, error).
 
@@ -313,6 +314,10 @@ def update_support_group_chat_row(
             if escalation_deposit_sent_button_message_id is not ...:
                 row.escalation_deposit_sent_button_message_id = (
                     escalation_deposit_sent_button_message_id
+                )
+            if escalation_post_deposit_idle_pending is not None:
+                row.escalation_post_deposit_idle_pending = bool(
+                    escalation_post_deposit_idle_pending
                 )
         return True, None
     except Exception as e:

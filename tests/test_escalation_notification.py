@@ -196,8 +196,40 @@ class SilenceDetectionTests(unittest.TestCase):
                     ).should_fire_idle
                 )
 
+    def test_post_deposit_pending_fires_without_silence(self):
+        silence = ga.ESCALATION_SILENCE_SECONDS
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                ga.record_human_message(1, role="staff", now=t0, silence_seconds=silence)
+                ga.mark_post_deposit_idle_pending(1)
+                self.assertTrue(ga.post_deposit_idle_pending(1))
+                t1 = t0 + timedelta(seconds=30)
+                obs = ga.record_human_message(
+                    1, role="player", now=t1, silence_seconds=silence
+                )
+                self.assertTrue(obs.should_fire_idle)
+                self.assertFalse(ga.post_deposit_idle_pending(1))
 
-class SupportSenderTests(unittest.TestCase):
+    def test_post_deposit_pending_survives_staff_then_player(self):
+        """Holden case: staff Added chips after payment; player question still idles."""
+        silence = ga.ESCALATION_SILENCE_SECONDS
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                ga.mark_post_deposit_idle_pending(1)
+                t_staff = t0 + timedelta(seconds=10)
+                ga.record_human_message(
+                    1, role="staff", now=t_staff, silence_seconds=silence
+                )
+                self.assertTrue(ga.post_deposit_idle_pending(1))
+                t_player = t_staff + timedelta(seconds=30)
+                obs = ga.record_human_message(
+                    1, role="player", now=t_player, silence_seconds=silence
+                )
+                self.assertTrue(obs.should_fire_idle)
+                self.assertFalse(ga.post_deposit_idle_pending(1))
+
     def test_admin_is_support(self):
         user = SimpleNamespace(id=111, is_bot=False, username="anyone")
         with patch.object(ga, "ADMIN_USER_IDS", {111}):
@@ -922,6 +954,7 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                 await esc.clear_deposit_chase_after_payment(bot, 55)
         self.assertFalse(ga.deposit_instructions_pending(55))
         self.assertIsNone(ga.deposit_sent_button_message_id(55))
+        self.assertTrue(ga.post_deposit_idle_pending(55))
         bot.edit_message_reply_markup.assert_awaited_once_with(
             chat_id=55,
             message_id=99,
@@ -944,6 +977,7 @@ class PersistenceReloadTests(unittest.TestCase):
             escalation_deposit_method_slug="zelle",
             escalation_deposit_sent_armed_at=armed,
             escalation_deposit_sent_button_message_id=None,
+            escalation_post_deposit_idle_pending=True,
         )
         with patch.object(
             ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=row
@@ -953,6 +987,7 @@ class PersistenceReloadTests(unittest.TestCase):
             self.assertEqual(state.deposit_sent_armed_at, armed)
             self.assertEqual(state.deposit_method_slug, "zelle")
             self.assertTrue(ga.deposit_sent_watch_armed(99))
+            self.assertTrue(state.post_deposit_idle_pending)
 
 
 if __name__ == "__main__":

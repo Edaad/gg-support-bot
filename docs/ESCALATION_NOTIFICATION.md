@@ -17,6 +17,8 @@ message may idle-fire (treated as already silent).
 
 AM/staff message then player reply **without** 5 minutes of silence: no Slack.
 
+**Exception — post-deposit:** when payment is received or chips-add clears the deposit chase (`clear_deposit_chase_after_payment` / `on_payment_received_for_escalation`), the bot arms `post_deposit_idle_pending`. The **next** player free text may Slack `player_idle` immediately, even if staff just posted “Added chips” (no 5m silence). The flag clears when that idle fires.
+
 Bare `/deposit` does **not** idle-fire. Allowed `/cashout` Slack-escalates (`cashout_started`) without an idle alert. Denied cashout (cooldown/hours) via typed `/cashout`: no Slack on the command; **idle episode reset** so a later free-text follow-up can Slack `player_idle` immediately (same as denied `/earlyrb`).
 
 `/earlyrb` is treated like a flow command (no idle escalate on the command itself):
@@ -199,6 +201,7 @@ GC title / contact is a Slack code span (tap-to-copy on mobile). Free-text bodie
 DATABASE_URL=... python migrate_enable_escalation_notification.py
 DATABASE_URL=... python migrate_escalation_activity_state.py
 DATABASE_URL=... python migrate_escalation_deposit_sent_button_message_id.py
+DATABASE_URL=... python migrate_escalation_post_deposit_idle.py
 DATABASE_URL=... python migrate_watched_group_escalation_state.py
 ```
 

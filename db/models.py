@@ -831,6 +831,10 @@ class SupportGroupChat(Base):
     escalation_deposit_method_slug = Column(String(64), nullable=True)
     escalation_deposit_sent_armed_at = Column(DateTime(timezone=True), nullable=True)
     escalation_deposit_sent_button_message_id = Column(BigInteger, nullable=True)
+    # After payment/chips-add: next player free text may idle without 5m silence.
+    escalation_post_deposit_idle_pending = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),
