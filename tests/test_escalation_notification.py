@@ -854,8 +854,8 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                         esc, "escalation_notification_eligible", return_value=True
                     ):
                         with patch(
-                            "bot.services.payment_method_binding.get_chat_binding",
-                            return_value=None,
+                            "bot.services.payment_method_binding.chat_has_deposit_method_binding",
+                            return_value=False,
                         ):
                             with patch.object(
                                 esc,
@@ -896,12 +896,56 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                         esc, "escalation_notification_eligible", return_value=True
                     ):
                         with patch(
-                            "bot.services.payment_method_binding.get_chat_binding",
-                            return_value=object(),
+                            "bot.services.payment_method_binding.chat_has_deposit_method_binding",
+                            return_value=True,
                         ):
                             with patch.object(esc, "schedule_deposit_sent_watch") as sched:
                                 await esc.handle_deposit_sent_claim(update, context)
                                 sched.assert_called_once()
+
+    async def test_claim_crypto_wallet_binding_schedules_watch(self):
+        """Crypto bound via crypto_wallet_bindings must not Slack unbound."""
+        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+            with patch.object(ga, "_persist_activity_state"):
+                ga.mark_deposit_instructions_pending(12, method_slug="crypto")
+                query = AsyncMock()
+                query.data = esc.DEPOSIT_SENT_CALLBACK_PREFIX
+                query.message = SimpleNamespace(message_id=1)
+                query.answer = AsyncMock()
+                query.edit_message_reply_markup = AsyncMock()
+                update = SimpleNamespace(
+                    callback_query=query,
+                    effective_chat=SimpleNamespace(id=12, title="G"),
+                )
+                context = MagicMock()
+                context.bot.send_message = AsyncMock()
+                context.job_queue = MagicMock()
+
+                with patch.object(esc, "get_club_for_chat", return_value=1):
+                    with patch.object(
+                        esc, "escalation_notification_eligible", return_value=True
+                    ):
+                        with patch(
+                            "bot.services.payment_method_binding.get_chat_binding",
+                            return_value=None,
+                        ):
+                            with patch(
+                                "bot.services.payment_method_binding.chat_has_crypto_wallet_binding",
+                                return_value=True,
+                            ):
+                                with patch.object(
+                                    esc,
+                                    "notify_escalation_slack",
+                                    new_callable=AsyncMock,
+                                ) as notify:
+                                    with patch.object(
+                                        esc, "schedule_deposit_sent_watch"
+                                    ) as sched:
+                                        await esc.handle_deposit_sent_claim(
+                                            update, context
+                                        )
+                notify.assert_not_awaited()
+                sched.assert_called_once()
 
     async def test_timeout_skips_when_payment_seen(self):
         with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):

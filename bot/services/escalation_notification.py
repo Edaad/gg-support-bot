@@ -985,9 +985,11 @@ async def handle_deposit_sent_claim(
     bound = False
     if slug:
         try:
-            from bot.services.payment_method_binding import get_chat_binding
+            from bot.services.payment_method_binding import (
+                chat_has_deposit_method_binding,
+            )
 
-            bound = get_chat_binding(chat_id, slug) is not None
+            bound = chat_has_deposit_method_binding(chat_id, slug)
         except Exception:
             logger.debug(
                 "escalation: binding lookup failed chat_id=%s slug=%s",

@@ -69,7 +69,7 @@ On tap:
 
 1. Remove the button and reply:
    > Thank you! Chips will be added as soon as we receive the payment.
-2. If the group has **no** `group_payment_method_bindings` row for the **selected** method (e.g. Venmo tap checks Venmo only) → Slack **Manual deposit request — no {method} binding for this group.** immediately.
+2. If the group has **no** binding for the **selected** method → Slack **Manual deposit request — no {method} binding for this group.** immediately. Handle methods (Venmo/Zelle/…) check `group_payment_method_bindings`; **crypto** checks any `crypto_wallet_bindings` row for this chat (so auto-add wallets are not false-alarmed as unbound).
 3. If **bound** → arm a durable 5-minute wait:
    - No payment/`/add` in 5 minutes → Slack `deposit_sent_timeout` (*5 minutes have passed since the player said they sent the payment — please look out for a payment in this group chat.*) (**re-checks DB** so API payment notify cancels correctly across dynos).
    - Player message containing `sent` / `done` (case-insensitive) **or any media** → ignore for follow-up Slack (wait stays armed). Does **not** open/feed an idle episode.

@@ -532,6 +532,33 @@ def get_chat_binding(
         )
 
 
+def chat_has_crypto_wallet_binding(telegram_chat_id: int) -> bool:
+    """True when any crypto_wallet_bindings row exists for this support group."""
+    with get_db() as session:
+        row = (
+            session.query(CryptoWalletBinding.id)
+            .filter_by(telegram_chat_id=int(telegram_chat_id))
+            .first()
+        )
+        return row is not None
+
+
+def chat_has_deposit_method_binding(
+    telegram_chat_id: int, payment_method_slug: str
+) -> bool:
+    """Whether deposit-chase should treat this method as already bound for the chat.
+
+    Handle methods (Venmo/Zelle/…) use ``group_payment_method_bindings``.
+    Crypto uses ``crypto_wallet_bindings`` (not the handle-binding table).
+    """
+    slug = (payment_method_slug or "").strip().lower()
+    if not slug:
+        return False
+    if slug == "crypto":
+        return chat_has_crypto_wallet_binding(int(telegram_chat_id))
+    return get_chat_binding(int(telegram_chat_id), slug) is not None
+
+
 def _expire_stale_pending_for_variant(session, variant_id: int) -> None:
     now = datetime.now(timezone.utc)
     (
