@@ -35,7 +35,6 @@ REASON_RPA_DEPOSIT_FAILED = "rpa_deposit_failed"
 REASON_RPA_CASHOUT_FAILED = "rpa_cashout_failed"
 REASON_RPA_DEPOSIT_UNCERTAIN = "rpa_deposit_uncertain"
 REASON_RPA_CASHOUT_UNCERTAIN = "rpa_cashout_uncertain"
-REASON_AWAITING_AGENT_TIMEOUT = "awaiting_agent_timeout"
 
 _HEADLINES = {
     REASON_PLAYER_IDLE: "A player just reached out.",
@@ -62,9 +61,6 @@ _HEADLINES = {
     REASON_RPA_CASHOUT_UNCERTAIN: (
         "Cashout UNCERTAIN — verify on ClubGG (do not re-claim)."
     ),
-    REASON_AWAITING_AGENT_TIMEOUT: (
-        "Player responded in the group chat — no agent reply."
-    ),
 }
 
 # Free-text / media escalations include the triggering player message body.
@@ -74,7 +70,6 @@ _REASONS_WITH_MESSAGE_BODY = frozenset(
         REASON_PLAYER_IDLE,
         REASON_DEPOSIT_SENT_FOLLOWUP,
         REASON_DEPOSIT_PLAYER_MESSAGE,
-        REASON_AWAITING_AGENT_TIMEOUT,
         REASON_RPA_DEPOSIT_UNCERTAIN,
         REASON_RPA_CASHOUT_UNCERTAIN,
     }
@@ -93,18 +88,6 @@ DEPOSIT_SENT_ACK_COPY = (
 )
 DEPOSIT_SENT_BUTTON_LABEL = "I have sent the payment"
 DEPOSIT_SENT_CALLBACK_PREFIX = "depsent"
-
-IDLE_HELP_COPY = "Thanks for reaching out — how can we help you?"
-IDLE_HELP_AGENT_ACK = "Got it — someone will be with you shortly."
-IDLE_HELP_CALLBACK_PREFIX = "idlehelp"
-IDLE_HELP_CB_DEPOSIT = f"{IDLE_HELP_CALLBACK_PREFIX}:deposit"
-IDLE_HELP_CB_CASHOUT = f"{IDLE_HELP_CALLBACK_PREFIX}:cashout"
-IDLE_HELP_CB_AGENT = f"{IDLE_HELP_CALLBACK_PREFIX}:agent"
-
-_CHAT_DATA_IDLE_HELP_MESSAGE_TEXT = "idle_help_message_text"
-_CHAT_DATA_IDLE_HELP_PROMPT_MSG_ID = "idle_help_prompt_message_id"
-_CHAT_DATA_IDLE_HELP_CLUB_ID = "idle_help_club_id"
-_CHAT_DATA_IDLE_HELP_TITLE = "idle_help_title"
 
 # While the 5m wait is armed: ignore expected payment acks / proofs.
 _DEPOSIT_FOLLOWUP_IGNORE_RE = re.compile(r"sent|done", re.IGNORECASE)
@@ -151,223 +134,6 @@ def awaiting_agent_episode_seconds() -> int:
 
 def _sent_watch_job_name(chat_id: int | str) -> str:
     return f"escalation_deposit_sent_{chat_id}"
-
-
-def _awaiting_agent_debounce_job_name(chat_id: int | str) -> str:
-    return f"awaiting_agent_debounce_{int(chat_id)}"
-
-
-def _awaiting_agent_episode_job_name(chat_id: int | str) -> str:
-    return f"awaiting_agent_episode_{int(chat_id)}"
-
-
-# Memory-only: chat_id -> {club_id, title, burst: list[str]}
-_awaiting_agent_episodes: dict[int, dict[str, Any]] = {}
-
-
-def clear_awaiting_agent_state_for_tests() -> None:
-    _awaiting_agent_episodes.clear()
-
-
-def awaiting_agent_episode_active(chat_id: int) -> bool:
-    return int(chat_id) in _awaiting_agent_episodes
-
-
-def _cancel_awaiting_agent_jobs(
-    chat_id: int,
-    *,
-    job_queue: Any | None = None,
-    include_episode: bool = True,
-) -> None:
-    jq = _resolve_job_queue(job_queue)
-    if jq is None:
-        return
-    names = [_awaiting_agent_debounce_job_name(chat_id)]
-    if include_episode:
-        names.append(_awaiting_agent_episode_job_name(chat_id))
-    for name in names:
-        try:
-            jobs = jq.get_jobs_by_name(name)
-        except Exception:
-            continue
-        if not jobs:
-            continue
-        try:
-            job_list = list(jobs)
-        except TypeError:
-            continue
-        for job in job_list:
-            try:
-                job.schedule_removal()
-            except Exception:
-                logger.debug(
-                    "escalation: cancel awaiting-agent job failed name=%s",
-                    name,
-                    exc_info=True,
-                )
-
-
-def end_awaiting_agent_episode(
-    chat_id: int,
-    *,
-    job_queue: Any | None = None,
-) -> None:
-    """Hard-stop episode: cancel jobs and drop memory state."""
-    cid = int(chat_id)
-    _cancel_awaiting_agent_jobs(cid, job_queue=job_queue, include_episode=True)
-    _awaiting_agent_episodes.pop(cid, None)
-
-
-def _clear_awaiting_agent_burst(chat_id: int) -> None:
-    state = _awaiting_agent_episodes.get(int(chat_id))
-    if state is not None:
-        state["burst"] = []
-
-
-def _seed_or_append_burst(chat_id: int, message_text: str | None) -> None:
-    state = _awaiting_agent_episodes.get(int(chat_id))
-    if state is None:
-        return
-    body = (message_text or "").strip()
-    if not body:
-        return
-    burst = state.setdefault("burst", [])
-    if not burst or burst[-1] != body:
-        burst.append(body)
-
-
-def _burst_message_text(chat_id: int) -> str | None:
-    state = _awaiting_agent_episodes.get(int(chat_id))
-    if not state:
-        return None
-    parts = [p for p in (state.get("burst") or []) if (p or "").strip()]
-    if not parts:
-        return None
-    return "\n".join(parts)
-
-
-def _schedule_awaiting_agent_debounce(
-    chat_id: int,
-    *,
-    job_queue: Any | None = None,
-) -> None:
-    jq = _resolve_job_queue(job_queue)
-    if jq is None:
-        logger.warning(
-            "escalation: no job_queue for awaiting-agent debounce chat_id=%s",
-            chat_id,
-        )
-        return
-    name = _awaiting_agent_debounce_job_name(chat_id)
-    try:
-        for job in jq.get_jobs_by_name(name):
-            job.schedule_removal()
-    except Exception:
-        pass
-    jq.run_once(
-        _awaiting_agent_debounce_callback,
-        when=float(awaiting_agent_debounce_seconds()),
-        data={"chat_id": int(chat_id)},
-        name=name,
-        job_kwargs={"misfire_grace_time": 30},
-    )
-
-
-def start_awaiting_agent_episode(
-    chat_id: int,
-    *,
-    club_id: int | None,
-    title: str | None,
-    message_text: str | None = None,
-    job_queue: Any | None = None,
-) -> None:
-    """Open 10m episode and arm 1m debounce (seeded with opening message)."""
-    cid = int(chat_id)
-    jq = _resolve_job_queue(job_queue)
-    end_awaiting_agent_episode(cid, job_queue=jq)
-    _awaiting_agent_episodes[cid] = {
-        "club_id": club_id,
-        "title": title,
-        "burst": [],
-    }
-    _seed_or_append_burst(cid, message_text)
-    if jq is None:
-        logger.warning(
-            "escalation: no job_queue for awaiting-agent episode chat_id=%s",
-            cid,
-        )
-        return
-    episode_name = _awaiting_agent_episode_job_name(cid)
-    jq.run_once(
-        _awaiting_agent_episode_end_callback,
-        when=float(awaiting_agent_episode_seconds()),
-        data={"chat_id": cid},
-        name=episode_name,
-        job_kwargs={"misfire_grace_time": 60},
-    )
-    _schedule_awaiting_agent_debounce(cid, job_queue=jq)
-    logger.info(
-        "escalation: awaiting-agent episode started chat_id=%s debounce_s=%s episode_s=%s",
-        cid,
-        awaiting_agent_debounce_seconds(),
-        awaiting_agent_episode_seconds(),
-    )
-
-
-def on_player_during_awaiting_agent(
-    chat_id: int,
-    *,
-    message_text: str | None,
-    job_queue: Any | None = None,
-) -> bool:
-    """Append to burst and restart 1m debounce. True if episode was open."""
-    cid = int(chat_id)
-    if not awaiting_agent_episode_active(cid):
-        return False
-    _seed_or_append_burst(cid, message_text)
-    _schedule_awaiting_agent_debounce(cid, job_queue=job_queue)
-    return True
-
-
-def on_staff_during_awaiting_agent(
-    chat_id: int,
-    *,
-    job_queue: Any | None = None,
-) -> bool:
-    """Cancel current debounce + clear burst; leave 10m episode open."""
-    cid = int(chat_id)
-    if not awaiting_agent_episode_active(cid):
-        return False
-    _cancel_awaiting_agent_jobs(cid, job_queue=job_queue, include_episode=False)
-    _clear_awaiting_agent_burst(cid)
-    return True
-
-
-async def _awaiting_agent_debounce_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
-    data = context.job.data or {}
-    chat_id = int(data.get("chat_id") or context.job.chat_id)
-    state = _awaiting_agent_episodes.get(chat_id)
-    if state is None:
-        return
-    message_text = _burst_message_text(chat_id)
-    _clear_awaiting_agent_burst(chat_id)
-    await notify_escalation_slack(
-        REASON_AWAITING_AGENT_TIMEOUT,
-        club_id=state.get("club_id"),
-        chat_id=chat_id,
-        title=state.get("title"),
-        message_text=message_text,
-    )
-
-
-async def _awaiting_agent_episode_end_callback(
-    context: ContextTypes.DEFAULT_TYPE,
-) -> None:
-    data = context.job.data or {}
-    chat_id = int(data.get("chat_id") or context.job.chat_id)
-    end_awaiting_agent_episode(
-        chat_id, job_queue=getattr(context, "job_queue", None)
-    )
 
 
 def escalation_notification_enabled(club_id: int | None) -> bool:
@@ -640,300 +406,20 @@ async def notify_escalation_slack(
 
 
 async def fire_player_idle(
-    bot: Any,
+    _bot: Any,
     chat_id: int,
     *,
     club_id: int | None,
     title: str | None = None,
     message_text: str | None = None,
-    context: ContextTypes.DEFAULT_TYPE | None = None,
 ) -> None:
-    """Offer in-group help prompt (Slack only via Talk to agent)."""
-    await offer_idle_help_prompt(
-        bot,
-        chat_id,
-        club_id=club_id,
-        title=title,
-        message_text=message_text,
-        context=context,
-    )
-
-
-def idle_help_button_markup() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("Deposit", callback_data=IDLE_HELP_CB_DEPOSIT),
-                InlineKeyboardButton("Cashout", callback_data=IDLE_HELP_CB_CASHOUT),
-            ],
-            [
-                InlineKeyboardButton(
-                    "Talk to agent", callback_data=IDLE_HELP_CB_AGENT
-                ),
-            ],
-        ]
-    )
-
-
-def stash_idle_help_context(
-    context: ContextTypes.DEFAULT_TYPE | None,
-    *,
-    club_id: int | None,
-    title: str | None,
-    message_text: str | None,
-    prompt_message_id: int | None,
-) -> None:
-    if context is None:
-        return
-    chat_data = getattr(context, "chat_data", None)
-    if chat_data is None:
-        return
-    chat_data[_CHAT_DATA_IDLE_HELP_CLUB_ID] = club_id
-    chat_data[_CHAT_DATA_IDLE_HELP_TITLE] = title
-    chat_data[_CHAT_DATA_IDLE_HELP_MESSAGE_TEXT] = message_text
-    chat_data[_CHAT_DATA_IDLE_HELP_PROMPT_MSG_ID] = prompt_message_id
-
-
-def clear_idle_help_stash(context: ContextTypes.DEFAULT_TYPE | None) -> None:
-    if context is None:
-        return
-    chat_data = getattr(context, "chat_data", None)
-    if chat_data is None:
-        return
-    for key in (
-        _CHAT_DATA_IDLE_HELP_CLUB_ID,
-        _CHAT_DATA_IDLE_HELP_TITLE,
-        _CHAT_DATA_IDLE_HELP_MESSAGE_TEXT,
-        _CHAT_DATA_IDLE_HELP_PROMPT_MSG_ID,
-    ):
-        chat_data.pop(key, None)
-
-
-def peek_idle_help_stash(
-    context: ContextTypes.DEFAULT_TYPE | None,
-) -> dict[str, Any]:
-    if context is None:
-        return {}
-    chat_data = getattr(context, "chat_data", None) or {}
-    return {
-        "club_id": chat_data.get(_CHAT_DATA_IDLE_HELP_CLUB_ID),
-        "title": chat_data.get(_CHAT_DATA_IDLE_HELP_TITLE),
-        "message_text": chat_data.get(_CHAT_DATA_IDLE_HELP_MESSAGE_TEXT),
-        "prompt_message_id": chat_data.get(_CHAT_DATA_IDLE_HELP_PROMPT_MSG_ID),
-    }
-
-
-def idle_help_prompt_active(context: ContextTypes.DEFAULT_TYPE | None) -> bool:
-    """True while an unclicked idle help prompt stash is present."""
-    if context is None:
-        return False
-    chat_data = getattr(context, "chat_data", None) or {}
-    return (
-        _CHAT_DATA_IDLE_HELP_PROMPT_MSG_ID in chat_data
-        or _CHAT_DATA_IDLE_HELP_MESSAGE_TEXT in chat_data
-        or _CHAT_DATA_IDLE_HELP_CLUB_ID in chat_data
-    )
-
-
-async def strip_idle_help_markup(query: Any) -> None:
-    """Remove InlineKeyboard from the idle help prompt. Never raises."""
-    if query is None:
-        return
-    try:
-        await query.edit_message_reply_markup(reply_markup=None)
-    except Exception:
-        logger.debug(
-            "escalation: strip idle help markup failed",
-            exc_info=True,
-        )
-
-
-async def strip_idle_help_markup_by_message(
-    bot: Any,
-    chat_id: int,
-    prompt_message_id: int | None,
-) -> None:
-    """Strip idle help buttons via chat_id + message_id. Never raises."""
-    if bot is None or prompt_message_id is None:
-        return
-    try:
-        await bot.edit_message_reply_markup(
-            chat_id=int(chat_id),
-            message_id=int(prompt_message_id),
-            reply_markup=None,
-        )
-    except Exception:
-        logger.debug(
-            "escalation: strip idle help markup by message failed chat_id=%s",
-            chat_id,
-            exc_info=True,
-        )
-
-
-async def complete_idle_help_as_agent(
-    bot: Any,
-    chat_id: int,
-    context: ContextTypes.DEFAULT_TYPE | None,
-    *,
-    message_text: str | None,
-    club_id: int | None = None,
-    title: str | None = None,
-    query: Any | None = None,
-) -> bool:
-    """Strip prompt, ack in group, Slack player_idle, clear stash."""
-    stashed = peek_idle_help_stash(context)
-    if query is not None:
-        await strip_idle_help_markup(query)
-    else:
-        await strip_idle_help_markup_by_message(
-            bot,
-            chat_id,
-            stashed.get("prompt_message_id"),
-        )
-
-    resolved_club = club_id if club_id is not None else stashed.get("club_id")
-    if resolved_club is None:
-        resolved_club = get_club_for_chat(int(chat_id))
-    resolved_title = title or stashed.get("title")
-
-    try:
-        await bot.send_message(
-            chat_id=int(chat_id),
-            text=IDLE_HELP_AGENT_ACK,
-        )
-    except Exception:
-        logger.warning(
-            "escalation: idle help agent ack failed chat_id=%s",
-            chat_id,
-            exc_info=True,
-        )
-
-    clear_idle_help_stash(context)
-
+    """Silent in the support group — Slack only."""
     await notify_escalation_slack(
         REASON_PLAYER_IDLE,
-        club_id=resolved_club,
+        club_id=club_id,
         chat_id=int(chat_id),
-        title=resolved_title,
-        message_text=message_text,
-    )
-    jq = None
-    if context is not None:
-        jq = getattr(context, "job_queue", None)
-    start_awaiting_agent_episode(
-        int(chat_id),
-        club_id=resolved_club,
-        title=resolved_title,
-        message_text=message_text,
-        job_queue=jq,
-    )
-    return True
-
-
-async def handle_idle_help_free_text(
-    bot: Any,
-    chat_id: int,
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    club_id: int | None,
-    title: str | None = None,
-    message_text: str | None = None,
-) -> bool:
-    """If idle help prompt is still up, treat free text like Talk to agent.
-
-    Returns True when consumed (caller should skip idle re-fire).
-    """
-    if not idle_help_prompt_active(context):
-        return False
-    return await complete_idle_help_as_agent(
-        bot,
-        int(chat_id),
-        context,
-        message_text=message_text,
-        club_id=club_id,
-        title=title,
-    )
-
-
-async def offer_idle_help_prompt(
-    bot: Any,
-    chat_id: int,
-    *,
-    club_id: int | None,
-    title: str | None = None,
-    message_text: str | None = None,
-    context: ContextTypes.DEFAULT_TYPE | None = None,
-) -> bool:
-    """Send Deposit / Cashout / Talk to agent prompt. Returns True if sent."""
-    try:
-        sent = await bot.send_message(
-            chat_id=int(chat_id),
-            text=IDLE_HELP_COPY,
-            reply_markup=idle_help_button_markup(),
-        )
-    except Exception:
-        logger.warning(
-            "escalation: idle help prompt failed chat_id=%s",
-            chat_id,
-            exc_info=True,
-        )
-        return False
-
-    mid = getattr(sent, "message_id", None)
-    stash_idle_help_context(
-        context,
-        club_id=club_id,
         title=title,
         message_text=message_text,
-        prompt_message_id=int(mid) if mid is not None else None,
-    )
-    return True
-
-
-async def handle_idle_help_agent(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> None:
-    """Talk to agent — strip buttons, ack in group, Slack player_idle."""
-    query = update.callback_query
-    if query is None:
-        return
-    data = (query.data or "").strip()
-    if data != IDLE_HELP_CB_AGENT:
-        return
-
-    chat = update.effective_chat
-    await query.answer()
-
-    if chat is None:
-        clear_idle_help_stash(context)
-        return
-
-    chat_id = int(chat.id)
-    stashed = peek_idle_help_stash(context)
-    club_id = stashed.get("club_id")
-    if club_id is None:
-        club_id = get_club_for_chat(chat_id)
-    title = stashed.get("title")
-    if not title:
-        title = getattr(chat, "title", None)
-    message_text = stashed.get("message_text")
-
-    await complete_idle_help_as_agent(
-        context.bot,
-        chat_id,
-        context,
-        message_text=message_text,
-        club_id=club_id,
-        title=title,
-        query=query,
-    )
-
-
-def get_idle_help_agent_handler() -> CallbackQueryHandler:
-    return CallbackQueryHandler(
-        handle_idle_help_agent,
-        pattern=rf"^{IDLE_HELP_CB_AGENT}$",
     )
 
 
@@ -1212,7 +698,6 @@ async def offer_deposit_sent_button(
 def on_payment_received_for_escalation(chat_id: int) -> None:
     """Payment notify landed — cancel deposit sent chase (DB-durable)."""
     cancel_deposit_sent_watch(int(chat_id))
-    ga.mark_post_deposit_idle_pending(int(chat_id))
 
 
 async def clear_deposit_chase_after_payment(
@@ -1224,7 +709,6 @@ async def clear_deposit_chase_after_payment(
     """Clear chase state and strip the sent button if we know its message id."""
     msg_id = ga.deposit_sent_button_message_id(int(chat_id))
     cancel_deposit_sent_watch(int(chat_id), job_queue=job_queue)
-    ga.mark_post_deposit_idle_pending(int(chat_id))
     if bot is None or msg_id is None:
         return
     try:

@@ -1441,23 +1441,6 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await _ask_deposit_amount(message, context)
 
 
-async def idlehelp_deposit_entry(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-):
-    """Start /deposit from idle-help InlineKeyboard."""
-    query = update.callback_query
-    if query is not None:
-        await query.answer()
-        from bot.services.escalation_notification import (
-            clear_idle_help_stash,
-            strip_idle_help_markup,
-        )
-
-        await strip_idle_help_markup(query)
-        clear_idle_help_stash(context)
-    return await deposit_entry(update, context)
-
-
 async def deposit_referral_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return ConversationHandler.END
@@ -2712,9 +2695,6 @@ def get_deposit_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler("deposit", deposit_entry),
-            CallbackQueryHandler(
-                idlehelp_deposit_entry, pattern=r"^idlehelp:deposit$"
-            ),
         ],
         states={
             DEPOSIT_REFERRAL: [

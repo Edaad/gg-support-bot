@@ -4,60 +4,27 @@ Per-club dashboard toggle **Escalation notification** (`clubs.enable_escalation_
 
 Uses shared group activity detection ([`bot/services/group_activity.py`](../bot/services/group_activity.py)). Popup keyboard remains a separate optional consumer of the same detection.
 
-## Player idle (in-group help prompt)
+## Player idle (Slack only)
 
-On a **player idle** open (free text/media after ≥5 minutes of human silence in the group): the bot posts in the support group:
+On a **player idle** open (free text/media after ≥5 minutes of human silence in the group), the bot posts a single `player_idle` alert to the Slack escalation channel (headline *A player just reached out.*, including the player's message body). It is **silent in the support group** — no in-group prompt, no buttons, no ack.
 
-> Thanks for reaching out — how can we help you?
-
-With inline buttons **Deposit**, **Cashout**, and **Talk to agent**.
-
-| Button | Behavior |
-|--------|----------|
-| Deposit | Same as `/deposit` (ConversationHandler entry) |
-| Cashout | Same as `/cashout`; if denied (hours/cooldown), also Slack `player_idle` |
-| Talk to agent | Short ack *Got it — someone will be with you shortly.* + Slack `player_idle` (same copy as the old idle Slack, including the player message body) |
-
-**Free text while the prompt is still up** (buttons not yet tapped): same as Talk to agent — strip buttons, ack, Slack `player_idle` using **this new message** body, then clear the in-memory stash. A later silence episode can offer a fresh thanks prompt; typing instead of tapping does not block future idle.
-
-### Awaiting agent (after Talk to agent)
-
-After Talk to agent **or** free-text-as-agent, a **10-minute** in-memory episode opens:
-
-1. Arm a **1-minute** quiet debounce (seeded with the message that opened agent help).
-2. Each further player free text/media **restarts** the 1m clock and **accumulates** that burst’s messages.
-3. If the 1m elapses with no club-staff / global-admin reply → Slack `awaiting_agent_timeout` (*Player responded in the group chat — no agent reply.*) with the accumulated burst body; clear the burst; episode stays open.
-4. Staff/admin reply cancels the current 1m job and clears the burst — does **not** end the 10m episode (later player bursts can fire again).
-5. At 10m from open, the episode ends quietly. Lost on worker restart (not durable).
-6. While the episode is open, another idle *Thanks for reaching out…* prompt is suppressed.
-
-Idle itself does **not** post to Slack. One prompt per idle episode (`idle_episode_fired`). After any button tap (or free-text-as-agent), the InlineKeyboard is removed.
-
-When **Escalation notification** is on, popup keyboard install and free-text strip are **suppressed** for that group so this prompt is the only CTA. Escalation-off clubs keep popup keyboard unchanged.
-
-No *Looks like your request was handled…* from this feature. That copy stays tied to popup keyboard install only.
+One alert per idle episode (`idle_episode_fired`); the episode re-arms after another ≥5 minutes of silence.
 
 Cold start / worker restart: activity timestamps are **durable** on
 `support_group_chats`, so restarts do not wipe silence state. If
 `escalation_last_human_at` is unset (never recorded), the next **player**
-message may idle-fire (treated as already silent). Pending idle-help stash
-(player message for Talk to agent) is in-memory `chat_data` only.
+message may idle-fire (treated as already silent).
 
-AM/staff message then player reply **without** 5 minutes silence: no prompt —
-**except** after deposit completion (payment received or chips-add chase clear),
-which arms `post_deposit_idle_pending` so the next player free text gets the idle
-help prompt immediately (balance / “still owed?” follow-ups). Slack still only via
-Talk to agent or free text while that prompt is up.
+AM/staff message then player reply **without** 5 minutes of silence: no Slack.
 
-Bare `/deposit` does **not** idle-fire. Allowed `/cashout` Slack-escalates without a Telegram idle prompt. Denied cashout (cooldown/hours) via **typed** `/cashout`: no Slack; arms silence-bypass so the next player free text can idle-help (same pending flag as post-deposit). Denied cashout from the idle-help **Cashout** button: Slack `player_idle` (same as Talk to agent) because the help buttons were already removed.
+Bare `/deposit` does **not** idle-fire. Allowed `/cashout` Slack-escalates (`cashout_started`) without an idle alert. Denied cashout (cooldown/hours) via typed `/cashout`: no Slack.
 
 `/earlyrb` is treated like a flow command (no idle escalate on the command itself):
 
-| Case | Telegram | Slack |
-|------|----------|-------|
-| Eligible (no 24h block) | No | `Early rakeback requested.` |
-| Denied (24h constraint) | No | No; arms silence-bypass so follow-up free text can idle-fire |
-| Follow-up free text after deny | Idle help prompt | Only if they tap Talk to agent **or** type free text while that prompt is still up |
+| Case | Slack |
+|------|-------|
+| Eligible (no 24h block) | `Early rakeback requested.` |
+| Denied (24h constraint) | No; idle episode reset so a later free-text follow-up can idle-fire |
 
 ## GC create / DM reach-out
 
@@ -107,7 +74,7 @@ When escalation is on, **immediate** Slack (`deposit_player_message`, no 5m sile
 
 Does not cancel the bot conversation / timeout. After the button arms the 5m wait, sent/done/media handling stays on the follow-up path above.
 
-The **10-minute deposit reminder** clears `deposit_instructions_pending` when it runs (unless the payment-sent watch is still armed). Abandoned deposits no longer stay “open” overnight and block the idle help prompt.
+The **10-minute deposit reminder** clears `deposit_instructions_pending` when it runs (unless the payment-sent watch is still armed). Abandoned deposits no longer stay “open” overnight and block `player_idle` escalation.
 
 If the depositing player replies before 10m, that cancel of the reminder job **also** schedules a deferred chase clear (after the current update). The reply can still Slack *Player messaged during deposit.*; later free text is no longer stuck behind a cancelled TTL.
 
@@ -201,8 +168,7 @@ Copy (no user id, no chat id):
 
 | Reason | Headline | Player message body? |
 |--------|----------|----------------------|
-| `player_idle` | A player just reached out. | Yes (Talk to agent, or free text while idle help prompt is still up) |
-| `awaiting_agent_timeout` | Player responded in the group chat — no agent reply. | Yes (accumulated burst since last arm/reset) |
+| `player_idle` | A player just reached out. | Yes (the player's message that triggered idle) |
 | `cashout_started` | Cash out initiated. | No |
 | `earlyrb_requested` | Early rakeback requested. | No |
 | `deposit_sent_timeout` | 5 minutes have passed since the player said they sent the payment — please look out for a payment in this group chat. | No |
@@ -233,10 +199,9 @@ GC title / contact is a Slack code span (tap-to-copy on mobile). Free-text bodie
 DATABASE_URL=... python migrate_enable_escalation_notification.py
 DATABASE_URL=... python migrate_escalation_activity_state.py
 DATABASE_URL=... python migrate_escalation_deposit_sent_button_message_id.py
-DATABASE_URL=... python migrate_escalation_post_deposit_idle.py
 DATABASE_URL=... python migrate_watched_group_escalation_state.py
 ```
 
 ## Overlap with popup keyboard
 
-When both toggles are on: escalation is Slack-only for player idle; popup keyboard owns its own install/remove Telegram copy independently.
+When both toggles are on: escalation is Slack-only for player idle; popup keyboard owns its own install/remove Telegram copy independently (unchanged by escalation).
