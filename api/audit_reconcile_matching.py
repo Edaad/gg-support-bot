@@ -8,7 +8,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from api.audit_ledger import LedgerLine
 from api.audit_reconcile import TradeLineForMatch
-from api.club_audit_timezone import zone_for_slug
+from api.club_audit_timezone import zone_for_payment_display
 from api.vaughn_methods import is_vaughn_method, matching_source_label
 
 MATCH_WINDOW = timedelta(minutes=15)
@@ -62,11 +62,12 @@ def _signs_compatible(trade_amount: Decimal, ledger: LedgerLine) -> bool:
 
 
 def _format_match_time(club_slug: str, occurred_at: datetime | None) -> str:
+    del club_slug  # display is always America/New_York
     if occurred_at is None:
         return ""
     dt = _as_utc(occurred_at)
     assert dt is not None
-    local = dt.astimezone(zone_for_slug(club_slug))
+    local = dt.astimezone(zone_for_payment_display())
     return local.strftime("%Y-%m-%d %H:%M")
 
 

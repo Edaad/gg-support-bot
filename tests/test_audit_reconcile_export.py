@@ -240,8 +240,17 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertIn("[Red]", _CURRENCY_FORMAT)
         self.assertIsInstance(matching.cell(row=2, column=1).value, datetime)
         self.assertEqual(matching.cell(row=2, column=1).number_format, _EXCEL_TIME_FORMAT)
+        # 15:30 UTC in July → 11:30 America/New_York (EDT), not club UTC-5 10:30.
+        self.assertEqual(
+            matching.cell(row=2, column=1).value,
+            datetime(2026, 7, 3, 11, 30),
+        )
         self.assertIsInstance(matching.cell(row=2, column=8).value, datetime)
         self.assertEqual(matching.cell(row=2, column=8).number_format, _EXCEL_TIME_FORMAT)
+        self.assertEqual(
+            matching.cell(row=2, column=8).value,
+            datetime(2026, 7, 3, 11, 30),
+        )
         self.assertEqual(matching.cell(row=2, column=6).value, "GTO Zelle")
         # Vaughn tally keys off Source = GTO …
         self.assertEqual(matching.cell(row=1, column=12).value, "Vaughn methods")

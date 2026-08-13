@@ -26,7 +26,7 @@ from api.audit_reconcile_matching import (
     _sort_key_occurred_at,
     match_trade_lines_to_ledger,
 )
-from api.club_audit_timezone import zone_for_slug
+from api.club_audit_timezone import zone_for_payment_display
 from api.vaughn_methods import (
     VAUGHN_VENMO_HANDLES,
     VAUGHN_ZELLE_RECIPIENTS,
@@ -159,7 +159,7 @@ SHEET_INTROS: dict[str, tuple[str, str, str]] = {
         "(player returning chips) are positive — matching ClubGG trade signs.",
         "Columns: Player ID; Nickname; Source — ledger event type "
         "(Stripe, Zelle, Bonus, Cashout, etc.); Amount — signed USD; "
-        "Time — club-local; Reference — external id / detail from our system.",
+        "Time — America/New_York; Reference — external id / detail from our system.",
     ),
     "Deposits": (
         "Deposit subset of our internal ledger only (payment methods), "
@@ -167,7 +167,7 @@ SHEET_INTROS: dict[str, tuple[str, str, str]] = {
         "cashouts are not listed here.",
         "Sections in Stripe → Zelle → Venmo → Cash App → PayPal → Crypto order.",
         "Columns: Player ID; Nickname; Amount — signed USD (club outflow); "
-        "Group / detail — group title or note; Time — club-local; "
+        "Group / detail — group title or note; Time — America/New_York; "
         "Reference — external payment id in our DB.",
     ),
 }
@@ -317,7 +317,7 @@ def _unresolved_player_name(line: LedgerLine) -> str:
 
 
 def _format_unresolved_time(club_slug: str, occurred_at: datetime | None) -> str:
-    """Match audit unresolved sheet: 'Jul 21st 2026, 1:40 AM' (club-local)."""
+    """Match audit unresolved sheet: 'Jul 21st 2026, 1:40 AM' (America/New_York)."""
     local = _local_datetime(club_slug, occurred_at)
     if local is None:
         return ""
@@ -597,7 +597,8 @@ def _format_time(club_slug: str, occurred_at: datetime | None) -> str:
 
 
 def _local_datetime(club_slug: str, occurred_at: datetime | None) -> datetime | None:
-    """Club-local naive datetime suitable for Excel cells."""
+    """America/New_York naive datetime suitable for Excel cells (all clubs)."""
+    del club_slug  # kept for call-site compatibility; display is always Eastern
     if occurred_at is None:
         return None
     dt = occurred_at
@@ -605,7 +606,7 @@ def _local_datetime(club_slug: str, occurred_at: datetime | None) -> datetime | 
         dt = dt.replace(tzinfo=timezone.utc)
     else:
         dt = dt.astimezone(timezone.utc)
-    local = dt.astimezone(zone_for_slug(club_slug))
+    local = dt.astimezone(zone_for_payment_display())
     return local.replace(tzinfo=None)
 
 
