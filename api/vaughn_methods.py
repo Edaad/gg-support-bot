@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from api.audit_ledger import DEPOSIT_METHOD_ORDER, LEDGER_SOURCE_LABELS, LedgerLine
+from api.audit_ledger import (
+    CASHOUT_SOURCE_LABELS,
+    DEPOSIT_METHOD_ORDER,
+    LEDGER_SOURCE_LABELS,
+    LedgerLine,
+)
 
 # Payment tags stored on ledger Variant (zelle_recipient / venmo_handle).
 VAUGHN_ZELLE_RECIPIENTS = frozenset({"2133729202"})
@@ -13,6 +18,13 @@ VAUGHN_VENMO_HANDLES = frozenset({"janseashells"})
 
 _VAUGHN_CLUB_SLUG = "clubgto"
 _DEPOSIT_SOURCES = frozenset(DEPOSIT_METHOD_ORDER)
+
+VAUGHN_CASHOUT_SOURCE_LABELS: tuple[str, ...] = (
+    "Vaughn Cashout Venmo",
+    "Vaughn Cashout Cash App",
+    "Vaughn Cashout Zelle",
+    "Vaughn Cashout Crypto",
+)
 
 
 def normalize_zelle_recipient(tag: str) -> str:
@@ -78,9 +90,14 @@ def clubgto_matching_source_options() -> tuple[str, ...]:
     non_deposit = [
         label
         for src, label in LEDGER_SOURCE_LABELS.items()
-        if src not in _DEPOSIT_SOURCES
+        if src not in _DEPOSIT_SOURCES and src != "cashout"
     ]
-    return tuple(deposit_labels + non_deposit)
+    return tuple(
+        deposit_labels
+        + non_deposit
+        + list(CASHOUT_SOURCE_LABELS)
+        + list(VAUGHN_CASHOUT_SOURCE_LABELS)
+    )
 
 
 @dataclass(frozen=True)

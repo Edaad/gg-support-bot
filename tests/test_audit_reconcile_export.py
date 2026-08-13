@@ -24,6 +24,7 @@ from api.audit_reconcile_export import (
     _MATCHING_BODY_FONT,
     _MATCHING_HEADER_FONT,
     _MATCHING_ROW_HEIGHT,
+    _MATCHING_SOURCE_FILL_HEX,
     build_all_clubs_matching_workbook,
     build_reconcile_workbook_from_report,
 )
@@ -106,7 +107,7 @@ class ReconcileExportTestCase(unittest.TestCase):
                     gg_player_id="3011-9668",
                     member_nickname="AcePlayer",
                     source="cashout",
-                    source_label="Cashout",
+                    source_label="Cashout Venmo",
                     amount_signed=Decimal("40"),
                     occurred_at_utc=occurred,
                     external_id="cashout:1",
@@ -179,6 +180,9 @@ class ReconcileExportTestCase(unittest.TestCase):
         )
         self.assertIsNone(matching.cell(row=2, column=1).value)
         self.assertNotEqual(matching.cell(row=1, column=1).value, "Matching")
+
+        net_ledger = wb["Net Ledger"]
+        self.assertEqual(net_ledger.cell(row=SHEET_INTRO_DATA_START_ROW + 1, column=3).value, "Cashout Venmo")
 
     def test_matching_flat_headers_manager_and_time_format(self):
         occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
@@ -283,8 +287,13 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertGreaterEqual(MATCHING_WIDTHS[7], 18)
         validations = list(matching.data_validations.dataValidation)
         self.assertEqual(len(validations), 2)
-        source_dv = next(dv for dv in validations if "GTO Stripe" in (dv.formula1 or ""))
+        source_dv = next(
+            dv
+            for dv in validations
+            if (dv.formula1 or "").startswith("=") and "INDIRECT" not in (dv.formula1 or "")
+        )
         self.assertIn("F2:F2", source_dv.sqref)
+        self.assertIn("$AD$1:", source_dv.formula1)
         variant_dv = next(dv for dv in validations if "INDIRECT" in (dv.formula1 or ""))
         self.assertIn("J2:J2", variant_dv.sqref)
         self.assertIn("MATCH(", variant_dv.formula1)
@@ -292,6 +301,24 @@ class ReconcileExportTestCase(unittest.TestCase):
         # Hidden per-source variant lists start at column 30
         self.assertEqual(matching.cell(row=1, column=30).value, "GTO Stripe")
         self.assertTrue(matching.column_dimensions["AD"].hidden)
+        hidden_headers = [
+            matching.cell(row=1, column=col).value for col in range(30, 60)
+        ]
+        self.assertIn("Cashout Venmo", hidden_headers)
+        self.assertIn("Vaughn Cashout Venmo", hidden_headers)
+        self.assertIn("Vaughn Cashout Cash App", hidden_headers)
+        cf_formulas: list[str] = []
+        for cf_range in matching.conditional_formatting._cf_rules:
+            self.assertIn("F2", str(cf_range))
+            for rule in matching.conditional_formatting._cf_rules[cf_range]:
+                cf_formulas.extend(rule.formula or [])
+        self.assertTrue(any("Cashout Venmo" in f for f in cf_formulas))
+        self.assertTrue(any("Vaughn Cashout Venmo" in f for f in cf_formulas))
+        self.assertTrue(any("GTO Stripe" in f for f in cf_formulas))
+        self.assertEqual(
+            len(cf_formulas),
+            len(_MATCHING_SOURCE_FILL_HEX),
+        )
 
     def test_unresolved_sheet_lists_unmatched_ledger(self):
         occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
@@ -356,6 +383,61 @@ class ReconcileExportTestCase(unittest.TestCase):
                         str(unresolved.cell(row=2, column=6).value).endswith("PM"))
         self.assertIsNone(unresolved.cell(row=3, column=1).value)
         self.assertIn("Unresolved_clubgto", unresolved.tables)
+
+    def test_cashout_method_label_matching_and_unresolved(self):
+        occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
+        report = AuditReconcileReport(
+            audit_date=date(2026, 7, 3),
+            club_slug="clubgto",
+            club_name="ClubGTO",
+            status="pass",
+            players=[],
+            trade_lines=[
+                TradeLineForMatch(
+                    line_id=1,
+                    occurred_at=occurred,
+                    amount=Decimal("50"),
+                    member_gg_player_id="1111-2222",
+                    member_nickname="P1",
+                    sheet_row=1,
+                    manager_nickname="Mgr",
+                ),
+            ],
+            ledger_lines=[
+                LedgerLine(
+                    gg_player_id="1111-2222",
+                    member_nickname="P1",
+                    source="cashout",
+                    source_label="Cashout Venmo",
+                    amount_signed=Decimal("50"),
+                    occurred_at_utc=occurred,
+                    external_id="cashout:1",
+                ),
+                LedgerLine(
+                    gg_player_id="3333-4444",
+                    member_nickname="LeftOver",
+                    source="cashout",
+                    source_label="Cashout Zelle",
+                    amount_signed=Decimal("22"),
+                    occurred_at_utc=occurred,
+                    external_id="cashout:2",
+                    display_name="Charlie Kim",
+                ),
+            ],
+        )
+        wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
+        matching = wb["Matching"]
+        self.assertEqual(matching.cell(row=2, column=6).value, "Cashout Venmo")
+        self.assertIsNone(matching.cell(row=2, column=10).value)
+        unresolved = wb["Unresolved"]
+        self.assertEqual(unresolved.cell(row=2, column=1).value, "Cashout Zelle")
+        net_ledger = wb["Net Ledger"]
+        labels = [
+            net_ledger.cell(row=row, column=3).value
+            for row in range(SHEET_INTRO_DATA_START_ROW + 1, SHEET_INTRO_DATA_START_ROW + 4)
+        ]
+        self.assertIn("Cashout Venmo", labels)
+        self.assertIn("Cashout Zelle", labels)
 
     def test_matching_vaughn_tally_only_clubgto(self):
         report = _empty_report(club_slug="round-table", club_name="Round Table")

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from openpyxl import Workbook
+from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -14,6 +15,7 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
 
 from api.audit_ledger import (
+    CASHOUT_SOURCE_LABELS,
     DEPOSIT_METHOD_ORDER,
     LEDGER_SOURCE_LABELS,
     LedgerLine,
@@ -189,7 +191,41 @@ _MATCHING_SOURCE_COL = 6  # Source (after Nickname)
 _MATCHING_DOLLAR_COL = 9  # $
 _MATCHING_VARIANT_COL = 10  # Variant
 
-MATCHING_SOURCE_OPTIONS: tuple[str, ...] = tuple(LEDGER_SOURCE_LABELS.values())
+MATCHING_SOURCE_OPTIONS: tuple[str, ...] = tuple(
+    label for src, label in LEDGER_SOURCE_LABELS.items() if src != "cashout"
+) + CASHOUT_SOURCE_LABELS
+
+# Matching Source fills: one family color; GTO / Vaughn uses the darker shade.
+_MATCHING_SOURCE_FILL_HEX: dict[str, str] = {
+    "Stripe": "E6D5F5",
+    "GTO Stripe": "C4A3E0",
+    "Zelle": "F5D0F0",
+    "RT Zelle": "F5D0F0",
+    "Cashout Zelle": "F5D0F0",
+    "GTO Zelle": "D98BCF",
+    "Vaughn Cashout Zelle": "D98BCF",
+    "Venmo": "D4E6F7",
+    "RT Venmo": "D4E6F7",
+    "Cashout Venmo": "D4E6F7",
+    "GTO Venmo": "7FB3D5",
+    "Vaughn Cashout Venmo": "7FB3D5",
+    "Cash App": "D5F5E3",
+    "RT Cash App": "D5F5E3",
+    "Cashout Cash App": "D5F5E3",
+    "Vaughn Cashout Cash App": "7DCEA0",
+    "PayPal": "D6F5FB",
+    "RT PayPal": "D6F5FB",
+    "Cashout PayPal": "D6F5FB",
+    "Crypto": "FDEBD0",
+    "Cashout Crypto": "FDEBD0",
+    "GTO Crypto": "F0B27A",
+    "Vaughn Cashout Crypto": "F0B27A",
+    "Cashout Revolut": "D5F5F5",
+    "Early RB": "FCF3CF",
+    "Bonus": "FADBD8",
+    "RB settlement (Monday)": "D5D8DC",
+    "Cashout": "E5E7E9",
+}
 
 
 def _matching_table_display_name(club_slug: str) -> str:
@@ -394,7 +430,7 @@ def _add_matching_source_variant_dropdowns(
     # showDropDown=False is the openpyxl quirk that *shows* the in-cell dropdown.
     dv_source = DataValidation(
         type="list",
-        formula1='"' + ",".join(source_options) + '"',
+        formula1=f"={header_range}",
         allow_blank=True,
         showDropDown=False,
         showErrorMessage=False,
@@ -418,6 +454,29 @@ def _add_matching_source_variant_dropdowns(
     )
     dv_variant.add(variant_sqref)
     ws.add_data_validation(dv_variant)
+
+
+def _add_matching_source_colors(
+    ws: Worksheet,
+    *,
+    first_row: int,
+    last_row: int,
+) -> None:
+    """Color Matching Source cells by label; updates when the dropdown changes."""
+    if last_row < first_row:
+        return
+    source_letter = get_column_letter(_MATCHING_SOURCE_COL)
+    sqref = f"{source_letter}{first_row}:{source_letter}{last_row}"
+    for label, hex_color in _MATCHING_SOURCE_FILL_HEX.items():
+        escaped = label.replace('"', '""')
+        ws.conditional_formatting.add(
+            sqref,
+            CellIsRule(
+                operator="equal",
+                formula=[f'"{escaped}"'],
+                fill=PatternFill("solid", fgColor=hex_color),
+            ),
+        )
 
 
 ALL_CLUBS_MATCHING_SHEET_ORDER: tuple[tuple[str, str], ...] = (
@@ -917,6 +976,11 @@ def _write_matching_rows(
     _add_matching_source_variant_dropdowns(
         ws,
         report_for_dropdowns,
+        first_row=header_row + 1,
+        last_row=last_data_row,
+    )
+    _add_matching_source_colors(
+        ws,
         first_row=header_row + 1,
         last_row=last_data_row,
     )

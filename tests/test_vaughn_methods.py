@@ -155,6 +155,15 @@ class MatchingSourceLabelTestCase(unittest.TestCase):
             ),
             "Bonus",
         )
+        self.assertEqual(
+            matching_source_label(
+                source="cashout",
+                variant=None,
+                club_slug="clubgto",
+                source_label="Cashout Venmo",
+            ),
+            "Cashout Venmo",
+        )
 
     def test_other_clubs_unprefixed(self):
         self.assertEqual(
@@ -177,6 +186,19 @@ class MatchingSourceLabelTestCase(unittest.TestCase):
         self.assertIn("GTO Crypto", opts)
         self.assertNotIn("RT Stripe", opts)
         self.assertNotIn("Zelle", opts)
+        self.assertIn("Cashout Venmo", opts)
+        self.assertIn("Cashout Cash App", opts)
+        self.assertIn("Cashout Zelle", opts)
+        self.assertIn("Cashout Crypto", opts)
+        self.assertIn("Cashout Revolut", opts)
+        self.assertIn("Cashout PayPal", opts)
+        self.assertIn("Cashout", opts)
+        self.assertIn("Vaughn Cashout Venmo", opts)
+        self.assertIn("Vaughn Cashout Cash App", opts)
+        self.assertIn("Vaughn Cashout Zelle", opts)
+        self.assertIn("Vaughn Cashout Crypto", opts)
+        self.assertNotIn("Vaughn Cashout Revolut", opts)
+        self.assertNotIn("GTO Cashout Venmo", opts)
 
 
 class TallyVaughnMethodsTestCase(unittest.TestCase):

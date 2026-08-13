@@ -15,7 +15,7 @@ from decimal import Decimal
 from typing import Callable, Literal
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from api.club_audit_timezone import audit_day_window_utc, occurred_at_in_audit_day
 from api.club_slug import resolve_club_id, slug_for_club_id
@@ -71,6 +71,28 @@ LEDGER_SOURCE_LABELS: dict[str, str] = {
     "cashout": "Cashout",
 }
 
+CASHOUT_FALLBACK_LABEL = "Cashout"
+CASHOUT_METHOD_TOKENS: tuple[str, ...] = (
+    "Venmo",
+    "Cash App",
+    "Zelle",
+    "Crypto",
+    "Revolut",
+    "PayPal",
+)
+CASHOUT_SOURCE_LABELS: tuple[str, ...] = tuple(
+    f"Cashout {token}" for token in CASHOUT_METHOD_TOKENS
+) + (CASHOUT_FALLBACK_LABEL,)
+
+_CASHOUT_METHOD_ALIASES: dict[str, str] = {
+    "venmo": "Venmo",
+    "cashapp": "Cash App",
+    "zelle": "Zelle",
+    "crypto": "Crypto",
+    "revolut": "Revolut",
+    "paypal": "PayPal",
+}
+
 DEPOSIT_METHOD_ORDER: tuple[str, ...] = (
     "deposit_stripe",
     "deposit_zelle",
@@ -101,6 +123,7 @@ class LedgerEvent:
     display_name: str | None = None
     variant: str | None = None
     club_slug: str | None = None
+    source_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -151,6 +174,37 @@ def ledger_source_label(source: str) -> str:
     return LEDGER_SOURCE_LABELS.get(source, source.replace("_", " ").title())
 
 
+def cashout_method_token(name: str | None) -> str | None:
+    """Map a cashier method display name to a pretty cashout token, or None."""
+    raw = (name or "").strip()
+    if not raw:
+        return None
+    head = raw.split("—", 1)[0].split("–", 1)[0].strip()
+    compact = "".join(ch for ch in head.lower() if ch.isalnum())
+    token = _CASHOUT_METHOD_ALIASES.get(compact)
+    if token:
+        return token
+    for key, alias in _CASHOUT_METHOD_ALIASES.items():
+        if compact.startswith(key):
+            return alias
+    return None
+
+
+def cashout_source_label(names: list[str | None]) -> str:
+    """Join recognized cashout methods in payment order; unknown names skipped."""
+    seen: set[str] = set()
+    tokens: list[str] = []
+    for name in names:
+        token = cashout_method_token(name)
+        if token is None or token in seen:
+            continue
+        seen.add(token)
+        tokens.append(token)
+    if not tokens:
+        return CASHOUT_FALLBACK_LABEL
+    return "Cashout " + " + ".join(tokens)
+
+
 def signed_reconcile_amount(source: str, amount_usd: Decimal) -> Decimal:
     if source == "cashout":
         return _club_inflow_usd(amount_usd)
@@ -176,7 +230,10 @@ def build_ledger_lines(
                 gg_player_id=gid,
                 member_nickname=nickname_map.get(gid) if gid else None,
                 source=event.source,
-                source_label=ledger_source_label(event.source),
+                source_label=(
+                    (event.source_label or "").strip()
+                    or ledger_source_label(event.source)
+                ),
                 amount_signed=signed_reconcile_amount(event.source, event.amount_usd),
                 occurred_at_utc=event.occurred_at_utc,
                 external_id=event.external_id,
@@ -562,6 +619,7 @@ def fetch_cashout_events(
     from_dt, to_dt = audit_day_window_utc(slug, audit_date)
     rows = (
         session.query(StaffCashoutRecord)
+        .options(joinedload(StaffCashoutRecord.payments))
         .filter(
             StaffCashoutRecord.club_id == club_id,
             StaffCashoutRecord.created_at >= from_dt,
@@ -583,6 +641,10 @@ def fetch_cashout_events(
         gg_id = (row.gg_player_id or "").strip() or _gg_player_id_from_title(
             row.group_title
         )
+        payments = sorted(
+            row.payments,
+            key=lambda payment: (payment.sort_order or 0, payment.id or 0),
+        )
         out.append(
             LedgerEvent(
                 source="cashout",
@@ -590,6 +652,9 @@ def fetch_cashout_events(
                 amount_usd=Decimal(str(row.amount)),
                 occurred_at_utc=row.created_at,
                 external_id=f"cashout:{row.id}",
+                source_label=cashout_source_label(
+                    [payment.method_display_name for payment in payments]
+                ),
             )
         )
     return out

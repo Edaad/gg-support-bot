@@ -319,6 +319,24 @@ class MatchTradeLinesTestCase(unittest.TestCase):
         ).rows
         self.assertEqual(rows[0].variant, "")
 
+    def test_cashout_method_label_variant_blank(self):
+        trade = _trade(occurred=self.t0, amount="100")
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="100",
+            source="cashout",
+            source_label="Cashout Venmo",
+            external_id="cashout:1",
+            variant=None,
+        )
+        rows = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="clubgto",
+        ).rows
+        self.assertEqual(rows[0].match_source, "Cashout Venmo")
+        self.assertEqual(rows[0].variant, "")
+
 
 if __name__ == "__main__":
     unittest.main()
