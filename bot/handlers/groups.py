@@ -63,14 +63,14 @@ def should_skip_club_onboarding(chat_id: int, title: str | None) -> bool:
     """True when join/auto-link must not club-link or send welcome.
 
     Skip for watched-group allowlist and for titles that are not GC format
-    ``CLUB / PLAYER_ID / NAME``.
+    ``CLUB / PLAYER_ID / NAME`` or ``CLUB / / NAME`` (empty player id).
     """
-    from bot.services.player_details import parse_group_title_parts
+    from bot.services.player_details import is_gc_group_title
     from bot.services.watched_group_escalation import is_env_allowlisted_chat
 
     if is_env_allowlisted_chat(chat_id):
         return True
-    return parse_group_title_parts(title) is None
+    return not is_gc_group_title(title)
 
 
 def _mark_post_gc_bundle_window(chat_id: int) -> None:
@@ -122,25 +122,6 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
     adder_uid = update.effective_user.id
 
     _auto_link_attempted.discard(chat_id)
-
-    from bot.services.watched_group_escalation import (
-        is_support_group_chat,
-        notify_admins_non_support_group_join,
-    )
-
-    if not is_support_group_chat(chat_id):
-        try:
-            await notify_admins_non_support_group_join(
-                chat_id=chat_id,
-                title=chat_title,
-                bot=context.bot,
-            )
-        except Exception:
-            logger.warning(
-                "non-support join admin DM failed chat_id=%s",
-                chat_id,
-                exc_info=True,
-            )
 
     if should_skip_club_onboarding(chat_id, chat_title):
         logger.info(

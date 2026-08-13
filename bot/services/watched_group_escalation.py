@@ -500,45 +500,6 @@ def restore_watched_group_escalation_jobs(job_queue: Any | None = None) -> None:
         )
 
 
-async def notify_admins_non_support_group_join(
-    *,
-    chat_id: int,
-    title: str | None,
-    bot: Any | None = None,
-) -> int:
-    """DM ADMIN_USER_IDS with chat_id so ops can fill the env allowlist."""
-    from config import ADMIN_USER_IDS
-
-    group = (title or "").strip() or "(untitled)"
-    body = (
-        f'Bot joined non-support group "{group}" chat_id={int(chat_id)}. '
-        f"Add to {WATCH_GROUP_ESCALATION_CHAT_IDS_ENV} to enable listen-escalate."
-    )
-    logger.info(
-        "watched_group_escalation: non-support join chat_id=%s title=%r",
-        chat_id,
-        title,
-    )
-
-    if bot is not None:
-        sent = 0
-        for user_id in ADMIN_USER_IDS:
-            try:
-                await bot.send_message(chat_id=int(user_id), text=body[:4096])
-                sent += 1
-            except Exception:
-                logger.warning(
-                    "watched_group_escalation: failed DM admin user_id=%s",
-                    user_id,
-                    exc_info=True,
-                )
-        return sent
-
-    from bot.services.deploy_notify import notify_all_admin_user_ids
-
-    return await notify_all_admin_user_ids(body)
-
-
 async def watched_group_message_gate(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,

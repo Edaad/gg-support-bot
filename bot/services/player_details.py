@@ -95,6 +95,20 @@ def parse_group_title_parts(title: str | None) -> Optional[GroupTitleParts]:
     )
 
 
+def is_gc_group_title(title: str | None) -> bool:
+    """True for ``CLUB / PLAYER_ID / NAME`` or new-GC ``CLUB / / NAME`` (empty player id)."""
+    if parse_group_title_parts(title) is not None:
+        return True
+    if not title:
+        return False
+    parts = [p.strip() for p in title.split("/")]
+    if len(parts) < 3 or parts[1]:
+        return False
+    if not _shorthands_from_prefix_segment(parts[0]):
+        return False
+    return bool(" / ".join(parts[2:]).strip())
+
+
 def merge_union_prefix(current_title: str | None, chosen_shorthand: str) -> Optional[str]:
     """Return new group title if deposit union shorthand should be merged into prefix."""
     chosen = (chosen_shorthand or "").strip().upper()

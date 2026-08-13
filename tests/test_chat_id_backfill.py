@@ -152,6 +152,14 @@ class ChatIdBackfillTests(unittest.TestCase):
         self.assertIn("RT", parsed.shorthands)
         self.assertIn("AT", parsed.shorthands)
 
+    def test_empty_player_id_title_is_gc_but_not_bindable(self):
+        from bot.services.player_details import is_gc_group_title
+
+        self.assertTrue(is_gc_group_title("RT / / @username"))
+        self.assertTrue(is_gc_group_title("CC / / John"))
+        self.assertFalse(is_gc_group_title("Round Table Support & GG Support"))
+        self.assertIsNone(parse_group_title_parts("RT / / @username"))
+
 
 if __name__ == "__main__":
     unittest.main()
