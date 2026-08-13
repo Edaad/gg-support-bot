@@ -187,6 +187,7 @@ UNRESOLVED_WIDTHS = [16, 12, 28, 40, 16, 24]
 # Matching sheet: left table cols 1–10; spacer 11; Vaughn tally starts at 12.
 _MATCHING_TALLY_START_COL = 12
 _MATCHING_TABLE_COLS = len(MATCHING_HEADERS)
+_MATCHING_AMOUNT_COL = 3  # Trade Amount (chips)
 _MATCHING_SOURCE_COL = 6  # Source (after Nickname)
 _MATCHING_DOLLAR_COL = 9  # $
 _MATCHING_VARIANT_COL = 10  # Variant
@@ -859,18 +860,15 @@ def _vaughn_sum_dollar_formula(*, source: str) -> str:
     return f'=SUMIF({src_col},"{source}",{dollar_col})'
 
 
-def _write_vaughn_tally(
-    ws: Worksheet,
-    *,
-    section_row: int,
-    start_col: int,
-) -> None:
-    """Vaughn totals: rows with Source starting GTO (GTO Zelle, GTO Venmo, …)."""
-    _style_section_title(ws, section_row, "Vaughn methods", col=start_col)
-    header_row = section_row + 1
-    _style_header_row(ws, header_row, VAUGHN_TALLY_HEADERS, start_col=start_col)
+def _vaughn_sum_chips_formula(*, source: str) -> str:
+    """Sum abs(Amount) chips for Matching rows whose Source is a GTO method."""
+    src_col = f"${get_column_letter(_MATCHING_SOURCE_COL)}:${get_column_letter(_MATCHING_SOURCE_COL)}"
+    amount_col = f"${get_column_letter(_MATCHING_AMOUNT_COL)}:${get_column_letter(_MATCHING_AMOUNT_COL)}"
+    return f'=SUMPRODUCT(({src_col}="{source}")*ABS({amount_col}))'
 
-    # Method / Tag are labels; Count/Total key only off Source = "GTO …".
+
+def _vaughn_method_rows() -> list[tuple[str, str, str]]:
+    """(method_label, tag, matching Source label) for Vaughn tally tables."""
     method_rows: list[tuple[str, str, str]] = []
     for digits in sorted(VAUGHN_ZELLE_RECIPIENTS):
         method_rows.append(("Zelle", digits, "GTO Zelle"))
@@ -878,10 +876,25 @@ def _write_vaughn_tally(
         method_rows.append(("Venmo", f"@{handle}", "GTO Venmo"))
     method_rows.append(("Crypto", "(all ClubGTO)", "GTO Crypto"))
     method_rows.append(("Stripe", "(all ClubGTO)", "GTO Stripe"))
+    return method_rows
+
+
+def _write_vaughn_tally_table(
+    ws: Worksheet,
+    *,
+    title: str,
+    section_row: int,
+    start_col: int,
+    total_formula,
+) -> int:
+    """Write one Vaughn tally; returns the Total row index."""
+    _style_section_title(ws, section_row, title, col=start_col)
+    header_row = section_row + 1
+    _style_header_row(ws, header_row, VAUGHN_TALLY_HEADERS, start_col=start_col)
 
     first_data = header_row + 1
     row_idx = first_data
-    for method_label, tag, source_label in method_rows:
+    for method_label, tag, source_label in _vaughn_method_rows():
         ws.cell(row=row_idx, column=start_col, value=method_label)
         ws.cell(row=row_idx, column=start_col + 1, value=tag)
         ws.cell(
@@ -892,7 +905,7 @@ def _write_vaughn_tally(
         total_cell = ws.cell(
             row=row_idx,
             column=start_col + 3,
-            value=_vaughn_sum_dollar_formula(source=source_label),
+            value=total_formula(source=source_label),
         )
         total_cell.number_format = _CURRENCY_FORMAT
         row_idx += 1
@@ -916,6 +929,31 @@ def _write_vaughn_tally(
     )
     total_cell.number_format = _CURRENCY_FORMAT
     total_cell.font = Font(bold=True)
+    return row_idx
+
+
+def _write_vaughn_tally(
+    ws: Worksheet,
+    *,
+    section_row: int,
+    start_col: int,
+) -> None:
+    """Vaughn receipt ($) tally, then chips (abs Amount) tally underneath."""
+    receipt_total_row = _write_vaughn_tally_table(
+        ws,
+        title="Vaughn methods",
+        section_row=section_row,
+        start_col=start_col,
+        total_formula=_vaughn_sum_dollar_formula,
+    )
+    chips_section_row = receipt_total_row + 2  # blank spacer row
+    _write_vaughn_tally_table(
+        ws,
+        title="Vaughn methods (chips)",
+        section_row=chips_section_row,
+        start_col=start_col,
+        total_formula=_vaughn_sum_chips_formula,
+    )
 
 
 def _write_matching_rows(

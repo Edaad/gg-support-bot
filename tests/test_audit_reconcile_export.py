@@ -271,6 +271,14 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(matching.cell(row=6, column=12).value, "Stripe")
         self.assertEqual(matching.cell(row=7, column=12).value, "Total")
         self.assertTrue(str(matching.cell(row=7, column=14).value).startswith("=SUM("))
+        # Chips tally under receipt tally (blank spacer at row 8).
+        self.assertEqual(matching.cell(row=9, column=12).value, "Vaughn methods (chips)")
+        self.assertEqual(matching.cell(row=10, column=12).value, "Method")
+        self.assertEqual(matching.cell(row=11, column=12).value, "Zelle")
+        chips_total = matching.cell(row=11, column=15).value
+        self.assertIsInstance(chips_total, str)
+        self.assertIn('SUMPRODUCT(($F:$F="GTO Zelle")*ABS($C:$C))', chips_total)
+        self.assertEqual(matching.cell(row=15, column=12).value, "Total")
         self.assertIn("Matching_clubgto", matching.tables)
         self.assertEqual(matching.tables["Matching_clubgto"].ref, "A1:J2")
         style = matching.tables["Matching_clubgto"].tableStyleInfo
