@@ -63,7 +63,7 @@ SETUP_MEMO_CODE_POOL: tuple[str, ...] = (
 )
 
 _ZELLE_EMAIL_RE = re.compile(
-    r"Zelle\s+Email:\s*(\S+@\S+)",
+    r"Zelle(?:\s+Email)?:\s*(\S+@\S+)",
     re.IGNORECASE,
 )
 _ZELLE_NAME_RE = re.compile(
@@ -71,7 +71,7 @@ _ZELLE_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 _ZELLE_PHONE_RE = re.compile(
-    r"Zelle:\s*([\d\-()+ \.]+)",
+    r"Zelle:\s*([\d\-()+ \.]*\d[\d\-()+ \.]*)",
     re.IGNORECASE,
 )
 
@@ -1545,7 +1545,9 @@ def extract_zelle_recipient_from_text(text: str | None) -> str | None:
         return normalize_zelle_recipient(email)
     phone_m = _ZELLE_PHONE_RE.search(text)
     if phone_m:
-        return normalize_zelle_recipient(phone_m.group(1))
+        normalized = normalize_zelle_recipient(phone_m.group(1))
+        if normalized:
+            return normalized
     return None
 
 

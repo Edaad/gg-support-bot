@@ -20,6 +20,7 @@ from bot.services.payment_method_binding import (
     extract_cashapp_url,
     _normalize_cashapp_handle,
     extract_zelle_details,
+    extract_zelle_recipient_from_text,
     find_existing_venmo_link_for_setup,
     format_first_time_memo_setup_message,
     format_first_time_memo_instructions_message,
@@ -621,15 +622,36 @@ class TestZelleRecipientHelpers(unittest.TestCase):
         self.assertEqual(name, "ACME LLC")
 
     def test_extract_zelle_recipient_phone(self):
-        from bot.services.payment_method_binding import (
-            extract_zelle_recipient_from_text,
-            normalize_zelle_recipient,
-        )
+        from bot.services.payment_method_binding import normalize_zelle_recipient
 
         text = "Zelle: 310-567-0961"
         self.assertEqual(extract_zelle_recipient_from_text(text), "3105670961")
         self.assertEqual(normalize_zelle_recipient("310-567-0961"), "3105670961")
         self.assertEqual(normalize_zelle_recipient("Pay@Example.com"), "pay@example.com")
+
+    def test_extract_zelle_recipient_bare_zelle_email(self):
+        text = (
+            "Zelle: coachingg444@gmail.com\n"
+            "Name: CONCORD CONSULTING, INC\n"
+            "For: Put a random Emoji\n"
+        )
+        email, name = extract_zelle_details(text)
+        self.assertEqual(email, "coachingg444@gmail.com")
+        self.assertIsNone(name)
+        self.assertEqual(
+            extract_zelle_recipient_from_text(text),
+            "coachingg444@gmail.com",
+        )
+
+    def test_extract_zelle_recipient_email_not_swallowed_as_phone(self):
+        self.assertEqual(
+            extract_zelle_recipient_from_text("Zelle: starship5vllc@gmail.com"),
+            "starship5vllc@gmail.com",
+        )
+        self.assertEqual(
+            extract_zelle_recipient_from_text("Zelle: janvenmo@gmail.com"),
+            "janvenmo@gmail.com",
+        )
 
     def test_zelle_memo_setup_requires_recipient_match(self):
         from datetime import datetime, timedelta, timezone
