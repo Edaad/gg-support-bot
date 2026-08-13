@@ -267,6 +267,69 @@ class MatchTradeLinesTestCase(unittest.TestCase):
         ).rows
         self.assertEqual(rows[0].match_amount, Decimal("100"))
 
+    def test_early_rb_fractional_matches_floored_trade(self):
+        """Early RB $18.60 (rounds to 19) ↔ ClubGG chips $18 within ±$1."""
+        trade = _trade(occurred=self.t0, amount="-18")
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-18.60",
+            source="early_rakeback",
+            source_label="Early RB",
+            external_id="early_rakeback:1",
+            display_name="RB Player",
+        )
+        rows = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="aces-table",
+        ).rows
+        self.assertEqual(rows[0].match_source, "Early RB")
+        self.assertEqual(rows[0].match_name, "RB Player")
+        self.assertEqual(rows[0].match_amount, Decimal("19"))
+
+    def test_amount_delta_over_one_dollar_rejected(self):
+        trade = _trade(occurred=self.t0, amount="-18")
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-20.00",
+            source="early_rakeback",
+            source_label="Early RB",
+            external_id="early_rakeback:2",
+        )
+        rows = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="aces-table",
+        ).rows
+        self.assertEqual(rows[0].match_name, "")
+        self.assertIsNone(rows[0].match_amount)
+
+    def test_prefers_exact_amount_over_nearby(self):
+        trade = _trade(occurred=self.t0, amount="-18")
+        near = _ledger(
+            occurred=self.t0,
+            amount_signed="-18.60",
+            source="early_rakeback",
+            source_label="Early RB",
+            external_id="early_rakeback:near",
+            display_name="Near",
+        )
+        exact = _ledger(
+            occurred=self.t0 + timedelta(seconds=30),
+            amount_signed="-18",
+            source="early_rakeback",
+            source_label="Early RB",
+            external_id="early_rakeback:exact",
+            display_name="Exact",
+        )
+        rows = match_trade_lines_to_ledger(
+            [trade],
+            [near, exact],
+            club_slug="aces-table",
+        ).rows
+        self.assertEqual(rows[0].match_name, "Exact")
+        self.assertEqual(rows[0].match_amount, Decimal("18"))
+
     def test_bonus_fills_variant(self):
         trade = _trade(occurred=self.t0, amount="-25")
         ledger = _ledger(

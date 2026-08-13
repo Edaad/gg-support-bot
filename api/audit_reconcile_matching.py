@@ -12,6 +12,8 @@ from api.club_audit_timezone import zone_for_slug
 from api.vaughn_methods import is_vaughn_method, matching_source_label
 
 MATCH_WINDOW = timedelta(minutes=15)
+# Whole-dollar slack after round_whole_usd (e.g. early RB $18.60 ↔ ClubGG $18).
+MATCH_AMOUNT_TOLERANCE_USD = Decimal("1")
 _WHOLE = Decimal("1")
 
 
@@ -112,14 +114,17 @@ def _empty_match_row(trade: TradeLineForMatch) -> MatchedTradeRow:
 def _candidate_score(
     trade: TradeLineForMatch,
     ledger: LedgerLine,
-) -> tuple[int, timedelta] | None:
+) -> tuple[int, Decimal, timedelta] | None:
     trade_at = _as_utc(trade.occurred_at)
     ledger_at = _as_utc(ledger.occurred_at_utc)
     if trade_at is None or ledger_at is None:
         return None
     if not _signs_compatible(trade.amount, ledger):
         return None
-    if round_whole_usd(trade.amount) != round_whole_usd(ledger.amount_signed):
+    amount_delta = abs(
+        round_whole_usd(trade.amount) - round_whole_usd(ledger.amount_signed)
+    )
+    if amount_delta > MATCH_AMOUNT_TOLERANCE_USD:
         return None
     delta = abs(trade_at - ledger_at)
     if delta > MATCH_WINDOW:
@@ -127,7 +132,8 @@ def _candidate_score(
     trade_gid = (trade.member_gg_player_id or "").strip()
     ledger_gid = (ledger.gg_player_id or "").strip()
     same_player = 0 if (trade_gid and ledger_gid and trade_gid == ledger_gid) else 1
-    return (same_player, delta)
+    # Prefer same player, then closer dollar match, then closer time.
+    return (same_player, amount_delta, delta)
 
 
 def match_trade_lines_to_ledger(
@@ -143,7 +149,7 @@ def match_trade_lines_to_ledger(
 
     for trade in trade_lines:
         best_idx: int | None = None
-        best_score: tuple[int, timedelta] | None = None
+        best_score: tuple[int, Decimal, timedelta] | None = None
         for idx, ledger in available:
             if idx in used:
                 continue
