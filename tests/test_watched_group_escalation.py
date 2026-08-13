@@ -88,6 +88,21 @@ class AllowlistTests(unittest.TestCase):
         self.assertTrue(wge.is_watched_escalation_chat(99))
 
 
+class IgnoreSenderTests(unittest.TestCase):
+    def test_union_automation_accounts(self):
+        for username in ("rtaccountant", "widget_stick", "@RTAccountant", "Widget_Stick"):
+            user = SimpleNamespace(username=username, is_bot=False)
+            self.assertTrue(wge.is_ignored_watched_sender(user), username)
+
+    def test_normal_user_not_ignored(self):
+        user = SimpleNamespace(username="ada", is_bot=False)
+        self.assertFalse(wge.is_ignored_watched_sender(user))
+
+    def test_missing_username_not_ignored(self):
+        user = SimpleNamespace(username=None, is_bot=False)
+        self.assertFalse(wge.is_ignored_watched_sender(user))
+
+
 class FormatTests(unittest.TestCase):
     def test_format_sender_with_username(self):
         user = SimpleNamespace(full_name="Ada Lovelace", first_name="Ada", username="ada")
@@ -356,6 +371,39 @@ class GateTests(unittest.IsolatedAsyncioTestCase):
         state = wge.load_episode_state(55)
         self.assertIsNotNone(state)
         self.assertEqual(state["burst"][0]["text"], "/deposit")
+
+    async def test_ignored_username_does_not_open_episode(self):
+        from telegram.ext import ApplicationHandlerStop
+
+        jq = _job_queue()
+        update = SimpleNamespace(
+            effective_message=SimpleNamespace(
+                text="settlement ping",
+                caption=None,
+                photo=None,
+                video=None,
+                video_note=None,
+                voice=None,
+                audio=None,
+                document=None,
+                animation=None,
+                sticker=None,
+            ),
+            effective_chat=SimpleNamespace(id=55, type="supergroup", title="TMT Union"),
+            effective_user=SimpleNamespace(
+                is_bot=False,
+                full_name="RT Accountant",
+                first_name="RT",
+                username="rtaccountant",
+            ),
+        )
+        context = SimpleNamespace(job_queue=jq)
+
+        with self.assertRaises(ApplicationHandlerStop):
+            await wge.watched_group_message_gate(update, context)
+
+        self.assertIsNone(wge.load_episode_state(55))
+        jq.run_once.assert_not_called()
 
 
 if __name__ == "__main__":

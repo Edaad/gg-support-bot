@@ -31,6 +31,9 @@ WATCH_GROUP_ESCALATION_CHAT_IDS_ENV = "WATCH_GROUP_ESCALATION_CHAT_IDS"
 SLACK_SOURCE = "watched_group"
 HEADLINE = "Watched group activity."
 
+# Union-chat automation accounts (Telegram users, not bots). Skip head-admin Slack.
+WATCHED_GROUP_IGNORE_USERNAMES = frozenset({"rtaccountant", "widget_stick"})
+
 _watched_app: Any | None = None
 
 
@@ -108,6 +111,15 @@ def _as_utc(dt: datetime | None) -> datetime | None:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def sender_username(user: Any) -> str:
+    return (getattr(user, "username", None) or "").strip().lstrip("@").lower()
+
+
+def is_ignored_watched_sender(user: Any) -> bool:
+    """True for union automation accounts that should not open/feed episodes."""
+    return sender_username(user) in WATCHED_GROUP_IGNORE_USERNAMES
 
 
 def format_sender_label(user: Any) -> str:
@@ -543,7 +555,7 @@ async def watched_group_message_gate(
         return
 
     # Stop all later handlers for this chat (commands, auto-link, activity, …).
-    if user.is_bot:
+    if user.is_bot or is_ignored_watched_sender(user):
         raise ApplicationHandlerStop
 
     text = extract_watched_message_text(message)

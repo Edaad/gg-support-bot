@@ -146,7 +146,7 @@ WATCH_GROUP_ESCALATION_CHAT_IDS=-100123,-100456
 Behavior:
 
 1. Allowlisted chat that is **not** a `support_group_chats` row.
-2. Any non-bot human text/media/caption/command opens or feeds a durable episode (table `watched_group_escalation_state`).
+2. Any non-bot human text/media/caption/command opens or feeds a durable episode (table `watched_group_escalation_state`). `@rtaccountant` and `@widget_stick` are ignored (union automation accounts).
 3. Reuses awaiting-agent timings (1 minute quiet debounce, 10 minute episode).
 4. On debounce: one Slack post to head-admin, then quiet until the episode ends.
 5. No bot reply in the group; no club auto-link/welcome; commands are swallowed.
