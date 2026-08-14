@@ -4,7 +4,7 @@ import asyncio
 import html
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -839,6 +839,16 @@ def _should_skip_deposit_reminder(chat_id: int, since: datetime) -> bool:
     )
 
 
+def _deposit_flow_since(context: ContextTypes.DEFAULT_TYPE) -> datetime:
+    """Start of this deposit conversation, or a lookback if the stamp is missing."""
+    raw = context.chat_data.get("deposit_flow_started_at")
+    if isinstance(raw, datetime):
+        if raw.tzinfo is None:
+            return raw.replace(tzinfo=timezone.utc)
+        return raw
+    return datetime.now(timezone.utc) - timedelta(seconds=int(TIMEOUT_SECONDS) + 60)
+
+
 def _parse_scheduled_at(job_data: dict | None) -> datetime | None:
     raw = (job_data or {}).get("scheduled_at")
     if not raw:
@@ -1363,9 +1373,16 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.chat_data["deposit_club_id"] = club_id
     context.chat_data["deposit_chat_id"] = chat.id
+    context.chat_data["deposit_flow_started_at"] = datetime.now(timezone.utc)
 
     if is_bot_admin and not is_test_bot_worker():
         if not get_club_allows_admin_commands(club_id):
+            logger.info(
+                "deposit_entry admin blocked chat_id=%s admin_id=%s club_id=%s",
+                chat.id,
+                user_id,
+                club_id,
+            )
             return ConversationHandler.END
         context.chat_data["deposit_admin_initiated"] = True
         context.chat_data["deposit_admin_user_id"] = user_id
@@ -1406,6 +1423,7 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.chat_data["deposit_user_id"] = user_id
     context.chat_data["deposit_is_first"] = first
     context.chat_data["deposit_fd_settings"] = settings
+    context.chat_data["deposit_flow_started_at"] = datetime.now(timezone.utc)
     _init_deposit_flow_session(
         context, club_id=club_id, chat_id=chat.id, user_id=user_id
     )
@@ -1571,6 +1589,7 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text(
             "Something went wrong showing deposit methods. Try /deposit again."
         )
+        _cleanup(context)
         return ConversationHandler.END
 
 
@@ -2613,23 +2632,24 @@ async def _send_simple_response(message, data):
     )
 
 
-def _cleanup(context):
+def _cleanup(context, *, close_idle_episode: bool = True):
     chat_id = context.chat_data.get("deposit_chat_id")
     if chat_id is not None:
         _DEPOSIT_AWAITING_CHATS.discard(int(chat_id))
-        try:
-            from bot.services.support_group_idle_episode import close_episode
+        if close_idle_episode:
+            try:
+                from bot.services.support_group_idle_episode import close_episode
 
-            close_episode(
-                int(chat_id),
-                job_queue=getattr(context, "job_queue", None),
-            )
-        except Exception:
-            logger.debug(
-                "deposit: close idle episode failed chat_id=%s",
-                chat_id,
-                exc_info=True,
-            )
+                close_episode(
+                    int(chat_id),
+                    job_queue=getattr(context, "job_queue", None),
+                )
+            except Exception:
+                logger.debug(
+                    "deposit: close idle episode failed chat_id=%s",
+                    chat_id,
+                    exc_info=True,
+                )
     reset_flow_callback_messages(context, flow="deposit")
     clear_active_flow(context)
     for key in (
@@ -2652,6 +2672,7 @@ def _cleanup(context):
         "deposit_setup_response_data",
         "deposit_session_id",
         "deposit_requires_method_setup",
+        "deposit_flow_started_at",
     ):
         context.chat_data.pop(key, None)
 
@@ -2679,7 +2700,27 @@ async def deposit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.chat_data.get("deposit_chat_id")
     club_id = context.chat_data.get("deposit_club_id")
+    logger.info(
+        "deposit_timeout chat_id=%s club_id=%s update_chat=%s",
+        chat_id,
+        club_id,
+        update.effective_chat.id if update.effective_chat else None,
+    )
     if chat_id:
+        since = _deposit_flow_since(context)
+        if _should_skip_deposit_reminder(int(chat_id), since):
+            logger.info(
+                "deposit_timeout skipped chat_id=%s payment or chips already landed",
+                chat_id,
+            )
+            await clear_deposit_payment_wait(
+                chat_id,
+                job_queue=getattr(context, "job_queue", None),
+            )
+            _cleanup(context, close_idle_episode=False)
+            popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
+            return ConversationHandler.END
+
         methods = get_deposit_method_names(club_id) if club_id else []
         method_list = ", ".join(methods) if methods else ""
 
@@ -2708,9 +2749,7 @@ async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     _cleanup(context)
     popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
-
-
-TIMEOUT_SECONDS = 600
+    return ConversationHandler.END
 
 _DEPOSIT_CANCEL = CommandHandler("cancel", deposit_cancel)
 
@@ -2755,7 +2794,9 @@ def get_deposit_handler() -> ConversationHandler:
                 _DEPOSIT_CANCEL,
             ],
             ConversationHandler.TIMEOUT: [
-                MessageHandler(filters.ALL, deposit_timeout),
+                CommandHandler("deposit", deposit_entry),
+                _DEPOSIT_CANCEL,
+                MessageHandler(filters.ALL & ~filters.COMMAND, deposit_timeout),
             ],
         },
         fallbacks=[_DEPOSIT_CANCEL],
@@ -2763,4 +2804,5 @@ def get_deposit_handler() -> ConversationHandler:
         name="deposit_conv",
         per_chat=True,
         per_user=per_user,
+        allow_reentry=True,
     )

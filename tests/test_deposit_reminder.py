@@ -440,5 +440,79 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
         cancel_mock.assert_called_once_with(chat_id)
 
 
+class DepositTimeoutSkipTests(unittest.IsolatedAsyncioTestCase):
+    async def test_timeout_skips_copy_when_chips_already_added(self):
+        chat_id = -100123
+        context = MagicMock()
+        context.chat_data = {
+            "deposit_chat_id": chat_id,
+            "deposit_club_id": 1,
+            "deposit_flow_started_at": datetime.now(timezone.utc),
+        }
+        context.bot.send_message = AsyncMock()
+        context.job_queue = MagicMock()
+        update = MagicMock()
+
+        with patch.object(
+            deposit_module, "_should_skip_deposit_reminder", return_value=True
+        ):
+            with patch.object(
+                deposit_module, "clear_deposit_payment_wait", new_callable=AsyncMock
+            ) as clear_wait:
+                with patch.object(deposit_module, "_cleanup") as cleanup:
+                    with patch.object(
+                        deposit_module.popup_keyboard_svc,
+                        "on_flow_exit_schedule_idle",
+                    ):
+                        await deposit_module.deposit_timeout(update, context)
+
+        context.bot.send_message.assert_not_awaited()
+        clear_wait.assert_awaited_once()
+        cleanup.assert_called_once_with(context, close_idle_episode=False)
+
+    async def test_timeout_sends_copy_when_deposit_not_completed(self):
+        chat_id = -100123
+        context = MagicMock()
+        context.chat_data = {
+            "deposit_chat_id": chat_id,
+            "deposit_club_id": 1,
+            "deposit_flow_started_at": datetime.now(timezone.utc),
+        }
+        context.bot.send_message = AsyncMock()
+        context.job_queue = MagicMock()
+        update = MagicMock()
+
+        with patch.object(
+            deposit_module, "_should_skip_deposit_reminder", return_value=False
+        ):
+            with patch.object(
+                deposit_module, "get_deposit_method_names", return_value=["Venmo"]
+            ):
+                with patch.object(
+                    deposit_module, "clear_deposit_payment_wait", new_callable=AsyncMock
+                ):
+                    with patch.object(
+                        deposit_module, "_abandon_deposit_flow_session"
+                    ) as abandon:
+                        with patch.object(deposit_module, "_cleanup"):
+                            with patch.object(
+                                deposit_module.popup_keyboard_svc,
+                                "pop_strip_reply_markup",
+                                return_value=None,
+                            ):
+                                with patch.object(
+                                    deposit_module.popup_keyboard_svc,
+                                    "on_flow_exit_schedule_idle",
+                                ):
+                                    await deposit_module.deposit_timeout(
+                                        update, context
+                                    )
+
+        context.bot.send_message.assert_awaited_once()
+        body = context.bot.send_message.await_args.kwargs["text"]
+        self.assertIn("canceling your request", body)
+        abandon.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
