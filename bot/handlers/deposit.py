@@ -395,6 +395,7 @@ _STRIPE_HARDCODE_DEFAULT_TEXT = (
 _PLACEHOLDER_RESPONSE_TEXT = frozenset({"long text", "test", "placeholder", "todo"})
 
 DEPOSIT_REMINDER_SECONDS = 600  # 10 minutes
+TIMEOUT_SECONDS = 600
 _PAYMENT_RECEIVED_SNIPPET = "we have received your payment"
 
 # Maps chat_id → customer user_id that we're waiting on for a deposit follow-up.
