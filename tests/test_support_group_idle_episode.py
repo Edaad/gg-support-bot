@@ -18,16 +18,22 @@ class _FakeRow:
         self.episode_started_at = None
         self.last_human_at = None
         self.burst_json = []
+        self.history_episode_id = None
         self.updated_at = None
 
 
 class _FakeSession:
     store: dict[int, _FakeRow] = {}
 
-    def get(self, _model, chat_id):
-        return self.store.get(int(chat_id))
+    def get(self, _model, key):
+        try:
+            return self.store.get(int(key))
+        except (TypeError, ValueError):
+            return None
 
     def add(self, row):
+        if not hasattr(row, "episode_started_at"):
+            return
         self.store[int(row.telegram_chat_id)] = row
 
     def query(self, _model):
@@ -93,6 +99,9 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.silence_patch.start()
         self.addCleanup(self.silence_patch.stop)
+        self.close_hist_patch = patch.object(ep, "close_history_episode")
+        self.close_hist_patch.start()
+        self.addCleanup(self.close_hist_patch.stop)
 
     async def test_open_slacks_once_and_schedules_timers(self):
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
@@ -196,8 +205,9 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         row.episode_started_at = t0
         row.last_human_at = t0
         row.burst_json = [{"text": "x"}]
-        ep.close_episode(1, job_queue=self.jq)
+        ep.close_episode(1, job_queue=self.jq, close_reason=ep.CLOSE_REASON_SILENCE)
         self.assertIsNone(ep.load_episode_state(1))
+        ep.close_history_episode.assert_called()
 
     async def test_debounce_slacks_followup_and_clears_burst(self):
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)

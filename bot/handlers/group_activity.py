@@ -13,6 +13,7 @@ from bot.services import group_activity as ga
 from bot.services import popup_keyboard as pk
 from bot.services import escalation_notification as esc
 from bot.services import support_group_idle_episode as idle_ep
+from bot.services.escalation_observability import trigger_message_from_telegram
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,7 @@ async def group_activity_handler(
 
         in_flow = deposit_flow_active(context) or cashout_flow_active(context)
         player_msg = esc.extract_player_message_for_slack(message)
+        trigger = trigger_message_from_telegram(message)
 
         expected = idle_ep.consume_expected_flow_input(context)
         skip_episode = bool(expected)
@@ -104,6 +106,7 @@ async def group_activity_handler(
                     slack_already_sent=True,
                     job_queue=jq,
                     bot=context.bot,
+                    trigger_message=trigger,
                 )
             elif esc.is_valid_deposit_flow_answer(context, message):
                 # Amount / referral answers: no Slack, no episode.
@@ -130,6 +133,7 @@ async def group_activity_handler(
                 slack_already_sent=False,
                 job_queue=jq,
                 bot=context.bot,
+                trigger_message=trigger,
             )
 
         # Popup keyboard strip on free text/media (not while in flow / commands).

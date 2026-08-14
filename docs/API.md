@@ -669,6 +669,24 @@ Messages already delivered before cancel are not recalled.
 
 ---
 
+## Escalation events (observability)
+
+JWT required. Persisted support-group Slack escalations (not watched-group posts).
+
+### List events
+
+`GET /api/escalations/events`
+
+Query: `club_id`, `chat_id`, `reason`, `episode_id`, `from`, `to`, `limit`, `offset`.
+
+### Get episode
+
+`GET /api/escalations/episodes/{id}` — episode row plus events in chronological order.
+
+Run `python migrate_escalation_observability.py` before using.
+
+---
+
 ## Schema reference
 
 Types are defined in [`api/schemas.py`](../api/schemas.py). Decimal fields serialize as strings in JSON.

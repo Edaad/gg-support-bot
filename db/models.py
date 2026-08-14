@@ -15,7 +15,7 @@ from sqlalchemy import (
     LargeBinary,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
 
@@ -2257,6 +2257,58 @@ class WatchedGroupEscalationState(Base):
     )
 
 
+class EscalationEpisode(Base):
+    """Append-only history of a support-group idle escalation episode."""
+
+    __tablename__ = "escalation_episodes"
+    __table_args__ = (
+        Index("ix_esc_ep_chat_opened_at", "telegram_chat_id", "opened_at"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True)
+    group_title = Column(Text, nullable=True)
+    opened_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    closed_at = Column(DateTime(timezone=True), nullable=True)
+    close_reason = Column(String(32), nullable=True)
+    trigger_messages = Column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
+    )
+
+
+class EscalationEvent(Base):
+    """One row per support-group Slack escalation notify attempt."""
+
+    __tablename__ = "escalation_events"
+    __table_args__ = (
+        Index("ix_esc_ev_created_at", "created_at"),
+        Index("ix_esc_ev_chat_created_at", "telegram_chat_id", "created_at"),
+        Index("ix_esc_ev_episode_id", "episode_id"),
+        Index("ix_esc_ev_reason_created_at", "reason", "created_at"),
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    reason = Column(String(64), nullable=False)
+    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    group_title = Column(Text, nullable=True)
+    episode_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("escalation_episodes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    slack_ok = Column(Boolean, nullable=False, server_default=text("false"), default=False)
+    head_admin_fanout = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    method_slug = Column(String(64), nullable=True)
+    trigger_messages = Column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
+    )
+
+
 class SupportGroupIdleEpisodeState(Base):
     """Durable idle episodes for support groups (1m burst / 5m silence / 30m cap)."""
 
@@ -2267,6 +2319,11 @@ class SupportGroupIdleEpisodeState(Base):
     episode_started_at = Column(DateTime(timezone=True), nullable=True)
     last_human_at = Column(DateTime(timezone=True), nullable=True)
     burst_json = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list)
+    history_episode_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("escalation_episodes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),

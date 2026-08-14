@@ -329,12 +329,16 @@ async def handle_deposit_player_message(
     if should_ignore_deposit_sent_followup(message):
         return False
 
+    from bot.services.escalation_observability import trigger_message_from_telegram
+
+    trigger = trigger_message_from_telegram(message)
     await notify_escalation_slack(
         REASON_DEPOSIT_PLAYER_MESSAGE,
         club_id=club_id,
         chat_id=int(chat_id),
         title=title,
         message_text=message_text,
+        trigger_messages=[trigger] if trigger else None,
     )
     return True
 
@@ -378,7 +382,16 @@ async def notify_escalation_slack(
     title: str | None = None,
     message_text: str | None = None,
     method_slug: str | None = None,
+    episode_id=None,
+    trigger_messages: list | None = None,
 ) -> bool:
+    from bot.services.escalation_observability import (
+        live_history_episode_id,
+        record_escalation_event,
+        update_escalation_event_slack_ok,
+    )
+    from bot.services.head_admin_escalation import HEAD_ADMIN_ESCALATION_REASONS
+
     text = format_escalation_slack_text(
         reason,
         club_id=club_id,
@@ -387,6 +400,22 @@ async def notify_escalation_slack(
         message_text=message_text,
         method_slug=method_slug,
     )
+    resolved_episode_id = episode_id
+    if resolved_episode_id is None:
+        resolved_episode_id = live_history_episode_id(int(chat_id))
+    fanout = reason in HEAD_ADMIN_ESCALATION_REASONS
+    event_id = record_escalation_event(
+        reason=reason,
+        telegram_chat_id=int(chat_id),
+        club_id=club_id,
+        group_title=title,
+        episode_id=resolved_episode_id,
+        slack_ok=False,
+        head_admin_fanout=fanout,
+        method_slug=method_slug,
+        trigger_messages=trigger_messages,
+    )
+
     ok = False
     try:
         from bot.services.slack_ops_notify import notify_slack_escalation
@@ -400,6 +429,8 @@ async def notify_escalation_slack(
             exc_info=True,
         )
         ok = False
+
+    update_escalation_event_slack_ok(event_id, ok)
 
     # Independent fan-out for allowlisted reasons (RPA fail/uncertain → head admin).
     try:
@@ -915,12 +946,16 @@ async def handle_deposit_sent_player_followup(
     cancel_deposit_sent_watch(
         chat_id, job_queue=getattr(context, "job_queue", None)
     )
+    from bot.services.escalation_observability import trigger_message_from_telegram
+
+    trigger = trigger_message_from_telegram(message)
     await notify_escalation_slack(
         REASON_DEPOSIT_SENT_FOLLOWUP,
         club_id=club_id,
         chat_id=int(chat_id),
         title=title,
         message_text=message_text,
+        trigger_messages=[trigger] if trigger else None,
     )
     return True
 

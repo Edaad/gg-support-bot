@@ -223,8 +223,12 @@ DATABASE_URL=... python migrate_escalation_activity_state.py
 DATABASE_URL=... python migrate_escalation_deposit_sent_button_message_id.py
 DATABASE_URL=... python migrate_escalation_post_deposit_idle.py
 DATABASE_URL=... python migrate_support_group_idle_episode_state.py
+DATABASE_URL=... python migrate_escalation_observability.py
 DATABASE_URL=... python migrate_watched_group_escalation_state.py
 ```
+
+JWT read API (no dashboard page): `GET /api/escalations/events` and `GET /api/escalations/episodes/{id}`.
+
 
 ## Overlap with popup keyboard
 

@@ -10,6 +10,7 @@ Observe-only relative to /deposit and /cashout wizards.
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -22,9 +23,15 @@ from bot.services.escalation_notification import (
     notify_escalation_slack,
     offer_idle_help_prompt,
 )
+from bot.services.escalation_observability import (
+    CLOSE_REASON_FLOW_END,
+    CLOSE_REASON_HARD_CAP,
+    CLOSE_REASON_SILENCE,
+    close_history_episode,
+)
 from bot.services.group_activity import ESCALATION_SILENCE_SECONDS
 from db.connection import get_db
-from db.models import SupportGroupIdleEpisodeState
+from db.models import EscalationEpisode, SupportGroupIdleEpisodeState
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +171,7 @@ def _row_to_dict(row: SupportGroupIdleEpisodeState) -> dict[str, Any]:
         "episode_started_at": _as_utc(row.episode_started_at),
         "last_human_at": _as_utc(row.last_human_at),
         "burst": list(burst),
+        "history_episode_id": getattr(row, "history_episode_id", None),
     }
 
 
@@ -189,19 +197,32 @@ def list_open_episodes() -> list[dict[str, Any]]:
         return [_row_to_dict(r) for r in rows]
 
 
-def close_episode(chat_id: int, *, job_queue: Any | None = None) -> None:
+def close_episode(
+    chat_id: int,
+    *,
+    job_queue: Any | None = None,
+    close_reason: str = CLOSE_REASON_FLOW_END,
+) -> None:
     """Clear durable episode fields and cancel timers (flow-end / silence / cap)."""
     cid = int(chat_id)
     _cancel_jobs(cid, job_queue=job_queue, include_hardcap=True)
+    history_id = None
     with get_db() as session:
         row = session.get(SupportGroupIdleEpisodeState, cid)
         if row is None:
             return
+        history_id = getattr(row, "history_episode_id", None)
         row.episode_started_at = None
         row.last_human_at = None
         row.burst_json = []
+        row.history_episode_id = None
         row.updated_at = _now()
-    logger.info("support_group_idle_episode: closed chat_id=%s", cid)
+    close_history_episode(history_id, close_reason=close_reason)
+    logger.info(
+        "support_group_idle_episode: closed chat_id=%s reason=%s",
+        cid,
+        close_reason,
+    )
 
 
 def format_burst_message_text(burst: list[dict[str, str]]) -> str | None:
@@ -309,6 +330,18 @@ def _schedule_hardcap(
     )
 
 
+def _burst_entry(
+    message_text: str | None,
+    trigger_message: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if trigger_message:
+        return dict(trigger_message)
+    body = (message_text or "").strip()
+    if not body:
+        return None
+    return {"text": body}
+
+
 def _persist_open_or_feed(
     chat_id: int,
     *,
@@ -316,12 +349,14 @@ def _persist_open_or_feed(
     message_text: str | None,
     now: datetime | None,
     feed_burst: bool,
-) -> tuple[bool, list[dict[str, str]]]:
-    """Write DB. Returns (opened_new, burst_after)."""
+    club_id: int | None = None,
+    trigger_message: dict[str, Any] | None = None,
+) -> tuple[bool, list[dict[str, Any]], Any]:
+    """Write DB. Returns (opened_new, burst_after, history_episode_id)."""
     cid = int(chat_id)
     ts = _as_utc(now) or _now()
-    body = (message_text or "").strip()
-    entry = {"text": body} if body else None
+    entry = _burst_entry(message_text, trigger_message)
+    history_id = None
 
     with get_db() as session:
         row = _get_or_create_row(session, cid)
@@ -331,18 +366,46 @@ def _persist_open_or_feed(
         row.last_human_at = ts
 
         if row.episode_started_at is None:
+            history_id = uuid.uuid4()
+            try:
+                session.add(
+                    EscalationEpisode(
+                        id=history_id,
+                        telegram_chat_id=cid,
+                        club_id=int(club_id) if club_id is not None else None,
+                        group_title=title,
+                        opened_at=ts,
+                        trigger_messages=[entry] if entry else [],
+                    )
+                )
+            except Exception:
+                logger.warning(
+                    "support_group_idle_episode: history insert failed chat_id=%s",
+                    cid,
+                    exc_info=True,
+                )
+                history_id = None
+            row.history_episode_id = history_id
             row.episode_started_at = ts
             # Opening Slack already covers this message; burst starts empty so the
             # 1m debounce only fires for *follow-up* player messages.
             row.burst_json = [entry] if (feed_burst and entry) else []
             burst = list(row.burst_json)
-            return True, burst
+            return True, burst, history_id
 
+        history_id = row.history_episode_id
         burst = list(row.burst_json) if isinstance(row.burst_json, list) else []
         if entry and (not burst or burst[-1] != entry):
             burst.append(entry)
         row.burst_json = burst
-        return False, burst
+        if entry and history_id is not None:
+            hist = session.get(EscalationEpisode, history_id)
+            if hist is not None:
+                current = list(hist.trigger_messages or [])
+                if not current or current[-1] != entry:
+                    current.append(entry)
+                    hist.trigger_messages = current
+        return False, burst, history_id
 
 
 async def on_player_reach_out(
@@ -356,6 +419,7 @@ async def on_player_reach_out(
     job_queue: Any | None = None,
     bot: Any | None = None,
     now: datetime | None = None,
+    trigger_message: dict[str, Any] | None = None,
 ) -> bool:
     """Open episode (Slack + no-op menu) or feed burst. Returns True if handled."""
     cid = int(chat_id)
@@ -364,7 +428,7 @@ async def on_player_reach_out(
         # Media-only still escalates via placeholder from caller; empty = ignore.
         return False
 
-    opened, burst = _persist_open_or_feed(
+    opened, burst, history_id = _persist_open_or_feed(
         cid,
         title=title,
         message_text=message_text,
@@ -373,6 +437,8 @@ async def on_player_reach_out(
         # 1m can re-surface it as follow-up; when we Slack player_idle ourselves,
         # leave burst empty until a later feed.
         feed_burst=bool(slack_already_sent),
+        club_id=club_id,
+        trigger_message=trigger_message,
     )
 
     jq = _resolve_job_queue(job_queue)
@@ -385,6 +451,10 @@ async def on_player_reach_out(
                 chat_id=cid,
                 title=title,
                 message_text=message_text,
+                episode_id=history_id,
+                trigger_messages=[trigger_message]
+                if trigger_message
+                else ([{"text": body}] if body else None),
             )
         try:
             await offer_idle_help_prompt(
@@ -430,6 +500,7 @@ async def feed_or_open_episode(
     job_queue: Any | None = None,
     bot: Any | None = None,
     now: datetime | None = None,
+    trigger_message: dict[str, Any] | None = None,
 ) -> bool:
     """Deposit path: reason Slack already sent; open/feed without double Slack."""
     return await on_player_reach_out(
@@ -442,6 +513,7 @@ async def feed_or_open_episode(
         job_queue=job_queue,
         bot=bot,
         now=now,
+        trigger_message=trigger_message,
     )
 
 
@@ -505,6 +577,8 @@ async def _idle_debounce_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
             chat_id=chat_id,
             title=title or state.get("title"),
             message_text=body,
+            episode_id=state.get("history_episode_id"),
+            trigger_messages=list(burst) if burst else None,
         )
     except Exception:
         logger.warning(
@@ -530,20 +604,32 @@ async def _idle_silence_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     last_at = state.get("last_human_at")
     if last_at is None:
-        close_episode(chat_id, job_queue=getattr(context, "job_queue", None))
+        close_episode(
+            chat_id,
+            job_queue=getattr(context, "job_queue", None),
+            close_reason=CLOSE_REASON_SILENCE,
+        )
         return
     elapsed = (_now() - last_at).total_seconds()
     if elapsed + 0.5 < float(idle_episode_silence_seconds()):
         # Newer human activity should have rescheduled; bail.
         return
-    close_episode(chat_id, job_queue=getattr(context, "job_queue", None))
+    close_episode(
+        chat_id,
+        job_queue=getattr(context, "job_queue", None),
+        close_reason=CLOSE_REASON_SILENCE,
+    )
     logger.info("support_group_idle_episode: silence closed chat_id=%s", chat_id)
 
 
 async def _idle_hardcap_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     data = context.job.data or {}
     chat_id = int(data.get("chat_id") or context.job.chat_id)
-    close_episode(chat_id, job_queue=getattr(context, "job_queue", None))
+    close_episode(
+        chat_id,
+        job_queue=getattr(context, "job_queue", None),
+        close_reason=CLOSE_REASON_HARD_CAP,
+    )
     logger.info("support_group_idle_episode: hardcap closed chat_id=%s", chat_id)
 
 
@@ -564,13 +650,17 @@ def restore_support_group_idle_episode_jobs(job_queue: Any | None = None) -> Non
             continue
         hardcap_remaining = hardcap_s - (now - started).total_seconds()
         if hardcap_remaining <= 0:
-            close_episode(chat_id, job_queue=jq)
+            close_episode(
+                chat_id, job_queue=jq, close_reason=CLOSE_REASON_HARD_CAP
+            )
             continue
 
         last_at = state.get("last_human_at") or started
         silence_remaining = silence_s - (now - last_at).total_seconds()
         if silence_remaining <= 0:
-            close_episode(chat_id, job_queue=jq)
+            close_episode(
+                chat_id, job_queue=jq, close_reason=CLOSE_REASON_SILENCE
+            )
             continue
 
         _schedule_hardcap(chat_id, job_queue=jq, when=hardcap_remaining)

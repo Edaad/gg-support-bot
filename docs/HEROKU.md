@@ -401,6 +401,7 @@ heroku run -a YOUR_APP -- python migrate_escalation_activity_state.py
 heroku run -a YOUR_APP -- python migrate_escalation_post_deposit_idle.py
 # Support-group idle episodes (1m burst / 5m silence / 30m hard cap)
 heroku run -a YOUR_APP -- python migrate_support_group_idle_episode_state.py
+heroku run -a YOUR_APP -- python migrate_escalation_observability.py
 heroku config:set SLACK_ESCALATION_BOT_TOKEN=xoxb-... -a YOUR_APP
 heroku config:set SLACK_ESCALATION_CHANNEL_ID=C... -a YOUR_APP
 heroku config:set SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID=C... -a YOUR_APP
