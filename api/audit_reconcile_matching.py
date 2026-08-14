@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -12,9 +12,19 @@ from api.club_audit_timezone import zone_for_payment_display
 from api.vaughn_methods import is_vaughn_method, matching_source_label
 
 MATCH_WINDOW = timedelta(minutes=15)
+CHIP_TRANSFER_WINDOW = timedelta(minutes=10)
+CHIP_TRANSFER_PLAYER_LABEL = "Chip Transfer (Player)"
+CHIP_TRANSFER_RT_AT_LABEL = "Chip Transfer (RT↔AT)"
 # Whole-dollar slack after round_whole_usd (e.g. early RB $18.60 ↔ ClubGG $18).
 MATCH_AMOUNT_TOLERANCE_USD = Decimal("1")
 _WHOLE = Decimal("1")
+_RT_SLUG = "round-table"
+_AT_SLUG = "aces-table"
+_RT_AT_SLUGS = frozenset({_RT_SLUG, _AT_SLUG})
+_CLUB_DISPLAY = {
+    _RT_SLUG: "Round Table",
+    _AT_SLUG: "Aces Table",
+}
 
 
 @dataclass(frozen=True)
@@ -110,6 +120,158 @@ def _empty_match_row(trade: TradeLineForMatch) -> MatchedTradeRow:
         vaughn_method=False,
         match_occurred_at=None,
     )
+
+
+def _trade_slug(trade: TradeLineForMatch) -> str:
+    return (trade.trade_club_slug or "").strip().lower()
+
+
+def _trade_player_id(trade: TradeLineForMatch) -> str:
+    return (trade.member_gg_player_id or "").strip()
+
+
+def _player_display_name(trade: TradeLineForMatch) -> str:
+    nick = (trade.member_nickname or "").strip()
+    return nick or _trade_player_id(trade)
+
+
+def _is_unmatched_row(row: MatchedTradeRow) -> bool:
+    return not (row.match_source or "").strip()
+
+
+def _chip_transfer_eligible_base(
+    left: TradeLineForMatch,
+    right: TradeLineForMatch,
+) -> timedelta | None:
+    left_at = _as_utc(left.occurred_at)
+    right_at = _as_utc(right.occurred_at)
+    if left_at is None or right_at is None:
+        return None
+    if left.amount == 0 or right.amount == 0:
+        return None
+    if left.amount * right.amount >= 0:
+        return None
+    if abs(left.amount) != abs(right.amount):
+        return None
+    delta = abs(left_at - right_at)
+    if delta > CHIP_TRANSFER_WINDOW:
+        return None
+    return delta
+
+
+def _is_inter_player_pair(left: TradeLineForMatch, right: TradeLineForMatch) -> bool:
+    left_id = _trade_player_id(left)
+    right_id = _trade_player_id(right)
+    if not left_id or not right_id or left_id == right_id:
+        return False
+    return _trade_slug(left) == _trade_slug(right)
+
+
+def _is_rt_at_pair(left: TradeLineForMatch, right: TradeLineForMatch) -> bool:
+    left_id = _trade_player_id(left)
+    right_id = _trade_player_id(right)
+    if not left_id or left_id != right_id:
+        return False
+    return {_trade_slug(left), _trade_slug(right)} == _RT_AT_SLUGS
+
+
+def _fill_transfer_pair(
+    rows: list[MatchedTradeRow],
+    i: int,
+    j: int,
+    *,
+    source: str,
+    name_i: str,
+    name_j: str,
+) -> None:
+    a = rows[i]
+    b = rows[j]
+    abs_amt = abs(a.trade.amount)
+    rows[i] = replace(
+        a,
+        match_name=name_i,
+        match_source=source,
+        match_time=_format_match_time("", b.trade.occurred_at),
+        match_amount=abs_amt,
+        variant="",
+        match_occurred_at=b.trade.occurred_at,
+    )
+    rows[j] = replace(
+        b,
+        match_name=name_j,
+        match_source=source,
+        match_time=_format_match_time("", a.trade.occurred_at),
+        match_amount=abs_amt,
+        variant="",
+        match_occurred_at=a.trade.occurred_at,
+    )
+
+
+def _pair_leftovers(
+    rows: list[MatchedTradeRow],
+    *,
+    eligible: object,
+    source: str,
+    name_for,
+) -> None:
+    leftover = [idx for idx, row in enumerate(rows) if _is_unmatched_row(row)]
+    leftover.sort(key=lambda idx: _sort_key_occurred_at(rows[idx].trade.occurred_at))
+    used: set[int] = set()
+    for i in leftover:
+        if i in used:
+            continue
+        best_j: int | None = None
+        best_delta: timedelta | None = None
+        for j in leftover:
+            if j == i or j in used:
+                continue
+            if not eligible(rows[i].trade, rows[j].trade):
+                continue
+            delta = _chip_transfer_eligible_base(rows[i].trade, rows[j].trade)
+            if delta is None:
+                continue
+            if best_delta is None or delta < best_delta:
+                best_delta = delta
+                best_j = j
+        if best_j is None:
+            continue
+        used.add(i)
+        used.add(best_j)
+        _fill_transfer_pair(
+            rows,
+            i,
+            best_j,
+            source=source,
+            name_i=name_for(rows[i].trade, rows[best_j].trade),
+            name_j=name_for(rows[best_j].trade, rows[i].trade),
+        )
+
+
+def apply_chip_transfer_matches(
+    rows: list[MatchedTradeRow],
+) -> list[MatchedTradeRow]:
+    """Pair leftover unmatched trades: inter-player first, then RT↔AT."""
+    out = list(rows)
+
+    def player_name(_self: TradeLineForMatch, counterpart: TradeLineForMatch) -> str:
+        return _player_display_name(counterpart)
+
+    def rt_at_name(_self: TradeLineForMatch, counterpart: TradeLineForMatch) -> str:
+        return _CLUB_DISPLAY.get(_trade_slug(counterpart), _trade_slug(counterpart))
+
+    _pair_leftovers(
+        out,
+        eligible=_is_inter_player_pair,
+        source=CHIP_TRANSFER_PLAYER_LABEL,
+        name_for=player_name,
+    )
+    _pair_leftovers(
+        out,
+        eligible=_is_rt_at_pair,
+        source=CHIP_TRANSFER_RT_AT_LABEL,
+        name_for=rt_at_name,
+    )
+    return out
 
 
 def _candidate_score(

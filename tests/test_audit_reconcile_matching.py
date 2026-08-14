@@ -9,6 +9,9 @@ from decimal import Decimal
 from api.audit_ledger import LedgerLine
 from api.audit_reconcile import TradeLineForMatch
 from api.audit_reconcile_matching import (
+    CHIP_TRANSFER_PLAYER_LABEL,
+    CHIP_TRANSFER_RT_AT_LABEL,
+    apply_chip_transfer_matches,
     match_trade_lines_to_ledger,
     round_whole_usd,
 )
@@ -22,6 +25,7 @@ def _trade(
     nick: str | None = "PlayerOne",
     occurred: datetime | None = None,
     sheet_row: int = 1,
+    club: str | None = "round-table",
 ) -> TradeLineForMatch:
     return TradeLineForMatch(
         line_id=line_id,
@@ -30,6 +34,7 @@ def _trade(
         member_gg_player_id=gg_id,
         member_nickname=nick,
         sheet_row=sheet_row,
+        trade_club_slug=club,
     )
 
 
@@ -399,6 +404,157 @@ class MatchTradeLinesTestCase(unittest.TestCase):
         ).rows
         self.assertEqual(rows[0].match_source, "Cashout Venmo")
         self.assertEqual(rows[0].variant, "")
+
+
+def _with_transfers(trades, ledgers, *, club_slug: str = "round-table"):
+    result = match_trade_lines_to_ledger(trades, ledgers, club_slug=club_slug)
+    return apply_chip_transfer_matches(result.rows)
+
+
+class ChipTransferMatchTestCase(unittest.TestCase):
+    def setUp(self):
+        self.t0 = datetime(2026, 7, 3, 6, 30, tzinfo=timezone.utc)
+
+    def test_inter_player_pair_after_unmatched_ledger(self):
+        add = _trade(
+            line_id=1,
+            amount="-100",
+            gg_id="1111-1111",
+            nick="Alice",
+            occurred=self.t0,
+            club="clubgto",
+        )
+        claim = _trade(
+            line_id=2,
+            amount="100",
+            gg_id="2222-2222",
+            nick="Bob",
+            occurred=self.t0 + timedelta(minutes=4),
+            club="clubgto",
+        )
+        rows = _with_transfers([add, claim], [], club_slug="clubgto")
+        self.assertEqual(rows[0].match_source, CHIP_TRANSFER_PLAYER_LABEL)
+        self.assertEqual(rows[1].match_source, CHIP_TRANSFER_PLAYER_LABEL)
+        self.assertEqual(rows[0].match_name, "Bob")
+        self.assertEqual(rows[1].match_name, "Alice")
+        self.assertEqual(rows[0].match_amount, Decimal("100"))
+        self.assertEqual(rows[1].variant, "")
+        self.assertEqual(rows[0].match_occurred_at, claim.occurred_at)
+
+    def test_ledger_match_wins_over_nearby_opposite_trade(self):
+        add = _trade(
+            line_id=1,
+            amount="-100",
+            gg_id="1111-1111",
+            nick="Alice",
+            occurred=self.t0,
+        )
+        claim = _trade(
+            line_id=2,
+            amount="100",
+            gg_id="2222-2222",
+            nick="Bob",
+            occurred=self.t0,
+        )
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-100",
+            gg_id="1111-1111",
+            nick="Alice",
+            source_label="Stripe",
+        )
+        rows = _with_transfers([add, claim], [ledger])
+        self.assertEqual(rows[0].match_source, "Stripe")
+        self.assertEqual(rows[1].match_source, "")
+
+    def test_inter_player_preferred_over_rt_at(self):
+        rt_a = _trade(
+            line_id=1,
+            amount="-100",
+            gg_id="1111-1111",
+            nick="Alice",
+            occurred=self.t0,
+            club="round-table",
+        )
+        rt_b = _trade(
+            line_id=2,
+            amount="100",
+            gg_id="2222-2222",
+            nick="Bob",
+            occurred=self.t0,
+            club="round-table",
+        )
+        at_a = _trade(
+            line_id=3,
+            amount="100",
+            gg_id="1111-1111",
+            nick="Alice",
+            occurred=self.t0,
+            club="aces-table",
+        )
+        rows = _with_transfers([rt_a, rt_b, at_a], [])
+        by_id = {row.trade.line_id: row for row in rows}
+        self.assertEqual(by_id[1].match_source, CHIP_TRANSFER_PLAYER_LABEL)
+        self.assertEqual(by_id[2].match_source, CHIP_TRANSFER_PLAYER_LABEL)
+        self.assertEqual(by_id[3].match_source, "")
+
+    def test_rt_at_same_player_different_clubs(self):
+        rt = _trade(
+            line_id=1,
+            amount="-80",
+            gg_id="1111-1111",
+            nick="Alice",
+            occurred=self.t0,
+            club="round-table",
+        )
+        at = _trade(
+            line_id=2,
+            amount="80",
+            gg_id="1111-1111",
+            nick="Alice",
+            occurred=self.t0 + timedelta(minutes=10),
+            club="aces-table",
+        )
+        rows = _with_transfers([rt, at], [])
+        self.assertEqual(rows[0].match_source, CHIP_TRANSFER_RT_AT_LABEL)
+        self.assertEqual(rows[1].match_source, CHIP_TRANSFER_RT_AT_LABEL)
+        self.assertEqual(rows[0].match_name, "Aces Table")
+        self.assertEqual(rows[1].match_name, "Round Table")
+
+    def test_amount_mismatch_rejected(self):
+        add = _trade(line_id=1, amount="-100", gg_id="1111-1111", occurred=self.t0)
+        claim = _trade(
+            line_id=2,
+            amount="99",
+            gg_id="2222-2222",
+            occurred=self.t0,
+        )
+        rows = _with_transfers([add, claim], [])
+        self.assertEqual(rows[0].match_source, "")
+        self.assertEqual(rows[1].match_source, "")
+
+    def test_window_eleven_minutes_rejected(self):
+        add = _trade(line_id=1, amount="-100", gg_id="1111-1111", occurred=self.t0)
+        claim = _trade(
+            line_id=2,
+            amount="100",
+            gg_id="2222-2222",
+            occurred=self.t0 + timedelta(minutes=11),
+        )
+        rows = _with_transfers([add, claim], [])
+        self.assertEqual(rows[0].match_source, "")
+
+    def test_missing_player_id_skipped(self):
+        add = _trade(line_id=1, amount="-100", gg_id=None, occurred=self.t0)
+        claim = _trade(
+            line_id=2,
+            amount="100",
+            gg_id="2222-2222",
+            occurred=self.t0,
+        )
+        rows = _with_transfers([add, claim], [])
+        self.assertEqual(rows[0].match_source, "")
+        self.assertEqual(rows[1].match_source, "")
 
 
 if __name__ == "__main__":

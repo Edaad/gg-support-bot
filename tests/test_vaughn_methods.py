@@ -199,6 +199,7 @@ class MatchingSourceLabelTestCase(unittest.TestCase):
         self.assertIn("Vaughn Cashout Crypto", opts)
         self.assertNotIn("Vaughn Cashout Revolut", opts)
         self.assertNotIn("GTO Cashout Venmo", opts)
+        self.assertNotIn("Chip Transfer (RT↔AT)", opts)
 
 
 class TallyVaughnMethodsTestCase(unittest.TestCase):

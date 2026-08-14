@@ -324,6 +324,8 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertIn("Cashout Venmo", hidden_headers)
         self.assertIn("Vaughn Cashout Venmo", hidden_headers)
         self.assertIn("Vaughn Cashout Cash App", hidden_headers)
+        self.assertIn("Chip Transfer (Player)", hidden_headers)
+        self.assertNotIn("Chip Transfer (RT↔AT)", hidden_headers)
         cf_formulas: list[str] = []
         for cf_range in matching.conditional_formatting._cf_rules:
             self.assertIn("F2", str(cf_range))
@@ -332,6 +334,8 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertTrue(any("Cashout Venmo" in f for f in cf_formulas))
         self.assertTrue(any("Vaughn Cashout Venmo" in f for f in cf_formulas))
         self.assertTrue(any("GTO Stripe" in f for f in cf_formulas))
+        self.assertTrue(any("Chip Transfer (Player)" in f for f in cf_formulas))
+        self.assertTrue(any("Chip Transfer (RT↔AT)" in f for f in cf_formulas))
         self.assertEqual(
             len(cf_formulas),
             len(_MATCHING_SOURCE_FILL_HEX),
@@ -640,6 +644,108 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(unresolved.cell(row=2, column=3).value, "Aware")
         self.assertEqual(unresolved.cell(row=3, column=3).value, "Naive")
         self.assertEqual(unresolved.cell(row=3, column=5).value, "Round Table")
+
+    def test_matching_chip_transfer_player_and_unresolved_ledger_only(self):
+        occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
+        report = AuditReconcileReport(
+            audit_date=date(2026, 7, 3),
+            club_slug="creator-club",
+            club_name="Creator Club",
+            status="pass",
+            players=[],
+            trade_lines=[
+                TradeLineForMatch(
+                    line_id=1,
+                    occurred_at=occurred,
+                    amount=Decimal("-40"),
+                    member_gg_player_id="1111-1111",
+                    member_nickname="Alice",
+                    sheet_row=1,
+                    trade_club_slug="creator-club",
+                ),
+                TradeLineForMatch(
+                    line_id=2,
+                    occurred_at=occurred,
+                    amount=Decimal("40"),
+                    member_gg_player_id="2222-2222",
+                    member_nickname="Bob",
+                    sheet_row=2,
+                    trade_club_slug="creator-club",
+                ),
+            ],
+            ledger_lines=[
+                LedgerLine(
+                    gg_player_id="9999-9999",
+                    member_nickname="Orphan",
+                    source="deposit_stripe",
+                    source_label="Stripe",
+                    amount_signed=Decimal("-12"),
+                    occurred_at_utc=occurred,
+                    external_id="deposit_stripe:orphan",
+                    display_name="Orphan",
+                ),
+            ],
+        )
+        wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
+        matching = wb["Matching"]
+        self.assertEqual(matching.cell(row=2, column=6).value, "Chip Transfer (Player)")
+        self.assertEqual(matching.cell(row=2, column=7).value, "Bob")
+        self.assertEqual(matching.cell(row=2, column=9).value, 40.0)
+        self.assertEqual(matching.cell(row=3, column=6).value, "Chip Transfer (Player)")
+        self.assertEqual(matching.cell(row=3, column=7).value, "Alice")
+        self.assertFalse(matching.cell(row=3, column=10).value)
+        hidden_headers = [
+            matching.cell(row=1, column=col).value for col in range(30, 60)
+        ]
+        self.assertIn("Chip Transfer (Player)", hidden_headers)
+        self.assertNotIn("Chip Transfer (RT↔AT)", hidden_headers)
+        unresolved = wb["Unresolved"]
+        self.assertEqual(unresolved.cell(row=2, column=3).value, "Orphan")
+        self.assertIsNone(unresolved.cell(row=3, column=1).value)
+
+    def test_all_clubs_chip_transfer_rt_at_split_sheets(self):
+        occurred = datetime(2026, 7, 3, 15, 0, tzinfo=timezone.utc)
+        rt_report = _empty_report(club_slug="round-table", club_name="Round Table")
+        rt_report.trade_lines = [
+            TradeLineForMatch(
+                line_id=1,
+                occurred_at=occurred,
+                amount=Decimal("-90"),
+                member_gg_player_id="1111-1111",
+                member_nickname="Alice",
+                sheet_row=1,
+                trade_club_slug="round-table",
+            ),
+            TradeLineForMatch(
+                line_id=2,
+                occurred_at=occurred,
+                amount=Decimal("90"),
+                member_gg_player_id="1111-1111",
+                member_nickname="Alice",
+                sheet_row=2,
+                trade_club_slug="aces-table",
+            ),
+        ]
+        reports = {
+            "round-table": rt_report,
+            "clubgto": _empty_report(club_slug="clubgto", club_name="ClubGTO"),
+            "creator-club": _empty_report(
+                club_slug="creator-club", club_name="Creator Club"
+            ),
+        }
+        wb = load_workbook(io.BytesIO(build_all_clubs_matching_workbook(reports)))
+        rt_sheet = wb["Round Table"]
+        at_sheet = wb["Aces Table"]
+        self.assertEqual(rt_sheet.cell(row=2, column=6).value, "Chip Transfer (RT↔AT)")
+        self.assertEqual(rt_sheet.cell(row=2, column=7).value, "Aces Table")
+        self.assertEqual(at_sheet.cell(row=2, column=6).value, "Chip Transfer (RT↔AT)")
+        self.assertEqual(at_sheet.cell(row=2, column=7).value, "Round Table")
+        rt_hidden = [rt_sheet.cell(row=1, column=col).value for col in range(30, 60)]
+        at_hidden = [at_sheet.cell(row=1, column=col).value for col in range(30, 60)]
+        self.assertIn("Chip Transfer (RT↔AT)", rt_hidden)
+        self.assertIn("Chip Transfer (RT↔AT)", at_hidden)
+        unresolved = wb["Unresolved"]
+        self.assertIsNone(unresolved.cell(row=2, column=1).value)
 
 
 if __name__ == "__main__":

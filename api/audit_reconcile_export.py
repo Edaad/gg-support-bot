@@ -22,8 +22,11 @@ from api.audit_ledger import (
 )
 from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport
 from api.audit_reconcile_matching import (
+    CHIP_TRANSFER_PLAYER_LABEL,
+    CHIP_TRANSFER_RT_AT_LABEL,
     MatchedTradeRow,
     _sort_key_occurred_at,
+    apply_chip_transfer_matches,
     match_trade_lines_to_ledger,
 )
 from api.club_audit_timezone import zone_for_payment_display
@@ -194,7 +197,7 @@ _MATCHING_VARIANT_COL = 10  # Variant
 
 MATCHING_SOURCE_OPTIONS: tuple[str, ...] = tuple(
     label for src, label in LEDGER_SOURCE_LABELS.items() if src != "cashout"
-) + CASHOUT_SOURCE_LABELS
+) + CASHOUT_SOURCE_LABELS + (CHIP_TRANSFER_PLAYER_LABEL,)
 
 # Matching Source fills: one family color; GTO / Vaughn uses the darker shade.
 _MATCHING_SOURCE_FILL_HEX: dict[str, str] = {
@@ -226,6 +229,8 @@ _MATCHING_SOURCE_FILL_HEX: dict[str, str] = {
     "Bonus": "FADBD8",
     "RB settlement (Monday)": "D5D8DC",
     "Cashout": "E5E7E9",
+    CHIP_TRANSFER_PLAYER_LABEL: "C5CAE9",
+    CHIP_TRANSFER_RT_AT_LABEL: "9FA8DA",
 }
 
 
@@ -258,8 +263,11 @@ def _variant_options_by_source(
 
 
 def _matching_source_dropdown_options(club_slug: str) -> tuple[str, ...]:
-    if club_slug.strip().lower() == "clubgto":
-        return clubgto_matching_source_options()
+    key = club_slug.strip().lower()
+    if key == "clubgto":
+        return clubgto_matching_source_options() + (CHIP_TRANSFER_PLAYER_LABEL,)
+    if key in {"round-table", "aces-table"}:
+        return MATCHING_SOURCE_OPTIONS + (CHIP_TRANSFER_RT_AT_LABEL,)
     return MATCHING_SOURCE_OPTIONS
 
 
@@ -384,6 +392,7 @@ def _add_matching_source_variant_dropdowns(
     *,
     first_row: int,
     last_row: int,
+    dropdown_club_slug: str | None = None,
 ) -> None:
     """Source list + Variant list dependent on Source (Excel / Sheets DV)."""
     if last_row < first_row:
@@ -393,7 +402,9 @@ def _add_matching_source_variant_dropdowns(
         report.ledger_lines,
         club_slug=report.club_slug,
     )
-    source_options = list(_matching_source_dropdown_options(report.club_slug))
+    source_options = list(
+        _matching_source_dropdown_options(dropdown_club_slug or report.club_slug)
+    )
     source_columns = list(source_options)
     for label in by_source:
         if label not in source_columns:
@@ -1017,6 +1028,7 @@ def _write_matching_rows(
         report_for_dropdowns,
         first_row=header_row + 1,
         last_row=last_data_row,
+        dropdown_club_slug=table_slug,
     )
     _add_matching_source_colors(
         ws,
@@ -1043,9 +1055,10 @@ def _write_matching_sheet(
         report.ledger_lines,
         club_slug=report.club_slug,
     )
+    match_rows = apply_chip_transfer_matches(match_result.rows)
     _write_matching_rows(
         ws,
-        match_result.rows,
+        match_rows,
         time_club_slug=report.club_slug,
         table_slug=report.club_slug,
         report_for_dropdowns=report,
@@ -1126,7 +1139,8 @@ def build_all_clubs_matching_workbook(
         rt_report.ledger_lines,
         club_slug=rt_report.club_slug,
     )
-    partitioned = _partition_composite_matching_rows(rt_match.rows)
+    rt_rows = apply_chip_transfer_matches(rt_match.rows)
+    partitioned = _partition_composite_matching_rows(rt_rows)
 
     for slug, title in ALL_CLUBS_MATCHING_SHEET_ORDER:
         if first:
