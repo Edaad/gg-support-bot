@@ -279,6 +279,21 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, ConversationHandler.END)
         update.message.reply_text.assert_not_called()
 
+    @patch.object(dep, "filter_deposit_methods_for_chat", side_effect=lambda _cid, ms: ms)
+    @patch.object(dep, "get_lowest_minimum", return_value=Decimal("50"))
+    @patch.object(dep, "get_methods_for_amount", return_value=[])
+    async def test_below_minimum_cancels_and_prompts_deposit_again(self, *_mocks):
+        update = _message_update(age_seconds=5, text="20", user_id=8132930521)
+        context = self._admin_context()
+        result = await dep.deposit_amount_received(update, context)
+        self.assertEqual(result, ConversationHandler.END)
+        update.message.reply_text.assert_awaited_once_with(
+            "Sorry! The minimum deposit amount is $50.00. "
+            "Use /deposit again to start a new deposit."
+        )
+        self.assertNotIn("deposit_club_id", context.chat_data)
+        self.assertNotIn("deposit_amount", context.chat_data)
+
 
 class TestCashoutAmountActorGating(unittest.IsolatedAsyncioTestCase):
     def _admin_context(self):
