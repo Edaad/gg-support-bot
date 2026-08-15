@@ -278,11 +278,8 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertIn("$C$2:$C$2", chips_total)
         self.assertIn("ABS($C$2:$C$2)", chips_total)
         self.assertIn('($F$2:$F$2="GTO Zelle")', chips_total)
-        self.assertIn("Matching_clubgto", matching.tables)
-        self.assertEqual(matching.tables["Matching_clubgto"].ref, "A1:J2")
-        style = matching.tables["Matching_clubgto"].tableStyleInfo
-        self.assertEqual(style.name, "TableStyleLight1")
-        self.assertFalse(style.showRowStripes)
+        self.assertEqual(matching.auto_filter.ref, "A1:J2")
+        self.assertEqual(list(matching.tables), [])
         header_fill = matching.cell(row=1, column=1).fill.fgColor.rgb
         self.assertTrue(str(header_fill).endswith("306A54"))
         self.assertEqual(matching.cell(row=1, column=1).font.name, _MATCHING_HEADER_FONT.name)
@@ -309,15 +306,20 @@ class ReconcileExportTestCase(unittest.TestCase):
             if (dv.formula1 or "").startswith("=") and "INDIRECT" not in (dv.formula1 or "")
         )
         self.assertIn("F2:F2", source_dv.sqref)
-        self.assertIn("$AD$1:", source_dv.formula1)
-        self.assertRegex(source_dv.formula1 or "", r"=\$AD\$1:\$AD\$\d+")
+        self.assertIn("Source lists", source_dv.formula1)
+        self.assertIn("$C$1:", source_dv.formula1)
         variant_dv = next(dv for dv in validations if "INDIRECT" in (dv.formula1 or ""))
         self.assertIn("J2:J2", variant_dv.sqref)
         self.assertIn("MATCH(", variant_dv.formula1)
         self.assertIn("ADDRESS(", variant_dv.formula1)
-        # Vertical Source list in AD (visible); variant lists start at AE (hidden)
-        self.assertEqual(matching.cell(row=1, column=30).value, "GTO Stripe")
-        self.assertFalse(bool(matching.column_dimensions["AD"].hidden))
+        lists = wb["Source lists"]
+        self.assertEqual(lists.cell(row=1, column=3).value, "GTO Stripe")
+        self.assertIn("Chip Transfer (Player)", [
+            lists.cell(row=r, column=3).value for r in range(1, 50)
+        ])
+        self.assertNotIn("Chip Transfer (RT↔AT)", [
+            lists.cell(row=r, column=3).value for r in range(1, 50)
+        ])
         self.assertTrue(matching.column_dimensions["AE"].hidden)
         hidden_headers = [
             matching.cell(row=1, column=col).value for col in range(30, 60)
@@ -478,8 +480,8 @@ class ReconcileExportTestCase(unittest.TestCase):
         wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
         matching = wb["Matching"]
         self.assertIsNone(matching.cell(row=1, column=12).value)
-        self.assertIn("Matching_round_table", matching.tables)
-        self.assertEqual(matching.tables["Matching_round_table"].ref, "A1:J1")
+        self.assertEqual(matching.auto_filter.ref, "A1:J1")
+        self.assertEqual(list(matching.tables), [])
 
     def test_all_clubs_matching_workbook_sheet_order(self):
         reports = {
@@ -508,10 +510,11 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(wb["ClubGTO"].cell(row=1, column=12).value, "Vaughn methods")
         self.assertIsNone(wb["Round Table"].cell(row=1, column=12).value)
         self.assertIsNone(wb["Aces Table"].cell(row=1, column=12).value)
-        self.assertIn("Matching_round_table", wb["Round Table"].tables)
-        self.assertIn("Matching_aces_table", wb["Aces Table"].tables)
-        self.assertIn("Matching_clubgto", wb["ClubGTO"].tables)
-        self.assertIn("Matching_creator_club", wb["Creator Club"].tables)
+        self.assertEqual(wb["Round Table"].auto_filter.ref, "A1:J1")
+        self.assertEqual(list(wb["Round Table"].tables), [])
+        self.assertEqual(list(wb["Aces Table"].tables), [])
+        self.assertEqual(list(wb["ClubGTO"].tables), [])
+        self.assertEqual(list(wb["Creator Club"].tables), [])
         unresolved = wb["Unresolved"]
         self.assertEqual(
             [unresolved.cell(row=1, column=c).value for c in range(1, 7)],

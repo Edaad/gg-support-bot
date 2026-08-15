@@ -234,12 +234,6 @@ _MATCHING_SOURCE_FILL_HEX: dict[str, str] = {
 }
 
 
-def _matching_table_display_name(club_slug: str) -> str:
-    """Excel table names: unique per workbook, no spaces/hyphens."""
-    safe = "".join(ch if ch.isalnum() else "_" for ch in club_slug.strip().lower())
-    return f"Matching_{safe or 'sheet'}"
-
-
 def _variant_options_by_source(
     ledger_lines: list[LedgerLine],
     *,
@@ -269,6 +263,76 @@ def _matching_source_dropdown_options(club_slug: str) -> tuple[str, ...]:
     if key in {"round-table", "aces-table"}:
         return MATCHING_SOURCE_OPTIONS + (CHIP_TRANSFER_RT_AT_LABEL,)
     return MATCHING_SOURCE_OPTIONS
+
+
+_SOURCE_LIST_SHEET = "Source lists"
+_SOURCE_LIST_COL_BY_SLUG: dict[str, int] = {
+    "round-table": 1,
+    "aces-table": 2,
+    "clubgto": 3,
+    "creator-club": 4,
+}
+
+
+def _source_list_formula(club_slug: str, n_options: int) -> str:
+    col = _SOURCE_LIST_COL_BY_SLUG.get(club_slug.strip().lower(), 1)
+    letter = get_column_letter(col)
+    return f"='{_SOURCE_LIST_SHEET}'!${letter}$1:${letter}${max(n_options, 1)}"
+
+
+def _write_source_list_column(
+    wb: Workbook,
+    *,
+    club_slug: str,
+    options: list[str],
+) -> None:
+    """Visible vertical list so Google Sheets keeps the Source dropdown."""
+    if _SOURCE_LIST_SHEET in wb.sheetnames:
+        lists_ws = wb[_SOURCE_LIST_SHEET]
+    else:
+        lists_ws = wb.create_sheet(_SOURCE_LIST_SHEET)
+    col = _SOURCE_LIST_COL_BY_SLUG.get(club_slug.strip().lower(), 1)
+    for row_i, source in enumerate(options, start=1):
+        lists_ws.cell(row=row_i, column=col, value=source)
+    lists_ws.column_dimensions[get_column_letter(col)].width = 28
+
+
+def _move_source_lists_last(wb: Workbook) -> None:
+    if _SOURCE_LIST_SHEET not in wb.sheetnames:
+        return
+    idx = wb.sheetnames.index(_SOURCE_LIST_SHEET)
+    offset = len(wb.sheetnames) - 1 - idx
+    if offset:
+        wb.move_sheet(_SOURCE_LIST_SHEET, offset=offset)
+
+
+def _style_matching_block(
+    ws: Worksheet,
+    *,
+    header_row: int,
+    last_row: int,
+    num_cols: int,
+) -> None:
+    """Matching look + AutoFilter (not an Excel Table — Sheets drops DV on tables)."""
+    end_col = get_column_letter(num_cols)
+    end_row = max(last_row, header_row)
+    ws.auto_filter.ref = f"A{header_row}:{end_col}{end_row}"
+
+    ws.row_dimensions[header_row].height = _MATCHING_ROW_HEIGHT
+    for col in range(1, num_cols + 1):
+        cell = ws.cell(row=header_row, column=col)
+        cell.fill = _MATCHING_HEADER_FILL
+        cell.font = _MATCHING_HEADER_FONT
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+
+    for row in range(header_row + 1, end_row + 1):
+        ws.row_dimensions[row].height = _MATCHING_ROW_HEIGHT
+        band = (row - header_row) % 2 == 0
+        for col in range(1, num_cols + 1):
+            cell = ws.cell(row=row, column=col)
+            cell.font = _MATCHING_BODY_FONT
+            if band:
+                cell.fill = _MATCHING_BAND_FILL
 
 
 def _add_excel_table(
@@ -402,25 +466,23 @@ def _add_matching_source_variant_dropdowns(
         report.ledger_lines,
         club_slug=report.club_slug,
     )
-    source_options = list(
-        _matching_source_dropdown_options(dropdown_club_slug or report.club_slug)
-    )
+    list_slug = (dropdown_club_slug or report.club_slug).strip().lower()
+    source_options = list(_matching_source_dropdown_options(list_slug))
     source_columns = list(source_options)
     for label in by_source:
         if label not in source_columns:
             source_columns.append(label)
 
-    # Source names as a vertical list (Sheets DV needs a column, not a row).
-    # Leave that column visible — Sheets drops the dropdown when the list
-    # range is hidden. Variant lists stay hidden further right.
-    source_list_col = 30
-    lists_start_col = 31
-    source_list_letter = get_column_letter(source_list_col)
-    for row_i, source in enumerate(source_columns, start=1):
-        ws.cell(row=row_i, column=source_list_col, value=source)
-    source_list_range = (
-        f"${source_list_letter}$1:${source_list_letter}${len(source_columns)}"
+    _write_source_list_column(
+        ws.parent,
+        club_slug=list_slug,
+        options=source_columns,
     )
+    source_list_formula = _source_list_formula(list_slug, len(source_columns))
+
+    # Per-source variant lists stay on this sheet (far right, hidden) for
+    # the Variant INDIRECT dropdown. Source itself uses the lists sheet.
+    lists_start_col = 31
 
     max_option_rows = 1
     for offset, source in enumerate(source_columns):
@@ -451,7 +513,7 @@ def _add_matching_source_variant_dropdowns(
     # showDropDown=False is the openpyxl quirk that *shows* the in-cell dropdown.
     dv_source = DataValidation(
         type="list",
-        formula1=f"={source_list_range}",
+        formula1=source_list_formula,
         allow_blank=True,
         showDropDown=False,
         showErrorMessage=False,
@@ -1062,9 +1124,8 @@ def _write_matching_rows(
         row_idx += 1
 
     last_data_row = row_idx - 1
-    _add_excel_table(
+    _style_matching_block(
         ws,
-        display_name=_matching_table_display_name(table_slug),
         header_row=header_row,
         last_row=last_data_row,
         num_cols=_MATCHING_TABLE_COLS,
@@ -1164,6 +1225,8 @@ def build_reconcile_workbook_from_report(report: AuditReconcileReport) -> bytes:
     _set_column_widths(matching, MATCHING_WIDTHS)
     _set_column_widths(unresolved, UNRESOLVED_WIDTHS)
 
+    _move_source_lists_last(wb)
+
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -1234,6 +1297,8 @@ def build_all_clubs_matching_workbook(
     unresolved = wb.create_sheet("Unresolved")
     _write_unresolved_sheet(unresolved, unresolved_rows, table_suffix="all")
     _set_column_widths(unresolved, UNRESOLVED_WIDTHS)
+
+    _move_source_lists_last(wb)
 
     buf = io.BytesIO()
     wb.save(buf)
