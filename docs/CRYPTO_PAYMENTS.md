@@ -99,6 +99,7 @@ Unbound example:
 
 ```
 🔔 Crypto Payment Notification
+ClubGTO Crypto Payment
 
 Group Chat: Unbound — reply to this message with the group title to bind
 

@@ -425,10 +425,20 @@ class FormatCryptoNotificationTestCase(unittest.TestCase):
             to_address="0x7063760294b901CF56b34BEB6275A641B5178CDa",
             transaction_hash=tx,
             paid_at="2026-05-06T23:56:53Z",
+            alert_name="ClubGTO Crypto Payment",
             alert_scope=ALERT_SCOPE_CLUBGTO,
         )
         text = format_notification_text(payment)
         self.assertIn(f"Tx: <code>{tx}</code>", text)
+        self.assertLess(
+            text.index("🔔 Crypto Payment Notification"),
+            text.index("ClubGTO Crypto Payment"),
+        )
+        self.assertLess(
+            text.index("ClubGTO Crypto Payment"),
+            text.index("Group Chat:"),
+        )
+        self.assertNotIn("Alert Name:", text)
         self.assertLess(text.index("From:"), text.index("Tx:"))
         self.assertLess(text.index("Tx:"), text.index("Paid:"))
 

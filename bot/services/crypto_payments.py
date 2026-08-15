@@ -178,16 +178,23 @@ def format_notification_text(
 
     lines = [
         "🔔 Crypto Payment Notification",
-        "",
-        format_group_chat_line(
-            group_title=group_title,
-            telegram_chat_id=resolve_notification_linked_chat_id(
-                payment,
-                telegram_chat_id=telegram_chat_id,
-            ),
-            group_chat_url=group_chat_url,
-        ),
     ]
+    alert = (payment.alert_name or "").strip()
+    if alert:
+        lines.append(escape_notification_html(alert))
+    lines.extend(
+        [
+            "",
+            format_group_chat_line(
+                group_title=group_title,
+                telegram_chat_id=resolve_notification_linked_chat_id(
+                    payment,
+                    telegram_chat_id=telegram_chat_id,
+                ),
+                group_chat_url=group_chat_url,
+            ),
+        ]
+    )
     player_line = format_player_id_line(group_title)
     if player_line:
         lines.append(player_line)
