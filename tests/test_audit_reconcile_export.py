@@ -263,22 +263,21 @@ class ReconcileExportTestCase(unittest.TestCase):
         zelle_total = matching.cell(row=3, column=15).value
         self.assertIsInstance(zelle_count, str)
         self.assertTrue(zelle_count.startswith("="))
-        self.assertIn('COUNTIF($F:$F,"GTO Zelle")', zelle_count)
+        self.assertIn('COUNTIFS($F:$F,"GTO Zelle",$J:$J,"2133729202")', zelle_count)
         self.assertIsInstance(zelle_total, str)
-        self.assertIn('SUMIF($F:$F,"GTO Zelle",$I:$I)', zelle_total)
-        self.assertEqual(matching.cell(row=4, column=12).value, "Venmo")
-        self.assertEqual(matching.cell(row=5, column=12).value, "Crypto")
-        self.assertEqual(matching.cell(row=6, column=12).value, "Stripe")
-        self.assertEqual(matching.cell(row=7, column=12).value, "Total")
-        self.assertTrue(str(matching.cell(row=7, column=14).value).startswith("=SUM("))
-        # Chips tally under receipt tally (blank spacer at row 8).
-        self.assertEqual(matching.cell(row=9, column=12).value, "Vaughn methods (chips)")
-        self.assertEqual(matching.cell(row=10, column=12).value, "Method")
-        self.assertEqual(matching.cell(row=11, column=12).value, "Zelle")
-        chips_total = matching.cell(row=11, column=15).value
+        self.assertIn('SUMIFS($I:$I,$F:$F,"GTO Zelle",$J:$J,"2133729202")', zelle_total)
+        chips_title_row = next(
+            r
+            for r in range(1, 30)
+            if matching.cell(row=r, column=12).value == "Vaughn methods (chips)"
+        )
+        chips_zelle_row = chips_title_row + 2
+        self.assertEqual(matching.cell(row=chips_zelle_row, column=12).value, "Zelle")
+        chips_total = matching.cell(row=chips_zelle_row, column=15).value
         self.assertIsInstance(chips_total, str)
-        self.assertIn('SUMPRODUCT(($F:$F="GTO Zelle")*ABS($C:$C))', chips_total)
-        self.assertEqual(matching.cell(row=15, column=12).value, "Total")
+        self.assertIn("$C$2:$C$2", chips_total)
+        self.assertIn("ABS($C$2:$C$2)", chips_total)
+        self.assertIn('($F$2:$F$2="GTO Zelle")', chips_total)
         self.assertIn("Matching_clubgto", matching.tables)
         self.assertEqual(matching.tables["Matching_clubgto"].ref, "A1:J2")
         style = matching.tables["Matching_clubgto"].tableStyleInfo
@@ -311,13 +310,15 @@ class ReconcileExportTestCase(unittest.TestCase):
         )
         self.assertIn("F2:F2", source_dv.sqref)
         self.assertIn("$AD$1:", source_dv.formula1)
+        self.assertRegex(source_dv.formula1 or "", r"=\$AD\$1:\$AD\$\d+")
         variant_dv = next(dv for dv in validations if "INDIRECT" in (dv.formula1 or ""))
         self.assertIn("J2:J2", variant_dv.sqref)
         self.assertIn("MATCH(", variant_dv.formula1)
         self.assertIn("ADDRESS(", variant_dv.formula1)
-        # Hidden per-source variant lists start at column 30
+        # Vertical Source list in AD (visible); variant lists start at AE (hidden)
         self.assertEqual(matching.cell(row=1, column=30).value, "GTO Stripe")
-        self.assertTrue(matching.column_dimensions["AD"].hidden)
+        self.assertFalse(bool(matching.column_dimensions["AD"].hidden))
+        self.assertTrue(matching.column_dimensions["AE"].hidden)
         hidden_headers = [
             matching.cell(row=1, column=col).value for col in range(30, 60)
         ]

@@ -410,9 +410,18 @@ def _add_matching_source_variant_dropdowns(
         if label not in source_columns:
             source_columns.append(label)
 
-    # Lists live on this sheet (far right, hidden) so Google Sheets INDIRECT
-    # data validation resolves; named ranges / hidden sheets often break there.
-    lists_start_col = 30
+    # Source names as a vertical list (Sheets DV needs a column, not a row).
+    # Leave that column visible — Sheets drops the dropdown when the list
+    # range is hidden. Variant lists stay hidden further right.
+    source_list_col = 30
+    lists_start_col = 31
+    source_list_letter = get_column_letter(source_list_col)
+    for row_i, source in enumerate(source_columns, start=1):
+        ws.cell(row=row_i, column=source_list_col, value=source)
+    source_list_range = (
+        f"${source_list_letter}$1:${source_list_letter}${len(source_columns)}"
+    )
+
     max_option_rows = 1
     for offset, source in enumerate(source_columns):
         col_idx = lists_start_col + offset
@@ -442,7 +451,7 @@ def _add_matching_source_variant_dropdowns(
     # showDropDown=False is the openpyxl quirk that *shows* the in-cell dropdown.
     dv_source = DataValidation(
         type="list",
-        formula1=f"={header_range}",
+        formula1=f"={source_list_range}",
         allow_blank=True,
         showDropDown=False,
         showErrorMessage=False,
@@ -858,24 +867,50 @@ def _write_deposits_sheet(
         row_idx += 1
 
 
-def _vaughn_countifs_formula(*, source: str) -> str:
-    """Count Matching rows whose Source is a GTO (Vaughn) method."""
+def _vaughn_tag_scoped(tag: str) -> bool:
+    return bool(tag) and not tag.startswith("(")
+
+
+def _vaughn_countifs_formula(*, source: str, tag: str) -> str:
+    """Count Matching rows for a GTO method; Zelle/Venmo also match Variant."""
     src_col = f"${get_column_letter(_MATCHING_SOURCE_COL)}:${get_column_letter(_MATCHING_SOURCE_COL)}"
-    return f'=COUNTIF({src_col},"{source}")'
+    if not _vaughn_tag_scoped(tag):
+        return f'=COUNTIF({src_col},"{source}")'
+    tag_col = f"${get_column_letter(_MATCHING_VARIANT_COL)}:${get_column_letter(_MATCHING_VARIANT_COL)}"
+    return f'=COUNTIFS({src_col},"{source}",{tag_col},"{tag}")'
 
 
-def _vaughn_sum_dollar_formula(*, source: str) -> str:
-    """Sum $ column for Matching rows whose Source is a GTO (Vaughn) method."""
+def _vaughn_sum_dollar_formula(*, source: str, tag: str) -> str:
+    """Sum $ column for a GTO method; Zelle/Venmo also match Variant."""
     src_col = f"${get_column_letter(_MATCHING_SOURCE_COL)}:${get_column_letter(_MATCHING_SOURCE_COL)}"
     dollar_col = f"${get_column_letter(_MATCHING_DOLLAR_COL)}:${get_column_letter(_MATCHING_DOLLAR_COL)}"
-    return f'=SUMIF({src_col},"{source}",{dollar_col})'
+    if not _vaughn_tag_scoped(tag):
+        return f'=SUMIF({src_col},"{source}",{dollar_col})'
+    tag_col = f"${get_column_letter(_MATCHING_VARIANT_COL)}:${get_column_letter(_MATCHING_VARIANT_COL)}"
+    return f'=SUMIFS({dollar_col},{src_col},"{source}",{tag_col},"{tag}")'
 
 
-def _vaughn_sum_chips_formula(*, source: str) -> str:
-    """Sum abs(Amount) chips for Matching rows whose Source is a GTO method."""
-    src_col = f"${get_column_letter(_MATCHING_SOURCE_COL)}:${get_column_letter(_MATCHING_SOURCE_COL)}"
-    amount_col = f"${get_column_letter(_MATCHING_AMOUNT_COL)}:${get_column_letter(_MATCHING_AMOUNT_COL)}"
-    return f'=SUMPRODUCT(({src_col}="{source}")*ABS({amount_col}))'
+def _matching_data_col_range(col_idx: int, first_row: int, last_row: int) -> str:
+    letter = get_column_letter(col_idx)
+    return f"${letter}${first_row}:${letter}${last_row}"
+
+
+def _vaughn_sum_chips_formula(
+    *,
+    source: str,
+    tag: str,
+    first_row: int,
+    last_row: int,
+) -> str:
+    """Sum abs(Amount) chips; data rows only so Sheets ABS skips the header."""
+    src_col = _matching_data_col_range(_MATCHING_SOURCE_COL, first_row, last_row)
+    amount_col = _matching_data_col_range(_MATCHING_AMOUNT_COL, first_row, last_row)
+    if not _vaughn_tag_scoped(tag):
+        return f'=SUMPRODUCT(({src_col}="{source}")*ABS({amount_col}))'
+    tag_col = _matching_data_col_range(_MATCHING_VARIANT_COL, first_row, last_row)
+    return (
+        f'=SUMPRODUCT(({src_col}="{source}")*({tag_col}="{tag}")*ABS({amount_col}))'
+    )
 
 
 def _vaughn_method_rows() -> list[tuple[str, str, str]]:
@@ -911,12 +946,12 @@ def _write_vaughn_tally_table(
         ws.cell(
             row=row_idx,
             column=start_col + 2,
-            value=_vaughn_countifs_formula(source=source_label),
+            value=_vaughn_countifs_formula(source=source_label, tag=tag),
         )
         total_cell = ws.cell(
             row=row_idx,
             column=start_col + 3,
-            value=total_formula(source=source_label),
+            value=total_formula(source=source_label, tag=tag),
         )
         total_cell.number_format = _CURRENCY_FORMAT
         row_idx += 1
@@ -948,6 +983,8 @@ def _write_vaughn_tally(
     *,
     section_row: int,
     start_col: int,
+    matching_first_row: int,
+    matching_last_row: int,
 ) -> None:
     """Vaughn receipt ($) tally, then chips (abs Amount) tally underneath."""
     receipt_total_row = _write_vaughn_tally_table(
@@ -958,12 +995,21 @@ def _write_vaughn_tally(
         total_formula=_vaughn_sum_dollar_formula,
     )
     chips_section_row = receipt_total_row + 2  # blank spacer row
+
+    def chips_formula(*, source: str, tag: str) -> str:
+        return _vaughn_sum_chips_formula(
+            source=source,
+            tag=tag,
+            first_row=matching_first_row,
+            last_row=matching_last_row,
+        )
+
     _write_vaughn_tally_table(
         ws,
         title="Vaughn methods (chips)",
         section_row=chips_section_row,
         start_col=start_col,
-        total_formula=_vaughn_sum_chips_formula,
+        total_formula=chips_formula,
     )
 
 
@@ -1041,6 +1087,8 @@ def _write_matching_rows(
             ws,
             section_row=header_row,
             start_col=_MATCHING_TALLY_START_COL,
+            matching_first_row=header_row + 1,
+            matching_last_row=max(last_data_row, header_row + 1),
         )
 
 
