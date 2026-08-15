@@ -24,6 +24,7 @@ from bot.handlers.group_checkout_commands import (
     GROUP_ONLY_CHECKOUT_COMMANDS,
 )
 from bot.handlers.response_utils import send_response_messages
+from bot.services.mtproto_group_delete import parse_delete_confirm_command
 from db.connection import get_db
 from db.models import CustomCommand
 
@@ -255,6 +256,10 @@ async def delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     uid = update.effective_user.id
     if not is_club_primary_owner(uid):
+        return
+    # Staff `/delete confirm` deletes the support group via MTProto. Do not treat
+    # "confirm" as a custom-command name (that replies "You don't have a /confirm command").
+    if parse_delete_confirm_command(update.message.text or ""):
         return
     args = context.args or []
     if not args:

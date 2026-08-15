@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from telethon.tl.types import Channel, Chat, User
 
+from bot.handlers.commands import delete_handler
 from bot.services.mtproto_group_delete import (
     _kick_all_basic_chat_participants,
     _resolve_club_id_for_delete,
@@ -96,6 +98,23 @@ class TestKickBasicChatParticipants(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kicked, 1)
         self.assertEqual(failed, 0)
         client.assert_called()
+
+
+class TestBotApiDeleteHandlerSkipsConfirm(unittest.IsolatedAsyncioTestCase):
+    async def test_delete_confirm_does_not_reply_as_missing_custom_command(self) -> None:
+        message = MagicMock()
+        message.text = "/delete confirm"
+        message.reply_text = AsyncMock()
+        update = SimpleNamespace(
+            message=message,
+            effective_user=SimpleNamespace(id=111),
+        )
+        context = SimpleNamespace(args=["confirm"])
+
+        with patch("bot.handlers.commands.is_club_primary_owner", return_value=True):
+            await delete_handler(update, context)
+
+        message.reply_text.assert_not_awaited()
 
 
 if __name__ == "__main__":
