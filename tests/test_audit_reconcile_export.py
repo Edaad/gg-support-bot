@@ -303,23 +303,24 @@ class ReconcileExportTestCase(unittest.TestCase):
         source_dv = next(
             dv
             for dv in validations
-            if (dv.formula1 or "").startswith("=") and "INDIRECT" not in (dv.formula1 or "")
+            if "INDIRECT" not in (dv.formula1 or "")
         )
         self.assertIn("F2:F2", source_dv.sqref)
-        self.assertIn("Source lists", source_dv.formula1)
-        self.assertIn("$C$1:", source_dv.formula1)
+        self.assertFalse((source_dv.formula1 or "").startswith("="))
+        self.assertIn("Matching", source_dv.formula1)
+        self.assertIn("$AD$1:", source_dv.formula1)
+        self.assertNotIn("Source lists", wb.sheetnames)
         variant_dv = next(dv for dv in validations if "INDIRECT" in (dv.formula1 or ""))
         self.assertIn("J2:J2", variant_dv.sqref)
         self.assertIn("MATCH(", variant_dv.formula1)
         self.assertIn("ADDRESS(", variant_dv.formula1)
-        lists = wb["Source lists"]
-        self.assertEqual(lists.cell(row=1, column=3).value, "GTO Stripe")
-        self.assertIn("Chip Transfer (Player)", [
-            lists.cell(row=r, column=3).value for r in range(1, 50)
-        ])
-        self.assertNotIn("Chip Transfer (RT↔AT)", [
-            lists.cell(row=r, column=3).value for r in range(1, 50)
-        ])
+        source_list = [
+            matching.cell(row=r, column=30).value for r in range(1, 50)
+        ]
+        self.assertEqual(source_list[0], "GTO Stripe")
+        self.assertIn("Chip Transfer (Player)", source_list)
+        self.assertNotIn("Chip Transfer (RT↔AT)", source_list)
+        self.assertTrue(matching.column_dimensions["AD"].hidden)
         self.assertTrue(matching.column_dimensions["AE"].hidden)
         hidden_headers = [
             matching.cell(row=1, column=col).value for col in range(30, 60)

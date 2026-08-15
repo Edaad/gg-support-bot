@@ -9,7 +9,7 @@ from decimal import Decimal
 from openpyxl import Workbook
 from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import get_column_letter, quote_sheetname
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
@@ -265,45 +265,10 @@ def _matching_source_dropdown_options(club_slug: str) -> tuple[str, ...]:
     return MATCHING_SOURCE_OPTIONS
 
 
-_SOURCE_LIST_SHEET = "Source lists"
-_SOURCE_LIST_COL_BY_SLUG: dict[str, int] = {
-    "round-table": 1,
-    "aces-table": 2,
-    "clubgto": 3,
-    "creator-club": 4,
-}
-
-
-def _source_list_formula(club_slug: str, n_options: int) -> str:
-    col = _SOURCE_LIST_COL_BY_SLUG.get(club_slug.strip().lower(), 1)
-    letter = get_column_letter(col)
-    return f"='{_SOURCE_LIST_SHEET}'!${letter}$1:${letter}${max(n_options, 1)}"
-
-
-def _write_source_list_column(
-    wb: Workbook,
-    *,
-    club_slug: str,
-    options: list[str],
-) -> None:
-    """Visible vertical list so Google Sheets keeps the Source dropdown."""
-    if _SOURCE_LIST_SHEET in wb.sheetnames:
-        lists_ws = wb[_SOURCE_LIST_SHEET]
-    else:
-        lists_ws = wb.create_sheet(_SOURCE_LIST_SHEET)
-    col = _SOURCE_LIST_COL_BY_SLUG.get(club_slug.strip().lower(), 1)
-    for row_i, source in enumerate(options, start=1):
-        lists_ws.cell(row=row_i, column=col, value=source)
-    lists_ws.column_dimensions[get_column_letter(col)].width = 28
-
-
-def _move_source_lists_last(wb: Workbook) -> None:
-    if _SOURCE_LIST_SHEET not in wb.sheetnames:
-        return
-    idx = wb.sheetnames.index(_SOURCE_LIST_SHEET)
-    offset = len(wb.sheetnames) - 1 - idx
-    if offset:
-        wb.move_sheet(_SOURCE_LIST_SHEET, offset=offset)
+# Far-right lookup cols on Matching (hidden). Source list is vertical so
+# data validation can use a same-sheet range (Sheets drops extra-tab lists).
+_SOURCE_LIST_COL = 30
+_VARIANT_LISTS_START_COL = 31
 
 
 def _style_matching_block(
@@ -473,16 +438,18 @@ def _add_matching_source_variant_dropdowns(
         if label not in source_columns:
             source_columns.append(label)
 
-    _write_source_list_column(
-        ws.parent,
-        club_slug=list_slug,
-        options=source_columns,
+    source_list_letter = get_column_letter(_SOURCE_LIST_COL)
+    n_sources = max(len(source_columns), 1)
+    for row_i, source in enumerate(source_columns, start=1):
+        ws.cell(row=row_i, column=_SOURCE_LIST_COL, value=source)
+    ws.column_dimensions[source_list_letter].hidden = True
+    # No leading "=" — Sheets drops list DV that starts with "=" or another tab.
+    source_list_formula = (
+        f"{quote_sheetname(ws.title)}!${source_list_letter}$1:"
+        f"${source_list_letter}${n_sources}"
     )
-    source_list_formula = _source_list_formula(list_slug, len(source_columns))
 
-    # Per-source variant lists stay on this sheet (far right, hidden) for
-    # the Variant INDIRECT dropdown. Source itself uses the lists sheet.
-    lists_start_col = 31
+    lists_start_col = _VARIANT_LISTS_START_COL
 
     max_option_rows = 1
     for offset, source in enumerate(source_columns):
@@ -518,8 +485,8 @@ def _add_matching_source_variant_dropdowns(
         showDropDown=False,
         showErrorMessage=False,
     )
-    dv_source.add(source_sqref)
     ws.add_data_validation(dv_source)
+    dv_source.add(source_sqref)
 
     # MATCH finds the Source header among hidden list columns; ADDRESS builds
     # that column's variant range. $F locks column; row stays relative per DV cell.
@@ -535,8 +502,8 @@ def _add_matching_source_variant_dropdowns(
         showDropDown=False,
         showErrorMessage=False,
     )
-    dv_variant.add(variant_sqref)
     ws.add_data_validation(dv_variant)
+    dv_variant.add(variant_sqref)
 
 
 def _add_matching_source_colors(
@@ -1225,8 +1192,6 @@ def build_reconcile_workbook_from_report(report: AuditReconcileReport) -> bytes:
     _set_column_widths(matching, MATCHING_WIDTHS)
     _set_column_widths(unresolved, UNRESOLVED_WIDTHS)
 
-    _move_source_lists_last(wb)
-
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -1297,8 +1262,6 @@ def build_all_clubs_matching_workbook(
     unresolved = wb.create_sheet("Unresolved")
     _write_unresolved_sheet(unresolved, unresolved_rows, table_suffix="all")
     _set_column_widths(unresolved, UNRESOLVED_WIDTHS)
-
-    _move_source_lists_last(wb)
 
     buf = io.BytesIO()
     wb.save(buf)
