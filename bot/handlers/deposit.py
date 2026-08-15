@@ -400,7 +400,8 @@ _PAYMENT_RECEIVED_SNIPPET = "we have received your payment"
 
 # Maps chat_id → customer user_id that we're waiting on for a deposit follow-up.
 _PENDING_DEPOSIT_REMINDERS: dict[int, int] = {}
-# Maps chat_id → deposit instruction message ids to delete after the reminder fires.
+# Maps chat_id → deposit instruction message ids to delete if the reminder fires
+# without a completed deposit (abandoned chase). Completed deposits keep them.
 _DEPOSIT_INFO_MESSAGE_IDS: dict[int, list[int]] = {}
 _deposit_reminder_app: Any | None = None
 
@@ -898,7 +899,9 @@ async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None
             "deposit_reminder skipped chat_id=%s deposit completed since schedule",
             chat_id,
         )
-        await _delete_deposit_info_messages(context.bot, chat_id)
+        # Payment notify runs on the API process and cannot cancel this worker
+        # job. Keep instructions in the group as the deposit paper trail.
+        _DEPOSIT_INFO_MESSAGE_IDS.pop(chat_id, None)
         return
 
     tracked_count = len(_DEPOSIT_INFO_MESSAGE_IDS.get(chat_id, []))
@@ -1318,7 +1321,10 @@ def _no_deposit_methods_message(club_id: int | None, amount: Decimal) -> str:
     backend = "v2 club_payment_*" if use_payment_v2() else "legacy payment_methods"
     lowest = get_lowest_minimum(club_id, "deposit")
     if lowest is not None and amount < lowest:
-        return f"Sorry! The minimum deposit amount is ${lowest:,.2f}."
+        return (
+            f"Sorry! The minimum deposit amount is ${lowest:,.2f}. "
+            "Use /deposit again to start a new deposit."
+        )
     return (
         f"No deposit methods available for ${amount}.\n"
         f"(club_id={club_id}, backend={backend})\n"
@@ -1572,6 +1578,8 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
 
     if not methods:
         await update.message.reply_text(_no_deposit_methods_message(club_id, amount))
+        _abandon_deposit_flow_session(context, end_reason=END_REASON_CANCELLED)
+        _cleanup(context)
         return ConversationHandler.END
 
     try:
@@ -1579,7 +1587,11 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
             await _prompt_deposit_union(update.message, context)
             return DEPOSIT_UNION
 
-        await _prompt_deposit_methods(update.message, context, amount=amount)
+        shown = await _prompt_deposit_methods(update.message, context, amount=amount)
+        if not shown:
+            _abandon_deposit_flow_session(context, end_reason=END_REASON_CANCELLED)
+            _cleanup(context)
+            return ConversationHandler.END
         return DEPOSIT_CHOOSE
     except Exception:
         logger.exception(
@@ -1632,12 +1644,16 @@ async def deposit_union_chosen(update: Update, context: ContextTypes.DEFAULT_TYP
         _cleanup(context)
         return ConversationHandler.END
 
-    await _prompt_deposit_methods(
+    shown = await _prompt_deposit_methods(
         query.message,
         context,
         amount=amount,
         edit_message=query,
     )
+    if not shown:
+        _abandon_deposit_flow_session(context, end_reason=END_REASON_CANCELLED)
+        _cleanup(context)
+        return ConversationHandler.END
     return DEPOSIT_CHOOSE
 
 
@@ -1676,7 +1692,7 @@ async def _prompt_deposit_methods(
     *,
     amount: Decimal,
     edit_message=None,
-) -> None:
+) -> bool:
     club_id = context.chat_data.get("deposit_club_id")
     methods = get_methods_for_amount(club_id, "deposit", amount)
     chat_id = getattr(message, "chat_id", None) or getattr(
@@ -1690,7 +1706,7 @@ async def _prompt_deposit_methods(
             await edit_message.edit_message_text(text)
         else:
             await message.reply_text(text)
-        return
+        return False
     text = f"Deposit amount: ${amount}\nSelect your deposit method:"
     markup = InlineKeyboardMarkup(_deposit_method_buttons(methods))
     if edit_message is not None:
@@ -1702,6 +1718,7 @@ async def _prompt_deposit_methods(
     else:
         sent = await message.reply_text(text, reply_markup=markup)
         register_flow_callback_message(context, sent.message_id, flow="deposit")
+    return True
 
 
 async def _run_first_time_method_setup_from_choice(

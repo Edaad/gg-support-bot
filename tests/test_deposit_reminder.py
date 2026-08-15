@@ -82,7 +82,7 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
 
         clear_chase.assert_awaited_once()
         bot.send_message.assert_not_awaited()
-        bot.delete_message.assert_awaited_once_with(chat_id=chat_id, message_id=21)
+        bot.delete_message.assert_not_awaited()
         self.assertNotIn(chat_id, deposit_module._DEPOSIT_INFO_MESSAGE_IDS)
 
     async def test_reminder_skips_when_stripe_checkout_completed_since_schedule(self):
@@ -119,7 +119,7 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
             await deposit_module._deposit_reminder_callback(context)
 
         bot.send_message.assert_not_awaited()
-        bot.delete_message.assert_awaited_once_with(chat_id=chat_id, message_id=22)
+        bot.delete_message.assert_not_awaited()
         self.assertNotIn(chat_id, deposit_module._DEPOSIT_INFO_MESSAGE_IDS)
 
     async def test_reminder_skips_when_deposit_activity_since_schedule(self):
@@ -157,7 +157,7 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
             await deposit_module._deposit_reminder_callback(context)
 
         bot.send_message.assert_not_awaited()
-        bot.delete_message.assert_awaited_once_with(chat_id=chat_id, message_id=23)
+        bot.delete_message.assert_not_awaited()
         self.assertNotIn(chat_id, deposit_module._DEPOSIT_INFO_MESSAGE_IDS)
 
     async def test_reminder_skips_chase_clear_when_sent_watch_armed(self):
