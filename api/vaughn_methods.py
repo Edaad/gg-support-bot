@@ -11,9 +11,10 @@ from api.audit_ledger import (
     LEDGER_SOURCE_LABELS,
     LedgerLine,
 )
+from bot.services.payment_method_binding import canonicalize_zelle_recipient
 
 # Payment tags stored on ledger Variant (zelle_recipient / venmo_handle).
-VAUGHN_ZELLE_RECIPIENTS = frozenset({"2133729202"})
+VAUGHN_ZELLE_RECIPIENTS = frozenset({"2133729202", "starship5vllc@gmail.com"})
 VAUGHN_VENMO_HANDLES = frozenset({"janseashells"})
 
 _VAUGHN_CLUB_SLUG = "clubgto"
@@ -28,7 +29,7 @@ VAUGHN_CASHOUT_SOURCE_LABELS: tuple[str, ...] = (
 
 
 def normalize_zelle_recipient(tag: str) -> str:
-    return "".join(ch for ch in (tag or "") if ch.isdigit())
+    return canonicalize_zelle_recipient(tag)
 
 
 def normalize_venmo_handle(tag: str) -> str:

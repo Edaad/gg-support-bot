@@ -172,6 +172,22 @@ def _normalize_venmo_handle(handle: str) -> str:
     return raw.lower()
 
 
+# Zapier bank-account labels -> destinations on club Zelle variants.
+ZELLE_BANK_LABEL_TO_RECIPIENT: dict[str, str] = {
+    "pnc bank": "coachingg444@gmail.com",
+    "us bank": "playsocialgg@gmail.com",
+    "clubgto well's fargo": "2133729202",
+    "bailey's wells fargo": "3105670961",
+    "citizens v": "starship5vllc@gmail.com",
+}
+
+
+def _zelle_bank_label_key(raw: str) -> str:
+    s = (raw or "").strip().lower()
+    s = s.replace("\u2019", "'").replace("\u2018", "'")
+    return re.sub(r"\s+", " ", s)
+
+
 def normalize_zelle_recipient(recipient: str) -> str:
     """Normalize Zelle email (lowercase) or phone (digits only) for comparison."""
     raw = (recipient or "").strip()
@@ -181,6 +197,14 @@ def normalize_zelle_recipient(recipient: str) -> str:
         return raw.lower()
     digits = re.sub(r"\D", "", raw)
     return digits if digits else raw.lower()
+
+
+def canonicalize_zelle_recipient(recipient: str) -> str:
+    """Normalize, mapping Zapier bank labels to variant destinations."""
+    mapped = ZELLE_BANK_LABEL_TO_RECIPIENT.get(_zelle_bank_label_key(recipient))
+    if mapped:
+        return normalize_zelle_recipient(mapped)
+    return normalize_zelle_recipient(recipient)
 
 
 def _normalize_cashapp_handle(handle: str) -> str:
@@ -202,7 +226,7 @@ def _normalize_binding_recipient(slug: str, recipient: str | None) -> str | None
         return None
     slug_norm = (slug or "").strip().lower()
     if slug_norm == "zelle":
-        return normalize_zelle_recipient(recipient)
+        return canonicalize_zelle_recipient(recipient)
     if slug_norm == "cashapp":
         return _normalize_cashapp_handle(recipient)
     if slug_norm == "paypal":
@@ -1017,7 +1041,7 @@ def match_pending_zelle_setup_in_session(
     zelle_recipient: str,
 ) -> Optional[PaymentMethodBindAttempt]:
     """Return a pending Zelle bind attempt matching ingest amount + variant recipient."""
-    recipient = normalize_zelle_recipient(zelle_recipient)
+    recipient = canonicalize_zelle_recipient(zelle_recipient)
     if not recipient:
         return None
     now = datetime.now(timezone.utc)
@@ -1065,7 +1089,7 @@ def _variant_venmo_handle_matches(session, variant_id: int, venmo_handle: str) -
 def _variant_zelle_recipient_matches(
     session, variant_id: int, zelle_recipient: str
 ) -> bool:
-    recipient = normalize_zelle_recipient(zelle_recipient)
+    recipient = canonicalize_zelle_recipient(zelle_recipient)
     if not recipient:
         return False
     variant = session.query(ClubPaymentTierVariant).get(int(variant_id))
@@ -2046,7 +2070,7 @@ def infer_variant_id_for_zelle_recipient(
     zelle_recipient: str,
 ) -> Optional[int]:
     """Match recipient to a club Zelle variant response text."""
-    recipient = normalize_zelle_recipient(zelle_recipient)
+    recipient = canonicalize_zelle_recipient(zelle_recipient)
     if not recipient:
         return None
 

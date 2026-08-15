@@ -33,6 +33,22 @@ def _line(
 
 
 class IsVaughnMethodTestCase(unittest.TestCase):
+    def test_zelle_starship_email(self):
+        self.assertTrue(
+            is_vaughn_method(
+                source="deposit_zelle",
+                variant="Starship5vllc@gmail.com",
+                club_slug="clubgto",
+            )
+        )
+        self.assertTrue(
+            is_vaughn_method(
+                source="deposit_zelle",
+                variant="Citizens V",
+                club_slug="clubgto",
+            )
+        )
+
     def test_zelle_starship_digits(self):
         self.assertTrue(
             is_vaughn_method(
@@ -132,6 +148,15 @@ class MatchingSourceLabelTestCase(unittest.TestCase):
         self.assertEqual(
             matching_source_label(
                 source="deposit_zelle",
+                variant="Starship5vllc@gmail.com",
+                club_slug="clubgto",
+                source_label="Zelle",
+            ),
+            "GTO Zelle",
+        )
+        self.assertEqual(
+            matching_source_label(
+                source="deposit_zelle",
                 variant="coachingg444@gmail.com",
                 club_slug="clubgto",
                 source_label="Zelle",
@@ -207,6 +232,12 @@ class TallyVaughnMethodsTestCase(unittest.TestCase):
         lines = [
             _line(source="deposit_zelle", variant="2133729202", amount="-50"),
             _line(source="deposit_zelle", variant="213-372-9202", amount="-25"),
+            _line(
+                source="deposit_zelle",
+                variant="Starship5vllc@gmail.com",
+                amount="-15",
+            ),
+            _line(source="deposit_zelle", variant="Citizens V", amount="-10"),
             _line(source="deposit_venmo", variant="@janseashells", amount="-40"),
             _line(source="deposit_crypto", variant="USDT", amount="-10"),
             _line(source="deposit_zelle", variant="other", amount="-99"),
@@ -219,6 +250,7 @@ class TallyVaughnMethodsTestCase(unittest.TestCase):
             [(t.method_label, t.tag, t.count, t.total_usd) for t in tallies],
             [
                 ("Zelle", "2133729202", 2, Decimal("75")),
+                ("Zelle", "starship5vllc@gmail.com", 2, Decimal("25")),
                 ("Venmo", "@janseashells", 1, Decimal("40")),
                 ("Crypto", "(all ClubGTO)", 2, Decimal("15")),
                 ("Stripe", "(all ClubGTO)", 2, Decimal("50")),

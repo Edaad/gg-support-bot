@@ -36,6 +36,7 @@ from api.payments_helpers import (
     resolve_group_title,
     resolve_method_display,
 )
+from bot.services.payment_method_binding import canonicalize_zelle_recipient
 from config import CLUB_SHORTHAND_TO_NAME
 from db.models import (
     BonusRecord,
@@ -686,10 +687,13 @@ def _tagged_manual_row(
         amount_usd = float(amount)
     club_slug = _slug_for_payment_club(session, data.get("club_id"), data)
     payer = str(data.get("payer_name") or data.get("from_label") or "").strip()
+    account_tag = str(data.get(tag_field) or "").strip()
+    if tag_field == "zelle_recipient" and account_tag:
+        account_tag = canonicalize_zelle_recipient(account_tag) or account_tag
     return TaggedManualAuditRow(
         amount_usd=amount_usd,
         payer_name=payer,
-        account_tag=str(data.get(tag_field) or "").strip(),
+        account_tag=account_tag,
         group_title=_manual_group_cell(data),
         club_label=_manual_club_name(data, club_names),
         time_label=_fmt_manual_audit_time(data["created_at"], club_slug),

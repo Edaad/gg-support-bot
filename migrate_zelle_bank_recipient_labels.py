@@ -13,35 +13,26 @@ Idempotent: rows already at the target recipient are skipped.
 from __future__ import annotations
 
 import argparse
-import re
 from collections import defaultdict
 
 from sqlalchemy import text
 
-from bot.services.payment_method_binding import normalize_zelle_recipient
+from bot.services.payment_method_binding import (
+    ZELLE_BANK_LABEL_TO_RECIPIENT,
+    _zelle_bank_label_key,
+    canonicalize_zelle_recipient,
+    normalize_zelle_recipient,
+)
 from db.connection import init_engine
 
 # Source label (case-insensitive) -> normalized Zelle destination
-BANK_LABEL_TO_RECIPIENT: dict[str, str] = {
-    "pnc bank": "coachingg444@gmail.com",
-    "us bank": "playsocialgg@gmail.com",
-    "clubgto well's fargo": "2133729202",
-    "bailey's wells fargo": "3105670961",
-}
-
-
-def _label_key(raw: str) -> str:
-    s = (raw or "").strip().lower()
-    s = s.replace("\u2019", "'").replace("\u2018", "'")
-    return re.sub(r"\s+", " ", s)
+BANK_LABEL_TO_RECIPIENT = ZELLE_BANK_LABEL_TO_RECIPIENT
 
 
 def _target_for(raw: str) -> str | None:
-    key = _label_key(raw)
-    mapped = BANK_LABEL_TO_RECIPIENT.get(key)
-    if not mapped:
+    if _zelle_bank_label_key(raw) not in BANK_LABEL_TO_RECIPIENT:
         return None
-    return normalize_zelle_recipient(mapped)
+    return canonicalize_zelle_recipient(raw)
 
 
 def _collect_updates(rows: list[tuple]) -> list[dict]:

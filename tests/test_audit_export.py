@@ -272,6 +272,23 @@ class AuditExportFormattingTestCase(unittest.TestCase):
         )
         self.assertEqual(row.account_tag, "clubgto1234@gmail.com")
 
+    def test_tagged_manual_row_maps_citizens_v_to_starship_email(self):
+        created = datetime(2026, 6, 22, 1, 51, tzinfo=timezone.utc)
+        row = _tagged_manual_row(
+            MagicMock(),
+            {
+                "amount_usd": Decimal("100.00"),
+                "payer_name": "Payer",
+                "zelle_recipient": "Citizens V",
+                "group_title": "GTO / 1111-2222 / P",
+                "club_id": 1,
+                "created_at": created,
+            },
+            {1: "ClubGTO"},
+            tag_field="zelle_recipient",
+        )
+        self.assertEqual(row.account_tag, "starship5vllc@gmail.com")
+
     def test_tagged_manual_row_uses_crypto_from_label_and_token(self):
         created = datetime(2026, 6, 21, 3, 57, tzinfo=timezone.utc)
         row = _tagged_manual_row(

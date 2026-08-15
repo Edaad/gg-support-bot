@@ -25,8 +25,8 @@ from bot.services.payment_method_binding import (
     find_existing_zelle_link_for_setup,
     get_last_bound_zelle_deposit_at,
     infer_variant_id_for_zelle_recipient,
+    canonicalize_zelle_recipient,
     match_pending_zelle_setup_in_session,
-    normalize_zelle_recipient,
     record_group_binding_in_session,
 )
 from bot.services.venmo_payments import (
@@ -227,7 +227,7 @@ async def ingest_zelle_payment(
     payer = (payer_name or "").strip()
     if not payer:
         raise ValueError("payer_name is required")
-    recipient = normalize_zelle_recipient(zelle_recipient)
+    recipient = canonicalize_zelle_recipient(zelle_recipient)
     if not recipient:
         raise ValueError("zelle_recipient is required")
     amount_cents = parse_amount_cents(amount)

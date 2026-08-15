@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 from typing import Literal, TYPE_CHECKING
 
 from bot.services.payment_method_binding import (
+    canonicalize_zelle_recipient,
     normalize_paypal_email,
-    normalize_zelle_recipient,
     _normalize_cashapp_handle,
     _normalize_payer_name,
     _normalize_venmo_handle,
@@ -297,7 +297,7 @@ def upsert_candidate_on_bind(
         row.venmo_handle = handle
     elif slug == "zelle":
         normalized = _normalize_payer_name(payer_name or "")
-        recipient = normalize_zelle_recipient(method_handle or "")
+        recipient = canonicalize_zelle_recipient(method_handle or "")
         row = (
             session.query(ZellePayerBinding)
             .filter_by(payer_name_normalized=normalized, telegram_chat_id=chat_id)

@@ -653,6 +653,22 @@ class TestZelleRecipientHelpers(unittest.TestCase):
             "janvenmo@gmail.com",
         )
 
+    def test_canonicalize_citizens_v_to_starship_email(self):
+        from bot.services.payment_method_binding import canonicalize_zelle_recipient
+
+        self.assertEqual(
+            canonicalize_zelle_recipient("Citizens V"),
+            "starship5vllc@gmail.com",
+        )
+        self.assertEqual(
+            canonicalize_zelle_recipient("Starship5vllc@gmail.com"),
+            "starship5vllc@gmail.com",
+        )
+        self.assertEqual(
+            canonicalize_zelle_recipient("clubgto well's fargo"),
+            "2133729202",
+        )
+
     def test_zelle_memo_setup_requires_recipient_match(self):
         from datetime import datetime, timedelta, timezone
 

@@ -28,6 +28,7 @@ from api.payments_helpers import (
     build_zelle_payment_read,
     resolve_group_title,
 )
+from bot.services.payment_method_binding import canonicalize_zelle_recipient
 from bot.services.player_details import parse_group_title_parts
 from bot.services.staff_cashout_records import _gg_player_id_from_title
 from db.models import (
@@ -396,6 +397,8 @@ def _fetch_manual_deposit_events(
         tag = (
             str(data.get(tag_field) or "").strip() or None if tag_field else None
         )
+        if source == "deposit_zelle" and tag:
+            tag = canonicalize_zelle_recipient(tag) or tag
         out.append(
             LedgerEvent(
                 source=source,
