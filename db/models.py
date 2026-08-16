@@ -742,6 +742,7 @@ class StaffCashoutRecord(Base):
     amount = Column(Numeric(12, 2), nullable=False)
     recorded_by_telegram_user_id = Column(BigInteger, nullable=False)
     trigger = Column(String(20), nullable=False)  # group_cash | dm_cashout
+    tracks_money_sent = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(
         DateTime, server_default=func.now(), onupdate=func.now()
@@ -754,6 +755,12 @@ class StaffCashoutRecord(Base):
         back_populates="cashout_record",
         cascade="all, delete-orphan",
         order_by="StaffCashoutPayment.sort_order",
+    )
+    money_sends = relationship(
+        "StaffCashoutMoneySend",
+        back_populates="cashout_record",
+        cascade="all, delete-orphan",
+        order_by="StaffCashoutMoneySend.created_at",
     )
 
 
@@ -777,8 +784,34 @@ class StaffCashoutPayment(Base):
     payout_details = Column(Text, nullable=True)
     amount = Column(Numeric(12, 2), nullable=True)
     sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, server_default=func.now())
 
     cashout_record = relationship("StaffCashoutRecord", back_populates="payments")
+
+
+class StaffCashoutMoneySend(Base):
+    """Manually logged money sent against a cashout order."""
+
+    __tablename__ = "staff_cashout_money_sends"
+    __table_args__ = (
+        Index("ix_staff_cashout_money_sends_record_id", "cashout_record_id"),
+        Index("ix_staff_cashout_money_sends_created_at", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    cashout_record_id = Column(
+        Integer,
+        ForeignKey("staff_cashout_records.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sender_name = Column(String(255), nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
+    payment_method_id = Column(Integer, nullable=True)
+    payment_sub_option_id = Column(Integer, nullable=True)
+    method_display_name = Column(String(100), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    cashout_record = relationship("StaffCashoutRecord", back_populates="money_sends")
 
 
 class SupportGroupChat(Base):

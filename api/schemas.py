@@ -564,6 +564,19 @@ class StaffCashoutPaymentRead(BaseModel):
     payout_details: Optional[str] = None
     amount: Optional[Decimal] = None
     sort_order: int
+    created_at: Optional[datetime] = None
+
+
+class StaffCashoutSendRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    sender_name: str
+    amount: Decimal
+    payment_method_id: Optional[int] = None
+    payment_sub_option_id: Optional[int] = None
+    method_display_name: str
+    created_at: Optional[datetime] = None
 
 
 class StaffCashoutRecordRead(BaseModel):
@@ -577,9 +590,14 @@ class StaffCashoutRecordRead(BaseModel):
     amount: Decimal
     recorded_by_telegram_user_id: int
     trigger: str
+    tracks_money_sent: bool = False
+    sent: Decimal = Decimal("0")
+    remaining: Decimal = Decimal("0")
+    status: str = "cleared"
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
     payments: List[StaffCashoutPaymentRead] = []
+    sends: List[StaffCashoutSendRead] = []
 
 
 class StaffCashoutRecordUpdate(BaseModel):
@@ -603,6 +621,22 @@ class StaffCashoutPaymentUpdate(BaseModel):
     payout_details: Optional[str] = None
     amount: Optional[Decimal] = None
     sort_order: Optional[int] = None
+
+
+class StaffCashoutSendCreate(BaseModel):
+    sender_name: str
+    amount: Decimal
+    payment_method_id: Optional[int] = None
+    payment_sub_option_id: Optional[int] = None
+    method_display_name: Optional[str] = None
+
+
+class StaffCashoutSendUpdate(BaseModel):
+    sender_name: Optional[str] = None
+    amount: Optional[Decimal] = None
+    payment_method_id: Optional[int] = None
+    payment_sub_option_id: Optional[int] = None
+    method_display_name: Optional[str] = None
 
 
 # ── Issue reports ─────────────────────────────────────────────────────────────
