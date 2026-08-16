@@ -31,6 +31,17 @@ function fmtDate(iso: string | null) {
   })
 }
 
+function applyRecord(row: StaffCashoutRecordT): StaffCashoutRecordT {
+  return {
+    ...row,
+    amount: Number(row.amount),
+    sent: Number(row.sent),
+    remaining: Number(row.remaining),
+    payments: [...(row.payments ?? [])],
+    sends: [...(row.sends ?? [])],
+  }
+}
+
 const emptyChoice = (): MethodChoice => ({
   custom: false,
   payment_method_id: null,
@@ -100,7 +111,7 @@ export default function CashoutRecordDetail({ token }: { token: string }) {
     setError(null)
     try {
       const row = await getCashoutRecord(token, recordId)
-      setRecord(row)
+      setRecord(applyRecord(row))
       setOriginalDraft(String(row.amount))
       const clubMethods = await listV2Methods(token, row.club_id, 'cashout')
       setMethods(clubMethods.filter((m) => m.is_active))
@@ -114,6 +125,21 @@ export default function CashoutRecordDetail({ token }: { token: string }) {
   useEffect(() => {
     load()
   }, [token, recordId])
+
+  const refreshRecord = async (fallback?: StaffCashoutRecordT) => {
+    try {
+      const row = await getCashoutRecord(token, recordId)
+      const next = applyRecord(row)
+      setRecord(next)
+      setOriginalDraft(String(next.amount))
+    } catch {
+      if (fallback) {
+        const next = applyRecord(fallback)
+        setRecord(next)
+        setOriginalDraft(String(next.amount))
+      }
+    }
+  }
 
   const openDest = (p?: StaffCashoutPaymentT) => {
     setDestEdit(p ?? null)
@@ -141,8 +167,7 @@ export default function CashoutRecordDetail({ token }: { token: string }) {
     setError(null)
     try {
       const updated = await updateCashoutRecord(token, record.id, { amount })
-      setRecord(updated)
-      setOriginalDraft(String(updated.amount))
+      await refreshRecord(updated)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed')
     } finally {
@@ -162,7 +187,7 @@ export default function CashoutRecordDetail({ token }: { token: string }) {
       const updated = destEdit
         ? await updateCashoutPayment(token, record.id, destEdit.id, payload)
         : await addCashoutPayment(token, record.id, payload)
-      setRecord(updated)
+      await refreshRecord(updated)
       setDestOpen(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed')
@@ -183,7 +208,7 @@ export default function CashoutRecordDetail({ token }: { token: string }) {
     setSaving(true)
     setError(null)
     try {
-      setRecord(await deleteCashoutPayment(token, record.id, p.id))
+      await refreshRecord(await deleteCashoutPayment(token, record.id, p.id))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Delete failed')
     } finally {
@@ -221,7 +246,7 @@ export default function CashoutRecordDetail({ token }: { token: string }) {
       const updated = sendEdit
         ? await updateCashoutSend(token, record.id, sendEdit.id, payload)
         : await addCashoutSend(token, record.id, payload)
-      setRecord(updated)
+      await refreshRecord(updated)
       setSendOpen(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed')
@@ -242,7 +267,7 @@ export default function CashoutRecordDetail({ token }: { token: string }) {
     setSaving(true)
     setError(null)
     try {
-      setRecord(await deleteCashoutSend(token, record.id, s.id))
+      await refreshRecord(await deleteCashoutSend(token, record.id, s.id))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Delete failed')
     } finally {

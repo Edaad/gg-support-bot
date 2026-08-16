@@ -110,6 +110,13 @@ def _record_to_dict(record: StaffCashoutRecord) -> dict[str, Any]:
     }
 
 
+def _record_dict_reloaded(session, record: StaffCashoutRecord) -> dict[str, Any]:
+    """Flush then reload collections so add/delete show up in the API response."""
+    session.flush()
+    session.expire(record, ["payments", "money_sends"])
+    return _record_to_dict(record)
+
+
 def _validate_method_choice(
     *,
     payment_method_id: Any,
@@ -261,6 +268,7 @@ def create_staff_cashout_record_manual(
         session.add(record)
         session.flush()
         logger.info("staff_cashout_record created from dashboard record_id=%s", record.id)
+        session.expire(record, ["payments", "money_sends"])
         return _record_to_dict(record)
 
 
@@ -283,8 +291,7 @@ def update_staff_cashout_record(
         if amount is not None:
             record.amount = amount
         record.updated_at = datetime.utcnow()
-        session.flush()
-        return _record_to_dict(record)
+        return _record_dict_reloaded(session, record)
 
 
 def replace_staff_cashout_payments(
@@ -319,8 +326,7 @@ def replace_staff_cashout_payments(
                 )
             )
         record.updated_at = datetime.utcnow()
-        session.flush()
-        return _record_to_dict(record)
+        return _record_dict_reloaded(session, record)
 
 
 def add_staff_cashout_payment(
@@ -350,8 +356,7 @@ def add_staff_cashout_payment(
             )
         )
         record.updated_at = datetime.utcnow()
-        session.flush()
-        return _record_to_dict(record)
+        return _record_dict_reloaded(session, record)
 
 
 def update_staff_cashout_payment(
@@ -389,8 +394,7 @@ def update_staff_cashout_payment(
         if "sort_order" in pdata and pdata["sort_order"] is not None:
             payment.sort_order = pdata["sort_order"]
         record.updated_at = datetime.utcnow()
-        session.flush()
-        return _record_to_dict(record)
+        return _record_dict_reloaded(session, record)
 
 
 def delete_staff_cashout_payment(record_id: int, payment_id: int) -> Optional[dict[str, Any]]:
@@ -403,8 +407,7 @@ def delete_staff_cashout_payment(record_id: int, payment_id: int) -> Optional[di
             return None
         session.delete(payment)
         record.updated_at = datetime.utcnow()
-        session.flush()
-        return _record_to_dict(record)
+        return _record_dict_reloaded(session, record)
 
 
 def add_staff_cashout_send(record_id: int, pdata: dict[str, Any]) -> Optional[dict[str, Any]]:
@@ -436,8 +439,7 @@ def add_staff_cashout_send(record_id: int, pdata: dict[str, Any]) -> Optional[di
             )
         )
         record.updated_at = datetime.utcnow()
-        session.flush()
-        return _record_to_dict(record)
+        return _record_dict_reloaded(session, record)
 
 
 def update_staff_cashout_send(
@@ -483,8 +485,7 @@ def update_staff_cashout_send(
             row.payment_sub_option_id = sub_id
             row.method_display_name = display
         record.updated_at = datetime.utcnow()
-        session.flush()
-        return _record_to_dict(record)
+        return _record_dict_reloaded(session, record)
 
 
 def delete_staff_cashout_send(record_id: int, send_id: int) -> Optional[dict[str, Any]]:
@@ -497,8 +498,7 @@ def delete_staff_cashout_send(record_id: int, send_id: int) -> Optional[dict[str
             return None
         session.delete(row)
         record.updated_at = datetime.utcnow()
-        session.flush()
-        return _record_to_dict(record)
+        return _record_dict_reloaded(session, record)
 
 
 def list_staff_cashout_records(
