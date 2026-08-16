@@ -40,6 +40,18 @@ STATEMENTS = [
     CREATE INDEX IF NOT EXISTS ix_staff_cashout_money_sends_created_at
     ON staff_cashout_money_sends (created_at);
     """,
+    """
+    ALTER TABLE staff_cashout_records
+    ALTER COLUMN cashier_job_id DROP NOT NULL;
+    """,
+    """
+    ALTER TABLE staff_cashout_records
+    ALTER COLUMN chat_id DROP NOT NULL;
+    """,
+    """
+    ALTER TABLE staff_cashout_records
+    ALTER COLUMN recorded_by_telegram_user_id DROP NOT NULL;
+    """,
 ]
 
 

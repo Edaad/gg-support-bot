@@ -219,14 +219,14 @@ export type CashoutLedgerStatus = 'active' | 'cleared' | 'oversent'
 
 export interface StaffCashoutRecordT {
   id: number
-  cashier_job_id: number
+  cashier_job_id: number | null
   club_id: number
   club_name: string | null
-  chat_id: number
+  chat_id: number | null
   group_title: string
   gg_player_id: string | null
   amount: number
-  recorded_by_telegram_user_id: number
+  recorded_by_telegram_user_id: number | null
   trigger: string
   tracks_money_sent: boolean
   sent: number
@@ -251,6 +251,15 @@ export const listCashoutRecords = (
 
 export const getCashoutRecord = (token: string, id: number) =>
   request<StaffCashoutRecordT>(`/cashout-records/${id}`, {}, token)
+
+export const createCashoutRecord = (
+  token: string,
+  data: { club_id: number; group_title: string; amount: number },
+) =>
+  request<StaffCashoutRecordT>(`/cashout-records`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }, token)
 
 export const updateCashoutRecord = (
   token: string,

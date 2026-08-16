@@ -731,17 +731,17 @@ class StaffCashoutRecord(Base):
     cashier_job_id = Column(
         Integer,
         ForeignKey("cashier_cashout_jobs.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
     club_id = Column(
         Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
     )
-    chat_id = Column(BigInteger, nullable=False)
+    chat_id = Column(BigInteger, nullable=True)
     group_title = Column(String(255), nullable=False)
     gg_player_id = Column(String(64), nullable=True)
     amount = Column(Numeric(12, 2), nullable=False)
-    recorded_by_telegram_user_id = Column(BigInteger, nullable=False)
-    trigger = Column(String(20), nullable=False)  # group_cash | dm_cashout
+    recorded_by_telegram_user_id = Column(BigInteger, nullable=True)
+    trigger = Column(String(20), nullable=False)  # group_cash | dm_cashout | dashboard
     tracks_money_sent = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(

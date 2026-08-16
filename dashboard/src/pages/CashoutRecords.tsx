@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
+  createCashoutRecord,
   listCashoutRecords,
+  listClubs,
   type CashoutLedgerStatus,
+  type Club,
   type StaffCashoutRecordT,
 } from '../api/client'
-import { fmtMoney } from '../components/CashoutMethodFields'
+import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
+import Modal from '../components/Modal'
 
 const TABS: { id: CashoutLedgerStatus; label: string }[] = [
   { id: 'active', label: 'Active' },
@@ -25,34 +29,77 @@ export default function CashoutRecords({ token }: { token: string }) {
   const navigate = useNavigate()
   const [status, setStatus] = useState<CashoutLedgerStatus>('active')
   const [records, setRecords] = useState<StaffCashoutRecordT[]>([])
+  const [clubs, setClubs] = useState<Club[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [clubId, setClubId] = useState('')
+  const [name, setName] = useState('')
+  const [amount, setAmount] = useState('')
 
-  useEffect(() => {
-    let cancelled = false
+  const reload = () => {
     setLoading(true)
     setError(null)
     listCashoutRecords(token, { status })
-      .then((rows) => {
-        if (!cancelled) setRecords(rows)
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
+      .then(setRecords)
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    reload()
   }, [token, status])
+
+  useEffect(() => {
+    listClubs(token).then(setClubs).catch(() => undefined)
+  }, [token])
+
+  const openCreate = () => {
+    setClubId(clubs[0] ? String(clubs[0].id) : '')
+    setName('')
+    setAmount('')
+    setCreateOpen(true)
+  }
+
+  const handleCreate = async () => {
+    const parsed = parseMoney(amount)
+    if (!clubId || !name.trim() || !parsed || parsed <= 0) {
+      setError('Club, name, and amount are required')
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      const created = await createCashoutRecord(token, {
+        club_id: Number(clubId),
+        group_title: name.trim(),
+        amount: parsed,
+      })
+      setCreateOpen(false)
+      navigate(`/cashout-records/${created.id}`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Create failed')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div>
-      <h1 className="mb-2 text-2xl font-bold">Cashout records</h1>
-      <p className="mb-6 text-sm text-ink-muted">
-        Orders from GGCashier. Log money sent here; remaining is original minus sent.
-      </p>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="mb-2 text-2xl font-bold">Cashout records</h1>
+          <p className="text-sm text-ink-muted">
+            Orders from GGCashier or created here. Log money sent on each record; remaining is original minus sent.
+          </p>
+        </div>
+        {status === 'active' && (
+          <button type="button" onClick={openCreate} className="btn-primary min-h-12 shrink-0 px-6 text-base">
+            New cashout
+          </button>
+        )}
+      </div>
 
       <div className="mb-6 flex gap-1 overflow-x-auto rounded-lg bg-surface p-1">
         {TABS.map((t) => (
@@ -129,6 +176,47 @@ export default function CashoutRecords({ token }: { token: string }) {
           ))}
         </div>
       )}
+
+      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New cashout">
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-muted">Club</label>
+            <select
+              value={clubId}
+              onChange={(e) => setClubId(e.target.value)}
+              className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+            >
+              {clubs.length === 0 && <option value="">No clubs</option>}
+              {clubs.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-muted">Name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="GTO / 2689-8977 / David"
+              className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-muted">Original amount</label>
+            <input
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0.00"
+              className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+            />
+          </div>
+          <button type="button" onClick={handleCreate} disabled={saving} className="btn-primary w-full min-h-12">
+            {saving ? 'Creating…' : 'Create'}
+          </button>
+        </div>
+      </Modal>
     </div>
   )
 }

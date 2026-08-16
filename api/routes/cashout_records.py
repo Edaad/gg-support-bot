@@ -13,6 +13,7 @@ from api.schemas import (
     StaffCashoutPaymentCreate,
     StaffCashoutPaymentRead,
     StaffCashoutPaymentUpdate,
+    StaffCashoutRecordCreate,
     StaffCashoutRecordRead,
     StaffCashoutRecordUpdate,
     StaffCashoutSendCreate,
@@ -23,6 +24,7 @@ from bot.services.staff_cashout_records import (
     CashoutRecordNotActive,
     add_staff_cashout_payment,
     add_staff_cashout_send,
+    create_staff_cashout_record_manual,
     delete_staff_cashout_payment,
     delete_staff_cashout_send,
     get_staff_cashout_record,
@@ -52,14 +54,14 @@ def _to_read(data: dict, club_names: dict[int, str]) -> StaffCashoutRecordRead:
     remaining = data.get("remaining", Decimal("0"))
     return StaffCashoutRecordRead(
         id=data["id"],
-        cashier_job_id=data["cashier_job_id"],
+        cashier_job_id=data.get("cashier_job_id"),
         club_id=club_id,
         club_name=club_names.get(club_id),
-        chat_id=data["chat_id"],
+        chat_id=data.get("chat_id"),
         group_title=data["group_title"],
         gg_player_id=data.get("gg_player_id"),
         amount=data["amount"],
-        recorded_by_telegram_user_id=data["recorded_by_telegram_user_id"],
+        recorded_by_telegram_user_id=data.get("recorded_by_telegram_user_id"),
         trigger=data["trigger"],
         tracks_money_sent=bool(data.get("tracks_money_sent")),
         sent=sent,
@@ -85,6 +87,22 @@ def list_cashout_records(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return [_to_read(row, club_names) for row in rows]
+
+
+@router.post("", response_model=StaffCashoutRecordRead, status_code=201)
+def create_cashout_record(
+    body: StaffCashoutRecordCreate,
+    db: Session = Depends(get_db_dependency),
+):
+    try:
+        data = create_staff_cashout_record_manual(
+            club_id=body.club_id,
+            group_title=body.group_title,
+            amount=body.amount,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _to_read(data, _club_name_map(db))
 
 
 @router.get("/{record_id}", response_model=StaffCashoutRecordRead)

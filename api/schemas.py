@@ -581,14 +581,14 @@ class StaffCashoutSendRead(BaseModel):
 
 class StaffCashoutRecordRead(BaseModel):
     id: int
-    cashier_job_id: int
+    cashier_job_id: Optional[int] = None
     club_id: int
     club_name: Optional[str] = None
-    chat_id: int
+    chat_id: Optional[int] = None
     group_title: str
     gg_player_id: Optional[str] = None
     amount: Decimal
-    recorded_by_telegram_user_id: int
+    recorded_by_telegram_user_id: Optional[int] = None
     trigger: str
     tracks_money_sent: bool = False
     sent: Decimal = Decimal("0")
@@ -598,6 +598,12 @@ class StaffCashoutRecordRead(BaseModel):
     updated_at: Optional[datetime]
     payments: List[StaffCashoutPaymentRead] = []
     sends: List[StaffCashoutSendRead] = []
+
+
+class StaffCashoutRecordCreate(BaseModel):
+    club_id: int
+    group_title: str
+    amount: Decimal
 
 
 class StaffCashoutRecordUpdate(BaseModel):

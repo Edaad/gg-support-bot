@@ -287,6 +287,28 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
             self.assertEqual(body[0]["club_name"], "Round Table")
             self.assertEqual(body[0]["status"], "active")
 
+    def test_create_manual_cashout(self) -> None:
+        created = _sample_record()
+        created["cashier_job_id"] = None
+        created["chat_id"] = None
+        created["recorded_by_telegram_user_id"] = None
+        created["trigger"] = "dashboard"
+        with patch(
+            "api.routes.cashout_records.create_staff_cashout_record_manual",
+            return_value=created,
+        ), patch(
+            "api.routes.cashout_records._club_name_map",
+            return_value={2: "Round Table"},
+        ):
+            client = TestClient(_make_api_app())
+            resp = client.post(
+                "/api/cashout-records",
+                json={"club_id": 2, "group_title": "RT / 2427-3267 / Samin", "amount": "500"},
+            )
+            self.assertEqual(resp.status_code, 201)
+            self.assertEqual(resp.json()["trigger"], "dashboard")
+            self.assertIsNone(resp.json()["cashier_job_id"])
+
     def test_patch_does_not_call_zapier(self) -> None:
         updated = _sample_record()
         updated["group_title"] = "RT / 2427-3267 / Sam"

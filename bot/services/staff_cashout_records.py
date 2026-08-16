@@ -10,7 +10,7 @@ from typing import Any, Optional
 from bot.services.club import get_method_by_id, get_sub_option_by_id
 from bot.services.player_details import parse_tracking_title
 from db.connection import get_db
-from db.models import StaffCashoutMoneySend, StaffCashoutPayment, StaffCashoutRecord
+from db.models import Club, StaffCashoutMoneySend, StaffCashoutPayment, StaffCashoutRecord
 
 logger = logging.getLogger(__name__)
 
@@ -228,6 +228,40 @@ def create_staff_cashout_record_from_job(job: dict[str, Any]) -> Optional[int]:
             record.id,
         )
         return record.id
+
+
+def create_staff_cashout_record_manual(
+    *,
+    club_id: int,
+    group_title: str,
+    amount: Decimal,
+) -> dict[str, Any]:
+    title = (group_title or "").strip()
+    if not title:
+        raise ValueError("Name is required")
+    amt = _as_decimal(amount)
+    if amt <= 0:
+        raise ValueError("Amount must be greater than zero")
+
+    with get_db() as session:
+        club = session.get(Club, int(club_id))
+        if not club:
+            raise ValueError("Club not found")
+        record = StaffCashoutRecord(
+            cashier_job_id=None,
+            club_id=int(club_id),
+            chat_id=None,
+            group_title=title,
+            gg_player_id=_gg_player_id_from_title(title),
+            amount=amt,
+            recorded_by_telegram_user_id=None,
+            trigger="dashboard",
+            tracks_money_sent=True,
+        )
+        session.add(record)
+        session.flush()
+        logger.info("staff_cashout_record created from dashboard record_id=%s", record.id)
+        return _record_to_dict(record)
 
 
 def update_staff_cashout_record(
