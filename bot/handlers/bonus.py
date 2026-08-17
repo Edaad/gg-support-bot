@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import logging
-import os
 from decimal import Decimal, InvalidOperation
 
-import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ChatType
 from telegram.ext import ApplicationHandlerStop, ContextTypes
@@ -20,6 +18,7 @@ from bot.handlers.flow_cancel import (
 )
 from bot.services.bonus_drafts import cancel_draft, draft_to_context, get_pending_draft, mark_draft_submitted
 from bot.services.bonus_player_resolve import BonusPlayerContext, resolve_bonus_player
+from bot.services.bonus_records import fire_bonus_zapier_webhook
 from db.connection import get_db
 from db.models import BonusType, BonusRecord, Club
 
@@ -27,7 +26,6 @@ logger = logging.getLogger(__name__)
 
 BONUS_STEP_KEY = "bonus_step"
 BONUS_TIMEOUT_SECONDS = 300
-ZAPIER_WEBHOOK_ENV = "ZAPIER_BONUS_WEBHOOK_URL"
 
 _TEXT_STEPS = frozenset({"group_title", "amount", "description"})
 
@@ -113,24 +111,7 @@ def _save_record(data: dict) -> int:
 
 
 async def _fire_zapier_webhook(data: dict):
-    url = os.getenv(ZAPIER_WEBHOOK_ENV)
-    if not url:
-        return
-    payload = {
-        "player_username": data["player_username"],
-        "gg_player_id": data.get("gg_player_id", ""),
-        "group_title": data.get("group_title", ""),
-        "amount": str(data["amount"]),
-        "bonus_type": data.get("bonus_type_name", ""),
-        "description": data.get("custom_description", ""),
-        "club": data.get("club_name", ""),
-        "admin_telegram_user_id": data["admin_user_id"],
-    }
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            await client.post(url, json=payload)
-    except Exception:
-        pass
+    fire_bonus_zapier_webhook(data)
 
 
 def bonus_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:

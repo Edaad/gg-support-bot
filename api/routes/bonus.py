@@ -1,4 +1,4 @@
-"""CRUD for bonus types and read-only listing of bonus records."""
+"""CRUD for bonus types and bonus records."""
 
 from typing import List
 
@@ -7,19 +7,31 @@ from sqlalchemy.orm import Session
 
 from api.auth import get_current_admin
 from api.schemas import (
-    BonusTypeCreate,
-    BonusTypeUpdate,
-    BonusTypeRead,
+    BonusRecordCreate,
     BonusRecordRead,
+    BonusRecordUpdate,
+    BonusTypeCreate,
+    BonusTypeRead,
+    BonusTypeUpdate,
+)
+from bot.services.bonus_records import (
+    create_bonus_record,
+    delete_bonus_record,
+    list_bonus_records as list_bonus_record_rows,
+    update_bonus_record,
 )
 from db.connection import get_db_dependency
-from db.models import BonusType, BonusRecord
+from db.models import BonusType
 
 router = APIRouter(
     prefix="/api/bonus",
     tags=["bonus"],
     dependencies=[Depends(get_current_admin)],
 )
+
+
+def _to_read(data: dict) -> BonusRecordRead:
+    return BonusRecordRead.model_validate(data)
 
 
 @router.get("/types", response_model=List[BonusTypeRead])
@@ -62,34 +74,37 @@ def delete_bonus_type(type_id: int, db: Session = Depends(get_db_dependency)):
 
 
 @router.get("/records", response_model=List[BonusRecordRead])
-def list_bonus_records(db: Session = Depends(get_db_dependency)):
-    rows = (
-        db.query(BonusRecord)
-        .order_by(BonusRecord.created_at.desc())
-        .limit(200)
-        .all()
-    )
-    results = []
-    for r in rows:
-        display_name = r.player_username
-        if r.group_title:
-            from cashier.services.zapier import build_zapier_name
+def list_bonus_records():
+    return [_to_read(row) for row in list_bonus_record_rows()]
 
-            display_name = build_zapier_name(r.group_title) or r.group_title
-        results.append(
-            BonusRecordRead(
-                id=r.id,
-                player_username=display_name,
-                amount=r.amount,
-                bonus_type_name=r.bonus_type.name if r.bonus_type else None,
-                custom_description=r.custom_description,
-                club_name=r.club.name if r.club else None,
-                gg_player_id=r.gg_player_id,
-                group_title=r.group_title,
-                chat_id=int(r.chat_id) if r.chat_id is not None else None,
-                player_details_id=r.player_details_id,
-                admin_telegram_user_id=r.admin_telegram_user_id,
-                created_at=r.created_at,
-            )
+
+@router.post("/records", response_model=BonusRecordRead, status_code=201)
+def create_bonus_record_api(body: BonusRecordCreate):
+    try:
+        data = create_bonus_record(
+            club_id=body.club_id,
+            group_title=body.group_title,
+            amount=body.amount,
+            bonus_type_id=body.bonus_type_id,
+            custom_description=body.custom_description,
         )
-    return results
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return _to_read(data)
+
+
+@router.patch("/records/{record_id}", response_model=BonusRecordRead)
+def update_bonus_record_api(record_id: int, body: BonusRecordUpdate):
+    try:
+        data = update_bonus_record(record_id, **body.model_dump(exclude_unset=True))
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    if not data:
+        raise HTTPException(404, "Bonus record not found")
+    return _to_read(data)
+
+
+@router.delete("/records/{record_id}", status_code=204)
+def delete_bonus_record_api(record_id: int):
+    if not delete_bonus_record(record_id):
+        raise HTTPException(404, "Bonus record not found")

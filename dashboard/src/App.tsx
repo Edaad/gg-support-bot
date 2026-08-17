@@ -8,6 +8,7 @@ import Settings from './pages/Settings'
 import WeeklyStats from './pages/WeeklyStats'
 import TelegramLogin from './pages/TelegramLogin'
 import BonusTypes from './pages/BonusTypes'
+import Bonuses from './pages/Bonuses'
 import CashoutRecords from './pages/CashoutRecords'
 import CashoutRecordDetail from './pages/CashoutRecordDetail'
 import Payments from './pages/Payments'
@@ -39,6 +40,7 @@ export default function App() {
         <Route path="/settings" element={<Settings token={token} />} />
         <Route path="/telegram-login" element={<TelegramLogin token={token} />} />
         <Route path="/bonus-types" element={<BonusTypes token={token} />} />
+        <Route path="/bonuses" element={<Bonuses token={token} />} />
         <Route path="/cashout-records" element={<CashoutRecords token={token} />} />
         <Route path="/cashout-records/:id" element={<CashoutRecordDetail token={token} />} />
         <Route path="/payments" element={<Payments token={token} />} />

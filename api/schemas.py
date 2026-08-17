@@ -541,15 +541,34 @@ class BonusRecordRead(BaseModel):
     id: int
     player_username: str
     amount: Decimal
+    bonus_type_id: Optional[int] = None
     bonus_type_name: Optional[str] = None
     custom_description: Optional[str] = None
+    club_id: Optional[int] = None
     club_name: Optional[str] = None
     gg_player_id: Optional[str] = None
     group_title: Optional[str] = None
     chat_id: Optional[int] = None
     player_details_id: Optional[int] = None
-    admin_telegram_user_id: int
+    admin_telegram_user_id: Optional[int] = None
     created_at: Optional[datetime]
+    player_resolved: bool = False
+
+
+class BonusRecordCreate(BaseModel):
+    club_id: int
+    group_title: str
+    amount: Decimal
+    bonus_type_id: Optional[int] = None
+    custom_description: Optional[str] = None
+
+
+class BonusRecordUpdate(BaseModel):
+    club_id: Optional[int] = None
+    group_title: Optional[str] = None
+    amount: Optional[Decimal] = None
+    bonus_type_id: Optional[int] = None
+    custom_description: Optional[str] = None
 
 
 # ── Staff cashout records ─────────────────────────────────────────────────────

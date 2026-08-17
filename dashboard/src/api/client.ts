@@ -192,6 +192,29 @@ export const deleteBonusType = (token: string, id: number) =>
   request<void>(`/bonus/types/${id}`, { method: 'DELETE' }, token)
 export const listBonusRecords = (token: string) =>
   request<BonusRecordT[]>('/bonus/records', {}, token)
+export const createBonusRecord = (
+  token: string,
+  data: {
+    club_id: number
+    group_title: string
+    amount: number
+    bonus_type_id: number | null
+    custom_description?: string | null
+  },
+) => request<BonusRecordT>('/bonus/records', { method: 'POST', body: JSON.stringify(data) }, token)
+export const updateBonusRecord = (
+  token: string,
+  id: number,
+  data: {
+    club_id?: number
+    group_title?: string
+    amount?: number
+    bonus_type_id?: number | null
+    custom_description?: string | null
+  },
+) => request<BonusRecordT>(`/bonus/records/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token)
+export const deleteBonusRecord = (token: string, id: number) =>
+  request<void>(`/bonus/records/${id}`, { method: 'DELETE' }, token)
 
 // Staff cashout records
 export interface StaffCashoutPaymentT {
@@ -515,13 +538,16 @@ export interface BonusRecordT {
   id: number
   player_username: string
   amount: number
+  bonus_type_id: number | null
   bonus_type_name: string | null
   custom_description: string | null
+  club_id: number | null
   club_name: string | null
   gg_player_id: string | null
   group_title: string | null
   chat_id: number | null
   player_details_id: number | null
-  admin_telegram_user_id: number
+  admin_telegram_user_id: number | null
   created_at: string | null
+  player_resolved: boolean
 }
