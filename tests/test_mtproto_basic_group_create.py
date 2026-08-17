@@ -19,6 +19,7 @@ from bot.services.mtproto_group_create import (
     _unwrap_create_chat_updates,
     ensure_player_in_support_group,
     export_invite_link_for_peer,
+    reload_group_entity_after_invites,
 )
 
 
@@ -226,6 +227,43 @@ class TestExportInviteLink(unittest.IsolatedAsyncioTestCase):
         mock_export.assert_awaited_once_with(
             client, mock_export.await_args.args[1], revoke_previous=False
         )
+
+
+class TestReloadGroupEntityAfterInvites(unittest.IsolatedAsyncioTestCase):
+    async def test_follows_migrated_to_channel(self) -> None:
+        old_chat = MagicMock(spec=Chat)
+        old_chat.migrated_to = MagicMock()
+        new_channel = MagicMock(spec=Channel)
+        new_channel.id = 999001
+
+        client = MagicMock()
+        client.get_entity = AsyncMock(side_effect=[old_chat, new_channel])
+
+        with patch(
+            "telethon.utils.get_peer_id",
+            side_effect=lambda ent: -100999001 if ent is new_channel else -555,
+        ), patch("bot.handlers.groups._mark_post_gc_bundle_window") as mark:
+            entity, chat_id = await reload_group_entity_after_invites(
+                client, old_chat, -555
+            )
+
+        self.assertIs(entity, new_channel)
+        self.assertEqual(chat_id, -100999001)
+        mark.assert_called_once_with(-100999001)
+
+    async def test_unchanged_when_not_migrated(self) -> None:
+        chat = MagicMock(spec=Chat)
+        chat.migrated_to = None
+        client = MagicMock()
+        client.get_entity = AsyncMock(return_value=chat)
+
+        with patch("telethon.utils.get_peer_id", return_value=-555):
+            entity, chat_id = await reload_group_entity_after_invites(
+                client, chat, -555
+            )
+
+        self.assertIs(entity, chat)
+        self.assertEqual(chat_id, -555)
 
 
 if __name__ == "__main__":

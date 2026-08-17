@@ -311,6 +311,62 @@ def _chat_id_from_create_updates(updates: Any) -> int | None:
     return None
 
 
+async def reload_group_entity_after_invites(
+    client: TelegramClient,
+    group_ent: Any,
+    chat_id_big: int | None,
+) -> tuple[Any, int | None]:
+    """Follow basic-group → supergroup migration after inviting the bot.
+
+    ``CreateChatRequest`` yields a basic group. Adding a bot often upgrades it;
+    Bot API welcome sends then fail against the stale id unless we refresh.
+    """
+
+    from telethon.utils import get_peer_id
+
+    entity = group_ent
+    try:
+        lookup = entity if entity is not None else chat_id_big
+        if lookup is not None:
+            entity = await client.get_entity(lookup)
+    except Exception as e:
+        logger.info("reload group entity failed: %s", type(e).__name__)
+        entity = group_ent
+
+    migrated = getattr(entity, "migrated_to", None) if entity is not None else None
+    if migrated is not None:
+        try:
+            entity = await client.get_entity(migrated)
+        except Exception as e:
+            logger.info("reload migrated_to entity failed: %s", type(e).__name__)
+
+    new_id = chat_id_big
+    try:
+        if entity is not None:
+            new_id = int(get_peer_id(entity))
+    except Exception:
+        new_id = chat_id_big
+
+    if new_id is not None and chat_id_big is not None and int(new_id) != int(chat_id_big):
+        logger.info(
+            "support group migrated after invites %s -> %s",
+            chat_id_big,
+            new_id,
+        )
+        try:
+            from bot.handlers.groups import _mark_post_gc_bundle_window
+
+            _mark_post_gc_bundle_window(int(new_id))
+        except Exception as e:
+            logger.warning(
+                "post_gc suppression window mark failed chat_id=%s: %s",
+                new_id,
+                type(e).__name__,
+            )
+
+    return entity, new_id
+
+
 async def _is_user_in_group(
     client: TelegramClient, group_entity: Any, user_entity: Any
 ) -> bool:
@@ -870,6 +926,10 @@ async def create_support_group(
                     added_ok.append({"user": marker, "kind": kind})
                 else:
                     failed_ok.append({"user": marker, "reason": err or "unknown", "kind": kind})
+
+            group_ent, chat_id_big = await reload_group_entity_after_invites(
+                client, group_ent, chat_id_big
+            )
 
             photo_ok = await apply_club_group_photo(
                 client,

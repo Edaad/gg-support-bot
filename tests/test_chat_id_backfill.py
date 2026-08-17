@@ -157,8 +157,10 @@ class ChatIdBackfillTests(unittest.TestCase):
 
         self.assertTrue(is_gc_group_title("RT / / @username"))
         self.assertTrue(is_gc_group_title("CC / / John"))
+        self.assertTrue(is_gc_group_title("GTO / / @ho3ennn"))
         self.assertFalse(is_gc_group_title("Round Table Support & GG Support"))
         self.assertIsNone(parse_group_title_parts("RT / / @username"))
+        self.assertIsNone(parse_group_title_parts("GTO / / @ho3ennn"))
 
 
 if __name__ == "__main__":

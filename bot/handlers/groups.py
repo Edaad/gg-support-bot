@@ -59,18 +59,15 @@ def _suppress_post_gc_redundant_recently(chat_id: int) -> bool:
     return True
 
 
-def should_skip_club_onboarding(chat_id: int, title: str | None) -> bool:
+def should_skip_club_onboarding(chat_id: int, _title: str | None) -> bool:
     """True when join/auto-link must not club-link or send welcome.
 
-    Skip for watched-group allowlist and for titles that are not GC format
-    ``CLUB / PLAYER_ID / NAME`` or ``CLUB / / NAME`` (empty player id).
+    Only watched-group allowlist chats skip. Ops titles and empty-player-id
+    GC names still onboard.
     """
-    from bot.services.player_details import is_gc_group_title
     from bot.services.watched_group_escalation import is_env_allowlisted_chat
 
-    if is_env_allowlisted_chat(chat_id):
-        return True
-    return not is_gc_group_title(title)
+    return is_env_allowlisted_chat(chat_id)
 
 
 def _mark_post_gc_bundle_window(chat_id: int) -> None:
@@ -175,47 +172,64 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
         )
         return
 
-    await _send_member_join_preamble_and_pdf(chat_id, club_id, context.bot)
+    live_id = await _send_member_join_preamble_and_pdf(chat_id, club_id, context.bot)
 
     welcome = get_club_welcome(club_id)
     if welcome:
         try:
             if welcome["type"] == "photo" and welcome.get("file_id"):
-                await context.bot.send_photo(
-                    chat_id=chat_id,
-                    photo=welcome["file_id"],
-                    caption=welcome.get("caption") or None,
+                live_id = await _bot_call_chat(
+                    context.bot,
+                    live_id,
+                    lambda cid: context.bot.send_photo(
+                        chat_id=cid,
+                        photo=welcome["file_id"],
+                        caption=welcome.get("caption") or None,
+                    ),
                 )
             elif welcome.get("text"):
                 text = welcome["text"]
                 chunk = 4096
                 for i in range(0, len(text), chunk):
-                    await context.bot.send_message(chat_id=chat_id, text=text[i : i + chunk])
+                    piece = text[i : i + chunk]
+                    live_id = await _bot_call_chat(
+                        context.bot,
+                        live_id,
+                        lambda cid, t=piece: context.bot.send_message(chat_id=cid, text=t),
+                    )
         except Exception as e:
-            print(f"Failed to send welcome to {chat_id}: {e}")
+            print(f"Failed to send welcome to {live_id}: {e}")
 
     # Also attempt player_details binding from the group title (after welcome).
     # Silent on invalid format; show explicit conflict errors.
-    res = bind_chat_from_title(chat_id=chat_id, title=update.effective_chat.title)
+    res = bind_chat_from_title(chat_id=live_id, title=update.effective_chat.title)
     if context.bot:
         try:
             if res.ok and res.gg_player_id:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=(
-                        "Thank you for playing at our club!!\n"
-                        f"\nPlayer ID: {res.gg_player_id}"
+                live_id = await _bot_call_chat(
+                    context.bot,
+                    live_id,
+                    lambda cid: context.bot.send_message(
+                        chat_id=cid,
+                        text=(
+                            "Thank you for playing at our club!!\n"
+                            f"\nPlayer ID: {res.gg_player_id}"
+                        ),
                     ),
                 )
             elif res.error and is_same_club_player_conflict_message(res.error):
-                await context.bot.send_message(
-                    chat_id=chat_id, text=res.error, parse_mode="HTML"
+                live_id = await _bot_call_chat(
+                    context.bot,
+                    live_id,
+                    lambda cid: context.bot.send_message(
+                        chat_id=cid, text=res.error, parse_mode="HTML"
+                    ),
                 )
         except Exception:
             pass
 
-    _mark_member_join_bundle_cooldown(chat_id)
-    _join_intro_sent_at[chat_id] = time.monotonic()
+    _mark_member_join_bundle_cooldown(live_id)
+    _join_intro_sent_at[live_id] = time.monotonic()
 
 
 async def auto_link_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -260,9 +274,35 @@ def _mark_member_join_bundle_cooldown(chat_id: int) -> None:
     _member_join_bundle_until[chat_id] = time.monotonic() + MEMBER_JOIN_BUNDLE_COOLDOWN_S
 
 
-async def _send_member_join_preamble_and_pdf(chat_id: int, club_id: int, bot) -> None:
-    """Dashboard member join copy + TOS file (typically before Dashboard Welcome on bot add)."""
+async def _bot_call_chat(bot, chat_id: int, send) -> int:
+    """Run ``send(chat_id)``; follow one ChatMigrated and return the live chat id."""
 
+    from telegram.error import ChatMigrated
+
+    try:
+        await send(int(chat_id))
+        return int(chat_id)
+    except ChatMigrated as e:
+        new_id = int(e.new_chat_id)
+        logger.info("ChatMigrated %s -> %s, retrying send", chat_id, new_id)
+        try:
+            from bot.services.chat_id_remap import try_silent_supergroup_remap
+
+            try_silent_supergroup_remap(int(chat_id), new_id)
+        except Exception:
+            logger.exception("ChatMigrated remap failed %s -> %s", chat_id, new_id)
+        _mark_post_gc_bundle_window(new_id)
+        await send(new_id)
+        return new_id
+
+
+async def _send_member_join_preamble_and_pdf(chat_id: int, club_id: int, bot) -> int:
+    """Dashboard member join copy + TOS file (typically before Dashboard Welcome on bot add).
+
+    Returns the chat id that accepted the send (may change after supergroup migration).
+    """
+
+    live_id = int(chat_id)
     club = get_club_by_id(club_id)
 
     if club:
@@ -271,11 +311,16 @@ async def _send_member_join_preamble_and_pdf(chat_id: int, club_id: int, bot) ->
             try:
                 cz = 4096
                 for i in range(0, len(preamble), cz):
-                    await bot.send_message(chat_id=chat_id, text=preamble[i : i + cz])
+                    chunk = preamble[i : i + cz]
+                    live_id = await _bot_call_chat(
+                        bot,
+                        live_id,
+                        lambda cid, text=chunk: bot.send_message(chat_id=cid, text=text),
+                    )
             except Exception as e:
                 logger.warning(
                     "member_join_intro: preamble send failed chat_id=%s: %s",
-                    chat_id,
+                    live_id,
                     e,
                 )
 
@@ -283,24 +328,30 @@ async def _send_member_join_preamble_and_pdf(chat_id: int, club_id: int, bot) ->
         if tos_doc:
             cap_raw = (club.member_join_tos_caption or "").strip()
             try:
-                await bot.send_document(
-                    chat_id=chat_id,
-                    document=tos_doc,
-                    caption=cap_raw or None,
+                live_id = await _bot_call_chat(
+                    bot,
+                    live_id,
+                    lambda cid: bot.send_document(
+                        chat_id=cid,
+                        document=tos_doc,
+                        caption=cap_raw or None,
+                    ),
                 )
             except Exception as e:
                 logger.warning(
                     "member_join_intro: TOS document send failed chat_id=%s: %s",
-                    chat_id,
+                    live_id,
                     e,
                 )
+
+    return live_id
 
 
 async def _deliver_member_join_intro_messages(chat_id: int, club_id: int, bot) -> None:
     """When a player joins only: preamble → TOS — no canned bot intro block (Dashboard welcome is bot-add only)."""
 
-    await _send_member_join_preamble_and_pdf(chat_id, club_id, bot)
-    _mark_member_join_bundle_cooldown(chat_id)
+    live_id = await _send_member_join_preamble_and_pdf(chat_id, club_id, bot)
+    _mark_member_join_bundle_cooldown(live_id)
 
 
 async def send_post_gc_intro_bundle(bot, chat_id: int, club_id: int, chat_title: str | None) -> None:
@@ -308,41 +359,61 @@ async def send_post_gc_intro_bundle(bot, chat_id: int, club_id: int, chat_title:
 
     _mark_post_gc_bundle_window(chat_id)
 
-    await _send_member_join_preamble_and_pdf(chat_id, club_id, bot)
+    live_id = await _send_member_join_preamble_and_pdf(chat_id, club_id, bot)
+    _mark_post_gc_bundle_window(live_id)
 
     welcome = get_club_welcome(club_id)
     if welcome:
         try:
             if welcome["type"] == "photo" and welcome.get("file_id"):
-                await bot.send_photo(
-                    chat_id=chat_id,
-                    photo=welcome["file_id"],
-                    caption=welcome.get("caption") or None,
+                live_id = await _bot_call_chat(
+                    bot,
+                    live_id,
+                    lambda cid: bot.send_photo(
+                        chat_id=cid,
+                        photo=welcome["file_id"],
+                        caption=welcome.get("caption") or None,
+                    ),
                 )
             elif welcome.get("text"):
                 text_w = welcome["text"]
                 for i in range(0, len(text_w), 4096):
-                    await bot.send_message(chat_id=chat_id, text=text_w[i : i + 4096])
+                    chunk = text_w[i : i + 4096]
+                    live_id = await _bot_call_chat(
+                        bot,
+                        live_id,
+                        lambda cid, text=chunk: bot.send_message(chat_id=cid, text=text),
+                    )
         except Exception as e:
-            logger.warning("post_gc_intro: welcome send failed chat_id=%s: %s", chat_id, e)
+            logger.warning("post_gc_intro: welcome send failed chat_id=%s: %s", live_id, e)
 
-    res = bind_chat_from_title(chat_id=chat_id, title=chat_title)
+    res = bind_chat_from_title(chat_id=live_id, title=chat_title)
     try:
         if res.ok and res.gg_player_id:
-            await bot.send_message(
-                chat_id=chat_id,
-                text=(
-                    "Thank you for playing at our club!!\n"
-                    f"\nPlayer ID: {res.gg_player_id}"
+            live_id = await _bot_call_chat(
+                bot,
+                live_id,
+                lambda cid: bot.send_message(
+                    chat_id=cid,
+                    text=(
+                        "Thank you for playing at our club!!\n"
+                        f"\nPlayer ID: {res.gg_player_id}"
+                    ),
                 ),
             )
         elif res.error and is_same_club_player_conflict_message(res.error):
-            await bot.send_message(chat_id=chat_id, text=res.error, parse_mode="HTML")
+            live_id = await _bot_call_chat(
+                bot,
+                live_id,
+                lambda cid: bot.send_message(
+                    chat_id=cid, text=res.error, parse_mode="HTML"
+                ),
+            )
     except Exception:
         pass
 
-    _mark_member_join_bundle_cooldown(chat_id)
-    _join_intro_sent_at[chat_id] = time.monotonic()
+    _mark_member_join_bundle_cooldown(live_id)
+    _join_intro_sent_at[live_id] = time.monotonic()
 
 
 async def _maybe_send_member_join_intro(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:

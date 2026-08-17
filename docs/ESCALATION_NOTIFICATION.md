@@ -149,8 +149,8 @@ Behavior:
 2. Any non-bot human text/media/caption/command opens or feeds a durable episode (table `watched_group_escalation_state`). `@rtaccountant` and `@widget_stick` are ignored (union automation accounts).
 3. Reuses awaiting-agent timings (1 minute quiet debounce, 10 minute episode).
 4. On debounce: one Slack post to head-admin, then quiet until the episode ends.
-5. No bot reply in the group; no club auto-link/welcome; commands are swallowed.
-6. Club welcome/link on join runs only when the title is GC format (`CLUB / PLAYER_ID / NAME` or `CLUB / / NAME` with empty player id). Titles like `Round Table Support & GG Support` skip onboarding. No admin DM is sent when the bot joins a non-support group.
+5. No bot reply in the group; commands are swallowed. Allowlisted chats skip club auto-link/welcome.
+6. Club welcome/link on join runs for ops titles (e.g. `Round Table Support & GG Support`) as well as GC titles. No admin DM is sent when the bot joins a non-support group.
 
 Slack copy:
 

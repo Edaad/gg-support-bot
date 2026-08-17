@@ -22,8 +22,8 @@ class TestShouldSkipClubOnboarding(unittest.TestCase):
     def tearDown(self) -> None:
         os.environ.pop(wge.WATCH_GROUP_ESCALATION_CHAT_IDS_ENV, None)
 
-    def test_ops_title_skips(self) -> None:
-        self.assertTrue(
+    def test_ops_title_allows(self) -> None:
+        self.assertFalse(
             groups.should_skip_club_onboarding(
                 1, "Round Table Support & GG Support"
             )
@@ -40,6 +40,9 @@ class TestShouldSkipClubOnboarding(unittest.TestCase):
         )
         self.assertFalse(
             groups.should_skip_club_onboarding(1, "CC / / John")
+        )
+        self.assertFalse(
+            groups.should_skip_club_onboarding(1, "GTO / / @ho3ennn")
         )
 
     def test_allowlisted_skips_even_with_gc_title(self) -> None:
@@ -115,19 +118,31 @@ class TestMaybeSendMemberJoinIntro(unittest.IsolatedAsyncioTestCase):
         mock_deliver.assert_awaited_once_with(CHAT_ID, 4, context.bot)
 
 
-class TestOnMyChatMemberSkipsOpsWelcome(unittest.IsolatedAsyncioTestCase):
+class TestOnMyChatMemberOnboarding(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         groups._join_intro_sent_at.clear()
         groups._member_join_bundle_until.clear()
         groups._post_gc_recent_until.clear()
 
-    @patch("bot.handlers.groups.set_group_club")
-    async def test_ops_title_skips_welcome_and_admin_dm(
+    @patch("bot.handlers.groups.set_group_club", return_value=2)
+    @patch("bot.handlers.groups.is_group_linked", return_value=False)
+    @patch("bot.handlers.groups._send_member_join_preamble_and_pdf", new_callable=AsyncMock)
+    @patch("bot.handlers.groups.get_club_welcome", return_value=None)
+    @patch("bot.handlers.groups.bind_chat_from_title")
+    async def test_ops_title_runs_onboarding(
         self,
+        bind: MagicMock,
+        _welcome: MagicMock,
+        preamble: AsyncMock,
+        _linked: MagicMock,
         set_club: MagicMock,
     ) -> None:
+        bind.return_value = MagicMock(
+            ok=False, gg_player_id=None, error="Invalid group name format."
+        )
+        preamble.return_value = -1001
         update = MagicMock()
-        update.effective_chat.type = "supergroup"
+        update.effective_chat.type = "group"
         update.effective_chat.id = -1001
         update.effective_chat.title = "Round Table Support & GG Support"
         update.effective_user.id = 493310710
@@ -137,10 +152,8 @@ class TestOnMyChatMemberSkipsOpsWelcome(unittest.IsolatedAsyncioTestCase):
         context = _make_context()
         await groups.on_my_chat_member_updated(update, context)
 
-        set_club.assert_not_called()
-        context.bot.send_message.assert_not_called()
-        context.bot.send_photo.assert_not_called()
-        context.bot.send_document.assert_not_called()
+        set_club.assert_called_once()
+        preamble.assert_awaited_once()
 
     @patch("bot.handlers.groups.set_group_club", return_value=2)
     @patch("bot.handlers.groups.is_group_linked", return_value=False)
@@ -158,6 +171,7 @@ class TestOnMyChatMemberSkipsOpsWelcome(unittest.IsolatedAsyncioTestCase):
         bind.return_value = MagicMock(
             ok=False, gg_player_id=None, error="Invalid group name format."
         )
+        preamble.return_value = -1002
         update = MagicMock()
         update.effective_chat.type = "group"
         update.effective_chat.id = -1002
@@ -171,3 +185,26 @@ class TestOnMyChatMemberSkipsOpsWelcome(unittest.IsolatedAsyncioTestCase):
 
         set_club.assert_called_once()
         preamble.assert_awaited_once()
+
+
+class TestBotCallChatMigration(unittest.IsolatedAsyncioTestCase):
+    @patch("bot.services.chat_id_remap.try_silent_supergroup_remap")
+    async def test_retries_on_chat_migrated(self, remap: MagicMock) -> None:
+        from telegram.error import ChatMigrated
+
+        bot = MagicMock()
+        calls: list[int] = []
+
+        async def send(cid: int) -> None:
+            calls.append(int(cid))
+            if cid == -555:
+                raise ChatMigrated(-100555)
+
+        live = await groups._bot_call_chat(bot, -555, send)
+        self.assertEqual(live, -100555)
+        self.assertEqual(calls, [-555, -100555])
+        remap.assert_called_once_with(-555, -100555)
+
+
+if __name__ == "__main__":
+    unittest.main()
