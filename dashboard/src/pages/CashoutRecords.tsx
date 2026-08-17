@@ -52,7 +52,7 @@ export default function CashoutRecords({ token }: { token: string }) {
   const reload = () => {
     const id = ++reqId.current
     setError(null)
-    if (id === 1) setLoading(true)
+    setLoading(true)
     listCashoutRecords(token, {
       status,
       clubId: clubFilter ? Number(clubFilter) : undefined,
@@ -85,7 +85,11 @@ export default function CashoutRecords({ token }: { token: string }) {
   }, [token])
 
   const needle = search.trim().toLowerCase()
-  const visible = needle ? records.filter((r) => recordMatchesSearch(r, needle)) : records
+  const visible = records.filter((r) => {
+    if (r.status !== status) return false
+    if (needle && !recordMatchesSearch(r, needle)) return false
+    return true
+  })
 
   const openCreate = () => {
     setClubId(clubs[0] ? String(clubs[0].id) : '')
@@ -190,7 +194,7 @@ export default function CashoutRecords({ token }: { token: string }) {
         </div>
       )}
 
-      {loading && records.length === 0 ? (
+      {loading && visible.length === 0 ? (
         <p className="text-sm text-ink-muted">Loading…</p>
       ) : visible.length === 0 ? (
         <p className="text-sm text-ink-muted">
