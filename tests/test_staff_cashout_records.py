@@ -287,6 +287,23 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
             self.assertEqual(body[0]["club_name"], "Round Table")
             self.assertEqual(body[0]["status"], "active")
 
+    def test_list_passes_club_and_search(self) -> None:
+        with patch(
+            "api.routes.cashout_records.list_staff_cashout_records",
+            return_value=[],
+        ) as mock_list, patch(
+            "api.routes.cashout_records._club_name_map",
+            return_value={},
+        ):
+            client = TestClient(_make_api_app())
+            resp = client.get("/api/cashout-records?status=active&club_id=2&q=Samin")
+        self.assertEqual(resp.status_code, 200)
+        mock_list.assert_called_once()
+        kwargs = mock_list.call_args.kwargs
+        self.assertEqual(kwargs["club_id"], 2)
+        self.assertEqual(kwargs["status"], "active")
+        self.assertEqual(kwargs["q"], "Samin")
+
     def test_create_manual_cashout(self) -> None:
         created = _sample_record()
         created["cashier_job_id"] = None

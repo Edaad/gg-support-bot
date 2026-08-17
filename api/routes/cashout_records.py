@@ -78,12 +78,13 @@ def _to_read(data: dict, club_names: dict[int, str]) -> StaffCashoutRecordRead:
 def list_cashout_records(
     club_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
+    q: Optional[str] = Query(None),
     limit: int = Query(200, ge=1, le=500),
     db: Session = Depends(get_db_dependency),
 ):
     club_names = _club_name_map(db)
     try:
-        rows = list_staff_cashout_records(club_id=club_id, status=status, limit=limit)
+        rows = list_staff_cashout_records(club_id=club_id, status=status, q=q, limit=limit)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return [_to_read(row, club_names) for row in rows]

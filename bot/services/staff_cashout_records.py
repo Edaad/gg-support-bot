@@ -7,6 +7,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Optional
 
+from sqlalchemy import or_
+
 from bot.services.club import get_method_by_id, get_sub_option_by_id
 from bot.services.player_details import parse_tracking_title
 from db.connection import get_db
@@ -505,16 +507,29 @@ def list_staff_cashout_records(
     *,
     club_id: Optional[int] = None,
     status: Optional[str] = None,
+    q: Optional[str] = None,
     limit: int = 200,
 ) -> list[dict[str, Any]]:
     if status is not None and status not in STATUSES:
         raise ValueError("status must be active, cleared, or oversent")
+    needle = None
+    if q:
+        cleaned = str(q).replace("%", "").replace("_", "").strip()
+        needle = cleaned or None
     with get_db() as session:
         query = session.query(StaffCashoutRecord).order_by(
             StaffCashoutRecord.created_at.desc()
         )
         if club_id is not None:
             query = query.filter(StaffCashoutRecord.club_id == int(club_id))
+        if needle:
+            like = f"%{needle}%"
+            query = query.filter(
+                or_(
+                    StaffCashoutRecord.group_title.ilike(like),
+                    StaffCashoutRecord.gg_player_id.ilike(like),
+                )
+            )
         rows = query.all()
         results = []
         for record in rows:

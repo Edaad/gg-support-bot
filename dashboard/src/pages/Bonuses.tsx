@@ -31,6 +31,10 @@ export default function Bonuses({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null)
   const [warning, setWarning] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [search, setSearch] = useState('')
+  const [q, setQ] = useState('')
+  const [clubFilter, setClubFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editRow, setEditRow] = useState<BonusRecordT | null>(null)
@@ -43,15 +47,25 @@ export default function Bonuses({ token }: { token: string }) {
   const reload = () => {
     setLoading(true)
     setError(null)
-    listBonusRecords(token)
+    listBonusRecords(token, {
+      clubId: clubFilter ? Number(clubFilter) : undefined,
+      bonusTypeId: typeFilter && typeFilter !== 'other' ? Number(typeFilter) : undefined,
+      other: typeFilter === 'other',
+      q: q || undefined,
+    })
       .then(setRecords)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false))
   }
 
   useEffect(() => {
+    const t = window.setTimeout(() => setQ(search.trim()), 300)
+    return () => window.clearTimeout(t)
+  }, [search])
+
+  useEffect(() => {
     reload()
-  }, [token])
+  }, [token, clubFilter, typeFilter, q])
 
   useEffect(() => {
     listClubs(token).then(setClubs).catch(() => undefined)
@@ -163,6 +177,59 @@ export default function Bonuses({ token }: { token: string }) {
         </button>
       </div>
 
+      <div className="mb-6 flex flex-wrap items-end gap-3">
+        <div className="min-w-[16rem] flex-1">
+          <label className="label-field-xs" htmlFor="bonus-search">
+            Search
+          </label>
+          <input
+            id="bonus-search"
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Name, player ID, description…"
+            className="input-field-sm w-full"
+          />
+        </div>
+        <div>
+          <label className="label-field-xs" htmlFor="bonus-club">
+            Club
+          </label>
+          <select
+            id="bonus-club"
+            value={clubFilter}
+            onChange={(e) => setClubFilter(e.target.value)}
+            className="input-field-sm min-w-[12rem]"
+          >
+            <option value="">All clubs</option>
+            {clubs.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label-field-xs" htmlFor="bonus-type">
+            Type
+          </label>
+          <select
+            id="bonus-type"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="input-field-sm min-w-[10rem]"
+          >
+            <option value="">All types</option>
+            {types.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+
       {error && (
         <div className="mb-4 rounded-lg border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger-ink">
           {error}
@@ -177,7 +244,9 @@ export default function Bonuses({ token }: { token: string }) {
       {loading ? (
         <p className="text-sm text-ink-muted">Loading…</p>
       ) : records.length === 0 ? (
-        <p className="text-sm text-ink-muted">No bonus records yet.</p>
+        <p className="text-sm text-ink-muted">
+          {clubFilter || typeFilter || q ? 'No matching bonuses.' : 'No bonus records yet.'}
+        </p>
       ) : (
         <div className="space-y-4">
           {records.map((r) => (

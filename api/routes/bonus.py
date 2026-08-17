@@ -1,8 +1,8 @@
 """CRUD for bonus types and bonus records."""
 
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from api.auth import get_current_admin
@@ -74,8 +74,21 @@ def delete_bonus_type(type_id: int, db: Session = Depends(get_db_dependency)):
 
 
 @router.get("/records", response_model=List[BonusRecordRead])
-def list_bonus_records():
-    return [_to_read(row) for row in list_bonus_record_rows()]
+def list_bonus_records(
+    club_id: Optional[int] = Query(None),
+    bonus_type_id: Optional[int] = Query(None),
+    other: bool = Query(False),
+    q: Optional[str] = Query(None),
+):
+    return [
+        _to_read(row)
+        for row in list_bonus_record_rows(
+            club_id=club_id,
+            bonus_type_id=bonus_type_id,
+            other=other,
+            q=q,
+        )
+    ]
 
 
 @router.post("/records", response_model=BonusRecordRead, status_code=201)

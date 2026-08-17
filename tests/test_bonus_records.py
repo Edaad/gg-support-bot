@@ -124,6 +124,13 @@ class ZapierPayloadTestCase(unittest.TestCase):
 
 
 class BonusRecordServiceTestCase(unittest.TestCase):
+    def test_search_needle_strips_wildcards(self) -> None:
+        from bot.services.bonus_records import _search_needle
+
+        self.assertEqual(_search_needle("  %Jacob_  "), "Jacob")
+        self.assertIsNone(_search_needle("   "))
+        self.assertIsNone(_search_needle(None))
+
     def test_create_resolved_fires_zapier(self) -> None:
         club = _club()
         bt = _bonus_type()
@@ -249,6 +256,31 @@ class BonusRecordServiceTestCase(unittest.TestCase):
 
 
 class BonusRecordsApiTestCase(unittest.TestCase):
+    def test_list_passes_filters(self) -> None:
+        with patch(
+            "api.routes.bonus.list_bonus_record_rows",
+            return_value=[_sample_record_dict()],
+        ) as mock_list:
+            client = TestClient(_make_api_app())
+            resp = client.get("/api/bonus/records?club_id=1&bonus_type_id=2&q=Jacob")
+        self.assertEqual(resp.status_code, 200)
+        mock_list.assert_called_once()
+        kwargs = mock_list.call_args.kwargs
+        self.assertEqual(kwargs["club_id"], 1)
+        self.assertEqual(kwargs["bonus_type_id"], 2)
+        self.assertEqual(kwargs["q"], "Jacob")
+        self.assertFalse(kwargs["other"])
+
+    def test_list_other_type(self) -> None:
+        with patch(
+            "api.routes.bonus.list_bonus_record_rows",
+            return_value=[],
+        ) as mock_list:
+            client = TestClient(_make_api_app())
+            resp = client.get("/api/bonus/records?other=true")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(mock_list.call_args.kwargs["other"])
+
     def test_create_resolved(self) -> None:
         with patch(
             "api.routes.bonus.create_bonus_record",

@@ -37,19 +37,31 @@ export default function CashoutRecords({ token }: { token: string }) {
   const [clubId, setClubId] = useState('')
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
+  const [search, setSearch] = useState('')
+  const [q, setQ] = useState('')
+  const [clubFilter, setClubFilter] = useState('')
 
   const reload = () => {
     setLoading(true)
     setError(null)
-    listCashoutRecords(token, { status })
+    listCashoutRecords(token, {
+      status,
+      clubId: clubFilter ? Number(clubFilter) : undefined,
+      q: q || undefined,
+    })
       .then(setRecords)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false))
   }
 
   useEffect(() => {
+    const t = window.setTimeout(() => setQ(search.trim()), 300)
+    return () => window.clearTimeout(t)
+  }, [search])
+
+  useEffect(() => {
     reload()
-  }, [token, status])
+  }, [token, status, clubFilter, q])
 
   useEffect(() => {
     listClubs(token).then(setClubs).catch(() => undefined)
@@ -118,6 +130,40 @@ export default function CashoutRecords({ token }: { token: string }) {
         ))}
       </div>
 
+      <div className="mb-6 flex flex-wrap items-end gap-3">
+        <div className="min-w-[16rem] flex-1">
+          <label className="label-field-xs" htmlFor="cashout-search">
+            Search
+          </label>
+          <input
+            id="cashout-search"
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Name, player ID…"
+            className="input-field-sm w-full"
+          />
+        </div>
+        <div>
+          <label className="label-field-xs" htmlFor="cashout-club">
+            Club
+          </label>
+          <select
+            id="cashout-club"
+            value={clubFilter}
+            onChange={(e) => setClubFilter(e.target.value)}
+            className="input-field-sm min-w-[12rem]"
+          >
+            <option value="">All clubs</option>
+            {clubs.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {error && (
         <div className="mb-4 rounded-lg border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger-ink">
           {error}
@@ -127,7 +173,9 @@ export default function CashoutRecords({ token }: { token: string }) {
       {loading ? (
         <p className="text-sm text-ink-muted">Loading…</p>
       ) : records.length === 0 ? (
-        <p className="text-sm text-ink-muted">No {status} cashouts.</p>
+        <p className="text-sm text-ink-muted">
+          {clubFilter || q ? `No matching ${status} cashouts.` : `No ${status} cashouts.`}
+        </p>
       ) : (
         <div className="space-y-4">
           {records.map((r) => (

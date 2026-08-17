@@ -190,8 +190,18 @@ export const updateBonusType = (token: string, id: number, data: Partial<BonusTy
   request<BonusTypeT>(`/bonus/types/${id}`, { method: 'PUT', body: JSON.stringify(data) }, token)
 export const deleteBonusType = (token: string, id: number) =>
   request<void>(`/bonus/types/${id}`, { method: 'DELETE' }, token)
-export const listBonusRecords = (token: string) =>
-  request<BonusRecordT[]>('/bonus/records', {}, token)
+export const listBonusRecords = (
+  token: string,
+  opts?: { clubId?: number; bonusTypeId?: number; other?: boolean; q?: string },
+) => {
+  const params = new URLSearchParams()
+  if (opts?.clubId != null) params.set('club_id', String(opts.clubId))
+  if (opts?.bonusTypeId != null) params.set('bonus_type_id', String(opts.bonusTypeId))
+  if (opts?.other) params.set('other', 'true')
+  if (opts?.q) params.set('q', opts.q)
+  const qs = params.toString()
+  return request<BonusRecordT[]>(`/bonus/records${qs ? `?${qs}` : ''}`, {}, token)
+}
 export const createBonusRecord = (
   token: string,
   data: {
@@ -263,11 +273,12 @@ export interface StaffCashoutRecordT {
 
 export const listCashoutRecords = (
   token: string,
-  opts?: { clubId?: number; status?: CashoutLedgerStatus },
+  opts?: { clubId?: number; status?: CashoutLedgerStatus; q?: string },
 ) => {
   const params = new URLSearchParams()
   if (opts?.clubId != null) params.set('club_id', String(opts.clubId))
   if (opts?.status) params.set('status', opts.status)
+  if (opts?.q) params.set('q', opts.q)
   const q = params.toString()
   return request<StaffCashoutRecordT[]>(`/cashout-records${q ? `?${q}` : ''}`, {}, token)
 }

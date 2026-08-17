@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 import httpx
+from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 
 from bot.services.bonus_player_resolve import resolve_bonus_player
@@ -125,15 +126,45 @@ def _zapier_data_from_record(record: BonusRecord, *, type_name: str, club_name: 
     }
 
 
-def list_bonus_records(*, limit: int = 200) -> list[dict[str, Any]]:
+def _search_needle(q: Optional[str]) -> Optional[str]:
+    if not q:
+        return None
+    cleaned = str(q).replace("%", "").replace("_", "").strip()
+    return cleaned or None
+
+
+def list_bonus_records(
+    *,
+    club_id: Optional[int] = None,
+    bonus_type_id: Optional[int] = None,
+    other: bool = False,
+    q: Optional[str] = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    needle = _search_needle(q)
     with get_db() as session:
-        rows = (
+        query = (
             session.query(BonusRecord)
             .options(joinedload(BonusRecord.bonus_type), joinedload(BonusRecord.club))
             .order_by(BonusRecord.created_at.desc())
-            .limit(limit)
-            .all()
         )
+        if club_id is not None:
+            query = query.filter(BonusRecord.club_id == int(club_id))
+        if other:
+            query = query.filter(BonusRecord.bonus_type_id.is_(None))
+        elif bonus_type_id is not None:
+            query = query.filter(BonusRecord.bonus_type_id == int(bonus_type_id))
+        if needle:
+            like = f"%{needle}%"
+            query = query.filter(
+                or_(
+                    BonusRecord.group_title.ilike(like),
+                    BonusRecord.player_username.ilike(like),
+                    BonusRecord.gg_player_id.ilike(like),
+                    BonusRecord.custom_description.ilike(like),
+                )
+            )
+        rows = query.limit(limit).all()
         return [record_to_dict(r) for r in rows]
 
 
