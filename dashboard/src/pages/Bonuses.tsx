@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   createBonusRecord,
   deleteBonusRecord,
@@ -22,6 +22,18 @@ function fmtDate(iso: string | null) {
   })
 }
 
+function recordMatchesSearch(r: BonusRecordT, needle: string) {
+  const n = needle.toLowerCase()
+  return [
+    r.group_title,
+    r.player_username,
+    r.gg_player_id,
+    r.club_name,
+    r.bonus_type_name,
+    r.custom_description,
+  ].some((v) => v && String(v).toLowerCase().includes(n))
+}
+
 export default function Bonuses({ token }: { token: string }) {
   const askConfirm = useConfirm()
   const [records, setRecords] = useState<BonusRecordT[]>([])
@@ -35,6 +47,7 @@ export default function Bonuses({ token }: { token: string }) {
   const [q, setQ] = useState('')
   const [clubFilter, setClubFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
+  const reqId = useRef(0)
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editRow, setEditRow] = useState<BonusRecordT | null>(null)
@@ -45,17 +58,26 @@ export default function Bonuses({ token }: { token: string }) {
   const [description, setDescription] = useState('')
 
   const reload = () => {
-    setLoading(true)
+    const id = ++reqId.current
     setError(null)
+    if (id === 1) setLoading(true)
     listBonusRecords(token, {
       clubId: clubFilter ? Number(clubFilter) : undefined,
       bonusTypeId: typeFilter && typeFilter !== 'other' ? Number(typeFilter) : undefined,
       other: typeFilter === 'other',
       q: q || undefined,
     })
-      .then(setRecords)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
-      .finally(() => setLoading(false))
+      .then((rows) => {
+        if (id !== reqId.current) return
+        setRecords(rows)
+      })
+      .catch((e) => {
+        if (id !== reqId.current) return
+        setError(e instanceof Error ? e.message : 'Failed to load')
+      })
+      .finally(() => {
+        if (id === reqId.current) setLoading(false)
+      })
   }
 
   useEffect(() => {
@@ -71,6 +93,9 @@ export default function Bonuses({ token }: { token: string }) {
     listClubs(token).then(setClubs).catch(() => undefined)
     listBonusTypes(token).then(setTypes).catch(() => undefined)
   }, [token])
+
+  const needle = search.trim().toLowerCase()
+  const visible = needle ? records.filter((r) => recordMatchesSearch(r, needle)) : records
 
   const activeTypes = types.filter((t) => t.is_active)
   const typeChoices = (current: BonusRecordT | null) => {
@@ -241,15 +266,15 @@ export default function Bonuses({ token }: { token: string }) {
         </div>
       )}
 
-      {loading ? (
+      {loading && records.length === 0 ? (
         <p className="text-sm text-ink-muted">Loading…</p>
-      ) : records.length === 0 ? (
+      ) : visible.length === 0 ? (
         <p className="text-sm text-ink-muted">
-          {clubFilter || typeFilter || q ? 'No matching bonuses.' : 'No bonus records yet.'}
+          {clubFilter || typeFilter || needle ? 'No matching bonuses.' : 'No bonus records yet.'}
         </p>
       ) : (
         <div className="space-y-4">
-          {records.map((r) => (
+          {visible.map((r) => (
             <article
               key={r.id}
               role="button"

@@ -13,6 +13,7 @@ from api.auth import get_current_admin
 from api.routes.cashout_records import router
 from bot.services.staff_cashout_records import (
     CashoutRecordNotActive,
+    _matches_search,
     compute_ledger,
 )
 from cashier.services.zapier import (
@@ -69,6 +70,18 @@ def _make_api_app() -> FastAPI:
     app.dependency_overrides[get_current_admin] = override_admin
     app.dependency_overrides[get_db_dependency] = override_db
     return app
+
+
+class SearchMatchTestCase(unittest.TestCase):
+    def test_matches_name_case_insensitive(self) -> None:
+        row = {"group_title": "GTO / 3580-8055 / Sijan", "gg_player_id": "3580-8055"}
+        self.assertTrue(_matches_search(row, "sijan"))
+        self.assertFalse(
+            _matches_search(
+                {"group_title": "GTO / 2690-5329 / @Mrhulkx", "gg_player_id": "2690-5329"},
+                "sijan",
+            )
+        )
 
 
 class LedgerStatusTestCase(unittest.TestCase):

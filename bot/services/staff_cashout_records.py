@@ -503,6 +503,13 @@ def delete_staff_cashout_send(record_id: int, send_id: int) -> Optional[dict[str
         return _record_dict_reloaded(session, record)
 
 
+def _matches_search(out: dict[str, Any], needle: str) -> bool:
+    blob = " ".join(
+        str(out.get(k) or "") for k in ("group_title", "gg_player_id")
+    ).lower()
+    return needle.lower() in blob
+
+
 def list_staff_cashout_records(
     *,
     club_id: Optional[int] = None,
@@ -535,6 +542,8 @@ def list_staff_cashout_records(
         for record in rows:
             out = _record_to_dict(record)
             if status is not None and out["status"] != status:
+                continue
+            if needle and not _matches_search(out, needle):
                 continue
             results.append(out)
             if len(results) >= limit:

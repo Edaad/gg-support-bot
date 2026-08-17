@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   createCashoutRecord,
@@ -25,6 +25,13 @@ function fmtDate(iso: string | null) {
   })
 }
 
+function recordMatchesSearch(r: StaffCashoutRecordT, needle: string) {
+  const n = needle.toLowerCase()
+  return [r.group_title, r.gg_player_id, r.club_name].some(
+    (v) => v && String(v).toLowerCase().includes(n),
+  )
+}
+
 export default function CashoutRecords({ token }: { token: string }) {
   const navigate = useNavigate()
   const [status, setStatus] = useState<CashoutLedgerStatus>('active')
@@ -40,18 +47,28 @@ export default function CashoutRecords({ token }: { token: string }) {
   const [search, setSearch] = useState('')
   const [q, setQ] = useState('')
   const [clubFilter, setClubFilter] = useState('')
+  const reqId = useRef(0)
 
   const reload = () => {
-    setLoading(true)
+    const id = ++reqId.current
     setError(null)
+    if (id === 1) setLoading(true)
     listCashoutRecords(token, {
       status,
       clubId: clubFilter ? Number(clubFilter) : undefined,
       q: q || undefined,
     })
-      .then(setRecords)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
-      .finally(() => setLoading(false))
+      .then((rows) => {
+        if (id !== reqId.current) return
+        setRecords(rows)
+      })
+      .catch((e) => {
+        if (id !== reqId.current) return
+        setError(e instanceof Error ? e.message : 'Failed to load')
+      })
+      .finally(() => {
+        if (id === reqId.current) setLoading(false)
+      })
   }
 
   useEffect(() => {
@@ -66,6 +83,9 @@ export default function CashoutRecords({ token }: { token: string }) {
   useEffect(() => {
     listClubs(token).then(setClubs).catch(() => undefined)
   }, [token])
+
+  const needle = search.trim().toLowerCase()
+  const visible = needle ? records.filter((r) => recordMatchesSearch(r, needle)) : records
 
   const openCreate = () => {
     setClubId(clubs[0] ? String(clubs[0].id) : '')
@@ -170,15 +190,15 @@ export default function CashoutRecords({ token }: { token: string }) {
         </div>
       )}
 
-      {loading ? (
+      {loading && records.length === 0 ? (
         <p className="text-sm text-ink-muted">Loading…</p>
-      ) : records.length === 0 ? (
+      ) : visible.length === 0 ? (
         <p className="text-sm text-ink-muted">
-          {clubFilter || q ? `No matching ${status} cashouts.` : `No ${status} cashouts.`}
+          {clubFilter || needle ? `No matching ${status} cashouts.` : `No ${status} cashouts.`}
         </p>
       ) : (
         <div className="space-y-4">
-          {records.map((r) => (
+          {visible.map((r) => (
             <article
               key={r.id}
               role="link"
