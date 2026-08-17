@@ -159,6 +159,42 @@ class TestMethodsForAction(unittest.TestCase):
             club_id=10, direction="cashout", is_active=True
         )
 
+    def test_cashout_whitelist_includes_public_crypto(self):
+        orig = self._methods
+        self._methods = lambda: [
+            SimpleNamespace(
+                id=1, name="Zelle", slug="zelle", is_public=True, sort_order=0
+            ),
+            SimpleNamespace(
+                id=4, name="Crypto", slug="crypto", is_public=True, sort_order=3
+            ),
+        ]
+        try:
+            session = self._session([])
+            mock_cm = MagicMock()
+            mock_cm.__enter__.return_value = session
+            mock_cm.__exit__.return_value = False
+            with patch(
+                "bot.services.deposit_method_access.get_db", return_value=mock_cm
+            ):
+                cashout = methods_for_action(
+                    10, -100, "whitelist", direction="cashout"
+                )
+            session2 = self._session([])
+            mock_cm2 = MagicMock()
+            mock_cm2.__enter__.return_value = session2
+            mock_cm2.__exit__.return_value = False
+            with patch(
+                "bot.services.deposit_method_access.get_db", return_value=mock_cm2
+            ):
+                deposit = methods_for_action(
+                    10, -100, "whitelist", direction="deposit"
+                )
+        finally:
+            self._methods = orig
+        self.assertEqual([m["slug"] for m in cashout], ["crypto"])
+        self.assertEqual(deposit, [])
+
 
 class TestUpsertAccessReplacesType(unittest.TestCase):
     def test_existing_row_updates_type(self):
@@ -338,7 +374,15 @@ class TestFilterCashoutMethodsForChat(unittest.TestCase):
         side_effect=lambda _c, ms: list(ms),
     )
     def test_no_bound_payment_hides_crypto(self, _filt, _bound):
-        result = filter_cashout_methods_for_chat(-100, self.methods)
+        session = MagicMock()
+        session.query.return_value.filter_by.return_value.all.return_value = []
+        mock_cm = MagicMock()
+        mock_cm.__enter__.return_value = session
+        mock_cm.__exit__.return_value = False
+        with patch(
+            "bot.services.deposit_method_access.get_db", return_value=mock_cm
+        ):
+            result = filter_cashout_methods_for_chat(-100, self.methods)
         self.assertEqual([m["slug"] for m in result], ["zelle"])
 
     @patch(
@@ -350,7 +394,15 @@ class TestFilterCashoutMethodsForChat(unittest.TestCase):
         side_effect=lambda _c, ms: list(ms),
     )
     def test_bound_payment_shows_crypto(self, _filt, _bound):
-        result = filter_cashout_methods_for_chat(-100, self.methods)
+        session = MagicMock()
+        session.query.return_value.filter_by.return_value.all.return_value = []
+        mock_cm = MagicMock()
+        mock_cm.__enter__.return_value = session
+        mock_cm.__exit__.return_value = False
+        with patch(
+            "bot.services.deposit_method_access.get_db", return_value=mock_cm
+        ):
+            result = filter_cashout_methods_for_chat(-100, self.methods)
         self.assertEqual([m["slug"] for m in result], ["zelle", "crypto"])
 
     @patch(
@@ -361,12 +413,20 @@ class TestFilterCashoutMethodsForChat(unittest.TestCase):
         "bot.services.deposit_method_access.filter_deposit_methods_for_chat",
         side_effect=lambda _c, ms: list(ms),
     )
-    def test_whitelist_does_not_bypass_crypto_gate(self, _filt, _bound):
-        methods = [
-            {"id": 2, "name": "Crypto", "slug": "crypto", "is_public": False},
+    def test_whitelist_unlocks_crypto_without_bound_payment(self, _filt, _bound):
+        session = MagicMock()
+        session.query.return_value.filter_by.return_value.all.return_value = [
+            (2, "whitelist")
         ]
-        result = filter_cashout_methods_for_chat(-100, methods)
-        self.assertEqual(result, [])
+        mock_cm = MagicMock()
+        mock_cm.__enter__.return_value = session
+        mock_cm.__exit__.return_value = False
+        with patch(
+            "bot.services.deposit_method_access.get_db", return_value=mock_cm
+        ):
+            result = filter_cashout_methods_for_chat(-100, self.methods)
+        self.assertEqual([m["slug"] for m in result], ["zelle", "crypto"])
+        _bound.assert_not_called()
 
 
 class TestIsCashoutMethodAllowedForChat(unittest.TestCase):
@@ -399,6 +459,26 @@ class TestIsCashoutMethodAllowedForChat(unittest.TestCase):
             ),
         ):
             self.assertFalse(is_cashout_method_allowed_for_chat(-100, 2))
+
+    def test_whitelist_unlocks_crypto_without_bound_payment(self):
+        method = SimpleNamespace(
+            direction="cashout",
+            is_active=True,
+            is_public=True,
+            slug="crypto",
+        )
+        with (
+            patch(
+                "bot.services.deposit_method_access.get_db",
+                return_value=self._session(method, [(2, "whitelist")]),
+            ),
+            patch(
+                "bot.services.crypto_payments.chat_has_bound_crypto_deposit",
+                return_value=False,
+            ) as bound,
+        ):
+            self.assertTrue(is_cashout_method_allowed_for_chat(-100, 2))
+            bound.assert_not_called()
 
     def test_public_crypto_shown_with_bound_payment(self):
         method = SimpleNamespace(

@@ -248,7 +248,7 @@ function MethodDetailsForm({
           {direction === 'cashout' && (
             <p className="text-xs text-ink-faint pl-6">
               Crypto cashout is hidden until a crypto deposit is bound to that
-              group (/cashoutaccess cannot unlock it).
+              group, or staff whitelist it via /cashoutaccess.
             </p>
           )}
         </div>

@@ -544,7 +544,7 @@ heroku run -a YOUR_APP -- python migrate_group_deposit_method_access.py
 
 Adds `club_payment_methods.is_public` (default true) and `group_deposit_method_access`. Staff manage rows via bot DM `/depositaccess` / `/listdepositaccess` and `/cashoutaccess` / `/listcashoutaccess`; flip Public in Club Detail → Deposit Methods or Cashout Methods.
 
-Player `/cashout` also hides the `crypto` method unless that support group has a bound non-test `crypto_payments` row. Staff `/cashoutaccess` whitelist cannot unlock crypto without that bound payment; GGCashier `/cash` is unfiltered.
+Player `/cashout` hides the `crypto` method unless that support group has a bound non-test `crypto_payments` row **or** staff whitelist crypto via `/cashoutaccess`. Blacklist still hides crypto after a bound deposit. GGCashier `/cash` is unfiltered.
 
 ## Payments page (Stripe tables)
 

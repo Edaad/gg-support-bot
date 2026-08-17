@@ -191,18 +191,34 @@ def _slug_is_crypto(slug: Optional[str]) -> bool:
     return (slug or "").strip().lower() == _CRYPTO_SLUG
 
 
+def _crypto_cashout_allowed(chat_id: int, method_id: int) -> bool:
+    """True if this chat may cash out crypto: staff whitelist or a bound deposit."""
+    try:
+        with get_db() as session:
+            access = _access_map_for_chat(session, chat_id)
+        if access.get(int(method_id)) == "whitelist":
+            return True
+    except Exception:
+        logger.exception(
+            "crypto whitelist lookup failed chat_id=%s method_id=%s",
+            chat_id,
+            method_id,
+        )
+    from bot.services.crypto_payments import chat_has_bound_crypto_deposit
+
+    return chat_has_bound_crypto_deposit(int(chat_id))
+
+
 def filter_cashout_methods_for_chat(
     chat_id: int, methods: Sequence[dict]
 ) -> List[dict]:
     visible = filter_deposit_methods_for_chat(chat_id, methods)
-    crypto_methods = [m for m in visible if _slug_is_crypto(m.get("slug"))]
-    if not crypto_methods:
-        return visible
-    from bot.services.crypto_payments import chat_has_bound_crypto_deposit
-
-    if chat_has_bound_crypto_deposit(int(chat_id)):
-        return visible
-    return [m for m in visible if not _slug_is_crypto(m.get("slug"))]
+    return [
+        m
+        for m in visible
+        if (not _slug_is_crypto(m.get("slug")))
+        or _crypto_cashout_allowed(int(chat_id), int(m["id"]))
+    ]
 
 
 def is_cashout_method_allowed_for_chat(chat_id: int, method_id: int) -> bool:
@@ -223,9 +239,7 @@ def is_cashout_method_allowed_for_chat(chat_id: int, method_id: int) -> bool:
             return True
     if not _slug_is_crypto(slug):
         return True
-    from bot.services.crypto_payments import chat_has_bound_crypto_deposit
-
-    return chat_has_bound_crypto_deposit(int(chat_id))
+    return _crypto_cashout_allowed(int(chat_id), int(method_id))
 
 
 def methods_for_action(
@@ -253,7 +267,12 @@ def methods_for_action(
                 if is_public and current != "blacklist":
                     result.append({"id": mid, "name": m.name, "slug": m.slug})
             elif action == "whitelist":
-                if (not is_public) and current != "whitelist":
+                if current == "whitelist":
+                    continue
+                if not is_public:
+                    result.append({"id": mid, "name": m.name, "slug": m.slug})
+                elif direction == "cashout" and _slug_is_crypto(m.slug):
+                    # Public crypto is still gated; whitelist is the staff override.
                     result.append({"id": mid, "name": m.name, "slug": m.slug})
             elif action == "remove":
                 if current is not None:
