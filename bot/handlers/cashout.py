@@ -34,6 +34,10 @@ from bot.services.club import (
     get_cashout_soft_limit,
     update_group_name,
 )
+from bot.services.deposit_method_access import (
+    filter_cashout_methods_for_chat,
+    is_cashout_method_allowed_for_chat,
+)
 from bot.handlers.flow_cancel import (
     block_if_group_money_flow_active,
     clear_active_flow,
@@ -364,6 +368,9 @@ async def _show_method_keyboard(update, context, first_pick=False):
     is_multi = context.chat_data.get("cashout_multi", False)
 
     methods = get_methods_for_amount(club_id, "cashout", amount)
+    chat = update.effective_chat
+    if chat is not None:
+        methods = filter_cashout_methods_for_chat(int(chat.id), methods)
     available = [m for m in methods if m["id"] not in already_selected]
 
     if not available:
@@ -441,6 +448,15 @@ async def cashout_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
     method = get_method_by_id(method_id)
     if not method:
         await query.edit_message_text("That method is no longer available.")
+        return ConversationHandler.END
+
+    chat_id = query.message.chat.id if query.message else None
+    if chat_id is not None and not is_cashout_method_allowed_for_chat(
+        int(chat_id), method_id
+    ):
+        await query.edit_message_text(
+            "That payment method is not available for this group."
+        )
         return ConversationHandler.END
 
     context.chat_data["cashout_current_method"] = method

@@ -186,9 +186,11 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
     from bot.handlers.whosnext import whosnext_handler
     from bot.handlers.unbind_method import unbindmethod_handler
     from bot.handlers.deposit_access import (
+        cashoutaccess_entry,
         depositaccess_callback_handler,
         depositaccess_entry,
         depositaccess_message_handler,
+        listcashoutaccess_handler,
         listdepositaccess_handler,
     )
     from bot.handlers.deposit import (
@@ -253,9 +255,11 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         whosnext_handler=whosnext_handler,
         unbindmethod_handler=unbindmethod_handler,
         depositaccess_entry=depositaccess_entry,
+        cashoutaccess_entry=cashoutaccess_entry,
         depositaccess_message_handler=depositaccess_message_handler,
         depositaccess_callback_handler=depositaccess_callback_handler,
         listdepositaccess_handler=listdepositaccess_handler,
+        listcashoutaccess_handler=listcashoutaccess_handler,
         stageinactive_handler=stageinactive_handler,
         unstageinactive_handler=unstageinactive_handler,
         stagedinactive_handler=stagedinactive_handler,
@@ -313,7 +317,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     # DM staff flows. PTB runs at most ONE handler per group, so private TEXT
     # handlers that share the same filter must live in separate groups (lower
     # group number = higher priority). /cancel stays first.
-    #   -5 cancel | -4 bonus | -3 sendinactive | -2 depositaccess | -1 issue triage
+    #   -5 cancel | -4 bonus | -3 sendinactive | -2 depositaccess/cashoutaccess | -1 issue triage
     app.add_handler(CommandHandler("cancel", h.dm_flow_cancel_priority), group=-5)
 
     app.add_handler(CommandHandler("bonus", h.bonus_entry), group=-4)
@@ -354,6 +358,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     )
 
     app.add_handler(CommandHandler("depositaccess", h.depositaccess_entry), group=-2)
+    app.add_handler(CommandHandler("cashoutaccess", h.cashoutaccess_entry), group=-2)
     app.add_handler(
         MessageHandler(
             filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
@@ -362,7 +367,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         group=-2,
     )
     app.add_handler(
-        CallbackQueryHandler(h.depositaccess_callback_handler, pattern=r"^da:"),
+        CallbackQueryHandler(h.depositaccess_callback_handler, pattern=r"^(da|ca):"),
         group=-2,
     )
     app.add_handler(
@@ -378,6 +383,22 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         CommandHandler(
             "depositaccesslist",
             h.listdepositaccess_handler,
+            filters=filters.ChatType.PRIVATE,
+        ),
+        group=-2,
+    )
+    app.add_handler(
+        CommandHandler(
+            "listcashoutaccess",
+            h.listcashoutaccess_handler,
+            filters=filters.ChatType.PRIVATE,
+        ),
+        group=-2,
+    )
+    app.add_handler(
+        CommandHandler(
+            "cashoutaccesslist",
+            h.listcashoutaccess_handler,
             filters=filters.ChatType.PRIVATE,
         ),
         group=-2,

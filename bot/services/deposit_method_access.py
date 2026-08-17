@@ -1,10 +1,10 @@
-"""Per-support-group deposit method blacklist / whitelist + public visibility."""
+"""Per-support-group deposit/cashout method blacklist / whitelist + public visibility."""
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Iterable, List, Literal, Optional, Sequence
+from typing import Iterable, List, Literal, Optional, Sequence, Tuple
 
 from config import ADMIN_USER_IDS
 from db.connection import get_db
@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 AccessType = Literal["blacklist", "whitelist"]
 AccessAction = Literal["blacklist", "whitelist", "remove"]
+MethodDirection = Literal["deposit", "cashout"]
+_CRYPTO_SLUG = "crypto"
 
 
 @dataclass(frozen=True)
@@ -155,34 +157,89 @@ def filter_deposit_methods_for_chat(
     return result
 
 
-def is_deposit_method_allowed_for_chat(chat_id: int, method_id: int) -> bool:
+def _is_method_allowed_for_chat(
+    chat_id: int, method_id: int, direction: MethodDirection
+) -> Tuple[bool, Optional[str]]:
+    """Return (visible, slug). slug is None when the method is missing or ACL lookup failed."""
     try:
         with get_db() as session:
             method = session.query(ClubPaymentMethod).get(int(method_id))
-            if not method or method.direction != "deposit" or not method.is_active:
-                return False
+            if not method or method.direction != direction or not method.is_active:
+                return False, None
             access = _access_map_for_chat(session, chat_id)
-            return method_visible_for_chat(
+            visible = method_visible_for_chat(
                 is_public=bool(getattr(method, "is_public", True)),
                 access_type=access.get(int(method_id)),
             )
+            return visible, method.slug
     except Exception:
         logger.exception(
-            "is_deposit_method_allowed_for_chat failed chat_id=%s method_id=%s; allowing",
+            "is_%s_method_allowed_for_chat failed chat_id=%s method_id=%s; allowing",
+            direction,
             chat_id,
             method_id,
         )
+        return True, None
+
+
+def is_deposit_method_allowed_for_chat(chat_id: int, method_id: int) -> bool:
+    visible, _ = _is_method_allowed_for_chat(chat_id, method_id, "deposit")
+    return visible
+
+
+def _slug_is_crypto(slug: Optional[str]) -> bool:
+    return (slug or "").strip().lower() == _CRYPTO_SLUG
+
+
+def filter_cashout_methods_for_chat(
+    chat_id: int, methods: Sequence[dict]
+) -> List[dict]:
+    visible = filter_deposit_methods_for_chat(chat_id, methods)
+    crypto_methods = [m for m in visible if _slug_is_crypto(m.get("slug"))]
+    if not crypto_methods:
+        return visible
+    from bot.services.crypto_payments import chat_has_bound_crypto_deposit
+
+    if chat_has_bound_crypto_deposit(int(chat_id)):
+        return visible
+    return [m for m in visible if not _slug_is_crypto(m.get("slug"))]
+
+
+def is_cashout_method_allowed_for_chat(chat_id: int, method_id: int) -> bool:
+    visible, slug = _is_method_allowed_for_chat(chat_id, method_id, "cashout")
+    if not visible:
+        return False
+    if slug is None:
+        try:
+            with get_db() as session:
+                method = session.query(ClubPaymentMethod).get(int(method_id))
+                slug = method.slug if method else ""
+        except Exception:
+            logger.exception(
+                "crypto gate slug lookup failed chat_id=%s method_id=%s; allowing non-crypto",
+                chat_id,
+                method_id,
+            )
+            return True
+    if not _slug_is_crypto(slug):
         return True
+    from bot.services.crypto_payments import chat_has_bound_crypto_deposit
+
+    return chat_has_bound_crypto_deposit(int(chat_id))
 
 
 def methods_for_action(
-    club_id: int, chat_id: int, action: AccessAction
+    club_id: int,
+    chat_id: int,
+    action: AccessAction,
+    *,
+    direction: MethodDirection = "deposit",
 ) -> List[dict]:
-    """Active deposit methods eligible for the given /depositaccess action."""
+    """Active methods eligible for the given /depositaccess or /cashoutaccess action."""
     with get_db() as session:
         methods = (
             session.query(ClubPaymentMethod)
-            .filter_by(club_id=int(club_id), direction="deposit", is_active=True)
+            .filter_by(club_id=int(club_id), direction=direction, is_active=True)
             .order_by(ClubPaymentMethod.sort_order, ClubPaymentMethod.id)
             .all()
         )
@@ -218,13 +275,16 @@ def upsert_access(
     club_payment_method_id: int,
     access_type: AccessType,
     created_by_telegram_user_id: Optional[int] = None,
+    direction: MethodDirection = "deposit",
 ) -> AccessEntry:
     with get_db() as session:
         method = session.query(ClubPaymentMethod).get(int(club_payment_method_id))
         if not method or int(method.club_id) != int(club_id):
             raise ValueError("Payment method not found for this club.")
-        if method.direction != "deposit":
-            raise ValueError("Only deposit methods can be blacklisted or whitelisted.")
+        if method.direction != direction:
+            raise ValueError(
+                f"Only {direction} methods can be blacklisted or whitelisted."
+            )
 
         row = (
             session.query(GroupDepositMethodAccess)
@@ -313,12 +373,14 @@ def delete_access(
     )
 
 
-def list_access_entries(actor_user_id: int) -> List[AccessEntry]:
+def list_access_entries(
+    actor_user_id: int, *, direction: MethodDirection = "deposit"
+) -> List[AccessEntry]:
     with get_db() as session:
         q = session.query(GroupDepositMethodAccess, ClubPaymentMethod).join(
             ClubPaymentMethod,
             ClubPaymentMethod.id == GroupDepositMethodAccess.club_payment_method_id,
-        )
+        ).filter(ClubPaymentMethod.direction == direction)
         if actor_user_id not in ADMIN_USER_IDS:
             club_ids = _staff_club_ids(session, actor_user_id)
             if not club_ids:
@@ -368,11 +430,15 @@ def list_access_entries(actor_user_id: int) -> List[AccessEntry]:
         )
     return result
 
-def format_access_list(entries: Iterable[AccessEntry]) -> str:
+
+def format_access_list(
+    entries: Iterable[AccessEntry], *, direction: MethodDirection = "deposit"
+) -> str:
     rows = list(entries)
+    label = "deposit" if direction == "deposit" else "cashout"
     if not rows:
-        return "No deposit method blacklist or whitelist entries."
-    lines = ["Deposit method access:"]
+        return f"No {label} method blacklist or whitelist entries."
+    lines = [f"{label.capitalize()} method access:"]
     for e in rows:
         title = e.group_title or f"chat {e.telegram_chat_id}"
         lines.append(

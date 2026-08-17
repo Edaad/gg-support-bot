@@ -47,6 +47,30 @@ logger = logging.getLogger(__name__)
 
 WEBHOOK_SECRET_ENV = "CRYPTO_ZAPIER_WEBHOOK_SECRET"
 
+
+def chat_has_bound_crypto_deposit(chat_id: int) -> bool:
+    """True if this support group has a non-test bound crypto_payments row.
+
+    Fail-closed: any lookup error returns False so crypto cashout stays hidden.
+    """
+    try:
+        with get_db() as session:
+            row = (
+                session.query(CryptoPayment.id)
+                .filter(
+                    CryptoPayment.telegram_chat_id == int(chat_id),
+                    CryptoPayment.is_test.is_(False),
+                )
+                .first()
+            )
+            return row is not None
+    except Exception:
+        logger.exception(
+            "chat_has_bound_crypto_deposit failed chat_id=%s; hiding crypto cashout",
+            chat_id,
+        )
+        return False
+
 ALERT_NAME_CLUBGTO = "ClubGTO Crypto Payment"
 ALERT_NAME_RT_AT_CC = "RT/AT/CC Crypto Payment"
 

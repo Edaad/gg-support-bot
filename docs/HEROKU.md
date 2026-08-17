@@ -533,15 +533,17 @@ heroku run -a YOUR_APP -- python scripts/run_group_chat_analysis.py --activity-d
 
 Optional: `GROUP_CHAT_ANALYSIS_CONCURRENCY=10` (default `0` = unlimited).
 
-## Per-group deposit method access
+## Per-group deposit / cashout method access
 
-After deploying deposit method public/blacklist/whitelist:
+After deploying deposit method public/blacklist/whitelist (cashout access reuses the same table — no extra migrate):
 
 ```bash
 heroku run -a YOUR_APP -- python migrate_group_deposit_method_access.py
 ```
 
-Adds `club_payment_methods.is_public` (default true) and `group_deposit_method_access`. Staff manage rows via bot DM `/depositaccess` / `/listdepositaccess`; flip Public in Club Detail → Deposit Methods.
+Adds `club_payment_methods.is_public` (default true) and `group_deposit_method_access`. Staff manage rows via bot DM `/depositaccess` / `/listdepositaccess` and `/cashoutaccess` / `/listcashoutaccess`; flip Public in Club Detail → Deposit Methods or Cashout Methods.
+
+Player `/cashout` also hides the `crypto` method unless that support group has a bound non-test `crypto_payments` row. Staff `/cashoutaccess` whitelist cannot unlock crypto without that bound payment; GGCashier `/cash` is unfiltered.
 
 ## Payments page (Stripe tables)
 

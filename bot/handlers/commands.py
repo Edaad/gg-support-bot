@@ -41,6 +41,9 @@ RESERVED_CMDS = {
     "depositaccess",
     "listdepositaccess",
     "depositaccesslist",  # common typo alias; real handler is /listdepositaccess
+    "cashoutaccess",
+    "listcashoutaccess",
+    "cashoutaccesslist",  # common typo alias; real handler is /listcashoutaccess
 }
 
 SET_NAME, SET_MESSAGE = range(2)

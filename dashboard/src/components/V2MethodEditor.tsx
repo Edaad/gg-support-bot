@@ -229,25 +229,29 @@ function MethodDetailsForm({
             Active (shown to players)
           </label>
         </div>
-        {direction === 'deposit' && (
-          <div className="sm:col-span-2 space-y-1">
-            <label className="flex items-center gap-2 text-sm text-ink">
-              <input
-                type="checkbox"
-                checked={form.is_public ?? true}
-                onChange={(e) => setField('is_public', e.target.checked)}
-                className="h-4 w-4 rounded border-border bg-control text-accent focus:ring-accent"
-              />
-              Public (visible to all groups unless blacklisted)
-            </label>
-            {form.is_public === false && (
-              <p className="text-xs text-ink-faint pl-6">
-                Private methods only appear for groups whitelisted via bot DM
-                (/depositaccess).
-              </p>
-            )}
-          </div>
-        )}
+        <div className="sm:col-span-2 space-y-1">
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={form.is_public ?? true}
+              onChange={(e) => setField('is_public', e.target.checked)}
+              className="h-4 w-4 rounded border-border bg-control text-accent focus:ring-accent"
+            />
+            Public (visible to all groups unless blacklisted)
+          </label>
+          {form.is_public === false && (
+            <p className="text-xs text-ink-faint pl-6">
+              Private methods only appear for groups whitelisted via bot DM
+              ({direction === 'cashout' ? '/cashoutaccess' : '/depositaccess'}).
+            </p>
+          )}
+          {direction === 'cashout' && (
+            <p className="text-xs text-ink-faint pl-6">
+              Crypto cashout is hidden until a crypto deposit is bound to that
+              group (/cashoutaccess cannot unlock it).
+            </p>
+          )}
+        </div>
         {direction === 'deposit' && (
           <div className="sm:col-span-2">
             <label htmlFor={depositLimitFieldId} className="label-field-xs">
@@ -711,7 +715,7 @@ export default function V2MethodEditor({ token, clubId, direction }: Props) {
                             inactive
                           </span>
                         )}
-                        {direction === 'deposit' && m.is_public === false && (
+                        {m.is_public === false && (
                           <span className="rounded bg-surface-raised px-1.5 py-0.5 text-xs text-ink-muted">
                             private
                           </span>
