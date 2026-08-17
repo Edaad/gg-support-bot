@@ -142,6 +142,133 @@ class MatchTradeLinesTestCase(unittest.TestCase):
         self.assertEqual(rows[0].variant, "gto zelle")
         self.assertFalse(rows[0].vaughn_method)
 
+    def test_different_player_ids_not_matched(self):
+        """HunnidPrblms must not consume Tiddlemouse19's Stripe (Aug 15)."""
+        hunnid = _trade(
+            line_id=1,
+            gg_id="1055-4566",
+            nick="HunnidPrblms",
+            occurred=self.t0,
+            amount="-50",
+        )
+        tiddle = _trade(
+            line_id=2,
+            gg_id="8196-3440",
+            nick="Tiddlemouse19",
+            occurred=self.t0 + timedelta(minutes=2),
+            amount="-50",
+            sheet_row=2,
+        )
+        stripe = _ledger(
+            gg_id="8196-3440",
+            nick="Tiddlemouse19",
+            occurred=self.t0 + timedelta(minutes=2),
+            amount_signed="-50",
+            display_name="Tiddlemouse19",
+            external_id="deposit_stripe:tiddle",
+        )
+        result = match_trade_lines_to_ledger(
+            [hunnid, tiddle],
+            [stripe],
+            club_slug="round-table",
+        )
+        self.assertEqual(result.rows[0].match_source, "")
+        self.assertEqual(result.rows[1].match_source, "Stripe")
+        self.assertEqual(result.rows[1].match_name, "Tiddlemouse19")
+        self.assertEqual(result.unmatched_ledger, [])
+
+    def test_wrong_player_stripe_does_not_steal_zelle_or_block_rt_at(self):
+        """Aug 15 cascade: Stripe→Hunnid, Zelle→Tiddlemouse, Tonka unmatched."""
+        hunnid_at = _trade(
+            line_id=1,
+            gg_id="1055-4566",
+            nick="HunnidPrblms",
+            occurred=self.t0,
+            amount="50",
+            club="aces-table",
+        )
+        hunnid_rt = _trade(
+            line_id=2,
+            gg_id="1055-4566",
+            nick="HunnidPrblms",
+            occurred=self.t0 + timedelta(seconds=8),
+            amount="-50",
+            club="round-table",
+            sheet_row=2,
+        )
+        tiddle = _trade(
+            line_id=3,
+            gg_id="8196-3440",
+            nick="Tiddlemouse19",
+            occurred=self.t0 + timedelta(minutes=2),
+            amount="-50",
+            club="round-table",
+            sheet_row=3,
+        )
+        tonka = _trade(
+            line_id=4,
+            gg_id="8064-5209",
+            nick="Tonkatrucktaha",
+            occurred=self.t0 + timedelta(minutes=8),
+            amount="-50",
+            club="round-table",
+            sheet_row=4,
+        )
+        stripe = _ledger(
+            gg_id="8196-3440",
+            nick="Tiddlemouse19",
+            occurred=self.t0 + timedelta(minutes=2),
+            amount_signed="-50",
+            display_name="Tiddlemouse19",
+            external_id="deposit_stripe:tiddle",
+        )
+        zelle = _ledger(
+            gg_id="8064-5209",
+            nick="Tonkatrucktaha",
+            occurred=self.t0 + timedelta(minutes=7),
+            amount_signed="-50",
+            source="deposit_zelle",
+            source_label="Zelle",
+            display_name="Ethan Tucker",
+            external_id="deposit_zelle:tonka",
+            variant="coachingg444@gmail.com",
+        )
+        gra8 = _trade(
+            line_id=5,
+            gg_id="5181-0004",
+            nick="GRA8",
+            occurred=self.t0 + timedelta(hours=1),
+            amount="-100",
+            club="aces-table",
+            sheet_row=5,
+        )
+        mook_stripe = _ledger(
+            gg_id="1680-2327",
+            nick="mookboy",
+            occurred=self.t0 + timedelta(hours=1, minutes=10),
+            amount_signed="-100",
+            display_name="mookboy",
+            external_id="deposit_stripe:mook",
+        )
+        result = match_trade_lines_to_ledger(
+            [hunnid_at, hunnid_rt, tiddle, tonka, gra8],
+            [stripe, zelle, mook_stripe],
+            club_slug="round-table",
+        )
+        rows = apply_chip_transfer_matches(result.rows)
+        by_id = {row.trade.line_id: row for row in rows}
+        self.assertEqual(by_id[1].match_source, CHIP_TRANSFER_RT_AT_LABEL)
+        self.assertEqual(by_id[2].match_source, CHIP_TRANSFER_RT_AT_LABEL)
+        self.assertEqual(by_id[3].match_source, "Stripe")
+        self.assertEqual(by_id[3].match_name, "Tiddlemouse19")
+        self.assertEqual(by_id[4].match_source, "Zelle")
+        self.assertEqual(by_id[4].match_name, "Ethan Tucker")
+        self.assertEqual(by_id[5].match_source, "")
+        self.assertEqual(
+            [line.external_id for line in result.unmatched_ledger],
+            ["deposit_stripe:mook"],
+        )
+
     def test_vaughn_zelle_flag(self):
         trade = _trade(occurred=self.t0, amount="-50")
         ledger = _ledger(

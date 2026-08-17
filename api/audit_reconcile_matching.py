@@ -294,7 +294,9 @@ def _candidate_score(
         return None
     trade_gid = (trade.member_gg_player_id or "").strip()
     ledger_gid = (ledger.gg_player_id or "").strip()
-    same_player = 0 if (trade_gid and ledger_gid and trade_gid == ledger_gid) else 1
+    if trade_gid and ledger_gid and trade_gid != ledger_gid:
+        return None
+    same_player = 0 if (trade_gid and ledger_gid) else 1
     # Prefer same player, then closer dollar match, then closer time.
     return (same_player, amount_delta, delta)
 
