@@ -9,6 +9,7 @@ from decimal import Decimal
 from api.audit_ledger import LedgerLine
 from api.audit_reconcile import TradeLineForMatch
 from api.audit_reconcile_matching import (
+    CHIP_TRANSFER_AT_CC_LABEL,
     CHIP_TRANSFER_PLAYER_LABEL,
     CHIP_TRANSFER_RT_AT_LABEL,
     apply_chip_transfer_matches,
@@ -647,6 +648,60 @@ class ChipTransferMatchTestCase(unittest.TestCase):
         self.assertEqual(rows[1].match_source, CHIP_TRANSFER_RT_AT_LABEL)
         self.assertEqual(rows[0].match_name, "Aces Table")
         self.assertEqual(rows[1].match_name, "Round Table")
+
+    def test_at_cc_same_player_different_clubs(self):
+        at = _trade(
+            line_id=1,
+            amount="-80",
+            gg_id="1111-1111",
+            nick="Alice",
+            occurred=self.t0,
+            club="aces-table",
+        )
+        cc = _trade(
+            line_id=2,
+            amount="80",
+            gg_id="1111-1111",
+            nick="Alice",
+            occurred=self.t0 + timedelta(minutes=10),
+            club="creator-club",
+        )
+        rows = _with_transfers([at, cc], [])
+        self.assertEqual(rows[0].match_source, CHIP_TRANSFER_AT_CC_LABEL)
+        self.assertEqual(rows[1].match_source, CHIP_TRANSFER_AT_CC_LABEL)
+        self.assertEqual(rows[0].match_name, "Creator Club")
+        self.assertEqual(rows[1].match_name, "Aces Table")
+
+    def test_rt_at_preferred_over_at_cc(self):
+        rt = _trade(
+            line_id=1,
+            amount="-80",
+            gg_id="1111-1111",
+            nick="Alice",
+            occurred=self.t0,
+            club="round-table",
+        )
+        at = _trade(
+            line_id=2,
+            amount="80",
+            gg_id="1111-1111",
+            nick="Alice",
+            occurred=self.t0,
+            club="aces-table",
+        )
+        cc = _trade(
+            line_id=3,
+            amount="-80",
+            gg_id="1111-1111",
+            nick="Alice",
+            occurred=self.t0,
+            club="creator-club",
+        )
+        rows = _with_transfers([rt, at, cc], [])
+        by_id = {row.trade.line_id: row for row in rows}
+        self.assertEqual(by_id[1].match_source, CHIP_TRANSFER_RT_AT_LABEL)
+        self.assertEqual(by_id[2].match_source, CHIP_TRANSFER_RT_AT_LABEL)
+        self.assertEqual(by_id[3].match_source, "")
 
     def test_amount_mismatch_rejected(self):
         add = _trade(line_id=1, amount="-100", gg_id="1111-1111", occurred=self.t0)

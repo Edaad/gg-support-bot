@@ -22,9 +22,11 @@ from api.audit_ledger import (
 )
 from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport
 from api.audit_reconcile_matching import (
+    CHIP_TRANSFER_AT_CC_LABEL,
     CHIP_TRANSFER_PLAYER_LABEL,
     CHIP_TRANSFER_RT_AT_LABEL,
     MatchedTradeRow,
+    TradeLedgerMatchResult,
     _sort_key_occurred_at,
     apply_chip_transfer_matches,
     match_trade_lines_to_ledger,
@@ -231,6 +233,7 @@ _MATCHING_SOURCE_FILL_HEX: dict[str, str] = {
     "Cashout": "E5E7E9",
     CHIP_TRANSFER_PLAYER_LABEL: "C5CAE9",
     CHIP_TRANSFER_RT_AT_LABEL: "9FA8DA",
+    CHIP_TRANSFER_AT_CC_LABEL: "7986CB",
 }
 
 
@@ -260,9 +263,12 @@ def _matching_source_dropdown_options(club_slug: str) -> tuple[str, ...]:
     key = club_slug.strip().lower()
     if key == "clubgto":
         return clubgto_matching_source_options() + (CHIP_TRANSFER_PLAYER_LABEL,)
+    extra: tuple[str, ...] = ()
     if key in {"round-table", "aces-table"}:
-        return MATCHING_SOURCE_OPTIONS + (CHIP_TRANSFER_RT_AT_LABEL,)
-    return MATCHING_SOURCE_OPTIONS
+        extra += (CHIP_TRANSFER_RT_AT_LABEL,)
+    if key in {"aces-table", "creator-club"}:
+        extra += (CHIP_TRANSFER_AT_CC_LABEL,)
+    return MATCHING_SOURCE_OPTIONS + extra
 
 
 # Far-right lookup cols on Matching (hidden). Source list is vertical so
@@ -1144,12 +1150,11 @@ def _write_matching_sheet(
     return match_result.unmatched_ledger
 
 
-def _partition_composite_matching_rows(
+def _partition_matching_rows(
     rows: list[MatchedTradeRow],
 ) -> dict[str, list[MatchedTradeRow]]:
     by_slug: dict[str, list[MatchedTradeRow]] = {
-        "round-table": [],
-        "aces-table": [],
+        slug: [] for slug, _ in ALL_CLUBS_MATCHING_SHEET_ORDER
     }
     for matched in rows:
         slug = (matched.trade.trade_club_slug or "round-table").strip().lower()
@@ -1202,11 +1207,11 @@ def build_all_clubs_matching_workbook(
 ) -> bytes:
     """Matching sheets per club + shared Unresolved tab.
 
-    Round Table + Aces share one composite match (option C), then split by
-    trade upload slug onto two sheets.
+    Round Table + Aces share one composite ledger match, then all clubs'
+    leftover trades are paired together (player, RT↔AT, AT↔CC) and split
+    back onto sheets by trade upload slug.
     """
     wb = Workbook()
-    first = True
     unresolved_rows: list[tuple[LedgerLine, str, str]] = []
 
     rt_report = reports_by_slug["round-table"]
@@ -1215,9 +1220,21 @@ def build_all_clubs_matching_workbook(
         rt_report.ledger_lines,
         club_slug=rt_report.club_slug,
     )
-    rt_rows = apply_chip_transfer_matches(rt_match.rows)
-    partitioned = _partition_composite_matching_rows(rt_rows)
+    all_rows: list[MatchedTradeRow] = list(rt_match.rows)
+    other_matches: dict[str, TradeLedgerMatchResult] = {}
+    for slug in ("clubgto", "creator-club"):
+        report = reports_by_slug[slug]
+        result = match_trade_lines_to_ledger(
+            report.trade_lines,
+            report.ledger_lines,
+            club_slug=report.club_slug,
+        )
+        other_matches[slug] = result
+        all_rows.extend(result.rows)
 
+    partitioned = _partition_matching_rows(apply_chip_transfer_matches(all_rows))
+
+    first = True
     for slug, title in ALL_CLUBS_MATCHING_SHEET_ORDER:
         if first:
             ws = wb.active
@@ -1226,23 +1243,19 @@ def build_all_clubs_matching_workbook(
             ws = wb.create_sheet()
 
         if slug in _ROUND_TABLE_COMPOSITE_SHEET_SLUGS:
-            _write_matching_rows(
-                ws,
-                partitioned[slug],
-                time_club_slug=slug,
-                table_slug=slug,
-                report_for_dropdowns=rt_report,
-                sheet_title=title,
-            )
-            _set_column_widths(ws, MATCHING_WIDTHS)
-            continue
-
-        report = reports_by_slug[slug]
-        unmatched = _write_matching_sheet(ws, report, sheet_title=title)
-        _set_column_widths(ws, MATCHING_WIDTHS)
-        unresolved_rows.extend(
-            (line, report.club_slug, report.club_name) for line in unmatched
+            dropdown_report = rt_report
+        else:
+            dropdown_report = reports_by_slug[slug]
+        _write_matching_rows(
+            ws,
+            partitioned[slug],
+            time_club_slug=slug,
+            table_slug=slug,
+            report_for_dropdowns=dropdown_report,
+            sheet_title=title,
+            include_vaughn_tally=slug == "clubgto",
         )
+        _set_column_widths(ws, MATCHING_WIDTHS)
 
     for line in rt_match.unmatched_ledger:
         line_slug = (line.club_slug or "round-table").strip().lower()
@@ -1251,6 +1264,10 @@ def build_all_clubs_matching_workbook(
         unresolved_rows.append(
             (line, line_slug, MATCHING_CLUB_DISPLAY[line_slug])
         )
+    for slug in ("clubgto", "creator-club"):
+        report = reports_by_slug[slug]
+        for line in other_matches[slug].unmatched_ledger:
+            unresolved_rows.append((line, report.club_slug, report.club_name))
 
     unresolved_rows.sort(
         key=lambda item: (

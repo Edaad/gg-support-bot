@@ -15,15 +15,19 @@ MATCH_WINDOW = timedelta(minutes=15)
 CHIP_TRANSFER_WINDOW = timedelta(minutes=10)
 CHIP_TRANSFER_PLAYER_LABEL = "Chip Transfer (Player)"
 CHIP_TRANSFER_RT_AT_LABEL = "Chip Transfer (RT↔AT)"
+CHIP_TRANSFER_AT_CC_LABEL = "Chip Transfer (AT↔CC)"
 # Whole-dollar slack after round_whole_usd (e.g. early RB $18.60 ↔ ClubGG $18).
 MATCH_AMOUNT_TOLERANCE_USD = Decimal("1")
 _WHOLE = Decimal("1")
 _RT_SLUG = "round-table"
 _AT_SLUG = "aces-table"
+_CC_SLUG = "creator-club"
 _RT_AT_SLUGS = frozenset({_RT_SLUG, _AT_SLUG})
+_AT_CC_SLUGS = frozenset({_AT_SLUG, _CC_SLUG})
 _CLUB_DISPLAY = {
     _RT_SLUG: "Round Table",
     _AT_SLUG: "Aces Table",
+    _CC_SLUG: "Creator Club",
 }
 
 
@@ -167,12 +171,24 @@ def _is_inter_player_pair(left: TradeLineForMatch, right: TradeLineForMatch) -> 
     return _trade_slug(left) == _trade_slug(right)
 
 
-def _is_rt_at_pair(left: TradeLineForMatch, right: TradeLineForMatch) -> bool:
+def _is_inter_club_pair(
+    left: TradeLineForMatch,
+    right: TradeLineForMatch,
+    slugs: frozenset[str],
+) -> bool:
     left_id = _trade_player_id(left)
     right_id = _trade_player_id(right)
     if not left_id or left_id != right_id:
         return False
-    return {_trade_slug(left), _trade_slug(right)} == _RT_AT_SLUGS
+    return {_trade_slug(left), _trade_slug(right)} == slugs
+
+
+def _is_rt_at_pair(left: TradeLineForMatch, right: TradeLineForMatch) -> bool:
+    return _is_inter_club_pair(left, right, _RT_AT_SLUGS)
+
+
+def _is_at_cc_pair(left: TradeLineForMatch, right: TradeLineForMatch) -> bool:
+    return _is_inter_club_pair(left, right, _AT_CC_SLUGS)
 
 
 def _fill_transfer_pair(
@@ -250,13 +266,13 @@ def _pair_leftovers(
 def apply_chip_transfer_matches(
     rows: list[MatchedTradeRow],
 ) -> list[MatchedTradeRow]:
-    """Pair leftover unmatched trades: inter-player first, then RT↔AT."""
+    """Pair leftover unmatched trades: inter-player, then RT↔AT, then AT↔CC."""
     out = list(rows)
 
     def player_name(_self: TradeLineForMatch, counterpart: TradeLineForMatch) -> str:
         return _player_display_name(counterpart)
 
-    def rt_at_name(_self: TradeLineForMatch, counterpart: TradeLineForMatch) -> str:
+    def club_name(_self: TradeLineForMatch, counterpart: TradeLineForMatch) -> str:
         return _CLUB_DISPLAY.get(_trade_slug(counterpart), _trade_slug(counterpart))
 
     _pair_leftovers(
@@ -269,7 +285,13 @@ def apply_chip_transfer_matches(
         out,
         eligible=_is_rt_at_pair,
         source=CHIP_TRANSFER_RT_AT_LABEL,
-        name_for=rt_at_name,
+        name_for=club_name,
+    )
+    _pair_leftovers(
+        out,
+        eligible=_is_at_cc_pair,
+        source=CHIP_TRANSFER_AT_CC_LABEL,
+        name_for=club_name,
     )
     return out
 
