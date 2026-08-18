@@ -78,6 +78,7 @@ export interface GroupChatTicketT {
   customer_first_message: string | null
   duration_seconds: number | null
   duration_source: TicketDurationSource | null
+  frt_seconds: number | null
 }
 
 export type TicketMessageRole = 'customer' | 'admin' | 'bot'

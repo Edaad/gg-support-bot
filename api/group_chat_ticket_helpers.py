@@ -37,6 +37,17 @@ def _seconds_between(start: datetime, end: datetime) -> int:
     return max(0, int((end - start).total_seconds()))
 
 
+def compute_ticket_frt(events: dict[str, Any] | None) -> int | None:
+    """First-response seconds: customer_first_message → admin_first_response."""
+
+    ev = events if isinstance(events, dict) else {}
+    start = _parse_ts(ev.get("customer_first_message"))
+    admin = _parse_ts(ev.get("admin_first_response"))
+    if start is None or admin is None:
+        return None
+    return _seconds_between(start, admin)
+
+
 def compute_ticket_duration(
     events: dict[str, Any] | None,
     message_ids: list[Any] | None,

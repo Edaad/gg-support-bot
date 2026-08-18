@@ -122,6 +122,12 @@ export default function TicketDetailModal({ ticket, token, onClose }: Props) {
             value={events.customer_first_message ?? ticket.customer_first_message}
           />
           <MetaCell label="Admin first response" value={events.admin_first_response} />
+          <div>
+            <dt className="text-xs font-medium text-ink-muted">Admin FRT</dt>
+            <dd className="mt-0.5 text-sm text-ink">
+              {ticket.frt_seconds == null ? 'No admin reply' : formatDurationSeconds(ticket.frt_seconds)}
+            </dd>
+          </div>
           <MetaCell label="Resolution" value={events.resolution} />
           <MetaCell label="Escalation" value={events.escalation} />
           <div>

@@ -28,6 +28,18 @@ const CATEGORY_LABELS: Record<TicketCategory, string> = {
   other: 'Other',
 }
 
+const DEFAULT_OVER_MINUTES = 5
+
+function ticketIsOverFrt(ticket: GroupChatTicketT, overMinutes: number): boolean {
+  if (ticket.frt_seconds == null) return true
+  return ticket.frt_seconds > overMinutes * 60
+}
+
+function formatFrt(ticket: GroupChatTicketT): string {
+  if (ticket.frt_seconds == null) return 'No reply'
+  return formatDurationSeconds(ticket.frt_seconds)
+}
+
 export default function Tickets({
   token,
   embedded = false,
@@ -43,6 +55,9 @@ export default function Tickets({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<GroupChatTicketT | null>(null)
+  const [overOnly, setOverOnly] = useState(false)
+  const [overMinutes, setOverMinutes] = useState(DEFAULT_OVER_MINUTES)
+  const [includeMessages, setIncludeMessages] = useState(true)
 
   useEffect(() => {
     listClubs(token)
@@ -83,9 +98,22 @@ export default function Tickets({
   }, [tickets])
 
   const visibleTickets = useMemo(() => {
-    if (!category) return tickets
-    return tickets.filter((t) => t.category === category)
-  }, [tickets, category])
+    let rows = category ? tickets.filter((t) => t.category === category) : tickets
+    if (overOnly) {
+      rows = rows.filter((t) => ticketIsOverFrt(t, overMinutes))
+      rows = [...rows].sort((a, b) => {
+        const av = a.frt_seconds ?? Number.POSITIVE_INFINITY
+        const bv = b.frt_seconds ?? Number.POSITIVE_INFINITY
+        return bv - av
+      })
+    }
+    return rows
+  }, [tickets, category, overOnly, overMinutes])
+
+  const overCount = useMemo(() => {
+    const rows = category ? tickets.filter((t) => t.category === category) : tickets
+    return rows.filter((t) => ticketIsOverFrt(t, overMinutes)).length
+  }, [tickets, category, overMinutes])
 
   const total = tickets.length
 
@@ -147,11 +175,37 @@ export default function Tickets({
               ))}
             </select>
           </label>
+          <label className="block text-xs font-medium text-ink-muted">
+            Over (min)
+            <input
+              type="number"
+              min={1}
+              value={overMinutes}
+              onChange={(e) => setOverMinutes(Math.max(1, Number(e.target.value) || 1))}
+              className="mt-1 block w-24 rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+            />
+          </label>
+          <label className="flex items-center gap-2 pb-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={overOnly}
+              onChange={(e) => setOverOnly(e.target.checked)}
+            />
+            Over / no reply only
+          </label>
         </div>
       </div>
 
       <div className="mb-6 rounded-lg border border-border bg-surface-raised p-4">
         <p className="mb-3 text-sm font-medium text-ink">Export tickets (activity_date range, ET)</p>
+        <label className="mb-3 flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={includeMessages}
+            onChange={(e) => setIncludeMessages(e.target.checked)}
+          />
+          Include messages (zip)
+        </label>
         <DateRangeCsvExport
           initialFrom={activityDate}
           initialTo={activityDate}
@@ -160,6 +214,8 @@ export default function Tickets({
             downloadGroupChatTicketsCsv(token, range, {
               clubId: clubId ? Number(clubId) : undefined,
               category: category || undefined,
+              minFrtSeconds: overOnly ? overMinutes * 60 : undefined,
+              includeMessages,
             })
           }
         />
@@ -181,6 +237,16 @@ export default function Tickets({
             >
               {total}
             </KpiStat>
+            <KpiStat
+              label={`Over ${overMinutes}m`}
+              tip={`Admin first-response time over ${overMinutes} minutes, plus tickets with no admin reply. Click to show only those.`}
+              tone={overOnly ? 'warning' : overCount > 0 ? 'warning' : 'muted'}
+              onClick={() => setOverOnly(!overOnly)}
+              actionLabel={`Show tickets over ${overMinutes} minutes`}
+              interactiveDisabled={overCount === 0}
+            >
+              {overCount}
+            </KpiStat>
             {TICKET_CATEGORIES.map((c) => {
               const count = categoryCounts[c] ?? 0
               const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0'
@@ -201,7 +267,11 @@ export default function Tickets({
           </div>
 
           {visibleTickets.length === 0 ? (
-            <p className="text-sm text-ink-muted">No tickets for this day.</p>
+            <p className="text-sm text-ink-muted">
+              {overOnly
+                ? `No tickets over ${overMinutes}m (or unanswered) for this day.`
+                : 'No tickets for this day.'}
+            </p>
           ) : (
             <div className="table-scroll">
               <table className="min-w-[40rem] text-left">
@@ -211,6 +281,7 @@ export default function Tickets({
                     <th className="px-4 py-3">Group</th>
                     <th className="px-4 py-3">Category</th>
                     <th className="px-4 py-3">First message</th>
+                    <th className="px-4 py-3">Admin FRT</th>
                     <th className="px-4 py-3">Duration</th>
                   </tr>
                 </thead>
@@ -238,6 +309,15 @@ export default function Tickets({
                       <td className="px-4 py-3 text-ink-muted">{t.category}</td>
                       <td className="px-4 py-3 text-ink-muted">
                         {formatEasternTime(t.customer_first_message)}
+                      </td>
+                      <td
+                        className={`px-4 py-3 tabular-nums ${
+                          ticketIsOverFrt(t, overMinutes)
+                            ? 'font-medium text-warning-ink'
+                            : 'text-ink-muted'
+                        }`}
+                      >
+                        {formatFrt(t)}
                       </td>
                       <td className="px-4 py-3 text-ink-muted tabular-nums">
                         {formatDurationSeconds(t.duration_seconds)}

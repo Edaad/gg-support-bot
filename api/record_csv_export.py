@@ -4,13 +4,20 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
+from io import BytesIO
 from typing import Any, Iterable
+from zipfile import ZIP_DEFLATED, ZipFile
 from zoneinfo import ZoneInfo
 
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 
-from api.group_chat_ticket_helpers import compute_ticket_duration, index_messages_by_id
+from api.group_chat_ticket_helpers import (
+    compute_ticket_duration,
+    compute_ticket_frt,
+    index_messages_by_id,
+    slice_ticket_messages,
+)
 from bot.services.staff_cashout_records import STATUSES, compute_ledger
 from db.models import (
     BonusRecord,
@@ -91,12 +98,33 @@ def rows_to_csv_bytes(header: list[str], rows: Iterable[list[Any]]) -> bytes:
     return ("\n".join(lines) + "\n").encode("utf-8")
 
 
-def csv_streaming_response(content: bytes, filename: str) -> StreamingResponse:
+def csv_streaming_response(
+    content: bytes,
+    filename: str,
+    *,
+    media_type: str = "text/csv; charset=utf-8",
+) -> StreamingResponse:
     return StreamingResponse(
         iter([content]),
-        media_type="text/csv; charset=utf-8",
+        media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def zip_csv_files(files: dict[str, bytes]) -> bytes:
+    buf = BytesIO()
+    with ZipFile(buf, "w", compression=ZIP_DEFLATED) as zf:
+        for name, data in files.items():
+            zf.writestr(name, data)
+    return buf.getvalue()
+
+
+def frt_over_threshold(frt_seconds: int | None, min_frt_seconds: int) -> bool:
+    """True when FRT exceeds the threshold, or there is no admin first response."""
+
+    if frt_seconds is None:
+        return True
+    return int(frt_seconds) > int(min_frt_seconds)
 
 
 def _fmt_dt(value: datetime | None) -> str:
@@ -223,6 +251,7 @@ TICKET_CSV_HEADER = [
     "clock_source",
     "duration_seconds",
     "duration_source",
+    "frt_seconds",
     "brief_summary",
     "summary",
     "prompt_version",
@@ -268,6 +297,27 @@ BONUS_CSV_HEADER = [
     "admin_telegram_user_id",
     "chat_id",
     "player_details_id",
+]
+
+TICKET_MESSAGE_CSV_HEADER = [
+    "ticket_id",
+    "activity_date",
+    "club_id",
+    "chat_id",
+    "ticket_index",
+    "message_id",
+    "date",
+    "sender_id",
+    "sender_name",
+    "username",
+    "is_bot",
+    "role",
+    "text",
+    "reply_to_msg_id",
+    "media_type",
+    "media_filename",
+    "edit_date",
+    "is_service",
 ]
 
 
@@ -419,7 +469,11 @@ def build_group_chat_tickets_csv(
     to_day: date,
     club_id: int | None = None,
     category: str | None = None,
-) -> bytes:
+    min_frt_seconds: int | None = None,
+    include_messages: bool = False,
+) -> tuple[bytes, str, str]:
+    """Return (content, filename, media_type). Zip when include_messages is set."""
+
     club_names = {
         int(row.id): str(row.name)
         for row in session.query(Club.id, Club.name).all()
@@ -444,8 +498,19 @@ def build_group_chat_tickets_csv(
         query = query.filter(GroupChatTicket.category == category.strip().lower())
 
     tickets = query.all()
+    stem = f"{from_day.isoformat()}-to-{to_day.isoformat()}"
     if not tickets:
-        return rows_to_csv_bytes(TICKET_CSV_HEADER, [])
+        tickets_csv = rows_to_csv_bytes(TICKET_CSV_HEADER, [])
+        if not include_messages:
+            return tickets_csv, f"group-chat-tickets-{stem}.csv", "text/csv; charset=utf-8"
+        empty_msgs = rows_to_csv_bytes(TICKET_MESSAGE_CSV_HEADER, [])
+        zipped = zip_csv_files(
+            {
+                f"tickets-{stem}.csv": tickets_csv,
+                f"messages-{stem}.csv": empty_msgs,
+            }
+        )
+        return zipped, f"group-chat-tickets-{stem}.zip", "application/zip"
 
     chat_ids = {int(t.chat_id) for t in tickets}
     groups = {
@@ -453,8 +518,7 @@ def build_group_chat_tickets_csv(
         for g in session.query(Group).filter(Group.chat_id.in_(chat_ids)).all()
     }
 
-    transcript_keys = {(t.activity_date, int(t.chat_id)) for t in tickets}
-    transcript_dates = {d for d, _ in transcript_keys}
+    transcript_dates = {t.activity_date for t in tickets}
     transcripts = (
         session.query(GroupChatDailyTranscript)
         .filter(
@@ -463,12 +527,19 @@ def build_group_chat_tickets_csv(
         )
         .all()
     )
-    messages_by_day_chat: dict[tuple[date, int], dict[int, dict[str, Any]]] = {
-        (t.activity_date, int(t.chat_id)): index_messages_by_id(t.messages)
+    messages_list_by_day_chat: dict[tuple[date, int], list[Any]] = {
+        (t.activity_date, int(t.chat_id)): (
+            t.messages if isinstance(t.messages, list) else []
+        )
         for t in transcripts
     }
+    messages_by_day_chat: dict[tuple[date, int], dict[int, dict[str, Any]]] = {
+        key: index_messages_by_id(msgs)
+        for key, msgs in messages_list_by_day_chat.items()
+    }
 
-    rows: list[list[Any]] = []
+    ticket_rows: list[list[Any]] = []
+    message_rows: list[list[Any]] = []
     for ticket in tickets:
         events = ticket.events if isinstance(ticket.events, dict) else None
         msg_index = messages_by_day_chat.get(
@@ -479,17 +550,24 @@ def build_group_chat_tickets_csv(
             ticket.message_ids if isinstance(ticket.message_ids, list) else None,
             msg_index or None,
         )
+        frt_seconds = compute_ticket_frt(events)
+        if min_frt_seconds is not None and not frt_over_threshold(
+            frt_seconds, min_frt_seconds
+        ):
+            continue
+
         event_cols = _event_columns(events)
         clock_cols = _ticket_clock_fields(events)
+        group_name = groups.get(int(ticket.chat_id), "")
 
-        rows.append(
+        ticket_rows.append(
             [
                 ticket.id,
                 ticket.activity_date.isoformat(),
                 club_names.get(int(ticket.club_id), ""),
                 ticket.club_id,
                 ticket.chat_id,
-                groups.get(int(ticket.chat_id), ""),
+                group_name,
                 ticket.ticket_index,
                 ticket.category,
                 ticket.start_msg_id,
@@ -506,6 +584,7 @@ def build_group_chat_tickets_csv(
                 clock_cols["clock_source"],
                 duration_seconds if duration_seconds is not None else "",
                 duration_source or "",
+                frt_seconds if frt_seconds is not None else "",
                 _flatten_text(ticket.brief_summary),
                 _flatten_text(ticket.summary),
                 ticket.prompt_version,
@@ -515,4 +594,53 @@ def build_group_chat_tickets_csv(
             ]
         )
 
-    return rows_to_csv_bytes(TICKET_CSV_HEADER, rows)
+        if include_messages:
+            sliced = slice_ticket_messages(
+                messages=messages_list_by_day_chat.get(
+                    (ticket.activity_date, int(ticket.chat_id)), []
+                ),
+                message_ids=(
+                    ticket.message_ids if isinstance(ticket.message_ids, list) else []
+                ),
+                club_id=int(ticket.club_id),
+                group_name=group_name or None,
+            )
+            for msg in sliced:
+                src = msg_index.get(int(msg["id"]), {}) if msg.get("id") is not None else {}
+                message_rows.append(
+                    [
+                        ticket.id,
+                        ticket.activity_date.isoformat(),
+                        ticket.club_id,
+                        ticket.chat_id,
+                        ticket.ticket_index,
+                        msg.get("id"),
+                        msg.get("date") or "",
+                        msg.get("sender_id") if msg.get("sender_id") is not None else "",
+                        msg.get("sender_name") or "",
+                        msg.get("username") or "",
+                        bool(msg.get("is_bot")),
+                        msg.get("role") or "",
+                        _flatten_text(msg.get("text")),
+                        src.get("reply_to_msg_id")
+                        if src.get("reply_to_msg_id") is not None
+                        else "",
+                        msg.get("media_type") or "",
+                        msg.get("media_filename") or "",
+                        src.get("edit_date") or "",
+                        bool(src.get("is_service")) if src else "",
+                    ]
+                )
+
+    tickets_csv = rows_to_csv_bytes(TICKET_CSV_HEADER, ticket_rows)
+    if not include_messages:
+        return tickets_csv, f"group-chat-tickets-{stem}.csv", "text/csv; charset=utf-8"
+
+    messages_csv = rows_to_csv_bytes(TICKET_MESSAGE_CSV_HEADER, message_rows)
+    zipped = zip_csv_files(
+        {
+            f"tickets-{stem}.csv": tickets_csv,
+            f"messages-{stem}.csv": messages_csv,
+        }
+    )
+    return zipped, f"group-chat-tickets-{stem}.zip", "application/zip"

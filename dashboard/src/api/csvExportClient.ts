@@ -89,16 +89,22 @@ export async function downloadBonusRecordsCsv(
 export async function downloadGroupChatTicketsCsv(
   token: string,
   range: CsvExportRange,
-  opts?: { clubId?: number; category?: string },
+  opts?: {
+    clubId?: number
+    category?: string
+    minFrtSeconds?: number
+    includeMessages?: boolean
+  },
 ): Promise<void> {
   const q = new URLSearchParams()
   q.set('from', range.from)
   q.set('to', range.to)
   if (opts?.clubId != null) q.set('club_id', String(opts.clubId))
   if (opts?.category) q.set('category', opts.category)
-  await downloadCsv(
-    `/api/group-chat-tickets/export?${q}`,
-    token,
-    `group-chat-tickets-${range.from}-to-${range.to}.csv`,
-  )
+  if (opts?.minFrtSeconds != null) q.set('min_frt_seconds', String(opts.minFrtSeconds))
+  if (opts?.includeMessages) q.set('include_messages', 'true')
+  const fallback = opts?.includeMessages
+    ? `group-chat-tickets-${range.from}-to-${range.to}.zip`
+    : `group-chat-tickets-${range.from}-to-${range.to}.csv`
+  await downloadCsv(`/api/group-chat-tickets/export?${q}`, token, fallback)
 }

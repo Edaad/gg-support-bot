@@ -385,6 +385,24 @@ class DurationHelperTest(unittest.TestCase):
         self.assertEqual(seconds, 300)
         self.assertEqual(source, "resolution")
 
+    def test_frt_from_admin_first_response(self):
+        from api.group_chat_ticket_helpers import compute_ticket_frt
+
+        seconds = compute_ticket_frt(
+            {
+                "customer_first_message": "2026-07-17T14:00:00+00:00",
+                "admin_first_response": "2026-07-17T14:02:00+00:00",
+            }
+        )
+        self.assertEqual(seconds, 120)
+
+    def test_frt_null_without_admin(self):
+        from api.group_chat_ticket_helpers import compute_ticket_frt
+
+        self.assertIsNone(
+            compute_ticket_frt({"customer_first_message": "2026-07-17T14:00:00+00:00"})
+        )
+
     def test_message_span_fallback(self):
         from api.group_chat_ticket_helpers import compute_ticket_duration
 
@@ -524,6 +542,7 @@ class TicketRestTest(unittest.TestCase):
             category="manual_deposit",
             events={
                 "customer_first_message": "2026-07-17T14:00:00+00:00",
+                "admin_first_response": "2026-07-17T14:02:00+00:00",
                 "resolution": "2026-07-17T14:05:00+00:00",
             },
             summary="done",
@@ -590,6 +609,7 @@ class TicketRestTest(unittest.TestCase):
         self.assertEqual(body[0]["group_name"], "Player Group")
         self.assertEqual(body[0]["duration_seconds"], 300)
         self.assertEqual(body[0]["duration_source"], "resolution")
+        self.assertEqual(body[0]["frt_seconds"], 120)
         self.assertEqual(
             body[0]["customer_first_message"], "2026-07-17T14:00:00+00:00"
         )

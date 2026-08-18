@@ -37,6 +37,14 @@ class RecordCsvExportHelpersTestCase(unittest.TestCase):
         self.assertEqual(rows[0], ["a", "b"])
         self.assertEqual(rows[1], ["1", "two"])
 
+    def test_frt_over_threshold(self):
+        from api.record_csv_export import frt_over_threshold
+
+        self.assertTrue(frt_over_threshold(None, 300))
+        self.assertTrue(frt_over_threshold(301, 300))
+        self.assertFalse(frt_over_threshold(300, 300))
+        self.assertFalse(frt_over_threshold(12, 300))
+
     def test_time_bucket_et(self):
         self.assertEqual(time_bucket_et(10), "9am-11am")
         self.assertEqual(time_bucket_et(23), "11pm-1am")

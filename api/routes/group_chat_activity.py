@@ -17,6 +17,7 @@ from api.record_csv_export import (
 )
 from api.group_chat_ticket_helpers import (
     compute_ticket_duration,
+    compute_ticket_frt,
     customer_first_from_events,
     index_messages_by_id,
     slice_ticket_messages,
@@ -98,6 +99,7 @@ class GroupChatTicketRead(BaseModel):
     customer_first_message: str | None = None
     duration_seconds: int | None = None
     duration_source: Literal["resolution", "message_span"] | None = None
+    frt_seconds: int | None = None
 
 
 class TicketMessageRead(BaseModel):
@@ -142,6 +144,7 @@ def _ticket_to_read(
         row.message_ids if isinstance(row.message_ids, list) else None,
         messages_by_id,
     )
+    frt_seconds = compute_ticket_frt(events)
     return GroupChatTicketRead(
         id=row.id,
         activity_date=row.activity_date,
@@ -164,6 +167,7 @@ def _ticket_to_read(
         customer_first_message=customer_first_from_events(events),
         duration_seconds=duration_seconds,
         duration_source=duration_source,
+        frt_seconds=frt_seconds,
     )
 
 
@@ -322,21 +326,28 @@ def export_group_chat_tickets_csv(
     to_date: str = Query(..., alias="to", description="YYYY-MM-DD (ET activity_date, inclusive)"),
     club_id: Optional[int] = Query(None),
     category: Optional[str] = Query(None),
+    min_frt_seconds: Optional[int] = Query(
+        None,
+        ge=0,
+        description="Keep tickets whose admin FRT exceeds this many seconds, plus unanswered",
+    ),
+    include_messages: bool = Query(False),
     db: Session = Depends(get_db_dependency),
 ):
     try:
         from_day, to_day = parse_inclusive_date_range(from_date, to_date)
-        content = build_group_chat_tickets_csv(
+        content, filename, media_type = build_group_chat_tickets_csv(
             db,
             from_day=from_day,
             to_day=to_day,
             club_id=club_id,
             category=category,
+            min_frt_seconds=min_frt_seconds,
+            include_messages=include_messages,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    filename = f"group-chat-tickets-{from_day.isoformat()}-to-{to_day.isoformat()}.csv"
-    return csv_streaming_response(content, filename)
+    return csv_streaming_response(content, filename, media_type=media_type)
 
 
 @router.get(

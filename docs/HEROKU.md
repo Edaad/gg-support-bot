@@ -524,9 +524,11 @@ CSV export (JWT, inclusive ET date range):
 
 - `GET /api/cashout-records/export?from=YYYY-MM-DD&to=YYYY-MM-DD[&club_id=][&status=]`
 - `GET /api/bonus/records/export?from=YYYY-MM-DD&to=YYYY-MM-DD[&club_id=][&bonus_type_id=][&other=true]`
-- `GET /api/group-chat-tickets/export?from=YYYY-MM-DD&to=YYYY-MM-DD[&club_id=][&category=]`
+- `GET /api/group-chat-tickets/export?from=YYYY-MM-DD&to=YYYY-MM-DD[&club_id=][&category=][&min_frt_seconds=][&include_messages=true]`
 
-Cashout/bonus exports filter on `created_at` (ET day bounds). Ticket export filters on `activity_date` (ET calendar day). Each dashboard page has an Export section with from/to pickers; current list filters (club, status, category) apply to the export.
+Ticket list includes `frt_seconds` (customer first message → admin first response). Dashboard **Tickets** has an Admin FRT column, “Over (min)” filter (unanswered counts as over), and optional message zip on export. `min_frt_seconds` keeps tickets slower than that plus unanswered. `include_messages=true` returns a zip (`tickets-*.csv` + `messages-*.csv`).
+
+Cashout/bonus exports filter on `created_at` (ET day bounds). Ticket export filters on `activity_date` (ET calendar day). Each dashboard page has an Export section with from/to pickers; current list filters (club, status, category, over-FRT) apply to the export.
 
 Categories: `auto_deposit`, `manual_deposit`, `unfinished_deposit`, `cashout`, `unfinished_cashout`, `early_rakeback`, `rakeback`, `bonus`, `other`.
 
