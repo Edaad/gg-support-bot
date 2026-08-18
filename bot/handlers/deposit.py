@@ -913,6 +913,7 @@ async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None
     await _delete_deposit_info_messages(context.bot, chat_id)
 
     methods = get_deposit_method_names(club_id) if club_id else []
+    methods = [name for name in methods if "paypal" not in name.lower()]
     method_list = ", ".join(methods) if methods else ""
 
     text = (
