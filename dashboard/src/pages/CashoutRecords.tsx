@@ -9,7 +9,9 @@ import {
   type StaffCashoutRecordT,
 } from '../api/client'
 import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
+import DateRangeCsvExport from '../components/DateRangeCsvExport'
 import Modal from '../components/Modal'
+import { downloadCashoutRecordsCsv } from '../api/csvExportClient'
 
 const TABS: { id: CashoutLedgerStatus; label: string }[] = [
   { id: 'active', label: 'Active' },
@@ -186,6 +188,18 @@ export default function CashoutRecords({ token }: { token: string }) {
             ))}
           </select>
         </div>
+      </div>
+
+      <div className="mb-6 rounded-lg border border-border bg-surface-raised p-4">
+        <p className="mb-3 text-sm font-medium text-ink">Export</p>
+        <DateRangeCsvExport
+          onExport={(range) =>
+            downloadCashoutRecordsCsv(token, range, {
+              clubId: clubFilter ? Number(clubFilter) : undefined,
+              status,
+            })
+          }
+        />
       </div>
 
       {error && (

@@ -7,7 +7,9 @@ import {
   type TicketCategory,
 } from '../api/ticketsClient'
 import KpiStat from '../components/KpiStat'
+import DateRangeCsvExport from '../components/DateRangeCsvExport'
 import TicketDetailModal from '../components/TicketDetailModal'
+import { downloadGroupChatTicketsCsv } from '../api/csvExportClient'
 import {
   formatDurationSeconds,
   formatEasternTime,
@@ -146,6 +148,21 @@ export default function Tickets({
             </select>
           </label>
         </div>
+      </div>
+
+      <div className="mb-6 rounded-lg border border-border bg-surface-raised p-4">
+        <p className="mb-3 text-sm font-medium text-ink">Export tickets (activity_date range, ET)</p>
+        <DateRangeCsvExport
+          initialFrom={activityDate}
+          initialTo={activityDate}
+          defaultFromDaysAgo={0}
+          onExport={(range) =>
+            downloadGroupChatTicketsCsv(token, range, {
+              clubId: clubId ? Number(clubId) : undefined,
+              category: category || undefined,
+            })
+          }
+        />
       </div>
 
       {error ? <p className="mb-4 text-sm text-danger-ink">{error}</p> : null}

@@ -5,7 +5,14 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from db.connection import get_db_dependency
+
 from api.auth import get_current_admin
+from api.record_csv_export import (
+    build_bonus_records_csv,
+    csv_streaming_response,
+    parse_inclusive_date_range,
+)
 from api.schemas import (
     BonusRecordCreate,
     BonusRecordRead,
@@ -20,7 +27,6 @@ from bot.services.bonus_records import (
     list_bonus_records as list_bonus_record_rows,
     update_bonus_record,
 )
-from db.connection import get_db_dependency
 from db.models import BonusType
 
 router = APIRouter(
@@ -89,6 +95,31 @@ def list_bonus_records(
             q=q,
         )
     ]
+
+
+@router.get("/records/export")
+def export_bonus_records_csv(
+    from_date: str = Query(..., alias="from", description="YYYY-MM-DD (ET, inclusive)"),
+    to_date: str = Query(..., alias="to", description="YYYY-MM-DD (ET, inclusive)"),
+    club_id: Optional[int] = Query(None),
+    bonus_type_id: Optional[int] = Query(None),
+    other: bool = Query(False),
+    db: Session = Depends(get_db_dependency),
+):
+    try:
+        from_day, to_day = parse_inclusive_date_range(from_date, to_date)
+        content = build_bonus_records_csv(
+            db,
+            from_day=from_day,
+            to_day=to_day,
+            club_id=club_id,
+            bonus_type_id=bonus_type_id,
+            other=other,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    filename = f"bonus-records-{from_day.isoformat()}-to-{to_day.isoformat()}.csv"
+    return csv_streaming_response(content, filename)
 
 
 @router.post("/records", response_model=BonusRecordRead, status_code=201)

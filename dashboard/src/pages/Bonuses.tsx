@@ -11,8 +11,10 @@ import {
   type Club,
 } from '../api/client'
 import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
+import DateRangeCsvExport from '../components/DateRangeCsvExport'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
+import { downloadBonusRecordsCsv } from '../api/csvExportClient'
 
 function fmtDate(iso: string | null) {
   if (!iso) return '—'
@@ -253,6 +255,20 @@ export default function Bonuses({ token }: { token: string }) {
             <option value="other">Other</option>
           </select>
         </div>
+      </div>
+
+      <div className="mb-6 rounded-lg border border-border bg-surface-raised p-4">
+        <p className="mb-3 text-sm font-medium text-ink">Export</p>
+        <DateRangeCsvExport
+          onExport={(range) =>
+            downloadBonusRecordsCsv(token, range, {
+              clubId: clubFilter ? Number(clubFilter) : undefined,
+              bonusTypeId:
+                typeFilter && typeFilter !== 'other' ? Number(typeFilter) : undefined,
+              other: typeFilter === 'other',
+            })
+          }
+        />
       </div>
 
       {error && (

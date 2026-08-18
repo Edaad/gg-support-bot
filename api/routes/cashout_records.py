@@ -9,6 +9,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from api.auth import get_current_admin
+from api.record_csv_export import (
+    build_cashout_records_csv,
+    csv_streaming_response,
+    parse_inclusive_date_range,
+)
 from api.schemas import (
     StaffCashoutPaymentCreate,
     StaffCashoutPaymentRead,
@@ -88,6 +93,29 @@ def list_cashout_records(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return [_to_read(row, club_names) for row in rows]
+
+
+@router.get("/export")
+def export_cashout_records_csv(
+    from_date: str = Query(..., alias="from", description="YYYY-MM-DD (ET, inclusive)"),
+    to_date: str = Query(..., alias="to", description="YYYY-MM-DD (ET, inclusive)"),
+    club_id: Optional[int] = Query(None),
+    status: Optional[str] = Query(None),
+    db: Session = Depends(get_db_dependency),
+):
+    try:
+        from_day, to_day = parse_inclusive_date_range(from_date, to_date)
+        content = build_cashout_records_csv(
+            db,
+            from_day=from_day,
+            to_day=to_day,
+            club_id=club_id,
+            status=status,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    filename = f"cashout-records-{from_day.isoformat()}-to-{to_day.isoformat()}.csv"
+    return csv_streaming_response(content, filename)
 
 
 @router.post("", response_model=StaffCashoutRecordRead, status_code=201)

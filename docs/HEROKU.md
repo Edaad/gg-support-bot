@@ -435,6 +435,8 @@ heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py --apply
 ```
 
+Dashboard **Cashout records** and **Bonuses** pages include CSV export (inclusive ET date range on `created_at`). JWT API: `GET /api/cashout-records/export?from=…&to=…` and `GET /api/bonus/records/export?from=…&to=…`.
+
 Set app-wide (worker + notification dynos). Restart after deploy: `heroku restart worker notification -a YOUR_APP`
 
 ## Payment binding audit log
@@ -517,6 +519,14 @@ JWT reads:
 - `GET /api/group-chat-tickets/by-id/{ticket_id}/messages` — sliced transcript messages with `role` (`customer` | `admin` | `bot`)
 
 Dashboard: Analytics → **Tickets** tab (single-day picker, club/category filters, detail modal with chat bubbles). `/tickets` redirects there.
+
+CSV export (JWT, inclusive ET date range):
+
+- `GET /api/cashout-records/export?from=YYYY-MM-DD&to=YYYY-MM-DD[&club_id=][&status=]`
+- `GET /api/bonus/records/export?from=YYYY-MM-DD&to=YYYY-MM-DD[&club_id=][&bonus_type_id=][&other=true]`
+- `GET /api/group-chat-tickets/export?from=YYYY-MM-DD&to=YYYY-MM-DD[&club_id=][&category=]`
+
+Cashout/bonus exports filter on `created_at` (ET day bounds). Ticket export filters on `activity_date` (ET calendar day). Each dashboard page has an Export section with from/to pickers; current list filters (club, status, category) apply to the export.
 
 Categories: `auto_deposit`, `manual_deposit`, `unfinished_deposit`, `cashout`, `unfinished_cashout`, `early_rakeback`, `rakeback`, `bonus`, `other`.
 
