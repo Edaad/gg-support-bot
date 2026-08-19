@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from bot.services import venmo_payments as vp
 from db.models import VenmoPayment
@@ -27,7 +27,7 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
         mock_session = MagicMock()
         mock_session.query.return_value.filter_by.return_value.one.return_value = payment
         with (
-            patch("bot.services.venmo_payments.get_db") as mock_get_db,
+            patch("bot.services.payment_refund_gate.get_db") as mock_get_db,
             patch(
                 "bot.services.issue_reports.create_issue_report",
                 new=AsyncMock(),
@@ -35,7 +35,9 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
         ):
             mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
             mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
-            await vp.maybe_create_venmo_goods_services_issue_report(payment)
+            await vp.maybe_create_venmo_goods_services_issue_report(
+                payment, is_first_time_setup_bind=False
+            )
         create_mock.assert_not_awaited()
 
     async def test_creates_deposit_report_for_goods_or_services(self):
@@ -53,7 +55,7 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
         mock_session = MagicMock()
         mock_session.query.return_value.filter_by.return_value.one.return_value = payment
         with (
-            patch("bot.services.venmo_payments.get_db") as mock_get_db,
+            patch("bot.services.payment_refund_gate.get_db") as mock_get_db,
             patch(
                 "bot.services.issue_reports.create_issue_report",
                 new=create_mock,
@@ -66,6 +68,7 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
                 group_title=GROUP_TITLE,
                 notification_chat_id=NOTIF_CHAT_ID,
                 notification_message_id=NOTIF_MSG_ID,
+                is_first_time_setup_bind=False,
             )
 
         create_mock.assert_awaited_once()
@@ -257,6 +260,8 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
             auto_bound=False,
             is_test=False,
             goods_or_services=False,
+            refund_gate=ANY,
+            payment_method_slug="venmo",
         )
         report_mock.assert_not_awaited()
 

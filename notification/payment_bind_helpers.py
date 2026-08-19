@@ -104,6 +104,7 @@ def format_payment_notification(
     telegram_chat_id: Optional[int] = None,
     auto_bound: bool = False,
     goods_or_services: bool = False,
+    refund_gate: object | None = None,
 ) -> str:
     register_formatters()
     fmt = FORMATters[method_slug]
@@ -115,6 +116,13 @@ def format_payment_notification(
     if ambiguous_candidates and len(ambiguous_candidates) > 1 and not group_title:
         text = inject_ambiguous_group_chat_line(text, ambiguous_candidates)
     from bot.services.payment_auto_deposit import append_creator_club_staff_footer
+    from bot.services.payment_refund_gate import (
+        inject_refund_banner,
+        refund_gate_for_payment,
+    )
+
+    gate = refund_gate or refund_gate_for_payment(method_slug, payment)
+    text = inject_refund_banner(text, gate)
 
     resolved_club_id = club_id
     if resolved_club_id is None:
@@ -128,6 +136,7 @@ def format_payment_notification(
         telegram_chat_id=int(resolved_chat_id) if resolved_chat_id is not None else None,
         auto_bound=auto_bound,
         goods_or_services=goods_or_services,
+        requires_refund=bool(getattr(gate, "requires_refund", False)),
         group_title=group_title,
     )
 

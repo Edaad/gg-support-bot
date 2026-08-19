@@ -76,6 +76,8 @@ async def notify_player_group_payment_received(
     amount_cents: int,
     is_test: bool = False,
     goods_or_services: bool = False,
+    refund_gate=None,
+    payment_method_slug: str = "venmo",
 ) -> bool:
     """Post payment confirmation in the linked GC via the support bot."""
     tokens = support_bot_tokens_to_try(is_test=is_test)
@@ -87,7 +89,23 @@ async def notify_player_group_payment_received(
         )
         return False
 
-    if goods_or_services:
+    if refund_gate is None and goods_or_services:
+        from bot.services.payment_refund_gate import evaluate_refund_gate
+
+        refund_gate = evaluate_refund_gate(
+            amount_cents=amount_cents,
+            goods_or_services=True,
+            method_slug=payment_method_slug,
+        )
+    if refund_gate is not None and getattr(refund_gate, "requires_refund", False):
+        from bot.services.payment_refund_gate import format_player_refund_message
+
+        text = format_player_refund_message(
+            amount_cents,
+            refund_gate,
+            method_slug=payment_method_slug,
+        )
+    elif goods_or_services:
         text = format_payment_goods_services_refund_message(amount_cents)
     else:
         text = format_payment_received_message(amount_cents)
@@ -168,6 +186,8 @@ async def maybe_notify_player_on_auto_bound(
     auto_bound: bool,
     is_test: bool = False,
     goods_or_services: bool = False,
+    refund_gate=None,
+    payment_method_slug: str = "venmo",
 ) -> None:
     """Notify the player's GC when ingest auto-bound the payment."""
     if not auto_bound or telegram_chat_id is None:
@@ -177,4 +197,6 @@ async def maybe_notify_player_on_auto_bound(
         amount_cents=amount_cents,
         is_test=is_test,
         goods_or_services=goods_or_services,
+        refund_gate=refund_gate,
+        payment_method_slug=payment_method_slug,
     )

@@ -209,6 +209,8 @@ class MaybeNotifyPlayerOnAutoBoundTestCase(unittest.IsolatedAsyncioTestCase):
             amount_cents=5000,
             is_test=False,
             goods_or_services=False,
+            refund_gate=None,
+            payment_method_slug="venmo",
         )
 
     async def test_notifies_goods_services_on_auto_bound(self):
@@ -228,6 +230,8 @@ class MaybeNotifyPlayerOnAutoBoundTestCase(unittest.IsolatedAsyncioTestCase):
             amount_cents=8000,
             is_test=False,
             goods_or_services=True,
+            refund_gate=None,
+            payment_method_slug="venmo",
         )
 
 

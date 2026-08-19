@@ -270,11 +270,16 @@ async def confirm_bind_payment(
         format_payment_row(refreshed) if refreshed else None,
     )
     if was_unbound and refreshed is not None:
+        from bot.services.payment_refund_gate import refund_gate_for_payment
+
+        gate = refund_gate_for_payment(method_slug, refreshed)
         await notify_player_group_payment_received(
             telegram_chat_id=int(target_chat_id),
             amount_cents=int(refreshed.amount_cents),
             is_test=bool(getattr(refreshed, "is_test", False)),
             goods_or_services=bool(getattr(refreshed, "goods_or_services", False)),
+            refund_gate=gate,
+            payment_method_slug=method_slug,
         )
     return True, None
 

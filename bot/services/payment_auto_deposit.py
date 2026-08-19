@@ -61,13 +61,14 @@ def auto_deposit_ineligible_reason(
     telegram_chat_id: int | None,
     auto_bound: bool,
     goods_or_services: bool = False,
+    requires_refund: bool = False,
     group_title: str | None = None,
 ) -> str | None:
     """Return why e2e auto-deposit was skipped, or None when eligible."""
     if not auto_bound:
         return "auto_bound_false"
-    if goods_or_services:
-        return "venmo_goods_and_services"
+    if goods_or_services or requires_refund:
+        return "refund_required"
     if club_id is None or telegram_chat_id is None:
         return "missing_club_or_chat"
     if not get_auto_deposit_on_payment_enabled(int(club_id)):
@@ -93,6 +94,7 @@ def is_creator_club_auto_deposit_eligible(
     telegram_chat_id: int | None,
     auto_bound: bool,
     goods_or_services: bool = False,
+    requires_refund: bool = False,
     group_title: str | None = None,
 ) -> bool:
     """True when payment will run full auto chip-add on ingest."""
@@ -102,6 +104,7 @@ def is_creator_club_auto_deposit_eligible(
             telegram_chat_id=telegram_chat_id,
             auto_bound=auto_bound,
             goods_or_services=goods_or_services,
+            requires_refund=requires_refund,
             group_title=group_title,
         )
         is None
@@ -114,16 +117,27 @@ def format_creator_club_staff_footer(
     telegram_chat_id: int | None,
     auto_bound: bool,
     goods_or_services: bool = False,
+    requires_refund: bool = False,
     group_title: str | None = None,
 ) -> str | None:
     """Return staff footer when e2e auto-deposit is enabled for the club."""
-    if club_id is None or not get_auto_deposit_on_payment_enabled(int(club_id)):
+    if club_id is None:
+        return None
+    try:
+        if not get_auto_deposit_on_payment_enabled(int(club_id)):
+            return None
+    except Exception:
+        logger.debug(
+            "payment_auto_deposit: footer skipped; auto-deposit toggle lookup failed",
+            exc_info=True,
+        )
         return None
     reason = auto_deposit_ineligible_reason(
         club_id=club_id,
         telegram_chat_id=telegram_chat_id,
         auto_bound=auto_bound,
         goods_or_services=goods_or_services,
+        requires_refund=requires_refund,
         group_title=group_title,
     )
     if reason is None:
@@ -142,6 +156,7 @@ def append_creator_club_staff_footer(
     telegram_chat_id: int | None,
     auto_bound: bool,
     goods_or_services: bool = False,
+    requires_refund: bool = False,
     group_title: str | None = None,
 ) -> str:
     """Append e2e auto-deposit staff footer when applicable."""
@@ -150,6 +165,7 @@ def append_creator_club_staff_footer(
         telegram_chat_id=telegram_chat_id,
         auto_bound=auto_bound,
         goods_or_services=goods_or_services,
+        requires_refund=requires_refund,
         group_title=group_title,
     )
     if not footer:
@@ -234,6 +250,7 @@ def schedule_auto_deposit_from_payment(
     payment_id: int,
     group_title: str | None = None,
     goods_or_services: bool = False,
+    requires_refund: bool = False,
     bind_attempt_id: int | None = None,
     stripe_checkout_session_id: str | None = None,
 ) -> None:
@@ -273,6 +290,7 @@ def schedule_auto_deposit_from_payment(
             payment_id=payment_id,
             group_title=group_title,
             goods_or_services=goods_or_services,
+            requires_refund=requires_refund,
             bind_attempt_id=bind_attempt_id,
             stripe_checkout_session_id=stripe_checkout_session_id,
         ),
@@ -340,6 +358,7 @@ async def maybe_auto_deposit_from_payment(
     payment_id: int,
     group_title: str | None = None,
     goods_or_services: bool = False,
+    requires_refund: bool = False,
     bind_attempt_id: int | None = None,
     stripe_checkout_session_id: str | None = None,
 ) -> None:
@@ -354,6 +373,7 @@ async def maybe_auto_deposit_from_payment(
         telegram_chat_id=telegram_chat_id,
         auto_bound=auto_bound,
         goods_or_services=goods_or_services,
+        requires_refund=requires_refund,
         group_title=title,
     )
     if pre_reason is not None:
@@ -391,6 +411,7 @@ async def maybe_auto_deposit_from_payment(
             telegram_chat_id=telegram_chat_id,
             auto_bound=auto_bound,
             goods_or_services=goods_or_services,
+            requires_refund=requires_refund,
             group_title=title,
         )
         if skip_reason is not None:

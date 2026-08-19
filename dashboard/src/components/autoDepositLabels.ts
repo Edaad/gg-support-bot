@@ -1,6 +1,7 @@
 export const AUTO_DEPOSIT_SKIP_REASON_LABELS: Record<string, string> = {
   auto_bound_false: 'Manual bind (not auto-bound)',
   venmo_goods_and_services: 'Venmo Goods & Services',
+  refund_required: 'Refund required',
   no_recent_deposit_command: 'No /deposit in last 10 min',
   recent_add_command: '/add in last 10 min',
   auto_deposit_on_payment_disabled: 'E2E toggle off',

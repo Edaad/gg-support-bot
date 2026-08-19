@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from db.connection import get_db
+from notification.chat_id import telegram_chat_id_variants
 from db.models import (
     Club,
     ClubLinkedAccount,
@@ -79,13 +80,47 @@ def get_club_by_telegram_id(telegram_user_id: int) -> Optional[Club]:
         return club
 
 
+def _group_row_for_chat(session: Session, chat_id: int) -> Optional[Group]:
+    """Linked ``groups`` row for this Telegram chat, including id variants."""
+    cid = int(chat_id)
+    group = session.query(Group).filter_by(chat_id=cid).first()
+    if group:
+        return group
+    variants = telegram_chat_id_variants(cid)
+    return (
+        session.query(Group)
+        .filter(Group.chat_id.in_(variants))
+        .first()
+    )
+
+
 def get_club_for_chat(chat_id: int) -> Optional[int]:
-    """Return the club ID for a group chat, or None."""
+    """Return the club ID for a group chat, or None.
+
+    Matches Bot API ``-100…`` ids against a stored basic-group id (and the
+    reverse). New ``/gc`` chats start as basic groups and often upgrade when
+    the bot is added; Telethon and Bot API can then disagree on the id.
+    """
+    cid = int(chat_id)
     with get_db() as session:
-        group = session.query(Group).filter_by(chat_id=chat_id).first()
+        group = _group_row_for_chat(session, cid)
         if group:
             return group.club_id
-    return None
+        variants = telegram_chat_id_variants(cid)
+        sgc = (
+            session.query(SupportGroupChat)
+            .filter(SupportGroupChat.telegram_chat_id.in_(list(variants)))
+            .order_by(SupportGroupChat.created_at.desc())
+            .first()
+        )
+        if sgc is None:
+            return None
+        from club_gc_settings import get_mtproto_session_config
+
+        cfg = get_mtproto_session_config(sgc.club_key)
+        if cfg is None:
+            return None
+        return int(cfg.link_club_id)
 
 
 def get_club_by_id(club_id: int) -> Optional[Club]:
@@ -668,7 +703,7 @@ def is_first_deposit_claimed(chat_id: int) -> bool:
 def is_group_linked(chat_id: int) -> bool:
     """Check if a group chat already has a club association in the DB."""
     with get_db() as session:
-        return session.query(Group).filter_by(chat_id=chat_id).first() is not None
+        return _group_row_for_chat(session, int(chat_id)) is not None
 
 
 def try_link_group_by_admin(chat_id: int, admin_user_ids: list[int], chat_title: Optional[str] = None) -> Optional[int]:

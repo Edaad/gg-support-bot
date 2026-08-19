@@ -14,7 +14,7 @@ The wizard is keyed per chat + user (`per_chat=True`), so steps only continue in
 
 ### System-generated reports
 
-Venmo ingest auto-creates issue reports when a payment is flagged **Goods & Services** (`goods_or_services: true` on the Zapier POST). These tickets notify **Head admin**, include payment details and **DO NOT ADD — refund required**, and appear in `/reports` like any other deposit report. No staff action is needed to open the ticket.
+Venmo and Zelle ingest auto-create issue reports when a payment requires a refund: **Goods & Services** (Venmo), **non-whole-dollar amount** (except first-time setup), or a **banned memo** (gambling/poker/club-name keywords). These tickets notify **Head admin**, include payment details and **DO NOT ADD — refund required**, and appear in `/reports` like any other deposit report. No staff action is needed to open the ticket. Reporter source is `venmo_ingest` or `zelle_ingest`.
 
 ### Fields
 

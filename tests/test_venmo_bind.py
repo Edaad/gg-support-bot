@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from bot.services import venmo_payments as vp
 from db.models import VenmoPayerBinding, VenmoPayment
@@ -117,6 +117,19 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
             goods_or_services=True,
         )
         text = vp.format_notification_text(payment)
+        from bot.services.payment_refund_gate import (
+            evaluate_refund_gate,
+            inject_refund_banner,
+        )
+
+        text = inject_refund_banner(
+            text,
+            evaluate_refund_gate(
+                amount_cents=8000,
+                goods_or_services=True,
+                method_slug="venmo",
+            ),
+        )
         self.assertIn("DO NOT ADD", text)
         self.assertIn("Goods/Services: True", text)
 
@@ -470,6 +483,8 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             auto_bound=True,
             is_test=False,
             goods_or_services=False,
+            refund_gate=ANY,
+            payment_method_slug="venmo",
         )
 
     async def test_ingest_auto_binds_known_payer_different_recipient_handle(self):
@@ -623,6 +638,8 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             auto_bound=False,
             is_test=True,
             goods_or_services=False,
+            refund_gate=ANY,
+            payment_method_slug="venmo",
         )
         payment_text = send_mock.await_args.kwargs.get("text") or send_mock.await_args.args[0]
         self.assertIn(AMBIGUOUS_GROUP_CHAT_LINE, payment_text)
@@ -705,6 +722,8 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             auto_bound=True,
             is_test=True,
             goods_or_services=False,
+            refund_gate=ANY,
+            payment_method_slug="venmo",
         )
 
     async def test_ingest_idempotent_reject_logs_and_skips_telegram(self):

@@ -30,7 +30,7 @@ Amount is whole dollars. **Manual** staff binds (notification reply or dashboard
 
 When Zapier sends `"goods_or_services": true` (player sent as Goods & Services, not Friends & Family):
 
-1. **Staff notification** — includes `⚠️ DO NOT ADD — Goods/Services payment` above the group line (plus `Goods/Services: True`).
+1. **Staff notification** — includes `⚠️ DO NOT ADD — refund required` plus a Goods & Services bullet (and `Goods/Services: True`).
 2. **Player group message** (auto-bind or confirm-bind only) — refund copy instead of chip-loading:
 
 ```text
@@ -40,6 +40,15 @@ We have received your payment for $80. Since it was sent as Goods & Services, we
 3. **Issue report** — auto-creates a deposit ticket (`category: deposit`, notify: head admin) in Postgres + Slack issue-report channel. Visible in `/reports` triage. Reporter shows as `GG Support Bot` (`reporter_source: venmo_ingest`). Unbound G&S payments still get a ticket (group unknown until staff bind).
 
 Do **not** add chips for G&S payments — refund and have the player resend as Friends & Family.
+
+### Other Venmo refund gates
+
+Same staff banner, player refund copy, auto-deposit skip, and issue report also fire when:
+
+- **Non-whole-dollar amount** — e.g. `$50.25` — except when this payment completed **first-time method setup** (special amount or memo code). Repeat deposits must be whole dollars.
+- **Banned memo** — case-insensitive whole-word / phrase match for: gambling, poker, club, GG, Club GG, Round Table, RT, Pure Poker, chips, buy-in. Applies even on first-time setup.
+
+Short tokens (`GG`, `RT`) do not match inside other words (`bigger`, `bright`).
 
 Test payments (`test: true` on ingest) try `TELEGRAM_TEST_BOT_TOKEN` first, then fall back to `TELEGRAM_BOT_TOKEN`. Production payments try production first, then test. Set both tokens on the **web/API** dyno.
 

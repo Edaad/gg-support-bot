@@ -302,10 +302,6 @@ def format_notification_text(
 
     lines = [
         "🔔 Venmo Payment Notification",
-    ]
-    if payment.goods_or_services:
-        lines.append("⚠️ <b>DO NOT ADD</b> — Goods/Services payment")
-    lines.append(
         format_group_chat_line(
             group_title=group_title,
             telegram_chat_id=resolve_notification_linked_chat_id(
@@ -313,8 +309,8 @@ def format_notification_text(
                 telegram_chat_id=telegram_chat_id,
             ),
             group_chat_url=group_chat_url,
-        )
-    )
+        ),
+    ]
     player_line = format_player_id_line(group_title)
     if player_line:
         lines.append(player_line)
@@ -341,89 +337,25 @@ def format_notification_text(
     return body
 
 
-def _format_goods_services_issue_report_title(payment: VenmoPayment) -> str:
-    amount = format_amount_display(payment.amount_cents)
-    return f"Venmo G&S refund — {payment.payer_name} {amount}"
-
-
-def _format_goods_services_issue_report_description(
-    payment: VenmoPayment,
-    *,
-    group_title: Optional[str] = None,
-    notification_chat_id: Optional[int] = None,
-    notification_message_id: Optional[int] = None,
-) -> str:
-    method = payment.venmo_handle
-    if not method.startswith("@"):
-        method = f"@{method.lstrip('@')}"
-    amount = format_amount_display(payment.amount_cents)
-    bound_label = group_title or "(unbound — bind via notification reply)"
-    lines = [
-        "DO NOT ADD — refund required.",
-        "",
-        "Venmo payment was sent as Goods & Services.",
-        "",
-        f"Payment ID: {payment.id}",
-        f"Payer: {payment.payer_name}",
-        f"Amount: {amount}",
-        f"Method: {method}",
-        f"Group: {bound_label}",
-    ]
-    memo = (getattr(payment, "memo", None) or "").strip()
-    if memo:
-        lines.append(f"Memo: {memo}")
-    if notification_chat_id is not None and notification_message_id is not None:
-        lines.append(
-            f"Staff notification: chat_id={notification_chat_id} "
-            f"message_id={notification_message_id}"
-        )
-    return "\n".join(lines)
-
-
 async def maybe_create_venmo_goods_services_issue_report(
     payment: VenmoPayment | int,
     *,
     group_title: Optional[str] = None,
     notification_chat_id: Optional[int] = None,
     notification_message_id: Optional[int] = None,
+    is_first_time_setup_bind: bool | None = None,
 ) -> None:
-    """Auto-create a deposit issue report for Goods & Services Venmo payments."""
-    payment_id = int(payment if isinstance(payment, int) else payment.id)
-    try:
-        from bot.services.issue_reports import create_issue_report
+    """Auto-create a deposit issue report for Venmo refund-required payments."""
+    from bot.services.payment_refund_gate import maybe_create_payment_refund_issue_report
 
-        with get_db() as session:
-            row = session.query(VenmoPayment).filter_by(id=payment_id).one()
-            if not row.goods_or_services:
-                return
-            await create_issue_report(
-                session,
-                title=_format_goods_services_issue_report_title(row),
-                description=_format_goods_services_issue_report_description(
-                    row,
-                    group_title=group_title,
-                    notification_chat_id=notification_chat_id,
-                    notification_message_id=notification_message_id,
-                ),
-                category="deposit",
-                notify_tags=["head_admin"],
-                reporter_name="GG Support Bot",
-                reporter_source="venmo_ingest",
-                club_id=int(row.club_id) if row.club_id is not None else None,
-                group_title=group_title,
-                telegram_chat_id=int(row.telegram_chat_id)
-                if row.telegram_chat_id is not None
-                else None,
-            )
-        logger.info(
-            "venmo ingest: goods/services issue report created payment_id=%s",
-            payment_id,
-        )
-    except Exception:
-        logger.exception(
-            "venmo ingest: goods/services issue report failed payment_id=%s",
-            payment_id,
-        )
+    await maybe_create_payment_refund_issue_report(
+        "venmo",
+        payment,
+        group_title=group_title,
+        notification_chat_id=notification_chat_id,
+        notification_message_id=notification_message_id,
+        is_first_time_setup_bind=is_first_time_setup_bind,
+    )
 
 
 async def _telegram_api(
@@ -802,6 +734,16 @@ async def ingest_venmo_payment(
 
     from notification.bind_keyboards import candidate_picker_markup, setup_blocked_markup
     from notification.payment_bind_helpers import format_payment_notification
+    from bot.services.payment_refund_gate import evaluate_refund_gate
+
+    is_first_time_setup_bind = bool(auto_bound and setup_attempt_id)
+    refund_gate = evaluate_refund_gate(
+        amount_cents=amount_cents,
+        memo=memo,
+        goods_or_services=bool(goods_or_services),
+        is_first_time_setup_bind=is_first_time_setup_bind,
+        method_slug="venmo",
+    )
 
     group_chat_url = await resolve_group_chat_url_for_payment(
         payment,
@@ -815,6 +757,7 @@ async def ingest_venmo_payment(
         ambiguous_candidates=ambiguous_candidates if not auto_bound else None,
         auto_bound=auto_bound,
         goods_or_services=bool(goods_or_services),
+        refund_gate=refund_gate,
     )
 
     notif_markup: dict | None = None
@@ -869,6 +812,7 @@ async def ingest_venmo_payment(
             telegram_chat_id=setup_target_chat_id,
             auto_bound=False,
             goods_or_services=bool(goods_or_services),
+            requires_refund=refund_gate.requires_refund,
         )
         await send_telegram_notification(setup_warning_text, chat_id=dest_chat_id)
 
@@ -932,6 +876,8 @@ async def ingest_venmo_payment(
         auto_bound=auto_bound,
         is_test=bool(test),
         goods_or_services=goods_or_services_flag,
+        refund_gate=refund_gate,
+        payment_method_slug="venmo",
     )
 
     if auto_bound and bound_chat_id is not None:
@@ -959,15 +905,17 @@ async def ingest_venmo_payment(
         payment_id=payment_id,
         group_title=bound_title or group_title,
         goods_or_services=goods_or_services_flag,
+        requires_refund=refund_gate.requires_refund,
         bind_attempt_id=setup_attempt_id,
     )
 
-    if goods_or_services_flag:
+    if refund_gate.requires_refund:
         await maybe_create_venmo_goods_services_issue_report(
             payment_id,
             group_title=bound_title or group_title,
             notification_chat_id=notif_chat_id,
             notification_message_id=notif_message_id,
+            is_first_time_setup_bind=is_first_time_setup_bind,
         )
 
     status = "bound" if auto_bound else "unbound"

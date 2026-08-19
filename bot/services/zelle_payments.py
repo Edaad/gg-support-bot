@@ -383,6 +383,16 @@ async def ingest_zelle_payment(
 
     from notification.bind_keyboards import candidate_picker_markup, setup_blocked_markup
     from notification.payment_bind_helpers import format_payment_notification
+    from bot.services.payment_refund_gate import evaluate_refund_gate
+
+    is_first_time_setup_bind = bool(auto_bound and setup_attempt_id)
+    refund_gate = evaluate_refund_gate(
+        amount_cents=amount_cents,
+        memo=memo,
+        goods_or_services=False,
+        is_first_time_setup_bind=is_first_time_setup_bind,
+        method_slug="zelle",
+    )
 
     group_chat_url = await resolve_group_chat_url_for_payment(
         payment,
@@ -395,6 +405,7 @@ async def ingest_zelle_payment(
         group_chat_url=group_chat_url,
         ambiguous_candidates=ambiguous_candidates if not auto_bound else None,
         auto_bound=auto_bound,
+        refund_gate=refund_gate,
     )
 
     notif_markup: dict | None = None
@@ -431,6 +442,7 @@ async def ingest_zelle_payment(
             club_id=setup_club_id,
             telegram_chat_id=setup_target_chat_id,
             auto_bound=False,
+            requires_refund=refund_gate.requires_refund,
         )
         await send_telegram_notification(setup_warning_text, chat_id=dest_chat_id)
 
@@ -483,6 +495,8 @@ async def ingest_zelle_payment(
         amount_cents=amount_cents,
         auto_bound=auto_bound,
         is_test=bool(test),
+        refund_gate=refund_gate,
+        payment_method_slug="zelle",
     )
 
     if auto_bound and bound_chat_id is not None:
@@ -509,8 +523,24 @@ async def ingest_zelle_payment(
         payment_method_slug="zelle",
         payment_id=payment_id,
         group_title=bound_title or group_title,
+        requires_refund=refund_gate.requires_refund,
         bind_attempt_id=setup_attempt_id,
     )
+
+    if refund_gate.requires_refund:
+        from bot.services.payment_refund_gate import (
+            maybe_create_payment_refund_issue_report,
+        )
+
+        await maybe_create_payment_refund_issue_report(
+            "zelle",
+            payment_id,
+            refund_gate,
+            group_title=bound_title or group_title,
+            notification_chat_id=notif_chat_id,
+            notification_message_id=notif_message_id,
+            is_first_time_setup_bind=is_first_time_setup_bind,
+        )
 
     status = "bound" if auto_bound else "unbound"
     logger.info(
