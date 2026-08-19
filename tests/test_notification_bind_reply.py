@@ -152,7 +152,11 @@ class SharedChatAddMemberTestCase(unittest.IsolatedAsyncioTestCase):
 
 
 class ChatIdVariantPendingTestCase(unittest.TestCase):
-    def test_pending_survives_supergroup_chat_id_variant(self) -> None:
+    @patch(
+        "notification.handlers.bind_callbacks.notification_chat_id",
+        return_value=-1005273879167,
+    )
+    def test_pending_survives_supergroup_chat_id_variant(self, _mock_chat) -> None:
         context = SimpleNamespace(
             chat_data={},
             user_data={},

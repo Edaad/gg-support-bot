@@ -134,6 +134,7 @@ class TestMaybeWarnMultiPayer(unittest.IsolatedAsyncioTestCase):
                 telegram_chat_id=-1001,
                 payer_name="C Three",
                 group_title="CC / 1 / player",
+                notification_chat_id=-100999,
                 notification_message_id=123,
                 is_test=False,
             )
@@ -141,6 +142,7 @@ class TestMaybeWarnMultiPayer(unittest.IsolatedAsyncioTestCase):
         send_tg.assert_awaited_once()
         kwargs = send_tg.await_args.kwargs
         self.assertEqual(kwargs.get("reply_to_message_id"), 123)
+        self.assertEqual(kwargs.get("chat_id"), -100999)
         self.assertIn("DO NOT ADD CHIPS", send_tg.await_args.args[0])
         send_slack.assert_awaited_once()
         self.assertEqual(send_slack.await_args.kwargs.get("source"), "multi_payer_warning")

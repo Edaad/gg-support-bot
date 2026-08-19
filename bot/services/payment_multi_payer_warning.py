@@ -149,6 +149,7 @@ async def maybe_warn_multi_payer(
     telegram_chat_id: Optional[int],
     payer_name: str,
     group_title: Optional[str],
+    notification_chat_id: Optional[int] = None,
     notification_message_id: Optional[int] = None,
     is_test: bool = False,
 ) -> bool:
@@ -204,6 +205,7 @@ async def maybe_warn_multi_payer(
             await send_telegram_notification(
                 telegram_text,
                 reply_to_message_id=reply_to,
+                chat_id=notification_chat_id,
             )
         except Exception:
             if reply_to is not None:
@@ -214,7 +216,10 @@ async def maybe_warn_multi_payer(
                     payment_id,
                     exc_info=True,
                 )
-                await send_telegram_notification(telegram_text)
+                await send_telegram_notification(
+                    telegram_text,
+                    chat_id=notification_chat_id,
+                )
             else:
                 raise
     except Exception:

@@ -413,6 +413,16 @@ async def ingest_zelle_payment(
     elif ambiguous_candidates and len(ambiguous_candidates) > 1 and not auto_bound:
         notif_markup = candidate_picker_markup("zelle", int(payment.id), ambiguous_candidates)
 
+    from notification.payment_notification_routing import (
+        resolve_ingest_notification_chat_id,
+    )
+
+    dest_chat_id = resolve_ingest_notification_chat_id(
+        group_title=group_title,
+        auto_bound=auto_bound,
+        ambiguous_candidates=ambiguous_candidates,
+    )
+
     if setup_warning_text:
         from bot.services.payment_auto_deposit import append_creator_club_staff_footer
 
@@ -422,11 +432,12 @@ async def ingest_zelle_payment(
             telegram_chat_id=setup_target_chat_id,
             auto_bound=False,
         )
-        await send_telegram_notification(setup_warning_text)
+        await send_telegram_notification(setup_warning_text, chat_id=dest_chat_id)
 
     notif_chat_id, notif_message_id = await send_telegram_notification(
         text,
         reply_markup=notif_markup,
+        chat_id=dest_chat_id,
     )
 
     from bot.services.payment_bind_candidates import identity_label
@@ -483,6 +494,7 @@ async def ingest_zelle_payment(
             telegram_chat_id=int(bound_chat_id),
             payer_name=payer,
             group_title=bound_title or group_title,
+            notification_chat_id=notif_chat_id,
             notification_message_id=notif_message_id,
             is_test=bool(test),
         )
@@ -648,6 +660,7 @@ async def bind_zelle_payment_by_id(
         telegram_chat_id=int(group.telegram_chat_id),
         payer_name=payment.payer_name,
         group_title=live_title,
+        notification_chat_id=notif_chat_id,
         notification_message_id=notif_message_id,
         is_test=bool(getattr(payment, "is_test", False)),
     )

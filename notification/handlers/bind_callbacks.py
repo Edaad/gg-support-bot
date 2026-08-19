@@ -38,6 +38,7 @@ from notification.payment_bind_helpers import (
     format_payment_notification,
     inject_pending_confirm_group_line,
 )
+from notification.payment_notification_routing import canonical_notification_chat_id
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +47,15 @@ _BIND_ADD_MEMBER_KEY = BIND_ADD_MEMBER_PENDING_KEY
 
 
 def _canonical_notification_chat_id(chat_id: int) -> int | None:
-    """Map Telegram chat id variants to the configured notification chat id."""
+    """Map Telegram chat id variants to a configured staff notification chat."""
     expected = notification_chat_id()
+    if expected is not None and telegram_chat_ids_match(int(chat_id), int(expected)):
+        return int(expected)
+    routed = canonical_notification_chat_id(int(chat_id))
+    if routed is not None:
+        return routed
     if expected is None:
         return int(chat_id)
-    if telegram_chat_ids_match(int(chat_id), int(expected)):
-        return int(expected)
     return None
 
 
@@ -220,14 +224,16 @@ async def payment_bind_callback_handler(
     if query is None or not query.data:
         return
 
-    expected_chat = notification_chat_id()
-    if expected_chat is None:
-        await query.answer("Notification chat not configured.")
+    message = query.message
+    if message is None:
+        await query.answer("Wrong chat.")
         return
 
-    message = query.message
-    if message is None or not telegram_chat_ids_match(int(message.chat_id), expected_chat):
-        await query.answer("Wrong chat.")
+    if _canonical_notification_chat_id(int(message.chat_id)) is None:
+        if notification_chat_id() is None:
+            await query.answer("Notification chat not configured.")
+        else:
+            await query.answer("Wrong chat.")
         return
 
     parsed = _parse_callback(query.data)
@@ -516,12 +522,6 @@ async def payment_bind_add_member_reply_handler(
                 update.message.reply_to_message.message_id,
                 list(_pending_store(context).keys()),
             )
-        return
-
-    expected_chat = notification_chat_id()
-    if expected_chat is None or not telegram_chat_ids_match(
-        int(update.effective_chat.id), expected_chat
-    ):
         return
 
     title = (update.message.text or "").strip()

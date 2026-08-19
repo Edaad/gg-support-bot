@@ -32,6 +32,10 @@ from notification.handlers.bind_callbacks import (
     payment_bind_add_member_reply_handler,
 )
 from notification.payment_lookup import find_payment_by_notification
+from notification.payment_notification_routing import (
+    canonical_notification_chat_id,
+    configured_notification_chat_ids,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +79,14 @@ def _titles_match(bound_title: str | None, reply_title: str) -> bool:
     return bool(a) and a == b
 
 
+def _staff_notification_chat_key(chat_id: int) -> int | None:
+    """Canonical staff notification chat for this Telegram chat, if allowed."""
+    main = notification_chat_id()
+    if main is not None and telegram_chat_ids_match(int(chat_id), int(main)):
+        return int(main)
+    return canonical_notification_chat_id(int(chat_id))
+
+
 async def payment_bind_reply_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -82,18 +94,16 @@ async def payment_bind_reply_handler(
     if not update.message or not update.effective_chat or not update.effective_user:
         return
 
-    expected_chat = notification_chat_id()
-    if expected_chat is None:
-        logger.warning("payment bind: %s not set", PAYMENT_NOTIFICATION_CHAT_ID_ENV)
-        return
-
     chat_id = int(update.effective_chat.id)
-    if not telegram_chat_ids_match(chat_id, expected_chat):
-        logger.debug(
-            "payment bind: ignoring message chat_id=%s (expected %s)",
-            chat_id,
-            expected_chat,
-        )
+    canonical = _staff_notification_chat_key(chat_id)
+    if canonical is None:
+        if notification_chat_id() is None and not configured_notification_chat_ids():
+            logger.warning("payment bind: %s not set", PAYMENT_NOTIFICATION_CHAT_ID_ENV)
+        else:
+            logger.debug(
+                "payment bind: ignoring message chat_id=%s",
+                chat_id,
+            )
         return
 
     # ForceReply answers to "Add another member" are replies to the bot prompt,

@@ -25,6 +25,10 @@ from notification.handlers.bind_callbacks import (
     payment_bind_callback_handler,
 )
 from notification.handlers.report import get_report_handler
+from notification.payment_notification_routing import (
+    gto_notification_chat_id,
+    rt_at_cc_notification_chat_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,8 +100,11 @@ def run_notification_bot(token: str | None = None) -> None:
     app.add_error_handler(_error_handler)
 
     logger.info(
-        "Notification bot starting (payment bind replies + callbacks in chat_id=%s)",
+        "Notification bot starting (payment bind replies + callbacks in "
+        "chat_id=%s gto=%s rt_at_cc=%s)",
         chat_raw,
+        gto_notification_chat_id(),
+        rt_at_cc_notification_chat_id(),
     )
     app.run_polling(allowed_updates=["message", "callback_query"])
 

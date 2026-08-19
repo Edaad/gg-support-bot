@@ -49,7 +49,9 @@ The wallet-bindings migration backfills from existing bound `crypto_payments` ro
 |----------|----------|---------|
 | `CRYPTO_ZAPIER_WEBHOOK_SECRET` | Yes (web dyno) | Auth for Zapier POST |
 | `TELEGRAM_NOTIFICATION_BOT_TOKEN` | Yes (web + notification dynos) | @ggnotificationbot |
-| `PAYMENT_NOTIFICATION_CHAT_ID` | Yes (web + notification dynos) | Shared staff notification group |
+| `PAYMENT_NOTIFICATION_CHAT_ID` | Yes (web + notification dynos) | Shared staff notification group (unbound / mixed-bucket) |
+| `PAYMENT_NOTIFICATION_CHAT_ID_GTO` | No | ClubGTO-only bound/same-bucket notifications |
+| `PAYMENT_NOTIFICATION_CHAT_ID_RT_AT_CC` | No | RT/CC/AT-only bound/same-bucket notifications |
 | `DEBUG_NOTIFICATION` | No | Verbose ingest/Telegram logs on web dyno |
 
 ## API

@@ -449,39 +449,61 @@ async def send_telegram_notification(
     *,
     reply_markup: dict | None = None,
     reply_to_message_id: int | None = None,
+    chat_id: int | None = None,
 ) -> tuple[int, int]:
-    """Post notification to staff group. Returns (chat_id, message_id)."""
+    """Post notification to a staff group. Returns (chat_id, message_id).
+
+    ``chat_id`` defaults to the main payment notification chat. If a club chat
+    send fails, retries once on main.
+    """
     token = _notification_bot_token()
-    chat_id = _notification_chat_id()
+    main_chat_id = _notification_chat_id()
     if not token:
         raise RuntimeError(f"{NOTIFICATION_BOT_TOKEN_ENV} is not set")
-    if chat_id is None:
+    if main_chat_id is None:
         raise RuntimeError(f"{PAYMENT_NOTIFICATION_CHAT_ID_ENV} is not set")
 
-    payload: dict[str, Any] = {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML",
-    }
-    if reply_markup is not None:
-        payload["reply_markup"] = reply_markup
-    if reply_to_message_id is not None:
-        payload["reply_to_message_id"] = int(reply_to_message_id)
+    target = int(chat_id) if chat_id is not None else int(main_chat_id)
 
-    if reply_markup is not None:
-        row_count = len(reply_markup.get("inline_keyboard") or [])
-        logger.info(
-            "payment_bind: telegram_send chat_id=%s has_keyboard=true keyboard_rows=%s",
-            chat_id,
-            row_count,
-        )
+    async def _send(dest: int) -> tuple[int, int]:
+        payload: dict[str, Any] = {
+            "chat_id": dest,
+            "text": text,
+            "parse_mode": "HTML",
+        }
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        if reply_to_message_id is not None:
+            payload["reply_to_message_id"] = int(reply_to_message_id)
 
-    data = await _telegram_api("sendMessage", payload, token=token)
-    result = data.get("result") or {}
-    message_id = int(result["message_id"])
-    chat_obj = result.get("chat") or {}
-    resolved_chat_id = int(chat_obj.get("id") or chat_id)
-    return resolved_chat_id, message_id
+        if reply_markup is not None:
+            row_count = len(reply_markup.get("inline_keyboard") or [])
+            logger.info(
+                "payment_bind: telegram_send chat_id=%s has_keyboard=true keyboard_rows=%s",
+                dest,
+                row_count,
+            )
+
+        data = await _telegram_api("sendMessage", payload, token=token)
+        result = data.get("result") or {}
+        message_id = int(result["message_id"])
+        chat_obj = result.get("chat") or {}
+        resolved_chat_id = int(chat_obj.get("id") or dest)
+        return resolved_chat_id, message_id
+
+    try:
+        return await _send(target)
+    except Exception:
+        if int(target) != int(main_chat_id):
+            logger.warning(
+                "payment notification: club chat send failed chat_id=%s; "
+                "falling back to main chat_id=%s",
+                target,
+                main_chat_id,
+                exc_info=True,
+            )
+            return await _send(int(main_chat_id))
+        raise
 
 
 async def edit_telegram_notification(
@@ -816,14 +838,23 @@ async def ingest_venmo_payment(
             ambiguous_candidates,
         )
 
+    from notification.payment_notification_routing import (
+        resolve_ingest_notification_chat_id,
+    )
+
+    dest_chat_id = resolve_ingest_notification_chat_id(
+        group_title=group_title,
+        auto_bound=auto_bound,
+        ambiguous_candidates=ambiguous_candidates,
+    )
+
     if debug_notification_enabled():
-        configured_chat = _notification_chat_id()
         has_token = bool(_notification_bot_token())
         logger.info(
             "venmo ingest: sending telegram notification payment_id=%s "
             "chat_id=%s token_configured=%s text_len=%s auto_bound=%s",
             payment_id,
-            configured_chat,
+            dest_chat_id,
             has_token,
             len(text),
             auto_bound,
@@ -839,11 +870,12 @@ async def ingest_venmo_payment(
             auto_bound=False,
             goods_or_services=bool(goods_or_services),
         )
-        await send_telegram_notification(setup_warning_text)
+        await send_telegram_notification(setup_warning_text, chat_id=dest_chat_id)
 
     notif_chat_id, notif_message_id = await send_telegram_notification(
         text,
         reply_markup=notif_markup,
+        chat_id=dest_chat_id,
     )
 
     from bot.services.payment_bind_candidates import identity_label
@@ -911,6 +943,7 @@ async def ingest_venmo_payment(
             telegram_chat_id=int(bound_chat_id),
             payer_name=payer,
             group_title=bound_title or group_title,
+            notification_chat_id=notif_chat_id,
             notification_message_id=notif_message_id,
             is_test=bool(test),
         )
@@ -1085,6 +1118,7 @@ async def bind_venmo_payment_by_id(
         telegram_chat_id=int(group.telegram_chat_id),
         payer_name=payment.payer_name,
         group_title=live_title,
+        notification_chat_id=notif_chat_id,
         notification_message_id=notif_message_id,
         is_test=bool(getattr(payment, "is_test", False)),
     )

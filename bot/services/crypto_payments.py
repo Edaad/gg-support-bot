@@ -452,9 +452,20 @@ async def ingest_crypto_payment(
             "crypto", int(payment.id), ambiguous_candidates
         )
 
+    from notification.payment_notification_routing import (
+        resolve_ingest_notification_chat_id,
+    )
+
+    dest_chat_id = resolve_ingest_notification_chat_id(
+        group_title=group_title,
+        auto_bound=auto_bound,
+        ambiguous_candidates=ambiguous_candidates,
+    )
+
     notif_chat_id, notif_message_id = await send_telegram_notification(
         text,
         reply_markup=notif_markup,
+        chat_id=dest_chat_id,
     )
 
     from bot.services.payment_bind_candidates import identity_label
