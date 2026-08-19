@@ -3,6 +3,7 @@
 Title convention:
     SHORTHAND / GGPLAYERID / anything
     SHORTHAND may be combined for Round Table unions: RT AT / GGPLAYERID / anything
+    Creator Club + Aces Table uses: CC AT / GGPLAYERID / anything
 Example:
     GTO / 8190-5287 / ThePirate343
 """
@@ -69,6 +70,11 @@ def format_title_prefix_segment(shorthands: Set[str]) -> str:
         return ""
     if "RT" in s and "AT" in s:
         return "RT AT"
+    # CC+AT maps to two clubs; keep CC first so resolve_club_id_from_shorthand
+    # picks Creator Club (AT alone is Round Table / Aces Table).
+    if "CC" in s and "AT" in s:
+        rest = sorted(s - {"CC", "AT"})
+        return " ".join(["CC", "AT", *rest])
     if len(s) == 1:
         return next(iter(s))
     return " ".join(sorted(s))
@@ -143,11 +149,19 @@ def parse_tracking_title(title: str | None) -> Optional[Tuple[str, str]]:
     return prefix, parsed.gg_player_id
 
 
-def resolve_club_id_from_shorthand(shorthand: str) -> Optional[int]:
-    """Map shorthand to clubs.name then resolve to clubs.id (case-insensitive exact match)."""
+def shorthand_tokens_for_club_resolve(shorthand: str) -> List[str]:
+    """Token order used to pick a club. CC AT (any order) prefers CC → Creator Club."""
     tokens = [t for t in (shorthand or "").upper().split() if t]
     if not tokens and shorthand:
         tokens = [shorthand.upper()]
+    if "CC" in tokens and "AT" in tokens:
+        tokens = ["CC"] + [t for t in tokens if t != "CC"]
+    return tokens
+
+
+def resolve_club_id_from_shorthand(shorthand: str) -> Optional[int]:
+    """Map shorthand to clubs.name then resolve to clubs.id (case-insensitive exact match)."""
+    tokens = shorthand_tokens_for_club_resolve(shorthand)
     seen_names: set[str] = set()
     for token in tokens:
         full_name = CLUB_SHORTHAND_TO_NAME.get(token)

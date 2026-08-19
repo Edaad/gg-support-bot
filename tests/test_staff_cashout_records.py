@@ -118,6 +118,10 @@ class ZapierPayloadTestCase(unittest.TestCase):
         name = build_zapier_name("RT / 2427-3267 / Samin")
         self.assertEqual(name, "RT / 2427-3267 / Samin")
 
+    def test_build_zapier_name_cc_at_keeps_cc_first(self) -> None:
+        name = build_zapier_name("CC AT / 8879-5560 / V")
+        self.assertEqual(name, "CC AT / 8879-5560 / V")
+
     def test_build_payload_from_record_uses_primary_payment(self) -> None:
         record = _sample_record()
         payload, err = build_zapier_payload_from_cashout_record(

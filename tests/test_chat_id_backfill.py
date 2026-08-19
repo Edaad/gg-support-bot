@@ -13,7 +13,7 @@ from bot.services.chat_id_backfill import (
     entry_from_title,
     match_player_to_chats,
 )
-from bot.services.player_details import parse_group_title_parts
+from bot.services.player_details import parse_group_title_parts, shorthand_tokens_for_club_resolve
 
 
 class ChatIdBackfillTests(unittest.TestCase):
@@ -151,6 +151,22 @@ class ChatIdBackfillTests(unittest.TestCase):
         self.assertEqual(parsed.gg_player_id, "8190-5287")
         self.assertIn("RT", parsed.shorthands)
         self.assertIn("AT", parsed.shorthands)
+
+    def test_parse_tracking_title_cc_at_prefers_cc_prefix(self):
+        from bot.services.player_details import (
+            format_title_prefix_segment,
+            parse_tracking_title,
+        )
+
+        parsed = parse_group_title_parts("CC AT / 8879-5560 / V")
+        self.assertIsNotNone(parsed)
+        assert parsed is not None
+        self.assertEqual(parsed.shorthands, frozenset({"CC", "AT"}))
+        self.assertEqual(format_title_prefix_segment(set(parsed.shorthands)), "CC AT")
+        self.assertEqual(parse_tracking_title("CC AT / 8879-5560 / V"), ("CC AT", "8879-5560"))
+        self.assertEqual(parse_tracking_title("AT CC / 8879-5560 / V"), ("CC AT", "8879-5560"))
+        self.assertEqual(shorthand_tokens_for_club_resolve("CC AT")[0], "CC")
+        self.assertEqual(shorthand_tokens_for_club_resolve("AT CC")[0], "CC")
 
     def test_empty_player_id_title_is_gc_but_not_bindable(self):
         from bot.services.player_details import is_gc_group_title
