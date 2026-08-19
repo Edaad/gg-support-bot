@@ -41,6 +41,7 @@ _BANNED_MEMO_RULES: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
 class RefundGate:
     reasons: tuple[str, ...] = ()
     banned_hits: tuple[str, ...] = ()
+    warn_whole_dollar: bool = False
 
     @property
     def requires_refund(self) -> bool:
@@ -78,11 +79,11 @@ def evaluate_refund_gate(
     is_first_time_setup_bind: bool = False,
     method_slug: str = "venmo",
 ) -> RefundGate:
-    """Return refund reasons for a Venmo/Zelle payment.
+    """Return refund reasons and non-blocking whole-dollar warnings.
 
-    Fractional (non-whole-dollar) amounts are allowed only when this payment
-    completed first-time method setup (special amount or memo code).
-    Banned memos always require a refund, including first-time setup.
+    Cents never block chip-add. Repeat fractional deposits get a polite
+    player reminder; first-time special-amount setup does not.
+    Banned memos (and Venmo G&S) still require a refund.
     """
     slug = (method_slug or "").strip().lower()
     if slug not in _GATED_METHODS:
@@ -92,11 +93,18 @@ def evaluate_refund_gate(
     banned_hits = find_banned_memo_hits(memo)
     if goods_or_services and slug == "venmo":
         reasons.append(REASON_GOODS_SERVICES)
-    if int(amount_cents) % 100 != 0 and not is_first_time_setup_bind:
-        reasons.append(REASON_FRACTIONAL_AMOUNT)
     if banned_hits:
         reasons.append(REASON_BANNED_MEMO)
-    return RefundGate(reasons=tuple(reasons), banned_hits=banned_hits)
+    warn_whole_dollar = (
+        int(amount_cents) % 100 != 0
+        and not is_first_time_setup_bind
+        and not reasons
+    )
+    return RefundGate(
+        reasons=tuple(reasons),
+        banned_hits=banned_hits,
+        warn_whole_dollar=warn_whole_dollar,
+    )
 
 
 def completed_first_time_setup_bind(
@@ -131,6 +139,61 @@ def completed_first_time_setup_bind(
         return False
 
 
+def is_special_amount_setup(
+    method_slug: str,
+    *,
+    amount_cents: int,
+    payment_id: int | None = None,
+) -> bool:
+    """True when this cents amount matches in-flight or completed special-amount setup."""
+    slug = (method_slug or "").strip().lower()
+    if slug not in _GATED_METHODS or int(amount_cents) % 100 == 0:
+        return False
+    if completed_first_time_setup_bind(slug, payment_id):
+        return True
+    try:
+        from sqlalchemy import or_
+
+        from bot.services.payment_method_binding import (
+            ATTEMPT_STATUS_PENDING,
+            ATTEMPT_STATUS_SUCCEEDED,
+            BIND_KIND_SPECIAL_AMOUNT,
+        )
+
+        column = (
+            PaymentMethodBindAttempt.venmo_payment_id
+            if slug == "venmo"
+            else PaymentMethodBindAttempt.zelle_payment_id
+        )
+        with get_db() as session:
+            filters = [
+                PaymentMethodBindAttempt.payment_method_slug == slug,
+                PaymentMethodBindAttempt.bind_kind == BIND_KIND_SPECIAL_AMOUNT,
+                PaymentMethodBindAttempt.amount_cents == int(amount_cents),
+                PaymentMethodBindAttempt.status.in_(
+                    (ATTEMPT_STATUS_PENDING, ATTEMPT_STATUS_SUCCEEDED)
+                ),
+            ]
+            if payment_id is not None:
+                filters.append(
+                    or_(
+                        column == int(payment_id),
+                        PaymentMethodBindAttempt.status == ATTEMPT_STATUS_PENDING,
+                    )
+                )
+            row = session.query(PaymentMethodBindAttempt.id).filter(*filters).first()
+        return row is not None
+    except Exception:
+        logger.exception(
+            "payment_refund_gate: special-amount lookup failed method=%s "
+            "amount_cents=%s payment_id=%s",
+            slug,
+            amount_cents,
+            payment_id,
+        )
+        return False
+
+
 def refund_gate_for_payment(
     method_slug: str,
     payment: object,
@@ -139,14 +202,16 @@ def refund_gate_for_payment(
 ) -> RefundGate:
     slug = (method_slug or "").strip().lower()
     payment_id = getattr(payment, "id", None)
+    amount_cents = int(getattr(payment, "amount_cents", 0) or 0)
     first_time = is_first_time_setup_bind
     if first_time is None:
-        first_time = completed_first_time_setup_bind(
+        first_time = is_special_amount_setup(
             slug,
-            int(payment_id) if payment_id is not None else None,
+            amount_cents=amount_cents,
+            payment_id=int(payment_id) if payment_id is not None else None,
         )
     return evaluate_refund_gate(
-        amount_cents=int(getattr(payment, "amount_cents", 0) or 0),
+        amount_cents=amount_cents,
         memo=getattr(payment, "memo", None),
         goods_or_services=bool(getattr(payment, "goods_or_services", False)),
         is_first_time_setup_bind=bool(first_time),
@@ -163,7 +228,6 @@ def inject_refund_banner(text: str, gate: RefundGate) -> str:
         line
         for line in lines
         if "DO NOT ADD" not in line and not line.startswith("• Goods")
-        and not line.startswith("• Non-whole")
         and not line.startswith("• Banned memo")
         and line != "⚠️ <b>DO NOT ADD</b> — refund required"
     ]
@@ -183,8 +247,6 @@ def staff_refund_banner_lines(gate: RefundGate) -> list[str]:
     for reason in gate.reasons:
         if reason == REASON_GOODS_SERVICES:
             lines.append("• Goods & Services")
-        elif reason == REASON_FRACTIONAL_AMOUNT:
-            lines.append("• Non-whole-dollar amount")
         elif reason == REASON_BANNED_MEMO:
             hits = ", ".join(gate.banned_hits)
             lines.append(f"• Banned memo ({hits})" if hits else "• Banned memo")
@@ -222,8 +284,6 @@ def format_player_refund_message(
     please: list[str] = []
     if slug == "venmo":
         please.append("resend as Friends & Family")
-    if REASON_FRACTIONAL_AMOUNT in gate.reasons:
-        please.append("use a whole-dollar amount")
     if REASON_BANNED_MEMO in gate.reasons:
         please.append(
             "leave the memo blank or unrelated (no poker, chips, or club names)"
@@ -238,6 +298,19 @@ def format_player_refund_message(
                 "Please " + ", ".join(please[:-1]) + f", and {please[-1]}."
             )
     return " ".join(parts)
+
+
+def format_player_whole_dollar_nudge() -> str:
+    return (
+        "Please send whole-dollar amounts from now on "
+        "(for example $50 instead of $49.99)."
+    )
+
+
+def append_whole_dollar_nudge(text: str, gate: RefundGate | None) -> str:
+    if gate is None or gate.requires_refund or not gate.warn_whole_dollar:
+        return text
+    return f"{text} {format_player_whole_dollar_nudge()}"
 
 
 def _method_label(method_slug: str) -> str:
@@ -266,8 +339,6 @@ def format_refund_issue_report_title(
     bits: list[str] = []
     if REASON_GOODS_SERVICES in gate.reasons:
         bits.append("G&S")
-    if REASON_FRACTIONAL_AMOUNT in gate.reasons:
-        bits.append("non-whole amount")
     if REASON_BANNED_MEMO in gate.reasons:
         bits.append("banned memo")
     reason_label = ", ".join(bits) if bits else "refund"
@@ -291,8 +362,6 @@ def format_refund_issue_report_description(
     ]
     if REASON_GOODS_SERVICES in gate.reasons:
         lines.append("Venmo payment was sent as Goods & Services.")
-    if REASON_FRACTIONAL_AMOUNT in gate.reasons:
-        lines.append("Amount is not a whole-dollar value.")
     if REASON_BANNED_MEMO in gate.reasons:
         hits = ", ".join(gate.banned_hits) or "banned keyword"
         lines.append(f"Memo contains banned keyword(s): {hits}.")

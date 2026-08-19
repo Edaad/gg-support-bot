@@ -109,6 +109,10 @@ async def notify_player_group_payment_received(
         text = format_payment_goods_services_refund_message(amount_cents)
     else:
         text = format_payment_received_message(amount_cents)
+        if refund_gate is not None:
+            from bot.services.payment_refund_gate import append_whole_dollar_nudge
+
+            text = append_whole_dollar_nudge(text, refund_gate)
     last_error: Exception | None = None
     for token in tokens:
         try:

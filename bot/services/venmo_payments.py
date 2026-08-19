@@ -734,9 +734,16 @@ async def ingest_venmo_payment(
 
     from notification.bind_keyboards import candidate_picker_markup, setup_blocked_markup
     from notification.payment_bind_helpers import format_payment_notification
-    from bot.services.payment_refund_gate import evaluate_refund_gate
+    from bot.services.payment_refund_gate import (
+        evaluate_refund_gate,
+        is_special_amount_setup,
+    )
 
-    is_first_time_setup_bind = bool(auto_bound and setup_attempt_id)
+    is_first_time_setup_bind = bool(setup_attempt_id) or is_special_amount_setup(
+        "venmo",
+        amount_cents=amount_cents,
+        payment_id=payment_id,
+    )
     refund_gate = evaluate_refund_gate(
         amount_cents=amount_cents,
         memo=memo,

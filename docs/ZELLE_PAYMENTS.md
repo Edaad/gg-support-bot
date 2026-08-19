@@ -18,10 +18,11 @@ Repeat payers (`zelle_payer_bindings`) auto-bind by **normalized payer name**. D
 
 Same as Venmo (except Goods & Services, which is Venmo-only):
 
-- **Non-whole-dollar amount** — refund unless this payment completed first-time Zelle setup (special amount). Repeat deposits must be whole dollars.
 - **Banned memo** — gambling, poker, club, GG, Club GG, Round Table, RT, Pure Poker, chips, buy-in (whole-word / phrase, case-insensitive). Always refund, including first-time setup.
 
-Staff notification gets `⚠️ DO NOT ADD — refund required`. Auto-bound player copy asks them to resend a whole-dollar amount and/or a blank memo (no Friends & Family language). A deposit issue report is opened (`reporter_source: zelle_ingest`).
+**Non-whole-dollar amounts** are not a refund. Repeat deposits get a polite player reminder to send whole dollars next time. First-time special-amount setup is never blocked and does not get that reminder.
+
+Staff notification gets `⚠️ DO NOT ADD — refund required` for banned memos (Venmo also: Goods & Services). Auto-bound player copy for those refunds asks them to resend with a blank memo (no Friends & Family language). A deposit issue report is opened (`reporter_source: zelle_ingest`).
 
 ## Database tables
 

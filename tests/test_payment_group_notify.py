@@ -78,6 +78,26 @@ class NotifyPlayerGroupPaymentReceivedTestCase(unittest.IsolatedAsyncioTestCase)
             ),
         )
 
+    async def test_fractional_amount_sends_received_plus_nudge(self):
+        mock_bot = MagicMock()
+        mock_bot.send_message = AsyncMock()
+        gate = MagicMock(requires_refund=False, warn_whole_dollar=True)
+        with (
+            patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "prod-token"}, clear=False),
+            patch.object(pgn, "Bot", return_value=mock_bot),
+        ):
+            ok = await pgn.notify_player_group_payment_received(
+                telegram_chat_id=CHAT_ID,
+                amount_cents=5025,
+                refund_gate=gate,
+                payment_method_slug="zelle",
+            )
+        self.assertTrue(ok)
+        sent = mock_bot.send_message.await_args.kwargs["text"]
+        self.assertIn("chips will be loaded", sent)
+        self.assertIn("whole-dollar amounts from now on", sent)
+        self.assertNotIn("refund", sent.lower())
+
     async def test_test_payment_prefers_test_bot_token(self):
         mock_bot = MagicMock()
         mock_bot.send_message = AsyncMock()

@@ -45,8 +45,9 @@ Do **not** add chips for G&S payments — refund and have the player resend as F
 
 Same staff banner, player refund copy, auto-deposit skip, and issue report also fire when:
 
-- **Non-whole-dollar amount** — e.g. `$50.25` — except when this payment completed **first-time method setup** (special amount or memo code). Repeat deposits must be whole dollars.
 - **Banned memo** — case-insensitive whole-word / phrase match for: gambling, poker, club, GG, Club GG, Round Table, RT, Pure Poker, chips, buy-in. Applies even on first-time setup.
+
+**Non-whole-dollar amounts** do **not** block chip-add or auto-deposit. Repeat deposits get a polite player reminder to send whole dollars next time. First-time special-amount setup never gets that reminder (and must not be treated as a refund).
 
 Short tokens (`GG`, `RT`) do not match inside other words (`bigger`, `bright`).
 

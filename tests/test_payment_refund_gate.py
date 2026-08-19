@@ -6,8 +6,8 @@ import unittest
 
 from bot.services.payment_refund_gate import (
     REASON_BANNED_MEMO,
-    REASON_FRACTIONAL_AMOUNT,
     REASON_GOODS_SERVICES,
+    append_whole_dollar_nudge,
     evaluate_refund_gate,
     find_banned_memo_hits,
     format_player_refund_message,
@@ -46,15 +46,17 @@ class EvaluateRefundGateTests(unittest.TestCase):
         )
         self.assertFalse(zelle.requires_refund)
 
-    def test_fractional_refunds_unless_first_time_setup(self):
+    def test_fractional_amount_does_not_block(self):
         repeat = evaluate_refund_gate(amount_cents=5025, method_slug="venmo")
-        self.assertIn(REASON_FRACTIONAL_AMOUNT, repeat.reasons)
+        self.assertFalse(repeat.requires_refund)
+        self.assertTrue(repeat.warn_whole_dollar)
         first = evaluate_refund_gate(
             amount_cents=8999,
             is_first_time_setup_bind=True,
             method_slug="zelle",
         )
         self.assertFalse(first.requires_refund)
+        self.assertFalse(first.warn_whole_dollar)
 
     def test_banned_memo_refunds_even_on_first_time(self):
         gate = evaluate_refund_gate(
@@ -79,8 +81,14 @@ class RefundCopyTests(unittest.TestCase):
         gate = evaluate_refund_gate(amount_cents=5025, memo="poker")
         text = inject_refund_banner("🔔 Venmo Payment Notification\nGroup Chat: Unbound", gate)
         self.assertIn("DO NOT ADD", text)
-        self.assertIn("Non-whole-dollar amount", text)
+        self.assertNotIn("Non-whole-dollar amount", text)
         self.assertIn("Banned memo (poker)", text)
+
+    def test_cents_only_has_no_staff_block(self):
+        gate = evaluate_refund_gate(amount_cents=5025, method_slug="zelle")
+        text = inject_refund_banner("🔔 Zelle Payment Notification\nGroup Chat: Unbound", gate)
+        self.assertNotIn("DO NOT ADD", text)
+        self.assertTrue(gate.warn_whole_dollar)
 
     def test_player_gs_copy_unchanged(self):
         gate = evaluate_refund_gate(amount_cents=8000, goods_or_services=True)
@@ -93,12 +101,69 @@ class RefundCopyTests(unittest.TestCase):
 
     def test_zelle_player_copy_omits_friends_and_family(self):
         gate = evaluate_refund_gate(
-            amount_cents=5025, memo="poker", method_slug="zelle"
+            amount_cents=5000, memo="poker", method_slug="zelle"
         )
-        text = format_player_refund_message(5025, gate, method_slug="zelle")
+        text = format_player_refund_message(5000, gate, method_slug="zelle")
         self.assertNotIn("Friends & Family", text)
-        self.assertIn("whole-dollar", text)
         self.assertIn("memo", text)
+        self.assertNotIn("whole-dollar", text)
+
+    def test_appends_whole_dollar_nudge(self):
+        gate = evaluate_refund_gate(amount_cents=5025, method_slug="zelle")
+        text = append_whole_dollar_nudge(
+            "We have received your payment for $50, chips will be loaded to your account shortly!!",
+            gate,
+        )
+        self.assertIn("whole-dollar amounts from now on", text)
+        first = evaluate_refund_gate(
+            amount_cents=5025,
+            is_first_time_setup_bind=True,
+            method_slug="zelle",
+        )
+        unchanged = "We have received your payment for $50, chips will be loaded to your account shortly!!"
+        self.assertEqual(append_whole_dollar_nudge(unchanged, first), unchanged)
+
+
+class SpecialAmountSetupLookupTests(unittest.TestCase):
+    def test_pending_special_amount_skips_whole_dollar_warn(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from bot.services.payment_refund_gate import refund_gate_for_payment
+
+        payment = SimpleNamespace(
+            id=99,
+            amount_cents=8999,
+            memo=None,
+            goods_or_services=False,
+        )
+        with patch(
+            "bot.services.payment_refund_gate.is_special_amount_setup",
+            return_value=True,
+        ):
+            gate = refund_gate_for_payment("zelle", payment)
+        self.assertFalse(gate.requires_refund)
+        self.assertFalse(gate.warn_whole_dollar)
+
+    def test_repeat_cents_without_setup_warns_only(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from bot.services.payment_refund_gate import refund_gate_for_payment
+
+        payment = SimpleNamespace(
+            id=100,
+            amount_cents=5025,
+            memo=None,
+            goods_or_services=False,
+        )
+        with patch(
+            "bot.services.payment_refund_gate.is_special_amount_setup",
+            return_value=False,
+        ):
+            gate = refund_gate_for_payment("zelle", payment)
+        self.assertFalse(gate.requires_refund)
+        self.assertTrue(gate.warn_whole_dollar)
 
 
 if __name__ == "__main__":
