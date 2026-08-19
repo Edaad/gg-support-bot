@@ -152,6 +152,7 @@ function MethodDetailsForm({
       <p className="text-xs text-ink-muted">
         Player messages and Stripe checkout live on amount tiers. Sub-option responses (e.g. crypto networks)
         live on the Sub-options tab when enabled below. Absolute min and max apply to the whole method.
+        Saving details adjusts amount tiers so they stay within these limits.
       </p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>

@@ -146,15 +146,12 @@ def validate_checkout_amount_bounds(
         )
 
 
-def clamp_checkout_amount_bounds(
+def clamp_bounds_to_method_envelope(
     method: ClubPaymentMethod,
-    checkout_min: Optional[Decimal],
-    checkout_max: Optional[Decimal],
+    lo: Optional[Decimal],
+    hi: Optional[Decimal],
 ) -> tuple[Optional[Decimal], Optional[Decimal]]:
-    """Clamp checkout bounds into the method absolute envelope (null = inherit / unbounded)."""
-    lo = checkout_min
-    hi = checkout_max
-
+    """Clamp min/max into the method absolute envelope (null = unbounded)."""
     if method.min_amount is not None:
         if lo is not None and lo < method.min_amount:
             lo = method.min_amount
@@ -171,6 +168,25 @@ def clamp_checkout_amount_bounds(
         hi = lo
 
     return lo, hi
+
+
+def clamp_checkout_amount_bounds(
+    method: ClubPaymentMethod,
+    checkout_min: Optional[Decimal],
+    checkout_max: Optional[Decimal],
+) -> tuple[Optional[Decimal], Optional[Decimal]]:
+    """Clamp checkout bounds into the method absolute envelope (null = inherit / unbounded)."""
+    return clamp_bounds_to_method_envelope(method, checkout_min, checkout_max)
+
+
+def _follow_if_matched(
+    current: Optional[Decimal],
+    prior: Optional[Decimal],
+    new: Optional[Decimal],
+) -> Optional[Decimal]:
+    if current is not None and prior is not None and current == prior:
+        return new
+    return current
 
 
 def effective_tier_checkout_min(tier: ClubPaymentTier) -> Optional[Decimal]:
@@ -248,14 +264,42 @@ def sync_tier_checkout_bounds_to_variants(
 
 
 def sync_method_envelope_side_effects(method: ClubPaymentMethod) -> None:
-    """Clamp tier/variant checkout bounds when method absolute envelope changes."""
-    for tier in method.tiers or []:
+    """Adjust tier bands and checkout bounds when method absolute envelope changes.
+
+    The default tier min tracks the method min. Other tier min/max values that
+    fall outside the new envelope are clamped in, rather than blocking the save.
+    """
+    siblings = list(method.tiers or [])
+    primary = primary_tier_for_method(siblings)
+
+    for tier in siblings:
+        prior_min = tier.min_amount
+        prior_max = tier.max_amount
+        if primary is not None and int(tier.id) == int(primary.id):
+            tier.min_amount = method.min_amount
+        tier.min_amount, tier.max_amount = clamp_bounds_to_method_envelope(
+            method,
+            tier.min_amount,
+            tier.max_amount,
+        )
+        tier.checkout_min_amount = _follow_if_matched(
+            tier.checkout_min_amount, prior_min, tier.min_amount
+        )
+        tier.checkout_max_amount = _follow_if_matched(
+            tier.checkout_max_amount, prior_max, tier.max_amount
+        )
         tier.checkout_min_amount, tier.checkout_max_amount = clamp_checkout_amount_bounds(
             method,
             tier.checkout_min_amount,
             tier.checkout_max_amount,
         )
         for variant in tier.variants or []:
+            variant.checkout_min_amount = _follow_if_matched(
+                variant.checkout_min_amount, prior_min, tier.min_amount
+            )
+            variant.checkout_max_amount = _follow_if_matched(
+                variant.checkout_max_amount, prior_max, tier.max_amount
+            )
             variant.checkout_min_amount, variant.checkout_max_amount = clamp_checkout_amount_bounds(
                 method,
                 variant.checkout_min_amount,

@@ -12,6 +12,7 @@ from api.payment_v2_helpers import (
     sync_tier_checkout_bounds_from_band,
     sync_tier_checkout_bounds_to_variants,
     sync_method_envelope_side_effects,
+    validate_all_method_tiers,
     validate_checkout_amount_bounds,
     validate_tier_amount_band,
 )
@@ -22,8 +23,15 @@ def _method(min_amount=None, max_amount=None):
     return SimpleNamespace(min_amount=min_amount, max_amount=max_amount, tiers=[])
 
 
-def _tier(id_, label, min_amount=None, max_amount=None):
-    return SimpleNamespace(id=id_, label=label, min_amount=min_amount, max_amount=max_amount)
+def _tier(id_, label, min_amount=None, max_amount=None, sort_order=0, **extra):
+    return SimpleNamespace(
+        id=id_,
+        label=label,
+        min_amount=min_amount,
+        max_amount=max_amount,
+        sort_order=sort_order,
+        **extra,
+    )
 
 
 class TierAmountBandTestCase(unittest.TestCase):
@@ -102,20 +110,111 @@ class CheckoutAmountBoundsTestCase(unittest.TestCase):
             checkout_min_amount=Decimal("20"),
             checkout_max_amount=Decimal("2000"),
         )
-        tier = SimpleNamespace(
-            label="Default",
-            min_amount=Decimal("50"),
-            max_amount=Decimal("400"),
+        tier = _tier(
+            1,
+            "Default",
+            Decimal("50"),
+            Decimal("400"),
             checkout_min_amount=Decimal("20"),
             checkout_max_amount=None,
             variants=[variant],
         )
         method = SimpleNamespace(min_amount=Decimal("100"), max_amount=Decimal("500"), tiers=[tier])
         sync_method_envelope_side_effects(method)
-        self.assertEqual(tier.min_amount, Decimal("50"))
+        self.assertEqual(tier.min_amount, Decimal("100"))
         self.assertEqual(tier.max_amount, Decimal("400"))
         self.assertEqual(variant.checkout_min_amount, Decimal("100"))
         self.assertEqual(variant.checkout_max_amount, Decimal("500"))
+        validate_all_method_tiers(method)
+
+    def test_lowering_method_min_updates_default_tier(self):
+        default = _tier(
+            1,
+            "Default",
+            Decimal("50"),
+            Decimal("100"),
+            checkout_min_amount=Decimal("50"),
+            checkout_max_amount=None,
+            variants=[],
+        )
+        over = _tier(
+            2,
+            "Over $100",
+            Decimal("101"),
+            Decimal("2000"),
+            sort_order=1,
+            checkout_min_amount=Decimal("101"),
+            checkout_max_amount=None,
+            variants=[],
+        )
+        method = SimpleNamespace(min_amount=Decimal("20"), max_amount=Decimal("2000"), tiers=[default, over])
+        sync_method_envelope_side_effects(method)
+        self.assertEqual(default.min_amount, Decimal("20"))
+        self.assertEqual(default.max_amount, Decimal("100"))
+        self.assertEqual(default.checkout_min_amount, Decimal("20"))
+        self.assertEqual(over.min_amount, Decimal("101"))
+        self.assertEqual(over.max_amount, Decimal("2000"))
+        validate_all_method_tiers(method)
+
+    def test_raising_method_min_updates_default_tier(self):
+        default = _tier(
+            1,
+            "Default",
+            Decimal("20"),
+            Decimal("100"),
+            checkout_min_amount=Decimal("20"),
+            checkout_max_amount=None,
+            variants=[],
+        )
+        over = _tier(
+            2,
+            "Over $100",
+            Decimal("101"),
+            Decimal("2000"),
+            sort_order=1,
+            checkout_min_amount=Decimal("101"),
+            checkout_max_amount=None,
+            variants=[],
+        )
+        method = SimpleNamespace(min_amount=Decimal("50"), max_amount=Decimal("2000"), tiers=[default, over])
+        sync_method_envelope_side_effects(method)
+        self.assertEqual(default.min_amount, Decimal("50"))
+        self.assertEqual(default.max_amount, Decimal("100"))
+        self.assertEqual(default.checkout_min_amount, Decimal("50"))
+        self.assertEqual(over.min_amount, Decimal("101"))
+        self.assertEqual(over.max_amount, Decimal("2000"))
+        validate_all_method_tiers(method)
+
+    def test_raising_method_max_does_not_expand_tiers(self):
+        default = _tier(
+            1,
+            "Default",
+            Decimal("20"),
+            Decimal("100"),
+            checkout_min_amount=None,
+            checkout_max_amount=Decimal("100"),
+            variants=[],
+        )
+        method = SimpleNamespace(min_amount=Decimal("20"), max_amount=Decimal("500"), tiers=[default])
+        sync_method_envelope_side_effects(method)
+        self.assertEqual(default.max_amount, Decimal("100"))
+        self.assertEqual(default.checkout_max_amount, Decimal("100"))
+
+    def test_lowering_method_max_clamps_tier_max(self):
+        default = _tier(
+            1,
+            "Default",
+            Decimal("20"),
+            Decimal("2000"),
+            checkout_min_amount=None,
+            checkout_max_amount=Decimal("2000"),
+            variants=[],
+        )
+        method = SimpleNamespace(min_amount=Decimal("20"), max_amount=Decimal("500"), tiers=[default])
+        sync_method_envelope_side_effects(method)
+        self.assertEqual(default.max_amount, Decimal("500"))
+        self.assertEqual(default.checkout_max_amount, Decimal("500"))
+        validate_all_method_tiers(method)
 
 
 class TierCheckoutSyncTestCase(unittest.TestCase):
