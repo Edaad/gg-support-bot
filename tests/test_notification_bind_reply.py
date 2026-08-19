@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from notification.handlers.bind import payment_bind_reply_handler
+from notification.payment_lookup import PaymentRef
 from notification.handlers.bind_callbacks import (
     BIND_ADD_MEMBER_PENDING_KEY,
     get_add_member_pending,
@@ -173,6 +174,80 @@ class ChatIdVariantPendingTestCase(unittest.TestCase):
         pending = get_add_member_pending(context, chat_id=-5273879167)
         self.assertIsNotNone(pending)
         self.assertEqual(pending["payment_id"], 116)
+
+
+class UnboundImmediateBindTestCase(unittest.IsolatedAsyncioTestCase):
+    @patch(
+        "notification.handlers.bind.bind_zelle_payment_from_reply",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "notification.handlers.bind.bind_venmo_payment_from_reply",
+        new_callable=AsyncMock,
+    )
+    @patch("notification.handlers.bind.format_payment_row", return_value="row")
+    @patch("notification.handlers.bind.candidates_for_payment", return_value=[])
+    @patch("notification.handlers.bind.get_db")
+    @patch("notification.handlers.bind.bind_scope_mismatch_error", return_value=None)
+    @patch("notification.handlers.bind.resolve_bound_group")
+    @patch("notification.handlers.bind.find_payment_by_notification")
+    @patch("notification.handlers.bind.notification_chat_id", return_value=NOTIF_CHAT_ID)
+    async def test_unbound_zelle_reply_uses_canonical_chat(
+        self,
+        _mock_chat: MagicMock,
+        mock_find: MagicMock,
+        mock_resolve: MagicMock,
+        _mock_scope: MagicMock,
+        mock_get_db: MagicMock,
+        _mock_candidates: MagicMock,
+        _mock_row: MagicMock,
+        mock_venmo_bind: AsyncMock,
+        mock_zelle_bind: AsyncMock,
+    ) -> None:
+        bound = SimpleNamespace(
+            telegram_chat_id=-1001111111111,
+            group_title="AT / 6794-0359 / Pratul",
+            club_id=2,
+        )
+        mock_find.return_value = PaymentRef(
+            method_slug="zelle",
+            payment_id=42,
+            payment_is_test=False,
+            telegram_chat_id=None,
+        )
+        mock_resolve.return_value = SimpleNamespace(
+            ok=True, bound_group=bound, error=None
+        )
+        session = MagicMock()
+        session.query.return_value.filter_by.return_value.one_or_none.return_value = (
+            SimpleNamespace(alert_scope=None, bound_group_title_at_bind=None)
+        )
+        mock_get_db.return_value.__enter__.return_value = session
+        mock_get_db.return_value.__exit__.return_value = False
+        mock_zelle_bind.return_value = SimpleNamespace(
+            ok=True, bound_group=bound, error=None
+        )
+
+        update = _reply_update(
+            text="AT / 6794-0359 / Pratul",
+            reply_text="🔔 Zelle Payment Notification",
+        )
+        update.message.reply_text = AsyncMock()
+        context = SimpleNamespace(
+            chat_data={},
+            user_data={},
+            application=SimpleNamespace(bot_data={}),
+        )
+
+        await payment_bind_reply_handler(update, context)
+
+        mock_zelle_bind.assert_awaited_once()
+        kwargs = mock_zelle_bind.await_args.kwargs
+        self.assertEqual(kwargs["notification_chat_id"], NOTIF_CHAT_ID)
+        self.assertEqual(kwargs["group_title_input"], "AT / 6794-0359 / Pratul")
+        mock_venmo_bind.assert_not_awaited()
+        update.message.reply_text.assert_awaited_once()
+        self.assertIn("Bound to AT / 6794-0359 / Pratul", update.message.reply_text.await_args.args[0])
 
 
 if __name__ == "__main__":

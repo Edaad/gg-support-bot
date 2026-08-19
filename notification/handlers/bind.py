@@ -39,13 +39,14 @@ from notification.payment_notification_routing import (
 
 logger = logging.getLogger(__name__)
 
-_BIND_REPLY_FUNCS = {
-    "crypto": bind_crypto_payment_from_reply,
-    "paypal": bind_paypal_payment_from_reply,
-    "cashapp": bind_cashapp_payment_from_reply,
-    "zelle": bind_zelle_payment_from_reply,
-    "venmo": bind_venmo_payment_from_reply,
-}
+def _bind_reply_func(method_slug: str):
+    return {
+        "crypto": bind_crypto_payment_from_reply,
+        "paypal": bind_paypal_payment_from_reply,
+        "cashapp": bind_cashapp_payment_from_reply,
+        "zelle": bind_zelle_payment_from_reply,
+        "venmo": bind_venmo_payment_from_reply,
+    }.get(method_slug)
 
 
 def _message_body(message) -> str:
@@ -135,8 +136,8 @@ async def payment_bind_reply_handler(
         return
 
     ref = find_payment_by_notification(chat_id, int(reply.message_id))
-    if ref is None and expected_chat is not None:
-        ref = find_payment_by_notification(int(expected_chat), int(reply.message_id))
+    if ref is None:
+        ref = find_payment_by_notification(int(canonical), int(reply.message_id))
     if ref is None:
         logger.warning(
             "payment_bind: reply no_payment notification_message_id=%s",
@@ -246,7 +247,7 @@ async def payment_bind_reply_handler(
         )
         await _immediate_bind(
             update=update,
-            expected_chat=expected_chat,
+            expected_chat=int(canonical),
             reply=reply,
             title=title,
             user_id=user_id,
@@ -306,9 +307,14 @@ async def _immediate_bind(
     reply,
     title: str,
     user_id: int,
-    method_slug: str | None = None,
+    method_slug: str,
     payment_id: int | None = None,
 ) -> None:
+    bind_fn = _bind_reply_func(method_slug)
+    if bind_fn is None:
+        await update.message.reply_text("Could not bind payment.")
+        return
+
     bind_kwargs = dict(
         notification_chat_id=expected_chat,
         notification_message_id=int(reply.message_id),
@@ -317,15 +323,7 @@ async def _immediate_bind(
     )
 
     try:
-        result = await bind_crypto_payment_from_reply(**bind_kwargs)
-        if not result.ok:
-            result = await bind_paypal_payment_from_reply(**bind_kwargs)
-        if not result.ok:
-            result = await bind_cashapp_payment_from_reply(**bind_kwargs)
-        if not result.ok:
-            result = await bind_zelle_payment_from_reply(**bind_kwargs)
-        if not result.ok:
-            result = await bind_venmo_payment_from_reply(**bind_kwargs)
+        result = await bind_fn(**bind_kwargs)
     except Exception:
         logger.exception(
             "payment bind failed reply_to=%s title=%r",
