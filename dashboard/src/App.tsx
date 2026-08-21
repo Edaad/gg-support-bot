@@ -85,7 +85,7 @@ export default function App() {
               <Route path="/bonus-types" element={<BonusTypes token={token} />} />
               <Route path="/bonuses" element={<Bonuses token={token} />} />
               <Route path="/expenses" element={<Expenses token={token} />} />
-              <Route path="/cashout-records" element={<CashoutRecords token={token} />} />
+              <Route path="/cashout-records" element={<CashoutRecords token={token} role={role} />} />
               <Route path="/cashout-records/:id" element={<CashoutRecordDetail token={token} />} />
               <Route path="/payments" element={<Payments token={token} />} />
               <Route path="/audit" element={<Audit token={token} />} />

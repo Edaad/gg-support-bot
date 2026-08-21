@@ -549,3 +549,132 @@ def list_staff_cashout_records(
             if len(results) >= limit:
                 break
         return results
+
+
+def _money_send_ledger_dict(
+    send: StaffCashoutMoneySend,
+    record: StaffCashoutRecord,
+    club_names: dict[int, str],
+) -> dict[str, Any]:
+    club_id = int(record.club_id)
+    return {
+        "id": send.id,
+        "cashout_record_id": int(send.cashout_record_id),
+        "sender_name": send.sender_name,
+        "amount": send.amount,
+        "payment_method_id": send.payment_method_id,
+        "payment_sub_option_id": send.payment_sub_option_id,
+        "method_display_name": send.method_display_name,
+        "created_at": send.created_at,
+        "club_id": club_id,
+        "club_name": club_names.get(club_id),
+        "group_title": record.group_title,
+        "gg_player_id": record.gg_player_id,
+    }
+
+
+def _filter_money_send_query(
+    session,
+    *,
+    club_id: Optional[int] = None,
+    from_dt: Optional[datetime] = None,
+    to_dt: Optional[datetime] = None,
+    method_display_name: Optional[str] = None,
+    q: Optional[str] = None,
+):
+    query = (
+        session.query(StaffCashoutMoneySend, StaffCashoutRecord)
+        .join(
+            StaffCashoutRecord,
+            StaffCashoutMoneySend.cashout_record_id == StaffCashoutRecord.id,
+        )
+    )
+    if club_id is not None:
+        query = query.filter(StaffCashoutRecord.club_id == int(club_id))
+    if from_dt is not None:
+        query = query.filter(StaffCashoutMoneySend.created_at >= from_dt)
+    if to_dt is not None:
+        query = query.filter(StaffCashoutMoneySend.created_at <= to_dt)
+    if method_display_name is not None:
+        method = str(method_display_name).strip()
+        if method:
+            query = query.filter(StaffCashoutMoneySend.method_display_name == method)
+    if q:
+        cleaned = str(q).replace("%", "").replace("_", "").strip()
+        if cleaned:
+            like = f"%{cleaned}%"
+            query = query.filter(
+                or_(
+                    StaffCashoutMoneySend.sender_name.ilike(like),
+                    StaffCashoutRecord.group_title.ilike(like),
+                    StaffCashoutRecord.gg_player_id.ilike(like),
+                )
+            )
+    return query
+
+
+def list_staff_cashout_money_sends(
+    *,
+    club_id: Optional[int] = None,
+    from_dt: Optional[datetime] = None,
+    to_dt: Optional[datetime] = None,
+    method_display_name: Optional[str] = None,
+    q: Optional[str] = None,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    """Flat ledger of money-sent rows across cashouts (newest first)."""
+    cap = max(1, min(int(limit), 10000))
+    with get_db() as session:
+        club_names = {
+            int(row.id): str(row.name)
+            for row in session.query(Club.id, Club.name).all()
+        }
+        query = _filter_money_send_query(
+            session,
+            club_id=club_id,
+            from_dt=from_dt,
+            to_dt=to_dt,
+            method_display_name=method_display_name,
+            q=q,
+        ).order_by(
+            StaffCashoutMoneySend.created_at.desc(),
+            StaffCashoutMoneySend.id.desc(),
+        )
+        results = []
+        for send, record in query.limit(cap).all():
+            results.append(_money_send_ledger_dict(send, record, club_names))
+        return results
+
+
+def list_money_send_method_names(
+    *,
+    club_id: Optional[int] = None,
+    from_dt: Optional[datetime] = None,
+    to_dt: Optional[datetime] = None,
+) -> list[str]:
+    """Distinct method_display_name values in the club/date window (for filter dropdown)."""
+    with get_db() as session:
+        query = (
+            session.query(StaffCashoutMoneySend.method_display_name)
+            .join(
+                StaffCashoutRecord,
+                StaffCashoutMoneySend.cashout_record_id == StaffCashoutRecord.id,
+            )
+        )
+        if club_id is not None:
+            query = query.filter(StaffCashoutRecord.club_id == int(club_id))
+        if from_dt is not None:
+            query = query.filter(StaffCashoutMoneySend.created_at >= from_dt)
+        if to_dt is not None:
+            query = query.filter(StaffCashoutMoneySend.created_at <= to_dt)
+        rows = (
+            query.distinct()
+            .order_by(StaffCashoutMoneySend.method_display_name.asc())
+            .all()
+        )
+        names: list[str] = []
+        for (name,) in rows:
+            text = (name or "").strip()
+            if text and text not in names:
+                names.append(text)
+        return names

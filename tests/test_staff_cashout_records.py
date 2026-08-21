@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from api.auth import get_current_admin
+from api.auth import ROLE_ACCOUNT_MANAGER, get_current_admin
 from api.routes.cashout_records import router
 from bot.services.staff_cashout_records import (
     CashoutRecordNotActive,
@@ -414,6 +414,75 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
             resp = client.delete("/api/cashout-records/1/payments/5")
             self.assertEqual(resp.status_code, 200)
             self.assertEqual(resp.json()["payments"], [])
+
+    def test_money_sends_ledger_admin_ok(self) -> None:
+        row = {
+            "id": 9,
+            "cashout_record_id": 1,
+            "sender_name": "Rtsupport",
+            "amount": Decimal("385"),
+            "payment_method_id": None,
+            "payment_sub_option_id": None,
+            "method_display_name": "Venmo",
+            "created_at": None,
+            "club_id": 2,
+            "club_name": "Round Table",
+            "group_title": "RT AT / 4283-2447 / Raff",
+            "gg_player_id": "4283-2447",
+        }
+        with patch(
+            "api.routes.cashout_records.list_staff_cashout_money_sends",
+            return_value=[row],
+        ) as mock_list:
+            client = TestClient(_make_api_app())
+            resp = client.get(
+                "/api/cashout-records/sends?from=2026-07-22&to=2026-08-21&club_id=2&q=Raff&method=Venmo"
+            )
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(len(body), 1)
+        self.assertEqual(body[0]["sender_name"], "Rtsupport")
+        self.assertEqual(body[0]["group_title"], "RT AT / 4283-2447 / Raff")
+        kwargs = mock_list.call_args.kwargs
+        self.assertEqual(kwargs["club_id"], 2)
+        self.assertEqual(kwargs["method_display_name"], "Venmo")
+        self.assertEqual(kwargs["q"], "Raff")
+        self.assertIsNotNone(kwargs["from_dt"])
+        self.assertIsNotNone(kwargs["to_dt"])
+
+    def test_money_sends_ledger_am_forbidden(self) -> None:
+        app = _make_api_app()
+        app.dependency_overrides[get_current_admin] = lambda: ROLE_ACCOUNT_MANAGER
+        client = TestClient(app)
+        resp = client.get("/api/cashout-records/sends?from=2026-07-22&to=2026-08-21")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_money_sends_export_am_forbidden(self) -> None:
+        app = _make_api_app()
+        app.dependency_overrides[get_current_admin] = lambda: ROLE_ACCOUNT_MANAGER
+        client = TestClient(app)
+        resp = client.get("/api/cashout-records/sends/export?from=2026-07-22&to=2026-08-21")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_money_sends_methods_admin_ok(self) -> None:
+        with patch(
+            "api.routes.cashout_records.list_money_send_method_names",
+            return_value=["Venmo", "Zelle"],
+        ):
+            client = TestClient(_make_api_app())
+            resp = client.get("/api/cashout-records/sends/methods?from=2026-07-22&to=2026-08-21")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), ["Venmo", "Zelle"])
+
+    def test_money_sends_export_admin_ok(self) -> None:
+        with patch(
+            "api.routes.cashout_records.build_cashout_money_sends_csv",
+            return_value=b"amount,sender_name\n",
+        ):
+            client = TestClient(_make_api_app())
+            resp = client.get("/api/cashout-records/sends/export?from=2026-07-22&to=2026-08-21")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("text/csv", resp.headers.get("content-type", ""))
 
 
 class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):

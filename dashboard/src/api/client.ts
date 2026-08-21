@@ -342,6 +342,21 @@ export interface StaffCashoutSendT {
   created_at: string | null
 }
 
+export interface StaffCashoutMoneySendLedgerT {
+  id: number
+  cashout_record_id: number
+  sender_name: string
+  amount: number
+  payment_method_id: number | null
+  payment_sub_option_id: number | null
+  method_display_name: string
+  created_at: string | null
+  club_id: number
+  club_name: string | null
+  group_title: string
+  gg_player_id: string | null
+}
+
 export type CashoutLedgerStatus = 'active' | 'cleared' | 'oversent'
 
 export interface StaffCashoutRecordT {
@@ -375,6 +390,39 @@ export const listCashoutRecords = (
   if (opts?.q) params.set('q', opts.q)
   const q = params.toString()
   return request<StaffCashoutRecordT[]>(`/cashout-records${q ? `?${q}` : ''}`, {}, token)
+}
+
+export type CashoutMoneySendListOpts = {
+  from: string
+  to: string
+  clubId?: number
+  method?: string
+  q?: string
+}
+
+export const listCashoutMoneySends = (token: string, opts: CashoutMoneySendListOpts) => {
+  const params = new URLSearchParams()
+  params.set('from', opts.from)
+  params.set('to', opts.to)
+  if (opts.clubId != null) params.set('club_id', String(opts.clubId))
+  if (opts.method) params.set('method', opts.method)
+  if (opts.q) params.set('q', opts.q)
+  return request<StaffCashoutMoneySendLedgerT[]>(
+    `/cashout-records/sends?${params}`,
+    {},
+    token,
+  )
+}
+
+export const listCashoutMoneySendMethods = (
+  token: string,
+  opts: { from: string; to: string; clubId?: number },
+) => {
+  const params = new URLSearchParams()
+  params.set('from', opts.from)
+  params.set('to', opts.to)
+  if (opts.clubId != null) params.set('club_id', String(opts.clubId))
+  return request<string[]>(`/cashout-records/sends/methods?${params}`, {}, token)
 }
 
 export const getCashoutRecord = (token: string, id: number) =>

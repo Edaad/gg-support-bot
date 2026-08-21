@@ -69,6 +69,24 @@ export async function downloadCashoutRecordsCsv(
   )
 }
 
+export async function downloadCashoutMoneySendsCsv(
+  token: string,
+  range: CsvExportRange,
+  opts?: { clubId?: number; method?: string; q?: string },
+): Promise<void> {
+  const q = new URLSearchParams()
+  q.set('from', range.from)
+  q.set('to', range.to)
+  if (opts?.clubId != null) q.set('club_id', String(opts.clubId))
+  if (opts?.method) q.set('method', opts.method)
+  if (opts?.q) q.set('q', opts.q)
+  await downloadCsv(
+    `/api/cashout-records/sends/export?${q}`,
+    token,
+    `cashout-money-sends-${range.from}-to-${range.to}.csv`,
+  )
+}
+
 export async function downloadBonusRecordsCsv(
   token: string,
   range: CsvExportRange,

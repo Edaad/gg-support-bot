@@ -8,13 +8,16 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from api.auth import get_current_admin
+from api.auth import get_current_admin, require_admin
 from api.record_csv_export import (
+    build_cashout_money_sends_csv,
     build_cashout_records_csv,
     csv_streaming_response,
+    et_range_to_utc_naive,
     parse_inclusive_date_range,
 )
 from api.schemas import (
+    StaffCashoutMoneySendLedgerRead,
     StaffCashoutPaymentCreate,
     StaffCashoutPaymentRead,
     StaffCashoutPaymentUpdate,
@@ -33,6 +36,8 @@ from bot.services.staff_cashout_records import (
     delete_staff_cashout_payment,
     delete_staff_cashout_send,
     get_staff_cashout_record,
+    list_money_send_method_names,
+    list_staff_cashout_money_sends,
     list_staff_cashout_records,
     replace_staff_cashout_payments,
     update_staff_cashout_payment,
@@ -115,6 +120,79 @@ def export_cashout_records_csv(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     filename = f"cashout-records-{from_day.isoformat()}-to-{to_day.isoformat()}.csv"
+    return csv_streaming_response(content, filename)
+
+
+def _ledger_to_read(data: dict) -> StaffCashoutMoneySendLedgerRead:
+    return StaffCashoutMoneySendLedgerRead.model_validate(data)
+
+
+@router.get("/sends", response_model=List[StaffCashoutMoneySendLedgerRead])
+def list_cashout_money_sends(
+    _admin: str = Depends(require_admin),
+    club_id: Optional[int] = Query(None),
+    from_date: str = Query(..., alias="from", description="YYYY-MM-DD (ET, inclusive)"),
+    to_date: str = Query(..., alias="to", description="YYYY-MM-DD (ET, inclusive)"),
+    method: Optional[str] = Query(None, description="Exact method_display_name"),
+    q: Optional[str] = Query(None),
+    limit: int = Query(500, ge=1, le=500),
+):
+    try:
+        from_day, to_day = parse_inclusive_date_range(from_date, to_date)
+        start, end = et_range_to_utc_naive(from_day, to_day)
+        rows = list_staff_cashout_money_sends(
+            club_id=club_id,
+            from_dt=start,
+            to_dt=end,
+            method_display_name=method,
+            q=q,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return [_ledger_to_read(row) for row in rows]
+
+
+@router.get("/sends/methods", response_model=List[str])
+def list_cashout_money_send_methods(
+    _admin: str = Depends(require_admin),
+    club_id: Optional[int] = Query(None),
+    from_date: str = Query(..., alias="from", description="YYYY-MM-DD (ET, inclusive)"),
+    to_date: str = Query(..., alias="to", description="YYYY-MM-DD (ET, inclusive)"),
+):
+    try:
+        from_day, to_day = parse_inclusive_date_range(from_date, to_date)
+        start, end = et_range_to_utc_naive(from_day, to_day)
+        return list_money_send_method_names(
+            club_id=club_id,
+            from_dt=start,
+            to_dt=end,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/sends/export")
+def export_cashout_money_sends_csv(
+    _admin: str = Depends(require_admin),
+    from_date: str = Query(..., alias="from", description="YYYY-MM-DD (ET, inclusive)"),
+    to_date: str = Query(..., alias="to", description="YYYY-MM-DD (ET, inclusive)"),
+    club_id: Optional[int] = Query(None),
+    method: Optional[str] = Query(None, description="Exact method_display_name"),
+    q: Optional[str] = Query(None),
+):
+    try:
+        from_day, to_day = parse_inclusive_date_range(from_date, to_date)
+        content = build_cashout_money_sends_csv(
+            from_day=from_day,
+            to_day=to_day,
+            club_id=club_id,
+            method_display_name=method,
+            q=q,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    filename = f"cashout-money-sends-{from_day.isoformat()}-to-{to_day.isoformat()}.csv"
     return csv_streaming_response(content, filename)
 
 

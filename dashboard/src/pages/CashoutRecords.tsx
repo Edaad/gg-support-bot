@@ -2,22 +2,38 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   createCashoutRecord,
+  listCashoutMoneySendMethods,
+  listCashoutMoneySends,
   listCashoutRecords,
   listClubs,
   type CashoutLedgerStatus,
   type Club,
+  type StaffCashoutMoneySendLedgerT,
   type StaffCashoutRecordT,
 } from '../api/client'
 import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
 import DateRangeCsvExport from '../components/DateRangeCsvExport'
 import Modal from '../components/Modal'
-import { downloadCashoutRecordsCsv } from '../api/csvExportClient'
+import {
+  downloadCashoutMoneySendsCsv,
+  downloadCashoutRecordsCsv,
+} from '../api/csvExportClient'
+import { easternCalendarDateString } from '../lib/easternTime'
+import type { DashboardRole } from '../lib/rbac'
 
-const TABS: { id: CashoutLedgerStatus; label: string }[] = [
+type PageTab = CashoutLedgerStatus | 'money_sent'
+
+const STATUS_TABS: { id: CashoutLedgerStatus; label: string }[] = [
   { id: 'active', label: 'Active' },
   { id: 'cleared', label: 'Cleared' },
   { id: 'oversent', label: 'Oversent' },
 ]
+
+function daysAgoEastern(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  return easternCalendarDateString(d)
+}
 
 function fmtDate(iso: string | null) {
   if (!iso) return '—'
@@ -27,6 +43,22 @@ function fmtDate(iso: string | null) {
   })
 }
 
+function fmtSendDate(iso: string | null) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  const datePart = d.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+  const timePart = d.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  return `${datePart} at ${timePart}`
+}
+
 function recordMatchesSearch(r: StaffCashoutRecordT, needle: string) {
   const n = needle.toLowerCase()
   return [r.group_title, r.gg_player_id, r.club_name].some(
@@ -34,10 +66,69 @@ function recordMatchesSearch(r: StaffCashoutRecordT, needle: string) {
   )
 }
 
-export default function CashoutRecords({ token }: { token: string }) {
+function MoneySentRowMenu({
+  recordId,
+  onOpen,
+}: {
+  recordId: number
+  onOpen: (id: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        aria-label="Row actions"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="rounded-md px-2 py-1 text-lg leading-none text-ink-muted hover:bg-control hover:text-ink"
+      >
+        ⋯
+      </button>
+      {open && (
+        <div className="absolute right-0 z-10 mt-1 min-w-[10rem] rounded-lg border border-border bg-surface-raised py-1 shadow-md">
+          <button
+            type="button"
+            className="block w-full px-3 py-2 text-left text-sm text-ink hover:bg-control"
+            onClick={() => {
+              setOpen(false)
+              onOpen(recordId)
+            }}
+          >
+            Open cashout
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function CashoutRecords({
+  token,
+  role,
+}: {
+  token: string
+  role: DashboardRole
+}) {
   const navigate = useNavigate()
-  const [status, setStatus] = useState<CashoutLedgerStatus>('active')
+  const isAdmin = role === 'admin'
+  const [tab, setTab] = useState<PageTab>('active')
   const [records, setRecords] = useState<StaffCashoutRecordT[]>([])
+  const [sends, setSends] = useState<StaffCashoutMoneySendLedgerT[]>([])
+  const [methodOptions, setMethodOptions] = useState<string[]>([])
   const [clubs, setClubs] = useState<Club[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -49,14 +140,31 @@ export default function CashoutRecords({ token }: { token: string }) {
   const [search, setSearch] = useState('')
   const [q, setQ] = useState('')
   const [clubFilter, setClubFilter] = useState('')
+  const [methodFilter, setMethodFilter] = useState('')
+  const [fromDate, setFromDate] = useState(() => daysAgoEastern(30))
+  const [toDate, setToDate] = useState(() => easternCalendarDateString())
+  const [menuExporting, setMenuExporting] = useState(false)
   const reqId = useRef(0)
 
-  const reload = () => {
+  const isMoneySent = tab === 'money_sent'
+  const statusTab = isMoneySent ? null : (tab as CashoutLedgerStatus)
+
+  const tabs: { id: PageTab; label: string }[] = [
+    ...STATUS_TABS,
+    ...(isAdmin ? [{ id: 'money_sent' as const, label: 'Money sent' }] : []),
+  ]
+
+  useEffect(() => {
+    if (!isAdmin && tab === 'money_sent') setTab('active')
+  }, [isAdmin, tab])
+
+  const reloadRecords = () => {
+    if (!statusTab) return
     const id = ++reqId.current
     setError(null)
     setLoading(true)
     listCashoutRecords(token, {
-      status,
+      status: statusTab,
       clubId: clubFilter ? Number(clubFilter) : undefined,
       q: q || undefined,
     })
@@ -73,25 +181,65 @@ export default function CashoutRecords({ token }: { token: string }) {
       })
   }
 
+  const reloadSends = () => {
+    if (!isMoneySent) return
+    const id = ++reqId.current
+    setError(null)
+    setLoading(true)
+    const clubIdNum = clubFilter ? Number(clubFilter) : undefined
+    Promise.all([
+      listCashoutMoneySends(token, {
+        from: fromDate,
+        to: toDate,
+        clubId: clubIdNum,
+        method: methodFilter || undefined,
+        q: q || undefined,
+      }),
+      listCashoutMoneySendMethods(token, {
+        from: fromDate,
+        to: toDate,
+        clubId: clubIdNum,
+      }),
+    ])
+      .then(([rows, methods]) => {
+        if (id !== reqId.current) return
+        setSends(rows)
+        setMethodOptions(methods)
+        if (methodFilter && !methods.includes(methodFilter)) {
+          setMethodFilter('')
+        }
+      })
+      .catch((e) => {
+        if (id !== reqId.current) return
+        setError(e instanceof Error ? e.message : 'Failed to load')
+      })
+      .finally(() => {
+        if (id === reqId.current) setLoading(false)
+      })
+  }
+
   useEffect(() => {
     const t = window.setTimeout(() => setQ(search.trim()), 300)
     return () => window.clearTimeout(t)
   }, [search])
 
   useEffect(() => {
-    reload()
-  }, [token, status, clubFilter, q])
+    if (isMoneySent) reloadSends()
+    else reloadRecords()
+  }, [token, tab, clubFilter, q, fromDate, toDate, methodFilter])
 
   useEffect(() => {
     listClubs(token).then(setClubs).catch(() => undefined)
   }, [token])
 
   const needle = search.trim().toLowerCase()
-  const visible = records.filter((r) => {
-    if (r.status !== status) return false
-    if (needle && !recordMatchesSearch(r, needle)) return false
-    return true
-  })
+  const visible = statusTab
+    ? records.filter((r) => {
+        if (r.status !== statusTab) return false
+        if (needle && !recordMatchesSearch(r, needle)) return false
+        return true
+      })
+    : []
 
   const openCreate = () => {
     setClubId(clubs[0] ? String(clubs[0].id) : '')
@@ -123,16 +271,46 @@ export default function CashoutRecords({ token }: { token: string }) {
     }
   }
 
+  const handleMoneySentExport = async () => {
+    if (!fromDate || !toDate) {
+      setError('From and to dates are required')
+      return
+    }
+    if (fromDate > toDate) {
+      setError('From must be on or before to')
+      return
+    }
+    setMenuExporting(true)
+    setError(null)
+    try {
+      await downloadCashoutMoneySendsCsv(
+        token,
+        { from: fromDate, to: toDate },
+        {
+          clubId: clubFilter ? Number(clubFilter) : undefined,
+          method: methodFilter || undefined,
+          q: q || undefined,
+        },
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Export failed')
+    } finally {
+      setMenuExporting(false)
+    }
+  }
+
   return (
     <div>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="mb-2 text-2xl font-bold">Cashout records</h1>
           <p className="text-sm text-ink-muted">
-            Orders from GGCashier or created here. Log money sent on each record; remaining is original minus sent.
+            {isMoneySent
+              ? 'All money-sent ledger entries across cashouts. Read-only.'
+              : 'Orders from GGCashier or created here. Log money sent on each record; remaining is original minus sent.'}
           </p>
         </div>
-        {status === 'active' && (
+        {tab === 'active' && (
           <button type="button" onClick={openCreate} className="btn-primary min-h-12 shrink-0 px-6 text-base">
             New cashout
           </button>
@@ -140,13 +318,13 @@ export default function CashoutRecords({ token }: { token: string }) {
       </div>
 
       <div className="mb-6 flex gap-1 overflow-x-auto rounded-lg bg-surface p-1">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
-            onClick={() => setStatus(t.id)}
+            onClick={() => setTab(t.id)}
             className={
-              status === t.id
+              tab === t.id
                 ? 'rounded-md bg-accent/12 px-4 py-2 text-sm font-medium text-accent'
                 : 'rounded-md px-4 py-2 text-sm font-medium text-ink-muted hover:bg-control hover:text-ink'
             }
@@ -166,7 +344,7 @@ export default function CashoutRecords({ token }: { token: string }) {
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Name, player ID…"
+            placeholder={isMoneySent ? 'Sender, sent to, player ID…' : 'Name, player ID…'}
             className="input-field-sm w-full"
           />
         </div>
@@ -188,19 +366,79 @@ export default function CashoutRecords({ token }: { token: string }) {
             ))}
           </select>
         </div>
+        {isMoneySent && (
+          <>
+            <div>
+              <label className="label-field-xs" htmlFor="money-sent-from">
+                From (ET)
+              </label>
+              <input
+                id="money-sent-from"
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="input-field-sm"
+              />
+            </div>
+            <div>
+              <label className="label-field-xs" htmlFor="money-sent-to">
+                To (ET)
+              </label>
+              <input
+                id="money-sent-to"
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="input-field-sm"
+              />
+            </div>
+            <div>
+              <label className="label-field-xs" htmlFor="money-sent-method">
+                Method
+              </label>
+              <select
+                id="money-sent-method"
+                value={methodFilter}
+                onChange={(e) => setMethodFilter(e.target.value)}
+                className="input-field-sm min-w-[10rem]"
+              >
+                <option value="">All methods</option>
+                {methodOptions.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
       </div>
 
-      <div className="mb-6 rounded-lg border border-border bg-surface-raised p-4">
-        <p className="mb-3 text-sm font-medium text-ink">Export</p>
-        <DateRangeCsvExport
-          onExport={(range) =>
-            downloadCashoutRecordsCsv(token, range, {
-              clubId: clubFilter ? Number(clubFilter) : undefined,
-              status,
-            })
-          }
-        />
-      </div>
+      {isMoneySent ? (
+        <div className="mb-6 rounded-lg border border-border bg-surface-raised p-4">
+          <p className="mb-3 text-sm font-medium text-ink">Export</p>
+          <button
+            type="button"
+            onClick={handleMoneySentExport}
+            disabled={menuExporting}
+            className="btn-primary min-h-11 px-4 text-sm"
+          >
+            {menuExporting ? 'Exporting…' : 'Export CSV'}
+          </button>
+        </div>
+      ) : (
+        <div className="mb-6 rounded-lg border border-border bg-surface-raised p-4">
+          <p className="mb-3 text-sm font-medium text-ink">Export</p>
+          <DateRangeCsvExport
+            onExport={(range) =>
+              downloadCashoutRecordsCsv(token, range, {
+                clubId: clubFilter ? Number(clubFilter) : undefined,
+                status: statusTab || undefined,
+              })
+            }
+          />
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 rounded-lg border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger-ink">
@@ -208,11 +446,57 @@ export default function CashoutRecords({ token }: { token: string }) {
         </div>
       )}
 
-      {loading && visible.length === 0 ? (
+      {isMoneySent ? (
+        loading && sends.length === 0 ? (
+          <p className="text-sm text-ink-muted">Loading…</p>
+        ) : sends.length === 0 ? (
+          <p className="text-sm text-ink-muted">
+            {clubFilter || needle || methodFilter
+              ? 'No matching money-sent records.'
+              : 'No money-sent records in this date range.'}
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+            <table className="min-w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-ink-muted">
+                  <th className="px-4 py-3">Amount</th>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Method</th>
+                  <th className="px-4 py-3">Date / time</th>
+                  <th className="px-4 py-3">Sent to</th>
+                  <th className="px-4 py-3">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {sends.map((s) => (
+                  <tr key={s.id} className="border-b border-border last:border-0">
+                    <td className="px-4 py-3 font-medium text-ink">{fmtMoney(s.amount)}</td>
+                    <td className="px-4 py-3 text-ink">{s.sender_name}</td>
+                    <td className="px-4 py-3 text-ink">{s.method_display_name}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-ink">
+                      {fmtSendDate(s.created_at)}
+                    </td>
+                    <td className="px-4 py-3 text-ink">{s.group_title}</td>
+                    <td className="px-4 py-3 text-right">
+                      <MoneySentRowMenu
+                        recordId={s.cashout_record_id}
+                        onOpen={(id) => navigate(`/cashout-records/${id}`)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : loading && visible.length === 0 ? (
         <p className="text-sm text-ink-muted">Loading…</p>
       ) : visible.length === 0 ? (
         <p className="text-sm text-ink-muted">
-          {clubFilter || needle ? `No matching ${status} cashouts.` : `No ${status} cashouts.`}
+          {clubFilter || needle ? `No matching ${tab} cashouts.` : `No ${tab} cashouts.`}
         </p>
       ) : (
         <div className="space-y-4">

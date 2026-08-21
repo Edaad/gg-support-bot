@@ -406,6 +406,55 @@ def build_cashout_records_csv(
     return rows_to_csv_bytes(CASHOUT_CSV_HEADER, rows)
 
 
+MONEY_SEND_CSV_HEADER = [
+    "amount",
+    "sender_name",
+    "method_display_name",
+    "created_at",
+    "group_title",
+    "gg_player_id",
+    "club_name",
+    "cashout_record_id",
+]
+
+
+def build_cashout_money_sends_csv(
+    *,
+    from_day: date,
+    to_day: date,
+    club_id: int | None = None,
+    method_display_name: str | None = None,
+    q: str | None = None,
+) -> bytes:
+    from bot.services.staff_cashout_records import list_staff_cashout_money_sends
+
+    start, end = et_range_to_utc_naive(from_day, to_day)
+    rows_data = list_staff_cashout_money_sends(
+        club_id=club_id,
+        from_dt=start,
+        to_dt=end,
+        method_display_name=method_display_name,
+        q=q,
+        limit=10000,
+    )
+    # Export oldest-first for reconciliation spreadsheets
+    rows_data = list(reversed(rows_data))
+    rows: list[list[Any]] = [
+        [
+            row.get("amount"),
+            row.get("sender_name") or "",
+            row.get("method_display_name") or "",
+            row.get("created_at"),
+            row.get("group_title") or "",
+            row.get("gg_player_id") or "",
+            row.get("club_name") or "",
+            row.get("cashout_record_id"),
+        ]
+        for row in rows_data
+    ]
+    return rows_to_csv_bytes(MONEY_SEND_CSV_HEADER, rows)
+
+
 def build_bonus_records_csv(
     session: Session,
     *,

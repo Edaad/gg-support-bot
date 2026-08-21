@@ -634,6 +634,23 @@ class StaffCashoutSendRead(BaseModel):
     created_at: Optional[datetime] = None
 
 
+class StaffCashoutMoneySendLedgerRead(BaseModel):
+    """Flat money-sent row for the admin ledger tab."""
+
+    id: int
+    cashout_record_id: int
+    sender_name: str
+    amount: Decimal
+    payment_method_id: Optional[int] = None
+    payment_sub_option_id: Optional[int] = None
+    method_display_name: str
+    created_at: Optional[datetime] = None
+    club_id: int
+    club_name: Optional[str] = None
+    group_title: str
+    gg_player_id: Optional[str] = None
+
+
 class StaffCashoutRecordRead(BaseModel):
     id: int
     cashier_job_id: Optional[int] = None
