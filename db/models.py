@@ -772,6 +772,7 @@ class StaffCashoutRecord(Base):
     recorded_by_telegram_user_id = Column(BigInteger, nullable=True)
     trigger = Column(String(20), nullable=False)  # group_cash | dm_cashout | dashboard
     tracks_money_sent = Column(Boolean, nullable=False, default=False)
+    do_not_send = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(
         DateTime, server_default=func.now(), onupdate=func.now()

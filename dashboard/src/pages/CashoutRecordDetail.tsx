@@ -22,6 +22,7 @@ import CashoutMethodFields, {
 } from '../components/CashoutMethodFields'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
+import type { DashboardRole } from '../lib/rbac'
 
 function fmtDate(iso: string | null) {
   if (!iso) return '—'
@@ -37,6 +38,7 @@ function applyRecord(row: StaffCashoutRecordT): StaffCashoutRecordT {
     amount: Number(row.amount),
     sent: Number(row.sent),
     remaining: Number(row.remaining),
+    do_not_send: Boolean(row.do_not_send),
     payments: [...(row.payments ?? [])],
     sends: [...(row.sends ?? [])],
   }
@@ -83,10 +85,17 @@ function choiceFromSend(s: StaffCashoutSendT): MethodChoice {
   }
 }
 
-export default function CashoutRecordDetail({ token }: { token: string }) {
+export default function CashoutRecordDetail({
+  token,
+  role,
+}: {
+  token: string
+  role: DashboardRole
+}) {
   const { id } = useParams()
   const recordId = Number(id)
   const askConfirm = useConfirm()
+  const isAdmin = role === 'admin'
   const [record, setRecord] = useState<StaffCashoutRecordT | null>(null)
   const [methods, setMethods] = useState<V2Method[]>([])
   const [loading, setLoading] = useState(true)
@@ -167,6 +176,22 @@ export default function CashoutRecordDetail({ token }: { token: string }) {
     setError(null)
     try {
       const updated = await updateCashoutRecord(token, record.id, { amount })
+      await refreshRecord(updated)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const toggleDoNotSend = async () => {
+    if (!record || !isAdmin) return
+    setSaving(true)
+    setError(null)
+    try {
+      const updated = await updateCashoutRecord(token, record.id, {
+        do_not_send: !record.do_not_send,
+      })
       await refreshRecord(updated)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed')
@@ -312,6 +337,30 @@ export default function CashoutRecordDetail({ token }: { token: string }) {
       <p className="mt-4 text-sm text-ink-muted">{fmtDate(record.created_at)}</p>
       <h1 className="mt-1 text-2xl font-bold text-ink">{record.group_title}</h1>
       <p className="mt-1 text-base text-ink-muted">{record.club_name || '—'}</p>
+
+      {record.do_not_send && (
+        <div
+          className="mt-4 rounded-lg border border-border bg-warning-bg px-4 py-3 text-sm text-warning-ink"
+          role="status"
+        >
+          Do not send — this cashout is parked and hidden from Active / Cleared / Oversent.
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-border"
+              checked={record.do_not_send}
+              disabled={saving}
+              onChange={() => toggleDoNotSend()}
+            />
+            Do not send
+          </label>
+        </div>
+      )}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-border bg-surface p-5">

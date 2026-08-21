@@ -18,7 +18,7 @@ from api.group_chat_ticket_helpers import (
     index_messages_by_id,
     slice_ticket_messages,
 )
-from bot.services.staff_cashout_records import STATUSES, compute_ledger
+from bot.services.staff_cashout_records import LEDGER_STATUSES, compute_ledger
 from db.models import (
     BonusRecord,
     Club,
@@ -329,7 +329,7 @@ def build_cashout_records_csv(
     club_id: int | None = None,
     status: str | None = None,
 ) -> bytes:
-    if status is not None and status not in STATUSES:
+    if status is not None and status not in LEDGER_STATUSES:
         raise ValueError("status must be active, cleared, or oversent")
 
     start, end = et_range_to_utc_naive(from_day, to_day)
@@ -347,6 +347,7 @@ def build_cashout_records_csv(
         .filter(
             StaffCashoutRecord.created_at >= start,
             StaffCashoutRecord.created_at <= end,
+            StaffCashoutRecord.do_not_send.is_(False),
         )
         .order_by(StaffCashoutRecord.created_at.asc(), StaffCashoutRecord.id.asc())
     )
@@ -364,6 +365,8 @@ def build_cashout_records_csv(
         ledger = compute_ledger(bool(record.tracks_money_sent), record.amount, send_dicts)
         row_status = str(ledger.get("status") or "cleared")
         if status is not None and row_status != status:
+            continue
+        if bool(getattr(record, "do_not_send", False)):
             continue
 
         methods = [

@@ -357,7 +357,7 @@ export interface StaffCashoutMoneySendLedgerT {
   gg_player_id: string | null
 }
 
-export type CashoutLedgerStatus = 'active' | 'cleared' | 'oversent'
+export type CashoutLedgerStatus = 'active' | 'cleared' | 'oversent' | 'do_not_send'
 
 export interface StaffCashoutRecordT {
   id: number
@@ -371,9 +371,10 @@ export interface StaffCashoutRecordT {
   recorded_by_telegram_user_id: number | null
   trigger: string
   tracks_money_sent: boolean
+  do_not_send: boolean
   sent: number
   remaining: number
-  status: CashoutLedgerStatus
+  status: 'active' | 'cleared' | 'oversent'
   created_at: string | null
   updated_at: string | null
   payments: StaffCashoutPaymentT[]
@@ -440,7 +441,7 @@ export const createCashoutRecord = (
 export const updateCashoutRecord = (
   token: string,
   id: number,
-  data: { group_title?: string; amount?: number },
+  data: { group_title?: string; amount?: number; do_not_send?: boolean },
 ) =>
   request<StaffCashoutRecordT>(`/cashout-records/${id}`, {
     method: 'PATCH',

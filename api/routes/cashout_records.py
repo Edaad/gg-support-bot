@@ -8,7 +8,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from api.auth import get_current_admin, require_admin
+from api.auth import ROLE_ADMIN, get_current_admin, require_admin
 from api.record_csv_export import (
     build_cashout_money_sends_csv,
     build_cashout_records_csv,
@@ -74,6 +74,7 @@ def _to_read(data: dict, club_names: dict[int, str]) -> StaffCashoutRecordRead:
         recorded_by_telegram_user_id=data.get("recorded_by_telegram_user_id"),
         trigger=data["trigger"],
         tracks_money_sent=bool(data.get("tracks_money_sent")),
+        do_not_send=bool(data.get("do_not_send")),
         sent=sent,
         remaining=remaining,
         status=str(data.get("status") or "cleared"),
@@ -90,8 +91,11 @@ def list_cashout_records(
     status: Optional[str] = Query(None),
     q: Optional[str] = Query(None),
     limit: int = Query(200, ge=1, le=500),
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
+    if status == "do_not_send" and role != ROLE_ADMIN:
+        raise HTTPException(403, "Admin only")
     club_names = _club_name_map(db)
     try:
         rows = list_staff_cashout_records(club_id=club_id, status=status, q=q, limit=limit)
@@ -227,6 +231,7 @@ def get_cashout_record(
 def patch_cashout_record(
     record_id: int,
     body: StaffCashoutRecordUpdate,
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
     updates = body.model_dump(exclude_unset=True)
@@ -236,11 +241,15 @@ def patch_cashout_record(
             raise HTTPException(404, "Cashout record not found")
         return _to_read(data, _club_name_map(db))
 
+    if "do_not_send" in updates and role != ROLE_ADMIN:
+        raise HTTPException(403, "Admin only")
+
     try:
         data = update_staff_cashout_record(
             record_id,
             group_title=updates.get("group_title"),
             amount=updates.get("amount"),
+            do_not_send=updates.get("do_not_send") if "do_not_send" in updates else None,
         )
     except CashoutRecordNotActive as exc:
         raise HTTPException(409, str(exc)) from exc

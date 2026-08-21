@@ -16,7 +16,8 @@ from db.models import Club, StaffCashoutMoneySend, StaffCashoutPayment, StaffCas
 
 logger = logging.getLogger(__name__)
 
-STATUSES = ("active", "cleared", "oversent")
+STATUSES = ("active", "cleared", "oversent", "do_not_send")
+LEDGER_STATUSES = ("active", "cleared", "oversent")
 
 
 class CashoutRecordNotActive(ValueError):
@@ -104,6 +105,7 @@ def _record_to_dict(record: StaffCashoutRecord) -> dict[str, Any]:
         "recorded_by_telegram_user_id": record.recorded_by_telegram_user_id,
         "trigger": record.trigger,
         "tracks_money_sent": tracks,
+        "do_not_send": bool(getattr(record, "do_not_send", False)),
         "created_at": record.created_at,
         "updated_at": record.updated_at,
         "payments": payments,
@@ -279,6 +281,7 @@ def update_staff_cashout_record(
     *,
     group_title: Optional[str] = None,
     amount: Optional[Decimal] = None,
+    do_not_send: Optional[bool] = None,
 ) -> Optional[dict[str, Any]]:
     with get_db() as session:
         record = session.get(StaffCashoutRecord, int(record_id))
@@ -292,6 +295,8 @@ def update_staff_cashout_record(
             record.gg_player_id = _gg_player_id_from_title(group_title)
         if amount is not None:
             record.amount = amount
+        if do_not_send is not None:
+            record.do_not_send = bool(do_not_send)
         record.updated_at = datetime.utcnow()
         return _record_dict_reloaded(session, record)
 
@@ -518,7 +523,7 @@ def list_staff_cashout_records(
     limit: int = 200,
 ) -> list[dict[str, Any]]:
     if status is not None and status not in STATUSES:
-        raise ValueError("status must be active, cleared, or oversent")
+        raise ValueError("status must be active, cleared, oversent, or do_not_send")
     needle = None
     if q:
         cleaned = str(q).replace("%", "").replace("_", "").strip()
@@ -529,6 +534,10 @@ def list_staff_cashout_records(
         )
         if club_id is not None:
             query = query.filter(StaffCashoutRecord.club_id == int(club_id))
+        if status == "do_not_send":
+            query = query.filter(StaffCashoutRecord.do_not_send.is_(True))
+        elif status in LEDGER_STATUSES:
+            query = query.filter(StaffCashoutRecord.do_not_send.is_(False))
         if needle:
             like = f"%{needle}%"
             query = query.filter(
@@ -541,8 +550,12 @@ def list_staff_cashout_records(
         results = []
         for record in rows:
             out = _record_to_dict(record)
-            if status is not None and out["status"] != status:
-                continue
+            if status == "do_not_send":
+                if not out.get("do_not_send"):
+                    continue
+            elif status in LEDGER_STATUSES:
+                if out.get("do_not_send") or out["status"] != status:
+                    continue
             if needle and not _matches_search(out, needle):
                 continue
             results.append(out)

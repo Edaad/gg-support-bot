@@ -35,6 +35,7 @@ def _sample_record() -> dict:
         "recorded_by_telegram_user_id": 999,
         "trigger": "group_cash",
         "tracks_money_sent": True,
+        "do_not_send": False,
         "sent": Decimal("0"),
         "remaining": Decimal("500"),
         "status": "active",
@@ -483,6 +484,71 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
             resp = client.get("/api/cashout-records/sends/export?from=2026-07-22&to=2026-08-21")
         self.assertEqual(resp.status_code, 200)
         self.assertIn("text/csv", resp.headers.get("content-type", ""))
+
+    def test_list_do_not_send_admin_ok(self) -> None:
+        parked = _sample_record()
+        parked["do_not_send"] = True
+        with patch(
+            "api.routes.cashout_records.list_staff_cashout_records",
+            return_value=[parked],
+        ) as mock_list, patch(
+            "api.routes.cashout_records._club_name_map",
+            return_value={2: "Round Table"},
+        ):
+            client = TestClient(_make_api_app())
+            resp = client.get("/api/cashout-records?status=do_not_send")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()[0]["do_not_send"])
+        self.assertEqual(mock_list.call_args.kwargs["status"], "do_not_send")
+
+    def test_list_do_not_send_am_forbidden(self) -> None:
+        app = _make_api_app()
+        app.dependency_overrides[get_current_admin] = lambda: ROLE_ACCOUNT_MANAGER
+        client = TestClient(app)
+        resp = client.get("/api/cashout-records?status=do_not_send")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_patch_do_not_send_admin_ok(self) -> None:
+        updated = _sample_record()
+        updated["do_not_send"] = True
+        with patch(
+            "api.routes.cashout_records.update_staff_cashout_record",
+            return_value=updated,
+        ) as mock_update, patch(
+            "api.routes.cashout_records._club_name_map",
+            return_value={2: "Round Table"},
+        ):
+            client = TestClient(_make_api_app())
+            resp = client.patch("/api/cashout-records/1", json={"do_not_send": True})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["do_not_send"])
+        self.assertEqual(mock_update.call_args.kwargs["do_not_send"], True)
+
+    def test_patch_do_not_send_am_forbidden(self) -> None:
+        app = _make_api_app()
+        app.dependency_overrides[get_current_admin] = lambda: ROLE_ACCOUNT_MANAGER
+        client = TestClient(app)
+        resp = client.patch("/api/cashout-records/1", json={"do_not_send": True})
+        self.assertEqual(resp.status_code, 403)
+
+    def test_patch_title_am_allowed(self) -> None:
+        updated = _sample_record()
+        updated["group_title"] = "RT / 1 / X"
+        app = _make_api_app()
+        app.dependency_overrides[get_current_admin] = lambda: ROLE_ACCOUNT_MANAGER
+        with patch(
+            "api.routes.cashout_records.update_staff_cashout_record",
+            return_value=updated,
+        ), patch(
+            "api.routes.cashout_records._club_name_map",
+            return_value={2: "Round Table"},
+        ):
+            client = TestClient(app)
+            resp = client.patch(
+                "/api/cashout-records/1",
+                json={"group_title": "RT / 1 / X"},
+            )
+        self.assertEqual(resp.status_code, 200)
 
 
 class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):

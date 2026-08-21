@@ -426,6 +426,7 @@ Include an `account_managers` key (Slack user-group mention for `@accmanagers`) 
 ```bash
 heroku run -a YOUR_APP -- python migrate_staff_cashout_records.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_ledger.py
+heroku run -a YOUR_APP -- python migrate_staff_cashout_do_not_send.py
 heroku run -a YOUR_APP -- python migrate_bonus_records.py
 heroku run -a YOUR_APP -- python migrate_bonus_drafts.py
 heroku run -a YOUR_APP -- python migrate_bonus_records_player_details.py

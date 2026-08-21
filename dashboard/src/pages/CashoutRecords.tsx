@@ -23,7 +23,7 @@ import type { DashboardRole } from '../lib/rbac'
 
 type PageTab = CashoutLedgerStatus | 'money_sent'
 
-const STATUS_TABS: { id: CashoutLedgerStatus; label: string }[] = [
+const LEDGER_TABS: { id: Exclude<CashoutLedgerStatus, 'do_not_send'>; label: string }[] = [
   { id: 'active', label: 'Active' },
   { id: 'cleared', label: 'Cleared' },
   { id: 'oversent', label: 'Oversent' },
@@ -147,15 +147,18 @@ export default function CashoutRecords({
   const reqId = useRef(0)
 
   const isMoneySent = tab === 'money_sent'
+  const isDoNotSend = tab === 'do_not_send'
   const statusTab = isMoneySent ? null : (tab as CashoutLedgerStatus)
 
   const tabs: { id: PageTab; label: string }[] = [
-    ...STATUS_TABS,
+    { id: 'active', label: 'Active' },
+    ...(isAdmin ? [{ id: 'do_not_send' as const, label: 'Do not send' }] : []),
+    ...LEDGER_TABS.filter((t) => t.id !== 'active'),
     ...(isAdmin ? [{ id: 'money_sent' as const, label: 'Money sent' }] : []),
   ]
 
   useEffect(() => {
-    if (!isAdmin && tab === 'money_sent') setTab('active')
+    if (!isAdmin && (tab === 'money_sent' || tab === 'do_not_send')) setTab('active')
   }, [isAdmin, tab])
 
   const reloadRecords = () => {
@@ -235,7 +238,11 @@ export default function CashoutRecords({
   const needle = search.trim().toLowerCase()
   const visible = statusTab
     ? records.filter((r) => {
-        if (r.status !== statusTab) return false
+        if (statusTab === 'do_not_send') {
+          if (!r.do_not_send) return false
+        } else {
+          if (r.do_not_send || r.status !== statusTab) return false
+        }
         if (needle && !recordMatchesSearch(r, needle)) return false
         return true
       })
@@ -426,7 +433,7 @@ export default function CashoutRecords({
             {menuExporting ? 'Exporting…' : 'Export CSV'}
           </button>
         </div>
-      ) : (
+      ) : isDoNotSend ? null : (
         <div className="mb-6 rounded-lg border border-border bg-surface-raised p-4">
           <p className="mb-3 text-sm font-medium text-ink">Export</p>
           <DateRangeCsvExport
@@ -496,7 +503,9 @@ export default function CashoutRecords({
         <p className="text-sm text-ink-muted">Loading…</p>
       ) : visible.length === 0 ? (
         <p className="text-sm text-ink-muted">
-          {clubFilter || needle ? `No matching ${tab} cashouts.` : `No ${tab} cashouts.`}
+          {clubFilter || needle
+            ? `No matching ${isDoNotSend ? 'do not send' : tab} cashouts.`
+            : `No ${isDoNotSend ? 'do not send' : tab} cashouts.`}
         </p>
       ) : (
         <div className="space-y-4">
