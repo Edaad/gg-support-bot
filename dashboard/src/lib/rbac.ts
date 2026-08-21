@@ -9,6 +9,18 @@ export const ACCOUNT_MANAGER_PATHS = [
   '/cashout-records',
 ] as const
 
+/** Paths that live under the Admin two-level nav (admin only). */
+export const ADMIN_SECTION_PATHS = [
+  '/clubs',
+  '/audit',
+  '/analytics',
+  '/expenses',
+  '/telegram-login',
+  '/weekly-stats',
+] as const
+
+export const ADMIN_SECTION_HOME = '/clubs'
+
 export function normalizeRole(raw: string | null | undefined): DashboardRole {
   if (raw === 'account_manager') return 'account_manager'
   return 'admin'
@@ -21,6 +33,12 @@ export function homePathForRole(role: DashboardRole): string {
 export function canAccessPath(role: DashboardRole, pathname: string): boolean {
   if (role !== 'account_manager') return true
   return ACCOUNT_MANAGER_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  )
+}
+
+export function isAdminSectionPath(pathname: string): boolean {
+  return ADMIN_SECTION_PATHS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   )
 }

@@ -2,24 +2,32 @@ import { Link, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import ThemeToggle from './ThemeToggle'
 import {
+  ADMIN_SECTION_HOME,
   canAccessPath,
   homePathForRole,
+  isAdminSectionPath,
   type DashboardRole,
 } from '../lib/rbac'
 
-const NAV = [
-  { to: '/clubs', label: 'Clubs' },
+type NavLinkItem = { to: string; label: string }
+
+/** Top-level links in display order (Admin is injected separately for admins). */
+const TOP_NAV: NavLinkItem[] = [
   { to: '/payments', label: 'Payments' },
-  { to: '/audit', label: 'Audit' },
-  { to: '/analytics', label: 'Analytics' },
   { to: '/bonuses', label: 'Bonuses' },
   { to: '/bonus-types', label: 'Bonus types' },
   { to: '/cashout-records', label: 'Cashout records' },
+  { to: '/settings', label: 'Settings' },
+]
+
+const ADMIN_SUBNAV: NavLinkItem[] = [
+  { to: '/clubs', label: 'Clubs' },
+  { to: '/audit', label: 'Audit' },
+  { to: '/analytics', label: 'Analytics' },
   { to: '/expenses', label: 'Expenses' },
   { to: '/telegram-login', label: 'Telegram login' },
   { to: '/weekly-stats', label: 'Weekly stats' },
-  { to: '/settings', label: 'Settings' },
-] as const
+]
 
 function isNavActive(pathname: string, to: string): boolean {
   if (to === '/clubs') return pathname === '/clubs' || pathname.startsWith('/clubs/')
@@ -49,7 +57,9 @@ export default function Layout({
   onLogout: () => void
 }) {
   const { pathname } = useLocation()
-  const navItems = NAV.filter((n) => canAccessPath(role, n.to))
+  const isAdmin = role === 'admin'
+  const showAdminSubnav = isAdmin && isAdminSectionPath(pathname)
+  const topItems = TOP_NAV.filter((n) => canAccessPath(role, n.to))
 
   return (
     <div className="min-h-screen bg-bg text-ink">
@@ -86,7 +96,15 @@ export default function Layout({
             className="-mx-4 flex gap-1 overflow-x-auto border-t border-border px-4 py-2 sm:mx-0 sm:border-t-0 sm:px-0 sm:pb-3 sm:pt-0"
             aria-label="Main"
           >
-            {navItems.map((n) => {
+            {isAdmin && (
+              <Link
+                to={ADMIN_SECTION_HOME}
+                className={navLinkClass(showAdminSubnav)}
+              >
+                Admin
+              </Link>
+            )}
+            {topItems.map((n) => {
               const active = isNavActive(pathname, n.to)
               return (
                 <Link
@@ -100,6 +118,27 @@ export default function Layout({
               )
             })}
           </nav>
+
+          {showAdminSubnav && (
+            <nav
+              className="-mx-4 flex gap-1 overflow-x-auto border-t border-border px-4 py-2 sm:mx-0 sm:px-0"
+              aria-label="Admin"
+            >
+              {ADMIN_SUBNAV.map((n) => {
+                const active = isNavActive(pathname, n.to)
+                return (
+                  <Link
+                    key={n.to}
+                    to={n.to}
+                    aria-current={active ? 'page' : undefined}
+                    className={navLinkClass(active)}
+                  >
+                    {n.label}
+                  </Link>
+                )
+              })}
+            </nav>
+          )}
         </div>
       </header>
 
