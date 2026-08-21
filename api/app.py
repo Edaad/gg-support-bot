@@ -63,15 +63,16 @@ def create_app() -> FastAPI:
         Base.metadata.create_all(engine)
 
     # ── Auth route (no token required) ────────────────────────────────────
-    from api.auth import verify_password, create_token
+    from api.auth import resolve_role, create_token
     from api.schemas import LoginRequest, TokenResponse
 
     @app.post("/api/auth/login", response_model=TokenResponse)
     def login(body: LoginRequest):
-        if not verify_password(body.password):
+        role = resolve_role(body.password)
+        if role is None:
             from fastapi import HTTPException
             raise HTTPException(401, "Invalid password")
-        return TokenResponse(token=create_token())
+        return TokenResponse(token=create_token(role), role=role)
 
     # ── Protected API routers ─────────────────────────────────────────────
     from api.routes.clubs import router as clubs_router

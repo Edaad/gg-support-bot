@@ -15,6 +15,7 @@ class LoginRequest(BaseModel):
 
 class TokenResponse(BaseModel):
     token: str
+    role: str = "admin"
 
 
 # ── Club ──────────────────────────────────────────────────────────────────────

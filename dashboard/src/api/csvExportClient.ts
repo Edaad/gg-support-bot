@@ -1,4 +1,5 @@
 import { apiUrl } from './apiBase'
+import { clearAuthSession } from '../lib/authStorage'
 
 function filenameFromContentDisposition(header: string | null, fallback: string): string {
   if (!header) return fallback
@@ -12,7 +13,7 @@ async function downloadCsv(path: string, token: string, fallbackFilename: string
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('token')
+    clearAuthSession()
     window.location.href = '/'
     throw new Error('Unauthorized')
   }

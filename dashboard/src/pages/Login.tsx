@@ -1,7 +1,12 @@
 import { useId, useState } from 'react'
 import { login } from '../api/client'
+import { normalizeRole, type DashboardRole } from '../lib/rbac'
 
-export default function Login({ onLogin }: { onLogin: (token: string) => void }) {
+export default function Login({
+  onLogin,
+}: {
+  onLogin: (token: string, role: DashboardRole) => void
+}) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -13,8 +18,8 @@ export default function Login({ onLogin }: { onLogin: (token: string) => void })
     setError('')
     setLoading(true)
     try {
-      const { token } = await login(password)
-      onLogin(token)
+      const { token, role } = await login(password)
+      onLogin(token, normalizeRole(role))
     } catch {
       setError('Invalid password')
     } finally {

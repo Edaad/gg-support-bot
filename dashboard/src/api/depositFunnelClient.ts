@@ -1,4 +1,5 @@
 import { apiUrl } from './apiBase'
+import { clearAuthSession } from '../lib/authStorage'
 
 const BASE = '/api/deposits/funnel'
 
@@ -12,7 +13,7 @@ async function request<T>(path: string, opts: RequestInit = {}, token?: string):
   const res = await fetch(apiUrl(`${BASE}${path}`), { ...opts, headers })
 
   if (res.status === 401) {
-    localStorage.removeItem('token')
+    clearAuthSession()
     window.location.href = '/'
     throw new Error('Unauthorized')
   }

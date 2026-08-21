@@ -1,6 +1,11 @@
 import { Link, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import ThemeToggle from './ThemeToggle'
+import {
+  canAccessPath,
+  homePathForRole,
+  type DashboardRole,
+} from '../lib/rbac'
 
 const NAV = [
   { to: '/clubs', label: 'Clubs' },
@@ -33,8 +38,17 @@ function navLinkClass(active: boolean): string {
   ].join(' ')
 }
 
-export default function Layout({ children, onLogout }: { children: ReactNode; onLogout: () => void }) {
+export default function Layout({
+  children,
+  role,
+  onLogout,
+}: {
+  children: ReactNode
+  role: DashboardRole
+  onLogout: () => void
+}) {
   const { pathname } = useLocation()
+  const navItems = NAV.filter((n) => canAccessPath(role, n.to))
 
   return (
     <div className="min-h-screen bg-bg text-ink">
@@ -49,7 +63,7 @@ export default function Layout({ children, onLogout }: { children: ReactNode; on
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="flex min-h-14 items-center justify-between gap-3 py-2">
             <Link
-              to="/clubs"
+              to={homePathForRole(role)}
               className={`shrink-0 text-lg font-bold tracking-tight text-ink transition hover:text-accent ${focusRing}`}
             >
               GG&nbsp;Dashboard
@@ -71,7 +85,7 @@ export default function Layout({ children, onLogout }: { children: ReactNode; on
             className="-mx-4 flex gap-1 overflow-x-auto border-t border-border px-4 py-2 sm:mx-0 sm:border-t-0 sm:px-0 sm:pb-3 sm:pt-0"
             aria-label="Main"
           >
-            {NAV.map((n) => {
+            {navItems.map((n) => {
               const active = isNavActive(pathname, n.to)
               return (
                 <Link

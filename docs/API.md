@@ -24,13 +24,15 @@ Base URL is the host where Uvicorn is bound (for example `http://localhost:8000`
 { "password": "string" }
 ```
 
-The password must match the `DASHBOARD_PASSWORD` environment variable (default in code: `changeme`).
+The password must match `DASHBOARD_PASSWORD` (role `admin`) or, if set, `DASHBOARD_AM_PASSWORD` (role `account_manager`). JWT signing always uses `DASHBOARD_PASSWORD`. Default admin password in code: `changeme`.
 
 **Response** `200` — body:
 
 ```json
-{ "token": "string" }
+{ "token": "string", "role": "admin" }
 ```
+
+`role` is `admin` or `account_manager`. The dashboard uses `role` for UI nav/route gating only; API routes still accept any valid JWT as full admin.
 
 JWT (`HS256`), expires after 24 hours. Implementation: [`api/auth.py`](../api/auth.py).
 
@@ -699,9 +701,10 @@ Types are defined in [`api/schemas.py`](../api/schemas.py). Decimal fields seria
 
 ### TokenResponse
 
-| Field | Type |
-|-------|------|
-| `token` | string |
+| Field | Type | Notes |
+|-------|------|--------|
+| `token` | string | |
+| `role` | string | `admin` or `account_manager` (default `admin`) |
 
 ### ClubCreate
 
@@ -895,7 +898,8 @@ Partial update; all fields optional.
 | Variable | Used by API |
 |----------|-------------|
 | `DATABASE_URL` | Required — SQLAlchemy URL |
-| `DASHBOARD_PASSWORD` | JWT signing and login password |
+| `DASHBOARD_PASSWORD` | JWT signing and admin login password |
+| `DASHBOARD_AM_PASSWORD` | Optional account-manager login password |
 | `TELEGRAM_BOT_TOKEN` | Required for **broadcast** sends |
 
 ---

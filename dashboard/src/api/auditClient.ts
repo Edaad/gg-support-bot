@@ -1,4 +1,5 @@
 import { apiUrl } from './apiBase'
+import { clearAuthSession } from '../lib/authStorage'
 import { syncWeeklyPlayerNicknames } from './client'
 import { downloadAuditExport as downloadPaymentsAuditExport } from './paymentsClient'
 import { processWeekSync } from './weeklyStats'
@@ -219,7 +220,7 @@ export async function uploadTradeRecord(
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('token')
+    clearAuthSession()
     window.location.href = '/'
     throw new Error('Unauthorized')
   }
@@ -248,7 +249,7 @@ export async function uploadAllTradeRecords(
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('token')
+    clearAuthSession()
     window.location.href = '/'
     throw new Error('Unauthorized')
   }
@@ -272,7 +273,7 @@ export async function listTradeRecordUploads(
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('token')
+    clearAuthSession()
     window.location.href = '/'
     throw new Error('Unauthorized')
   }
@@ -296,7 +297,7 @@ export async function syncEarlyRakeback(
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('token')
+    clearAuthSession()
     window.location.href = '/'
     throw new Error('Unauthorized')
   }
@@ -320,7 +321,7 @@ export async function listEarlyRakebackSnapshots(
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('token')
+    clearAuthSession()
     window.location.href = '/'
     throw new Error('Unauthorized')
   }
@@ -346,7 +347,7 @@ export async function reconcileAudit(
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('token')
+    clearAuthSession()
     window.location.href = '/'
     throw new Error('Unauthorized')
   }
@@ -377,7 +378,7 @@ export async function getReconcileReport(
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('token')
+    clearAuthSession()
     window.location.href = '/'
     throw new Error('Unauthorized')
   }
@@ -405,7 +406,7 @@ export async function listReconcileRuns(
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('token')
+    clearAuthSession()
     window.location.href = '/'
     throw new Error('Unauthorized')
   }
@@ -430,7 +431,7 @@ export async function downloadReconcileExport(
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('token')
+    clearAuthSession()
     window.location.href = '/'
     throw new Error('Unauthorized')
   }
@@ -461,7 +462,7 @@ export async function downloadReconcileExportAll(
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('token')
+    clearAuthSession()
     window.location.href = '/'
     throw new Error('Unauthorized')
   }

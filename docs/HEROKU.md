@@ -21,7 +21,7 @@ The **Python buildpack** still runs `pip install -r requirements.txt`. At runtim
 
    [`app.json`](../app.json) documents the recommended order for apps created from it; **existing** apps do not pick up `app.json` automatically — use the CLI or **Dashboard → Settings → Buildpacks**.
 
-2. **Config vars**: set `DATABASE_URL`, `DASHBOARD_PASSWORD`, `TELEGRAM_BOT_TOKEN`, etc., as you already do.
+2. **Config vars**: set `DATABASE_URL`, `DASHBOARD_PASSWORD`, optional `DASHBOARD_AM_PASSWORD` (account-manager UI), `TELEGRAM_BOT_TOKEN`, etc., as you already do.
 
    For **test payment** group confirmations (`test: true` on Zapier ingest), also set `TELEGRAM_TEST_BOT_TOKEN` on the **web** dyno (same value as local `run_test_bot.py`). Without it, only the production support bot is tried and test groups get `Chat not found`.
 
