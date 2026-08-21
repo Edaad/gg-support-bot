@@ -108,6 +108,7 @@ MATCHING_HEADERS = [
 
 UNRESOLVED_HEADERS = [
     "Source",
+    "Variant",
     "Amount",
     "Name / player",
     "Group",
@@ -187,7 +188,7 @@ NET_LEDGER_WIDTHS = [16, 22, 18, 14, 18, 40]
 DEPOSIT_WIDTHS = [16, 22, 14, 40, 18, 28]
 # Trade Time / Match Time widened so headers are not truncated.
 MATCHING_WIDTHS = [18, 18, 12, 16, 22, 14, 22, 18, 10, 22, 3, 12, 18, 10, 14]
-UNRESOLVED_WIDTHS = [16, 12, 28, 40, 16, 24]
+UNRESOLVED_WIDTHS = [18, 22, 12, 28, 40, 16, 24]
 
 # Matching sheet: left table cols 1–10; spacer 11; Vaughn tally starts at 12.
 _MATCHING_TALLY_START_COL = 12
@@ -386,25 +387,45 @@ def _write_unresolved_sheet(
     *,
     table_suffix: str = "all",
 ) -> None:
-    """rows: (ledger_line, club_slug, club_name)."""
+    """rows: (ledger_line, club_slug, club_name).
+
+    Source uses Matching-style mapping (e.g. RT Zelle / GTO Zelle); Variant is
+    the payment tag (recipient / handle) when present.
+    """
     header_row = 1
     _style_header_row(ws, header_row, UNRESOLVED_HEADERS)
     row_idx = header_row + 1
+    amount_col = 3
     for line, club_slug, club_name in rows:
-        ws.cell(row=row_idx, column=1, value=line.source_label)
-        amount_cell = ws.cell(
+        label_slug = (line.club_slug or club_slug or "").strip() or club_slug
+        ws.cell(
+            row=row_idx,
+            column=1,
+            value=matching_source_label(
+                source=line.source,
+                variant=line.variant,
+                club_slug=label_slug,
+                source_label=line.source_label,
+            ),
+        )
+        ws.cell(
             row=row_idx,
             column=2,
+            value=(line.variant or "").strip() or None,
+        )
+        amount_cell = ws.cell(
+            row=row_idx,
+            column=amount_col,
             value=_decimal_cell(abs(line.amount_signed)),
         )
         amount_cell.number_format = "0.##"
         amount_cell.alignment = Alignment(horizontal="right")
-        ws.cell(row=row_idx, column=3, value=_unresolved_player_name(line))
-        ws.cell(row=row_idx, column=4, value=(line.detail or "").strip())
-        ws.cell(row=row_idx, column=5, value=(club_name or "").strip())
+        ws.cell(row=row_idx, column=4, value=_unresolved_player_name(line))
+        ws.cell(row=row_idx, column=5, value=(line.detail or "").strip())
+        ws.cell(row=row_idx, column=6, value=(club_name or "").strip())
         ws.cell(
             row=row_idx,
-            column=6,
+            column=7,
             value=_format_unresolved_time(club_slug, line.occurred_at_utc),
         )
         row_idx += 1
@@ -418,7 +439,7 @@ def _write_unresolved_sheet(
         num_cols=len(UNRESOLVED_HEADERS),
     )
     for row in range(header_row + 1, last_data_row + 1):
-        ws.cell(row=row, column=2).alignment = Alignment(horizontal="right")
+        ws.cell(row=row, column=amount_col).alignment = Alignment(horizontal="right")
 
 
 def _add_matching_source_variant_dropdowns(

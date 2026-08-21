@@ -383,33 +383,58 @@ class ReconcileExportTestCase(unittest.TestCase):
                 LedgerLine(
                     gg_player_id="3333-4444",
                     member_nickname="LeftOver",
-                    source="deposit_stripe",
-                    source_label="Stripe",
+                    source="deposit_zelle",
+                    source_label="Zelle",
                     amount_signed=Decimal("-22"),
                     occurred_at_utc=occurred,
-                    external_id="deposit_stripe:9",
+                    external_id="deposit_zelle:9",
                     display_name="Charlie Kim",
+                    variant="rt-zelle-inbox@example.com",
                     detail="GTO / 3333-4444 / Charlie Kim",
+                ),
+                LedgerLine(
+                    gg_player_id="5555-6666",
+                    member_nickname="GtoOnly",
+                    source="deposit_stripe",
+                    source_label="Stripe",
+                    amount_signed=Decimal("-15"),
+                    occurred_at_utc=occurred,
+                    external_id="deposit_stripe:2",
+                    display_name="Gto Only",
+                    detail="GTO / 5555-6666 / Gto Only",
                 ),
             ],
         )
         wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
         unresolved = wb["Unresolved"]
         self.assertEqual(
-            [unresolved.cell(row=1, column=c).value for c in range(1, 7)],
+            [unresolved.cell(row=1, column=c).value for c in range(1, 8)],
             UNRESOLVED_HEADERS,
         )
-        self.assertEqual(unresolved.cell(row=2, column=1).value, "Stripe")
-        self.assertEqual(unresolved.cell(row=2, column=2).value, 22.0)
-        self.assertEqual(unresolved.cell(row=2, column=3).value, "Charlie Kim")
+        # Unmatched ledger order follows match leftover order (stripe after zelle leftover
+        # depends on match algorithm — assert by Source+Variant content).
+        rows = [
+            (
+                unresolved.cell(row=r, column=1).value,
+                unresolved.cell(row=r, column=2).value,
+                unresolved.cell(row=r, column=3).value,
+                unresolved.cell(row=r, column=4).value,
+                unresolved.cell(row=r, column=6).value,
+            )
+            for r in range(2, 4)
+        ]
         self.assertEqual(
-            unresolved.cell(row=2, column=4).value,
-            "GTO / 3333-4444 / Charlie Kim",
+            set(rows),
+            {
+                ("RT Zelle", "rt-zelle-inbox@example.com", 22.0, "Charlie Kim", "ClubGTO"),
+                ("GTO Stripe", None, 15.0, "Gto Only", "ClubGTO"),
+            },
         )
-        self.assertEqual(unresolved.cell(row=2, column=5).value, "ClubGTO")
-        self.assertTrue(str(unresolved.cell(row=2, column=6).value).endswith("AM") or
-                        str(unresolved.cell(row=2, column=6).value).endswith("PM"))
-        self.assertIsNone(unresolved.cell(row=3, column=1).value)
+        self.assertTrue(
+            str(unresolved.cell(row=2, column=7).value).endswith("AM")
+            or str(unresolved.cell(row=2, column=7).value).endswith("PM")
+        )
+        self.assertIsNone(unresolved.cell(row=4, column=1).value)
         self.assertIn("Unresolved_clubgto", unresolved.tables)
 
     def test_cashout_method_label_matching_and_unresolved(self):
@@ -521,7 +546,7 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(list(wb["Creator Club"].tables), [])
         unresolved = wb["Unresolved"]
         self.assertEqual(
-            [unresolved.cell(row=1, column=c).value for c in range(1, 7)],
+            [unresolved.cell(row=1, column=c).value for c in range(1, 8)],
             UNRESOLVED_HEADERS,
         )
         self.assertIn("Unresolved_all", unresolved.tables)
@@ -604,9 +629,9 @@ class ReconcileExportTestCase(unittest.TestCase):
 
         unresolved = wb["Unresolved"]
         # Only the unmatched AT Venmo orphan (matched deposits consumed).
-        self.assertEqual(unresolved.cell(row=2, column=3).value, "Orphan AT")
-        self.assertEqual(unresolved.cell(row=2, column=5).value, "Aces Table")
-        self.assertIsNone(unresolved.cell(row=3, column=3).value)
+        self.assertEqual(unresolved.cell(row=2, column=4).value, "Orphan AT")
+        self.assertEqual(unresolved.cell(row=2, column=6).value, "Aces Table")
+        self.assertIsNone(unresolved.cell(row=3, column=4).value)
 
     def test_all_clubs_unresolved_sorts_mixed_naive_aware_times(self):
         """Regression: export-all 500'd on naive vs aware occurred_at compare."""
@@ -649,9 +674,9 @@ class ReconcileExportTestCase(unittest.TestCase):
         # Must not raise TypeError on sort.
         wb = load_workbook(io.BytesIO(build_all_clubs_matching_workbook(reports)))
         unresolved = wb["Unresolved"]
-        self.assertEqual(unresolved.cell(row=2, column=3).value, "Aware")
-        self.assertEqual(unresolved.cell(row=3, column=3).value, "Naive")
-        self.assertEqual(unresolved.cell(row=3, column=5).value, "Round Table")
+        self.assertEqual(unresolved.cell(row=2, column=4).value, "Aware")
+        self.assertEqual(unresolved.cell(row=3, column=4).value, "Naive")
+        self.assertEqual(unresolved.cell(row=3, column=6).value, "Round Table")
 
     def test_matching_chip_transfer_player_and_unresolved_ledger_only(self):
         occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
@@ -709,7 +734,7 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertNotIn("Chip Transfer (RT↔AT)", hidden_headers)
         self.assertIn("Chip Transfer (AT↔CC)", hidden_headers)
         unresolved = wb["Unresolved"]
-        self.assertEqual(unresolved.cell(row=2, column=3).value, "Orphan")
+        self.assertEqual(unresolved.cell(row=2, column=4).value, "Orphan")
         self.assertIsNone(unresolved.cell(row=3, column=1).value)
 
     def test_all_clubs_chip_transfer_rt_at_split_sheets(self):
