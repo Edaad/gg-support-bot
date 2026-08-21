@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional, List
 
@@ -570,6 +570,41 @@ class BonusRecordUpdate(BaseModel):
     amount: Optional[Decimal] = None
     bonus_type_id: Optional[int] = None
     custom_description: Optional[str] = None
+
+
+# ── Expenses (admin ledger) ───────────────────────────────────────────────────
+
+class ExpenseCreate(BaseModel):
+    amount: Decimal
+    expense_type: str
+    description: Optional[str] = None
+    club_id: int
+    expense_date: date
+    pending: bool = True
+
+
+class ExpenseUpdate(BaseModel):
+    amount: Optional[Decimal] = None
+    expense_type: Optional[str] = None
+    description: Optional[str] = None
+    club_id: Optional[int] = None
+    expense_date: Optional[date] = None
+    pending: Optional[bool] = None
+
+
+class ExpenseRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    amount: Decimal
+    expense_type: str
+    description: Optional[str] = None
+    club_id: int
+    club_name: Optional[str] = None
+    expense_date: date
+    pending: bool
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 # ── Staff cashout records ─────────────────────────────────────────────────────

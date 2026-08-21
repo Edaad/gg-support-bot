@@ -430,6 +430,7 @@ heroku run -a YOUR_APP -- python migrate_bonus_records.py
 heroku run -a YOUR_APP -- python migrate_bonus_drafts.py
 heroku run -a YOUR_APP -- python migrate_bonus_records_player_details.py
 heroku run -a YOUR_APP -- python migrate_bonus_records_dashboard.py
+heroku run -a YOUR_APP -- python migrate_expenses.py
 # optional: backfill completed cashier jobs into staff_cashout_records
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py --apply
@@ -437,6 +438,7 @@ heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py --app
 
 Dashboard **Cashout records** and **Bonuses** pages include CSV export (inclusive ET date range on `created_at`). JWT API: `GET /api/cashout-records/export?from=…&to=…` and `GET /api/bonus/records/export?from=…&to=…`.
 
+Dashboard **Expenses** (admin only) uses `expenses` and XLSX export: `GET /api/expenses/export?from=…&to=…` (plus optional `club_id`, `pending`, `q`).
 Set app-wide (worker + notification dynos). Restart after deploy: `heroku restart worker notification -a YOUR_APP`
 
 ## Payment binding audit log

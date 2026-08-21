@@ -626,6 +626,35 @@ class BonusRecord(Base):
     player_details = relationship("PlayerDetails")
 
 
+class Expense(Base):
+    """Admin-only expense ledger rows (dashboard Expenses page)."""
+
+    __tablename__ = "expenses"
+    __table_args__ = (
+        Index("ix_expenses_expense_date", "expense_date"),
+        Index("ix_expenses_club_id", "club_id"),
+        Index("ix_expenses_pending", "pending"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    amount = Column(Numeric(12, 2), nullable=False)
+    expense_type = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="RESTRICT"), nullable=False
+    )
+    expense_date = Column(Date, nullable=False)
+    pending = Column(Boolean, nullable=False, server_default=text("true"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    club = relationship("Club")
+
+
 class BonusDraft(Base):
     """Pending bonus recording started from a support group /add with a bonus amount."""
 

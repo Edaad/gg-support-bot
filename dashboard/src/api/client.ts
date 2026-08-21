@@ -230,6 +230,96 @@ export const updateBonusRecord = (
 export const deleteBonusRecord = (token: string, id: number) =>
   request<void>(`/bonus/records/${id}`, { method: 'DELETE' }, token)
 
+// Expenses (admin only)
+export type ExpenseListOpts = {
+  clubId?: number
+  pending?: boolean
+  q?: string
+  from?: string
+  to?: string
+}
+
+function expenseQueryParams(opts?: ExpenseListOpts): string {
+  const params = new URLSearchParams()
+  if (opts?.clubId != null) params.set('club_id', String(opts.clubId))
+  if (opts?.pending != null) params.set('pending', opts.pending ? 'true' : 'false')
+  if (opts?.q) params.set('q', opts.q)
+  if (opts?.from) params.set('from', opts.from)
+  if (opts?.to) params.set('to', opts.to)
+  return params.toString()
+}
+
+export const listExpenses = (token: string, opts?: ExpenseListOpts) => {
+  const qs = expenseQueryParams(opts)
+  return request<ExpenseT[]>(`/expenses${qs ? `?${qs}` : ''}`, {}, token)
+}
+
+export const createExpense = (
+  token: string,
+  data: {
+    amount: number
+    expense_type: string
+    description?: string | null
+    club_id: number
+    expense_date: string
+    pending?: boolean
+  },
+) => request<ExpenseT>('/expenses', { method: 'POST', body: JSON.stringify(data) }, token)
+
+export const updateExpense = (
+  token: string,
+  id: number,
+  data: Partial<{
+    amount: number
+    expense_type: string
+    description: string | null
+    club_id: number
+    expense_date: string
+    pending: boolean
+  }>,
+) => request<ExpenseT>(`/expenses/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token)
+
+export const deleteExpense = (token: string, id: number) =>
+  request<void>(`/expenses/${id}`, { method: 'DELETE' }, token)
+
+export async function downloadExpensesXlsx(token: string, opts?: ExpenseListOpts): Promise<void> {
+  const qs = expenseQueryParams(opts)
+  const res = await fetch(apiUrl(`/api/expenses/export${qs ? `?${qs}` : ''}`), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (res.status === 401) {
+    clearAuthSession()
+    window.location.href = '/'
+    throw new Error('Unauthorized')
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: unknown }
+    let msg: string | undefined
+    const d = body.detail
+    if (typeof d === 'string') msg = d
+    else if (Array.isArray(d))
+      msg = d
+        .map((x) =>
+          typeof x === 'object' && x != null && 'msg' in x
+            ? String((x as { msg: unknown }).msg)
+            : String(x),
+        )
+        .join('; ')
+    else if (d != null) msg = String(d)
+    throw new Error(msg || `HTTP ${res.status}`)
+  }
+  const blob = await res.blob()
+  const cd = res.headers.get('Content-Disposition')
+  const match = cd ? /filename="([^"]+)"/.exec(cd) : null
+  const filename = match?.[1] ?? `expenses-${opts?.from ?? 'all'}-to-${opts?.to ?? 'all'}.xlsx`
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 // Staff cashout records
 export interface StaffCashoutPaymentT {
   id: number
@@ -565,4 +655,17 @@ export interface BonusRecordT {
   admin_telegram_user_id: number | null
   created_at: string | null
   player_resolved: boolean
+}
+
+export interface ExpenseT {
+  id: number
+  amount: number
+  expense_type: string
+  description: string | null
+  club_id: number
+  club_name: string | null
+  expense_date: string
+  pending: boolean
+  created_at: string | null
+  updated_at: string | null
 }

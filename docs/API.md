@@ -32,7 +32,7 @@ The password must match `DASHBOARD_PASSWORD` (role `admin`) or, if set, `DASHBOA
 { "token": "string", "role": "admin" }
 ```
 
-`role` is `admin` or `account_manager`. The dashboard uses `role` for UI nav/route gating only; API routes still accept any valid JWT as full admin.
+`role` is `admin` or `account_manager`. Most API routes accept any valid JWT. **Expenses** (`/api/expenses*`) requires `role=admin` (403 for account managers).
 
 JWT (`HS256`), expires after 24 hours. Implementation: [`api/auth.py`](../api/auth.py).
 
@@ -46,6 +46,28 @@ Content-Type: application/json
 ```
 
 Missing or invalid token → **401** (`Invalid token`, `Token expired`, etc.).
+
+---
+
+## Expenses (admin only)
+
+Prefix: `/api/expenses` — requires Bearer JWT with `role=admin`.
+
+| | |
+|---|---|
+| **GET** | `/api/expenses` |
+| **POST** | `/api/expenses` |
+| **PATCH** | `/api/expenses/{id}` |
+| **DELETE** | `/api/expenses/{id}` |
+| **GET** | `/api/expenses/export` |
+
+**List / export query params:** `club_id`, `pending` (bool), `q` (search type/description/club name), `from`, `to` (inclusive `expense_date` calendar dates).
+
+**Create body:** `amount` (decimal > 0), `expense_type` (string), `description` (optional), `club_id` (required), `expense_date` (`YYYY-MM-DD`), `pending` (default `true`).
+
+Export returns an XLSX attachment with the same filters applied.
+
+Migration: `DATABASE_URL=… python migrate_expenses.py` (or `heroku run … python migrate_expenses.py`).
 
 ---
 

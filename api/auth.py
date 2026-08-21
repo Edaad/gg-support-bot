@@ -58,3 +58,10 @@ def get_current_admin(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
+
+
+def require_admin(role: str = Depends(get_current_admin)) -> str:
+    """Reject non-admin dashboard roles (e.g. account_manager)."""
+    if role != ROLE_ADMIN:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin only")
+    return role
