@@ -12,7 +12,9 @@ from api.audit_reconcile_matching import (
     CHIP_TRANSFER_AT_CC_LABEL,
     CHIP_TRANSFER_PLAYER_LABEL,
     CHIP_TRANSFER_RT_AT_LABEL,
+    apply_cc_at_aces_ledger_fallback,
     apply_chip_transfer_matches,
+    is_cc_at_group_title,
     match_trade_lines_to_ledger,
     round_whole_usd,
 )
@@ -50,6 +52,7 @@ def _ledger(
     external_id: str = "deposit_stripe:1",
     display_name: str | None = None,
     variant: str | None = None,
+    detail: str | None = None,
 ) -> LedgerLine:
     return LedgerLine(
         gg_player_id=gg_id,
@@ -61,6 +64,7 @@ def _ledger(
         external_id=external_id,
         display_name=display_name,
         variant=variant,
+        detail=detail,
     )
 
 
@@ -737,6 +741,133 @@ class ChipTransferMatchTestCase(unittest.TestCase):
         rows = _with_transfers([add, claim], [])
         self.assertEqual(rows[0].match_source, "")
         self.assertEqual(rows[1].match_source, "")
+
+
+class CcAtAcesLedgerFallbackTestCase(unittest.TestCase):
+    def setUp(self):
+        self.t0 = datetime(2026, 7, 3, 6, 30, tzinfo=timezone.utc)
+
+    def test_is_cc_at_group_title(self):
+        self.assertTrue(is_cc_at_group_title("CC AT / 8879-5560 / V"))
+        self.assertTrue(is_cc_at_group_title("AT CC / 8879-5560 / V"))
+        self.assertFalse(is_cc_at_group_title("CC / 8879-5560 / V"))
+        self.assertFalse(is_cc_at_group_title("RT AT / 8879-5560 / V"))
+        self.assertFalse(is_cc_at_group_title(None))
+
+    def test_aces_trade_matches_cc_at_creator_club_ledger(self):
+        at = _trade(
+            line_id=1,
+            amount="-50",
+            gg_id="8879-5560",
+            nick="V",
+            occurred=self.t0,
+            club="aces-table",
+        )
+        unmatched = match_trade_lines_to_ledger(
+            [at],
+            [],
+            club_slug="round-table",
+        ).rows
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-50",
+            gg_id="8879-5560",
+            nick="V",
+            display_name="V",
+            detail="CC AT / 8879-5560 / V",
+        )
+        rows, remaining = apply_cc_at_aces_ledger_fallback(unmatched, [ledger])
+        self.assertEqual(len(remaining), 0)
+        self.assertEqual(rows[0].match_source, "Stripe")
+        self.assertEqual(rows[0].match_name, "V")
+        self.assertEqual(rows[0].match_amount, Decimal("50"))
+        self.assertEqual(rows[0].trade.trade_club_slug, "aces-table")
+
+    def test_cc_only_title_not_eligible(self):
+        at = _trade(
+            line_id=1,
+            amount="-50",
+            gg_id="8879-5560",
+            occurred=self.t0,
+            club="aces-table",
+        )
+        unmatched = match_trade_lines_to_ledger(
+            [at], [], club_slug="round-table"
+        ).rows
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-50",
+            gg_id="8879-5560",
+            detail="CC / 8879-5560 / V",
+        )
+        rows, remaining = apply_cc_at_aces_ledger_fallback(unmatched, [ledger])
+        self.assertEqual(len(remaining), 1)
+        self.assertEqual(rows[0].match_source, "")
+
+    def test_already_matched_aces_trade_skipped(self):
+        at = _trade(
+            line_id=1,
+            amount="-50",
+            gg_id="8879-5560",
+            occurred=self.t0,
+            club="aces-table",
+        )
+        at_ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-50",
+            gg_id="8879-5560",
+            source_label="Zelle",
+            external_id="deposit_zelle:1",
+            display_name="AtPay",
+        )
+        matched = match_trade_lines_to_ledger(
+            [at], [at_ledger], club_slug="aces-table"
+        ).rows
+        cc_ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-50",
+            gg_id="8879-5560",
+            detail="CC AT / 8879-5560 / V",
+            external_id="deposit_stripe:cc",
+        )
+        rows, remaining = apply_cc_at_aces_ledger_fallback(matched, [cc_ledger])
+        self.assertEqual(rows[0].match_source, "Zelle")
+        self.assertEqual(len(remaining), 1)
+
+    def test_fallback_beats_at_cc_chip_transfer(self):
+        at = _trade(
+            line_id=1,
+            amount="-80",
+            gg_id="8879-5560",
+            nick="V",
+            occurred=self.t0,
+            club="aces-table",
+        )
+        cc_trade = _trade(
+            line_id=2,
+            amount="80",
+            gg_id="8879-5560",
+            nick="V",
+            occurred=self.t0,
+            club="creator-club",
+        )
+        unmatched = match_trade_lines_to_ledger(
+            [at, cc_trade], [], club_slug="round-table"
+        ).rows
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-80",
+            gg_id="8879-5560",
+            nick="V",
+            display_name="V",
+            detail="CC AT / 8879-5560 / V",
+        )
+        rows, remaining = apply_cc_at_aces_ledger_fallback(unmatched, [ledger])
+        rows = apply_chip_transfer_matches(rows)
+        by_id = {row.trade.line_id: row for row in rows}
+        self.assertEqual(len(remaining), 0)
+        self.assertEqual(by_id[1].match_source, "Stripe")
+        self.assertEqual(by_id[2].match_source, "")
 
 
 if __name__ == "__main__":

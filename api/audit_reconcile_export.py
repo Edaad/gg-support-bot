@@ -28,6 +28,7 @@ from api.audit_reconcile_matching import (
     MatchedTradeRow,
     TradeLedgerMatchResult,
     _sort_key_occurred_at,
+    apply_cc_at_aces_ledger_fallback,
     apply_chip_transfer_matches,
     match_trade_lines_to_ledger,
 )
@@ -1228,9 +1229,10 @@ def build_all_clubs_matching_workbook(
 ) -> bytes:
     """Matching sheets per club + shared Unresolved tab.
 
-    Round Table + Aces share one composite ledger match, then all clubs'
-    leftover trades are paired together (player, RT↔AT, AT↔CC) and split
-    back onto sheets by trade upload slug.
+    Round Table + Aces share one composite ledger match. Unmatched Aces trades
+    may then match Creator Club ledger lines whose group title is CC AT. Then
+    leftover trades are paired together (player, RT↔AT, AT↔CC) and split back
+    onto sheets by trade upload slug.
     """
     wb = Workbook()
     unresolved_rows: list[tuple[LedgerLine, str, str]] = []
@@ -1253,6 +1255,10 @@ def build_all_clubs_matching_workbook(
         other_matches[slug] = result
         all_rows.extend(result.rows)
 
+    all_rows, cc_unmatched_ledger = apply_cc_at_aces_ledger_fallback(
+        all_rows,
+        other_matches["creator-club"].unmatched_ledger,
+    )
     partitioned = _partition_matching_rows(apply_chip_transfer_matches(all_rows))
 
     first = True
@@ -1285,10 +1291,12 @@ def build_all_clubs_matching_workbook(
         unresolved_rows.append(
             (line, line_slug, MATCHING_CLUB_DISPLAY[line_slug])
         )
-    for slug in ("clubgto", "creator-club"):
-        report = reports_by_slug[slug]
-        for line in other_matches[slug].unmatched_ledger:
-            unresolved_rows.append((line, report.club_slug, report.club_name))
+    for line in other_matches["clubgto"].unmatched_ledger:
+        report = reports_by_slug["clubgto"]
+        unresolved_rows.append((line, report.club_slug, report.club_name))
+    cc_report = reports_by_slug["creator-club"]
+    for line in cc_unmatched_ledger:
+        unresolved_rows.append((line, cc_report.club_slug, cc_report.club_name))
 
     unresolved_rows.sort(
         key=lambda item: (

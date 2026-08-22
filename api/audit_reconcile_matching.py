@@ -10,6 +10,7 @@ from api.audit_ledger import LedgerLine
 from api.audit_reconcile import TradeLineForMatch
 from api.club_audit_timezone import zone_for_payment_display
 from api.vaughn_methods import is_vaughn_method, matching_source_label
+from bot.services.player_details import parse_group_title_parts
 
 MATCH_WINDOW = timedelta(minutes=15)
 CHIP_TRANSFER_WINDOW = timedelta(minutes=10)
@@ -261,6 +262,83 @@ def _pair_leftovers(
             name_i=name_for(rows[i].trade, rows[best_j].trade),
             name_j=name_for(rows[best_j].trade, rows[i].trade),
         )
+
+
+def is_cc_at_group_title(title: str | None) -> bool:
+    """True when a support group title carries both CC and AT tokens."""
+    parsed = parse_group_title_parts(title)
+    if not parsed:
+        return False
+    return "CC" in parsed.shorthands and "AT" in parsed.shorthands
+
+
+def apply_cc_at_aces_ledger_fallback(
+    rows: list[MatchedTradeRow],
+    cc_unmatched_ledger: list[LedgerLine],
+) -> tuple[list[MatchedTradeRow], list[LedgerLine]]:
+    """Match leftover Aces trades to unmatched Creator Club ledger for CC AT titles.
+
+    Used only in all-clubs Matching, after per-club trade↔ledger matching and
+    before chip-transfer pairing. Matched rows stay on the Aces sheet (trade
+    upload slug). Returns updated rows and remaining unmatched CC ledger lines.
+    """
+    out = list(rows)
+    eligible = [
+        (idx, line)
+        for idx, line in enumerate(cc_unmatched_ledger)
+        if is_cc_at_group_title(line.detail)
+    ]
+    if not eligible:
+        return out, list(cc_unmatched_ledger)
+
+    used_ledger: set[int] = set()
+    at_indices = [
+        i
+        for i, row in enumerate(out)
+        if _is_unmatched_row(row) and _trade_slug(row.trade) == _AT_SLUG
+    ]
+    at_indices.sort(key=lambda i: _sort_key_occurred_at(out[i].trade.occurred_at))
+
+    for i in at_indices:
+        trade = out[i].trade
+        best_idx: int | None = None
+        best_score: tuple[int, Decimal, timedelta] | None = None
+        for ledger_idx, ledger in eligible:
+            if ledger_idx in used_ledger:
+                continue
+            score = _candidate_score(trade, ledger)
+            if score is None:
+                continue
+            if best_score is None or score < best_score:
+                best_score = score
+                best_idx = ledger_idx
+        if best_idx is None:
+            continue
+        used_ledger.add(best_idx)
+        ledger = cc_unmatched_ledger[best_idx]
+        name, source, time_label, dollars = _match_fields(_CC_SLUG, ledger)
+        variant = (ledger.variant or "").strip()
+        out[i] = replace(
+            out[i],
+            match_name=name,
+            match_source=source,
+            match_time=time_label,
+            match_amount=dollars,
+            variant=variant,
+            vaughn_method=is_vaughn_method(
+                source=ledger.source,
+                variant=variant,
+                club_slug=_CC_SLUG,
+            ),
+            match_occurred_at=ledger.occurred_at_utc,
+        )
+
+    remaining = [
+        line
+        for idx, line in enumerate(cc_unmatched_ledger)
+        if idx not in used_ledger
+    ]
+    return out, remaining
 
 
 def apply_chip_transfer_matches(

@@ -829,6 +829,50 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertIn("Chip Transfer (AT↔CC)", cc_hidden)
         self.assertNotIn("Chip Transfer (RT↔AT)", cc_hidden)
 
+    def test_all_clubs_cc_at_aces_fallback_matches_creator_club_payment(self):
+        occurred = datetime(2026, 7, 3, 15, 0, tzinfo=timezone.utc)
+        rt_report = _empty_report(club_slug="round-table", club_name="Round Table")
+        rt_report.trade_lines = [
+            TradeLineForMatch(
+                line_id=1,
+                occurred_at=occurred,
+                amount=Decimal("-50"),
+                member_gg_player_id="8879-5560",
+                member_nickname="V",
+                sheet_row=1,
+                trade_club_slug="aces-table",
+            ),
+        ]
+        cc_report = _empty_report(
+            club_slug="creator-club", club_name="Creator Club"
+        )
+        cc_report.ledger_lines = [
+            LedgerLine(
+                gg_player_id="8879-5560",
+                member_nickname="V",
+                source="deposit_stripe",
+                source_label="Stripe",
+                amount_signed=Decimal("-50"),
+                occurred_at_utc=occurred,
+                external_id="deposit_stripe:1",
+                display_name="V",
+                detail="CC AT / 8879-5560 / V",
+                club_slug="creator-club",
+            ),
+        ]
+        reports = {
+            "round-table": rt_report,
+            "clubgto": _empty_report(club_slug="clubgto", club_name="ClubGTO"),
+            "creator-club": cc_report,
+        }
+        wb = load_workbook(io.BytesIO(build_all_clubs_matching_workbook(reports)))
+        at_sheet = wb["Aces Table"]
+        self.assertEqual(at_sheet.cell(row=2, column=6).value, "Stripe")
+        self.assertEqual(at_sheet.cell(row=2, column=7).value, "V")
+        self.assertEqual(at_sheet.cell(row=2, column=9).value, 50.0)
+        unresolved = wb["Unresolved"]
+        self.assertIsNone(unresolved.cell(row=2, column=1).value)
+
 
 if __name__ == "__main__":
     unittest.main()
