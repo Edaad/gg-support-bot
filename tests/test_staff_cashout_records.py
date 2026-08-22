@@ -575,6 +575,12 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             "cashier.services.complete.create_staff_cashout_record_from_job",
             return_value=99,
         ) as mock_create, patch(
+            "cashier.services.complete.apply_low_deposit_cashout_hold",
+            return_value=None,
+        ) as mock_hold, patch(
+            "cashier.services.complete.notify_slack_head_admin_escalation",
+            new=AsyncMock(return_value=True),
+        ) as mock_slack, patch(
             "cashier.services.complete.schedule_cash_flow_from_club",
         ), patch(
             "cashier.services.complete.record_activity_for_chat",
@@ -590,6 +596,238 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(ok)
             self.assertIsNone(err)
             mock_create.assert_called_once_with(job)
+            mock_hold.assert_called_once_with(99)
+            mock_slack.assert_not_called()
+
+    async def test_complete_notifies_slack_when_low_deposit_hold(self) -> None:
+        job = {
+            "id": 7,
+            "club_id": 2,
+            "chat_id": -100,
+            "group_title": "RT / 1-2 / X",
+            "amount": Decimal("50"),
+            "status": "in_progress",
+            "initiated_by": 1,
+            "trigger": "group_cash",
+            "method_display_name": "Venmo",
+            "payout_details": "@x",
+        }
+        hold = {
+            "record_id": 99,
+            "club_id": 2,
+            "chat_id": -100,
+            "group_title": "RT / 1-2 / X",
+            "gg_player_id": "1-2",
+            "amount": Decimal("50"),
+            "deposit_count": 0,
+            "reason": "no_deposits",
+        }
+        club = MagicMock()
+        club.name = "Round Table"
+        with patch(
+            "cashier.services.complete.get_job",
+            return_value=job,
+        ), patch(
+            "cashier.services.complete.fire_zapier_webhook",
+            new=AsyncMock(return_value=(True, None)),
+        ) as mock_zapier, patch(
+            "cashier.services.complete.create_staff_cashout_record_from_job",
+            return_value=99,
+        ), patch(
+            "cashier.services.complete.apply_low_deposit_cashout_hold",
+            return_value=hold,
+        ), patch(
+            "cashier.services.complete.notify_slack_head_admin_escalation",
+            new=AsyncMock(return_value=True),
+        ) as mock_slack, patch(
+            "cashier.services.complete.get_club_by_id",
+            return_value=club,
+        ), patch(
+            "cashier.services.complete.schedule_cash_flow_from_club",
+        ), patch(
+            "cashier.services.complete.record_activity_for_chat",
+        ), patch(
+            "cashier.services.complete.invalidate_pending_one_time_bypasses",
+        ), patch(
+            "cashier.services.complete.complete_job",
+            return_value=job,
+        ):
+            from cashier.services.complete import complete_cashout_job
+
+            ok, err = await complete_cashout_job(7)
+            self.assertTrue(ok)
+            self.assertIsNone(err)
+            mock_zapier.assert_awaited_once()
+            mock_slack.assert_awaited_once()
+            text = mock_slack.await_args.args[0]
+            self.assertIn("0 deposits", text)
+            self.assertIn("Round Table", text)
+            self.assertEqual(
+                mock_slack.await_args.kwargs.get("source"),
+                "low_deposit_cashout",
+            )
+
+
+class CountDepositsForChatTestCase(unittest.TestCase):
+    @patch("bot.services.club.get_db")
+    def test_counts_non_cancelled_deposits(self, mock_get_db: MagicMock) -> None:
+        session = MagicMock()
+        mock_get_db.return_value.__enter__.return_value = session
+        mock_get_db.return_value.__exit__.return_value = False
+        session.query.return_value.filter_by.return_value.filter.return_value.count.return_value = (
+            3
+        )
+
+        from bot.services.club import count_deposits_for_chat
+        from db.models import PlayerActivity
+
+        self.assertEqual(count_deposits_for_chat(-100), 3)
+        session.query.assert_called_once_with(PlayerActivity)
+        session.query.return_value.filter_by.assert_called_once_with(
+            chat_id=-100,
+            activity_type="deposit",
+        )
+
+
+class LowDepositCashoutHoldTestCase(unittest.TestCase):
+    def _session_cm(self, session: MagicMock) -> MagicMock:
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        return cm
+
+    def test_skip_when_no_chat_id(self) -> None:
+        record = MagicMock()
+        record.chat_id = None
+        record.do_not_send = False
+        session = MagicMock()
+        session.get.return_value = record
+
+        with patch(
+            "bot.services.staff_cashout_records.get_db",
+            return_value=self._session_cm(session),
+        ):
+            from bot.services.staff_cashout_records import apply_low_deposit_cashout_hold
+
+            self.assertIsNone(apply_low_deposit_cashout_hold(1))
+            self.assertFalse(record.do_not_send)
+
+    def test_skip_when_already_do_not_send(self) -> None:
+        record = MagicMock()
+        record.chat_id = -100
+        record.do_not_send = True
+        session = MagicMock()
+        session.get.return_value = record
+
+        with patch(
+            "bot.services.staff_cashout_records.get_db",
+            return_value=self._session_cm(session),
+        ), patch(
+            "bot.services.staff_cashout_records.count_deposits_for_chat",
+        ) as mock_count:
+            from bot.services.staff_cashout_records import apply_low_deposit_cashout_hold
+
+            self.assertIsNone(apply_low_deposit_cashout_hold(1))
+            mock_count.assert_not_called()
+
+    def test_no_hold_when_two_or_more_deposits(self) -> None:
+        record = MagicMock()
+        record.id = 5
+        record.chat_id = -100
+        record.do_not_send = False
+        session = MagicMock()
+        session.get.return_value = record
+
+        with patch(
+            "bot.services.staff_cashout_records.get_db",
+            return_value=self._session_cm(session),
+        ), patch(
+            "bot.services.staff_cashout_records.count_deposits_for_chat",
+            return_value=2,
+        ):
+            from bot.services.staff_cashout_records import apply_low_deposit_cashout_hold
+
+            self.assertIsNone(apply_low_deposit_cashout_hold(5))
+            self.assertFalse(record.do_not_send)
+
+    def test_parks_on_zero_deposits(self) -> None:
+        record = MagicMock()
+        record.id = 5
+        record.club_id = 2
+        record.chat_id = -100
+        record.group_title = "RT / 1 / X"
+        record.gg_player_id = "1"
+        record.amount = Decimal("75")
+        record.do_not_send = False
+        session = MagicMock()
+        session.get.return_value = record
+
+        with patch(
+            "bot.services.staff_cashout_records.get_db",
+            return_value=self._session_cm(session),
+        ), patch(
+            "bot.services.staff_cashout_records.count_deposits_for_chat",
+            return_value=0,
+        ):
+            from bot.services.staff_cashout_records import apply_low_deposit_cashout_hold
+
+            hold = apply_low_deposit_cashout_hold(5)
+        self.assertTrue(record.do_not_send)
+        self.assertEqual(hold["reason"], "no_deposits")
+        self.assertEqual(hold["deposit_count"], 0)
+        self.assertEqual(hold["record_id"], 5)
+
+    def test_parks_on_single_deposit(self) -> None:
+        record = MagicMock()
+        record.id = 6
+        record.club_id = 2
+        record.chat_id = -100
+        record.group_title = "RT / 1 / X"
+        record.gg_player_id = "1"
+        record.amount = Decimal("75")
+        record.do_not_send = False
+        session = MagicMock()
+        session.get.return_value = record
+
+        with patch(
+            "bot.services.staff_cashout_records.get_db",
+            return_value=self._session_cm(session),
+        ), patch(
+            "bot.services.staff_cashout_records.count_deposits_for_chat",
+            return_value=1,
+        ):
+            from bot.services.staff_cashout_records import apply_low_deposit_cashout_hold
+
+            hold = apply_low_deposit_cashout_hold(6)
+        self.assertTrue(record.do_not_send)
+        self.assertEqual(hold["reason"], "single_deposit")
+        self.assertEqual(hold["deposit_count"], 1)
+
+    def test_parks_on_count_exception(self) -> None:
+        record = MagicMock()
+        record.id = 7
+        record.club_id = 2
+        record.chat_id = -100
+        record.group_title = "RT / 1 / X"
+        record.gg_player_id = "1"
+        record.amount = Decimal("75")
+        record.do_not_send = False
+        session = MagicMock()
+        session.get.return_value = record
+
+        with patch(
+            "bot.services.staff_cashout_records.get_db",
+            return_value=self._session_cm(session),
+        ), patch(
+            "bot.services.staff_cashout_records.count_deposits_for_chat",
+            side_effect=RuntimeError("db down"),
+        ):
+            from bot.services.staff_cashout_records import apply_low_deposit_cashout_hold
+
+            hold = apply_low_deposit_cashout_hold(7)
+        self.assertTrue(record.do_not_send)
+        self.assertEqual(hold["reason"], "count_failed")
+        self.assertIsNone(hold["deposit_count"])
 
 
 if __name__ == "__main__":

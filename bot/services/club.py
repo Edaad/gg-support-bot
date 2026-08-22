@@ -679,6 +679,17 @@ def is_first_deposit(club_id: int, telegram_user_id: int) -> bool:
         return count == 0
 
 
+def count_deposits_for_chat(chat_id: int) -> int:
+    """Count completed (non-cancelled) deposits recorded for a support group."""
+    with get_db() as session:
+        return (
+            session.query(PlayerActivity)
+            .filter_by(chat_id=int(chat_id), activity_type="deposit")
+            .filter(PlayerActivity.cancelled == False)
+            .count()
+        )
+
+
 def get_first_deposit_settings(club_id: int) -> dict:
     """Return referral_enabled, first_deposit_bonus_enabled, and bonus pct for a club."""
     with get_db() as session:

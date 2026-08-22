@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 from sqlalchemy import or_
 
-from bot.services.club import get_method_by_id, get_sub_option_by_id
+from bot.services.club import count_deposits_for_chat, get_method_by_id, get_sub_option_by_id
 from bot.services.player_details import parse_tracking_title
 from db.connection import get_db
 from db.models import Club, StaffCashoutMoneySend, StaffCashoutPayment, StaffCashoutRecord
@@ -239,6 +239,60 @@ def create_staff_cashout_record_from_job(job: dict[str, Any]) -> Optional[int]:
             record.id,
         )
         return record.id
+
+
+def apply_low_deposit_cashout_hold(record_id: int) -> Optional[dict[str, Any]]:
+    """Park a cashout with do_not_send when the group has 0–1 completed deposits.
+
+    Returns a Slack payload only when newly parked. Skips missing chat_id and
+    records already marked do_not_send. Fail-closed on deposit-count errors.
+    """
+    with get_db() as session:
+        record = session.get(StaffCashoutRecord, int(record_id))
+        if not record:
+            return None
+        if record.chat_id is None:
+            return None
+        if bool(getattr(record, "do_not_send", False)):
+            return None
+
+        deposit_count: Optional[int]
+        reason: str
+        try:
+            deposit_count = count_deposits_for_chat(int(record.chat_id))
+        except Exception:
+            logger.exception(
+                "low_deposit_hold: count failed record_id=%s chat_id=%s",
+                record_id,
+                record.chat_id,
+            )
+            deposit_count = None
+            reason = "count_failed"
+        else:
+            if deposit_count >= 2:
+                return None
+            reason = "no_deposits" if deposit_count == 0 else "single_deposit"
+
+        record.do_not_send = True
+        record.updated_at = datetime.utcnow()
+        logger.info(
+            "low_deposit_hold: parked record_id=%s chat_id=%s reason=%s "
+            "deposit_count=%s",
+            record.id,
+            record.chat_id,
+            reason,
+            deposit_count,
+        )
+        return {
+            "record_id": int(record.id),
+            "club_id": int(record.club_id),
+            "chat_id": int(record.chat_id),
+            "group_title": record.group_title or "",
+            "gg_player_id": record.gg_player_id,
+            "amount": record.amount,
+            "deposit_count": deposit_count,
+            "reason": reason,
+        }
 
 
 def create_staff_cashout_record_manual(
