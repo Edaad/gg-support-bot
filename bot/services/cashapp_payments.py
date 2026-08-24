@@ -364,7 +364,11 @@ async def ingest_cashapp_payment(
                         telegram_chat_id=int(existing_link.linked_chat_ids[0]),
                         exclude_payment_id=int(payment.id),
                     )
-                    cancel_setup_attempt_in_session(session, setup_attempt)
+                    cancel_setup_attempt_in_session(
+                        session,
+                        setup_attempt,
+                        cashapp_payment_id=int(payment.id),
+                    )
                     setup_blocked_already_linked = True
                     setup_target_chat_id = int(setup_attempt.telegram_chat_id)
                     setup_target_title = live_title
@@ -476,11 +480,12 @@ async def ingest_cashapp_payment(
             "cashapp", int(payment.id), ambiguous_candidates
         )
 
+    from notification.payment_notification_delivery import deliver_payment_notification
     from notification.payment_notification_routing import (
-        resolve_ingest_notification_chat_id,
+        resolve_ingest_notification_chat_ids,
     )
 
-    dest_chat_id = resolve_ingest_notification_chat_id(
+    bind_chat_ids = resolve_ingest_notification_chat_ids(
         group_title=group_title,
         auto_bound=auto_bound,
         ambiguous_candidates=ambiguous_candidates,
@@ -495,12 +500,15 @@ async def ingest_cashapp_payment(
             telegram_chat_id=setup_target_chat_id,
             auto_bound=False,
         )
-        await send_telegram_notification(setup_warning_text, chat_id=dest_chat_id)
+        await deliver_payment_notification(
+            setup_warning_text,
+            bind_chat_ids=bind_chat_ids,
+        )
 
-    notif_chat_id, notif_message_id = await send_telegram_notification(
+    notif_chat_id, notif_message_id = await deliver_payment_notification(
         text,
         reply_markup=notif_markup,
-        chat_id=dest_chat_id,
+        bind_chat_ids=bind_chat_ids,
     )
 
     from bot.services.payment_bind_candidates import identity_label

@@ -49,9 +49,11 @@ The wallet-bindings migration backfills from existing bound `crypto_payments` ro
 |----------|----------|---------|
 | `CRYPTO_ZAPIER_WEBHOOK_SECRET` | Yes (web dyno) | Auth for Zapier POST |
 | `TELEGRAM_NOTIFICATION_BOT_TOKEN` | Yes (web + notification dynos) | @ggnotificationbot |
-| `PAYMENT_NOTIFICATION_CHAT_ID` | Yes (web + notification dynos) | Shared staff notification group (unbound / mixed-bucket) |
+| `PAYMENT_NOTIFICATION_CHAT_ID` | Yes (web + notification dynos) | Legacy main chat (`/report`; fallback when no club chats configured) |
 | `PAYMENT_NOTIFICATION_CHAT_ID_GTO` | No | ClubGTO-only bound/same-bucket notifications |
-| `PAYMENT_NOTIFICATION_CHAT_ID_RT_AT_CC` | No | RT/CC/AT-only bound/same-bucket notifications |
+| `PAYMENT_NOTIFICATION_CHAT_ID_RT_AT` | No | Round Table + Aces Table bound/same-bucket notifications |
+| `PAYMENT_NOTIFICATION_CHAT_ID_CREATOR_CLUB` | No | Creator Club (CC) bound/same-bucket notifications |
+| Slack AM escalations | No | Mirror of every payment notification via `SLACK_ESCALATION_BOT_TOKEN` + `SLACK_ESCALATION_CHANNEL_ID` (or webhook) |
 | `DEBUG_NOTIFICATION` | No | Verbose ingest/Telegram logs on web dyno |
 
 ## API

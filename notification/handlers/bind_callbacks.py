@@ -38,7 +38,10 @@ from notification.payment_bind_helpers import (
     format_payment_notification,
     inject_pending_confirm_group_line,
 )
-from notification.payment_notification_routing import canonical_notification_chat_id
+from notification.payment_notification_routing import (
+    canonical_notification_chat_id,
+    is_bind_notification_chat_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -208,10 +211,14 @@ def _is_stale_notification_button(
     action: str,
     payment_notification_message_id: int | None,
     callback_message_id: int,
+    payment_bound: bool = False,
+    callback_in_bind_chat: bool = False,
 ) -> bool:
     if payment_notification_message_id is None:
         return False
     if int(payment_notification_message_id) == int(callback_message_id):
+        return False
+    if not payment_bound and callback_in_bind_chat:
         return False
     return action not in _REPLY_MESSAGE_ACTIONS
 
@@ -266,12 +273,15 @@ async def payment_bind_callback_handler(
         return
 
     notif_msg_id = getattr(payment, "notification_message_id", None)
+    payment_bound = getattr(payment, "telegram_chat_id", None) is not None
     if _is_stale_notification_button(
         action=action,
         payment_notification_message_id=(
             int(notif_msg_id) if notif_msg_id is not None else None
         ),
         callback_message_id=int(message.message_id),
+        payment_bound=payment_bound,
+        callback_in_bind_chat=is_bind_notification_chat_id(int(message.chat_id)),
     ):
         log_callback_result(
             action=action,

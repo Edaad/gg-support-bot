@@ -364,7 +364,7 @@ Player replies to the club MTProto DM after `dm_status=sent` trigger re-onboard 
 
 ## Notification bot (`notification` dyno)
 
-Separate bot for payment notification bind replies (`TELEGRAM_NOTIFICATION_BOT_TOKEN`, `PAYMENT_NOTIFICATION_CHAT_ID`). Optional club chats: `PAYMENT_NOTIFICATION_CHAT_ID_GTO`, `PAYMENT_NOTIFICATION_CHAT_ID_RT_AT_CC` (web + notification dynos). Unbound/mixed-bucket cards stay in the main chat; GTO-only and RT/CC/AT-only ingest cards go to those chats when configured. Bind replies and buttons work in all three. `/report` stays in the main chat.
+Separate bot for payment notification bind replies (`TELEGRAM_NOTIFICATION_BOT_TOKEN`, `PAYMENT_NOTIFICATION_CHAT_ID`). Optional club bind chats: `PAYMENT_NOTIFICATION_CHAT_ID_GTO`, `PAYMENT_NOTIFICATION_CHAT_ID_RT_AT` (Round Table + Aces Table), `PAYMENT_NOTIFICATION_CHAT_ID_CREATOR_CLUB` (web + notification dynos). Unbound/mixed-bucket cards broadcast to all configured club bind chats; single-bucket bound cards go to that club chat. Every payment notification is also copied to Slack AM escalations (`SLACK_ESCALATION_BOT_TOKEN` + `SLACK_ESCALATION_CHANNEL_ID`, or `SLACK_ESCALATION_WEBHOOK_URL`). Bind replies and buttons work in club bind chats (and legacy main). `/report` stays in the main chat.
 
 **Report a buggy notification:** In the payment notification chat, **reply** to the notification message with `/report`. The bot asks what was wrong; send a short description. On success it confirms in chat and posts the ticket to Slack (Engineer noti service — see Slack ops below). Send `/cancel` to abort mid-flow.
 

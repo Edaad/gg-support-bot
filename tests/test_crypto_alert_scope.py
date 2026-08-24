@@ -116,10 +116,10 @@ class CryptoIngestIdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
 
         with patch("bot.services.crypto_payments.get_db") as get_db_mock:
             get_db_mock.return_value.__enter__.return_value = session
-            send_mock = AsyncMock()
+            deliver_mock = AsyncMock()
             with patch(
-                "bot.services.crypto_payments.send_telegram_notification",
-                send_mock,
+                "notification.payment_notification_delivery.deliver_payment_notification",
+                deliver_mock,
             ):
                 result = await ingest_crypto_payment(
                     amount="25",
@@ -134,7 +134,7 @@ class CryptoIngestIdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result.created)
         self.assertEqual(result.payment_id, 5)
-        send_mock.assert_not_called()
+        deliver_mock.assert_not_called()
 
     async def test_new_source_external_id_creates_payment(self):
         """Regression: ext_id present but no row yet must not hit idempotent return."""
@@ -153,9 +153,9 @@ class CryptoIngestIdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
         with (
             patch("bot.services.crypto_payments.get_db") as get_db_mock,
             patch(
-                "bot.services.crypto_payments.send_telegram_notification",
+                "notification.payment_notification_delivery.deliver_payment_notification",
                 new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
-            ) as send_mock,
+            ) as deliver_mock,
             patch(
                 "bot.services.crypto_payments.resolve_group_chat_url_for_payment",
                 new=AsyncMock(return_value=None),
@@ -178,7 +178,7 @@ class CryptoIngestIdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result.created)
         self.assertEqual(result.payment_id, 42)
-        send_mock.assert_called_once()
+        deliver_mock.assert_called_once()
 
 
 class CryptoWalletBindingTestCase(unittest.TestCase):
@@ -227,7 +227,7 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
         with (
             patch("bot.services.crypto_payments.get_db") as mock_get_db,
             patch(
-                "bot.services.crypto_payments.send_telegram_notification",
+                "notification.payment_notification_delivery.deliver_payment_notification",
                 new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
             ),
             patch(
@@ -296,7 +296,7 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
         with (
             patch("bot.services.crypto_payments.get_db") as mock_get_db,
             patch(
-                "bot.services.crypto_payments.send_telegram_notification",
+                "notification.payment_notification_delivery.deliver_payment_notification",
                 new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
             ),
             patch(
