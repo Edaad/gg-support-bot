@@ -11,8 +11,9 @@ from notification.payment_lookup import PaymentRef, find_payment_by_notification
 
 
 class PaymentNotificationLookupTestCase(unittest.TestCase):
+    @patch("notification.payment_lookup.find_payment_notification_post", return_value=None)
     @patch("notification.payment_lookup.get_db")
-    def test_find_payment_matches_chat_id_variants(self, mock_get_db):
+    def test_find_payment_matches_chat_id_variants(self, mock_get_db, _mock_post):
         session = MagicMock()
         mock_get_db.return_value.__enter__.return_value = session
 

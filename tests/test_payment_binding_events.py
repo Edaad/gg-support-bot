@@ -90,12 +90,13 @@ class TestPaymentBindingEvents(IsolatedAsyncioTestCase):
         mock_record.assert_called_once()
         self.assertEqual(mock_record.call_args[0][0].event_type, EVENT_NOTIFICATION_SENT)
 
+    @patch("notification.payment_notification_posts.list_payment_notification_posts", return_value=[])
     @patch("bot.services.payment_binding_events.record_binding_event")
     @patch(
         "bot.services.venmo_payments.edit_telegram_notification",
         new_callable=AsyncMock,
     )
-    async def test_sync_payment_notification_edit_ok(self, mock_edit, mock_record):
+    async def test_sync_payment_notification_edit_ok(self, mock_edit, mock_record, _mock_list):
         mock_edit.return_value = None
         ok = await sync_payment_notification_edit(
             payment_method_slug="zelle",
@@ -110,8 +111,9 @@ class TestPaymentBindingEvents(IsolatedAsyncioTestCase):
         recorded = mock_record.call_args[0][0]
         self.assertEqual(recorded.event_type, EVENT_NOTIFICATION_EDIT_OK)
 
+    @patch("notification.payment_notification_posts.list_payment_notification_posts", return_value=[])
     @patch("bot.services.payment_binding_events.record_binding_event")
-    async def test_sync_payment_notification_edit_skipped(self, mock_record):
+    async def test_sync_payment_notification_edit_skipped(self, mock_record, _mock_list):
         ok = await sync_payment_notification_edit(
             payment_method_slug="zelle",
             payment_id=81,
@@ -123,12 +125,13 @@ class TestPaymentBindingEvents(IsolatedAsyncioTestCase):
         recorded = mock_record.call_args[0][0]
         self.assertEqual(recorded.event_type, EVENT_NOTIFICATION_EDIT_SKIPPED)
 
+    @patch("notification.payment_notification_posts.list_payment_notification_posts", return_value=[])
     @patch("bot.services.payment_binding_events.record_binding_event")
     @patch(
         "bot.services.venmo_payments.edit_telegram_notification",
         new_callable=AsyncMock,
     )
-    async def test_sync_payment_notification_edit_failed(self, mock_edit, mock_record):
+    async def test_sync_payment_notification_edit_failed(self, mock_edit, mock_record, _mock_list):
         mock_edit.side_effect = RuntimeError("message to edit not found")
         with self.assertRaises(RuntimeError):
             await sync_payment_notification_edit(
