@@ -20,7 +20,7 @@ EARLYRB_ELIGIBLE_MESSAGE = (
     "We're checking your early rakeback now. Your account manager will follow up "
     "in this group shortly.\n\n"
     "Early rakeback can be requested once every 24 hours.\n\n"
-    "If chips are credited for early rakeback, that counts as a deposit :)"
+    "Early rake back counts as deposit and will reset the cashout timer"
 )
 
 EARLYRB_RECORD_FAILED_MESSAGE = (
