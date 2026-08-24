@@ -53,6 +53,15 @@ class CashAppPaymentsHelpersTestCase(unittest.TestCase):
 
 
 class CashAppIngestMemoSetupTestCase(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._record_posts = patch(
+            "notification.payment_notification_posts.record_payment_notification_posts"
+        )
+        self._record_posts.start()
+
+    def tearDown(self) -> None:
+        self._record_posts.stop()
+
     async def test_ingest_memo_setup_auto_binds(self):
         attempt = MagicMock()
         attempt.id = 12
@@ -86,7 +95,7 @@ class CashAppIngestMemoSetupTestCase(unittest.IsolatedAsyncioTestCase):
         mock_session.add.side_effect = _add
         mock_session.flush = MagicMock()
 
-        send_mock = AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID))
+        send_mock = AsyncMock(return_value=[(NOTIF_CHAT_ID, NOTIF_MSG_ID)])
 
         with (
             patch("bot.services.cashapp_payments.get_db") as mock_get_db,

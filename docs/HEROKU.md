@@ -448,6 +448,7 @@ After deploying binding-event tracking, run once on production Postgres:
 
 ```bash
 heroku run -a YOUR_APP -- python migrate_payment_binding_events.py
+heroku run -a YOUR_APP -- python migrate_payment_notification_posts.py
 ```
 
 This creates `payment_binding_events`, an append-only log of binds, group-link updates, notification sends, and notification edit outcomes. Find payments whose Telegram message may be stale:

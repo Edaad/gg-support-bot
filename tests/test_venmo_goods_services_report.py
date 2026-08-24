@@ -16,6 +16,14 @@ NOTIF_MSG_ID = 12345
 
 
 class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._record_posts = patch(
+            "notification.payment_notification_posts.record_payment_notification_posts"
+        )
+        self._record_posts.start()
+
+    def tearDown(self) -> None:
+        self._record_posts.stop()
     async def test_skips_when_not_goods_or_services(self):
         payment = VenmoPayment(
             id=1,
@@ -116,7 +124,7 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
             patch("bot.services.venmo_payments.get_db") as mock_get_db,
             patch(
                 "notification.payment_notification_delivery.deliver_payment_notification",
-                new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
+                new=AsyncMock(return_value=[(NOTIF_CHAT_ID, NOTIF_MSG_ID)]),
             ),
             patch(
                 "bot.services.venmo_payments.match_pending_memo_setup_in_session",
@@ -218,7 +226,7 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
             patch("bot.services.venmo_payments.get_db") as mock_get_db,
             patch(
                 "notification.payment_notification_delivery.deliver_payment_notification",
-                new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
+                new=AsyncMock(return_value=[(NOTIF_CHAT_ID, NOTIF_MSG_ID)]),
             ),
             patch(
                 "bot.services.venmo_payments.match_pending_memo_setup_in_session",

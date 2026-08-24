@@ -14,6 +14,7 @@ from db.models import (
     ZellePayment,
 )
 from notification.chat_id import telegram_chat_id_variants
+from notification.payment_notification_posts import find_payment_notification_post
 
 METHOD_ORDER = ("crypto", "paypal", "cashapp", "zelle", "venmo")
 
@@ -47,6 +48,19 @@ def find_payment_by_notification(
     notification_chat_id: int,
     notification_message_id: int,
 ) -> Optional[PaymentRef]:
+    posted = find_payment_notification_post(
+        int(notification_chat_id),
+        int(notification_message_id),
+    )
+    if posted is not None:
+        slug, payment_id = posted
+        with get_db() as session:
+            payment = (
+                session.query(_MODELS[slug]).filter_by(id=int(payment_id)).one_or_none()
+            )
+            if payment is not None:
+                return _payment_ref_from_row(slug, payment)
+
     chat_ids = telegram_chat_id_variants(int(notification_chat_id))
     msg_id = int(notification_message_id)
     with get_db() as session:

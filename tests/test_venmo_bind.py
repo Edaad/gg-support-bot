@@ -7,6 +7,7 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from bot.services import venmo_payments as vp
 from db.models import VenmoPayerBinding, VenmoPayment
+from notification.payment_lookup import PaymentRef
 
 CHAT_ID = -1001234567890
 CLUB_ID = 2
@@ -211,6 +212,15 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
 
 
 class SetupAlreadyLinkedIngestTestCase(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._record_posts = patch(
+            "notification.payment_notification_posts.record_payment_notification_posts"
+        )
+        self._record_posts.start()
+
+    def tearDown(self) -> None:
+        self._record_posts.stop()
+
     async def test_ingest_setup_match_already_linked_leaves_unbound(self):
         from datetime import datetime, timezone
 
@@ -247,7 +257,7 @@ class SetupAlreadyLinkedIngestTestCase(unittest.IsolatedAsyncioTestCase):
         mock_session.add.side_effect = _add
         mock_session.flush = MagicMock()
 
-        send_mock = AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID))
+        send_mock = AsyncMock(return_value=[(NOTIF_CHAT_ID, NOTIF_MSG_ID)])
 
         with (
             patch("bot.services.venmo_payments.get_db") as mock_get_db,
@@ -342,6 +352,15 @@ class ResolveBoundGroupTestCase(unittest.TestCase):
 
 
 class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._record_posts = patch(
+            "notification.payment_notification_posts.record_payment_notification_posts"
+        )
+        self._record_posts.start()
+
+    def tearDown(self) -> None:
+        self._record_posts.stop()
+
     async def test_bind_updates_payment(self):
         payment = VenmoPayment(
             id=1,
@@ -359,6 +378,15 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("bot.services.venmo_payments.get_db") as mock_get_db,
+            patch(
+                "notification.payment_lookup.find_payment_by_notification",
+                return_value=PaymentRef(
+                    method_slug="venmo",
+                    payment_id=1,
+                    payment_is_test=False,
+                    telegram_chat_id=None,
+                ),
+            ),
             patch(
                 "bot.services.venmo_payments.edit_telegram_notification",
                 new=AsyncMock(),
@@ -450,7 +478,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             patch("bot.services.venmo_payments.get_db") as mock_get_db,
             patch(
                 "notification.payment_notification_delivery.deliver_payment_notification",
-                new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
+                new=AsyncMock(return_value=[(NOTIF_CHAT_ID, NOTIF_MSG_ID)]),
             ),
             patch(
                 "bot.services.venmo_payments.resolve_display_group_title",
@@ -527,7 +555,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             patch("bot.services.venmo_payments.get_db") as mock_get_db,
             patch(
                 "notification.payment_notification_delivery.deliver_payment_notification",
-                new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
+                new=AsyncMock(return_value=[(NOTIF_CHAT_ID, NOTIF_MSG_ID)]),
             ),
             patch(
                 "bot.services.venmo_payments.resolve_display_group_title",
@@ -594,7 +622,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             ),
         ]
 
-        send_mock = AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID))
+        send_mock = AsyncMock(return_value=[(NOTIF_CHAT_ID, NOTIF_MSG_ID)])
 
         with (
             patch("bot.services.venmo_payments.get_db") as mock_get_db,
@@ -688,7 +716,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             patch("bot.services.venmo_payments.get_db") as mock_get_db,
             patch(
                 "notification.payment_notification_delivery.deliver_payment_notification",
-                new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
+                new=AsyncMock(return_value=[(NOTIF_CHAT_ID, NOTIF_MSG_ID)]),
             ),
             patch(
                 "bot.services.venmo_payments.resolve_display_group_title",

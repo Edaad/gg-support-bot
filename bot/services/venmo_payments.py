@@ -479,15 +479,16 @@ def find_payment_by_notification_message(
     notification_chat_id: int,
     notification_message_id: int,
 ) -> Optional[VenmoPayment]:
+    from notification.payment_lookup import find_payment_by_notification
+
+    ref = find_payment_by_notification(
+        int(notification_chat_id),
+        int(notification_message_id),
+    )
+    if ref is None or ref.method_slug != "venmo":
+        return None
     with get_db() as session:
-        return (
-            session.query(VenmoPayment)
-            .filter_by(
-                notification_chat_id=int(notification_chat_id),
-                notification_message_id=int(notification_message_id),
-            )
-            .one_or_none()
-        )
+        return session.query(VenmoPayment).filter_by(id=int(ref.payment_id)).one_or_none()
 
 
 async def ingest_venmo_payment(
@@ -799,11 +800,19 @@ async def ingest_venmo_payment(
             bind_chat_ids=bind_chat_ids,
         )
 
-    notif_chat_id, notif_message_id = await deliver_payment_notification(
+    notif_posts = await deliver_payment_notification(
         text,
         reply_markup=notif_markup,
         bind_chat_ids=bind_chat_ids,
     )
+    from notification.payment_notification_posts import record_payment_notification_posts
+
+    record_payment_notification_posts(
+        payment_method_slug="venmo",
+        payment_id=payment_id,
+        posts=notif_posts,
+    )
+    notif_chat_id, notif_message_id = notif_posts[0]
 
     from bot.services.payment_bind_candidates import identity_label
     from notification.payment_bind_helpers import log_ingest_bind_delivery
@@ -1072,21 +1081,17 @@ async def bind_venmo_payment_from_reply(
     bound_by_telegram_user_id: int,
 ) -> BindResult:
     """Bind or rebind a payment from a reply in the notification group."""
-    with get_db() as session:
-        payment = (
-            session.query(VenmoPayment)
-            .filter_by(
-                notification_chat_id=int(notification_chat_id),
-                notification_message_id=int(notification_message_id),
-            )
-            .one_or_none()
-        )
-        if payment is None:
-            return BindResult(ok=False, error="No payment found for this notification.")
-        payment_id = int(payment.id)
+    from notification.payment_lookup import find_payment_by_notification
+
+    ref = find_payment_by_notification(
+        int(notification_chat_id),
+        int(notification_message_id),
+    )
+    if ref is None or ref.method_slug != "venmo":
+        return BindResult(ok=False, error="No payment found for this notification.")
 
     return await bind_venmo_payment_by_id(
-        payment_id=payment_id,
+        payment_id=int(ref.payment_id),
         group_title_input=group_title_input,
         bound_by_telegram_user_id=int(bound_by_telegram_user_id),
         bound_via=BOUND_VIA_MANUAL_NOTIFICATION,

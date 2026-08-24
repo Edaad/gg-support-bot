@@ -309,11 +309,11 @@ class DeliverPaymentNotificationTestCase(unittest.IsolatedAsyncioTestCase):
             {"ok": True, "result": {"message_id": 2, "chat": {"id": RT_CHAT}}},
         ]
         mock_slack.return_value = True
-        chat, mid = await deliver_payment_notification(
+        posts = await deliver_payment_notification(
             "🔔 Venmo Payment Notification\nAmount: <b>$1.00</b>",
             bind_chat_ids=[GTO_CHAT, RT_CHAT],
         )
-        self.assertEqual((chat, mid), (GTO_CHAT, 1))
+        self.assertEqual(posts, [(GTO_CHAT, 1), (RT_CHAT, 2)])
         self.assertEqual(mock_api.await_count, 2)
         mock_slack.assert_awaited_once()
         self.assertIn("*$1.00*", mock_slack.await_args.args[0])
@@ -343,11 +343,11 @@ class DeliverPaymentNotificationTestCase(unittest.IsolatedAsyncioTestCase):
             RuntimeError("forbidden"),
             {"ok": True, "result": {"message_id": 2, "chat": {"id": RT_CHAT}}},
         ]
-        chat, mid = await deliver_payment_notification(
+        posts = await deliver_payment_notification(
             "hi",
             bind_chat_ids=[GTO_CHAT, RT_CHAT],
         )
-        self.assertEqual((chat, mid), (RT_CHAT, 2))
+        self.assertEqual(posts, [(RT_CHAT, 2)])
         mock_head_admin.assert_awaited_once()
         mock_slack.assert_awaited_once()
 

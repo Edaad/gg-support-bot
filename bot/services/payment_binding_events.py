@@ -247,8 +247,16 @@ async def sync_payment_notification_edit(
     auto_bound: bool = False,
     reply_markup: dict | None = None,
 ) -> bool:
-    """Edit a payment notification and persist the outcome. Returns True on success."""
+    """Edit payment notification copies and persist the outcome."""
     from bot.services.venmo_payments import edit_telegram_notification
+    from notification.payment_notification_posts import list_payment_notification_posts
+
+    targets = list_payment_notification_posts(
+        payment_method_slug=payment_method_slug,
+        payment_id=int(payment_id),
+    )
+    if not targets and notification_chat_id and notification_message_id:
+        targets = [(int(notification_chat_id), int(notification_message_id))]
 
     base = dict(
         payment_method_slug=payment_method_slug,
@@ -263,7 +271,7 @@ async def sync_payment_notification_edit(
         auto_bound=auto_bound,
     )
 
-    if not notification_chat_id or not notification_message_id or not text:
+    if not text or not targets:
         record_binding_event(
             BindingEventRecord(
                 event_type=EVENT_NOTIFICATION_EDIT_SKIPPED,
@@ -273,45 +281,69 @@ async def sync_payment_notification_edit(
         )
         return False
 
-    try:
-        edit_kwargs: dict = {}
-        if reply_markup is not None:
-            edit_kwargs["reply_markup"] = reply_markup
-        await edit_telegram_notification(
-            int(notification_chat_id),
-            int(notification_message_id),
-            text,
-            **edit_kwargs,
-        )
-    except Exception as exc:
+    edited_any = False
+    last_error: Exception | None = None
+    edit_kwargs: dict = {}
+    if reply_markup is not None:
+        edit_kwargs["reply_markup"] = reply_markup
+
+    for target_chat_id, target_message_id in targets:
+        event_base = {
+            **base,
+            "notification_chat_id": int(target_chat_id),
+            "notification_message_id": int(target_message_id),
+        }
+        try:
+            await edit_telegram_notification(
+                int(target_chat_id),
+                int(target_message_id),
+                text,
+                **edit_kwargs,
+            )
+        except Exception as exc:
+            last_error = exc
+            record_binding_event(
+                BindingEventRecord(
+                    event_type=EVENT_NOTIFICATION_EDIT_FAILED,
+                    error_message=str(exc)[:2000],
+                    **event_base,
+                )
+            )
+            logger.warning(
+                "payment notification edit failed method=%s payment_id=%s chat_id=%s message_id=%s",
+                payment_method_slug,
+                payment_id,
+                target_chat_id,
+                target_message_id,
+                exc_info=True,
+            )
+            continue
+
+        edited_any = True
         record_binding_event(
             BindingEventRecord(
-                event_type=EVENT_NOTIFICATION_EDIT_FAILED,
-                error_message=str(exc)[:2000],
-                **base,
+                event_type=EVENT_NOTIFICATION_EDIT_OK,
+                **event_base,
             )
         )
-        raise
+        if reply_markup is not None:
+            from bot.services.payment_bind_logging import log_notification_edit
 
-    record_binding_event(
-        BindingEventRecord(
-            event_type=EVENT_NOTIFICATION_EDIT_OK,
-            **base,
-        )
-    )
-    if reply_markup is not None:
-        from bot.services.payment_bind_logging import log_notification_edit
+            log_notification_edit(
+                method_slug=payment_method_slug,
+                payment_id=int(payment_id),
+                notification_chat_id=int(target_chat_id),
+                notification_message_id=int(target_message_id),
+                has_keyboard=bool(reply_markup.get("inline_keyboard")),
+                keyboard_kind="cleared"
+                if not reply_markup.get("inline_keyboard")
+                else "present",
+                reason="sync_payment_notification_edit",
+            )
 
-        log_notification_edit(
-            method_slug=payment_method_slug,
-            payment_id=int(payment_id),
-            notification_chat_id=int(notification_chat_id),
-            notification_message_id=int(notification_message_id),
-            has_keyboard=bool(reply_markup.get("inline_keyboard")),
-            keyboard_kind="cleared" if not reply_markup.get("inline_keyboard") else "present",
-            reason="sync_payment_notification_edit",
-        )
-    return True
+    if not edited_any and last_error is not None:
+        raise last_error
+    return edited_any
 
 
 def _payment_ids_with_notification_sync(session, *, payment_method_slug: str) -> set[int]:

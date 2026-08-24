@@ -1907,6 +1907,31 @@ class GroupPaymentMethodBinding(Base):
     )
 
 
+class PaymentNotificationPost(Base):
+    """One Telegram staff notification message for a payment (fan-out copies)."""
+
+    __tablename__ = "payment_notification_posts"
+    __table_args__ = (
+        UniqueConstraint(
+            "notification_chat_id",
+            "notification_message_id",
+            name="uq_pnp_notification_msg",
+        ),
+        Index(
+            "ix_pnp_method_payment",
+            "payment_method_slug",
+            "payment_id",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    payment_method_slug = Column(String(32), nullable=False)
+    payment_id = Column(Integer, nullable=False)
+    notification_chat_id = Column(BigInteger, nullable=False)
+    notification_message_id = Column(BigInteger, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class PaymentBindingEvent(Base):
     """Append-only audit log for payment/group binding and notification sync."""
 

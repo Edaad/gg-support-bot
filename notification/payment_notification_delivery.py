@@ -59,19 +59,20 @@ async def deliver_payment_notification(
     reply_markup: dict | None = None,
     reply_to_message_id: int | None = None,
     include_slack_escalation: bool = True,
-) -> tuple[int, int]:
+) -> list[tuple[int, int]]:
     """Post to bind chats and optionally mirror to Slack AM escalations.
 
-    Returns ``(chat_id, message_id)`` for the first successful bind-chat post
-    (stored on the payment row for bind/edit flows). Failed club-chat sends are
-    skipped; head-admin Slack is notified for those failures.
+    Returns every successful ``(chat_id, message_id)`` bind-chat post. The first
+    entry is the primary copy stored on the payment row for legacy callers.
+    Failed club-chat sends are skipped; head-admin Slack is notified for those
+    failures.
     """
     from bot.services.venmo_payments import send_telegram_notification
 
     if not bind_chat_ids:
         raise RuntimeError("deliver_payment_notification: no bind_chat_ids")
 
-    primary: tuple[int, int] | None = None
+    posts: list[tuple[int, int]] = []
     failed_chat_ids: list[int] = []
     for chat_id in bind_chat_ids:
         try:
@@ -89,8 +90,7 @@ async def deliver_payment_notification(
                 exc_info=True,
             )
             continue
-        if primary is None:
-            primary = (resolved_chat_id, message_id)
+        posts.append((int(resolved_chat_id), int(message_id)))
 
     if failed_chat_ids:
         try:
@@ -105,7 +105,7 @@ async def deliver_payment_notification(
                 exc_info=True,
             )
 
-    if primary is None:
+    if not posts:
         raise RuntimeError(
             "deliver_payment_notification: all bind chat sends failed "
             f"chat_ids={bind_chat_ids}"
@@ -127,4 +127,4 @@ async def deliver_payment_notification(
                 exc_info=True,
             )
 
-    return primary
+    return posts

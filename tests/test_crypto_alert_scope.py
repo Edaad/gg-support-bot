@@ -95,6 +95,15 @@ class CryptoAlertScopeTestCase(unittest.TestCase):
 
 
 class CryptoIngestIdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._record_posts = patch(
+            "notification.payment_notification_posts.record_payment_notification_posts"
+        )
+        self._record_posts.start()
+
+    def tearDown(self) -> None:
+        self._record_posts.stop()
+
     async def test_duplicate_source_external_id_skips_second_notification(self):
         existing = CryptoPayment(
             id=5,
@@ -154,7 +163,7 @@ class CryptoIngestIdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
             patch("bot.services.crypto_payments.get_db") as get_db_mock,
             patch(
                 "notification.payment_notification_delivery.deliver_payment_notification",
-                new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
+                new=AsyncMock(return_value=[(NOTIF_CHAT_ID, NOTIF_MSG_ID)]),
             ) as deliver_mock,
             patch(
                 "bot.services.crypto_payments.resolve_group_chat_url_for_payment",
@@ -190,6 +199,15 @@ class CryptoWalletBindingTestCase(unittest.TestCase):
 
 
 class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._record_posts = patch(
+            "notification.payment_notification_posts.record_payment_notification_posts"
+        )
+        self._record_posts.start()
+
+    def tearDown(self) -> None:
+        self._record_posts.stop()
+
     async def test_ingest_auto_binds_known_wallet(self):
         candidate = CandidateGroup(
             telegram_chat_id=CHAT_ID,
@@ -228,7 +246,7 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
             patch("bot.services.crypto_payments.get_db") as mock_get_db,
             patch(
                 "notification.payment_notification_delivery.deliver_payment_notification",
-                new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
+                new=AsyncMock(return_value=[(NOTIF_CHAT_ID, NOTIF_MSG_ID)]),
             ),
             patch(
                 "bot.services.crypto_payments.resolve_group_chat_url_for_payment",
@@ -297,7 +315,7 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
             patch("bot.services.crypto_payments.get_db") as mock_get_db,
             patch(
                 "notification.payment_notification_delivery.deliver_payment_notification",
-                new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
+                new=AsyncMock(return_value=[(NOTIF_CHAT_ID, NOTIF_MSG_ID)]),
             ),
             patch(
                 "bot.services.crypto_payments.resolve_group_chat_url_for_payment",
