@@ -91,7 +91,7 @@ class CashAppIngestMemoSetupTestCase(unittest.IsolatedAsyncioTestCase):
         with (
             patch("bot.services.cashapp_payments.get_db") as mock_get_db,
             patch(
-                "bot.services.cashapp_payments.send_telegram_notification",
+                "notification.payment_notification_delivery.deliver_payment_notification",
                 new=send_mock,
             ),
             patch(

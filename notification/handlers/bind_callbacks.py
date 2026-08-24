@@ -33,13 +33,13 @@ from notification.bind_keyboards import (
     to_inline_keyboard,
 )
 from notification.chat_id import telegram_chat_ids_match
-from notification.handlers._chat import notification_chat_id
 from notification.payment_bind_helpers import (
     format_payment_notification,
     inject_pending_confirm_group_line,
 )
 from notification.payment_notification_routing import (
     canonical_notification_chat_id,
+    configured_bind_notification_chat_ids,
     is_bind_notification_chat_id,
 )
 
@@ -51,15 +51,7 @@ _BIND_ADD_MEMBER_KEY = BIND_ADD_MEMBER_PENDING_KEY
 
 def _canonical_notification_chat_id(chat_id: int) -> int | None:
     """Map Telegram chat id variants to a configured staff notification chat."""
-    expected = notification_chat_id()
-    if expected is not None and telegram_chat_ids_match(int(chat_id), int(expected)):
-        return int(expected)
-    routed = canonical_notification_chat_id(int(chat_id))
-    if routed is not None:
-        return routed
-    if expected is None:
-        return int(chat_id)
-    return None
+    return canonical_notification_chat_id(int(chat_id))
 
 
 def _pending_store(context: ContextTypes.DEFAULT_TYPE) -> dict:
@@ -237,7 +229,7 @@ async def payment_bind_callback_handler(
         return
 
     if _canonical_notification_chat_id(int(message.chat_id)) is None:
-        if notification_chat_id() is None:
+        if not configured_bind_notification_chat_ids():
             await query.answer("Notification chat not configured.")
         else:
             await query.answer("Wrong chat.")

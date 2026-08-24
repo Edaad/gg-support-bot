@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -16,6 +17,7 @@ from notification.handlers.bind_callbacks import (
 )
 
 NOTIF_CHAT_ID = -5273879167
+_CLUB_ENV = {"PAYMENT_NOTIFICATION_CHAT_ID_GTO": str(NOTIF_CHAT_ID)}
 
 
 def _reply_update(
@@ -73,14 +75,13 @@ def _context_with_pending(*, prompt_actor: int = 8318575265) -> SimpleNamespace:
 
 
 class ForceReplyAddMemberRoutingTestCase(unittest.IsolatedAsyncioTestCase):
+    @patch.dict(os.environ, _CLUB_ENV, clear=False)
     @patch(
         "notification.handlers.bind.payment_bind_add_member_reply_handler",
         new_callable=AsyncMock,
     )
-    @patch("notification.handlers.bind.notification_chat_id", return_value=NOTIF_CHAT_ID)
     async def test_pending_add_member_delegates_before_notification_check(
         self,
-        _mock_chat: MagicMock,
         mock_add_member: AsyncMock,
     ) -> None:
         context = _context_with_pending()
@@ -89,15 +90,14 @@ class ForceReplyAddMemberRoutingTestCase(unittest.IsolatedAsyncioTestCase):
 
         mock_add_member.assert_awaited_once()
 
+    @patch.dict(os.environ, _CLUB_ENV, clear=False)
     @patch(
         "notification.handlers.bind.payment_bind_add_member_reply_handler",
         new_callable=AsyncMock,
     )
     @patch("notification.handlers.bind.find_payment_by_notification", return_value=None)
-    @patch("notification.handlers.bind.notification_chat_id", return_value=NOTIF_CHAT_ID)
     async def test_non_pending_reply_to_force_prompt_is_ignored(
         self,
-        _mock_chat: MagicMock,
         _mock_find: MagicMock,
         mock_add_member: AsyncMock,
     ) -> None:
@@ -114,38 +114,35 @@ class ForceReplyAddMemberRoutingTestCase(unittest.IsolatedAsyncioTestCase):
 
 class SharedChatAddMemberTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_different_staff_member_can_complete_add_member(self) -> None:
-        context = _context_with_pending(prompt_actor=8318575265)
-        bound = SimpleNamespace(
-            telegram_chat_id=-1001111111111,
-            group_title="GTO / 3342-5648 / Abadani",
-            club_id=4,
-        )
-        update = _plain_text_update(user_id=6713100304)
-        update.message.reply_text = AsyncMock()
+        with patch.dict(os.environ, _CLUB_ENV, clear=False):
+            context = _context_with_pending(prompt_actor=8318575265)
+            bound = SimpleNamespace(
+                telegram_chat_id=-1001111111111,
+                group_title="GTO / 3342-5648 / Abadani",
+                club_id=4,
+            )
+            update = _plain_text_update(user_id=6713100304)
+            update.message.reply_text = AsyncMock()
 
-        with (
-            patch(
-                "notification.handlers.bind_callbacks.notification_chat_id",
-                return_value=NOTIF_CHAT_ID,
-            ),
-            patch(
-                "notification.handlers.bind_callbacks.load_payment",
-                return_value=SimpleNamespace(is_test=False, alert_scope="clubgto"),
-            ),
-            patch(
-                "notification.handlers.bind_callbacks.resolve_bound_group",
-                return_value=SimpleNamespace(ok=True, bound_group=bound, error=None),
-            ),
-            patch(
-                "notification.handlers.bind_callbacks.crypto_scope_error",
-                return_value=None,
-            ),
-            patch(
-                "notification.handlers.bind_callbacks.bind_scope_mismatch_error",
-                return_value=None,
-            ),
-        ):
-            await payment_bind_add_member_reply_handler(update, context)
+            with (
+                patch(
+                    "notification.handlers.bind_callbacks.load_payment",
+                    return_value=SimpleNamespace(is_test=False, alert_scope="clubgto"),
+                ),
+                patch(
+                    "notification.handlers.bind_callbacks.resolve_bound_group",
+                    return_value=SimpleNamespace(ok=True, bound_group=bound, error=None),
+                ),
+                patch(
+                    "notification.handlers.bind_callbacks.crypto_scope_error",
+                    return_value=None,
+                ),
+                patch(
+                    "notification.handlers.bind_callbacks.bind_scope_mismatch_error",
+                    return_value=None,
+                ),
+            ):
+                await payment_bind_add_member_reply_handler(update, context)
 
         update.message.reply_text.assert_awaited_once()
         self.assertIn("Confirm add", update.message.reply_text.await_args.args[0])
@@ -153,11 +150,12 @@ class SharedChatAddMemberTestCase(unittest.IsolatedAsyncioTestCase):
 
 
 class ChatIdVariantPendingTestCase(unittest.TestCase):
-    @patch(
-        "notification.handlers.bind_callbacks.notification_chat_id",
-        return_value=-1005273879167,
+    @patch.dict(
+        os.environ,
+        {"PAYMENT_NOTIFICATION_CHAT_ID_GTO": "-1005273879167"},
+        clear=False,
     )
-    def test_pending_survives_supergroup_chat_id_variant(self, _mock_chat) -> None:
+    def test_pending_survives_supergroup_chat_id_variant(self) -> None:
         context = SimpleNamespace(
             chat_data={},
             user_data={},
@@ -177,32 +175,31 @@ class ChatIdVariantPendingTestCase(unittest.TestCase):
 
 
 class UnboundImmediateBindTestCase(unittest.IsolatedAsyncioTestCase):
-    @patch(
-        "notification.handlers.bind.bind_zelle_payment_from_reply",
-        new_callable=AsyncMock,
-    )
+    @patch.dict(os.environ, _CLUB_ENV, clear=False)
+    @patch("notification.handlers.bind.find_payment_by_notification")
+    @patch("notification.handlers.bind.resolve_bound_group")
+    @patch("notification.handlers.bind.bind_scope_mismatch_error", return_value=None)
+    @patch("notification.handlers.bind.get_db")
+    @patch("notification.handlers.bind.candidates_for_payment", return_value=[])
+    @patch("notification.handlers.bind.format_payment_row", return_value="row")
     @patch(
         "notification.handlers.bind.bind_venmo_payment_from_reply",
         new_callable=AsyncMock,
     )
-    @patch("notification.handlers.bind.format_payment_row", return_value="row")
-    @patch("notification.handlers.bind.candidates_for_payment", return_value=[])
-    @patch("notification.handlers.bind.get_db")
-    @patch("notification.handlers.bind.bind_scope_mismatch_error", return_value=None)
-    @patch("notification.handlers.bind.resolve_bound_group")
-    @patch("notification.handlers.bind.find_payment_by_notification")
-    @patch("notification.handlers.bind.notification_chat_id", return_value=NOTIF_CHAT_ID)
+    @patch(
+        "notification.handlers.bind.bind_zelle_payment_from_reply",
+        new_callable=AsyncMock,
+    )
     async def test_unbound_zelle_reply_uses_canonical_chat(
         self,
-        _mock_chat: MagicMock,
-        mock_find: MagicMock,
-        mock_resolve: MagicMock,
-        _mock_scope: MagicMock,
-        mock_get_db: MagicMock,
-        _mock_candidates: MagicMock,
-        _mock_row: MagicMock,
-        mock_venmo_bind: AsyncMock,
         mock_zelle_bind: AsyncMock,
+        mock_venmo_bind: AsyncMock,
+        _mock_row: MagicMock,
+        _mock_candidates: MagicMock,
+        mock_get_db: MagicMock,
+        _mock_scope: MagicMock,
+        mock_resolve: MagicMock,
+        mock_find: MagicMock,
     ) -> None:
         bound = SimpleNamespace(
             telegram_chat_id=-1001111111111,

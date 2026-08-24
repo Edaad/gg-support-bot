@@ -200,9 +200,8 @@ class StripeNotifyPaymentCompletedTestCase(unittest.IsolatedAsyncioTestCase):
             patch.object(sd, "get_group_title_for_chat", return_value=("RT / 6485-8168 / Angus Mcgoon", CLUB_ID)),
             patch.object(sd, "get_db") as mock_get_db,
             patch.object(sd, "_resolve_stripe_method_label", return_value="Stripe"),
-            patch.object(
-                sd,
-                "send_telegram_notification",
+            patch(
+                "notification.payment_notification_delivery.deliver_payment_notification",
                 new=AsyncMock(),
             ),
             patch.object(

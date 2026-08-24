@@ -54,7 +54,6 @@ logger = logging.getLogger(__name__)
 WEBHOOK_SECRET_ENV = "VENMO_ZAPIER_WEBHOOK_SECRET"
 from notification.constants import (
     NOTIFICATION_BOT_TOKEN_ENV,
-    PAYMENT_NOTIFICATION_CHAT_ID_ENV,
     debug_notification_enabled,
 )
 
@@ -178,17 +177,6 @@ def resolve_bound_group(title: str) -> BindResult:
             group_title=live_title,
         ),
     )
-
-
-def _notification_chat_id() -> Optional[int]:
-    raw = (os.getenv(PAYMENT_NOTIFICATION_CHAT_ID_ENV) or "").strip()
-    if not raw:
-        return None
-    try:
-        return int(raw)
-    except ValueError:
-        logger.warning("invalid %s=%r", PAYMENT_NOTIFICATION_CHAT_ID_ENV, raw)
-        return None
 
 
 def _notification_bot_token() -> Optional[str]:
@@ -383,59 +371,39 @@ async def send_telegram_notification(
     reply_to_message_id: int | None = None,
     chat_id: int | None = None,
 ) -> tuple[int, int]:
-    """Post notification to a staff group. Returns (chat_id, message_id).
-
-    ``chat_id`` defaults to the main payment notification chat. If a club chat
-    send fails, retries once on main.
-    """
+    """Post notification to a staff group. Returns (chat_id, message_id)."""
     token = _notification_bot_token()
-    main_chat_id = _notification_chat_id()
     if not token:
         raise RuntimeError(f"{NOTIFICATION_BOT_TOKEN_ENV} is not set")
-    if main_chat_id is None:
-        raise RuntimeError(f"{PAYMENT_NOTIFICATION_CHAT_ID_ENV} is not set")
+    if chat_id is None:
+        raise RuntimeError("send_telegram_notification: chat_id is required")
 
-    target = int(chat_id) if chat_id is not None else int(main_chat_id)
+    target = int(chat_id)
 
-    async def _send(dest: int) -> tuple[int, int]:
-        payload: dict[str, Any] = {
-            "chat_id": dest,
-            "text": text,
-            "parse_mode": "HTML",
-        }
-        if reply_markup is not None:
-            payload["reply_markup"] = reply_markup
-        if reply_to_message_id is not None:
-            payload["reply_to_message_id"] = int(reply_to_message_id)
+    payload: dict[str, Any] = {
+        "chat_id": target,
+        "text": text,
+        "parse_mode": "HTML",
+    }
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+    if reply_to_message_id is not None:
+        payload["reply_to_message_id"] = int(reply_to_message_id)
 
-        if reply_markup is not None:
-            row_count = len(reply_markup.get("inline_keyboard") or [])
-            logger.info(
-                "payment_bind: telegram_send chat_id=%s has_keyboard=true keyboard_rows=%s",
-                dest,
-                row_count,
-            )
+    if reply_markup is not None:
+        row_count = len(reply_markup.get("inline_keyboard") or [])
+        logger.info(
+            "payment_bind: telegram_send chat_id=%s has_keyboard=true keyboard_rows=%s",
+            target,
+            row_count,
+        )
 
-        data = await _telegram_api("sendMessage", payload, token=token)
-        result = data.get("result") or {}
-        message_id = int(result["message_id"])
-        chat_obj = result.get("chat") or {}
-        resolved_chat_id = int(chat_obj.get("id") or dest)
-        return resolved_chat_id, message_id
-
-    try:
-        return await _send(target)
-    except Exception:
-        if int(target) != int(main_chat_id):
-            logger.warning(
-                "payment notification: club chat send failed chat_id=%s; "
-                "falling back to main chat_id=%s",
-                target,
-                main_chat_id,
-                exc_info=True,
-            )
-            return await _send(int(main_chat_id))
-        raise
+    data = await _telegram_api("sendMessage", payload, token=token)
+    result = data.get("result") or {}
+    message_id = int(result["message_id"])
+    chat_obj = result.get("chat") or {}
+    resolved_chat_id = int(chat_obj.get("id") or target)
+    return resolved_chat_id, message_id
 
 
 async def edit_telegram_notification(

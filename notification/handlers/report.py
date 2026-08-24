@@ -13,8 +13,7 @@ from telegram.ext import (
     filters,
 )
 
-from notification.chat_id import telegram_chat_ids_match
-from notification.handlers._chat import notification_chat_id
+from notification.payment_notification_routing import is_bind_notification_chat_id
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +34,7 @@ def _message_body(message) -> str:
 def _is_notification_chat(update: Update) -> bool:
     if not update.effective_chat:
         return False
-    expected = notification_chat_id()
-    if expected is None:
-        return False
-    return telegram_chat_ids_match(int(update.effective_chat.id), expected)
+    return is_bind_notification_chat_id(int(update.effective_chat.id))
 
 
 def format_report_ticket(

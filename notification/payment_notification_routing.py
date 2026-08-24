@@ -10,7 +10,6 @@ from bot.services.player_details import _shorthands_from_prefix_segment
 from notification.chat_id import telegram_chat_ids_match
 from notification.constants import (
     PAYMENT_NOTIFICATION_CHAT_ID_CREATOR_CLUB_ENV,
-    PAYMENT_NOTIFICATION_CHAT_ID_ENV,
     PAYMENT_NOTIFICATION_CHAT_ID_GTO_ENV,
     PAYMENT_NOTIFICATION_CHAT_ID_RT_AT_CC_ENV,
     PAYMENT_NOTIFICATION_CHAT_ID_RT_AT_ENV,
@@ -28,6 +27,9 @@ _GTO_SHORTHANDS = frozenset({"GTO"})
 _RT_AT_SHORTHANDS = frozenset({"RT", "AT"})
 _CREATOR_SHORTHANDS = frozenset({"CC"})
 
+_CC_AT_UNION_BUCKETS = frozenset({BUCKET_RT_AT, BUCKET_CREATOR_CLUB})
+_ALL_CLUB_BUCKETS = frozenset({BUCKET_GTO, BUCKET_RT_AT, BUCKET_CREATOR_CLUB})
+
 
 def _env_chat_id(env_key: str) -> int | None:
     raw = (os.getenv(env_key) or "").strip()
@@ -38,10 +40,6 @@ def _env_chat_id(env_key: str) -> int | None:
     except ValueError:
         logger.warning("invalid %s=%r", env_key, raw)
         return None
-
-
-def main_notification_chat_id() -> int | None:
-    return _env_chat_id(PAYMENT_NOTIFICATION_CHAT_ID_ENV)
 
 
 def gto_notification_chat_id() -> int | None:
@@ -67,7 +65,7 @@ def creator_club_notification_chat_id() -> int | None:
 
 
 def club_binding_notification_chat_ids() -> list[int]:
-    """Configured club bind chats (GTO, RT/AT, Creator Club). Excludes main."""
+    """Configured club bind chats (GTO, RT/AT, Creator Club)."""
     ids: list[int] = []
     for cid in (
         gto_notification_chat_id(),
@@ -80,14 +78,8 @@ def club_binding_notification_chat_ids() -> list[int]:
 
 
 def configured_bind_notification_chat_ids() -> list[int]:
-    """Chats where payment bind UX is active (club chats + legacy main)."""
-    ids = club_binding_notification_chat_ids()
-    main = main_notification_chat_id()
-    if main is not None:
-        main_id = int(main)
-        if main_id not in ids:
-            ids.insert(0, main_id)
-    return ids
+    """Chats where payment bind UX and /report are active."""
+    return club_binding_notification_chat_ids()
 
 
 def configured_notification_chat_ids() -> list[int]:
@@ -107,47 +99,50 @@ def is_bind_notification_chat_id(chat_id: int) -> bool:
     return canonical_notification_chat_id(int(chat_id)) is not None
 
 
-def notification_bucket_for_title(title: str | None) -> NotificationBucket | None:
-    """Club-notification bucket from the first `/` segment of a group title.
-
-    Does not require a GG player id (megagroups like ``GTO / / Player`` still match).
-    A single title with tokens from more than one bucket has no bucket.
-    """
+def notification_buckets_for_title(title: str | None) -> frozenset[NotificationBucket]:
+    """All club buckets referenced by a group title prefix."""
     raw = (title or "").strip()
     if not raw:
-        return None
+        return frozenset()
     first = raw.split("/", 1)[0]
     shorthands = _shorthands_from_prefix_segment(first)
-    has_gto = bool(shorthands & _GTO_SHORTHANDS)
-    has_rt_at = bool(shorthands & _RT_AT_SHORTHANDS)
-    has_creator = bool(shorthands & _CREATOR_SHORTHANDS)
-    bucket_flags = (has_gto, has_rt_at, has_creator)
-    if sum(bucket_flags) != 1:
-        return None
-    if has_gto:
-        return BUCKET_GTO
-    if has_rt_at:
-        return BUCKET_RT_AT
-    if has_creator:
-        return BUCKET_CREATOR_CLUB
+    buckets: set[NotificationBucket] = set()
+    if shorthands & _GTO_SHORTHANDS:
+        buckets.add(BUCKET_GTO)
+    if shorthands & _RT_AT_SHORTHANDS:
+        buckets.add(BUCKET_RT_AT)
+    if shorthands & _CREATOR_SHORTHANDS:
+        buckets.add(BUCKET_CREATOR_CLUB)
+    return frozenset(buckets)
+
+
+def notification_bucket_for_title(title: str | None) -> NotificationBucket | None:
+    """Single bucket when a title maps to exactly one club; else None."""
+    buckets = notification_buckets_for_title(title)
+    if len(buckets) == 1:
+        return next(iter(buckets))
     return None
 
 
 def notification_destination_bucket(
     titles: Iterable[str | None],
 ) -> NotificationBucket | None:
-    """Single destination bucket for a set of titles, or None for broadcast-to-all.
-
-    None means unknown, mixed buckets, or no classifiable titles.
-    """
+    """Single destination bucket for a set of titles, or None for broadcast."""
     buckets: set[NotificationBucket] = set()
     for title in titles:
-        bucket = notification_bucket_for_title(title)
-        if bucket is not None:
-            buckets.add(bucket)
+        buckets |= set(notification_buckets_for_title(title))
     if len(buckets) == 1:
         return next(iter(buckets))
     return None
+
+
+def notification_destination_buckets(
+    titles: Iterable[str | None],
+) -> frozenset[NotificationBucket]:
+    combined: set[NotificationBucket] = set()
+    for title in titles:
+        combined |= set(notification_buckets_for_title(title))
+    return frozenset(combined)
 
 
 def _chat_id_for_bucket(bucket: NotificationBucket) -> int | None:
@@ -166,6 +161,32 @@ def _env_key_for_bucket(bucket: NotificationBucket) -> str:
     if bucket == BUCKET_RT_AT:
         return PAYMENT_NOTIFICATION_CHAT_ID_RT_AT_ENV
     return PAYMENT_NOTIFICATION_CHAT_ID_CREATOR_CLUB_ENV
+
+
+def _chat_ids_for_buckets(buckets: Iterable[NotificationBucket]) -> list[int]:
+    ids: list[int] = []
+    for bucket in (BUCKET_GTO, BUCKET_RT_AT, BUCKET_CREATOR_CLUB):
+        if bucket not in buckets:
+            continue
+        club = _chat_id_for_bucket(bucket)
+        if club is not None:
+            chat_id = int(club)
+            if chat_id not in ids:
+                ids.append(chat_id)
+        else:
+            logger.warning(
+                "%s not set; skipping %s payment notification chat",
+                _env_key_for_bucket(bucket),
+                bucket,
+            )
+    return ids
+
+
+def _all_club_bind_chat_ids() -> list[int]:
+    bind = club_binding_notification_chat_ids()
+    if bind:
+        return bind
+    return []
 
 
 def ingest_notification_titles(
@@ -188,24 +209,36 @@ def ingest_notification_titles(
 def resolve_notification_chat_ids(titles: Iterable[str | None]) -> list[int]:
     """Staff bind chats for these titles.
 
-    Single-bucket titles go to that club chat. Unbound/mixed/unknown titles
-    broadcast to all configured club bind chats. Falls back to main when no
-    club chats are configured.
+    Single-bucket titles go to that club chat. CC+AT union titles go to RT/AT
+    and Creator Club. Cross-club mixed / unknown titles broadcast to all club
+    bind chats.
     """
-    dest = notification_destination_bucket(titles)
-    if dest is not None:
-        club = _chat_id_for_bucket(dest)
+    title_list = [(t or "").strip() for t in titles if (t or "").strip()]
+    if not title_list:
+        return _all_club_bind_chat_ids()
+
+    combined = notification_destination_buckets(title_list)
+    if not combined:
+        return _all_club_bind_chat_ids()
+
+    if combined <= _CC_AT_UNION_BUCKETS:
+        ids = _chat_ids_for_buckets(combined)
+        if ids:
+            return ids
+        return _all_club_bind_chat_ids()
+
+    if len(combined) == 1:
+        bucket = next(iter(combined))
+        club = _chat_id_for_bucket(bucket)
         if club is not None:
             return [int(club)]
         logger.warning(
             "%s not set; broadcasting to all club bind chats",
-            _env_key_for_bucket(dest),
+            _env_key_for_bucket(bucket),
         )
-    bind = club_binding_notification_chat_ids()
-    if bind:
-        return bind
-    main = main_notification_chat_id()
-    return [int(main)] if main is not None else []
+        return _all_club_bind_chat_ids()
+
+    return _all_club_bind_chat_ids()
 
 
 def resolve_notification_chat_id(titles: Iterable[str | None]) -> int | None:

@@ -25,8 +25,6 @@ from db.connection import get_db
 from notification.bind_actions import crypto_scope_error
 from notification.bind_keyboards import reassign_or_add_markup, to_inline_keyboard
 from notification.chat_id import telegram_chat_ids_match
-from notification.constants import PAYMENT_NOTIFICATION_CHAT_ID_ENV
-from notification.handlers._chat import notification_chat_id
 from notification.handlers.bind_callbacks import (
     get_add_member_pending,
     payment_bind_add_member_reply_handler,
@@ -82,9 +80,6 @@ def _titles_match(bound_title: str | None, reply_title: str) -> bool:
 
 def _staff_notification_chat_key(chat_id: int) -> int | None:
     """Canonical staff notification chat for this Telegram chat, if allowed."""
-    main = notification_chat_id()
-    if main is not None and telegram_chat_ids_match(int(chat_id), int(main)):
-        return int(main)
     return canonical_notification_chat_id(int(chat_id))
 
 
@@ -98,8 +93,8 @@ async def payment_bind_reply_handler(
     chat_id = int(update.effective_chat.id)
     canonical = _staff_notification_chat_key(chat_id)
     if canonical is None:
-        if notification_chat_id() is None and not configured_notification_chat_ids():
-            logger.warning("payment bind: %s not set", PAYMENT_NOTIFICATION_CHAT_ID_ENV)
+        if not configured_bind_notification_chat_ids():
+            logger.warning("payment bind: no club notification chats configured")
         else:
             logger.debug(
                 "payment bind: ignoring message chat_id=%s",

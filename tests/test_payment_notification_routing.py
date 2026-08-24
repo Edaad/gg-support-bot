@@ -34,7 +34,6 @@ RT_CHAT = -1000000000003
 CREATOR_CHAT = -1000000000004
 
 _CHAT_ENV = {
-    "PAYMENT_NOTIFICATION_CHAT_ID": str(MAIN_CHAT),
     "PAYMENT_NOTIFICATION_CHAT_ID_GTO": str(GTO_CHAT),
     "PAYMENT_NOTIFICATION_CHAT_ID_RT_AT": str(RT_CHAT),
     "PAYMENT_NOTIFICATION_CHAT_ID_CREATOR_CLUB": str(CREATOR_CHAT),
@@ -124,6 +123,20 @@ class ResolveNotificationChatIdTestCase(unittest.TestCase):
         self.assertEqual(resolve_notification_chat_ids(["RT / 1-2 / A"]), [RT_CHAT])
 
     @patch.dict(os.environ, _CHAT_ENV, clear=False)
+    def test_cc_at_routes_to_rt_and_creator_only(self):
+        self.assertEqual(
+            resolve_notification_chat_ids(["CC AT / 1-2 / p"]),
+            [RT_CHAT, CREATOR_CHAT],
+        )
+
+    @patch.dict(os.environ, _CHAT_ENV, clear=False)
+    def test_rt_and_cc_candidates_route_to_rt_and_creator(self):
+        self.assertEqual(
+            resolve_notification_chat_ids(["RT / 1-2 / A", "CC / 3-4 / B"]),
+            [RT_CHAT, CREATOR_CHAT],
+        )
+
+    @patch.dict(os.environ, _CHAT_ENV, clear=False)
     def test_mixed_broadcasts_to_all_club_chats(self):
         self.assertEqual(
             resolve_notification_chat_ids(["GTO / 1-2 / A", "RT / 3-4 / B"]),
@@ -138,7 +151,6 @@ class ResolveNotificationChatIdTestCase(unittest.TestCase):
     @patch.dict(
         os.environ,
         {
-            "PAYMENT_NOTIFICATION_CHAT_ID": str(MAIN_CHAT),
             "PAYMENT_NOTIFICATION_CHAT_ID_GTO": "",
             "PAYMENT_NOTIFICATION_CHAT_ID_RT_AT": str(RT_CHAT),
             "PAYMENT_NOTIFICATION_CHAT_ID_CREATOR_CLUB": str(CREATOR_CHAT),
@@ -221,32 +233,23 @@ class ResolveIngestNotificationChatIdTestCase(unittest.TestCase):
 
 class StaffChatAllowlistTestCase(unittest.TestCase):
     @patch.dict(os.environ, _CHAT_ENV, clear=False)
-    @patch("notification.handlers.bind.notification_chat_id", return_value=MAIN_CHAT)
-    def test_bind_allows_club_chats_and_rejects_other(self, _main):
+    def test_bind_allows_club_chats_and_rejects_other(self):
         self.assertEqual(_staff_notification_chat_key(GTO_CHAT), GTO_CHAT)
         self.assertEqual(_staff_notification_chat_key(CREATOR_CHAT), CREATOR_CHAT)
-        self.assertEqual(_staff_notification_chat_key(MAIN_CHAT), MAIN_CHAT)
         self.assertIsNone(_staff_notification_chat_key(-1099))
 
     @patch.dict(os.environ, _CHAT_ENV, clear=False)
-    @patch(
-        "notification.handlers.bind_callbacks.notification_chat_id",
-        return_value=MAIN_CHAT,
-    )
-    def test_callback_canonical_allows_club_chats(self, _main):
+    def test_callback_canonical_allows_club_chats(self):
         self.assertEqual(_canonical_notification_chat_id(RT_CHAT), RT_CHAT)
         self.assertEqual(_canonical_notification_chat_id(GTO_CHAT), GTO_CHAT)
         self.assertEqual(_canonical_notification_chat_id(CREATOR_CHAT), CREATOR_CHAT)
         self.assertIsNone(_canonical_notification_chat_id(-1099))
 
 
-class SendTelegramNotificationFallbackTestCase(unittest.IsolatedAsyncioTestCase):
+class SendTelegramNotificationTestCase(unittest.IsolatedAsyncioTestCase):
     @patch.dict(
         os.environ,
-        {
-            "TELEGRAM_NOTIFICATION_BOT_TOKEN": "tok",
-            "PAYMENT_NOTIFICATION_CHAT_ID": str(MAIN_CHAT),
-        },
+        {"TELEGRAM_NOTIFICATION_BOT_TOKEN": "tok"},
         clear=False,
     )
     @patch("bot.services.venmo_payments._telegram_api", new_callable=AsyncMock)
@@ -263,25 +266,17 @@ class SendTelegramNotificationFallbackTestCase(unittest.IsolatedAsyncioTestCase)
 
     @patch.dict(
         os.environ,
-        {
-            "TELEGRAM_NOTIFICATION_BOT_TOKEN": "tok",
-            "PAYMENT_NOTIFICATION_CHAT_ID": str(MAIN_CHAT),
-        },
+        {"TELEGRAM_NOTIFICATION_BOT_TOKEN": "tok"},
         clear=False,
     )
     @patch("bot.services.venmo_payments._telegram_api", new_callable=AsyncMock)
-    async def test_club_send_failure_retries_main(self, mock_api):
-        mock_api.side_effect = [
-            RuntimeError("forbidden"),
-            {"ok": True, "result": {"message_id": 10, "chat": {"id": MAIN_CHAT}}},
-        ]
+    async def test_club_send_failure_raises(self, mock_api):
+        mock_api.side_effect = RuntimeError("forbidden")
         from bot.services.venmo_payments import send_telegram_notification
 
-        chat, mid = await send_telegram_notification("hi", chat_id=GTO_CHAT)
-        self.assertEqual((chat, mid), (MAIN_CHAT, 10))
-        self.assertEqual(mock_api.await_count, 2)
-        self.assertEqual(mock_api.await_args_list[0].args[1]["chat_id"], GTO_CHAT)
-        self.assertEqual(mock_api.await_args_list[1].args[1]["chat_id"], MAIN_CHAT)
+        with self.assertRaises(RuntimeError):
+            await send_telegram_notification("hi", chat_id=GTO_CHAT)
+        self.assertEqual(mock_api.await_count, 1)
 
 
 class PaymentNotificationHtmlToSlackTestCase(unittest.TestCase):
@@ -300,10 +295,7 @@ class PaymentNotificationHtmlToSlackTestCase(unittest.TestCase):
 class DeliverPaymentNotificationTestCase(unittest.IsolatedAsyncioTestCase):
     @patch.dict(
         os.environ,
-        {
-            "TELEGRAM_NOTIFICATION_BOT_TOKEN": "tok",
-            "PAYMENT_NOTIFICATION_CHAT_ID": str(MAIN_CHAT),
-        },
+        {"TELEGRAM_NOTIFICATION_BOT_TOKEN": "tok"},
         clear=False,
     )
     @patch(
@@ -326,6 +318,38 @@ class DeliverPaymentNotificationTestCase(unittest.IsolatedAsyncioTestCase):
         mock_slack.assert_awaited_once()
         self.assertIn("*$1.00*", mock_slack.await_args.args[0])
         self.assertEqual(mock_slack.await_args.kwargs["source"], "payment_notification")
+
+    @patch.dict(
+        os.environ,
+        {"TELEGRAM_NOTIFICATION_BOT_TOKEN": "tok"},
+        clear=False,
+    )
+    @patch(
+        "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "bot.services.slack_ops_notify.notify_slack_escalation",
+        new_callable=AsyncMock,
+    )
+    @patch("bot.services.venmo_payments._telegram_api", new_callable=AsyncMock)
+    async def test_partial_failure_notifies_head_admin(
+        self,
+        mock_api,
+        mock_slack,
+        mock_head_admin,
+    ):
+        mock_api.side_effect = [
+            RuntimeError("forbidden"),
+            {"ok": True, "result": {"message_id": 2, "chat": {"id": RT_CHAT}}},
+        ]
+        chat, mid = await deliver_payment_notification(
+            "hi",
+            bind_chat_ids=[GTO_CHAT, RT_CHAT],
+        )
+        self.assertEqual((chat, mid), (RT_CHAT, 2))
+        mock_head_admin.assert_awaited_once()
+        mock_slack.assert_awaited_once()
 
 
 if __name__ == "__main__":

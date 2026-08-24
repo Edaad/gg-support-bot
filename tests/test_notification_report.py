@@ -18,6 +18,7 @@ from notification.handlers.report import (
 )
 
 NOTIF_CHAT_ID = -1009999999999
+_REPORT_CLUB_ENV = {"PAYMENT_NOTIFICATION_CHAT_ID_GTO": str(NOTIF_CHAT_ID)}
 
 
 def _make_update(
@@ -79,7 +80,7 @@ class TestFormatReportTicket(unittest.TestCase):
 
 
 class TestReportEntry(unittest.IsolatedAsyncioTestCase):
-    @patch.dict(os.environ, {"PAYMENT_NOTIFICATION_CHAT_ID": str(NOTIF_CHAT_ID)})
+    @patch.dict(os.environ, _REPORT_CLUB_ENV, clear=False)
     async def test_requires_reply(self) -> None:
         update = _make_update(has_reply=False)
         context = _make_context()
@@ -90,7 +91,7 @@ class TestReportEntry(unittest.IsolatedAsyncioTestCase):
         update.message.reply_text.assert_awaited_once()
         self.assertIn("Reply to the notification", update.message.reply_text.await_args.args[0])
 
-    @patch.dict(os.environ, {"PAYMENT_NOTIFICATION_CHAT_ID": str(NOTIF_CHAT_ID)})
+    @patch.dict(os.environ, _REPORT_CLUB_ENV, clear=False)
     async def test_starts_conversation_when_reply_present(self) -> None:
         update = _make_update()
         context = _make_context()
@@ -105,7 +106,11 @@ class TestReportEntry(unittest.IsolatedAsyncioTestCase):
             reply_markup=ForceReply(selective=True),
         )
 
-    @patch.dict(os.environ, {"PAYMENT_NOTIFICATION_CHAT_ID": "-1000000000001"})
+    @patch.dict(
+        os.environ,
+        {"PAYMENT_NOTIFICATION_CHAT_ID_GTO": "-1000000000001"},
+        clear=False,
+    )
     async def test_ignores_wrong_chat(self) -> None:
         update = _make_update(chat_id=NOTIF_CHAT_ID)
         context = _make_context()
@@ -117,7 +122,7 @@ class TestReportEntry(unittest.IsolatedAsyncioTestCase):
 
 
 class TestReportReason(unittest.IsolatedAsyncioTestCase):
-    @patch.dict(os.environ, {"PAYMENT_NOTIFICATION_CHAT_ID": str(NOTIF_CHAT_ID)})
+    @patch.dict(os.environ, _REPORT_CLUB_ENV, clear=False)
     @patch(
         "bot.services.slack_ops_notify.notify_slack_ops",
         new_callable=AsyncMock,
@@ -144,7 +149,7 @@ class TestReportReason(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_slack.await_args.kwargs["source"], "notification_report")
         self.assertIn("Wrong group title", mock_slack.await_args.args[0])
 
-    @patch.dict(os.environ, {"PAYMENT_NOTIFICATION_CHAT_ID": str(NOTIF_CHAT_ID)})
+    @patch.dict(os.environ, _REPORT_CLUB_ENV, clear=False)
     @patch(
         "bot.services.slack_ops_notify.notify_slack_ops",
         new_callable=AsyncMock,
@@ -168,7 +173,7 @@ class TestReportReason(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Slack", update.message.reply_text.await_args.args[0])
         mock_slack.assert_awaited_once()
 
-    @patch.dict(os.environ, {"PAYMENT_NOTIFICATION_CHAT_ID": str(NOTIF_CHAT_ID)})
+    @patch.dict(os.environ, _REPORT_CLUB_ENV, clear=False)
     async def test_empty_reason_reprompts(self) -> None:
         update = _make_update(text="   ")
         context = _make_context()

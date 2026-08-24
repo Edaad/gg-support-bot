@@ -115,7 +115,7 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
         with (
             patch("bot.services.venmo_payments.get_db") as mock_get_db,
             patch(
-                "bot.services.venmo_payments.send_telegram_notification",
+                "notification.payment_notification_delivery.deliver_payment_notification",
                 new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
             ),
             patch(
@@ -217,7 +217,7 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
         with (
             patch("bot.services.venmo_payments.get_db") as mock_get_db,
             patch(
-                "bot.services.venmo_payments.send_telegram_notification",
+                "notification.payment_notification_delivery.deliver_payment_notification",
                 new=AsyncMock(return_value=(NOTIF_CHAT_ID, NOTIF_MSG_ID)),
             ),
             patch(

@@ -17,7 +17,9 @@ from db.connection import init_engine
 from db.models import Base
 from notification.constants import (
     NOTIFICATION_BOT_TOKEN_ENV,
-    PAYMENT_NOTIFICATION_CHAT_ID_ENV,
+    PAYMENT_NOTIFICATION_CHAT_ID_CREATOR_CLUB_ENV,
+    PAYMENT_NOTIFICATION_CHAT_ID_GTO_ENV,
+    PAYMENT_NOTIFICATION_CHAT_ID_RT_AT_ENV,
 )
 from notification.handlers.bind import payment_bind_reply_handler
 from notification.handlers.bind_callbacks import (
@@ -26,6 +28,7 @@ from notification.handlers.bind_callbacks import (
 )
 from notification.handlers.report import get_report_handler
 from notification.payment_notification_routing import (
+    club_binding_notification_chat_ids,
     creator_club_notification_chat_id,
     gto_notification_chat_id,
     rt_at_notification_chat_id,
@@ -70,9 +73,14 @@ def run_notification_bot(token: str | None = None) -> None:
     if not token:
         raise SystemExit(f"Provide {NOTIFICATION_BOT_TOKEN_ENV} env var")
 
-    chat_raw = (os.getenv(PAYMENT_NOTIFICATION_CHAT_ID_ENV) or "").strip()
-    if not chat_raw:
-        raise SystemExit(f"Provide {PAYMENT_NOTIFICATION_CHAT_ID_ENV} env var")
+    bind_chats = club_binding_notification_chat_ids()
+    if not bind_chats:
+        raise SystemExit(
+            "Provide at least one club bind chat env var: "
+            f"{PAYMENT_NOTIFICATION_CHAT_ID_GTO_ENV}, "
+            f"{PAYMENT_NOTIFICATION_CHAT_ID_RT_AT_ENV}, "
+            f"{PAYMENT_NOTIFICATION_CHAT_ID_CREATOR_CLUB_ENV}"
+        )
 
     _configure_worker_logging()
     engine = init_engine()
@@ -102,11 +110,11 @@ def run_notification_bot(token: str | None = None) -> None:
 
     logger.info(
         "Notification bot starting (payment bind replies + callbacks in "
-        "chat_id=%s gto=%s rt_at=%s creator_club=%s)",
-        chat_raw,
+        "gto=%s rt_at=%s creator_club=%s bind_chats=%s)",
         gto_notification_chat_id(),
         rt_at_notification_chat_id(),
         creator_club_notification_chat_id(),
+        bind_chats,
     )
     app.run_polling(allowed_updates=["message", "callback_query"])
 

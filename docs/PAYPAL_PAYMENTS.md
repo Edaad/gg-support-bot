@@ -31,10 +31,10 @@ DATABASE_URL=... python migrate_paypal_payments.py
 |----------|----------|---------|
 | `PAYPAL_ZAPIER_WEBHOOK_SECRET` | Yes (web dyno) | Auth for Zapier POST |
 | `TELEGRAM_NOTIFICATION_BOT_TOKEN` | Yes (web + notification dynos) | @ggnotificationbot |
-| `PAYMENT_NOTIFICATION_CHAT_ID` | Yes (web + notification dynos) | Legacy main chat (`/report`; fallback when no club chats configured) |
-| `PAYMENT_NOTIFICATION_CHAT_ID_GTO` | No | ClubGTO-only bound/same-bucket notifications |
-| `PAYMENT_NOTIFICATION_CHAT_ID_RT_AT` | No | Round Table + Aces Table bound/same-bucket notifications |
-| `PAYMENT_NOTIFICATION_CHAT_ID_CREATOR_CLUB` | No | Creator Club (CC) bound/same-bucket notifications |
+| `TELEGRAM_NOTIFICATION_BOT_TOKEN` | Yes (web + notification dynos) | Notification bot token |
+| `PAYMENT_NOTIFICATION_CHAT_ID_GTO` | No* | ClubGTO bind chat |
+| `PAYMENT_NOTIFICATION_CHAT_ID_RT_AT` | No* | Round Table + Aces Table bind chat |
+| `PAYMENT_NOTIFICATION_CHAT_ID_CREATOR_CLUB` | No* | Creator Club bind chat |
 | Slack AM escalations | No | Mirror of every payment notification via `SLACK_ESCALATION_BOT_TOKEN` + `SLACK_ESCALATION_CHANNEL_ID` (or webhook) |
 
 ## API
