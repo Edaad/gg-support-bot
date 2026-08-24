@@ -1133,7 +1133,8 @@ def _format_cooldown_wait(
 EARLYRB_COOLDOWN_DENIAL_MESSAGE = (
     "Sorry, you must wait 24 hours between early rakeback requests. "
     "Inquiries are limited to once every 24 hours. "
-    "If you don't meet the 50 minimum, you'll need to wait another 24 hours before trying again."
+    "If you don't meet the 50 minimum, you'll need to wait another 24 hours before trying again.\n\n"
+    "If chips are credited for early rakeback, that counts as a deposit :)"
 )
 
 

@@ -35,6 +35,7 @@ class EarlyrbEligibilityTestCase(unittest.TestCase):
         assert msg is not None
         self.assertIn("early rakeback requests", msg)
         self.assertIn("50 minimum", msg)
+        self.assertIn("counts as a deposit :)", msg)
         self.assertIn("/earlyrb again at", msg)
         self.assertIn(" EST ", msg)
 
