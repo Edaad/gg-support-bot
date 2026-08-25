@@ -578,9 +578,12 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             "cashier.services.complete.apply_low_deposit_cashout_hold",
             return_value=None,
         ) as mock_hold, patch(
-            "cashier.services.complete.notify_slack_head_admin_escalation",
+            "cashier.services.complete.notify_slack_escalation",
             new=AsyncMock(return_value=True),
         ) as mock_slack, patch(
+            "cashier.services.complete.dm_staff",
+            new=AsyncMock(return_value=True),
+        ) as mock_dm, patch(
             "cashier.services.complete.schedule_cash_flow_from_club",
         ), patch(
             "cashier.services.complete.record_activity_for_chat",
@@ -598,6 +601,7 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             mock_create.assert_called_once_with(job)
             mock_hold.assert_called_once_with(99)
             mock_slack.assert_not_called()
+            mock_dm.assert_not_called()
 
     async def test_complete_notifies_slack_when_low_deposit_hold(self) -> None:
         job = {
@@ -637,9 +641,12 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             "cashier.services.complete.apply_low_deposit_cashout_hold",
             return_value=hold,
         ), patch(
-            "cashier.services.complete.notify_slack_head_admin_escalation",
+            "cashier.services.complete.notify_slack_escalation",
             new=AsyncMock(return_value=True),
         ) as mock_slack, patch(
+            "cashier.services.complete.dm_staff",
+            new=AsyncMock(return_value=True),
+        ) as mock_dm, patch(
             "cashier.services.complete.get_club_by_id",
             return_value=club,
         ), patch(
@@ -660,12 +667,26 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             mock_zapier.assert_awaited_once()
             mock_slack.assert_awaited_once()
             text = mock_slack.await_args.args[0]
+            self.assertTrue(
+                text.startswith(
+                    "CASHOUT ON HOLD, DO NOT SEND UNTIL HEAD ADMIN CLEARS\n"
+                )
+            )
             self.assertIn("0 deposits", text)
             self.assertIn("Round Table", text)
+            self.assertIn("*Group*: `RT / 1-2 / X`", text)
+            self.assertIn("*Club*: Round Table", text)
+            self.assertNotIn("Chat id", text)
             self.assertEqual(
                 mock_slack.await_args.kwargs.get("source"),
                 "low_deposit_cashout",
             )
+            mock_dm.assert_awaited_once()
+            self.assertEqual(mock_dm.await_args.args[0], 1)
+            tg = mock_dm.await_args.args[1]
+            self.assertIn("<b>Group</b>: <code>RT / 1-2 / X</code>", tg)
+            self.assertIn("<b>Club</b>: Round Table", tg)
+            self.assertEqual(mock_dm.await_args.kwargs.get("parse_mode"), "HTML")
 
 
 class CountDepositsForChatTestCase(unittest.TestCase):

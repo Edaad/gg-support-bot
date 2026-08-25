@@ -219,3 +219,39 @@ async def notify_staff_cashout_job(
             token=token,
         )
         return False
+
+
+async def dm_staff(
+    staff_user_id: int,
+    text: str,
+    *,
+    parse_mode: str | None = None,
+) -> bool:
+    """Best-effort DM via GGCashier bot. Never raises."""
+    message = (text or "").strip()
+    if not message:
+        return False
+    token = os.getenv(CASHIER_BOT_TOKEN_ENV)
+    if not token:
+        logger.warning("dm_staff: %s not set", CASHIER_BOT_TOKEN_ENV)
+        return False
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload: dict = {"chat_id": int(staff_user_id), "text": message}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            if not data.get("ok"):
+                logger.warning(
+                    "dm_staff failed staff_user_id=%s: %s",
+                    staff_user_id,
+                    data.get("description"),
+                )
+                return False
+            return True
+    except Exception:
+        logger.exception("dm_staff failed staff_user_id=%s", staff_user_id)
+        return False
