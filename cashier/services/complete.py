@@ -13,7 +13,10 @@ from bot.services.club import (
     record_activity_for_chat,
 )
 from bot.services.mtproto_group_cash import schedule_cash_flow_from_club
-from bot.services.slack_ops_notify import notify_slack_escalation
+from bot.services.slack_ops_notify import (
+    notify_slack_escalation,
+    notify_slack_head_admin_escalation,
+)
 from bot.services.staff_cashout_records import (
     apply_low_deposit_cashout_hold,
     create_staff_cashout_record_from_job,
@@ -86,6 +89,9 @@ def _format_low_deposit_hold_telegram(hold: dict[str, Any]) -> str:
 async def _notify_low_deposit_hold(hold: dict[str, Any], job: dict[str, Any]) -> None:
     slack_text = _format_low_deposit_hold_slack(hold)
     await notify_slack_escalation(slack_text, source="low_deposit_cashout")
+    await notify_slack_head_admin_escalation(
+        slack_text, source="low_deposit_cashout"
+    )
     staff_user_id = job.get("initiated_by")
     if staff_user_id is None:
         logger.warning(

@@ -581,6 +581,9 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             "cashier.services.complete.notify_slack_escalation",
             new=AsyncMock(return_value=True),
         ) as mock_slack, patch(
+            "cashier.services.complete.notify_slack_head_admin_escalation",
+            new=AsyncMock(return_value=True),
+        ) as mock_head_admin, patch(
             "cashier.services.complete.dm_staff",
             new=AsyncMock(return_value=True),
         ) as mock_dm, patch(
@@ -601,6 +604,7 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             mock_create.assert_called_once_with(job)
             mock_hold.assert_called_once_with(99)
             mock_slack.assert_not_called()
+            mock_head_admin.assert_not_called()
             mock_dm.assert_not_called()
 
     async def test_complete_notifies_slack_when_low_deposit_hold(self) -> None:
@@ -644,6 +648,9 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             "cashier.services.complete.notify_slack_escalation",
             new=AsyncMock(return_value=True),
         ) as mock_slack, patch(
+            "cashier.services.complete.notify_slack_head_admin_escalation",
+            new=AsyncMock(return_value=True),
+        ) as mock_head_admin, patch(
             "cashier.services.complete.dm_staff",
             new=AsyncMock(return_value=True),
         ) as mock_dm, patch(
@@ -680,6 +687,9 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 mock_slack.await_args.kwargs.get("source"),
                 "low_deposit_cashout",
+            )
+            mock_head_admin.assert_awaited_once_with(
+                text, source="low_deposit_cashout"
             )
             mock_dm.assert_awaited_once()
             self.assertEqual(mock_dm.await_args.args[0], 1)
