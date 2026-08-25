@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -60,6 +60,10 @@ from api.audit_reconcile import (
 from api.audit_reconcile_export import (
     build_all_clubs_matching_workbook,
     build_reconcile_workbook_from_report,
+)
+from api.gto_weekly_audit import (
+    GtoWeeklyAuditError,
+    build_gto_weekly_audit_from_uploads,
 )
 from db.connection import get_db_dependency
 from db.models import AuditReconcileRun, EarlyRakebackSnapshot, TradeRecordLine, TradeRecordUpload
@@ -695,4 +699,46 @@ def export_reconcile_all_clubs(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/gto-weekly-audit/export")
+async def export_gto_weekly_audit(
+    monday: str = Form(..., description="Week Monday (YYYY-MM-DD)"),
+    files: list[UploadFile] = File(
+        ...,
+        description="Exactly 7 reconcile-all-clubs-YYYY-MM-DD.xlsx Matching exports",
+    ),
+):
+    """Build GTO weekly audit XLSX from human-corrected all-clubs Matching files."""
+    if len(files) != 7:
+        raise HTTPException(
+            400,
+            f"Expected exactly 7 files; got {len(files)}.",
+        )
+
+    uploads: list[tuple[str, bytes]] = []
+    for file in files:
+        filename = (file.filename or "upload.xlsx").strip()
+        if not filename.lower().endswith(".xlsx"):
+            raise HTTPException(400, f"{filename!r} must be an .xlsx workbook")
+        raw = await file.read()
+        if len(raw) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(400, f"{filename!r} exceeds 20MB limit")
+        if not raw:
+            raise HTTPException(400, f"{filename!r} is empty")
+        uploads.append((filename, raw))
+
+    try:
+        content, out_name = build_gto_weekly_audit_from_uploads(
+            monday=monday,
+            uploads=uploads,
+        )
+    except GtoWeeklyAuditError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{out_name}"'},
     )

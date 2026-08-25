@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import {
   downloadAuditExport,
+  downloadGtoWeeklyAudit,
   runReconcilePipeline,
   syncEarlyRakeback,
   uploadAllTradeRecords,
@@ -234,6 +235,8 @@ function AllClubsUploadZone({ uploads, error, disabled, onUpload }: AllClubsUplo
 export default function Audit({ token }: { token: string }) {
   const reconcileClubId = useId()
   const exportDateId = useId()
+  const gtoMondayId = useId()
+  const gtoFilesId = useId()
 
   const [reconcileClubSlug, setReconcileClubSlug] = useState(RECONCILE_CLUB_OPTIONS[0].slug)
   const [slotUploads, setSlotUploads] = useState<Record<string, TradeRecordUploadReport>>({})
@@ -244,6 +247,10 @@ export default function Audit({ token }: { token: string }) {
   const [exportErr, setExportErr] = useState('')
   const [exportWarn, setExportWarn] = useState('')
   const [depositExportPhase, setDepositExportPhase] = useState<'idle' | 'syncing' | 'exporting'>('idle')
+  const [gtoMonday, setGtoMonday] = useState('')
+  const [gtoFiles, setGtoFiles] = useState<File[]>([])
+  const [gtoErr, setGtoErr] = useState('')
+  const [gtoExporting, setGtoExporting] = useState(false)
 
   const exportBusy = depositExportPhase !== 'idle'
   const running = pipelineStep !== null && pipelineStep !== 'done' && pipelineStep !== 'failed'
@@ -412,6 +419,31 @@ export default function Audit({ token }: { token: string }) {
         ? 'Exporting…'
         : 'Export deposit audit XLSX'
 
+  const onDownloadGtoWeeklyAudit = async () => {
+    if (!gtoMonday) {
+      setGtoErr('Select the Monday that starts the audit week.')
+      return
+    }
+    const mondayDate = new Date(`${gtoMonday}T00:00:00`)
+    if (Number.isNaN(mondayDate.getTime()) || mondayDate.getDay() !== 1) {
+      setGtoErr('Week start must be a Monday.')
+      return
+    }
+    if (gtoFiles.length !== 7) {
+      setGtoErr(`Select exactly 7 Matching files; got ${gtoFiles.length}.`)
+      return
+    }
+    setGtoErr('')
+    setGtoExporting(true)
+    try {
+      await downloadGtoWeeklyAudit(token, gtoMonday, gtoFiles)
+    } catch (e: unknown) {
+      setGtoErr(e instanceof Error ? e.message : 'GTO weekly audit export failed.')
+    } finally {
+      setGtoExporting(false)
+    }
+  }
+
   const activeStepIdx = pipelineStep ? stepIndex(pipelineStep) : -1
   const pipelineError = slotErrors._pipeline
 
@@ -557,6 +589,66 @@ export default function Audit({ token }: { token: string }) {
             className="btn-primary-sm disabled:opacity-40"
           >
             {depositExportLabel}
+          </button>
+        </div>
+      </section>
+
+      <section className="panel mb-6">
+        <h2 className="mb-2 text-lg font-semibold text-ink">GTO weekly audit</h2>
+        <p className="mb-4 text-sm text-ink-muted">
+          Upload seven human-corrected all-clubs Matching exports (
+          <code className="text-xs">reconcile-all-clubs-YYYY-MM-DD.xlsx</code>) for one Mon–Sun
+          week. Builds Processed (with Category pivot), Zelle, Venmo, Crypto, and Bonuses sheets.
+        </p>
+
+        {gtoErr ? (
+          <p role="alert" className="alert-danger mb-4">
+            {gtoErr}
+          </p>
+        ) : null}
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label htmlFor={gtoMondayId} className="label-field-xs">
+              Week Monday
+            </label>
+            <input
+              id={gtoMondayId}
+              type="date"
+              value={gtoMonday}
+              onChange={(e) => {
+                setGtoMonday(e.target.value)
+                setGtoErr('')
+              }}
+              className="input-field-sm"
+            />
+          </div>
+          <div>
+            <label htmlFor={gtoFilesId} className="label-field-xs">
+              Matching files (7)
+            </label>
+            <input
+              id={gtoFilesId}
+              type="file"
+              accept={XLSX_ACCEPT}
+              multiple
+              onChange={(e) => {
+                setGtoFiles(Array.from(e.target.files ?? []))
+                setGtoErr('')
+              }}
+              className="block max-w-xs text-sm text-ink-muted file:mr-3 file:rounded file:border-0 file:bg-surface-2 file:px-3 file:py-1.5 file:text-sm file:text-ink"
+            />
+            {gtoFiles.length > 0 ? (
+              <p className="mt-1 text-xs text-ink-muted">{gtoFiles.length} file(s) selected</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            disabled={gtoExporting || !gtoMonday || gtoFiles.length !== 7}
+            onClick={() => void onDownloadGtoWeeklyAudit()}
+            className="btn-primary-sm disabled:opacity-40"
+          >
+            {gtoExporting ? 'Exporting…' : 'Export GTO weekly audit'}
           </button>
         </div>
       </section>

@@ -483,6 +483,48 @@ export async function downloadReconcileExportAll(
   URL.revokeObjectURL(url)
 }
 
+export async function downloadGtoWeeklyAudit(
+  token: string,
+  monday: string,
+  files: File[],
+): Promise<void> {
+  if (files.length !== 7) {
+    throw new Error(`Expected exactly 7 files; got ${files.length}.`)
+  }
+  const body = new FormData()
+  body.append('monday', monday)
+  for (const file of files) {
+    body.append('files', file, file.name)
+  }
+
+  const res = await fetch(apiUrl('/api/audit/gto-weekly-audit/export'), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body,
+  })
+
+  if (res.status === 401) {
+    clearAuthSession()
+    window.location.href = '/'
+    throw new Error('Unauthorized')
+  }
+  if (!res.ok) {
+    throw new Error(await parseError(res))
+  }
+
+  const blob = await res.blob()
+  const filename = filenameFromContentDisposition(
+    res.headers.get('Content-Disposition'),
+    `GTO Audit ${monday}.xlsx`,
+  )
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 export async function downloadAuditExport(token: string, date: string): Promise<void> {
   return downloadPaymentsAuditExport(token, date)
 }
