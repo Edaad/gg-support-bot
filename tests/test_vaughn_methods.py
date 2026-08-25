@@ -58,6 +58,33 @@ class IsVaughnMethodTestCase(unittest.TestCase):
             )
         )
 
+    def test_zelle_coachingstarship_email(self):
+        self.assertTrue(
+            is_vaughn_method(
+                source="deposit_zelle",
+                variant="CoachingStarship@gmail.com",
+                club_slug="clubgto",
+            )
+        )
+
+    def test_zelle_janvenmo_email(self):
+        self.assertTrue(
+            is_vaughn_method(
+                source="deposit_zelle",
+                variant="janvenmo@gmail.com (clubgto)",
+                club_slug="clubgto",
+            )
+        )
+        self.assertEqual(
+            matching_source_label(
+                source="deposit_zelle",
+                variant="janvenmo@gmail.com (clubgto)",
+                club_slug="clubgto",
+                source_label="Zelle",
+            ),
+            "GTO Zelle",
+        )
+
     def test_zelle_starship_dashed(self):
         self.assertTrue(
             is_vaughn_method(

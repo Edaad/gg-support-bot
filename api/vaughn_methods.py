@@ -14,7 +14,14 @@ from api.audit_ledger import (
 from bot.services.payment_method_binding import canonicalize_zelle_recipient
 
 # Payment tags stored on ledger Variant (zelle_recipient / venmo_handle).
-VAUGHN_ZELLE_RECIPIENTS = frozenset({"2133729202", "starship5vllc@gmail.com"})
+VAUGHN_ZELLE_RECIPIENTS = frozenset(
+    {
+        "2133729202",
+        "starship5vllc@gmail.com",
+        "coachingstarship@gmail.com",
+        "janvenmo@gmail.com",
+    }
+)
 VAUGHN_VENMO_HANDLES = frozenset({"janseashells"})
 
 _VAUGHN_CLUB_SLUG = "clubgto"
@@ -29,7 +36,11 @@ VAUGHN_CASHOUT_SOURCE_LABELS: tuple[str, ...] = (
 
 
 def normalize_zelle_recipient(tag: str) -> str:
-    return canonicalize_zelle_recipient(tag)
+    canonical = canonicalize_zelle_recipient(tag)
+    # Zapier sometimes appends a club label, e.g. "janvenmo@gmail.com (clubgto)".
+    if " (" in canonical:
+        canonical = canonical.split(" (", 1)[0].strip()
+    return canonical
 
 
 def normalize_venmo_handle(tag: str) -> str:
