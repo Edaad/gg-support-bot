@@ -351,6 +351,37 @@ class DeliverPaymentNotificationTestCase(unittest.IsolatedAsyncioTestCase):
         mock_head_admin.assert_awaited_once()
         mock_slack.assert_awaited_once()
 
+    @patch.dict(
+        os.environ,
+        {"TELEGRAM_NOTIFICATION_BOT_TOKEN": "tok"},
+        clear=False,
+    )
+    @patch(
+        "bot.services.slack_ops_notify.notify_slack_escalation",
+        new_callable=AsyncMock,
+    )
+    @patch("bot.services.venmo_payments._telegram_api", new_callable=AsyncMock)
+    async def test_skips_slack_for_fully_automatic_auto_add(
+        self, mock_api, mock_slack
+    ):
+        from bot.services.payment_auto_deposit import CREATOR_STAFF_FOOTER_AUTO
+
+        mock_api.return_value = {
+            "ok": True,
+            "result": {"message_id": 1, "chat": {"id": GTO_CHAT}},
+        }
+        text = (
+            "🔔 Venmo Payment Notification\nAmount: <b>$1.00</b>\n\n"
+            f"{CREATOR_STAFF_FOOTER_AUTO}"
+        )
+        posts = await deliver_payment_notification(
+            text,
+            bind_chat_ids=[GTO_CHAT],
+        )
+        self.assertEqual(posts, [(GTO_CHAT, 1)])
+        mock_api.assert_awaited_once()
+        mock_slack.assert_not_awaited()
+
 
 if __name__ == "__main__":
     unittest.main()

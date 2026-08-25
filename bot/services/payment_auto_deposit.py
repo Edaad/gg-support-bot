@@ -55,6 +55,12 @@ CREATOR_STAFF_FOOTER_RECENT_ADD = (
 )
 
 
+def is_fully_automatic_staff_notification(text: str | None) -> bool:
+    """True when the staff notification includes the fully automatic Auto-add footer."""
+    body = text or ""
+    return "Auto-add:</b> Fully automatic" in body or "Auto-add: Fully automatic" in body
+
+
 def auto_deposit_ineligible_reason(
     *,
     club_id: int | None,

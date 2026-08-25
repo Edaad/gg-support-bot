@@ -112,19 +112,28 @@ async def deliver_payment_notification(
         )
 
     if include_slack_escalation:
-        try:
-            from bot.services.slack_ops_notify import notify_slack_escalation
+        from bot.services.payment_auto_deposit import (
+            is_fully_automatic_staff_notification,
+        )
 
-            slack_text = payment_notification_html_to_slack(text)
-            if slack_text:
-                await notify_slack_escalation(
-                    slack_text,
-                    source="payment_notification",
-                )
-        except Exception:
-            logger.warning(
-                "payment notification: slack escalation send failed",
-                exc_info=True,
+        if is_fully_automatic_staff_notification(text):
+            logger.info(
+                "payment notification: skipping slack escalation for fully automatic auto-add"
             )
+        else:
+            try:
+                from bot.services.slack_ops_notify import notify_slack_escalation
+
+                slack_text = payment_notification_html_to_slack(text)
+                if slack_text:
+                    await notify_slack_escalation(
+                        slack_text,
+                        source="payment_notification",
+                    )
+            except Exception:
+                logger.warning(
+                    "payment notification: slack escalation send failed",
+                    exc_info=True,
+                )
 
     return posts
