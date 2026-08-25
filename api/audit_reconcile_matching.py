@@ -108,6 +108,7 @@ def _match_fields(
         variant=line.variant,
         club_slug=club_slug,
         source_label=line.source_label,
+        memo=line.memo,
     )
     time_label = _format_match_time(club_slug, line.occurred_at_utc)
     dollars = round_whole_usd(line.amount_signed)
@@ -329,6 +330,7 @@ def apply_cc_at_aces_ledger_fallback(
                 source=ledger.source,
                 variant=variant,
                 club_slug=_CC_SLUG,
+                memo=ledger.memo,
             ),
             match_occurred_at=ledger.occurred_at_utc,
         )
@@ -454,6 +456,7 @@ def match_trade_lines_to_ledger(
                     source=ledger.source,
                     variant=variant,
                     club_slug=club_slug,
+                    memo=ledger.memo,
                 ),
                 match_occurred_at=ledger.occurred_at_utc,
             )

@@ -252,6 +252,7 @@ def _variant_options_by_source(
             variant=line.variant,
             club_slug=club_slug,
             source_label=line.source_label,
+            memo=line.memo,
         )
         if not label:
             continue
@@ -408,6 +409,7 @@ def _write_unresolved_sheet(
                 variant=line.variant,
                 club_slug=label_slug,
                 source_label=line.source_label,
+                memo=line.memo,
             ),
         )
         ws.cell(

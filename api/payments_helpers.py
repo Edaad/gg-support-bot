@@ -462,6 +462,7 @@ def build_venmo_payment_read(session: Session, payment: VenmoPayment) -> dict:
         "is_test": payment.is_test,
         "created_at": payment.created_at,
         "bound_at": payment.bound_at,
+        "memo": payment.memo,
     }
 
 
@@ -860,6 +861,7 @@ def build_zelle_payment_read(session: Session, payment: ZellePayment) -> dict:
         "is_test": payment.is_test,
         "created_at": payment.created_at,
         "bound_at": payment.bound_at,
+        "memo": payment.memo,
     }
 
 

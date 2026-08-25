@@ -659,6 +659,7 @@ def _ledger_line_from_dict(raw: dict[str, Any]) -> LedgerLine:
         display_name=raw.get("display_name"),
         variant=raw.get("variant"),
         club_slug=club_slug,
+        memo=raw.get("memo"),
     )
 
 

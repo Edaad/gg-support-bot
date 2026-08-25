@@ -35,6 +35,11 @@ VAUGHN_CASHOUT_SOURCE_LABELS: tuple[str, ...] = (
 )
 
 
+def memo_indicates_vaughn(memo: str | None) -> bool:
+    """True when a payment memo/caption explicitly marks Vaughn ownership."""
+    return "vaughn" in (memo or "").strip().lower()
+
+
 def normalize_zelle_recipient(tag: str) -> str:
     canonical = canonicalize_zelle_recipient(tag)
     # Zapier sometimes appends a club label, e.g. "janvenmo@gmail.com (clubgto)".
@@ -52,11 +57,16 @@ def is_vaughn_method(
     source: str,
     variant: str | None,
     club_slug: str,
+    memo: str | None = None,
 ) -> bool:
     """True when this ledger deposit belongs to Vaughn's ClubGTO accounts."""
     src = (source or "").strip()
+    slug = club_slug.strip().lower()
     if src in ("deposit_crypto", "deposit_stripe"):
-        return club_slug.strip().lower() == _VAUGHN_CLUB_SLUG
+        return slug == _VAUGHN_CLUB_SLUG
+    if slug == _VAUGHN_CLUB_SLUG and memo_indicates_vaughn(memo):
+        if src in ("deposit_zelle", "deposit_venmo"):
+            return True
     tag = (variant or "").strip()
     if src == "deposit_zelle":
         return normalize_zelle_recipient(tag) in VAUGHN_ZELLE_RECIPIENTS
@@ -71,6 +81,7 @@ def matching_source_label(
     variant: str | None,
     club_slug: str,
     source_label: str | None = None,
+    memo: str | None = None,
 ) -> str:
     """Matching Source cell text. ClubGTO deposits use RT/GTO ownership prefix."""
     base = (source_label or LEDGER_SOURCE_LABELS.get(source, "") or source).strip()
@@ -82,7 +93,7 @@ def matching_source_label(
     if src not in _DEPOSIT_SOURCES:
         return base
     prefix = "GTO" if is_vaughn_method(
-        source=src, variant=variant, club_slug=club_slug
+        source=src, variant=variant, club_slug=club_slug, memo=memo
     ) else "RT"
     return f"{prefix} {base}"
 
@@ -148,6 +159,7 @@ def tally_vaughn_methods(
             source=line.source,
             variant=line.variant,
             club_slug=club_slug,
+            memo=line.memo,
         ):
             continue
         key = _bucket_key(line)
