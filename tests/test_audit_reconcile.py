@@ -375,7 +375,7 @@ class ReconcilePassFailTestCase(unittest.TestCase):
             ]
         return []
 
-    @patch("api.audit_reconcile.fetch_settlement_events", return_value=([], []))
+    @patch("api.audit_reconcile.fetch_netted_settlement_events", return_value=([], []))
     @patch("api.audit_reconcile.fetch_cashout_events", return_value=[])
     @patch("api.audit_reconcile.fetch_bonus_events", return_value=[])
     @patch("api.audit_reconcile.fetch_early_rakeback_events", return_value=[])
@@ -402,7 +402,7 @@ class ReconcilePassFailTestCase(unittest.TestCase):
         self.assertEqual(report.players_matched, 1)
         self.assertEqual(report.players_failed, 0)
 
-    @patch("api.audit_reconcile.fetch_settlement_events", return_value=([], []))
+    @patch("api.audit_reconcile.fetch_netted_settlement_events", return_value=([], []))
     @patch("api.audit_reconcile.fetch_cashout_events", return_value=[])
     @patch("api.audit_reconcile.fetch_bonus_events", return_value=[])
     @patch("api.audit_reconcile.fetch_early_rakeback_events", return_value=[])
@@ -429,7 +429,7 @@ class ReconcilePassFailTestCase(unittest.TestCase):
         self.assertEqual(report.players[0].status, "match")
         self.assertEqual(report.players[0].delta, Decimal("-1.50"))
 
-    @patch("api.audit_reconcile.fetch_settlement_events", return_value=([], []))
+    @patch("api.audit_reconcile.fetch_netted_settlement_events", return_value=([], []))
     @patch("api.audit_reconcile.fetch_cashout_events", return_value=[])
     @patch("api.audit_reconcile.fetch_bonus_events", return_value=[])
     @patch("api.audit_reconcile.fetch_early_rakeback_events", return_value=[])
@@ -461,6 +461,101 @@ class MondaySettlementTestCase(unittest.TestCase):
     def test_monday_detection(self):
         self.assertTrue(is_monday_audit_date("round-table", date(2026, 6, 22)))
         self.assertFalse(is_monday_audit_date("round-table", date(2026, 6, 18)))
+
+    def test_settlement_week_bounds(self):
+        from api.gg_computer_settlement import (
+            settlement_week_bounds,
+            settlement_week_dates,
+        )
+
+        monday, sunday = settlement_week_bounds(date(2026, 8, 24))
+        self.assertEqual(monday, date(2026, 8, 17))
+        self.assertEqual(sunday, date(2026, 8, 23))
+        self.assertEqual(
+            settlement_week_dates(date(2026, 8, 24)),
+            [
+                date(2026, 8, 17),
+                date(2026, 8, 18),
+                date(2026, 8, 19),
+                date(2026, 8, 20),
+                date(2026, 8, 21),
+                date(2026, 8, 22),
+                date(2026, 8, 23),
+            ],
+        )
+
+    def test_net_settlement_subtracts_early_rb(self):
+        from api.gg_computer_settlement import net_settlement_events_after_early_rb
+
+        events = [
+            LedgerEvent(
+                "monday_settlement",
+                "1055-4566",
+                Decimal("3536.535"),
+                None,
+                "monday:w:1055-4566",
+            ),
+            LedgerEvent(
+                "monday_settlement",
+                "9999-0000",
+                Decimal("100"),
+                None,
+                "monday:w:9999-0000",
+            ),
+            LedgerEvent(
+                "monday_settlement",
+                "1111-2222",
+                Decimal("50"),
+                None,
+                "monday:w:1111-2222",
+            ),
+        ]
+        early = {
+            "1055-4566": Decimal("3476"),
+            "1111-2222": Decimal("50"),
+        }
+        netted, warnings = net_settlement_events_after_early_rb(events, early)
+        by_id = {e.gg_player_id: e.amount_usd for e in netted}
+        self.assertEqual(by_id["1055-4566"], Decimal("60.535"))
+        self.assertEqual(by_id["9999-0000"], Decimal("100"))
+        self.assertNotIn("1111-2222", by_id)  # fully consumed by early RB
+        self.assertEqual(warnings, [])
+
+    def test_sum_early_rakeback_by_player_for_week(self):
+        from api.gg_computer_settlement import sum_early_rakeback_by_player_for_week
+
+        session = MagicMock()
+        snap_a = MagicMock(id=1, audit_date=date(2026, 8, 17))
+        snap_b = MagicMock(id=2, audit_date=date(2026, 8, 18))
+        line_a = MagicMock(gg_player_id="1055-4566", amount_usd=Decimal("450"))
+        line_b = MagicMock(gg_player_id="1055-4566", amount_usd=Decimal("52"))
+
+        def query_side_effect(model):
+            q = MagicMock()
+            if model is EarlyRakebackSnapshot:
+                q.filter.return_value.all.return_value = [snap_a, snap_b]
+            else:
+                q.filter.return_value.all.return_value = [line_a, line_b]
+            return q
+
+        session.query.side_effect = query_side_effect
+        totals, missing = sum_early_rakeback_by_player_for_week(
+            session,
+            club_slug="aces-table",
+            week_monday=date(2026, 8, 17),
+            week_sunday=date(2026, 8, 23),
+        )
+        self.assertEqual(totals["1055-4566"], Decimal("502"))
+        self.assertEqual(
+            missing,
+            [
+                date(2026, 8, 19),
+                date(2026, 8, 20),
+                date(2026, 8, 21),
+                date(2026, 8, 22),
+                date(2026, 8, 23),
+            ],
+        )
 
     @patch.dict(os.environ, {"GG_COMPUTER_BASE_URL": "http://gg-computer.test"})
     @patch("api.gg_computer_settlement.httpx.Client")

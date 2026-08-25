@@ -424,6 +424,65 @@ class MatchTradeLinesTestCase(unittest.TestCase):
         self.assertEqual(rows[0].match_name, "RB Player")
         self.assertEqual(rows[0].match_amount, Decimal("19"))
 
+    def test_monday_settlement_matches_without_ledger_time(self):
+        """gg-computer Monday RB has no timestamp; still match on amount + GG id."""
+        trade = _trade(
+            occurred=self.t0,
+            amount="-33",
+            gg_id="1055-4566",
+            nick="HunnidPrblms",
+        )
+        ledger = _ledger(
+            occurred=None,
+            amount_signed="-33.333",
+            source="monday_settlement",
+            source_label="RB settlement (Monday)",
+            external_id="monday:week:1055-4566",
+            gg_id="1055-4566",
+            nick="HunnidPrblms",
+            display_name="HunnidPrblms",
+        )
+        result = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="aces-table",
+        )
+        self.assertEqual(result.rows[0].match_source, "RB settlement (Monday)")
+        self.assertEqual(result.rows[0].match_name, "HunnidPrblms")
+        self.assertEqual(result.rows[0].match_amount, Decimal("33"))
+        self.assertEqual(result.rows[0].match_time, "")
+        self.assertEqual(result.unmatched_ledger, [])
+
+    def test_deposit_without_ledger_time_still_unmatched(self):
+        trade = _trade(occurred=self.t0, amount="-100")
+        ledger = _ledger(occurred=None, amount_signed="-100")
+        result = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="aces-table",
+        )
+        self.assertEqual(result.rows[0].match_source, "")
+        self.assertEqual(result.unmatched_ledger, [ledger])
+
+    def test_monday_settlement_requires_player_id_when_both_present(self):
+        trade = _trade(occurred=self.t0, amount="-33", gg_id="1111-2222")
+        ledger = _ledger(
+            occurred=None,
+            amount_signed="-33.333",
+            source="monday_settlement",
+            source_label="RB settlement (Monday)",
+            external_id="monday:week:9999-0000",
+            gg_id="9999-0000",
+            nick="Other",
+        )
+        result = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="aces-table",
+        )
+        self.assertEqual(result.rows[0].match_source, "")
+        self.assertEqual(result.unmatched_ledger, [ledger])
+
     def test_amount_delta_over_one_dollar_rejected(self):
         trade = _trade(occurred=self.t0, amount="-18")
         ledger = _ledger(

@@ -152,8 +152,9 @@ SHEET_INTROS: dict[str, tuple[str, str, str]] = {
         "(how far ClubGG and our ledger disagree for that player).",
         "Columns: Nickname; Player ID; Deposits — signed total of payment "
         "deposits in our ledger; Early RB — early rakeback issued; Bonuses; "
-        "RB settlement (Monday) — weekly settlement from gg-computer when "
-        "applicable; Cashouts — staff cashouts in our ledger; "
+        "RB settlement (Monday) — weekly gg-computer rakeback minus early RB "
+        "paid during that Mon–Sun week (when applicable); "
+        "Cashouts — staff cashouts in our ledger; "
         "Net Trade Record — ClubGG sum; Net Ledger — sum of those ledger "
         "parts; Discrepancy — net trade − net ledger.",
     ),

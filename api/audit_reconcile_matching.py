@@ -380,7 +380,12 @@ def _candidate_score(
 ) -> tuple[int, Decimal, timedelta] | None:
     trade_at = _as_utc(trade.occurred_at)
     ledger_at = _as_utc(ledger.occurred_at_utc)
-    if trade_at is None or ledger_at is None:
+    # Monday settlement from gg-computer has no occurred_at; match on amount +
+    # player only (payout times differ by club and are not in the ledger).
+    skip_time_window = ledger.source == "monday_settlement" and ledger_at is None
+    if trade_at is None:
+        return None
+    if ledger_at is None and not skip_time_window:
         return None
     if not _signs_compatible(trade.amount, ledger):
         return None
@@ -389,9 +394,13 @@ def _candidate_score(
     )
     if amount_delta > MATCH_AMOUNT_TOLERANCE_USD:
         return None
-    delta = abs(trade_at - ledger_at)
-    if delta > MATCH_WINDOW:
-        return None
+    if skip_time_window:
+        delta = timedelta(0)
+    else:
+        assert ledger_at is not None
+        delta = abs(trade_at - ledger_at)
+        if delta > MATCH_WINDOW:
+            return None
     trade_gid = (trade.member_gg_player_id or "").strip()
     ledger_gid = (ledger.gg_player_id or "").strip()
     if trade_gid and ledger_gid and trade_gid != ledger_gid:

@@ -30,7 +30,7 @@ from api.club_slug import (
 from api.payments_helpers import lookup_gg_nickname
 from api.gg_computer_settlement import (
     SettlementFetchError,
-    fetch_settlement_events,
+    fetch_netted_settlement_events,
     is_monday_audit_date,
 )
 from db.models import (
@@ -283,8 +283,8 @@ def _ledger_events_for_club(
 
     if is_monday_audit_date(slug, audit_date):
         try:
-            settlement_events, settlement_warnings = fetch_settlement_events(
-                club_slug=slug, audit_date=audit_date
+            settlement_events, settlement_warnings = fetch_netted_settlement_events(
+                session, club_slug=slug, audit_date=audit_date
             )
             events.extend(
                 _stamp_ledger_events(settlement_events, club_slug=slug)
@@ -348,8 +348,10 @@ def _ledger_events_for_clubs(
 
         if is_monday_audit_date(slug, audit_date):
             try:
-                settlement_events, settlement_warnings = fetch_settlement_events(
-                    club_slug=slug, audit_date=audit_date
+                settlement_events, settlement_warnings = (
+                    fetch_netted_settlement_events(
+                        session, club_slug=slug, audit_date=audit_date
+                    )
                 )
                 events.extend(
                     _stamp_ledger_events(settlement_events, club_slug=slug)

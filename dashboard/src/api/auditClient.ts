@@ -549,6 +549,41 @@ function mergeEarlyRbReports(
   }
 }
 
+/** YYYY-MM-DD arithmetic in UTC calendar space (audit dates are date-only). */
+function addAuditDays(isoDate: string, days: number): string {
+  const [y, m, d] = isoDate.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d + days))
+  return dt.toISOString().slice(0, 10)
+}
+
+function isMondayAuditDate(isoDate: string): boolean {
+  const [y, m, d] = isoDate.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay() === 1
+}
+
+/**
+ * Early RB sync days for reconcile.
+ * Always includes the audit day. On Mondays also includes Mon–Sun of the
+ * settled week so Monday settlement can net early RB.
+ */
+export function earlyRbSyncDatesForReconcile(auditDate: string): string[] {
+  const dates = new Set<string>([auditDate])
+  if (isMondayAuditDate(auditDate)) {
+    for (let i = 7; i >= 1; i -= 1) {
+      dates.add(addAuditDays(auditDate, -i))
+    }
+  }
+  return [...dates].sort()
+}
+
+async function syncEarlyRakebackForSlugDates(
+  token: string,
+  clubSlug: string,
+  dates: string[],
+): Promise<EarlyRakebackSyncReport[]> {
+  return Promise.all(dates.map((d) => syncEarlyRakeback(token, d, clubSlug)))
+}
+
 /**
  * Ensure gg-computer has processed weeks for the reconcile club(s).
  * Needed so Monday settlement can load `weekly_profits` during net reconcile.
@@ -591,6 +626,7 @@ export async function runReconcilePipeline(
 ): Promise<AuditPipelineResult> {
   const primary = uploads[0]
   const auditDate = primary.audit_date
+  const earlyRbDates = earlyRbSyncDatesForReconcile(auditDate)
 
   onStep?.('syncingWeek')
   const weekSyncError = await syncProcessWeekForReconcile(token, reconcileClubSlug)
@@ -601,20 +637,29 @@ export async function runReconcilePipeline(
   onStep?.('syncingEarlyRb')
   try {
     if (reconcileClubSlug === 'all-clubs') {
-      const reports = await Promise.all(
-        ALL_CLUBS_TRADE_SLUGS.map((slug) =>
-          syncEarlyRakeback(token, auditDate, slug),
-        ),
-      )
+      const reports = (
+        await Promise.all(
+          ALL_CLUBS_TRADE_SLUGS.map((slug) =>
+            syncEarlyRakebackForSlugDates(token, slug, earlyRbDates),
+          ),
+        )
+      ).flat()
       earlyRb = mergeEarlyRbReports(auditDate, reports)
     } else if (reconcileClubSlug === 'round-table') {
-      const [rtReport, atReport] = await Promise.all([
-        syncEarlyRakeback(token, auditDate, 'round-table'),
-        syncEarlyRakeback(token, auditDate, 'aces-table'),
-      ])
-      earlyRb = mergeEarlyRbReports(auditDate, [rtReport, atReport])
+      const reports = (
+        await Promise.all([
+          syncEarlyRakebackForSlugDates(token, 'round-table', earlyRbDates),
+          syncEarlyRakebackForSlugDates(token, 'aces-table', earlyRbDates),
+        ])
+      ).flat()
+      earlyRb = mergeEarlyRbReports(auditDate, reports)
     } else {
-      earlyRb = await syncEarlyRakeback(token, auditDate, reconcileClubSlug)
+      const reports = await syncEarlyRakebackForSlugDates(
+        token,
+        reconcileClubSlug,
+        earlyRbDates,
+      )
+      earlyRb = mergeEarlyRbReports(auditDate, reports)
     }
   } catch (e: unknown) {
     earlyRbError = e instanceof Error ? e.message : 'Early rakeback sync failed.'
