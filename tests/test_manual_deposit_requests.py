@@ -427,7 +427,13 @@ class ManualDepositRequestListQueryTests(unittest.TestCase):
         from sqlalchemy.orm import sessionmaker
         from sqlalchemy.pool import StaticPool
 
-        from db.models import Base, Club, ClubPaymentMethod, ManualDepositRequest
+        from db.models import (
+            Base,
+            Club,
+            ClubPaymentMethod,
+            ClubPaymentMethodClub,
+            ManualDepositRequest,
+        )
 
         self.engine = create_engine(
             "sqlite:///:memory:",
@@ -439,6 +445,7 @@ class ManualDepositRequestListQueryTests(unittest.TestCase):
             tables=[
                 Club.__table__,
                 ClubPaymentMethod.__table__,
+                ClubPaymentMethodClub.__table__,
                 ManualDepositRequest.__table__,
             ],
         )
@@ -568,6 +575,32 @@ class ManualDepositRequestListQueryTests(unittest.TestCase):
             names = {c.id: c.name for c in by_method[10]}
             self.assertEqual(names[1], "Round Table")
             self.assertEqual(names[2], "ClubGTO")
+        finally:
+            session.close()
+
+    def test_stats_includes_deposit_request_count(self):
+        from api.routes.union_methods import _stats_for_methods
+
+        session = self.Session()
+        try:
+            stats = _stats_for_methods(session, [10])
+            used, unchecked, total = stats[10]
+            self.assertEqual(used, Decimal("575.50"))
+            self.assertEqual(unchecked, 1)
+            self.assertEqual(total, 2)
+        finally:
+            session.close()
+
+    def test_delete_union_method_cascades_deposit_rows(self):
+        from api.routes.union_methods import delete_union_method
+        from db.models import ClubPaymentMethod, ManualDepositRequest
+
+        session = self.Session()
+        try:
+            delete_union_method(10, db=session)
+            self.assertIsNone(session.get(ClubPaymentMethod, 10))
+            remaining = session.query(ManualDepositRequest).count()
+            self.assertEqual(remaining, 0)
         finally:
             session.close()
 

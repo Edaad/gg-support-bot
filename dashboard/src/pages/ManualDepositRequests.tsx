@@ -5,6 +5,7 @@ import { useConfirm } from '../components/ConfirmProvider'
 import { listClubs, type Club } from '../api/client'
 import {
   createUnionMethod,
+  deleteUnionMethod,
   listUnionMethods,
   reactivateUnionMethod,
   reorderUnionMethods,
@@ -377,6 +378,28 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     }
   }
 
+  const onDelete = async (m: UnionMethod) => {
+    const count = m.deposit_request_count
+    const rowLabel = count === 1 ? 'deposit request row' : 'deposit request rows'
+    const ok = await askConfirm({
+      title: 'Delete union method?',
+      message: `${m.name} · ${m.tag} will be permanently deleted along with ${count} ${rowLabel}. This cannot be undone.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
+    setBusy(true)
+    try {
+      await deleteUnionMethod(token, m.id)
+      await load()
+      if (selectedMethodId === m.id) setQuery({ tab: 'active' })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const onReactivate = async (m: UnionMethod) => {
     setBusy(true)
     try {
@@ -677,6 +700,16 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                     Reactivate
                   </button>
                 )}
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="btn-secondary-sm text-danger-ink"
+                  onClick={() => {
+                    void onDelete(selected)
+                  }}
+                >
+                  Delete
+                </button>
               </div>
             </div>
 

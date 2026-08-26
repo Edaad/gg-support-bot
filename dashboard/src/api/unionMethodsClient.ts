@@ -66,6 +66,7 @@ export type UnionMethod = {
   row_clubs: UnionMethodClub[]
   used_sum: number | string
   unchecked_count: number
+  deposit_request_count: number
 }
 
 export type UnionMethodCreateBody = {
@@ -135,6 +136,14 @@ export function reactivateUnionMethod(token: string, methodId: number) {
   return request<UnionMethod>(
     `/api/union-methods/${methodId}/reactivate`,
     { method: 'POST' },
+    token,
+  )
+}
+
+export function deleteUnionMethod(token: string, methodId: number) {
+  return request<void>(
+    `/api/union-methods/${methodId}`,
+    { method: 'DELETE' },
     token,
   )
 }
