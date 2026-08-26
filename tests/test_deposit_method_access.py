@@ -75,70 +75,88 @@ class TestMethodsForAction(unittest.TestCase):
     def _methods(self):
         return [
             SimpleNamespace(
-                id=1, name="Zelle", slug="zelle", is_public=True, sort_order=0
+                id=1,
+                name="Zelle",
+                slug="zelle",
+                is_public=True,
+                sort_order=0,
+                tracks_manual_requests=False,
             ),
             SimpleNamespace(
-                id=2, name="Venmo", slug="venmo", is_public=True, sort_order=1
+                id=2,
+                name="Venmo",
+                slug="venmo",
+                is_public=True,
+                sort_order=1,
+                tracks_manual_requests=False,
             ),
             SimpleNamespace(
-                id=3, name="Wire", slug="wire", is_public=False, sort_order=2
+                id=3,
+                name="Wire",
+                slug="wire",
+                is_public=False,
+                sort_order=2,
+                tracks_manual_requests=False,
             ),
             SimpleNamespace(
-                id=4, name="Crypto", slug="crypto", is_public=False, sort_order=3
+                id=4,
+                name="Crypto",
+                slug="crypto",
+                is_public=False,
+                sort_order=3,
+                tracks_manual_requests=False,
             ),
         ]
 
-    def _session(self, access_rows):
+    def _patch_session(self, access_rows, methods=None):
+        methods = methods if methods is not None else self._methods()
         session = MagicMock()
-        method_q = MagicMock()
-        method_q.filter_by.return_value.order_by.return_value.all.return_value = (
-            self._methods()
-        )
         access_q = MagicMock()
         access_q.filter_by.return_value.all.return_value = access_rows
-
-        calls = {"n": 0}
-
-        def query(*_a, **_k):
-            calls["n"] += 1
-            if calls["n"] == 1:
-                return method_q
-            return access_q
-
-        session.query.side_effect = query
-        session._method_q = method_q
-        return session
-
-    def test_blacklist_menu(self):
-        # Already blacklisted zelle; private methods excluded.
-        session = self._session([(1, "blacklist"), (3, "whitelist")])
+        session.query.return_value = access_q
         mock_cm = MagicMock()
         mock_cm.__enter__.return_value = session
         mock_cm.__exit__.return_value = False
+        return mock_cm, methods
+
+    def test_blacklist_menu(self):
+        mock_cm, methods = self._patch_session([(1, "blacklist"), (3, "whitelist")])
         with patch(
             "bot.services.deposit_method_access.get_db", return_value=mock_cm
+        ), patch(
+            "bot.services.deposit_method_access._active_methods_for_club",
+            return_value=methods,
+        ), patch(
+            "bot.services.deposit_method_access._access_map_for_chat",
+            return_value={1: "blacklist", 3: "whitelist"},
         ):
             result = methods_for_action(10, -100, "blacklist")
         self.assertEqual([m["slug"] for m in result], ["venmo"])
 
     def test_whitelist_menu(self):
-        session = self._session([(1, "blacklist"), (3, "whitelist")])
-        mock_cm = MagicMock()
-        mock_cm.__enter__.return_value = session
-        mock_cm.__exit__.return_value = False
+        mock_cm, methods = self._patch_session([(1, "blacklist"), (3, "whitelist")])
         with patch(
             "bot.services.deposit_method_access.get_db", return_value=mock_cm
+        ), patch(
+            "bot.services.deposit_method_access._active_methods_for_club",
+            return_value=methods,
+        ), patch(
+            "bot.services.deposit_method_access._access_map_for_chat",
+            return_value={1: "blacklist", 3: "whitelist"},
         ):
             result = methods_for_action(10, -100, "whitelist")
         self.assertEqual([m["slug"] for m in result], ["crypto"])
 
     def test_remove_menu(self):
-        session = self._session([(1, "blacklist"), (3, "whitelist")])
-        mock_cm = MagicMock()
-        mock_cm.__enter__.return_value = session
-        mock_cm.__exit__.return_value = False
+        mock_cm, methods = self._patch_session([(1, "blacklist"), (3, "whitelist")])
         with patch(
             "bot.services.deposit_method_access.get_db", return_value=mock_cm
+        ), patch(
+            "bot.services.deposit_method_access._active_methods_for_club",
+            return_value=methods,
+        ), patch(
+            "bot.services.deposit_method_access._access_map_for_chat",
+            return_value={1: "blacklist", 3: "whitelist"},
         ):
             result = methods_for_action(10, -100, "remove")
         self.assertEqual(
@@ -147,56 +165,63 @@ class TestMethodsForAction(unittest.TestCase):
         )
 
     def test_cashout_direction_passed_to_query(self):
-        session = self._session([])
-        mock_cm = MagicMock()
-        mock_cm.__enter__.return_value = session
-        mock_cm.__exit__.return_value = False
+        mock_cm, methods = self._patch_session([])
         with patch(
             "bot.services.deposit_method_access.get_db", return_value=mock_cm
+        ), patch(
+            "bot.services.deposit_method_access._active_methods_for_club",
+            return_value=methods,
+        ) as active, patch(
+            "bot.services.deposit_method_access._access_map_for_chat",
+            return_value={},
         ):
             methods_for_action(10, -100, "blacklist", direction="cashout")
-        session._method_q.filter_by.assert_called_with(
-            club_id=10, direction="cashout", is_active=True
-        )
+        active.assert_called_once()
+        self.assertEqual(active.call_args.args[2], "cashout")
 
     def test_cashout_whitelist_includes_public_crypto(self):
-        orig = self._methods
-        self._methods = lambda: [
+        methods = [
             SimpleNamespace(
-                id=1, name="Zelle", slug="zelle", is_public=True, sort_order=0
+                id=1,
+                name="Zelle",
+                slug="zelle",
+                is_public=True,
+                sort_order=0,
+                tracks_manual_requests=False,
             ),
             SimpleNamespace(
-                id=4, name="Crypto", slug="crypto", is_public=True, sort_order=3
+                id=4,
+                name="Crypto",
+                slug="crypto",
+                is_public=True,
+                sort_order=3,
+                tracks_manual_requests=False,
             ),
         ]
-        try:
-            session = self._session([])
-            mock_cm = MagicMock()
-            mock_cm.__enter__.return_value = session
-            mock_cm.__exit__.return_value = False
-            with patch(
-                "bot.services.deposit_method_access.get_db", return_value=mock_cm
-            ):
-                cashout = methods_for_action(
-                    10, -100, "whitelist", direction="cashout"
-                )
-            session2 = self._session([])
-            mock_cm2 = MagicMock()
-            mock_cm2.__enter__.return_value = session2
-            mock_cm2.__exit__.return_value = False
-            with patch(
-                "bot.services.deposit_method_access.get_db", return_value=mock_cm2
-            ):
-                deposit = methods_for_action(
-                    10, -100, "whitelist", direction="deposit"
-                )
-        finally:
-            self._methods = orig
+        mock_cm, _ = self._patch_session([])
+        with patch(
+            "bot.services.deposit_method_access.get_db", return_value=mock_cm
+        ), patch(
+            "bot.services.deposit_method_access._active_methods_for_club",
+            return_value=methods,
+        ), patch(
+            "bot.services.deposit_method_access._access_map_for_chat",
+            return_value={},
+        ):
+            cashout = methods_for_action(10, -100, "whitelist", direction="cashout")
+            deposit = methods_for_action(10, -100, "whitelist", direction="deposit")
         self.assertEqual([m["slug"] for m in cashout], ["crypto"])
         self.assertEqual(deposit, [])
 
 
 class TestUpsertAccessReplacesType(unittest.TestCase):
+    def _method_query(self, method):
+        q = MagicMock()
+        q.options.return_value = q
+        q.filter.return_value = q
+        q.one_or_none.return_value = method
+        return q
+
     def test_existing_row_updates_type(self):
         from bot.services import deposit_method_access as dma
 
@@ -208,10 +233,14 @@ class TestUpsertAccessReplacesType(unittest.TestCase):
         method.direction = "deposit"
         method.name = "Zelle"
         method.slug = "zelle"
+        method.tracks_manual_requests = False
+        method.method_clubs = []
 
         session = MagicMock()
-        session.query.return_value.get.return_value = method
-        session.query.return_value.filter_by.return_value.first.return_value = existing
+        method_q = self._method_query(method)
+        access_q = MagicMock()
+        access_q.filter_by.return_value.first.return_value = existing
+        session.query.side_effect = [method_q, access_q]
 
         mock_cm = MagicMock()
         mock_cm.__enter__.return_value = session
@@ -245,10 +274,14 @@ class TestUpsertAccessReplacesType(unittest.TestCase):
         method.direction = "cashout"
         method.name = "Crypto"
         method.slug = "crypto"
+        method.tracks_manual_requests = False
+        method.method_clubs = []
 
         session = MagicMock()
-        session.query.return_value.get.return_value = method
-        session.query.return_value.filter_by.return_value.first.return_value = existing
+        method_q = self._method_query(method)
+        access_q = MagicMock()
+        access_q.filter_by.return_value.first.return_value = existing
+        session.query.side_effect = [method_q, access_q]
 
         mock_cm = MagicMock()
         mock_cm.__enter__.return_value = session
@@ -278,9 +311,11 @@ class TestUpsertAccessReplacesType(unittest.TestCase):
         method.direction = "cashout"
         method.name = "Crypto"
         method.slug = "crypto"
+        method.tracks_manual_requests = False
+        method.method_clubs = []
 
         session = MagicMock()
-        session.query.return_value.get.return_value = method
+        session.query.return_value = self._method_query(method)
 
         mock_cm = MagicMock()
         mock_cm.__enter__.return_value = session
