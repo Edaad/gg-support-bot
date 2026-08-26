@@ -20,6 +20,14 @@ function formatUsd(amount: number | string | null | undefined): string {
   })
 }
 
+function capacityPct(used: number | string, limit: number | string): number {
+  const lim = Number(limit)
+  if (!Number.isFinite(lim) || lim <= 0) return 0
+  const u = Number(used)
+  if (!Number.isFinite(u) || u <= 0) return 0
+  return Math.min(100, Math.round((u / lim) * 100))
+}
+
 type ActivityTab = 'active' | 'inactive'
 type CheckedFilter = 'all' | 'unchecked' | 'checked'
 
@@ -63,6 +71,16 @@ function parseOptionalAmount(raw: string): number | null {
   if (!t) return null
   const n = Number(t)
   return Number.isFinite(n) ? n : null
+}
+
+/** Clubs eligible for union membership checkboxes / filters.
+ * Aces Table is a ClubGG union under Round Table (same bot club_id), not its own row. */
+function isUnionMembershipClub(c: Club): boolean {
+  if (!c.is_active) return false
+  if (c.name.trim().toLowerCase() === 'aces table') return false
+  // Orphan rows (no groups/methods) are not real support clubs.
+  if (c.group_count === 0 && c.method_count === 0) return false
+  return true
 }
 
 export default function ManualDepositRequests({ token }: { token: string }) {
@@ -130,6 +148,11 @@ export default function ManualDepositRequests({ token }: { token: string }) {
   useEffect(() => {
     void load()
   }, [load])
+
+  const membershipClubs = useMemo(
+    () => clubs.filter(isUnionMembershipClub),
+    [clubs],
+  )
 
   const selected = useMemo(
     () => methods.find((m) => m.id === selectedMethodId) ?? null,
@@ -263,7 +286,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
       : checkedFilter === 'checked'
 
   const formPanel = (title: string) => (
-    <div className="rounded-xl border border-accent/40 bg-surface p-4 space-y-4">
+    <div className="panel space-y-4 border-accent/40">
       <h3 className="text-sm font-semibold text-ink">{title}</h3>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
@@ -371,7 +394,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
         <div className="sm:col-span-2">
           <p className="label-field-xs mb-2">Clubs</p>
           <div className="flex flex-wrap gap-3">
-            {clubs.map((c) => (
+            {membershipClubs.map((c) => (
               <label key={c.id} className="inline-flex items-center gap-2 text-sm text-ink">
                 <input
                   type="checkbox"
@@ -461,112 +484,182 @@ export default function ManualDepositRequests({ token }: { token: string }) {
 
       {selected && (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={backToGrid} className="btn-secondary-sm">
-              Back
-            </button>
-            <h2 className="text-lg font-semibold text-ink">
-              {selected.name}{' '}
-              <span className="text-sm font-normal text-ink-muted">({selected.slug})</span>
-            </h2>
-          </div>
-          <p className="text-sm text-ink-muted">
-            {selected.clubs.map((c) => c.name).join(' · ') || 'No clubs'} · used{' '}
-            {formatUsd(selected.used_sum)} / {formatUsd(selected.deposit_limit)} ·{' '}
-            {selected.unchecked_count} unchecked
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {!editing && (
-              <button
-                type="button"
-                className="btn-secondary-sm"
-                onClick={() => startEdit(selected)}
-              >
-                Edit
-              </button>
-            )}
-            {selected.is_active ? (
-              <button
-                type="button"
-                disabled={busy}
-                className="btn-secondary-sm"
-                onClick={() => {
-                  void onRetire(selected)
-                }}
-              >
-                Retire
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled={busy}
-                className="btn-secondary-sm"
-                onClick={() => {
-                  void onReactivate(selected)
-                }}
-              >
-                Reactivate
-              </button>
-            )}
-          </div>
+          <section className="panel space-y-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0 space-y-2">
+                <button type="button" onClick={backToGrid} className="btn-secondary-sm">
+                  Back
+                </button>
+                <div>
+                  <h2 className="text-xl font-semibold text-ink text-balance">
+                    {selected.name}
+                  </h2>
+                  <p className="mt-0.5 font-mono text-sm text-ink-muted">{selected.slug}</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {!editing && (
+                  <button
+                    type="button"
+                    className="btn-secondary-sm"
+                    onClick={() => startEdit(selected)}
+                  >
+                    Edit
+                  </button>
+                )}
+                {selected.is_active ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="btn-secondary-sm"
+                    onClick={() => {
+                      void onRetire(selected)
+                    }}
+                  >
+                    Retire
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="btn-secondary-sm"
+                    onClick={() => {
+                      void onReactivate(selected)
+                    }}
+                  >
+                    Reactivate
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="panel-nested">
+                <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+                  Clubs
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {selected.clubs.length === 0 ? (
+                    <span className="text-sm text-ink-muted">None</span>
+                  ) : (
+                    selected.clubs.map((c) => (
+                      <span
+                        key={c.id}
+                        className="rounded-md border border-border bg-surface px-2 py-0.5 text-xs text-ink"
+                      >
+                        {c.name}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div className="panel-nested sm:col-span-1">
+                <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+                  Capacity
+                </p>
+                <p className="mt-2 text-lg font-semibold tabular-nums text-ink">
+                  {formatUsd(selected.used_sum)}{' '}
+                  <span className="text-sm font-normal text-ink-muted">
+                    / {formatUsd(selected.deposit_limit)}
+                  </span>
+                </p>
+                <div
+                  className="mt-2 h-2 overflow-hidden rounded-full bg-control"
+                  role="progressbar"
+                  aria-valuenow={capacityPct(selected.used_sum, selected.deposit_limit)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label="Capacity used"
+                >
+                  <div
+                    className="h-full rounded-full bg-accent transition-[width] duration-200 ease-out motion-reduce:transition-none"
+                    style={{
+                      width: `${capacityPct(selected.used_sum, selected.deposit_limit)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="panel-nested">
+                <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+                  Trade record
+                </p>
+                <p className="mt-2 text-lg font-semibold tabular-nums text-ink">
+                  {selected.unchecked_count}{' '}
+                  <span className="text-sm font-normal text-ink-muted">unchecked</span>
+                </p>
+                {selected.manual_request_variant_name ? (
+                  <p className="mt-1 truncate text-xs text-ink-muted">
+                    {selected.manual_request_variant_name}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </section>
+
           {editing && formPanel('Edit union method')}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div>
-              <label className="label-field-xs" htmlFor="um-row-club">
-                Club
-              </label>
-              <select
-                id="um-row-club"
-                className="input-field-sm"
-                value={clubFilter ?? ''}
-                onChange={(e) =>
-                  setQuery({
-                    club: e.target.value ? e.target.value : null,
-                  })
-                }
-              >
-                <option value="">All clubs</option>
-                {selected.clubs.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-                {clubs
-                  .filter((c) => !selected.clubs.some((sc) => sc.id === c.id))
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} (historical)
-                    </option>
-                  ))}
-              </select>
+
+          <section className="panel space-y-4">
+            <div className="flex flex-col gap-1 border-b border-border pb-3 sm:flex-row sm:items-end sm:justify-between">
+              <h3 className="text-sm font-semibold text-ink">Deposits</h3>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div>
+                  <label className="label-field-xs" htmlFor="um-row-club">
+                    Club
+                  </label>
+                  <select
+                    id="um-row-club"
+                    className="input-field-sm min-w-[10rem]"
+                    value={clubFilter ?? ''}
+                    onChange={(e) =>
+                      setQuery({
+                        club: e.target.value ? e.target.value : null,
+                      })
+                    }
+                  >
+                    <option value="">All clubs</option>
+                    {selected.clubs.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                    {membershipClubs
+                      .filter((c) => !selected.clubs.some((sc) => sc.id === c.id))
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} (historical)
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label-field-xs" htmlFor="um-checked">
+                    Trade record
+                  </label>
+                  <select
+                    id="um-checked"
+                    className="input-field-sm min-w-[10rem]"
+                    value={checkedFilter}
+                    onChange={(e) => {
+                      const v = e.target.value as CheckedFilter
+                      setQuery({ checked: v === 'all' ? null : v })
+                    }}
+                  >
+                    <option value="all">All</option>
+                    <option value="unchecked">Unchecked</option>
+                    <option value="checked">Checked</option>
+                  </select>
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="label-field-xs" htmlFor="um-checked">
-                Trade record
-              </label>
-              <select
-                id="um-checked"
-                className="input-field-sm"
-                value={checkedFilter}
-                onChange={(e) => {
-                  const v = e.target.value as CheckedFilter
-                  setQuery({ checked: v === 'all' ? null : v })
-                }}
-              >
-                <option value="all">All</option>
-                <option value="unchecked">Unchecked</option>
-                <option value="checked">Checked</option>
-              </select>
-            </div>
-          </div>
-          <ManualDepositRequestsTable
-            token={token}
-            methodId={selected.id}
-            clubId={clubFilter ?? undefined}
-            tradeRecordChecked={tradeCheckedFilter}
-            showMethodColumns={false}
-            showClubColumn
-          />
+            <ManualDepositRequestsTable
+              token={token}
+              methodId={selected.id}
+              clubId={clubFilter ?? undefined}
+              tradeRecordChecked={tradeCheckedFilter}
+              showMethodColumns={false}
+              showClubColumn
+            />
+          </section>
         </div>
       )}
 
@@ -576,34 +669,87 @@ export default function ManualDepositRequests({ token }: { token: string }) {
             <p className="py-8 text-center text-sm text-ink-muted">Loading…</p>
           )}
           {!loading && methods.length === 0 && (
-            <p className="text-sm text-ink-muted">
+            <p className="rounded-xl border border-dashed border-border bg-surface px-4 py-8 text-center text-sm text-ink-muted">
               No {tab} union methods yet.
             </p>
           )}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {methods.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => openMethod(m)}
-                className="rounded-xl border border-border bg-surface p-4 text-left hover:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent"
-              >
-                <div className="font-medium text-ink">{m.name}</div>
-                <div className="text-xs text-ink-muted">({m.slug})</div>
-                <p className="mt-2 text-xs text-ink-muted">
-                  {m.clubs.map((c) => c.name).join(' · ') || 'No clubs'}
-                </p>
-                <p className="mt-2 text-sm text-ink">
-                  {formatUsd(m.used_sum)} / {formatUsd(m.deposit_limit)}
-                </p>
-                <p className="mt-1 text-xs text-ink-muted">
-                  {m.unchecked_count} unchecked
-                  {m.manual_request_variant_name
-                    ? ` · ${m.manual_request_variant_name}`
-                    : ''}
-                </p>
-              </button>
-            ))}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {methods.map((m) => {
+              const pct = capacityPct(m.used_sum, m.deposit_limit)
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => openMethod(m)}
+                  className="panel group w-full space-y-4 p-5 text-left transition hover:border-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-lg font-semibold text-ink group-hover:text-accent">
+                        {m.name}
+                      </div>
+                      <div className="mt-0.5 font-mono text-xs text-ink-muted">{m.slug}</div>
+                    </div>
+                    {m.unchecked_count > 0 ? (
+                      <span className="chip-warning shrink-0">
+                        {m.unchecked_count} unchecked
+                      </span>
+                    ) : (
+                      <span className="shrink-0 rounded-md border border-border bg-surface-raised px-2 py-0.5 text-xs text-ink-muted">
+                        All checked
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 border-t border-border pt-3">
+                    {m.clubs.length === 0 ? (
+                      <span className="text-xs text-ink-muted">No clubs</span>
+                    ) : (
+                      m.clubs.map((c) => (
+                        <span
+                          key={c.id}
+                          className="rounded-md border border-border bg-surface-raised px-2 py-0.5 text-xs text-ink"
+                        >
+                          {c.name}
+                        </span>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="border-t border-border pt-3">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+                        Capacity
+                      </p>
+                      <p className="text-sm font-semibold tabular-nums text-ink">
+                        {formatUsd(m.used_sum)}{' '}
+                        <span className="font-normal text-ink-muted">
+                          / {formatUsd(m.deposit_limit)}
+                        </span>
+                      </p>
+                    </div>
+                    <div
+                      className="mt-2 h-2 overflow-hidden rounded-full bg-control"
+                      role="progressbar"
+                      aria-valuenow={pct}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label={`${m.name} capacity used`}
+                    >
+                      <div
+                        className="h-full rounded-full bg-accent transition-[width] duration-200 ease-out motion-reduce:transition-none"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    {m.manual_request_variant_name ? (
+                      <p className="mt-2 truncate text-xs text-ink-muted">
+                        {m.manual_request_variant_name}
+                      </p>
+                    ) : null}
+                  </div>
+                </button>
+              )
+            })}
           </div>
         </>
       )}
