@@ -52,7 +52,7 @@ const emptyForm = (): FormState => ({
   tag: '',
   club_ids: [],
   deposit_limit: '',
-  min_amount: '',
+  min_amount: '500',
   max_amount: '',
   manual_request_message: '',
 })
