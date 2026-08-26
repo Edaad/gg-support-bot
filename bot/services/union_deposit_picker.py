@@ -49,10 +49,13 @@ def list_union_methods_for_club(
         if active_only:
             q = q.filter(ClubPaymentMethod.is_active.is_(True))
         rows = q.all()
-    if method_type is None:
+        for m in rows:
+            # Detach with loaded columns so callers can read name/id after commit.
+            session.expunge(m)
+        if method_type is not None:
+            display = union_type_display_name(method_type)
+            rows = [m for m in rows if (m.name or "") == display]
         return rows
-    display = union_type_display_name(method_type)
-    return [m for m in rows if (m.name or "") == display]
 
 
 def pick_union_method(

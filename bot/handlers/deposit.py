@@ -1650,12 +1650,24 @@ async def deposit_union_chosen(update: Update, context: ContextTypes.DEFAULT_TYP
         _cleanup(context)
         return ConversationHandler.END
 
-    shown = await _prompt_deposit_methods(
-        query.message,
-        context,
-        amount=amount,
-        edit_message=query,
-    )
+    try:
+        shown = await _prompt_deposit_methods(
+            query.message,
+            context,
+            amount=amount,
+            edit_message=query,
+        )
+    except Exception:
+        logger.exception(
+            "deposit_union_chosen: failed prompting methods shorthand=%s amount=%s",
+            shorthand,
+            amount,
+        )
+        await query.edit_message_text(
+            "Something went wrong showing deposit methods. Try /deposit again."
+        )
+        _cleanup(context)
+        return ConversationHandler.END
     if not shown:
         _abandon_deposit_flow_session(context, end_reason=END_REASON_CANCELLED)
         _cleanup(context)

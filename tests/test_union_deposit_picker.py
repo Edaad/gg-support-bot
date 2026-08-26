@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from bot.services.union_deposit_picker import (
     build_deposit_picker_methods,
+    list_union_methods_for_club,
     pick_union_method,
 )
 from bot.services.union_method_types import UNION_METHOD_TYPES
@@ -27,6 +28,29 @@ def _union_row(*, id: int, tag: str, sort_order: int = 0, limit: str = "1000"):
         is_active=True,
         method_clubs=[],
     )
+
+
+class ListUnionMethodsForClubTests(unittest.TestCase):
+    @patch("bot.services.union_deposit_picker.get_db")
+    def test_expunges_rows_before_return(self, mock_get_db):
+        row = SimpleNamespace(id=9, name="Zelle")
+        session = MagicMock()
+        q = session.query.return_value
+        q.join.return_value = q
+        q.filter.return_value = q
+        q.options.return_value = q
+        q.order_by.return_value = q
+        q.all.return_value = [row]
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        mock_get_db.return_value = cm
+
+        result = list_union_methods_for_club(1)
+
+        session.expunge.assert_called_once_with(row)
+        self.assertEqual(result, [row])
+        self.assertEqual(result[0].name, "Zelle")
 
 
 class BuildDepositPickerMethodsTests(unittest.TestCase):
