@@ -8,7 +8,13 @@ from typing import Iterable, List, Literal, Optional, Sequence, Tuple
 
 from config import ADMIN_USER_IDS
 from db.connection import get_db
-from db.models import Club, ClubLinkedAccount, ClubPaymentMethod, GroupDepositMethodAccess
+from db.models import (
+    Club,
+    ClubLinkedAccount,
+    ClubPaymentMethod,
+    ClubPaymentMethodClub,
+    GroupDepositMethodAccess,
+)
 from bot.services.club import get_group_title_for_chat, is_club_staff
 
 logger = logging.getLogger(__name__)
@@ -17,6 +23,46 @@ AccessType = Literal["blacklist", "whitelist"]
 AccessAction = Literal["blacklist", "whitelist", "remove"]
 MethodDirection = Literal["deposit", "cashout"]
 _CRYPTO_SLUG = "crypto"
+
+
+def _method_belongs_to_club(method: ClubPaymentMethod, club_id: int) -> bool:
+    if bool(getattr(method, "tracks_manual_requests", False)):
+        return any(int(mc.club_id) == int(club_id) for mc in (method.method_clubs or []))
+    return int(method.club_id) == int(club_id)
+
+
+def _active_methods_for_club(
+    session, club_id: int, direction: MethodDirection
+) -> List[ClubPaymentMethod]:
+    """Normal club methods plus union methods attached via junction."""
+    from sqlalchemy.orm import joinedload
+
+    normal = (
+        session.query(ClubPaymentMethod)
+        .filter_by(club_id=int(club_id), direction=direction, is_active=True)
+        .filter(ClubPaymentMethod.tracks_manual_requests.is_(False))
+        .order_by(ClubPaymentMethod.sort_order, ClubPaymentMethod.id)
+        .all()
+    )
+    if direction != "deposit":
+        return list(normal)
+    union_rows = (
+        session.query(ClubPaymentMethod)
+        .join(
+            ClubPaymentMethodClub,
+            ClubPaymentMethodClub.method_id == ClubPaymentMethod.id,
+        )
+        .filter(
+            ClubPaymentMethodClub.club_id == int(club_id),
+            ClubPaymentMethod.direction == "deposit",
+            ClubPaymentMethod.is_active.is_(True),
+            ClubPaymentMethod.tracks_manual_requests.is_(True),
+        )
+        .options(joinedload(ClubPaymentMethod.method_clubs))
+        .order_by(ClubPaymentMethod.id)
+        .all()
+    )
+    return list(normal) + list(union_rows)
 
 
 @dataclass(frozen=True)
@@ -251,12 +297,7 @@ def methods_for_action(
 ) -> List[dict]:
     """Active methods eligible for the given /depositaccess or /cashoutaccess action."""
     with get_db() as session:
-        methods = (
-            session.query(ClubPaymentMethod)
-            .filter_by(club_id=int(club_id), direction=direction, is_active=True)
-            .order_by(ClubPaymentMethod.sort_order, ClubPaymentMethod.id)
-            .all()
-        )
+        methods = _active_methods_for_club(session, int(club_id), direction)
         access = _access_map_for_chat(session, chat_id)
         result: List[dict] = []
         for m in methods:
@@ -297,8 +338,15 @@ def upsert_access(
     direction: MethodDirection = "deposit",
 ) -> AccessEntry:
     with get_db() as session:
-        method = session.query(ClubPaymentMethod).get(int(club_payment_method_id))
-        if not method or int(method.club_id) != int(club_id):
+        from sqlalchemy.orm import joinedload
+
+        method = (
+            session.query(ClubPaymentMethod)
+            .options(joinedload(ClubPaymentMethod.method_clubs))
+            .filter(ClubPaymentMethod.id == int(club_payment_method_id))
+            .one_or_none()
+        )
+        if not method or not _method_belongs_to_club(method, int(club_id)):
             raise ValueError("Payment method not found for this club.")
         if method.direction != direction:
             raise ValueError(

@@ -331,34 +331,36 @@ def validate_first_time_linking(method: ClubPaymentMethod) -> None:
 
 
 def apply_manual_trade_request_constraints(method: ClubPaymentMethod) -> None:
-    """Normalize + validate flagged manual trade-request methods. Raises ValueError."""
+    """Normalize + validate flagged union methods. Raises ValueError."""
     tracks = bool(getattr(method, "tracks_manual_requests", False))
     if not tracks:
         return
     if method.direction != "deposit":
-        raise ValueError("Manual trade requests apply to deposit methods only.")
+        raise ValueError("Union methods apply to deposit methods only.")
     if method.deposit_limit is None or method.deposit_limit <= 0:
-        raise ValueError("Manual trade requests require a positive deposit limit.")
+        raise ValueError("Union methods require a positive deposit limit.")
     message = (getattr(method, "manual_request_message", None) or "").strip()
     variant = (getattr(method, "manual_request_variant_name", None) or "").strip()
     if not message:
-        raise ValueError("Manual trade requests require a player message.")
+        raise ValueError("Union methods require a player message.")
     if not variant:
-        raise ValueError("Manual trade requests require a variant name.")
+        raise ValueError("Union methods require a variant name.")
     method.manual_request_message = message
     method.manual_request_variant_name = variant
     method.has_sub_options = False
     method.first_time_linking_enabled = False
     method.first_time_bind_mode = None
+    # Whitelist-only: empty whitelist ⇒ nobody sees the method.
+    method.is_public = False
     for tier in getattr(method, "tiers", None) or []:
         if bool(getattr(tier, "use_group_checkout_link", False)):
             raise ValueError(
-                "Manual trade-request methods cannot use Stripe/group checkout."
+                "Union methods cannot use Stripe/group checkout."
             )
         for variant_row in getattr(tier, "variants", None) or []:
             if bool(getattr(variant_row, "use_group_checkout_link", False)):
                 raise ValueError(
-                    "Manual trade-request methods cannot use Stripe/group checkout."
+                    "Union methods cannot use Stripe/group checkout."
                 )
 
 

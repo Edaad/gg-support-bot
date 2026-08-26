@@ -3,7 +3,6 @@ import { useConfirm } from './ConfirmProvider'
 import {
   deleteManualDepositRequest,
   listManualDepositRequests,
-  listMethodManualDepositRequests,
   updateManualDepositRequest,
   type ManualDepositRequestRow,
 } from '../api/manualDepositRequestsClient'
@@ -28,6 +27,7 @@ type Props = {
   methodId?: number
   clubId?: number
   methodSlug?: string
+  tradeRecordChecked?: boolean
   showMethodColumns?: boolean
   showClubColumn?: boolean
 }
@@ -37,6 +37,7 @@ export default function ManualDepositRequestsTable({
   methodId,
   clubId,
   methodSlug,
+  tradeRecordChecked,
   showMethodColumns = true,
   showClubColumn = true,
 }: Props) {
@@ -53,10 +54,16 @@ export default function ManualDepositRequestsTable({
     try {
       const data =
         methodId != null
-          ? await listMethodManualDepositRequests(token, methodId, { limit: 100 })
+          ? await listManualDepositRequests(token, {
+              method_id: methodId,
+              club_id: clubId,
+              trade_record_checked: tradeRecordChecked,
+              limit: 100,
+            })
           : await listManualDepositRequests(token, {
               club_id: clubId,
               method_slug: methodSlug,
+              trade_record_checked: tradeRecordChecked,
               limit: 100,
             })
       setRows(data.items)
@@ -68,7 +75,7 @@ export default function ManualDepositRequestsTable({
     } finally {
       setLoading(false)
     }
-  }, [token, methodId, clubId, methodSlug])
+  }, [token, methodId, clubId, methodSlug, tradeRecordChecked])
 
   useEffect(() => {
     void load()
@@ -124,11 +131,11 @@ export default function ManualDepositRequestsTable({
         </div>
       )}
       <p className="text-xs text-ink-muted">
-        {total} request{total === 1 ? '' : 's'}
+        {total} deposit{total === 1 ? '' : 's'}
         {methodId != null ? '' : ' (newest first)'}
       </p>
       {rows.length === 0 ? (
-        <p className="text-sm text-ink-muted">No deposit requests yet.</p>
+        <p className="text-sm text-ink-muted">No deposits yet.</p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="min-w-full text-left text-sm">

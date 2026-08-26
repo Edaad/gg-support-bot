@@ -94,37 +94,63 @@ def get_methods_for_amount(
     club_id: int, direction: str, amount: Optional[Decimal] = None
 ) -> List[dict]:
     from bot.services.manual_deposit_requests import sum_for_method
+    from db.models import ClubPaymentMethodClub
+    from sqlalchemy.orm import joinedload
 
     with get_db() as session:
-        methods = (
+        normal = (
             session.query(ClubPaymentMethod)
             .filter_by(club_id=club_id, direction=direction, is_active=True)
+            .filter(ClubPaymentMethod.tracks_manual_requests.is_(False))
             .order_by(ClubPaymentMethod.sort_order, ClubPaymentMethod.id)
             .all()
         )
-        result = []
-        for m in methods:
+        union_methods: list[ClubPaymentMethod] = []
+        if direction == "deposit":
+            union_methods = (
+                session.query(ClubPaymentMethod)
+                .join(
+                    ClubPaymentMethodClub,
+                    ClubPaymentMethodClub.method_id == ClubPaymentMethod.id,
+                )
+                .filter(
+                    ClubPaymentMethodClub.club_id == int(club_id),
+                    ClubPaymentMethod.direction == "deposit",
+                    ClubPaymentMethod.is_active.is_(True),
+                    ClubPaymentMethod.tracks_manual_requests.is_(True),
+                )
+                .options(joinedload(ClubPaymentMethod.method_clubs))
+                .order_by(ClubPaymentMethod.id)
+                .all()
+            )
+
+        def _passes_amount_and_capacity(m: ClubPaymentMethod) -> bool:
             if bool(getattr(m, "tracks_manual_requests", False)):
                 if m.deposit_limit is None:
-                    continue
+                    return False
                 limit = Decimal(str(m.deposit_limit))
                 if limit <= 0:
-                    continue
+                    return False
                 current = sum_for_method(session, int(m.id))
                 if amount is not None:
                     if current + Decimal(str(amount)) > limit:
-                        continue
+                        return False
                 elif current >= limit:
-                    continue
+                    return False
             elif m.deposit_limit is not None and m.accumulated_amount is not None:
                 if m.accumulated_amount >= m.deposit_limit:
-                    continue
+                    return False
             if amount is not None:
                 if m.min_amount is not None and amount < m.min_amount:
-                    continue
+                    return False
                 if m.max_amount is not None and amount > m.max_amount:
-                    continue
-            result.append(_method_dict(m))
+                    return False
+            return True
+
+        result = [_method_dict(m) for m in normal if _passes_amount_and_capacity(m)]
+        result.extend(
+            _method_dict(m) for m in union_methods if _passes_amount_and_capacity(m)
+        )
         return result
 
 

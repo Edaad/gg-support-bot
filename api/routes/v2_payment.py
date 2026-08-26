@@ -102,7 +102,11 @@ def list_methods(club_id: int, direction: str | None = None, db: Session = Depen
     if direction:
         q = q.filter_by(direction=direction)
     methods = q.order_by(ClubPaymentMethod.sort_order, ClubPaymentMethod.id).all()
-    return [_read_method(m) for m in methods]
+    return [
+        _read_method(m)
+        for m in methods
+        if not bool(getattr(m, "tracks_manual_requests", False))
+    ]
 
 
 @router.post("/clubs/{club_id}/methods", response_model=ClubPaymentMethodRead, status_code=201)
@@ -112,6 +116,11 @@ def create_method(club_id: int, body: ClubPaymentMethodCreate, db: Session = Dep
         raise HTTPException(404, "Club not found")
     if body.direction not in ("deposit", "cashout"):
         raise HTTPException(400, "direction must be 'deposit' or 'cashout'")
+    if bool(getattr(body, "tracks_manual_requests", False)):
+        raise HTTPException(
+            400,
+            "Create union methods on the Union methods page, not under club deposit methods.",
+        )
     method = ClubPaymentMethod(club_id=club_id, **body.model_dump())
     try:
         apply_manual_trade_request_constraints(method)
@@ -146,6 +155,13 @@ def get_method(method_id: int, db: Session = Depends(get_db_dependency)):
 def update_method(method_id: int, body: ClubPaymentMethodUpdate, db: Session = Depends(get_db_dependency)):
     method = _get_method(db, method_id)
     data = body.model_dump(exclude_unset=True)
+    if bool(getattr(method, "tracks_manual_requests", False)) or data.get(
+        "tracks_manual_requests"
+    ):
+        raise HTTPException(
+            400,
+            "Edit union methods on the Union methods page.",
+        )
     for field, value in data.items():
         setattr(method, field, value)
     if method.min_amount is not None and method.max_amount is not None and method.min_amount > method.max_amount:
@@ -223,7 +239,7 @@ def create_tier(method_id: int, body: ClubPaymentTierCreate, db: Session = Depen
     method = _get_method(db, method_id)
     if bool(getattr(method, "tracks_manual_requests", False)):
         raise HTTPException(
-            400, "Manual trade-request methods do not use amount tiers."
+            400, "Union methods do not use amount tiers."
         )
     tier_data = body.model_dump()
     if method_needs_variants(method):
@@ -416,7 +432,7 @@ def create_sub_option(method_id: int, body: ClubPaymentSubOptionCreate, db: Sess
     method = _get_method(db, method_id)
     if bool(getattr(method, "tracks_manual_requests", False)):
         raise HTTPException(
-            400, "Manual trade-request methods do not use sub-options."
+            400, "Union methods do not use sub-options."
         )
     sub = ClubPaymentSubOption(method_id=method_id, **body.model_dump())
     db.add(sub)

@@ -1,4 +1,4 @@
-"""Tests for manual trade-request deposit methods."""
+"""Tests for union / manual trade-request deposit methods."""
 
 from __future__ import annotations
 
@@ -9,6 +9,11 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from api.payment_v2_helpers import apply_manual_trade_request_constraints
+from bot.services.deposit_method_access import (
+    _method_belongs_to_club,
+    filter_deposit_methods_for_chat,
+    method_visible_for_chat,
+)
 from bot.services.manual_deposit_requests import (
     ManualDepositCapacityError,
     capacity_allows,
@@ -25,6 +30,7 @@ class ApplyManualTradeConstraintsTests(unittest.TestCase):
             manual_request_message="hi",
             manual_request_variant_name="v1",
             tiers=[],
+            is_public=True,
         )
         with self.assertRaises(ValueError):
             apply_manual_trade_request_constraints(method)
@@ -39,7 +45,7 @@ class ApplyManualTradeConstraintsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             apply_manual_trade_request_constraints(method)
 
-    def test_forces_off_linking_and_sub_options(self):
+    def test_forces_off_linking_and_whitelist_only(self):
         method = SimpleNamespace(
             tracks_manual_requests=True,
             direction="deposit",
@@ -50,11 +56,13 @@ class ApplyManualTradeConstraintsTests(unittest.TestCase):
             first_time_linking_enabled=True,
             first_time_bind_mode="special_amount",
             tiers=[],
+            is_public=True,
         )
         apply_manual_trade_request_constraints(method)
         self.assertFalse(method.has_sub_options)
         self.assertFalse(method.first_time_linking_enabled)
         self.assertIsNone(method.first_time_bind_mode)
+        self.assertFalse(method.is_public)
         self.assertEqual(method.manual_request_message, "Pay me")
         self.assertEqual(method.manual_request_variant_name, "Union")
 
@@ -70,6 +78,7 @@ class ApplyManualTradeConstraintsTests(unittest.TestCase):
             first_time_linking_enabled=False,
             first_time_bind_mode=None,
             tiers=[tier],
+            is_public=True,
         )
         with self.assertRaises(ValueError):
             apply_manual_trade_request_constraints(method)
@@ -109,6 +118,91 @@ class CapacityAllowsTests(unittest.TestCase):
             )
 
 
+class MethodBelongsToClubTests(unittest.TestCase):
+    def test_union_uses_junction_only(self):
+        method = SimpleNamespace(
+            club_id=1,
+            tracks_manual_requests=True,
+            method_clubs=[SimpleNamespace(club_id=2), SimpleNamespace(club_id=3)],
+        )
+        self.assertFalse(_method_belongs_to_club(method, 1))
+        self.assertTrue(_method_belongs_to_club(method, 2))
+
+    def test_normal_uses_club_id(self):
+        method = SimpleNamespace(
+            club_id=5,
+            tracks_manual_requests=False,
+            method_clubs=[],
+        )
+        self.assertTrue(_method_belongs_to_club(method, 5))
+        self.assertFalse(_method_belongs_to_club(method, 6))
+
+
+class WhitelistOnlyTests(unittest.TestCase):
+    def test_empty_whitelist_hides_private_method(self):
+        self.assertFalse(
+            method_visible_for_chat(is_public=False, access_type=None)
+        )
+        self.assertTrue(
+            method_visible_for_chat(is_public=False, access_type="whitelist")
+        )
+
+    def test_filter_deposit_methods_requires_whitelist(self):
+        methods = [
+            {"id": 10, "is_public": False, "name": "Union"},
+            {"id": 11, "is_public": True, "name": "Venmo"},
+        ]
+        with patch(
+            "bot.services.deposit_method_access.get_db"
+        ) as get_db, patch(
+            "bot.services.deposit_method_access._access_map_for_chat",
+            return_value={10: "whitelist"},
+        ):
+            session = MagicMock()
+            cm = MagicMock()
+            cm.__enter__.return_value = session
+            cm.__exit__.return_value = False
+            get_db.return_value = cm
+            shown = filter_deposit_methods_for_chat(-100, methods)
+        self.assertEqual([m["id"] for m in shown], [10, 11])
+
+        with patch(
+            "bot.services.deposit_method_access.get_db"
+        ) as get_db, patch(
+            "bot.services.deposit_method_access._access_map_for_chat",
+            return_value={},
+        ):
+            session = MagicMock()
+            cm = MagicMock()
+            cm.__enter__.return_value = session
+            cm.__exit__.return_value = False
+            get_db.return_value = cm
+            shown = filter_deposit_methods_for_chat(-100, methods)
+        self.assertEqual([m["id"] for m in shown], [11])
+
+
+def _mock_session_for_get_methods(*, normal, union):
+    """Build a session whose query chain returns normal then union lists."""
+    session = MagicMock()
+
+    normal_q = MagicMock()
+    normal_q.filter_by.return_value = normal_q
+    normal_q.filter.return_value = normal_q
+    normal_q.order_by.return_value = normal_q
+    normal_q.all.return_value = normal
+
+    union_q = MagicMock()
+    union_q.join.return_value = union_q
+    union_q.filter.return_value = union_q
+    union_q.options.return_value = union_q
+    union_q.order_by.return_value = union_q
+    union_q.all.return_value = union
+
+    # First query(...) is normal methods; second is union.
+    session.query.side_effect = [normal_q, union_q]
+    return session
+
+
 class GetMethodsForAmountManualTests(unittest.TestCase):
     def test_hides_when_amount_exceeds_remaining(self):
         from bot.services import club_payment_v2
@@ -120,17 +214,14 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
             min_amount=None,
             max_amount=None,
             has_sub_options=False,
-            is_public=True,
+            is_public=False,
             tracks_manual_requests=True,
             manual_request_message="msg",
             manual_request_variant_name="v",
             deposit_limit=Decimal("1000"),
             accumulated_amount=Decimal("0"),
         )
-        session = MagicMock()
-        session.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = [
-            method
-        ]
+        session = _mock_session_for_get_methods(normal=[], union=[method])
         cm = MagicMock()
         cm.__enter__.return_value = session
         cm.__exit__.return_value = False
@@ -143,11 +234,64 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
                 1, "deposit", Decimal("200")
             )
             self.assertEqual(shown, [])
+
+        session2 = _mock_session_for_get_methods(normal=[], union=[method])
+        cm2 = MagicMock()
+        cm2.__enter__.return_value = session2
+        cm2.__exit__.return_value = False
+        with patch.object(club_payment_v2, "get_db", return_value=cm2), patch(
+            "bot.services.manual_deposit_requests.sum_for_method",
+            return_value=Decimal("900"),
+        ):
             shown_ok = club_payment_v2.get_methods_for_amount(
                 1, "deposit", Decimal("50")
             )
             self.assertEqual(len(shown_ok), 1)
             self.assertTrue(shown_ok[0]["tracks_manual_requests"])
+
+    def test_appends_union_after_normal(self):
+        from bot.services import club_payment_v2
+
+        normal = SimpleNamespace(
+            id=1,
+            name="Venmo",
+            slug="venmo",
+            min_amount=None,
+            max_amount=None,
+            has_sub_options=False,
+            is_public=True,
+            tracks_manual_requests=False,
+            manual_request_message=None,
+            manual_request_variant_name=None,
+            deposit_limit=None,
+            accumulated_amount=Decimal("0"),
+        )
+        union = SimpleNamespace(
+            id=9,
+            name="Zelle Union",
+            slug="zelle-union",
+            min_amount=None,
+            max_amount=None,
+            has_sub_options=False,
+            is_public=False,
+            tracks_manual_requests=True,
+            manual_request_message="msg",
+            manual_request_variant_name="v",
+            deposit_limit=Decimal("5000"),
+            accumulated_amount=Decimal("0"),
+        )
+        session = _mock_session_for_get_methods(normal=[normal], union=[union])
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        with patch.object(club_payment_v2, "get_db", return_value=cm), patch(
+            "bot.services.manual_deposit_requests.sum_for_method",
+            return_value=Decimal("0"),
+        ):
+            shown = club_payment_v2.get_methods_for_amount(
+                1, "deposit", Decimal("100")
+            )
+        self.assertEqual([m["slug"] for m in shown], ["venmo", "zelle-union"])
 
     def test_hides_when_amount_outside_min_max(self):
         from bot.services import club_payment_v2
@@ -159,37 +303,28 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
             min_amount=Decimal("50"),
             max_amount=Decimal("200"),
             has_sub_options=False,
-            is_public=True,
+            is_public=False,
             tracks_manual_requests=True,
             manual_request_message="msg",
             manual_request_variant_name="v",
             deposit_limit=Decimal("10000"),
             accumulated_amount=Decimal("0"),
         )
-        session = MagicMock()
-        session.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = [
-            method
-        ]
-        cm = MagicMock()
-        cm.__enter__.return_value = session
-        cm.__exit__.return_value = False
 
-        with patch.object(club_payment_v2, "get_db", return_value=cm), patch(
-            "bot.services.manual_deposit_requests.sum_for_method",
-            return_value=Decimal("0"),
-        ):
-            self.assertEqual(
-                club_payment_v2.get_methods_for_amount(1, "deposit", Decimal("25")),
-                [],
-            )
-            self.assertEqual(
-                club_payment_v2.get_methods_for_amount(1, "deposit", Decimal("250")),
-                [],
-            )
-            shown = club_payment_v2.get_methods_for_amount(
-                1, "deposit", Decimal("100")
-            )
-            self.assertEqual(len(shown), 1)
+        def run(amount):
+            session = _mock_session_for_get_methods(normal=[], union=[method])
+            cm = MagicMock()
+            cm.__enter__.return_value = session
+            cm.__exit__.return_value = False
+            with patch.object(club_payment_v2, "get_db", return_value=cm), patch(
+                "bot.services.manual_deposit_requests.sum_for_method",
+                return_value=Decimal("0"),
+            ):
+                return club_payment_v2.get_methods_for_amount(1, "deposit", amount)
+
+        self.assertEqual(run(Decimal("25")), [])
+        self.assertEqual(run(Decimal("250")), [])
+        self.assertEqual(len(run(Decimal("100"))), 1)
 
 
 class CreateRequestAtomicTests(unittest.TestCase):
@@ -270,6 +405,21 @@ class ManualTradeLedgerFetchTests(unittest.TestCase):
         self.assertEqual(events[0].source_label, "Zelle")
         self.assertEqual(events[0].gg_player_id, "2222-2222")
         self.assertEqual(events[0].amount_usd, Decimal("100"))
+
+
+class UnionMethodsApiHelpersTests(unittest.TestCase):
+    def test_sync_method_clubs_sets_anchor(self):
+        from api.routes.union_methods import _sync_method_clubs
+
+        db = MagicMock()
+        method = SimpleNamespace(id=5, club_id=1, method_clubs=[])
+        clubs = [
+            SimpleNamespace(id=1, name="RT"),
+            SimpleNamespace(id=3, name="CC"),
+        ]
+        _sync_method_clubs(db, method, clubs)
+        self.assertEqual(method.club_id, 1)
+        self.assertEqual(db.add.call_count, 2)
 
 
 if __name__ == "__main__":

@@ -311,6 +311,36 @@ class ClubPaymentMethod(Base):
         "ManualDepositRequest",
         back_populates="method",
     )
+    method_clubs = relationship(
+        "ClubPaymentMethodClub",
+        back_populates="method",
+        cascade="all, delete-orphan",
+    )
+
+
+class ClubPaymentMethodClub(Base):
+    """Clubs that can offer a shared union (tracks_manual_requests) method."""
+
+    __tablename__ = "club_payment_method_clubs"
+    __table_args__ = (
+        UniqueConstraint("method_id", "club_id", name="uq_cpmc_method_club"),
+        Index("ix_cpmc_club_id", "club_id"),
+        Index("ix_cpmc_method_id", "method_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    method_id = Column(
+        Integer,
+        ForeignKey("club_payment_methods.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    method = relationship("ClubPaymentMethod", back_populates="method_clubs")
+    club = relationship("Club")
 
 
 class ClubPaymentTier(Base):

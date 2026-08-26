@@ -14,7 +14,7 @@ type NavLinkItem = { to: string; label: string }
 /** Top-level links in display order (Admin is injected separately for admins). */
 const TOP_NAV: NavLinkItem[] = [
   { to: '/payments', label: 'Payments' },
-  { to: '/manual-deposit-requests', label: 'Trade requests' },
+  { to: '/manual-deposit-requests', label: 'Union methods' },
   { to: '/bonuses', label: 'Bonuses' },
   { to: '/bonus-types', label: 'Bonus types' },
   { to: '/cashout-records', label: 'Cashout records' },

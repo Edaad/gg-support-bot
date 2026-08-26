@@ -21,7 +21,6 @@ import V2SubOptionEditor from './V2SubOptionEditor'
 import FirstTimeDepositLinkingSection, {
   type FirstTimeBindMode,
 } from './FirstTimeDepositLinkingSection'
-import ManualDepositRequestsTable from './ManualDepositRequestsTable'
 import { useConfirm } from './ConfirmProvider'
 
 interface Props {
@@ -30,7 +29,7 @@ interface Props {
   direction: 'deposit' | 'cashout'
 }
 
-type MethodPanel = 'details' | 'tiers' | 'suboptions' | 'requests'
+type MethodPanel = 'details' | 'tiers' | 'suboptions'
 type ActivityFilter = 'active' | 'inactive'
 
 const EMPTY: Partial<V2Method> = {
@@ -60,9 +59,6 @@ const DETAILS_SNAPSHOT_KEYS: (keyof V2Method)[] = [
   'has_sub_options',
   'first_time_linking_enabled',
   'first_time_bind_mode',
-  'tracks_manual_requests',
-  'manual_request_message',
-  'manual_request_variant_name',
 ]
 
 function countAllVariants(m: V2Method): number {
@@ -70,8 +66,6 @@ function countAllVariants(m: V2Method): number {
 }
 
 function detailsPayload(form: Partial<V2Method>, direction: string): Partial<V2Method> {
-  const tracksManual =
-    direction === 'deposit' && Boolean(form.tracks_manual_requests)
   const payload: Partial<V2Method> = {
     direction,
     name: form.name?.trim(),
@@ -81,18 +75,11 @@ function detailsPayload(form: Partial<V2Method>, direction: string): Partial<V2M
   }
   if (direction === 'deposit') {
     payload.deposit_limit = form.deposit_limit ?? null
-    payload.tracks_manual_requests = tracksManual
-    payload.manual_request_message = tracksManual
-      ? (form.manual_request_message || '').trim() || null
-      : null
-    payload.manual_request_variant_name = tracksManual
-      ? (form.manual_request_variant_name || '').trim() || null
-      : null
+    payload.tracks_manual_requests = false
+    payload.manual_request_message = null
+    payload.manual_request_variant_name = null
     const slug = (form.slug || '').trim().toLowerCase()
-    if (
-      !tracksManual &&
-      (slug === 'venmo' || slug === 'zelle' || slug === 'cashapp' || slug === 'paypal')
-    ) {
+    if (slug === 'venmo' || slug === 'zelle' || slug === 'cashapp' || slug === 'paypal') {
       payload.first_time_linking_enabled = form.first_time_linking_enabled ?? false
       payload.first_time_bind_mode = form.first_time_linking_enabled
         ? (form.first_time_bind_mode ?? 'special_amount')
@@ -104,7 +91,7 @@ function detailsPayload(form: Partial<V2Method>, direction: string): Partial<V2M
   }
   payload.is_active = form.is_active ?? true
   payload.is_public = form.is_public ?? true
-  payload.has_sub_options = tracksManual ? false : (form.has_sub_options ?? false)
+  payload.has_sub_options = form.has_sub_options ?? false
   return payload
 }
 
@@ -118,21 +105,6 @@ function isDetailsDirty(saved: V2Method, form: Partial<V2Method>): boolean {
 
 function methodSummary(m: V2Method): string[] {
   const parts: string[] = []
-  if (m.tracks_manual_requests) {
-    parts.push('manual trade requests')
-    if (m.manual_request_variant_name) {
-      parts.push(`variant: ${m.manual_request_variant_name}`)
-    }
-    if (m.min_amount != null || m.max_amount != null) {
-      const min = m.min_amount != null ? `$${m.min_amount}` : '—'
-      const max = m.max_amount != null ? `$${m.max_amount}` : '—'
-      parts.push(`per deposit ${min}–${max}`)
-    }
-    if (m.deposit_limit != null) {
-      parts.push(`cap $${m.deposit_limit}`)
-    }
-    return parts
-  }
   if (m.min_amount != null || m.max_amount != null) {
     const min = m.min_amount != null ? `$${m.min_amount}` : '—'
     const max = m.max_amount != null ? `$${m.max_amount}` : '—'
@@ -180,8 +152,6 @@ function MethodDetailsForm({
   saving?: boolean
   nameInputRef?: RefObject<HTMLInputElement | null>
 }) {
-  const tracksManual =
-    direction === 'deposit' && Boolean(form.tracks_manual_requests)
   return (
     <div className="space-y-4">
       {error && (
@@ -190,9 +160,10 @@ function MethodDetailsForm({
         </div>
       )}
       <p className="text-xs text-ink-muted">
-        {tracksManual
-          ? 'Manual trade-request methods send one fixed message and log each /deposit for staff to mark trade record checked. Set min/max per deposit, capacity limit, message, and variant name.'
-          : 'Player messages and Stripe checkout live on amount tiers. Sub-option responses (e.g. crypto networks) live on the Sub-options tab when enabled below. Absolute min and max apply to the whole method. Saving details adjusts amount tiers so they stay within these limits.'}
+        Player messages and Stripe checkout live on amount tiers. Sub-option responses (e.g. crypto
+        networks) live on the Sub-options tab when enabled below. Absolute min and max apply to the
+        whole method. Saving details adjusts amount tiers so they stay within these limits. Union
+        methods are managed on the Union methods page.
       </p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
@@ -224,7 +195,7 @@ function MethodDetailsForm({
         </div>
         <div>
           <label htmlFor={minAmountFieldId} className="label-field-xs">
-            {tracksManual ? 'Min per deposit ($)' : 'Absolute min ($)'}
+            Absolute min ($)
           </label>
           <input
             id={minAmountFieldId}
@@ -241,7 +212,7 @@ function MethodDetailsForm({
         </div>
         <div>
           <label htmlFor={maxAmountFieldId} className="label-field-xs">
-            {tracksManual ? 'Max per deposit ($)' : 'Absolute max ($)'}
+            Absolute max ($)
           </label>
           <input
             id={maxAmountFieldId}
@@ -256,19 +227,17 @@ function MethodDetailsForm({
             placeholder="No maximum"
           />
         </div>
-        {!tracksManual && (
-          <div className="sm:col-span-2">
-            <label className="flex items-center gap-2 text-sm text-ink">
-              <input
-                type="checkbox"
-                checked={form.has_sub_options ?? false}
-                onChange={(e) => setField('has_sub_options', e.target.checked)}
-                className="h-4 w-4 rounded border-border bg-control text-accent focus:ring-accent"
-              />
-              Uses sub-options (player picks a network or variant after choosing this method)
-            </label>
-          </div>
-        )}
+        <div className="sm:col-span-2">
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={form.has_sub_options ?? false}
+              onChange={(e) => setField('has_sub_options', e.target.checked)}
+              className="h-4 w-4 rounded border-border bg-control text-accent focus:ring-accent"
+            />
+            Uses sub-options (player picks a network or variant after choosing this method)
+          </label>
+        </div>
         <div className="sm:col-span-2">
           <label className="flex items-center gap-2 text-sm text-ink">
             <input
@@ -305,28 +274,8 @@ function MethodDetailsForm({
         </div>
         {direction === 'deposit' && (
           <div className="sm:col-span-2">
-            <label className="flex items-center gap-2 text-sm text-ink">
-              <input
-                type="checkbox"
-                checked={form.tracks_manual_requests ?? false}
-                onChange={(e) => {
-                  setField('tracks_manual_requests', e.target.checked)
-                  if (e.target.checked) {
-                    setField('has_sub_options', false)
-                    setField('first_time_linking_enabled', false)
-                    setField('first_time_bind_mode', null)
-                  }
-                }}
-                className="h-4 w-4 rounded border-border bg-control text-accent focus:ring-accent"
-              />
-              Manual trade requests (log each /deposit; no payment notification)
-            </label>
-          </div>
-        )}
-        {direction === 'deposit' && (
-          <div className="sm:col-span-2">
             <label htmlFor={depositLimitFieldId} className="label-field-xs">
-              {tracksManual ? 'Capacity limit ($)' : 'Deposit cap ($)'}
+              Deposit cap ($)
             </label>
             <input
               id={depositLimitFieldId}
@@ -338,47 +287,16 @@ function MethodDetailsForm({
                 setField('deposit_limit', e.target.value ? Number(e.target.value) : null)
               }
               className="input-field-sm max-w-xs"
-              placeholder={tracksManual ? 'Required' : 'No cap'}
+              placeholder="No cap"
             />
             <p className="mt-1 text-xs text-ink-faint">
-              {tracksManual
-                ? 'Hide this method when the sum of request amounts plus the new deposit would exceed this limit.'
-                : 'Hide this method after total deposits reach this amount.'}
+              Hide this method after total deposits reach this amount.
             </p>
           </div>
         )}
-        {tracksManual && (
-          <>
-            <div className="sm:col-span-2">
-              <label htmlFor={`${nameFieldId}-variant`} className="label-field-xs">
-                Variant name
-              </label>
-              <input
-                id={`${nameFieldId}-variant`}
-                value={form.manual_request_variant_name || ''}
-                onChange={(e) => setField('manual_request_variant_name', e.target.value)}
-                className="input-field-sm"
-                placeholder="e.g. Union Zelle"
-                autoComplete="off"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label htmlFor={`${nameFieldId}-message`} className="label-field-xs">
-                Player message
-              </label>
-              <textarea
-                id={`${nameFieldId}-message`}
-                value={form.manual_request_message || ''}
-                onChange={(e) => setField('manual_request_message', e.target.value)}
-                className="input-field-sm min-h-28"
-                placeholder="Instructions sent in Telegram after the player picks this method"
-              />
-            </div>
-          </>
-        )}
       </div>
 
-      {direction === 'deposit' && !tracksManual && (
+      {direction === 'deposit' && (
         <FirstTimeDepositLinkingSection
           methodSlug={form.slug}
           enabled={form.first_time_linking_enabled ?? false}
@@ -415,7 +333,6 @@ function ConfigTabs({
   onSelect,
   showSubOptions,
   showTiers,
-  showRequests,
 }: {
   methodId: number
   panel: MethodPanel
@@ -423,7 +340,6 @@ function ConfigTabs({
   onSelect: (p: MethodPanel) => void
   showSubOptions: boolean
   showTiers: boolean
-  showRequests: boolean
 }) {
   const tabs: { id: MethodPanel; label: string }[] = [
     { id: 'details', label: 'Details' },
@@ -433,9 +349,6 @@ function ConfigTabs({
   }
   if (showSubOptions) {
     tabs.push({ id: 'suboptions', label: 'Sub-options' })
-  }
-  if (showRequests) {
-    tabs.push({ id: 'requests', label: 'Requests' })
   }
 
   return (
@@ -495,8 +408,9 @@ export default function V2MethodEditor({ token, clubId, direction }: Props) {
     setLoadError('')
     try {
       const data = await listV2Methods(token, clubId, direction)
-      setMethods(data)
-      return data
+      const filtered = data.filter((m) => !m.tracks_manual_requests)
+      setMethods(filtered)
+      return filtered
     } catch {
       setLoadError('Could not load payment methods. Check your connection and try again.')
       setMethods([])
@@ -615,13 +529,10 @@ export default function V2MethodEditor({ token, clubId, direction }: Props) {
   }
 
   const handleDelete = async (m: V2Method) => {
-    const retires = Boolean(m.tracks_manual_requests)
     const ok = await askConfirm({
-      title: retires ? 'Retire payment method?' : 'Delete payment method?',
-      message: retires
-        ? `Mark ${m.name} inactive. Existing request rows are kept.`
-        : `Remove ${m.name} and all sub-options, tiers, and variants.`,
-      confirmLabel: retires ? 'Retire method' : 'Delete method',
+      title: 'Delete payment method?',
+      message: `Remove ${m.name} and all sub-options, tiers, and variants.`,
+      confirmLabel: 'Delete method',
       destructive: true,
     })
     if (!ok) return
@@ -725,16 +636,6 @@ export default function V2MethodEditor({ token, clubId, direction }: Props) {
     if (panel === 'details') {
       return <MethodDetailsForm {...formProps} />
     }
-    if (panel === 'requests') {
-      return (
-        <ManualDepositRequestsTable
-          token={token}
-          methodId={m.id}
-          showMethodColumns={false}
-          showClubColumn={false}
-        />
-      )
-    }
     if (panel === 'tiers') {
       const editingThis = openMethodId === m.id && editId === m.id
       const absoluteMin = editingThis ? (form.min_amount ?? m.min_amount) : m.min_amount
@@ -769,20 +670,11 @@ export default function V2MethodEditor({ token, clubId, direction }: Props) {
   }
 
   const showSubOptionsFor = (m: V2Method): boolean => {
-    if (m.tracks_manual_requests) return false
     const editingThis = openMethodId === m.id && editId === m.id && !isCreating
     if (editingThis) {
       return Boolean(form.has_sub_options ?? m.has_sub_options)
     }
     return Boolean(m.has_sub_options)
-  }
-
-  const tracksManualFor = (m: V2Method): boolean => {
-    const editingThis = openMethodId === m.id && editId === m.id && !isCreating
-    if (editingThis) {
-      return Boolean(form.tracks_manual_requests ?? m.tracks_manual_requests)
-    }
-    return Boolean(m.tracks_manual_requests)
   }
 
   const visibleMethods = methods.filter((m) =>
@@ -869,8 +761,7 @@ export default function V2MethodEditor({ token, clubId, direction }: Props) {
             const isOpen = openMethodId === m.id && !isCreating
             const summary = methodSummary(m)
             const panelId = `v2-method-${m.id}-panel`
-            const showTiers = !tracksManualFor(m)
-            const showRequests = Boolean(m.tracks_manual_requests)
+            const showTiers = true
             return (
               <div
                 key={m.id}
@@ -904,17 +795,11 @@ export default function V2MethodEditor({ token, clubId, direction }: Props) {
                             private
                           </span>
                         )}
-                        {m.tracks_manual_requests && (
-                          <span className="rounded bg-surface-raised px-1.5 py-0.5 text-xs text-ink-muted">
-                            trade requests
-                          </span>
-                        )}
                       </div>
                       {summary.length > 0 && (
                         <p className="mt-1 text-xs text-ink-muted">{summary.join(' · ')}</p>
                       )}
                       {direction === 'deposit' &&
-                        !m.tracks_manual_requests &&
                         (m.deposit_limit != null || (m.accumulated_amount ?? 0) > 0) && (
                         <div className="mt-2">
                           <div className="flex flex-wrap items-center gap-2">
@@ -1024,15 +909,11 @@ export default function V2MethodEditor({ token, clubId, direction }: Props) {
                           onClick={() => {
                             void handleDelete(m)
                           }}
-                          aria-label={`${m.tracks_manual_requests ? 'Retire' : 'Delete'} method ${m.name}`}
+                          aria-label={`Delete method ${m.name}`}
                           className="action-chip action-chip-equal text-danger-ink hover:bg-danger-bg"
                         >
-                          <span className="sm:hidden">
-                            {m.tracks_manual_requests ? 'Retire' : 'Delete'}
-                          </span>
-                          <span className="hidden sm:inline">
-                            {m.tracks_manual_requests ? 'Retire method' : 'Delete method'}
-                          </span>
+                          <span className="sm:hidden">Delete</span>
+                          <span className="hidden sm:inline">Delete method</span>
                         </button>
                       )}
                     </div>
@@ -1054,7 +935,6 @@ export default function V2MethodEditor({ token, clubId, direction }: Props) {
                       panelId={panelId}
                       showSubOptions={showSubOptionsFor(m)}
                       showTiers={showTiers}
-                      showRequests={showRequests}
                       onSelect={(tab) => {
                         void handleTabSelect(m, tab)
                       }}

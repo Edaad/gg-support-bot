@@ -96,6 +96,7 @@ def create_app() -> FastAPI:
     from api.routes.crypto_payments import router as crypto_payments_router
     from api.routes.v2_payment import router as v2_payment_router
     from api.routes.manual_deposit_requests import router as manual_deposit_requests_router
+    from api.routes.union_methods import router as union_methods_router
     from api.routes.issue_reports import router as issue_reports_router
     from api.routes.audit import router as audit_router
     from api.routes.early_rakeback_webhook import router as early_rakeback_webhook_router
@@ -112,6 +113,7 @@ def create_app() -> FastAPI:
     app.include_router(crypto_payments_router)
     app.include_router(v2_payment_router)
     app.include_router(manual_deposit_requests_router)
+    app.include_router(union_methods_router)
     app.include_router(clubs_router)
     app.include_router(commands_router)
     app.include_router(simulate_router)
