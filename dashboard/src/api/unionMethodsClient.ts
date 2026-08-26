@@ -35,6 +35,17 @@ async function request<T>(path: string, opts: RequestInit = {}, token?: string):
   return res.json()
 }
 
+export type UnionMethodTypeSlug = 'zelle' | 'cashapp' | 'applepay'
+
+export const UNION_METHOD_TYPE_OPTIONS: {
+  value: UnionMethodTypeSlug
+  label: string
+}[] = [
+  { value: 'zelle', label: 'Zelle' },
+  { value: 'cashapp', label: 'Cash App' },
+  { value: 'applepay', label: 'Apple Pay' },
+]
+
 export type UnionMethodClub = {
   id: number
   name: string
@@ -42,14 +53,15 @@ export type UnionMethodClub = {
 
 export type UnionMethod = {
   id: number
+  method: UnionMethodTypeSlug
   name: string
-  slug: string
+  tag: string
   is_active: boolean
+  sort_order: number
   min_amount: number | string | null
   max_amount: number | string | null
   deposit_limit: number | string
   manual_request_message: string
-  manual_request_variant_name: string
   clubs: UnionMethodClub[]
   row_clubs: UnionMethodClub[]
   used_sum: number | string
@@ -57,14 +69,13 @@ export type UnionMethod = {
 }
 
 export type UnionMethodCreateBody = {
-  name: string
-  slug: string
+  method: UnionMethodTypeSlug
+  tag: string
   club_ids: number[]
   deposit_limit: number
   min_amount?: number | null
   max_amount?: number | null
   manual_request_message: string
-  manual_request_variant_name: string
 }
 
 export type UnionMethodUpdateBody = Partial<UnionMethodCreateBody>
@@ -96,6 +107,18 @@ export function updateUnionMethod(
   return request<UnionMethod>(
     `/api/union-methods/${methodId}`,
     { method: 'PUT', body: JSON.stringify(body) },
+    token,
+  )
+}
+
+export function reorderUnionMethods(
+  token: string,
+  method: UnionMethodTypeSlug,
+  order: number[],
+) {
+  return request<{ ok: boolean }>(
+    `/api/union-methods/reorder`,
+    { method: 'PUT', body: JSON.stringify({ method, order }) },
     token,
   )
 }

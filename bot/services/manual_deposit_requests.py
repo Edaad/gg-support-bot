@@ -113,7 +113,7 @@ def create_request_atomic(
                 "This payment method is at capacity for that amount."
             )
 
-        variant = (method.manual_request_variant_name or "").strip() or "default"
+        variant = (method.slug or "").strip() or "default"
         row = ManualDepositRequest(
             club_id=int(club_id),
             method_id=int(method.id),

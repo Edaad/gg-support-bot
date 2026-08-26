@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import ManualDepositRequestsTable from '../components/ManualDepositRequestsTable'
 import { useConfirm } from '../components/ConfirmProvider'
@@ -7,9 +7,12 @@ import {
   createUnionMethod,
   listUnionMethods,
   reactivateUnionMethod,
+  reorderUnionMethods,
   retireUnionMethod,
   updateUnionMethod,
+  UNION_METHOD_TYPE_OPTIONS,
   type UnionMethod,
+  type UnionMethodTypeSlug,
 } from '../api/unionMethodsClient'
 
 function formatUsd(amount: number | string | null | undefined): string {
@@ -35,37 +38,34 @@ type PageView = 'methods' | 'deposits'
 const DEPOSITS_PAGE_SIZE = 50
 
 type FormState = {
-  name: string
-  slug: string
+  method: UnionMethodTypeSlug
+  tag: string
   club_ids: number[]
   deposit_limit: string
   min_amount: string
   max_amount: string
   manual_request_message: string
-  manual_request_variant_name: string
 }
 
 const emptyForm = (): FormState => ({
-  name: '',
-  slug: '',
+  method: 'zelle',
+  tag: '',
   club_ids: [],
   deposit_limit: '',
   min_amount: '',
   max_amount: '',
   manual_request_message: '',
-  manual_request_variant_name: '',
 })
 
 function formFromMethod(m: UnionMethod): FormState {
   return {
-    name: m.name,
-    slug: m.slug,
+    method: m.method,
+    tag: m.tag,
     club_ids: m.clubs.map((c) => c.id),
     deposit_limit: m.deposit_limit != null ? String(m.deposit_limit) : '',
     min_amount: m.min_amount != null ? String(m.min_amount) : '',
     max_amount: m.max_amount != null ? String(m.max_amount) : '',
     manual_request_message: m.manual_request_message || '',
-    manual_request_variant_name: m.manual_request_variant_name || '',
   }
 }
 
@@ -98,10 +98,14 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     pageView === 'methods' && methodIdParam && /^\d+$/.test(methodIdParam)
       ? Number(methodIdParam)
       : null
-  const methodFilterParam = searchParams.get('filter_method')
-  const methodFilter =
-    pageView === 'deposits' && methodFilterParam && /^\d+$/.test(methodFilterParam)
-      ? Number(methodFilterParam)
+  const methodTypeFilterParam = searchParams.get('filter_type')
+  const methodTypeFilter: UnionMethodTypeSlug | null =
+    pageView === 'deposits' &&
+    methodTypeFilterParam &&
+    (['zelle', 'cashapp', 'applepay'] as const).includes(
+      methodTypeFilterParam as UnionMethodTypeSlug,
+    )
+      ? (methodTypeFilterParam as UnionMethodTypeSlug)
       : null
   const clubFilterParam = searchParams.get('club')
   const clubFilter =
@@ -120,14 +124,16 @@ export default function ManualDepositRequests({ token }: { token: string }) {
 
   const [clubs, setClubs] = useState<Club[]>([])
   const [methods, setMethods] = useState<UnionMethod[]>([])
-  const [allMethods, setAllMethods] = useState<UnionMethod[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [reordering, setReordering] = useState(false)
   const [editing, setEditing] = useState(false)
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [searchDraft, setSearchDraft] = useState(qParam)
+  const dragItem = useRef<number | null>(null)
+  const dragOver = useRef<number | null>(null)
 
   const setQuery = useCallback(
     (patch: Record<string, string | null>) => {
@@ -157,15 +163,6 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     }
   }, [token, tab])
 
-  const loadAllMethods = useCallback(async () => {
-    try {
-      const rows = await listUnionMethods(token)
-      setAllMethods(rows)
-    } catch {
-      setAllMethods([])
-    }
-  }, [token])
-
   useEffect(() => {
     void listClubs(token)
       .then(setClubs)
@@ -175,10 +172,6 @@ export default function ManualDepositRequests({ token }: { token: string }) {
   useEffect(() => {
     void load()
   }, [load])
-
-  useEffect(() => {
-    if (pageView === 'deposits') void loadAllMethods()
-  }, [pageView, loadAllMethods])
 
   useEffect(() => {
     setSearchDraft(qParam)
@@ -198,6 +191,63 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     () => clubs.filter(isUnionMembershipClub),
     [clubs],
   )
+
+  const methodsByType = useMemo(() => {
+    const grouped: Record<UnionMethodTypeSlug, UnionMethod[]> = {
+      zelle: [],
+      cashapp: [],
+      applepay: [],
+    }
+    for (const m of methods) {
+      if (grouped[m.method]) grouped[m.method].push(m)
+    }
+    for (const key of Object.keys(grouped) as UnionMethodTypeSlug[]) {
+      grouped[key].sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)
+    }
+    return grouped
+  }, [methods])
+
+  const persistTypeOrder = async (
+    methodType: UnionMethodTypeSlug,
+    reordered: UnionMethod[],
+  ) => {
+    setReordering(true)
+    setError('')
+    try {
+      await reorderUnionMethods(
+        token,
+        methodType,
+        reordered.map((m) => m.id),
+      )
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Reorder failed')
+    } finally {
+      setReordering(false)
+    }
+  }
+
+  const onDragEndType = async (methodType: UnionMethodTypeSlug) => {
+    if (
+      dragItem.current === null ||
+      dragOver.current === null ||
+      dragItem.current === dragOver.current
+    ) {
+      dragItem.current = null
+      dragOver.current = null
+      return
+    }
+    const section = [...methodsByType[methodType]]
+    const [moved] = section.splice(dragItem.current, 1)
+    section.splice(dragOver.current, 0, moved)
+    dragItem.current = null
+    dragOver.current = null
+    setMethods((prev) => {
+      const others = prev.filter((m) => m.method !== methodType)
+      return [...others, ...section]
+    })
+    await persistTypeOrder(methodType, section)
+  }
 
   const selected = useMemo(
     () => methods.find((m) => m.id === selectedMethodId) ?? null,
@@ -242,7 +292,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
       checked: null,
       q: null,
       offset: null,
-      filter_method: null,
+      filter_type: null,
     })
   }
 
@@ -269,8 +319,8 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     setError('')
     try {
       const deposit_limit = Number(form.deposit_limit)
-      if (!form.name.trim() || !form.slug.trim()) {
-        throw new Error('Name and slug are required.')
+      if (!form.tag.trim()) {
+        throw new Error('Tag is required.')
       }
       if (!form.club_ids.length) {
         throw new Error('Select at least one club.')
@@ -279,17 +329,16 @@ export default function ManualDepositRequests({ token }: { token: string }) {
         throw new Error('Capacity limit must be a positive number.')
       }
       const body = {
-        name: form.name.trim(),
-        slug: form.slug.trim().toLowerCase(),
+        method: form.method,
+        tag: form.tag.trim().toLowerCase(),
         club_ids: form.club_ids,
         deposit_limit,
         min_amount: parseOptionalAmount(form.min_amount),
         max_amount: parseOptionalAmount(form.max_amount),
         manual_request_message: form.manual_request_message.trim(),
-        manual_request_variant_name: form.manual_request_variant_name.trim(),
       }
-      if (!body.manual_request_message || !body.manual_request_variant_name) {
-        throw new Error('Message and variant name are required.')
+      if (!body.manual_request_message) {
+        throw new Error('Player message is required.')
       }
       if (creating) {
         const created = await createUnionMethod(token, body)
@@ -311,7 +360,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
   const onRetire = async (m: UnionMethod) => {
     const ok = await askConfirm({
       title: 'Retire union method?',
-      message: `${m.name} will leave Active and stop appearing in /deposit.`,
+      message: `${m.name} · ${m.tag} will leave Active and stop appearing in /deposit.`,
       confirmLabel: 'Retire',
       destructive: true,
     })
@@ -351,26 +400,37 @@ export default function ManualDepositRequests({ token }: { token: string }) {
       <h3 className="text-sm font-semibold text-ink">{title}</h3>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label className="label-field-xs" htmlFor="um-name">
-            Name
+          <label className="label-field-xs" htmlFor="um-method">
+            Method
           </label>
-          <input
-            id="um-name"
+          <select
+            id="um-method"
             className="input-field-sm"
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          />
+            value={form.method}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                method: e.target.value as UnionMethodTypeSlug,
+              }))
+            }
+          >
+            {UNION_METHOD_TYPE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
         </div>
         <div>
-          <label className="label-field-xs" htmlFor="um-slug">
-            Slug
+          <label className="label-field-xs" htmlFor="um-tag">
+            Tag
           </label>
           <input
-            id="um-slug"
+            id="um-tag"
             className="input-field-sm"
-            value={form.slug}
-            onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
-            placeholder="zelle-union"
+            value={form.tag}
+            onChange={(e) => setForm((f) => ({ ...f, tag: e.target.value }))}
+            placeholder="main"
           />
         </div>
         <div>
@@ -419,22 +479,6 @@ export default function ManualDepositRequests({ token }: { token: string }) {
             }
           />
         </div>
-        <div>
-          <label className="label-field-xs" htmlFor="um-variant">
-            Variant name
-          </label>
-          <input
-            id="um-variant"
-            className="input-field-sm"
-            value={form.manual_request_variant_name}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                manual_request_variant_name: e.target.value,
-              }))
-            }
-          />
-        </div>
         <div className="sm:col-span-2">
           <label className="label-field-xs" htmlFor="um-msg">
             Player message
@@ -468,9 +512,8 @@ export default function ManualDepositRequests({ token }: { token: string }) {
             ))}
           </div>
           <p className="mt-2 text-xs text-ink-faint">
-            Whitelist-only via /depositaccess — empty whitelist means nobody sees this
-            method. Unchecking a club hides it there; past deposits still count toward
-            capacity.
+            Public to all groups in checked clubs. Unchecking a club hides the method
+            there; past deposits still count toward capacity.
           </p>
         </div>
       </div>
@@ -507,8 +550,8 @@ export default function ManualDepositRequests({ token }: { token: string }) {
         <div>
           <h1 className="text-2xl font-semibold text-ink text-balance">Union methods</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            Shared multi-club deposit configs with one capacity pool. Whitelist groups
-            with /depositaccess after creating a method.
+            Shared multi-club deposit configs with one capacity pool per union method.
+            Drag active cards within each type to set fulfillment priority.
           </p>
         </div>
         {pageView === 'methods' && !selected && !creating && (
@@ -537,6 +580,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                 q: null,
                 offset: null,
                 filter_method: null,
+                filter_type: null,
                 club: null,
                 checked: null,
               })
@@ -593,9 +637,11 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                 </button>
                 <div>
                   <h2 className="text-xl font-semibold text-ink text-balance">
-                    {selected.name}
+                    {selected.name} · {selected.tag}
                   </h2>
-                  <p className="mt-0.5 font-mono text-sm text-ink-muted">{selected.slug}</p>
+                  <p className="mt-0.5 text-sm text-ink-muted">
+                    Fulfillment priority #{selected.sort_order + 1}
+                  </p>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -688,11 +734,6 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                   {selected.unchecked_count}{' '}
                   <span className="text-sm font-normal text-ink-muted">unchecked</span>
                 </p>
-                {selected.manual_request_variant_name ? (
-                  <p className="mt-1 truncate text-xs text-ink-muted">
-                    {selected.manual_request_variant_name}
-                  </p>
-                ) : null}
               </div>
             </div>
           </section>
@@ -769,7 +810,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                 className="input-field-sm"
                 value={searchDraft}
                 onChange={(e) => setSearchDraft(e.target.value)}
-                placeholder="Group, amount, or club"
+                placeholder="Group, amount, club, or tag"
               />
             </div>
             <div>
@@ -779,18 +820,18 @@ export default function ManualDepositRequests({ token }: { token: string }) {
               <select
                 id="um-deposits-method"
                 className="input-field-sm"
-                value={methodFilter ?? ''}
+                value={methodTypeFilter ?? ''}
                 onChange={(e) =>
                   setQuery({
-                    filter_method: e.target.value || null,
+                    filter_type: e.target.value || null,
                     offset: null,
                   })
                 }
               >
                 <option value="">All</option>
-                {allMethods.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.is_active ? m.name : `${m.name} (inactive)`}
+                {UNION_METHOD_TYPE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
                   </option>
                 ))}
               </select>
@@ -842,7 +883,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
           </div>
           <ManualDepositRequestsTable
             token={token}
-            methodId={methodFilter ?? undefined}
+            methodType={methodTypeFilter ?? undefined}
             clubId={clubFilter ?? undefined}
             tradeRecordChecked={tradeCheckedFilter}
             q={qParam || undefined}
@@ -870,81 +911,113 @@ export default function ManualDepositRequests({ token }: { token: string }) {
               No {tab} union methods yet.
             </p>
           )}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {methods.map((m) => {
-              const pct = capacityPct(m.used_sum, m.deposit_limit)
+          {tab === 'active' && !loading && methods.length > 0 && (
+            <p className="text-xs text-ink-muted">
+              Drag cards within each method type to set fulfillment priority (top =
+              first).
+            </p>
+          )}
+          <div className="space-y-8">
+            {UNION_METHOD_TYPE_OPTIONS.map((typeOpt) => {
+              const section = methodsByType[typeOpt.value]
+              if (section.length === 0) return null
               return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => openMethod(m)}
-                  className="panel group w-full space-y-4 p-5 text-left transition hover:border-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-lg font-semibold text-ink group-hover:text-accent">
-                        {m.name}
-                      </div>
-                      <div className="mt-0.5 font-mono text-xs text-ink-muted">{m.slug}</div>
-                    </div>
-                    {m.unchecked_count > 0 ? (
-                      <span className="chip-warning shrink-0">
-                        {m.unchecked_count} unchecked
-                      </span>
-                    ) : (
-                      <span className="shrink-0 rounded-md border border-border bg-surface-raised px-2 py-0.5 text-xs text-ink-muted">
-                        All checked
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap gap-1.5 border-t border-border pt-3">
-                    {m.clubs.length === 0 ? (
-                      <span className="text-xs text-ink-muted">No clubs</span>
-                    ) : (
-                      m.clubs.map((c) => (
-                        <span
-                          key={c.id}
-                          className="rounded-md border border-border bg-surface-raised px-2 py-0.5 text-xs text-ink"
+                <section key={typeOpt.value} className="space-y-3">
+                  <h3 className="text-sm font-semibold text-ink">{typeOpt.label}</h3>
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    {section.map((m, index) => {
+                      const pct = capacityPct(m.used_sum, m.deposit_limit)
+                      const draggable = tab === 'active' && !reordering
+                      return (
+                        <div
+                          key={m.id}
+                          draggable={draggable}
+                          onDragStart={() => {
+                            dragItem.current = index
+                          }}
+                          onDragEnter={() => {
+                            dragOver.current = index
+                          }}
+                          onDragEnd={() => {
+                            if (tab === 'active') void onDragEndType(typeOpt.value)
+                          }}
+                          onDragOver={(e) => e.preventDefault()}
+                          className={draggable ? 'cursor-grab active:cursor-grabbing' : ''}
                         >
-                          {c.name}
-                        </span>
-                      ))
-                    )}
-                  </div>
+                          <button
+                            type="button"
+                            onClick={() => openMethod(m)}
+                            className="panel group w-full space-y-4 p-5 text-left transition hover:border-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-lg font-semibold text-ink group-hover:text-accent">
+                                  {m.name} · {m.tag}
+                                </div>
+                                {tab === 'active' ? (
+                                  <div className="mt-0.5 text-xs text-ink-muted">
+                                    Priority #{index + 1}
+                                  </div>
+                                ) : null}
+                              </div>
+                              {m.unchecked_count > 0 ? (
+                                <span className="chip-warning shrink-0">
+                                  {m.unchecked_count} unchecked
+                                </span>
+                              ) : (
+                                <span className="shrink-0 rounded-md border border-border bg-surface-raised px-2 py-0.5 text-xs text-ink-muted">
+                                  All checked
+                                </span>
+                              )}
+                            </div>
 
-                  <div className="border-t border-border pt-3">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
-                        Capacity
-                      </p>
-                      <p className="text-sm font-semibold tabular-nums text-ink">
-                        {formatUsd(m.used_sum)}{' '}
-                        <span className="font-normal text-ink-muted">
-                          / {formatUsd(m.deposit_limit)}
-                        </span>
-                      </p>
-                    </div>
-                    <div
-                      className="mt-2 h-2 overflow-hidden rounded-full bg-control"
-                      role="progressbar"
-                      aria-valuenow={pct}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-label={`${m.name} capacity used`}
-                    >
-                      <div
-                        className="h-full rounded-full bg-accent transition-[width] duration-200 ease-out motion-reduce:transition-none"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                    {m.manual_request_variant_name ? (
-                      <p className="mt-2 truncate text-xs text-ink-muted">
-                        {m.manual_request_variant_name}
-                      </p>
-                    ) : null}
+                            <div className="flex flex-wrap gap-1.5 border-t border-border pt-3">
+                              {m.clubs.length === 0 ? (
+                                <span className="text-xs text-ink-muted">No clubs</span>
+                              ) : (
+                                m.clubs.map((c) => (
+                                  <span
+                                    key={c.id}
+                                    className="rounded-md border border-border bg-surface-raised px-2 py-0.5 text-xs text-ink"
+                                  >
+                                    {c.name}
+                                  </span>
+                                ))
+                              )}
+                            </div>
+
+                            <div className="border-t border-border pt-3">
+                              <div className="flex items-baseline justify-between gap-2">
+                                <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+                                  Capacity
+                                </p>
+                                <p className="text-sm font-semibold tabular-nums text-ink">
+                                  {formatUsd(m.used_sum)}{' '}
+                                  <span className="font-normal text-ink-muted">
+                                    / {formatUsd(m.deposit_limit)}
+                                  </span>
+                                </p>
+                              </div>
+                              <div
+                                className="mt-2 h-2 overflow-hidden rounded-full bg-control"
+                                role="progressbar"
+                                aria-valuenow={pct}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-label={`${m.name} ${m.tag} capacity used`}
+                              >
+                                <div
+                                  className="h-full rounded-full bg-accent transition-[width] duration-200 ease-out motion-reduce:transition-none"
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                            </div>
+                          </button>
+                        </div>
+                      )
+                    })}
                   </div>
-                </button>
+                </section>
               )
             })}
           </div>

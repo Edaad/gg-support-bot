@@ -25,6 +25,7 @@ function formatWhen(iso: string): string {
 type Props = {
   token: string
   methodId?: number
+  methodType?: 'zelle' | 'cashapp' | 'applepay'
   clubId?: number
   methodSlug?: string
   tradeRecordChecked?: boolean
@@ -43,6 +44,7 @@ const PAGE_SIZE = 50
 export default function ManualDepositRequestsTable({
   token,
   methodId,
+  methodType,
   clubId,
   methodSlug,
   tradeRecordChecked,
@@ -70,6 +72,7 @@ export default function ManualDepositRequestsTable({
     try {
       const data = await listManualDepositRequests(token, {
         method_id: methodId,
+        method_type: methodType,
         club_id: clubId,
         method_slug: methodId == null ? methodSlug : undefined,
         trade_record_checked: tradeRecordChecked,
@@ -90,6 +93,7 @@ export default function ManualDepositRequestsTable({
   }, [
     token,
     methodId,
+    methodType,
     clubId,
     methodSlug,
     tradeRecordChecked,

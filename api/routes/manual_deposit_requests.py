@@ -12,6 +12,7 @@ from sqlalchemy import String, cast, or_
 from sqlalchemy.orm import Session, joinedload
 
 from api.auth import get_current_admin
+from bot.services.union_method_types import union_type_display_name, validate_union_method_type
 from db.connection import get_db_dependency
 from db.models import Club, ClubPaymentMethod, ManualDepositRequest
 
@@ -82,6 +83,7 @@ def _list_query(
     club_id: Optional[int] = None,
     method_id: Optional[int] = None,
     method_slug: Optional[str] = None,
+    method_type: Optional[str] = None,
     trade_record_checked: Optional[bool] = None,
     include_inactive_methods: bool = True,
     q: Optional[str] = None,
@@ -97,6 +99,9 @@ def _list_query(
         query = query.filter(
             ManualDepositRequest.method_slug == method_slug.strip().lower()
         )
+    if method_type:
+        display = union_type_display_name(validate_union_method_type(method_type))
+        query = query.filter(ManualDepositRequest.method_name == display)
     if trade_record_checked is not None:
         query = query.filter(
             ManualDepositRequest.trade_record_checked.is_(bool(trade_record_checked))
@@ -116,6 +121,7 @@ def _list_query(
         clauses = [
             ManualDepositRequest.group_title.ilike(pattern),
             Club.name.ilike(pattern),
+            ManualDepositRequest.method_slug.ilike(pattern),
             cast(ManualDepositRequest.amount, String).ilike(pattern),
         ]
         try:
@@ -140,6 +146,7 @@ def list_manual_deposit_requests(
     club_id: Optional[int] = None,
     method_id: Optional[int] = None,
     method_slug: Optional[str] = None,
+    method_type: Optional[str] = Query(None),
     trade_record_checked: Optional[bool] = None,
     include_inactive_methods: bool = Query(True),
     q: Optional[str] = Query(None),
@@ -147,11 +154,14 @@ def list_manual_deposit_requests(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db_dependency),
 ):
+    if method_type:
+        validate_union_method_type(method_type)
     query = _list_query(
         db,
         club_id=club_id,
         method_id=method_id,
         method_slug=method_slug,
+        method_type=method_type,
         trade_record_checked=trade_record_checked,
         include_inactive_methods=include_inactive_methods,
         q=q,

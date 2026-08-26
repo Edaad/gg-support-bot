@@ -120,7 +120,7 @@ def get_methods_for_amount(
                     ClubPaymentMethod.tracks_manual_requests.is_(True),
                 )
                 .options(joinedload(ClubPaymentMethod.method_clubs))
-                .order_by(ClubPaymentMethod.id)
+                .order_by(ClubPaymentMethod.sort_order, ClubPaymentMethod.id)
                 .all()
             )
 

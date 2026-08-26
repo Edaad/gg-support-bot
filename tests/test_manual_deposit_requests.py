@@ -22,7 +22,7 @@ from bot.services.manual_deposit_requests import (
 
 
 class ApplyManualTradeConstraintsTests(unittest.TestCase):
-    def test_requires_limit_message_variant(self):
+    def test_requires_limit_and_message(self):
         method = SimpleNamespace(
             tracks_manual_requests=True,
             direction="deposit",
@@ -41,11 +41,10 @@ class ApplyManualTradeConstraintsTests(unittest.TestCase):
             apply_manual_trade_request_constraints(method)
 
         method.manual_request_message = "Send here"
-        method.manual_request_variant_name = ""
-        with self.assertRaises(ValueError):
-            apply_manual_trade_request_constraints(method)
+        apply_manual_trade_request_constraints(method)
+        self.assertIsNone(method.manual_request_variant_name)
 
-    def test_forces_off_linking_and_whitelist_only(self):
+    def test_forces_off_linking_and_sets_public(self):
         method = SimpleNamespace(
             tracks_manual_requests=True,
             direction="deposit",
@@ -56,15 +55,15 @@ class ApplyManualTradeConstraintsTests(unittest.TestCase):
             first_time_linking_enabled=True,
             first_time_bind_mode="special_amount",
             tiers=[],
-            is_public=True,
+            is_public=False,
         )
         apply_manual_trade_request_constraints(method)
         self.assertFalse(method.has_sub_options)
         self.assertFalse(method.first_time_linking_enabled)
         self.assertIsNone(method.first_time_bind_mode)
-        self.assertFalse(method.is_public)
+        self.assertTrue(method.is_public)
         self.assertEqual(method.manual_request_message, "Pay me")
-        self.assertEqual(method.manual_request_variant_name, "Union")
+        self.assertIsNone(method.manual_request_variant_name)
 
     def test_rejects_stripe_on_tiers(self):
         tier = SimpleNamespace(use_group_checkout_link=True, variants=[])
@@ -534,6 +533,26 @@ class ManualDepositRequestListQueryTests(unittest.TestCase):
         session = self.Session()
         try:
             rows = _list_query(session, q="  ").all()
+            self.assertEqual(sorted(r.id for r in rows), [1, 2])
+        finally:
+            session.close()
+
+    def test_q_matches_tag(self):
+        from api.routes.manual_deposit_requests import _list_query
+
+        session = self.Session()
+        try:
+            rows = _list_query(session, q="zelle-union").all()
+            self.assertEqual(sorted(r.id for r in rows), [1, 2])
+        finally:
+            session.close()
+
+    def test_method_type_filter(self):
+        from api.routes.manual_deposit_requests import _list_query
+
+        session = self.Session()
+        try:
+            rows = _list_query(session, method_type="zelle").all()
             self.assertEqual(sorted(r.id for r in rows), [1, 2])
         finally:
             session.close()

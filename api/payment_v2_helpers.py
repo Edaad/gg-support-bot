@@ -340,18 +340,14 @@ def apply_manual_trade_request_constraints(method: ClubPaymentMethod) -> None:
     if method.deposit_limit is None or method.deposit_limit <= 0:
         raise ValueError("Union methods require a positive deposit limit.")
     message = (getattr(method, "manual_request_message", None) or "").strip()
-    variant = (getattr(method, "manual_request_variant_name", None) or "").strip()
     if not message:
         raise ValueError("Union methods require a player message.")
-    if not variant:
-        raise ValueError("Union methods require a variant name.")
     method.manual_request_message = message
-    method.manual_request_variant_name = variant
+    method.manual_request_variant_name = None
     method.has_sub_options = False
     method.first_time_linking_enabled = False
     method.first_time_bind_mode = None
-    # Whitelist-only: empty whitelist ⇒ nobody sees the method.
-    method.is_public = False
+    method.is_public = True
     for tier in getattr(method, "tiers", None) or []:
         if bool(getattr(tier, "use_group_checkout_link", False)):
             raise ValueError(

@@ -60,6 +60,7 @@ export type ListManualDepositRequestsParams = {
   club_id?: number
   method_id?: number
   method_slug?: string
+  method_type?: 'zelle' | 'cashapp' | 'applepay'
   trade_record_checked?: boolean
   include_inactive_methods?: boolean
   q?: string
@@ -75,6 +76,7 @@ export function listManualDepositRequests(
   if (params.club_id != null) q.set('club_id', String(params.club_id))
   if (params.method_id != null) q.set('method_id', String(params.method_id))
   if (params.method_slug) q.set('method_slug', params.method_slug)
+  if (params.method_type) q.set('method_type', params.method_type)
   if (params.trade_record_checked != null) {
     q.set('trade_record_checked', String(params.trade_record_checked))
   }

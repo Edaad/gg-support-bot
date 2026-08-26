@@ -48,6 +48,11 @@ from bot.services.deposit_method_access import (
     filter_deposit_methods_for_chat,
     is_deposit_method_allowed_for_chat,
 )
+from bot.services.union_deposit_picker import (
+    build_deposit_picker_methods,
+    pick_union_method,
+)
+from bot.services.union_method_types import UNION_METHOD_TYPES
 from bot.services.round_table_unions import (
     ROUND_TABLE_DEPOSIT_UNIONS,
     is_round_table_club,
@@ -1662,7 +1667,15 @@ def _deposit_method_buttons(methods) -> list[list[InlineKeyboardButton]]:
     buttons = []
     row = []
     for m in methods:
-        row.append(InlineKeyboardButton(m["name"], callback_data=f"dep:{m['id']}"))
+        if m.get("picker_kind") == "union_type":
+            type_slug = m.get("type_slug") or m.get("slug")
+            row.append(
+                InlineKeyboardButton(
+                    m["name"], callback_data=f"deptype:{type_slug}"
+                )
+            )
+        else:
+            row.append(InlineKeyboardButton(m["name"], callback_data=f"dep:{m['id']}"))
         if len(row) == 2:
             buttons.append(row)
             row = []
@@ -1695,7 +1708,7 @@ async def _prompt_deposit_methods(
     edit_message=None,
 ) -> bool:
     club_id = context.chat_data.get("deposit_club_id")
-    methods = get_methods_for_amount(club_id, "deposit", amount)
+    methods = build_deposit_picker_methods(club_id, amount)
     chat_id = getattr(message, "chat_id", None) or getattr(
         getattr(message, "chat", None), "id", None
     )
@@ -1890,30 +1903,14 @@ async def _run_normal_deposit_from_choice(
     return await _complete_deposit_flow(query.message.chat, context)
 
 
-async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.callback_query:
-        return ConversationHandler.END
-    query = update.callback_query
-    if await handle_stale_flow_callback(
-        update,
-        context,
-        flow="deposit",
-        handler="deposit_method_chosen",
-        cleanup=_cleanup,
-    ):
-        return ConversationHandler.END
-    await query.answer()
-
-    data = query.data or ""
-    if not data.startswith("dep:"):
-        return ConversationHandler.END
-
-    method_id = int(data.split(":")[1])
-    method = get_method_by_id(method_id)
-    if not method:
-        await query.edit_message_text("That method is no longer available.")
-        return ConversationHandler.END
-
+async def _continue_deposit_for_method_dict(
+    query,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    method_id: int,
+    method: dict,
+    method_slug: str,
+) -> int | str:
     chat_id = query.message.chat.id if query.message else None
     if chat_id is not None and not is_deposit_method_allowed_for_chat(
         int(chat_id), method_id
@@ -1923,10 +1920,9 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return ConversationHandler.END
 
-    method_slug = (method.get("slug") or "").strip().lower()
     logger.info(
         "deposit_method_chosen chat_id=%s method_id=%s slug=%r name=%r has_sub_options=%s stripe_configured=%s",
-        query.message.chat.id if query.message else None,
+        chat_id,
         method_id,
         method_slug,
         method.get("name"),
@@ -1960,9 +1956,6 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
 
     _record_funnel_from_context(context, STEP_METHOD_CHOSEN, method_slug=method_slug)
 
-    amount = context.chat_data.get("deposit_amount", "?")
-    chat_id = query.message.chat.id if query.message else None
-
     club_id = context.chat_data.get("deposit_club_id")
     bind_kind = (
         bind_mode_for_method(method_slug, club_id=club_id)
@@ -1987,6 +1980,109 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
     return await _run_normal_deposit_from_choice(
+        query,
+        context,
+        method_id=method_id,
+        method=method,
+        method_slug=method_slug,
+    )
+
+
+async def deposit_union_type_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.callback_query:
+        return ConversationHandler.END
+    query = update.callback_query
+    if await handle_stale_flow_callback(
+        update,
+        context,
+        flow="deposit",
+        handler="deposit_union_type_chosen",
+        cleanup=_cleanup,
+    ):
+        return ConversationHandler.END
+    await query.answer()
+
+    data = query.data or ""
+    if not data.startswith("deptype:"):
+        return ConversationHandler.END
+
+    type_slug = data.split(":", 1)[1].strip().lower()
+    if type_slug not in UNION_METHOD_TYPES:
+        await query.edit_message_text("That method is no longer available.")
+        return ConversationHandler.END
+
+    club_id = context.chat_data.get("deposit_club_id")
+    amount = context.chat_data.get("deposit_amount")
+    if club_id is None or not isinstance(amount, Decimal):
+        await query.edit_message_text("Deposit session expired. Use /deposit again.")
+        _cleanup(context)
+        return ConversationHandler.END
+
+    union_method = pick_union_method(int(club_id), type_slug, amount)
+    if union_method is not None:
+        method = get_method_by_id(int(union_method.id))
+        if not method:
+            await query.edit_message_text("That method is no longer available.")
+            return ConversationHandler.END
+        method_slug = (method.get("slug") or "").strip().lower()
+        return await _continue_deposit_for_method_dict(
+            query,
+            context,
+            method_id=int(union_method.id),
+            method=method,
+            method_slug=method_slug,
+        )
+
+    club_slug = UNION_METHOD_TYPES[type_slug]["club_slug"]
+    filtered = get_methods_for_amount(int(club_id), "deposit", amount)
+    club_method = next(
+        (
+            m
+            for m in filtered
+            if not m.get("tracks_manual_requests")
+            and (m.get("slug") or "").strip().lower() == club_slug
+        ),
+        None,
+    )
+    if not club_method:
+        await query.edit_message_text("That payment method is not available right now.")
+        return ConversationHandler.END
+
+    return await _continue_deposit_for_method_dict(
+        query,
+        context,
+        method_id=int(club_method["id"]),
+        method=club_method,
+        method_slug=club_slug,
+    )
+
+
+async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.callback_query:
+        return ConversationHandler.END
+    query = update.callback_query
+    if await handle_stale_flow_callback(
+        update,
+        context,
+        flow="deposit",
+        handler="deposit_method_chosen",
+        cleanup=_cleanup,
+    ):
+        return ConversationHandler.END
+    await query.answer()
+
+    data = query.data or ""
+    if not data.startswith("dep:"):
+        return ConversationHandler.END
+
+    method_id = int(data.split(":")[1])
+    method = get_method_by_id(method_id)
+    if not method:
+        await query.edit_message_text("That method is no longer available.")
+        return ConversationHandler.END
+
+    method_slug = (method.get("slug") or "").strip().lower()
+    return await _continue_deposit_for_method_dict(
         query,
         context,
         method_id=method_id,
@@ -2866,6 +2962,10 @@ def get_deposit_handler() -> ConversationHandler:
                 _DEPOSIT_CANCEL,
             ],
             DEPOSIT_CHOOSE: [
+                CallbackQueryHandler(
+                    deposit_union_type_chosen,
+                    pattern=r"^deptype:(zelle|cashapp|applepay)$",
+                ),
                 CallbackQueryHandler(deposit_method_chosen, pattern=r"^dep:\d+$"),
                 _DEPOSIT_CANCEL,
             ],
