@@ -571,6 +571,163 @@ class MondaySettlementTestCase(unittest.TestCase):
         with self.assertRaises(SettlementFetchError):
             fetch_settlement_events(club_slug="round-table", audit_date=date(2026, 6, 22))
 
+    def _mock_week_data_client(self, mock_client_cls, body: dict):
+        mock_client = MagicMock()
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+        mock_res = MagicMock()
+        mock_res.raise_for_status = MagicMock()
+        mock_res.json.return_value = body
+        mock_client.get.return_value = mock_res
+        return mock_client
+
+    @patch.dict(os.environ, {"GG_COMPUTER_BASE_URL": "http://gg-computer.test"})
+    @patch("api.gg_computer_settlement.httpx.Client")
+    def test_settlement_fetch_week_data_rakebacks_success(self, mock_client_cls):
+        from api.gg_computer_settlement import fetch_settlement_events
+
+        mock_client = self._mock_week_data_client(
+            mock_client_cls,
+            {
+                "clubId": "clubgto",
+                "startDate": "2026-08-17",
+                "endDate": "2026-08-23",
+                "weekDataCount": 1,
+                "count": 2,
+                "entries": [
+                    {
+                        "nickname": "Obama4",
+                        "playerId": "1055-4566",
+                        "rakebackAmount": 131,
+                    },
+                    {
+                        "nickname": "ZeroRB",
+                        "playerId": "0000-0001",
+                        "rakebackAmount": 0,
+                    },
+                    {
+                        "nickname": "NegRB",
+                        "playerId": "0000-0002",
+                        "rakebackAmount": -5,
+                    },
+                ],
+            },
+        )
+
+        events, warnings = fetch_settlement_events(
+            club_slug="clubgto", audit_date=date(2026, 8, 24)
+        )
+        mock_client.get.assert_called_once_with(
+            "http://gg-computer.test/week-data-rakebacks/clubgto",
+            params={"startDate": "2026-08-17", "endDate": "2026-08-23"},
+        )
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].gg_player_id, "1055-4566")
+        self.assertEqual(events[0].amount_usd, Decimal("131"))
+        self.assertEqual(
+            events[0].external_id, "monday:2026-08-17:2026-08-23:1055-4566"
+        )
+        self.assertEqual(warnings, [])
+
+    @patch.dict(os.environ, {"GG_COMPUTER_BASE_URL": "http://gg-computer.test"})
+    @patch("api.gg_computer_settlement.httpx.Client")
+    def test_settlement_fetch_empty_entries_raises(self, mock_client_cls):
+        from api.gg_computer_settlement import SettlementFetchError, fetch_settlement_events
+
+        self._mock_week_data_client(
+            mock_client_cls,
+            {
+                "clubId": "clubgto",
+                "startDate": "2026-08-17",
+                "endDate": "2026-08-23",
+                "weekDataCount": 0,
+                "count": 0,
+                "entries": [],
+            },
+        )
+        with self.assertRaises(SettlementFetchError) as ctx:
+            fetch_settlement_events(club_slug="clubgto", audit_date=date(2026, 8, 24))
+        self.assertIn("No week-data-rakebacks", str(ctx.exception))
+
+    @patch.dict(os.environ, {"GG_COMPUTER_BASE_URL": "http://gg-computer.test"})
+    @patch("api.gg_computer_settlement.httpx.Client")
+    def test_settlement_fetch_sums_duplicate_player_ids(self, mock_client_cls):
+        from api.gg_computer_settlement import fetch_settlement_events
+
+        self._mock_week_data_client(
+            mock_client_cls,
+            {
+                "weekDataCount": 1,
+                "entries": [
+                    {
+                        "nickname": "AgentFirst",
+                        "playerId": "8854-6440",
+                        "rakebackAmount": 10,
+                    },
+                    {
+                        "nickname": "",
+                        "playerId": "8854-6440",
+                        "rakebackAmount": 5.5,
+                    },
+                ],
+            },
+        )
+        events, warnings = fetch_settlement_events(
+            club_slug="clubgto", audit_date=date(2026, 8, 24)
+        )
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].amount_usd, Decimal("15.5"))
+        self.assertEqual(events[0].detail, "AgentFirst")
+        self.assertTrue(any("duplicate playerId" in w for w in warnings))
+
+    @patch.dict(os.environ, {"GG_COMPUTER_BASE_URL": "http://gg-computer.test"})
+    @patch("api.gg_computer_settlement.httpx.Client")
+    def test_settlement_fetch_blank_player_id(self, mock_client_cls):
+        from api.gg_computer_settlement import (
+            MISSING_PLAYER_ID_LABEL,
+            fetch_settlement_events,
+        )
+
+        self._mock_week_data_client(
+            mock_client_cls,
+            {
+                "weekDataCount": 1,
+                "entries": [
+                    {
+                        "nickname": "OrphanAgent",
+                        "playerId": None,
+                        "rakebackAmount": 42,
+                    },
+                ],
+            },
+        )
+        events, warnings = fetch_settlement_events(
+            club_slug="clubgto", audit_date=date(2026, 8, 24)
+        )
+        self.assertEqual(len(events), 1)
+        self.assertIsNone(events[0].gg_player_id)
+        self.assertEqual(events[0].display_name, MISSING_PLAYER_ID_LABEL)
+        self.assertEqual(events[0].detail, "OrphanAgent")
+        self.assertEqual(
+            events[0].external_id,
+            "monday:2026-08-17:2026-08-23:noid:OrphanAgent",
+        )
+        self.assertTrue(any("missing playerId" in w for w in warnings))
+
+    @patch.dict(os.environ, {"GG_COMPUTER_BASE_URL": "http://gg-computer.test"})
+    @patch("api.gg_computer_settlement.httpx.Client")
+    def test_settlement_fetch_skips_non_monday(self, mock_client_cls):
+        from api.gg_computer_settlement import fetch_settlement_events
+
+        mock_client = MagicMock()
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        events, warnings = fetch_settlement_events(
+            club_slug="clubgto", audit_date=date(2026, 8, 25)
+        )
+        self.assertEqual(events, [])
+        self.assertEqual(warnings, [])
+        mock_client.get.assert_not_called()
+
 
 class ReportJsonRoundTripTestCase(unittest.TestCase):
     def test_report_json_round_trip(self):

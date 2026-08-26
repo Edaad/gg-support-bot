@@ -1,4 +1,4 @@
-"""Monday weekly settlement fetch from gg-computer weekly_profits."""
+"""Monday weekly settlement fetch from gg-computer week-data-rakebacks."""
 
 from __future__ import annotations
 
@@ -13,15 +13,11 @@ from api.audit_ledger import LedgerEvent
 from bot.services.gg_computer import gg_computer_base_url
 from db.models import EarlyRakebackLine, EarlyRakebackSnapshot
 
+MISSING_PLAYER_ID_LABEL = "(missing player id)"
+
 
 class SettlementFetchError(Exception):
     pass
-
-
-@dataclass(frozen=True)
-class SettlementPlayerRow:
-    gg_id: str
-    rakeback: Decimal
 
 
 def is_monday_audit_date(club_slug: str, audit_date: date) -> bool:
@@ -45,11 +41,6 @@ def settlement_week_dates(audit_date: date) -> list[date]:
         days.append(day)
         day += timedelta(days=1)
     return days
-
-
-def _settlement_sunday(audit_date: date) -> str:
-    """Prior Sunday (week ending day before Monday settlement)."""
-    return (audit_date - timedelta(days=1)).isoformat()
 
 
 def sum_early_rakeback_by_player_for_week(
@@ -134,6 +125,74 @@ def net_settlement_events_after_early_rb(
     return out, warnings
 
 
+@dataclass
+class _AggRow:
+    amount: Decimal = Decimal(0)
+    nickname: str = ""
+    count: int = 0
+    blank_id: bool = False
+
+
+def _aggregate_week_data_entries(
+    entries: list[object],
+) -> tuple[dict[str, _AggRow], list[str]]:
+    """Sum by playerId (or noid key); skip non-positive amounts. Returns (by_key, warnings)."""
+    warnings: list[str] = []
+    by_key: dict[str, _AggRow] = {}
+    noid_seq = 0
+
+    for raw in entries:
+        if not isinstance(raw, dict):
+            continue
+        amount_raw = raw.get("rakebackAmount")
+        if amount_raw is None:
+            continue
+        amount = Decimal(str(amount_raw))
+        if amount <= 0:
+            continue
+
+        player_id = raw.get("playerId")
+        gg_id = (str(player_id).strip() if player_id is not None else "") or ""
+        nickname = (raw.get("nickname") or "")
+        if not isinstance(nickname, str):
+            nickname = str(nickname) if nickname is not None else ""
+        nickname = nickname.strip()
+
+        if not gg_id:
+            key = f"noid:{noid_seq}:{nickname or 'unknown'}"
+            noid_seq += 1
+            row = _AggRow(amount=amount, nickname=nickname, count=1, blank_id=True)
+            by_key[key] = row
+            warnings.append(
+                "Monday settlement row missing playerId"
+                + (f" (nickname={nickname!r})" if nickname else "")
+            )
+            continue
+
+        existing = by_key.get(gg_id)
+        if existing is None:
+            by_key[gg_id] = _AggRow(
+                amount=amount,
+                nickname=nickname,
+                count=1,
+                blank_id=False,
+            )
+        else:
+            existing.amount += amount
+            existing.count += 1
+            if not existing.nickname and nickname:
+                existing.nickname = nickname
+
+    for gid, row in by_key.items():
+        if not row.blank_id and row.count > 1:
+            warnings.append(
+                f"Monday settlement duplicate playerId={gid!r} "
+                f"({row.count} entries); amounts summed"
+            )
+
+    return by_key, warnings
+
+
 def fetch_settlement_events(
     *,
     club_slug: str,
@@ -142,8 +201,9 @@ def fetch_settlement_events(
 ) -> tuple[list[LedgerEvent], list[str]]:
     """Fetch Monday settlement rakeback as ledger events. Empty if not Monday.
 
-    Amounts are gross weekly rakeback from gg-computer. Callers should net
-    early RB for the settled week via net_settlement_events_after_early_rb.
+    Amounts are gross weekly rakeback from gg-computer week-data-rakebacks.
+    Callers should net early RB for the settled week via
+    net_settlement_events_after_early_rb.
     """
     warnings: list[str] = []
     if not is_monday_audit_date(club_slug, audit_date):
@@ -156,79 +216,71 @@ def fetch_settlement_events(
         )
 
     slug = club_slug.strip().lower()
-    sunday = _settlement_sunday(audit_date)
+    week_monday, week_sunday = settlement_week_bounds(audit_date)
+    start_s = week_monday.isoformat()
+    end_s = week_sunday.isoformat()
 
     try:
         with httpx.Client(timeout=timeout) as client:
-            weeks_res = client.get(
-                f"{base}/processed-weeks",
-                params={"clubId": slug, "from": sunday, "to": sunday},
+            res = client.get(
+                f"{base}/week-data-rakebacks/{slug}",
+                params={"startDate": start_s, "endDate": end_s},
             )
-            weeks_res.raise_for_status()
-            weeks = weeks_res.json()
-            if not isinstance(weeks, list) or not weeks:
-                raise SettlementFetchError(
-                    f"No processed week ending {sunday} for club {slug!r}"
-                )
-
-            week_id = weeks[0].get("weekId")
-            if not week_id:
-                raise SettlementFetchError(
-                    f"Processed week missing weekId for club {slug!r}"
-                )
-
-            players_res = client.get(
-                f"{base}/players",
-                params={
-                    "clubId": slug,
-                    "weekId": str(week_id),
-                    "pageSize": 5000,
-                },
-            )
-            players_res.raise_for_status()
-            body = players_res.json()
+            res.raise_for_status()
+            body = res.json()
     except httpx.HTTPError as exc:
         raise SettlementFetchError(f"gg-computer settlement fetch failed: {exc}") from exc
 
-    players = body.get("players") if isinstance(body, dict) else None
-    if not isinstance(players, list):
-        raise SettlementFetchError("Invalid gg-computer /players response")
+    if not isinstance(body, dict):
+        raise SettlementFetchError("Invalid gg-computer /week-data-rakebacks response")
+
+    entries = body.get("entries")
+    if not isinstance(entries, list):
+        raise SettlementFetchError(
+            "Invalid gg-computer /week-data-rakebacks response (entries)"
+        )
+    if not entries:
+        raise SettlementFetchError(
+            f"No week-data-rakebacks for club {slug!r} "
+            f"startDate={start_s} endDate={end_s}"
+        )
+
+    week_data_count = body.get("weekDataCount")
+    if isinstance(week_data_count, int) and week_data_count > 1:
+        warnings.append(
+            f"Monday settlement weekDataCount={week_data_count} for {slug!r} "
+            f"{start_s}..{end_s}; duplicate playerIds will be summed"
+        )
+
+    by_key, agg_warnings = _aggregate_week_data_entries(entries)
+    warnings.extend(agg_warnings)
 
     events: list[LedgerEvent] = []
-    for row in players:
-        if not isinstance(row, dict):
+    for key, row in by_key.items():
+        if row.amount <= 0:
             continue
-        gg_id = (row.get("gg_id") or "").strip()
-        rakeback = row.get("rakeback")
-        if rakeback is None:
-            continue
-        amount = Decimal(str(rakeback))
-        if amount == 0:
-            continue
-        if not gg_id:
-            nickname = (row.get("nickname") or "").strip()
-            warnings.append(
-                f"Monday settlement row missing gg_id"
-                + (f" (nickname={nickname!r})" if nickname else "")
-            )
+        if row.blank_id:
+            nick_part = row.nickname or "unknown"
             events.append(
                 LedgerEvent(
                     source="monday_settlement",
                     gg_player_id=None,
-                    amount_usd=amount,
+                    amount_usd=row.amount,
                     occurred_at_utc=None,
-                    external_id=f"monday:{week_id}:{nickname or 'unknown'}",
-                    detail=nickname or None,
+                    external_id=f"monday:{start_s}:{end_s}:noid:{nick_part}",
+                    detail=row.nickname or None,
+                    display_name=MISSING_PLAYER_ID_LABEL,
                 )
             )
             continue
         events.append(
             LedgerEvent(
                 source="monday_settlement",
-                gg_player_id=gg_id,
-                amount_usd=amount,
+                gg_player_id=key,
+                amount_usd=row.amount,
                 occurred_at_utc=None,
-                external_id=f"monday:{week_id}:{gg_id}",
+                external_id=f"monday:{start_s}:{end_s}:{key}",
+                detail=row.nickname or None,
             )
         )
     return events, warnings
