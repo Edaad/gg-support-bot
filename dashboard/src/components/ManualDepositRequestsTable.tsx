@@ -28,9 +28,17 @@ type Props = {
   clubId?: number
   methodSlug?: string
   tradeRecordChecked?: boolean
+  q?: string
   showMethodColumns?: boolean
   showClubColumn?: boolean
+  paginated?: boolean
+  limit?: number
+  offset?: number
+  onPageChange?: (offset: number) => void
 }
+
+const DETAIL_LIMIT = 100
+const PAGE_SIZE = 50
 
 export default function ManualDepositRequestsTable({
   token,
@@ -38,8 +46,13 @@ export default function ManualDepositRequestsTable({
   clubId,
   methodSlug,
   tradeRecordChecked,
+  q,
   showMethodColumns = true,
   showClubColumn = true,
+  paginated = false,
+  limit,
+  offset = 0,
+  onPageChange,
 }: Props) {
   const askConfirm = useConfirm()
   const [rows, setRows] = useState<ManualDepositRequestRow[]>([])
@@ -48,24 +61,23 @@ export default function ManualDepositRequestsTable({
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<number | null>(null)
 
+  const pageLimit = paginated ? (limit ?? PAGE_SIZE) : (limit ?? DETAIL_LIMIT)
+  const pageOffset = paginated ? offset : 0
+
   const load = useCallback(async () => {
     setError('')
     setLoading(true)
     try {
-      const data =
-        methodId != null
-          ? await listManualDepositRequests(token, {
-              method_id: methodId,
-              club_id: clubId,
-              trade_record_checked: tradeRecordChecked,
-              limit: 100,
-            })
-          : await listManualDepositRequests(token, {
-              club_id: clubId,
-              method_slug: methodSlug,
-              trade_record_checked: tradeRecordChecked,
-              limit: 100,
-            })
+      const data = await listManualDepositRequests(token, {
+        method_id: methodId,
+        club_id: clubId,
+        method_slug: methodId == null ? methodSlug : undefined,
+        trade_record_checked: tradeRecordChecked,
+        q: q || undefined,
+        limit: pageLimit,
+        offset: pageOffset,
+        include_inactive_methods: true,
+      })
       setRows(data.items)
       setTotal(data.total)
     } catch (e) {
@@ -75,7 +87,16 @@ export default function ManualDepositRequestsTable({
     } finally {
       setLoading(false)
     }
-  }, [token, methodId, clubId, methodSlug, tradeRecordChecked])
+  }, [
+    token,
+    methodId,
+    clubId,
+    methodSlug,
+    tradeRecordChecked,
+    q,
+    pageLimit,
+    pageOffset,
+  ])
 
   useEffect(() => {
     void load()
@@ -123,6 +144,11 @@ export default function ManualDepositRequestsTable({
     return <p className="py-4 text-sm text-ink-muted">Loading requests…</p>
   }
 
+  const from = total === 0 ? 0 : pageOffset + 1
+  const to = Math.min(pageOffset + rows.length, total)
+  const canPrev = paginated && pageOffset > 0
+  const canNext = paginated && pageOffset + pageLimit < total
+
   return (
     <div className="space-y-3">
       {error && (
@@ -130,10 +156,35 @@ export default function ManualDepositRequestsTable({
           {error}
         </div>
       )}
-      <p className="text-xs text-ink-muted">
-        {total} deposit{total === 1 ? '' : 's'}
-        {methodId != null ? '' : ' (newest first)'}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-ink-muted">
+          {paginated
+            ? total === 0
+              ? '0 deposits'
+              : `Showing ${from}–${to} of ${total}`
+            : `${total} deposit${total === 1 ? '' : 's'}${methodId != null ? '' : ' (newest first)'}`}
+        </p>
+        {paginated && onPageChange && total > 0 && (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="btn-secondary-sm"
+              disabled={!canPrev}
+              onClick={() => onPageChange(Math.max(0, pageOffset - pageLimit))}
+            >
+              Prev
+            </button>
+            <button
+              type="button"
+              className="btn-secondary-sm"
+              disabled={!canNext}
+              onClick={() => onPageChange(pageOffset + pageLimit)}
+            >
+              Next
+            </button>
+          </div>
+        )}
+      </div>
       {rows.length === 0 ? (
         <p className="text-sm text-ink-muted">No deposits yet.</p>
       ) : (

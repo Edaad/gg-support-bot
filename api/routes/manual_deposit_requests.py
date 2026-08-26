@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import String, cast, or_
 from sqlalchemy.orm import Session, joinedload
 
 from api.auth import get_current_admin
 from db.connection import get_db_dependency
-from db.models import ClubPaymentMethod, ManualDepositRequest
+from db.models import Club, ClubPaymentMethod, ManualDepositRequest
 
 router = APIRouter(
     prefix="/api",
@@ -83,22 +84,25 @@ def _list_query(
     method_slug: Optional[str] = None,
     trade_record_checked: Optional[bool] = None,
     include_inactive_methods: bool = True,
+    q: Optional[str] = None,
 ):
-    q = db.query(ManualDepositRequest).options(
+    query = db.query(ManualDepositRequest).options(
         joinedload(ManualDepositRequest.club),
     )
     if club_id is not None:
-        q = q.filter(ManualDepositRequest.club_id == int(club_id))
+        query = query.filter(ManualDepositRequest.club_id == int(club_id))
     if method_id is not None:
-        q = q.filter(ManualDepositRequest.method_id == int(method_id))
+        query = query.filter(ManualDepositRequest.method_id == int(method_id))
     if method_slug:
-        q = q.filter(ManualDepositRequest.method_slug == method_slug.strip().lower())
+        query = query.filter(
+            ManualDepositRequest.method_slug == method_slug.strip().lower()
+        )
     if trade_record_checked is not None:
-        q = q.filter(
+        query = query.filter(
             ManualDepositRequest.trade_record_checked.is_(bool(trade_record_checked))
         )
     if not include_inactive_methods:
-        q = q.join(
+        query = query.join(
             ClubPaymentMethod,
             ClubPaymentMethod.id == ManualDepositRequest.method_id,
             isouter=True,
@@ -106,7 +110,26 @@ def _list_query(
             (ManualDepositRequest.method_id.is_(None))
             | (ClubPaymentMethod.is_active.is_(True))
         )
-    return q.order_by(ManualDepositRequest.created_at.desc(), ManualDepositRequest.id.desc())
+    search = (q or "").strip()
+    if search:
+        pattern = f"%{search}%"
+        clauses = [
+            ManualDepositRequest.group_title.ilike(pattern),
+            Club.name.ilike(pattern),
+            cast(ManualDepositRequest.amount, String).ilike(pattern),
+        ]
+        try:
+            amount = Decimal(search)
+        except (InvalidOperation, ValueError):
+            amount = None
+        if amount is not None:
+            clauses.append(ManualDepositRequest.amount == amount)
+        query = query.outerjoin(Club, Club.id == ManualDepositRequest.club_id).filter(
+            or_(*clauses)
+        )
+    return query.order_by(
+        ManualDepositRequest.created_at.desc(), ManualDepositRequest.id.desc()
+    )
 
 
 @router.get(
@@ -119,20 +142,22 @@ def list_manual_deposit_requests(
     method_slug: Optional[str] = None,
     trade_record_checked: Optional[bool] = None,
     include_inactive_methods: bool = Query(True),
+    q: Optional[str] = Query(None),
     limit: int = Query(_DEFAULT_LIMIT, ge=1, le=_MAX_LIMIT),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db_dependency),
 ):
-    q = _list_query(
+    query = _list_query(
         db,
         club_id=club_id,
         method_id=method_id,
         method_slug=method_slug,
         trade_record_checked=trade_record_checked,
         include_inactive_methods=include_inactive_methods,
+        q=q,
     )
-    total = q.count()
-    rows = q.offset(offset).limit(limit).all()
+    total = query.count()
+    rows = query.offset(offset).limit(limit).all()
     return ManualDepositRequestListResponse(
         items=[_to_read(r) for r in rows],
         total=total,
@@ -148,6 +173,7 @@ def list_manual_deposit_requests(
 def list_method_manual_deposit_requests(
     method_id: int,
     trade_record_checked: Optional[bool] = None,
+    q: Optional[str] = Query(None),
     limit: int = Query(_DEFAULT_LIMIT, ge=1, le=_MAX_LIMIT),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db_dependency),
@@ -155,14 +181,15 @@ def list_method_manual_deposit_requests(
     method = db.query(ClubPaymentMethod).get(int(method_id))
     if not method:
         raise HTTPException(404, "Method not found")
-    q = _list_query(
+    query = _list_query(
         db,
         method_id=int(method_id),
         trade_record_checked=trade_record_checked,
         include_inactive_methods=True,
+        q=q,
     )
-    total = q.count()
-    rows = q.offset(offset).limit(limit).all()
+    total = query.count()
+    rows = query.offset(offset).limit(limit).all()
     return ManualDepositRequestListResponse(
         items=[_to_read(r) for r in rows],
         total=total,

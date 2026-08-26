@@ -422,5 +422,136 @@ class UnionMethodsApiHelpersTests(unittest.TestCase):
         self.assertEqual(db.add.call_count, 2)
 
 
+class ManualDepositRequestListQueryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+
+        from db.models import Base, Club, ClubPaymentMethod, ManualDepositRequest
+
+        self.engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(
+            self.engine,
+            tables=[
+                Club.__table__,
+                ClubPaymentMethod.__table__,
+                ManualDepositRequest.__table__,
+            ],
+        )
+        self.Session = sessionmaker(bind=self.engine)
+        session = self.Session()
+        session.add(Club(id=1, name="Round Table", telegram_user_id=1001, is_active=True))
+        session.add(Club(id=2, name="ClubGTO", telegram_user_id=1002, is_active=True))
+        session.add(
+            ClubPaymentMethod(
+                id=10,
+                club_id=1,
+                direction="deposit",
+                name="Zelle",
+                slug="zelle-union",
+                deposit_limit=Decimal("1000"),
+                tracks_manual_requests=True,
+                is_active=True,
+                is_public=False,
+                manual_request_message="pay",
+                manual_request_variant_name="v1",
+            )
+        )
+        session.add(
+            ManualDepositRequest(
+                id=1,
+                club_id=1,
+                method_id=10,
+                method_name="Zelle",
+                method_slug="zelle-union",
+                variant_name="v1",
+                group_title="RT / 1111-1111 / Alice",
+                amount=Decimal("500.00"),
+                telegram_chat_id=-1001,
+                trade_record_checked=False,
+            )
+        )
+        session.add(
+            ManualDepositRequest(
+                id=2,
+                club_id=2,
+                method_id=10,
+                method_name="Zelle",
+                method_slug="zelle-union",
+                variant_name="v1",
+                group_title="GTO / 2222-2222 / Bob",
+                amount=Decimal("75.50"),
+                telegram_chat_id=-1002,
+                trade_record_checked=True,
+            )
+        )
+        session.commit()
+        session.close()
+
+    def tearDown(self) -> None:
+        self.engine.dispose()
+
+    def test_q_matches_group_title(self):
+        from api.routes.manual_deposit_requests import _list_query
+
+        session = self.Session()
+        try:
+            rows = _list_query(session, q="Alice").all()
+            self.assertEqual([r.id for r in rows], [1])
+        finally:
+            session.close()
+
+    def test_q_matches_club_name(self):
+        from api.routes.manual_deposit_requests import _list_query
+
+        session = self.Session()
+        try:
+            rows = _list_query(session, q="clubgto").all()
+            self.assertEqual([r.id for r in rows], [2])
+        finally:
+            session.close()
+
+    def test_q_matches_numeric_amount(self):
+        from api.routes.manual_deposit_requests import _list_query
+
+        session = self.Session()
+        try:
+            rows = _list_query(session, q="500").all()
+            self.assertEqual([r.id for r in rows], [1])
+            rows_exact = _list_query(session, q="75.50").all()
+            self.assertEqual([r.id for r in rows_exact], [2])
+        finally:
+            session.close()
+
+    def test_empty_q_returns_all(self):
+        from api.routes.manual_deposit_requests import _list_query
+
+        session = self.Session()
+        try:
+            rows = _list_query(session, q="  ").all()
+            self.assertEqual(sorted(r.id for r in rows), [1, 2])
+        finally:
+            session.close()
+
+    def test_row_clubs_includes_non_member_club(self):
+        from api.routes.union_methods import _row_clubs_for_methods
+
+        session = self.Session()
+        try:
+            by_method = _row_clubs_for_methods(session, [10])
+            ids = [c.id for c in by_method[10]]
+            self.assertEqual(ids, [1, 2])
+            names = {c.id: c.name for c in by_method[10]}
+            self.assertEqual(names[1], "Round Table")
+            self.assertEqual(names[2], "ClubGTO")
+        finally:
+            session.close()
+
+
 if __name__ == "__main__":
     unittest.main()

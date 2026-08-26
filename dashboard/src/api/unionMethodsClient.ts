@@ -51,6 +51,7 @@ export type UnionMethod = {
   manual_request_message: string
   manual_request_variant_name: string
   clubs: UnionMethodClub[]
+  row_clubs: UnionMethodClub[]
   used_sum: number | string
   unchecked_count: number
 }

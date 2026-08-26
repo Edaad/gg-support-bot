@@ -30,6 +30,9 @@ function capacityPct(used: number | string, limit: number | string): number {
 
 type ActivityTab = 'active' | 'inactive'
 type CheckedFilter = 'all' | 'unchecked' | 'checked'
+type PageView = 'methods' | 'deposits'
+
+const DEPOSITS_PAGE_SIZE = 50
 
 type FormState = {
   name: string
@@ -86,11 +89,20 @@ function isUnionMembershipClub(c: Club): boolean {
 export default function ManualDepositRequests({ token }: { token: string }) {
   const askConfirm = useConfirm()
   const [searchParams, setSearchParams] = useSearchParams()
+  const pageView: PageView =
+    searchParams.get('view') === 'deposits' ? 'deposits' : 'methods'
   const tab: ActivityTab =
     searchParams.get('tab') === 'inactive' ? 'inactive' : 'active'
   const methodIdParam = searchParams.get('method')
   const selectedMethodId =
-    methodIdParam && /^\d+$/.test(methodIdParam) ? Number(methodIdParam) : null
+    pageView === 'methods' && methodIdParam && /^\d+$/.test(methodIdParam)
+      ? Number(methodIdParam)
+      : null
+  const methodFilterParam = searchParams.get('filter_method')
+  const methodFilter =
+    pageView === 'deposits' && methodFilterParam && /^\d+$/.test(methodFilterParam)
+      ? Number(methodFilterParam)
+      : null
   const clubFilterParam = searchParams.get('club')
   const clubFilter =
     clubFilterParam && /^\d+$/.test(clubFilterParam)
@@ -101,15 +113,21 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     checkedParam === 'unchecked' || checkedParam === 'checked'
       ? checkedParam
       : 'all'
+  const qParam = searchParams.get('q') || ''
+  const offsetParam = searchParams.get('offset')
+  const depositsOffset =
+    offsetParam && /^\d+$/.test(offsetParam) ? Number(offsetParam) : 0
 
   const [clubs, setClubs] = useState<Club[]>([])
   const [methods, setMethods] = useState<UnionMethod[]>([])
+  const [allMethods, setAllMethods] = useState<UnionMethod[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState<FormState>(emptyForm)
+  const [searchDraft, setSearchDraft] = useState(qParam)
 
   const setQuery = useCallback(
     (patch: Record<string, string | null>) => {
@@ -139,6 +157,15 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     }
   }, [token, tab])
 
+  const loadAllMethods = useCallback(async () => {
+    try {
+      const rows = await listUnionMethods(token)
+      setAllMethods(rows)
+    } catch {
+      setAllMethods([])
+    }
+  }, [token])
+
   useEffect(() => {
     void listClubs(token)
       .then(setClubs)
@@ -148,6 +175,24 @@ export default function ManualDepositRequests({ token }: { token: string }) {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (pageView === 'deposits') void loadAllMethods()
+  }, [pageView, loadAllMethods])
+
+  useEffect(() => {
+    setSearchDraft(qParam)
+  }, [qParam])
+
+  useEffect(() => {
+    if (pageView !== 'deposits') return
+    const handle = window.setTimeout(() => {
+      const next = searchDraft.trim()
+      if (next === qParam) return
+      setQuery({ q: next || null, offset: null })
+    }, 300)
+    return () => window.clearTimeout(handle)
+  }, [searchDraft, pageView, qParam, setQuery])
 
   const membershipClubs = useMemo(
     () => clubs.filter(isUnionMembershipClub),
@@ -159,16 +204,24 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     [methods, selectedMethodId],
   )
 
-  useEffect(() => {
-    if (selectedMethodId != null && !loading && !selected && methods.length >= 0) {
-      // Method may be on the other tab — leave selection; user can go back.
+  const detailClubOptions = useMemo(() => {
+    if (!selected) return []
+    const byId = new Map<number, { id: number; name: string; historical: boolean }>()
+    for (const c of selected.clubs) {
+      byId.set(c.id, { id: c.id, name: c.name, historical: false })
     }
-  }, [selectedMethodId, selected, loading, methods.length])
+    for (const c of selected.row_clubs || []) {
+      if (!byId.has(c.id)) {
+        byId.set(c.id, { id: c.id, name: c.name, historical: true })
+      }
+    }
+    return [...byId.values()].sort((a, b) => a.id - b.id)
+  }, [selected])
 
   const openMethod = (m: UnionMethod) => {
     setCreating(false)
     setEditing(false)
-    setQuery({ method: String(m.id) })
+    setQuery({ view: null, method: String(m.id) })
   }
 
   const backToGrid = () => {
@@ -182,7 +235,15 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     setCreating(true)
     setEditing(false)
     setForm(emptyForm())
-    setQuery({ method: null, club: null, checked: null })
+    setQuery({
+      view: null,
+      method: null,
+      club: null,
+      checked: null,
+      q: null,
+      offset: null,
+      filter_method: null,
+    })
   }
 
   const startEdit = (m: UnionMethod) => {
@@ -450,7 +511,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
             with /depositaccess after creating a method.
           </p>
         </div>
-        {!selected && !creating && (
+        {pageView === 'methods' && !selected && !creating && (
           <button type="button" onClick={startCreate} className="btn-primary-sm shrink-0">
             Add union method
           </button>
@@ -464,6 +525,46 @@ export default function ManualDepositRequests({ token }: { token: string }) {
       )}
 
       {!selected && !creating && (
+        <div className="flex gap-2" role="tablist" aria-label="Union methods sections">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={pageView === 'methods'}
+            onClick={() =>
+              setQuery({
+                view: null,
+                method: null,
+                q: null,
+                offset: null,
+                filter_method: null,
+                club: null,
+                checked: null,
+              })
+            }
+            className={`config-tab ${pageView === 'methods' ? 'config-tab-active' : ''}`}
+          >
+            Methods
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={pageView === 'deposits'}
+            onClick={() =>
+              setQuery({
+                view: 'deposits',
+                method: null,
+                tab: null,
+                offset: null,
+              })
+            }
+            className={`config-tab ${pageView === 'deposits' ? 'config-tab-active' : ''}`}
+          >
+            Deposits
+          </button>
+        </div>
+      )}
+
+      {pageView === 'methods' && !selected && !creating && (
         <div className="flex gap-2" role="tablist" aria-label="Method activity">
           {(['active', 'inactive'] as ActivityTab[]).map((t) => (
             <button
@@ -617,18 +718,11 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                     }
                   >
                     <option value="">All clubs</option>
-                    {selected.clubs.map((c) => (
+                    {detailClubOptions.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name}
+                        {c.historical ? `${c.name} (historical)` : c.name}
                       </option>
                     ))}
-                    {membershipClubs
-                      .filter((c) => !selected.clubs.some((sc) => sc.id === c.id))
-                      .map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} (historical)
-                        </option>
-                      ))}
                   </select>
                 </div>
                 <div>
@@ -663,7 +757,110 @@ export default function ManualDepositRequests({ token }: { token: string }) {
         </div>
       )}
 
-      {!selected && !creating && (
+      {pageView === 'deposits' && !creating && (
+        <section className="panel space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="sm:col-span-2 lg:col-span-4">
+              <label className="label-field-xs" htmlFor="um-deposits-q">
+                Search
+              </label>
+              <input
+                id="um-deposits-q"
+                className="input-field-sm"
+                value={searchDraft}
+                onChange={(e) => setSearchDraft(e.target.value)}
+                placeholder="Group, amount, or club"
+              />
+            </div>
+            <div>
+              <label className="label-field-xs" htmlFor="um-deposits-method">
+                Method
+              </label>
+              <select
+                id="um-deposits-method"
+                className="input-field-sm"
+                value={methodFilter ?? ''}
+                onChange={(e) =>
+                  setQuery({
+                    filter_method: e.target.value || null,
+                    offset: null,
+                  })
+                }
+              >
+                <option value="">All</option>
+                {allMethods.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.is_active ? m.name : `${m.name} (inactive)`}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label-field-xs" htmlFor="um-deposits-club">
+                Club
+              </label>
+              <select
+                id="um-deposits-club"
+                className="input-field-sm"
+                value={clubFilter ?? ''}
+                onChange={(e) =>
+                  setQuery({
+                    club: e.target.value || null,
+                    offset: null,
+                  })
+                }
+              >
+                <option value="">All</option>
+                {membershipClubs.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label-field-xs" htmlFor="um-deposits-checked">
+                Trade record
+              </label>
+              <select
+                id="um-deposits-checked"
+                className="input-field-sm"
+                value={checkedFilter}
+                onChange={(e) => {
+                  const v = e.target.value as CheckedFilter
+                  setQuery({
+                    checked: v === 'all' ? null : v,
+                    offset: null,
+                  })
+                }}
+              >
+                <option value="all">All</option>
+                <option value="unchecked">Unchecked</option>
+                <option value="checked">Checked</option>
+              </select>
+            </div>
+          </div>
+          <ManualDepositRequestsTable
+            token={token}
+            methodId={methodFilter ?? undefined}
+            clubId={clubFilter ?? undefined}
+            tradeRecordChecked={tradeCheckedFilter}
+            q={qParam || undefined}
+            showMethodColumns
+            showClubColumn
+            paginated
+            limit={DEPOSITS_PAGE_SIZE}
+            offset={depositsOffset}
+            onPageChange={(nextOffset) =>
+              setQuery({
+                offset: nextOffset > 0 ? String(nextOffset) : null,
+              })
+            }
+          />
+        </section>
+      )}
+
+      {pageView === 'methods' && !selected && !creating && (
         <>
           {loading && (
             <p className="py-8 text-center text-sm text-ink-muted">Loading…</p>

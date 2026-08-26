@@ -62,6 +62,7 @@ export type ListManualDepositRequestsParams = {
   method_slug?: string
   trade_record_checked?: boolean
   include_inactive_methods?: boolean
+  q?: string
   limit?: number
   offset?: number
 }
@@ -80,6 +81,7 @@ export function listManualDepositRequests(
   if (params.include_inactive_methods != null) {
     q.set('include_inactive_methods', String(params.include_inactive_methods))
   }
+  if (params.q != null && params.q.trim()) q.set('q', params.q.trim())
   if (params.limit != null) q.set('limit', String(params.limit))
   if (params.offset != null) q.set('offset', String(params.offset))
   const qs = q.toString()
@@ -93,12 +95,18 @@ export function listManualDepositRequests(
 export function listMethodManualDepositRequests(
   token: string,
   methodId: number,
-  params: { trade_record_checked?: boolean; limit?: number; offset?: number } = {},
+  params: {
+    trade_record_checked?: boolean
+    q?: string
+    limit?: number
+    offset?: number
+  } = {},
 ) {
   const q = new URLSearchParams()
   if (params.trade_record_checked != null) {
     q.set('trade_record_checked', String(params.trade_record_checked))
   }
+  if (params.q != null && params.q.trim()) q.set('q', params.q.trim())
   if (params.limit != null) q.set('limit', String(params.limit))
   if (params.offset != null) q.set('offset', String(params.offset))
   const qs = q.toString()

@@ -46,6 +46,7 @@ class UnionMethodRead(BaseModel):
     manual_request_message: str
     manual_request_variant_name: str
     clubs: List[UnionMethodClubRead]
+    row_clubs: List[UnionMethodClubRead] = Field(default_factory=list)
     used_sum: Decimal
     unchecked_count: int
 
@@ -138,7 +139,49 @@ def _stats_for_methods(
     }
 
 
-def _to_read(method: ClubPaymentMethod, used_sum: Decimal, unchecked_count: int) -> UnionMethodRead:
+def _row_clubs_for_methods(
+    db: Session, method_ids: List[int]
+) -> dict[int, List[UnionMethodClubRead]]:
+    if not method_ids:
+        return {}
+    rows = (
+        db.query(
+            ManualDepositRequest.method_id,
+            ManualDepositRequest.club_id,
+            Club.name,
+        )
+        .outerjoin(Club, Club.id == ManualDepositRequest.club_id)
+        .filter(ManualDepositRequest.method_id.in_(method_ids))
+        .distinct()
+        .all()
+    )
+    out: dict[int, List[UnionMethodClubRead]] = {mid: [] for mid in method_ids}
+    seen: dict[int, set[int]] = {mid: set() for mid in method_ids}
+    for mid, club_id, club_name in rows:
+        if mid is None or club_id is None:
+            continue
+        mid_i = int(mid)
+        cid = int(club_id)
+        if cid in seen.get(mid_i, set()):
+            continue
+        seen.setdefault(mid_i, set()).add(cid)
+        out.setdefault(mid_i, []).append(
+            UnionMethodClubRead(
+                id=cid,
+                name=club_name if club_name else f"Club {cid}",
+            )
+        )
+    for mid in out:
+        out[mid] = sorted(out[mid], key=lambda c: c.id)
+    return out
+
+
+def _to_read(
+    method: ClubPaymentMethod,
+    used_sum: Decimal,
+    unchecked_count: int,
+    row_clubs: Optional[List[UnionMethodClubRead]] = None,
+) -> UnionMethodRead:
     clubs = []
     for mc in sorted(method.method_clubs or [], key=lambda x: int(x.club_id)):
         if mc.club is not None:
@@ -156,6 +199,7 @@ def _to_read(method: ClubPaymentMethod, used_sum: Decimal, unchecked_count: int)
         manual_request_message=method.manual_request_message or "",
         manual_request_variant_name=method.manual_request_variant_name or "",
         clubs=clubs,
+        row_clubs=list(row_clubs or []),
         used_sum=used_sum,
         unchecked_count=int(unchecked_count),
     )
@@ -197,12 +241,15 @@ def list_union_methods(
     if is_active is not None:
         q = q.filter(ClubPaymentMethod.is_active.is_(bool(is_active)))
     methods = q.order_by(ClubPaymentMethod.name, ClubPaymentMethod.id).all()
-    stats = _stats_for_methods(db, [int(m.id) for m in methods])
+    method_ids = [int(m.id) for m in methods]
+    stats = _stats_for_methods(db, method_ids)
+    row_clubs = _row_clubs_for_methods(db, method_ids)
     return [
         _to_read(
             m,
             stats.get(int(m.id), (Decimal("0"), 0))[0],
             stats.get(int(m.id), (Decimal("0"), 0))[1],
+            row_clubs.get(int(m.id), []),
         )
         for m in methods
     ]
@@ -213,7 +260,8 @@ def get_union_method(method_id: int, db: Session = Depends(get_db_dependency)):
     method = _get_union_method(db, method_id)
     stats = _stats_for_methods(db, [int(method.id)])
     used, unchecked = stats.get(int(method.id), (Decimal("0"), 0))
-    return _to_read(method, used, unchecked)
+    row_clubs = _row_clubs_for_methods(db, [int(method.id)]).get(int(method.id), [])
+    return _to_read(method, used, unchecked, row_clubs)
 
 
 @router.post("", response_model=UnionMethodRead, status_code=201)
@@ -259,7 +307,7 @@ def create_union_method(body: UnionMethodCreate, db: Session = Depends(get_db_de
         db.rollback()
         raise HTTPException(400, "Union method slug must be unique.") from e
     method = _get_union_method(db, int(method.id))
-    return _to_read(method, Decimal("0"), 0)
+    return _to_read(method, Decimal("0"), 0, [])
 
 
 @router.put("/{method_id}", response_model=UnionMethodRead)
@@ -295,7 +343,8 @@ def update_union_method(
     method = _get_union_method(db, method_id)
     stats = _stats_for_methods(db, [int(method.id)])
     used, unchecked = stats.get(int(method.id), (Decimal("0"), 0))
-    return _to_read(method, used, unchecked)
+    row_clubs = _row_clubs_for_methods(db, [int(method.id)]).get(int(method.id), [])
+    return _to_read(method, used, unchecked, row_clubs)
 
 
 @router.post("/{method_id}/retire", response_model=UnionMethodRead)
@@ -306,7 +355,8 @@ def retire_union_method(method_id: int, db: Session = Depends(get_db_dependency)
     method = _get_union_method(db, method_id)
     stats = _stats_for_methods(db, [int(method.id)])
     used, unchecked = stats.get(int(method.id), (Decimal("0"), 0))
-    return _to_read(method, used, unchecked)
+    row_clubs = _row_clubs_for_methods(db, [int(method.id)]).get(int(method.id), [])
+    return _to_read(method, used, unchecked, row_clubs)
 
 
 @router.post("/{method_id}/reactivate", response_model=UnionMethodRead)
@@ -318,4 +368,5 @@ def reactivate_union_method(method_id: int, db: Session = Depends(get_db_depende
     method = _get_union_method(db, method_id)
     stats = _stats_for_methods(db, [int(method.id)])
     used, unchecked = stats.get(int(method.id), (Decimal("0"), 0))
-    return _to_read(method, used, unchecked)
+    row_clubs = _row_clubs_for_methods(db, [int(method.id)]).get(int(method.id), [])
+    return _to_read(method, used, unchecked, row_clubs)
