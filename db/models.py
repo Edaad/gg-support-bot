@@ -271,6 +271,11 @@ class ClubPaymentMethod(Base):
     accumulated_amount = Column(Numeric(12, 2), nullable=False, default=0)
     first_time_linking_enabled = Column(Boolean, nullable=False, default=False)
     first_time_bind_mode = Column(String(32), nullable=True)
+    tracks_manual_requests = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    manual_request_message = Column(Text, nullable=True)
+    manual_request_variant_name = Column(String(100), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),
@@ -301,6 +306,10 @@ class ClubPaymentMethod(Base):
         "GroupDepositMethodAccess",
         back_populates="method",
         cascade="all, delete-orphan",
+    )
+    manual_deposit_requests = relationship(
+        "ManualDepositRequest",
+        back_populates="method",
     )
 
 
@@ -410,6 +419,39 @@ class ClubPaymentSubOption(Base):
     )
 
     method = relationship("ClubPaymentMethod", back_populates="sub_options")
+
+
+class ManualDepositRequest(Base):
+    """Ops-tracked deposit request for flagged manual-trade methods (no payment ingest)."""
+
+    __tablename__ = "manual_deposit_requests"
+    __table_args__ = (
+        Index("ix_mdr_method_id", "method_id"),
+        Index("ix_mdr_club_created", "club_id", "created_at"),
+        Index("ix_mdr_checked_created", "trade_record_checked", "created_at"),
+        Index("ix_mdr_method_slug", "method_slug"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    method_id = Column(
+        Integer,
+        ForeignKey("club_payment_methods.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    method_name = Column(String(50), nullable=False)
+    method_slug = Column(String(50), nullable=False)
+    variant_name = Column(String(100), nullable=False)
+    group_title = Column(String(512), nullable=True)
+    amount = Column(Numeric(12, 2), nullable=False)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    trade_record_checked = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    club = relationship("Club")
+    method = relationship("ClubPaymentMethod", back_populates="manual_deposit_requests")
 
 
 class Group(Base):

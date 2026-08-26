@@ -84,13 +84,23 @@ def matching_source_label(
     memo: str | None = None,
 ) -> str:
     """Matching Source cell text. ClubGTO deposits use RT/GTO ownership prefix."""
-    base = (source_label or LEDGER_SOURCE_LABELS.get(source, "") or source).strip()
+    src = (source or "").strip()
+    if source_label and source_label.strip():
+        base = source_label.strip()
+    elif src in LEDGER_SOURCE_LABELS:
+        base = LEDGER_SOURCE_LABELS[src]
+    elif src.startswith("deposit_"):
+        base = src[len("deposit_") :].replace("-", " ").replace("_", " ").strip().title()
+    else:
+        base = src
     if not base:
         return ""
     if club_slug.strip().lower() != _VAUGHN_CLUB_SLUG:
         return base
-    src = (source or "").strip()
+    if src not in _DEPOSIT_SOURCES and not src.startswith("deposit_"):
+        return base
     if src not in _DEPOSIT_SOURCES:
+        # Dynamic manual-request sources: no Vaughn split.
         return base
     prefix = "GTO" if is_vaughn_method(
         source=src, variant=variant, club_slug=club_slug, memo=memo

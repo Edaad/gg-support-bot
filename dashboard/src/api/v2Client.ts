@@ -105,6 +105,9 @@ export interface V2Method {
   accumulated_amount: number | null
   first_time_linking_enabled: boolean
   first_time_bind_mode: FirstTimeBindMode | null
+  tracks_manual_requests: boolean
+  manual_request_message: string | null
+  manual_request_variant_name: string | null
   created_at: string | null
   updated_at: string | null
   sub_options: V2SubOption[]

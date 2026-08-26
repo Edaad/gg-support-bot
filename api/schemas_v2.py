@@ -166,6 +166,9 @@ class ClubPaymentMethodCreate(BaseModel):
     deposit_limit: Optional[Decimal] = None
     first_time_linking_enabled: bool = False
     first_time_bind_mode: Optional[FirstTimeBindMode] = None
+    tracks_manual_requests: bool = False
+    manual_request_message: Optional[str] = None
+    manual_request_variant_name: Optional[str] = None
 
 
 class ClubPaymentMethodUpdate(BaseModel):
@@ -181,6 +184,9 @@ class ClubPaymentMethodUpdate(BaseModel):
     deposit_limit: Optional[Decimal] = None
     first_time_linking_enabled: Optional[bool] = None
     first_time_bind_mode: Optional[FirstTimeBindMode] = None
+    tracks_manual_requests: Optional[bool] = None
+    manual_request_message: Optional[str] = None
+    manual_request_variant_name: Optional[str] = None
 
 
 class ClubPaymentMethodRead(BaseModel):
@@ -201,6 +207,9 @@ class ClubPaymentMethodRead(BaseModel):
     accumulated_amount: Optional[Decimal] = None
     first_time_linking_enabled: bool = False
     first_time_bind_mode: Optional[FirstTimeBindMode] = None
+    tracks_manual_requests: bool = False
+    manual_request_message: Optional[str] = None
+    manual_request_variant_name: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     sub_options: List[ClubPaymentSubOptionRead] = []

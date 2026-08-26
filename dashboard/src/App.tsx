@@ -13,6 +13,7 @@ import Expenses from './pages/Expenses'
 import CashoutRecords from './pages/CashoutRecords'
 import CashoutRecordDetail from './pages/CashoutRecordDetail'
 import Payments from './pages/Payments'
+import ManualDepositRequests from './pages/ManualDepositRequests'
 import Audit from './pages/Audit'
 import Layout from './components/Layout'
 import { ConfirmProvider } from './components/ConfirmProvider'
@@ -88,6 +89,10 @@ export default function App() {
               <Route path="/cashout-records" element={<CashoutRecords token={token} role={role} />} />
               <Route path="/cashout-records/:id" element={<CashoutRecordDetail token={token} role={role} />} />
               <Route path="/payments" element={<Payments token={token} />} />
+              <Route
+                path="/manual-deposit-requests"
+                element={<ManualDepositRequests token={token} />}
+              />
               <Route path="/audit" element={<Audit token={token} />} />
               <Route
                 path="/analytics"

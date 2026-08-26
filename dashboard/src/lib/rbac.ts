@@ -5,6 +5,7 @@ export const ROLE_STORAGE_KEY = 'dashboard_role'
 /** Paths account_manager may open (prefix match for nested routes). */
 export const ACCOUNT_MANAGER_PATHS = [
   '/payments',
+  '/manual-deposit-requests',
   '/bonuses',
   '/cashout-records',
 ] as const

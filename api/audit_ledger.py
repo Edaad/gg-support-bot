@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Callable, Literal
+from typing import Callable
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -37,6 +37,7 @@ from db.models import (
     CryptoPayment,
     EarlyRakebackLine,
     EarlyRakebackSnapshot,
+    ManualDepositRequest,
     PayPalPayment,
     PlayerDetails,
     StaffCashoutRecord,
@@ -46,18 +47,8 @@ from db.models import (
     ZellePayment,
 )
 
-LedgerSource = Literal[
-    "deposit_stripe",
-    "deposit_zelle",
-    "deposit_venmo",
-    "deposit_cashapp",
-    "deposit_paypal",
-    "deposit_crypto",
-    "early_rakeback",
-    "bonus",
-    "cashout",
-    "monday_settlement",
-]
+# Built-in deposit_* plus dynamic deposit_{slug} from manual trade requests.
+LedgerSource = str
 
 LEDGER_SOURCE_LABELS: dict[str, str] = {
     "deposit_stripe": "Stripe",
@@ -513,7 +504,73 @@ def fetch_deposit_events(
             source="deposit_crypto",
         )
     )
+    events.extend(
+        _fetch_manual_trade_request_events(
+            session,
+            club_slug=slug,
+            audit_date=audit_date,
+            from_dt=from_dt,
+            to_dt=to_dt,
+        )
+    )
     return events
+
+
+def _fetch_manual_trade_request_events(
+    session: Session,
+    *,
+    club_slug: str,
+    audit_date: date,
+    from_dt: datetime,
+    to_dt: datetime,
+) -> list[LedgerEvent]:
+    """Checked manual trade-request rows → deposit_{slug} ledger events."""
+    query = (
+        session.query(ManualDepositRequest)
+        .filter(ManualDepositRequest.trade_record_checked.is_(True))
+        .filter(ManualDepositRequest.created_at >= from_dt)
+        .filter(ManualDepositRequest.created_at < to_dt)
+    )
+    query = apply_analytics_payment_exclusion(
+        session, query, ManualDepositRequest.telegram_chat_id
+    )
+    rows = query.order_by(
+        ManualDepositRequest.created_at.desc(), ManualDepositRequest.id.desc()
+    ).all()
+    out: list[LedgerEvent] = []
+    for row in rows:
+        if not payment_in_audit_day_for_club(
+            session,
+            club_slug=club_slug,
+            audit_date=audit_date,
+            club_id=row.club_id,
+            occurred_at=row.created_at,
+            data={"group_title": row.group_title},
+        ):
+            continue
+        title, gg_id = resolve_group_title(
+            session,
+            int(row.telegram_chat_id),
+            fallback_gg_player_id=None,
+        )
+        group_title = (row.group_title or title or "").strip() or None
+        slug = (row.method_slug or "").strip().lower() or "manual"
+        source = f"deposit_{slug}"
+        out.append(
+            LedgerEvent(
+                source=source,
+                gg_player_id=(gg_id or "").strip() or None,
+                amount_usd=Decimal(str(row.amount)),
+                occurred_at_utc=row.created_at,
+                external_id=f"manual_deposit_request:{row.id}",
+                detail=group_title,
+                display_name=None,
+                variant=(row.variant_name or "").strip() or None,
+                club_slug=club_slug,
+                source_label=(row.method_name or "").strip() or slug,
+            )
+        )
+    return out
 
 
 def fetch_early_rakeback_events(

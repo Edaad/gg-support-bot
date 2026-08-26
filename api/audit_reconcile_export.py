@@ -726,6 +726,20 @@ def deposit_lines_by_method(
     return by_method
 
 
+def deposit_method_order_for_lines(lines: list[LedgerLine]) -> tuple[str, ...]:
+    """Known deposit sources first, then any dynamic deposit_* from the day."""
+    seen = list(DEPOSIT_METHOD_ORDER)
+    known = set(DEPOSIT_METHOD_ORDER)
+    extras: list[str] = []
+    for line in lines:
+        src = line.source
+        if src.startswith("deposit_") and src not in known:
+            known.add(src)
+            extras.append(src)
+    extras.sort()
+    return tuple(seen + extras)
+
+
 def _sort_net_ledger_lines(lines: list[LedgerLine]) -> list[LedgerLine]:
     def sort_key(line: LedgerLine) -> tuple:
         unmatched = 0 if line.gg_player_id else 1
@@ -898,11 +912,11 @@ def _write_deposits_sheet(
     start = _write_sheet_intro(ws, "Deposits", merge_cols=6)
     by_method = deposit_lines_by_method(report.ledger_lines)
     row_idx = start
-    for method in DEPOSIT_METHOD_ORDER:
+    for method in deposit_method_order_for_lines(report.ledger_lines):
         method_lines = _sort_deposit_lines(by_method.get(method, []))
         if not method_lines:
             continue
-        label = LEDGER_SOURCE_LABELS.get(method, method)
+        label = method_lines[0].source_label or LEDGER_SOURCE_LABELS.get(method, method)
         ws.cell(row=row_idx, column=1, value=label).font = _SECTION_FONT
         row_idx += 1
         _style_header_row(ws, row_idx, DEPOSIT_HEADERS)

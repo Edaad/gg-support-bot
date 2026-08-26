@@ -28,6 +28,10 @@ def _method_dict(m: ClubPaymentMethod) -> dict:
         "max_amount": m.max_amount,
         "has_sub_options": m.has_sub_options,
         "is_public": bool(getattr(m, "is_public", True)),
+        "tracks_manual_requests": bool(getattr(m, "tracks_manual_requests", False)),
+        "manual_request_message": getattr(m, "manual_request_message", None),
+        "manual_request_variant_name": getattr(m, "manual_request_variant_name", None),
+        "deposit_limit": m.deposit_limit,
         "response_type": None,
         "response_text": None,
         "response_file_id": None,
@@ -89,6 +93,8 @@ def _variant_response_dict(v: ClubPaymentTierVariant, *, include_ids: bool = Fal
 def get_methods_for_amount(
     club_id: int, direction: str, amount: Optional[Decimal] = None
 ) -> List[dict]:
+    from bot.services.manual_deposit_requests import sum_for_method
+
     with get_db() as session:
         methods = (
             session.query(ClubPaymentMethod)
@@ -98,7 +104,19 @@ def get_methods_for_amount(
         )
         result = []
         for m in methods:
-            if m.deposit_limit is not None and m.accumulated_amount is not None:
+            if bool(getattr(m, "tracks_manual_requests", False)):
+                if m.deposit_limit is None:
+                    continue
+                limit = Decimal(str(m.deposit_limit))
+                if limit <= 0:
+                    continue
+                current = sum_for_method(session, int(m.id))
+                if amount is not None:
+                    if current + Decimal(str(amount)) > limit:
+                        continue
+                elif current >= limit:
+                    continue
+            elif m.deposit_limit is not None and m.accumulated_amount is not None:
                 if m.accumulated_amount >= m.deposit_limit:
                     continue
             if amount is not None:

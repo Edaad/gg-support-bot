@@ -1790,9 +1790,31 @@ async def _run_normal_deposit_from_choice(
     method_slug: str,
     picked: tuple[dict | None, dict | None] | None = None,
 ) -> int | str:
+    from bot.services.manual_deposit_requests import (
+        ManualDepositCapacityError,
+        create_request_atomic,
+    )
+
     amount = context.chat_data.get("deposit_amount", "?")
     chat_id = query.message.chat.id if query.message else None
-    if picked is not None:
+    tracks_manual = bool(method.get("tracks_manual_requests"))
+    context.chat_data["deposit_tracks_manual_requests"] = tracks_manual
+
+    if tracks_manual:
+        message = (method.get("manual_request_message") or "").strip()
+        if not message:
+            await query.edit_message_text(
+                "This payment method is not configured yet. Please contact support."
+            )
+            return ConversationHandler.END
+        response_data = {
+            "response_type": "text",
+            "response_text": message,
+            "response_file_id": None,
+            "response_caption": None,
+        }
+        tier = None
+    elif picked is not None:
         response_data, tier = picked
     else:
         response_data, tier = _pick_deposit_variant_response(
@@ -1827,7 +1849,40 @@ async def _run_normal_deposit_from_choice(
     )
     if not ok:
         return ConversationHandler.END
-    if isinstance(amount, Decimal):
+
+    if tracks_manual:
+        club_id = context.chat_data.get("deposit_club_id")
+        if (
+            club_id is None
+            or chat_id is None
+            or not isinstance(amount, Decimal)
+        ):
+            await query.message.chat.send_message(
+                "Could not record this deposit request. Please contact support."
+            )
+            return ConversationHandler.END
+        try:
+            create_request_atomic(
+                club_id=int(club_id),
+                method_id=int(method_id),
+                amount=amount,
+                telegram_chat_id=int(chat_id),
+                group_title=getattr(query.message.chat, "title", None),
+            )
+        except ManualDepositCapacityError as exc:
+            await query.message.chat.send_message(str(exc))
+            return ConversationHandler.END
+        except Exception:
+            logger.exception(
+                "manual deposit request create failed chat_id=%s method_id=%s",
+                chat_id,
+                method_id,
+            )
+            await query.message.chat.send_message(
+                "Could not record this deposit request. Please try again or contact support."
+            )
+            return ConversationHandler.END
+    elif isinstance(amount, Decimal):
         try:
             record_method_deposit(method_id, amount)
         except Exception:
@@ -2202,11 +2257,18 @@ async def _complete_deposit_flow(chat, context: ContextTypes.DEFAULT_TYPE):
     _persist_deposit_union(context)
     await _maybe_rename_group_for_union(context)
     await _send_bonus_message(chat, context)
-    _schedule_deposit_reminder(context, club_id, chat_id, user_id=customer_uid)
+    tracks_manual = bool(context.chat_data.get("deposit_tracks_manual_requests"))
+    if not tracks_manual:
+        _schedule_deposit_reminder(context, club_id, chat_id, user_id=customer_uid)
 
     defer_popup = bool(context.chat_data.pop("deposit_defer_popup_idle", False))
     setup_attempt_id = context.chat_data.get("deposit_setup_attempt_id")
-    if not defer_popup and setup_attempt_id is not None and chat_id is not None:
+    if (
+        not tracks_manual
+        and not defer_popup
+        and setup_attempt_id is not None
+        and chat_id is not None
+    ):
         attempt = get_pending_bind_attempt(int(setup_attempt_id))
         if attempt is not None:
             popup_keyboard_svc.schedule_payment_window_then_idle(
@@ -2504,7 +2566,10 @@ async def _send_deposit_method_response(
         return False
 
     await _send_response(query, response_data, amount, display_name)
-    if chat_id is not None:
+    if chat_id is not None and not bool(
+        (method or {}).get("tracks_manual_requests")
+        or context.chat_data.get("deposit_tracks_manual_requests")
+    ):
         await _maybe_offer_deposit_sent_button(
             getattr(context, "bot", None),
             int(chat_id),

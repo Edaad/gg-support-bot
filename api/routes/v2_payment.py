@@ -20,6 +20,7 @@ from api.payment_v2_helpers import (
     sync_tier_checkout_bounds_from_band,
     sync_tier_checkout_bounds_to_variants,
     sync_method_envelope_side_effects,
+    apply_manual_trade_request_constraints,
     validate_first_time_linking,
     tier_variant_count,
     validate_all_method_tiers,
@@ -113,23 +114,25 @@ def create_method(club_id: int, body: ClubPaymentMethodCreate, db: Session = Dep
         raise HTTPException(400, "direction must be 'deposit' or 'cashout'")
     method = ClubPaymentMethod(club_id=club_id, **body.model_dump())
     try:
+        apply_manual_trade_request_constraints(method)
         validate_first_time_linking(method)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     db.add(method)
     db.flush()
-    tier = ClubPaymentTier(
-        method_id=method.id,
-        label=DEFAULT_TIER_LABEL,
-        min_amount=method.min_amount,
-        max_amount=method.max_amount,
-        sort_order=0,
-    )
-    db.add(tier)
-    db.flush()
-    if not method.has_sub_options:
-        create_empty_default_variant(db, tier)
+    if not bool(getattr(method, "tracks_manual_requests", False)):
+        tier = ClubPaymentTier(
+            method_id=method.id,
+            label=DEFAULT_TIER_LABEL,
+            min_amount=method.min_amount,
+            max_amount=method.max_amount,
+            sort_order=0,
+        )
+        db.add(tier)
         db.flush()
+        if not method.has_sub_options:
+            create_empty_default_variant(db, tier)
+            db.flush()
     method = _get_method(db, method.id)
     return _read_method(method)
 
@@ -148,6 +151,7 @@ def update_method(method_id: int, body: ClubPaymentMethodUpdate, db: Session = D
     if method.min_amount is not None and method.max_amount is not None and method.min_amount > method.max_amount:
         raise HTTPException(400, "Method min amount cannot be greater than max amount.")
     try:
+        apply_manual_trade_request_constraints(method)
         validate_first_time_linking(method)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
@@ -156,10 +160,11 @@ def update_method(method_id: int, body: ClubPaymentMethodUpdate, db: Session = D
     db.flush()
     if {"min_amount", "max_amount"}.intersection(data.keys()):
         method = _get_method(db, method_id)
-        sync_method_envelope_side_effects(method)
-        db.flush()
-        method = _get_method(db, method_id)
-        validate_all_method_tiers(method)
+        if not bool(getattr(method, "tracks_manual_requests", False)):
+            sync_method_envelope_side_effects(method)
+            db.flush()
+            method = _get_method(db, method_id)
+            validate_all_method_tiers(method)
     method = _get_method(db, method_id)
     return _read_method(method)
 
@@ -169,6 +174,18 @@ def delete_method(method_id: int, db: Session = Depends(get_db_dependency)):
     method = db.query(ClubPaymentMethod).get(method_id)
     if not method:
         raise HTTPException(404, "Method not found")
+    from db.models import ManualDepositRequest
+
+    has_requests = (
+        db.query(ManualDepositRequest.id)
+        .filter(ManualDepositRequest.method_id == method_id)
+        .first()
+        is not None
+    )
+    if has_requests or bool(getattr(method, "tracks_manual_requests", False)):
+        method.is_active = False
+        db.flush()
+        return
     db.delete(method)
 
 
@@ -204,6 +221,10 @@ def list_tiers(method_id: int, db: Session = Depends(get_db_dependency)):
 @router.post("/methods/{method_id}/tiers", response_model=ClubPaymentTierRead, status_code=201)
 def create_tier(method_id: int, body: ClubPaymentTierCreate, db: Session = Depends(get_db_dependency)):
     method = _get_method(db, method_id)
+    if bool(getattr(method, "tracks_manual_requests", False)):
+        raise HTTPException(
+            400, "Manual trade-request methods do not use amount tiers."
+        )
     tier_data = body.model_dump()
     if method_needs_variants(method):
         tier_data = strip_response_from_tier_payload(tier_data)
@@ -392,7 +413,11 @@ def list_sub_options(method_id: int, db: Session = Depends(get_db_dependency)):
 
 @router.post("/methods/{method_id}/sub-options", response_model=ClubPaymentSubOptionRead, status_code=201)
 def create_sub_option(method_id: int, body: ClubPaymentSubOptionCreate, db: Session = Depends(get_db_dependency)):
-    _get_method(db, method_id)
+    method = _get_method(db, method_id)
+    if bool(getattr(method, "tracks_manual_requests", False)):
+        raise HTTPException(
+            400, "Manual trade-request methods do not use sub-options."
+        )
     sub = ClubPaymentSubOption(method_id=method_id, **body.model_dump())
     db.add(sub)
     db.flush()
