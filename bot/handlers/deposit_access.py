@@ -131,9 +131,9 @@ def _method_keyboard(
     buttons: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
     for m in methods:
-        label = m["name"]
+        label = m["slug"]
         if m.get("access_type"):
-            label = f"{m['name']} ({m['access_type']})"
+            label = f"{m['slug']} ({m['access_type']})"
         row.append(InlineKeyboardButton(label, callback_data=f"{p}:m:{m['id']}"))
         if len(row) == 2:
             buttons.append(row)
@@ -405,15 +405,16 @@ async def depositaccess_callback_handler(
         context.user_data[_ud(direction, "existing_type")] = chosen.get("access_type")
         context.user_data[_ud(direction, "step")] = "confirm"
         title = context.user_data.get(_ud(direction, "group_title"), "?")
+        slug = chosen["slug"]
         if action == "remove":
             existing = chosen.get("access_type", "entry")
             summary = (
-                f"Remove {existing} for {chosen['name']} "
+                f"Remove {existing} for {slug} "
                 f"on group:\n{title}?"
             )
         else:
             summary = (
-                f"{action.capitalize()} {chosen['name']} "
+                f"{action.capitalize()} {slug} "
                 f"for group:\n{title}?"
             )
         await query.edit_message_text(
@@ -449,7 +450,7 @@ async def depositaccess_callback_handler(
                     await query.edit_message_text("Nothing to remove (already gone).")
                 else:
                     await query.edit_message_text(
-                        f"Removed {deleted.access_type} for {deleted.method_name} "
+                        f"Removed {deleted.access_type} for {deleted.method_slug} "
                         f"on:\n{title}"
                     )
             else:
@@ -462,7 +463,7 @@ async def depositaccess_callback_handler(
                     direction=direction,
                 )
                 await query.edit_message_text(
-                    f"{entry.access_type.capitalize()} set for {entry.method_name} "
+                    f"{entry.access_type.capitalize()} set for {entry.method_slug} "
                     f"on:\n{title}"
                 )
         except ValueError as e:

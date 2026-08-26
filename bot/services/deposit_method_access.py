@@ -461,6 +461,6 @@ def format_access_list(
     for e in rows:
         title = e.group_title or f"chat {e.telegram_chat_id}"
         lines.append(
-            f"• {title}\n  {e.access_type} — {e.method_name} ({e.method_slug})"
+            f"• {title}\n  {e.access_type} — {e.method_slug}"
         )
     return "\n".join(lines)

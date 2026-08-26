@@ -320,7 +320,8 @@ class TestFormatAccessList(unittest.TestCase):
         )
         self.assertIn("RT / 1 / Bob", text)
         self.assertIn("blacklist", text)
-        self.assertIn("Zelle", text)
+        self.assertIn("zelle", text)
+        self.assertNotIn("Zelle", text)
 
     def test_cashout_empty(self):
         self.assertIn("No cashout method", format_access_list([], direction="cashout"))
