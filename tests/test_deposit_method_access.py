@@ -70,6 +70,32 @@ class TestFilterDepositMethodsForChat(unittest.TestCase):
         slugs = [m["slug"] for m in result]
         self.assertEqual(slugs, ["wire", "venmo"])
 
+    def test_passes_through_union_type_picker_rows_without_id(self):
+        methods = [
+            {
+                "picker_kind": "union_type",
+                "type_slug": "zelle",
+                "name": "Zelle",
+                "slug": "zelle",
+                "id": None,
+            },
+            {"id": 1, "name": "Venmo", "slug": "venmo", "is_public": True},
+        ]
+        session = MagicMock()
+        session.query.return_value.filter_by.return_value.all.return_value = []
+        mock_cm = MagicMock()
+        mock_cm.__enter__.return_value = session
+        mock_cm.__exit__.return_value = False
+
+        with patch(
+            "bot.services.deposit_method_access.get_db", return_value=mock_cm
+        ):
+            result = filter_deposit_methods_for_chat(-100, methods)
+
+        self.assertEqual(len(result), 2)
+        self.assertIsNone(result[0]["id"])
+        self.assertEqual(result[0]["picker_kind"], "union_type")
+
 
 class TestMethodsForAction(unittest.TestCase):
     def _methods(self):

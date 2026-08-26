@@ -193,6 +193,10 @@ def filter_deposit_methods_for_chat(
 
     result: List[dict] = []
     for m in methods:
+        if m.get("id") is None:
+            # Synthetic union-type picker rows have no ClubPaymentMethod id.
+            result.append(m)
+            continue
         mid = int(m["id"])
         is_public = bool(m["is_public"]) if "is_public" in m else public_by_id.get(mid, True)
         if method_visible_for_chat(
