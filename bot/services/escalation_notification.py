@@ -37,6 +37,7 @@ REASON_RPA_DEPOSIT_FAILED = "rpa_deposit_failed"
 REASON_RPA_CASHOUT_FAILED = "rpa_cashout_failed"
 REASON_RPA_DEPOSIT_UNCERTAIN = "rpa_deposit_uncertain"
 REASON_RPA_CASHOUT_UNCERTAIN = "rpa_cashout_uncertain"
+REASON_AUTO_CASHOUT_ESCALATION = "auto_cashout_escalation"
 REASON_UNION_DEPOSIT_FIRST = "union_deposit_first"
 REASON_UNION_DEPOSIT_REPEAT = "union_deposit_repeat"
 
@@ -77,6 +78,9 @@ _HEADLINES = {
     REASON_RPA_CASHOUT_UNCERTAIN: (
         "Cashout UNCERTAIN — verify on ClubGG (do not re-claim)."
     ),
+    REASON_AUTO_CASHOUT_ESCALATION: (
+        "Automated cashout needs a human — please assist this player."
+    ),
 }
 
 # Free-text / media escalations include the triggering player message body.
@@ -89,6 +93,7 @@ _REASONS_WITH_MESSAGE_BODY = frozenset(
         REASON_DEPOSIT_PLAYER_MESSAGE,
         REASON_RPA_DEPOSIT_UNCERTAIN,
         REASON_RPA_CASHOUT_UNCERTAIN,
+        REASON_AUTO_CASHOUT_ESCALATION,
     }
 )
 
@@ -691,6 +696,46 @@ async def notify_rpa_cashout_uncertain(
         chat_id=int(chat_id),
         title=title,
         message_text=detail,
+    )
+
+
+async def notify_auto_cashout_escalation(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None = None,
+    detail: str | None = None,
+    claimed_amount=None,
+) -> None:
+    """Slack when an automated cashout can't finish on its own and needs a human.
+
+    Always posts (the ``enable_auto_cashout`` flag is the feature's own gate) and
+    surfaces whether chips were already claimed so an AM finishes the payout
+    without re-claiming.
+    """
+    parts: list[str] = []
+    if claimed_amount is not None:
+        if isinstance(claimed_amount, Decimal):
+            amt = claimed_amount.quantize(Decimal("0.01"))
+            amt_str = (
+                f"${int(amt):,}"
+                if amt == amt.to_integral_value()
+                else f"${amt:,.2f}"
+            )
+        else:
+            amt_str = f"${claimed_amount}"
+        parts.append(
+            f"Chips already claimed: {amt_str} — cashout NOT recorded. "
+            f"Finish the payout manually; DO NOT re-claim."
+        )
+    if detail:
+        parts.append(str(detail))
+    await notify_escalation_slack(
+        REASON_AUTO_CASHOUT_ESCALATION,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+        message_text="\n".join(parts) if parts else None,
     )
 
 

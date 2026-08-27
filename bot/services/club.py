@@ -625,6 +625,15 @@ def get_auto_claim_enabled(club_id: int) -> bool:
         return bool(getattr(club, "auto_claim_enabled", False))
 
 
+def get_auto_cashout_enabled(club_id: int) -> bool:
+    """True if player /cashout should run the fully automated cashout flow."""
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club:
+            return False
+        return bool(getattr(club, "enable_auto_cashout", False))
+
+
 def set_last_deposit_union(chat_id: int, shorthand: str) -> None:
     """Record the customer's last Round Table deposit union ("RT"/"AT") for a group."""
     token = (shorthand or "").strip().upper()

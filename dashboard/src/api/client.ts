@@ -560,6 +560,7 @@ export interface Club {
   auto_claim_enabled: boolean
   enable_popup_keyboard: boolean
   enable_escalation_notification: boolean
+  enable_auto_cashout: boolean
   deposit_simple_mode: boolean
   deposit_simple_type: string | null
   deposit_simple_text: string | null

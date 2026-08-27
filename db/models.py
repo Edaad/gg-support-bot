@@ -56,6 +56,9 @@ class Club(Base):
     enable_escalation_notification = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
+    enable_auto_cashout = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
     deposit_simple_mode = Column(Boolean, default=False)
     deposit_simple_type = Column(String(10), default="text")
     deposit_simple_text = Column(Text)

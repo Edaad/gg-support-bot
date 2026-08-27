@@ -695,13 +695,18 @@ async def run_auto_claim(
     job_id: int,
     amount: Decimal,
     group_title: Optional[str] = None,
+    union_shorthand: Optional[str] = None,
+    request_id: Optional[str] = None,
 ) -> ClaimOutcome:
     """Claim chips back via the deposit bot's ``/claim`` endpoint.
 
     Never raises. Player id + club/union are resolved from the group exactly like
-    ``/add`` auto chip-adding. ``request_id`` is derived from the cashout job id so a
-    given job can never double-claim. Returns a rich :class:`ClaimOutcome` the caller
-    uses to decide what to tell staff.
+    ``/add`` auto chip-adding, unless ``union_shorthand`` ("RT"/"AT") is given, in
+    which case the caller's explicit union choice is used (automated cashouts).
+    ``request_id`` defaults to a value derived from the cashout job id so a given
+    job can never double-claim; callers without a job id (automated cashout) may
+    pass a stable per-flow key instead. Returns a rich :class:`ClaimOutcome` the
+    caller uses to decide what to tell staff.
     """
     try:
         cfg = load_config()
@@ -724,26 +729,31 @@ async def run_auto_claim(
         club = await asyncio.to_thread(get_club_by_id, int(club_id))
         club_name = club.name if club else None
 
-        union_shorthand: Optional[str] = None
-        if (club_name or "").strip().lower() == ROUND_TABLE_CLUB_NAME.strip().lower():
+        resolved_union: Optional[str] = (union_shorthand or "").strip().upper() or None
+        if (
+            resolved_union is None
+            and (club_name or "").strip().lower()
+            == ROUND_TABLE_CLUB_NAME.strip().lower()
+        ):
             stored_union, _recorded_at = await asyncio.to_thread(
                 get_last_deposit_union, int(chat_id)
             )
-            union_shorthand = _resolve_round_table_union_for_auto_chip_add(
+            resolved_union = _resolve_round_table_union_for_auto_chip_add(
                 title, stored_union
             )
 
-        clubgg_club = resolve_clubgg_club_name(club_name, union_shorthand)
+        clubgg_club = resolve_clubgg_club_name(club_name, resolved_union)
         if not clubgg_club:
             return ClaimOutcome(
                 False,
                 "unmapped",
-                f"could not map club {club_name!r}/union {union_shorthand!r} to a ClubGG club",
+                f"could not map club {club_name!r}/union {resolved_union!r} to a ClubGG club",
                 player_id=player_id,
             )
 
         amount_str = _format_chip_amount(amount)
-        request_id = f"cash-claim-{int(job_id)}"
+        if not request_id:
+            request_id = f"cash-claim-{int(job_id)}"
         timeout = httpx.Timeout(cfg.timeout_sec)
         async with httpx.AsyncClient(timeout=timeout) as client:
             ok_health, detail = await _health_ok(cfg, client)

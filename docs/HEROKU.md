@@ -617,3 +617,25 @@ heroku config:set -a YOUR_APP \
 choices are kept). If the customer never ran `/deposit` / never picked RT or AT,
 `/add` defaults to **Round Table** (RT). `ClubGTO` (`790203`)
 and `Creator Club` (`846162`) route by club name. Restart after config: `heroku restart worker -a YOUR_APP`.
+
+## Automated cashouts on /cashout (fully automated)
+
+Turns player `/cashout` (and `/withdraw`) into an end-to-end flow: amount →
+(RT/AT union) → auto-claim chips → pick method → validated payout handle → record
+to the hub (same GGCashier/Zapier path staff use). Anything off-script posts "an
+agent will be with you shortly" once and Slack-escalates. Off by default; requires
+the deposit API configured **and** Auto claim on /cash enabled for the club. See
+[`docs/AUTO_CASHOUT.md`](AUTO_CASHOUT.md).
+
+Run the migration once after deploy (adds `clubs.enable_auto_cashout`):
+
+```bash
+heroku run -a YOUR_APP -- python migrate_enable_auto_cashout.py
+```
+
+**Rollout / single-group test (do this before enabling widely):** enable
+**Automated cashouts** for **one** club only, keep `GG_DEPOSIT_API_DRY_RUN=true`,
+and run a real `/cashout` in one known group: confirm the claim dry-run targets the
+correct ClubGG club, a valid handle records a Glide row + owed pin, an invalid
+handle escalates, and a forced claim failure escalates with the "chips already
+claimed" note.

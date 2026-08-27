@@ -346,6 +346,21 @@ function GeneralTab({
           <label className="flex items-center gap-2 text-sm text-ink">
             <input
               type="checkbox"
+              checked={form.enable_auto_cashout ?? false}
+              onChange={(e) => setField('enable_auto_cashout', e.target.checked)}
+              className="h-4 w-4 rounded border-border bg-control text-accent"
+            />
+            Automated cashouts
+          </label>
+          <p className="ml-6 text-xs text-ink-muted">
+            When enabled, player /cashout runs end-to-end: claim chips, ask for a payout
+            handle, and record to the hub automatically. Any invalid input or failed claim
+            posts "an agent will be with you shortly" and escalates. Requires the deposit API
+            and Auto claim on /cash. Off by default.
+          </p>
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
               checked={form.is_active ?? true}
               onChange={(e) => setField('is_active', e.target.checked)}
               className="h-4 w-4 rounded border-border bg-control text-accent"
