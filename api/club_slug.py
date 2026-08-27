@@ -24,14 +24,6 @@ ALL_GG_COMPUTER_CLUB_SLUGS: tuple[str, ...] = (
     "creator-club",
 )
 
-# Audit reconcile picker (dashboard Audit page)
-RECONCILE_CLUB_OPTIONS: tuple[str, ...] = (
-    "all-clubs",
-    "round-table",
-    "clubgto",
-    "creator-club",
-)
-
 ALL_CLUBS_RECONCILE_UNITS: tuple[str, ...] = (
     "round-table",
     "clubgto",
@@ -58,31 +50,6 @@ CLUB_LABEL_TO_SLUG: dict[str, str] = {
 
 def is_round_table_composite(reconcile_slug: str) -> bool:
     return reconcile_slug.strip().lower() == "round-table"
-
-
-def is_all_clubs_reconcile(reconcile_slug: str) -> bool:
-    return reconcile_slug.strip().lower() == "all-clubs"
-
-
-def trade_slugs_for_reconcile(reconcile_slug: str) -> tuple[str, ...]:
-    key = reconcile_slug.strip().lower()
-    if key == "all-clubs":
-        return ALL_CLUBS_TRADE_SLUGS
-    if key == "round-table":
-        return ROUND_TABLE_TRADE_SLUGS
-    if key in RECONCILE_CLUB_OPTIONS:
-        return (key,)
-    raise HTTPException(400, f"Unknown reconcile club slug: {reconcile_slug!r}")
-
-
-def reconcile_units_for_slug(reconcile_slug: str) -> tuple[str, ...]:
-    """Club units to run net reconcile for (not trade upload slots)."""
-    key = reconcile_slug.strip().lower()
-    if key == "all-clubs":
-        return ALL_CLUBS_RECONCILE_UNITS
-    if key in ("round-table", "clubgto", "creator-club"):
-        return (key,)
-    raise HTTPException(400, f"Unknown reconcile club slug: {reconcile_slug!r}")
 
 
 def slug_for_club_name(name: str) -> str | None:

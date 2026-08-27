@@ -35,16 +35,20 @@ PROCESSED_HEADERS = [
     "Player ID",
     "Player Username",
     "Category",
+    "Source date",
 ]
 
-ZELLE_VENMO_HEADERS = ["Time", "Name", "Amount", "Variant"]
-CRYPTO_HEADERS = ["Time", "From", "USD", "Token"]
-BONUSES_HEADERS = ["Time", "Player", "Amount"]
+ZELLE_VENMO_HEADERS = ["Time", "Name", "Amount", "Variant", "Source date"]
+CRYPTO_HEADERS = ["Time", "From", "USD", "Token", "Source date"]
+BONUSES_HEADERS = ["Time", "Player", "Amount", "Source date"]
+
+MISSING_DATA = "Missing data"
 
 _HEADER_FILL = PatternFill("solid", fgColor="38761D")
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _CURRENCY_FORMAT = '$#,##0.00;[Red]-$#,##0.00'
 _PROCESSED_TABLE = "ProcessedData"
+_PROCESSED_COL_COUNT = len(PROCESSED_HEADERS)
 
 class GtoWeeklyAuditError(ValueError):
     """User-facing validation / parse error for GTO weekly audit export."""
@@ -62,6 +66,16 @@ class MatchingRow:
     match_time: datetime | None
     match_amount: Decimal | float | int | None
     variant: str
+    audit_date: date
+
+
+def _display_cell(value: object) -> object:
+    """Blank → Missing data; keep datetimes/numbers/non-empty strings."""
+    if value is None:
+        return MISSING_DATA
+    if isinstance(value, str) and not value.strip():
+        return MISSING_DATA
+    return value
 
 
 def expected_week_dates(monday: date) -> list[date]:
@@ -214,8 +228,18 @@ def _row_is_empty(ws: Worksheet, row: int, cols: list[int]) -> bool:
     return True
 
 
-def parse_clubgto_rows(workbook: Workbook, *, filename: str = "") -> list[MatchingRow]:
+def parse_clubgto_rows(
+    workbook: Workbook,
+    *,
+    filename: str = "",
+    audit_date: date | None = None,
+) -> list[MatchingRow]:
     label = Path(filename).name if filename else "workbook"
+    day = audit_date
+    if day is None:
+        if not filename:
+            raise GtoWeeklyAuditError("audit_date is required when filename is empty.")
+        day = date_from_filename(filename)
     if CLUBGTO_SHEET not in workbook.sheetnames:
         raise GtoWeeklyAuditError(
             f"{label}: missing sheet {CLUBGTO_SHEET!r}."
@@ -247,6 +271,7 @@ def parse_clubgto_rows(workbook: Workbook, *, filename: str = "") -> list[Matchi
                 match_time=_cell_datetime(ws.cell(row_idx, headers["Match Time"]).value),
                 match_amount=_cell_number(ws.cell(row_idx, headers["$"]).value),
                 variant=_cell_str(ws.cell(row_idx, headers["Variant"]).value),
+                audit_date=day,
             )
         )
 
@@ -278,10 +303,12 @@ def _clear_sheet_body(ws: Worksheet) -> None:
 
 
 def _resize_processed_table(ws: Worksheet, last_row: int) -> None:
+    end_col = get_column_letter(_PROCESSED_COL_COUNT)
+    ref = f"A1:{end_col}{max(last_row, 2)}"
     if _PROCESSED_TABLE not in ws.tables:
         tab = Table(
             displayName=_PROCESSED_TABLE,
-            ref=f"A1:F{max(last_row, 2)}",
+            ref=ref,
         )
         tab.tableStyleInfo = TableStyleInfo(
             name="TableStyleLight1",
@@ -292,7 +319,7 @@ def _resize_processed_table(ws: Worksheet, last_row: int) -> None:
         )
         ws.add_table(tab)
         return
-    ws.tables[_PROCESSED_TABLE].ref = f"A1:F{max(last_row, 2)}"
+    ws.tables[_PROCESSED_TABLE].ref = ref
 
 
 def _write_processed(ws: Worksheet, rows: list[MatchingRow]) -> None:
@@ -304,39 +331,59 @@ def _write_processed(ws: Worksheet, rows: list[MatchingRow]) -> None:
         cell.fill = _HEADER_FILL
         cell.font = _HEADER_FONT
 
+    # Pivot sits to the right of the data table (col H+)
     if ws["H1"].value is None:
         ws["H1"] = "Pivot Table"
         ws["H1"].font = Font(bold=True)
 
     for offset, row in enumerate(rows):
         r = offset + 2
-        ws.cell(r, 1, row.trade_time)
-        ws.cell(r, 2, row.manager or None)
-        amount_cell = ws.cell(r, 3, float(row.amount) if row.amount is not None else None)
-        if row.amount is not None:
-            amount_cell.number_format = _CURRENCY_FORMAT
-        ws.cell(r, 4, row.player_id or None)
-        ws.cell(r, 5, row.nickname or None)
-        ws.cell(r, 6, row.source or None)
+        values = [
+            _display_cell(row.trade_time),
+            _display_cell(row.manager),
+            _display_cell(_as_float(row.amount) if row.amount is not None else None),
+            _display_cell(row.player_id),
+            _display_cell(row.nickname),
+            _display_cell(row.source),
+            row.audit_date.isoformat(),
+        ]
+        for col, value in enumerate(values, start=1):
+            cell = ws.cell(r, col, value)
+            if col == 3 and isinstance(value, (int, float)):
+                cell.number_format = _CURRENCY_FORMAT
 
     last_row = 1 + len(rows) if rows else 2
     if not rows:
-        # Keep one blank body row for table validity
-        for col in range(1, 7):
-            ws.cell(2, col, None)
+        for col in range(1, _PROCESSED_COL_COUNT + 1):
+            ws.cell(2, col, MISSING_DATA if col < _PROCESSED_COL_COUNT else None)
         last_row = 2
     _resize_processed_table(ws, last_row)
 
-    for col in range(1, 7):
+    for col in range(1, _PROCESSED_COL_COUNT + 1):
         ws.column_dimensions[get_column_letter(col)].width = 16
     ws.column_dimensions["A"].width = 20
     ws.column_dimensions["F"].width = 18
+    ws.column_dimensions["G"].width = 14
 
 
 def _as_float(value: Decimal | float | int | None) -> float | None:
     if value is None:
         return None
     return float(value)
+
+
+def _rail_time(row: MatchingRow) -> datetime | None:
+    """Match Time, else Trade Time."""
+    return row.match_time if row.match_time is not None else row.trade_time
+
+
+def _rail_amount(row: MatchingRow) -> float | None:
+    """Match $, else abs(trade Amount) — rails show unsigned payment size."""
+    if row.match_amount is not None:
+        return _as_float(row.match_amount)
+    if row.amount is None:
+        return None
+    return abs(float(row.amount))
 
 
 def _write_rail_sheet(
@@ -356,7 +403,6 @@ def _write_rail_sheet(
                 cell.number_format = _CURRENCY_FORMAT
 
     total_row = 2 + len(rows)
-    # Total under amount column
     total = 0.0
     has_any = False
     for values in rows:
@@ -378,8 +424,27 @@ def _rail_rows(
     bucket: RailBucket,
 ) -> list[MatchingRow]:
     matched = [r for r in rows if rail_bucket(r.source) == bucket]
-    matched.sort(key=lambda r: _sort_key_time(r.match_time))
+    matched.sort(key=lambda r: _sort_key_time(_rail_time(r)))
     return matched
+
+
+def _rail_tuple_four(row: MatchingRow) -> tuple[object, ...]:
+    return (
+        _display_cell(_rail_time(row)),
+        _display_cell(row.name),
+        _display_cell(_rail_amount(row)),
+        _display_cell(row.variant),
+        row.audit_date.isoformat(),
+    )
+
+
+def _rail_tuple_bonus(row: MatchingRow) -> tuple[object, ...]:
+    return (
+        _display_cell(_rail_time(row)),
+        _display_cell(row.name),
+        _display_cell(_rail_amount(row)),
+        row.audit_date.isoformat(),
+    )
 
 
 def build_gto_weekly_audit_workbook(
@@ -424,10 +489,7 @@ def build_gto_weekly_audit_workbook(
     _write_rail_sheet(
         out_wb["Zelle"],
         headers=ZELLE_VENMO_HEADERS,
-        rows=[
-            (r.match_time, r.name or None, _as_float(r.match_amount), r.variant or None)
-            for r in zelle
-        ],
+        rows=[_rail_tuple_four(r) for r in zelle],
         amount_col=3,
     )
 
@@ -435,10 +497,7 @@ def build_gto_weekly_audit_workbook(
     _write_rail_sheet(
         out_wb["Venmo"],
         headers=ZELLE_VENMO_HEADERS,
-        rows=[
-            (r.match_time, r.name or None, _as_float(r.match_amount), r.variant or None)
-            for r in venmo
-        ],
+        rows=[_rail_tuple_four(r) for r in venmo],
         amount_col=3,
     )
 
@@ -446,10 +505,7 @@ def build_gto_weekly_audit_workbook(
     _write_rail_sheet(
         out_wb["Crypto"],
         headers=CRYPTO_HEADERS,
-        rows=[
-            (r.match_time, r.name or None, _as_float(r.match_amount), r.variant or None)
-            for r in crypto
-        ],
+        rows=[_rail_tuple_four(r) for r in crypto],
         amount_col=3,
     )
 
@@ -457,10 +513,7 @@ def build_gto_weekly_audit_workbook(
     _write_rail_sheet(
         out_wb["Bonuses"],
         headers=BONUSES_HEADERS,
-        rows=[
-            (r.match_time, r.name or None, _as_float(r.match_amount))
-            for r in bonuses
-        ],
+        rows=[_rail_tuple_bonus(r) for r in bonuses],
         amount_col=3,
     )
 

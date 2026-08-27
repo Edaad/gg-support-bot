@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Callable
+from typing import Callable, Iterator
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -30,10 +30,12 @@ from api.payments_helpers import (
 )
 from bot.services.payment_method_binding import canonicalize_zelle_recipient
 from bot.services.player_details import parse_group_title_parts
+from bot.services.union_method_types import union_type_from_display_name
 from bot.services.staff_cashout_records import _gg_player_id_from_title
 from db.models import (
     BonusRecord,
     CashAppPayment,
+    ClubPaymentMethod,
     CryptoPayment,
     EarlyRakebackLine,
     EarlyRakebackSnapshot,
@@ -45,6 +47,16 @@ from db.models import (
     StripeCustomer,
     VenmoPayment,
     ZellePayment,
+)
+
+UNION_DEPOSIT_SOURCE_LABELS: dict[str, str] = {
+    "zelle": "Union Zelle",
+    "cashapp": "Union Cash App",
+    "applepay": "Union Apple Pay",
+}
+
+UNION_MATCHING_SOURCE_OPTIONS: tuple[str, ...] = tuple(
+    UNION_DEPOSIT_SOURCE_LABELS.values()
 )
 
 # Built-in deposit_* plus dynamic deposit_{slug} from manual trade requests.
@@ -516,6 +528,61 @@ def fetch_deposit_events(
     return events
 
 
+def union_deposit_source_for_type(type_slug: str) -> str:
+    key = (type_slug or "").strip().lower()
+    return f"deposit_union_{key}"
+
+
+def union_deposit_source_label(method_name: str) -> str | None:
+    type_slug = union_type_from_display_name(method_name)
+    if not type_slug:
+        return None
+    return UNION_DEPOSIT_SOURCE_LABELS.get(type_slug)
+
+
+def _union_method_tag(row: ManualDepositRequest) -> str:
+    return (row.method_slug or row.variant_name or "").strip()
+
+
+def _resolve_union_group_title(
+    session: Session,
+    row: ManualDepositRequest,
+) -> tuple[str | None, str | None]:
+    title, gg_id = resolve_group_title(
+        session,
+        int(row.telegram_chat_id),
+        fallback_gg_player_id=None,
+    )
+    group_title = (row.group_title or title or "").strip() or None
+    return group_title, (gg_id or "").strip() or None
+
+
+def _iter_checked_union_deposit_requests(
+    session: Session,
+    *,
+    from_dt: datetime,
+    to_dt: datetime,
+) -> Iterator[ManualDepositRequest]:
+    """Checked union manual deposit rows in [from_dt, to_dt)."""
+    query = (
+        session.query(ManualDepositRequest)
+        .join(
+            ClubPaymentMethod,
+            ManualDepositRequest.method_id == ClubPaymentMethod.id,
+        )
+        .filter(ManualDepositRequest.trade_record_checked.is_(True))
+        .filter(ClubPaymentMethod.tracks_manual_requests.is_(True))
+        .filter(ManualDepositRequest.created_at >= from_dt)
+        .filter(ManualDepositRequest.created_at < to_dt)
+    )
+    query = apply_analytics_payment_exclusion(
+        session, query, ManualDepositRequest.telegram_chat_id
+    )
+    yield from query.order_by(
+        ManualDepositRequest.created_at.desc(), ManualDepositRequest.id.desc()
+    ).all()
+
+
 def _fetch_manual_trade_request_events(
     session: Session,
     *,
@@ -524,21 +591,11 @@ def _fetch_manual_trade_request_events(
     from_dt: datetime,
     to_dt: datetime,
 ) -> list[LedgerEvent]:
-    """Checked manual trade-request rows → deposit_{slug} ledger events."""
-    query = (
-        session.query(ManualDepositRequest)
-        .filter(ManualDepositRequest.trade_record_checked.is_(True))
-        .filter(ManualDepositRequest.created_at >= from_dt)
-        .filter(ManualDepositRequest.created_at < to_dt)
-    )
-    query = apply_analytics_payment_exclusion(
-        session, query, ManualDepositRequest.telegram_chat_id
-    )
-    rows = query.order_by(
-        ManualDepositRequest.created_at.desc(), ManualDepositRequest.id.desc()
-    ).all()
+    """Checked union deposit rows → deposit_union_{type} ledger events."""
     out: list[LedgerEvent] = []
-    for row in rows:
+    for row in _iter_checked_union_deposit_requests(
+        session, from_dt=from_dt, to_dt=to_dt
+    ):
         if not payment_in_audit_day_for_club(
             session,
             club_slug=club_slug,
@@ -548,26 +605,24 @@ def _fetch_manual_trade_request_events(
             data={"group_title": row.group_title},
         ):
             continue
-        title, gg_id = resolve_group_title(
-            session,
-            int(row.telegram_chat_id),
-            fallback_gg_player_id=None,
-        )
-        group_title = (row.group_title or title or "").strip() or None
-        slug = (row.method_slug or "").strip().lower() or "manual"
-        source = f"deposit_{slug}"
+        source_label = union_deposit_source_label(row.method_name)
+        type_slug = union_type_from_display_name(row.method_name or "")
+        if not source_label or not type_slug:
+            continue
+        group_title, gg_id = _resolve_union_group_title(session, row)
+        method_tag = _union_method_tag(row)
         out.append(
             LedgerEvent(
-                source=source,
-                gg_player_id=(gg_id or "").strip() or None,
+                source=union_deposit_source_for_type(type_slug),
+                gg_player_id=gg_id,
                 amount_usd=Decimal(str(row.amount)),
                 occurred_at_utc=row.created_at,
                 external_id=f"manual_deposit_request:{row.id}",
                 detail=group_title,
-                display_name=None,
-                variant=(row.variant_name or "").strip() or None,
+                display_name=group_title,
+                variant=method_tag or None,
                 club_slug=club_slug,
-                source_label=(row.method_name or "").strip() or slug,
+                source_label=source_label,
             )
         )
     return out

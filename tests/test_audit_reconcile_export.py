@@ -12,11 +12,8 @@ from openpyxl import load_workbook
 from api.audit_ledger import LedgerBreakdown, LedgerLine
 from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport, TradeLineForMatch
 from api.audit_reconcile_export import (
-    DETAIL_HEADERS,
     MATCHING_HEADERS,
     MATCHING_WIDTHS,
-    OVERVIEW_HEADERS,
-    SHEET_INTRO_DATA_START_ROW,
     UNRESOLVED_HEADERS,
     _CURRENCY_FORMAT,
     _EXCEL_TIME_FORMAT,
@@ -26,7 +23,6 @@ from api.audit_reconcile_export import (
     _MATCHING_ROW_HEIGHT,
     _MATCHING_SOURCE_FILL_HEX,
     build_all_clubs_matching_workbook,
-    build_reconcile_workbook_from_report,
 )
 
 
@@ -66,124 +62,22 @@ def _empty_report(*, club_slug: str, club_name: str) -> AuditReconcileReport:
     )
 
 
+def _all_clubs_reports(
+    *,
+    round_table: AuditReconcileReport | None = None,
+    clubgto: AuditReconcileReport | None = None,
+    creator_club: AuditReconcileReport | None = None,
+) -> dict[str, AuditReconcileReport]:
+    return {
+        "round-table": round_table
+        or _empty_report(club_slug="round-table", club_name="Round Table"),
+        "clubgto": clubgto or _empty_report(club_slug="clubgto", club_name="ClubGTO"),
+        "creator-club": creator_club
+        or _empty_report(club_slug="creator-club", club_name="Creator Club"),
+    }
+
+
 class ReconcileExportTestCase(unittest.TestCase):
-    def test_workbook_layout_and_intros(self):
-        occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
-        report = AuditReconcileReport(
-            audit_date=date(2026, 7, 3),
-            club_slug="aces-table",
-            club_name="Aces Table",
-            status="fail",
-            players=[
-                _player(
-                    gg_player_id="3011-9668",
-                    nickname="AcePlayer",
-                    net_trade="100",
-                    net_ledger="100",
-                    delta="0",
-                    status="match",
-                ),
-                _player(
-                    gg_player_id="3011-9999",
-                    nickname="BadPlayer",
-                    net_trade="50",
-                    net_ledger="40",
-                    delta="10",
-                    status="mismatch",
-                ),
-            ],
-            ledger_lines=[
-                LedgerLine(
-                    gg_player_id="3011-9668",
-                    member_nickname="AcePlayer",
-                    source="deposit_stripe",
-                    source_label="Stripe",
-                    amount_signed=Decimal("-100"),
-                    occurred_at_utc=occurred,
-                    external_id="deposit_stripe:1",
-                    detail=None,
-                ),
-                LedgerLine(
-                    gg_player_id="3011-9668",
-                    member_nickname="AcePlayer",
-                    source="cashout",
-                    source_label="Cashout Venmo",
-                    amount_signed=Decimal("40"),
-                    occurred_at_utc=occurred,
-                    external_id="cashout:1",
-                    detail=None,
-                ),
-                LedgerLine(
-                    gg_player_id=None,
-                    member_nickname=None,
-                    source="deposit_zelle",
-                    source_label="Zelle",
-                    amount_signed=Decimal("-25"),
-                    occurred_at_utc=occurred,
-                    external_id="deposit_zelle:2",
-                    detail="Unknown group",
-                ),
-            ],
-        )
-
-        wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
-        self.assertEqual(
-            wb.sheetnames,
-            ["Overview", "Details", "Net Ledger", "Deposits", "Matching", "Unresolved"],
-        )
-
-        overview = wb["Overview"]
-        self.assertEqual(overview["A1"].value, "Overview")
-        self.assertTrue(overview["A2"].value)
-        self.assertTrue(overview["A3"].value)
-        self.assertIn("Columns:", overview["A4"].value or "")
-        self.assertIn("Net Trade Record", overview["A4"].value or "")
-        self.assertIn("internal ledger", (overview["A2"].value or "").lower())
-        self.assertIn("deposits", (overview["A2"].value or "").lower())
-        section_row = SHEET_INTRO_DATA_START_ROW
-        self.assertEqual(overview.cell(row=section_row, column=1).value, "Matched")
-        self.assertEqual(overview.cell(row=section_row, column=6).value, "Mismatched")
-        header_row = section_row + 1
-        self.assertEqual(
-            [overview.cell(row=header_row, column=c).value for c in range(1, 5)],
-            OVERVIEW_HEADERS,
-        )
-        self.assertEqual(
-            [overview.cell(row=header_row, column=c).value for c in range(6, 10)],
-            OVERVIEW_HEADERS,
-        )
-        data_row = header_row + 1
-        self.assertEqual(overview.cell(row=data_row, column=1).value, "AcePlayer")
-        self.assertEqual(overview.cell(row=data_row, column=2).value, "3011-9668")
-        self.assertEqual(overview.cell(row=data_row, column=6).value, "BadPlayer")
-        self.assertEqual(overview.cell(row=data_row, column=7).value, "3011-9999")
-
-        details = wb["Details"]
-        self.assertEqual(details["A1"].value, "Details")
-        self.assertIn("Discrepancy", details["A4"].value or "")
-        self.assertEqual(
-            details.cell(row=SHEET_INTRO_DATA_START_ROW, column=1).value,
-            "Mismatched",
-        )
-        self.assertEqual(
-            [
-                details.cell(row=SHEET_INTRO_DATA_START_ROW + 1, column=c).value
-                for c in range(1, 11)
-            ],
-            DETAIL_HEADERS,
-        )
-
-        matching = wb["Matching"]
-        self.assertEqual(
-            [matching.cell(row=1, column=c).value for c in range(1, 11)],
-            MATCHING_HEADERS,
-        )
-        self.assertIsNone(matching.cell(row=2, column=1).value)
-        self.assertNotEqual(matching.cell(row=1, column=1).value, "Matching")
-
-        net_ledger = wb["Net Ledger"]
-        self.assertEqual(net_ledger.cell(row=SHEET_INTRO_DATA_START_ROW + 1, column=3).value, "Cashout Venmo")
-
     def test_matching_flat_headers_manager_and_time_format(self):
         occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
         report = AuditReconcileReport(
@@ -201,6 +95,7 @@ class ReconcileExportTestCase(unittest.TestCase):
                     member_nickname="P1",
                     sheet_row=1,
                     manager_nickname="TrafficLight7",
+                    trade_club_slug="clubgto",
                 ),
             ],
             ledger_lines=[
@@ -227,8 +122,12 @@ class ReconcileExportTestCase(unittest.TestCase):
                 ),
             ],
         )
-        wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
-        matching = wb["Matching"]
+        wb = load_workbook(
+            io.BytesIO(
+                build_all_clubs_matching_workbook(_all_clubs_reports(clubgto=report))
+            )
+        )
+        matching = wb["ClubGTO"]
         self.assertEqual(matching.cell(row=1, column=1).value, "Trade Time")
         self.assertEqual(matching.cell(row=1, column=2).value, "Manager")
         self.assertEqual(matching.cell(row=2, column=2).value, "TrafficLight7")
@@ -307,7 +206,7 @@ class ReconcileExportTestCase(unittest.TestCase):
         )
         self.assertIn("F2:F2", source_dv.sqref)
         self.assertFalse((source_dv.formula1 or "").startswith("="))
-        self.assertIn("Matching", source_dv.formula1)
+        self.assertIn("ClubGTO", source_dv.formula1)
         self.assertIn("$AD$1:", source_dv.formula1)
         self.assertNotIn("Source lists", wb.sheetnames)
         variant_dv = next(dv for dv in validations if "INDIRECT" in (dv.formula1 or ""))
@@ -318,6 +217,7 @@ class ReconcileExportTestCase(unittest.TestCase):
             matching.cell(row=r, column=30).value for r in range(1, 50)
         ]
         self.assertEqual(source_list[0], "GTO Stripe")
+        self.assertIn("Union Zelle", source_list)
         self.assertIn("Chip Transfer (Player)", source_list)
         self.assertNotIn("Chip Transfer (RT↔AT)", source_list)
         self.assertNotIn("Chip Transfer (AT↔CC)", source_list)
@@ -365,6 +265,7 @@ class ReconcileExportTestCase(unittest.TestCase):
                     member_nickname="P1",
                     sheet_row=1,
                     manager_nickname="Mgr",
+                    trade_club_slug="clubgto",
                 ),
             ],
             ledger_lines=[
@@ -405,7 +306,11 @@ class ReconcileExportTestCase(unittest.TestCase):
                 ),
             ],
         )
-        wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
+        wb = load_workbook(
+            io.BytesIO(
+                build_all_clubs_matching_workbook(_all_clubs_reports(clubgto=report))
+            )
+        )
         unresolved = wb["Unresolved"]
         self.assertEqual(
             [unresolved.cell(row=1, column=c).value for c in range(1, 8)],
@@ -435,7 +340,7 @@ class ReconcileExportTestCase(unittest.TestCase):
             or str(unresolved.cell(row=2, column=7).value).endswith("PM")
         )
         self.assertIsNone(unresolved.cell(row=4, column=1).value)
-        self.assertIn("Unresolved_clubgto", unresolved.tables)
+        self.assertIn("Unresolved_all", unresolved.tables)
 
     def test_cashout_method_label_matching_and_unresolved(self):
         occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
@@ -454,6 +359,7 @@ class ReconcileExportTestCase(unittest.TestCase):
                     member_nickname="P1",
                     sheet_row=1,
                     manager_nickname="Mgr",
+                    trade_club_slug="clubgto",
                 ),
             ],
             ledger_lines=[
@@ -478,19 +384,16 @@ class ReconcileExportTestCase(unittest.TestCase):
                 ),
             ],
         )
-        wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
-        matching = wb["Matching"]
+        wb = load_workbook(
+            io.BytesIO(
+                build_all_clubs_matching_workbook(_all_clubs_reports(clubgto=report))
+            )
+        )
+        matching = wb["ClubGTO"]
         self.assertEqual(matching.cell(row=2, column=6).value, "Cashout Venmo")
         self.assertIsNone(matching.cell(row=2, column=10).value)
         unresolved = wb["Unresolved"]
         self.assertEqual(unresolved.cell(row=2, column=1).value, "Cashout Zelle")
-        net_ledger = wb["Net Ledger"]
-        labels = [
-            net_ledger.cell(row=row, column=3).value
-            for row in range(SHEET_INTRO_DATA_START_ROW + 1, SHEET_INTRO_DATA_START_ROW + 4)
-        ]
-        self.assertIn("Cashout Venmo", labels)
-        self.assertIn("Cashout Zelle", labels)
 
     def test_matching_vaughn_tally_only_clubgto(self):
         report = _empty_report(club_slug="round-table", club_name="Round Table")
@@ -506,8 +409,12 @@ class ReconcileExportTestCase(unittest.TestCase):
                 variant="2133729202",
             ),
         ]
-        wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
-        matching = wb["Matching"]
+        wb = load_workbook(
+            io.BytesIO(
+                build_all_clubs_matching_workbook(_all_clubs_reports(round_table=report))
+            )
+        )
+        matching = wb["Round Table"]
         self.assertIsNone(matching.cell(row=1, column=12).value)
         self.assertEqual(matching.auto_filter.ref, "A1:J1")
         self.assertEqual(list(matching.tables), [])
@@ -719,8 +626,12 @@ class ReconcileExportTestCase(unittest.TestCase):
                 ),
             ],
         )
-        wb = load_workbook(io.BytesIO(build_reconcile_workbook_from_report(report)))
-        matching = wb["Matching"]
+        wb = load_workbook(
+            io.BytesIO(
+                build_all_clubs_matching_workbook(_all_clubs_reports(creator_club=report))
+            )
+        )
+        matching = wb["Creator Club"]
         self.assertEqual(matching.cell(row=2, column=6).value, "Chip Transfer (Player)")
         self.assertEqual(matching.cell(row=2, column=7).value, "Bob")
         self.assertEqual(matching.cell(row=2, column=9).value, 40.0)

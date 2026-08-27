@@ -1,34 +1,24 @@
-"""Tests for all-clubs reconcile slug helpers."""
+"""Tests for all-clubs audit slug constants."""
 
 from __future__ import annotations
 
 import unittest
 
-from fastapi import HTTPException
-
-from api.club_slug import (
-    ALL_CLUBS_TRADE_SLUGS,
-    reconcile_units_for_slug,
-    trade_slugs_for_reconcile,
-)
+from api.club_slug import ALL_CLUBS_RECONCILE_UNITS, ALL_CLUBS_TRADE_SLUGS
 
 
 class AllClubsSlugTestCase(unittest.TestCase):
     def test_trade_slugs_all_four(self):
         self.assertEqual(
-            trade_slugs_for_reconcile("all-clubs"),
             ALL_CLUBS_TRADE_SLUGS,
+            ("round-table", "aces-table", "clubgto", "creator-club"),
         )
 
     def test_reconcile_units_three(self):
         self.assertEqual(
-            reconcile_units_for_slug("all-clubs"),
+            ALL_CLUBS_RECONCILE_UNITS,
             ("round-table", "clubgto", "creator-club"),
         )
-
-    def test_unknown_raises(self):
-        with self.assertRaises(HTTPException):
-            trade_slugs_for_reconcile("nope")
 
 
 if __name__ == "__main__":

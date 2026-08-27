@@ -6,8 +6,6 @@ import { processWeekSync } from './weeklyStats'
 import {
   ALL_CLUBS_RECONCILE_UNITS,
   ALL_CLUBS_TRADE_SLUGS,
-  reconcileUnitsForSlug,
-  tradeSlugsForReconcile,
 } from '../config/clubMap'
 
 export type TradeRecordUploadReport = {
@@ -167,21 +165,13 @@ export type AuditPipelineStep =
   | 'failed'
 
 export type AuditPipelineResult = {
-  reconcileClubSlug: string
   uploads: TradeRecordUploadReport[]
   upload: TradeRecordUploadReport
   weekSyncError: string | null
   earlyRb: EarlyRakebackSyncReport | null
   earlyRbError: string | null
-  reconcile: AuditReconcileReport | null
   reconcileError: string | null
-  /** Populated when reconcileClubSlug is all-clubs (one report per unit). */
   allClubReports: AuditReconcileReport[] | null
-}
-
-export type UploadTradeRecordParams = {
-  reconcileClubSlug: string
-  expectedTradeSlug: string
 }
 
 async function parseError(res: Response): Promise<string> {
@@ -198,36 +188,6 @@ async function parseError(res: Response): Promise<string> {
       .join('; ')
   }
   return `Request failed (${res.status})`
-}
-
-export async function uploadTradeRecord(
-  token: string,
-  file: File,
-  params: UploadTradeRecordParams,
-): Promise<TradeRecordUploadReport> {
-  const form = new FormData()
-  form.append('file', file)
-
-  const q = new URLSearchParams({
-    reconcile_club_slug: params.reconcileClubSlug,
-    expected_trade_slug: params.expectedTradeSlug,
-  })
-
-  const res = await fetch(apiUrl(`/api/audit/trade-records/upload?${q}`), {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: form,
-  })
-
-  if (res.status === 401) {
-    clearAuthSession()
-    window.location.href = '/'
-    throw new Error('Unauthorized')
-  }
-  if (!res.ok) {
-    throw new Error(await parseError(res))
-  }
-  return res.json() as Promise<TradeRecordUploadReport>
 }
 
 export async function uploadAllTradeRecords(
@@ -416,42 +376,6 @@ export async function listReconcileRuns(
   return res.json() as Promise<AuditReconcileRunSummary[]>
 }
 
-export async function downloadReconcileExport(
-  token: string,
-  auditDate: string,
-  clubSlug: string,
-): Promise<void> {
-  const q = new URLSearchParams({
-    audit_date: auditDate,
-    club_slug: clubSlug,
-  })
-
-  const res = await fetch(apiUrl(`/api/audit/reconcile/export?${q}`), {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-
-  if (res.status === 401) {
-    clearAuthSession()
-    window.location.href = '/'
-    throw new Error('Unauthorized')
-  }
-  if (!res.ok) {
-    throw new Error(await parseError(res))
-  }
-
-  const blob = await res.blob()
-  const filename = filenameFromContentDisposition(
-    res.headers.get('Content-Disposition'),
-    `reconcile-${clubSlug}-${auditDate}.xlsx`,
-  )
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
 export async function downloadReconcileExportAll(
   token: string,
   auditDate: string,
@@ -589,17 +513,9 @@ async function syncEarlyRakebackForSlugDates(
  * Needed so Monday settlement can load `weekly_profits` during net reconcile.
  * Nickname backfill is best-effort (same as Weekly Stats).
  */
-async function syncProcessWeekForReconcile(
-  token: string,
-  reconcileClubSlug: string,
-): Promise<string | null> {
-  const slugs =
-    reconcileClubSlug === 'all-clubs'
-      ? ALL_CLUBS_TRADE_SLUGS
-      : tradeSlugsForReconcile(reconcileClubSlug)
-
+async function syncProcessWeekForReconcile(token: string): Promise<string | null> {
   const settled = await Promise.all(
-    slugs.map(async (slug) => {
+    ALL_CLUBS_TRADE_SLUGS.map(async (slug) => {
       try {
         await processWeekSync(slug)
         try {
@@ -620,7 +536,6 @@ async function syncProcessWeekForReconcile(
 
 export async function runReconcilePipeline(
   token: string,
-  reconcileClubSlug: string,
   uploads: TradeRecordUploadReport[],
   onStep?: (step: AuditPipelineStep) => void,
 ): Promise<AuditPipelineResult> {
@@ -629,121 +544,78 @@ export async function runReconcilePipeline(
   const earlyRbDates = earlyRbSyncDatesForReconcile(auditDate)
 
   onStep?.('syncingWeek')
-  const weekSyncError = await syncProcessWeekForReconcile(token, reconcileClubSlug)
+  const weekSyncError = await syncProcessWeekForReconcile(token)
 
   let earlyRb: EarlyRakebackSyncReport | null = null
   let earlyRbError: string | null = null
 
   onStep?.('syncingEarlyRb')
   try {
-    if (reconcileClubSlug === 'all-clubs') {
-      const reports = (
-        await Promise.all(
-          ALL_CLUBS_TRADE_SLUGS.map((slug) =>
-            syncEarlyRakebackForSlugDates(token, slug, earlyRbDates),
-          ),
-        )
-      ).flat()
-      earlyRb = mergeEarlyRbReports(auditDate, reports)
-    } else if (reconcileClubSlug === 'round-table') {
-      const reports = (
-        await Promise.all([
-          syncEarlyRakebackForSlugDates(token, 'round-table', earlyRbDates),
-          syncEarlyRakebackForSlugDates(token, 'aces-table', earlyRbDates),
-        ])
-      ).flat()
-      earlyRb = mergeEarlyRbReports(auditDate, reports)
-    } else {
-      const reports = await syncEarlyRakebackForSlugDates(
-        token,
-        reconcileClubSlug,
-        earlyRbDates,
+    const reports = (
+      await Promise.all(
+        ALL_CLUBS_TRADE_SLUGS.map((slug) =>
+          syncEarlyRakebackForSlugDates(token, slug, earlyRbDates),
+        ),
       )
-      earlyRb = mergeEarlyRbReports(auditDate, reports)
-    }
+    ).flat()
+    earlyRb = mergeEarlyRbReports(auditDate, reports)
   } catch (e: unknown) {
     earlyRbError = e instanceof Error ? e.message : 'Early rakeback sync failed.'
   }
 
-  let reconcile: AuditReconcileReport | null = null
   let reconcileError: string | null = null
   let allClubReports: AuditReconcileReport[] | null = null
 
   onStep?.('reconciling')
   try {
-    if (reconcileClubSlug === 'all-clubs') {
-      const units = reconcileUnitsForSlug('all-clubs')
-      const settled = await Promise.all(
-        units.map(async (unit) => {
-          try {
-            return {
-              report: await reconcileAudit(token, auditDate, unit),
-              error: null as string | null,
-            }
-          } catch (e: unknown) {
-            return {
-              report: null as AuditReconcileReport | null,
-              error: `${unit}: ${e instanceof Error ? e.message : 'Reconcile failed.'}`,
-            }
-          }
-        }),
-      )
-      const reports = settled
-        .map((s) => s.report)
-        .filter((r): r is AuditReconcileReport => r !== null)
-      const errors = settled
-        .map((s) => s.error)
-        .filter((e): e is string => e !== null)
-      allClubReports = reports
-      reconcile = reports[0] ?? null
-      if (errors.length > 0) {
-        reconcileError = errors.join('; ')
-      }
-      if (reports.length === ALL_CLUBS_RECONCILE_UNITS.length) {
+    const settled = await Promise.all(
+      ALL_CLUBS_RECONCILE_UNITS.map(async (unit) => {
         try {
-          await downloadReconcileExportAll(token, auditDate)
+          return {
+            report: await reconcileAudit(token, auditDate, unit),
+            error: null as string | null,
+          }
         } catch (e: unknown) {
-          const detail =
-            e instanceof Error ? e.message : 'All clubs Matching export failed.'
-          reconcileError = reconcileError
-            ? `${reconcileError}; ${detail}`
-            : detail
+          return {
+            report: null as AuditReconcileReport | null,
+            error: `${unit}: ${e instanceof Error ? e.message : 'Reconcile failed.'}`,
+          }
         }
+      }),
+    )
+    const reports = settled
+      .map((s) => s.report)
+      .filter((r): r is AuditReconcileReport => r !== null)
+    const errors = settled
+      .map((s) => s.error)
+      .filter((e): e is string => e !== null)
+    allClubReports = reports
+    if (errors.length > 0) {
+      reconcileError = errors.join('; ')
+    }
+    if (reports.length === ALL_CLUBS_RECONCILE_UNITS.length) {
+      try {
+        await downloadReconcileExportAll(token, auditDate)
+      } catch (e: unknown) {
+        const detail =
+          e instanceof Error ? e.message : 'All clubs Matching export failed.'
+        reconcileError = reconcileError ? `${reconcileError}; ${detail}` : detail
       }
-    } else {
-      reconcile = await reconcileAudit(token, auditDate, reconcileClubSlug)
     }
   } catch (e: unknown) {
     reconcileError = e instanceof Error ? e.message : 'Reconcile failed.'
   }
 
-  const failed =
-    reconcileError !== null &&
-    reconcile === null &&
-    (allClubReports === null || allClubReports.length === 0)
+  const failed = reconcileError !== null && (allClubReports === null || allClubReports.length === 0)
   onStep?.(failed ? 'failed' : 'done')
 
   return {
-    reconcileClubSlug,
     uploads,
     upload: primary,
     weekSyncError,
     earlyRb,
     earlyRbError,
-    reconcile,
     reconcileError,
     allClubReports,
   }
-}
-
-/** @deprecated Use upload + runReconcilePipeline separately from Audit page. */
-export async function runAuditPipeline(
-  token: string,
-  file: File,
-  params: UploadTradeRecordParams,
-  onStep?: (step: AuditPipelineStep) => void,
-): Promise<AuditPipelineResult> {
-  onStep?.('uploading')
-  const upload = await uploadTradeRecord(token, file, params)
-  return runReconcilePipeline(token, params.reconcileClubSlug, [upload], onStep)
 }

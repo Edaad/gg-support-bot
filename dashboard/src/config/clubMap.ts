@@ -11,16 +11,7 @@ export const CLUB_OPTIONS: ClubOption[] = [
   { slug: 'creator-club', label: 'Creator Club' },
 ]
 
-/** Audit reconcile club picker (Round Table = combined RT + AT uploads). */
-export const RECONCILE_CLUB_OPTIONS: ClubOption[] = [
-  { slug: 'all-clubs', label: 'All clubs' },
-  { slug: 'round-table', label: 'Round Table' },
-  { slug: 'clubgto', label: 'ClubGTO' },
-  { slug: 'creator-club', label: 'Creator Club' },
-]
-
-export const ROUND_TABLE_TRADE_SLUGS = ['round-table', 'aces-table'] as const
-
+/** Audit reconcile trade upload slots and reconcile units (all-clubs only). */
 export const ALL_CLUBS_TRADE_SLUGS = [
   'round-table',
   'aces-table',
@@ -33,17 +24,6 @@ export const ALL_CLUBS_RECONCILE_UNITS = [
   'clubgto',
   'creator-club',
 ] as const
-
-export function tradeSlugsForReconcile(reconcileSlug: string): readonly string[] {
-  if (reconcileSlug === 'all-clubs') return ALL_CLUBS_TRADE_SLUGS
-  if (reconcileSlug === 'round-table') return ROUND_TABLE_TRADE_SLUGS
-  return [reconcileSlug]
-}
-
-export function reconcileUnitsForSlug(reconcileSlug: string): readonly string[] {
-  if (reconcileSlug === 'all-clubs') return ALL_CLUBS_RECONCILE_UNITS
-  return [reconcileSlug]
-}
 
 export function displayLabelForSlug(slug: string): string {
   if (slug === 'all-clubs') return 'All clubs'

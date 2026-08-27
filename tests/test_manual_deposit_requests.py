@@ -432,13 +432,10 @@ class ManualTradeLedgerFetchTests(unittest.TestCase):
             trade_record_checked=True,
         )
         session = MagicMock()
-        q = MagicMock()
-        session.query.return_value = q
-        q.filter.return_value = q
-        q.order_by.return_value.all.return_value = [checked]
-
         with patch.object(
-            audit_ledger, "apply_analytics_payment_exclusion", side_effect=lambda s, qq, c: qq
+            audit_ledger,
+            "_iter_checked_union_deposit_requests",
+            return_value=[checked],
         ), patch.object(
             audit_ledger, "payment_in_audit_day_for_club", return_value=True
         ), patch.object(
@@ -454,8 +451,10 @@ class ManualTradeLedgerFetchTests(unittest.TestCase):
                 to_dt=datetime(2026, 8, 26, tzinfo=timezone.utc),
             )
         self.assertEqual(len(events), 1)
-        self.assertEqual(events[0].source, "deposit_zelle-union")
-        self.assertEqual(events[0].source_label, "Zelle")
+        self.assertEqual(events[0].source, "deposit_union_zelle")
+        self.assertEqual(events[0].source_label, "Union Zelle")
+        self.assertEqual(events[0].display_name, "GTO / 2222-2222 / jz")
+        self.assertEqual(events[0].variant, "zelle-union")
         self.assertEqual(events[0].gg_player_id, "2222-2222")
         self.assertEqual(events[0].amount_usd, Decimal("100"))
 
