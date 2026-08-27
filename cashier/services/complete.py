@@ -163,11 +163,15 @@ async def complete_cashout_job(job_id: int) -> tuple[bool, Optional[str]]:
     if not isinstance(amount, Decimal):
         amount = Decimal(str(amount))
 
+    # Automated player cashouts post their own "being processed" message in-group, so
+    # skip the MTProto ASAP line; still send + pin the "$X owed" message.
+    send_asap = job.get("trigger") != "auto_cashout"
     try:
         schedule_cash_flow_from_club(
             chat_id=chat_id,
             club_id=club_id,
             amount=amount,
+            send_asap=send_asap,
         )
         logger.info(
             "complete_cashout_job: owed flow scheduled job_id=%s chat_id=%s amount=%s",

@@ -90,14 +90,32 @@ def format_cash_owed(amount: Decimal) -> str:
     return f"{_format_money(amount)} owed"
 
 
-async def _execute_cash_flow(cfg: ClubGcConfig, chat_id: int, amount: Decimal) -> None:
-    """Pin owed amount and send ASAP (called after wizard completes)."""
+async def _execute_cash_flow(
+    cfg: ClubGcConfig,
+    chat_id: int,
+    amount: Decimal,
+    *,
+    send_asap: bool = True,
+) -> None:
+    """Pin owed amount and optionally send ASAP (called after wizard completes).
+
+    Reuse the live dm/gc listener client when it's connected (same process, e.g. the
+    automated player cashout) so we never open a second connection on the club's auth
+    key — that would trip AUTH_KEY_DUPLICATED and drop the listener. Only fall back to
+    a short-lived ``make_client`` when no listener is running (e.g. the cashier
+    process handling ``/cash``).
+    """
+    from bot.services.mtproto_dm_gc_listener import get_listener_client
+
     owed_text = format_cash_owed(amount)
     async with get_mtproto_lock(cfg.club_key):
-        client = make_client(cfg)
-        await client.connect()
+        live = get_listener_client(cfg.club_key)
+        client = live if live is not None else make_client(cfg)
+        owns_client = live is None
+        if owns_client:
+            await client.connect()
         try:
-            if not await is_client_authorized(cfg):
+            if owns_client and not await is_client_authorized(cfg):
                 logger.warning(
                     "group_cash: MTProto not authorized club=%s", cfg.club_key
                 )
@@ -112,9 +130,11 @@ async def _execute_cash_flow(cfg: ClubGcConfig, chat_id: int, amount: Decimal) -
                     chat_id,
                     type(e).__name__,
                 )
-            await client.send_message(chat_id, CASH_ASAP_MESSAGE)
+            if send_asap:
+                await client.send_message(chat_id, CASH_ASAP_MESSAGE)
         finally:
-            await client.disconnect()
+            if owns_client:
+                await client.disconnect()
 
 
 def schedule_cash_flow_from_club(
@@ -122,6 +142,7 @@ def schedule_cash_flow_from_club(
     chat_id: int,
     club_id: int,
     amount: Decimal,
+    send_asap: bool = True,
 ) -> None:
     """Run cash flow from the club MTProto user (not the bot)."""
     cfg = get_club_gc_config_by_link_club_id(int(club_id))
@@ -138,7 +159,7 @@ def schedule_cash_flow_from_club(
     from bot.services.mtproto_dm_gc_listener import _loop_holder
 
     mtproto_loop = _loop_holder.get("loop")
-    coro = _execute_cash_flow(cfg, chat_id, amount)
+    coro = _execute_cash_flow(cfg, chat_id, amount, send_asap=send_asap)
     if mtproto_loop and mtproto_loop.is_running():
         asyncio.run_coroutine_threadsafe(coro, mtproto_loop)
     else:
