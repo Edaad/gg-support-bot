@@ -1,80 +1,18 @@
-import { useId, useMemo, useState } from 'react'
+import { useState } from 'react'
 import {
-  downloadReconcileExport,
   downloadReconcileExportAll,
-  type AuditReconcilePlayerResult,
   type AuditReconcileReport,
-  type EarlyRakebackSyncReport,
-  type LedgerLine,
   type TradeRecordUploadReport,
 } from '../api/auditClient'
-import { ROUND_TABLE_TRADE_SLUGS, displayLabelForSlug } from '../config/clubMap'
-import KpiStat from './KpiStat'
-
-const MATCH_TOLERANCE_USD = 2
-
-type PlayerFilter = 'all' | 'match' | 'mismatch' | 'trade_only' | 'ledger_only'
-
-const DEPOSIT_METHOD_ORDER = [
-  'deposit_stripe',
-  'deposit_zelle',
-  'deposit_venmo',
-  'deposit_cashapp',
-  'deposit_paypal',
-  'deposit_crypto',
-] as const
-
-const DEPOSIT_METHOD_LABELS: Record<string, string> = {
-  deposit_stripe: 'Stripe',
-  deposit_zelle: 'Zelle',
-  deposit_venmo: 'Venmo',
-  deposit_cashapp: 'Cash App',
-  deposit_paypal: 'PayPal',
-  deposit_crypto: 'Crypto',
-}
-
-function fmtOccurredAt(value: string | null): string {
-  if (!value) return '—'
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleString()
-}
-
-function ledgerReference(line: LedgerLine): string {
-  const parts = [line.external_id, line.detail].filter(Boolean)
-  return parts.join(' — ') || '—'
-}
+import { displayLabelForSlug } from '../config/clubMap'
 
 type Props = {
   token: string
   uploads: TradeRecordUploadReport[]
-  reconcileClubSlug: string
   weekSyncError: string | null
-  earlyRb: EarlyRakebackSyncReport | null
   earlyRbError: string | null
-  reconcile: AuditReconcileReport | null
   reconcileError: string | null
-  allClubReports?: AuditReconcileReport[] | null
-}
-
-function fmtMoney(value: string | number): string {
-  const n = Number(value)
-  if (Number.isNaN(n)) return String(value)
-  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function absDelta(delta: string): number {
-  return Math.abs(Number(delta) || 0)
-}
-
-function playerSortKey(p: AuditReconcilePlayerResult): [number, number] {
-  const statusOrder: Record<string, number> = {
-    mismatch: 0,
-    trade_only: 1,
-    ledger_only: 2,
-    match: 3,
-  }
-  return [statusOrder[p.status] ?? 4, -absDelta(p.delta)]
+  allClubReports: AuditReconcileReport[] | null
 }
 
 function statusChipClass(status: string): string {
@@ -92,134 +30,27 @@ function statusChipClass(status: string): string {
   }
 }
 
-function deltaClass(delta: string, playerStatus: string): string {
-  if (playerStatus === 'match') return 'text-success-ink'
-  if (absDelta(delta) > MATCH_TOLERANCE_USD) return 'text-danger-ink'
-  return 'text-ink'
-}
-
-function bannerClass(status: string): string {
-  switch (status) {
-    case 'pass':
-      return 'alert-success'
-    case 'fail':
-      return 'alert-danger'
-    case 'blocked':
-      return 'alert-warning'
-    default:
-      return 'rounded-lg border border-border bg-surface-raised px-4 py-2 text-sm text-ink'
-  }
-}
-
 export default function AuditReconcilePanel({
   token,
   uploads,
-  reconcileClubSlug,
   weekSyncError,
-  earlyRb,
   earlyRbError,
-  reconcile,
   reconcileError,
-  allClubReports = null,
+  allClubReports,
 }: Props) {
-  const searchId = useId()
-  const unmatchedTradePanelId = useId()
-  const unmatchedLedgerPanelId = useId()
-  const netLedgerPanelId = useId()
-  const depositsPanelId = useId()
-
-  const [playerFilter, setPlayerFilter] = useState<PlayerFilter>('all')
-  const [playerSearch, setPlayerSearch] = useState('')
-  const [showUnmatchedTrade, setShowUnmatchedTrade] = useState(true)
-  const [showUnmatchedLedger, setShowUnmatchedLedger] = useState(true)
-  const [showNetLedger, setShowNetLedger] = useState(false)
-  const [showDeposits, setShowDeposits] = useState(false)
   const [exportingReconcile, setExportingReconcile] = useState(false)
   const [reconcileExportErr, setReconcileExportErr] = useState('')
 
-  const filteredPlayers = useMemo(() => {
-    if (!reconcile) return []
-    let rows = [...reconcile.players]
-    if (playerFilter !== 'all') {
-      rows = rows.filter((p) => p.status === playerFilter)
-    }
-    const q = playerSearch.trim().toLowerCase()
-    if (q) {
-      rows = rows.filter(
-        (p) =>
-          p.gg_player_id.toLowerCase().includes(q) ||
-          (p.member_nickname ?? '').toLowerCase().includes(q),
-      )
-    }
-    rows.sort((a, b) => {
-      const [a0, a1] = playerSortKey(a)
-      const [b0, b1] = playerSortKey(b)
-      if (a0 !== b0) return a0 - b0
-      return a1 - b1
-    })
-    return rows
-  }, [playerFilter, playerSearch, reconcile])
-
-  const ledgerLines = reconcile?.ledger_lines ?? []
-
-  const sortedLedgerLines = useMemo(() => {
-    return [...ledgerLines].sort((a, b) => {
-      const aUnmatched = a.gg_player_id ? 0 : 1
-      const bUnmatched = b.gg_player_id ? 0 : 1
-      if (aUnmatched !== bUnmatched) return aUnmatched - bUnmatched
-      const aId = a.gg_player_id ?? ''
-      const bId = b.gg_player_id ?? ''
-      if (aId !== bId) return aId.localeCompare(bId)
-      return a.source.localeCompare(b.source)
-    })
-  }, [ledgerLines])
-
-  const depositLinesByMethod = useMemo(() => {
-    const byMethod = new Map<string, LedgerLine[]>()
-    for (const method of DEPOSIT_METHOD_ORDER) {
-      byMethod.set(method, [])
-    }
-    for (const line of ledgerLines) {
-      if (!line.source.startsWith('deposit_')) continue
-      const bucket = byMethod.get(line.source) ?? []
-      bucket.push(line)
-      byMethod.set(line.source, bucket)
-    }
-    return byMethod
-  }, [ledgerLines])
-
-  const filterButtons: { id: PlayerFilter; label: string }[] = [
-    { id: 'all', label: 'All' },
-    { id: 'mismatch', label: 'Mismatch' },
-    { id: 'match', label: 'Match' },
-    { id: 'trade_only', label: 'Trade only' },
-    { id: 'ledger_only', label: 'Ledger only' },
-  ]
-
-  const earlyRbClubs =
-    reconcileClubSlug === 'all-clubs'
-      ? (earlyRb?.clubs ?? [])
-      : reconcileClubSlug === 'round-table'
-        ? (earlyRb?.clubs.filter((c) =>
-            (ROUND_TABLE_TRADE_SLUGS as readonly string[]).includes(c.club_slug),
-          ) ?? [])
-        : earlyRb?.clubs.filter((c) => c.club_slug === reconcileClubSlug) ?? []
+  const reports = allClubReports ?? []
+  const auditDate = reports[0]?.audit_date ?? uploads[0]?.audit_date ?? '—'
 
   const onExportReconcile = async () => {
     setExportingReconcile(true)
     setReconcileExportErr('')
     try {
-      if (reconcileClubSlug === 'all-clubs') {
-        const auditDate =
-          reconcile?.audit_date ??
-          allClubReports?.[0]?.audit_date ??
-          uploads[0]?.audit_date
-        if (!auditDate) throw new Error('No audit date for export.')
-        await downloadReconcileExportAll(token, auditDate)
-      } else {
-        if (!reconcile) return
-        await downloadReconcileExport(token, reconcile.audit_date, reconcile.club_slug)
-      }
+      const date = reports[0]?.audit_date ?? uploads[0]?.audit_date
+      if (!date) throw new Error('No audit date for export.')
+      await downloadReconcileExportAll(token, date)
     } catch (e: unknown) {
       setReconcileExportErr(e instanceof Error ? e.message : 'Reconcile export failed.')
     } finally {
@@ -227,97 +58,9 @@ export default function AuditReconcilePanel({
     }
   }
 
-  if (reconcileClubSlug === 'all-clubs') {
-    const reports = allClubReports ?? []
-    const auditDate =
-      reports[0]?.audit_date ?? reconcile?.audit_date ?? uploads[0]?.audit_date ?? '—'
-    return (
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold text-ink">All clubs reconcile</h2>
-
-        {reconcileError ? (
-          <p role="alert" className="alert-danger">
-            {reconcileError}
-          </p>
-        ) : null}
-
-        {weekSyncError ? (
-          <p role="status" className="alert-warning">
-            Week sync: {weekSyncError}
-          </p>
-        ) : null}
-
-        {earlyRbError ? (
-          <p role="status" className="alert-warning">
-            Early RB: {earlyRbError}
-          </p>
-        ) : null}
-
-        {reconcileExportErr ? (
-          <p role="alert" className="alert-danger">
-            {reconcileExportErr}
-          </p>
-        ) : null}
-
-        <p className="text-sm text-ink-muted">
-          Matching-only workbook for {auditDate}. Run auto-downloads when all four trade sheets
-          are present; Export re-downloads the same file.
-        </p>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            disabled={exportingReconcile || reports.length === 0}
-            onClick={() => void onExportReconcile()}
-            className="btn-primary-sm disabled:opacity-40"
-          >
-            {exportingReconcile ? 'Exporting…' : 'Export Matching XLSX'}
-          </button>
-        </div>
-
-        {reports.length > 0 ? (
-          <div className="table-scroll">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left text-ink-muted">
-                  <th scope="col" className="px-2 py-1 font-medium">
-                    Club
-                  </th>
-                  <th scope="col" className="px-2 py-1 font-medium">
-                    Status
-                  </th>
-                  <th scope="col" className="px-2 py-1 font-medium text-right">
-                    Matched
-                  </th>
-                  <th scope="col" className="px-2 py-1 font-medium text-right">
-                    Failed
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {reports.map((r) => (
-                  <tr key={r.club_slug} className="table-row-hover">
-                    <td className="px-2 py-1">
-                      {r.club_name || displayLabelForSlug(r.club_slug)}
-                    </td>
-                    <td className="px-2 py-1">
-                      <span className={statusChipClass(r.status)}>{r.status}</span>
-                    </td>
-                    <td className="table-num px-2 py-1">{r.players_matched}</td>
-                    <td className="table-num px-2 py-1">{r.players_failed}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-ink">Net reconcile</h2>
+      <h2 className="text-lg font-semibold text-ink">All clubs reconcile</h2>
 
       {reconcileError ? (
         <p role="alert" className="alert-danger">
@@ -325,487 +68,76 @@ export default function AuditReconcilePanel({
         </p>
       ) : null}
 
-      {reconcile ? (
-        <>
-          <div className={bannerClass(reconcile.status)}>
-            <p className="font-semibold capitalize">
-              Reconcile {reconcile.status}
-              {reconcile.run_id ? (
-                <span className="ml-2 font-normal text-ink-muted">Run #{reconcile.run_id}</span>
-              ) : null}
-            </p>
-            <p className="mt-1 text-sm">
-              {reconcile.club_name} · {reconcile.audit_date}
-            </p>
-            {reconcile.blocked_reason ? (
-              <p className="mt-2 text-sm font-medium">{reconcile.blocked_reason}</p>
-            ) : null}
-          </div>
-
-          {reconcileExportErr ? (
-            <p role="alert" className="alert-danger">
-              {reconcileExportErr}
-            </p>
-          ) : null}
-
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              disabled={exportingReconcile}
-              onClick={() => void onExportReconcile()}
-              className="btn-primary-sm disabled:opacity-40"
-            >
-              {exportingReconcile ? 'Exporting…' : 'Export reconcile XLSX'}
-            </button>
-            <p className="text-xs text-ink-muted">
-              Per-club player deltas, ledger breakdown, and unmatched rows for this run.
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiStat
-              label="Players matched"
-              tip="Players on both sides with delta within ±$2."
-              tone="success"
-            >
-              {reconcile.players_matched}
-            </KpiStat>
-            <KpiStat
-              label="Players failed"
-              tip="Players on both sides with delta outside ±$2 tolerance."
-              tone={reconcile.players_failed > 0 ? 'warning' : 'default'}
-            >
-              {reconcile.players_failed}
-            </KpiStat>
-            <KpiStat
-              label="Unmatched trade rows"
-              tip="Trade record lines without a member GG player ID."
-              tone={reconcile.unmatched_trade_count > 0 ? 'warning' : 'muted'}
-            >
-              {reconcile.unmatched_trade_count}
-            </KpiStat>
-            <KpiStat
-              label="Unmatched ledger events"
-              tip="Ledger events that could not be keyed to a GG player ID."
-              tone={reconcile.unmatched_ledger_count > 0 ? 'warning' : 'muted'}
-            >
-              {reconcile.unmatched_ledger_count}
-            </KpiStat>
-          </div>
-
-          {reconcile.warnings.length > 0 ? (
-            <div className="rounded-md border border-border bg-surface-raised p-3 text-sm">
-              <p className="mb-1 font-medium text-ink">Reconcile warnings</p>
-              <ul className="list-inside list-disc space-y-0.5 text-ink-muted">
-                {reconcile.warnings.map((w) => (
-                  <li key={w}>{w}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {reconcile.players.length > 0 ? (
-            <div>
-              <div className="mb-3 flex flex-wrap items-end gap-3">
-                <div className="flex flex-wrap gap-2" role="group" aria-label="Filter players by status">
-                  {filterButtons.map((f) => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      aria-pressed={playerFilter === f.id}
-                      onClick={() => setPlayerFilter(f.id)}
-                      className={playerFilter === f.id ? 'chip-accent' : 'chip-neutral'}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
-                <div>
-                  <label htmlFor={searchId} className="label-field-xs">
-                    Search player ID or nickname
-                  </label>
-                  <input
-                    id={searchId}
-                    type="search"
-                    value={playerSearch}
-                    onChange={(e) => setPlayerSearch(e.target.value)}
-                    placeholder="3011-9668 or nickname"
-                    className="input-field-sm"
-                  />
-                </div>
-              </div>
-
-              <div className="table-scroll">
-                <table className="min-w-[64rem] text-left text-sm">
-                  <thead className="border-b border-border text-xs uppercase text-ink-muted">
-                    <tr>
-                      <th scope="col" className="px-2 py-2 font-medium">Player ID</th>
-                      <th scope="col" className="px-2 py-2 font-medium">Nickname</th>
-                      <th scope="col" className="px-2 py-2 font-medium text-right">Deposits</th>
-                      <th scope="col" className="px-2 py-2 font-medium text-right">Early RB</th>
-                      <th scope="col" className="px-2 py-2 font-medium text-right">Bonuses</th>
-                      <th scope="col" className="px-2 py-2 font-medium text-right">RB settlement (Monday)</th>
-                      <th scope="col" className="px-2 py-2 font-medium text-right">Cashouts</th>
-                      <th scope="col" className="px-2 py-2 font-medium text-right">Net ledger</th>
-                      <th scope="col" className="px-2 py-2 font-medium text-right">Net trade</th>
-                      <th scope="col" className="px-2 py-2 font-medium text-right">Delta</th>
-                      <th scope="col" className="px-2 py-2 font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredPlayers.length === 0 ? (
-                      <tr>
-                        <td colSpan={11} className="px-2 py-6 text-center text-ink-muted">
-                          No players match this filter.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredPlayers.map((p) => {
-                        const bd = p.ledger_breakdown
-                        return (
-                          <tr key={p.gg_player_id} className="table-row-hover">
-                            <td
-                              className="max-w-[10rem] truncate px-2 py-2 font-mono text-xs"
-                              title={p.gg_player_id}
-                            >
-                              {p.gg_player_id}
-                            </td>
-                            <td
-                              className="max-w-[12rem] truncate px-2 py-2"
-                              title={p.member_nickname ?? undefined}
-                            >
-                              {p.member_nickname ?? '—'}
-                            </td>
-                            <td className="table-num px-2 py-2">${fmtMoney(bd.deposits)}</td>
-                            <td className="table-num px-2 py-2">${fmtMoney(bd.early_rb)}</td>
-                            <td className="table-num px-2 py-2">${fmtMoney(bd.bonuses)}</td>
-                            <td className="table-num px-2 py-2">${fmtMoney(bd.monday)}</td>
-                            <td className="table-num px-2 py-2">${fmtMoney(bd.cashouts)}</td>
-                            <td className="table-num px-2 py-2">${fmtMoney(p.net_ledger)}</td>
-                            <td className="table-num px-2 py-2">${fmtMoney(p.net_trade_record)}</td>
-                            <td
-                              className={`table-num px-2 py-2 font-medium ${deltaClass(p.delta, p.status)}`}
-                            >
-                              ${fmtMoney(p.delta)}
-                            </td>
-                            <td className="px-2 py-2">
-                              <span className={statusChipClass(p.status)}>{p.status}</span>
-                            </td>
-                          </tr>
-                        )
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : null}
-
-          {ledgerLines.length > 0 ? (
-            <div className="rounded-md border border-border bg-surface-raised p-3">
-              <button
-                type="button"
-                aria-expanded={showNetLedger}
-                aria-controls={netLedgerPanelId}
-                onClick={() => setShowNetLedger((v) => !v)}
-                className="mb-2 text-sm font-medium text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
-              >
-                Net ledger ({ledgerLines.length}){' '}
-                <span aria-hidden>{showNetLedger ? '▾' : '▸'}</span>
-              </button>
-              {showNetLedger ? (
-                <div id={netLedgerPanelId} className="table-scroll">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-ink-muted">
-                        <th scope="col" className="px-2 py-1 font-medium">Source</th>
-                        <th scope="col" className="px-2 py-1 font-medium">Player ID</th>
-                        <th scope="col" className="px-2 py-1 font-medium">Nickname</th>
-                        <th scope="col" className="px-2 py-1 font-medium text-right">Amount</th>
-                        <th scope="col" className="px-2 py-1 font-medium">Time</th>
-                        <th scope="col" className="px-2 py-1 font-medium">Reference</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedLedgerLines.map((line) => (
-                        <tr
-                          key={`${line.source}-${line.external_id}`}
-                          className="table-row-hover"
-                        >
-                          <td className="px-2 py-1">{line.source_label}</td>
-                          <td className="px-2 py-1 font-mono text-xs">
-                            {line.gg_player_id ?? '—'}
-                          </td>
-                          <td className="px-2 py-1">{line.member_nickname ?? '—'}</td>
-                          <td className="table-num px-2 py-1">
-                            ${fmtMoney(line.amount_signed)}
-                          </td>
-                          <td className="px-2 py-1">{fmtOccurredAt(line.occurred_at)}</td>
-                          <td className="max-w-[16rem] truncate px-2 py-1" title={ledgerReference(line)}>
-                            {ledgerReference(line)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {ledgerLines.some((line) => line.source.startsWith('deposit_')) ? (
-            <div className="rounded-md border border-border bg-surface-raised p-3">
-              <button
-                type="button"
-                aria-expanded={showDeposits}
-                aria-controls={depositsPanelId}
-                onClick={() => setShowDeposits((v) => !v)}
-                className="mb-2 text-sm font-medium text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
-              >
-                Deposits by method{' '}
-                <span aria-hidden>{showDeposits ? '▾' : '▸'}</span>
-              </button>
-              {showDeposits ? (
-                <div id={depositsPanelId} className="space-y-4">
-                  {DEPOSIT_METHOD_ORDER.map((method) => {
-                    const methodLines = depositLinesByMethod.get(method) ?? []
-                    if (methodLines.length === 0) return null
-                    return (
-                      <div key={method}>
-                        <p className="mb-1 text-sm font-semibold text-ink">
-                          {DEPOSIT_METHOD_LABELS[method] ?? method}
-                        </p>
-                        <div className="table-scroll">
-                          <table className="min-w-full text-sm">
-                            <thead>
-                              <tr className="text-left text-ink-muted">
-                                <th scope="col" className="px-2 py-1 font-medium">Player ID</th>
-                                <th scope="col" className="px-2 py-1 font-medium">Nickname</th>
-                                <th scope="col" className="px-2 py-1 font-medium text-right">Amount</th>
-                                <th scope="col" className="px-2 py-1 font-medium">Group / detail</th>
-                                <th scope="col" className="px-2 py-1 font-medium">Time</th>
-                                <th scope="col" className="px-2 py-1 font-medium">Reference</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {methodLines.map((line) => (
-                                <tr
-                                  key={`${method}-${line.external_id}`}
-                                  className="table-row-hover"
-                                >
-                                  <td className="px-2 py-1 font-mono text-xs">
-                                    {line.gg_player_id ?? '—'}
-                                  </td>
-                                  <td className="px-2 py-1">{line.member_nickname ?? '—'}</td>
-                                  <td className="table-num px-2 py-1">
-                                    ${fmtMoney(line.amount_signed)}
-                                  </td>
-                                  <td className="px-2 py-1">{line.detail ?? '—'}</td>
-                                  <td className="px-2 py-1">{fmtOccurredAt(line.occurred_at)}</td>
-                                  <td className="px-2 py-1 font-mono text-xs">{line.external_id}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {reconcile.unmatched_trade.length > 0 ? (
-            <div className="rounded-md border border-border bg-surface-raised p-3">
-              <button
-                type="button"
-                aria-expanded={showUnmatchedTrade}
-                aria-controls={unmatchedTradePanelId}
-                onClick={() => setShowUnmatchedTrade((v) => !v)}
-                className="mb-2 text-sm font-medium text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
-              >
-                Unmatched trade rows ({reconcile.unmatched_trade.length}){' '}
-                <span aria-hidden>{showUnmatchedTrade ? '▾' : '▸'}</span>
-              </button>
-              {showUnmatchedTrade ? (
-                <div id={unmatchedTradePanelId} className="table-scroll">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-ink-muted">
-                        <th scope="col" className="px-2 py-1 font-medium">Nickname</th>
-                        <th scope="col" className="px-2 py-1 font-medium text-right">Amount</th>
-                        <th scope="col" className="px-2 py-1 font-medium">Sheet row</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {reconcile.unmatched_trade.map((u) => (
-                        <tr key={u.line_id} className="table-row-hover">
-                          <td
-                            className="max-w-[12rem] truncate px-2 py-1"
-                            title={u.member_nickname ?? undefined}
-                          >
-                            {u.member_nickname ?? '—'}
-                          </td>
-                          <td className="table-num px-2 py-1">${fmtMoney(u.amount)}</td>
-                          <td className="px-2 py-1">{u.sheet_row}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {reconcile.unmatched_ledger.length > 0 ? (
-            <div className="rounded-md border border-border bg-surface-raised p-3">
-              <button
-                type="button"
-                aria-expanded={showUnmatchedLedger}
-                aria-controls={unmatchedLedgerPanelId}
-                onClick={() => setShowUnmatchedLedger((v) => !v)}
-                className="mb-2 text-sm font-medium text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
-              >
-                Unmatched ledger events ({reconcile.unmatched_ledger.length}){' '}
-                <span aria-hidden>{showUnmatchedLedger ? '▾' : '▸'}</span>
-              </button>
-              {showUnmatchedLedger ? (
-                <div id={unmatchedLedgerPanelId} className="table-scroll">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-ink-muted">
-                        <th scope="col" className="px-2 py-1 font-medium">Source</th>
-                        <th scope="col" className="px-2 py-1 font-medium">Nickname</th>
-                        <th scope="col" className="px-2 py-1 font-medium text-right">Amount</th>
-                        <th scope="col" className="px-2 py-1 font-medium">External ID</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {reconcile.unmatched_ledger.map((u) => (
-                        <tr key={`${u.source}-${u.external_id}`} className="table-row-hover">
-                          <td className="px-2 py-1">{u.source}</td>
-                          <td
-                            className="max-w-[12rem] truncate px-2 py-1"
-                            title={u.detail ?? undefined}
-                          >
-                            {u.detail ?? '—'}
-                          </td>
-                          <td className="table-num px-2 py-1">${fmtMoney(u.amount_usd)}</td>
-                          <td
-                            className="max-w-[12rem] truncate px-2 py-1 font-mono text-xs"
-                            title={u.external_id}
-                          >
-                            {u.external_id}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </>
+      {weekSyncError ? (
+        <p role="status" className="alert-warning">
+          Week sync: {weekSyncError}
+        </p>
       ) : null}
 
-      <div className="rounded-md border border-border bg-surface-raised p-4 text-sm">
-        <p className="mb-2 font-semibold text-ink">Upload</p>
-        {uploads.map((upload) => (
-          <ul key={upload.upload_id} className="mb-4 space-y-1 text-ink-muted last:mb-0">
-            <li>
-              {upload.club_name} · {upload.audit_date} · {upload.filename}
-            </li>
-            {upload.replaced_previous ? (
-              <li>Replaced a previous upload for this club and day.</li>
-            ) : null}
-            <li>Transaction rows parsed: {upload.transaction_rows_parsed}</li>
-            <li>Identities synced: {upload.identities_extracted}</li>
-            <li>
-              Postgres: {upload.postgres_inserted} inserted, {upload.postgres_updated} updated
-            </li>
-            <li>
-              gg-computer: {upload.gg_computer_upserted} upserted, {upload.gg_computer_modified}{' '}
-              modified
-              {upload.gg_computer_error ? (
-                <span className="text-danger-ink"> — {upload.gg_computer_error}</span>
-              ) : null}
-            </li>
-            {upload.skipped_rows.length > 0 ? (
-              <li>Skipped rows: {upload.skipped_rows.join('; ')}</li>
-            ) : null}
-          </ul>
-        ))}
+      {earlyRbError ? (
+        <p role="status" className="alert-warning">
+          Early RB: {earlyRbError}
+        </p>
+      ) : null}
+
+      {reconcileExportErr ? (
+        <p role="alert" className="alert-danger">
+          {reconcileExportErr}
+        </p>
+      ) : null}
+
+      <p className="text-sm text-ink-muted">
+        Matching-only workbook for {auditDate}. Pipeline auto-downloads when all four trade
+        sheets are present; Export re-downloads the same file.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          disabled={exportingReconcile || reports.length === 0}
+          onClick={() => void onExportReconcile()}
+          className="btn-primary-sm disabled:opacity-40"
+        >
+          {exportingReconcile ? 'Exporting…' : 'Export Matching XLSX'}
+        </button>
       </div>
 
-      <div className="rounded-md border border-border bg-surface-raised p-4 text-sm">
-        <p className="mb-2 font-semibold text-ink">Week process / sync</p>
-        {weekSyncError ? (
-          <p role="alert" className="text-danger-ink">
-            {weekSyncError}
-          </p>
-        ) : (
-          <p className="text-ink-muted">
-            gg-computer process-week/sync completed for{' '}
-            {reconcileClubSlug === 'round-table'
-              ? 'Round Table and Aces Table'
-              : uploads[0]?.club_name ?? reconcileClubSlug}
-            .
-          </p>
-        )}
-      </div>
-
-      <div className="rounded-md border border-border bg-surface-raised p-4 text-sm">
-        <p className="mb-2 font-semibold text-ink">Early rakeback</p>
-        {earlyRbError ? (
-          <p role="alert" className="text-danger-ink">
-            {earlyRbError}
-          </p>
-        ) : earlyRbClubs.length > 0 ? (
-          <ul className="space-y-3 text-ink-muted">
-            {earlyRbClubs.map((clubEarlyRb) => (
-              <li key={clubEarlyRb.club_slug}>
-                <p className="font-medium text-ink">{clubEarlyRb.club_name}</p>
-                <ul className="mt-1 space-y-0.5">
-                  <li>
-                    {clubEarlyRb.lines_stored} line(s) stored
-                    {clubEarlyRb.lines_skipped_unmapped > 0
-                      ? `, ${clubEarlyRb.lines_skipped_unmapped} unmapped (included in export)`
-                      : ''}
-                  </li>
-                  {clubEarlyRb.error ? (
-                    <li className="text-danger-ink">{clubEarlyRb.error}</li>
-                  ) : null}
-                  {(clubEarlyRb.skips?.length ?? 0) > 0 ? (
-                    <li>
-                      Unmapped (no GG player ID, still in Early RB export):{' '}
-                      {clubEarlyRb.skips
-                        .map((skip) => {
-                          const who = skip.nickname || '(no nickname)'
-                          const why = skip.reason_label || skip.reason
-                          return `${who} — ${why} (×${skip.count})`
-                        })
-                        .join('; ')}
-                    </li>
-                  ) : clubEarlyRb.skipped_nicknames.length > 0 ? (
-                    <li>
-                      Unmapped nicknames (no GG player ID):{' '}
-                      {clubEarlyRb.skipped_nicknames.join(', ')}
-                    </li>
-                  ) : null}
-                </ul>
-              </li>
-            ))}
-          </ul>
-        ) : earlyRb ? (
-          <p className="text-ink-muted">No early RB data returned for this club.</p>
-        ) : (
-          <p className="text-ink-muted">Early RB sync did not complete.</p>
-        )}
-        {earlyRb && earlyRb.warnings.length > 0 ? (
-          <p className="mt-2 text-ink-muted">Warnings: {earlyRb.warnings.join('; ')}</p>
-        ) : null}
-      </div>
+      {reports.length > 0 ? (
+        <div className="table-scroll">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left text-ink-muted">
+                <th scope="col" className="px-2 py-1 font-medium">
+                  Club
+                </th>
+                <th scope="col" className="px-2 py-1 font-medium">
+                  Status
+                </th>
+                <th scope="col" className="px-2 py-1 font-medium text-right">
+                  Matched
+                </th>
+                <th scope="col" className="px-2 py-1 font-medium text-right">
+                  Failed
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {reports.map((r) => (
+                <tr key={r.club_slug} className="table-row-hover">
+                  <td className="px-2 py-1">
+                    {r.club_name || displayLabelForSlug(r.club_slug)}
+                  </td>
+                  <td className="px-2 py-1">
+                    <span className={statusChipClass(r.status)}>{r.status}</span>
+                  </td>
+                  <td className="table-num px-2 py-1">{r.players_matched}</td>
+                  <td className="table-num px-2 py-1">{r.players_failed}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </div>
   )
 }

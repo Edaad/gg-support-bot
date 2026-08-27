@@ -25,6 +25,12 @@ from api.club_audit_timezone import (
 )
 from api.club_slug import CLUB_SLUG_TO_NAME, slug_for_club_id
 
+from api.audit_ledger import (
+    _iter_checked_union_deposit_requests,
+    _resolve_union_group_title,
+    _union_method_tag,
+    union_type_from_display_name,
+)
 from api.payments_helpers import (
     apply_analytics_payment_exclusion,
     build_cashapp_payment_read,
@@ -80,6 +86,7 @@ SHEET_SPECS: list[SheetSpec] = [
     SheetSpec("Zelle", TAGGED_MANUAL_LAYOUT, "tagged_manual"),
     SheetSpec("Venmo", TAGGED_MANUAL_LAYOUT, "tagged_manual"),
     SheetSpec("Cash App", TAGGED_MANUAL_LAYOUT, "tagged_manual"),
+    SheetSpec("Apple Pay", TAGGED_MANUAL_LAYOUT, "tagged_manual"),
     SheetSpec("PayPal", TAGGED_MANUAL_LAYOUT, "tagged_manual"),
     SheetSpec("Crypto", TAGGED_MANUAL_LAYOUT, "tagged_manual"),
     SheetSpec("Bonus", MANUAL_LAYOUT, "manual"),
@@ -115,6 +122,12 @@ class TaggedManualAuditRow:
     group_title: str
     club_label: str
     time_label: str
+
+
+@dataclass(frozen=True)
+class _TimedTaggedManualAuditRow:
+    occurred_at: datetime
+    row: TaggedManualAuditRow
 
 
 def _stripe_fee_usd(amount_cents: int) -> Decimal:
@@ -486,15 +499,25 @@ def build_audit_workbook(session: Session, audit_date: str) -> bytes:
     stripe_rows = _fetch_stripe_rows(
         session, club_names, from_dt, to_dt, audit_date=audit_date
     )
-    zelle_rows = _fetch_tagged_manual_rows(
-        session,
-        ZellePayment,
-        build_zelle_payment_read,
-        club_names,
-        from_dt,
-        to_dt,
-        audit_date=audit_date,
-        tag_field="zelle_recipient",
+    zelle_rows = _merge_timed_tagged_rows(
+        _fetch_tagged_manual_rows_timed(
+            session,
+            ZellePayment,
+            build_zelle_payment_read,
+            club_names,
+            from_dt,
+            to_dt,
+            audit_date=audit_date,
+            tag_field="zelle_recipient",
+        ),
+        _fetch_union_deposit_audit_rows_timed(
+            session,
+            club_names,
+            from_dt,
+            to_dt,
+            audit_date=audit_date,
+            union_type="zelle",
+        ),
     )
     venmo_rows = _fetch_tagged_manual_rows(
         session,
@@ -506,15 +529,25 @@ def build_audit_workbook(session: Session, audit_date: str) -> bytes:
         audit_date=audit_date,
         tag_field="venmo_handle",
     )
-    cashapp_rows = _fetch_tagged_manual_rows(
-        session,
-        CashAppPayment,
-        build_cashapp_payment_read,
-        club_names,
-        from_dt,
-        to_dt,
-        audit_date=audit_date,
-        tag_field="cashapp_handle",
+    cashapp_rows = _merge_timed_tagged_rows(
+        _fetch_tagged_manual_rows_timed(
+            session,
+            CashAppPayment,
+            build_cashapp_payment_read,
+            club_names,
+            from_dt,
+            to_dt,
+            audit_date=audit_date,
+            tag_field="cashapp_handle",
+        ),
+        _fetch_union_deposit_audit_rows_timed(
+            session,
+            club_names,
+            from_dt,
+            to_dt,
+            audit_date=audit_date,
+            union_type="cashapp",
+        ),
     )
     paypal_rows = _fetch_tagged_manual_rows(
         session,
@@ -525,6 +558,16 @@ def build_audit_workbook(session: Session, audit_date: str) -> bytes:
         to_dt,
         audit_date=audit_date,
         tag_field="paypal_email",
+    )
+    applepay_rows = _merge_timed_tagged_rows(
+        _fetch_union_deposit_audit_rows_timed(
+            session,
+            club_names,
+            from_dt,
+            to_dt,
+            audit_date=audit_date,
+            union_type="applepay",
+        ),
     )
     crypto_rows = _fetch_tagged_manual_rows(
         session,
@@ -548,6 +591,7 @@ def build_audit_workbook(session: Session, audit_date: str) -> bytes:
         zelle_rows,
         venmo_rows,
         cashapp_rows,
+        applepay_rows,
         paypal_rows,
         crypto_rows,
         bonus_rows,
@@ -639,6 +683,83 @@ def _fetch_stripe_rows(
     return out
 
 
+def _merge_timed_tagged_rows(
+    *groups: list[_TimedTaggedManualAuditRow],
+) -> list[TaggedManualAuditRow]:
+    merged = sorted(
+        (item for group in groups for item in group),
+        key=lambda item: item.occurred_at,
+        reverse=True,
+    )
+    return [item.row for item in merged]
+
+
+def _union_deposit_club_label(
+    club_names: dict[int, str],
+    *,
+    group_title: str | None,
+    club_id: int,
+) -> str:
+    return _manual_club_name(
+        {"club_id": club_id, "group_title": group_title},
+        club_names,
+    )
+
+
+def _fetch_union_deposit_audit_rows_timed(
+    session: Session,
+    club_names: dict[int, str],
+    from_dt: datetime,
+    to_dt: datetime,
+    *,
+    audit_date: str,
+    union_type: str,
+) -> list[_TimedTaggedManualAuditRow]:
+    target_type = (union_type or "").strip().lower()
+    out: list[_TimedTaggedManualAuditRow] = []
+    for row in _iter_checked_union_deposit_requests(
+        session, from_dt=from_dt, to_dt=to_dt
+    ):
+        type_slug = union_type_from_display_name(row.method_name or "")
+        if type_slug != target_type:
+            continue
+        occurred_at = row.created_at
+        if not _payment_in_audit_day(
+            session,
+            audit_date=audit_date,
+            club_id=row.club_id,
+            occurred_at=occurred_at,
+            data={"group_title": row.group_title},
+        ):
+            continue
+        group_title, _gg_id = _resolve_union_group_title(session, row)
+        title = (group_title or "").strip()
+        if not title:
+            continue
+        club_slug = _slug_for_payment_club(
+            session, row.club_id, {"group_title": group_title}
+        )
+        method_tag = _union_method_tag(row)
+        out.append(
+            _TimedTaggedManualAuditRow(
+                occurred_at=occurred_at,
+                row=TaggedManualAuditRow(
+                    amount_usd=float(Decimal(str(row.amount))),
+                    payer_name=title,
+                    account_tag=method_tag,
+                    group_title=title,
+                    club_label=_union_deposit_club_label(
+                        club_names,
+                        group_title=group_title,
+                        club_id=int(row.club_id),
+                    ),
+                    time_label=_fmt_manual_audit_time(occurred_at, club_slug),
+                ),
+            )
+        )
+    return out
+
+
 def _fetch_tagged_manual_rows(
     session: Session,
     payment_cls,
@@ -650,6 +771,32 @@ def _fetch_tagged_manual_rows(
     audit_date: str,
     tag_field: str,
 ) -> list[TaggedManualAuditRow]:
+    return [
+        item.row
+        for item in _fetch_tagged_manual_rows_timed(
+            session,
+            payment_cls,
+            build_read,
+            club_names,
+            from_dt,
+            to_dt,
+            audit_date=audit_date,
+            tag_field=tag_field,
+        )
+    ]
+
+
+def _fetch_tagged_manual_rows_timed(
+    session: Session,
+    payment_cls,
+    build_read: Callable,
+    club_names: dict[int, str],
+    from_dt: datetime,
+    to_dt: datetime,
+    *,
+    audit_date: str,
+    tag_field: str,
+) -> list[_TimedTaggedManualAuditRow]:
     query = _apply_audit_manual_filters(
         session,
         session.query(payment_cls),
@@ -658,18 +805,26 @@ def _fetch_tagged_manual_rows(
         to_dt=to_dt,
     )
     rows = query.order_by(payment_cls.created_at.desc(), payment_cls.id.desc()).all()
-    out: list[TaggedManualAuditRow] = []
+    out: list[_TimedTaggedManualAuditRow] = []
     for row in rows:
         data = build_read(session, row)
+        occurred_at = data.get("created_at")
         if not _payment_in_audit_day(
             session,
             audit_date=audit_date,
             club_id=data.get("club_id"),
-            occurred_at=data.get("created_at"),
+            occurred_at=occurred_at,
             data=data,
         ):
             continue
-        out.append(_tagged_manual_row(session, data, club_names, tag_field=tag_field))
+        if occurred_at is None:
+            continue
+        out.append(
+            _TimedTaggedManualAuditRow(
+                occurred_at=occurred_at,
+                row=_tagged_manual_row(session, data, club_names, tag_field=tag_field),
+            )
+        )
     return out
 
 

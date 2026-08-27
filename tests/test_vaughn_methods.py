@@ -320,5 +320,24 @@ class TallyVaughnMethodsTestCase(unittest.TestCase):
         self.assertEqual(tally_vaughn_methods(lines, club_slug="clubgto"), [])
 
 
+class UnionDepositMatchingLabelTestCase(unittest.TestCase):
+    def test_union_zelle_on_clubgto_has_no_rt_gto_prefix(self):
+        self.assertEqual(
+            matching_source_label(
+                source="deposit_union_zelle",
+                variant="zelle-pool",
+                club_slug="clubgto",
+                source_label="Union Zelle",
+            ),
+            "Union Zelle",
+        )
+
+    def test_clubgto_dropdown_includes_union_sources(self):
+        options = clubgto_matching_source_options()
+        self.assertIn("Union Zelle", options)
+        self.assertIn("Union Cash App", options)
+        self.assertIn("Union Apple Pay", options)
+
+
 if __name__ == "__main__":
     unittest.main()

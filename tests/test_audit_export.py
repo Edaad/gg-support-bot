@@ -322,6 +322,7 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
                 "Zelle",
                 "Venmo",
                 "Cash App",
+                "Apple Pay",
                 "PayPal",
                 "Crypto",
                 "Bonus",
@@ -347,18 +348,22 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         self.assertEqual(data["alert_scope_label"], ALERT_SCOPE_LABELS[ALERT_SCOPE_CLUBGTO])
         self.assertIn("0xfrom", data["from_label"])
 
+    @patch("api.audit_export._fetch_union_deposit_audit_rows_timed", return_value=[])
+    @patch("api.audit_export._fetch_tagged_manual_rows_timed", return_value=[])
     @patch("api.audit_export._fetch_early_rakeback_rows", return_value=[])
     @patch("api.audit_export._fetch_stripe_rows", return_value=[])
     @patch("api.audit_export._fetch_tagged_manual_rows", return_value=[])
     @patch("api.audit_export._fetch_bonus_rows", return_value=[])
     @patch("api.audit_export._club_name_map", return_value={})
-    def test_build_audit_workbook_has_eight_sheets_with_headers(
+    def test_build_audit_workbook_has_nine_sheets_with_headers(
         self,
         _club_map,
         _bonus,
         _tagged,
         _stripe,
         _early_rb,
+        _tagged_timed,
+        _union_timed,
     ):
         session = MagicMock()
         content = build_audit_workbook(session, "2026-01-31")
@@ -368,11 +373,15 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
             ws = wb[spec.title]
             self.assertEqual([cell.value for cell in ws[1]], spec.headers)
 
+    @patch("api.audit_export._fetch_union_deposit_audit_rows_timed", return_value=[])
+    @patch("api.audit_export._fetch_tagged_manual_rows_timed", return_value=[])
     @patch("api.audit_export._fetch_early_rakeback_rows", return_value=[])
     @patch("api.audit_export._fetch_tagged_manual_rows", return_value=[])
     @patch("api.audit_export._fetch_bonus_rows", return_value=[])
     @patch("api.audit_export._club_name_map", return_value={})
-    def test_build_audit_workbook_styles_stripe_sheet(self, _club_map, _bonus, _tagged, _early_rb):
+    def test_build_audit_workbook_styles_stripe_sheet(
+        self, _club_map, _bonus, _tagged, _early_rb, _tagged_timed, _union_timed
+    ):
         stripe_rows = [
             StripeAuditRow(
                 amount_usd=42.0,
@@ -413,6 +422,7 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         zelle_ws = wb["Zelle"]
         self.assertEqual(zelle_ws.max_row, 1)
 
+    @patch("api.audit_export._fetch_union_deposit_audit_rows_timed", return_value=[])
     @patch("api.audit_export._fetch_early_rakeback_rows", return_value=[])
     @patch("api.audit_export._fetch_stripe_rows", return_value=[])
     @patch("api.audit_export._fetch_tagged_manual_rows", return_value=[])
@@ -423,7 +433,10 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         _tagged,
         _stripe,
         _early_rb,
+        _union_timed,
     ):
+        from api.audit_export import _TimedTaggedManualAuditRow
+
         tagged_rows = [
             TaggedManualAuditRow(
                 amount_usd=199.99,
@@ -439,11 +452,16 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
             session, payment_cls, build_read, club_names, from_dt, to_dt, *, audit_date, tag_field
         ):
             if payment_cls.__name__ == "ZellePayment":
-                return tagged_rows
+                return [
+                    _TimedTaggedManualAuditRow(
+                        occurred_at=datetime(2026, 6, 21, 23, 57, tzinfo=timezone.utc),
+                        row=tagged_rows[0],
+                    )
+                ]
             return []
 
         with patch(
-            "api.audit_export._fetch_tagged_manual_rows",
+            "api.audit_export._fetch_tagged_manual_rows_timed",
             side_effect=tagged_side_effect,
         ):
             content = build_audit_workbook(
@@ -464,10 +482,14 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         self.assertEqual(zelle_ws["E2"].value, "ClubGTO")
         self.assertEqual(zelle_ws["F2"].value, "June 21, 2026 at 11:57 PM")
 
+    @patch("api.audit_export._fetch_union_deposit_audit_rows_timed", return_value=[])
+    @patch("api.audit_export._fetch_tagged_manual_rows_timed", return_value=[])
     @patch("api.audit_export._fetch_stripe_rows", return_value=[])
     @patch("api.audit_export._fetch_bonus_rows", return_value=[])
     @patch("api.audit_export._club_name_map", return_value={})
-    def test_build_audit_workbook_writes_venmo_tag_column(self, _club_map, _bonus, _stripe):
+    def test_build_audit_workbook_writes_venmo_tag_column(
+        self, _club_map, _bonus, _stripe, _tagged_timed, _union_timed
+    ):
         venmo_rows = [
             TaggedManualAuditRow(
                 amount_usd=100.0,
@@ -505,11 +527,15 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         self.assertEqual(venmo_ws["D2"].value, "GTO / 3011-9668 / Pvtenis")
         self.assertEqual(venmo_ws["E2"].value, "ClubGTO")
 
+    @patch("api.audit_export._fetch_union_deposit_audit_rows_timed", return_value=[])
+    @patch("api.audit_export._fetch_tagged_manual_rows_timed", return_value=[])
     @patch("api.audit_export._fetch_early_rakeback_rows", return_value=[])
     @patch("api.audit_export._fetch_stripe_rows", return_value=[])
     @patch("api.audit_export._fetch_bonus_rows", return_value=[])
     @patch("api.audit_export._club_name_map", return_value={})
-    def test_build_audit_workbook_writes_crypto_sheet(self, _club_map, _bonus, _stripe, _early_rb):
+    def test_build_audit_workbook_writes_crypto_sheet(
+        self, _club_map, _bonus, _stripe, _early_rb, _tagged_timed, _union_timed
+    ):
         crypto_rows = [
             TaggedManualAuditRow(
                 amount_usd=122.0,
@@ -549,11 +575,15 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         self.assertEqual(crypto_ws["D2"].value, "GTO / 3011-9668 / Pvtenis")
         self.assertEqual(crypto_ws["E2"].value, "ClubGTO")
 
+    @patch("api.audit_export._fetch_union_deposit_audit_rows_timed", return_value=[])
+    @patch("api.audit_export._fetch_tagged_manual_rows_timed", return_value=[])
     @patch("api.audit_export._fetch_early_rakeback_rows", return_value=[])
     @patch("api.audit_export._fetch_stripe_rows", return_value=[])
     @patch("api.audit_export._fetch_tagged_manual_rows", return_value=[])
     @patch("api.audit_export._club_name_map", return_value={})
-    def test_build_audit_workbook_writes_bonus_sheet(self, _club_map, _tagged, _stripe, _early_rb):
+    def test_build_audit_workbook_writes_bonus_sheet(
+        self, _club_map, _tagged, _stripe, _early_rb, _tagged_timed, _union_timed
+    ):
         bonus_rows = [
             ManualAuditRow(
                 amount_usd=75.0,
@@ -578,6 +608,50 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         self.assertEqual(bonus_ws["C2"].value, "Referral")
         self.assertEqual(bonus_ws["D2"].value, "ClubGTO")
         self.assertEqual(bonus_ws["E2"].value, "June 21, 2026 at 11:57 PM")
+
+    @patch("api.audit_export._fetch_early_rakeback_rows", return_value=[])
+    @patch("api.audit_export._fetch_stripe_rows", return_value=[])
+    @patch("api.audit_export._fetch_tagged_manual_rows", return_value=[])
+    @patch("api.audit_export._fetch_bonus_rows", return_value=[])
+    @patch("api.audit_export._club_name_map", return_value={1: "ClubGTO"})
+    def test_build_audit_workbook_merges_union_zelle_rows(self, _club_map, _bonus, _tagged, _stripe, _early_rb):
+        from api.audit_export import _TimedTaggedManualAuditRow
+
+        union_row = TaggedManualAuditRow(
+            amount_usd=100.0,
+            payer_name="GTO / 2222-2222 / jz",
+            account_tag="zelle-pool",
+            group_title="GTO / 2222-2222 / jz",
+            club_label="ClubGTO",
+            time_label="August 25, 2026 at 8:00 AM",
+        )
+
+        def union_side_effect(
+            session, club_names, from_dt, to_dt, *, audit_date, union_type
+        ):
+            if union_type == "zelle":
+                return [
+                    _TimedTaggedManualAuditRow(
+                        occurred_at=datetime(2026, 8, 25, 12, 0, tzinfo=timezone.utc),
+                        row=union_row,
+                    )
+                ]
+            return []
+
+        with patch(
+            "api.audit_export._fetch_union_deposit_audit_rows_timed",
+            side_effect=union_side_effect,
+        ), patch(
+            "api.audit_export._fetch_tagged_manual_rows_timed",
+            return_value=[],
+        ):
+            content = build_audit_workbook(MagicMock(), "2026-08-25")
+
+        wb = load_workbook(io.BytesIO(content))
+        zelle_ws = wb["Zelle"]
+        self.assertEqual(zelle_ws["B2"].value, "GTO / 2222-2222 / jz")
+        self.assertEqual(zelle_ws["C2"].value, "zelle-pool")
+        self.assertEqual(zelle_ws["D2"].value, "GTO / 2222-2222 / jz")
 
 
 class AuditExportApiTestCase(unittest.TestCase):

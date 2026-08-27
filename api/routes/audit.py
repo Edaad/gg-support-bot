@@ -21,12 +21,8 @@ from api.club_slug import (
     ALL_CLUBS_RECONCILE_UNITS,
     ALL_CLUBS_TRADE_SLUGS,
     CLUB_SLUG_TO_NAME,
-    RECONCILE_CLUB_OPTIONS,
-    is_all_clubs_reconcile,
-    is_round_table_composite,
     resolve_club_id,
     slug_for_club_id,
-    trade_slugs_for_reconcile,
 )
 from api.schemas_audit import (
     AuditReconcileReportSchema,
@@ -40,10 +36,8 @@ from api.trade_record_parser import (
     TradeRecordParseError,
     TradeRecordParseResult,
     TradeRecordValidationError,
-    parse_result_from_stored_upload,
     parse_trade_record_workbook,
     validate_all_clubs_trade_uploads,
-    validate_trade_upload_pair,
 )
 from api.trade_record_sync import sync_identities
 from api.aon_beta_client import AonBetaConfigError
@@ -57,10 +51,7 @@ from api.audit_reconcile import (
     load_stored_reconcile_report,
     run_audit_reconcile,
 )
-from api.audit_reconcile_export import (
-    build_all_clubs_matching_workbook,
-    build_reconcile_workbook_from_report,
-)
+from api.audit_reconcile_export import build_all_clubs_matching_workbook
 from api.gto_weekly_audit import (
     GtoWeeklyAuditError,
     build_gto_weekly_audit_from_uploads,
@@ -247,89 +238,6 @@ def _report_to_schema(report: AuditReconcileReport) -> AuditReconcileReportSchem
         unmatched_trade_count=report.unmatched_trade_count,
         unmatched_ledger_count=report.unmatched_ledger_count,
     )
-
-
-@router.post("/trade-records/upload", response_model=TradeRecordUploadReport)
-async def upload_trade_record(
-    file: UploadFile = File(...),
-    reconcile_club_slug: str = Query(
-        ...,
-        description="Reconcile club selected in UI (round-table, clubgto, creator-club)",
-    ),
-    expected_trade_slug: str = Query(
-        ...,
-        description="Trade slug for this upload slot (round-table, aces-table, clubgto, creator-club)",
-    ),
-    db: Session = Depends(get_db_dependency),
-):
-    reconcile_slug = reconcile_club_slug.strip().lower()
-    if reconcile_slug not in RECONCILE_CLUB_OPTIONS:
-        raise HTTPException(400, f"Unknown reconcile club slug: {reconcile_club_slug!r}")
-
-    expected_slug = expected_trade_slug.strip().lower()
-    allowed_trade_slugs = trade_slugs_for_reconcile(reconcile_slug)
-    if expected_slug not in allowed_trade_slugs:
-        raise HTTPException(
-            400,
-            f"expected_trade_slug {expected_trade_slug!r} is not valid for "
-            f"reconcile club {reconcile_club_slug!r}",
-        )
-
-    filename = (file.filename or "upload.xlsx").strip()
-    if not filename.lower().endswith(".xlsx"):
-        raise HTTPException(400, "File must be an .xlsx workbook")
-
-    raw = await file.read()
-    if len(raw) > _MAX_UPLOAD_BYTES:
-        raise HTTPException(400, "File exceeds 20MB limit")
-    if not raw:
-        raise HTTPException(400, "Empty file")
-
-    try:
-        parsed = parse_trade_record_workbook(raw)
-    except TradeRecordValidationError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    except TradeRecordParseError as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-    if parsed.club_slug != expected_slug:
-        expected_label = CLUB_SLUG_TO_NAME.get(expected_slug, expected_slug)
-        actual_label = CLUB_SLUG_TO_NAME.get(parsed.club_slug, parsed.club_slug)
-        raise HTTPException(
-            400,
-            f"File is for {actual_label!r}, expected {expected_label!r} for this upload slot.",
-        )
-
-    if is_round_table_composite(reconcile_slug) or (
-        is_all_clubs_reconcile(reconcile_slug)
-        and expected_slug in ("round-table", "aces-table")
-    ):
-        other_slug = (
-            "aces-table" if expected_slug == "round-table" else "round-table"
-        )
-        other_upload = (
-            db.query(TradeRecordUpload)
-            .filter_by(club_slug=other_slug, audit_date=parsed.audit_date)
-            .first()
-        )
-        if other_upload is not None:
-            other_parsed = parse_result_from_stored_upload(other_upload)
-            try:
-                if expected_slug == "round-table":
-                    validate_trade_upload_pair(parsed, other_parsed)
-                else:
-                    validate_trade_upload_pair(other_parsed, parsed)
-            except TradeRecordValidationError as exc:
-                raise HTTPException(400, str(exc)) from exc
-
-    try:
-        report = _persist_parsed_trade_upload(db, parsed=parsed, filename=filename)
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(409, "Upload conflict for this club and date") from exc
-
-    return report
 
 
 @router.post(
@@ -630,29 +538,6 @@ def list_reconcile_runs(
             )
         )
     return out
-
-
-@router.get("/reconcile/export")
-def export_reconcile(
-    club_slug: str = Query(..., description="Club slug (required)"),
-    audit_date: str = Query(..., description="Local audit calendar day (YYYY-MM-DD)"),
-    db: Session = Depends(get_db_dependency),
-):
-    slug = club_slug.strip().lower()
-    if slug not in CLUB_SLUG_TO_NAME:
-        raise HTTPException(400, f"Unknown club slug: {club_slug!r}")
-    parsed_date = _parse_audit_date(audit_date)
-
-    report = run_audit_reconcile(
-        db, club_slug=slug, audit_date=parsed_date, persist=False
-    )
-    content = build_reconcile_workbook_from_report(report)
-    filename = f"reconcile-{slug}-{parsed_date.isoformat()}.xlsx"
-    return Response(
-        content=content,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
 
 
 def _missing_trade_upload_slugs(db: Session, audit_date: date) -> list[str]:

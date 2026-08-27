@@ -262,7 +262,7 @@ class GtoWeeklyAuditUnitTestCase(unittest.TestCase):
 
         processed = wb["Processed"]
         self.assertEqual(
-            [processed.cell(1, c).value for c in range(1, 7)],
+            [processed.cell(1, c).value for c in range(1, 8)],
             [
                 "Date / Time",
                 "Admin Username",
@@ -270,27 +270,30 @@ class GtoWeeklyAuditUnitTestCase(unittest.TestCase):
                 "Player ID",
                 "Player Username",
                 "Category",
+                "Source date",
             ],
         )
         # 5 rows day0 + 1 day1 + 5 days stripe = 11
         data_rows = []
         for r in range(2, processed.max_row + 1):
-            if processed.cell(r, 6).value:
+            if processed.cell(r, 6).value and processed.cell(r, 6).value != "Missing data":
                 data_rows.append(
                     (
                         processed.cell(r, 2).value,
                         processed.cell(r, 4).value,
                         processed.cell(r, 6).value,
+                        processed.cell(r, 7).value,
                     )
                 )
         self.assertEqual(len(data_rows), 11)
+        self.assertTrue(all(row[3] for row in data_rows))
         self.assertIn("ProcessedData", processed.tables)
 
         # Chronological: first trade times should be sorted
         times = [
             processed.cell(r, 1).value
             for r in range(2, processed.max_row + 1)
-            if processed.cell(r, 1).value
+            if isinstance(processed.cell(r, 1).value, datetime)
         ]
         self.assertEqual(times, sorted(times))
 
@@ -299,33 +302,107 @@ class GtoWeeklyAuditUnitTestCase(unittest.TestCase):
         zelle_names = [
             zelle.cell(r, 2).value
             for r in range(2, zelle.max_row)
-            if zelle.cell(r, 2).value
+            if zelle.cell(r, 2).value and zelle.cell(r, 2).value != "Missing data"
         ]
         self.assertEqual(zelle_names, ["Alice Payer"])
+        self.assertEqual(zelle.cell(2, 5).value, MONDAY.isoformat())
         # Total row
         self.assertEqual(zelle.cell(3, 3).value, 40.0)
 
         venmo = wb["Venmo"]
-        # Blank match still included
+        # Blank match falls back to Trade Time + abs(Amount)
         self.assertEqual(venmo.cell(2, 2).value, "Eve Payer")
-        self.assertIsNone(venmo.cell(2, 1).value)
-        self.assertIsNone(venmo.cell(2, 3).value)
+        self.assertEqual(
+            venmo.cell(2, 1).value,
+            datetime(MONDAY.year, MONDAY.month, MONDAY.day, 12, 4, 0),
+        )
+        self.assertEqual(venmo.cell(2, 3).value, 20.0)
         self.assertEqual(venmo.cell(2, 4).value, "@Janseashells")
-        self.assertEqual(venmo.cell(3, 3).value, 0)
+        self.assertEqual(venmo.cell(2, 5).value, MONDAY.isoformat())
+        self.assertEqual(venmo.cell(3, 3).value, 20.0)
 
         crypto = wb["Crypto"]
         self.assertEqual(crypto.cell(1, 2).value, "From")
+        self.assertEqual(crypto.cell(1, 5).value, "Source date")
         self.assertEqual(crypto.cell(2, 2).value, "bc1qabc…")
         self.assertEqual(crypto.cell(2, 4).value, "BTC")
+        self.assertEqual(
+            crypto.cell(2, 5).value,
+            (MONDAY + timedelta(days=1)).isoformat(),
+        )
         self.assertEqual(crypto.cell(3, 3).value, 100.0)
 
         bonuses = wb["Bonuses"]
         self.assertEqual(bonuses.cell(2, 2).value, "Dan Nick")
+        self.assertEqual(bonuses.cell(2, 4).value, MONDAY.isoformat())
         self.assertEqual(bonuses.cell(3, 3).value, 5.0)
+
+        # Stripe rows have blank Name on Matching — not on rails; Processed Category filled.
+        # Day-0 GTO Stripe isn't in factory; days 2-6 have empty Name/Variant — Processed only.
+        stripe_processed = [
+            r
+            for r in range(2, processed.max_row + 1)
+            if processed.cell(r, 6).value == "GTO Stripe"
+        ]
+        self.assertGreaterEqual(len(stripe_processed), 1)
 
         with zipfile.ZipFile(io.BytesIO(content)) as z:
             pivot_parts = [n for n in z.namelist() if "pivotTables/" in n]
             self.assertTrue(pivot_parts, "expected pivot table part in output")
+
+    def test_missing_data_and_source_date_on_blank_fields(self):
+        """Blank Variant → Missing data; Source date from Matching file day."""
+
+        def row_factory(day: date, i: int):
+            base = datetime(day.year, day.month, day.day, 15, 0, 0)
+            if i == 0:
+                return [
+                    (
+                        base,
+                        "Admin1",
+                        -75.0,
+                        "9000-0001",
+                        "CryptoPlayer",
+                        "GTO Crypto",
+                        "usdt",
+                        None,
+                        None,
+                        "",  # blank Variant
+                    )
+                ]
+            return [
+                (
+                    base,
+                    "AdminX",
+                    -10.0,
+                    f"3000-000{i}",
+                    f"P{i}",
+                    "GTO Stripe",
+                    "",
+                    None,
+                    None,
+                    "",
+                )
+            ]
+
+        files = _week_files(MONDAY, row_factory=row_factory)
+        content = build_gto_weekly_audit_workbook(MONDAY, files)
+        wb = load_workbook(io.BytesIO(content))
+        crypto = wb["Crypto"]
+        self.assertEqual(crypto.cell(2, 1).value, datetime(2026, 8, 10, 15, 0, 0))
+        self.assertEqual(crypto.cell(2, 2).value, "usdt")
+        self.assertEqual(crypto.cell(2, 3).value, 75.0)
+        self.assertEqual(crypto.cell(2, 4).value, "Missing data")
+        self.assertEqual(crypto.cell(2, 5).value, MONDAY.isoformat())
+
+        processed = wb["Processed"]
+        # Find the crypto processed row
+        found = False
+        for r in range(2, processed.max_row + 1):
+            if processed.cell(r, 6).value == "GTO Crypto":
+                self.assertEqual(processed.cell(r, 7).value, MONDAY.isoformat())
+                found = True
+        self.assertTrue(found)
 
 
 class GtoWeeklyAuditApiTestCase(unittest.TestCase):

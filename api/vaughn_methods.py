@@ -10,6 +10,7 @@ from api.audit_ledger import (
     DEPOSIT_METHOD_ORDER,
     LEDGER_SOURCE_LABELS,
     LedgerLine,
+    UNION_MATCHING_SOURCE_OPTIONS,
 )
 from bot.services.payment_method_binding import canonicalize_zelle_recipient
 
@@ -128,6 +129,7 @@ def clubgto_matching_source_options() -> tuple[str, ...]:
     return tuple(
         deposit_labels
         + non_deposit
+        + list(UNION_MATCHING_SOURCE_OPTIONS)
         + list(CASHOUT_SOURCE_LABELS)
         + list(VAUGHN_CASHOUT_SOURCE_LABELS)
     )
