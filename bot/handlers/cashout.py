@@ -174,14 +174,17 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not eligible:
             await message.reply_text(deny_msg)
             return ConversationHandler.END
-        try:
-            from bot.services.escalation_notification import notify_cashout_started
+        # Auto-mode cashouts are hands-off; skip the "Cash out initiated." ping so
+        # admins are only alerted when the flow actually needs a human.
+        if not get_auto_cashout_enabled(club_id):
+            try:
+                from bot.services.escalation_notification import notify_cashout_started
 
-            await notify_cashout_started(
-                club_id=club_id, chat_id=chat.id, title=chat.title
-            )
-        except Exception:
-            pass
+                await notify_cashout_started(
+                    club_id=club_id, chat_id=chat.id, title=chat.title
+                )
+            except Exception:
+                pass
 
     popup_keyboard_svc.prepare_flow_entry_keyboard(
         context, chat.id, club_id=club_id, title=chat.title
@@ -487,6 +490,11 @@ async def cashout_auto_amount_received(update, context):
         context, sender_id=sender_id, text=message_text
     ):
         return CASHOUT_AUTO_AMOUNT
+
+    # This update is an expected wizard input; keep group_activity from escalating it.
+    from bot.services.support_group_idle_episode import mark_expected_flow_input
+
+    mark_expected_flow_input(context)
 
     if context.chat_data.get("cashout_admin_initiated") and update.effective_user:
         uid = update.effective_user.id
@@ -824,6 +832,11 @@ async def cashout_auto_handle_received(update, context):
     if target is not None and sender_id != target:
         return CASHOUT_AUTO_HANDLE
 
+    # Expected wizard input (the payout handle); suppress group_activity escalation.
+    from bot.services.support_group_idle_episode import mark_expected_flow_input
+
+    mark_expected_flow_input(context)
+
     method = context.chat_data.get("cashout_current_method", {})
     slug = method.get("slug")
     text = update.message.text or ""
@@ -912,6 +925,10 @@ async def cashout_auto_offscript(update, context):
     target = _auto_target_id(context)
     if target is not None and sender_id != target:
         return None  # not the target customer; ignore
+    # We own this escalation; stop group_activity from also firing player_idle.
+    from bot.services.support_group_idle_episode import mark_expected_flow_input
+
+    mark_expected_flow_input(context)
     text = ""
     if update.message:
         text = update.message.text or update.message.caption or "(non-text message)"
