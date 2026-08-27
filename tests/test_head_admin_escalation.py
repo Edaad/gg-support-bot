@@ -83,6 +83,20 @@ class HeadAdminAllowlistTests(unittest.IsolatedAsyncioTestCase):
         notify.assert_awaited_once()
 
 
+    async def test_union_deposit_first_calls_head_admin(self) -> None:
+        with patch(
+            "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as notify:
+            ok = await ha.maybe_notify_head_admin_escalation(
+                "First-time union deposit — verify with union.",
+                reason=esc.REASON_UNION_DEPOSIT_FIRST,
+            )
+        self.assertTrue(ok)
+        notify.assert_awaited_once()
+
+
 class NotifyEscalationSlackFanoutTests(unittest.IsolatedAsyncioTestCase):
     async def test_rpa_fans_out_identical_text(self) -> None:
         with patch.object(esc, "_club_display_name", return_value="Round Table"):

@@ -1818,6 +1818,11 @@ async def _run_normal_deposit_from_choice(
     from bot.services.manual_deposit_requests import (
         ManualDepositCapacityError,
         create_request_atomic,
+        union_deposit_slack_variant,
+    )
+    from bot.services.union_method_types import (
+        union_type_display_name,
+        union_type_from_display_name,
     )
 
     amount = context.chat_data.get("deposit_amount", "?")
@@ -1886,6 +1891,22 @@ async def _run_normal_deposit_from_choice(
                 "Could not record this deposit request. Please contact support."
             )
             return ConversationHandler.END
+        union_type_slug = union_type_from_display_name(method.get("name") or "")
+        slack_variant = None
+        method_display_name = (method.get("name") or "").strip()
+        if union_type_slug:
+            try:
+                slack_variant = union_deposit_slack_variant(
+                    int(chat_id),
+                    union_type_slug=union_type_slug,
+                )
+                method_display_name = union_type_display_name(union_type_slug)
+            except Exception:
+                logger.exception(
+                    "manual deposit slack variant failed chat_id=%s method_id=%s",
+                    chat_id,
+                    method_id,
+                )
         try:
             create_request_atomic(
                 club_id=int(club_id),
@@ -1907,6 +1928,26 @@ async def _run_normal_deposit_from_choice(
                 "Could not record this deposit request. Please try again or contact support."
             )
             return ConversationHandler.END
+        if slack_variant is not None:
+            try:
+                from bot.services.escalation_notification import (
+                    notify_union_deposit_request_slack,
+                )
+
+                await notify_union_deposit_request_slack(
+                    variant=slack_variant,
+                    club_id=int(club_id),
+                    chat_id=int(chat_id),
+                    title=getattr(query.message.chat, "title", None),
+                    amount=amount,
+                    method_display_name=method_display_name,
+                )
+            except Exception:
+                logger.exception(
+                    "manual deposit slack notify failed chat_id=%s method_id=%s",
+                    chat_id,
+                    method_id,
+                )
     elif isinstance(amount, Decimal):
         try:
             record_method_deposit(method_id, amount)

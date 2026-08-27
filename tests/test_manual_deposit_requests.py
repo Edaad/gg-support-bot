@@ -18,6 +18,7 @@ from bot.services.manual_deposit_requests import (
     ManualDepositCapacityError,
     capacity_allows,
     create_request_atomic,
+    union_deposit_slack_variant,
 )
 
 
@@ -359,6 +360,59 @@ class CreateRequestAtomicTests(unittest.TestCase):
                     telegram_chat_id=-100,
                     group_title="GTO / 2222-2222 / jz",
                 )
+
+
+class UnionDepositSlackVariantTests(unittest.TestCase):
+    def _mock_rows(self, rows):
+        session = MagicMock()
+        session.query.return_value.filter.return_value.all.return_value = rows
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        return cm
+
+    def test_first_when_no_priors(self):
+        with patch(
+            "bot.services.manual_deposit_requests.get_db",
+            return_value=self._mock_rows([]),
+        ):
+            self.assertEqual(
+                union_deposit_slack_variant(-100, union_type_slug="zelle"),
+                "first",
+            )
+
+    def test_repeat_open_when_prior_unchecked(self):
+        rows = [("Zelle", False)]
+        with patch(
+            "bot.services.manual_deposit_requests.get_db",
+            return_value=self._mock_rows(rows),
+        ):
+            self.assertEqual(
+                union_deposit_slack_variant(-100, union_type_slug="zelle"),
+                "repeat_open",
+            )
+
+    def test_repeat_verified_when_prior_checked(self):
+        rows = [("Zelle", False), ("Zelle", True)]
+        with patch(
+            "bot.services.manual_deposit_requests.get_db",
+            return_value=self._mock_rows(rows),
+        ):
+            self.assertEqual(
+                union_deposit_slack_variant(-100, union_type_slug="zelle"),
+                "repeat_verified",
+            )
+
+    def test_other_union_type_ignored(self):
+        rows = [("Cash App", True)]
+        with patch(
+            "bot.services.manual_deposit_requests.get_db",
+            return_value=self._mock_rows(rows),
+        ):
+            self.assertEqual(
+                union_deposit_slack_variant(-100, union_type_slug="zelle"),
+                "first",
+            )
 
 
 class ManualTradeLedgerFetchTests(unittest.TestCase):

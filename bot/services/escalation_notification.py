@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -36,6 +37,19 @@ REASON_RPA_DEPOSIT_FAILED = "rpa_deposit_failed"
 REASON_RPA_CASHOUT_FAILED = "rpa_cashout_failed"
 REASON_RPA_DEPOSIT_UNCERTAIN = "rpa_deposit_uncertain"
 REASON_RPA_CASHOUT_UNCERTAIN = "rpa_cashout_uncertain"
+REASON_UNION_DEPOSIT_FIRST = "union_deposit_first"
+REASON_UNION_DEPOSIT_REPEAT = "union_deposit_repeat"
+
+_UNION_DEPOSIT_FIRST_HEADLINE = "First-time union deposit — verify with union"
+_UNION_DEPOSIT_REPEAT_HEADLINE = "Union deposit — verify and add chips"
+_UNION_DEPOSIT_INSTRUCTION_FIRST = (
+    "This is the first time this player is using a union method. "
+    "Forward to head admins to verify with union."
+)
+_UNION_DEPOSIT_INSTRUCTION_REPEAT = "Please verify payment and add chips."
+_UNION_DEPOSIT_INSTRUCTION_REPEAT_OPEN = (
+    "Please verify payment and add chips. Prior request still unchecked."
+)
 
 _HEADLINES = {
     REASON_PLAYER_IDLE: "A player just reached out.",
@@ -374,6 +388,91 @@ def format_escalation_slack_text(
     return "\n".join(lines)
 
 
+def format_union_deposit_slack_text(
+    *,
+    variant: str,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None,
+    amount,
+    method_display_name: str,
+) -> str:
+    from bot.services.manual_deposit_requests import UnionDepositSlackVariant
+
+    v: UnionDepositSlackVariant = variant  # type: ignore[assignment]
+    if v == "first":
+        headline = _UNION_DEPOSIT_FIRST_HEADLINE
+        instruction = _UNION_DEPOSIT_INSTRUCTION_FIRST
+    elif v == "repeat_verified":
+        headline = _UNION_DEPOSIT_REPEAT_HEADLINE
+        instruction = _UNION_DEPOSIT_INSTRUCTION_REPEAT
+    else:
+        headline = _UNION_DEPOSIT_REPEAT_HEADLINE
+        instruction = _UNION_DEPOSIT_INSTRUCTION_REPEAT_OPEN
+
+    club = _club_display_name(club_id)
+    group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
+    if isinstance(amount, Decimal):
+        amount_normalized = amount.quantize(Decimal("0.01"))
+        if amount_normalized == amount_normalized.to_integral_value():
+            amount_str = f"${int(amount_normalized):,}"
+        else:
+            amount_str = f"${amount_normalized:,.2f}"
+    else:
+        amount_str = f"${amount}"
+    method_name = (method_display_name or "").strip() or "Unknown"
+    lines = [
+        f"*{headline}*",
+        f"Club: {club}",
+        _slack_code_span(group_title),
+        f"Amount: {amount_str}",
+        f"Method: {method_name}",
+        "",
+        instruction,
+    ]
+    return "\n".join(lines)
+
+
+async def notify_union_deposit_request_slack(
+    *,
+    variant: str,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None,
+    amount,
+    method_display_name: str,
+) -> bool:
+    """Slack AMs (and head admins on first-ever) when a union manual deposit is created."""
+    if is_test_bot_worker():
+        return False
+    if not escalation_notification_eligible(
+        int(chat_id), club_id=club_id, title=title
+    ):
+        return False
+
+    from bot.services.manual_deposit_requests import UnionDepositSlackVariant
+
+    v: UnionDepositSlackVariant = variant  # type: ignore[assignment]
+    reason = (
+        REASON_UNION_DEPOSIT_FIRST if v == "first" else REASON_UNION_DEPOSIT_REPEAT
+    )
+    text = format_union_deposit_slack_text(
+        variant=v,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+        amount=amount,
+        method_display_name=method_display_name,
+    )
+    return await notify_escalation_slack(
+        reason,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+        slack_text=text,
+    )
+
+
 async def notify_escalation_slack(
     reason: str,
     *,
@@ -384,6 +483,7 @@ async def notify_escalation_slack(
     method_slug: str | None = None,
     episode_id=None,
     trigger_messages: list | None = None,
+    slack_text: str | None = None,
 ) -> bool:
     from bot.services.escalation_observability import (
         live_history_episode_id,
@@ -392,7 +492,7 @@ async def notify_escalation_slack(
     )
     from bot.services.head_admin_escalation import HEAD_ADMIN_ESCALATION_REASONS
 
-    text = format_escalation_slack_text(
+    text = slack_text or format_escalation_slack_text(
         reason,
         club_id=club_id,
         chat_id=chat_id,

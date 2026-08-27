@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from bot.services.union_method_types import union_type_from_display_name
 from db.connection import get_db
 from db.models import ClubPaymentMethod, ManualDepositRequest
+
+UnionDepositSlackVariant = Literal["first", "repeat_verified", "repeat_open"]
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +78,34 @@ def method_has_capacity_for_amount(
         if amount is None:
             return current < limit
         return current + Decimal(str(amount)) <= limit
+
+
+def union_deposit_slack_variant(
+    telegram_chat_id: int,
+    *,
+    union_type_slug: str,
+) -> UnionDepositSlackVariant:
+    """Classify Slack copy for a union manual deposit (call before insert)."""
+    type_slug = (union_type_slug or "").strip().lower()
+    with get_db() as session:
+        rows = (
+            session.query(
+                ManualDepositRequest.method_name,
+                ManualDepositRequest.trade_record_checked,
+            )
+            .filter(ManualDepositRequest.telegram_chat_id == int(telegram_chat_id))
+            .all()
+        )
+    matching = [
+        row
+        for row in rows
+        if union_type_from_display_name(row[0] or "") == type_slug
+    ]
+    if not matching:
+        return "first"
+    if any(bool(row[1]) for row in matching):
+        return "repeat_verified"
+    return "repeat_open"
 
 
 def create_request_atomic(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -413,6 +414,48 @@ class EscalationCopyTests(unittest.TestCase):
         self.assertIn("*RPA deposit failed — add chips manually.*", dep)
         self.assertIn("*RPA cashout failed — claim chips manually.*", cash)
 
+    def test_union_deposit_first_copy(self):
+        with patch.object(esc, "_club_display_name", return_value="Round Table"):
+            text = esc.format_union_deposit_slack_text(
+                variant="first",
+                club_id=2,
+                chat_id=-300,
+                title="RT / 1234-5678 / Player",
+                amount=Decimal("500"),
+                method_display_name="Zelle",
+            )
+        self.assertIn("*First-time union deposit — verify with union*", text)
+        self.assertIn("Amount: $500", text)
+        self.assertIn("Method: Zelle", text)
+        self.assertIn("Forward to head admins to verify with union.", text)
+
+    def test_union_deposit_repeat_verified_copy(self):
+        with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
+            text = esc.format_union_deposit_slack_text(
+                variant="repeat_verified",
+                club_id=4,
+                chat_id=-300,
+                title="GTO / 1 / x",
+                amount=Decimal("100.50"),
+                method_display_name="Cash App",
+            )
+        self.assertIn("*Union deposit — verify and add chips*", text)
+        self.assertIn("Amount: $100.50", text)
+        self.assertIn("Please verify payment and add chips.", text)
+        self.assertNotIn("Prior request still unchecked", text)
+
+    def test_union_deposit_repeat_open_copy(self):
+        with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
+            text = esc.format_union_deposit_slack_text(
+                variant="repeat_open",
+                club_id=4,
+                chat_id=-300,
+                title="GTO / 1 / x",
+                amount=Decimal("75"),
+                method_display_name="Apple Pay",
+            )
+        self.assertIn("Prior request still unchecked.", text)
+
     def test_extract_player_message_prefers_text(self):
         msg = SimpleNamespace(text=" hello ", caption="cap", photo=None)
         self.assertEqual(esc.extract_player_message_for_slack(msg), "hello")
@@ -422,6 +465,80 @@ class EscalationCopyTests(unittest.TestCase):
         self.assertEqual(
             esc.extract_player_message_for_slack(msg), esc.MEDIA_ONLY_PLACEHOLDER
         )
+
+
+class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_skips_on_test_bot(self):
+        with patch.object(esc, "is_test_bot_worker", return_value=True):
+            ok = await esc.notify_union_deposit_request_slack(
+                variant="first",
+                club_id=2,
+                chat_id=-100,
+                title="RT / 1 / x",
+                amount=Decimal("100"),
+                method_display_name="Zelle",
+            )
+        self.assertFalse(ok)
+
+    async def test_skips_when_not_eligible(self):
+        with patch.object(esc, "is_test_bot_worker", return_value=False), patch.object(
+            esc, "escalation_notification_eligible", return_value=False
+        ):
+            ok = await esc.notify_union_deposit_request_slack(
+                variant="first",
+                club_id=2,
+                chat_id=-100,
+                title="RT / 1 / x",
+                amount=Decimal("100"),
+                method_display_name="Zelle",
+            )
+        self.assertFalse(ok)
+
+    async def test_first_uses_first_reason(self):
+        with patch.object(esc, "is_test_bot_worker", return_value=False), patch.object(
+            esc, "escalation_notification_eligible", return_value=True
+        ), patch.object(
+            esc,
+            "format_union_deposit_slack_text",
+            return_value="First-time union deposit body",
+        ), patch.object(
+            esc, "notify_escalation_slack", new_callable=AsyncMock, return_value=True
+        ) as notify:
+            ok = await esc.notify_union_deposit_request_slack(
+                variant="first",
+                club_id=2,
+                chat_id=-100,
+                title="RT / 1 / x",
+                amount=Decimal("100"),
+                method_display_name="Zelle",
+            )
+        self.assertTrue(ok)
+        notify.assert_awaited_once()
+        self.assertEqual(notify.await_args.args[0], esc.REASON_UNION_DEPOSIT_FIRST)
+        self.assertEqual(
+            notify.await_args.kwargs["slack_text"],
+            "First-time union deposit body",
+        )
+
+    async def test_repeat_uses_repeat_reason(self):
+        with patch.object(esc, "is_test_bot_worker", return_value=False), patch.object(
+            esc, "escalation_notification_eligible", return_value=True
+        ), patch.object(
+            esc,
+            "format_union_deposit_slack_text",
+            return_value="Repeat union deposit body",
+        ), patch.object(
+            esc, "notify_escalation_slack", new_callable=AsyncMock, return_value=True
+        ) as notify:
+            await esc.notify_union_deposit_request_slack(
+                variant="repeat_verified",
+                club_id=2,
+                chat_id=-100,
+                title="RT / 1 / x",
+                amount=Decimal("100"),
+                method_display_name="Zelle",
+            )
+        self.assertEqual(notify.await_args.args[0], esc.REASON_UNION_DEPOSIT_REPEAT)
 
 
 class PlayerContactLabelTests(unittest.TestCase):
