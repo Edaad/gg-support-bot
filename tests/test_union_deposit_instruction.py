@@ -57,6 +57,18 @@ class BuildUnionDepositInstructionTests(unittest.TestCase):
         )
         self.assertIn("Max: $500", text)
 
+    def test_ack_step_excludes_current_request_from_used_sum(self):
+        method = _method(
+            deposit_limit=Decimal("500"),
+            min_amount=Decimal("500"),
+            max_amount=None,
+            union_type="zelle",
+            method_tag="zelle email",
+        )
+        text = build_union_deposit_instruction(method, used_sum=Decimal("0"))
+        self.assertIn("Min: $500", text)
+        self.assertIn("Max: $500", text)
+
     def test_returns_none_without_method_tag(self):
         self.assertIsNone(
             build_union_deposit_instruction(

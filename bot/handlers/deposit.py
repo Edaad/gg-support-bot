@@ -2024,7 +2024,7 @@ async def handle_deposit_union_ack(
         UnionAckValidationError,
         complete_union_ack,
         get_union_ack_pending,
-        sum_for_method,
+        sum_for_method_excluding_request,
     )
     from bot.services.union_deposit_messages import build_union_instruction_with_footer
     from bot.services.union_instruction_expiry import (
@@ -2070,7 +2070,11 @@ async def handle_deposit_union_ack(
                 "This payment method is not configured yet. Please contact support."
             )
             return
-        used_sum = sum_for_method(session, int(method_id))
+        used_sum = sum_for_method_excluding_request(
+            session,
+            int(method_id),
+            exclude_request_id=int(request_id),
+        )
         session.expunge(db_method)
 
     instruction_html = build_union_instruction_with_footer(

@@ -21,6 +21,7 @@ from bot.services.manual_deposit_requests import (
     capacity_allows_for_update,
     create_dashboard_manual_deposit_request,
     create_request_atomic,
+    sum_for_method_excluding_request,
     union_deposit_slack_variant,
     update_dashboard_manual_deposit_request,
     validate_manual_deposit_amount,
@@ -108,6 +109,21 @@ class ApplyManualTradeConstraintsTests(unittest.TestCase):
 
 
 class CapacityAllowsTests(unittest.TestCase):
+    def test_sum_for_method_excluding_request(self):
+        session = MagicMock()
+        row = SimpleNamespace(amount=Decimal("500"))
+        session.get.return_value = row
+        with patch(
+            "bot.services.manual_deposit_requests.sum_for_method",
+            return_value=Decimal("500"),
+        ):
+            used = sum_for_method_excluding_request(
+                session,
+                110,
+                exclude_request_id=20,
+            )
+        self.assertEqual(used, Decimal("0"))
+
     def test_amount_aware_remaining_capacity(self):
         session = MagicMock()
         with patch(

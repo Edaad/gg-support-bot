@@ -78,6 +78,20 @@ def sum_for_method(session: Session, method_id: int) -> Decimal:
     return Decimal(str(total or 0))
 
 
+def sum_for_method_excluding_request(
+    session: Session,
+    method_id: int,
+    *,
+    exclude_request_id: int,
+) -> Decimal:
+    """Open capacity for instruction display (exclude the active deposit row)."""
+    total = sum_for_method(session, int(method_id))
+    row = session.get(ManualDepositRequest, int(exclude_request_id))
+    if row is None:
+        return total
+    return total - Decimal(str(row.amount))
+
+
 def capacity_allows(
     session: Session,
     *,
