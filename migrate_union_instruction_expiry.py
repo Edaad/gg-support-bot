@@ -13,7 +13,7 @@ from db.connection import init_engine
 COLUMN_DDL = [
     """
     ALTER TABLE manual_deposit_requests
-    ADD COLUMN IF NOT EXISTS instruction_telegram_message_ids JSONB
+    ADD COLUMN IF NOT EXISTS instruction_telegram_message_ids BIGINT[]
     """,
     """
     ALTER TABLE manual_deposit_requests

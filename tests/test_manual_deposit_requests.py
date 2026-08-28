@@ -488,6 +488,11 @@ class ManualDepositRequestListQueryTests(unittest.TestCase):
             ManualDepositRequest,
         )
 
+        # SQLite cannot compile PostgreSQL ARRAY; use JSON for in-memory tests only.
+        from sqlalchemy import JSON
+
+        ManualDepositRequest.__table__.c.instruction_telegram_message_ids.type = JSON()
+
         self.engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
