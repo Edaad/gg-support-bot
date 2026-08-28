@@ -38,7 +38,11 @@ def _instruction_warning_bullets(*, html: bool, bold_not: bool = False) -> list[
     ]
 
 
-UNION_INSTRUCTION_EXPIRED_TEXT = "\n".join(_instruction_warning_bullets(html=False))
+UNION_INSTRUCTION_EXPIRED_TEXT = (
+    "The provided payment method has expired.\n\n"
+    "Please do not send a payment to this tag if you have not already.\n\n"
+    "Use /deposit to get a valid method."
+)
 UNION_ACK_BUTTON_LABEL = "I HAVE READ THE INSTRUCTIONS ABOVE"
 UNION_ACK_CALLBACK_PREFIX = "depum"
 
