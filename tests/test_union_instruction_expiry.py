@@ -18,6 +18,7 @@ from bot.services.union_instruction_expiry import (
     restore_union_instruction_expiries,
     schedule_union_ack_expiry,
     schedule_union_instruction_expiry,
+    sweep_overdue_union_deposit_expiries,
 )
 
 
@@ -238,6 +239,29 @@ class UnionInstructionExpiryTests(unittest.TestCase):
         import asyncio
 
         asyncio.run(self._run_expire_skips_checked())
+
+    def test_sweep_overdue_instruction_expiry(self):
+        import asyncio
+
+        asyncio.run(self._run_sweep_overdue_instruction_expiry())
+
+    async def _run_sweep_overdue_instruction_expiry(self):
+        bot = AsyncMock()
+        expire_mock = AsyncMock(return_value=True)
+
+        with patch(
+            "bot.services.union_instruction_expiry._list_overdue_union_ack_request_ids",
+            return_value=[],
+        ), patch(
+            "bot.services.union_instruction_expiry._list_overdue_union_instruction_request_ids",
+            return_value=[12],
+        ), patch(
+            "bot.services.union_instruction_expiry.expire_union_instruction_now",
+            expire_mock,
+        ):
+            await sweep_overdue_union_deposit_expiries(bot)
+
+        expire_mock.assert_awaited_once_with(bot, 12)
 
 
 if __name__ == "__main__":

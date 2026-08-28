@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, NamedTuple
 
 from telegram.ext import ContextTypes
 
@@ -20,8 +20,20 @@ logger = logging.getLogger(__name__)
 
 UNION_INSTRUCTION_EXPIRY_SECONDS = 600  # 10 minutes
 UNION_INSTRUCTION_EXPIRY_SECONDS_TEST = 30
+_UNION_DEPOSIT_EXPIRY_SWEEP_JOB = "union_deposit_expiry_sweep"
+_UNION_DEPOSIT_EXPIRY_SWEEP_INTERVAL = 60
 
 _union_expiry_app: Any | None = None
+
+
+class UnionAckExpiryTarget(NamedTuple):
+    telegram_chat_id: int
+    ack_telegram_message_id: int
+
+
+class UnionInstructionExpiryTarget(NamedTuple):
+    telegram_chat_id: int
+    instruction_telegram_message_ids: list[int]
 
 
 def union_instruction_expiry_seconds() -> int:
@@ -33,12 +45,27 @@ def union_instruction_expiry_seconds() -> int:
 def register_union_instruction_expiry_runtime(app: Any) -> None:
     global _union_expiry_app
     _union_expiry_app = app
+    jq = getattr(app, "job_queue", None)
     try:
-        restore_union_deposit_expiries(getattr(app, "job_queue", None))
+        restore_union_deposit_expiries(jq)
     except Exception:
         logger.warning(
             "union deposit expiry: restore pending jobs failed", exc_info=True
         )
+    if jq is not None:
+        try:
+            for job in jq.get_jobs_by_name(_UNION_DEPOSIT_EXPIRY_SWEEP_JOB):
+                job.schedule_removal()
+            jq.run_repeating(
+                _union_deposit_expiry_sweep_callback,
+                interval=_UNION_DEPOSIT_EXPIRY_SWEEP_INTERVAL,
+                first=_UNION_DEPOSIT_EXPIRY_SWEEP_INTERVAL,
+                name=_UNION_DEPOSIT_EXPIRY_SWEEP_JOB,
+            )
+        except Exception:
+            logger.warning(
+                "union deposit expiry: sweep job setup failed", exc_info=True
+            )
 
 
 def _resolve_job_queue(job_queue: Any | None = None) -> Any | None:
@@ -170,20 +197,30 @@ async def _edit_message_text(
     text: str,
     log_label: str,
 ) -> None:
-    try:
-        await bot.edit_message_text(
-            chat_id=int(chat_id),
-            message_id=int(message_id),
-            text=text,
-        )
-    except Exception:
-        logger.debug(
-            "%s: edit failed chat_id=%s message_id=%s",
-            log_label,
-            chat_id,
-            message_id,
-            exc_info=True,
-        )
+    for parse_mode in (None,):
+        try:
+            kwargs: dict[str, Any] = {
+                "chat_id": int(chat_id),
+                "message_id": int(message_id),
+                "text": text,
+            }
+            if parse_mode is not None:
+                kwargs["parse_mode"] = parse_mode
+            await bot.edit_message_text(**kwargs)
+            return
+        except Exception as exc:
+            err = str(exc).lower()
+            if "message is not modified" in err:
+                return
+            logger.warning(
+                "%s: edit failed chat_id=%s message_id=%s parse_mode=%r: %s",
+                log_label,
+                chat_id,
+                message_id,
+                parse_mode,
+                exc,
+                exc_info=True,
+            )
 
 
 async def _edit_instruction_messages(
@@ -202,7 +239,7 @@ async def _edit_instruction_messages(
         )
 
 
-def mark_union_ack_expired(request_id: int) -> ManualDepositRequest | None:
+def mark_union_ack_expired(request_id: int) -> UnionAckExpiryTarget | None:
     now = datetime.now(timezone.utc)
     with get_db() as session:
         row = (
@@ -227,33 +264,31 @@ def mark_union_ack_expired(request_id: int) -> ManualDepositRequest | None:
         row.ack_expires_at = None
         session.flush()
         session.refresh(row)
-        return row
+        ack_message_id = row.ack_telegram_message_id
+        if ack_message_id is None:
+            return None
+        return UnionAckExpiryTarget(
+            telegram_chat_id=int(row.telegram_chat_id),
+            ack_telegram_message_id=int(ack_message_id),
+        )
 
 
 async def expire_union_ack_now(bot: Any, request_id: int) -> bool:
-    row = mark_union_ack_expired(int(request_id))
-    if row is None:
-        return False
-    ack_message_id = row.ack_telegram_message_id
-    if ack_message_id is None:
-        logger.info(
-            "union ack expiry: no ack message id request_id=%s chat_id=%s",
-            request_id,
-            row.telegram_chat_id,
-        )
+    target = mark_union_ack_expired(int(request_id))
+    if target is None:
         return False
     await _edit_message_text(
         bot,
-        chat_id=int(row.telegram_chat_id),
-        message_id=int(ack_message_id),
+        chat_id=target.telegram_chat_id,
+        message_id=target.ack_telegram_message_id,
         text=UNION_ACK_EXPIRED_TEXT,
         log_label="union ack expiry",
     )
     logger.info(
         "union ack expiry: applied request_id=%s chat_id=%s message_id=%s",
         request_id,
-        row.telegram_chat_id,
-        ack_message_id,
+        target.telegram_chat_id,
+        target.ack_telegram_message_id,
     )
     return True
 
@@ -311,8 +346,10 @@ def schedule_union_ack_expiry(
     )
 
 
-def mark_union_instruction_expired(request_id: int) -> ManualDepositRequest | None:
-    """Persist expiry timestamp; return row if expiry should proceed."""
+def mark_union_instruction_expired(
+    request_id: int,
+) -> UnionInstructionExpiryTarget | None:
+    """Persist expiry timestamp; return edit target if expiry should proceed."""
     now = datetime.now(timezone.utc)
     with get_db() as session:
         row = (
@@ -322,20 +359,46 @@ def mark_union_instruction_expired(request_id: int) -> ManualDepositRequest | No
             .one_or_none()
         )
         if row is None:
+            logger.info(
+                "union instruction expiry: skip missing request_id=%s",
+                request_id,
+            )
             return None
         if row.instruction_expired_at is not None:
             return None
         if bool(row.trade_record_checked):
             row.instruction_expires_at = None
             session.flush()
+            logger.info(
+                "union instruction expiry: skip checked request_id=%s",
+                request_id,
+            )
             return None
         if row.instruction_expires_at is None:
+            logger.warning(
+                "union instruction expiry: skip no deadline request_id=%s chat_id=%s",
+                request_id,
+                row.telegram_chat_id,
+            )
             return None
         row.instruction_expired_at = now
         row.instruction_expires_at = None
         session.flush()
         session.refresh(row)
-        return row
+        message_ids = [
+            int(mid) for mid in (row.instruction_telegram_message_ids or []) if mid
+        ]
+        if not message_ids:
+            logger.info(
+                "union instruction expiry: no message ids request_id=%s chat_id=%s",
+                request_id,
+                row.telegram_chat_id,
+            )
+            return None
+        return UnionInstructionExpiryTarget(
+            telegram_chat_id=int(row.telegram_chat_id),
+            instruction_telegram_message_ids=message_ids,
+        )
 
 
 async def expire_union_instruction_now(
@@ -343,28 +406,47 @@ async def expire_union_instruction_now(
     request_id: int,
 ) -> bool:
     """Apply expiry edit if still eligible. Returns True when messages were attempted."""
-    row = mark_union_instruction_expired(int(request_id))
-    if row is None:
-        return False
-    message_ids = [
-        int(mid) for mid in (row.instruction_telegram_message_ids or []) if mid
-    ]
-    if not message_ids:
-        logger.info(
-            "union instruction expiry: no message ids request_id=%s chat_id=%s",
-            request_id,
-            row.telegram_chat_id,
-        )
+    target = mark_union_instruction_expired(int(request_id))
+    if target is None:
         return False
     await _edit_instruction_messages(
         bot,
-        chat_id=int(row.telegram_chat_id),
-        message_ids=message_ids,
+        chat_id=target.telegram_chat_id,
+        message_ids=target.instruction_telegram_message_ids,
     )
     logger.info(
         "union instruction expiry: applied request_id=%s chat_id=%s messages=%s",
         request_id,
-        row.telegram_chat_id,
+        target.telegram_chat_id,
+        len(target.instruction_telegram_message_ids),
+    )
+    return True
+
+
+async def edit_union_instruction_expired_messages(
+    bot: Any,
+    request_id: int,
+) -> bool:
+    """Edit instruction messages to expired copy (repair missed Telegram edits)."""
+    with get_db() as session:
+        row = session.get(ManualDepositRequest, int(request_id))
+        if row is None:
+            return False
+        message_ids = [
+            int(mid) for mid in (row.instruction_telegram_message_ids or []) if mid
+        ]
+        if not message_ids:
+            return False
+        chat_id = int(row.telegram_chat_id)
+    await _edit_instruction_messages(
+        bot,
+        chat_id=chat_id,
+        message_ids=message_ids,
+    )
+    logger.info(
+        "union instruction expiry: re-applied edit request_id=%s chat_id=%s messages=%s",
+        request_id,
+        chat_id,
         len(message_ids),
     )
     return True
@@ -461,3 +543,52 @@ def restore_union_ack_expiries(job_queue: Any | None = None) -> None:
 def restore_union_deposit_expiries(job_queue: Any | None = None) -> None:
     restore_union_ack_expiries(job_queue)
     restore_union_instruction_expiries(job_queue)
+
+
+def _list_overdue_union_ack_request_ids(
+    *,
+    now: datetime | None = None,
+) -> list[int]:
+    cutoff = _as_utc(now) or datetime.now(timezone.utc)
+    with get_db() as session:
+        rows = (
+            session.query(ManualDepositRequest.id)
+            .filter(ManualDepositRequest.ack_expires_at.isnot(None))
+            .filter(ManualDepositRequest.ack_expires_at <= cutoff)
+            .filter(ManualDepositRequest.ack_expired_at.is_(None))
+            .filter(ManualDepositRequest.acknowledged_at.is_(None))
+            .filter(ManualDepositRequest.trade_record_checked.is_(False))
+            .all()
+        )
+    return [int(request_id) for (request_id,) in rows]
+
+
+def _list_overdue_union_instruction_request_ids(
+    *,
+    now: datetime | None = None,
+) -> list[int]:
+    cutoff = _as_utc(now) or datetime.now(timezone.utc)
+    with get_db() as session:
+        rows = (
+            session.query(ManualDepositRequest.id)
+            .filter(ManualDepositRequest.instruction_expires_at.isnot(None))
+            .filter(ManualDepositRequest.instruction_expires_at <= cutoff)
+            .filter(ManualDepositRequest.instruction_expired_at.is_(None))
+            .filter(ManualDepositRequest.trade_record_checked.is_(False))
+            .all()
+        )
+    return [int(request_id) for (request_id,) in rows]
+
+
+async def sweep_overdue_union_deposit_expiries(bot: Any) -> None:
+    """DB-driven fallback when one-shot jobs were missed."""
+    for request_id in _list_overdue_union_ack_request_ids():
+        await expire_union_ack_now(bot, int(request_id))
+    for request_id in _list_overdue_union_instruction_request_ids():
+        await expire_union_instruction_now(bot, int(request_id))
+
+
+async def _union_deposit_expiry_sweep_callback(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    await sweep_overdue_union_deposit_expiries(context.bot)

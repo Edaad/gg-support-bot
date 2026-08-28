@@ -1969,7 +1969,7 @@ async def _run_union_deposit_from_choice(
         expires_at=ack_expires_at,
     )
     schedule_union_ack_expiry(
-        context,
+        None,
         int(row.id),
         expires_at=ack_expires_at,
     )
@@ -2093,17 +2093,25 @@ async def handle_deposit_union_ack(
         log_label="union_deposit_instruction",
     )
     instruction_expires = instruction_expires_at_from_now()
-    complete_union_ack(
-        request_id,
-        instruction_message_ids=[instruction_msg.message_id],
-        instruction_expires_at=instruction_expires,
-    )
+    try:
+        complete_union_ack(
+            request_id,
+            instruction_message_ids=[instruction_msg.message_id],
+            instruction_expires_at=instruction_expires,
+        )
+    except Exception:
+        logger.exception(
+            "union deposit ack: persist instruction expiry failed request_id=%s chat_id=%s",
+            request_id,
+            chat_id,
+        )
+        raise
     cancel_union_ack_expiry(
         request_id,
-        job_queue=getattr(context, "job_queue", None),
+        job_queue=None,
     )
     schedule_union_instruction_expiry(
-        context,
+        None,
         request_id,
         expires_at=instruction_expires,
     )
