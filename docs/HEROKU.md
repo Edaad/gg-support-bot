@@ -550,6 +550,17 @@ heroku run -a YOUR_APP -- python scripts/run_group_chat_analysis.py --activity-d
 
 Optional: `GROUP_CHAT_ANALYSIS_CONCURRENCY=10` (default `0` = unlimited).
 
+## Union method shape (dashboard manual deposits)
+
+After deploying the union method redesign, run **in order** (wipes existing union methods and deposit rows, then adds new columns):
+
+```bash
+heroku run -a YOUR_APP -- python migrate_union_methods_clean_slate.py
+heroku run -a YOUR_APP -- python migrate_union_method_shape.py
+```
+
+Recreate union methods in the dashboard (Type, Union, Internal identifier, Method tag, optional Method name). Bot instructions are generated from those fields; no free-text player message column.
+
 ## Per-group deposit / cashout method access
 
 After deploying deposit method public/blacklist/whitelist (cashout access reuses the same table — no extra migrate):

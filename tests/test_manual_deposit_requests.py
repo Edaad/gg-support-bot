@@ -28,40 +28,56 @@ from bot.services.manual_deposit_requests import (
 )
 
 
+def _valid_union_method_ns(**overrides):
+    base = {
+        "tracks_manual_requests": True,
+        "direction": "deposit",
+        "deposit_limit": Decimal("1000"),
+        "union_type": "zelle",
+        "deposit_union": "tmt",
+        "method_tag": "$zelle",
+        "name": "Zelle",
+        "manual_request_variant_name": "v1",
+        "tiers": [],
+        "is_public": True,
+    }
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
 class ApplyManualTradeConstraintsTests(unittest.TestCase):
-    def test_requires_limit_and_message(self):
-        method = SimpleNamespace(
-            tracks_manual_requests=True,
-            direction="deposit",
-            deposit_limit=None,
-            manual_request_message="hi",
-            manual_request_variant_name="v1",
-            tiers=[],
-            is_public=True,
-        )
+    def test_requires_limit_and_fields(self):
+        method = _valid_union_method_ns(deposit_limit=None)
         with self.assertRaises(ValueError):
             apply_manual_trade_request_constraints(method)
 
         method.deposit_limit = Decimal("1000")
-        method.manual_request_message = "  "
+        method.union_type = None
         with self.assertRaises(ValueError):
             apply_manual_trade_request_constraints(method)
 
-        method.manual_request_message = "Send here"
+        method.union_type = "zelle"
+        method.deposit_union = None
+        with self.assertRaises(ValueError):
+            apply_manual_trade_request_constraints(method)
+
+        method.deposit_union = "tmt"
+        method.method_tag = "  "
+        with self.assertRaises(ValueError):
+            apply_manual_trade_request_constraints(method)
+
+        method.method_tag = "pay@example.com"
         apply_manual_trade_request_constraints(method)
         self.assertIsNone(method.manual_request_variant_name)
 
     def test_forces_off_linking_and_sets_public(self):
-        method = SimpleNamespace(
-            tracks_manual_requests=True,
-            direction="deposit",
+        method = _valid_union_method_ns(
             deposit_limit=Decimal("500"),
-            manual_request_message=" Pay me ",
+            method_tag=" Pay me ",
             manual_request_variant_name=" Union ",
             has_sub_options=True,
             first_time_linking_enabled=True,
             first_time_bind_mode="special_amount",
-            tiers=[],
             is_public=False,
         )
         apply_manual_trade_request_constraints(method)
@@ -69,22 +85,14 @@ class ApplyManualTradeConstraintsTests(unittest.TestCase):
         self.assertFalse(method.first_time_linking_enabled)
         self.assertIsNone(method.first_time_bind_mode)
         self.assertTrue(method.is_public)
-        self.assertEqual(method.manual_request_message, "Pay me")
+        self.assertEqual(method.method_tag, "Pay me")
         self.assertIsNone(method.manual_request_variant_name)
 
     def test_rejects_stripe_on_tiers(self):
         tier = SimpleNamespace(use_group_checkout_link=True, variants=[])
-        method = SimpleNamespace(
-            tracks_manual_requests=True,
-            direction="deposit",
+        method = _valid_union_method_ns(
             deposit_limit=Decimal("100"),
-            manual_request_message="x",
-            manual_request_variant_name="y",
-            has_sub_options=False,
-            first_time_linking_enabled=False,
-            first_time_bind_mode=None,
             tiers=[tier],
-            is_public=True,
         )
         with self.assertRaises(ValueError):
             apply_manual_trade_request_constraints(method)
@@ -222,8 +230,9 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
             has_sub_options=False,
             is_public=False,
             tracks_manual_requests=True,
-            manual_request_message="msg",
-            manual_request_variant_name="v",
+            union_type="zelle",
+            deposit_union="tmt",
+            method_tag="pay@zelle",
             deposit_limit=Decimal("1000"),
             accumulated_amount=Decimal("0"),
         )
@@ -267,8 +276,9 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
             has_sub_options=False,
             is_public=True,
             tracks_manual_requests=False,
-            manual_request_message=None,
-            manual_request_variant_name=None,
+            union_type=None,
+            deposit_union=None,
+            method_tag=None,
             deposit_limit=None,
             accumulated_amount=Decimal("0"),
         )
@@ -281,8 +291,9 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
             has_sub_options=False,
             is_public=False,
             tracks_manual_requests=True,
-            manual_request_message="msg",
-            manual_request_variant_name="v",
+            union_type="zelle",
+            deposit_union="tmt",
+            method_tag="pay@zelle",
             deposit_limit=Decimal("5000"),
             accumulated_amount=Decimal("0"),
         )
@@ -311,8 +322,9 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
             has_sub_options=False,
             is_public=False,
             tracks_manual_requests=True,
-            manual_request_message="msg",
-            manual_request_variant_name="v",
+            union_type="zelle",
+            deposit_union="tmt",
+            method_tag="pay@zelle",
             deposit_limit=Decimal("10000"),
             accumulated_amount=Decimal("0"),
         )
@@ -501,7 +513,7 @@ class ManualTradeLedgerFetchTests(unittest.TestCase):
         self.assertEqual(events[0].source, "deposit_union_zelle")
         self.assertEqual(events[0].source_label, "Union Zelle")
         self.assertEqual(events[0].display_name, "GTO / 2222-2222 / jz")
-        self.assertEqual(events[0].variant, "zelle-union")
+        self.assertEqual(events[0].variant, "Union")
         self.assertEqual(events[0].gg_player_id, "2222-2222")
         self.assertEqual(events[0].amount_usd, Decimal("100"))
 
@@ -569,8 +581,9 @@ class ManualDepositRequestListQueryTests(unittest.TestCase):
                 tracks_manual_requests=True,
                 is_active=True,
                 is_public=False,
-                manual_request_message="pay",
-                manual_request_variant_name="v1",
+                union_type="zelle",
+                deposit_union="tmt",
+                method_tag="pay@zelle",
             )
         )
         session.add(
@@ -774,8 +787,9 @@ class DashboardManualDepositServiceTests(unittest.TestCase):
                 tracks_manual_requests=True,
                 is_active=False,
                 is_public=False,
-                manual_request_message="pay",
-                manual_request_variant_name="v1",
+                union_type="zelle",
+                deposit_union="tmt",
+                method_tag="pay@zelle",
             )
         )
         session.add(ClubPaymentMethodClub(method_id=10, club_id=1))

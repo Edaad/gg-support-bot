@@ -1851,7 +1851,15 @@ async def _run_normal_deposit_from_choice(
     context.chat_data["deposit_tracks_manual_requests"] = tracks_manual
 
     if tracks_manual:
-        message = (method.get("manual_request_message") or "").strip()
+        from bot.services.manual_deposit_requests import sum_for_method
+        from bot.services.union_deposit_instruction import (
+            build_union_deposit_instruction_from_dict,
+        )
+        from db.connection import get_db
+
+        with get_db() as session:
+            used_sum = sum_for_method(session, int(method_id))
+        message = build_union_deposit_instruction_from_dict(method, used_sum=used_sum)
         if not message:
             await query.edit_message_text(
                 "This payment method is not configured yet. Please contact support."

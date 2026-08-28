@@ -14,12 +14,19 @@ from bot.services.union_method_types import (
     UNION_METHOD_TYPES,
     UNION_TYPE_SLUGS,
     union_type_display_name,
+    validate_union_method_type,
 )
 from db.connection import get_db
 from db.models import ClubPaymentMethod, ClubPaymentMethodClub
 
 
 def _union_type_slug_for_method(method: ClubPaymentMethod) -> Optional[str]:
+    raw = getattr(method, "union_type", None)
+    if raw:
+        try:
+            return validate_union_method_type(str(raw))
+        except ValueError:
+            pass
     from bot.services.union_method_types import union_type_from_display_name
 
     return union_type_from_display_name(method.name or "")
@@ -53,8 +60,8 @@ def list_union_methods_for_club(
             # Detach with loaded columns so callers can read name/id after commit.
             session.expunge(m)
         if method_type is not None:
-            display = union_type_display_name(method_type)
-            rows = [m for m in rows if (m.name or "") == display]
+            type_slug = validate_union_method_type(method_type)
+            rows = [m for m in rows if _union_type_slug_for_method(m) == type_slug]
         return rows
 
 

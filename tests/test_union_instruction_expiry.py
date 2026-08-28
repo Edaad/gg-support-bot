@@ -31,10 +31,11 @@ class UnionInstructionExpiryTests(unittest.TestCase):
             id=3,
             name="Zelle",
             slug="zelle-union",
+            union_type="zelle",
+            method_tag="pay@zelle",
             tracks_manual_requests=True,
             is_active=True,
             deposit_limit=Decimal("1000"),
-            manual_request_variant_name="Union",
         )
         session = MagicMock()
         session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = (
@@ -77,10 +78,11 @@ class UnionInstructionExpiryTests(unittest.TestCase):
             id=3,
             name="Zelle",
             slug="zelle-union",
+            union_type="zelle",
+            method_tag="pay@zelle",
             tracks_manual_requests=True,
             is_active=True,
             deposit_limit=Decimal("1000"),
-            manual_request_variant_name="Union",
         )
         session = MagicMock()
         session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = (

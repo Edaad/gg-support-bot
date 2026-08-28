@@ -277,7 +277,10 @@ class ClubPaymentMethod(Base):
     tracks_manual_requests = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
-    manual_request_message = Column(Text, nullable=True)
+    union_type = Column(String(20), nullable=True)
+    deposit_union = Column(String(20), nullable=True)
+    method_tag = Column(String(200), nullable=True)
+    payment_account_name = Column(String(200), nullable=True)
     manual_request_variant_name = Column(String(100), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(

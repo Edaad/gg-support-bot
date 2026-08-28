@@ -332,6 +332,9 @@ def validate_first_time_linking(method: ClubPaymentMethod) -> None:
 
 def apply_manual_trade_request_constraints(method: ClubPaymentMethod) -> None:
     """Normalize + validate flagged union methods. Raises ValueError."""
+    from bot.services.deposit_union_types import validate_deposit_union
+    from bot.services.union_method_types import union_type_display_name, validate_union_method_type
+
     tracks = bool(getattr(method, "tracks_manual_requests", False))
     if not tracks:
         return
@@ -339,10 +342,23 @@ def apply_manual_trade_request_constraints(method: ClubPaymentMethod) -> None:
         raise ValueError("Union methods apply to deposit methods only.")
     if method.deposit_limit is None or method.deposit_limit <= 0:
         raise ValueError("Union methods require a positive deposit limit.")
-    message = (getattr(method, "manual_request_message", None) or "").strip()
-    if not message:
-        raise ValueError("Union methods require a player message.")
-    method.manual_request_message = message
+    union_type_raw = getattr(method, "union_type", None)
+    if not union_type_raw:
+        raise ValueError("Union methods require a payment type.")
+    union_type = validate_union_method_type(str(union_type_raw))
+    method.union_type = union_type
+    method.name = union_type_display_name(union_type)
+    deposit_union_raw = getattr(method, "deposit_union", None)
+    if not deposit_union_raw:
+        raise ValueError("Union methods require a union (TMT or Massiv).")
+    method.deposit_union = validate_deposit_union(str(deposit_union_raw))
+    method_tag = (getattr(method, "method_tag", None) or "").strip()
+    if not method_tag:
+        raise ValueError("Union methods require a method tag.")
+    method.method_tag = method_tag
+    account_name = getattr(method, "payment_account_name", None)
+    if account_name is not None:
+        method.payment_account_name = account_name.strip() or None
     method.manual_request_variant_name = None
     method.has_sub_options = False
     method.first_time_linking_enabled = False

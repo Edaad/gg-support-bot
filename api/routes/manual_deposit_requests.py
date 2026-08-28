@@ -12,6 +12,7 @@ from sqlalchemy import String, cast, or_
 from sqlalchemy.orm import Session, joinedload
 
 from api.auth import get_current_admin
+from bot.services.deposit_union_types import validate_deposit_union
 from bot.services.manual_deposit_requests import (
     ManualDepositCapacityError,
     ManualDepositValidationError,
@@ -144,6 +145,7 @@ def _list_query(
     method_id: Optional[int] = None,
     method_slug: Optional[str] = None,
     method_type: Optional[str] = None,
+    deposit_union: Optional[str] = None,
     trade_record_checked: Optional[bool] = None,
     include_inactive_methods: bool = True,
     q: Optional[str] = None,
@@ -162,6 +164,12 @@ def _list_query(
     if method_type:
         display = union_type_display_name(validate_union_method_type(method_type))
         query = query.filter(ManualDepositRequest.method_name == display)
+    if deposit_union:
+        union_slug = validate_deposit_union(deposit_union)
+        query = query.join(
+            ClubPaymentMethod,
+            ClubPaymentMethod.id == ManualDepositRequest.method_id,
+        ).filter(ClubPaymentMethod.deposit_union == union_slug)
     if trade_record_checked is not None:
         query = query.filter(
             ManualDepositRequest.trade_record_checked.is_(bool(trade_record_checked))
@@ -182,6 +190,7 @@ def _list_query(
             ManualDepositRequest.group_title.ilike(pattern),
             Club.name.ilike(pattern),
             ManualDepositRequest.method_slug.ilike(pattern),
+            ManualDepositRequest.variant_name.ilike(pattern),
             cast(ManualDepositRequest.amount, String).ilike(pattern),
         ]
         try:
@@ -206,7 +215,9 @@ def list_manual_deposit_requests(
     club_id: Optional[int] = None,
     method_id: Optional[int] = None,
     method_slug: Optional[str] = None,
+    type: Optional[str] = Query(None, alias="type"),
     method_type: Optional[str] = Query(None),
+    deposit_union: Optional[str] = Query(None),
     trade_record_checked: Optional[bool] = None,
     include_inactive_methods: bool = Query(True),
     q: Optional[str] = Query(None),
@@ -214,14 +225,18 @@ def list_manual_deposit_requests(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db_dependency),
 ):
-    if method_type:
-        validate_union_method_type(method_type)
+    resolved_type = type or method_type
+    if resolved_type:
+        validate_union_method_type(resolved_type)
+    if deposit_union:
+        validate_deposit_union(deposit_union)
     query = _list_query(
         db,
         club_id=club_id,
         method_id=method_id,
         method_slug=method_slug,
-        method_type=method_type,
+        method_type=resolved_type,
+        deposit_union=deposit_union,
         trade_record_checked=trade_record_checked,
         include_inactive_methods=include_inactive_methods,
         q=q,

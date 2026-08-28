@@ -10,7 +10,11 @@ from typing import Literal, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from bot.services.union_method_types import union_type_from_display_name
+from bot.services.union_method_types import (
+    union_type_display_name,
+    union_type_from_display_name,
+    validate_union_method_type,
+)
 from db.connection import get_db
 from db.models import ClubPaymentMethod, ClubPaymentMethodClub, Group, ManualDepositRequest
 
@@ -26,6 +30,35 @@ class ManualDepositCapacityError(Exception):
 
 class ManualDepositValidationError(Exception):
     """Raised when dashboard create/update validation fails."""
+
+
+def _union_method_type_display(method: ClubPaymentMethod) -> str:
+    raw = getattr(method, "union_type", None)
+    if raw:
+        try:
+            return union_type_display_name(validate_union_method_type(str(raw)))
+        except ValueError:
+            pass
+    return (method.name or "").strip()
+
+
+def _deposit_snapshot_fields(method: ClubPaymentMethod) -> tuple[str, str, str]:
+    method_tag = (getattr(method, "method_tag", None) or "").strip() or "default"
+    return (
+        _union_method_type_display(method),
+        (method.slug or "").strip().lower(),
+        method_tag,
+    )
+
+
+def _method_union_type(method: ClubPaymentMethod) -> Optional[str]:
+    raw = getattr(method, "union_type", None)
+    if raw:
+        try:
+            return validate_union_method_type(str(raw))
+        except ValueError:
+            pass
+    return union_type_from_display_name(method.name or "")
 
 
 def sum_for_method(session: Session, method_id: int) -> Decimal:
@@ -181,13 +214,13 @@ def create_dashboard_manual_deposit_request(
             telegram_chat_id=int(telegram_chat_id),
         )
         group_title = (group.name or "").strip()[:512] or None
-        variant = (method.slug or "").strip() or "default"
+        type_display, internal_id, method_tag = _deposit_snapshot_fields(method)
         row = ManualDepositRequest(
             club_id=int(group.club_id),
             method_id=int(method.id),
-            method_name=method.name,
-            method_slug=(method.slug or "").strip().lower(),
-            variant_name=variant,
+            method_name=type_display,
+            method_slug=internal_id,
+            variant_name=method_tag,
             group_title=group_title,
             amount=amount_dec,
             telegram_chat_id=int(telegram_chat_id),
@@ -379,20 +412,20 @@ def create_request_atomic(
                 "This payment method is at capacity for that amount."
             )
 
-        variant = (method.slug or "").strip() or "default"
+        type_display, internal_id, method_tag = _deposit_snapshot_fields(method)
         row = ManualDepositRequest(
             club_id=int(club_id),
             method_id=int(method.id),
-            method_name=method.name,
-            method_slug=(method.slug or "").strip().lower(),
-            variant_name=variant,
+            method_name=type_display,
+            method_slug=internal_id,
+            variant_name=method_tag,
             group_title=(group_title or "").strip()[:512] or None,
             amount=amount_dec,
             telegram_chat_id=int(telegram_chat_id),
             trade_record_checked=False,
             source="bot",
         )
-        if instruction_message_ids and union_type_from_display_name(method.name or ""):
+        if instruction_message_ids and _method_union_type(method):
             row.instruction_telegram_message_ids = [
                 int(mid) for mid in instruction_message_ids if mid
             ]

@@ -541,7 +541,7 @@ def union_deposit_source_label(method_name: str) -> str | None:
 
 
 def _union_method_tag(row: ManualDepositRequest) -> str:
-    return (row.method_slug or row.variant_name or "").strip()
+    return (row.variant_name or row.method_slug or "").strip()
 
 
 def _resolve_union_group_title(

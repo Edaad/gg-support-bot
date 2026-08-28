@@ -141,11 +141,11 @@ class UnionMethodTypesTests(unittest.TestCase):
 
 class EnsureUniqueTagTests(unittest.TestCase):
     def test_collision_appends_suffix(self):
-        from api.routes.union_methods import _ensure_unique_tag
+        from api.routes.union_methods import _ensure_unique_internal_identifier
 
         db = MagicMock()
         db.query.return_value.filter.return_value.first.side_effect = [object(), None]
-        tag = _ensure_unique_tag(db, "main")
+        tag = _ensure_unique_internal_identifier(db, "main")
         self.assertTrue(tag.startswith("main-"))
         self.assertNotEqual(tag, "main")
 
