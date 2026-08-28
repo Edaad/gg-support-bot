@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 import re
 from datetime import datetime, timezone
@@ -393,6 +394,15 @@ def format_escalation_slack_text(
     return "\n".join(lines)
 
 
+def _union_deposit_amount_str(amount) -> str:
+    if isinstance(amount, Decimal):
+        amount_normalized = amount.quantize(Decimal("0.01"))
+        if amount_normalized == amount_normalized.to_integral_value():
+            return f"${int(amount_normalized):,}"
+        return f"${amount_normalized:,.2f}"
+    return f"${amount}"
+
+
 def format_union_deposit_slack_text(
     *,
     variant: str,
@@ -417,14 +427,7 @@ def format_union_deposit_slack_text(
 
     club = _club_display_name(club_id)
     group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
-    if isinstance(amount, Decimal):
-        amount_normalized = amount.quantize(Decimal("0.01"))
-        if amount_normalized == amount_normalized.to_integral_value():
-            amount_str = f"${int(amount_normalized):,}"
-        else:
-            amount_str = f"${amount_normalized:,.2f}"
-    else:
-        amount_str = f"${amount}"
+    amount_str = _union_deposit_amount_str(amount)
     method_name = (method_display_name or "").strip() or "Unknown"
     lines = [
         f"*{headline}*",
@@ -436,6 +439,85 @@ def format_union_deposit_slack_text(
         instruction,
     ]
     return "\n".join(lines)
+
+
+async def format_union_deposit_telegram_text(
+    *,
+    variant: str,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None,
+    amount,
+    method_display_name: str,
+) -> str:
+    from bot.services.manual_deposit_requests import UnionDepositSlackVariant
+    from notification.formatting import format_player_id_line, resolve_and_format_group_chat_line
+
+    v: UnionDepositSlackVariant = variant  # type: ignore[assignment]
+    if v == "first":
+        headline = _UNION_DEPOSIT_FIRST_HEADLINE
+        instruction = _UNION_DEPOSIT_INSTRUCTION_FIRST
+    elif v == "repeat_verified":
+        headline = _UNION_DEPOSIT_REPEAT_HEADLINE
+        instruction = _UNION_DEPOSIT_INSTRUCTION_REPEAT
+    else:
+        headline = _UNION_DEPOSIT_REPEAT_HEADLINE
+        instruction = _UNION_DEPOSIT_INSTRUCTION_REPEAT_OPEN
+
+    club = _club_display_name(club_id)
+    group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
+    amount_str = _union_deposit_amount_str(amount)
+    method_name = (method_display_name or "").strip() or "Unknown"
+    lines = [
+        f"<b>{html.escape(headline, quote=False)}</b>",
+        "",
+        f"Club: {html.escape(club, quote=False)}",
+        await resolve_and_format_group_chat_line(
+            group_title=group_title,
+            telegram_chat_id=int(chat_id),
+            club_id=club_id,
+        ),
+    ]
+    player_line = format_player_id_line(group_title)
+    if player_line:
+        lines.append(player_line)
+    lines.extend(
+        [
+            "",
+            f"Amount: {html.escape(amount_str, quote=False)}",
+            f"Method: {html.escape(method_name, quote=False)}",
+            "",
+            html.escape(instruction, quote=False),
+        ]
+    )
+    return "\n".join(lines)
+
+
+async def _notify_union_deposit_payment_chats(
+    *,
+    telegram_text: str,
+    group_title: str | None,
+) -> None:
+    from notification.payment_notification_delivery import deliver_payment_notification
+    from notification.payment_notification_routing import resolve_notification_chat_ids
+
+    chat_ids = resolve_notification_chat_ids([group_title])
+    if not chat_ids:
+        logger.warning("union deposit: no payment notification bind chats configured")
+        return
+    try:
+        await deliver_payment_notification(
+            telegram_text,
+            bind_chat_ids=chat_ids,
+            include_slack_escalation=False,
+        )
+    except Exception:
+        logger.warning(
+            "union deposit: payment notification chat delivery failed titles=%r chat_ids=%s",
+            group_title,
+            chat_ids,
+            exc_info=True,
+        )
 
 
 async def notify_union_deposit_request_slack(
@@ -469,6 +551,25 @@ async def notify_union_deposit_request_slack(
         amount=amount,
         method_display_name=method_display_name,
     )
+    try:
+        telegram_text = await format_union_deposit_telegram_text(
+            variant=v,
+            club_id=club_id,
+            chat_id=int(chat_id),
+            title=title,
+            amount=amount,
+            method_display_name=method_display_name,
+        )
+        await _notify_union_deposit_payment_chats(
+            telegram_text=telegram_text,
+            group_title=title or get_group_name(int(chat_id)),
+        )
+    except Exception:
+        logger.warning(
+            "union deposit: telegram payment notification failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
     return await notify_escalation_slack(
         reason,
         club_id=club_id,

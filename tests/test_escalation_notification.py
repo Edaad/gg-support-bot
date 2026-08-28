@@ -468,6 +468,26 @@ class EscalationCopyTests(unittest.TestCase):
 
 
 class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_union_deposit_telegram_copy(self):
+        with patch.object(esc, "_club_display_name", return_value="Round Table"), patch(
+            "notification.formatting.resolve_and_format_group_chat_line",
+            new_callable=AsyncMock,
+            return_value="Group Chat: RT / 1234-5678 / Player",
+        ):
+            text = await esc.format_union_deposit_telegram_text(
+                variant="first",
+                club_id=2,
+                chat_id=-300,
+                title="RT / 1234-5678 / Player",
+                amount=Decimal("500"),
+                method_display_name="Zelle",
+            )
+        self.assertIn("<b>First-time union deposit — verify with union</b>", text)
+        self.assertIn("Group Chat: RT / 1234-5678 / Player", text)
+        self.assertIn("Player ID: <code>1234-5678</code>", text)
+        self.assertIn("Amount: $500", text)
+        self.assertIn("Method: Zelle", text)
+
     async def test_skips_on_test_bot(self):
         with patch.object(esc, "is_test_bot_worker", return_value=True):
             ok = await esc.notify_union_deposit_request_slack(
@@ -502,6 +522,15 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
             "format_union_deposit_slack_text",
             return_value="First-time union deposit body",
         ), patch.object(
+            esc,
+            "format_union_deposit_telegram_text",
+            new_callable=AsyncMock,
+            return_value="<b>First-time union deposit body</b>",
+        ), patch.object(
+            esc,
+            "_notify_union_deposit_payment_chats",
+            new_callable=AsyncMock,
+        ) as payment_chats, patch.object(
             esc, "notify_escalation_slack", new_callable=AsyncMock, return_value=True
         ) as notify:
             ok = await esc.notify_union_deposit_request_slack(
@@ -513,6 +542,7 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
                 method_display_name="Zelle",
             )
         self.assertTrue(ok)
+        payment_chats.assert_awaited_once()
         notify.assert_awaited_once()
         self.assertEqual(notify.await_args.args[0], esc.REASON_UNION_DEPOSIT_FIRST)
         self.assertEqual(
@@ -528,6 +558,15 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
             "format_union_deposit_slack_text",
             return_value="Repeat union deposit body",
         ), patch.object(
+            esc,
+            "format_union_deposit_telegram_text",
+            new_callable=AsyncMock,
+            return_value="<b>Repeat union deposit body</b>",
+        ), patch.object(
+            esc,
+            "_notify_union_deposit_payment_chats",
+            new_callable=AsyncMock,
+        ), patch.object(
             esc, "notify_escalation_slack", new_callable=AsyncMock, return_value=True
         ) as notify:
             await esc.notify_union_deposit_request_slack(
@@ -539,6 +578,26 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
                 method_display_name="Zelle",
             )
         self.assertEqual(notify.await_args.args[0], esc.REASON_UNION_DEPOSIT_REPEAT)
+
+    async def test_payment_chat_routing_uses_group_title(self):
+        with patch(
+            "notification.payment_notification_routing.resolve_notification_chat_ids",
+            return_value=[-9001],
+        ) as resolve, patch(
+            "notification.payment_notification_delivery.deliver_payment_notification",
+            new_callable=AsyncMock,
+            return_value=[(-9001, 42)],
+        ) as deliver:
+            await esc._notify_union_deposit_payment_chats(
+                telegram_text="<b>Union deposit</b>",
+                group_title="GTO / 1 / x",
+            )
+        resolve.assert_called_once_with(["GTO / 1 / x"])
+        deliver.assert_awaited_once_with(
+            "<b>Union deposit</b>",
+            bind_chat_ids=[-9001],
+            include_slack_escalation=False,
+        )
 
 
 class PlayerContactLabelTests(unittest.TestCase):
