@@ -328,6 +328,47 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
 
 
 class CreateRequestAtomicTests(unittest.TestCase):
+    def test_row_usable_after_session_closes(self):
+        method = SimpleNamespace(
+            id=3,
+            name="Zelle",
+            slug="zelle-union",
+            tracks_manual_requests=True,
+            is_active=True,
+            deposit_limit=Decimal("1000"),
+            manual_request_variant_name="Union",
+        )
+        session = MagicMock()
+        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = (
+            method
+        )
+
+        def _add(row):
+            row.id = 99
+
+        session.add.side_effect = _add
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+
+        with patch(
+            "bot.services.manual_deposit_requests.get_db", return_value=cm
+        ), patch(
+            "bot.services.manual_deposit_requests.capacity_allows",
+            return_value=True,
+        ):
+            row = create_request_atomic(
+                club_id=1,
+                method_id=3,
+                amount=Decimal("100"),
+                telegram_chat_id=-100,
+                group_title="RT / 1234-5678 / jz",
+                instruction_message_ids=[501],
+            )
+        session.expunge.assert_called_once()
+        self.assertEqual(int(row.id), 99)
+        self.assertIsNotNone(row.instruction_expires_at)
+
     def test_rejects_over_capacity(self):
         method = SimpleNamespace(
             id=3,

@@ -169,4 +169,5 @@ def create_request_atomic(
         session.add(row)
         session.flush()
         session.refresh(row)
+        session.expunge(row)
         return row
