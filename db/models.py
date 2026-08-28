@@ -481,6 +481,12 @@ class ManualDepositRequest(Base):
     trade_record_checked = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
+    instruction_telegram_message_ids = Column(
+        ARRAY(BigInteger),
+        nullable=True,
+    )
+    instruction_expires_at = Column(DateTime(timezone=True), nullable=True)
+    instruction_expired_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     club = relationship("Club")

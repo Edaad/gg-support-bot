@@ -60,6 +60,9 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
     from bot.services.escalation_notification import (
         register_escalation_notification_runtime,
     )
+    from bot.services.union_instruction_expiry import (
+        register_union_instruction_expiry_runtime,
+    )
     from bot.services.watched_group_escalation import (
         register_watched_group_escalation_runtime,
     )
@@ -67,6 +70,7 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
     register_deposit_reminder_runtime(app)
     register_popup_keyboard_runtime(app)
     register_escalation_notification_runtime(app)
+    register_union_instruction_expiry_runtime(app)
     register_watched_group_escalation_runtime(app)
     set_contact_save_notify_bot(app.bot)
 

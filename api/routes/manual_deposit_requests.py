@@ -225,7 +225,14 @@ def update_manual_deposit_request(
     )
     if not row:
         raise HTTPException(404, "Request not found")
+    was_checked = bool(row.trade_record_checked)
     row.trade_record_checked = bool(body.trade_record_checked)
+    if body.trade_record_checked and not was_checked:
+        from bot.services.union_instruction_expiry import (
+            cancel_union_instruction_expiry,
+        )
+
+        cancel_union_instruction_expiry(int(row.id))
     db.flush()
     db.refresh(row)
     return _to_read(row)

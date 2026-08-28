@@ -115,8 +115,12 @@ def create_request_atomic(
     amount: Decimal,
     telegram_chat_id: int,
     group_title: Optional[str] = None,
+    instruction_message_ids: Optional[list[int]] = None,
 ) -> ManualDepositRequest:
     """Lock method row, re-check capacity, insert request. Raises ManualDepositCapacityError."""
+    from bot.services.union_instruction_expiry import instruction_expires_at_from_now
+    from bot.services.union_method_types import union_type_from_display_name
+
     amount_dec = Decimal(str(amount))
     if amount_dec <= 0:
         raise ValueError("Amount must be positive")
@@ -156,6 +160,12 @@ def create_request_atomic(
             telegram_chat_id=int(telegram_chat_id),
             trade_record_checked=False,
         )
+        if instruction_message_ids and union_type_from_display_name(method.name or ""):
+            row.instruction_telegram_message_ids = [
+                int(mid) for mid in instruction_message_ids if mid
+            ]
+            if row.instruction_telegram_message_ids:
+                row.instruction_expires_at = instruction_expires_at_from_now()
         session.add(row)
         session.flush()
         session.refresh(row)

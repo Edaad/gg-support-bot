@@ -408,6 +408,8 @@ _PENDING_DEPOSIT_REMINDERS: dict[int, int] = {}
 # Maps chat_id → deposit instruction message ids to delete if the reminder fires
 # without a completed deposit (abandoned chase). Completed deposits keep them.
 _DEPOSIT_INFO_MESSAGE_IDS: dict[int, list[int]] = {}
+# Instruction-only message ids (excludes the "Deposit request for $X" announcement).
+_DEPOSIT_INSTRUCTION_MESSAGE_IDS: dict[int, list[int]] = {}
 _deposit_reminder_app: Any | None = None
 
 _PAYMENT_BOUND_MODELS = (
@@ -421,6 +423,24 @@ _PAYMENT_BOUND_MODELS = (
 
 def _reset_deposit_info_messages(chat_id: int) -> None:
     _DEPOSIT_INFO_MESSAGE_IDS[int(chat_id)] = []
+    _DEPOSIT_INSTRUCTION_MESSAGE_IDS[int(chat_id)] = []
+
+
+def _pop_deposit_instruction_message_ids(chat_id: int) -> list[int]:
+    return list(_DEPOSIT_INSTRUCTION_MESSAGE_IDS.pop(int(chat_id), []))
+
+
+def _exclude_union_instructions_from_deposit_reminder_deletes(chat_id: int) -> None:
+    """Keep union instruction messages for expiry edit; reminder may still delete the announcement."""
+    instr = set(_DEPOSIT_INSTRUCTION_MESSAGE_IDS.get(int(chat_id), []))
+    if not instr:
+        return
+    kept = [
+        mid
+        for mid in _DEPOSIT_INFO_MESSAGE_IDS.get(int(chat_id), [])
+        if mid not in instr
+    ]
+    _DEPOSIT_INFO_MESSAGE_IDS[int(chat_id)] = kept
 
 
 def _track_deposit_info_message(chat_id: int, message_id: int | None) -> None:
@@ -1880,6 +1900,14 @@ async def _run_normal_deposit_from_choice(
     if not ok:
         return ConversationHandler.END
 
+    union_type_slug = (
+        union_type_from_display_name(method.get("name") or "")
+        if tracks_manual
+        else None
+    )
+    if union_type_slug and chat_id is not None:
+        _exclude_union_instructions_from_deposit_reminder_deletes(int(chat_id))
+
     if tracks_manual:
         club_id = context.chat_data.get("deposit_club_id")
         if (
@@ -1891,7 +1919,6 @@ async def _run_normal_deposit_from_choice(
                 "Could not record this deposit request. Please contact support."
             )
             return ConversationHandler.END
-        union_type_slug = union_type_from_display_name(method.get("name") or "")
         slack_variant = None
         method_display_name = (method.get("name") or "").strip()
         if union_type_slug:
@@ -1908,12 +1935,18 @@ async def _run_normal_deposit_from_choice(
                     method_id,
                 )
         try:
-            create_request_atomic(
+            instruction_ids = (
+                _pop_deposit_instruction_message_ids(int(chat_id))
+                if union_type_slug
+                else None
+            )
+            row = create_request_atomic(
                 club_id=int(club_id),
                 method_id=int(method_id),
                 amount=amount,
                 telegram_chat_id=int(chat_id),
                 group_title=getattr(query.message.chat, "title", None),
+                instruction_message_ids=instruction_ids,
             )
         except ManualDepositCapacityError as exc:
             await query.message.chat.send_message(str(exc))
@@ -1928,6 +1961,16 @@ async def _run_normal_deposit_from_choice(
                 "Could not record this deposit request. Please try again or contact support."
             )
             return ConversationHandler.END
+        if row.instruction_expires_at is not None:
+            from bot.services.union_instruction_expiry import (
+                schedule_union_instruction_expiry,
+            )
+
+            schedule_union_instruction_expiry(
+                context,
+                int(row.id),
+                expires_at=row.instruction_expires_at,
+            )
         if slack_variant is not None:
             try:
                 from bot.services.escalation_notification import (
@@ -2849,10 +2892,12 @@ async def _send_response(query, data, amount, display_name):
     announcement = f"Deposit request for ${amount} via {display_name}"
     await query.edit_message_text(announcement)
     _track_deposit_info_message(chat_id, query.message.message_id)
-    _track_deposit_info_messages(
-        chat_id,
-        await send_response_messages(query.message.chat, data),
-    )
+    instruction_ids = await send_response_messages(query.message.chat, data)
+    _track_deposit_info_messages(chat_id, instruction_ids)
+    if instruction_ids:
+        _DEPOSIT_INSTRUCTION_MESSAGE_IDS[int(chat_id)] = [
+            int(message_id) for message_id in instruction_ids
+        ]
 
 
 async def _send_simple_response(message, data):
