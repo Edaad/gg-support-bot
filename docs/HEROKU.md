@@ -561,6 +561,14 @@ heroku run -a YOUR_APP -- python migrate_union_method_shape.py
 
 Recreate union methods in the dashboard (Type, Union, Internal identifier, Method tag, optional Method name). Bot instructions are generated from those fields; no free-text player message column.
 
+After deploying the union deposit ack-step flow:
+
+```bash
+heroku run -a YOUR_APP -- python migrate_union_deposit_ack.py
+```
+
+Adds durable ack-state columns on `manual_deposit_requests` (ack message id, ack/instruction expiry timestamps, initiating player id).
+
 ## Per-group deposit / cashout method access
 
 After deploying deposit method public/blacklist/whitelist (cashout access reuses the same table — no extra migrate):

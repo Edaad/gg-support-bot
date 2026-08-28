@@ -83,15 +83,15 @@ Arming the chase is **button only** (typed “sent” / media do not start the w
 
 ### Union manual deposit (`tracks_manual_requests`)
 
-When a player picks a union pool method (Zelle / Cash App / Apple Pay) and the bot posts payment instructions, a `manual_deposit_requests` row is created and Slack fires immediately (no “I have sent the payment” button for these methods).
+When a player picks a union pool method (Zelle / Cash App / Apple Pay), a `manual_deposit_requests` row is created and Slack fires immediately. The bot first posts **special instructions** with an “I have read the instructions above” button; min/max payment details appear only after the player taps. A 10-minute ack timer edits the special-instructions message if they never tap; a separate 10-minute timer (starting on ack) edits the payment-tag message when it expires.
 
 Classification is **per support group + union type** (prior rows in `manual_deposit_requests` for the same `telegram_chat_id` and method type):
 
 | Case | Headline | Instruction | Head-admin fan-out |
 |------|----------|-------------|-------------------|
-| First ever (no prior row for that type) | First-time union deposit — verify with union | Forward to head admins to verify with union | Yes (`union_deposit_first`) |
-| Repeat, prior verified (`trade_record_checked`) | Union deposit — verify and add chips | Please verify payment and add chips. | No |
-| Repeat, prior still open (unchecked priors only) | Union deposit — verify and add chips | Please verify payment and add chips. Prior request still unchecked. | No |
+| First ever (no prior row for that type) | Union method deposit | Please ensure the player sends a screen recording of their payment, then verify and add chips. | No |
+| Repeat, prior verified (`trade_record_checked`) | Union method deposit | Please ensure the player sends a screen recording of their payment, then verify and add chips. | No |
+| Repeat, prior still open (unchecked priors only) | Union method deposit | Please ensure the player sends a screen recording of their payment, then verify and add chips. | No |
 
 Slack body includes club, group title, amount, and method (union type name). Respects the club escalation toggle; skipped on the test bot worker.
 
@@ -138,7 +138,7 @@ SLACK_ESCALATION_CHANNEL_ID=C...
 # SLACK_ESCALATION_WEBHOOK_URL=https://hooks.slack.com/services/...
 ```
 
-**Head-admin fan-out:** `rpa_deposit_failed`, `rpa_cashout_failed`, `rpa_deposit_uncertain`, `rpa_cashout_uncertain`, and first-time union manual deposits (`union_deposit_first`) also post the **same** text to a second channel, reusing `SLACK_ESCALATION_BOT_TOKEN`:
+**Head-admin fan-out:** `rpa_deposit_failed`, `rpa_cashout_failed`, `rpa_deposit_uncertain`, and `rpa_cashout_uncertain` also post the **same** text to a second channel, reusing `SLACK_ESCALATION_BOT_TOKEN`:
 
 ```bash
 SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID=C...

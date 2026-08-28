@@ -7,21 +7,27 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from bot.services.union_deposit_messages import UNION_INSTRUCTION_EXPIRED_TEXT
 from bot.services.union_instruction_expiry import (
-    UNION_INSTRUCTION_EXPIRED_TEXT,
     cancel_union_instruction_expiry,
+    expire_union_ack_now,
     expire_union_instruction_now,
+    list_pending_union_ack_expiries,
     list_pending_union_instruction_expiries,
+    restore_union_deposit_expiries,
     restore_union_instruction_expiries,
+    schedule_union_ack_expiry,
     schedule_union_instruction_expiry,
 )
 
 
 class UnionInstructionExpiryTests(unittest.TestCase):
     def test_expired_text_matches_copy(self):
-        self.assertIn("This payment tag has expired.", UNION_INSTRUCTION_EXPIRED_TEXT)
-        self.assertIn("please DO NOT send money there again", UNION_INSTRUCTION_EXPIRED_TEXT)
-        self.assertIn("/deposit", UNION_INSTRUCTION_EXPIRED_TEXT)
+        self.assertIn(
+            "This is NOT a recurring payment method and should not be sent again.",
+            UNION_INSTRUCTION_EXPIRED_TEXT,
+        )
+        self.assertIn("screen recording within 10 minutes", UNION_INSTRUCTION_EXPIRED_TEXT)
 
     def test_create_request_atomic_sets_expiry_for_union(self):
         from bot.services.manual_deposit_requests import create_request_atomic

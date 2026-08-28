@@ -42,15 +42,10 @@ REASON_AUTO_CASHOUT_ESCALATION = "auto_cashout_escalation"
 REASON_UNION_DEPOSIT_FIRST = "union_deposit_first"
 REASON_UNION_DEPOSIT_REPEAT = "union_deposit_repeat"
 
-_UNION_DEPOSIT_FIRST_HEADLINE = "First-time union deposit — verify with union"
-_UNION_DEPOSIT_REPEAT_HEADLINE = "Union deposit — verify and add chips"
-_UNION_DEPOSIT_INSTRUCTION_FIRST = (
-    "This is the first time this player is using a union method. "
-    "Forward to head admins to verify with union."
-)
-_UNION_DEPOSIT_INSTRUCTION_REPEAT = "Please verify payment and add chips."
-_UNION_DEPOSIT_INSTRUCTION_REPEAT_OPEN = (
-    "Please verify payment and add chips. Prior request still unchecked."
+_UNION_DEPOSIT_HEADLINE = "Union method deposit"
+_UNION_DEPOSIT_INSTRUCTION = (
+    "Please ensure the player sends a screen recording of their payment, "
+    "then verify and add chips."
 )
 
 _HEADLINES = {
@@ -412,31 +407,18 @@ def format_union_deposit_slack_text(
     amount,
     method_display_name: str,
 ) -> str:
-    from bot.services.manual_deposit_requests import UnionDepositSlackVariant
-
-    v: UnionDepositSlackVariant = variant  # type: ignore[assignment]
-    if v == "first":
-        headline = _UNION_DEPOSIT_FIRST_HEADLINE
-        instruction = _UNION_DEPOSIT_INSTRUCTION_FIRST
-    elif v == "repeat_verified":
-        headline = _UNION_DEPOSIT_REPEAT_HEADLINE
-        instruction = _UNION_DEPOSIT_INSTRUCTION_REPEAT
-    else:
-        headline = _UNION_DEPOSIT_REPEAT_HEADLINE
-        instruction = _UNION_DEPOSIT_INSTRUCTION_REPEAT_OPEN
-
     club = _club_display_name(club_id)
     group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
     amount_str = _union_deposit_amount_str(amount)
     method_name = (method_display_name or "").strip() or "Unknown"
     lines = [
-        f"*{headline}*",
+        f"*{_UNION_DEPOSIT_HEADLINE}*",
         f"Club: {club}",
         _slack_code_span(group_title),
         f"Amount: {amount_str}",
         f"Method: {method_name}",
         "",
-        instruction,
+        _UNION_DEPOSIT_INSTRUCTION,
     ]
     return "\n".join(lines)
 
@@ -450,26 +432,14 @@ async def format_union_deposit_telegram_text(
     amount,
     method_display_name: str,
 ) -> str:
-    from bot.services.manual_deposit_requests import UnionDepositSlackVariant
     from notification.formatting import format_player_id_line, resolve_and_format_group_chat_line
-
-    v: UnionDepositSlackVariant = variant  # type: ignore[assignment]
-    if v == "first":
-        headline = _UNION_DEPOSIT_FIRST_HEADLINE
-        instruction = _UNION_DEPOSIT_INSTRUCTION_FIRST
-    elif v == "repeat_verified":
-        headline = _UNION_DEPOSIT_REPEAT_HEADLINE
-        instruction = _UNION_DEPOSIT_INSTRUCTION_REPEAT
-    else:
-        headline = _UNION_DEPOSIT_REPEAT_HEADLINE
-        instruction = _UNION_DEPOSIT_INSTRUCTION_REPEAT_OPEN
 
     club = _club_display_name(club_id)
     group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
     amount_str = _union_deposit_amount_str(amount)
     method_name = (method_display_name or "").strip() or "Unknown"
     lines = [
-        f"<b>{html.escape(headline, quote=False)}</b>",
+        f"<b>{html.escape(_UNION_DEPOSIT_HEADLINE, quote=False)}</b>",
         "",
         f"Club: {html.escape(club, quote=False)}",
         await resolve_and_format_group_chat_line(
@@ -487,7 +457,7 @@ async def format_union_deposit_telegram_text(
             f"Amount: {html.escape(amount_str, quote=False)}",
             f"Method: {html.escape(method_name, quote=False)}",
             "",
-            html.escape(instruction, quote=False),
+            html.escape(_UNION_DEPOSIT_INSTRUCTION, quote=False),
         ]
     )
     return "\n".join(lines)
@@ -529,7 +499,7 @@ async def notify_union_deposit_request_slack(
     amount,
     method_display_name: str,
 ) -> bool:
-    """Slack AMs (and head admins on first-ever) when a union manual deposit is created."""
+    """Slack AMs when a union manual deposit is created."""
     if is_test_bot_worker():
         return False
     if not escalation_notification_eligible(

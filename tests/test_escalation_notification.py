@@ -424,10 +424,14 @@ class EscalationCopyTests(unittest.TestCase):
                 amount=Decimal("500"),
                 method_display_name="Zelle",
             )
-        self.assertIn("*First-time union deposit — verify with union*", text)
+        self.assertIn("*Union method deposit*", text)
         self.assertIn("Amount: $500", text)
         self.assertIn("Method: Zelle", text)
-        self.assertIn("Forward to head admins to verify with union.", text)
+        self.assertIn(
+            "Please ensure the player sends a screen recording of their payment, "
+            "then verify and add chips.",
+            text,
+        )
 
     def test_union_deposit_repeat_verified_copy(self):
         with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
@@ -439,10 +443,13 @@ class EscalationCopyTests(unittest.TestCase):
                 amount=Decimal("100.50"),
                 method_display_name="Cash App",
             )
-        self.assertIn("*Union deposit — verify and add chips*", text)
+        self.assertIn("*Union method deposit*", text)
         self.assertIn("Amount: $100.50", text)
-        self.assertIn("Please verify payment and add chips.", text)
-        self.assertNotIn("Prior request still unchecked", text)
+        self.assertIn(
+            "Please ensure the player sends a screen recording of their payment, "
+            "then verify and add chips.",
+            text,
+        )
 
     def test_union_deposit_repeat_open_copy(self):
         with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
@@ -454,7 +461,13 @@ class EscalationCopyTests(unittest.TestCase):
                 amount=Decimal("75"),
                 method_display_name="Apple Pay",
             )
-        self.assertIn("Prior request still unchecked.", text)
+        self.assertIn("*Union method deposit*", text)
+        self.assertIn(
+            "Please ensure the player sends a screen recording of their payment, "
+            "then verify and add chips.",
+            text,
+        )
+        self.assertNotIn("Prior request still unchecked", text)
 
     def test_extract_player_message_prefers_text(self):
         msg = SimpleNamespace(text=" hello ", caption="cap", photo=None)
@@ -482,7 +495,7 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
                 amount=Decimal("500"),
                 method_display_name="Zelle",
             )
-        self.assertIn("<b>First-time union deposit — verify with union</b>", text)
+        self.assertIn("<b>Union method deposit</b>", text)
         self.assertIn("Group Chat: RT / 1234-5678 / Player", text)
         self.assertIn("Player ID: <code>1234-5678</code>", text)
         self.assertIn("Amount: $500", text)

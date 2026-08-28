@@ -490,6 +490,11 @@ class ManualDepositRequest(Base):
     )
     instruction_expires_at = Column(DateTime(timezone=True), nullable=True)
     instruction_expired_at = Column(DateTime(timezone=True), nullable=True)
+    ack_telegram_message_id = Column(BigInteger, nullable=True)
+    ack_expires_at = Column(DateTime(timezone=True), nullable=True)
+    ack_expired_at = Column(DateTime(timezone=True), nullable=True)
+    acknowledged_at = Column(DateTime(timezone=True), nullable=True)
+    initiated_by_telegram_user_id = Column(BigInteger, nullable=True)
     source = Column(
         String(20), nullable=False, server_default=text("'bot'"), default="bot"
     )

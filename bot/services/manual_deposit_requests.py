@@ -32,6 +32,14 @@ class ManualDepositValidationError(Exception):
     """Raised when dashboard create/update validation fails."""
 
 
+class UnionAckValidationError(Exception):
+    """Raised when a union deposit ack callback is invalid."""
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(message)
+
+
 def _union_method_type_display(method: ClubPaymentMethod) -> str:
     raw = getattr(method, "union_type", None)
     if raw:
@@ -380,6 +388,7 @@ def create_request_atomic(
     telegram_chat_id: int,
     group_title: Optional[str] = None,
     instruction_message_ids: Optional[list[int]] = None,
+    initiated_by_telegram_user_id: Optional[int] = None,
 ) -> ManualDepositRequest:
     """Lock method row, re-check capacity, insert request. Raises ManualDepositCapacityError."""
     from bot.services.union_instruction_expiry import instruction_expires_at_from_now
@@ -425,6 +434,8 @@ def create_request_atomic(
             trade_record_checked=False,
             source="bot",
         )
+        if initiated_by_telegram_user_id is not None:
+            row.initiated_by_telegram_user_id = int(initiated_by_telegram_user_id)
         if instruction_message_ids and _method_union_type(method):
             row.instruction_telegram_message_ids = [
                 int(mid) for mid in instruction_message_ids if mid
@@ -434,5 +445,96 @@ def create_request_atomic(
         session.add(row)
         session.flush()
         session.refresh(row)
+        session.expunge(row)
+        return row
+
+
+def set_union_ack_pending(
+    request_id: int,
+    *,
+    ack_message_id: int,
+    expires_at: datetime | None = None,
+) -> None:
+    from bot.services.union_instruction_expiry import instruction_expires_at_from_now
+
+    exp = expires_at or instruction_expires_at_from_now()
+    with get_db() as session:
+        row = session.get(ManualDepositRequest, int(request_id))
+        if row is None:
+            raise ValueError(f"Manual deposit request {request_id} not found")
+        row.ack_telegram_message_id = int(ack_message_id)
+        row.ack_expires_at = exp
+        session.flush()
+
+
+def complete_union_ack(
+    request_id: int,
+    *,
+    instruction_message_ids: list[int],
+    instruction_expires_at: datetime,
+) -> ManualDepositRequest:
+    now = datetime.now(timezone.utc)
+    message_ids = [int(mid) for mid in instruction_message_ids if mid]
+    with get_db() as session:
+        row = (
+            session.query(ManualDepositRequest)
+            .filter(ManualDepositRequest.id == int(request_id))
+            .with_for_update()
+            .one_or_none()
+        )
+        if row is None:
+            raise ValueError(f"Manual deposit request {request_id} not found")
+        row.acknowledged_at = now
+        row.ack_expires_at = None
+        row.instruction_telegram_message_ids = message_ids
+        if message_ids:
+            row.instruction_expires_at = instruction_expires_at
+        session.flush()
+        session.refresh(row)
+        session.expunge(row)
+        return row
+
+
+def get_union_ack_pending(
+    request_id: int,
+    *,
+    telegram_chat_id: int,
+    initiated_by_telegram_user_id: int | None,
+) -> ManualDepositRequest:
+    """Load a row eligible for union ack; raise UnionAckValidationError otherwise."""
+    now = datetime.now(timezone.utc)
+    with get_db() as session:
+        row = session.get(ManualDepositRequest, int(request_id))
+        if row is None:
+            raise UnionAckValidationError("This deposit request is no longer available.")
+        if int(row.telegram_chat_id) != int(telegram_chat_id):
+            raise UnionAckValidationError("This deposit request is no longer available.")
+        expected_user = row.initiated_by_telegram_user_id
+        if expected_user is not None and initiated_by_telegram_user_id is not None:
+            if int(expected_user) != int(initiated_by_telegram_user_id):
+                raise UnionAckValidationError(
+                    "Only the player who started this deposit can continue."
+                )
+        if row.acknowledged_at is not None:
+            raise UnionAckValidationError("Instructions were already shown.")
+        if row.ack_expired_at is not None:
+            raise UnionAckValidationError(
+                "These instructions expired. Use /deposit to start again."
+            )
+        if bool(row.trade_record_checked):
+            raise UnionAckValidationError("This deposit request is no longer available.")
+        ack_expires = row.ack_expires_at
+        if ack_expires is not None:
+            exp = (
+                ack_expires.astimezone(timezone.utc)
+                if ack_expires.tzinfo
+                else ack_expires.replace(tzinfo=timezone.utc)
+            )
+            if now >= exp:
+                raise UnionAckValidationError(
+                    "These instructions expired. Use /deposit to start again."
+                )
+        if row.ack_expires_at is None and row.ack_telegram_message_id is None:
+            raise UnionAckValidationError("This deposit request is no longer available.")
         session.expunge(row)
         return row
