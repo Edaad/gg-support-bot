@@ -1953,11 +1953,14 @@ async def _run_union_deposit_from_choice(
     _track_deposit_info_message(int(chat_id), query.message.message_id)
 
     ack_expires_at = instruction_expires_at_from_now()
-    ack_text = build_union_special_instructions_text()
-    ack_msg = await _deposit_send_message(
+    ack_html = build_union_special_instructions_text(html=True)
+    ack_plain = build_union_special_instructions_text(html=False)
+    ack_msg = await _deposit_send_html_or_plain(
         query.message.chat,
         int(chat_id),
-        text=ack_text,
+        html_text=ack_html,
+        plain_text=ack_plain,
+        log_label="union_deposit_ack",
         reply_markup=_union_deposit_ack_markup(request_id=int(row.id)),
     )
     set_union_ack_pending(
@@ -2070,14 +2073,25 @@ async def handle_deposit_union_ack(
         used_sum = sum_for_method(session, int(method_id))
         session.expunge(db_method)
 
-    instruction = build_union_instruction_with_footer(db_method, used_sum=used_sum)
-    if not instruction:
+    instruction_html = build_union_instruction_with_footer(
+        db_method, used_sum=used_sum, html_mode=True
+    )
+    instruction_plain = build_union_instruction_with_footer(
+        db_method, used_sum=used_sum, html_mode=False
+    )
+    if not instruction_html or not instruction_plain:
         await query.message.chat.send_message(
             "This payment method is not configured yet. Please contact support."
         )
         return
 
-    instruction_msg = await query.message.chat.send_message(instruction)
+    instruction_msg = await _deposit_send_html_or_plain(
+        query.message.chat,
+        chat_id,
+        html_text=instruction_html,
+        plain_text=instruction_plain,
+        log_label="union_deposit_instruction",
+    )
     instruction_expires = instruction_expires_at_from_now()
     complete_union_ack(
         request_id,

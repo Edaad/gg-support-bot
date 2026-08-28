@@ -80,6 +80,17 @@ class BuildUnionDepositInstructionTests(unittest.TestCase):
         self.assertIn("Zelle Tag: pay@example.com", text)
         self.assertIn("Max: $900", text)
 
+    def test_html_tag_tap_to_copy(self):
+        text = build_union_deposit_instruction(
+            _method(method_tag="$cashapp"),
+            used_sum=Decimal("0"),
+            html_mode=True,
+        )
+        self.assertIsNotNone(text)
+        assert text is not None
+        self.assertIn("Tap the tag below to copy it.", text)
+        self.assertIn("<code>$cashapp</code>", text)
+
 
 if __name__ == "__main__":
     unittest.main()

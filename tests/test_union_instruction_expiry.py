@@ -24,10 +24,10 @@ from bot.services.union_instruction_expiry import (
 class UnionInstructionExpiryTests(unittest.TestCase):
     def test_expired_text_matches_copy(self):
         self.assertIn(
-            "This is NOT a recurring payment method and should not be sent again.",
+            "• This is NOT a recurring payment method and should not be sent again.",
             UNION_INSTRUCTION_EXPIRED_TEXT,
         )
-        self.assertIn("screen recording within 10 minutes", UNION_INSTRUCTION_EXPIRED_TEXT)
+        self.assertIn("• Once the payment is sent", UNION_INSTRUCTION_EXPIRED_TEXT)
 
     def test_create_request_atomic_sets_expiry_for_union(self):
         from bot.services.manual_deposit_requests import create_request_atomic

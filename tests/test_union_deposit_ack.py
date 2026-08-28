@@ -31,9 +31,13 @@ from bot.services.union_instruction_expiry import (
 
 class UnionDepositMessagesTests(unittest.TestCase):
     def test_special_instructions_copy(self):
-        text = build_union_special_instructions_text()
-        self.assertIn("Special instructions;", text)
-        self.assertIn("screen recording within 10 minutes", text)
+        html = build_union_special_instructions_text(html=True)
+        self.assertIn("<b>Special instructions</b>", html)
+        self.assertIn("• This is <b>NOT</b> a recurring payment method", html)
+        self.assertIn("• Please initiate a new deposit before sending again.", html)
+        plain = build_union_special_instructions_text(html=False)
+        self.assertIn("• This is NOT a recurring payment method", plain)
+        self.assertIn("• Once the payment is sent", plain)
 
     def test_instruction_includes_recurring_footer(self):
         method = SimpleNamespace(
@@ -49,6 +53,26 @@ class UnionDepositMessagesTests(unittest.TestCase):
         assert text is not None
         self.assertIn("Zelle Tag: $zelle-tag", text)
         self.assertTrue(text.endswith(UNION_INSTRUCTION_RECURRING_LINE))
+
+    def test_instruction_html_tag_is_tap_to_copy(self):
+        from bot.services.union_deposit_instruction import build_union_deposit_instruction
+
+        method = SimpleNamespace(
+            union_type="cashapp",
+            method_tag="$cashapp",
+            payment_account_name=None,
+            deposit_limit=Decimal("1000"),
+            min_amount=None,
+            max_amount=None,
+        )
+        text = build_union_deposit_instruction(
+            method, used_sum=Decimal("0"), html_mode=True
+        )
+        self.assertIsNotNone(text)
+        assert text is not None
+        self.assertIn("Cash App Tag:", text)
+        self.assertIn("Tap the tag below to copy it.", text)
+        self.assertIn("<code>$cashapp</code>", text)
 
     def test_ack_callback_data(self):
         self.assertEqual(union_ack_callback_data(42), "depum:42")

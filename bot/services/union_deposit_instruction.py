@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -11,6 +12,7 @@ _FOOTER_LINES = (
     "Please put a random emoji in the payment caption when sending",
     "Chips will be added as soon as we receive them.",
 )
+_TAG_COPY_HINT = "Tap the tag below to copy it."
 
 
 def _read_attr(obj: Any, key: str, default: Any = None) -> Any:
@@ -49,6 +51,7 @@ def build_union_deposit_instruction(
     method: Any,
     *,
     used_sum: Decimal,
+    html_mode: bool = False,
 ) -> Optional[str]:
     """Return instruction text, or None if method is not fully configured."""
     type_slug = _method_union_type(method)
@@ -76,11 +79,20 @@ def build_union_deposit_instruction(
     lines.append("")
 
     type_label = union_type_display_name(type_slug)
-    lines.append(f"{type_label} Tag: {method_tag}")
+    if html_mode:
+        lines.append(f"{html.escape(type_label)} Tag:")
+        lines.append(_TAG_COPY_HINT)
+        lines.append("")
+        lines.append(f"<code>{html.escape(method_tag)}</code>")
+    else:
+        lines.append(f"{type_label} Tag: {method_tag}")
 
     account_name = (_read_attr(method, "payment_account_name") or "").strip()
     if account_name:
-        lines.append(f"{type_label} Name: {account_name}")
+        if html_mode:
+            lines.append(f"{html.escape(type_label)} Name: {html.escape(account_name)}")
+        else:
+            lines.append(f"{type_label} Name: {account_name}")
 
     lines.append("")
     lines.extend(_FOOTER_LINES)
