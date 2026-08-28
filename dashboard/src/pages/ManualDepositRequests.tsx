@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import ManualDepositRequestsTable from '../components/ManualDepositRequestsTable'
+import ManualDepositRequestModal from '../components/ManualDepositRequestModal'
 import { useConfirm } from '../components/ConfirmProvider'
 import { listClubs, type Club } from '../api/client'
 import {
@@ -133,6 +134,8 @@ export default function ManualDepositRequests({ token }: { token: string }) {
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [searchDraft, setSearchDraft] = useState(qParam)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [depositsRefreshKey, setDepositsRefreshKey] = useState(0)
   const dragItem = useRef<number | null>(null)
   const dragOver = useRef<number | null>(null)
 
@@ -777,6 +780,13 @@ export default function ManualDepositRequests({ token }: { token: string }) {
             <div className="flex flex-col gap-1 border-b border-border pb-3 sm:flex-row sm:items-end sm:justify-between">
               <h3 className="text-sm font-semibold text-ink">Deposits</h3>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <button
+                  type="button"
+                  className="btn-primary-sm"
+                  onClick={() => setCreateOpen(true)}
+                >
+                  Add deposit
+                </button>
                 <div>
                   <label className="label-field-xs" htmlFor="um-row-club">
                     Club
@@ -826,8 +836,32 @@ export default function ManualDepositRequests({ token }: { token: string }) {
               tradeRecordChecked={tradeCheckedFilter}
               showMethodColumns={false}
               showClubColumn
+              allowEdit
+              minAmount={selected.min_amount}
+              maxAmount={selected.max_amount}
+              refreshKey={depositsRefreshKey}
+              onMutated={() => {
+                void load()
+              }}
             />
           </section>
+
+          {createOpen ? (
+            <ManualDepositRequestModal
+              open
+              mode="create"
+              token={token}
+              methodId={selected.id}
+              minAmount={selected.min_amount}
+              maxAmount={selected.max_amount}
+              onClose={() => setCreateOpen(false)}
+              onSaved={() => {
+                setCreateOpen(false)
+                setDepositsRefreshKey((k) => k + 1)
+                void load()
+              }}
+            />
+          ) : null}
         </div>
       )}
 
@@ -923,6 +957,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
             showMethodColumns
             showClubColumn
             paginated
+            allowEdit
             limit={DEPOSITS_PAGE_SIZE}
             offset={depositsOffset}
             onPageChange={(nextOffset) =>

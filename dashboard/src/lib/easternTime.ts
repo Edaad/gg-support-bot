@@ -73,3 +73,46 @@ export function formatDurationSeconds(seconds: number | null | undefined): strin
   const mins = m % 60
   return mins ? `${h}h ${mins}m` : `${h}h`
 }
+
+/** Format a Date or API ISO string for `<input type="datetime-local">` in US Eastern. */
+export function toEasternDatetimeLocalValue(value: string | Date = new Date()): string {
+  const d = typeof value === 'string' ? parseApiUtcDate(value) : value
+  if (Number.isNaN(d.getTime())) return ''
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: EASTERN,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(d)
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? ''
+  const hour = get('hour') === '24' ? '00' : get('hour')
+  return `${get('year')}-${get('month')}-${get('day')}T${hour}:${get('minute')}`
+}
+
+/** Parse `<input type="datetime-local">` value as US Eastern → UTC Date. */
+export function fromEasternDatetimeLocalValue(localValue: string): Date {
+  const [datePart, timePart] = localValue.trim().split('T')
+  if (!datePart || !timePart) return new Date(NaN)
+  const [y, m, d] = datePart.split('-').map(Number)
+  const [hh, mm] = timePart.split(':').map(Number)
+  if (![y, m, d, hh, mm].every(Number.isFinite)) return new Date(NaN)
+
+  const utcGuess = Date.UTC(y, m - 1, d, hh, mm)
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: EASTERN,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const parts = formatter.formatToParts(new Date(utcGuess))
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value)
+  const asUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'))
+  const offsetMs = utcGuess - asUtc
+  return new Date(utcGuess + offsetMs)
+}

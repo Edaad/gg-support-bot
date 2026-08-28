@@ -16,9 +16,15 @@ from bot.services.deposit_method_access import (
 )
 from bot.services.manual_deposit_requests import (
     ManualDepositCapacityError,
+    ManualDepositValidationError,
     capacity_allows,
+    capacity_allows_for_update,
+    create_dashboard_manual_deposit_request,
     create_request_atomic,
     union_deposit_slack_variant,
+    update_dashboard_manual_deposit_request,
+    validate_manual_deposit_amount,
+    validate_manual_deposit_created_at,
 )
 
 
@@ -702,6 +708,142 @@ class ManualDepositRequestListQueryTests(unittest.TestCase):
             self.assertEqual(remaining, 0)
         finally:
             session.close()
+
+
+class DashboardManualDepositServiceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from contextlib import contextmanager
+
+        from sqlalchemy import JSON, create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+
+        from db.models import (
+            Base,
+            Club,
+            ClubPaymentMethod,
+            ClubPaymentMethodClub,
+            Group,
+            ManualDepositRequest,
+        )
+
+        ManualDepositRequest.__table__.c.instruction_telegram_message_ids.type = JSON()
+
+        self.engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(
+            self.engine,
+            tables=[
+                Club.__table__,
+                Group.__table__,
+                ClubPaymentMethod.__table__,
+                ClubPaymentMethodClub.__table__,
+                ManualDepositRequest.__table__,
+            ],
+        )
+        self.Session = sessionmaker(bind=self.engine)
+
+        @contextmanager
+        def _get_db():
+            session = self.Session()
+            try:
+                yield session
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
+
+        self._get_db = _get_db
+        session = self.Session()
+        session.add(Club(id=1, name="Round Table", telegram_user_id=1001, is_active=True))
+        session.add(
+            ClubPaymentMethod(
+                id=10,
+                club_id=1,
+                direction="deposit",
+                name="Zelle",
+                slug="zelle-union",
+                deposit_limit=Decimal("1000"),
+                min_amount=Decimal("50"),
+                max_amount=Decimal("500"),
+                tracks_manual_requests=True,
+                is_active=False,
+                is_public=False,
+                manual_request_message="pay",
+                manual_request_variant_name="v1",
+            )
+        )
+        session.add(ClubPaymentMethodClub(method_id=10, club_id=1))
+        session.add(
+            Group(chat_id=-1001, club_id=1, name="RT / 1111-1111 / Alice")
+        )
+        session.commit()
+        session.close()
+
+    def tearDown(self) -> None:
+        self.engine.dispose()
+
+    def test_validate_amount_min_max(self):
+        method = SimpleNamespace(
+            min_amount=Decimal("50"),
+            max_amount=Decimal("500"),
+        )
+        validate_manual_deposit_amount(method, Decimal("100"))
+        with self.assertRaises(ManualDepositValidationError):
+            validate_manual_deposit_amount(method, Decimal("25"))
+        with self.assertRaises(ManualDepositValidationError):
+            validate_manual_deposit_amount(method, Decimal("600"))
+
+    def test_validate_created_at_rejects_future(self):
+        future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        with self.assertRaises(ManualDepositValidationError):
+            validate_manual_deposit_created_at(future)
+
+    def test_create_dashboard_inactive_method(self):
+        when = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+        with patch(
+            "bot.services.manual_deposit_requests.get_db",
+            side_effect=self._get_db,
+        ):
+            row = create_dashboard_manual_deposit_request(
+                method_id=10,
+                amount=Decimal("100"),
+                telegram_chat_id=-1001,
+                created_at=when,
+                trade_record_checked=True,
+            )
+        self.assertEqual(row.source, "dashboard")
+        self.assertTrue(row.trade_record_checked)
+        self.assertIsNone(row.instruction_expires_at)
+        self.assertEqual(row.group_title, "RT / 1111-1111 / Alice")
+        self.assertEqual(row.club_id, 1)
+
+    def test_update_amount_rejects_above_max(self):
+        when = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+        with patch(
+            "bot.services.manual_deposit_requests.get_db",
+            side_effect=self._get_db,
+        ):
+            row = create_dashboard_manual_deposit_request(
+                method_id=10,
+                amount=Decimal("400"),
+                telegram_chat_id=-1001,
+                created_at=when,
+            )
+        with patch(
+            "bot.services.manual_deposit_requests.get_db",
+            side_effect=self._get_db,
+        ):
+            with self.assertRaises(ManualDepositValidationError):
+                update_dashboard_manual_deposit_request(
+                    request_id=int(row.id),
+                    amount=Decimal("700"),
+                )
 
 
 if __name__ == "__main__":

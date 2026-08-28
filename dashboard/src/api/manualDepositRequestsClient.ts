@@ -43,8 +43,10 @@ export type ManualDepositRequestRow = {
   method_slug: string
   variant_name: string
   group_title: string | null
+  telegram_chat_id: number
   amount: number | string
   trade_record_checked: boolean
+  source?: string
   created_at: string
   club: { id: number; name: string } | null
 }
@@ -54,6 +56,13 @@ export type ManualDepositRequestList = {
   total: number
   limit: number
   offset: number
+}
+
+export type DepositGroupOption = {
+  chat_id: number
+  name: string | null
+  club_id: number
+  club_name: string
 }
 
 export type ListManualDepositRequestsParams = {
@@ -66,6 +75,20 @@ export type ListManualDepositRequestsParams = {
   q?: string
   limit?: number
   offset?: number
+}
+
+export type ManualDepositRequestCreateBody = {
+  amount: number
+  telegram_chat_id: number
+  created_at?: string
+  trade_record_checked?: boolean
+}
+
+export type ManualDepositRequestUpdateBody = {
+  amount?: number
+  telegram_chat_id?: number
+  created_at?: string
+  trade_record_checked?: boolean
 }
 
 export function listManualDepositRequests(
@@ -119,16 +142,48 @@ export function listMethodManualDepositRequests(
   )
 }
 
+export function searchMethodDepositGroups(
+  token: string,
+  methodId: number,
+  q?: string,
+  limit = 50,
+) {
+  const params = new URLSearchParams()
+  if (q != null && q.trim()) params.set('q', q.trim())
+  if (limit != null) params.set('limit', String(limit))
+  const qs = params.toString()
+  return request<{ items: DepositGroupOption[] }>(
+    `/api/v2/methods/${methodId}/deposit-groups${qs ? `?${qs}` : ''}`,
+    {},
+    token,
+  )
+}
+
+export function createManualDepositRequest(
+  token: string,
+  methodId: number,
+  body: ManualDepositRequestCreateBody,
+) {
+  return request<ManualDepositRequestRow>(
+    `/api/v2/methods/${methodId}/manual-deposit-requests`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+    token,
+  )
+}
+
 export function updateManualDepositRequest(
   token: string,
   requestId: number,
-  trade_record_checked: boolean,
+  body: ManualDepositRequestUpdateBody,
 ) {
   return request<ManualDepositRequestRow>(
     `/api/manual-deposit-requests/${requestId}`,
     {
       method: 'PATCH',
-      body: JSON.stringify({ trade_record_checked }),
+      body: JSON.stringify(body),
     },
     token,
   )

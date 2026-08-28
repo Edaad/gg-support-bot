@@ -487,6 +487,9 @@ class ManualDepositRequest(Base):
     )
     instruction_expires_at = Column(DateTime(timezone=True), nullable=True)
     instruction_expired_at = Column(DateTime(timezone=True), nullable=True)
+    source = Column(
+        String(20), nullable=False, server_default=text("'bot'"), default="bot"
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     club = relationship("Club")
