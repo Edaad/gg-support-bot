@@ -89,9 +89,9 @@ Classification is **per support group + union type** (prior rows in `manual_depo
 
 | Case | Headline | Instruction | Head-admin fan-out |
 |------|----------|-------------|-------------------|
-| First ever (no prior row for that type) | Union method deposit | Please ensure the player sends a screen recording of their payment, then verify and add chips. | No |
-| Repeat, prior verified (`trade_record_checked`) | Union method deposit | Please ensure the player sends a screen recording of their payment, then verify and add chips. | No |
-| Repeat, prior still open (unchecked priors only) | Union method deposit | Please ensure the player sends a screen recording of their payment, then verify and add chips. | No |
+| First ever (no prior row for that type) | Union method deposit | Verify the time, ensure payment status is visible, and if you are unsure, contact head admins. | No |
+| Repeat, prior verified (`trade_record_checked`) | Union method deposit | Verify the time, ensure payment status is visible, and if you are unsure, contact head admins. | No |
+| Repeat, prior still open (unchecked priors only) | Union method deposit | Verify the time, ensure payment status is visible, and if you are unsure, contact head admins. | No |
 
 Slack body includes club, group title, amount, and method (union type name). Respects the club escalation toggle; skipped on the test bot worker.
 

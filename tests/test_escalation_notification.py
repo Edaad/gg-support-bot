@@ -437,8 +437,8 @@ class EscalationCopyTests(unittest.TestCase):
         self.assertIn("Tag: zelle email", text)
         self.assertNotIn("Method:", text)
         self.assertIn(
-            "Please ensure the player sends a screen recording of their payment, "
-            "then verify and add chips.",
+            "Verify the time, ensure payment status is visible, and if you are unsure, "
+            "contact head admins.",
             text,
         )
 
@@ -472,8 +472,8 @@ class EscalationCopyTests(unittest.TestCase):
             )
         self.assertIn("*Union method deposit*", text)
         self.assertIn(
-            "Please ensure the player sends a screen recording of their payment, "
-            "then verify and add chips.",
+            "Verify the time, ensure payment status is visible, and if you are unsure, "
+            "contact head admins.",
             text,
         )
         self.assertNotIn("Prior request still unchecked", text)

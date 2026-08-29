@@ -45,8 +45,8 @@ REASON_UNION_DEPOSIT_REPEAT = "union_deposit_repeat"
 
 _UNION_DEPOSIT_HEADLINE = "Union method deposit"
 _UNION_DEPOSIT_INSTRUCTION = (
-    "Please ensure the player sends a screen recording of their payment, "
-    "then verify and add chips."
+    "Verify the time, ensure payment status is visible, and if you are unsure, "
+    "contact head admins."
 )
 _ET = ZoneInfo("America/New_York")
 
