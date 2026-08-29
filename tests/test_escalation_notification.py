@@ -11,6 +11,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from bot.services import group_activity as ga
 from bot.services import escalation_notification as esc
 
+_UNION_DEPOSIT_REQUESTED_AT = datetime(2026, 8, 28, 23, 4, 10, tzinfo=timezone.utc)
+_UNION_DEPOSIT_KWARGS = {
+    "method_tag": "zelle email",
+    "requested_at": _UNION_DEPOSIT_REQUESTED_AT,
+}
+
 
 class MediaDetectionTests(unittest.TestCase):
     def test_photo_counts(self):
@@ -420,13 +426,16 @@ class EscalationCopyTests(unittest.TestCase):
                 variant="first",
                 club_id=2,
                 chat_id=-300,
-                title="RT / 1234-5678 / Player",
+                title="RT AT / 3333-3333 / @jz034",
                 amount=Decimal("500"),
                 method_display_name="Zelle",
+                **_UNION_DEPOSIT_KWARGS,
             )
         self.assertIn("*Union method deposit*", text)
+        self.assertIn("Time: Aug 28, 2026 at 7:04 PM ET", text)
         self.assertIn("Amount: $500", text)
-        self.assertIn("Method: Zelle", text)
+        self.assertIn("Tag: zelle email", text)
+        self.assertNotIn("Method:", text)
         self.assertIn(
             "Please ensure the player sends a screen recording of their payment, "
             "then verify and add chips.",
@@ -442,14 +451,12 @@ class EscalationCopyTests(unittest.TestCase):
                 title="GTO / 1 / x",
                 amount=Decimal("100.50"),
                 method_display_name="Cash App",
+                method_tag="$cashapp-tag",
+                requested_at=_UNION_DEPOSIT_REQUESTED_AT,
             )
         self.assertIn("*Union method deposit*", text)
         self.assertIn("Amount: $100.50", text)
-        self.assertIn(
-            "Please ensure the player sends a screen recording of their payment, "
-            "then verify and add chips.",
-            text,
-        )
+        self.assertIn("Tag: $cashapp-tag", text)
 
     def test_union_deposit_repeat_open_copy(self):
         with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
@@ -460,6 +467,8 @@ class EscalationCopyTests(unittest.TestCase):
                 title="GTO / 1 / x",
                 amount=Decimal("75"),
                 method_display_name="Apple Pay",
+                method_tag="pay@example.com",
+                requested_at=_UNION_DEPOSIT_REQUESTED_AT,
             )
         self.assertIn("*Union method deposit*", text)
         self.assertIn(
@@ -494,12 +503,14 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
                 title="RT / 1234-5678 / Player",
                 amount=Decimal("500"),
                 method_display_name="Zelle",
+                **_UNION_DEPOSIT_KWARGS,
             )
         self.assertIn("<b>Union method deposit</b>", text)
         self.assertIn("Group Chat: RT / 1234-5678 / Player", text)
         self.assertIn("Player ID: <code>1234-5678</code>", text)
+        self.assertIn("Time: Aug 28, 2026 at 7:04 PM ET", text)
         self.assertIn("Amount: $500", text)
-        self.assertIn("Method: Zelle", text)
+        self.assertIn("Tag: zelle email", text)
 
     async def test_skips_on_test_bot(self):
         with patch.object(esc, "is_test_bot_worker", return_value=True):
@@ -510,6 +521,8 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
                 title="RT / 1 / x",
                 amount=Decimal("100"),
                 method_display_name="Zelle",
+                method_tag="zelle email",
+                requested_at=_UNION_DEPOSIT_REQUESTED_AT,
             )
         self.assertFalse(ok)
 
@@ -524,6 +537,8 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
                 title="RT / 1 / x",
                 amount=Decimal("100"),
                 method_display_name="Zelle",
+                method_tag="zelle email",
+                requested_at=_UNION_DEPOSIT_REQUESTED_AT,
             )
         self.assertFalse(ok)
 
@@ -553,6 +568,8 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
                 title="RT / 1 / x",
                 amount=Decimal("100"),
                 method_display_name="Zelle",
+                method_tag="zelle email",
+                requested_at=_UNION_DEPOSIT_REQUESTED_AT,
             )
         self.assertTrue(ok)
         payment_chats.assert_awaited_once()
@@ -589,6 +606,8 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
                 title="RT / 1 / x",
                 amount=Decimal("100"),
                 method_display_name="Zelle",
+                method_tag="zelle email",
+                requested_at=_UNION_DEPOSIT_REQUESTED_AT,
             )
         self.assertEqual(notify.await_args.args[0], esc.REASON_UNION_DEPOSIT_REPEAT)
 

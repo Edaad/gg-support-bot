@@ -1988,6 +1988,8 @@ async def _run_union_deposit_from_choice(
                 title=getattr(query.message.chat, "title", None),
                 amount=amount,
                 method_display_name=method_display_name,
+                method_tag=(getattr(db_method, "method_tag", None) or "").strip() or None,
+                requested_at=row.created_at,
             )
         except Exception:
             logger.exception(

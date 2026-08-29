@@ -375,6 +375,8 @@ async def create_method_manual_deposit_request(
                 title=row.group_title,
                 amount=row.amount,
                 method_display_name=method_display_name,
+                method_tag=(method.method_tag or "").strip() or None,
+                requested_at=row.created_at,
             )
         except Exception:
             pass
