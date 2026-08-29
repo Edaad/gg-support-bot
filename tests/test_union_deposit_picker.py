@@ -54,9 +54,8 @@ class ListUnionMethodsForClubTests(unittest.TestCase):
 
 
 class BuildDepositPickerMethodsTests(unittest.TestCase):
-    @patch("bot.services.union_deposit_picker.list_union_methods_for_club")
     @patch("bot.services.union_deposit_picker.get_methods_for_amount")
-    def test_deduplicates_zelle_union_and_club(self, mock_get, mock_union_list):
+    def test_deduplicates_zelle_union_and_club(self, mock_get):
         mock_get.return_value = [
             {
                 "id": 1,
@@ -75,9 +74,9 @@ class BuildDepositPickerMethodsTests(unittest.TestCase):
                 "name": "Zelle",
                 "slug": "main",
                 "tracks_manual_requests": True,
+                "union_type": "zelle",
             },
         ]
-        mock_union_list.return_value = [_union_row(id=9, tag="main")]
 
         shown = build_deposit_picker_methods(1, Decimal("100"))
         names = [m["name"] for m in shown]
@@ -85,15 +84,44 @@ class BuildDepositPickerMethodsTests(unittest.TestCase):
         self.assertEqual(shown[0]["picker_kind"], "union_type")
         self.assertEqual(shown[0]["type_slug"], "zelle")
 
-    @patch("bot.services.union_deposit_picker.list_union_methods_for_club")
     @patch("bot.services.union_deposit_picker.get_methods_for_amount")
-    def test_shows_type_when_union_only(self, mock_get, mock_union_list):
-        mock_get.return_value = []
-        mock_union_list.return_value = [_union_row(id=9, tag="pool")]
+    def test_shows_type_when_union_only(self, mock_get):
+        mock_get.return_value = [
+            {
+                "id": 9,
+                "name": "Zelle",
+                "slug": "pool",
+                "tracks_manual_requests": True,
+                "union_type": "zelle",
+            }
+        ]
 
-        shown = build_deposit_picker_methods(1, Decimal("50"))
+        shown = build_deposit_picker_methods(1, Decimal("500"))
         self.assertEqual(len(shown), 1)
         self.assertEqual(shown[0]["type_slug"], "zelle")
+
+    @patch("bot.services.union_deposit_picker.get_methods_for_amount")
+    def test_hides_union_type_below_min(self, mock_get):
+        mock_get.return_value = [
+            {
+                "id": 1,
+                "name": "Venmo",
+                "slug": "venmo",
+                "tracks_manual_requests": False,
+            }
+        ]
+
+        shown = build_deposit_picker_methods(1, Decimal("25"))
+        names = [m["name"] for m in shown]
+        self.assertEqual(names, ["Venmo"])
+        self.assertFalse(any(m.get("type_slug") == "zelle" for m in shown))
+
+    @patch("bot.services.union_deposit_picker.get_methods_for_amount")
+    def test_hides_union_type_when_filtered_out(self, mock_get):
+        mock_get.return_value = []
+
+        shown = build_deposit_picker_methods(1, Decimal("25"))
+        self.assertEqual(shown, [])
 
 
 class PickUnionMethodTests(unittest.TestCase):

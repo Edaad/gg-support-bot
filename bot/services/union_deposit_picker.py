@@ -32,6 +32,18 @@ def _union_type_slug_for_method(method: ClubPaymentMethod) -> Optional[str]:
     return union_type_from_display_name(method.name or "")
 
 
+def _union_type_slug_for_method_dict(method: dict) -> Optional[str]:
+    raw = method.get("union_type")
+    if raw:
+        try:
+            return validate_union_method_type(str(raw))
+        except ValueError:
+            pass
+    from bot.services.union_method_types import union_type_from_display_name
+
+    return union_type_from_display_name(method.get("name") or "")
+
+
 def list_union_methods_for_club(
     club_id: int,
     *,
@@ -119,19 +131,16 @@ def build_deposit_picker_methods(
 ) -> List[dict]:
     """Return picker entries: synthetic union-type rows + other club methods."""
     raw = get_methods_for_amount(club_id, "deposit", amount)
-    union_rows = list_union_methods_for_club(club_id, active_only=True)
 
-    union_types_present: set[str] = set()
-    for m in union_rows:
-        t = _union_type_slug_for_method(m)
-        if t:
-            union_types_present.add(t)
-
+    union_types_eligible: set[str] = set()
     club_by_type: dict[str, dict] = {}
     other: list[dict] = []
     for m in raw:
         slug = (m.get("slug") or "").strip().lower()
         if bool(m.get("tracks_manual_requests")):
+            type_slug = _union_type_slug_for_method_dict(m)
+            if type_slug:
+                union_types_eligible.add(type_slug)
             continue
         type_slug = CLUB_SLUG_TO_UNION_TYPE.get(slug)
         if type_slug:
@@ -141,7 +150,7 @@ def build_deposit_picker_methods(
 
     merged: list[dict] = []
     for type_slug in sorted(UNION_TYPE_SLUGS):
-        if type_slug in union_types_present or type_slug in club_by_type:
+        if type_slug in union_types_eligible or type_slug in club_by_type:
             meta = UNION_METHOD_TYPES[type_slug]
             merged.append(
                 {
