@@ -26,8 +26,9 @@ logger = logging.getLogger(__name__)
 
 BONUS_STEP_KEY = "bonus_step"
 BONUS_TIMEOUT_SECONDS = 300
+REFERRAL_TYPE_NAME = "Referral"
 
-_TEXT_STEPS = frozenset({"group_title", "amount", "description"})
+_TEXT_STEPS = frozenset({"group_title", "amount", "description", "referred_group_title"})
 
 _GROUP_TITLE_PROMPT = (
     "Enter group title (e.g. CC / 8190-5287 / Jacob):"
@@ -36,6 +37,10 @@ _GROUP_TITLE_INVALID = (
     "Invalid group title. Use format: CLUB / PLAYER_ID / NAME\n"
     "Example: CC / 8190-5287 / Jacob"
 )
+_REFERRED_GROUP_TITLE_PROMPT = (
+    "Enter the referred player's support group title (e.g. CC / 8190-5287 / Jacob):"
+)
+_SAME_PLAYER_ERROR = "Referred player must be different from the bonus recipient."
 
 
 def _get_bonus_types():
@@ -62,6 +67,58 @@ def _get_clubs():
 
 def _club_name_for_id(club_id: int) -> str:
     return next((c["name"] for c in _get_clubs() if c["id"] == club_id), "Unknown")
+
+
+def _is_referral_bonus(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    return context.user_data.get("bonus_type_name") == REFERRAL_TYPE_NAME
+
+
+def _is_same_player(
+    *,
+    recipient_chat_id: int | None,
+    recipient_gg_player_id: str | None,
+    referred: BonusPlayerContext,
+) -> bool:
+    if (
+        recipient_chat_id is not None
+        and referred.chat_id is not None
+        and int(recipient_chat_id) == int(referred.chat_id)
+    ):
+        return True
+    if (
+        recipient_gg_player_id
+        and referred.gg_player_id
+        and recipient_gg_player_id == referred.gg_player_id
+    ):
+        return True
+    return False
+
+
+def _referral_metadata(referred: BonusPlayerContext, title: str) -> dict:
+    return {
+        "referred_player_gc_id": referred.chat_id,
+        "referred_player_group_title": title,
+    }
+
+
+async def _ask_referred_player(chat, context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data[BONUS_STEP_KEY] = "referred_group_title"
+    await chat.send_message(_REFERRED_GROUP_TITLE_PROMPT)
+
+
+async def _maybe_finalize_or_ask_referred(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    query=None,
+    chat=None,
+) -> None:
+    if _is_referral_bonus(context):
+        target_chat = chat or (query.message.chat if query else None)
+        if target_chat is None:
+            return
+        await _ask_referred_player(target_chat, context)
+        return
+    await _finalize_bonus_record(context, query=query, chat=chat)
 
 
 def _type_keyboard_markup() -> InlineKeyboardMarkup:
@@ -104,6 +161,7 @@ def _save_record(data: dict) -> int:
             chat_id=data.get("chat_id"),
             group_title=data.get("group_title"),
             admin_telegram_user_id=data["admin_user_id"],
+            metadata_json=data.get("metadata"),
         )
         session.add(rec)
         session.flush()
@@ -185,6 +243,7 @@ def _cleanup(context: ContextTypes.DEFAULT_TYPE) -> None:
         "bonus_custom_desc",
         "bonus_club_id",
         "bonus_club_name",
+        "bonus_metadata",
     ):
         context.user_data.pop(key, None)
 
@@ -232,6 +291,7 @@ async def _finalize_bonus_record(
         "gg_player_id": context.user_data.get("bonus_gg_player_id"),
         "chat_id": context.user_data.get("bonus_chat_id"),
         "group_title": context.user_data.get("bonus_group_title"),
+        "metadata": context.user_data.get("bonus_metadata"),
     }
 
     _save_record(record_data)
@@ -409,6 +469,8 @@ async def bonus_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await _handle_amount(update, context)
     elif step == "description":
         await _handle_description(update, context)
+    elif step == "referred_group_title":
+        await _handle_referred_group_title(update, context)
 
     raise ApplicationHandlerStop()
 
@@ -500,7 +562,7 @@ async def _handle_type_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data["bonus_type_name"] = type_name
     await query.edit_message_text(f"Bonus Type: {type_name}")
     if context.user_data.get("bonus_club_id"):
-        await _finalize_bonus_record(context, query=query)
+        await _maybe_finalize_or_ask_referred(context, query=query)
     else:
         await _ask_club(query.message.chat, context)
 
@@ -552,7 +614,35 @@ async def _handle_club_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE
     club_name = _club_name_for_id(club_id)
     context.user_data["bonus_club_id"] = club_id
     context.user_data["bonus_club_name"] = club_name
-    await _finalize_bonus_record(context, query=query)
+    await _maybe_finalize_or_ask_referred(context, query=query)
+
+
+async def _handle_referred_group_title(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    assert update.message
+    title = (update.message.text or "").strip()
+    if not title:
+        await update.message.reply_text(_GROUP_TITLE_INVALID)
+        return
+
+    referred = resolve_bonus_player(group_title=title, chat_id=None)
+    if referred is None:
+        await update.message.reply_text(_GROUP_TITLE_INVALID)
+        return
+
+    recipient_chat_id = context.user_data.get("bonus_chat_id")
+    recipient_gg_player_id = context.user_data.get("bonus_gg_player_id")
+    if _is_same_player(
+        recipient_chat_id=recipient_chat_id,
+        recipient_gg_player_id=recipient_gg_player_id,
+        referred=referred,
+    ):
+        await update.message.reply_text(_SAME_PLAYER_ERROR)
+        return
+
+    context.user_data["bonus_metadata"] = _referral_metadata(referred, title)
+    await _finalize_bonus_record(context, chat=update.message.chat)
 
 
 async def bonus_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

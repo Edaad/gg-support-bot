@@ -1,15 +1,16 @@
-"""Fixed union method types (Zelle, Cash App, Apple Pay)."""
+"""Fixed union method types (Zelle, Cash App, Apple Pay, Venmo)."""
 
 from __future__ import annotations
 
 from typing import Literal, Optional
 
-UnionMethodTypeSlug = Literal["zelle", "cashapp", "applepay"]
+UnionMethodTypeSlug = Literal["zelle", "cashapp", "applepay", "venmo"]
 
 UNION_METHOD_TYPES: dict[str, dict[str, str]] = {
     "zelle": {"name": "Zelle", "club_slug": "zelle"},
     "cashapp": {"name": "Cash App", "club_slug": "cashapp"},
     "applepay": {"name": "Apple Pay", "club_slug": "applepay"},
+    "venmo": {"name": "Venmo", "club_slug": "venmo"},
 }
 
 UNION_TYPE_SLUGS = frozenset(UNION_METHOD_TYPES.keys())

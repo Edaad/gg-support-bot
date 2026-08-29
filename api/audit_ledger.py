@@ -53,6 +53,7 @@ UNION_DEPOSIT_SOURCE_LABELS: dict[str, str] = {
     "zelle": "Union Zelle",
     "cashapp": "Union Cash App",
     "applepay": "Union Apple Pay",
+    "venmo": "Union Venmo",
 }
 
 UNION_MATCHING_SOURCE_OPTIONS: tuple[str, ...] = tuple(
@@ -541,7 +542,7 @@ def union_deposit_source_label(method_name: str) -> str | None:
 
 
 def _union_method_tag(row: ManualDepositRequest) -> str:
-    return (row.method_slug or row.variant_name or "").strip()
+    return (row.variant_name or row.method_slug or "").strip()
 
 
 def _resolve_union_group_title(

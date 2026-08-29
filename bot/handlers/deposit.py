@@ -398,6 +398,9 @@ _STRIPE_HARDCODE_DEFAULT_TEXT = (
     "{{hyperlink}}"
 )
 _PLACEHOLDER_RESPONSE_TEXT = frozenset({"long text", "test", "placeholder", "todo"})
+_DEPOSIT_UNION_TYPE_PATTERN = (
+    r"^deptype:(" + "|".join(sorted(UNION_METHOD_TYPES)) + r")$"
+)
 
 DEPOSIT_REMINDER_SECONDS = 600  # 10 minutes
 TIMEOUT_SECONDS = 600
@@ -408,6 +411,8 @@ _PENDING_DEPOSIT_REMINDERS: dict[int, int] = {}
 # Maps chat_id → deposit instruction message ids to delete if the reminder fires
 # without a completed deposit (abandoned chase). Completed deposits keep them.
 _DEPOSIT_INFO_MESSAGE_IDS: dict[int, list[int]] = {}
+# Instruction-only message ids (excludes the "Deposit request for $X" announcement).
+_DEPOSIT_INSTRUCTION_MESSAGE_IDS: dict[int, list[int]] = {}
 _deposit_reminder_app: Any | None = None
 
 _PAYMENT_BOUND_MODELS = (
@@ -421,6 +426,24 @@ _PAYMENT_BOUND_MODELS = (
 
 def _reset_deposit_info_messages(chat_id: int) -> None:
     _DEPOSIT_INFO_MESSAGE_IDS[int(chat_id)] = []
+    _DEPOSIT_INSTRUCTION_MESSAGE_IDS[int(chat_id)] = []
+
+
+def _pop_deposit_instruction_message_ids(chat_id: int) -> list[int]:
+    return list(_DEPOSIT_INSTRUCTION_MESSAGE_IDS.pop(int(chat_id), []))
+
+
+def _exclude_union_instructions_from_deposit_reminder_deletes(chat_id: int) -> None:
+    """Keep union instruction messages for expiry edit; reminder may still delete the announcement."""
+    instr = set(_DEPOSIT_INSTRUCTION_MESSAGE_IDS.get(int(chat_id), []))
+    if not instr:
+        return
+    kept = [
+        mid
+        for mid in _DEPOSIT_INFO_MESSAGE_IDS.get(int(chat_id), [])
+        if mid not in instr
+    ]
+    _DEPOSIT_INFO_MESSAGE_IDS[int(chat_id)] = kept
 
 
 def _track_deposit_info_message(chat_id: int, message_id: int | None) -> None:
@@ -607,6 +630,24 @@ def _first_time_setup_ack_markup(*, attempt_id: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     "I HAVE READ THE INSTRUCTIONS ABOVE",
                     callback_data=f"depft:{attempt_id}",
+                )
+            ]
+        ]
+    )
+
+
+def _union_deposit_ack_markup(*, request_id: int) -> InlineKeyboardMarkup:
+    from bot.services.union_deposit_messages import (
+        UNION_ACK_BUTTON_LABEL,
+        union_ack_callback_data,
+    )
+
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    UNION_ACK_BUTTON_LABEL,
+                    callback_data=union_ack_callback_data(request_id),
                 )
             ]
         ]
@@ -1806,6 +1847,291 @@ async def _run_first_time_method_setup_from_choice(
     return await _complete_deposit_flow(query.message.chat, context)
 
 
+async def _run_union_deposit_from_choice(
+    query,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    method_id: int,
+    method: dict,
+    method_slug: str,
+) -> int | str:
+    from bot.services.manual_deposit_requests import (
+        ManualDepositCapacityError,
+        create_request_atomic,
+        set_union_ack_pending,
+        sum_for_method,
+        union_deposit_slack_variant,
+    )
+    from bot.services.union_deposit_messages import (
+        build_union_instruction_with_footer,
+        build_union_special_instructions_text,
+    )
+    from bot.services.union_method_types import (
+        union_type_display_name,
+        union_type_from_display_name,
+    )
+    from bot.services.union_instruction_expiry import (
+        instruction_expires_at_from_now,
+        schedule_union_ack_expiry,
+    )
+    from db.connection import get_db
+    from db.models import ClubPaymentMethod
+
+    amount = context.chat_data.get("deposit_amount", "?")
+    chat_id = query.message.chat.id if query.message else None
+    club_id = context.chat_data.get("deposit_club_id")
+    deposit_user_id = context.chat_data.get("deposit_user_id")
+
+    if (
+        club_id is None
+        or chat_id is None
+        or not isinstance(amount, Decimal)
+        or query.message is None
+    ):
+        await query.edit_message_text(
+            "Could not record this deposit request. Please contact support."
+        )
+        return ConversationHandler.END
+
+    union_type_slug = union_type_from_display_name(method.get("name") or "")
+    with get_db() as session:
+        db_method = session.get(ClubPaymentMethod, int(method_id))
+        if db_method is None:
+            await query.edit_message_text(
+                "This payment method is not configured yet. Please contact support."
+            )
+            return ConversationHandler.END
+        used_sum = sum_for_method(session, int(method_id))
+        session.expunge(db_method)
+    if not build_union_instruction_with_footer(db_method, used_sum=used_sum):
+        await query.edit_message_text(
+            "This payment method is not configured yet. Please contact support."
+        )
+        return ConversationHandler.END
+
+    slack_variant = None
+    method_display_name = (method.get("name") or "").strip()
+    if union_type_slug:
+        try:
+            slack_variant = union_deposit_slack_variant(
+                int(chat_id),
+                union_type_slug=union_type_slug,
+            )
+            method_display_name = union_type_display_name(union_type_slug)
+        except Exception:
+            logger.exception(
+                "manual deposit slack variant failed chat_id=%s method_id=%s",
+                chat_id,
+                method_id,
+            )
+
+    try:
+        row = create_request_atomic(
+            club_id=int(club_id),
+            method_id=int(method_id),
+            amount=amount,
+            telegram_chat_id=int(chat_id),
+            group_title=getattr(query.message.chat, "title", None),
+            initiated_by_telegram_user_id=(
+                int(deposit_user_id) if deposit_user_id is not None else None
+            ),
+        )
+    except ManualDepositCapacityError as exc:
+        await query.edit_message_text(str(exc))
+        return ConversationHandler.END
+    except Exception:
+        logger.exception(
+            "manual deposit request create failed chat_id=%s method_id=%s",
+            chat_id,
+            method_id,
+        )
+        await query.edit_message_text(
+            "Could not record this deposit request. Please try again or contact support."
+        )
+        return ConversationHandler.END
+
+    _reset_deposit_info_messages(int(chat_id))
+    announcement = f"Deposit request for ${amount} via {method['name']}"
+    await query.edit_message_text(announcement)
+    _track_deposit_info_message(int(chat_id), query.message.message_id)
+
+    ack_expires_at = instruction_expires_at_from_now()
+    ack_html = build_union_special_instructions_text(html=True)
+    ack_plain = build_union_special_instructions_text(html=False)
+    ack_msg = await _deposit_send_html_or_plain(
+        query.message.chat,
+        int(chat_id),
+        html_text=ack_html,
+        plain_text=ack_plain,
+        log_label="union_deposit_ack",
+        reply_markup=_union_deposit_ack_markup(request_id=int(row.id)),
+    )
+    set_union_ack_pending(
+        int(row.id),
+        ack_message_id=int(ack_msg.message_id),
+        expires_at=ack_expires_at,
+    )
+    schedule_union_ack_expiry(
+        None,
+        int(row.id),
+        expires_at=ack_expires_at,
+    )
+    _track_deposit_info_message(int(chat_id), ack_msg.message_id)
+
+    if slack_variant is not None:
+        try:
+            from bot.services.escalation_notification import (
+                notify_union_deposit_request_slack,
+            )
+
+            await notify_union_deposit_request_slack(
+                variant=slack_variant,
+                club_id=int(club_id),
+                chat_id=int(chat_id),
+                title=getattr(query.message.chat, "title", None),
+                amount=amount,
+                method_display_name=method_display_name,
+                method_tag=(getattr(db_method, "method_tag", None) or "").strip() or None,
+                requested_at=row.created_at,
+            )
+        except Exception:
+            logger.exception(
+                "manual deposit slack notify failed chat_id=%s method_id=%s",
+                chat_id,
+                method_id,
+            )
+
+    return await _complete_deposit_flow(query.message.chat, context)
+
+
+async def handle_deposit_union_ack(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    query = update.callback_query
+    if not query or not query.message:
+        return
+
+    data = query.data or ""
+    if not data.startswith("depum:"):
+        return
+
+    try:
+        request_id = int(data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        await query.answer()
+        return
+
+    chat_id = int(query.message.chat.id)
+    user_id = int(query.from_user.id) if query.from_user else None
+
+    from bot.services.manual_deposit_requests import (
+        UnionAckValidationError,
+        complete_union_ack,
+        get_union_ack_pending,
+        sum_for_method_excluding_request,
+    )
+    from bot.services.union_deposit_messages import build_union_instruction_with_footer
+    from bot.services.union_instruction_expiry import (
+        cancel_union_ack_expiry,
+        instruction_expires_at_from_now,
+        schedule_union_instruction_expiry,
+    )
+    from db.connection import get_db
+    from db.models import ClubPaymentMethod
+
+    try:
+        row = get_union_ack_pending(
+            request_id,
+            telegram_chat_id=chat_id,
+            initiated_by_telegram_user_id=user_id,
+        )
+    except UnionAckValidationError as exc:
+        await query.answer(exc.message, show_alert=True)
+        return
+
+    await query.answer()
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        logger.debug(
+            "union deposit ack: remove button failed chat_id=%s request_id=%s",
+            chat_id,
+            request_id,
+            exc_info=True,
+        )
+
+    method_id = row.method_id
+    if method_id is None:
+        await query.message.chat.send_message(
+            "This payment method is no longer available. Please contact support."
+        )
+        return
+
+    with get_db() as session:
+        db_method = session.get(ClubPaymentMethod, int(method_id))
+        if db_method is None:
+            await query.message.chat.send_message(
+                "This payment method is not configured yet. Please contact support."
+            )
+            return
+        used_sum = sum_for_method_excluding_request(
+            session,
+            int(method_id),
+            exclude_request_id=int(request_id),
+        )
+        session.expunge(db_method)
+
+    instruction_html = build_union_instruction_with_footer(
+        db_method, used_sum=used_sum, html_mode=True
+    )
+    instruction_plain = build_union_instruction_with_footer(
+        db_method, used_sum=used_sum, html_mode=False
+    )
+    if not instruction_html or not instruction_plain:
+        await query.message.chat.send_message(
+            "This payment method is not configured yet. Please contact support."
+        )
+        return
+
+    instruction_msg = await _deposit_send_html_or_plain(
+        query.message.chat,
+        chat_id,
+        html_text=instruction_html,
+        plain_text=instruction_plain,
+        log_label="union_deposit_instruction",
+    )
+    instruction_expires = instruction_expires_at_from_now()
+    try:
+        complete_union_ack(
+            request_id,
+            instruction_message_ids=[instruction_msg.message_id],
+            instruction_expires_at=instruction_expires,
+        )
+    except Exception:
+        logger.exception(
+            "union deposit ack: persist instruction expiry failed request_id=%s chat_id=%s",
+            request_id,
+            chat_id,
+        )
+        raise
+    cancel_union_ack_expiry(
+        request_id,
+        job_queue=None,
+    )
+    schedule_union_instruction_expiry(
+        None,
+        request_id,
+        expires_at=instruction_expires,
+    )
+    _DEPOSIT_INSTRUCTION_MESSAGE_IDS[chat_id] = [int(instruction_msg.message_id)]
+    _exclude_union_instructions_from_deposit_reminder_deletes(chat_id)
+
+
+def get_deposit_union_ack_handler() -> CallbackQueryHandler:
+    return CallbackQueryHandler(handle_deposit_union_ack, pattern=r"^depum:\d+$")
+
+
 async def _run_normal_deposit_from_choice(
     query,
     context: ContextTypes.DEFAULT_TYPE,
@@ -1815,36 +2141,21 @@ async def _run_normal_deposit_from_choice(
     method_slug: str,
     picked: tuple[dict | None, dict | None] | None = None,
 ) -> int | str:
-    from bot.services.manual_deposit_requests import (
-        ManualDepositCapacityError,
-        create_request_atomic,
-        union_deposit_slack_variant,
-    )
-    from bot.services.union_method_types import (
-        union_type_display_name,
-        union_type_from_display_name,
-    )
-
     amount = context.chat_data.get("deposit_amount", "?")
     chat_id = query.message.chat.id if query.message else None
     tracks_manual = bool(method.get("tracks_manual_requests"))
     context.chat_data["deposit_tracks_manual_requests"] = tracks_manual
 
     if tracks_manual:
-        message = (method.get("manual_request_message") or "").strip()
-        if not message:
-            await query.edit_message_text(
-                "This payment method is not configured yet. Please contact support."
-            )
-            return ConversationHandler.END
-        response_data = {
-            "response_type": "text",
-            "response_text": message,
-            "response_file_id": None,
-            "response_caption": None,
-        }
-        tier = None
-    elif picked is not None:
+        return await _run_union_deposit_from_choice(
+            query,
+            context,
+            method_id=method_id,
+            method=method,
+            method_slug=method_slug,
+        )
+
+    if picked is not None:
         response_data, tier = picked
     else:
         response_data, tier = _pick_deposit_variant_response(
@@ -1880,75 +2191,7 @@ async def _run_normal_deposit_from_choice(
     if not ok:
         return ConversationHandler.END
 
-    if tracks_manual:
-        club_id = context.chat_data.get("deposit_club_id")
-        if (
-            club_id is None
-            or chat_id is None
-            or not isinstance(amount, Decimal)
-        ):
-            await query.message.chat.send_message(
-                "Could not record this deposit request. Please contact support."
-            )
-            return ConversationHandler.END
-        union_type_slug = union_type_from_display_name(method.get("name") or "")
-        slack_variant = None
-        method_display_name = (method.get("name") or "").strip()
-        if union_type_slug:
-            try:
-                slack_variant = union_deposit_slack_variant(
-                    int(chat_id),
-                    union_type_slug=union_type_slug,
-                )
-                method_display_name = union_type_display_name(union_type_slug)
-            except Exception:
-                logger.exception(
-                    "manual deposit slack variant failed chat_id=%s method_id=%s",
-                    chat_id,
-                    method_id,
-                )
-        try:
-            create_request_atomic(
-                club_id=int(club_id),
-                method_id=int(method_id),
-                amount=amount,
-                telegram_chat_id=int(chat_id),
-                group_title=getattr(query.message.chat, "title", None),
-            )
-        except ManualDepositCapacityError as exc:
-            await query.message.chat.send_message(str(exc))
-            return ConversationHandler.END
-        except Exception:
-            logger.exception(
-                "manual deposit request create failed chat_id=%s method_id=%s",
-                chat_id,
-                method_id,
-            )
-            await query.message.chat.send_message(
-                "Could not record this deposit request. Please try again or contact support."
-            )
-            return ConversationHandler.END
-        if slack_variant is not None:
-            try:
-                from bot.services.escalation_notification import (
-                    notify_union_deposit_request_slack,
-                )
-
-                await notify_union_deposit_request_slack(
-                    variant=slack_variant,
-                    club_id=int(club_id),
-                    chat_id=int(chat_id),
-                    title=getattr(query.message.chat, "title", None),
-                    amount=amount,
-                    method_display_name=method_display_name,
-                )
-            except Exception:
-                logger.exception(
-                    "manual deposit slack notify failed chat_id=%s method_id=%s",
-                    chat_id,
-                    method_id,
-                )
-    elif isinstance(amount, Decimal):
+    if isinstance(amount, Decimal):
         try:
             record_method_deposit(method_id, amount)
         except Exception:
@@ -2849,10 +3092,12 @@ async def _send_response(query, data, amount, display_name):
     announcement = f"Deposit request for ${amount} via {display_name}"
     await query.edit_message_text(announcement)
     _track_deposit_info_message(chat_id, query.message.message_id)
-    _track_deposit_info_messages(
-        chat_id,
-        await send_response_messages(query.message.chat, data),
-    )
+    instruction_ids = await send_response_messages(query.message.chat, data)
+    _track_deposit_info_messages(chat_id, instruction_ids)
+    if instruction_ids:
+        _DEPOSIT_INSTRUCTION_MESSAGE_IDS[int(chat_id)] = [
+            int(message_id) for message_id in instruction_ids
+        ]
 
 
 async def _send_simple_response(message, data):
@@ -3017,7 +3262,7 @@ def get_deposit_handler() -> ConversationHandler:
             DEPOSIT_CHOOSE: [
                 CallbackQueryHandler(
                     deposit_union_type_chosen,
-                    pattern=r"^deptype:(zelle|cashapp|applepay)$",
+                    pattern=_DEPOSIT_UNION_TYPE_PATTERN,
                 ),
                 CallbackQueryHandler(deposit_method_chosen, pattern=r"^dep:\d+$"),
                 _DEPOSIT_CANCEL,

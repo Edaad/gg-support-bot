@@ -218,13 +218,17 @@ class ReconcileExportTestCase(unittest.TestCase):
         ]
         self.assertEqual(source_list[0], "GTO Stripe")
         self.assertIn("Union Zelle", source_list)
+        self.assertIn("Union Venmo", source_list)
         self.assertIn("Chip Transfer (Player)", source_list)
+        self.assertIn("Free Play", source_list)
+        self.assertIn("Back to Club", source_list)
+        self.assertIn("GTO INC", source_list)
         self.assertNotIn("Chip Transfer (RT↔AT)", source_list)
         self.assertNotIn("Chip Transfer (AT↔CC)", source_list)
         self.assertTrue(matching.column_dimensions["AD"].hidden)
         self.assertTrue(matching.column_dimensions["AE"].hidden)
         hidden_headers = [
-            matching.cell(row=1, column=col).value for col in range(30, 60)
+            matching.cell(row=1, column=col).value for col in range(30, 65)
         ]
         self.assertIn("Cashout Venmo", hidden_headers)
         self.assertIn("Vaughn Cashout Venmo", hidden_headers)
@@ -243,6 +247,9 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertTrue(any("Chip Transfer (Player)" in f for f in cf_formulas))
         self.assertTrue(any("Chip Transfer (RT↔AT)" in f for f in cf_formulas))
         self.assertTrue(any("Chip Transfer (AT↔CC)" in f for f in cf_formulas))
+        self.assertTrue(any("Free Play" in f for f in cf_formulas))
+        self.assertTrue(any("Back to Club" in f for f in cf_formulas))
+        self.assertTrue(any("GTO INC" in f for f in cf_formulas))
         self.assertEqual(
             len(cf_formulas),
             len(_MATCHING_SOURCE_FILL_HEX),
@@ -394,6 +401,41 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertIsNone(matching.cell(row=2, column=10).value)
         unresolved = wb["Unresolved"]
         self.assertEqual(unresolved.cell(row=2, column=1).value, "Cashout Zelle")
+
+    def test_round_table_source_dropdown_includes_free_play_and_back_to_club(self):
+        occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
+        report = AuditReconcileReport(
+            audit_date=date(2026, 7, 3),
+            club_slug="round-table",
+            club_name="Round Table",
+            status="pass",
+            players=[],
+            trade_lines=[
+                TradeLineForMatch(
+                    line_id=1,
+                    occurred_at=occurred,
+                    amount=Decimal("-50"),
+                    member_gg_player_id="1111-2222",
+                    member_nickname="P1",
+                    sheet_row=1,
+                    trade_club_slug="round-table",
+                ),
+            ],
+            ledger_lines=[],
+        )
+        wb = load_workbook(
+            io.BytesIO(
+                build_all_clubs_matching_workbook(_all_clubs_reports(round_table=report))
+            )
+        )
+        matching = wb["Round Table"]
+        source_list = [
+            matching.cell(row=r, column=30).value for r in range(1, 80)
+        ]
+        source_list = [value for value in source_list if value]
+        self.assertIn("Free Play", source_list)
+        self.assertIn("Back to Club", source_list)
+        self.assertNotIn("GTO INC", source_list)
 
     def test_matching_vaughn_tally_only_clubgto(self):
         report = _empty_report(club_slug="round-table", club_name="Round Table")

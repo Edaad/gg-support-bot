@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import html
 import logging
 import re
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackQueryHandler, ContextTypes
@@ -41,16 +43,12 @@ REASON_AUTO_CASHOUT_ESCALATION = "auto_cashout_escalation"
 REASON_UNION_DEPOSIT_FIRST = "union_deposit_first"
 REASON_UNION_DEPOSIT_REPEAT = "union_deposit_repeat"
 
-_UNION_DEPOSIT_FIRST_HEADLINE = "First-time union deposit — verify with union"
-_UNION_DEPOSIT_REPEAT_HEADLINE = "Union deposit — verify and add chips"
-_UNION_DEPOSIT_INSTRUCTION_FIRST = (
-    "This is the first time this player is using a union method. "
-    "Forward to head admins to verify with union."
+_UNION_DEPOSIT_HEADLINE = "Union method deposit"
+_UNION_DEPOSIT_INSTRUCTION = (
+    "Verify the time, ensure payment status is visible, and if you are unsure, "
+    "contact head admins."
 )
-_UNION_DEPOSIT_INSTRUCTION_REPEAT = "Please verify payment and add chips."
-_UNION_DEPOSIT_INSTRUCTION_REPEAT_OPEN = (
-    "Please verify payment and add chips. Prior request still unchecked."
-)
+_ET = ZoneInfo("America/New_York")
 
 _HEADLINES = {
     REASON_PLAYER_IDLE: "A player just reached out.",
@@ -393,6 +391,29 @@ def format_escalation_slack_text(
     return "\n".join(lines)
 
 
+def _union_deposit_amount_str(amount) -> str:
+    if isinstance(amount, Decimal):
+        amount_normalized = amount.quantize(Decimal("0.01"))
+        if amount_normalized == amount_normalized.to_integral_value():
+            return f"${int(amount_normalized):,}"
+        return f"${amount_normalized:,.2f}"
+    return f"${amount}"
+
+
+def _format_union_deposit_time(requested_at: datetime | None) -> str:
+    if requested_at is None:
+        return "(unknown)"
+    dt = requested_at
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    local = dt.astimezone(_ET)
+    month = local.strftime("%b")
+    clock = local.strftime("%I:%M %p").lstrip("0")
+    return f"{month} {local.day}, {local.year} at {clock} ET"
+
+
 def format_union_deposit_slack_text(
     *,
     variant: str,
@@ -401,41 +422,98 @@ def format_union_deposit_slack_text(
     title: str | None,
     amount,
     method_display_name: str,
+    method_tag: str | None,
+    requested_at: datetime | None,
 ) -> str:
-    from bot.services.manual_deposit_requests import UnionDepositSlackVariant
+    del variant, method_display_name
+    club = _club_display_name(club_id)
+    group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
+    amount_str = _union_deposit_amount_str(amount)
+    tag = (method_tag or "").strip() or "(not configured)"
+    lines = [
+        f"*{_UNION_DEPOSIT_HEADLINE}*",
+        f"Club: {club}",
+        _slack_code_span(group_title),
+        "",
+        f"Time: {_format_union_deposit_time(requested_at)}",
+        f"Amount: {amount_str}",
+        f"Tag: {tag}",
+        "",
+        _UNION_DEPOSIT_INSTRUCTION,
+    ]
+    return "\n".join(lines)
 
-    v: UnionDepositSlackVariant = variant  # type: ignore[assignment]
-    if v == "first":
-        headline = _UNION_DEPOSIT_FIRST_HEADLINE
-        instruction = _UNION_DEPOSIT_INSTRUCTION_FIRST
-    elif v == "repeat_verified":
-        headline = _UNION_DEPOSIT_REPEAT_HEADLINE
-        instruction = _UNION_DEPOSIT_INSTRUCTION_REPEAT
-    else:
-        headline = _UNION_DEPOSIT_REPEAT_HEADLINE
-        instruction = _UNION_DEPOSIT_INSTRUCTION_REPEAT_OPEN
+
+async def format_union_deposit_telegram_text(
+    *,
+    variant: str,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None,
+    amount,
+    method_display_name: str,
+    method_tag: str | None,
+    requested_at: datetime | None,
+) -> str:
+    del variant, method_display_name
+    from notification.formatting import format_player_id_line, resolve_and_format_group_chat_line
 
     club = _club_display_name(club_id)
     group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
-    if isinstance(amount, Decimal):
-        amount_normalized = amount.quantize(Decimal("0.01"))
-        if amount_normalized == amount_normalized.to_integral_value():
-            amount_str = f"${int(amount_normalized):,}"
-        else:
-            amount_str = f"${amount_normalized:,.2f}"
-    else:
-        amount_str = f"${amount}"
-    method_name = (method_display_name or "").strip() or "Unknown"
+    amount_str = _union_deposit_amount_str(amount)
+    tag = (method_tag or "").strip() or "(not configured)"
+    time_str = _format_union_deposit_time(requested_at)
     lines = [
-        f"*{headline}*",
-        f"Club: {club}",
-        _slack_code_span(group_title),
-        f"Amount: {amount_str}",
-        f"Method: {method_name}",
+        f"<b>{html.escape(_UNION_DEPOSIT_HEADLINE, quote=False)}</b>",
         "",
-        instruction,
+        f"Club: {html.escape(club, quote=False)}",
+        await resolve_and_format_group_chat_line(
+            group_title=group_title,
+            telegram_chat_id=int(chat_id),
+            club_id=club_id,
+        ),
     ]
+    player_line = format_player_id_line(group_title)
+    if player_line:
+        lines.append(player_line)
+    lines.extend(
+        [
+            "",
+            f"Time: {html.escape(time_str, quote=False)}",
+            f"Amount: {html.escape(amount_str, quote=False)}",
+            f"Tag: {html.escape(tag, quote=False)}",
+            "",
+            html.escape(_UNION_DEPOSIT_INSTRUCTION, quote=False),
+        ]
+    )
     return "\n".join(lines)
+
+
+async def _notify_union_deposit_payment_chats(
+    *,
+    telegram_text: str,
+    group_title: str | None,
+) -> None:
+    from notification.payment_notification_delivery import deliver_payment_notification
+    from notification.payment_notification_routing import resolve_notification_chat_ids
+
+    chat_ids = resolve_notification_chat_ids([group_title])
+    if not chat_ids:
+        logger.warning("union deposit: no payment notification bind chats configured")
+        return
+    try:
+        await deliver_payment_notification(
+            telegram_text,
+            bind_chat_ids=chat_ids,
+            include_slack_escalation=False,
+        )
+    except Exception:
+        logger.warning(
+            "union deposit: payment notification chat delivery failed titles=%r chat_ids=%s",
+            group_title,
+            chat_ids,
+            exc_info=True,
+        )
 
 
 async def notify_union_deposit_request_slack(
@@ -446,8 +524,10 @@ async def notify_union_deposit_request_slack(
     title: str | None,
     amount,
     method_display_name: str,
+    method_tag: str | None,
+    requested_at: datetime | None,
 ) -> bool:
-    """Slack AMs (and head admins on first-ever) when a union manual deposit is created."""
+    """Slack AMs when a union manual deposit is created."""
     if is_test_bot_worker():
         return False
     if not escalation_notification_eligible(
@@ -468,7 +548,30 @@ async def notify_union_deposit_request_slack(
         title=title,
         amount=amount,
         method_display_name=method_display_name,
+        method_tag=method_tag,
+        requested_at=requested_at,
     )
+    try:
+        telegram_text = await format_union_deposit_telegram_text(
+            variant=v,
+            club_id=club_id,
+            chat_id=int(chat_id),
+            title=title,
+            amount=amount,
+            method_display_name=method_display_name,
+            method_tag=method_tag,
+            requested_at=requested_at,
+        )
+        await _notify_union_deposit_payment_chats(
+            telegram_text=telegram_text,
+            group_title=title or get_group_name(int(chat_id)),
+        )
+    except Exception:
+        logger.warning(
+            "union deposit: telegram payment notification failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
     return await notify_escalation_slack(
         reason,
         club_id=club_id,

@@ -35,7 +35,8 @@ async function request<T>(path: string, opts: RequestInit = {}, token?: string):
   return res.json()
 }
 
-export type UnionMethodTypeSlug = 'zelle' | 'cashapp' | 'applepay'
+export type UnionMethodTypeSlug = 'zelle' | 'cashapp' | 'applepay' | 'venmo'
+export type DepositUnionSlug = 'tmt' | 'massiv'
 
 export const UNION_METHOD_TYPE_OPTIONS: {
   value: UnionMethodTypeSlug
@@ -44,6 +45,15 @@ export const UNION_METHOD_TYPE_OPTIONS: {
   { value: 'zelle', label: 'Zelle' },
   { value: 'cashapp', label: 'Cash App' },
   { value: 'applepay', label: 'Apple Pay' },
+  { value: 'venmo', label: 'Venmo' },
+]
+
+export const DEPOSIT_UNION_OPTIONS: {
+  value: DepositUnionSlug
+  label: string
+}[] = [
+  { value: 'tmt', label: 'TMT' },
+  { value: 'massiv', label: 'Massiv' },
 ]
 
 export type UnionMethodClub = {
@@ -53,15 +63,16 @@ export type UnionMethodClub = {
 
 export type UnionMethod = {
   id: number
-  method: UnionMethodTypeSlug
-  name: string
-  tag: string
+  type: UnionMethodTypeSlug
+  deposit_union: DepositUnionSlug
+  internal_identifier: string
+  method_tag: string
+  payment_account_name: string | null
   is_active: boolean
   sort_order: number
   min_amount: number | string | null
   max_amount: number | string | null
   deposit_limit: number | string
-  manual_request_message: string
   clubs: UnionMethodClub[]
   row_clubs: UnionMethodClub[]
   used_sum: number | string
@@ -70,20 +81,34 @@ export type UnionMethod = {
 }
 
 export type UnionMethodCreateBody = {
-  method: UnionMethodTypeSlug
-  tag: string
+  type: UnionMethodTypeSlug
+  deposit_union: DepositUnionSlug
+  internal_identifier: string
+  method_tag: string
+  payment_account_name?: string | null
   club_ids: number[]
   deposit_limit: number
   min_amount?: number | null
   max_amount?: number | null
-  manual_request_message: string
 }
 
 export type UnionMethodUpdateBody = Partial<UnionMethodCreateBody>
 
-export function listUnionMethods(token: string, params: { is_active?: boolean } = {}) {
+export function unionMethodTypeLabel(type: UnionMethodTypeSlug): string {
+  return UNION_METHOD_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type
+}
+
+export function depositUnionLabel(slug: DepositUnionSlug): string {
+  return DEPOSIT_UNION_OPTIONS.find((o) => o.value === slug)?.label ?? slug
+}
+
+export function listUnionMethods(
+  token: string,
+  params: { is_active?: boolean; deposit_union?: DepositUnionSlug } = {},
+) {
   const q = new URLSearchParams()
   if (params.is_active != null) q.set('is_active', String(params.is_active))
+  if (params.deposit_union) q.set('deposit_union', params.deposit_union)
   const qs = q.toString()
   return request<UnionMethod[]>(`/api/union-methods${qs ? `?${qs}` : ''}`, {}, token)
 }
@@ -114,12 +139,12 @@ export function updateUnionMethod(
 
 export function reorderUnionMethods(
   token: string,
-  method: UnionMethodTypeSlug,
+  type: UnionMethodTypeSlug,
   order: number[],
 ) {
   return request<{ ok: boolean }>(
     `/api/union-methods/reorder`,
-    { method: 'PUT', body: JSON.stringify({ method, order }) },
+    { method: 'PUT', body: JSON.stringify({ type, order }) },
     token,
   )
 }

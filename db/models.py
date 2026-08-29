@@ -277,7 +277,10 @@ class ClubPaymentMethod(Base):
     tracks_manual_requests = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
-    manual_request_message = Column(Text, nullable=True)
+    union_type = Column(String(20), nullable=True)
+    deposit_union = Column(String(20), nullable=True)
+    method_tag = Column(String(200), nullable=True)
+    payment_account_name = Column(String(200), nullable=True)
     manual_request_variant_name = Column(String(100), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
@@ -480,6 +483,20 @@ class ManualDepositRequest(Base):
     telegram_chat_id = Column(BigInteger, nullable=False)
     trade_record_checked = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    instruction_telegram_message_ids = Column(
+        ARRAY(BigInteger),
+        nullable=True,
+    )
+    instruction_expires_at = Column(DateTime(timezone=True), nullable=True)
+    instruction_expired_at = Column(DateTime(timezone=True), nullable=True)
+    ack_telegram_message_id = Column(BigInteger, nullable=True)
+    ack_expires_at = Column(DateTime(timezone=True), nullable=True)
+    ack_expired_at = Column(DateTime(timezone=True), nullable=True)
+    acknowledged_at = Column(DateTime(timezone=True), nullable=True)
+    initiated_by_telegram_user_id = Column(BigInteger, nullable=True)
+    source = Column(
+        String(20), nullable=False, server_default=text("'bot'"), default="bot"
     )
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -694,6 +711,7 @@ class BonusRecord(Base):
     chat_id = Column(BigInteger, nullable=True)
     group_title = Column(String(512), nullable=True)
     admin_telegram_user_id = Column(BigInteger, nullable=True)
+    metadata_json = Column("metadata", JSONB, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     bonus_type = relationship("BonusType")

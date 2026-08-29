@@ -431,6 +431,7 @@ heroku run -a YOUR_APP -- python migrate_bonus_records.py
 heroku run -a YOUR_APP -- python migrate_bonus_drafts.py
 heroku run -a YOUR_APP -- python migrate_bonus_records_player_details.py
 heroku run -a YOUR_APP -- python migrate_bonus_records_dashboard.py
+heroku run -a YOUR_APP -- python migrate_bonus_records_metadata.py
 heroku run -a YOUR_APP -- python migrate_expenses.py
 # optional: backfill completed cashier jobs into staff_cashout_records
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py
@@ -549,6 +550,25 @@ heroku run -a YOUR_APP -- python scripts/run_group_chat_analysis.py --activity-d
 ```
 
 Optional: `GROUP_CHAT_ANALYSIS_CONCURRENCY=10` (default `0` = unlimited).
+
+## Union method shape (dashboard manual deposits)
+
+After deploying the union method redesign, run **in order** (wipes existing union methods and deposit rows, then adds new columns):
+
+```bash
+heroku run -a YOUR_APP -- python migrate_union_methods_clean_slate.py
+heroku run -a YOUR_APP -- python migrate_union_method_shape.py
+```
+
+Recreate union methods in the dashboard (Type, Union, Internal identifier, Method tag, optional Method name). Bot instructions are generated from those fields; no free-text player message column.
+
+After deploying the union deposit ack-step flow:
+
+```bash
+heroku run -a YOUR_APP -- python migrate_union_deposit_ack.py
+```
+
+Adds durable ack-state columns on `manual_deposit_requests` (ack message id, ack/instruction expiry timestamps, initiating player id).
 
 ## Per-group deposit / cashout method access
 

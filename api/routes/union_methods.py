@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from api.auth import get_current_admin
 from api.payment_v2_helpers import apply_manual_trade_request_constraints
+from bot.services.deposit_union_types import validate_deposit_union
 from bot.services.union_method_types import (
     union_type_display_name,
     union_type_from_display_name,
@@ -33,7 +34,8 @@ router = APIRouter(
     dependencies=[Depends(get_current_admin)],
 )
 
-UnionMethodTypeSlug = Literal["zelle", "cashapp", "applepay"]
+UnionMethodTypeSlug = Literal["zelle", "cashapp", "applepay", "venmo"]
+DepositUnionSlug = Literal["tmt", "massiv"]
 
 
 class UnionMethodClubRead(BaseModel):
@@ -45,15 +47,16 @@ class UnionMethodRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    method: str
-    name: str
-    tag: str
+    type: str
+    deposit_union: str
+    internal_identifier: str
+    method_tag: str
+    payment_account_name: Optional[str] = None
     is_active: bool
     sort_order: int
     min_amount: Optional[Decimal] = None
     max_amount: Optional[Decimal] = None
     deposit_limit: Decimal
-    manual_request_message: str
     clubs: List[UnionMethodClubRead]
     row_clubs: List[UnionMethodClubRead] = Field(default_factory=list)
     used_sum: Decimal
@@ -62,71 +65,83 @@ class UnionMethodRead(BaseModel):
 
 
 class UnionMethodCreate(BaseModel):
-    method: UnionMethodTypeSlug
-    tag: str = Field(..., min_length=1, max_length=50)
+    type: UnionMethodTypeSlug
+    deposit_union: DepositUnionSlug
+    internal_identifier: str = Field(..., min_length=1, max_length=50)
+    method_tag: str = Field(..., min_length=1, max_length=200)
+    payment_account_name: Optional[str] = Field(None, max_length=200)
     club_ids: List[int] = Field(..., min_length=1)
     deposit_limit: Decimal
     min_amount: Optional[Decimal] = None
     max_amount: Optional[Decimal] = None
-    manual_request_message: str = Field(..., min_length=1)
 
 
 class UnionMethodUpdate(BaseModel):
-    method: Optional[UnionMethodTypeSlug] = None
-    tag: Optional[str] = Field(None, min_length=1, max_length=50)
+    type: Optional[UnionMethodTypeSlug] = None
+    deposit_union: Optional[DepositUnionSlug] = None
+    internal_identifier: Optional[str] = Field(None, min_length=1, max_length=50)
+    method_tag: Optional[str] = Field(None, min_length=1, max_length=200)
+    payment_account_name: Optional[str] = Field(None, max_length=200)
     club_ids: Optional[List[int]] = Field(None, min_length=1)
     deposit_limit: Optional[Decimal] = None
     min_amount: Optional[Decimal] = None
     max_amount: Optional[Decimal] = None
-    manual_request_message: Optional[str] = None
 
 
 class UnionMethodReorderBody(BaseModel):
-    method: UnionMethodTypeSlug
+    type: UnionMethodTypeSlug
     order: List[int] = Field(..., min_length=1)
 
 
-def _normalize_tag(tag: str) -> str:
-    return tag.strip().lower()
+def _normalize_internal_identifier(value: str) -> str:
+    return value.strip().lower()
 
 
-def _union_tag_exists(db: Session, tag: str, *, exclude_method_id: Optional[int] = None) -> bool:
+def _union_internal_identifier_exists(
+    db: Session, identifier: str, *, exclude_method_id: Optional[int] = None
+) -> bool:
     q = db.query(ClubPaymentMethod.id).filter(
         ClubPaymentMethod.tracks_manual_requests.is_(True),
         ClubPaymentMethod.direction == "deposit",
-        ClubPaymentMethod.slug == tag,
+        ClubPaymentMethod.slug == identifier,
     )
     if exclude_method_id is not None:
         q = q.filter(ClubPaymentMethod.id != int(exclude_method_id))
     return q.first() is not None
 
 
-def _ensure_unique_tag(
+def _ensure_unique_internal_identifier(
     db: Session,
     base: str,
     *,
     exclude_method_id: Optional[int] = None,
 ) -> str:
-    normalized = _normalize_tag(base)
+    normalized = _normalize_internal_identifier(base)
     if not normalized:
-        raise HTTPException(400, "Tag is required.")
-    if not _union_tag_exists(db, normalized, exclude_method_id=exclude_method_id):
+        raise HTTPException(400, "Internal identifier is required.")
+    if not _union_internal_identifier_exists(
+        db, normalized, exclude_method_id=exclude_method_id
+    ):
         return normalized
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     candidate = f"{normalized}-{stamp}"
-    if not _union_tag_exists(db, candidate, exclude_method_id=exclude_method_id):
+    if not _union_internal_identifier_exists(
+        db, candidate, exclude_method_id=exclude_method_id
+    ):
         return candidate
-    raise HTTPException(400, "Could not allocate a unique tag; try a different tag.")
+    raise HTTPException(
+        400, "Could not allocate a unique internal identifier; try a different value."
+    )
 
 
 def _next_sort_order(db: Session, method_type: str) -> int:
-    display = union_type_display_name(method_type)
+    type_slug = validate_union_method_type(method_type)
     max_order = (
         db.query(func.coalesce(func.max(ClubPaymentMethod.sort_order), -1))
         .filter(
             ClubPaymentMethod.tracks_manual_requests.is_(True),
             ClubPaymentMethod.direction == "deposit",
-            ClubPaymentMethod.name == display,
+            ClubPaymentMethod.union_type == type_slug,
         )
         .scalar()
     )
@@ -247,6 +262,12 @@ def _row_clubs_for_methods(
 
 
 def _method_type_slug(method: ClubPaymentMethod) -> str:
+    raw = getattr(method, "union_type", None)
+    if raw:
+        try:
+            return validate_union_method_type(str(raw))
+        except ValueError:
+            pass
     slug = union_type_from_display_name(method.name or "")
     if slug:
         return slug
@@ -267,17 +288,19 @@ def _to_read(
         else:
             clubs.append(UnionMethodClubRead(id=int(mc.club_id), name=f"Club {mc.club_id}"))
     method_type = _method_type_slug(method)
+    account_name = getattr(method, "payment_account_name", None)
     return UnionMethodRead(
         id=int(method.id),
-        method=method_type,
-        name=method.name,
-        tag=method.slug,
+        type=method_type,
+        deposit_union=str(getattr(method, "deposit_union", "") or ""),
+        internal_identifier=method.slug or "",
+        method_tag=getattr(method, "method_tag", "") or "",
+        payment_account_name=(account_name.strip() if account_name else None) or None,
         is_active=bool(method.is_active),
         sort_order=int(method.sort_order or 0),
         min_amount=method.min_amount,
         max_amount=method.max_amount,
         deposit_limit=Decimal(str(method.deposit_limit or 0)),
-        manual_request_message=method.manual_request_message or "",
         clubs=clubs,
         row_clubs=list(row_clubs or []),
         used_sum=used_sum,
@@ -308,6 +331,7 @@ def _get_union_method(db: Session, method_id: int) -> ClubPaymentMethod:
 @router.get("", response_model=List[UnionMethodRead])
 def list_union_methods(
     is_active: Optional[bool] = Query(None),
+    deposit_union: Optional[DepositUnionSlug] = Query(None),
     db: Session = Depends(get_db_dependency),
 ):
     q = (
@@ -321,8 +345,12 @@ def list_union_methods(
     )
     if is_active is not None:
         q = q.filter(ClubPaymentMethod.is_active.is_(bool(is_active)))
+    if deposit_union is not None:
+        q = q.filter(
+            ClubPaymentMethod.deposit_union == validate_deposit_union(deposit_union)
+        )
     methods = q.order_by(
-        ClubPaymentMethod.name,
+        ClubPaymentMethod.union_type,
         ClubPaymentMethod.sort_order,
         ClubPaymentMethod.id,
     ).all()
@@ -346,14 +374,13 @@ def reorder_union_methods(
     body: UnionMethodReorderBody,
     db: Session = Depends(get_db_dependency),
 ):
-    method_type = validate_union_method_type(body.method)
-    display = union_type_display_name(method_type)
+    method_type = validate_union_method_type(body.type)
     rows = (
         db.query(ClubPaymentMethod)
         .filter(
             ClubPaymentMethod.tracks_manual_requests.is_(True),
             ClubPaymentMethod.direction == "deposit",
-            ClubPaymentMethod.name == display,
+            ClubPaymentMethod.union_type == method_type,
             ClubPaymentMethod.is_active.is_(True),
         )
         .all()
@@ -383,14 +410,20 @@ def get_union_method(method_id: int, db: Session = Depends(get_db_dependency)):
 @router.post("", response_model=UnionMethodRead, status_code=201)
 def create_union_method(body: UnionMethodCreate, db: Session = Depends(get_db_dependency)):
     clubs = _validate_club_ids(db, body.club_ids)
-    method_type = validate_union_method_type(body.method)
-    tag = _ensure_unique_tag(db, body.tag)
+    method_type = validate_union_method_type(body.type)
+    deposit_union = validate_deposit_union(body.deposit_union)
+    internal_id = _ensure_unique_internal_identifier(db, body.internal_identifier)
     display_name = union_type_display_name(method_type)
+    account_name = (body.payment_account_name or "").strip() or None
     method = ClubPaymentMethod(
         club_id=int(clubs[0].id),
         direction="deposit",
         name=display_name,
-        slug=tag,
+        slug=internal_id,
+        union_type=method_type,
+        deposit_union=deposit_union,
+        method_tag=body.method_tag.strip(),
+        payment_account_name=account_name,
         min_amount=body.min_amount,
         max_amount=body.max_amount,
         deposit_limit=body.deposit_limit,
@@ -398,7 +431,6 @@ def create_union_method(body: UnionMethodCreate, db: Session = Depends(get_db_de
         is_active=True,
         is_public=True,
         tracks_manual_requests=True,
-        manual_request_message=body.manual_request_message,
         manual_request_variant_name=None,
         first_time_linking_enabled=False,
         first_time_bind_mode=None,
@@ -417,13 +449,13 @@ def create_union_method(body: UnionMethodCreate, db: Session = Depends(get_db_de
         db.flush()
     except IntegrityError as e:
         db.rollback()
-        raise HTTPException(400, "Union method tag must be unique.") from e
+        raise HTTPException(400, "Internal identifier must be unique.") from e
     _sync_method_clubs(db, method, clubs)
     try:
         db.flush()
     except IntegrityError as e:
         db.rollback()
-        raise HTTPException(400, "Union method tag must be unique.") from e
+        raise HTTPException(400, "Internal identifier must be unique.") from e
     method = _get_union_method(db, int(method.id))
     return _to_read(method, Decimal("0"), 0, 0, [])
 
@@ -437,15 +469,21 @@ def update_union_method(
     method = _get_union_method(db, method_id)
     data = body.model_dump(exclude_unset=True)
     club_ids = data.pop("club_ids", None)
-    if "method" in data and data["method"] is not None:
-        method_type = validate_union_method_type(data.pop("method"))
+    if "type" in data and data["type"] is not None:
+        method_type = validate_union_method_type(data.pop("type"))
+        method.union_type = method_type
         method.name = union_type_display_name(method_type)
-    if "tag" in data and data["tag"] is not None:
-        method.slug = _ensure_unique_tag(
-            db, data.pop("tag"), exclude_method_id=int(method.id)
+    if "deposit_union" in data and data["deposit_union"] is not None:
+        method.deposit_union = validate_deposit_union(data.pop("deposit_union"))
+    if "internal_identifier" in data and data["internal_identifier"] is not None:
+        method.slug = _ensure_unique_internal_identifier(
+            db, data.pop("internal_identifier"), exclude_method_id=int(method.id)
         )
-    if "manual_request_message" in data and data["manual_request_message"] is not None:
-        method.manual_request_message = data.pop("manual_request_message")
+    if "method_tag" in data and data["method_tag"] is not None:
+        method.method_tag = data.pop("method_tag").strip()
+    if "payment_account_name" in data:
+        raw = data.pop("payment_account_name")
+        method.payment_account_name = (raw or "").strip() or None
     for field, value in data.items():
         setattr(method, field, value)
     try:
@@ -462,7 +500,7 @@ def update_union_method(
         db.flush()
     except IntegrityError as e:
         db.rollback()
-        raise HTTPException(400, "Union method tag must be unique.") from e
+        raise HTTPException(400, "Internal identifier must be unique.") from e
     method = _get_union_method(db, method_id)
     stats = _stats_for_methods(db, [int(method.id)])
     used, unchecked, deposit_count = stats.get(int(method.id), (Decimal("0"), 0, 0))

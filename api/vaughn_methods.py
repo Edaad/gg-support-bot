@@ -132,6 +132,7 @@ def clubgto_matching_source_options() -> tuple[str, ...]:
         + list(UNION_MATCHING_SOURCE_OPTIONS)
         + list(CASHOUT_SOURCE_LABELS)
         + list(VAUGHN_CASHOUT_SOURCE_LABELS)
+        + ["Free Play", "Back to Club", "GTO INC"]
     )
 
 

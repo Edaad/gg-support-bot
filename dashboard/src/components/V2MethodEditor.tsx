@@ -44,7 +44,6 @@ const EMPTY: Partial<V2Method> = {
   first_time_linking_enabled: false,
   first_time_bind_mode: null,
   tracks_manual_requests: false,
-  manual_request_message: null,
   manual_request_variant_name: null,
 }
 
@@ -76,7 +75,6 @@ function detailsPayload(form: Partial<V2Method>, direction: string): Partial<V2M
   if (direction === 'deposit') {
     payload.deposit_limit = form.deposit_limit ?? null
     payload.tracks_manual_requests = false
-    payload.manual_request_message = null
     payload.manual_request_variant_name = null
     const slug = (form.slug || '').trim().toLowerCase()
     if (slug === 'venmo' || slug === 'zelle' || slug === 'cashapp' || slug === 'paypal') {

@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import ManualDepositRequestsTable from '../components/ManualDepositRequestsTable'
+import ManualDepositRequestModal from '../components/ManualDepositRequestModal'
 import { useConfirm } from '../components/ConfirmProvider'
 import { listClubs, type Club } from '../api/client'
 import {
   createUnionMethod,
   deleteUnionMethod,
+  DEPOSIT_UNION_OPTIONS,
+  depositUnionLabel,
   listUnionMethods,
   reactivateUnionMethod,
   reorderUnionMethods,
   retireUnionMethod,
+  unionMethodTypeLabel,
   updateUnionMethod,
   UNION_METHOD_TYPE_OPTIONS,
+  type DepositUnionSlug,
   type UnionMethod,
   type UnionMethodTypeSlug,
 } from '../api/unionMethodsClient'
@@ -39,34 +44,44 @@ type PageView = 'methods' | 'deposits'
 const DEPOSITS_PAGE_SIZE = 50
 
 type FormState = {
-  method: UnionMethodTypeSlug
-  tag: string
+  type: UnionMethodTypeSlug
+  deposit_union: DepositUnionSlug
+  internal_identifier: string
+  method_tag: string
+  payment_account_name: string
   club_ids: number[]
   deposit_limit: string
   min_amount: string
   max_amount: string
-  manual_request_message: string
 }
 
 const emptyForm = (): FormState => ({
-  method: 'zelle',
-  tag: '',
+  type: 'zelle',
+  deposit_union: 'tmt',
+  internal_identifier: '',
+  method_tag: '',
+  payment_account_name: '',
   club_ids: [],
   deposit_limit: '',
   min_amount: '500',
   max_amount: '',
-  manual_request_message: '',
 })
+
+function methodCardTitle(m: UnionMethod): string {
+  return `${unionMethodTypeLabel(m.type)} · ${m.internal_identifier}`
+}
 
 function formFromMethod(m: UnionMethod): FormState {
   return {
-    method: m.method,
-    tag: m.tag,
+    type: m.type,
+    deposit_union: m.deposit_union,
+    internal_identifier: m.internal_identifier,
+    method_tag: m.method_tag,
+    payment_account_name: m.payment_account_name ?? '',
     club_ids: m.clubs.map((c) => c.id),
     deposit_limit: m.deposit_limit != null ? String(m.deposit_limit) : '',
     min_amount: m.min_amount != null ? String(m.min_amount) : '',
     max_amount: m.max_amount != null ? String(m.max_amount) : '',
-    manual_request_message: m.manual_request_message || '',
   }
 }
 
@@ -103,10 +118,15 @@ export default function ManualDepositRequests({ token }: { token: string }) {
   const methodTypeFilter: UnionMethodTypeSlug | null =
     pageView === 'deposits' &&
     methodTypeFilterParam &&
-    (['zelle', 'cashapp', 'applepay'] as const).includes(
+    (['zelle', 'cashapp', 'applepay', 'venmo'] as const).includes(
       methodTypeFilterParam as UnionMethodTypeSlug,
     )
       ? (methodTypeFilterParam as UnionMethodTypeSlug)
+      : null
+  const unionFilterParam = searchParams.get('filter_union')
+  const unionFilter: DepositUnionSlug | null =
+    unionFilterParam === 'tmt' || unionFilterParam === 'massiv'
+      ? unionFilterParam
       : null
   const clubFilterParam = searchParams.get('club')
   const clubFilter =
@@ -133,6 +153,8 @@ export default function ManualDepositRequests({ token }: { token: string }) {
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [searchDraft, setSearchDraft] = useState(qParam)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [depositsRefreshKey, setDepositsRefreshKey] = useState(0)
   const dragItem = useRef<number | null>(null)
   const dragOver = useRef<number | null>(null)
 
@@ -193,20 +215,26 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     [clubs],
   )
 
+  const filteredMethods = useMemo(() => {
+    if (!unionFilter) return methods
+    return methods.filter((m) => m.deposit_union === unionFilter)
+  }, [methods, unionFilter])
+
   const methodsByType = useMemo(() => {
     const grouped: Record<UnionMethodTypeSlug, UnionMethod[]> = {
       zelle: [],
       cashapp: [],
       applepay: [],
+      venmo: [],
     }
-    for (const m of methods) {
-      if (grouped[m.method]) grouped[m.method].push(m)
+    for (const m of filteredMethods) {
+      if (grouped[m.type]) grouped[m.type].push(m)
     }
     for (const key of Object.keys(grouped) as UnionMethodTypeSlug[]) {
       grouped[key].sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)
     }
     return grouped
-  }, [methods])
+  }, [filteredMethods])
 
   const persistTypeOrder = async (
     methodType: UnionMethodTypeSlug,
@@ -244,7 +272,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     dragItem.current = null
     dragOver.current = null
     setMethods((prev) => {
-      const others = prev.filter((m) => m.method !== methodType)
+      const others = prev.filter((m) => m.type !== methodType)
       return [...others, ...section]
     })
     await persistTypeOrder(methodType, section)
@@ -320,8 +348,11 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     setError('')
     try {
       const deposit_limit = Number(form.deposit_limit)
-      if (!form.tag.trim()) {
-        throw new Error('Tag is required.')
+      if (!form.internal_identifier.trim()) {
+        throw new Error('Internal identifier is required.')
+      }
+      if (!form.method_tag.trim()) {
+        throw new Error('Method tag is required.')
       }
       if (!form.club_ids.length) {
         throw new Error('Select at least one club.')
@@ -329,17 +360,17 @@ export default function ManualDepositRequests({ token }: { token: string }) {
       if (!Number.isFinite(deposit_limit) || deposit_limit <= 0) {
         throw new Error('Capacity limit must be a positive number.')
       }
+      const accountName = form.payment_account_name.trim()
       const body = {
-        method: form.method,
-        tag: form.tag.trim().toLowerCase(),
+        type: form.type,
+        deposit_union: form.deposit_union,
+        internal_identifier: form.internal_identifier.trim().toLowerCase(),
+        method_tag: form.method_tag.trim(),
+        payment_account_name: accountName || null,
         club_ids: form.club_ids,
         deposit_limit,
         min_amount: parseOptionalAmount(form.min_amount),
         max_amount: parseOptionalAmount(form.max_amount),
-        manual_request_message: form.manual_request_message.trim(),
-      }
-      if (!body.manual_request_message) {
-        throw new Error('Player message is required.')
       }
       if (creating) {
         const created = await createUnionMethod(token, body)
@@ -361,7 +392,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
   const onRetire = async (m: UnionMethod) => {
     const ok = await askConfirm({
       title: 'Retire union method?',
-      message: `${m.name} · ${m.tag} will leave Active and stop appearing in /deposit.`,
+      message: `${methodCardTitle(m)} will leave Active and stop appearing in /deposit.`,
       confirmLabel: 'Retire',
       destructive: true,
     })
@@ -383,7 +414,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     const rowLabel = count === 1 ? 'deposit request row' : 'deposit request rows'
     const ok = await askConfirm({
       title: 'Delete union method?',
-      message: `${m.name} · ${m.tag} will be permanently deleted along with ${count} ${rowLabel}. This cannot be undone.`,
+      message: `${methodCardTitle(m)} will be permanently deleted along with ${count} ${rowLabel}. This cannot be undone.`,
       confirmLabel: 'Delete',
       destructive: true,
     })
@@ -423,17 +454,17 @@ export default function ManualDepositRequests({ token }: { token: string }) {
       <h3 className="text-sm font-semibold text-ink">{title}</h3>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label className="label-field-xs" htmlFor="um-method">
-            Method
+          <label className="label-field-xs" htmlFor="um-type">
+            Type
           </label>
           <select
-            id="um-method"
+            id="um-type"
             className="input-field-sm"
-            value={form.method}
+            value={form.type}
             onChange={(e) =>
               setForm((f) => ({
                 ...f,
-                method: e.target.value as UnionMethodTypeSlug,
+                type: e.target.value as UnionMethodTypeSlug,
               }))
             }
           >
@@ -445,15 +476,65 @@ export default function ManualDepositRequests({ token }: { token: string }) {
           </select>
         </div>
         <div>
-          <label className="label-field-xs" htmlFor="um-tag">
-            Tag
+          <label className="label-field-xs" htmlFor="um-deposit-union">
+            Union
+          </label>
+          <select
+            id="um-deposit-union"
+            className="input-field-sm"
+            value={form.deposit_union}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                deposit_union: e.target.value as DepositUnionSlug,
+              }))
+            }
+          >
+            {DEPOSIT_UNION_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label-field-xs" htmlFor="um-internal-id">
+            Internal identifier
           </label>
           <input
-            id="um-tag"
+            id="um-internal-id"
             className="input-field-sm"
-            value={form.tag}
-            onChange={(e) => setForm((f) => ({ ...f, tag: e.target.value }))}
-            placeholder="main"
+            value={form.internal_identifier}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, internal_identifier: e.target.value }))
+            }
+            placeholder="main-zelle-rt"
+          />
+        </div>
+        <div>
+          <label className="label-field-xs" htmlFor="um-method-tag">
+            Method tag
+          </label>
+          <input
+            id="um-method-tag"
+            className="input-field-sm"
+            value={form.method_tag}
+            onChange={(e) => setForm((f) => ({ ...f, method_tag: e.target.value }))}
+            placeholder="$cashapp"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="label-field-xs" htmlFor="um-method-name">
+            Method name (optional)
+          </label>
+          <input
+            id="um-method-name"
+            className="input-field-sm"
+            value={form.payment_account_name}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, payment_account_name: e.target.value }))
+            }
+            placeholder="CONCORD CONSULTING AGENCY, INC"
           />
         </div>
         <div>
@@ -499,23 +580,6 @@ export default function ManualDepositRequests({ token }: { token: string }) {
             value={form.deposit_limit}
             onChange={(e) =>
               setForm((f) => ({ ...f, deposit_limit: e.target.value }))
-            }
-          />
-        </div>
-        <div className="sm:col-span-2">
-          <label className="label-field-xs" htmlFor="um-msg">
-            Player message
-          </label>
-          <textarea
-            id="um-msg"
-            rows={4}
-            className="input-field-sm"
-            value={form.manual_request_message}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                manual_request_message: e.target.value,
-              }))
             }
           />
         </div>
@@ -632,6 +696,34 @@ export default function ManualDepositRequests({ token }: { token: string }) {
       )}
 
       {pageView === 'methods' && !selected && !creating && (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="min-w-[10rem]">
+            <label className="label-field-xs" htmlFor="um-methods-union">
+              Union
+            </label>
+            <select
+              id="um-methods-union"
+              className="input-field-sm"
+              value={unionFilter ?? ''}
+              onChange={(e) =>
+                setQuery({
+                  filter_union: e.target.value || null,
+                  method: null,
+                })
+              }
+            >
+              <option value="">All</option>
+              {DEPOSIT_UNION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {pageView === 'methods' && !selected && !creating && (
         <div className="flex gap-2" role="tablist" aria-label="Method activity">
           {(['active', 'inactive'] as ActivityTab[]).map((t) => (
             <button
@@ -659,9 +751,20 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                   Back
                 </button>
                 <div>
-                  <h2 className="text-xl font-semibold text-ink text-balance">
-                    {selected.name} · {selected.tag}
-                  </h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-xl font-semibold text-ink text-balance">
+                      {methodCardTitle(selected)}
+                    </h2>
+                    <span className="rounded-md border border-border bg-surface-raised px-2 py-0.5 text-xs font-medium text-ink">
+                      {depositUnionLabel(selected.deposit_union)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-ink-muted">
+                    Method tag: {selected.method_tag}
+                    {selected.payment_account_name
+                      ? ` · ${selected.payment_account_name}`
+                      : ''}
+                  </p>
                   <p className="mt-0.5 text-sm text-ink-muted">
                     Fulfillment priority #{selected.sort_order + 1}
                   </p>
@@ -777,6 +880,13 @@ export default function ManualDepositRequests({ token }: { token: string }) {
             <div className="flex flex-col gap-1 border-b border-border pb-3 sm:flex-row sm:items-end sm:justify-between">
               <h3 className="text-sm font-semibold text-ink">Deposits</h3>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <button
+                  type="button"
+                  className="btn-primary-sm"
+                  onClick={() => setCreateOpen(true)}
+                >
+                  Add deposit
+                </button>
                 <div>
                   <label className="label-field-xs" htmlFor="um-row-club">
                     Club
@@ -826,8 +936,32 @@ export default function ManualDepositRequests({ token }: { token: string }) {
               tradeRecordChecked={tradeCheckedFilter}
               showMethodColumns={false}
               showClubColumn
+              allowEdit
+              minAmount={selected.min_amount}
+              maxAmount={selected.max_amount}
+              refreshKey={depositsRefreshKey}
+              onMutated={() => {
+                void load()
+              }}
             />
           </section>
+
+          {createOpen ? (
+            <ManualDepositRequestModal
+              open
+              mode="create"
+              token={token}
+              methodId={selected.id}
+              minAmount={selected.min_amount}
+              maxAmount={selected.max_amount}
+              onClose={() => setCreateOpen(false)}
+              onSaved={() => {
+                setCreateOpen(false)
+                setDepositsRefreshKey((k) => k + 1)
+                void load()
+              }}
+            />
+          ) : null}
         </div>
       )}
 
@@ -843,12 +977,35 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                 className="input-field-sm"
                 value={searchDraft}
                 onChange={(e) => setSearchDraft(e.target.value)}
-                placeholder="Group, amount, club, or tag"
+                placeholder="Group, amount, club, identifier, or method tag"
               />
             </div>
             <div>
+              <label className="label-field-xs" htmlFor="um-deposits-union">
+                Union
+              </label>
+              <select
+                id="um-deposits-union"
+                className="input-field-sm"
+                value={unionFilter ?? ''}
+                onChange={(e) =>
+                  setQuery({
+                    filter_union: e.target.value || null,
+                    offset: null,
+                  })
+                }
+              >
+                <option value="">All</option>
+                {DEPOSIT_UNION_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="label-field-xs" htmlFor="um-deposits-method">
-                Method
+                Type
               </label>
               <select
                 id="um-deposits-method"
@@ -917,12 +1074,14 @@ export default function ManualDepositRequests({ token }: { token: string }) {
           <ManualDepositRequestsTable
             token={token}
             methodType={methodTypeFilter ?? undefined}
+            depositUnion={unionFilter ?? undefined}
             clubId={clubFilter ?? undefined}
             tradeRecordChecked={tradeCheckedFilter}
             q={qParam || undefined}
             showMethodColumns
             showClubColumn
             paginated
+            allowEdit
             limit={DEPOSITS_PAGE_SIZE}
             offset={depositsOffset}
             onPageChange={(nextOffset) =>
@@ -939,12 +1098,12 @@ export default function ManualDepositRequests({ token }: { token: string }) {
           {loading && (
             <p className="py-8 text-center text-sm text-ink-muted">Loading…</p>
           )}
-          {!loading && methods.length === 0 && (
+          {!loading && filteredMethods.length === 0 && (
             <p className="rounded-xl border border-dashed border-border bg-surface px-4 py-8 text-center text-sm text-ink-muted">
               No {tab} union methods yet.
             </p>
           )}
-          {tab === 'active' && !loading && methods.length > 0 && (
+          {tab === 'active' && !loading && filteredMethods.length > 0 && (
             <p className="text-xs text-ink-muted">
               Drag cards within each method type to set fulfillment priority (top =
               first).
@@ -985,7 +1144,16 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="text-lg font-semibold text-ink group-hover:text-accent">
-                                  {m.name} · {m.tag}
+                                  {methodCardTitle(m)}
+                                </div>
+                                <div className="mt-1 flex flex-wrap items-center gap-2">
+                                  <span className="rounded-md border border-border bg-surface-raised px-2 py-0.5 text-xs font-medium text-ink">
+                                    {depositUnionLabel(m.deposit_union)}
+                                  </span>
+                                  <span className="text-xs text-ink-muted">
+                                    {m.method_tag}
+                                    {m.payment_account_name ? ` · ${m.payment_account_name}` : ''}
+                                  </span>
                                 </div>
                                 {tab === 'active' ? (
                                   <div className="mt-0.5 text-xs text-ink-muted">
@@ -1037,7 +1205,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                                 aria-valuenow={pct}
                                 aria-valuemin={0}
                                 aria-valuemax={100}
-                                aria-label={`${m.name} ${m.tag} capacity used`}
+                                aria-label={`${methodCardTitle(m)} capacity used`}
                               >
                                 <div
                                   className="h-full rounded-full bg-accent transition-[width] duration-200 ease-out motion-reduce:transition-none"

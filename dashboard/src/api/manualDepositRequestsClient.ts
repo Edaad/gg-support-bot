@@ -43,8 +43,10 @@ export type ManualDepositRequestRow = {
   method_slug: string
   variant_name: string
   group_title: string | null
+  telegram_chat_id: number
   amount: number | string
   trade_record_checked: boolean
+  source?: string
   created_at: string
   club: { id: number; name: string } | null
 }
@@ -56,16 +58,39 @@ export type ManualDepositRequestList = {
   offset: number
 }
 
+export type DepositGroupOption = {
+  chat_id: number
+  name: string | null
+  club_id: number
+  club_name: string
+}
+
 export type ListManualDepositRequestsParams = {
   club_id?: number
   method_id?: number
   method_slug?: string
-  method_type?: 'zelle' | 'cashapp' | 'applepay'
+  type?: 'zelle' | 'cashapp' | 'applepay' | 'venmo'
+  method_type?: 'zelle' | 'cashapp' | 'applepay' | 'venmo'
+  deposit_union?: 'tmt' | 'massiv'
   trade_record_checked?: boolean
   include_inactive_methods?: boolean
   q?: string
   limit?: number
   offset?: number
+}
+
+export type ManualDepositRequestCreateBody = {
+  amount: number
+  telegram_chat_id: number
+  created_at?: string
+  trade_record_checked?: boolean
+}
+
+export type ManualDepositRequestUpdateBody = {
+  amount?: number
+  telegram_chat_id?: number
+  created_at?: string
+  trade_record_checked?: boolean
 }
 
 export function listManualDepositRequests(
@@ -76,7 +101,9 @@ export function listManualDepositRequests(
   if (params.club_id != null) q.set('club_id', String(params.club_id))
   if (params.method_id != null) q.set('method_id', String(params.method_id))
   if (params.method_slug) q.set('method_slug', params.method_slug)
-  if (params.method_type) q.set('method_type', params.method_type)
+  const resolvedType = params.type ?? params.method_type
+  if (resolvedType) q.set('type', resolvedType)
+  if (params.deposit_union) q.set('deposit_union', params.deposit_union)
   if (params.trade_record_checked != null) {
     q.set('trade_record_checked', String(params.trade_record_checked))
   }
@@ -119,16 +146,48 @@ export function listMethodManualDepositRequests(
   )
 }
 
+export function searchMethodDepositGroups(
+  token: string,
+  methodId: number,
+  q?: string,
+  limit = 50,
+) {
+  const params = new URLSearchParams()
+  if (q != null && q.trim()) params.set('q', q.trim())
+  if (limit != null) params.set('limit', String(limit))
+  const qs = params.toString()
+  return request<{ items: DepositGroupOption[] }>(
+    `/api/v2/methods/${methodId}/deposit-groups${qs ? `?${qs}` : ''}`,
+    {},
+    token,
+  )
+}
+
+export function createManualDepositRequest(
+  token: string,
+  methodId: number,
+  body: ManualDepositRequestCreateBody,
+) {
+  return request<ManualDepositRequestRow>(
+    `/api/v2/methods/${methodId}/manual-deposit-requests`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+    token,
+  )
+}
+
 export function updateManualDepositRequest(
   token: string,
   requestId: number,
-  trade_record_checked: boolean,
+  body: ManualDepositRequestUpdateBody,
 ) {
   return request<ManualDepositRequestRow>(
     `/api/manual-deposit-requests/${requestId}`,
     {
       method: 'PATCH',
-      body: JSON.stringify({ trade_record_checked }),
+      body: JSON.stringify(body),
     },
     token,
   )

@@ -16,46 +16,69 @@ from bot.services.deposit_method_access import (
 )
 from bot.services.manual_deposit_requests import (
     ManualDepositCapacityError,
+    ManualDepositValidationError,
     capacity_allows,
+    capacity_allows_for_update,
+    create_dashboard_manual_deposit_request,
     create_request_atomic,
+    sum_for_method_excluding_request,
     union_deposit_slack_variant,
+    update_dashboard_manual_deposit_request,
+    validate_manual_deposit_amount,
+    validate_manual_deposit_created_at,
 )
 
 
+def _valid_union_method_ns(**overrides):
+    base = {
+        "tracks_manual_requests": True,
+        "direction": "deposit",
+        "deposit_limit": Decimal("1000"),
+        "union_type": "zelle",
+        "deposit_union": "tmt",
+        "method_tag": "$zelle",
+        "name": "Zelle",
+        "manual_request_variant_name": "v1",
+        "tiers": [],
+        "is_public": True,
+    }
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
 class ApplyManualTradeConstraintsTests(unittest.TestCase):
-    def test_requires_limit_and_message(self):
-        method = SimpleNamespace(
-            tracks_manual_requests=True,
-            direction="deposit",
-            deposit_limit=None,
-            manual_request_message="hi",
-            manual_request_variant_name="v1",
-            tiers=[],
-            is_public=True,
-        )
+    def test_requires_limit_and_fields(self):
+        method = _valid_union_method_ns(deposit_limit=None)
         with self.assertRaises(ValueError):
             apply_manual_trade_request_constraints(method)
 
         method.deposit_limit = Decimal("1000")
-        method.manual_request_message = "  "
+        method.union_type = None
         with self.assertRaises(ValueError):
             apply_manual_trade_request_constraints(method)
 
-        method.manual_request_message = "Send here"
+        method.union_type = "zelle"
+        method.deposit_union = None
+        with self.assertRaises(ValueError):
+            apply_manual_trade_request_constraints(method)
+
+        method.deposit_union = "tmt"
+        method.method_tag = "  "
+        with self.assertRaises(ValueError):
+            apply_manual_trade_request_constraints(method)
+
+        method.method_tag = "pay@example.com"
         apply_manual_trade_request_constraints(method)
         self.assertIsNone(method.manual_request_variant_name)
 
     def test_forces_off_linking_and_sets_public(self):
-        method = SimpleNamespace(
-            tracks_manual_requests=True,
-            direction="deposit",
+        method = _valid_union_method_ns(
             deposit_limit=Decimal("500"),
-            manual_request_message=" Pay me ",
+            method_tag=" Pay me ",
             manual_request_variant_name=" Union ",
             has_sub_options=True,
             first_time_linking_enabled=True,
             first_time_bind_mode="special_amount",
-            tiers=[],
             is_public=False,
         )
         apply_manual_trade_request_constraints(method)
@@ -63,22 +86,14 @@ class ApplyManualTradeConstraintsTests(unittest.TestCase):
         self.assertFalse(method.first_time_linking_enabled)
         self.assertIsNone(method.first_time_bind_mode)
         self.assertTrue(method.is_public)
-        self.assertEqual(method.manual_request_message, "Pay me")
+        self.assertEqual(method.method_tag, "Pay me")
         self.assertIsNone(method.manual_request_variant_name)
 
     def test_rejects_stripe_on_tiers(self):
         tier = SimpleNamespace(use_group_checkout_link=True, variants=[])
-        method = SimpleNamespace(
-            tracks_manual_requests=True,
-            direction="deposit",
+        method = _valid_union_method_ns(
             deposit_limit=Decimal("100"),
-            manual_request_message="x",
-            manual_request_variant_name="y",
-            has_sub_options=False,
-            first_time_linking_enabled=False,
-            first_time_bind_mode=None,
             tiers=[tier],
-            is_public=True,
         )
         with self.assertRaises(ValueError):
             apply_manual_trade_request_constraints(method)
@@ -94,6 +109,21 @@ class ApplyManualTradeConstraintsTests(unittest.TestCase):
 
 
 class CapacityAllowsTests(unittest.TestCase):
+    def test_sum_for_method_excluding_request(self):
+        session = MagicMock()
+        row = SimpleNamespace(amount=Decimal("500"))
+        session.get.return_value = row
+        with patch(
+            "bot.services.manual_deposit_requests.sum_for_method",
+            return_value=Decimal("500"),
+        ):
+            used = sum_for_method_excluding_request(
+                session,
+                110,
+                exclude_request_id=20,
+            )
+        self.assertEqual(used, Decimal("0"))
+
     def test_amount_aware_remaining_capacity(self):
         session = MagicMock()
         with patch(
@@ -216,8 +246,9 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
             has_sub_options=False,
             is_public=False,
             tracks_manual_requests=True,
-            manual_request_message="msg",
-            manual_request_variant_name="v",
+            union_type="zelle",
+            deposit_union="tmt",
+            method_tag="pay@zelle",
             deposit_limit=Decimal("1000"),
             accumulated_amount=Decimal("0"),
         )
@@ -261,8 +292,9 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
             has_sub_options=False,
             is_public=True,
             tracks_manual_requests=False,
-            manual_request_message=None,
-            manual_request_variant_name=None,
+            union_type=None,
+            deposit_union=None,
+            method_tag=None,
             deposit_limit=None,
             accumulated_amount=Decimal("0"),
         )
@@ -275,8 +307,9 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
             has_sub_options=False,
             is_public=False,
             tracks_manual_requests=True,
-            manual_request_message="msg",
-            manual_request_variant_name="v",
+            union_type="zelle",
+            deposit_union="tmt",
+            method_tag="pay@zelle",
             deposit_limit=Decimal("5000"),
             accumulated_amount=Decimal("0"),
         )
@@ -305,8 +338,9 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
             has_sub_options=False,
             is_public=False,
             tracks_manual_requests=True,
-            manual_request_message="msg",
-            manual_request_variant_name="v",
+            union_type="zelle",
+            deposit_union="tmt",
+            method_tag="pay@zelle",
             deposit_limit=Decimal("10000"),
             accumulated_amount=Decimal("0"),
         )
@@ -328,6 +362,47 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
 
 
 class CreateRequestAtomicTests(unittest.TestCase):
+    def test_row_usable_after_session_closes(self):
+        method = SimpleNamespace(
+            id=3,
+            name="Zelle",
+            slug="zelle-union",
+            tracks_manual_requests=True,
+            is_active=True,
+            deposit_limit=Decimal("1000"),
+            manual_request_variant_name="Union",
+        )
+        session = MagicMock()
+        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = (
+            method
+        )
+
+        def _add(row):
+            row.id = 99
+
+        session.add.side_effect = _add
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+
+        with patch(
+            "bot.services.manual_deposit_requests.get_db", return_value=cm
+        ), patch(
+            "bot.services.manual_deposit_requests.capacity_allows",
+            return_value=True,
+        ):
+            row = create_request_atomic(
+                club_id=1,
+                method_id=3,
+                amount=Decimal("100"),
+                telegram_chat_id=-100,
+                group_title="RT / 1234-5678 / jz",
+                instruction_message_ids=[501],
+            )
+        session.expunge.assert_called_once()
+        self.assertEqual(int(row.id), 99)
+        self.assertIsNotNone(row.instruction_expires_at)
+
     def test_rejects_over_capacity(self):
         method = SimpleNamespace(
             id=3,
@@ -454,7 +529,7 @@ class ManualTradeLedgerFetchTests(unittest.TestCase):
         self.assertEqual(events[0].source, "deposit_union_zelle")
         self.assertEqual(events[0].source_label, "Union Zelle")
         self.assertEqual(events[0].display_name, "GTO / 2222-2222 / jz")
-        self.assertEqual(events[0].variant, "zelle-union")
+        self.assertEqual(events[0].variant, "Union")
         self.assertEqual(events[0].gg_player_id, "2222-2222")
         self.assertEqual(events[0].amount_usd, Decimal("100"))
 
@@ -488,6 +563,11 @@ class ManualDepositRequestListQueryTests(unittest.TestCase):
             ManualDepositRequest,
         )
 
+        # SQLite cannot compile PostgreSQL ARRAY; use JSON for in-memory tests only.
+        from sqlalchemy import JSON
+
+        ManualDepositRequest.__table__.c.instruction_telegram_message_ids.type = JSON()
+
         self.engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -517,8 +597,9 @@ class ManualDepositRequestListQueryTests(unittest.TestCase):
                 tracks_manual_requests=True,
                 is_active=True,
                 is_public=False,
-                manual_request_message="pay",
-                manual_request_variant_name="v1",
+                union_type="zelle",
+                deposit_union="tmt",
+                method_tag="pay@zelle",
             )
         )
         session.add(
@@ -656,6 +737,143 @@ class ManualDepositRequestListQueryTests(unittest.TestCase):
             self.assertEqual(remaining, 0)
         finally:
             session.close()
+
+
+class DashboardManualDepositServiceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from contextlib import contextmanager
+
+        from sqlalchemy import JSON, create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+
+        from db.models import (
+            Base,
+            Club,
+            ClubPaymentMethod,
+            ClubPaymentMethodClub,
+            Group,
+            ManualDepositRequest,
+        )
+
+        ManualDepositRequest.__table__.c.instruction_telegram_message_ids.type = JSON()
+
+        self.engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(
+            self.engine,
+            tables=[
+                Club.__table__,
+                Group.__table__,
+                ClubPaymentMethod.__table__,
+                ClubPaymentMethodClub.__table__,
+                ManualDepositRequest.__table__,
+            ],
+        )
+        self.Session = sessionmaker(bind=self.engine)
+
+        @contextmanager
+        def _get_db():
+            session = self.Session()
+            try:
+                yield session
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
+
+        self._get_db = _get_db
+        session = self.Session()
+        session.add(Club(id=1, name="Round Table", telegram_user_id=1001, is_active=True))
+        session.add(
+            ClubPaymentMethod(
+                id=10,
+                club_id=1,
+                direction="deposit",
+                name="Zelle",
+                slug="zelle-union",
+                deposit_limit=Decimal("1000"),
+                min_amount=Decimal("50"),
+                max_amount=Decimal("500"),
+                tracks_manual_requests=True,
+                is_active=False,
+                is_public=False,
+                union_type="zelle",
+                deposit_union="tmt",
+                method_tag="pay@zelle",
+            )
+        )
+        session.add(ClubPaymentMethodClub(method_id=10, club_id=1))
+        session.add(
+            Group(chat_id=-1001, club_id=1, name="RT / 1111-1111 / Alice")
+        )
+        session.commit()
+        session.close()
+
+    def tearDown(self) -> None:
+        self.engine.dispose()
+
+    def test_validate_amount_min_max(self):
+        method = SimpleNamespace(
+            min_amount=Decimal("50"),
+            max_amount=Decimal("500"),
+        )
+        validate_manual_deposit_amount(method, Decimal("100"))
+        with self.assertRaises(ManualDepositValidationError):
+            validate_manual_deposit_amount(method, Decimal("25"))
+        with self.assertRaises(ManualDepositValidationError):
+            validate_manual_deposit_amount(method, Decimal("600"))
+
+    def test_validate_created_at_rejects_future(self):
+        future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        with self.assertRaises(ManualDepositValidationError):
+            validate_manual_deposit_created_at(future)
+
+    def test_create_dashboard_inactive_method(self):
+        when = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+        with patch(
+            "bot.services.manual_deposit_requests.get_db",
+            side_effect=self._get_db,
+        ):
+            row = create_dashboard_manual_deposit_request(
+                method_id=10,
+                amount=Decimal("100"),
+                telegram_chat_id=-1001,
+                created_at=when,
+                trade_record_checked=True,
+            )
+        self.assertEqual(row.source, "dashboard")
+        self.assertTrue(row.trade_record_checked)
+        self.assertIsNone(row.instruction_expires_at)
+        self.assertEqual(row.group_title, "RT / 1111-1111 / Alice")
+        self.assertEqual(row.club_id, 1)
+
+    def test_update_amount_rejects_above_max(self):
+        when = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+        with patch(
+            "bot.services.manual_deposit_requests.get_db",
+            side_effect=self._get_db,
+        ):
+            row = create_dashboard_manual_deposit_request(
+                method_id=10,
+                amount=Decimal("400"),
+                telegram_chat_id=-1001,
+                created_at=when,
+            )
+        with patch(
+            "bot.services.manual_deposit_requests.get_db",
+            side_effect=self._get_db,
+        ):
+            with self.assertRaises(ManualDepositValidationError):
+                update_dashboard_manual_deposit_request(
+                    request_id=int(row.id),
+                    amount=Decimal("700"),
+                )
 
 
 if __name__ == "__main__":

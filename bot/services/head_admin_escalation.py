@@ -9,7 +9,6 @@ from bot.services.escalation_notification import (
     REASON_RPA_CASHOUT_UNCERTAIN,
     REASON_RPA_DEPOSIT_FAILED,
     REASON_RPA_DEPOSIT_UNCERTAIN,
-    REASON_UNION_DEPOSIT_FIRST,
 )
 
 logger = logging.getLogger(__name__)
@@ -20,7 +19,6 @@ HEAD_ADMIN_ESCALATION_REASONS = frozenset(
         REASON_RPA_CASHOUT_FAILED,
         REASON_RPA_DEPOSIT_UNCERTAIN,
         REASON_RPA_CASHOUT_UNCERTAIN,
-        REASON_UNION_DEPOSIT_FIRST,
     }
 )
 

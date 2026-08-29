@@ -58,6 +58,7 @@ _BONUS_ACTIVE_KEYS = (
     "bonus_group_title",
     "bonus_gg_player_id",
     "bonus_amount",
+    "bonus_metadata",
 )
 _ISSUE_REPORT_WIZARD_KEYS = (
     "ir_draft_id",

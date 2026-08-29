@@ -6,6 +6,8 @@ import {
   updateManualDepositRequest,
   type ManualDepositRequestRow,
 } from '../api/manualDepositRequestsClient'
+import { formatEasternDateTime } from '../lib/easternTime'
+import ManualDepositRequestModal from './ManualDepositRequestModal'
 
 function formatUsd(amount: number | string): string {
   return Number(amount).toLocaleString('en-US', {
@@ -14,18 +16,11 @@ function formatUsd(amount: number | string): string {
   })
 }
 
-function formatWhen(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString()
-  } catch {
-    return iso
-  }
-}
-
 type Props = {
   token: string
   methodId?: number
-  methodType?: 'zelle' | 'cashapp' | 'applepay'
+  methodType?: 'zelle' | 'cashapp' | 'applepay' | 'venmo'
+  depositUnion?: 'tmt' | 'massiv'
   clubId?: number
   methodSlug?: string
   tradeRecordChecked?: boolean
@@ -36,6 +31,11 @@ type Props = {
   limit?: number
   offset?: number
   onPageChange?: (offset: number) => void
+  allowEdit?: boolean
+  minAmount?: number | string | null
+  maxAmount?: number | string | null
+  onMutated?: () => void
+  refreshKey?: number
 }
 
 const DETAIL_LIMIT = 100
@@ -45,6 +45,7 @@ export default function ManualDepositRequestsTable({
   token,
   methodId,
   methodType,
+  depositUnion,
   clubId,
   methodSlug,
   tradeRecordChecked,
@@ -55,6 +56,11 @@ export default function ManualDepositRequestsTable({
   limit,
   offset = 0,
   onPageChange,
+  allowEdit = false,
+  minAmount,
+  maxAmount,
+  onMutated,
+  refreshKey = 0,
 }: Props) {
   const askConfirm = useConfirm()
   const [rows, setRows] = useState<ManualDepositRequestRow[]>([])
@@ -62,6 +68,7 @@ export default function ManualDepositRequestsTable({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<number | null>(null)
+  const [editRow, setEditRow] = useState<ManualDepositRequestRow | null>(null)
 
   const pageLimit = paginated ? (limit ?? PAGE_SIZE) : (limit ?? DETAIL_LIMIT)
   const pageOffset = paginated ? offset : 0
@@ -72,7 +79,8 @@ export default function ManualDepositRequestsTable({
     try {
       const data = await listManualDepositRequests(token, {
         method_id: methodId,
-        method_type: methodType,
+        type: methodType,
+        deposit_union: depositUnion,
         club_id: clubId,
         method_slug: methodId == null ? methodSlug : undefined,
         trade_record_checked: tradeRecordChecked,
@@ -94,12 +102,14 @@ export default function ManualDepositRequestsTable({
     token,
     methodId,
     methodType,
+    depositUnion,
     clubId,
     methodSlug,
     tradeRecordChecked,
     q,
     pageLimit,
     pageOffset,
+    refreshKey,
   ])
 
   useEffect(() => {
@@ -110,12 +120,11 @@ export default function ManualDepositRequestsTable({
     setBusyId(row.id)
     setError('')
     try {
-      const updated = await updateManualDepositRequest(
-        token,
-        row.id,
-        !row.trade_record_checked,
-      )
+      const updated = await updateManualDepositRequest(token, row.id, {
+        trade_record_checked: !row.trade_record_checked,
+      })
       setRows((prev) => prev.map((r) => (r.id === row.id ? updated : r)))
+      onMutated?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to update')
     } finally {
@@ -137,11 +146,26 @@ export default function ManualDepositRequestsTable({
       await deleteManualDepositRequest(token, row.id)
       setRows((prev) => prev.filter((r) => r.id !== row.id))
       setTotal((t) => Math.max(0, t - 1))
+      onMutated?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to delete')
     } finally {
       setBusyId(null)
     }
+  }
+
+  const onSaved = (saved: ManualDepositRequestRow) => {
+    setRows((prev) => {
+      const idx = prev.findIndex((r) => r.id === saved.id)
+      if (idx >= 0) {
+        const next = [...prev]
+        next[idx] = saved
+        return next
+      }
+      return [saved, ...prev]
+    })
+    setTotal((t) => (editRow ? t : t + 1))
+    onMutated?.()
   }
 
   if (loading) {
@@ -152,6 +176,8 @@ export default function ManualDepositRequestsTable({
   const to = Math.min(pageOffset + rows.length, total)
   const canPrev = paginated && pageOffset > 0
   const canNext = paginated && pageOffset + pageLimit < total
+
+  const editMethodId = editRow?.method_id ?? methodId
 
   return (
     <div className="space-y-3">
@@ -226,7 +252,9 @@ export default function ManualDepositRequestsTable({
                   {showClubColumn && (
                     <td className="px-3 py-2 text-ink">{row.club?.name || '—'}</td>
                   )}
-                  <td className="px-3 py-2 text-ink-muted">{formatWhen(row.created_at)}</td>
+                  <td className="px-3 py-2 text-ink-muted">
+                    {formatEasternDateTime(row.created_at)}
+                  </td>
                   <td className="px-3 py-2">
                     <label className="inline-flex items-center gap-2 text-ink">
                       <input
@@ -244,16 +272,28 @@ export default function ManualDepositRequestsTable({
                     </label>
                   </td>
                   <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      disabled={busyId === row.id}
-                      onClick={() => {
-                        void onDelete(row)
-                      }}
-                      className="action-chip text-danger-ink hover:bg-danger-bg"
-                    >
-                      Delete
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      {allowEdit && row.method_id != null ? (
+                        <button
+                          type="button"
+                          disabled={busyId === row.id}
+                          onClick={() => setEditRow(row)}
+                          className="action-chip"
+                        >
+                          Edit
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        disabled={busyId === row.id}
+                        onClick={() => {
+                          void onDelete(row)
+                        }}
+                        className="action-chip text-danger-ink hover:bg-danger-bg"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -261,6 +301,23 @@ export default function ManualDepositRequestsTable({
           </table>
         </div>
       )}
+
+      {allowEdit && editRow && editMethodId != null ? (
+        <ManualDepositRequestModal
+          open
+          mode="edit"
+          token={token}
+          methodId={editMethodId}
+          minAmount={minAmount}
+          maxAmount={maxAmount}
+          row={editRow}
+          onClose={() => setEditRow(null)}
+          onSaved={(saved) => {
+            onSaved(saved)
+            setEditRow(null)
+          }}
+        />
+      ) : null}
     </div>
   )
 }

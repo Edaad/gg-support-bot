@@ -83,18 +83,18 @@ class HeadAdminAllowlistTests(unittest.IsolatedAsyncioTestCase):
         notify.assert_awaited_once()
 
 
-    async def test_union_deposit_first_calls_head_admin(self) -> None:
+    async def test_union_deposit_first_does_not_call_head_admin(self) -> None:
         with patch(
             "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
             new_callable=AsyncMock,
             return_value=True,
         ) as notify:
             ok = await ha.maybe_notify_head_admin_escalation(
-                "First-time union deposit — verify with union.",
+                "Union method deposit",
                 reason=esc.REASON_UNION_DEPOSIT_FIRST,
             )
-        self.assertTrue(ok)
-        notify.assert_awaited_once()
+        self.assertFalse(ok)
+        notify.assert_not_awaited()
 
 
 class NotifyEscalationSlackFanoutTests(unittest.IsolatedAsyncioTestCase):

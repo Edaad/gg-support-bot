@@ -61,7 +61,7 @@ class AuditExportFormattingTestCase(unittest.TestCase):
     def test_audit_day_window_utc_edt(self):
         start, end = audit_day_window_utc("2026-06-19")
         self.assertEqual(start, datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc))
-        self.assertEqual(end, datetime(2026, 6, 20, 4, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(end, datetime(2026, 6, 20, 3, 59, 59, 999999, tzinfo=timezone.utc))
 
     def test_eastern_day_bounds_utc_edt(self):
         start, end = eastern_day_bounds_utc("2026-06-19")
@@ -80,11 +80,11 @@ class AuditExportFormattingTestCase(unittest.TestCase):
 
     def test_eastern_audit_end_utc_edt(self):
         end = eastern_audit_end_utc("2026-06-21")
-        self.assertEqual(end, datetime(2026, 6, 22, 4, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(end, datetime(2026, 6, 22, 3, 59, 59, 999999, tzinfo=timezone.utc))
 
     def test_eastern_audit_end_utc_est(self):
         end = eastern_audit_end_utc("2026-01-15")
-        self.assertEqual(end, datetime(2026, 1, 16, 4, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(end, datetime(2026, 1, 16, 3, 59, 59, 999999, tzinfo=timezone.utc))
 
     def test_fmt_stripe_audit_time_uses_ordinal_eastern(self):
         dt = datetime(2026, 6, 19, 4, 58, tzinfo=timezone.utc)
@@ -490,26 +490,31 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
     def test_build_audit_workbook_writes_venmo_tag_column(
         self, _club_map, _bonus, _stripe, _tagged_timed, _union_timed
     ):
-        venmo_rows = [
-            TaggedManualAuditRow(
-                amount_usd=100.0,
-                payer_name="Jane Doe",
-                account_tag="@godfather4444",
-                group_title="GTO / 3011-9668 / Pvtenis",
-                club_label="ClubGTO",
-                time_label="June 21, 2026 at 11:57 PM",
-            )
-        ]
+        from api.audit_export import _TimedTaggedManualAuditRow
+
+        venmo_row = TaggedManualAuditRow(
+            amount_usd=100.0,
+            payer_name="Jane Doe",
+            account_tag="@godfather4444",
+            group_title="GTO / 3011-9668 / Pvtenis",
+            club_label="ClubGTO",
+            time_label="June 21, 2026 at 11:57 PM",
+        )
 
         def tagged_side_effect(
             session, payment_cls, build_read, club_names, from_dt, to_dt, *, audit_date, tag_field
         ):
             if payment_cls.__name__ == "VenmoPayment":
-                return venmo_rows
+                return [
+                    _TimedTaggedManualAuditRow(
+                        occurred_at=datetime(2026, 6, 21, 23, 57, tzinfo=timezone.utc),
+                        row=venmo_row,
+                    )
+                ]
             return []
 
         with patch(
-            "api.audit_export._fetch_tagged_manual_rows",
+            "api.audit_export._fetch_tagged_manual_rows_timed",
             side_effect=tagged_side_effect,
         ):
             content = build_audit_workbook(

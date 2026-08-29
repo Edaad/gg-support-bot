@@ -1,7 +1,7 @@
 """Retire all legacy union (tracks_manual_requests) methods.
 
-Run once after deploying the union-method redesign. Ops then creates new
-methods with Method + Tag in the dashboard.
+Superseded by migrate_union_methods_clean_slate.py for the union method
+shape redesign. Use clean-slate wipe + migrate_union_method_shape.py instead.
 
 Usage:
     DATABASE_URL=... python migrate_retire_legacy_union_methods.py

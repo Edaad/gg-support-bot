@@ -17,6 +17,20 @@ CHIP_TRANSFER_WINDOW = timedelta(minutes=10)
 CHIP_TRANSFER_PLAYER_LABEL = "Chip Transfer (Player)"
 CHIP_TRANSFER_RT_AT_LABEL = "Chip Transfer (RT↔AT)"
 CHIP_TRANSFER_AT_CC_LABEL = "Chip Transfer (AT↔CC)"
+FREE_PLAY_LABEL = "Free Play"
+BACK_TO_CLUB_LABEL = "Back to Club"
+GTO_INC_LABEL = "GTO INC"
+GTO_INC_NICKNAME = "GTO INC"
+_FREE_PLAY_MIN = Decimal("-1")
+_FREE_PLAY_MAX = Decimal("0")
+_GTO_SLUG = "clubgto"
+_CHIP_TRANSFER_SOURCES = frozenset(
+    {
+        CHIP_TRANSFER_PLAYER_LABEL,
+        CHIP_TRANSFER_RT_AT_LABEL,
+        CHIP_TRANSFER_AT_CC_LABEL,
+    }
+)
 # Whole-dollar slack after round_whole_usd (e.g. early RB $18.60 ↔ ClubGG $18).
 MATCH_AMOUNT_TOLERANCE_USD = Decimal("1")
 _WHOLE = Decimal("1")
@@ -470,3 +484,51 @@ def match_trade_lines_to_ledger(
         )
     )
     return TradeLedgerMatchResult(rows=rows, unmatched_ledger=unmatched)
+
+
+def _is_free_play_amount(amount: Decimal) -> bool:
+    return _FREE_PLAY_MIN <= amount <= _FREE_PLAY_MAX
+
+
+def _is_gto_inc_trade(trade: TradeLineForMatch) -> bool:
+    if _trade_slug(trade) != _GTO_SLUG:
+        return False
+    manager = (trade.manager_nickname or "").strip()
+    member = (trade.member_nickname or "").strip()
+    return manager == GTO_INC_NICKNAME and member == GTO_INC_NICKNAME
+
+
+def _is_chip_transfer_source(source: str) -> bool:
+    return (source or "").strip() in _CHIP_TRANSFER_SOURCES
+
+
+def _clear_match_details(row: MatchedTradeRow, *, source: str) -> MatchedTradeRow:
+    return replace(
+        row,
+        match_source=source,
+        match_name="",
+        match_time="",
+        match_amount=None,
+        variant="",
+        vaughn_method=False,
+        match_occurred_at=None,
+    )
+
+
+def apply_trade_record_source_overrides(
+    rows: list[MatchedTradeRow],
+) -> list[MatchedTradeRow]:
+    """Apply trade-record Source labels after ledger + chip-transfer matching."""
+    out = list(rows)
+    for idx, row in enumerate(out):
+        if _is_gto_inc_trade(row.trade):
+            out[idx] = _clear_match_details(row, source=GTO_INC_LABEL)
+    for idx, row in enumerate(out):
+        if row.match_source == GTO_INC_LABEL:
+            continue
+        if not _is_free_play_amount(row.trade.amount):
+            continue
+        if _is_chip_transfer_source(row.match_source):
+            continue
+        out[idx] = _clear_match_details(row, source=FREE_PLAY_LABEL)
+    return out

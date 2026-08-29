@@ -60,6 +60,9 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
     from bot.services.escalation_notification import (
         register_escalation_notification_runtime,
     )
+    from bot.services.union_instruction_expiry import (
+        register_union_instruction_expiry_runtime,
+    )
     from bot.services.watched_group_escalation import (
         register_watched_group_escalation_runtime,
     )
@@ -67,6 +70,7 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
     register_deposit_reminder_runtime(app)
     register_popup_keyboard_runtime(app)
     register_escalation_notification_runtime(app)
+    register_union_instruction_expiry_runtime(app)
     register_watched_group_escalation_runtime(app)
     set_contact_save_notify_bot(app.bot)
 
@@ -140,7 +144,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         delete_handler,
         command_router,
     )
-    from bot.handlers.deposit import get_deposit_handler
+    from bot.handlers.deposit import get_deposit_handler, get_deposit_union_ack_handler
     from bot.handlers.cashout import get_cashout_handler
     from bot.handlers.earlyrb import earlyrb_handler
     from bot.handlers.flow_cancel import dm_flow_cancel_priority, flow_cancel_handler
@@ -217,6 +221,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         delete_handler=delete_handler,
         command_router=command_router,
         get_deposit_handler=get_deposit_handler,
+        get_deposit_union_ack_handler=get_deposit_union_ack_handler,
         get_cashout_handler=get_cashout_handler,
         get_popup_keyboard_activity_handler=get_popup_keyboard_activity_handler,
         get_deposit_sent_claim_handler=get_deposit_sent_claim_handler,
@@ -459,6 +464,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
 
     app.add_handler(h.get_set_handler())
     app.add_handler(h.get_deposit_handler())
+    app.add_handler(h.get_deposit_union_ack_handler())
     app.add_handler(h.get_deposit_sent_claim_handler())
     app.add_handler(h.get_cashout_handler())
     app.add_handler(CommandHandler("earlyrb", h.earlyrb_handler))
