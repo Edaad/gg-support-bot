@@ -104,27 +104,8 @@ def audit_day_bounds_utc(slug: str, date_val: date | str) -> tuple[datetime, dat
 
 
 def audit_day_window_utc(slug: str, date_val: date | str) -> tuple[datetime, datetime]:
-    """Local calendar day + first hour of next day (export grace window)."""
-    policy = audit_timezone_for_slug(slug)
-    local_date = _parse_date_arg(date_val)
-    tz = _zone_for_policy(policy)
-    start_local = datetime(
-        local_date.year,
-        local_date.month,
-        local_date.day,
-        tzinfo=tz,
-    )
-    next_day = local_date + timedelta(days=1)
-    end_local = datetime(
-        next_day.year,
-        next_day.month,
-        next_day.day,
-        1,
-        0,
-        0,
-        tzinfo=tz,
-    ) - timedelta(microseconds=1)
-    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+    """Local calendar day → UTC range (start and end inclusive)."""
+    return audit_day_bounds_utc(slug, date_val)
 
 
 def union_audit_day_window_utc(date_val: date | str) -> tuple[datetime, datetime]:
@@ -207,14 +188,12 @@ def occurred_at_in_audit_day(
 
 
 def audit_date_for_occurred_at(ts: datetime, slug: str) -> date:
-    """Map a UTC timestamp to the club audit calendar day (00:00–00:59 → prior day)."""
+    """Map a UTC timestamp to the club audit calendar day."""
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
     else:
         ts = ts.astimezone(timezone.utc)
     local = ts.astimezone(zone_for_slug(slug))
-    if local.hour == 0:
-        return local.date() - timedelta(days=1)
     return local.date()
 
 

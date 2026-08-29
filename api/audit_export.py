@@ -140,7 +140,7 @@ def eastern_day_bounds_utc(date_str: str) -> tuple[datetime, datetime]:
 
 
 def eastern_audit_end_utc(date_str: str) -> datetime:
-    """UTC end of round-table audit export window (day + first hour of next)."""
+    """UTC end of round-table local calendar day."""
     _, end = club_audit_day_window_utc("round-table", date_str)
     return end
 

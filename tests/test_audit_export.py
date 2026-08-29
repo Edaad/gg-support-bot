@@ -61,7 +61,7 @@ class AuditExportFormattingTestCase(unittest.TestCase):
     def test_audit_day_window_utc_edt(self):
         start, end = audit_day_window_utc("2026-06-19")
         self.assertEqual(start, datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc))
-        self.assertEqual(end, datetime(2026, 6, 20, 4, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(end, datetime(2026, 6, 20, 3, 59, 59, 999999, tzinfo=timezone.utc))
 
     def test_eastern_day_bounds_utc_edt(self):
         start, end = eastern_day_bounds_utc("2026-06-19")
@@ -80,11 +80,11 @@ class AuditExportFormattingTestCase(unittest.TestCase):
 
     def test_eastern_audit_end_utc_edt(self):
         end = eastern_audit_end_utc("2026-06-21")
-        self.assertEqual(end, datetime(2026, 6, 22, 4, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(end, datetime(2026, 6, 22, 3, 59, 59, 999999, tzinfo=timezone.utc))
 
     def test_eastern_audit_end_utc_est(self):
         end = eastern_audit_end_utc("2026-01-15")
-        self.assertEqual(end, datetime(2026, 1, 16, 4, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(end, datetime(2026, 1, 16, 3, 59, 59, 999999, tzinfo=timezone.utc))
 
     def test_fmt_stripe_audit_time_uses_ordinal_eastern(self):
         dt = datetime(2026, 6, 19, 4, 58, tzinfo=timezone.utc)
