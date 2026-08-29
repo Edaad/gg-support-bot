@@ -21,6 +21,7 @@ from bot.services.crypto_payments import (
 from bot.services.venmo_payments import BindResult, BoundGroup
 from bot.services.payment_bind_candidates import CandidateGroup
 from db.models import CryptoPayment, CryptoWalletBinding
+from tests.support.ingest_mocks import start_payment_ingest_mocks, stop_patchers
 
 CHAT_ID = -1001234567890
 CLUB_ID = 2
@@ -100,8 +101,10 @@ class CryptoIngestIdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
             "notification.payment_notification_posts.record_payment_notification_posts"
         )
         self._record_posts.start()
+        self._ingest_patchers = start_payment_ingest_mocks()
 
     def tearDown(self) -> None:
+        stop_patchers(self._ingest_patchers)
         self._record_posts.stop()
 
     async def test_duplicate_source_external_id_skips_second_notification(self):
@@ -138,6 +141,7 @@ class CryptoIngestIdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
                     to_address="0xdef",
                     transaction_hash="0xtx",
                     alert_name=ALERT_NAME_CLUBGTO,
+                    method_owner="round-table",
                     source_external_id="ext-1",
                 )
 
@@ -182,6 +186,7 @@ class CryptoIngestIdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
                 to_address="TZ9LgB7MQjvSmnPqGY1NYNbMh4fYbCdBtD",
                 transaction_hash="0xtx",
                 alert_name=ALERT_NAME_CLUBGTO,
+                method_owner="round-table",
                 source_external_id="tx_0",
             )
 
@@ -204,8 +209,10 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
             "notification.payment_notification_posts.record_payment_notification_posts"
         )
         self._record_posts.start()
+        self._ingest_patchers = start_payment_ingest_mocks()
 
     def tearDown(self) -> None:
+        stop_patchers(self._ingest_patchers)
         self._record_posts.stop()
 
     async def test_ingest_auto_binds_known_wallet(self):
@@ -277,6 +284,7 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
                 to_address="0x7063760294b901CF56b34BEB6275A641B5178CDa",
                 transaction_hash="0xtx2",
                 alert_name=ALERT_NAME_CLUBGTO,
+                method_owner="round-table",
             )
 
         self.assertTrue(result.auto_bound)
@@ -338,6 +346,7 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
                 to_address="0x7063760294b901CF56b34BEB6275A641B5178CDa",
                 transaction_hash="0xtx3",
                 alert_name=ALERT_NAME_RT_AT_CC,
+                method_owner="round-table",
             )
 
         self.assertFalse(result.auto_bound)

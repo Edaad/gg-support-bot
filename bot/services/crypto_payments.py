@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
+from api.method_owner import normalize_method_owner
 from bot.services.club import get_group_title_for_chat
 from bot.services.group_chat_invite_links import resolve_group_chat_url_for_payment
 from bot.services.payment_binding_events import (
@@ -311,6 +312,7 @@ async def ingest_crypto_payment(
     to_address: str,
     transaction_hash: str,
     alert_name: str,
+    method_owner: str,
     token_name: Optional[str] = None,
     from_entity_name: Optional[str] = None,
     paid_at: Optional[str] = None,
@@ -318,6 +320,7 @@ async def ingest_crypto_payment(
     test: bool = False,
 ) -> IngestResult:
     """Create payment row, auto-bind known wallet+scope, send Telegram notification."""
+    owner = normalize_method_owner(method_owner)
     symbol = (token_symbol or "").strip().upper()
     if not symbol:
         raise ValueError("token_symbol is required")
@@ -364,6 +367,7 @@ async def ingest_crypto_payment(
                 )
 
         payment = CryptoPayment(
+            method_owner=owner,
             amount_cents=amount_cents,
             token_symbol=symbol,
             token_name=(token_name or "").strip() or None,

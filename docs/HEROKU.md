@@ -443,6 +443,18 @@ Dashboard **Cashout records** and **Bonuses** pages include CSV export (inclusiv
 Dashboard **Expenses** (admin only) uses `expenses` and XLSX export: `GET /api/expenses/export?from=…&to=…` (plus optional `club_id`, `pending`, `q`).
 Set app-wide (worker + notification dynos). Restart after deploy: `heroku restart worker notification -a YOUR_APP`
 
+## Payment method_owner column
+
+After deploying `method_owner` on manual payment ingest, run once on production Postgres:
+
+```bash
+heroku run -a YOUR_APP -- python migrate_payment_method_owner.py
+```
+
+Adds `method_owner` to `venmo_payments`, `zelle_payments`, `cashapp_payments`, `paypal_payments`, and `crypto_payments`; backfills existing rows from Vaughn heuristics; adds `(method_owner, created_at)` indexes.
+
+Zapier ingests must send `method_owner` on every POST (`round-table`, `vaughn`, or `mateos`) before traffic hits the new API.
+
 ## Payment binding audit log
 
 After deploying binding-event tracking, run once on production Postgres:

@@ -41,6 +41,7 @@ class CashAppPaymentsApiTestCase(unittest.TestCase):
                 "payer_name": "Jackson Taylor",
                 "amount": "15.00",
                 "cashapp_handle": "$michaelc4444",
+                "method_owner": "round-table",
             },
         )
         self.assertEqual(response.status_code, 401)
@@ -63,6 +64,7 @@ class CashAppPaymentsApiTestCase(unittest.TestCase):
                     "payer_name": "Jackson Taylor",
                     "amount": "15.00",
                     "cashapp_handle": "$michaelc4444",
+                    "method_owner": "round-table",
                     "memo": "FLOP",
                 },
                 headers={"X-Cashapp-Webhook-Secret": WEBHOOK_SECRET},
@@ -74,3 +76,29 @@ class CashAppPaymentsApiTestCase(unittest.TestCase):
         self.assertEqual(data["status"], "unbound")
         self.assertFalse(data["auto_bound"])
         self.assertTrue(data["created"])
+
+    def test_ingest_rejects_missing_method_owner(self):
+        response = self.client.post(
+            "/api/cashapp/payments",
+            json={
+                "payer_name": "Jackson Taylor",
+                "amount": "15.00",
+                "cashapp_handle": "$michaelc4444",
+            },
+            headers={"X-Cashapp-Webhook-Secret": WEBHOOK_SECRET},
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_ingest_rejects_invalid_method_owner(self):
+        response = self.client.post(
+            "/api/cashapp/payments",
+            json={
+                "payer_name": "Jackson Taylor",
+                "amount": "15.00",
+                "cashapp_handle": "$michaelc4444",
+                "method_owner": "invalid",
+            },
+            headers={"X-Cashapp-Webhook-Secret": WEBHOOK_SECRET},
+        )
+        self.assertEqual(response.status_code, 422)
+

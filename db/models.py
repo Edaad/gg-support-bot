@@ -1233,9 +1233,11 @@ class VenmoPayment(Base):
         ),
         Index("ix_venmo_payments_telegram_chat_id", "telegram_chat_id"),
         Index("ix_venmo_payments_created_at", "created_at"),
+        Index("ix_venmo_payments_method_owner_created", "method_owner", "created_at"),
     )
 
     id = Column(Integer, primary_key=True)
+    method_owner = Column(String(32), nullable=False)
     payer_name = Column(String(255), nullable=False)
     amount_cents = Column(Integer, nullable=False)
     venmo_handle = Column(String(100), nullable=False)
@@ -1303,9 +1305,11 @@ class CashAppPayment(Base):
         ),
         Index("ix_cashapp_payments_telegram_chat_id", "telegram_chat_id"),
         Index("ix_cashapp_payments_created_at", "created_at"),
+        Index("ix_cashapp_payments_method_owner_created", "method_owner", "created_at"),
     )
 
     id = Column(Integer, primary_key=True)
+    method_owner = Column(String(32), nullable=False)
     payer_name = Column(String(255), nullable=False)
     amount_cents = Column(Integer, nullable=False)
     cashapp_handle = Column(String(100), nullable=False)
@@ -1372,9 +1376,11 @@ class PayPalPayment(Base):
         ),
         Index("ix_paypal_payments_telegram_chat_id", "telegram_chat_id"),
         Index("ix_paypal_payments_created_at", "created_at"),
+        Index("ix_paypal_payments_method_owner_created", "method_owner", "created_at"),
     )
 
     id = Column(Integer, primary_key=True)
+    method_owner = Column(String(32), nullable=False)
     payer_name = Column(String(255), nullable=False)
     amount_cents = Column(Integer, nullable=False)
     paypal_email = Column(String(255), nullable=False)
@@ -1441,9 +1447,11 @@ class ZellePayment(Base):
         ),
         Index("ix_zelle_payments_telegram_chat_id", "telegram_chat_id"),
         Index("ix_zelle_payments_created_at", "created_at"),
+        Index("ix_zelle_payments_method_owner_created", "method_owner", "created_at"),
     )
 
     id = Column(Integer, primary_key=True)
+    method_owner = Column(String(32), nullable=False)
     payer_name = Column(String(255), nullable=False)
     amount_cents = Column(Integer, nullable=False)
     zelle_recipient = Column(String(100), nullable=False)
@@ -1483,9 +1491,11 @@ class CryptoPayment(Base):
         ),
         Index("ix_crypto_payments_telegram_chat_id", "telegram_chat_id"),
         Index("ix_crypto_payments_created_at", "created_at"),
+        Index("ix_crypto_payments_method_owner_created", "method_owner", "created_at"),
     )
 
     id = Column(Integer, primary_key=True)
+    method_owner = Column(String(32), nullable=False)
     amount_cents = Column(Integer, nullable=False)
     token_symbol = Column(String(32), nullable=False)
     token_name = Column(String(100), nullable=True)

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
 
+from api.method_owner import MethodOwnerSlug
 from bot.services.crypto_payments import (
     WEBHOOK_SECRET_ENV,
     ingest_crypto_payment,
@@ -54,6 +55,7 @@ class CryptoPaymentIngestBody(BaseModel):
     source_external_id: str | None = None
     alert_name: str | None = Field(..., min_length=1)
     test: bool = False
+    method_owner: MethodOwnerSlug
 
 
 class CryptoPaymentIngestResponse(BaseModel):
@@ -101,6 +103,7 @@ async def ingest_payment(
             source_external_id=body.source_external_id,
             alert_name=body.alert_name,
             test=body.test,
+            method_owner=body.method_owner,
         )
     except ValueError as e:
         if debug_notification_enabled():

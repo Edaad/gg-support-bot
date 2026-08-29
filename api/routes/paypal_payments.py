@@ -6,6 +6,7 @@ import os
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
 
+from api.method_owner import MethodOwnerSlug
 from bot.services.paypal_payments import (
     WEBHOOK_SECRET_ENV,
     ingest_paypal_payment,
@@ -47,6 +48,7 @@ class PayPalPaymentIngestBody(BaseModel):
     source_external_id: str | None = None
     memo: str | None = None
     test: bool = False
+    method_owner: MethodOwnerSlug
 
 
 class PayPalPaymentIngestResponse(BaseModel):
@@ -100,6 +102,7 @@ async def ingest_payment(
             source_external_id=body.source_external_id,
             memo=body.memo,
             test=body.test,
+            method_owner=body.method_owner,
         )
     except ValueError as e:
         logger.warning("paypal ingest: rejected bad request — %s", e)
