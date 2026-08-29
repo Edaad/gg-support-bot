@@ -711,6 +711,7 @@ class BonusRecord(Base):
     chat_id = Column(BigInteger, nullable=True)
     group_title = Column(String(512), nullable=True)
     admin_telegram_user_id = Column(BigInteger, nullable=True)
+    metadata_json = Column("metadata", JSONB, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     bonus_type = relationship("BonusType")
