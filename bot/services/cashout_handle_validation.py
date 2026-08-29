@@ -20,13 +20,15 @@ import re
 from typing import Callable, Optional
 
 _VENMO_URL_RE = re.compile(
-    r"https?://(?:www\.)?venmo\.com/(?:u/)?([A-Za-z0-9_.-]{2,30})",
+    r"(?:https?://)?(?:www\.)?venmo\.com/(?:u/)?@?([A-Za-z0-9_.-]{2,30})",
     re.IGNORECASE,
 )
-_VENMO_HANDLE_RE = re.compile(r"@([A-Za-z0-9_.-]{2,30})")
+# Skip an ``@`` that is part of an email (``john@gmail.com``) — that is not a Venmo
+# handle, and silently recording ``@gmail.com`` would mis-pay the player.
+_VENMO_HANDLE_RE = re.compile(r"(?<![A-Za-z0-9._%+-])@([A-Za-z0-9_.-]{2,30})")
 
 _CASHAPP_URL_RE = re.compile(
-    r"https?://(?:www\.)?cash\.app/\$?([A-Za-z0-9_-]{1,30})",
+    r"(?:https?://)?(?:www\.)?cash\.app/\$?([A-Za-z0-9_-]{1,30})",
     re.IGNORECASE,
 )
 _CASHAPP_TAG_RE = re.compile(r"(?<![A-Za-z0-9])\$([A-Za-z0-9_-]{1,30})(?![A-Za-z0-9])")
@@ -37,7 +39,7 @@ _US_PHONE_RE = re.compile(
 )
 
 _PAYPAL_ME_RE = re.compile(
-    r"https?://(?:www\.)?paypal\.me/([A-Za-z0-9_.-]{2,40})",
+    r"(?:https?://)?(?:www\.)?paypal\.me/([A-Za-z0-9_.-]{2,40})",
     re.IGNORECASE,
 )
 

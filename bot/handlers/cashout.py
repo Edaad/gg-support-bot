@@ -418,13 +418,11 @@ AUTO_CLAIMING_COPY = "Claiming chips...this will just take a minute!"
 AUTO_AGENT_SHORTLY_COPY = "An agent will be with you shortly."
 
 _AUTO_HANDLE_PROMPTS = {
-    "venmo": "Chips claimed! Please reply with your Venmo @username or Venmo link.",
-    "cashapp": (
-        "Chips claimed! Please reply with your Cash App $cashtag or Cash App link."
-    ),
-    "zelle": "Chips claimed! Please reply with your Zelle phone number or email.",
-    "paypal": "Chips claimed! Please reply with your PayPal email or PayPal.me link.",
-    "crypto": "Chips claimed! Please reply with your {asset} wallet address.",
+    "venmo": "Please reply with your Venmo @username or Venmo link.",
+    "cashapp": "Please reply with your Cash App $cashtag or Cash App link.",
+    "zelle": "Please reply with your Zelle phone number or email.",
+    "paypal": "Please reply with your PayPal email or PayPal.me link.",
+    "crypto": "Please reply with your {asset} wallet address.",
 }
 
 
@@ -563,7 +561,7 @@ async def cashout_auto_amount_received(update, context):
         await _auto_prompt_union(update.message, context)
         return CASHOUT_AUTO_UNION
 
-    return await _auto_run_claim(update, context)
+    return await _auto_show_methods(update, context)
 
 
 def _auto_eligible_methods(update, club_id, amount):
@@ -614,7 +612,7 @@ async def cashout_auto_union_chosen(update, context):
         await query.edit_message_text(f"Cashing out from {label}.")
     except Exception:
         pass
-    return await _auto_run_claim(update, context)
+    return await _auto_show_methods(update, context)
 
 
 async def _auto_run_claim(update, context):
@@ -676,7 +674,11 @@ async def _auto_run_claim(update, context):
         return await _auto_escalate(update, context, detail=detail)
 
     context.chat_data["cashout_auto_claimed"] = True
-    return await _auto_show_methods(update, context)
+    return await _auto_finalize(
+        update,
+        context,
+        payout_details=context.chat_data.get("cashout_auto_payout_details") or "",
+    )
 
 
 async def _auto_show_methods(update, context):
@@ -687,7 +689,7 @@ async def _auto_show_methods(update, context):
         return await _auto_escalate(
             update,
             context,
-            detail="No cashout methods available after claiming chips.",
+            detail=f"No automatable cashout methods available for ${amount}.",
         )
     buttons = []
     row = []
@@ -701,7 +703,7 @@ async def _auto_show_methods(update, context):
     chat = update.effective_chat
     if chat is not None:
         sent = await chat.send_message(
-            "Chips claimed! Select your cashout method:",
+            "Select your cashout method:",
             reply_markup=InlineKeyboardMarkup(buttons),
         )
         register_flow_callback_message(context, sent.message_id, flow="cashout")
@@ -729,7 +731,7 @@ async def cashout_auto_method_chosen(update, context):
     method = get_method_by_id(method_id)
     if not method:
         return await _auto_escalate(
-            update, context, detail="Selected method no longer available after claim."
+            update, context, detail="Selected method no longer available."
         )
     chat_id = query.message.chat.id if query.message else None
     if chat_id is not None and not is_cashout_method_allowed_for_chat(
@@ -800,7 +802,7 @@ async def cashout_auto_sub_chosen(update, context):
     method = context.chat_data.get("cashout_current_method", {})
     if not sub:
         return await _auto_escalate(
-            update, context, detail="Selected option no longer available after claim."
+            update, context, detail="Selected option no longer available."
         )
     context.chat_data["cashout_payment_sub_option_id"] = sub_id
     display = f"{method.get('name', '')} \u2014 {sub['name']}"
@@ -853,7 +855,10 @@ async def cashout_auto_handle_received(update, context):
             context,
             detail=f"Player reply was not a valid {slug} handle: {text[:120]!r}",
         )
-    return await _auto_finalize(update, context, payout_details=normalized)
+    # Handle is good — chips are only claimed now, at the very end, so the player
+    # never waits on ClubGG before being asked for their payout details.
+    context.chat_data["cashout_auto_payout_details"] = normalized
+    return await _auto_run_claim(update, context)
 
 
 async def _auto_finalize(update, context, *, payout_details):
@@ -1204,6 +1209,7 @@ def _cleanup(context):
         "cashout_auto",
         "cashout_auto_claim_key",
         "cashout_auto_claimed",
+        "cashout_auto_payout_details",
         "cashout_union_shorthand",
         "cashout_method_display_name",
         "cashout_payment_sub_option_id",

@@ -25,27 +25,34 @@ every other flow are unchanged.
 
 1. Player runs `/cashout` (or `/withdraw`) and enters an amount. Existing
    eligibility (24-hour cooldown + business hours) still gates entry.
-2. Before claiming, the bot verifies at least one **active** cashout method with an
-   automated handle format is available for the amount (below-min / no-method ends
-   the flow with the usual message — no chips are claimed).
+2. The bot verifies at least one **active** cashout method with an automated handle
+   format is available for the amount (below-min / no-method ends the flow with the
+   usual message).
 3. For a Round Table club, the bot asks which union (RT / AT), mirroring `/deposit`.
-4. The bot posts "Claiming chips…" and runs the ClubGG auto-claim for the chosen
-   club/union. On failure or an UNCERTAIN result it escalates and stops.
-5. On a clean claim, the bot shows the eligible methods (single choice). Crypto
-   asks for the asset sub-option.
-6. The bot asks for the player's payout handle and validates it for the method:
+   Single-union clubs (CC, GTO, …) skip this step.
+4. The bot shows the eligible methods (single choice). Crypto asks for the asset
+   sub-option.
+5. The bot asks for the player's payout handle and validates it for the method. The
+   handle is **extracted from anywhere in the message**, so `Venmo: @test` or a
+   message with several handles is fine (the first valid one wins):
 
    | Method  | Accepted |
    |---------|----------|
-   | Venmo   | `@username` or a `venmo.com` link |
+   | Venmo   | `@username` or a `venmo.com` link (bare or with `https://`) |
    | Cash App| `$cashtag` or a `cash.app` link |
    | Zelle   | US phone number or email |
    | Crypto  | wallet-address-looking token (case preserved) |
    | PayPal  | email or a `paypal.me` link |
 
-7. A valid handle records the cashout via `complete_cashout_job` → Zapier (Glide RT
-   Hub) + `staff_cashout_records` audit + the group "$X owed" pin and ASAP message +
-   the cooldown activity. The player gets a short confirmation.
+   A plain email is **not** accepted as a Venmo handle — that escalates rather than
+   recording `@gmail.com` as the payout destination.
+6. **Only once everything above succeeds**, the bot posts "Claiming chips…" and runs
+   the ClubGG auto-claim for the chosen club/union. On failure or an UNCERTAIN
+   result it escalates and stops. Claiming last means the player is never waiting on
+   ClubGG before being asked for their method and handle.
+7. On a clean claim, the cashout is recorded via `complete_cashout_job` → Zapier
+   (Glide RT Hub) + `staff_cashout_records` audit + the group "$X owed" pin + the
+   cooldown activity. The player gets a short confirmation.
 
 Because the bot only allows cashouts 24h after the last deposit/cashout and the
 trade record is enforced by the bot, both attestations are auto-marked on the job.
