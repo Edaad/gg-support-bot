@@ -12,8 +12,11 @@ from api.audit_reconcile_matching import (
     CHIP_TRANSFER_AT_CC_LABEL,
     CHIP_TRANSFER_PLAYER_LABEL,
     CHIP_TRANSFER_RT_AT_LABEL,
+    FREE_PLAY_LABEL,
+    GTO_INC_LABEL,
     apply_cc_at_aces_ledger_fallback,
     apply_chip_transfer_matches,
+    apply_trade_record_source_overrides,
     is_cc_at_group_title,
     match_trade_lines_to_ledger,
     round_whole_usd,
@@ -29,6 +32,7 @@ def _trade(
     occurred: datetime | None = None,
     sheet_row: int = 1,
     club: str | None = "round-table",
+    manager: str | None = None,
 ) -> TradeLineForMatch:
     return TradeLineForMatch(
         line_id=line_id,
@@ -37,6 +41,7 @@ def _trade(
         member_gg_player_id=gg_id,
         member_nickname=nick,
         sheet_row=sheet_row,
+        manager_nickname=manager,
         trade_club_slug=club,
     )
 
@@ -602,6 +607,11 @@ def _with_transfers(trades, ledgers, *, club_slug: str = "round-table"):
     return apply_chip_transfer_matches(result.rows)
 
 
+def _with_source_overrides(trades, ledgers, *, club_slug: str = "round-table"):
+    rows = _with_transfers(trades, ledgers, club_slug=club_slug)
+    return apply_trade_record_source_overrides(rows)
+
+
 class ChipTransferMatchTestCase(unittest.TestCase):
     def setUp(self):
         self.t0 = datetime(2026, 7, 3, 6, 30, tzinfo=timezone.utc)
@@ -927,6 +937,145 @@ class CcAtAcesLedgerFallbackTestCase(unittest.TestCase):
         self.assertEqual(len(remaining), 0)
         self.assertEqual(by_id[1].match_source, "Stripe")
         self.assertEqual(by_id[2].match_source, "")
+
+
+class ApplyTradeRecordSourceOverridesTestCase(unittest.TestCase):
+    def setUp(self):
+        self.t0 = datetime(2026, 7, 3, 6, 30, tzinfo=timezone.utc)
+
+    def test_free_play_overrides_ledger_match(self):
+        trade = _trade(occurred=self.t0, amount="-0.50")
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-0.50",
+            display_name="Jane Doe",
+        )
+        rows = apply_trade_record_source_overrides(
+            match_trade_lines_to_ledger([trade], [ledger], club_slug="round-table").rows
+        )
+        self.assertEqual(rows[0].match_source, FREE_PLAY_LABEL)
+        self.assertEqual(rows[0].match_name, "")
+
+    def test_free_play_unmatched(self):
+        trade = _trade(occurred=self.t0, amount="-0.50")
+        rows = apply_trade_record_source_overrides(
+            match_trade_lines_to_ledger([trade], [], club_slug="round-table").rows
+        )
+        self.assertEqual(rows[0].match_source, FREE_PLAY_LABEL)
+
+    def test_free_play_does_not_override_chip_transfer(self):
+        add = _trade(
+            line_id=1,
+            amount="-0.50",
+            gg_id="1111-1111",
+            nick="Alice",
+            occurred=self.t0,
+            club="clubgto",
+        )
+        claim = _trade(
+            line_id=2,
+            amount="0.50",
+            gg_id="2222-2222",
+            nick="Bob",
+            occurred=self.t0 + timedelta(minutes=2),
+            club="clubgto",
+        )
+        rows = _with_source_overrides([add, claim], [], club_slug="clubgto")
+        self.assertEqual(rows[0].match_source, CHIP_TRANSFER_PLAYER_LABEL)
+        self.assertEqual(rows[1].match_source, CHIP_TRANSFER_PLAYER_LABEL)
+
+    def test_free_play_outside_band_keeps_ledger(self):
+        trade = _trade(occurred=self.t0, amount="-2")
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-2",
+            display_name="Jane Doe",
+        )
+        rows = apply_trade_record_source_overrides(
+            match_trade_lines_to_ledger([trade], [ledger], club_slug="round-table").rows
+        )
+        self.assertEqual(rows[0].match_source, "Stripe")
+        self.assertEqual(rows[0].match_name, "Jane Doe")
+
+    def test_gto_inc_overrides_ledger(self):
+        trade = _trade(
+            occurred=self.t0,
+            amount="-50",
+            nick="GTO INC",
+            manager="GTO INC",
+            club="clubgto",
+        )
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-50",
+            display_name="Jane Doe",
+        )
+        rows = apply_trade_record_source_overrides(
+            match_trade_lines_to_ledger([trade], [ledger], club_slug="clubgto").rows
+        )
+        self.assertEqual(rows[0].match_source, GTO_INC_LABEL)
+        self.assertEqual(rows[0].match_name, "")
+
+    def test_gto_inc_overrides_chip_transfer(self):
+        add = _trade(
+            line_id=1,
+            amount="-100",
+            gg_id="1111-1111",
+            nick="GTO INC",
+            manager="GTO INC",
+            occurred=self.t0,
+            club="clubgto",
+        )
+        claim = _trade(
+            line_id=2,
+            amount="100",
+            gg_id="2222-2222",
+            nick="Bob",
+            occurred=self.t0 + timedelta(minutes=2),
+            club="clubgto",
+        )
+        rows = _with_source_overrides([add, claim], [], club_slug="clubgto")
+        self.assertEqual(rows[0].match_source, GTO_INC_LABEL)
+        self.assertEqual(rows[1].match_source, CHIP_TRANSFER_PLAYER_LABEL)
+
+    def test_gto_inc_beats_free_play(self):
+        trade = _trade(
+            occurred=self.t0,
+            amount="-0.50",
+            nick="GTO INC",
+            manager="GTO INC",
+            club="clubgto",
+        )
+        rows = apply_trade_record_source_overrides(
+            match_trade_lines_to_ledger([trade], [], club_slug="clubgto").rows
+        )
+        self.assertEqual(rows[0].match_source, GTO_INC_LABEL)
+
+    def test_gto_inc_case_sensitive(self):
+        trade = _trade(
+            occurred=self.t0,
+            amount="-50",
+            nick="gto inc",
+            manager="gto inc",
+            club="clubgto",
+        )
+        rows = apply_trade_record_source_overrides(
+            match_trade_lines_to_ledger([trade], [], club_slug="clubgto").rows
+        )
+        self.assertEqual(rows[0].match_source, "")
+
+    def test_gto_inc_only_clubgto(self):
+        trade = _trade(
+            occurred=self.t0,
+            amount="-50",
+            nick="GTO INC",
+            manager="GTO INC",
+            club="round-table",
+        )
+        rows = apply_trade_record_source_overrides(
+            match_trade_lines_to_ledger([trade], [], club_slug="round-table").rows
+        )
+        self.assertEqual(rows[0].match_source, "")
 
 
 if __name__ == "__main__":

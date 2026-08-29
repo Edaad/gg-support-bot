@@ -22,14 +22,18 @@ from api.audit_ledger import (
 )
 from api.audit_reconcile import AuditReconcileReport
 from api.audit_reconcile_matching import (
+    BACK_TO_CLUB_LABEL,
     CHIP_TRANSFER_AT_CC_LABEL,
     CHIP_TRANSFER_PLAYER_LABEL,
     CHIP_TRANSFER_RT_AT_LABEL,
+    FREE_PLAY_LABEL,
+    GTO_INC_LABEL,
     MatchedTradeRow,
     TradeLedgerMatchResult,
     _sort_key_occurred_at,
     apply_cc_at_aces_ledger_fallback,
     apply_chip_transfer_matches,
+    apply_trade_record_source_overrides,
     match_trade_lines_to_ledger,
 )
 from api.club_audit_timezone import zone_for_payment_display
@@ -99,7 +103,11 @@ _MATCHING_VARIANT_COL = 10  # Variant
 
 MATCHING_SOURCE_OPTIONS: tuple[str, ...] = tuple(
     label for src, label in LEDGER_SOURCE_LABELS.items() if src != "cashout"
-) + CASHOUT_SOURCE_LABELS + UNION_MATCHING_SOURCE_OPTIONS + (CHIP_TRANSFER_PLAYER_LABEL,)
+) + CASHOUT_SOURCE_LABELS + UNION_MATCHING_SOURCE_OPTIONS + (
+    CHIP_TRANSFER_PLAYER_LABEL,
+    FREE_PLAY_LABEL,
+    BACK_TO_CLUB_LABEL,
+)
 
 # Matching Source fills: one family color; GTO / Vaughn uses the darker shade.
 _MATCHING_SOURCE_FILL_HEX: dict[str, str] = {
@@ -134,6 +142,9 @@ _MATCHING_SOURCE_FILL_HEX: dict[str, str] = {
     "Bonus": "FADBD8",
     "RB settlement (Monday)": "D5D8DC",
     "Cashout": "E5E7E9",
+    FREE_PLAY_LABEL: "FADBD8",
+    BACK_TO_CLUB_LABEL: "E5E7E9",
+    GTO_INC_LABEL: "C4A3E0",
     CHIP_TRANSFER_PLAYER_LABEL: "C5CAE9",
     CHIP_TRANSFER_RT_AT_LABEL: "9FA8DA",
     CHIP_TRANSFER_AT_CC_LABEL: "7986CB",
@@ -813,7 +824,9 @@ def build_all_clubs_matching_workbook(
         all_rows,
         other_matches["creator-club"].unmatched_ledger,
     )
-    partitioned = _partition_matching_rows(apply_chip_transfer_matches(all_rows))
+    partitioned = _partition_matching_rows(
+        apply_trade_record_source_overrides(apply_chip_transfer_matches(all_rows))
+    )
 
     first = True
     for slug, title in ALL_CLUBS_MATCHING_SHEET_ORDER:
