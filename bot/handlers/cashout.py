@@ -270,7 +270,9 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
             cashout_chat_id = context.chat_data.get("cashout_chat_id")
             if club_id and cashout_chat_id:
                 if not is_club_staff(uid, club_id):
-                    eligible, deny_msg = check_cashout_eligibility(club_id, cashout_chat_id)
+                    eligible, deny_msg = check_cashout_eligibility(
+                        club_id, cashout_chat_id
+                    )
                     if not eligible:
                         await update.message.reply_text(deny_msg)
                         _cleanup_after_flow(context)
@@ -311,7 +313,9 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
     return await _show_method_keyboard(update, context, first_pick=True)
 
 
-async def cashout_simple_amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cashout_simple_amount_received(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     if not update.message:
         return ConversationHandler.END
     if is_update_too_old(update):
@@ -334,7 +338,9 @@ async def cashout_simple_amount_received(update: Update, context: ContextTypes.D
             cashout_chat_id = context.chat_data.get("cashout_chat_id")
             if club_id and cashout_chat_id:
                 if not is_club_staff(uid, club_id):
-                    eligible, deny_msg = check_cashout_eligibility(club_id, cashout_chat_id)
+                    eligible, deny_msg = check_cashout_eligibility(
+                        club_id, cashout_chat_id
+                    )
                     if not eligible:
                         await update.message.reply_text(deny_msg)
                         _cleanup_after_flow(context)
@@ -408,7 +414,7 @@ async def cashout_simple_amount_received(update: Update, context: ContextTypes.D
 # with a single "an agent will be with you shortly" and the bot bows out.
 # ---------------------------------------------------------------------------
 
-AUTO_CLAIMING_COPY = "Claiming chips\u2026"
+AUTO_CLAIMING_COPY = "Claiming chips...this will just take a minute!"
 AUTO_AGENT_SHORTLY_COPY = "An agent will be with you shortly."
 
 _AUTO_HANDLE_PROMPTS = {
@@ -1059,7 +1065,9 @@ async def cashout_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
             return CASHOUT_SUB
 
     amount = context.chat_data.get("cashout_amount", "?")
-    tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
+    tier = (
+        get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
+    )
     if tier:
         response_data = pick_variant(method_id, tier_id=tier["id"])
         if not response_data:
@@ -1303,7 +1311,9 @@ def get_cashout_handler() -> ConversationHandler:
                 MessageHandler(~filters.COMMAND, cashout_auto_offscript),
             ],
             CASHOUT_AUTO_CHOOSE: [
-                CallbackQueryHandler(cashout_auto_method_chosen, pattern=r"^coauto:\d+$"),
+                CallbackQueryHandler(
+                    cashout_auto_method_chosen, pattern=r"^coauto:\d+$"
+                ),
                 _CASHOUT_CANCEL,
                 MessageHandler(~filters.COMMAND, cashout_auto_offscript),
             ],
