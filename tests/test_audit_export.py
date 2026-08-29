@@ -490,26 +490,31 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
     def test_build_audit_workbook_writes_venmo_tag_column(
         self, _club_map, _bonus, _stripe, _tagged_timed, _union_timed
     ):
-        venmo_rows = [
-            TaggedManualAuditRow(
-                amount_usd=100.0,
-                payer_name="Jane Doe",
-                account_tag="@godfather4444",
-                group_title="GTO / 3011-9668 / Pvtenis",
-                club_label="ClubGTO",
-                time_label="June 21, 2026 at 11:57 PM",
-            )
-        ]
+        from api.audit_export import _TimedTaggedManualAuditRow
+
+        venmo_row = TaggedManualAuditRow(
+            amount_usd=100.0,
+            payer_name="Jane Doe",
+            account_tag="@godfather4444",
+            group_title="GTO / 3011-9668 / Pvtenis",
+            club_label="ClubGTO",
+            time_label="June 21, 2026 at 11:57 PM",
+        )
 
         def tagged_side_effect(
             session, payment_cls, build_read, club_names, from_dt, to_dt, *, audit_date, tag_field
         ):
             if payment_cls.__name__ == "VenmoPayment":
-                return venmo_rows
+                return [
+                    _TimedTaggedManualAuditRow(
+                        occurred_at=datetime(2026, 6, 21, 23, 57, tzinfo=timezone.utc),
+                        row=venmo_row,
+                    )
+                ]
             return []
 
         with patch(
-            "api.audit_export._fetch_tagged_manual_rows",
+            "api.audit_export._fetch_tagged_manual_rows_timed",
             side_effect=tagged_side_effect,
         ):
             content = build_audit_workbook(

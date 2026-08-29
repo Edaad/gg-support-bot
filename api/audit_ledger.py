@@ -53,6 +53,7 @@ UNION_DEPOSIT_SOURCE_LABELS: dict[str, str] = {
     "zelle": "Union Zelle",
     "cashapp": "Union Cash App",
     "applepay": "Union Apple Pay",
+    "venmo": "Union Venmo",
 }
 
 UNION_MATCHING_SOURCE_OPTIONS: tuple[str, ...] = tuple(

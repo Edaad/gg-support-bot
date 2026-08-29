@@ -1,4 +1,4 @@
-"""Deduplicated union-type deposit picker (Zelle / Cash App / Apple Pay)."""
+"""Deduplicated union-type deposit picker (Zelle / Cash App / Apple Pay / Venmo)."""
 
 from __future__ import annotations
 

@@ -80,9 +80,42 @@ class BuildDepositPickerMethodsTests(unittest.TestCase):
 
         shown = build_deposit_picker_methods(1, Decimal("100"))
         names = [m["name"] for m in shown]
-        self.assertEqual(names, ["Zelle", "Venmo"])
-        self.assertEqual(shown[0]["picker_kind"], "union_type")
-        self.assertEqual(shown[0]["type_slug"], "zelle")
+        self.assertEqual(names, ["Venmo", "Zelle"])
+        zelle_row = next(m for m in shown if m["type_slug"] == "zelle")
+        venmo_row = next(m for m in shown if m["type_slug"] == "venmo")
+        self.assertEqual(zelle_row["picker_kind"], "union_type")
+        self.assertEqual(venmo_row["picker_kind"], "union_type")
+
+    @patch("bot.services.union_deposit_picker.get_methods_for_amount")
+    def test_deduplicates_venmo_union_and_club(self, mock_get):
+        mock_get.return_value = [
+            {
+                "id": 1,
+                "name": "Zelle",
+                "slug": "zelle",
+                "tracks_manual_requests": False,
+            },
+            {
+                "id": 2,
+                "name": "Venmo",
+                "slug": "venmo",
+                "tracks_manual_requests": False,
+            },
+            {
+                "id": 10,
+                "name": "Venmo",
+                "slug": "venmo-pool",
+                "tracks_manual_requests": True,
+                "union_type": "venmo",
+            },
+        ]
+
+        shown = build_deposit_picker_methods(1, Decimal("100"))
+        names = [m["name"] for m in shown]
+        self.assertEqual(names, ["Venmo", "Zelle"])
+        venmo_row = next(m for m in shown if m["name"] == "Venmo")
+        self.assertEqual(venmo_row["picker_kind"], "union_type")
+        self.assertEqual(venmo_row["type_slug"], "venmo")
 
     @patch("bot.services.union_deposit_picker.get_methods_for_amount")
     def test_shows_type_when_union_only(self, mock_get):
@@ -165,6 +198,8 @@ class UnionMethodTypesTests(unittest.TestCase):
     def test_club_slug_map(self):
         self.assertEqual(UNION_METHOD_TYPES["zelle"]["club_slug"], "zelle")
         self.assertEqual(UNION_METHOD_TYPES["cashapp"]["club_slug"], "cashapp")
+        self.assertEqual(UNION_METHOD_TYPES["venmo"]["club_slug"], "venmo")
+        self.assertEqual(UNION_METHOD_TYPES["venmo"]["name"], "Venmo")
 
 
 class EnsureUniqueTagTests(unittest.TestCase):

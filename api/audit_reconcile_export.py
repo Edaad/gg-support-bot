@@ -131,6 +131,7 @@ _MATCHING_SOURCE_FILL_HEX: dict[str, str] = {
     "Vaughn Cashout Cash App": "7DCEA0",
     "PayPal": "D6F5FB",
     "Union Apple Pay": "E8DAEF",
+    "Union Venmo": "D4E6F7",
     "RT PayPal": "D6F5FB",
     "Cashout PayPal": "D6F5FB",
     "Crypto": "FDEBD0",

@@ -19,7 +19,7 @@ function formatUsd(amount: number | string): string {
 type Props = {
   token: string
   methodId?: number
-  methodType?: 'zelle' | 'cashapp' | 'applepay'
+  methodType?: 'zelle' | 'cashapp' | 'applepay' | 'venmo'
   depositUnion?: 'tmt' | 'massiv'
   clubId?: number
   methodSlug?: string

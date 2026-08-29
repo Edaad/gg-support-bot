@@ -398,6 +398,9 @@ _STRIPE_HARDCODE_DEFAULT_TEXT = (
     "{{hyperlink}}"
 )
 _PLACEHOLDER_RESPONSE_TEXT = frozenset({"long text", "test", "placeholder", "todo"})
+_DEPOSIT_UNION_TYPE_PATTERN = (
+    r"^deptype:(" + "|".join(sorted(UNION_METHOD_TYPES)) + r")$"
+)
 
 DEPOSIT_REMINDER_SECONDS = 600  # 10 minutes
 TIMEOUT_SECONDS = 600
@@ -3259,7 +3262,7 @@ def get_deposit_handler() -> ConversationHandler:
             DEPOSIT_CHOOSE: [
                 CallbackQueryHandler(
                     deposit_union_type_chosen,
-                    pattern=r"^deptype:(zelle|cashapp|applepay)$",
+                    pattern=_DEPOSIT_UNION_TYPE_PATTERN,
                 ),
                 CallbackQueryHandler(deposit_method_chosen, pattern=r"^dep:\d+$"),
                 _DEPOSIT_CANCEL,

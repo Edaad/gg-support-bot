@@ -519,15 +519,25 @@ def build_audit_workbook(session: Session, audit_date: str) -> bytes:
             union_type="zelle",
         ),
     )
-    venmo_rows = _fetch_tagged_manual_rows(
-        session,
-        VenmoPayment,
-        build_venmo_payment_read,
-        club_names,
-        from_dt,
-        to_dt,
-        audit_date=audit_date,
-        tag_field="venmo_handle",
+    venmo_rows = _merge_timed_tagged_rows(
+        _fetch_tagged_manual_rows_timed(
+            session,
+            VenmoPayment,
+            build_venmo_payment_read,
+            club_names,
+            from_dt,
+            to_dt,
+            audit_date=audit_date,
+            tag_field="venmo_handle",
+        ),
+        _fetch_union_deposit_audit_rows_timed(
+            session,
+            club_names,
+            from_dt,
+            to_dt,
+            audit_date=audit_date,
+            union_type="venmo",
+        ),
     )
     cashapp_rows = _merge_timed_tagged_rows(
         _fetch_tagged_manual_rows_timed(

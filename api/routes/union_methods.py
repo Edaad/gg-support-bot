@@ -34,7 +34,7 @@ router = APIRouter(
     dependencies=[Depends(get_current_admin)],
 )
 
-UnionMethodTypeSlug = Literal["zelle", "cashapp", "applepay"]
+UnionMethodTypeSlug = Literal["zelle", "cashapp", "applepay", "venmo"]
 DepositUnionSlug = Literal["tmt", "massiv"]
 
 

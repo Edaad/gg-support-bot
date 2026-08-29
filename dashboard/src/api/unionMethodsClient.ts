@@ -35,7 +35,7 @@ async function request<T>(path: string, opts: RequestInit = {}, token?: string):
   return res.json()
 }
 
-export type UnionMethodTypeSlug = 'zelle' | 'cashapp' | 'applepay'
+export type UnionMethodTypeSlug = 'zelle' | 'cashapp' | 'applepay' | 'venmo'
 export type DepositUnionSlug = 'tmt' | 'massiv'
 
 export const UNION_METHOD_TYPE_OPTIONS: {
@@ -45,6 +45,7 @@ export const UNION_METHOD_TYPE_OPTIONS: {
   { value: 'zelle', label: 'Zelle' },
   { value: 'cashapp', label: 'Cash App' },
   { value: 'applepay', label: 'Apple Pay' },
+  { value: 'venmo', label: 'Venmo' },
 ]
 
 export const DEPOSIT_UNION_OPTIONS: {

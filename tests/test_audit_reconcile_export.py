@@ -218,6 +218,7 @@ class ReconcileExportTestCase(unittest.TestCase):
         ]
         self.assertEqual(source_list[0], "GTO Stripe")
         self.assertIn("Union Zelle", source_list)
+        self.assertIn("Union Venmo", source_list)
         self.assertIn("Chip Transfer (Player)", source_list)
         self.assertIn("Free Play", source_list)
         self.assertIn("Back to Club", source_list)
@@ -227,7 +228,7 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertTrue(matching.column_dimensions["AD"].hidden)
         self.assertTrue(matching.column_dimensions["AE"].hidden)
         hidden_headers = [
-            matching.cell(row=1, column=col).value for col in range(30, 60)
+            matching.cell(row=1, column=col).value for col in range(30, 65)
         ]
         self.assertIn("Cashout Venmo", hidden_headers)
         self.assertIn("Vaughn Cashout Venmo", hidden_headers)

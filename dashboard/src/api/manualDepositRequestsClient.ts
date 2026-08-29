@@ -69,8 +69,8 @@ export type ListManualDepositRequestsParams = {
   club_id?: number
   method_id?: number
   method_slug?: string
-  type?: 'zelle' | 'cashapp' | 'applepay'
-  method_type?: 'zelle' | 'cashapp' | 'applepay'
+  type?: 'zelle' | 'cashapp' | 'applepay' | 'venmo'
+  method_type?: 'zelle' | 'cashapp' | 'applepay' | 'venmo'
   deposit_union?: 'tmt' | 'massiv'
   trade_record_checked?: boolean
   include_inactive_methods?: boolean

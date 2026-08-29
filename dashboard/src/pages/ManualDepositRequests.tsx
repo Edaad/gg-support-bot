@@ -118,7 +118,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
   const methodTypeFilter: UnionMethodTypeSlug | null =
     pageView === 'deposits' &&
     methodTypeFilterParam &&
-    (['zelle', 'cashapp', 'applepay'] as const).includes(
+    (['zelle', 'cashapp', 'applepay', 'venmo'] as const).includes(
       methodTypeFilterParam as UnionMethodTypeSlug,
     )
       ? (methodTypeFilterParam as UnionMethodTypeSlug)
@@ -225,6 +225,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
       zelle: [],
       cashapp: [],
       applepay: [],
+      venmo: [],
     }
     for (const m of filteredMethods) {
       if (grouped[m.type]) grouped[m.type].push(m)
