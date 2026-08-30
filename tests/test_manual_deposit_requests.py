@@ -383,9 +383,56 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
 
 
 class ClubDepositDeliverableTests(unittest.TestCase):
+    def _deliverable_session(
+        self,
+        *,
+        tiers,
+        method_id: int = 9,
+        has_sub_options: bool = False,
+        variant_count: int = 1,
+        active_sub_count: int = 0,
+    ):
+        from db.models import ClubPaymentMethod, ClubPaymentSubOption, ClubPaymentTier, ClubPaymentTierVariant
+
+        tier_q = MagicMock()
+        tier_q.filter_by.return_value = tier_q
+        tier_q.order_by.return_value = tier_q
+        tier_q.all.return_value = tiers
+
+        variant_q = MagicMock()
+        variant_q.filter_by.return_value = variant_q
+        variant_q.filter.return_value = variant_q
+        variant_q.count.return_value = variant_count
+
+        sub_q = MagicMock()
+        sub_q.filter_by.return_value = sub_q
+        sub_q.count.return_value = active_sub_count
+
+        method_q = MagicMock()
+        method_q.get.return_value = SimpleNamespace(
+            id=method_id,
+            is_active=True,
+            has_sub_options=has_sub_options,
+        )
+
+        session = MagicMock()
+
+        def query_side_effect(model):
+            if model is ClubPaymentMethod:
+                return method_q
+            if model is ClubPaymentTier:
+                return tier_q
+            if model is ClubPaymentTierVariant:
+                return variant_q
+            if model is ClubPaymentSubOption:
+                return sub_q
+            return MagicMock()
+
+        session.query.side_effect = query_side_effect
+        return session
+
     def test_respects_tier_max_for_club_method(self):
         from bot.services import club_payment_v2
-        from db.models import ClubPaymentTier, ClubPaymentTierVariant
 
         tier_under = SimpleNamespace(
             id=1,
@@ -401,27 +448,7 @@ class ClubDepositDeliverableTests(unittest.TestCase):
             use_group_checkout_link=True,
             sort_order=1,
         )
-
-        tier_q = MagicMock()
-        tier_q.filter_by.return_value = tier_q
-        tier_q.order_by.return_value = tier_q
-        tier_q.all.return_value = [tier_under, tier_over]
-
-        variant_q = MagicMock()
-        variant_q.filter_by.return_value = variant_q
-        variant_q.filter.return_value = variant_q
-        variant_q.count.return_value = 1
-
-        session = MagicMock()
-
-        def query_side_effect(model):
-            if model is ClubPaymentTier:
-                return tier_q
-            if model is ClubPaymentTierVariant:
-                return variant_q
-            return MagicMock()
-
-        session.query.side_effect = query_side_effect
+        session = self._deliverable_session(tiers=[tier_under, tier_over])
 
         self.assertTrue(
             club_payment_v2.club_deposit_method_deliverable(
@@ -436,7 +463,6 @@ class ClubDepositDeliverableTests(unittest.TestCase):
 
     def test_requires_variant_or_checkout_on_matching_tier(self):
         from bot.services import club_payment_v2
-        from db.models import ClubPaymentTier, ClubPaymentTierVariant
 
         tier = SimpleNamespace(
             id=1,
@@ -445,30 +471,59 @@ class ClubDepositDeliverableTests(unittest.TestCase):
             use_group_checkout_link=False,
             sort_order=0,
         )
-        tier_q = MagicMock()
-        tier_q.filter_by.return_value = tier_q
-        tier_q.order_by.return_value = tier_q
-        tier_q.all.return_value = [tier]
-
-        variant_q = MagicMock()
-        variant_q.filter_by.return_value = variant_q
-        variant_q.filter.return_value = variant_q
-        variant_q.count.return_value = 0
-
-        session = MagicMock()
-
-        def query_side_effect(model):
-            if model is ClubPaymentTier:
-                return tier_q
-            if model is ClubPaymentTierVariant:
-                return variant_q
-            return MagicMock()
-
-        session.query.side_effect = query_side_effect
+        session = self._deliverable_session(tiers=[tier], variant_count=0)
 
         self.assertFalse(
             club_payment_v2.club_deposit_method_deliverable(
                 session, 1, Decimal("2000")
+            )
+        )
+
+    def test_crypto_deliverable_with_active_sub_options(self):
+        from bot.services import club_payment_v2
+
+        tier = SimpleNamespace(
+            id=1,
+            min_amount=Decimal("20"),
+            max_amount=None,
+            use_group_checkout_link=False,
+            sort_order=0,
+        )
+        session = self._deliverable_session(
+            tiers=[tier],
+            method_id=3,
+            has_sub_options=True,
+            variant_count=0,
+            active_sub_count=11,
+        )
+
+        self.assertTrue(
+            club_payment_v2.club_deposit_method_deliverable(
+                session, 3, Decimal("100")
+            )
+        )
+
+    def test_crypto_not_deliverable_without_active_sub_options(self):
+        from bot.services import club_payment_v2
+
+        tier = SimpleNamespace(
+            id=1,
+            min_amount=Decimal("20"),
+            max_amount=None,
+            use_group_checkout_link=False,
+            sort_order=0,
+        )
+        session = self._deliverable_session(
+            tiers=[tier],
+            method_id=3,
+            has_sub_options=True,
+            variant_count=0,
+            active_sub_count=0,
+        )
+
+        self.assertFalse(
+            club_payment_v2.club_deposit_method_deliverable(
+                session, 3, Decimal("100")
             )
         )
 

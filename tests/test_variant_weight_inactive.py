@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from api.schemas_v2 import ClubPaymentTierVariantCreate, ClubPaymentTierVariantUpdate
 from bot.handlers import deposit as dep
 from bot.services import club_payment_v2
-from db.models import ClubPaymentTier, ClubPaymentTierVariant
+from db.models import ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant
 
 
 def _variant_row(
@@ -115,6 +115,32 @@ class PickVariantInactiveTests(unittest.TestCase):
 
 
 class DeliverabilityInactiveTests(unittest.TestCase):
+    def _method_session(self, *, method_id: int = 4, tiers, variant_q):
+        method_q = MagicMock()
+        method_q.get.return_value = SimpleNamespace(
+            id=method_id,
+            is_active=True,
+            has_sub_options=False,
+        )
+        tier_q = MagicMock()
+        tier_q.filter_by.return_value = tier_q
+        tier_q.order_by.return_value = tier_q
+        tier_q.all.return_value = tiers
+
+        session = MagicMock()
+
+        def query_side_effect(model):
+            if model is ClubPaymentMethod:
+                return method_q
+            if model is ClubPaymentTier:
+                return tier_q
+            if model is ClubPaymentTierVariant:
+                return variant_q
+            return MagicMock()
+
+        session.query.side_effect = query_side_effect
+        return session
+
     def test_not_deliverable_when_only_inactive_variants(self):
         tier = SimpleNamespace(
             id=1,
@@ -123,26 +149,12 @@ class DeliverabilityInactiveTests(unittest.TestCase):
             use_group_checkout_link=False,
             sort_order=0,
         )
-        tier_q = MagicMock()
-        tier_q.filter_by.return_value = tier_q
-        tier_q.order_by.return_value = tier_q
-        tier_q.all.return_value = [tier]
-
         variant_q = MagicMock()
         variant_q.filter_by.return_value = variant_q
         variant_q.filter.return_value = variant_q
         variant_q.count.side_effect = [2, 0]
 
-        session = MagicMock()
-
-        def query_side_effect(model):
-            if model is ClubPaymentTier:
-                return tier_q
-            if model is ClubPaymentTierVariant:
-                return variant_q
-            return MagicMock()
-
-        session.query.side_effect = query_side_effect
+        session = self._method_session(tiers=[tier], variant_q=variant_q)
 
         self.assertFalse(
             club_payment_v2.club_deposit_method_deliverable(
@@ -158,26 +170,12 @@ class DeliverabilityInactiveTests(unittest.TestCase):
             use_group_checkout_link=False,
             sort_order=0,
         )
-        tier_q = MagicMock()
-        tier_q.filter_by.return_value = tier_q
-        tier_q.order_by.return_value = tier_q
-        tier_q.all.return_value = [tier]
-
         variant_q = MagicMock()
         variant_q.filter_by.return_value = variant_q
         variant_q.filter.return_value = variant_q
         variant_q.count.side_effect = [2, 1]
 
-        session = MagicMock()
-
-        def query_side_effect(model):
-            if model is ClubPaymentTier:
-                return tier_q
-            if model is ClubPaymentTierVariant:
-                return variant_q
-            return MagicMock()
-
-        session.query.side_effect = query_side_effect
+        session = self._method_session(tiers=[tier], variant_q=variant_q)
 
         self.assertTrue(
             club_payment_v2.club_deposit_method_deliverable(
@@ -193,26 +191,12 @@ class DeliverabilityInactiveTests(unittest.TestCase):
             use_group_checkout_link=True,
             sort_order=0,
         )
-        tier_q = MagicMock()
-        tier_q.filter_by.return_value = tier_q
-        tier_q.order_by.return_value = tier_q
-        tier_q.all.return_value = [tier]
-
         variant_q = MagicMock()
         variant_q.filter_by.return_value = variant_q
         variant_q.filter.return_value = variant_q
         variant_q.count.return_value = 0
 
-        session = MagicMock()
-
-        def query_side_effect(model):
-            if model is ClubPaymentTier:
-                return tier_q
-            if model is ClubPaymentTierVariant:
-                return variant_q
-            return MagicMock()
-
-        session.query.side_effect = query_side_effect
+        session = self._method_session(tiers=[tier], variant_q=variant_q)
 
         self.assertTrue(
             club_payment_v2.club_deposit_method_deliverable(

@@ -115,7 +115,12 @@ def club_deposit_method_deliverable(
     method_id: int,
     amount: Decimal,
 ) -> bool:
-    """True when a club deposit method has a tier (and variant or checkout) for amount."""
+    """True when a club deposit method has a tier (and variant, checkout, or sub-option) for amount."""
+    method = session.query(ClubPaymentMethod).get(int(method_id))
+    if method is None or not method.is_active:
+        return False
+    has_sub_options = bool(getattr(method, "has_sub_options", False))
+
     tiers = (
         session.query(ClubPaymentTier)
         .filter_by(method_id=int(method_id))
@@ -130,6 +135,14 @@ def club_deposit_method_deliverable(
             continue
         if tier.max_amount is not None and amt > Decimal(str(tier.max_amount)):
             continue
+        if has_sub_options:
+            active_sub_count = (
+                session.query(ClubPaymentSubOption)
+                .filter_by(method_id=int(method_id), is_active=True)
+                .count()
+            )
+            return active_sub_count > 0
+
         variant_count = (
             session.query(ClubPaymentTierVariant)
             .filter_by(tier_id=int(tier.id))
