@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
-from api.method_owner import normalize_method_owner
+from api.method_owner import resolve_ingest_method_owner
 from bot.services.club import get_group_title_for_chat
 from bot.services.group_chat_invite_links import resolve_group_chat_url_for_payment
 from bot.services.payment_binding_events import (
@@ -226,7 +226,12 @@ async def ingest_zelle_payment(
     test: bool = False,
 ) -> IngestResult:
     """Create payment row, auto-bind if known payer, send Telegram notification."""
-    owner = normalize_method_owner(method_owner)
+    owner = resolve_ingest_method_owner(
+        source="deposit_zelle",
+        variant=zelle_recipient,
+        method_owner=method_owner,
+        memo=memo,
+    )
     payer = (payer_name or "").strip()
     if not payer:
         raise ValueError("payer_name is required")

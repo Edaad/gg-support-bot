@@ -40,3 +40,25 @@ def infer_method_owner_for_backfill(
     ):
         return METHOD_OWNER_VAUGHN
     return METHOD_OWNER_ROUND_TABLE
+
+
+def resolve_ingest_method_owner(
+    *,
+    source: str,
+    variant: str | None,
+    method_owner: str,
+    memo: str | None = None,
+    club_slug: str = "",
+) -> str:
+    """Apply variant-based Vaughn detection on top of Zapier method_owner."""
+    owner = normalize_method_owner(method_owner)
+    if owner == METHOD_OWNER_MATEOS:
+        return owner
+    if is_vaughn_method(
+        source=source,
+        variant=variant,
+        club_slug=club_slug,
+        memo=memo,
+    ):
+        return METHOD_OWNER_VAUGHN
+    return owner

@@ -3,6 +3,8 @@
 Usage:
     DATABASE_URL=... python migrate_payment_method_owner.py
     DATABASE_URL=... python migrate_payment_method_owner.py --dry-run
+    DATABASE_URL=... python migrate_payment_method_owner.py --reclassify
+    DATABASE_URL=... python migrate_payment_method_owner.py --reclassify --dry-run
 
 Idempotent: safe to run multiple times (IF NOT EXISTS / skips rows already set).
 """
@@ -18,14 +20,7 @@ from sqlalchemy import inspect, text
 from api.club_slug import slug_for_club_name
 from api.method_owner import METHOD_OWNER_ROUND_TABLE, METHOD_OWNER_VAUGHN, infer_method_owner_for_backfill
 from db.connection import get_db, init_engine
-from db.models import (
-    CashAppPayment,
-    Club,
-    CryptoPayment,
-    PayPalPayment,
-    VenmoPayment,
-    ZellePayment,
-)
+from db.models import Club
 
 load_dotenv()
 
@@ -36,6 +31,39 @@ PAYMENT_TABLES = (
     "paypal_payments",
     "crypto_payments",
 )
+
+TABLE_BACKFILL_CONFIG: dict[str, dict[str, str | None]] = {
+    "venmo_payments": {
+        "source": "deposit_venmo",
+        "variant_col": "venmo_handle",
+        "memo_col": "memo",
+        "alert_scope_col": None,
+    },
+    "zelle_payments": {
+        "source": "deposit_zelle",
+        "variant_col": "zelle_recipient",
+        "memo_col": "memo",
+        "alert_scope_col": None,
+    },
+    "cashapp_payments": {
+        "source": "deposit_cashapp",
+        "variant_col": "cashapp_handle",
+        "memo_col": "memo",
+        "alert_scope_col": None,
+    },
+    "paypal_payments": {
+        "source": "deposit_paypal",
+        "variant_col": "paypal_email",
+        "memo_col": "memo",
+        "alert_scope_col": None,
+    },
+    "crypto_payments": {
+        "source": "deposit_crypto",
+        "variant_col": "token_symbol",
+        "memo_col": None,
+        "alert_scope_col": "alert_scope",
+    },
+}
 
 ADD_COLUMN = """
 ALTER TABLE {table}
@@ -74,97 +102,60 @@ def _club_slug_for_row(
     return ""
 
 
-def _backfill_venmo(session, club_slugs: dict[int, str]) -> int:
-    updated = 0
-    rows = session.query(VenmoPayment).filter(VenmoPayment.method_owner.is_(None)).all()
-    for row in rows:
-        row.method_owner = infer_method_owner_for_backfill(
-            source="deposit_venmo",
-            variant=row.venmo_handle,
-            club_slug=_club_slug_for_row(
-                club_id=row.club_id,
-                alert_scope=None,
-                club_slugs=club_slugs,
-            ),
-            memo=row.memo,
-        )
-        updated += 1
-    return updated
+def _null_count(session, table: str) -> int:
+    return int(
+        session.execute(
+            text(f"SELECT COUNT(*) FROM {table} WHERE method_owner IS NULL")
+        ).scalar_one()
+    )
 
 
-def _backfill_zelle(session, club_slugs: dict[int, str]) -> int:
-    updated = 0
-    rows = session.query(ZellePayment).filter(ZellePayment.method_owner.is_(None)).all()
-    for row in rows:
-        row.method_owner = infer_method_owner_for_backfill(
-            source="deposit_zelle",
-            variant=row.zelle_recipient,
-            club_slug=_club_slug_for_row(
-                club_id=row.club_id,
-                alert_scope=None,
-                club_slugs=club_slugs,
-            ),
-            memo=row.memo,
-        )
-        updated += 1
-    return updated
-
-
-def _backfill_cashapp(session, club_slugs: dict[int, str]) -> int:
-    updated = 0
+def _backfill_table(
+    session,
+    *,
+    table: str,
+    source: str,
+    variant_col: str,
+    club_slugs: dict[int, str],
+    memo_col: str | None = "memo",
+    alert_scope_col: str | None = None,
+) -> int:
+    cols = ["id", "club_id", variant_col]
+    if memo_col:
+        cols.append(memo_col)
+    if alert_scope_col:
+        cols.append(alert_scope_col)
     rows = (
-        session.query(CashAppPayment)
-        .filter(CashAppPayment.method_owner.is_(None))
+        session.execute(
+            text(
+                f"SELECT {', '.join(cols)} FROM {table} "
+                "WHERE method_owner IS NULL ORDER BY id"
+            )
+        )
+        .mappings()
         .all()
     )
-    for row in rows:
-        row.method_owner = infer_method_owner_for_backfill(
-            source="deposit_cashapp",
-            variant=row.cashapp_handle,
-            club_slug=_club_slug_for_row(
-                club_id=row.club_id,
-                alert_scope=None,
-                club_slugs=club_slugs,
-            ),
-            memo=row.memo,
-        )
-        updated += 1
-    return updated
-
-
-def _backfill_paypal(session, club_slugs: dict[int, str]) -> int:
     updated = 0
-    rows = session.query(PayPalPayment).filter(PayPalPayment.method_owner.is_(None)).all()
     for row in rows:
-        row.method_owner = infer_method_owner_for_backfill(
-            source="deposit_paypal",
-            variant=row.paypal_email,
+        owner = infer_method_owner_for_backfill(
+            source=source,
+            variant=row[variant_col],
             club_slug=_club_slug_for_row(
-                club_id=row.club_id,
-                alert_scope=None,
+                club_id=row["club_id"],
+                alert_scope=row.get(alert_scope_col) if alert_scope_col else None,
                 club_slugs=club_slugs,
             ),
-            memo=row.memo,
+            memo=row.get(memo_col) if memo_col else None,
         )
-        updated += 1
-    return updated
-
-
-def _backfill_crypto(session, club_slugs: dict[int, str]) -> int:
-    updated = 0
-    rows = session.query(CryptoPayment).filter(CryptoPayment.method_owner.is_(None)).all()
-    for row in rows:
-        row.method_owner = infer_method_owner_for_backfill(
-            source="deposit_crypto",
-            variant=row.token_symbol,
-            club_slug=_club_slug_for_row(
-                club_id=row.club_id,
-                alert_scope=row.alert_scope,
-                club_slugs=club_slugs,
+        result = session.execute(
+            text(
+                f"UPDATE {table} "
+                "SET method_owner = :owner "
+                "WHERE id = :id AND method_owner IS NULL"
             ),
-            memo=None,
+            {"owner": owner, "id": row["id"]},
         )
-        updated += 1
+        updated += int(result.rowcount or 0)
     return updated
 
 
@@ -204,6 +195,93 @@ def _preview_table(
     return sum(counts.values()), counts
 
 
+def _reclassify_table(
+    session,
+    *,
+    table: str,
+    source: str,
+    variant_col: str,
+    club_slugs: dict[int, str],
+    memo_col: str | None = "memo",
+    alert_scope_col: str | None = None,
+    dry_run: bool = False,
+) -> tuple[int, Counter[str]]:
+    cols = ["id", "club_id", "method_owner", variant_col]
+    if memo_col:
+        cols.append(memo_col)
+    if alert_scope_col:
+        cols.append(alert_scope_col)
+    rows = session.execute(
+        text(f"SELECT {', '.join(cols)} FROM {table} ORDER BY id")
+    ).mappings().all()
+    changes: Counter[str] = Counter()
+    updated = 0
+    for row in rows:
+        inferred = infer_method_owner_for_backfill(
+            source=source,
+            variant=row[variant_col],
+            club_slug=_club_slug_for_row(
+                club_id=row["club_id"],
+                alert_scope=row.get(alert_scope_col) if alert_scope_col else None,
+                club_slugs=club_slugs,
+            ),
+            memo=row.get(memo_col) if memo_col else None,
+        )
+        current = (row["method_owner"] or "").strip()
+        if current == inferred:
+            continue
+        changes[f"{current}->{inferred}"] += 1
+        if dry_run:
+            continue
+        result = session.execute(
+            text(
+                f"UPDATE {table} "
+                "SET method_owner = :owner "
+                "WHERE id = :id AND method_owner = :current"
+            ),
+            {"owner": inferred, "id": row["id"], "current": current},
+        )
+        updated += int(result.rowcount or 0)
+    return updated, changes
+
+
+def reclassify_method_owner(*, dry_run: bool = False) -> None:
+    engine = init_engine()
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    totals: Counter[str] = Counter()
+    total_updated = 0
+    with get_db() as session:
+        club_slugs = _club_slug_by_id(session)
+        for table, cfg in TABLE_BACKFILL_CONFIG.items():
+            if table not in existing_tables:
+                continue
+            updated, changes = _reclassify_table(
+                session,
+                table=table,
+                source=str(cfg["source"]),
+                variant_col=str(cfg["variant_col"]),
+                club_slugs=club_slugs,
+                memo_col=cfg["memo_col"],
+                alert_scope_col=cfg["alert_scope_col"],
+                dry_run=dry_run,
+            )
+            total_updated += updated
+            totals.update(changes)
+            if changes:
+                print(f"  {table}: {dict(changes)}")
+        if not dry_run:
+            session.commit()
+
+    mode = "dry run" if dry_run else "applied"
+    print(f"method_owner reclassify {mode}: {total_updated} row(s) updated")
+    if totals:
+        print(f"  transitions: {dict(totals)}")
+    else:
+        print("  no mismatches found")
+
+
 def dry_run_backfill() -> None:
     engine = init_engine()
     inspector = inspect(engine)
@@ -212,47 +290,17 @@ def dry_run_backfill() -> None:
     previews: dict[str, tuple[int, Counter[str]]] = {}
     with get_db() as session:
         club_slugs = _club_slug_by_id(session)
-        if "venmo_payments" in existing_tables:
-            previews["venmo_payments"] = _preview_table(
+        for table, cfg in TABLE_BACKFILL_CONFIG.items():
+            if table not in existing_tables:
+                continue
+            previews[table] = _preview_table(
                 session,
-                table="venmo_payments",
-                source="deposit_venmo",
-                variant_col="venmo_handle",
+                table=table,
+                source=str(cfg["source"]),
+                variant_col=str(cfg["variant_col"]),
                 club_slugs=club_slugs,
-            )
-        if "zelle_payments" in existing_tables:
-            previews["zelle_payments"] = _preview_table(
-                session,
-                table="zelle_payments",
-                source="deposit_zelle",
-                variant_col="zelle_recipient",
-                club_slugs=club_slugs,
-            )
-        if "cashapp_payments" in existing_tables:
-            previews["cashapp_payments"] = _preview_table(
-                session,
-                table="cashapp_payments",
-                source="deposit_cashapp",
-                variant_col="cashapp_handle",
-                club_slugs=club_slugs,
-            )
-        if "paypal_payments" in existing_tables:
-            previews["paypal_payments"] = _preview_table(
-                session,
-                table="paypal_payments",
-                source="deposit_paypal",
-                variant_col="paypal_email",
-                club_slugs=club_slugs,
-            )
-        if "crypto_payments" in existing_tables:
-            previews["crypto_payments"] = _preview_table(
-                session,
-                table="crypto_payments",
-                source="deposit_crypto",
-                variant_col="token_symbol",
-                club_slugs=club_slugs,
-                memo_col=None,
-                alert_scope_col="alert_scope",
+                memo_col=cfg["memo_col"],
+                alert_scope_col=cfg["alert_scope_col"],
             )
 
     totals = Counter()
@@ -290,16 +338,31 @@ def main() -> None:
             conn.execute(text(ADD_COLUMN.format(table=table)))
         conn.commit()
 
+    counts: dict[str, int] = {}
     with get_db() as session:
         club_slugs = _club_slug_by_id(session)
-        counts = {
-            "venmo_payments": _backfill_venmo(session, club_slugs),
-            "zelle_payments": _backfill_zelle(session, club_slugs),
-            "cashapp_payments": _backfill_cashapp(session, club_slugs),
-            "paypal_payments": _backfill_paypal(session, club_slugs),
-            "crypto_payments": _backfill_crypto(session, club_slugs),
-        }
+        for table, cfg in TABLE_BACKFILL_CONFIG.items():
+            counts[table] = _backfill_table(
+                session,
+                table=table,
+                source=str(cfg["source"]),
+                variant_col=str(cfg["variant_col"]),
+                club_slugs=club_slugs,
+                memo_col=cfg["memo_col"],
+                alert_scope_col=cfg["alert_scope_col"],
+            )
         session.commit()
+
+        remaining: dict[str, int] = {}
+        for table in PAYMENT_TABLES:
+            nulls = _null_count(session, table)
+            if nulls:
+                remaining[table] = nulls
+        if remaining:
+            raise RuntimeError(
+                "method_owner backfill incomplete; NULL rows remain: "
+                + ", ".join(f"{table}={count}" for table, count in remaining.items())
+            )
 
     with engine.connect() as conn:
         for table in PAYMENT_TABLES:
@@ -319,8 +382,16 @@ if __name__ == "__main__":
         action="store_true",
         help="Preview backfill counts without writing to the database",
     )
+    parser.add_argument(
+        "--reclassify",
+        action="store_true",
+        help="Update rows whose method_owner no longer matches Vaughn heuristics",
+    )
     args = parser.parse_args()
-    if args.dry_run:
+    if args.reclassify:
+        print("method_owner reclassify preview:" if args.dry_run else "method_owner reclassify:")
+        reclassify_method_owner(dry_run=args.dry_run)
+    elif args.dry_run:
         dry_run_backfill()
     else:
         main()

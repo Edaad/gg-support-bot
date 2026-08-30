@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 import httpx
 
-from api.method_owner import normalize_method_owner
+from api.method_owner import resolve_ingest_method_owner
 from bot.services.club import find_group_chat_id_by_name, get_group_title_for_chat
 from bot.services.group_chat_invite_links import resolve_group_chat_url_for_payment
 from bot.services.player_details import (
@@ -505,7 +505,12 @@ async def ingest_venmo_payment(
     test: bool = False,
 ) -> IngestResult:
     """Create payment row, auto-bind if known payer, send Telegram notification."""
-    owner = normalize_method_owner(method_owner)
+    owner = resolve_ingest_method_owner(
+        source="deposit_venmo",
+        variant=venmo_handle,
+        method_owner=method_owner,
+        memo=memo,
+    )
     payer = (payer_name or "").strip()
     if not payer:
         raise ValueError("payer_name is required")
