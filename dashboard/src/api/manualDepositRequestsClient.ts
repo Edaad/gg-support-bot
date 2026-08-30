@@ -56,6 +56,10 @@ export type ManualDepositRequestList = {
   total: number
   limit: number
   offset: number
+  summary: {
+    total_count: number
+    total_amount: number | string
+  }
 }
 
 export type DepositGroupOption = {
@@ -74,6 +78,9 @@ export type ListManualDepositRequestsParams = {
   deposit_union?: 'tmt' | 'massiv'
   trade_record_checked?: boolean
   include_inactive_methods?: boolean
+  variant?: string
+  from?: string
+  to?: string
   q?: string
   limit?: number
   offset?: number
@@ -107,6 +114,9 @@ export function listManualDepositRequests(
   if (params.trade_record_checked != null) {
     q.set('trade_record_checked', String(params.trade_record_checked))
   }
+  if (params.variant?.trim()) q.set('variant', params.variant.trim())
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
   if (params.include_inactive_methods != null) {
     q.set('include_inactive_methods', String(params.include_inactive_methods))
   }
@@ -119,6 +129,52 @@ export function listManualDepositRequests(
     {},
     token,
   )
+}
+
+export function listManualDepositRequestVariants(
+  token: string,
+  params: ListManualDepositRequestsParams = {},
+) {
+  const q = new URLSearchParams()
+  if (params.club_id != null) q.set('club_id', String(params.club_id))
+  if (params.method_id != null) q.set('method_id', String(params.method_id))
+  if (params.method_slug) q.set('method_slug', params.method_slug)
+  const resolvedType = params.type ?? params.method_type
+  if (resolvedType) q.set('type', resolvedType)
+  if (params.deposit_union) q.set('deposit_union', params.deposit_union)
+  if (params.trade_record_checked != null) {
+    q.set('trade_record_checked', String(params.trade_record_checked))
+  }
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  if (params.q != null && params.q.trim()) q.set('q', params.q.trim())
+  const qs = q.toString()
+  return request<{ items: string[] }>(
+    `/api/manual-deposit-requests/variants${qs ? `?${qs}` : ''}`,
+    {},
+    token,
+  )
+}
+
+const EXPORT_PAGE_SIZE = 200
+
+export async function fetchAllManualDepositRequests(
+  token: string,
+  params: ListManualDepositRequestsParams = {},
+): Promise<ManualDepositRequestRow[]> {
+  const all: ManualDepositRequestRow[] = []
+  let offset = 0
+  for (;;) {
+    const res = await listManualDepositRequests(token, {
+      ...params,
+      limit: EXPORT_PAGE_SIZE,
+      offset,
+    })
+    all.push(...res.items)
+    offset += res.items.length
+    if (offset >= res.total || res.items.length === 0) break
+  }
+  return all
 }
 
 export function listMethodManualDepositRequests(
