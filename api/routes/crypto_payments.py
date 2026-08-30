@@ -4,8 +4,8 @@ import logging
 import os
 
 import httpx
-from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Header, HTTPException, Request
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from api.method_owner import MethodOwnerSlug
@@ -67,14 +67,38 @@ class CryptoPaymentIngestResponse(BaseModel):
 
 @router.post("/payments", response_model=CryptoPaymentIngestResponse)
 async def ingest_payment(
-    body: CryptoPaymentIngestBody,
+    request: Request,
     x_crypto_webhook_secret: str | None = Header(None, alias=LOOKUP_HEADER),
 ):
     """Ingest a crypto payment from Zapier; notify staff Telegram group."""
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        logger.warning("crypto ingest: invalid JSON — %s", exc)
+        raise HTTPException(400, "Invalid JSON body") from exc
+
+    if not isinstance(payload, dict):
+        logger.warning(
+            "crypto ingest: JSON body must be an object, got %s",
+            type(payload).__name__,
+        )
+        raise HTTPException(400, "JSON body must be an object")
+
+    try:
+        body = CryptoPaymentIngestBody.model_validate(payload)
+    except ValidationError as exc:
+        logger.warning(
+            "crypto ingest: validation failed top_keys=%s errors=%s",
+            sorted(payload.keys()),
+            exc.errors(),
+        )
+        raise HTTPException(422, detail=exc.errors()) from exc
+
     if debug_notification_enabled():
         logger.info(
             "crypto ingest: request received amount=%r token=%r chain=%r "
-            "from=%r to=%r tx=%r paid_at=%r alert=%r test=%s source_external_id=%r",
+            "from=%r to=%r tx=%r paid_at=%r alert=%r test=%s "
+            "source_external_id=%r method_owner=%r",
             body.amount,
             body.token_symbol,
             body.chain,
@@ -85,6 +109,7 @@ async def ingest_payment(
             body.alert_name,
             body.test,
             body.source_external_id,
+            body.method_owner,
         )
 
     _verify_webhook_secret(x_crypto_webhook_secret)
