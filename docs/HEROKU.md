@@ -627,7 +627,8 @@ heroku config:set -a YOUR_APP \
 2. Keep `GG_DEPOSIT_API_DRY_RUN=true`. Make a `/deposit` in one Round Table group,
    pick RT or AT, then `/add <amount>` — confirm the staff alert shows a `dry_run`
    result for the correct ClubGG club (Round Table vs Aces Table) and player id.
-3. For CC/GTO, confirm club resolves with no union needed.
+3. For GTO, confirm club resolves with no union needed. For Creator Club, pick
+   Creator Club or Aces Table (see below).
 4. Only after the dry-run looks correct, set `GG_DEPOSIT_API_DRY_RUN=false` and
    restart the worker. The ClubGG desktop app must be open/foregrounded and the
    deposit server + tunnel running.
@@ -635,8 +636,33 @@ heroku config:set -a YOUR_APP \
 `Round Table` deposits route to ClubGG **Round Table** (`522594`) or **Aces Table**
 (`983183`) from the customer's last `/deposit` RT/AT choice when one exists (stale
 choices are kept). If the customer never ran `/deposit` / never picked RT or AT,
-`/add` defaults to **Round Table** (RT). `ClubGTO` (`790203`)
-and `Creator Club` (`846162`) route by club name. Restart after config: `heroku restart worker -a YOUR_APP`.
+`/add` defaults to **Round Table** (RT). `Creator Club` (`846162`) works the same
+way with **CC/AT** and defaults to **Creator Club** — so groups already titled
+`CC AT` keep routing to Creator Club until the player picks Aces Table on
+`/deposit`. `ClubGTO` (`790203`) routes by club name.
+Restart after config: `heroku restart worker -a YOUR_APP`.
+
+### Aces Table for Creator Club players
+
+Creator Club `/deposit` and automated `/cashout` offer **Creator Club (TMT Union)**
+and **Aces Table (Massiv Union)**, mirroring Round Table. Before a Creator Club
+player's **first** Aces Table deposit the bot posts the club join link with an
+**I HAVE JOINED** button; the acknowledgement is recorded when that deposit
+completes, so the link reappears if the player abandons the flow. Completing an
+Aces Table deposit also retitles the group `CC AT / <player id> / …`, which still
+resolves to Creator Club for binding, cashouts, and bonuses.
+
+Run the migration once after deploy (adds `groups.aces_join_ack_at`):
+
+```bash
+heroku run -a YOUR_APP -- python migrate_aces_join_ack.py
+```
+
+**Single-group test:** in one Creator Club group run `/deposit`, pick Aces Table,
+confirm the join link + button appear, tap it, finish the deposit, then check the
+title became `CC AT / …` and `/add` dry-run targets **Aces Table**. Run `/deposit`
+again and confirm the join link is **not** shown, and that picking Creator Club
+routes back to **Creator Club**.
 
 ## Automated cashouts on /cashout (fully automated)
 

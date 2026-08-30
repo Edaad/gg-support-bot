@@ -514,10 +514,13 @@ class Group(Base):
     )
     name = Column(String(255), nullable=True)
     first_deposit_claimed = Column(Boolean, default=False)
-    # Last customer-chosen Round Table deposit union ("RT" or "AT"), used to route
-    # auto chip-adding to the correct ClubGG club (Round Table vs Aces Table).
+    # Last customer-chosen deposit union ("RT"/"AT" for Round Table, "CC"/"AT" for
+    # Creator Club), used to route auto chip-adding to the correct ClubGG club.
     last_deposit_union = Column(String(2), nullable=True)
     last_deposit_union_at = Column(DateTime(timezone=True), nullable=True)
+    # Set when a Creator Club player confirms they joined Aces Table, so the
+    # one-time join link is only shown before their first Aces Table deposit.
+    aces_join_ack_at = Column(DateTime(timezone=True), nullable=True)
     added_at = Column(DateTime, server_default=func.now())
 
     club = relationship("Club", back_populates="groups")

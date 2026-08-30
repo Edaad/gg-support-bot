@@ -12,9 +12,11 @@ Design goals:
 - **Idempotent.** ``request_id`` is derived from the Telegram message id so the
   same ``/add`` can never double-send (and the two internal /add code paths can
   never both fire a deposit).
-- **Round Table vs Aces Table** uses the group title prefix when it is only ``RT`` or
-  only ``AT``. When the title shows both (``RT AT / …``), uses the customer's last
-  ``/deposit`` union choice (defaults to **RT** if they never picked).
+- **Union routing** uses the group title prefix when it names exactly one of the
+  club's unions (``AT / …`` is Aces Table). When the title shows both
+  (``RT AT / …``, ``CC AT / …``), uses the customer's last ``/deposit`` union
+  choice, defaulting to the club's home union (**RT** for Round Table, **CC** for
+  Creator Club) if they never picked.
 
 All configuration is via environment variables (see ``.env.example``). The
 per-club on/off switch lives in the database (``clubs.auto_chip_adding_enabled``).
@@ -42,7 +44,13 @@ from bot.services.club import (
     get_last_deposit_union,
 )
 from bot.services.player_details import gg_player_id_from_title, parse_group_title_parts
-from bot.services.round_table_unions import ROUND_TABLE_CLUB_NAME, ROUND_TABLE_UNION_SHORTHANDS
+from bot.services.round_table_unions import (
+    CREATOR_CLUB_CLUB_NAME,
+    ROUND_TABLE_CLUB_NAME,
+    ROUND_TABLE_UNION_SHORTHANDS,
+    home_union_for_club_name,
+    union_shorthands_for_club_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -144,16 +152,19 @@ def resolve_clubgg_club_name(
     """Map a dashboard clubs.name (+ RT/AT union) to a ClubGG club name.
 
     Round Table requires a union: RT -> "Round Table", AT -> "Aces Table".
-    Other clubs map directly. Returns None when it cannot be resolved.
+    Creator Club may also route to Aces Table (AT); with no union it stays
+    Creator Club. Other clubs map directly. Returns None when unresolvable.
     """
     key = (club_name or "").strip().lower()
+    u = (union_shorthand or "").strip().upper()
     if key == ROUND_TABLE_CLUB_NAME.strip().lower():
-        u = (union_shorthand or "").strip().upper()
         if u == "RT":
             return "Round Table"
         if u == "AT":
             return "Aces Table"
         return None
+    if key == CREATOR_CLUB_CLUB_NAME.strip().lower():
+        return "Aces Table" if u == "AT" else "Creator Club"
     return _CLUBGG_CANONICAL.get(key)
 
 
@@ -338,13 +349,41 @@ def _resolve_round_table_union_shorthand(union_shorthand: Optional[str]) -> str:
     return "RT"
 
 
-def _round_table_union_shorthands_in_title(title: Optional[str]) -> frozenset[str]:
+def _union_shorthands_in_title(
+    title: Optional[str], allowed: frozenset[str]
+) -> frozenset[str]:
     parsed = parse_group_title_parts(title)
     if not parsed:
         return frozenset()
-    return frozenset(
-        s for s in parsed.shorthands if s in ROUND_TABLE_UNION_SHORTHANDS
-    )
+    return frozenset(s for s in parsed.shorthands if s in allowed)
+
+
+def _round_table_union_shorthands_in_title(title: Optional[str]) -> frozenset[str]:
+    return _union_shorthands_in_title(title, ROUND_TABLE_UNION_SHORTHANDS)
+
+
+def _resolve_union_for_auto_chip_add(
+    club_name: Optional[str],
+    title: Optional[str],
+    stored_union: Optional[str],
+) -> Optional[str]:
+    """Pick the union for auto chip-add, or None for clubs that have no unions.
+
+    A title naming exactly one of the club's unions is decisive (``AT / …`` is
+    Aces Table). Otherwise the player's last recorded choice wins, falling back to
+    the club's home union so an ambiguous title (``RT AT`` / ``CC AT``) never
+    silently sends chips to the wrong club.
+    """
+    allowed = union_shorthands_for_club_name(club_name)
+    if not allowed:
+        return None
+    title_unions = _union_shorthands_in_title(title, allowed)
+    if len(title_unions) == 1:
+        return next(iter(title_unions))
+    token = (stored_union or "").strip().upper()
+    if token in allowed:
+        return token
+    return home_union_for_club_name(club_name)
 
 
 def _resolve_round_table_union_for_auto_chip_add(
@@ -352,12 +391,10 @@ def _resolve_round_table_union_for_auto_chip_add(
     stored_union: Optional[str],
 ) -> str:
     """Pick RT vs AT for Round Table auto chip-add from title prefix and deposit history."""
-    title_unions = _round_table_union_shorthands_in_title(title)
-    if title_unions == frozenset({"AT"}):
-        return "AT"
-    if title_unions == frozenset({"RT"}):
-        return "RT"
-    return _resolve_round_table_union_shorthand(stored_union)
+    return (
+        _resolve_union_for_auto_chip_add(ROUND_TABLE_CLUB_NAME, title, stored_union)
+        or "RT"
+    )
 
 
 async def _run_single_deposit(
@@ -516,54 +553,45 @@ async def run_auto_chip_add(
     club_name = club.name if club else None
 
     union_shorthand: Optional[str] = None
-    if (club_name or "").strip().lower() == ROUND_TABLE_CLUB_NAME.strip().lower():
+    club_unions = union_shorthands_for_club_name(club_name)
+    if club_unions:
         stored_union, recorded_at = await asyncio.to_thread(
             get_last_deposit_union, int(chat_id)
         )
-        title_unions = _round_table_union_shorthands_in_title(title)
-        union_shorthand = _resolve_round_table_union_for_auto_chip_add(
-            title, stored_union
+        title_unions = _union_shorthands_in_title(title, club_unions)
+        union_shorthand = _resolve_union_for_auto_chip_add(
+            club_name, title, stored_union
         )
-        if title_unions == frozenset({"AT"}):
+        if len(title_unions) == 1:
             logger.info(
-                "auto_chip_add: title prefix AT only on chat %s -> Aces Table",
+                "auto_chip_add: %s title names only %s on chat %s -> union %s",
+                club_name,
+                next(iter(title_unions)),
                 chat_id,
+                union_shorthand,
             )
-        elif title_unions == frozenset({"RT"}):
-            logger.info(
-                "auto_chip_add: title prefix RT only on chat %s -> Round Table",
-                chat_id,
-            )
-        elif title_unions >= frozenset({"RT", "AT"}):
-            if not (stored_union or "").strip():
-                logger.info(
-                    "auto_chip_add: title RT+AT on chat %s; no deposit union; "
-                    "defaulting to RT",
-                    chat_id,
-                )
-            elif not _union_is_fresh(recorded_at, cfg.union_max_age_hours):
-                logger.info(
-                    "auto_chip_add: title RT+AT on chat %s; using stale deposit "
-                    "union %s",
-                    chat_id,
-                    union_shorthand,
-                )
-            else:
-                logger.info(
-                    "auto_chip_add: title RT+AT on chat %s; using deposit union %s",
-                    chat_id,
-                    union_shorthand,
-                )
         elif not (stored_union or "").strip():
             logger.info(
-                "auto_chip_add: no RT/AT in title on chat %s; defaulting to RT",
+                "auto_chip_add: %s title %r ambiguous on chat %s; no deposit "
+                "union; defaulting to %s",
+                club_name,
+                title,
                 chat_id,
+                union_shorthand,
             )
         elif not _union_is_fresh(recorded_at, cfg.union_max_age_hours):
             logger.info(
-                "auto_chip_add: using stale RT/AT deposit union %s for chat %s",
-                union_shorthand,
+                "auto_chip_add: %s chat %s using stale deposit union %s",
+                club_name,
                 chat_id,
+                union_shorthand,
+            )
+        else:
+            logger.info(
+                "auto_chip_add: %s chat %s using deposit union %s",
+                club_name,
+                chat_id,
+                union_shorthand,
             )
 
     clubgg_club = resolve_clubgg_club_name(club_name, union_shorthand)
@@ -730,16 +758,12 @@ async def run_auto_claim(
         club_name = club.name if club else None
 
         resolved_union: Optional[str] = (union_shorthand or "").strip().upper() or None
-        if (
-            resolved_union is None
-            and (club_name or "").strip().lower()
-            == ROUND_TABLE_CLUB_NAME.strip().lower()
-        ):
+        if resolved_union is None and union_shorthands_for_club_name(club_name):
             stored_union, _recorded_at = await asyncio.to_thread(
                 get_last_deposit_union, int(chat_id)
             )
-            resolved_union = _resolve_round_table_union_for_auto_chip_add(
-                title, stored_union
+            resolved_union = _resolve_union_for_auto_chip_add(
+                club_name, title, stored_union
             )
 
         clubgg_club = resolve_clubgg_club_name(club_name, resolved_union)

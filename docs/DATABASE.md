@@ -133,6 +133,8 @@ Maps a **Telegram group/supergroup** (`chat_id` = Telegram chat id) to exactly o
 | `club_id` | FK → `clubs.id` CASCADE | Which club’s config applies (`/deposit`, `/cashout`, `/list`, custom commands, etc.). |
 | `name` | string(255), nullable | **Current Telegram group title** — updated on every `NEW_CHAT_TITLE` event, and refreshed on `/deposit` / `/cashout`. Intended lookup key `(club_id, name)` → `chat_id` for downstream integrations (`find_group_chat_id_by_name` in [`bot/services/club.py`](../bot/services/club.py)). |
 | `first_deposit_claimed` | bool | Promo / first-deposit tracking. |
+| `last_deposit_union`, `last_deposit_union_at` | string(2) / timestamptz, nullable | Customer's last `/deposit` union pick — `RT`/`AT` for Round Table, `CC`/`AT` for Creator Club. Routes auto chip-adding when the group title names both unions (`RT AT`, `CC AT`). |
+| `aces_join_ack_at` | timestamptz, nullable | Set once a Creator Club player completes an Aces Table deposit, so the one-time join link is only shown before their first one (see [`migrate_aces_join_ack.py`](../migrate_aces_join_ack.py)). |
 | `added_at` | datetime | |
 
 **Indexes:** `ix_groups_club_id_name` on `(club_id, name)` for title lookup (see [`migrate_groups_name_index.py`](../migrate_groups_name_index.py)).

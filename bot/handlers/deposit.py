@@ -41,6 +41,8 @@ from bot.services.club import (
     get_deposit_method_names,
     is_club_staff,
     set_last_deposit_union,
+    has_aces_join_ack,
+    set_aces_join_ack,
 )
 from bot.services.mtproto_group_rename import rename_support_group_title
 from bot.services.player_details import merge_union_prefix
@@ -54,9 +56,11 @@ from bot.services.union_deposit_picker import (
 )
 from bot.services.union_method_types import UNION_METHOD_TYPES
 from bot.services.round_table_unions import (
-    ROUND_TABLE_DEPOSIT_UNIONS,
-    is_round_table_club,
+    ACES_TABLE_SHORTHAND,
+    deposit_unions_for_club,
+    is_creator_club,
     union_label_for_shorthand,
+    union_shorthands_for_club,
 )
 from bot.handlers.flow_cancel import (
     block_if_group_money_flow_active,
@@ -127,7 +131,23 @@ from db.models import (
 
 logger = logging.getLogger(__name__)
 
-DEPOSIT_REFERRAL, DEPOSIT_AMOUNT, DEPOSIT_UNION, DEPOSIT_CHOOSE, DEPOSIT_SUB, DEPOSIT_SETUP_ACK = range(6)
+(
+    DEPOSIT_REFERRAL,
+    DEPOSIT_AMOUNT,
+    DEPOSIT_UNION,
+    DEPOSIT_CHOOSE,
+    DEPOSIT_SUB,
+    DEPOSIT_SETUP_ACK,
+    DEPOSIT_ACES_JOIN,
+) = range(7)
+
+# One-time gate before a Creator Club player's first Aces Table deposit.
+ACES_TABLE_JOIN_LINK = "https://clubgg.app.link/F1rW9jQJ15b"
+ACES_TABLE_JOIN_COPY = (
+    f"Join Aces Table (Massiv Union): {ACES_TABLE_JOIN_LINK}\n\n"
+    "Tap below once you've joined."
+)
+ACES_TABLE_JOIN_BUTTON = "I HAVE JOINED"
 
 
 def _init_deposit_flow_session(
@@ -1630,7 +1650,7 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         return ConversationHandler.END
 
     try:
-        if is_round_table_club(int(club_id)):
+        if deposit_unions_for_club(int(club_id)):
             await _prompt_deposit_union(update.message, context)
             return DEPOSIT_UNION
 
@@ -1671,9 +1691,12 @@ async def deposit_union_chosen(update: Update, context: ContextTypes.DEFAULT_TYP
     if not data.startswith("depunion:"):
         return DEPOSIT_UNION
 
+    club_id = context.chat_data.get("deposit_club_id")
     shorthand = data.split(":", 1)[1].strip().upper()
     label = union_label_for_shorthand(shorthand)
-    if not label:
+    if not label or (
+        club_id and shorthand not in union_shorthands_for_club(int(club_id))
+    ):
         await query.edit_message_text("That option is no longer available.")
         return ConversationHandler.END
 
@@ -1691,6 +1714,35 @@ async def deposit_union_chosen(update: Update, context: ContextTypes.DEFAULT_TYP
         _cleanup(context)
         return ConversationHandler.END
 
+    if _needs_aces_join_gate(context, club_id=club_id, shorthand=shorthand):
+        try:
+            await query.edit_message_text(
+                ACES_TABLE_JOIN_COPY,
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton(
+                                ACES_TABLE_JOIN_BUTTON, callback_data="depaces"
+                            )
+                        ]
+                    ]
+                ),
+            )
+        except Exception:
+            # Never strand the player on the gate with no button to tap.
+            logger.exception(
+                "deposit_union_chosen: failed showing aces join gate chat_id=%s",
+                context.chat_data.get("deposit_chat_id"),
+            )
+            _abandon_deposit_flow_session(context, end_reason=END_REASON_CANCELLED)
+            _cleanup(context)
+            return ConversationHandler.END
+        if query.message is not None:
+            register_flow_callback_message(
+                context, query.message.message_id, flow="deposit"
+            )
+        return DEPOSIT_ACES_JOIN
+
     try:
         shown = await _prompt_deposit_methods(
             query.message,
@@ -1703,6 +1755,76 @@ async def deposit_union_chosen(update: Update, context: ContextTypes.DEFAULT_TYP
             "deposit_union_chosen: failed prompting methods shorthand=%s amount=%s",
             shorthand,
             amount,
+        )
+        await query.edit_message_text(
+            "Something went wrong showing deposit methods. Try /deposit again."
+        )
+        _cleanup(context)
+        return ConversationHandler.END
+    if not shown:
+        _abandon_deposit_flow_session(context, end_reason=END_REASON_CANCELLED)
+        _cleanup(context)
+        return ConversationHandler.END
+    return DEPOSIT_CHOOSE
+
+
+def _needs_aces_join_gate(context, *, club_id, shorthand: str) -> bool:
+    """True before a Creator Club player's first Aces Table deposit."""
+    if not club_id or shorthand != ACES_TABLE_SHORTHAND:
+        return False
+    chat_id = context.chat_data.get("deposit_chat_id")
+    if chat_id is None:
+        return False
+    try:
+        if not is_creator_club(int(club_id)):
+            return False
+        return not has_aces_join_ack(int(chat_id))
+    except Exception:
+        logger.exception(
+            "aces join gate: check failed chat_id=%s club_id=%s", chat_id, club_id
+        )
+        return False
+
+
+async def deposit_aces_join_ack(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Player confirmed they joined Aces Table — continue to the method list."""
+    if not update.callback_query:
+        return ConversationHandler.END
+    query = update.callback_query
+    if await handle_stale_flow_callback(
+        update,
+        context,
+        flow="deposit",
+        handler="deposit_aces_join_ack",
+        cleanup=_cleanup,
+    ):
+        return ConversationHandler.END
+
+    expected_user = context.chat_data.get("deposit_user_id")
+    if expected_user is not None and query.from_user.id != int(expected_user):
+        await query.answer(
+            "Only the player who started this deposit can continue.",
+            show_alert=True,
+        )
+        return DEPOSIT_ACES_JOIN
+    await query.answer()
+
+    amount = context.chat_data.get("deposit_amount")
+    if not isinstance(amount, Decimal):
+        await query.edit_message_text("Deposit session expired. Use /deposit again.")
+        _cleanup(context)
+        return ConversationHandler.END
+
+    try:
+        shown = await _prompt_deposit_methods(
+            query.message,
+            context,
+            amount=amount,
+            edit_message=query,
+        )
+    except Exception:
+        logger.exception(
+            "deposit_aces_join_ack: failed prompting methods amount=%s", amount
         )
         await query.edit_message_text(
             "Something went wrong showing deposit methods. Try /deposit again."
@@ -1738,13 +1860,15 @@ def _deposit_method_buttons(methods) -> list[list[InlineKeyboardButton]]:
 
 
 async def _prompt_deposit_union(message, context) -> None:
+    club_id = context.chat_data.get("deposit_club_id")
+    unions = deposit_unions_for_club(int(club_id)) if club_id else None
     buttons = [
         [
             InlineKeyboardButton(
                 union["label"], callback_data=f"depunion:{union['shorthand']}"
             )
         ]
-        for union in ROUND_TABLE_DEPOSIT_UNIONS
+        for union in (unions or ())
     ]
     sent = await message.reply_text(
         "Which club would you like your deposit to be added to?",
@@ -2647,6 +2771,7 @@ async def _complete_deposit_flow(chat, context: ContextTypes.DEFAULT_TYPE):
     )
     _record_deposit(context)
     _persist_deposit_union(context)
+    _persist_aces_join_ack(context)
     await _maybe_rename_group_for_union(context)
     await _send_bonus_message(chat, context)
     tracks_manual = bool(context.chat_data.get("deposit_tracks_manual_requests"))
@@ -2714,7 +2839,7 @@ def _record_deposit(context):
 
 
 def _persist_deposit_union(context):
-    """Save the customer's RT/AT union choice on the group for auto chip-add routing."""
+    """Save the customer's union choice on the group for auto chip-add routing."""
     shorthand = context.chat_data.get("deposit_union_shorthand")
     chat_id = context.chat_data.get("deposit_chat_id")
     if shorthand and chat_id:
@@ -2725,6 +2850,24 @@ def _persist_deposit_union(context):
                 "deposit: failed to persist union choice chat_id=%s", chat_id,
                 exc_info=True,
             )
+
+
+def _persist_aces_join_ack(context):
+    """Remember an Aces Table deposit so the join link is only shown once."""
+    if context.chat_data.get("deposit_union_shorthand") != ACES_TABLE_SHORTHAND:
+        return
+    club_id = context.chat_data.get("deposit_club_id")
+    chat_id = context.chat_data.get("deposit_chat_id")
+    if not club_id or not chat_id:
+        return
+    try:
+        if is_creator_club(int(club_id)):
+            set_aces_join_ack(int(chat_id))
+    except Exception:
+        logger.warning(
+            "deposit: failed to persist aces join ack chat_id=%s", chat_id,
+            exc_info=True,
+        )
 
 
 async def _send_deposit_method_response(
@@ -3255,8 +3398,12 @@ def get_deposit_handler() -> ConversationHandler:
             ],
             DEPOSIT_UNION: [
                 CallbackQueryHandler(
-                    deposit_union_chosen, pattern=r"^depunion:(RT|AT)$"
+                    deposit_union_chosen, pattern=r"^depunion:(RT|AT|CC)$"
                 ),
+                _DEPOSIT_CANCEL,
+            ],
+            DEPOSIT_ACES_JOIN: [
+                CallbackQueryHandler(deposit_aces_join_ack, pattern=r"^depaces$"),
                 _DEPOSIT_CANCEL,
             ],
             DEPOSIT_CHOOSE: [

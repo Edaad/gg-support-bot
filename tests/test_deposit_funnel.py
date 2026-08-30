@@ -264,7 +264,10 @@ class DepositFunnelApiTest(unittest.TestCase):
         self.assertFalse(data["show_union_step"])
         self.assertIsNone(data["union_breakdown"])
 
-    @patch("api.routes.deposit_funnel.is_round_table_club", return_value=True)
+    @patch(
+        "api.routes.deposit_funnel.deposit_unions_for_club",
+        return_value=({"shorthand": "RT", "label": "Round Table (TMT Union)"},),
+    )
     @patch("api.routes.deposit_funnel._union_breakdown")
     @patch("api.routes.deposit_funnel._compute_step_latencies")
     @patch("api.routes.deposit_funnel._step_counts_for_sessions")

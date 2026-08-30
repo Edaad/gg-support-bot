@@ -201,7 +201,7 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
 
     @patch.object(dep, "filter_deposit_methods_for_chat", side_effect=lambda _cid, ms: ms)
     @patch.object(dep, "_prompt_deposit_methods", new_callable=AsyncMock)
-    @patch.object(dep, "is_round_table_club", return_value=False)
+    @patch.object(dep, "deposit_unions_for_club", return_value=None)
     @patch.object(
         dep,
         "get_methods_for_amount",
@@ -226,7 +226,7 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
 
     @patch.object(dep, "filter_deposit_methods_for_chat", side_effect=lambda _cid, ms: ms)
     @patch.object(dep, "_prompt_deposit_methods", new_callable=AsyncMock)
-    @patch.object(dep, "is_round_table_club", return_value=False)
+    @patch.object(dep, "deposit_unions_for_club", return_value=None)
     @patch.object(
         dep,
         "get_methods_for_amount",
@@ -242,7 +242,7 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
 
     @patch.object(dep, "filter_deposit_methods_for_chat", side_effect=lambda _cid, ms: ms)
     @patch.object(dep, "_prompt_deposit_methods", new_callable=AsyncMock)
-    @patch.object(dep, "is_round_table_club", return_value=False)
+    @patch.object(dep, "deposit_unions_for_club", return_value=None)
     @patch.object(
         dep,
         "get_methods_for_amount",

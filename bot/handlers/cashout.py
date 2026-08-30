@@ -41,9 +41,9 @@ from bot.services.cashout_handle_validation import (
     validate_cashout_handle,
 )
 from bot.services.round_table_unions import (
-    ROUND_TABLE_DEPOSIT_UNIONS,
-    is_round_table_club,
+    deposit_unions_for_club,
     union_label_for_shorthand,
+    union_shorthands_for_club,
 )
 from bot.services.deposit_method_access import (
     filter_cashout_methods_for_chat,
@@ -557,7 +557,7 @@ async def cashout_auto_amount_received(update, context):
 
     context.chat_data["cashout_amount"] = amount
 
-    if is_round_table_club(int(club_id)):
+    if deposit_unions_for_club(int(club_id)):
         await _auto_prompt_union(update.message, context)
         return CASHOUT_AUTO_UNION
 
@@ -574,13 +574,15 @@ def _auto_eligible_methods(update, club_id, amount):
 
 
 async def _auto_prompt_union(message, context):
+    club_id = context.chat_data.get("cashout_club_id")
+    unions = deposit_unions_for_club(int(club_id)) if club_id else None
     buttons = [
         [
             InlineKeyboardButton(
                 u["label"], callback_data=f"coautounion:{u['shorthand']}"
             )
         ]
-        for u in ROUND_TABLE_DEPOSIT_UNIONS
+        for u in (unions or ())
     ]
     sent = await message.reply_text(
         "Which club would you like to cash out from?",
@@ -604,7 +606,8 @@ async def cashout_auto_union_chosen(update, context):
     await query.answer()
     data = query.data or ""
     shorthand = data.split(":", 1)[1].strip().upper() if ":" in data else ""
-    if shorthand not in ("RT", "AT"):
+    club_id = context.chat_data.get("cashout_club_id")
+    if not club_id or shorthand not in union_shorthands_for_club(int(club_id)):
         return CASHOUT_AUTO_UNION
     context.chat_data["cashout_union_shorthand"] = shorthand
     label = union_label_for_shorthand(shorthand) or shorthand
@@ -1311,7 +1314,7 @@ def get_cashout_handler() -> ConversationHandler:
             ],
             CASHOUT_AUTO_UNION: [
                 CallbackQueryHandler(
-                    cashout_auto_union_chosen, pattern=r"^coautounion:(RT|AT)$"
+                    cashout_auto_union_chosen, pattern=r"^coautounion:(RT|AT|CC)$"
                 ),
                 _CASHOUT_CANCEL,
                 MessageHandler(~filters.COMMAND, cashout_auto_offscript),

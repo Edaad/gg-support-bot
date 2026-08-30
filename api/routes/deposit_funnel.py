@@ -29,7 +29,7 @@ from bot.services.deposit_funnel_events import (
     STEP_UNION_CHOSEN,
     display_funnel_step_order,
 )
-from bot.services.round_table_unions import is_round_table_club
+from bot.services.round_table_unions import deposit_unions_for_club
 from db.connection import get_db_dependency
 from db.models import Club, DepositFunnelEvent
 
@@ -88,7 +88,7 @@ def _raise_db_schema_error(exc: ProgrammingError) -> None:
 
 
 def _show_union_step(club_id: int | None) -> bool:
-    return club_id is not None and is_round_table_club(int(club_id))
+    return club_id is not None and bool(deposit_unions_for_club(int(club_id)))
 
 
 def _funnel_events_query(

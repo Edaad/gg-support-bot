@@ -635,9 +635,14 @@ def get_auto_cashout_enabled(club_id: int) -> bool:
 
 
 def set_last_deposit_union(chat_id: int, shorthand: str) -> None:
-    """Record the customer's last Round Table deposit union ("RT"/"AT") for a group."""
+    """Record the customer's last deposit union for a group.
+
+    "RT"/"AT" for Round Table, "CC"/"AT" for Creator Club. Storing the home-club
+    token ("RT"/"CC") matters: without it a group whose title carries both tokens
+    would keep routing chips to the union chosen on some earlier deposit.
+    """
     token = (shorthand or "").strip().upper()
-    if token not in ("RT", "AT"):
+    if token not in ("RT", "AT", "CC"):
         return
     with get_db() as session:
         group = session.query(Group).filter_by(chat_id=int(chat_id)).first()
@@ -654,6 +659,22 @@ def get_last_deposit_union(chat_id: int) -> Tuple[Optional[str], Optional[dateti
         if not group or not group.last_deposit_union:
             return (None, None)
         return (group.last_deposit_union, group.last_deposit_union_at)
+
+
+def has_aces_join_ack(chat_id: int) -> bool:
+    """True once this group's player confirmed they joined Aces Table."""
+    with get_db() as session:
+        group = session.query(Group).filter_by(chat_id=int(chat_id)).first()
+        return bool(group and group.aces_join_ack_at)
+
+
+def set_aces_join_ack(chat_id: int) -> None:
+    """Record that this group's player joined Aces Table (idempotent)."""
+    with get_db() as session:
+        group = session.query(Group).filter_by(chat_id=int(chat_id)).first()
+        if not group or group.aces_join_ack_at:
+            return
+        group.aces_join_ack_at = datetime.now(timezone.utc)
 
 
 def get_cashout_max_amount(club_id: int) -> Optional[Decimal]:
