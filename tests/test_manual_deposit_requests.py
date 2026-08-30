@@ -409,6 +409,7 @@ class ClubDepositDeliverableTests(unittest.TestCase):
 
         variant_q = MagicMock()
         variant_q.filter_by.return_value = variant_q
+        variant_q.filter.return_value = variant_q
         variant_q.count.return_value = 1
 
         session = MagicMock()
@@ -451,6 +452,7 @@ class ClubDepositDeliverableTests(unittest.TestCase):
 
         variant_q = MagicMock()
         variant_q.filter_by.return_value = variant_q
+        variant_q.filter.return_value = variant_q
         variant_q.count.return_value = 0
 
         session = MagicMock()

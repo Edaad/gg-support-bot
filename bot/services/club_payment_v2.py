@@ -66,6 +66,24 @@ def _tier_dict(t: ClubPaymentTier) -> dict:
     }
 
 
+def _variant_weight(v: ClubPaymentTierVariant) -> int:
+    return int(v.weight) if v.weight is not None else 1
+
+
+def _active_variants(variants: list[ClubPaymentTierVariant]) -> list[ClubPaymentTierVariant]:
+    return [v for v in variants if _variant_weight(v) > 0]
+
+
+def _pick_weighted_variant(
+    variants: list[ClubPaymentTierVariant],
+) -> Optional[ClubPaymentTierVariant]:
+    active = _active_variants(variants)
+    if not active:
+        return None
+    weights = [_variant_weight(v) for v in active]
+    return random.choices(active, weights=weights, k=1)[0]
+
+
 def _variant_response_dict(v: ClubPaymentTierVariant, *, include_ids: bool = False) -> dict:
     link = v.use_group_checkout_link
     provider = v.group_checkout_provider
@@ -117,9 +135,15 @@ def club_deposit_method_deliverable(
             .filter_by(tier_id=int(tier.id))
             .count()
         )
-        if variant_count > 0:
+        active_variant_count = (
+            session.query(ClubPaymentTierVariant)
+            .filter_by(tier_id=int(tier.id))
+            .filter(ClubPaymentTierVariant.weight > 0)
+            .count()
+        )
+        if active_variant_count > 0:
             return True
-        if bool(tier.use_group_checkout_link):
+        if variant_count == 0 and bool(tier.use_group_checkout_link):
             return True
         return False
     return False
@@ -297,7 +321,7 @@ def list_tier_variants(method_id: int, tier_id: int) -> list[dict]:
         out: list[dict] = []
         for variant in variants:
             data = _variant_response_dict(variant, include_ids=True)
-            data["weight"] = int(variant.weight or 1)
+            data["weight"] = _variant_weight(variant)
             out.append(data)
         return out
 
@@ -313,7 +337,9 @@ def pick_variant(
             chosen = session.query(ClubPaymentTierVariant).get(int(variant_id))
             if chosen is None or int(chosen.method_id) != int(method_id):
                 return None
-            if tier_id is None or int(chosen.tier_id) == int(tier_id):
+            if _variant_weight(chosen) > 0 and (
+                tier_id is None or int(chosen.tier_id) == int(tier_id)
+            ):
                 return _variant_response_dict(chosen, include_ids=True)
 
         if tier_id is not None:
@@ -323,9 +349,8 @@ def pick_variant(
                 .order_by(ClubPaymentTierVariant.sort_order, ClubPaymentTierVariant.id)
                 .all()
             )
-            if variants:
-                weights = [v.weight for v in variants]
-                chosen = random.choices(variants, weights=weights, k=1)[0]
+            chosen = _pick_weighted_variant(variants)
+            if chosen is not None:
                 return _variant_response_dict(chosen, include_ids=True)
         return None
 

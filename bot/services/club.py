@@ -423,6 +423,18 @@ def _variant_response_dict(
     return data
 
 
+def _legacy_variant_weight(v: MethodVariant) -> int:
+    return int(v.weight) if v.weight is not None else 1
+
+
+def _pick_weighted_legacy_variant(variants: list[MethodVariant]) -> Optional[MethodVariant]:
+    active = [v for v in variants if _legacy_variant_weight(v) > 0]
+    if not active:
+        return None
+    weights = [_legacy_variant_weight(v) for v in active]
+    return random.choices(active, weights=weights, k=1)[0]
+
+
 def list_tier_variants(method_id: int, tier_id: int) -> list[dict]:
     """Return tier variants as response dicts with weight."""
     v2 = _payment_v2()
@@ -438,7 +450,7 @@ def list_tier_variants(method_id: int, tier_id: int) -> list[dict]:
         out: list[dict] = []
         for variant in variants:
             data = _variant_response_dict(variant, tier_scoped=True, include_ids=True)
-            data["weight"] = int(variant.weight or 1)
+            data["weight"] = _legacy_variant_weight(variant)
             out.append(data)
         return out
 
@@ -465,8 +477,11 @@ def pick_variant(
             chosen = session.query(MethodVariant).get(int(variant_id))
             if chosen is None or int(chosen.method_id) != int(method_id):
                 return None
-            if tier_id is None or (
-                chosen.tier_id is not None and int(chosen.tier_id) == int(tier_id)
+            if _legacy_variant_weight(chosen) > 0 and (
+                tier_id is None
+                or (
+                    chosen.tier_id is not None and int(chosen.tier_id) == int(tier_id)
+                )
             ):
                 return _variant_response_dict(
                     chosen, tier_scoped=bool(chosen.tier_id), include_ids=True
@@ -478,9 +493,8 @@ def pick_variant(
                 .filter_by(tier_id=tier_id)
                 .all()
             )
-            if variants:
-                weights = [v.weight for v in variants]
-                chosen = random.choices(variants, weights=weights, k=1)[0]
+            chosen = _pick_weighted_legacy_variant(variants)
+            if chosen is not None:
                 return _variant_response_dict(chosen, tier_scoped=True, include_ids=True)
 
         variants = (
@@ -488,10 +502,9 @@ def pick_variant(
             .filter_by(method_id=method_id, tier_id=None)
             .all()
         )
-        if not variants:
+        chosen = _pick_weighted_legacy_variant(variants)
+        if chosen is None:
             return None
-        weights = [v.weight for v in variants]
-        chosen = random.choices(variants, weights=weights, k=1)[0]
         return _variant_response_dict(chosen, tier_scoped=False, include_ids=True)
 
 

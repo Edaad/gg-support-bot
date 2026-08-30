@@ -149,7 +149,8 @@ export default function V2VariantEditor({
     }
   }
 
-  const totalWeight = variants.reduce((sum, v) => sum + v.weight, 0)
+  const activeVariants = variants.filter((v) => v.weight > 0)
+  const totalWeight = activeVariants.reduce((sum, v) => sum + v.weight, 0)
   const pct = (w: number) => (totalWeight > 0 ? Math.round((w / totalWeight) * 100) : 0)
 
   const showCheckoutBounds =
@@ -169,13 +170,19 @@ export default function V2VariantEditor({
       </div>
 
       {variants.map((v) => (
-        <div key={v.id} className="editor-row">
+        <div key={v.id} className={`editor-row${v.weight === 0 ? ' opacity-60' : ''}`}>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium text-ink">{v.label}</span>
-              <span className="rounded bg-success-bg px-1.5 py-0.5 text-xs font-medium text-success-ink">
-                {pct(v.weight)}% (weight: {v.weight})
-              </span>
+              {v.weight === 0 ? (
+                <span className="rounded bg-control px-1.5 py-0.5 text-xs font-medium text-ink-muted">
+                  Inactive
+                </span>
+              ) : (
+                <span className="rounded bg-success-bg px-1.5 py-0.5 text-xs font-medium text-success-ink">
+                  {pct(v.weight)}% (weight: {v.weight})
+                </span>
+              )}
               {(v.checkout_min_amount != null || v.checkout_max_amount != null) && (
                 <span className="text-xs text-ink-muted">
                   {v.checkout_min_amount != null && v.checkout_max_amount != null
@@ -221,10 +228,10 @@ export default function V2VariantEditor({
         </p>
       )}
 
-      {variants.length > 0 && (
+      {activeVariants.length > 0 && (
         <div className="mb-2 mt-2">
           <div className="flex h-2 overflow-hidden rounded-full bg-control">
-            {variants.map((v, i) => {
+            {activeVariants.map((v, i) => {
               const colors = ['bg-chart-1', 'bg-chart-2', 'bg-chart-3', 'bg-chart-4', 'bg-chart-5', 'bg-chart-6']
               return (
                 <div
@@ -261,11 +268,12 @@ export default function V2VariantEditor({
               <input
                 id={variantWeightId}
                 type="number"
-                min={1}
+                min={0}
                 value={form.weight ?? 1}
-                onChange={(e) => setForm({ ...form, weight: Math.max(1, Number(e.target.value) || 1) })}
+                onChange={(e) => setForm({ ...form, weight: Math.max(0, Number(e.target.value) || 0) })}
                 className="input-field-sm"
               />
+              <p className="mt-1 text-xs text-ink-muted">Set to 0 to mark inactive (excluded from rotation).</p>
             </div>
           </div>
 

@@ -66,7 +66,7 @@ TABLES = [
         method_id INTEGER NOT NULL REFERENCES club_payment_methods(id) ON DELETE CASCADE,
         tier_id INTEGER NOT NULL REFERENCES club_payment_tiers(id) ON DELETE CASCADE,
         label VARCHAR(100) NOT NULL,
-        weight INTEGER NOT NULL DEFAULT 1 CHECK (weight >= 1),
+        weight INTEGER NOT NULL DEFAULT 1 CHECK (weight >= 0),
         sort_order INTEGER NOT NULL DEFAULT 0,
         response_type VARCHAR(10) NOT NULL DEFAULT 'text',
         response_text TEXT,
