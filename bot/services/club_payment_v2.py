@@ -92,6 +92,48 @@ def _variant_response_dict(v: ClubPaymentTierVariant, *, include_ids: bool = Fal
     return data
 
 
+def club_deposit_method_deliverable(
+    session,
+    method_id: int,
+    amount: Decimal,
+) -> bool:
+    """True when a club deposit method has a tier (and variant or checkout) for amount."""
+    tiers = (
+        session.query(ClubPaymentTier)
+        .filter_by(method_id=int(method_id))
+        .order_by(ClubPaymentTier.sort_order, ClubPaymentTier.id)
+        .all()
+    )
+    if not tiers:
+        return False
+    amt = Decimal(str(amount))
+    for tier in tiers:
+        if tier.min_amount is not None and amt < Decimal(str(tier.min_amount)):
+            continue
+        if tier.max_amount is not None and amt > Decimal(str(tier.max_amount)):
+            continue
+        variant_count = (
+            session.query(ClubPaymentTierVariant)
+            .filter_by(tier_id=int(tier.id))
+            .count()
+        )
+        if variant_count > 0:
+            return True
+        if bool(tier.use_group_checkout_link):
+            return True
+        return False
+    return False
+
+
+def union_deposit_method_deliverable(session, method: ClubPaymentMethod) -> bool:
+    """True when a union pool method has player-facing instructions configured."""
+    from bot.services.manual_deposit_requests import sum_for_method
+    from bot.services.union_deposit_instruction import build_union_deposit_instruction
+
+    used = sum_for_method(session, int(method.id))
+    return build_union_deposit_instruction(method, used_sum=used) is not None
+
+
 def get_methods_for_amount(
     club_id: int, direction: str, amount: Optional[Decimal] = None
 ) -> List[dict]:
@@ -149,9 +191,22 @@ def get_methods_for_amount(
                     return False
             return True
 
-        result = [_method_dict(m) for m in normal if _passes_amount_and_capacity(m)]
+        def _passes_deposit_deliverability(m: ClubPaymentMethod) -> bool:
+            if direction != "deposit" or amount is None:
+                return True
+            if bool(getattr(m, "tracks_manual_requests", False)):
+                return union_deposit_method_deliverable(session, m)
+            return club_deposit_method_deliverable(session, int(m.id), amount)
+
+        result = [
+            _method_dict(m)
+            for m in normal
+            if _passes_amount_and_capacity(m) and _passes_deposit_deliverability(m)
+        ]
         result.extend(
-            _method_dict(m) for m in union_methods if _passes_amount_and_capacity(m)
+            _method_dict(m)
+            for m in union_methods
+            if _passes_amount_and_capacity(m) and _passes_deposit_deliverability(m)
         )
         return result
 

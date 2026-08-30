@@ -156,6 +156,22 @@ class BuildDepositPickerMethodsTests(unittest.TestCase):
         shown = build_deposit_picker_methods(1, Decimal("25"))
         self.assertEqual(shown, [])
 
+    @patch("bot.services.union_deposit_picker.get_methods_for_amount")
+    def test_hides_cashapp_when_club_method_not_deliverable(self, mock_get):
+        mock_get.return_value = [
+            {
+                "id": 11,
+                "name": "Venmo",
+                "slug": "venmo",
+                "tracks_manual_requests": False,
+            },
+        ]
+
+        shown = build_deposit_picker_methods(2, Decimal("2000"))
+        names = [m["name"] for m in shown]
+        self.assertEqual(names, ["Venmo"])
+        self.assertFalse(any(m.get("type_slug") == "cashapp" for m in shown))
+
 
 class PickUnionMethodTests(unittest.TestCase):
     @patch("bot.services.union_deposit_picker.get_db")
