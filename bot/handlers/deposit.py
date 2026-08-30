@@ -144,8 +144,12 @@ logger = logging.getLogger(__name__)
 # One-time gate before a Creator Club player's first Aces Table deposit.
 ACES_TABLE_JOIN_LINK = "https://clubgg.app.link/F1rW9jQJ15b"
 ACES_TABLE_JOIN_COPY = (
-    f"Join Aces Table (Massiv Union): {ACES_TABLE_JOIN_LINK}\n\n"
-    "Tap below once you've joined."
+    "You’ve unlocked Aces Table (Massiv Union)\n\n"
+    "Aces Table is a sister club to The Creator Club, with new opponents and "
+    "more games selection!\n\n"
+    "Join the club first, then complete your deposit:\n\n"
+    f"{ACES_TABLE_JOIN_LINK}\n\n"
+    "Tap below once you’ve joined."
 )
 ACES_TABLE_JOIN_BUTTON = "I HAVE JOINED"
 
@@ -1718,6 +1722,7 @@ async def deposit_union_chosen(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             await query.edit_message_text(
                 ACES_TABLE_JOIN_COPY,
+                disable_web_page_preview=True,
                 reply_markup=InlineKeyboardMarkup(
                     [
                         [

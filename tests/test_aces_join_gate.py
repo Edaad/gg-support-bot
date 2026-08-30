@@ -109,6 +109,8 @@ class AcesJoinGateTests(unittest.IsolatedAsyncioTestCase):
         dep._prompt_deposit_methods.assert_not_awaited()
         text, kwargs = update.callback_query.edit_message_text.await_args
         self.assertIn(dep.ACES_TABLE_JOIN_LINK, text[0])
+        # No link preview card — the bare link only.
+        self.assertTrue(kwargs["disable_web_page_preview"])
         button = kwargs["reply_markup"].inline_keyboard[0][0]
         self.assertEqual(button.text, "I HAVE JOINED")
         self.assertEqual(button.callback_data, "depaces")
