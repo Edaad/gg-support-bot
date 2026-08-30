@@ -28,13 +28,20 @@ def _instruction_warning_bullets(*, html: bool, bold_not: bool = False) -> list[
             f"{_BULLET} This is NOT a recurring payment method "
             "and should not be sent again."
         )
+    third = (
+        f"{_BULLET} Once the payment is sent, please send a "
+        f"{'<b>Screen Recording</b>' if html else 'Screen Recording'} "
+        "within 10 minutes."
+    )
+    fourth = (
+        f"{_BULLET} If you cannot screen record inside the app, please provide "
+        f"screen recording of the {'<b>confirmation email</b>' if html else 'confirmation email'}."
+    )
     return [
         first,
         f"{_BULLET} Please initiate a new deposit before sending again.",
-        (
-            f"{_BULLET} Once the payment is sent, please send a screen recording "
-            "within 10 minutes."
-        ),
+        third,
+        fourth,
     ]
 
 

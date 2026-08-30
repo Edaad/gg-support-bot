@@ -34,9 +34,12 @@ class UnionDepositMessagesTests(unittest.TestCase):
         self.assertIn("<b>Special instructions</b>", html)
         self.assertIn("• This is <b>NOT</b> a recurring payment method", html)
         self.assertIn("• Please initiate a new deposit before sending again.", html)
+        self.assertIn("• Once the payment is sent, please send a <b>Screen Recording</b>", html)
+        self.assertIn("<b>confirmation email</b>", html)
         plain = build_union_special_instructions_text(html=False)
         self.assertIn("• This is NOT a recurring payment method", plain)
-        self.assertIn("• Once the payment is sent", plain)
+        self.assertIn("• Once the payment is sent, please send a Screen Recording", plain)
+        self.assertIn("confirmation email", plain)
 
     def test_instruction_excludes_recurring_footer(self):
         method = SimpleNamespace(
