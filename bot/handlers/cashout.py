@@ -41,7 +41,7 @@ from bot.services.cashout_handle_validation import (
     validate_cashout_handle,
 )
 from bot.services.round_table_unions import (
-    deposit_unions_for_club,
+    cashout_unions_for_chat,
     union_label_for_shorthand,
     union_shorthands_for_club,
 )
@@ -557,7 +557,7 @@ async def cashout_auto_amount_received(update, context):
 
     context.chat_data["cashout_amount"] = amount
 
-    if deposit_unions_for_club(int(club_id)):
+    if _cashout_unions_for_flow(context, club_id):
         await _auto_prompt_union(update.message, context)
         return CASHOUT_AUTO_UNION
 
@@ -573,9 +573,19 @@ def _auto_eligible_methods(update, club_id, amount):
     return [m for m in methods if supported_cashout_slug(m.get("slug"))]
 
 
+def _cashout_unions_for_flow(context, club_id=None):
+    """Union choices for the group running this cashout, or None for no picker."""
+    club_id = club_id if club_id is not None else context.chat_data.get("cashout_club_id")
+    if not club_id:
+        return None
+    chat_id = context.chat_data.get("cashout_chat_id")
+    return cashout_unions_for_chat(
+        int(club_id), int(chat_id) if chat_id is not None else None
+    )
+
+
 async def _auto_prompt_union(message, context):
-    club_id = context.chat_data.get("cashout_club_id")
-    unions = deposit_unions_for_club(int(club_id)) if club_id else None
+    unions = _cashout_unions_for_flow(context)
     buttons = [
         [
             InlineKeyboardButton(

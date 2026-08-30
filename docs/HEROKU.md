@@ -664,25 +664,49 @@ Restart after config: `heroku restart worker -a YOUR_APP`.
 
 ### Aces Table for Creator Club players
 
-Creator Club `/deposit` and automated `/cashout` offer **Creator Club (TMT Union)**
-and **Aces Table (Massiv Union)**, mirroring Round Table. Before a Creator Club
-player's **first** Aces Table deposit the bot posts the club join link with an
-**I HAVE JOINED** button; the acknowledgement is recorded when that deposit
+Creator Club `/deposit` offers **Creator Club (TMT Union)** and **Aces Table
+(Massiv Union)**, mirroring Round Table. Before a Creator Club player's **first**
+Aces Table deposit the bot posts the club join link with an **I HAVE JOINED**
+button; tapping it retires the button but leaves the link in the chat and sends
+the methods as a new message. The acknowledgement is recorded when that deposit
 completes, so the link reappears if the player abandons the flow. Completing an
 Aces Table deposit also retitles the group `CC AT / <player id> / …`, which still
 resolves to Creator Club for binding, cashouts, and bonuses.
 
-Run the migration once after deploy (adds `groups.aces_join_ack_at`):
+**When the picker appears (Creator Club only).** Club Detail → *Aces Table picker
+— deposits required* (`clubs.aces_option_min_deposits`, default `0` = always).
+Set it to e.g. `5` and the picker stays hidden — deposits go to Creator Club with
+no prompt — until the group has that many deposits on record. It counts existing
+`player_activities` rows, so it applies to current players immediately with no
+backfill. Note one real deposit can write more than one row (the `/deposit` flow
+completing, payment ingest, and `/add` each write one), so the number runs ahead
+of "real" deposits. A group that already deposits to Aces Table (ack recorded or
+a `CC AT` title) always keeps the picker, so raising the number never silently
+reroutes an existing Aces player's chips. Round Table ignores this setting.
+
+Automated `/cashout` offers Aces Table to a Creator Club player **only once they
+have actually deposited there** — offering a club they hold no chips in would
+just fail the claim and escalate. Round Table always offers both.
+
+Run the migrations once after deploy:
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_aces_join_ack.py
+heroku run -a YOUR_APP -- python migrate_aces_join_ack.py            # groups.aces_join_ack_at
+heroku run -a YOUR_APP -- python migrate_aces_option_min_deposits.py # clubs.aces_option_min_deposits
 ```
 
+> **Run these before or immediately with the deploy.** The models declare both
+> columns, so until the migration lands every query against `groups` / `clubs`
+> fails and `/deposit` breaks for *all* clubs.
+
 **Single-group test:** in one Creator Club group run `/deposit`, pick Aces Table,
-confirm the join link + button appear, tap it, finish the deposit, then check the
-title became `CC AT / …` and `/add` dry-run targets **Aces Table**. Run `/deposit`
-again and confirm the join link is **not** shown, and that picking Creator Club
-routes back to **Creator Club**.
+confirm the join link + button appear, tap it, confirm the link is **still in the
+chat** and the methods arrived as a new message, finish the deposit, then check
+the title became `CC AT / …` and `/add` dry-run targets **Aces Table**. Run
+`/deposit` again and confirm the join link is **not** shown, and that picking
+Creator Club routes back to **Creator Club**. To test the threshold, set it above
+that group's deposit count in the dashboard and confirm the picker disappears for
+a group with no Aces history while the `CC AT` group above keeps it.
 
 ## Automated cashouts on /cashout (fully automated)
 

@@ -59,6 +59,11 @@ class Club(Base):
     enable_auto_cashout = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
+    # Creator Club only: deposits a support group must already have before the
+    # Creator Club / Aces Table picker is offered. 0 = always offer.
+    aces_option_min_deposits = Column(
+        Integer, nullable=False, server_default=text("0"), default=0
+    )
     deposit_simple_mode = Column(Boolean, default=False)
     deposit_simple_type = Column(String(10), default="text")
     deposit_simple_text = Column(Text)

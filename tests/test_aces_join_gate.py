@@ -38,7 +38,10 @@ def _union_callback_update(shorthand: str):
 def _ack_callback_update(*, from_user_id: int = PLAYER_ID):
     chat = SimpleNamespace(id=CHAT_ID, type="supergroup")
     message = SimpleNamespace(
-        chat=chat, date=datetime.now(timezone.utc), message_id=99
+        chat=chat,
+        date=datetime.now(timezone.utc),
+        message_id=99,
+        reply_text=AsyncMock(),
     )
     query = SimpleNamespace(
         data="depaces",
@@ -46,6 +49,7 @@ def _ack_callback_update(*, from_user_id: int = PLAYER_ID):
         answer=AsyncMock(),
         from_user=SimpleNamespace(id=from_user_id),
         edit_message_text=AsyncMock(),
+        edit_message_reply_markup=AsyncMock(),
     )
     return SimpleNamespace(
         callback_query=query,
@@ -161,6 +165,31 @@ class AcesJoinGateTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_ack_continues_to_methods(self):
         update = _ack_callback_update()
+        context = _context()
+        result = await dep.deposit_aces_join_ack(update, context)
+
+        self.assertEqual(result, dep.DEPOSIT_CHOOSE)
+        dep._prompt_deposit_methods.assert_awaited_once()
+
+    async def test_ack_keeps_join_link_and_only_drops_the_button(self):
+        update = _ack_callback_update()
+        context = _context()
+        await dep.deposit_aces_join_ack(update, context)
+
+        # The link message text is never rewritten, so the link stays in the chat.
+        update.callback_query.edit_message_text.assert_not_awaited()
+        update.callback_query.edit_message_reply_markup.assert_awaited_once_with(
+            reply_markup=None
+        )
+        # Methods must go out as a new message, not by editing the link away.
+        _args, kwargs = dep._prompt_deposit_methods.await_args
+        self.assertIsNone(kwargs.get("edit_message"))
+
+    async def test_ack_survives_button_removal_failure(self):
+        update = _ack_callback_update()
+        update.callback_query.edit_message_reply_markup = AsyncMock(
+            side_effect=RuntimeError("message can't be edited")
+        )
         context = _context()
         result = await dep.deposit_aces_join_ack(update, context)
 

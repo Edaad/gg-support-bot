@@ -561,6 +561,7 @@ export interface Club {
   enable_popup_keyboard: boolean
   enable_escalation_notification: boolean
   enable_auto_cashout: boolean
+  aces_option_min_deposits: number
   deposit_simple_mode: boolean
   deposit_simple_type: string | null
   deposit_simple_text: string | null

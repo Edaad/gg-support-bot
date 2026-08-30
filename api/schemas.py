@@ -42,6 +42,7 @@ class ClubCreate(BaseModel):
     enable_popup_keyboard: bool = False
     enable_escalation_notification: bool = False
     enable_auto_cashout: bool = False
+    aces_option_min_deposits: int = 0
     deposit_simple_mode: bool = False
     deposit_simple_type: str = "text"
     deposit_simple_text: Optional[str] = None
@@ -88,6 +89,7 @@ class ClubUpdate(BaseModel):
     enable_popup_keyboard: Optional[bool] = None
     enable_escalation_notification: Optional[bool] = None
     enable_auto_cashout: Optional[bool] = None
+    aces_option_min_deposits: Optional[int] = None
     deposit_simple_mode: Optional[bool] = None
     deposit_simple_type: Optional[str] = None
     deposit_simple_text: Optional[str] = None
@@ -137,6 +139,7 @@ class ClubRead(BaseModel):
     enable_popup_keyboard: bool = False
     enable_escalation_notification: bool = False
     enable_auto_cashout: bool = False
+    aces_option_min_deposits: int = 0
     deposit_simple_mode: bool
     deposit_simple_type: Optional[str]
     deposit_simple_text: Optional[str]

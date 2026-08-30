@@ -11,9 +11,18 @@ always come from the dashboard club.
 
 from __future__ import annotations
 
+import logging
 from typing import Optional, TypedDict
 
-from bot.services.club import get_club_by_id
+from bot.services.club import (
+    count_deposits_for_chat,
+    get_aces_option_min_deposits,
+    get_club_by_id,
+    get_group_title_for_chat,
+    has_aces_join_ack,
+)
+
+logger = logging.getLogger(__name__)
 
 ROUND_TABLE_CLUB_NAME = "Round Table"
 CREATOR_CLUB_CLUB_NAME = "Creator Club"
@@ -81,6 +90,66 @@ def deposit_unions_for_club_name(
     club_name: str | None,
 ) -> Optional[tuple[RoundTableUnion, ...]]:
     return _UNIONS_BY_CLUB_NAME.get(_name_key(club_name))
+
+
+def has_aces_deposit_history(chat_id: int) -> bool:
+    """True when this group already deposits to Aces Table.
+
+    Either the player acknowledged the join link, or the group title already
+    carries the ``AT`` tag (groups renamed before the ack column existed).
+    """
+    try:
+        if has_aces_join_ack(int(chat_id)):
+            return True
+        # Imported here: player_details imports this module, so a module-level
+        # import would be circular.
+        from bot.services.player_details import parse_group_title_parts
+
+        title, _club_id = get_group_title_for_chat(int(chat_id))
+        parsed = parse_group_title_parts(title)
+        return bool(parsed and ACES_TABLE_SHORTHAND in parsed.shorthands)
+    except Exception:
+        logger.exception("aces history check failed chat_id=%s", chat_id)
+        return False
+
+
+def deposit_unions_for_chat(
+    club_id: int, chat_id: int | None
+) -> Optional[tuple[RoundTableUnion, ...]]:
+    """Union choices to offer this group on ``/deposit``.
+
+    Creator Club can hide the picker until the group has enough deposits
+    (``clubs.aces_option_min_deposits``). A group that already deposits to Aces
+    keeps the picker regardless, so raising the threshold can never silently
+    reroute their chips to Creator Club.
+    """
+    unions = deposit_unions_for_club(club_id)
+    if not unions or chat_id is None or not is_creator_club(club_id):
+        return unions
+    if has_aces_deposit_history(int(chat_id)):
+        return unions
+    threshold = get_aces_option_min_deposits(club_id)
+    if threshold <= 0:
+        return unions
+    if count_deposits_for_chat(int(chat_id)) >= threshold:
+        return unions
+    return None
+
+
+def cashout_unions_for_chat(
+    club_id: int, chat_id: int | None
+) -> Optional[tuple[RoundTableUnion, ...]]:
+    """Union choices to offer this group on the automated ``/cashout``.
+
+    Creator Club only offers Aces Table once the player actually deposits there —
+    picking a club they hold no chips in would just fail the claim and escalate.
+    """
+    unions = deposit_unions_for_club(club_id)
+    if not unions or not is_creator_club(club_id):
+        return unions
+    if chat_id is not None and has_aces_deposit_history(int(chat_id)):
+        return unions
+    return None
 
 
 def union_shorthands_for_club(club_id: int) -> frozenset[str]:

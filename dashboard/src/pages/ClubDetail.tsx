@@ -358,6 +358,26 @@ function GeneralTab({
             posts "an agent will be with you shortly" and escalates. Requires the deposit API
             and Auto claim on /cash. Off by default.
           </p>
+          {club.name.trim().toLowerCase() === 'creator club' && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-muted">
+                Aces Table picker — deposits required
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={form.aces_option_min_deposits ?? 0}
+                onChange={(e) => setField('aces_option_min_deposits', Number(e.target.value))}
+                className="field-short rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-ink-muted">
+                Deposits a player needs before /deposit offers the Creator Club / Aces Table
+                choice. Counts deposits already on record, so it applies to existing players
+                immediately. 0 = always offer. Players who already deposit to Aces Table keep
+                the choice regardless of this number.
+              </p>
+            </div>
+          )}
           <label className="flex items-center gap-2 text-sm text-ink">
             <input
               type="checkbox"

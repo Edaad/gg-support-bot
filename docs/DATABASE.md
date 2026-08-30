@@ -45,6 +45,7 @@ One row per **club** (poker/gaming room operator). The **primary** Telegram iden
 | `cashout_cooldown_hours` | int | Hours after last **deposit or cashout** before another cashout is allowed. |
 | `cashout_hours_enabled` | bool | Restricts cashout to a daily window (interpreted in **America/New_York** in code). |
 | `cashout_hours_start` / `cashout_hours_end` | string(5) | e.g. `08:00`–`23:00` local to that timezone. |
+| `aces_option_min_deposits` | int, not null, default 0 | **Creator Club only.** Deposits a group must already have (non-cancelled `player_activities` `deposit` rows) before `/deposit` offers the Creator Club / Aces Table picker. `0` = always offer. Groups that already deposit to Aces Table keep the picker regardless (see [`migrate_aces_option_min_deposits.py`](../migrate_aces_option_min_deposits.py)). |
 | `is_active` | bool | Inactive clubs are excluded from owner resolution in bot queries. |
 | `created_at` | datetime | Server default `now()`. |
 

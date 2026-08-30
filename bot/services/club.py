@@ -661,6 +661,13 @@ def get_last_deposit_union(chat_id: int) -> Tuple[Optional[str], Optional[dateti
         return (group.last_deposit_union, group.last_deposit_union_at)
 
 
+def get_aces_option_min_deposits(club_id: int) -> int:
+    """Deposits a group needs before the Aces Table picker shows. 0 = always."""
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        return int(club.aces_option_min_deposits or 0) if club else 0
+
+
 def has_aces_join_ack(chat_id: int) -> bool:
     """True once this group's player confirmed they joined Aces Table."""
     with get_db() as session:

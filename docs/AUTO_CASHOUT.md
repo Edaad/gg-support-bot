@@ -28,10 +28,13 @@ every other flow are unchanged.
 2. The bot verifies at least one **active** cashout method with an automated handle
    format is available for the amount (below-min / no-method ends the flow with the
    usual message).
-3. For a club with unions the bot asks which one, mirroring `/deposit`: Round Table
-   offers RT / AT, Creator Club offers CC / AT. Single-union clubs (GTO, …) skip
-   this step. Creator Club is **not** join-gated here (that gate is deposit-only);
-   picking Aces Table with no chips there just fails the claim and escalates.
+3. For a club with unions the bot asks which one, mirroring `/deposit`. Round Table
+   always offers RT / AT. Creator Club offers CC / AT **only once the player has
+   actually deposited to Aces Table** (join ack recorded, or a `CC AT` group
+   title) — otherwise the step is skipped and the cashout comes from Creator
+   Club, since claiming from a club they hold no chips in would only fail and
+   escalate. Single-union clubs (GTO, …) skip this step. The deposit-side join
+   gate and its `aces_option_min_deposits` threshold are deposit-only.
 4. The bot shows the eligible methods (single choice). Crypto asks for the asset
    sub-option.
 5. The bot asks for the player's payout handle and validates it for the method. The

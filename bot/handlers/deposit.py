@@ -57,7 +57,7 @@ from bot.services.union_deposit_picker import (
 from bot.services.union_method_types import UNION_METHOD_TYPES
 from bot.services.round_table_unions import (
     ACES_TABLE_SHORTHAND,
-    deposit_unions_for_club,
+    deposit_unions_for_chat,
     is_creator_club,
     union_label_for_shorthand,
     union_shorthands_for_club,
@@ -1650,7 +1650,7 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         return ConversationHandler.END
 
     try:
-        if deposit_unions_for_club(int(club_id)):
+        if _deposit_unions_for_flow(context, club_id):
             await _prompt_deposit_union(update.message, context)
             return DEPOSIT_UNION
 
@@ -1815,20 +1815,29 @@ async def deposit_aces_join_ack(update: Update, context: ContextTypes.DEFAULT_TY
         _cleanup(context)
         return ConversationHandler.END
 
+    # Leave the join link in the chat for reference; only retire the button so it
+    # cannot be tapped twice. Methods go out as a new message.
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
     try:
         shown = await _prompt_deposit_methods(
             query.message,
             context,
             amount=amount,
-            edit_message=query,
         )
     except Exception:
         logger.exception(
             "deposit_aces_join_ack: failed prompting methods amount=%s", amount
         )
-        await query.edit_message_text(
-            "Something went wrong showing deposit methods. Try /deposit again."
-        )
+        try:
+            await query.message.reply_text(
+                "Something went wrong showing deposit methods. Try /deposit again."
+            )
+        except Exception:
+            pass
         _cleanup(context)
         return ConversationHandler.END
     if not shown:
@@ -1859,9 +1868,19 @@ def _deposit_method_buttons(methods) -> list[list[InlineKeyboardButton]]:
     return buttons
 
 
+def _deposit_unions_for_flow(context, club_id=None):
+    """Union choices for the group running this deposit, or None for no picker."""
+    club_id = club_id if club_id is not None else context.chat_data.get("deposit_club_id")
+    if not club_id:
+        return None
+    chat_id = context.chat_data.get("deposit_chat_id")
+    return deposit_unions_for_chat(
+        int(club_id), int(chat_id) if chat_id is not None else None
+    )
+
+
 async def _prompt_deposit_union(message, context) -> None:
-    club_id = context.chat_data.get("deposit_club_id")
-    unions = deposit_unions_for_club(int(club_id)) if club_id else None
+    unions = _deposit_unions_for_flow(context)
     buttons = [
         [
             InlineKeyboardButton(
