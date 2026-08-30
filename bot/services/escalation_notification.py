@@ -40,6 +40,7 @@ REASON_RPA_CASHOUT_FAILED = "rpa_cashout_failed"
 REASON_RPA_DEPOSIT_UNCERTAIN = "rpa_deposit_uncertain"
 REASON_RPA_CASHOUT_UNCERTAIN = "rpa_cashout_uncertain"
 REASON_AUTO_CASHOUT_ESCALATION = "auto_cashout_escalation"
+REASON_TRANSFER_ESCALATION = "transfer_escalation"
 REASON_UNION_DEPOSIT_FIRST = "union_deposit_first"
 REASON_UNION_DEPOSIT_REPEAT = "union_deposit_repeat"
 REASON_LARGE_CASHOUT_PAYOUT = "large_cashout_payout"
@@ -82,6 +83,9 @@ _HEADLINES = {
     ),
     REASON_AUTO_CASHOUT_ESCALATION: (
         "Automated cashout needs a human — please assist this player."
+    ),
+    REASON_TRANSFER_ESCALATION: (
+        "Chip transfer needs a human — please assist this player."
     ),
 }
 
@@ -986,6 +990,54 @@ async def notify_auto_cashout_escalation(
         chat_id=int(chat_id),
         title=title,
         message_text="\n".join(parts) if parts else None,
+    )
+
+
+def _format_transfer_amount(value) -> str:
+    if isinstance(value, Decimal):
+        amt = value.quantize(Decimal("0.01"))
+        if amt == amt.to_integral_value():
+            return f"${int(amt):,}"
+        return f"${amt:,.2f}"
+    return f"${value}"
+
+
+async def notify_transfer_escalation(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None = None,
+    detail: str | None = None,
+    claimed_amount=None,
+    source_club: str | None = None,
+    destination_club: str | None = None,
+) -> None:
+    """Slack when a /transfer can't finish on its own and needs a human.
+
+    ``claimed_amount`` is set only when chips already left the source club, which
+    is the dangerous case: they are not in the destination either, so the alert
+    has to name the amount, both clubs, and that re-claiming would double-charge.
+    """
+    parts: list[str] = []
+    src = source_club or "the source club"
+    dst = destination_club or "the destination club"
+    if claimed_amount is not None:
+        amt_str = _format_transfer_amount(claimed_amount)
+        parts.append(
+            f"Chips ALREADY CLAIMED: {amt_str} from {src}, but NOT added to {dst}. "
+            f"The player is owed {amt_str} in {dst} — add it manually; "
+            f"DO NOT re-claim from {src}."
+        )
+    else:
+        parts.append(f"No chips were moved ({src} to {dst}).")
+    if detail:
+        parts.append(str(detail))
+    await notify_escalation_slack(
+        REASON_TRANSFER_ESCALATION,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+        message_text="\n".join(parts),
     )
 
 

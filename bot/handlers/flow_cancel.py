@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 FlowName = Literal[
     "deposit",
     "cashout",
+    "transfer",
     "bonus",
     "issue_report",
     "inactive_outreach_send",
@@ -51,6 +52,12 @@ _CASHOUT_ACTIVE_KEYS = (
     "cashout_method_id",
     "cashout_admin_initiated",
     "cashout_simple_data",
+)
+_TRANSFER_ACTIVE_KEYS = (
+    "transfer_club_id",
+    "transfer_amount",
+    "transfer_destination",
+    "transfer_admin_initiated",
 )
 _BONUS_ACTIVE_KEYS = (
     "bonus_admin_id",
@@ -129,6 +136,10 @@ def cashout_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return any(k in context.chat_data for k in _CASHOUT_ACTIVE_KEYS)
 
 
+def transfer_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    return any(k in context.chat_data for k in _TRANSFER_ACTIVE_KEYS)
+
+
 def deposit_payment_wait_active(chat_id: int | None) -> bool:
     """True while post-instructions deposit chase is still open for this group."""
     if chat_id is None:
@@ -155,8 +166,17 @@ def cashout_blocking_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return cashout_flow_active(context)
 
 
-def format_group_flow_block_message(*, active: Literal["deposit", "cashout"]) -> str:
-    cmd = "/deposit" if active == "deposit" else "/cashout"
+GroupMoneyFlow = Literal["deposit", "cashout", "transfer"]
+
+_GROUP_MONEY_FLOW_COMMANDS: dict[GroupMoneyFlow, str] = {
+    "deposit": "/deposit",
+    "cashout": "/cashout",
+    "transfer": "/transfer",
+}
+
+
+def format_group_flow_block_message(*, active: GroupMoneyFlow) -> str:
+    cmd = _GROUP_MONEY_FLOW_COMMANDS.get(active, "/deposit")
     return (
         f"You already have an active {cmd} in progress. "
         "Send /cancel to abort it first."
@@ -167,10 +187,10 @@ async def block_if_group_money_flow_active(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     *,
-    starting: Literal["deposit", "cashout"],
+    starting: GroupMoneyFlow,
     chat_id: int | None = None,
 ) -> bool:
-    """Block starting deposit/cashout when the other (or same) flow is still open.
+    """Block starting a money flow when another (or the same) is still open.
 
     Returns True when entry must abort (a reply was sent).
     """
@@ -178,23 +198,19 @@ async def block_if_group_money_flow_active(
     if cid is None and update.effective_chat is not None:
         cid = update.effective_chat.id
 
-    deposit_open = deposit_blocking_active(context, cid)
-    cashout_open = cashout_blocking_active(context)
-
-    if starting == "deposit":
-        if cashout_open:
-            active: Literal["deposit", "cashout"] = "cashout"
-        elif deposit_open:
-            active = "deposit"
-        else:
-            return False
+    open_flows: dict[GroupMoneyFlow, bool] = {
+        "deposit": deposit_blocking_active(context, cid),
+        "cashout": cashout_blocking_active(context),
+        "transfer": transfer_flow_active(context),
+    }
+    # Report a different open flow first; only fall back to naming the same one.
+    others = [f for f, is_open in open_flows.items() if is_open and f != starting]
+    if others:
+        active: GroupMoneyFlow = others[0]
+    elif open_flows[starting]:
+        active = starting
     else:
-        if deposit_open:
-            active = "deposit"
-        elif cashout_open:
-            active = "cashout"
-        else:
-            return False
+        return False
 
     message = format_group_flow_block_message(active=active)
     reply = update.effective_message

@@ -634,6 +634,15 @@ def get_auto_cashout_enabled(club_id: int) -> bool:
         return bool(getattr(club, "enable_auto_cashout", False))
 
 
+def get_transfer_enabled(club_id: int) -> bool:
+    """True if /transfer may move chips between this club's two unions."""
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club:
+            return False
+        return bool(getattr(club, "enable_transfer", False))
+
+
 def set_last_deposit_union(chat_id: int, shorthand: str) -> None:
     """Record the customer's last deposit union for a group.
 

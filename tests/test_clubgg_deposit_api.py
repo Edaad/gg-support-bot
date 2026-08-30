@@ -1,5 +1,9 @@
 import unittest
+from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
+from bot.services import clubgg_deposit_api as api
 from bot.services.clubgg_deposit_api import (
     _resolve_round_table_union_for_auto_chip_add,
     _resolve_round_table_union_shorthand,
@@ -232,6 +236,73 @@ class TestCreatorClubAcesTitleMerge(unittest.TestCase):
     def test_cc_at_title_still_resolves_to_creator_club(self) -> None:
         self.assertEqual(shorthand_tokens_for_club_resolve("CC AT"), ["CC", "AT"])
         self.assertEqual(shorthand_tokens_for_club_resolve("AT CC"), ["CC", "AT"])
+
+
+class TestChipAddUnionOverride(unittest.IsolatedAsyncioTestCase):
+    """`/transfer` pins the destination union; deposit callers must not change.
+
+    Each case stops the run at ``club_mapping_failed`` so the union that reached
+    ``resolve_clubgg_club_name`` can be inspected without any HTTP.
+    """
+
+    async def _union_used(self, *, title, stored_union, **kwargs):
+        cfg = SimpleNamespace(union_max_age_hours=24.0)
+        with patch.object(api, "load_config", return_value=cfg), patch.object(
+            api, "_claim_request", return_value=True
+        ), patch.object(
+            api, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
+        ), patch.object(
+            api, "get_last_deposit_union", return_value=(stored_union, None)
+        ), patch.object(
+            api, "resolve_clubgg_club_name", return_value=None
+        ) as mock_resolve, patch.object(
+            api, "_send_alert", AsyncMock()
+        ), patch.object(
+            api, "_maybe_notify_rpa_deposit_failed", AsyncMock()
+        ):
+            ok, status = await api.run_auto_chip_add(
+                club_id=2,
+                chat_id=-100,
+                amount=Decimal("100"),
+                request_id="test-req",
+                group_title=title,
+                **kwargs,
+            )
+        self.assertFalse(ok)
+        self.assertEqual(status, "club_mapping_failed")
+        return mock_resolve.call_args.args[1]
+
+    async def test_pinned_union_overrides_title_and_stored_union(self) -> None:
+        used = await self._union_used(
+            title="RT AT / 1234-5678 / Player",
+            stored_union="RT",
+            union_shorthand="AT",
+        )
+        self.assertEqual(used, "AT")
+
+    async def test_pinned_union_is_normalized(self) -> None:
+        used = await self._union_used(
+            title="RT / 1234-5678 / Player", stored_union=None, union_shorthand=" at "
+        )
+        self.assertEqual(used, "AT")
+
+    async def test_omitted_param_still_resolves_from_title(self) -> None:
+        used = await self._union_used(
+            title="AT / 1234-5678 / Player", stored_union="RT"
+        )
+        self.assertEqual(used, "AT")
+
+    async def test_omitted_param_still_resolves_from_stored_union(self) -> None:
+        used = await self._union_used(
+            title="RT AT / 1234-5678 / Player", stored_union="AT"
+        )
+        self.assertEqual(used, "AT")
+
+    async def test_omitted_param_still_falls_back_to_home_union(self) -> None:
+        used = await self._union_used(
+            title="RT AT / 1234-5678 / Player", stored_union=None
+        )
+        self.assertEqual(used, "RT")
 
 
 if __name__ == "__main__":

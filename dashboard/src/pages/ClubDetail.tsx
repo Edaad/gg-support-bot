@@ -358,6 +358,22 @@ function GeneralTab({
             posts "an agent will be with you shortly" and escalates. Requires the deposit API
             and Auto claim on /cash. Off by default.
           </p>
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={form.enable_transfer ?? false}
+              onChange={(e) => setField('enable_transfer', e.target.checked)}
+              className="h-4 w-4 rounded border-border bg-control text-accent"
+            />
+            Chip transfers between unions
+          </label>
+          <p className="ml-6 text-xs text-ink-muted">
+            When enabled, players use /transfer to move chips between this club's two
+            unions (Round Table / Aces Table, or Creator Club / Aces Table). The bot claims
+            from the source union then adds to the destination. Either leg failing posts "an
+            agent will be with you shortly" and escalates. Requires the deposit API and Auto
+            claim on /cash. Clubs without unions ignore this. Off by default.
+          </p>
           {club.name.trim().toLowerCase() === 'creator club' && (
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-muted">

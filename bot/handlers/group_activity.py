@@ -7,7 +7,11 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 
-from bot.handlers.flow_cancel import cashout_flow_active, deposit_flow_active
+from bot.handlers.flow_cancel import (
+    cashout_flow_active,
+    deposit_flow_active,
+    transfer_flow_active,
+)
 from bot.services.club import get_club_for_chat
 from bot.services import group_activity as ga
 from bot.services import popup_keyboard as pk
@@ -71,7 +75,11 @@ async def group_activity_handler(
             username=user.username,
         )
 
-        in_flow = deposit_flow_active(context) or cashout_flow_active(context)
+        in_flow = (
+            deposit_flow_active(context)
+            or cashout_flow_active(context)
+            or transfer_flow_active(context)
+        )
         player_msg = esc.extract_player_message_for_slack(message)
         trigger = trigger_message_from_telegram(message)
 
@@ -148,7 +156,11 @@ async def group_activity_handler(
     if not popup_on:
         return
 
-    if deposit_flow_active(context) or cashout_flow_active(context):
+    if (
+        deposit_flow_active(context)
+        or cashout_flow_active(context)
+        or transfer_flow_active(context)
+    ):
         pk.cancel_popup_keyboard_idle(
             chat.id, job_queue=jq
         )

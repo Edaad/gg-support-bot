@@ -517,12 +517,17 @@ async def run_auto_chip_add(
     request_id: str,
     bonus: Optional[Decimal] = None,
     group_title: Optional[str] = None,
+    union_shorthand: Optional[str] = None,
     ptb_bot: Any | None = None,
 ) -> tuple[bool, str]:
     """Submit chip-add to ClubGG and poll to terminal.
 
     Returns (ok, status) where ok is True on success/dry_run/skipped. Never raises.
     Caller must claim ``request_id`` via ``_claim_request`` when idempotency matters.
+
+    ``union_shorthand`` pins the destination union (``/transfer`` needs to add to a
+    specific one). When omitted the union is resolved from the group title and the
+    stored deposit union, which is what every deposit-side caller wants.
     """
     cfg = load_config()
     if cfg is None:
@@ -552,9 +557,16 @@ async def run_auto_chip_add(
     club = await asyncio.to_thread(get_club_by_id, int(club_id))
     club_name = club.name if club else None
 
-    union_shorthand: Optional[str] = None
+    union_shorthand = (union_shorthand or "").strip().upper() or None
     club_unions = union_shorthands_for_club_name(club_name)
-    if club_unions:
+    if union_shorthand:
+        logger.info(
+            "auto_chip_add: caller pinned union %s for chat %s (club=%s)",
+            union_shorthand,
+            chat_id,
+            club_name,
+        )
+    elif club_unions:
         stored_union, recorded_at = await asyncio.to_thread(
             get_last_deposit_union, int(chat_id)
         )

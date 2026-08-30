@@ -729,3 +729,40 @@ and run a real `/cashout` in one known group: confirm the claim dry-run targets 
 correct ClubGG club, a valid handle records a Glide row + owed pin, an invalid
 handle escalates, and a forced claim failure escalates with the "chips already
 claimed" note.
+
+## Chip transfers between unions (/transfer)
+
+Lets a player in a two-union club move chips between them: `/transfer` → pick the
+destination club → amount → the bot claims from the other union and adds to the
+chosen one. Only four moves exist — Round Table `RT<->AT` and Creator Club
+`CC<->AT`. Off by default per club; also needs the deposit API configured **and**
+Auto claim on /cash enabled. Single-union clubs ignore it. See
+[`docs/TRANSFER.md`](TRANSFER.md).
+
+Claiming runs first on purpose: an over-balance request fails the claim, so nothing
+was added and nothing is lost. The one dangerous outcome — claim ok, add failed —
+escalates naming the amount, both clubs, and that the player is owed those chips in
+the destination; it is never auto-reversed. Transfers write no `player_activities`
+row, so they do not reset the 24h cashout cooldown or count toward
+`aces_option_min_deposits`. A successful transfer into Aces records the Aces ack for
+Creator Club groups so automated `/cashout` can pay those chips out.
+
+> **Accepted risk:** transfers into Aces Table are allowed even when the group has
+> no Aces history. A non-member fails the add leg every time, leaving chips claimed
+> from the source and owed in the destination until an agent intervenes.
+
+Run the migration once after deploy (adds `clubs.enable_transfer`):
+
+```bash
+heroku run -a YOUR_APP -- python migrate_enable_transfer.py
+```
+
+> **Run this before or with the deploy.** The model declares the column, so until
+> the migration lands every query against `clubs` fails.
+
+**Rollout / single-group test (do this before enabling widely):** enable **Chip
+transfers between unions** for **one** club (start with Round Table), then in one
+known group transfer a small amount `RT -> AT`: confirm the three messages
+(claiming / adding / transferred), verify both legs on ClubGG, then move it back
+`AT -> RT`. Send a random message mid-flow and confirm exactly one "an agent will be
+with you shortly" plus one Slack alert. Only then enable Creator Club.

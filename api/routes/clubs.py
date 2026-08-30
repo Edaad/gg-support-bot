@@ -42,6 +42,7 @@ def _club_to_read(club: Club) -> ClubRead:
         enable_popup_keyboard=club.enable_popup_keyboard or False,
         enable_escalation_notification=club.enable_escalation_notification or False,
         enable_auto_cashout=club.enable_auto_cashout or False,
+        enable_transfer=club.enable_transfer or False,
         aces_option_min_deposits=club.aces_option_min_deposits or 0,
         deposit_simple_mode=club.deposit_simple_mode or False,
         deposit_simple_type=club.deposit_simple_type,

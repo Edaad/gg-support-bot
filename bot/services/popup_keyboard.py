@@ -41,7 +41,7 @@ BTN_EARLYRB = "/earlyrb"
 BUTTON_LABELS = frozenset({BTN_DEPOSIT, BTN_CASHOUT})
 # Typed cashout alias — never strip when player sends this (starts cashout flow).
 FLOW_COMMAND_TEXTS = frozenset(
-    {BTN_DEPOSIT, BTN_CASHOUT, BTN_EARLYRB, "/withdraw"}
+    {BTN_DEPOSIT, BTN_CASHOUT, BTN_EARLYRB, "/withdraw", "/transfer"}
 )
 
 INSTALL_COPY = (

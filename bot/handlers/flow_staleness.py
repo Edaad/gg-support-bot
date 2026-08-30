@@ -88,7 +88,7 @@ def log_stale_update(update: Update, *, handler: str, reason: str = "age") -> No
     )
 
 
-FlowName = Literal["deposit", "cashout"]
+FlowName = Literal["deposit", "cashout", "transfer"]
 
 
 def _flow_message_ids_key(flow: FlowName) -> str:
@@ -130,6 +130,10 @@ def has_active_cashout_flow(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return context.chat_data.get("cashout_amount") is not None
 
 
+def has_active_transfer_flow(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    return context.chat_data.get("transfer_destination") is not None
+
+
 def is_flow_callback_stale(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -147,7 +151,12 @@ def is_flow_callback_stale(
     if update.callback_query is None:
         return is_update_too_old(update, now=now)
 
-    active = has_active_deposit_flow(context) if flow == "deposit" else has_active_cashout_flow(context)
+    if flow == "deposit":
+        active = has_active_deposit_flow(context)
+    elif flow == "transfer":
+        active = has_active_transfer_flow(context)
+    else:
+        active = has_active_cashout_flow(context)
     if active:
         msg_id = _callback_message_id(update)
         flow_ids = context.chat_data.get(_flow_message_ids_key(flow))
@@ -272,6 +281,21 @@ def cashout_amount_actor_allowed(
         return sender_id not in ADMIN_USER_IDS
     cashouter_id = context.chat_data.get("cashout_user_id")
     return cashouter_id is not None and sender_id == cashouter_id
+
+
+def transfer_amount_actor_allowed(
+    context,
+    *,
+    sender_id: int | None,
+    text: str | None,
+) -> bool:
+    if sender_id is None or not looks_like_amount(text):
+        return False
+    if context.chat_data.get("transfer_admin_initiated"):
+        # Admin starts /transfer; the customer (not a global admin) enters the amount.
+        return sender_id not in ADMIN_USER_IDS
+    transferrer_id = context.chat_data.get("transfer_user_id")
+    return transferrer_id is not None and sender_id == transferrer_id
 
 
 async def answer_stale_callback(
