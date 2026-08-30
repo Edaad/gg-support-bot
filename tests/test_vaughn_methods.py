@@ -85,6 +85,58 @@ class IsVaughnMethodTestCase(unittest.TestCase):
             "GTO Zelle",
         )
 
+    def test_zelle_clubgto1234_email(self):
+        self.assertTrue(
+            is_vaughn_method(
+                source="deposit_zelle",
+                variant="clubgto1234@gmail.com",
+                club_slug="clubgto",
+            )
+        )
+
+    def test_zelle_gto_chase_bank_label(self):
+        self.assertTrue(
+            is_vaughn_method(
+                source="deposit_zelle",
+                variant="gto chase zelle",
+                club_slug="clubgto",
+            )
+        )
+        self.assertEqual(
+            matching_source_label(
+                source="deposit_zelle",
+                variant="gto chase zelle",
+                club_slug="clubgto",
+                source_label="Zelle",
+            ),
+            "GTO Zelle",
+        )
+
+    def test_zelle_baileys_wells_fargo_bank_label(self):
+        self.assertTrue(
+            is_vaughn_method(
+                source="deposit_zelle",
+                variant="bailey's wells fargo",
+                club_slug="clubgto",
+            )
+        )
+        self.assertTrue(
+            is_vaughn_method(
+                source="deposit_zelle",
+                variant="3105670961",
+                club_slug="clubgto",
+            )
+        )
+        self.assertEqual(
+            matching_source_label(
+                source="deposit_zelle",
+                variant="bailey's wells fargo",
+                club_slug="clubgto",
+                source_label="Zelle",
+            ),
+            "GTO Zelle",
+        )
+
     def test_zelle_memo_vaughn_on_clubgto(self):
         self.assertTrue(
             is_vaughn_method(

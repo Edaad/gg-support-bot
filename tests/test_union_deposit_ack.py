@@ -16,7 +16,6 @@ from bot.services.manual_deposit_requests import (
 )
 from bot.services.union_deposit_messages import (
     UNION_ACK_EXPIRED_TEXT,
-    UNION_INSTRUCTION_RECURRING_LINE,
     build_union_instruction_with_footer,
     build_union_special_instructions_text,
     union_ack_callback_data,
@@ -39,7 +38,7 @@ class UnionDepositMessagesTests(unittest.TestCase):
         self.assertIn("• This is NOT a recurring payment method", plain)
         self.assertIn("• Once the payment is sent", plain)
 
-    def test_instruction_includes_recurring_footer(self):
+    def test_instruction_excludes_recurring_footer(self):
         method = SimpleNamespace(
             union_type="zelle",
             method_tag="$zelle-tag",
@@ -52,7 +51,7 @@ class UnionDepositMessagesTests(unittest.TestCase):
         self.assertIsNotNone(text)
         assert text is not None
         self.assertIn("Zelle Tag: $zelle-tag", text)
-        self.assertTrue(text.endswith(UNION_INSTRUCTION_RECURRING_LINE))
+        self.assertNotIn("recurring payment method", text)
 
     def test_instruction_html_tag_is_tap_to_copy(self):
         from bot.services.union_deposit_instruction import build_union_deposit_instruction

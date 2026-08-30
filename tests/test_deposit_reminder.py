@@ -434,6 +434,13 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
                 deposit_module,
                 "cancel_deposit_reminder_for_chat",
             ) as cancel_mock,
+            patch(
+                "bot.services.escalation_notification.clear_deposit_chase_after_payment",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "bot.services.popup_keyboard.on_payment_window_closed",
+            ),
         ):
             bot = AsyncMock()
             bot.send_message = AsyncMock()

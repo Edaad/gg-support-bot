@@ -56,9 +56,16 @@ UNION_DEPOSIT_SOURCE_LABELS: dict[str, str] = {
     "venmo": "Union Venmo",
 }
 
+LARGE_CASHOUT_SOURCE_LABELS: dict[str, str] = {
+    "zelle": "Large cashout Zelle",
+    "cashapp": "Large cashout Cash App",
+    "applepay": "Large cashout Apple Pay",
+    "venmo": "Large cashout Venmo",
+}
+
 UNION_MATCHING_SOURCE_OPTIONS: tuple[str, ...] = tuple(
     UNION_DEPOSIT_SOURCE_LABELS.values()
-)
+) + tuple(LARGE_CASHOUT_SOURCE_LABELS.values())
 
 # Built-in deposit_* plus dynamic deposit_{slug} from manual trade requests.
 LedgerSource = str
@@ -534,11 +541,34 @@ def union_deposit_source_for_type(type_slug: str) -> str:
     return f"deposit_union_{key}"
 
 
-def union_deposit_source_label(method_name: str) -> str | None:
+def large_cashout_source_for_type(type_slug: str) -> str:
+    key = (type_slug or "").strip().lower()
+    return f"deposit_large_cashout_{key}"
+
+
+def pool_pay_source_label(
+    method_name: str,
+    *,
+    pool_pay_type: str | None = None,
+    method_slug: str | None = None,
+) -> str | None:
     type_slug = union_type_from_display_name(method_name)
     if not type_slug:
         return None
+    pay_type = (pool_pay_type or "").strip().lower()
+    if not pay_type and method_slug:
+        from bot.services.pool_pay_types import parse_pool_pay_slug
+
+        parsed = parse_pool_pay_slug(method_slug)
+        if parsed:
+            pay_type = parsed[1]
+    if pay_type == "large_cashout":
+        return LARGE_CASHOUT_SOURCE_LABELS.get(type_slug)
     return UNION_DEPOSIT_SOURCE_LABELS.get(type_slug)
+
+
+def union_deposit_source_label(method_name: str) -> str | None:
+    return pool_pay_source_label(method_name, pool_pay_type="union_method")
 
 
 def _union_method_tag(row: ManualDepositRequest) -> str:
@@ -563,8 +593,9 @@ def _iter_checked_union_deposit_requests(
     *,
     from_dt: datetime,
     to_dt: datetime,
+    pool_pay_type: str | None = None,
 ) -> Iterator[ManualDepositRequest]:
-    """Checked union manual deposit rows in [from_dt, to_dt)."""
+    """Checked pool pay manual deposit rows in [from_dt, to_dt)."""
     query = (
         session.query(ManualDepositRequest)
         .join(
@@ -576,6 +607,8 @@ def _iter_checked_union_deposit_requests(
         .filter(ManualDepositRequest.created_at >= from_dt)
         .filter(ManualDepositRequest.created_at < to_dt)
     )
+    if pool_pay_type:
+        query = query.filter(ClubPaymentMethod.pool_pay_type == pool_pay_type)
     query = apply_analytics_payment_exclusion(
         session, query, ManualDepositRequest.telegram_chat_id
     )
@@ -592,7 +625,7 @@ def _fetch_manual_trade_request_events(
     from_dt: datetime,
     to_dt: datetime,
 ) -> list[LedgerEvent]:
-    """Checked union deposit rows → deposit_union_{type} ledger events."""
+    """Checked pool pay deposit rows → deposit_union_{type} / deposit_large_cashout_{type}."""
     out: list[LedgerEvent] = []
     for row in _iter_checked_union_deposit_requests(
         session, from_dt=from_dt, to_dt=to_dt
@@ -606,15 +639,41 @@ def _fetch_manual_trade_request_events(
             data={"group_title": row.group_title},
         ):
             continue
-        source_label = union_deposit_source_label(row.method_name)
         type_slug = union_type_from_display_name(row.method_name or "")
-        if not source_label or not type_slug:
+        if not type_slug:
             continue
+        pool_pay_type = None
+        method_id = getattr(row, "method_id", None)
+        if method_id is not None:
+            pool_pay_type = (
+                session.query(ClubPaymentMethod.pool_pay_type)
+                .filter(ClubPaymentMethod.id == int(method_id))
+                .scalar()
+            )
+        source_label = pool_pay_source_label(
+            row.method_name,
+            pool_pay_type=str(pool_pay_type) if pool_pay_type else None,
+            method_slug=row.method_slug,
+        )
+        if not source_label:
+            continue
+        pay_type = (str(pool_pay_type or "").strip().lower()) or "union_method"
+        if pay_type != "large_cashout":
+            from bot.services.pool_pay_types import parse_pool_pay_slug
+
+            parsed = parse_pool_pay_slug(row.method_slug or "")
+            if parsed:
+                pay_type = parsed[1]
+        source = (
+            large_cashout_source_for_type(type_slug)
+            if pay_type == "large_cashout"
+            else union_deposit_source_for_type(type_slug)
+        )
         group_title, gg_id = _resolve_union_group_title(session, row)
         method_tag = _union_method_tag(row)
         out.append(
             LedgerEvent(
-                source=union_deposit_source_for_type(type_slug),
+                source=source,
                 gg_player_id=gg_id,
                 amount_usd=Decimal(str(row.amount)),
                 occurred_at_utc=row.created_at,

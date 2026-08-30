@@ -2035,6 +2035,7 @@ async def _run_union_deposit_from_choice(
 
     slack_variant = None
     method_display_name = (method.get("name") or "").strip()
+    pool_pay_type = "union_method"
     if union_type_slug:
         try:
             slack_variant = union_deposit_slack_variant(
@@ -2048,6 +2049,9 @@ async def _run_union_deposit_from_choice(
                 chat_id,
                 method_id,
             )
+    from bot.services.pool_pay_types import pool_pay_type_from_method
+
+    pool_pay_type = pool_pay_type_from_method(db_method)
 
     try:
         row = create_request_atomic(
@@ -2102,14 +2106,15 @@ async def _run_union_deposit_from_choice(
     )
     _track_deposit_info_message(int(chat_id), ack_msg.message_id)
 
-    if slack_variant is not None:
+    if slack_variant is not None or pool_pay_type == "large_cashout":
         try:
             from bot.services.escalation_notification import (
-                notify_union_deposit_request_slack,
+                notify_pool_pay_deposit_slack,
             )
 
-            await notify_union_deposit_request_slack(
-                variant=slack_variant,
+            await notify_pool_pay_deposit_slack(
+                pool_pay_type=pool_pay_type,
+                variant=slack_variant or "first",
                 club_id=int(club_id),
                 chat_id=int(chat_id),
                 title=getattr(query.message.chat, "title", None),

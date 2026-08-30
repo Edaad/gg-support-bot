@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
+from api.method_owner import resolve_ingest_method_owner
 from bot.services.club import get_group_title_for_chat
 from bot.services.group_chat_invite_links import resolve_group_chat_url_for_payment
 from bot.services.payment_binding_events import (
@@ -207,12 +208,19 @@ async def ingest_paypal_payment(
     payer_name: str,
     amount: str | int | float | Decimal,
     paypal_email: str,
+    method_owner: str,
     paid_at: Optional[str] = None,
     source_external_id: Optional[str] = None,
     memo: Optional[str] = None,
     test: bool = False,
 ) -> IngestResult:
     """Create payment row, auto-bind if known payer, send Telegram notification."""
+    owner = resolve_ingest_method_owner(
+        source="deposit_paypal",
+        variant=paypal_email,
+        method_owner=method_owner,
+        memo=memo,
+    )
     payer = (payer_name or "").strip()
     if not payer:
         raise ValueError("payer_name is required")
@@ -269,6 +277,7 @@ async def ingest_paypal_payment(
                 )
 
         payment = PayPalPayment(
+            method_owner=owner,
             payer_name=payer,
             amount_cents=amount_cents,
             paypal_email=email,

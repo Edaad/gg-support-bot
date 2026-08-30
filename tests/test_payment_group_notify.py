@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.services import payment_group_notify as pgn
+from tests.support.ingest_mocks import start_payment_notify_mocks, stop_patchers
 
 CHAT_ID = -1001234567890
 
@@ -35,6 +36,12 @@ class FormatPaymentReceivedMessageTestCase(unittest.TestCase):
 
 
 class NotifyPlayerGroupPaymentReceivedTestCase(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._notify_patchers = start_payment_notify_mocks()
+
+    def tearDown(self) -> None:
+        stop_patchers(self._notify_patchers)
+
     async def test_sends_message_with_support_bot(self):
         mock_bot = MagicMock()
         mock_bot.send_message = AsyncMock()

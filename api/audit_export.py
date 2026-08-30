@@ -728,7 +728,10 @@ def _fetch_union_deposit_audit_rows_timed(
     target_type = (union_type or "").strip().lower()
     out: list[_TimedTaggedManualAuditRow] = []
     for row in _iter_checked_union_deposit_requests(
-        session, from_dt=from_dt, to_dt=to_dt
+        session,
+        from_dt=from_dt,
+        to_dt=to_dt,
+        pool_pay_type="union_method",
     ):
         type_slug = union_type_from_display_name(row.method_name or "")
         if type_slug != target_type:

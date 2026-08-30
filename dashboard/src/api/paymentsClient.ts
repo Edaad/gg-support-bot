@@ -1118,3 +1118,95 @@ export async function downloadAuditExport(
   link.click()
   URL.revokeObjectURL(url)
 }
+
+export type OwnerSlug = 'round-table' | 'vaughn' | 'mateos'
+
+export type OwnerMethod =
+  | 'stripe'
+  | 'venmo'
+  | 'zelle'
+  | 'cashapp'
+  | 'paypal'
+  | 'crypto'
+
+export type OwnerPaymentSummary = {
+  total_count: number
+  total_amount_cents: number
+  total_amount_usd: number
+}
+
+export type OwnerVariantOption = {
+  value: string
+  label: string
+}
+
+export type OwnerPaymentList<T> = {
+  method: OwnerMethod
+  items: T[]
+  total: number
+  limit: number
+  offset: number
+  summary: OwnerPaymentSummary
+}
+
+export type OwnerPaymentListParams = {
+  method: OwnerMethod
+  variant?: string
+  from?: string
+  to?: string
+  q?: string
+  limit?: number
+  offset?: number
+}
+
+export function listOwnerPayments<T>(
+  token: string,
+  owner: OwnerSlug,
+  params: OwnerPaymentListParams,
+) {
+  const q = new URLSearchParams({ method: params.method })
+  if (params.variant) q.set('variant', params.variant)
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  if (params.q?.trim()) q.set('q', params.q.trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  return request<OwnerPaymentList<T>>(`/owner/${owner}/payments?${q}`, {}, token)
+}
+
+export function listOwnerVariants(
+  token: string,
+  owner: OwnerSlug,
+  params: { method: OwnerMethod; from?: string; to?: string },
+) {
+  const q = new URLSearchParams({ method: params.method })
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  return request<{ items: OwnerVariantOption[] }>(`/owner/${owner}/variants?${q}`, {}, token)
+}
+
+export async function fetchAllOwnerPayments<T>(
+  token: string,
+  owner: OwnerSlug,
+  params: Omit<OwnerPaymentListParams, 'limit' | 'offset'>,
+): Promise<{ items: T[]; summary: OwnerPaymentSummary }> {
+  const all: T[] = []
+  let offset = 0
+  let summary: OwnerPaymentSummary = {
+    total_count: 0,
+    total_amount_cents: 0,
+    total_amount_usd: 0,
+  }
+  for (;;) {
+    const res = await listOwnerPayments<T>(token, owner, {
+      ...params,
+      limit: EXPORT_PAGE_SIZE,
+      offset,
+    })
+    if (offset === 0) summary = res.summary
+    all.push(...res.items)
+    offset += res.items.length
+    if (offset >= res.total || res.items.length === 0) break
+  }
+  return { items: all, summary }
+}

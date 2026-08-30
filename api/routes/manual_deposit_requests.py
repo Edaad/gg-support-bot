@@ -8,11 +8,12 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import String, cast, or_
+from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from api.auth import get_current_admin
 from bot.services.deposit_union_types import validate_deposit_union
+from bot.services.pool_pay_types import pool_pay_type_from_method, validate_pool_pay_type
 from bot.services.manual_deposit_requests import (
     ManualDepositCapacityError,
     ManualDepositValidationError,
@@ -68,6 +69,16 @@ class ManualDepositRequestListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+    summary: "ManualDepositRequestSummary"
+
+
+class ManualDepositRequestSummary(BaseModel):
+    total_count: int
+    total_amount: Decimal
+
+
+class ManualDepositVariantListResponse(BaseModel):
+    items: List[str]
 
 
 class ManualDepositRequestCreate(BaseModel):
@@ -93,6 +104,18 @@ class DepositGroupRead(BaseModel):
 
 class DepositGroupListResponse(BaseModel):
     items: List[DepositGroupRead]
+
+
+def _parse_dt(value: Optional[str]) -> Optional[datetime]:
+    if not value or not value.strip():
+        return None
+    raw = value.strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError as exc:
+        raise HTTPException(400, f"Invalid datetime: {value}") from exc
 
 
 def _to_read(row: ManualDepositRequest) -> ManualDepositRequestRead:
@@ -146,8 +169,12 @@ def _list_query(
     method_slug: Optional[str] = None,
     method_type: Optional[str] = None,
     deposit_union: Optional[str] = None,
+    pool_pay_type: Optional[str] = None,
     trade_record_checked: Optional[bool] = None,
     include_inactive_methods: bool = True,
+    variant: Optional[str] = None,
+    from_dt: Optional[datetime] = None,
+    to_dt: Optional[datetime] = None,
     q: Optional[str] = None,
 ):
     query = db.query(ManualDepositRequest).options(
@@ -164,22 +191,40 @@ def _list_query(
     if method_type:
         display = union_type_display_name(validate_union_method_type(method_type))
         query = query.filter(ManualDepositRequest.method_name == display)
-    if deposit_union:
-        union_slug = validate_deposit_union(deposit_union)
+    method_joined = False
+    if deposit_union or pool_pay_type:
         query = query.join(
             ClubPaymentMethod,
             ClubPaymentMethod.id == ManualDepositRequest.method_id,
-        ).filter(ClubPaymentMethod.deposit_union == union_slug)
+        )
+        method_joined = True
+        if deposit_union:
+            union_slug = validate_deposit_union(deposit_union)
+            query = query.filter(ClubPaymentMethod.deposit_union == union_slug)
+        if pool_pay_type:
+            pay_type = validate_pool_pay_type(pool_pay_type)
+            query = query.filter(ClubPaymentMethod.pool_pay_type == pay_type)
     if trade_record_checked is not None:
         query = query.filter(
             ManualDepositRequest.trade_record_checked.is_(bool(trade_record_checked))
         )
-    if not include_inactive_methods:
+    if variant and variant.strip():
+        query = query.filter(ManualDepositRequest.variant_name == variant.strip())
+    if from_dt is not None:
+        query = query.filter(ManualDepositRequest.created_at >= from_dt)
+    if to_dt is not None:
+        query = query.filter(ManualDepositRequest.created_at <= to_dt)
+    if not include_inactive_methods and not method_joined:
         query = query.join(
             ClubPaymentMethod,
             ClubPaymentMethod.id == ManualDepositRequest.method_id,
             isouter=True,
         ).filter(
+            (ManualDepositRequest.method_id.is_(None))
+            | (ClubPaymentMethod.is_active.is_(True))
+        )
+    elif not include_inactive_methods:
+        query = query.filter(
             (ManualDepositRequest.method_id.is_(None))
             | (ClubPaymentMethod.is_active.is_(True))
         )
@@ -202,8 +247,79 @@ def _list_query(
         query = query.outerjoin(Club, Club.id == ManualDepositRequest.club_id).filter(
             or_(*clauses)
         )
+    return query
+
+
+def _apply_list_order(query):
     return query.order_by(
         ManualDepositRequest.created_at.desc(), ManualDepositRequest.id.desc()
+    )
+
+
+def _list_summary(query) -> ManualDepositRequestSummary:
+    row = (
+        query.order_by(None)
+        .enable_eagerloads(False)
+        .with_entities(
+            func.count().label("total_count"),
+            func.coalesce(func.sum(ManualDepositRequest.amount), 0).label("total_amount"),
+        )
+        .one()
+    )
+    return ManualDepositRequestSummary(
+        total_count=int(row.total_count or 0),
+        total_amount=Decimal(str(row.total_amount or 0)),
+    )
+
+
+@router.get(
+    "/manual-deposit-requests/variants",
+    response_model=ManualDepositVariantListResponse,
+)
+def list_manual_deposit_request_variants(
+    club_id: Optional[int] = None,
+    method_id: Optional[int] = None,
+    method_slug: Optional[str] = None,
+    type: Optional[str] = Query(None, alias="type"),
+    method_type: Optional[str] = Query(None),
+    deposit_union: Optional[str] = Query(None),
+    pool_pay_type: Optional[str] = Query(None),
+    trade_record_checked: Optional[bool] = None,
+    include_inactive_methods: bool = Query(True),
+    from_dt: Optional[str] = Query(None, alias="from"),
+    to_dt: Optional[str] = Query(None, alias="to"),
+    q: Optional[str] = Query(None),
+    db: Session = Depends(get_db_dependency),
+):
+    resolved_type = type or method_type
+    if resolved_type:
+        validate_union_method_type(resolved_type)
+    if deposit_union:
+        validate_deposit_union(deposit_union)
+    if pool_pay_type:
+        validate_pool_pay_type(pool_pay_type)
+    query = _list_query(
+        db,
+        club_id=club_id,
+        method_id=method_id,
+        method_slug=method_slug,
+        method_type=resolved_type,
+        deposit_union=deposit_union,
+        pool_pay_type=pool_pay_type,
+        trade_record_checked=trade_record_checked,
+        include_inactive_methods=include_inactive_methods,
+        from_dt=_parse_dt(from_dt),
+        to_dt=_parse_dt(to_dt),
+        q=q,
+    )
+    rows = (
+        query.with_entities(ManualDepositRequest.variant_name)
+        .distinct()
+        .order_by(ManualDepositRequest.variant_name.asc())
+        .all()
+    )
+    return ManualDepositVariantListResponse(
+        items=[str(row[0]) for row in rows if row[0]]
     )
 
 
@@ -218,8 +334,12 @@ def list_manual_deposit_requests(
     type: Optional[str] = Query(None, alias="type"),
     method_type: Optional[str] = Query(None),
     deposit_union: Optional[str] = Query(None),
+    pool_pay_type: Optional[str] = Query(None),
     trade_record_checked: Optional[bool] = None,
     include_inactive_methods: bool = Query(True),
+    variant: Optional[str] = Query(None),
+    from_dt: Optional[str] = Query(None, alias="from"),
+    to_dt: Optional[str] = Query(None, alias="to"),
     q: Optional[str] = Query(None),
     limit: int = Query(_DEFAULT_LIMIT, ge=1, le=_MAX_LIMIT),
     offset: int = Query(0, ge=0),
@@ -230,6 +350,8 @@ def list_manual_deposit_requests(
         validate_union_method_type(resolved_type)
     if deposit_union:
         validate_deposit_union(deposit_union)
+    if pool_pay_type:
+        validate_pool_pay_type(pool_pay_type)
     query = _list_query(
         db,
         club_id=club_id,
@@ -237,17 +359,23 @@ def list_manual_deposit_requests(
         method_slug=method_slug,
         method_type=resolved_type,
         deposit_union=deposit_union,
+        pool_pay_type=pool_pay_type,
         trade_record_checked=trade_record_checked,
         include_inactive_methods=include_inactive_methods,
+        variant=variant,
+        from_dt=_parse_dt(from_dt),
+        to_dt=_parse_dt(to_dt),
         q=q,
     )
-    total = query.count()
-    rows = query.offset(offset).limit(limit).all()
+    summary = _list_summary(query)
+    total = summary.total_count
+    rows = _apply_list_order(query).offset(offset).limit(limit).all()
     return ManualDepositRequestListResponse(
         items=[_to_read(r) for r in rows],
         total=total,
         limit=limit,
         offset=offset,
+        summary=summary,
     )
 
 
@@ -313,13 +441,15 @@ def list_method_manual_deposit_requests(
         include_inactive_methods=True,
         q=q,
     )
-    total = query.count()
-    rows = query.offset(offset).limit(limit).all()
+    summary = _list_summary(query)
+    total = summary.total_count
+    rows = _apply_list_order(query).offset(offset).limit(limit).all()
     return ManualDepositRequestListResponse(
         items=[_to_read(r) for r in rows],
         total=total,
         limit=limit,
         offset=offset,
+        summary=summary,
     )
 
 
@@ -362,14 +492,15 @@ async def create_method_manual_deposit_request(
     except (ManualDepositCapacityError, ManualDepositValidationError, ValueError) as exc:
         raise _http_error_from_service(exc) from exc
 
-    if slack_variant is not None:
+    if slack_variant is not None or pool_pay_type_from_method(method) == "large_cashout":
         try:
             from bot.services.escalation_notification import (
-                notify_union_deposit_request_slack,
+                notify_pool_pay_deposit_slack,
             )
 
-            await notify_union_deposit_request_slack(
-                variant=slack_variant,
+            await notify_pool_pay_deposit_slack(
+                pool_pay_type=pool_pay_type_from_method(method),
+                variant=slack_variant or "first",
                 club_id=int(row.club_id),
                 chat_id=int(row.telegram_chat_id),
                 title=row.group_title,

@@ -75,6 +75,7 @@ Header: `X-Crypto-Webhook-Secret: <CRYPTO_ZAPIER_WEBHOOK_SECRET>`
   "paid_at": "2026-05-06T23:56:53Z",
   "source_external_id": "0xa64ed1c7ecf9dbd350f2738f9d8f0699625ee957e42a4bd6dc165c619936f6d3_59",
   "alert_name": "ClubGTO Crypto Payment",
+  "method_owner": "round-table",
   "test": false
 }
 ```
@@ -82,6 +83,7 @@ Header: `X-Crypto-Webhook-Secret: <CRYPTO_ZAPIER_WEBHOOK_SECRET>`
 - `amount` — USD value as a number string with two decimals (from `transfer.historicalUSD` or `transfer.unitValue` for stablecoins)
 - `source_external_id` — use `transfer.id` for idempotent dedup
 - `alert_name` — **required**; must be exactly `ClubGTO Crypto Payment` or `RT/AT/CC Crypto Payment` (case-insensitive)
+- `method_owner` — **required**; ledger bucket: `round-table`, `vaughn`, or `mateos`. Use `round-table` for all standard crypto deposits unless you route Vaughn/Mateos wallets separately
 - `from_entity_name` — optional; from `transfer.fromAddress.arkhamEntity.name` when Arkham labels the sender
 
 Set `"test": true` only on a duplicate test Zap.
@@ -211,6 +213,8 @@ paid_at — transfer.blockTimestamp ISO string if present (example: 2026-05-06T2
 source_external_id — transfer.id (example: 0xa64e...f6d3_59). Required for dedup.
 
 alert_name — top-level alertName. Must be exactly ClubGTO Crypto Payment or RT/AT/CC Crypto Payment (case-insensitive). This decides the club bucket.
+
+method_owner — always round-table unless this deposit is explicitly Vaughn- or Mateos-routed (same slugs as other payment ingests).
 ```
 
 ### Webhook POST body
@@ -231,7 +235,8 @@ Map parse outputs into JSON:
   "transaction_hash": "<parse: transaction_hash>",
   "paid_at": "<parse: paid_at>",
   "source_external_id": "<parse: source_external_id>",
-  "alert_name": "<parse: alert_name>"
+  "alert_name": "<parse: alert_name>",
+  "method_owner": "round-table"
 }
 ```
 
@@ -276,6 +281,7 @@ return {
   paid_at: t.blockTimestamp || '',
   source_external_id: t.id || root.id || '',
   alert_name: root.alertName || '',
+  method_owner: 'round-table',
 };
 ```
 
@@ -300,6 +306,7 @@ Given the sample alert in the repo discussion:
 | paid_at | `2026-05-06T23:56:53Z` |
 | source_external_id | `0xa64ed1c7ecf9dbd350f2738f9d8f0699625ee957e42a4bd6dc165c619936f6d3_59` |
 | alert_name | `ClubGTO Crypto Payment` |
+| method_owner | `round-table` |
 
 ## Code references
 

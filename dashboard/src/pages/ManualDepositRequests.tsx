@@ -5,21 +5,25 @@ import ManualDepositRequestModal from '../components/ManualDepositRequestModal'
 import { useConfirm } from '../components/ConfirmProvider'
 import { listClubs, type Club } from '../api/client'
 import {
-  createUnionMethod,
-  deleteUnionMethod,
+  createPoolPayMethod,
+  deletePoolPayMethod,
   DEPOSIT_UNION_OPTIONS,
   depositUnionLabel,
-  listUnionMethods,
-  reactivateUnionMethod,
-  reorderUnionMethods,
-  retireUnionMethod,
-  unionMethodTypeLabel,
-  updateUnionMethod,
-  UNION_METHOD_TYPE_OPTIONS,
+  listPoolPayMethods,
+  poolPayMethodTypeLabel,
+  poolPayTypeLabel,
+  POOL_PAY_METHOD_TYPE_OPTIONS,
+  POOL_PAY_TYPE_OPTIONS,
+  previewPoolPaySlug,
+  reactivatePoolPayMethod,
+  reorderPoolPayMethods,
+  retirePoolPayMethod,
+  updatePoolPayMethod,
   type DepositUnionSlug,
-  type UnionMethod,
-  type UnionMethodTypeSlug,
-} from '../api/unionMethodsClient'
+  type PoolPayMethod,
+  type PoolPayMethodTypeSlug,
+  type PoolPayTypeSlug,
+} from '../api/poolPayClient'
 
 function formatUsd(amount: number | string | null | undefined): string {
   if (amount == null || amount === '') return '—'
@@ -44,9 +48,10 @@ type PageView = 'methods' | 'deposits'
 const DEPOSITS_PAGE_SIZE = 50
 
 type FormState = {
-  type: UnionMethodTypeSlug
+  pool_pay_type: PoolPayTypeSlug
+  type: PoolPayMethodTypeSlug
   deposit_union: DepositUnionSlug
-  internal_identifier: string
+  identifier_suffix: string
   method_tag: string
   payment_account_name: string
   club_ids: number[]
@@ -56,9 +61,10 @@ type FormState = {
 }
 
 const emptyForm = (): FormState => ({
+  pool_pay_type: 'union_method',
   type: 'zelle',
   deposit_union: 'tmt',
-  internal_identifier: '',
+  identifier_suffix: '',
   method_tag: '',
   payment_account_name: '',
   club_ids: [],
@@ -67,15 +73,16 @@ const emptyForm = (): FormState => ({
   max_amount: '',
 })
 
-function methodCardTitle(m: UnionMethod): string {
-  return `${unionMethodTypeLabel(m.type)} · ${m.internal_identifier}`
+function methodCardTitle(m: PoolPayMethod): string {
+  return `${poolPayMethodTypeLabel(m.type)} · ${m.identifier_suffix || m.internal_identifier}`
 }
 
-function formFromMethod(m: UnionMethod): FormState {
+function formFromMethod(m: PoolPayMethod): FormState {
   return {
+    pool_pay_type: m.pool_pay_type,
     type: m.type,
-    deposit_union: m.deposit_union,
-    internal_identifier: m.internal_identifier,
+    deposit_union: m.deposit_union ?? 'tmt',
+    identifier_suffix: m.identifier_suffix,
     method_tag: m.method_tag,
     payment_account_name: m.payment_account_name ?? '',
     club_ids: m.clubs.map((c) => c.id),
@@ -115,13 +122,19 @@ export default function ManualDepositRequests({ token }: { token: string }) {
       ? Number(methodIdParam)
       : null
   const methodTypeFilterParam = searchParams.get('filter_type')
-  const methodTypeFilter: UnionMethodTypeSlug | null =
+  const methodTypeFilter: PoolPayMethodTypeSlug | null =
     pageView === 'deposits' &&
     methodTypeFilterParam &&
     (['zelle', 'cashapp', 'applepay', 'venmo'] as const).includes(
-      methodTypeFilterParam as UnionMethodTypeSlug,
+      methodTypeFilterParam as PoolPayMethodTypeSlug,
     )
-      ? (methodTypeFilterParam as UnionMethodTypeSlug)
+      ? (methodTypeFilterParam as PoolPayMethodTypeSlug)
+      : null
+  const poolPayTypeFilterParam = searchParams.get('filter_pool_pay')
+  const poolPayTypeFilter: PoolPayTypeSlug | null =
+    poolPayTypeFilterParam === 'union_method' ||
+    poolPayTypeFilterParam === 'large_cashout'
+      ? poolPayTypeFilterParam
       : null
   const unionFilterParam = searchParams.get('filter_union')
   const unionFilter: DepositUnionSlug | null =
@@ -144,7 +157,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     offsetParam && /^\d+$/.test(offsetParam) ? Number(offsetParam) : 0
 
   const [clubs, setClubs] = useState<Club[]>([])
-  const [methods, setMethods] = useState<UnionMethod[]>([])
+  const [methods, setMethods] = useState<PoolPayMethod[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -174,17 +187,19 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     setLoading(true)
     setError('')
     try {
-      const rows = await listUnionMethods(token, {
+      const rows = await listPoolPayMethods(token, {
         is_active: tab === 'active',
+        deposit_union: unionFilter ?? undefined,
+        pool_pay_type: poolPayTypeFilter ?? undefined,
       })
       setMethods(rows)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load union methods')
+      setError(e instanceof Error ? e.message : 'Failed to load pool pay methods')
       setMethods([])
     } finally {
       setLoading(false)
     }
-  }, [token, tab])
+  }, [token, tab, unionFilter, poolPayTypeFilter])
 
   useEffect(() => {
     void listClubs(token)
@@ -215,13 +230,10 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     [clubs],
   )
 
-  const filteredMethods = useMemo(() => {
-    if (!unionFilter) return methods
-    return methods.filter((m) => m.deposit_union === unionFilter)
-  }, [methods, unionFilter])
+  const filteredMethods = useMemo(() => methods, [methods])
 
   const methodsByType = useMemo(() => {
-    const grouped: Record<UnionMethodTypeSlug, UnionMethod[]> = {
+    const grouped: Record<PoolPayMethodTypeSlug, PoolPayMethod[]> = {
       zelle: [],
       cashapp: [],
       applepay: [],
@@ -230,20 +242,20 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     for (const m of filteredMethods) {
       if (grouped[m.type]) grouped[m.type].push(m)
     }
-    for (const key of Object.keys(grouped) as UnionMethodTypeSlug[]) {
+    for (const key of Object.keys(grouped) as PoolPayMethodTypeSlug[]) {
       grouped[key].sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)
     }
     return grouped
   }, [filteredMethods])
 
   const persistTypeOrder = async (
-    methodType: UnionMethodTypeSlug,
-    reordered: UnionMethod[],
+    methodType: PoolPayMethodTypeSlug,
+    reordered: PoolPayMethod[],
   ) => {
     setReordering(true)
     setError('')
     try {
-      await reorderUnionMethods(
+      await reorderPoolPayMethods(
         token,
         methodType,
         reordered.map((m) => m.id),
@@ -256,7 +268,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     }
   }
 
-  const onDragEndType = async (methodType: UnionMethodTypeSlug) => {
+  const onDragEndType = async (methodType: PoolPayMethodTypeSlug) => {
     if (
       dragItem.current === null ||
       dragOver.current === null ||
@@ -297,7 +309,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     return [...byId.values()].sort((a, b) => a.id - b.id)
   }, [selected])
 
-  const openMethod = (m: UnionMethod) => {
+  const openMethod = (m: PoolPayMethod) => {
     setCreating(false)
     setEditing(false)
     setQuery({ view: null, method: String(m.id) })
@@ -325,7 +337,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     })
   }
 
-  const startEdit = (m: UnionMethod) => {
+  const startEdit = (m: PoolPayMethod) => {
     setForm(formFromMethod(m))
     setEditing(true)
     setCreating(false)
@@ -348,8 +360,8 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     setError('')
     try {
       const deposit_limit = Number(form.deposit_limit)
-      if (!form.internal_identifier.trim()) {
-        throw new Error('Internal identifier is required.')
+      if (!form.identifier_suffix.trim()) {
+        throw new Error('Identifier suffix is required.')
       }
       if (!form.method_tag.trim()) {
         throw new Error('Method tag is required.')
@@ -362,9 +374,11 @@ export default function ManualDepositRequests({ token }: { token: string }) {
       }
       const accountName = form.payment_account_name.trim()
       const body = {
+        pool_pay_type: form.pool_pay_type,
         type: form.type,
-        deposit_union: form.deposit_union,
-        internal_identifier: form.internal_identifier.trim().toLowerCase(),
+        deposit_union:
+          form.pool_pay_type === 'union_method' ? form.deposit_union : null,
+        identifier_suffix: form.identifier_suffix.trim(),
         method_tag: form.method_tag.trim(),
         payment_account_name: accountName || null,
         club_ids: form.club_ids,
@@ -373,12 +387,12 @@ export default function ManualDepositRequests({ token }: { token: string }) {
         max_amount: parseOptionalAmount(form.max_amount),
       }
       if (creating) {
-        const created = await createUnionMethod(token, body)
+        const created = await createPoolPayMethod(token, body)
         setCreating(false)
         await load()
         setQuery({ method: String(created.id), tab: 'active' })
       } else if (selected) {
-        await updateUnionMethod(token, selected.id, body)
+        await updatePoolPayMethod(token, selected.id, body)
         setEditing(false)
         await load()
       }
@@ -389,9 +403,9 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     }
   }
 
-  const onRetire = async (m: UnionMethod) => {
+  const onRetire = async (m: PoolPayMethod) => {
     const ok = await askConfirm({
-      title: 'Retire union method?',
+      title: 'Retire pool pay method?',
       message: `${methodCardTitle(m)} will leave Active and stop appearing in /deposit.`,
       confirmLabel: 'Retire',
       destructive: true,
@@ -399,7 +413,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     if (!ok) return
     setBusy(true)
     try {
-      await retireUnionMethod(token, m.id)
+      await retirePoolPayMethod(token, m.id)
       await load()
       if (selectedMethodId === m.id) setQuery({ tab: 'inactive' })
     } catch (e) {
@@ -409,11 +423,11 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     }
   }
 
-  const onDelete = async (m: UnionMethod) => {
+  const onDelete = async (m: PoolPayMethod) => {
     const count = m.deposit_request_count
     const rowLabel = count === 1 ? 'deposit request row' : 'deposit request rows'
     const ok = await askConfirm({
-      title: 'Delete union method?',
+      title: 'Delete pool pay method?',
       message: `${methodCardTitle(m)} will be permanently deleted along with ${count} ${rowLabel}. This cannot be undone.`,
       confirmLabel: 'Delete',
       destructive: true,
@@ -421,7 +435,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     if (!ok) return
     setBusy(true)
     try {
-      await deleteUnionMethod(token, m.id)
+      await deletePoolPayMethod(token, m.id)
       await load()
       if (selectedMethodId === m.id) setQuery({ tab: 'active' })
     } catch (e) {
@@ -431,10 +445,10 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     }
   }
 
-  const onReactivate = async (m: UnionMethod) => {
+  const onReactivate = async (m: PoolPayMethod) => {
     setBusy(true)
     try {
-      await reactivateUnionMethod(token, m.id)
+      await reactivatePoolPayMethod(token, m.id)
       await load()
       if (selectedMethodId === m.id) setQuery({ tab: 'active' })
     } catch (e) {
@@ -454,6 +468,28 @@ export default function ManualDepositRequests({ token }: { token: string }) {
       <h3 className="text-sm font-semibold text-ink">{title}</h3>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
+          <label className="label-field-xs" htmlFor="um-pool-pay-type">
+            Pool pay type
+          </label>
+          <select
+            id="um-pool-pay-type"
+            className="input-field-sm"
+            value={form.pool_pay_type}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                pool_pay_type: e.target.value as PoolPayTypeSlug,
+              }))
+            }
+          >
+            {POOL_PAY_TYPE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
           <label className="label-field-xs" htmlFor="um-type">
             Type
           </label>
@@ -464,52 +500,57 @@ export default function ManualDepositRequests({ token }: { token: string }) {
             onChange={(e) =>
               setForm((f) => ({
                 ...f,
-                type: e.target.value as UnionMethodTypeSlug,
+                type: e.target.value as PoolPayMethodTypeSlug,
               }))
             }
           >
-            {UNION_METHOD_TYPE_OPTIONS.map((opt) => (
+            {POOL_PAY_METHOD_TYPE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
             ))}
           </select>
         </div>
+        {form.pool_pay_type === 'union_method' ? (
+          <div>
+            <label className="label-field-xs" htmlFor="um-deposit-union">
+              Union
+            </label>
+            <select
+              id="um-deposit-union"
+              className="input-field-sm"
+              value={form.deposit_union}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  deposit_union: e.target.value as DepositUnionSlug,
+                }))
+              }
+            >
+              {DEPOSIT_UNION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         <div>
-          <label className="label-field-xs" htmlFor="um-deposit-union">
-            Union
-          </label>
-          <select
-            id="um-deposit-union"
-            className="input-field-sm"
-            value={form.deposit_union}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                deposit_union: e.target.value as DepositUnionSlug,
-              }))
-            }
-          >
-            {DEPOSIT_UNION_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="label-field-xs" htmlFor="um-internal-id">
-            Internal identifier
+          <label className="label-field-xs" htmlFor="um-identifier-suffix">
+            Identifier suffix
           </label>
           <input
-            id="um-internal-id"
+            id="um-identifier-suffix"
             className="input-field-sm"
-            value={form.internal_identifier}
+            value={form.identifier_suffix}
             onChange={(e) =>
-              setForm((f) => ({ ...f, internal_identifier: e.target.value }))
+              setForm((f) => ({ ...f, identifier_suffix: e.target.value }))
             }
-            placeholder="main-zelle-rt"
+            placeholder="yaki"
           />
+          <p className="mt-1 text-xs text-ink-muted font-mono">
+            Slug: {previewPoolPaySlug(form.type, form.pool_pay_type, form.identifier_suffix)}
+          </p>
         </div>
         <div>
           <label className="label-field-xs" htmlFor="um-method-tag">
@@ -635,15 +676,15 @@ export default function ManualDepositRequests({ token }: { token: string }) {
     <div className="space-y-6">
       <div className="page-header flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-ink text-balance">Union methods</h1>
+          <h1 className="text-2xl font-semibold text-ink text-balance">Pool Pay</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            Shared multi-club deposit configs with one capacity pool per union method.
+            Shared multi-club deposit configs with one capacity pool per method.
             Drag active cards within each type to set fulfillment priority.
           </p>
         </div>
         {pageView === 'methods' && !selected && !creating && (
           <button type="button" onClick={startCreate} className="btn-primary-sm shrink-0">
-            Add union method
+            Add new pool pay method
           </button>
         )}
       </div>
@@ -655,7 +696,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
       )}
 
       {!selected && !creating && (
-        <div className="flex gap-2" role="tablist" aria-label="Union methods sections">
+        <div className="flex gap-2" role="tablist" aria-label="Pool pay sections">
           <button
             type="button"
             role="tab"
@@ -698,28 +739,53 @@ export default function ManualDepositRequests({ token }: { token: string }) {
       {pageView === 'methods' && !selected && !creating && (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="min-w-[10rem]">
-            <label className="label-field-xs" htmlFor="um-methods-union">
-              Union
+            <label className="label-field-xs" htmlFor="um-pool-pay-filter">
+              Pool pay type
             </label>
             <select
-              id="um-methods-union"
+              id="um-pool-pay-filter"
               className="input-field-sm"
-              value={unionFilter ?? ''}
+              value={poolPayTypeFilter ?? ''}
               onChange={(e) =>
                 setQuery({
-                  filter_union: e.target.value || null,
+                  filter_pool_pay: e.target.value || null,
                   method: null,
                 })
               }
             >
               <option value="">All</option>
-              {DEPOSIT_UNION_OPTIONS.map((opt) => (
+              {POOL_PAY_TYPE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
               ))}
             </select>
           </div>
+          {poolPayTypeFilter !== 'large_cashout' ? (
+            <div className="min-w-[10rem]">
+              <label className="label-field-xs" htmlFor="um-methods-union">
+                Union
+              </label>
+              <select
+                id="um-methods-union"
+                className="input-field-sm"
+                value={unionFilter ?? ''}
+                onChange={(e) =>
+                  setQuery({
+                    filter_union: e.target.value || null,
+                    method: null,
+                  })
+                }
+              >
+                <option value="">All</option>
+                {DEPOSIT_UNION_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -740,7 +806,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
         </div>
       )}
 
-      {creating && formPanel('New union method')}
+      {creating && formPanel('New pool pay method')}
 
       {selected && (
         <div className="space-y-4">
@@ -756,8 +822,13 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                       {methodCardTitle(selected)}
                     </h2>
                     <span className="rounded-md border border-border bg-surface-raised px-2 py-0.5 text-xs font-medium text-ink">
-                      {depositUnionLabel(selected.deposit_union)}
+                      {poolPayTypeLabel(selected.pool_pay_type)}
                     </span>
+                    {selected.pool_pay_type === 'union_method' && selected.deposit_union ? (
+                      <span className="rounded-md border border-border bg-surface-raised px-2 py-0.5 text-xs font-medium text-ink">
+                        {depositUnionLabel(selected.deposit_union)}
+                      </span>
+                    ) : null}
                   </div>
                   <p className="mt-1 text-sm text-ink-muted">
                     Method tag: {selected.method_tag}
@@ -874,7 +945,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
             </div>
           </section>
 
-          {editing && formPanel('Edit union method')}
+          {editing && formPanel('Edit pool pay method')}
 
           <section className="panel space-y-4">
             <div className="flex flex-col gap-1 border-b border-border pb-3 sm:flex-row sm:items-end sm:justify-between">
@@ -1019,7 +1090,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                 }
               >
                 <option value="">All</option>
-                {UNION_METHOD_TYPE_OPTIONS.map((opt) => (
+                {POOL_PAY_METHOD_TYPE_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>
@@ -1100,7 +1171,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
           )}
           {!loading && filteredMethods.length === 0 && (
             <p className="rounded-xl border border-dashed border-border bg-surface px-4 py-8 text-center text-sm text-ink-muted">
-              No {tab} union methods yet.
+              No {tab} pool pay methods yet.
             </p>
           )}
           {tab === 'active' && !loading && filteredMethods.length > 0 && (
@@ -1110,7 +1181,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
             </p>
           )}
           <div className="space-y-8">
-            {UNION_METHOD_TYPE_OPTIONS.map((typeOpt) => {
+            {POOL_PAY_METHOD_TYPE_OPTIONS.map((typeOpt) => {
               const section = methodsByType[typeOpt.value]
               if (section.length === 0) return null
               return (
@@ -1148,8 +1219,13 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                                 </div>
                                 <div className="mt-1 flex flex-wrap items-center gap-2">
                                   <span className="rounded-md border border-border bg-surface-raised px-2 py-0.5 text-xs font-medium text-ink">
-                                    {depositUnionLabel(m.deposit_union)}
+                                    {poolPayTypeLabel(m.pool_pay_type)}
                                   </span>
+                                  {m.pool_pay_type === 'union_method' && m.deposit_union ? (
+                                    <span className="rounded-md border border-border bg-surface-raised px-2 py-0.5 text-xs font-medium text-ink">
+                                      {depositUnionLabel(m.deposit_union)}
+                                    </span>
+                                  ) : null}
                                   <span className="text-xs text-ink-muted">
                                     {m.method_tag}
                                     {m.payment_account_name ? ` · ${m.payment_account_name}` : ''}

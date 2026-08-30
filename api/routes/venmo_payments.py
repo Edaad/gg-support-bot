@@ -6,6 +6,7 @@ import os
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from api.method_owner import MethodOwnerSlug
 from bot.services.venmo_payments import (
     WEBHOOK_SECRET_ENV,
     ingest_venmo_payment,
@@ -48,6 +49,7 @@ class VenmoPaymentIngestBody(BaseModel):
     source_external_id: str | None = None
     memo: str | None = None
     test: bool = False
+    method_owner: MethodOwnerSlug
 
 
 class VenmoPaymentIngestResponse(BaseModel):
@@ -92,6 +94,7 @@ async def ingest_payment(
             source_external_id=body.source_external_id,
             memo=body.memo,
             test=body.test,
+            method_owner=body.method_owner,
         )
     except ValueError as e:
         if debug_notification_enabled():

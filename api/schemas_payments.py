@@ -94,6 +94,7 @@ class VenmoPaymentRead(BaseModel):
     status: str
     auto_bound: bool
     is_test: bool
+    method_owner: str
     created_at: datetime
     bound_at: Optional[datetime] = None
 
@@ -152,6 +153,7 @@ class ZellePaymentRead(BaseModel):
     status: str
     auto_bound: bool
     is_test: bool
+    method_owner: str
     created_at: datetime
     bound_at: Optional[datetime] = None
 
@@ -210,6 +212,7 @@ class CashAppPaymentRead(BaseModel):
     status: str
     auto_bound: bool
     is_test: bool
+    method_owner: str
     created_at: datetime
     bound_at: Optional[datetime] = None
 
@@ -268,6 +271,7 @@ class PayPalPaymentRead(BaseModel):
     status: str
     auto_bound: bool
     is_test: bool
+    method_owner: str
     created_at: datetime
     bound_at: Optional[datetime] = None
 
@@ -354,6 +358,7 @@ class CryptoPaymentRead(BaseModel):
     status: str
     auto_bound: bool
     is_test: bool
+    method_owner: str
     created_at: datetime
     bound_at: Optional[datetime] = None
 
@@ -580,3 +585,27 @@ class DepositFunnelEventListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class OwnerPaymentSummary(BaseModel):
+    total_count: int
+    total_amount_cents: int
+    total_amount_usd: Decimal
+
+
+class OwnerVariantOptionRead(BaseModel):
+    value: str
+    label: str
+
+
+class OwnerVariantListResponse(BaseModel):
+    items: list[OwnerVariantOptionRead]
+
+
+class OwnerPaymentListResponse(BaseModel):
+    method: str
+    items: list
+    total: int
+    limit: int
+    offset: int
+    summary: OwnerPaymentSummary

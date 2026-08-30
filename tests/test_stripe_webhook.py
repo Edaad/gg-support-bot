@@ -207,8 +207,12 @@ class StripeNotifyPaymentCompletedTestCase(unittest.IsolatedAsyncioTestCase):
             patch.object(
                 sd,
                 "notify_player_group_payment_received",
-                new=AsyncMock(return_value=True),
+                new_callable=AsyncMock,
+                return_value=True,
             ) as player_notify_mock,
+            patch(
+                "bot.services.payment_auto_deposit.schedule_auto_deposit_from_payment",
+            ),
             patch.object(sd, "resolve_group_chat_notification_url", new=AsyncMock(return_value=None)),
         ):
             mock_session = MagicMock()

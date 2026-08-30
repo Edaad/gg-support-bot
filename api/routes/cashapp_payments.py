@@ -6,6 +6,7 @@ import os
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
 
+from api.method_owner import MethodOwnerSlug
 from bot.services.cashapp_payments import (
     WEBHOOK_SECRET_ENV,
     ingest_cashapp_payment,
@@ -52,6 +53,7 @@ class CashAppPaymentIngestBody(BaseModel):
     source_external_id: str | None = None
     memo: str | None = None
     test: bool = False
+    method_owner: MethodOwnerSlug
 
 
 class CashAppPaymentIngestResponse(BaseModel):
@@ -129,6 +131,7 @@ async def ingest_payment(
             source_external_id=body.source_external_id,
             memo=body.memo,
             test=body.test,
+            method_owner=body.method_owner,
         )
     except ValueError as e:
         logger.warning("cashapp ingest: rejected bad request — %s", e)

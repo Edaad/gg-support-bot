@@ -41,6 +41,7 @@ class VenmoPaymentsApiTestCase(unittest.TestCase):
                 "payer_name": "Moshe Toussoun",
                 "amount": "200.00",
                 "venmo_handle": "@godfather4444",
+                "method_owner": "round-table",
             },
         )
         self.assertEqual(response.status_code, 401)
@@ -63,6 +64,7 @@ class VenmoPaymentsApiTestCase(unittest.TestCase):
                     "payer_name": "Moshe Toussoun",
                     "amount": "200.00",
                     "venmo_handle": "@godfather4444",
+                "method_owner": "round-table",
                     "goods_or_services": False,
                 },
                 headers={"X-Venmo-Webhook-Secret": WEBHOOK_SECRET},
@@ -93,12 +95,38 @@ class VenmoPaymentsApiTestCase(unittest.TestCase):
                     "payer_name": "Moshe Toussoun",
                     "amount": "150.00",
                     "venmo_handle": "@godfather4444",
+                "method_owner": "round-table",
                 },
                 headers={"X-Venmo-Webhook-Secret": WEBHOOK_SECRET},
             )
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["auto_bound"])
+
+    def test_ingest_rejects_missing_method_owner(self):
+        response = self.client.post(
+            "/api/venmo/payments",
+            json={
+                "payer_name": "Moshe Toussoun",
+                "amount": "200.00",
+                "venmo_handle": "@godfather4444",
+            },
+            headers={"X-Venmo-Webhook-Secret": WEBHOOK_SECRET},
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_ingest_rejects_invalid_method_owner(self):
+        response = self.client.post(
+            "/api/venmo/payments",
+            json={
+                "payer_name": "Moshe Toussoun",
+                "amount": "200.00",
+                "venmo_handle": "@godfather4444",
+                "method_owner": "unknown-owner",
+            },
+            headers={"X-Venmo-Webhook-Secret": WEBHOOK_SECRET},
+        )
+        self.assertEqual(response.status_code, 422)
 
 
 if __name__ == "__main__":

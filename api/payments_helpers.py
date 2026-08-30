@@ -463,6 +463,7 @@ def build_venmo_payment_read(session: Session, payment: VenmoPayment) -> dict:
         "created_at": payment.created_at,
         "bound_at": payment.bound_at,
         "memo": payment.memo,
+        "method_owner": payment.method_owner,
     }
 
 
@@ -733,6 +734,7 @@ def build_cashapp_payment_read(session: Session, payment: CashAppPayment) -> dic
         "is_test": payment.is_test,
         "created_at": payment.created_at,
         "bound_at": payment.bound_at,
+        "method_owner": payment.method_owner,
     }
 
 
@@ -835,6 +837,7 @@ def build_paypal_payment_read(session: Session, payment: PayPalPayment) -> dict:
         "is_test": payment.is_test,
         "created_at": payment.created_at,
         "bound_at": payment.bound_at,
+        "method_owner": payment.method_owner,
     }
 
 
@@ -862,6 +865,7 @@ def build_zelle_payment_read(session: Session, payment: ZellePayment) -> dict:
         "created_at": payment.created_at,
         "bound_at": payment.bound_at,
         "memo": payment.memo,
+        "method_owner": payment.method_owner,
     }
 
 
@@ -958,4 +962,251 @@ def build_crypto_payment_read(session: Session, payment: CryptoPayment) -> dict:
         "is_test": payment.is_test,
         "created_at": payment.created_at,
         "bound_at": payment.bound_at,
+        "method_owner": payment.method_owner,
     }
+
+
+# --- Owner-scoped dashboard queries (no club filter) ---
+
+OWNER_INGEST_METHODS: dict[str, type] = {
+    "venmo": VenmoPayment,
+    "zelle": ZellePayment,
+    "cashapp": CashAppPayment,
+    "paypal": PayPalPayment,
+    "crypto": CryptoPayment,
+}
+
+OWNER_VARIANT_COLUMNS: dict[str, str] = {
+    "venmo": "venmo_handle",
+    "zelle": "zelle_recipient",
+    "cashapp": "cashapp_handle",
+    "paypal": "paypal_email",
+    "crypto": "to_address",
+}
+
+OWNER_METHODS_BY_OWNER: dict[str, frozenset[str]] = {
+    "round-table": frozenset({"stripe", "venmo", "zelle", "cashapp", "paypal", "crypto"}),
+    "vaughn": frozenset({"venmo", "zelle"}),
+    "mateos": frozenset({"venmo", "zelle"}),
+}
+
+
+def owner_payment_search_clause(chat_id_column, term: str):
+    """Cross-club group / player search for owner-scoped payment lists."""
+    pattern = f"%{term.strip()}%"
+    group_match = exists(
+        select(1).where(
+            Group.chat_id == chat_id_column,
+            Group.name.ilike(pattern),
+        )
+    )
+    sgc_match = exists(
+        select(1).where(
+            SupportGroupChat.telegram_chat_id == chat_id_column,
+            SupportGroupChat.telegram_chat_title.ilike(pattern),
+        )
+    )
+    player_match = exists(
+        select(1).where(
+            chat_id_column == func.any(PlayerDetails.chat_ids),
+            or_(
+                PlayerDetails.gg_nickname.ilike(pattern),
+                PlayerDetails.gg_player_id.ilike(pattern),
+            ),
+        )
+    )
+    return and_(
+        chat_id_column.isnot(None),
+        or_(group_match, sgc_match, player_match),
+    )
+
+
+def _owner_ingest_search_filters(payment_cls, term: str):
+    pattern = f"%{term.strip()}%"
+    clauses = [
+        payment_cls.bound_group_title_at_bind.ilike(pattern),
+        owner_payment_search_clause(payment_cls.telegram_chat_id, term),
+    ]
+    if payment_cls is VenmoPayment:
+        clauses.extend(
+            [
+                VenmoPayment.payer_name.ilike(pattern),
+                VenmoPayment.venmo_handle.ilike(pattern),
+            ]
+        )
+    elif payment_cls is ZellePayment:
+        clauses.extend(
+            [
+                ZellePayment.payer_name.ilike(pattern),
+                ZellePayment.zelle_recipient.ilike(pattern),
+            ]
+        )
+    elif payment_cls is CashAppPayment:
+        clauses.extend(
+            [
+                CashAppPayment.payer_name.ilike(pattern),
+                CashAppPayment.cashapp_handle.ilike(pattern),
+            ]
+        )
+    elif payment_cls is PayPalPayment:
+        clauses.extend(
+            [
+                PayPalPayment.payer_name.ilike(pattern),
+                PayPalPayment.paypal_email.ilike(pattern),
+            ]
+        )
+    elif payment_cls is CryptoPayment:
+        clauses.extend(
+            [
+                CryptoPayment.from_address.ilike(pattern),
+                CryptoPayment.from_entity_name.ilike(pattern),
+                CryptoPayment.to_address.ilike(pattern),
+                CryptoPayment.transaction_hash.ilike(pattern),
+                CryptoPayment.token_symbol.ilike(pattern),
+            ]
+        )
+    return or_(*clauses)
+
+
+def apply_owner_ingest_filters(
+    query,
+    payment_cls,
+    *,
+    method_owner: str,
+    variant: str | None,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+    q: str | None,
+):
+    query = query.filter(
+        payment_cls.method_owner == method_owner,
+        payment_cls.is_test.is_(False),
+    )
+    variant_col_name = None
+    for method_slug, cls in OWNER_INGEST_METHODS.items():
+        if cls is payment_cls:
+            variant_col_name = OWNER_VARIANT_COLUMNS[method_slug]
+            break
+    if variant and variant.strip() and variant_col_name:
+        variant_col = getattr(payment_cls, variant_col_name)
+        query = query.filter(variant_col == variant.strip())
+    if from_dt is not None:
+        query = query.filter(payment_cls.created_at >= from_dt)
+    if to_dt is not None:
+        query = query.filter(payment_cls.created_at <= to_dt)
+    if q and q.strip():
+        query = query.filter(_owner_ingest_search_filters(payment_cls, q))
+    return query
+
+
+def owner_stripe_search_clause(term: str):
+    pattern = f"%{term.strip()}%"
+    customer_match = exists(
+        select(1).where(
+            StripeCustomer.stripe_customer_id == StripeCheckoutSession.stripe_customer_id,
+            or_(
+                StripeCustomer.stripe_customer_id.ilike(pattern),
+                StripeCustomer.gg_player_id.ilike(pattern),
+                StripeCustomer.player_display_name.ilike(pattern),
+            ),
+        )
+    )
+    return or_(
+        owner_payment_search_clause(StripeCheckoutSession.telegram_chat_id, term),
+        customer_match,
+    )
+
+
+def apply_owner_stripe_filters(
+    query,
+    *,
+    variant: str | None,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+    q: str | None,
+):
+    query = query.filter(StripeCheckoutSession.status == "complete")
+    if variant and variant.strip():
+        variant_key = variant.strip()
+        if variant_key == "manual":
+            query = query.filter(StripeCheckoutSession.payment_method_id.is_(None))
+        elif variant_key.isdigit():
+            query = query.filter(
+                StripeCheckoutSession.payment_method_id == int(variant_key)
+            )
+    if from_dt is not None:
+        query = query.filter(StripeCheckoutSession.created_at >= from_dt)
+    if to_dt is not None:
+        query = query.filter(StripeCheckoutSession.created_at <= to_dt)
+    if q and q.strip():
+        query = query.filter(owner_stripe_search_clause(q))
+    return query
+
+
+def aggregate_owner_payment_query(query, amount_column):
+    row = query.with_entities(
+        func.count().label("total_count"),
+        func.coalesce(func.sum(amount_column), 0).label("total_amount_cents"),
+    ).one()
+    total_count = int(row.total_count or 0)
+    total_amount_cents = int(row.total_amount_cents or 0)
+    return total_count, total_amount_cents
+
+
+def distinct_owner_ingest_variants(
+    session: Session,
+    payment_cls,
+    *,
+    method_owner: str,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+) -> list[str]:
+    variant_col_name = None
+    for method_slug, cls in OWNER_INGEST_METHODS.items():
+        if cls is payment_cls:
+            variant_col_name = OWNER_VARIANT_COLUMNS[method_slug]
+            break
+    if variant_col_name is None:
+        return []
+    variant_col = getattr(payment_cls, variant_col_name)
+    query = session.query(variant_col).filter(
+        payment_cls.method_owner == method_owner,
+        payment_cls.is_test.is_(False),
+        variant_col.isnot(None),
+        variant_col != "",
+    )
+    if from_dt is not None:
+        query = query.filter(payment_cls.created_at >= from_dt)
+    if to_dt is not None:
+        query = query.filter(payment_cls.created_at <= to_dt)
+    rows = query.distinct().order_by(variant_col.asc()).all()
+    return [str(row[0]) for row in rows if row[0]]
+
+
+def distinct_owner_stripe_variants(
+    session: Session,
+    *,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+) -> list[dict]:
+    query = session.query(
+        StripeCheckoutSession.payment_method_id,
+        StripeCheckoutSession.club_id,
+    ).filter(StripeCheckoutSession.status == "complete")
+    if from_dt is not None:
+        query = query.filter(StripeCheckoutSession.created_at >= from_dt)
+    if to_dt is not None:
+        query = query.filter(StripeCheckoutSession.created_at <= to_dt)
+    rows = query.distinct().all()
+    seen: dict[str, str] = {}
+    for method_id, club_id in rows:
+        if method_id is None:
+            key = "manual"
+            label = "Manual (/stripe)"
+        else:
+            name, slug = resolve_method_display(session, int(club_id), int(method_id))
+            key = str(method_id)
+            label = name or slug or key
+        seen[key] = label
+    return [{"id": key, "label": label} for key, label in sorted(seen.items(), key=lambda x: x[1].lower())]
+

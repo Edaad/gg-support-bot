@@ -1,4 +1,4 @@
-"""Union methods API: shared multi-club manual deposit configs."""
+"""Union methods API: shared multi-club manual deposit configs (Pool Pay)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
@@ -15,6 +15,12 @@ from sqlalchemy.orm import Session, joinedload
 from api.auth import get_current_admin
 from api.payment_v2_helpers import apply_manual_trade_request_constraints
 from bot.services.deposit_union_types import validate_deposit_union
+from bot.services.pool_pay_types import (
+    build_pool_pay_slug,
+    normalize_identifier_suffix,
+    parse_pool_pay_slug,
+    validate_pool_pay_type,
+)
 from bot.services.union_method_types import (
     union_type_display_name,
     union_type_from_display_name,
@@ -29,13 +35,14 @@ from db.models import (
 )
 
 router = APIRouter(
-    prefix="/api/union-methods",
-    tags=["union-methods"],
+    prefix="/api/pool-pay",
+    tags=["pool-pay"],
     dependencies=[Depends(get_current_admin)],
 )
 
 UnionMethodTypeSlug = Literal["zelle", "cashapp", "applepay", "venmo"]
 DepositUnionSlug = Literal["tmt", "massiv"]
+PoolPayTypeSlug = Literal["union_method", "large_cashout"]
 
 
 class UnionMethodClubRead(BaseModel):
@@ -48,8 +55,10 @@ class UnionMethodRead(BaseModel):
 
     id: int
     type: str
-    deposit_union: str
+    pool_pay_type: PoolPayTypeSlug
+    deposit_union: Optional[str] = None
     internal_identifier: str
+    identifier_suffix: str
     method_tag: str
     payment_account_name: Optional[str] = None
     is_active: bool
@@ -65,9 +74,10 @@ class UnionMethodRead(BaseModel):
 
 
 class UnionMethodCreate(BaseModel):
+    pool_pay_type: PoolPayTypeSlug = "union_method"
     type: UnionMethodTypeSlug
-    deposit_union: DepositUnionSlug
-    internal_identifier: str = Field(..., min_length=1, max_length=50)
+    deposit_union: Optional[DepositUnionSlug] = None
+    identifier_suffix: str = Field(..., min_length=1, max_length=50)
     method_tag: str = Field(..., min_length=1, max_length=200)
     payment_account_name: Optional[str] = Field(None, max_length=200)
     club_ids: List[int] = Field(..., min_length=1)
@@ -75,11 +85,22 @@ class UnionMethodCreate(BaseModel):
     min_amount: Optional[Decimal] = None
     max_amount: Optional[Decimal] = None
 
+    @model_validator(mode="after")
+    def _validate_deposit_union(self) -> "UnionMethodCreate":
+        pay_type = validate_pool_pay_type(self.pool_pay_type)
+        if pay_type == "union_method":
+            if self.deposit_union is None:
+                raise ValueError("deposit_union is required for union method pool pay.")
+        elif self.deposit_union is not None:
+            raise ValueError("deposit_union is not allowed for large cashout pool pay.")
+        return self
+
 
 class UnionMethodUpdate(BaseModel):
+    pool_pay_type: Optional[PoolPayTypeSlug] = None
     type: Optional[UnionMethodTypeSlug] = None
     deposit_union: Optional[DepositUnionSlug] = None
-    internal_identifier: Optional[str] = Field(None, min_length=1, max_length=50)
+    identifier_suffix: Optional[str] = Field(None, min_length=1, max_length=50)
     method_tag: Optional[str] = Field(None, min_length=1, max_length=200)
     payment_account_name: Optional[str] = Field(None, max_length=200)
     club_ids: Optional[List[int]] = Field(None, min_length=1)
@@ -132,6 +153,47 @@ def _ensure_unique_internal_identifier(
     raise HTTPException(
         400, "Could not allocate a unique internal identifier; try a different value."
     )
+
+
+def _build_slug_from_parts(
+    *,
+    method_type: str,
+    pool_pay_type: str,
+    identifier_suffix: str,
+    db: Session,
+    exclude_method_id: Optional[int] = None,
+) -> str:
+    try:
+        suffix = normalize_identifier_suffix(identifier_suffix)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    try:
+        slug = build_pool_pay_slug(method_type, pool_pay_type, suffix)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _ensure_unique_internal_identifier(
+        db, slug, exclude_method_id=exclude_method_id
+    )
+
+
+def _identifier_suffix_for_method(method: ClubPaymentMethod) -> str:
+    parsed = parse_pool_pay_slug(method.slug or "")
+    if parsed:
+        return parsed[2]
+    return method.slug or ""
+
+
+def _pool_pay_type_for_method(method: ClubPaymentMethod) -> str:
+    raw = getattr(method, "pool_pay_type", None)
+    if raw:
+        try:
+            return validate_pool_pay_type(str(raw))
+        except ValueError:
+            pass
+    parsed = parse_pool_pay_slug(method.slug or "")
+    if parsed:
+        return parsed[1]
+    return "union_method"
 
 
 def _next_sort_order(db: Session, method_type: str) -> int:
@@ -289,11 +351,15 @@ def _to_read(
             clubs.append(UnionMethodClubRead(id=int(mc.club_id), name=f"Club {mc.club_id}"))
     method_type = _method_type_slug(method)
     account_name = getattr(method, "payment_account_name", None)
+    deposit_union = getattr(method, "deposit_union", None)
+    pool_pay_type = _pool_pay_type_for_method(method)
     return UnionMethodRead(
         id=int(method.id),
         type=method_type,
-        deposit_union=str(getattr(method, "deposit_union", "") or ""),
+        pool_pay_type=pool_pay_type,  # type: ignore[arg-type]
+        deposit_union=(str(deposit_union).strip() if deposit_union else None),
         internal_identifier=method.slug or "",
+        identifier_suffix=_identifier_suffix_for_method(method),
         method_tag=getattr(method, "method_tag", "") or "",
         payment_account_name=(account_name.strip() if account_name else None) or None,
         is_active=bool(method.is_active),
@@ -324,7 +390,7 @@ def _get_union_method(db: Session, method_id: int) -> ClubPaymentMethod:
         .one_or_none()
     )
     if not method:
-        raise HTTPException(404, "Union method not found")
+        raise HTTPException(404, "Pool pay method not found")
     return method
 
 
@@ -332,6 +398,7 @@ def _get_union_method(db: Session, method_id: int) -> ClubPaymentMethod:
 def list_union_methods(
     is_active: Optional[bool] = Query(None),
     deposit_union: Optional[DepositUnionSlug] = Query(None),
+    pool_pay_type: Optional[PoolPayTypeSlug] = Query(None),
     db: Session = Depends(get_db_dependency),
 ):
     q = (
@@ -348,6 +415,10 @@ def list_union_methods(
     if deposit_union is not None:
         q = q.filter(
             ClubPaymentMethod.deposit_union == validate_deposit_union(deposit_union)
+        )
+    if pool_pay_type is not None:
+        q = q.filter(
+            ClubPaymentMethod.pool_pay_type == validate_pool_pay_type(pool_pay_type)
         )
     methods = q.order_by(
         ClubPaymentMethod.union_type,
@@ -390,7 +461,7 @@ def reorder_union_methods(
     if set(order_ids) != set(by_id.keys()):
         raise HTTPException(
             400,
-            "Order must include exactly the active union methods for this type.",
+            "Order must include exactly the active pool pay methods for this type.",
         )
     for idx, method_id in enumerate(order_ids):
         by_id[method_id].sort_order = idx
@@ -409,10 +480,25 @@ def get_union_method(method_id: int, db: Session = Depends(get_db_dependency)):
 
 @router.post("", response_model=UnionMethodRead, status_code=201)
 def create_union_method(body: UnionMethodCreate, db: Session = Depends(get_db_dependency)):
+    try:
+        validated = UnionMethodCreate.model_validate(body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    body = validated
     clubs = _validate_club_ids(db, body.club_ids)
     method_type = validate_union_method_type(body.type)
-    deposit_union = validate_deposit_union(body.deposit_union)
-    internal_id = _ensure_unique_internal_identifier(db, body.internal_identifier)
+    pool_pay_type = validate_pool_pay_type(body.pool_pay_type)
+    deposit_union = (
+        validate_deposit_union(body.deposit_union)
+        if pool_pay_type == "union_method"
+        else None
+    )
+    internal_id = _build_slug_from_parts(
+        method_type=method_type,
+        pool_pay_type=pool_pay_type,
+        identifier_suffix=body.identifier_suffix,
+        db=db,
+    )
     display_name = union_type_display_name(method_type)
     account_name = (body.payment_account_name or "").strip() or None
     method = ClubPaymentMethod(
@@ -421,6 +507,7 @@ def create_union_method(body: UnionMethodCreate, db: Session = Depends(get_db_de
         name=display_name,
         slug=internal_id,
         union_type=method_type,
+        pool_pay_type=pool_pay_type,
         deposit_union=deposit_union,
         method_tag=body.method_tag.strip(),
         payment_account_name=account_name,
@@ -469,15 +556,47 @@ def update_union_method(
     method = _get_union_method(db, method_id)
     data = body.model_dump(exclude_unset=True)
     club_ids = data.pop("club_ids", None)
+
+    method_type = _method_type_slug(method)
+    pool_pay_type = _pool_pay_type_for_method(method)
+    type_changed = False
+    pool_pay_type_changed = False
+
+    if "pool_pay_type" in data and data["pool_pay_type"] is not None:
+        pool_pay_type = validate_pool_pay_type(data.pop("pool_pay_type"))
+        method.pool_pay_type = pool_pay_type
+        pool_pay_type_changed = True
+        if pool_pay_type == "large_cashout":
+            method.deposit_union = None
     if "type" in data and data["type"] is not None:
         method_type = validate_union_method_type(data.pop("type"))
         method.union_type = method_type
         method.name = union_type_display_name(method_type)
-    if "deposit_union" in data and data["deposit_union"] is not None:
-        method.deposit_union = validate_deposit_union(data.pop("deposit_union"))
-    if "internal_identifier" in data and data["internal_identifier"] is not None:
-        method.slug = _ensure_unique_internal_identifier(
-            db, data.pop("internal_identifier"), exclude_method_id=int(method.id)
+        type_changed = True
+    if "deposit_union" in data:
+        raw_union = data.pop("deposit_union")
+        if pool_pay_type == "large_cashout" and raw_union is not None:
+            raise HTTPException(400, "deposit_union is not allowed for large cashout.")
+        method.deposit_union = (
+            validate_deposit_union(raw_union) if raw_union is not None else None
+        )
+    elif pool_pay_type == "union_method" and method.deposit_union is None:
+        raise HTTPException(400, "deposit_union is required for union method pool pay.")
+
+    rebuild_slug = type_changed or pool_pay_type_changed
+    if "identifier_suffix" in data and data["identifier_suffix"] is not None:
+        suffix = data.pop("identifier_suffix")
+        rebuild_slug = True
+    else:
+        suffix = _identifier_suffix_for_method(method)
+
+    if rebuild_slug:
+        method.slug = _build_slug_from_parts(
+            method_type=method_type,
+            pool_pay_type=pool_pay_type,
+            identifier_suffix=suffix,
+            db=db,
+            exclude_method_id=int(method.id),
         )
     if "method_tag" in data and data["method_tag"] is not None:
         method.method_tag = data.pop("method_tag").strip()

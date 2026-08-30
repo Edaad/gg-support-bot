@@ -443,6 +443,18 @@ Dashboard **Cashout records** and **Bonuses** pages include CSV export (inclusiv
 Dashboard **Expenses** (admin only) uses `expenses` and XLSX export: `GET /api/expenses/export?from=…&to=…` (plus optional `club_id`, `pending`, `q`).
 Set app-wide (worker + notification dynos). Restart after deploy: `heroku restart worker notification -a YOUR_APP`
 
+## Payment method_owner column
+
+After deploying `method_owner` on manual payment ingest, run once on production Postgres:
+
+```bash
+heroku run -a YOUR_APP -- python migrate_payment_method_owner.py
+```
+
+Adds `method_owner` to `venmo_payments`, `zelle_payments`, `cashapp_payments`, `paypal_payments`, and `crypto_payments`; backfills existing rows from Vaughn heuristics; adds `(method_owner, created_at)` indexes.
+
+Zapier ingests must send `method_owner` on every POST (`round-table`, `vaughn`, or `mateos`) before traffic hits the new API.
+
 ## Payment binding audit log
 
 After deploying binding-event tracking, run once on production Postgres:
@@ -569,6 +581,14 @@ heroku run -a YOUR_APP -- python migrate_union_deposit_ack.py
 ```
 
 Adds durable ack-state columns on `manual_deposit_requests` (ack message id, ack/instruction expiry timestamps, initiating player id).
+
+After deploying Pool Pay (union method + large cashout categories, structured slugs):
+
+```bash
+heroku run -a YOUR_APP -- python migrate_pool_pay.py
+```
+
+This adds `pool_pay_type` on pool-pay methods, backfills existing rows as `union_method`, and rewrites slugs to `{type}-union-{old_slug}` (e.g. `main-zelle-rt` → `zelle-union-main-zelle-rt`). Manage methods on the **Pool Pay** dashboard (`/api/pool-pay`).
 
 ## Per-group deposit / cashout method access
 

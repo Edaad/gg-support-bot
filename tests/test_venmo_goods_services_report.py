@@ -7,6 +7,7 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from bot.services import venmo_payments as vp
 from db.models import VenmoPayment
+from tests.support.ingest_mocks import start_payment_ingest_mocks, stop_patchers
 
 CHAT_ID = -1001234567890
 CLUB_ID = 2
@@ -21,9 +22,12 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
             "notification.payment_notification_posts.record_payment_notification_posts"
         )
         self._record_posts.start()
+        self._ingest_patchers = start_payment_ingest_mocks()
 
     def tearDown(self) -> None:
+        stop_patchers(self._ingest_patchers)
         self._record_posts.stop()
+
     async def test_skips_when_not_goods_or_services(self):
         payment = VenmoPayment(
             id=1,
@@ -155,6 +159,7 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
                 payer_name="Jackson Taylor",
                 amount="80.00",
                 venmo_handle="@godfather4444",
+                method_owner="round-table",
                 goods_or_services=True,
             )
 
@@ -188,6 +193,7 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
                 payer_name="Jackson Taylor",
                 amount="80.00",
                 venmo_handle="@godfather4444",
+                method_owner="round-table",
                 goods_or_services=True,
                 source_external_id="gmail-msg-123",
             )
@@ -257,6 +263,7 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
                 payer_name="Brayden solberg",
                 amount="250.00",
                 venmo_handle="@godfather4444",
+                method_owner="round-table",
                 goods_or_services=False,
             )
 

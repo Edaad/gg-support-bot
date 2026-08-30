@@ -12,15 +12,21 @@ from api.audit_ledger import (
     LedgerLine,
     UNION_MATCHING_SOURCE_OPTIONS,
 )
-from bot.services.payment_method_binding import canonicalize_zelle_recipient
+from bot.services.payment_method_binding import (
+    ZELLE_BANK_LABEL_TO_RECIPIENT,
+    _zelle_bank_label_key,
+    canonicalize_zelle_recipient,
+)
 
 # Payment tags stored on ledger Variant (zelle_recipient / venmo_handle).
 VAUGHN_ZELLE_RECIPIENTS = frozenset(
     {
         "2133729202",
+        "3105670961",
         "starship5vllc@gmail.com",
         "coachingstarship@gmail.com",
         "janvenmo@gmail.com",
+        "clubgto1234@gmail.com",
     }
 )
 VAUGHN_VENMO_HANDLES = frozenset({"janseashells"})
@@ -53,6 +59,23 @@ def normalize_venmo_handle(tag: str) -> str:
     return (tag or "").strip().lstrip("@").lower()
 
 
+def is_vaughn_zelle_tag(tag: str) -> bool:
+    """True when a Zelle recipient or Zapier bank label belongs to Vaughn/GTO."""
+    raw = (tag or "").strip()
+    if not raw:
+        return False
+    canonical = normalize_zelle_recipient(raw)
+    if canonical in VAUGHN_ZELLE_RECIPIENTS:
+        return True
+    if "clubgto" in canonical:
+        return True
+    key = _zelle_bank_label_key(raw)
+    if key in ZELLE_BANK_LABEL_TO_RECIPIENT:
+        mapped = canonicalize_zelle_recipient(raw)
+        return mapped in VAUGHN_ZELLE_RECIPIENTS or "clubgto" in mapped
+    return False
+
+
 def is_vaughn_method(
     *,
     source: str,
@@ -70,7 +93,7 @@ def is_vaughn_method(
             return True
     tag = (variant or "").strip()
     if src == "deposit_zelle":
-        return normalize_zelle_recipient(tag) in VAUGHN_ZELLE_RECIPIENTS
+        return is_vaughn_zelle_tag(tag)
     if src == "deposit_venmo":
         return normalize_venmo_handle(tag) in VAUGHN_VENMO_HANDLES
     return False

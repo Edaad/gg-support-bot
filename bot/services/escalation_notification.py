@@ -42,8 +42,12 @@ REASON_RPA_CASHOUT_UNCERTAIN = "rpa_cashout_uncertain"
 REASON_AUTO_CASHOUT_ESCALATION = "auto_cashout_escalation"
 REASON_UNION_DEPOSIT_FIRST = "union_deposit_first"
 REASON_UNION_DEPOSIT_REPEAT = "union_deposit_repeat"
+REASON_LARGE_CASHOUT_PAYOUT = "large_cashout_payout"
 
 _UNION_DEPOSIT_HEADLINE = "Union method deposit"
+_LARGE_CASHOUT_HEADLINE = "Large cashout payout"
+_LARGE_CASHOUT_CONTEXT = "Check dashboard trade record."
+_UNION_DEPOSIT_SCREEN_RECORDING_REQUIRED = "SCREEN RECORDING REQUIRED"
 _UNION_DEPOSIT_INSTRUCTION = (
     "Verify the time, ensure payment status is visible, and if you are unsure, "
     "contact head admins."
@@ -439,8 +443,85 @@ def format_union_deposit_slack_text(
         f"Amount: {amount_str}",
         f"Tag: {tag}",
         "",
+        f"*{_UNION_DEPOSIT_SCREEN_RECORDING_REQUIRED}*",
+        "",
         _UNION_DEPOSIT_INSTRUCTION,
     ]
+    return "\n".join(lines)
+
+
+def format_large_cashout_slack_text(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None,
+    amount,
+    method_tag: str | None,
+    requested_at: datetime | None,
+) -> str:
+    club = _club_display_name(club_id)
+    group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
+    amount_str = _union_deposit_amount_str(amount)
+    tag = (method_tag or "").strip() or "(not configured)"
+    lines = [
+        f"*{_LARGE_CASHOUT_HEADLINE}*",
+        _LARGE_CASHOUT_CONTEXT,
+        f"Club: {club}",
+        _slack_code_span(group_title),
+        "",
+        f"Time: {_format_union_deposit_time(requested_at)}",
+        f"Amount: {amount_str}",
+        f"Tag: {tag}",
+        "",
+        f"*{_UNION_DEPOSIT_SCREEN_RECORDING_REQUIRED}*",
+        "",
+        _UNION_DEPOSIT_INSTRUCTION,
+    ]
+    return "\n".join(lines)
+
+
+async def format_large_cashout_telegram_text(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None,
+    amount,
+    method_tag: str | None,
+    requested_at: datetime | None,
+) -> str:
+    from notification.formatting import format_player_id_line, resolve_and_format_group_chat_line
+
+    club = _club_display_name(club_id)
+    group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
+    amount_str = _union_deposit_amount_str(amount)
+    tag = (method_tag or "").strip() or "(not configured)"
+    time_str = _format_union_deposit_time(requested_at)
+    lines = [
+        f"<b>{html.escape(_LARGE_CASHOUT_HEADLINE, quote=False)}</b>",
+        html.escape(_LARGE_CASHOUT_CONTEXT, quote=False),
+        "",
+        f"Club: {html.escape(club, quote=False)}",
+        await resolve_and_format_group_chat_line(
+            group_title=group_title,
+            telegram_chat_id=int(chat_id),
+            club_id=club_id,
+        ),
+    ]
+    player_line = format_player_id_line(group_title)
+    if player_line:
+        lines.append(player_line)
+    lines.extend(
+        [
+            "",
+            f"Time: {html.escape(time_str, quote=False)}",
+            f"Amount: {html.escape(amount_str, quote=False)}",
+            f"Tag: {html.escape(tag, quote=False)}",
+            "",
+            f"<b>{html.escape(_UNION_DEPOSIT_SCREEN_RECORDING_REQUIRED, quote=False)}</b>",
+            "",
+            html.escape(_UNION_DEPOSIT_INSTRUCTION, quote=False),
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -483,6 +564,8 @@ async def format_union_deposit_telegram_text(
             f"Amount: {html.escape(amount_str, quote=False)}",
             f"Tag: {html.escape(tag, quote=False)}",
             "",
+            f"<b>{html.escape(_UNION_DEPOSIT_SCREEN_RECORDING_REQUIRED, quote=False)}</b>",
+            "",
             html.escape(_UNION_DEPOSIT_INSTRUCTION, quote=False),
         ]
     )
@@ -516,8 +599,9 @@ async def _notify_union_deposit_payment_chats(
         )
 
 
-async def notify_union_deposit_request_slack(
+async def notify_pool_pay_deposit_slack(
     *,
+    pool_pay_type: str,
     variant: str,
     club_id: int | None,
     chat_id: int,
@@ -527,13 +611,51 @@ async def notify_union_deposit_request_slack(
     method_tag: str | None,
     requested_at: datetime | None,
 ) -> bool:
-    """Slack AMs when a union manual deposit is created."""
+    """Slack AMs when a pool pay manual deposit is created."""
     if is_test_bot_worker():
         return False
     if not escalation_notification_eligible(
         int(chat_id), club_id=club_id, title=title
     ):
         return False
+
+    pay_type = (pool_pay_type or "union_method").strip().lower()
+    if pay_type == "large_cashout":
+        reason = REASON_LARGE_CASHOUT_PAYOUT
+        text = format_large_cashout_slack_text(
+            club_id=club_id,
+            chat_id=int(chat_id),
+            title=title,
+            amount=amount,
+            method_tag=method_tag,
+            requested_at=requested_at,
+        )
+        try:
+            telegram_text = await format_large_cashout_telegram_text(
+                club_id=club_id,
+                chat_id=int(chat_id),
+                title=title,
+                amount=amount,
+                method_tag=method_tag,
+                requested_at=requested_at,
+            )
+            await _notify_union_deposit_payment_chats(
+                telegram_text=telegram_text,
+                group_title=title or get_group_name(int(chat_id)),
+            )
+        except Exception:
+            logger.warning(
+                "large cashout: telegram payment notification failed chat_id=%s",
+                chat_id,
+                exc_info=True,
+            )
+        return await notify_escalation_slack(
+            reason,
+            club_id=club_id,
+            chat_id=int(chat_id),
+            title=title,
+            slack_text=text,
+        )
 
     from bot.services.manual_deposit_requests import UnionDepositSlackVariant
 
@@ -578,6 +700,31 @@ async def notify_union_deposit_request_slack(
         chat_id=int(chat_id),
         title=title,
         slack_text=text,
+    )
+
+
+async def notify_union_deposit_request_slack(
+    *,
+    variant: str,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None,
+    amount,
+    method_display_name: str,
+    method_tag: str | None,
+    requested_at: datetime | None,
+) -> bool:
+    """Slack AMs when a union manual deposit is created."""
+    return await notify_pool_pay_deposit_slack(
+        pool_pay_type="union_method",
+        variant=variant,
+        club_id=club_id,
+        chat_id=chat_id,
+        title=title,
+        amount=amount,
+        method_display_name=method_display_name,
+        method_tag=method_tag,
+        requested_at=requested_at,
     )
 
 

@@ -26,6 +26,7 @@ SAMPLE_BODY = {
     "paid_at": "2026-05-06T23:56:53Z",
     "source_external_id": "0xa64ed1c7ecf9dbd350f2738f9d8f0699625ee957e42a4bd6dc165c619936f6d3_59",
     "alert_name": "ClubGTO Crypto Payment",
+    "method_owner": "round-table",
 }
 
 
@@ -76,6 +77,26 @@ class CryptoPaymentsApiTestCase(unittest.TestCase):
         self.assertEqual(data["status"], "unbound")
         self.assertFalse(data["auto_bound"])
         self.assertTrue(data["created"])
+
+    def test_ingest_rejects_missing_method_owner(self):
+        body = dict(SAMPLE_BODY)
+        body.pop("method_owner")
+        response = self.client.post(
+            "/api/crypto/payments",
+            json=body,
+            headers={"X-Crypto-Webhook-Secret": WEBHOOK_SECRET},
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_ingest_rejects_invalid_method_owner(self):
+        body = dict(SAMPLE_BODY)
+        body["method_owner"] = "invalid"
+        response = self.client.post(
+            "/api/crypto/payments",
+            json=body,
+            headers={"X-Crypto-Webhook-Secret": WEBHOOK_SECRET},
+        )
+        self.assertEqual(response.status_code, 422)
 
 
 if __name__ == "__main__":

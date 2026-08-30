@@ -41,6 +41,7 @@ class PayPalPaymentsApiTestCase(unittest.TestCase):
                 "payer_name": "Marcus Ahlbäck",
                 "amount": "200.00",
                 "paypal_email": "payments@clubgto.com",
+                "method_owner": "round-table",
             },
         )
         self.assertEqual(response.status_code, 401)
@@ -63,6 +64,7 @@ class PayPalPaymentsApiTestCase(unittest.TestCase):
                     "payer_name": "Marcus Ahlbäck",
                     "amount": "200.00",
                     "paypal_email": "payments@clubgto.com",
+                    "method_owner": "round-table",
                     "memo": "FLOP",
                 },
                 headers={"X-Paypal-Webhook-Secret": WEBHOOK_SECRET},
@@ -74,3 +76,29 @@ class PayPalPaymentsApiTestCase(unittest.TestCase):
         self.assertEqual(data["status"], "unbound")
         self.assertFalse(data["auto_bound"])
         self.assertTrue(data["created"])
+
+    def test_ingest_rejects_missing_method_owner(self):
+        response = self.client.post(
+            "/api/paypal/payments",
+            json={
+                "payer_name": "Marcus Ahlbäck",
+                "amount": "200.00",
+                "paypal_email": "payments@clubgto.com",
+            },
+            headers={"X-Paypal-Webhook-Secret": WEBHOOK_SECRET},
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_ingest_rejects_invalid_method_owner(self):
+        response = self.client.post(
+            "/api/paypal/payments",
+            json={
+                "payer_name": "Marcus Ahlbäck",
+                "amount": "200.00",
+                "paypal_email": "payments@clubgto.com",
+                "method_owner": "invalid",
+            },
+            headers={"X-Paypal-Webhook-Secret": WEBHOOK_SECRET},
+        )
+        self.assertEqual(response.status_code, 422)
+

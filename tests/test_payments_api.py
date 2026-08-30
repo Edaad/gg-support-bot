@@ -145,6 +145,7 @@ class PaymentsApiTestCase(unittest.TestCase):
                     "status": "bound",
                     "auto_bound": False,
                     "is_test": False,
+                    "method_owner": "round-table",
                     "created_at": "2024-01-01T00:00:00Z",
                     "bound_at": "2024-01-01T00:00:00Z",
                 },

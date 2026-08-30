@@ -8,6 +8,7 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from bot.services import venmo_payments as vp
 from db.models import VenmoPayerBinding, VenmoPayment
 from notification.payment_lookup import PaymentRef
+from tests.support.ingest_mocks import start_payment_ingest_mocks, stop_patchers
 
 CHAT_ID = -1001234567890
 CLUB_ID = 2
@@ -217,8 +218,10 @@ class SetupAlreadyLinkedIngestTestCase(unittest.IsolatedAsyncioTestCase):
             "notification.payment_notification_posts.record_payment_notification_posts"
         )
         self._record_posts.start()
+        self._ingest_patchers = start_payment_ingest_mocks()
 
     def tearDown(self) -> None:
+        stop_patchers(self._ingest_patchers)
         self._record_posts.stop()
 
     async def test_ingest_setup_match_already_linked_leaves_unbound(self):
@@ -312,6 +315,7 @@ class SetupAlreadyLinkedIngestTestCase(unittest.IsolatedAsyncioTestCase):
                 payer_name="Moshe Toussoun",
                 amount="5.00",
                 venmo_handle="@godfather4444",
+                method_owner="round-table",
                 memo="FLOP",
             )
 
@@ -357,8 +361,10 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             "notification.payment_notification_posts.record_payment_notification_posts"
         )
         self._record_posts.start()
+        self._ingest_patchers = start_payment_ingest_mocks()
 
     def tearDown(self) -> None:
+        stop_patchers(self._ingest_patchers)
         self._record_posts.stop()
 
     async def test_bind_updates_payment(self):
@@ -501,6 +507,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
                 payer_name="Moshe Toussoun",
                 amount="200.00",
                 venmo_handle="@godfather4444",
+                method_owner="round-table",
             )
 
         self.assertTrue(result.auto_bound)
@@ -574,6 +581,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
                 payer_name="Moshe Toussoun",
                 amount="150.00",
                 venmo_handle="@other-venmo",
+                method_owner="round-table",
             )
 
         self.assertTrue(result.auto_bound)
@@ -655,6 +663,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
                 payer_name="Winson Dong",
                 amount="200.00",
                 venmo_handle="@godfather4444",
+                method_owner="round-table",
                 test=True,
             )
 
@@ -739,6 +748,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
                 payer_name="Winson Dong",
                 amount="200.00",
                 venmo_handle="@godfather4444",
+                method_owner="round-table",
                 test=True,
             )
 
@@ -785,6 +795,7 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
                 payer_name="Jungwook Youn",
                 amount="300.00",
                 venmo_handle="@godfather4444",
+                method_owner="round-table",
                 source_external_id="1974050a62bcb581",
             )
 

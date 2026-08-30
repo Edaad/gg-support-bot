@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.services import cashapp_payments as cp
 from db.models import CashAppPayerBinding, CashAppPayment
+from tests.support.ingest_mocks import start_payment_ingest_mocks, stop_patchers
 
 CHAT_ID = -1001234567890
 CLUB_ID = 2
@@ -58,8 +59,10 @@ class CashAppIngestMemoSetupTestCase(unittest.IsolatedAsyncioTestCase):
             "notification.payment_notification_posts.record_payment_notification_posts"
         )
         self._record_posts.start()
+        self._ingest_patchers = start_payment_ingest_mocks()
 
     def tearDown(self) -> None:
+        stop_patchers(self._ingest_patchers)
         self._record_posts.stop()
 
     async def test_ingest_memo_setup_auto_binds(self):
@@ -135,6 +138,7 @@ class CashAppIngestMemoSetupTestCase(unittest.IsolatedAsyncioTestCase):
                 payer_name="Jackson Taylor",
                 amount="5.00",
                 cashapp_handle="$michaelc4444",
+                method_owner="round-table",
                 memo="FLOP",
             )
 

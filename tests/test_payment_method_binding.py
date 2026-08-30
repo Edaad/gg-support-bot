@@ -668,6 +668,10 @@ class TestZelleRecipientHelpers(unittest.TestCase):
             canonicalize_zelle_recipient("clubgto well's fargo"),
             "2133729202",
         )
+        self.assertEqual(
+            canonicalize_zelle_recipient("gto chase zelle"),
+            "clubgto1234@gmail.com",
+        )
 
     def test_zelle_memo_setup_requires_recipient_match(self):
         from datetime import datetime, timedelta, timezone

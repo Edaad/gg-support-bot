@@ -41,6 +41,7 @@ class ZellePaymentsApiTestCase(unittest.TestCase):
                 "payer_name": "Jane Doe",
                 "amount": "200.00",
                 "zelle_recipient": "pay@example.com",
+                "method_owner": "round-table",
             },
         )
         self.assertEqual(response.status_code, 401)
@@ -63,6 +64,7 @@ class ZellePaymentsApiTestCase(unittest.TestCase):
                     "payer_name": "Jane Doe",
                     "amount": "200.00",
                     "zelle_recipient": "pay@example.com",
+                    "method_owner": "round-table",
                 },
                 headers={"X-Zelle-Webhook-Secret": WEBHOOK_SECRET},
             )
@@ -73,6 +75,31 @@ class ZellePaymentsApiTestCase(unittest.TestCase):
         self.assertEqual(data["status"], "unbound")
         self.assertFalse(data["auto_bound"])
         self.assertTrue(data["created"])
+
+    def test_ingest_rejects_missing_method_owner(self):
+        response = self.client.post(
+            "/api/zelle/payments",
+            json={
+                "payer_name": "Jane Doe",
+                "amount": "200.00",
+                "zelle_recipient": "pay@example.com",
+            },
+            headers={"X-Zelle-Webhook-Secret": WEBHOOK_SECRET},
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_ingest_rejects_invalid_method_owner(self):
+        response = self.client.post(
+            "/api/zelle/payments",
+            json={
+                "payer_name": "Jane Doe",
+                "amount": "200.00",
+                "zelle_recipient": "pay@example.com",
+                "method_owner": "invalid",
+            },
+            headers={"X-Zelle-Webhook-Secret": WEBHOOK_SECRET},
+        )
+        self.assertEqual(response.status_code, 422)
 
 
 if __name__ == "__main__":

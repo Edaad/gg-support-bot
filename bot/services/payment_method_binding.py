@@ -179,6 +179,7 @@ ZELLE_BANK_LABEL_TO_RECIPIENT: dict[str, str] = {
     "clubgto well's fargo": "2133729202",
     "bailey's wells fargo": "3105670961",
     "citizens v": "starship5vllc@gmail.com",
+    "gto chase zelle": "clubgto1234@gmail.com",
 }
 
 

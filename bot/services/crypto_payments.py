@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
+from api.method_owner import resolve_ingest_method_owner
 from bot.services.club import get_group_title_for_chat
 from bot.services.group_chat_invite_links import resolve_group_chat_url_for_payment
 from bot.services.payment_binding_events import (
@@ -311,6 +312,7 @@ async def ingest_crypto_payment(
     to_address: str,
     transaction_hash: str,
     alert_name: str,
+    method_owner: str,
     token_name: Optional[str] = None,
     from_entity_name: Optional[str] = None,
     paid_at: Optional[str] = None,
@@ -336,6 +338,13 @@ async def ingest_crypto_payment(
     amount_cents = parse_amount_cents(amount)
     alert = (alert_name or "").strip()
     alert_scope = resolve_alert_scope(alert)
+    club_slug = "clubgto" if alert_scope == "clubgto" else ""
+    owner = resolve_ingest_method_owner(
+        source="deposit_crypto",
+        variant=symbol,
+        method_owner=method_owner,
+        club_slug=club_slug,
+    )
 
     ext_id = (source_external_id or "").strip() or None
     auto_bound = False
@@ -364,6 +373,7 @@ async def ingest_crypto_payment(
                 )
 
         payment = CryptoPayment(
+            method_owner=owner,
             amount_cents=amount_cents,
             token_symbol=symbol,
             token_name=(token_name or "").strip() or None,
