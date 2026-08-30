@@ -582,6 +582,14 @@ heroku run -a YOUR_APP -- python migrate_union_deposit_ack.py
 
 Adds durable ack-state columns on `manual_deposit_requests` (ack message id, ack/instruction expiry timestamps, initiating player id).
 
+After deploying Pool Pay (union method + large cashout categories, structured slugs):
+
+```bash
+heroku run -a YOUR_APP -- python migrate_pool_pay.py
+```
+
+This adds `pool_pay_type` on pool-pay methods, backfills existing rows as `union_method`, and rewrites slugs to `{type}-union-{old_slug}` (e.g. `main-zelle-rt` → `zelle-union-main-zelle-rt`). Manage methods on the **Pool Pay** dashboard (`/api/pool-pay`).
+
 ## Per-group deposit / cashout method access
 
 After deploying deposit method public/blacklist/whitelist (cashout access reuses the same table — no extra migrate):

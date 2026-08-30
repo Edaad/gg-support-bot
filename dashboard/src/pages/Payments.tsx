@@ -131,6 +131,7 @@ export default function Payments({ token }: { token: string }) {
         trade_record_checked: true,
         type: method as UnionMethodType,
         deposit_union: unionFilter === 'all' ? undefined : unionFilter,
+        pool_pay_type: 'union_method',
         ...dateParams,
         q: appliedSearch || undefined,
       })
@@ -161,6 +162,7 @@ export default function Payments({ token }: { token: string }) {
         trade_record_checked: true,
         type: method as UnionMethodType,
         deposit_union: unionFilter === 'all' ? undefined : unionFilter,
+        pool_pay_type: 'union_method',
         variant: variant || undefined,
         q: appliedSearch || undefined,
         limit: PAGE_SIZE,
@@ -284,6 +286,7 @@ export default function Payments({ token }: { token: string }) {
           trade_record_checked: true,
           type: method as UnionMethodType,
           deposit_union: unionFilter === 'all' ? undefined : unionFilter,
+          pool_pay_type: 'union_method',
           variant: variant || undefined,
           q: appliedSearch || undefined,
           ...dateParams,

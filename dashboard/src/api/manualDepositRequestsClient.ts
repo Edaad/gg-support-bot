@@ -76,6 +76,7 @@ export type ListManualDepositRequestsParams = {
   type?: 'zelle' | 'cashapp' | 'applepay' | 'venmo'
   method_type?: 'zelle' | 'cashapp' | 'applepay' | 'venmo'
   deposit_union?: 'tmt' | 'massiv'
+  pool_pay_type?: 'union_method' | 'large_cashout'
   trade_record_checked?: boolean
   include_inactive_methods?: boolean
   variant?: string
@@ -111,6 +112,7 @@ export function listManualDepositRequests(
   const resolvedType = params.type ?? params.method_type
   if (resolvedType) q.set('type', resolvedType)
   if (params.deposit_union) q.set('deposit_union', params.deposit_union)
+  if (params.pool_pay_type) q.set('pool_pay_type', params.pool_pay_type)
   if (params.trade_record_checked != null) {
     q.set('trade_record_checked', String(params.trade_record_checked))
   }
@@ -142,6 +144,7 @@ export function listManualDepositRequestVariants(
   const resolvedType = params.type ?? params.method_type
   if (resolvedType) q.set('type', resolvedType)
   if (params.deposit_union) q.set('deposit_union', params.deposit_union)
+  if (params.pool_pay_type) q.set('pool_pay_type', params.pool_pay_type)
   if (params.trade_record_checked != null) {
     q.set('trade_record_checked', String(params.trade_record_checked))
   }

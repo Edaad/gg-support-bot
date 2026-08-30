@@ -218,6 +218,7 @@ class ReconcileExportTestCase(unittest.TestCase):
         ]
         self.assertEqual(source_list[0], "GTO Stripe")
         self.assertIn("Union Zelle", source_list)
+        self.assertIn("Large cashout Zelle", source_list)
         self.assertIn("Union Venmo", source_list)
         self.assertIn("Chip Transfer (Player)", source_list)
         self.assertIn("Free Play", source_list)

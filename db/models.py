@@ -278,6 +278,9 @@ class ClubPaymentMethod(Base):
         Boolean, nullable=False, server_default=text("false"), default=False
     )
     union_type = Column(String(20), nullable=True)
+    pool_pay_type = Column(
+        String(20), nullable=False, server_default=text("'union_method'"), default="union_method"
+    )
     deposit_union = Column(String(20), nullable=True)
     method_tag = Column(String(200), nullable=True)
     payment_account_name = Column(String(200), nullable=True)

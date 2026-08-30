@@ -161,7 +161,7 @@ function MethodDetailsForm({
         Player messages and Stripe checkout live on amount tiers. Sub-option responses (e.g. crypto
         networks) live on the Sub-options tab when enabled below. Absolute min and max apply to the
         whole method. Saving details adjusts amount tiers so they stay within these limits. Union
-        methods are managed on the Union methods page.
+        methods are managed on the Pool Pay page.
       </p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>

@@ -443,6 +443,21 @@ class EscalationCopyTests(unittest.TestCase):
             text,
         )
 
+    def test_large_cashout_slack_copy(self):
+        with patch.object(esc, "_club_display_name", return_value="Round Table"):
+            text = esc.format_large_cashout_slack_text(
+                club_id=2,
+                chat_id=-300,
+                title="RT / 1 / x",
+                amount=Decimal("5000"),
+                method_tag="zelle@example.com",
+                requested_at=_UNION_DEPOSIT_REQUESTED_AT,
+            )
+        self.assertIn("*Large cashout payout*", text)
+        self.assertIn("Check dashboard trade record.", text)
+        self.assertIn("*SCREEN RECORDING REQUIRED*", text)
+        self.assertIn("Amount: $5,000", text)
+
     def test_union_deposit_repeat_verified_copy(self):
         with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
             text = esc.format_union_deposit_slack_text(

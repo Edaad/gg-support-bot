@@ -283,6 +283,7 @@ Method **envelope** only — no `response_*` or Stripe fields on the method row.
 | `min_amount`, `max_amount` | Absolute amount envelope for the method |
 | `has_sub_options`, `is_active`, `sort_order` | Listing and crypto branching |
 | `deposit_limit`, `accumulated_amount` | Deposit cap tracking (deposit direction only) |
+| `tracks_manual_requests`, `union_type`, `pool_pay_type`, `deposit_union`, `method_tag` | **Pool Pay** shared methods (`pool_pay_type`: `union_method` or `large_cashout`; slug `{type}-union-{suffix}` or `{type}-lc-{suffix}`) |
 | `created_at`, `updated_at` | Audit |
 
 #### `club_payment_tiers`
