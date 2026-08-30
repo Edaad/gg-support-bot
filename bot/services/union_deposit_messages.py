@@ -59,18 +59,12 @@ def build_union_instruction_with_footer(
     used_sum: Decimal,
     html_mode: bool = False,
 ) -> str | None:
-    """Min/max instruction plus recurring-payment footer line."""
-    core = build_union_deposit_instruction(
+    """Min/max instruction text for the group chat after ack."""
+    return build_union_deposit_instruction(
         method,
         used_sum=used_sum,
         html_mode=html_mode,
     )
-    if not core:
-        return None
-    footer = UNION_INSTRUCTION_RECURRING_LINE
-    if html_mode:
-        footer = html.escape(footer)
-    return f"{core}\n\n{footer}"
 
 
 def union_ack_callback_data(request_id: int) -> str:

@@ -44,6 +44,7 @@ REASON_UNION_DEPOSIT_FIRST = "union_deposit_first"
 REASON_UNION_DEPOSIT_REPEAT = "union_deposit_repeat"
 
 _UNION_DEPOSIT_HEADLINE = "Union method deposit"
+_UNION_DEPOSIT_SCREEN_RECORDING_REQUIRED = "SCREEN RECORDING REQUIRED"
 _UNION_DEPOSIT_INSTRUCTION = (
     "Verify the time, ensure payment status is visible, and if you are unsure, "
     "contact head admins."
@@ -439,6 +440,8 @@ def format_union_deposit_slack_text(
         f"Amount: {amount_str}",
         f"Tag: {tag}",
         "",
+        f"*{_UNION_DEPOSIT_SCREEN_RECORDING_REQUIRED}*",
+        "",
         _UNION_DEPOSIT_INSTRUCTION,
     ]
     return "\n".join(lines)
@@ -482,6 +485,8 @@ async def format_union_deposit_telegram_text(
             f"Time: {html.escape(time_str, quote=False)}",
             f"Amount: {html.escape(amount_str, quote=False)}",
             f"Tag: {html.escape(tag, quote=False)}",
+            "",
+            f"<b>{html.escape(_UNION_DEPOSIT_SCREEN_RECORDING_REQUIRED, quote=False)}</b>",
             "",
             html.escape(_UNION_DEPOSIT_INSTRUCTION, quote=False),
         ]

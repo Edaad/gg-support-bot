@@ -436,6 +436,7 @@ class EscalationCopyTests(unittest.TestCase):
         self.assertIn("Amount: $500", text)
         self.assertIn("Tag: zelle email", text)
         self.assertNotIn("Method:", text)
+        self.assertIn("*SCREEN RECORDING REQUIRED*", text)
         self.assertIn(
             "Verify the time, ensure payment status is visible, and if you are unsure, "
             "contact head admins.",
@@ -471,6 +472,7 @@ class EscalationCopyTests(unittest.TestCase):
                 requested_at=_UNION_DEPOSIT_REQUESTED_AT,
             )
         self.assertIn("*Union method deposit*", text)
+        self.assertIn("*SCREEN RECORDING REQUIRED*", text)
         self.assertIn(
             "Verify the time, ensure payment status is visible, and if you are unsure, "
             "contact head admins.",
@@ -511,6 +513,7 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Time: Aug 28, 2026 at 7:04 PM ET", text)
         self.assertIn("Amount: $500", text)
         self.assertIn("Tag: zelle email", text)
+        self.assertIn("<b>SCREEN RECORDING REQUIRED</b>", text)
 
     async def test_skips_on_test_bot(self):
         with patch.object(esc, "is_test_bot_worker", return_value=True):
