@@ -594,6 +594,7 @@ async def export_gto_weekly_audit(
         ...,
         description="Exactly 7 reconcile-all-clubs-YYYY-MM-DD.xlsx Matching exports",
     ),
+    db: Session = Depends(get_db_dependency),
 ):
     """Build GTO weekly audit XLSX from human-corrected all-clubs Matching files."""
     if len(files) != 7:
@@ -618,6 +619,7 @@ async def export_gto_weekly_audit(
         content, out_name = build_gto_weekly_audit_from_uploads(
             monday=monday,
             uploads=uploads,
+            session=db,
         )
     except GtoWeeklyAuditError as exc:
         raise HTTPException(400, str(exc)) from exc
