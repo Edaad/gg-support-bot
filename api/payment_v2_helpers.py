@@ -331,8 +331,9 @@ def validate_first_time_linking(method: ClubPaymentMethod) -> None:
 
 
 def apply_manual_trade_request_constraints(method: ClubPaymentMethod) -> None:
-    """Normalize + validate flagged union methods. Raises ValueError."""
+    """Normalize + validate flagged pool pay methods. Raises ValueError."""
     from bot.services.deposit_union_types import validate_deposit_union
+    from bot.services.pool_pay_types import pool_pay_type_from_method
     from bot.services.union_method_types import union_type_display_name, validate_union_method_type
 
     tracks = bool(getattr(method, "tracks_manual_requests", False))
@@ -348,10 +349,14 @@ def apply_manual_trade_request_constraints(method: ClubPaymentMethod) -> None:
     union_type = validate_union_method_type(str(union_type_raw))
     method.union_type = union_type
     method.name = union_type_display_name(union_type)
+    pool_pay_type = pool_pay_type_from_method(method)
     deposit_union_raw = getattr(method, "deposit_union", None)
-    if not deposit_union_raw:
-        raise ValueError("Union methods require a union (TMT or Massiv).")
-    method.deposit_union = validate_deposit_union(str(deposit_union_raw))
+    if pool_pay_type == "union_method":
+        if not deposit_union_raw:
+            raise ValueError("Union methods require a union (TMT or Massiv).")
+        method.deposit_union = validate_deposit_union(str(deposit_union_raw))
+    else:
+        method.deposit_union = None
     method_tag = (getattr(method, "method_tag", None) or "").strip()
     if not method_tag:
         raise ValueError("Union methods require a method tag.")

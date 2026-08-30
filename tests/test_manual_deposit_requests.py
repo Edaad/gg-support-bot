@@ -71,6 +71,14 @@ class ApplyManualTradeConstraintsTests(unittest.TestCase):
         apply_manual_trade_request_constraints(method)
         self.assertIsNone(method.manual_request_variant_name)
 
+    def test_large_cashout_skips_deposit_union(self):
+        method = _valid_union_method_ns(
+            pool_pay_type="large_cashout",
+            deposit_union=None,
+        )
+        apply_manual_trade_request_constraints(method)
+        self.assertIsNone(method.deposit_union)
+
     def test_forces_off_linking_and_sets_public(self):
         method = _valid_union_method_ns(
             deposit_limit=Decimal("500"),
