@@ -64,8 +64,12 @@ class ManualDepositRequestsApiTestCase(unittest.TestCase):
     def _set_rows(self, rows: list) -> TestClient:
         total_amount = sum(Decimal(str(r.amount)) for r in rows)
         summary_row = SimpleNamespace(total_count=len(rows), total_amount=total_amount)
-        self.query.with_entities.return_value.one.return_value = summary_row
-        self.query.offset.return_value.limit.return_value.all.return_value = rows
+        self.query.order_by.return_value.enable_eagerloads.return_value.with_entities.return_value.one.return_value = (
+            summary_row
+        )
+        self.query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = (
+            rows
+        )
         return TestClient(self.app)
 
     def test_list_includes_summary(self):
@@ -108,3 +112,63 @@ class ManualDepositRequestsApiTestCase(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["items"], ["pay@a", "pay@b"])
+
+
+class ManualDepositRequestsPostgresSqlTestCase(unittest.TestCase):
+    """Guard against ORDER BY leaking into aggregate/distinct queries (PostgreSQL)."""
+
+    def test_summary_and_variants_sql_has_no_created_at_order(self):
+        from decimal import Decimal
+        from datetime import datetime, timezone
+
+        from sqlalchemy import JSON, create_engine
+        from sqlalchemy.dialects import postgresql
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+
+        from api.routes.manual_deposit_requests import _list_query, _list_summary
+        from db.models import Base, Club, ManualDepositRequest
+
+        ManualDepositRequest.__table__.c.instruction_telegram_message_ids.type = JSON()
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(
+            engine, tables=[Club.__table__, ManualDepositRequest.__table__]
+        )
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        session.add(Club(id=1, name="Round Table", telegram_user_id=1, is_active=True))
+        session.add(
+            ManualDepositRequest(
+                id=1,
+                club_id=1,
+                method_id=None,
+                method_name="Zelle",
+                method_slug="z",
+                variant_name="v1",
+                group_title="g",
+                amount=Decimal("99.99"),
+                telegram_chat_id=-100,
+                trade_record_checked=True,
+                created_at=datetime(2024, 6, 1, tzinfo=timezone.utc),
+            )
+        )
+        session.commit()
+
+        query = _list_query(session, method_type="zelle", trade_record_checked=True)
+        summary = _list_summary(query)
+        self.assertEqual(summary.total_count, 1)
+
+        variant_sql = str(
+            query.with_entities(ManualDepositRequest.variant_name)
+            .distinct()
+            .order_by(ManualDepositRequest.variant_name.asc())
+            .statement.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+        self.assertNotIn("created_at", variant_sql.lower())

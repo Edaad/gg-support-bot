@@ -233,16 +233,25 @@ def _list_query(
         query = query.outerjoin(Club, Club.id == ManualDepositRequest.club_id).filter(
             or_(*clauses)
         )
+    return query
+
+
+def _apply_list_order(query):
     return query.order_by(
         ManualDepositRequest.created_at.desc(), ManualDepositRequest.id.desc()
     )
 
 
 def _list_summary(query) -> ManualDepositRequestSummary:
-    row = query.with_entities(
-        func.count().label("total_count"),
-        func.coalesce(func.sum(ManualDepositRequest.amount), 0).label("total_amount"),
-    ).one()
+    row = (
+        query.order_by(None)
+        .enable_eagerloads(False)
+        .with_entities(
+            func.count().label("total_count"),
+            func.coalesce(func.sum(ManualDepositRequest.amount), 0).label("total_amount"),
+        )
+        .one()
+    )
     return ManualDepositRequestSummary(
         total_count=int(row.total_count or 0),
         total_amount=Decimal(str(row.total_amount or 0)),
@@ -338,7 +347,7 @@ def list_manual_deposit_requests(
     )
     summary = _list_summary(query)
     total = summary.total_count
-    rows = query.offset(offset).limit(limit).all()
+    rows = _apply_list_order(query).offset(offset).limit(limit).all()
     return ManualDepositRequestListResponse(
         items=[_to_read(r) for r in rows],
         total=total,
@@ -412,7 +421,7 @@ def list_method_manual_deposit_requests(
     )
     summary = _list_summary(query)
     total = summary.total_count
-    rows = query.offset(offset).limit(limit).all()
+    rows = _apply_list_order(query).offset(offset).limit(limit).all()
     return ManualDepositRequestListResponse(
         items=[_to_read(r) for r in rows],
         total=total,
