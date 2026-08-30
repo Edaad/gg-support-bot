@@ -146,7 +146,7 @@ ACES_TABLE_JOIN_LINK = "https://clubgg.app.link/F1rW9jQJ15b"
 ACES_TABLE_JOIN_COPY = (
     "You’ve unlocked Aces Table (Massiv Union)\n\n"
     "Aces Table is a sister club to The Creator Club, with new opponents and "
-    "more games selection!\n\n"
+    "more game selection!\n\n"
     "Join the club first, then complete your deposit:\n\n"
     f"{ACES_TABLE_JOIN_LINK}\n\n"
     "Tap below once you’ve joined."
@@ -292,7 +292,12 @@ def _merge_response_layers(response_data: dict, *fallback_layers: dict | None) -
         if not layer:
             continue
         candidate = dict(merged)
-        for field in ("response_type", "response_text", "response_file_id", "response_caption"):
+        for field in (
+            "response_type",
+            "response_text",
+            "response_file_id",
+            "response_caption",
+        ):
             value = layer.get(field)
             if value is not None:
                 candidate[field] = value
@@ -312,11 +317,17 @@ def _normalize_misconfigured_response_type(data: dict) -> dict:
     return out
 
 
-def _zelle_venmo_destination_fallback(response_data: dict, method_slug: str) -> dict | None:
+def _zelle_venmo_destination_fallback(
+    response_data: dict, method_slug: str
+) -> dict | None:
     slug = (method_slug or "").strip().lower()
     if slug not in ("zelle", "venmo"):
         return None
-    raw = (response_data.get("response_text") or response_data.get("response_caption") or "").strip()
+    raw = (
+        response_data.get("response_text")
+        or response_data.get("response_caption")
+        or ""
+    ).strip()
     if not raw:
         return None
     text = format_first_time_payment_destination_message(
@@ -363,7 +374,9 @@ def _apply_checkout_layer(target: dict, source: dict | None) -> None:
             target.pop("group_checkout_provider", None)
     if source.get("group_checkout_provider"):
         target["group_checkout_provider"] = source.get("group_checkout_provider")
-    elif target.get("use_group_checkout_link") and not target.get("group_checkout_provider"):
+    elif target.get("use_group_checkout_link") and not target.get(
+        "group_checkout_provider"
+    ):
         target["group_checkout_provider"] = "stripe"
     if source.get("hyperlink_text"):
         target["hyperlink_text"] = source.get("hyperlink_text")
@@ -577,7 +590,11 @@ def _merged_deposit_variant_response(
     *,
     tier: dict | None = None,
 ) -> dict:
-    merged = _merge_response_layers(variant_data, tier, method) if tier else _merge_response_layers(variant_data, method)
+    merged = (
+        _merge_response_layers(variant_data, tier, method)
+        if tier
+        else _merge_response_layers(variant_data, method)
+    )
     return _with_method_checkout_settings(merged, method, tier=tier)
 
 
@@ -590,7 +607,9 @@ def _pick_deposit_variant_response(
     method_slug: str = "",
 ) -> tuple[dict | None, dict | None]:
     """Return (response_data, tier) for a deposit method selection."""
-    tier = get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
+    tier = (
+        get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
+    )
     sticky_variant_id: int | None = None
     slug_norm = (method_slug or "").strip().lower()
     if slug_norm in ("venmo", "zelle", "cashapp", "paypal") and chat_id is not None:
@@ -773,12 +792,12 @@ async def _send_first_time_method_setup(
     _schedule_bind_attempt_expiry(context, attempt.id)
 
     _reset_deposit_info_messages(int(chat_id))
-    await query.edit_message_text(
-        f"Deposit via {method_name} — one-time setup"
-    )
+    await query.edit_message_text(f"Deposit via {method_name} — one-time setup")
     if query.message:
         _track_deposit_info_message(int(chat_id), query.message.message_id)
-        register_flow_callback_message(context, query.message.message_id, flow="deposit")
+        register_flow_callback_message(
+            context, query.message.message_id, flow="deposit"
+        )
 
     context.chat_data["deposit_setup_attempt_id"] = attempt.id
     context.chat_data["deposit_setup_response_data"] = _prepare_deposit_response_data(
@@ -828,9 +847,7 @@ async def _send_first_time_method_setup(
             reply_markup=_first_time_setup_ack_markup(attempt_id=attempt.id),
         )
     if setup_msg is not None:
-        register_flow_callback_message(
-            context, setup_msg.message_id, flow="deposit"
-        )
+        register_flow_callback_message(context, setup_msg.message_id, flow="deposit")
 
     # Do not offer "I have sent the payment" until after the player acks and
     # receives the payment destination (see _send_first_time_payment_destination).
@@ -998,7 +1015,9 @@ async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None
     try:
         await context.bot.send_message(chat_id=chat_id, text=text)
     except Exception:
-        logger.warning("Failed to send deposit reminder to chat_id=%s", chat_id, exc_info=True)
+        logger.warning(
+            "Failed to send deposit reminder to chat_id=%s", chat_id, exc_info=True
+        )
 
 
 def _schedule_deposit_reminder(
@@ -1058,12 +1077,16 @@ def cancel_deposit_reminder_for_chat(
         pass
 
 
-def _cancel_deposit_reminder(context: ContextTypes.DEFAULT_TYPE, chat_id: int | str) -> None:
+def _cancel_deposit_reminder(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int | str
+) -> None:
     """Cancel any pending deposit follow-up reminder for a chat."""
     cancel_deposit_reminder_for_chat(chat_id, job_queue=context.job_queue)
 
 
-def cancel_deposit_reminder(context: ContextTypes.DEFAULT_TYPE, chat_id: int | str) -> None:
+def cancel_deposit_reminder(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int | str
+) -> None:
     """Public entry: cancel pending deposit follow-up reminder for a chat."""
     _cancel_deposit_reminder(context, chat_id)
 
@@ -1234,7 +1257,9 @@ def _apply_hardcoded_stripe_below_100(
 def _stripe_checkout_enabled(response_data: dict) -> bool:
     if not response_data.get("use_group_checkout_link"):
         return False
-    provider = (response_data.get("group_checkout_provider") or "stripe").strip().lower()
+    provider = (
+        (response_data.get("group_checkout_provider") or "stripe").strip().lower()
+    )
     return provider == "stripe"
 
 
@@ -1246,7 +1271,9 @@ def _response_has_hyperlink_placeholder(response_data: dict) -> bool:
 
 
 def _build_stripe_response_payload(response_data: dict, checkout_url: str) -> dict:
-    hyperlink_text = (response_data.get("hyperlink_text") or "PAY HERE").strip() or "PAY HERE"
+    hyperlink_text = (
+        response_data.get("hyperlink_text") or "PAY HERE"
+    ).strip() or "PAY HERE"
     safe_url = html.escape(checkout_url, quote=True)
     safe_label = html.escape(hyperlink_text, quote=False)
     html_link = f'<a href="{safe_url}">{safe_label}</a>'
@@ -1296,7 +1323,10 @@ def _clear_awaiting_amount(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 def _is_awaiting_amount(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> bool:
-    return bool(context.chat_data.get("deposit_awaiting_amount")) or chat_id in _DEPOSIT_AWAITING_CHATS
+    return (
+        bool(context.chat_data.get("deposit_awaiting_amount"))
+        or chat_id in _DEPOSIT_AWAITING_CHATS
+    )
 
 
 async def _ask_deposit_amount(message, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1859,9 +1889,7 @@ def _deposit_method_buttons(methods) -> list[list[InlineKeyboardButton]]:
         if m.get("picker_kind") == "union_type":
             type_slug = m.get("type_slug") or m.get("slug")
             row.append(
-                InlineKeyboardButton(
-                    m["name"], callback_data=f"deptype:{type_slug}"
-                )
+                InlineKeyboardButton(m["name"], callback_data=f"deptype:{type_slug}")
             )
         else:
             row.append(InlineKeyboardButton(m["name"], callback_data=f"dep:{m['id']}"))
@@ -1875,7 +1903,9 @@ def _deposit_method_buttons(methods) -> list[list[InlineKeyboardButton]]:
 
 def _deposit_unions_for_flow(context, club_id=None):
     """Union choices for the group running this deposit, or None for no picker."""
-    club_id = club_id if club_id is not None else context.chat_data.get("deposit_club_id")
+    club_id = (
+        club_id if club_id is not None else context.chat_data.get("deposit_club_id")
+    )
     if not club_id:
         return None
     chat_id = context.chat_data.get("deposit_chat_id")
@@ -2144,7 +2174,8 @@ async def _run_union_deposit_from_choice(
                 title=getattr(query.message.chat, "title", None),
                 amount=amount,
                 method_display_name=method_display_name,
-                method_tag=(getattr(db_method, "method_tag", None) or "").strip() or None,
+                method_tag=(getattr(db_method, "method_tag", None) or "").strip()
+                or None,
                 requested_at=row.created_at,
             )
         except Exception:
@@ -2835,7 +2866,12 @@ async def _send_bonus_message(chat, context):
     """If this is a first deposit and bonus is enabled, send the bonus announcement."""
     first = context.chat_data.get("deposit_is_first", False)
     settings = context.chat_data.get("deposit_fd_settings")
-    if not first or not settings or not settings["bonus_enabled"] or settings["bonus_pct"] <= 0:
+    if (
+        not first
+        or not settings
+        or not settings["bonus_enabled"]
+        or settings["bonus_pct"] <= 0
+    ):
         return
     amount = context.chat_data.get("deposit_amount")
     if not isinstance(amount, Decimal):
@@ -2876,7 +2912,8 @@ def _persist_deposit_union(context):
             set_last_deposit_union(int(chat_id), str(shorthand))
         except Exception:
             logger.warning(
-                "deposit: failed to persist union choice chat_id=%s", chat_id,
+                "deposit: failed to persist union choice chat_id=%s",
+                chat_id,
                 exc_info=True,
             )
 
@@ -2894,7 +2931,8 @@ def _persist_aces_join_ack(context):
             set_aces_join_ack(int(chat_id))
     except Exception:
         logger.warning(
-            "deposit: failed to persist aces join ack chat_id=%s", chat_id,
+            "deposit: failed to persist aces join ack chat_id=%s",
+            chat_id,
             exc_info=True,
         )
 
@@ -2937,7 +2975,8 @@ async def _send_deposit_method_response(
     ):
         response_data = {
             **response_data,
-            "group_checkout_provider": response_data.get("group_checkout_provider") or "stripe",
+            "group_checkout_provider": response_data.get("group_checkout_provider")
+            or "stripe",
         }
         use_stripe_checkout = _stripe_checkout_enabled(response_data)
     chat_id = context.chat_data.get("deposit_chat_id") or (
@@ -2956,7 +2995,10 @@ async def _send_deposit_method_response(
     )
 
     if use_stripe_checkout and not stripe_configured():
-        logger.warning("deposit: stripe checkout requested but STRIPE_SECRET_KEY not set chat_id=%s", chat_id)
+        logger.warning(
+            "deposit: stripe checkout requested but STRIPE_SECRET_KEY not set chat_id=%s",
+            chat_id,
+        )
         if club_id is not None:
             await _notify_missing_stripe_secret(context, int(club_id))
         await query.edit_message_text(
@@ -2967,7 +3009,10 @@ async def _send_deposit_method_response(
 
     if use_stripe_checkout and stripe_configured():
         if club_id is None:
-            logger.error("deposit: stripe checkout requested but deposit_club_id missing chat_id=%s", chat_id)
+            logger.error(
+                "deposit: stripe checkout requested but deposit_club_id missing chat_id=%s",
+                chat_id,
+            )
             await query.edit_message_text(
                 "This group is not linked to a club. Card checkout cannot be started."
             )
@@ -3029,7 +3074,9 @@ async def _send_deposit_method_response(
                         int(chat_id),
                         await send_response_messages(chat, payload),
                     )
-                    await _deposit_send_message(chat, int(chat_id), text=link_only_plain)
+                    await _deposit_send_message(
+                        chat, int(chat_id), text=link_only_plain
+                    )
             logger.info(
                 "deposit: stripe checkout sent chat_id=%s session_id=%s customer_id=%s",
                 chat_id,
@@ -3181,12 +3228,19 @@ async def _notify_stripe_checkout_failure(
         with get_db() as session:
             club = session.query(Club).filter(Club.id == int(club_id)).one_or_none()
             if not club:
-                logger.warning("deposit: stripe failure notify skipped — club_id=%s not found", club_id)
+                logger.warning(
+                    "deposit: stripe failure notify skipped — club_id=%s not found",
+                    club_id,
+                )
                 return
             admin_id = int(club.telegram_user_id)
             club_name = club.name
     except Exception:
-        logger.warning("deposit: stripe failure notify — could not load club_id=%s", club_id, exc_info=True)
+        logger.warning(
+            "deposit: stripe failure notify — could not load club_id=%s",
+            club_id,
+            exc_info=True,
+        )
         return
 
     lines = [
@@ -3207,7 +3261,9 @@ async def _notify_stripe_checkout_failure(
         lo = f"${checkout_min_usd}" if checkout_min_usd is not None else "—"
         hi = f"${checkout_max_usd}" if checkout_max_usd is not None else "—"
         lines.append(f"Checkout limits (dashboard): {lo} – {hi}")
-    lines.extend(["", f"Error: {error_detail}", "", "See worker logs for full traceback."])
+    lines.extend(
+        ["", f"Error: {error_detail}", "", "See worker logs for full traceback."]
+    )
     text = "\n".join(lines)[:3900]
 
     try:
@@ -3380,9 +3436,7 @@ async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         if method_list:
             text += f"\n\nWe offer: {method_list}."
-        text += (
-            "\n\nDeposits are available 24/7, so feel free to reach out anytime!"
-        )
+        text += "\n\nDeposits are available 24/7, so feel free to reach out anytime!"
 
         try:
             kwargs = {}
@@ -3400,6 +3454,7 @@ async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _cleanup(context)
     popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
     return ConversationHandler.END
+
 
 _DEPOSIT_CANCEL = CommandHandler("cancel", deposit_cancel)
 
