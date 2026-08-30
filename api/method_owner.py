@@ -14,6 +14,30 @@ METHOD_OWNER_ROUND_TABLE = "round-table"
 METHOD_OWNER_VAUGHN = "vaughn"
 METHOD_OWNER_MATEOS = "mateos"
 
+OWNER_SOURCE_PREFIX: dict[str, str] = {
+    METHOD_OWNER_ROUND_TABLE: "RT",
+    METHOD_OWNER_VAUGHN: "GTO",
+    METHOD_OWNER_MATEOS: "Mateos",
+}
+
+OWNER_PREFIXED_DEPOSIT_SOURCES: frozenset[str] = frozenset(
+    {
+        "deposit_zelle",
+        "deposit_venmo",
+        "deposit_cashapp",
+        "deposit_paypal",
+        "deposit_crypto",
+    }
+)
+
+
+def owner_source_prefix(method_owner: str | None) -> str | None:
+    """Return RT/GTO/Mateos prefix for a method_owner slug, or None."""
+    if not method_owner:
+        return None
+    key = method_owner.strip().lower()
+    return OWNER_SOURCE_PREFIX.get(key)
+
 
 def normalize_method_owner(value: str) -> str:
     """Return canonical method_owner slug or raise ValueError."""

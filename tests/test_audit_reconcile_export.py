@@ -109,6 +109,7 @@ class ReconcileExportTestCase(unittest.TestCase):
                     external_id="deposit_zelle:1",
                     display_name="Payer",
                     variant="2133729202",
+                    method_owner="vaughn",
                 ),
                 LedgerLine(
                     gg_player_id="1111-2222",
@@ -119,6 +120,7 @@ class ReconcileExportTestCase(unittest.TestCase):
                     occurred_at_utc=occurred,
                     external_id="deposit_venmo:1",
                     variant="@janseashells",
+                    method_owner="vaughn",
                 ),
             ],
         )
@@ -216,7 +218,7 @@ class ReconcileExportTestCase(unittest.TestCase):
         source_list = [
             matching.cell(row=r, column=30).value for r in range(1, 50)
         ]
-        self.assertEqual(source_list[0], "GTO Stripe")
+        self.assertEqual(source_list[0], "Stripe")
         self.assertIn("Union Zelle", source_list)
         self.assertIn("Large cashout Zelle", source_list)
         self.assertIn("Union Venmo", source_list)
@@ -229,7 +231,7 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertTrue(matching.column_dimensions["AD"].hidden)
         self.assertTrue(matching.column_dimensions["AE"].hidden)
         hidden_headers = [
-            matching.cell(row=1, column=col).value for col in range(30, 65)
+            matching.cell(row=1, column=col).value for col in range(30, 120)
         ]
         self.assertIn("Cashout Venmo", hidden_headers)
         self.assertIn("Vaughn Cashout Venmo", hidden_headers)
@@ -244,7 +246,8 @@ class ReconcileExportTestCase(unittest.TestCase):
                 cf_formulas.extend(rule.formula or [])
         self.assertTrue(any("Cashout Venmo" in f for f in cf_formulas))
         self.assertTrue(any("Vaughn Cashout Venmo" in f for f in cf_formulas))
-        self.assertTrue(any("GTO Stripe" in f for f in cf_formulas))
+        self.assertTrue(any("Stripe" in f for f in cf_formulas))
+        self.assertTrue(any("Mateos Venmo" in f for f in cf_formulas))
         self.assertTrue(any("Chip Transfer (Player)" in f for f in cf_formulas))
         self.assertTrue(any("Chip Transfer (RT↔AT)" in f for f in cf_formulas))
         self.assertTrue(any("Chip Transfer (AT↔CC)" in f for f in cf_formulas))
@@ -300,6 +303,7 @@ class ReconcileExportTestCase(unittest.TestCase):
                     display_name="Charlie Kim",
                     variant="rt-zelle-inbox@example.com",
                     detail="GTO / 3333-4444 / Charlie Kim",
+                    method_owner="round-table",
                 ),
                 LedgerLine(
                     gg_player_id="5555-6666",
@@ -340,7 +344,7 @@ class ReconcileExportTestCase(unittest.TestCase):
             set(rows),
             {
                 ("RT Zelle", "rt-zelle-inbox@example.com", 22.0, "Charlie Kim", "ClubGTO"),
-                ("GTO Stripe", None, 15.0, "Gto Only", "ClubGTO"),
+                ("Stripe", None, 15.0, "Gto Only", "ClubGTO"),
             },
         )
         self.assertTrue(
@@ -436,7 +440,51 @@ class ReconcileExportTestCase(unittest.TestCase):
         source_list = [value for value in source_list if value]
         self.assertIn("Free Play", source_list)
         self.assertIn("Back to Club", source_list)
-        self.assertNotIn("GTO INC", source_list)
+
+    def test_creator_club_mateos_pivot(self):
+        occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
+        report = AuditReconcileReport(
+            audit_date=date(2026, 7, 3),
+            club_slug="creator-club",
+            club_name="Creator Club",
+            status="pass",
+            players=[],
+            trade_lines=[
+                TradeLineForMatch(
+                    line_id=1,
+                    occurred_at=occurred,
+                    amount=Decimal("-25"),
+                    member_gg_player_id="1111-2222",
+                    member_nickname="P1",
+                    sheet_row=1,
+                    trade_club_slug="creator-club",
+                ),
+            ],
+            ledger_lines=[
+                LedgerLine(
+                    gg_player_id="1111-2222",
+                    member_nickname="P1",
+                    source="deposit_venmo",
+                    source_label="Venmo",
+                    amount_signed=Decimal("-25"),
+                    occurred_at_utc=occurred,
+                    external_id="deposit_venmo:1",
+                    display_name="Payer",
+                    variant="@mateos-handle",
+                    method_owner="mateos",
+                ),
+            ],
+        )
+        wb = load_workbook(
+            io.BytesIO(
+                build_all_clubs_matching_workbook(_all_clubs_reports(creator_club=report))
+            )
+        )
+        matching = wb["Creator Club"]
+        self.assertEqual(matching.cell(row=1, column=12).value, "Mateos methods")
+        self.assertEqual(matching.cell(row=3, column=12).value, "Venmo")
+        self.assertEqual(matching.cell(row=3, column=13).value, "@mateos-handle")
+        self.assertEqual(matching.cell(row=2, column=6).value, "Mateos Venmo")
 
     def test_matching_vaughn_tally_only_clubgto(self):
         report = _empty_report(club_slug="round-table", club_name="Round Table")
@@ -489,6 +537,7 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(wb["ClubGTO"].cell(row=1, column=12).value, "Vaughn methods")
         self.assertIsNone(wb["Round Table"].cell(row=1, column=12).value)
         self.assertIsNone(wb["Aces Table"].cell(row=1, column=12).value)
+        self.assertEqual(wb["Creator Club"].cell(row=1, column=12).value, "Mateos methods")
         self.assertEqual(wb["Round Table"].auto_filter.ref, "A1:J1")
         self.assertEqual(list(wb["Round Table"].tables), [])
         self.assertEqual(list(wb["Aces Table"].tables), [])
@@ -682,7 +731,7 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(matching.cell(row=3, column=7).value, "Alice")
         self.assertFalse(matching.cell(row=3, column=10).value)
         hidden_headers = [
-            matching.cell(row=1, column=col).value for col in range(30, 60)
+            matching.cell(row=1, column=col).value for col in range(30, 120)
         ]
         self.assertIn("Chip Transfer (Player)", hidden_headers)
         self.assertNotIn("Chip Transfer (RT↔AT)", hidden_headers)
@@ -728,8 +777,8 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(rt_sheet.cell(row=2, column=7).value, "Aces Table")
         self.assertEqual(at_sheet.cell(row=2, column=6).value, "Chip Transfer (RT↔AT)")
         self.assertEqual(at_sheet.cell(row=2, column=7).value, "Round Table")
-        rt_hidden = [rt_sheet.cell(row=1, column=col).value for col in range(30, 60)]
-        at_hidden = [at_sheet.cell(row=1, column=col).value for col in range(30, 60)]
+        rt_hidden = [rt_sheet.cell(row=1, column=col).value for col in range(30, 120)]
+        at_hidden = [at_sheet.cell(row=1, column=col).value for col in range(30, 120)]
         self.assertIn("Chip Transfer (RT↔AT)", rt_hidden)
         self.assertNotIn("Chip Transfer (AT↔CC)", rt_hidden)
         self.assertIn("Chip Transfer (RT↔AT)", at_hidden)
@@ -777,8 +826,8 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(at_sheet.cell(row=2, column=7).value, "Creator Club")
         self.assertEqual(cc_sheet.cell(row=2, column=6).value, "Chip Transfer (AT↔CC)")
         self.assertEqual(cc_sheet.cell(row=2, column=7).value, "Aces Table")
-        at_hidden = [at_sheet.cell(row=1, column=col).value for col in range(30, 60)]
-        cc_hidden = [cc_sheet.cell(row=1, column=col).value for col in range(30, 60)]
+        at_hidden = [at_sheet.cell(row=1, column=col).value for col in range(30, 120)]
+        cc_hidden = [cc_sheet.cell(row=1, column=col).value for col in range(30, 120)]
         self.assertIn("Chip Transfer (AT↔CC)", at_hidden)
         self.assertIn("Chip Transfer (AT↔CC)", cc_hidden)
         self.assertNotIn("Chip Transfer (RT↔AT)", cc_hidden)

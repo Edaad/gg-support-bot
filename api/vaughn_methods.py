@@ -34,6 +34,27 @@ VAUGHN_VENMO_HANDLES = frozenset({"janseashells"})
 _VAUGHN_CLUB_SLUG = "clubgto"
 _DEPOSIT_SOURCES = frozenset(DEPOSIT_METHOD_ORDER)
 
+_OWNER_SOURCE_PREFIX: dict[str, str] = {
+    "round-table": "RT",
+    "vaughn": "GTO",
+    "mateos": "Mateos",
+}
+_OWNER_PREFIXED_DEPOSIT_SOURCES = frozenset(
+    {
+        "deposit_zelle",
+        "deposit_venmo",
+        "deposit_cashapp",
+        "deposit_paypal",
+        "deposit_crypto",
+    }
+)
+
+
+def _owner_source_prefix(method_owner: str | None) -> str | None:
+    if not method_owner:
+        return None
+    return _OWNER_SOURCE_PREFIX.get(method_owner.strip().lower())
+
 VAUGHN_CASHOUT_SOURCE_LABELS: tuple[str, ...] = (
     "Vaughn Cashout Venmo",
     "Vaughn Cashout Cash App",
@@ -102,12 +123,14 @@ def is_vaughn_method(
 def matching_source_label(
     *,
     source: str,
-    variant: str | None,
-    club_slug: str,
+    variant: str | None = None,
+    club_slug: str = "",
     source_label: str | None = None,
     memo: str | None = None,
+    method_owner: str | None = None,
 ) -> str:
-    """Matching Source cell text. ClubGTO deposits use RT/GTO ownership prefix."""
+    """Matching Source cell text with RT/GTO/Mateos owner prefix when applicable."""
+    del club_slug, variant, memo  # kept for call-site compatibility
     src = (source or "").strip()
     if source_label and source_label.strip():
         base = source_label.strip()
@@ -119,31 +142,27 @@ def matching_source_label(
         base = src
     if not base:
         return ""
-    if club_slug.strip().lower() != _VAUGHN_CLUB_SLUG:
-        return base
-    if src not in _DEPOSIT_SOURCES and not src.startswith("deposit_"):
-        return base
-    if src not in _DEPOSIT_SOURCES:
-        # Dynamic manual-request sources: no Vaughn split.
-        return base
-    prefix = "GTO" if is_vaughn_method(
-        source=src, variant=variant, club_slug=club_slug, memo=memo
-    ) else "RT"
-    return f"{prefix} {base}"
+    if src == "deposit_stripe":
+        return "Stripe"
+    if src in _OWNER_PREFIXED_DEPOSIT_SOURCES:
+        prefix = _owner_source_prefix(method_owner)
+        if prefix:
+            return f"{prefix} {base}"
+    return base
 
 
-def clubgto_matching_source_options() -> tuple[str, ...]:
-    """Source dropdown values for ClubGTO Matching (GTO = Vaughn, RT = other)."""
+def owner_matching_source_options() -> tuple[str, ...]:
+    """Source dropdown values with RT/GTO/Mateos owner prefixes on deposits."""
     deposit_labels: list[str] = []
     for src in DEPOSIT_METHOD_ORDER:
         base = LEDGER_SOURCE_LABELS[src]
-        if src in ("deposit_stripe", "deposit_crypto"):
-            deposit_labels.append(f"GTO {base}")
-        elif src in ("deposit_zelle", "deposit_venmo"):
-            deposit_labels.append(f"GTO {base}")
-            deposit_labels.append(f"RT {base}")
-        else:
-            deposit_labels.append(f"RT {base}")
+        if src == "deposit_stripe":
+            deposit_labels.append(base)
+            continue
+        for owner in ("round-table", "vaughn", "mateos"):
+            prefix = _owner_source_prefix(owner)
+            if prefix:
+                deposit_labels.append(f"{prefix} {base}")
     non_deposit = [
         label
         for src, label in LEDGER_SOURCE_LABELS.items()
@@ -157,6 +176,11 @@ def clubgto_matching_source_options() -> tuple[str, ...]:
         + list(VAUGHN_CASHOUT_SOURCE_LABELS)
         + ["Free Play", "Back to Club", "GTO INC"]
     )
+
+
+def clubgto_matching_source_options() -> tuple[str, ...]:
+    """Deprecated alias; use owner_matching_source_options()."""
+    return owner_matching_source_options()
 
 
 @dataclass(frozen=True)

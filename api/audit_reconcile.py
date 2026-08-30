@@ -600,6 +600,7 @@ def _report_to_json(report: AuditReconcileReport) -> str:
                 "display_name": line.display_name,
                 "variant": line.variant,
                 "club_slug": line.club_slug,
+                "method_owner": line.method_owner,
             }
             for line in report.ledger_lines
         ],
@@ -660,6 +661,7 @@ def _ledger_line_from_dict(raw: dict[str, Any]) -> LedgerLine:
         variant=raw.get("variant"),
         club_slug=club_slug,
         memo=raw.get("memo"),
+        method_owner=raw.get("method_owner"),
     )
 
 

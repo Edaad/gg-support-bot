@@ -137,6 +137,7 @@ class LedgerEvent:
     club_slug: str | None = None
     source_label: str | None = None
     memo: str | None = None
+    method_owner: str | None = None
 
 
 @dataclass(frozen=True)
@@ -172,6 +173,7 @@ class LedgerLine:
     variant: str | None = None
     club_slug: str | None = None
     memo: str | None = None
+    method_owner: str | None = None
 
 
 def _club_outflow_usd(amount: Decimal) -> Decimal:
@@ -256,6 +258,7 @@ def build_ledger_lines(
                 variant=event.variant,
                 club_slug=event.club_slug,
                 memo=event.memo,
+                method_owner=event.method_owner,
             )
         )
     return lines
@@ -414,6 +417,7 @@ def _fetch_manual_deposit_events(
         if source == "deposit_zelle" and tag:
             tag = canonicalize_zelle_recipient(tag) or tag
         memo = str(data.get("memo") or "").strip() or None
+        owner = str(data.get("method_owner") or "").strip() or None
         out.append(
             LedgerEvent(
                 source=source,
@@ -425,6 +429,7 @@ def _fetch_manual_deposit_events(
                 display_name=payer,
                 variant=tag,
                 memo=memo,
+                method_owner=owner,
             )
         )
     return out
