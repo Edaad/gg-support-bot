@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { listClubs, type Club } from '../api/client'
 import {
   bindCashAppPayment,
   bindCryptoPayment,
@@ -56,9 +57,15 @@ function bindableMethod(method: OwnerMethod): method is Exclude<OwnerMethod, 'st
   return method !== 'stripe'
 }
 
+function fmtClubLabel(clubId: number | null | undefined, clubNameById: Record<number, string>): string {
+  if (clubId == null) return 'Unbound'
+  return clubNameById[clubId] ?? `Club ${clubId}`
+}
+
 export default function Payments({ token }: { token: string }) {
   const methodSelectId = useId()
   const variantSelectId = useId()
+  const clubSelectId = useId()
   const unionSelectId = useId()
   const searchId = useId()
   const fromDateId = useId()
@@ -68,6 +75,8 @@ export default function Payments({ token }: { token: string }) {
   const [method, setMethod] = useState<OwnerMethod | UnionMethodType>('stripe')
   const [variant, setVariant] = useState('')
   const [unionFilter, setUnionFilter] = useState<UnionFilter>('all')
+  const [clubFilter, setClubFilter] = useState('')
+  const [clubs, setClubs] = useState<Club[]>([])
   const [variantOptions, setVariantOptions] = useState<{ value: string; label: string }[]>([])
 
   const [search, setSearch] = useState('')
@@ -103,6 +112,12 @@ export default function Payments({ token }: { token: string }) {
 
   const isUnionTab = ownerTab === 'union'
   const ownerSlug = isUnionTab ? null : ownerTab
+  const clubIdNum = clubFilter ? Number(clubFilter) : undefined
+
+  const clubNameById = useMemo(
+    () => Object.fromEntries(clubs.map((c) => [c.id, c.name])),
+    [clubs],
+  )
 
   const methodsForTab = useMemo((): readonly (OwnerMethod | UnionMethodType)[] => {
     if (isUnionTab) return UNION_METHODS
@@ -125,6 +140,12 @@ export default function Payments({ token }: { token: string }) {
     () => formatAppliedEasternDateRange(appliedFrom, appliedTo),
     [appliedFrom, appliedTo],
   )
+
+  useEffect(() => {
+    listClubs(token)
+      .then((rows) => setClubs([...rows].sort((a, b) => a.name.localeCompare(b.name))))
+      .catch(() => setClubs([]))
+  }, [token])
 
   useEffect(() => {
     if (method !== effectiveMethod) {
@@ -151,6 +172,7 @@ export default function Payments({ token }: { token: string }) {
         type: effectiveMethod as UnionMethodType,
         deposit_union: unionFilter === 'all' ? undefined : unionFilter,
         pool_pay_type: 'union_method',
+        club_id: clubIdNum,
         ...dateParams,
         q: appliedSearch || undefined,
       })
@@ -167,7 +189,7 @@ export default function Payments({ token }: { token: string }) {
     })
       .then((res) => setVariantOptions(res.items))
       .catch(() => setVariantOptions([]))
-  }, [token, isUnionTab, ownerSlug, effectiveMethod, unionFilter, dateParams, appliedSearch])
+  }, [token, isUnionTab, ownerSlug, effectiveMethod, unionFilter, clubIdNum, dateParams, appliedSearch])
 
   useEffect(() => {
     loadVariants()
@@ -182,6 +204,7 @@ export default function Payments({ token }: { token: string }) {
         type: effectiveMethod as UnionMethodType,
         deposit_union: unionFilter === 'all' ? undefined : unionFilter,
         pool_pay_type: 'union_method',
+        club_id: clubIdNum,
         variant: variant || undefined,
         q: appliedSearch || undefined,
         limit: PAGE_SIZE,
@@ -204,6 +227,7 @@ export default function Payments({ token }: { token: string }) {
     listOwnerPayments(token, ownerSlug, {
       method: effectiveMethod as OwnerMethod,
       variant: variant || undefined,
+      clubId: clubIdNum,
       q: appliedSearch || undefined,
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
@@ -226,6 +250,7 @@ export default function Payments({ token }: { token: string }) {
     effectiveMethod,
     variant,
     unionFilter,
+    clubIdNum,
     appliedSearch,
     page,
     dateParams,
@@ -306,6 +331,7 @@ export default function Payments({ token }: { token: string }) {
           type: effectiveMethod as UnionMethodType,
           deposit_union: unionFilter === 'all' ? undefined : unionFilter,
           pool_pay_type: 'union_method',
+          club_id: clubIdNum,
           variant: variant || undefined,
           q: appliedSearch || undefined,
           ...dateParams,
@@ -335,6 +361,7 @@ export default function Payments({ token }: { token: string }) {
       const { items: rows, summary } = await fetchAllOwnerPayments(token, ownerSlug, {
         method: effectiveMethod as OwnerMethod,
         variant: variant || undefined,
+        clubId: clubIdNum,
         q: appliedSearch || undefined,
         ...dateParams,
       })
@@ -354,6 +381,7 @@ export default function Payments({ token }: { token: string }) {
             'gg_nickname',
             'gg_player_id',
             'method_name',
+            'club',
             'amount_usd',
             'currency',
             'stripe_payment_intent_id',
@@ -365,6 +393,7 @@ export default function Payments({ token }: { token: string }) {
             row.gg_nickname || '',
             row.gg_player_id || '',
             row.method_name || '',
+            fmtClubLabel(row.club_id, clubNameById),
             String(row.amount_usd),
             row.currency,
             row.stripe_payment_intent_id || '',
@@ -384,6 +413,7 @@ export default function Payments({ token }: { token: string }) {
             'group_title',
             'gg_nickname',
             'gg_player_id',
+            'club',
             'amount_usd',
             'status',
           ],
@@ -397,6 +427,7 @@ export default function Payments({ token }: { token: string }) {
             row.group_title || '',
             row.gg_nickname || '',
             row.gg_player_id || '',
+            fmtClubLabel(row.club_id, clubNameById),
             String(row.amount_usd),
             row.status,
           ]),
@@ -419,6 +450,7 @@ export default function Payments({ token }: { token: string }) {
                 'group_title',
                 'gg_nickname',
                 'gg_player_id',
+                'club',
                 'amount_usd',
                 'status',
                 'auto_bound',
@@ -431,6 +463,7 @@ export default function Payments({ token }: { token: string }) {
                 'group_title',
                 'gg_nickname',
                 'gg_player_id',
+                'club',
                 'amount_usd',
                 'status',
                 'auto_bound',
@@ -453,6 +486,7 @@ export default function Payments({ token }: { token: string }) {
               row.group_title || '',
               row.gg_nickname || '',
               row.gg_player_id || '',
+              fmtClubLabel(row.club_id, clubNameById),
               String(row.amount_usd),
               row.status,
               String(row.auto_bound),
@@ -536,6 +570,27 @@ export default function Payments({ token }: { token: string }) {
             {variantOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor={clubSelectId} className="label-field-xs">
+            Club
+          </label>
+          <select
+            id={clubSelectId}
+            value={clubFilter}
+            onChange={(e) => {
+              setClubFilter(e.target.value)
+              setPage(0)
+            }}
+            className="input-field-sm min-w-[12rem]"
+          >
+            <option value="">All clubs</option>
+            {clubs.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
               </option>
             ))}
           </select>
@@ -644,6 +699,7 @@ export default function Payments({ token }: { token: string }) {
         <IngestedPaymentTable
           method={effectiveMethod as OwnerMethod}
           rows={ingestedRows}
+          clubNameById={clubNameById}
           onBind={
             bindableMethod(effectiveMethod as OwnerMethod) ? openBindModal : undefined
           }

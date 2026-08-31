@@ -20,6 +20,7 @@ type IngestedRow =
 type Props = {
   method: OwnerMethod
   rows: IngestedRow[]
+  clubNameById: Record<number, string>
   onBind?: (row: VenmoPaymentRow | ZellePaymentRow | CashAppPaymentRow | PayPalPaymentRow | CryptoPaymentRow) => void
 }
 
@@ -39,6 +40,11 @@ function fmtMoney(value: number | string): string {
 function fmtGgNickname(nickname: string | null | undefined): string {
   const s = nickname?.trim()
   return s ? s : 'Not available'
+}
+
+function fmtClub(clubId: number | null | undefined, clubNameById: Record<number, string>): string {
+  if (clubId == null) return 'Unbound'
+  return clubNameById[clubId] ?? `Club ${clubId}`
 }
 
 function isCrypto(row: IngestedRow): row is CryptoPaymentRow {
@@ -68,7 +74,7 @@ function accountHeader(method: OwnerMethod): string {
   return 'Handle'
 }
 
-export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
+export default function IngestedPaymentTable({ method, rows, clubNameById, onBind }: Props) {
   if (method === 'stripe') {
     return (
       <div className="table-scroll">
@@ -80,6 +86,7 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
               <th className="px-4 py-3">Group</th>
               <th className="px-4 py-3">Player</th>
               <th className="px-4 py-3">Method</th>
+              <th className="px-4 py-3">Club</th>
               <th className="px-4 py-3">Stripe</th>
             </tr>
           </thead>
@@ -97,6 +104,7 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
                 </td>
                 <td className="px-4 py-3">{fmtGgNickname(row.gg_nickname)}</td>
                 <td className="px-4 py-3">{row.method_name || '—'}</td>
+                <td className="px-4 py-3">{fmtClub(row.club_id, clubNameById)}</td>
                 <td className="px-4 py-3">
                   <a
                     href={row.stripe_payment_url || row.stripe_dashboard_url}
@@ -130,6 +138,7 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
               <th className="px-4 py-3">From</th>
               <th className="px-4 py-3">Token</th>
               <th className="px-4 py-3">Tx</th>
+              <th className="px-4 py-3">Club</th>
               <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
@@ -155,6 +164,7 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
                 <td className="px-4 py-3 font-mono text-xs max-w-[10rem] truncate" title={row.transaction_hash}>
                   {row.transaction_hash}
                 </td>
+                <td className="px-4 py-3">{fmtClub(row.club_id, clubNameById)}</td>
                 <td className="px-4 py-3">
                   {row.status === 'unbound' && onBind && (
                     <button
@@ -186,6 +196,7 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
             <th className="px-4 py-3">Payer</th>
             <th className="px-4 py-3">{accountHeader(method)}</th>
             <th className="px-4 py-3">Status</th>
+            <th className="px-4 py-3">Club</th>
             <th className="px-4 py-3">Actions</th>
           </tr>
         </thead>
@@ -210,6 +221,7 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
                   <span className="ml-1 text-xs text-ink-muted">(auto)</span>
                 )}
               </td>
+              <td className="px-4 py-3">{fmtClub(row.club_id, clubNameById)}</td>
               <td className="px-4 py-3">
                 {row.status === 'unbound' && onBind && (
                   <button

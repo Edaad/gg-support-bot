@@ -30,7 +30,7 @@ from api.payments_helpers import (
     stripe_dashboard_payment_url,
     stripe_dashboard_session_url,
 )
-from api.routes.payments import _clamp_limit, _parse_dt, _raise_db_schema_error
+from api.routes.payments import _clamp_limit, _get_club_or_404, _parse_dt, _raise_db_schema_error
 from api.schemas_payments import (
     CashAppPaymentRead,
     CryptoPaymentRead,
@@ -134,6 +134,7 @@ def list_owner_payments(
     from_dt: str | None = Query(None, alias="from"),
     to_dt: str | None = Query(None, alias="to"),
     q: str | None = Query(None),
+    club_id: int | None = Query(None),
     limit: int = Query(_DEFAULT_LIMIT),
     offset: int = Query(0),
     db: Session = Depends(get_db_dependency),
@@ -143,6 +144,8 @@ def list_owner_payments(
     offset = max(0, offset)
     parsed_from = _parse_dt(from_dt)
     parsed_to = _parse_dt(to_dt)
+    if club_id is not None:
+        _get_club_or_404(db, club_id)
 
     try:
         if method_slug == "stripe":
@@ -155,6 +158,7 @@ def list_owner_payments(
                 from_dt=parsed_from,
                 to_dt=parsed_to,
                 q=q,
+                club_id=club_id,
             )
             total_count, total_amount_cents = aggregate_owner_payment_query(
                 base, StripeCheckoutSession.amount_cents
@@ -180,6 +184,7 @@ def list_owner_payments(
                 from_dt=parsed_from,
                 to_dt=parsed_to,
                 q=q,
+                club_id=club_id,
             )
             total_count, total_amount_cents = aggregate_owner_payment_query(
                 base, payment_cls.amount_cents

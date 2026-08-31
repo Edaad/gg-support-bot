@@ -1077,11 +1077,14 @@ def apply_owner_ingest_filters(
     from_dt: datetime | None,
     to_dt: datetime | None,
     q: str | None,
+    club_id: int | None = None,
 ):
     query = query.filter(
         payment_cls.method_owner == method_owner,
         payment_cls.is_test.is_(False),
     )
+    if club_id is not None:
+        query = query.filter(_payment_linked_to_club(payment_cls, club_id))
     variant_col_name = None
     for method_slug, cls in OWNER_INGEST_METHODS.items():
         if cls is payment_cls:
@@ -1124,8 +1127,11 @@ def apply_owner_stripe_filters(
     from_dt: datetime | None,
     to_dt: datetime | None,
     q: str | None,
+    club_id: int | None = None,
 ):
     query = query.filter(StripeCheckoutSession.status == "complete")
+    if club_id is not None:
+        query = query.filter(StripeCheckoutSession.club_id == int(club_id))
     if variant and variant.strip():
         variant_key = variant.strip()
         if variant_key == "manual":

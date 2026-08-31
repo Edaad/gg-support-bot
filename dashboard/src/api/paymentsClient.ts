@@ -1152,6 +1152,7 @@ export type OwnerPaymentList<T> = {
 export type OwnerPaymentListParams = {
   method: OwnerMethod
   variant?: string
+  clubId?: number
   from?: string
   to?: string
   q?: string
@@ -1166,6 +1167,7 @@ export function listOwnerPayments<T>(
 ) {
   const q = new URLSearchParams({ method: params.method })
   if (params.variant) q.set('variant', params.variant)
+  if (params.clubId != null) q.set('club_id', String(params.clubId))
   if (params.from) q.set('from', params.from)
   if (params.to) q.set('to', params.to)
   if (params.q?.trim()) q.set('q', params.q.trim())
