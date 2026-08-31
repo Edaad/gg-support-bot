@@ -76,10 +76,10 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
           <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
             <tr>
               <th className="px-4 py-3">Time</th>
+              <th className="px-4 py-3">Amount</th>
               <th className="px-4 py-3">Group</th>
               <th className="px-4 py-3">Player</th>
               <th className="px-4 py-3">Method</th>
-              <th className="px-4 py-3">Amount</th>
               <th className="px-4 py-3">Stripe</th>
             </tr>
           </thead>
@@ -89,14 +89,14 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
                 <td className="px-4 py-3 whitespace-nowrap">
                   {fmtPaymentAt(row.completed_at || row.created_at)}
                 </td>
+                <td className="px-4 py-3 font-medium">
+                  {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
+                </td>
                 <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                   {row.group_title || '—'}
                 </td>
                 <td className="px-4 py-3">{fmtGgNickname(row.gg_nickname)}</td>
                 <td className="px-4 py-3">{row.method_name || '—'}</td>
-                <td className="px-4 py-3 font-medium">
-                  {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
-                </td>
                 <td className="px-4 py-3">
                   <a
                     href={row.stripe_payment_url || row.stripe_dashboard_url}
@@ -124,7 +124,7 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
           <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
             <tr>
               <th className="px-4 py-3">Time</th>
-              <th className="px-4 py-3">Amount (USD)</th>
+              <th className="px-4 py-3">Amount</th>
               <th className="px-4 py-3">Group</th>
               <th className="px-4 py-3">Player</th>
               <th className="px-4 py-3">From</th>
@@ -180,11 +180,11 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
         <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
           <tr>
             <th className="px-4 py-3">Time</th>
-            <th className="px-4 py-3">Payer</th>
-            <th className="px-4 py-3">{accountHeader(method)}</th>
+            <th className="px-4 py-3">Amount</th>
             <th className="px-4 py-3">Group</th>
             <th className="px-4 py-3">Player</th>
-            <th className="px-4 py-3">Amount</th>
+            <th className="px-4 py-3">Payer</th>
+            <th className="px-4 py-3">{accountHeader(method)}</th>
             <th className="px-4 py-3">Status</th>
             <th className="px-4 py-3">Actions</th>
           </tr>
@@ -193,8 +193,7 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
           {rows.filter(isManualIngest).map((row) => (
             <tr key={row.id} className="hover:bg-surface/80">
               <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(row.created_at)}</td>
-              <td className="px-4 py-3">{row.payer_name}</td>
-              <td className="px-4 py-3 font-mono text-xs">{accountCell(row)}</td>
+              <td className="px-4 py-3 font-medium">${fmtMoney(row.amount_usd)}</td>
               <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                 {row.status === 'unbound' ? (
                   <span className="text-warning-ink">Unbound</span>
@@ -203,7 +202,8 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
                 )}
               </td>
               <td className="px-4 py-3">{fmtGgNickname(row.gg_nickname)}</td>
-              <td className="px-4 py-3 font-medium">${fmtMoney(row.amount_usd)}</td>
+              <td className="px-4 py-3">{row.payer_name}</td>
+              <td className="px-4 py-3 font-mono text-xs">{accountCell(row)}</td>
               <td className="px-4 py-3 capitalize">
                 {row.status}
                 {row.auto_bound && row.status === 'bound' && (
