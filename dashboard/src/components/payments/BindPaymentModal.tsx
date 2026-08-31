@@ -26,14 +26,14 @@ type Props = {
   onSubmit: () => void
 }
 
-function fmtMoney(n: number): string {
-  return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function fmtMoney(value: number | string): string {
+  return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function rowSummary(method: OwnerMethod | null, row: BindableRow | null): string | null {
   if (!row || !method) return null
   if (method === 'crypto' && 'transaction_hash' in row) {
-    return `${row.from_label} · $${fmtMoney(row.amount_usd)} ${row.token_symbol}`
+    return `${row.from_label} · $${fmtMoney(row.amount_usd)}`
   }
   if ('payer_name' in row && 'amount_usd' in row) {
     const account =

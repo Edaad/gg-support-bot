@@ -32,8 +32,8 @@ function fmtPaymentAt(iso: string | null | undefined): string {
   }
 }
 
-function fmtMoney(n: number): string {
-  return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function fmtMoney(value: number | string): string {
+  return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function fmtGgNickname(nickname: string | null | undefined): string {
@@ -120,19 +120,16 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
   if (method === 'crypto') {
     return (
       <div className="table-scroll">
-        <table className="min-w-[64rem] text-left">
+        <table className="min-w-[52rem] text-left">
           <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
             <tr>
               <th className="px-4 py-3">Time</th>
-              <th className="px-4 py-3">Alert</th>
-              <th className="px-4 py-3">From</th>
-              <th className="px-4 py-3">Chain</th>
-              <th className="px-4 py-3">Token</th>
-              <th className="px-4 py-3">To</th>
-              <th className="px-4 py-3">Tx</th>
+              <th className="px-4 py-3">Amount (USD)</th>
               <th className="px-4 py-3">Group</th>
               <th className="px-4 py-3">Player</th>
-              <th className="px-4 py-3">Amount</th>
+              <th className="px-4 py-3">From</th>
+              <th className="px-4 py-3">Token</th>
+              <th className="px-4 py-3">Tx</th>
               <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
@@ -140,17 +137,8 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
             {rows.filter(isCrypto).map((row) => (
               <tr key={row.id} className="hover:bg-surface/80">
                 <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(row.created_at)}</td>
-                <td className="px-4 py-3">{row.alert_scope_label}</td>
-                <td className="px-4 py-3 max-w-[12rem] truncate" title={row.from_label}>
-                  {row.from_label}
-                </td>
-                <td className="px-4 py-3 uppercase">{row.chain}</td>
-                <td className="px-4 py-3">{row.token_symbol}</td>
-                <td className="px-4 py-3 font-mono text-xs max-w-[10rem] truncate" title={row.to_address}>
-                  {row.to_address}
-                </td>
-                <td className="px-4 py-3 font-mono text-xs max-w-[10rem] truncate" title={row.transaction_hash}>
-                  {row.transaction_hash}
+                <td className="px-4 py-3 font-medium">
+                  {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
                 </td>
                 <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                   {row.status === 'unbound' ? (
@@ -160,8 +148,12 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
                   )}
                 </td>
                 <td className="px-4 py-3">{fmtGgNickname(row.gg_nickname)}</td>
-                <td className="px-4 py-3 font-medium">
-                  ${fmtMoney(row.amount_usd)} {row.token_symbol}
+                <td className="px-4 py-3 max-w-[12rem] truncate" title={row.from_label}>
+                  {row.from_label}
+                </td>
+                <td className="px-4 py-3">{row.token_symbol}</td>
+                <td className="px-4 py-3 font-mono text-xs max-w-[10rem] truncate" title={row.transaction_hash}>
+                  {row.transaction_hash}
                 </td>
                 <td className="px-4 py-3">
                   {row.status === 'unbound' && onBind && (

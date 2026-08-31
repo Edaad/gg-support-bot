@@ -690,7 +690,7 @@ export type CryptoPaymentRow = {
   token_name: string | null
   chain: string
   amount_cents: number
-  amount_usd: number
+  amount_usd: number | string
   paid_at: string | null
   alert_name: string | null
   alert_scope: string
