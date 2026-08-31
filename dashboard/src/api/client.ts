@@ -185,6 +185,20 @@ export const gcMtprotoCloudPassword = (token: string, body: { club_key: string; 
 export const gcMtprotoDeleteSession = (token: string, clubKey: string) =>
   request<void>(`/gc/mtproto/session/${encodeURIComponent(clubKey)}`, { method: 'DELETE' }, token)
 
+export const gcMtprotoQrStart = (token: string, body: { club_key: string }) =>
+  request<{ ok: boolean; message: string; url: string; expires_at: string }>(
+    '/gc/mtproto/qr-start',
+    { method: 'POST', body: JSON.stringify(body) },
+    token,
+  )
+
+export const gcMtprotoQrStatus = (token: string, clubKey: string) =>
+  request<{ status: string; detail?: string | null }>(
+    `/gc/mtproto/qr-status/${encodeURIComponent(clubKey)}`,
+    {},
+    token,
+  )
+
 // Bonus types
 export const listBonusTypes = (token: string) =>
   request<BonusTypeT[]>('/bonus/types', {}, token)

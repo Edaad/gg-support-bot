@@ -5,6 +5,8 @@ import {
   gcMtprotoSignIn,
   gcMtprotoCloudPassword,
   gcMtprotoDeleteSession,
+  gcMtprotoQrStart,
+  gcMtprotoQrStatus,
   clubStatusLabel,
   type GcMtProtoClub,
 } from '../api/client'
@@ -23,6 +25,8 @@ export default function TelegramLogin({ token }: { token: string }) {
   const [busy, setBusy] = useState(false)
   const [info, setInfo] = useState<string | null>(null)
   const [confirmLogout, setConfirmLogout] = useState(false)
+  const [qrUrl, setQrUrl] = useState<string | null>(null)
+  const [qrPolling, setQrPolling] = useState(false)
 
   const selected = clubs.find((c) => c.club_key === clubKey)
 
@@ -45,6 +49,44 @@ export default function TelegramLogin({ token }: { token: string }) {
     }
   }, [token])
 
+  useEffect(() => {
+    if (!qrPolling || !clubKey || !token) return
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const r = await gcMtprotoQrStatus(token, clubKey)
+        if (cancelled) return
+        if (r.status === 'success') {
+          setQrPolling(false)
+          setQrUrl(null)
+          setNeedsPassword(false)
+          setInfo(
+            'Telegram logged in via QR; session synced to Postgres for the bot worker. Send /gc in Telegram to create a megagroup.',
+          )
+          const rows = await gcMtprotoListClubs(token)
+          setClubs(rows)
+        } else if (r.status === 'needs_password') {
+          setQrPolling(false)
+          setQrUrl(null)
+          setNeedsPassword(true)
+          setInfo('QR login accepted. Enter your Telegram Cloud Password below.')
+        } else if (r.status === 'error' || r.status === 'expired') {
+          setQrPolling(false)
+          setQrUrl(null)
+          setError(r.detail ?? `QR login ${r.status}.`)
+        }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
+      }
+    }
+    const id = window.setInterval(tick, 2000)
+    tick()
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [qrPolling, clubKey, token])
+
   async function logOut() {
     if (!clubKey) return
     setError(null)
@@ -57,6 +99,8 @@ export default function TelegramLogin({ token }: { token: string }) {
       setCode('')
       setNeedsPassword(false)
       setCloudPassword('')
+      setQrUrl(null)
+      setQrPolling(false)
       setInfo('Session cleared. Log in again below to generate a new session.')
       const rows = await gcMtprotoListClubs(token)
       setClubs(rows)
@@ -81,6 +125,25 @@ export default function TelegramLogin({ token }: { token: string }) {
       setNeedsPassword(false)
       setCloudPassword('')
       setCode('')
+      setInfo(r.message)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function startQrLogin() {
+    if (!clubKey) return
+    setError(null)
+    setInfo(null)
+    setBusy(true)
+    setQrUrl(null)
+    setQrPolling(false)
+    try {
+      const r = await gcMtprotoQrStart(token, { club_key: clubKey })
+      setQrUrl(r.url)
+      setQrPolling(true)
       setInfo(r.message)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -233,6 +296,8 @@ export default function TelegramLogin({ token }: { token: string }) {
             setError(null)
             setInfo(null)
             setConfirmLogout(false)
+            setQrUrl(null)
+            setQrPolling(false)
           }}
           className={`${inputCls} cursor-pointer`}
         >
@@ -320,7 +385,31 @@ export default function TelegramLogin({ token }: { token: string }) {
           >
             Send login code
           </button>
+          <button
+            type="button"
+            disabled={busy || !clubKey || qrPolling}
+            onClick={startQrLogin}
+            className="btn-secondary disabled:opacity-40"
+          >
+            {qrPolling ? 'Waiting for QR scan…' : 'Login with QR code'}
+          </button>
         </div>
+
+        {qrUrl && (
+          <div className="mt-6 border-t border-border pt-6">
+            <p className="text-sm text-ink-muted">
+              Scan with the club Telegram account ({selected?.club_display_name}): Settings → Devices →
+              Link Desktop Device.
+            </p>
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrUrl)}`}
+              alt="Telegram QR login"
+              className="mt-3 rounded-lg border border-border bg-white p-2"
+              width={240}
+              height={240}
+            />
+          </div>
+        )}
 
         {phoneCodeHash && !needsPassword && (
           <div className="mt-6 border-t border-border pt-6">
