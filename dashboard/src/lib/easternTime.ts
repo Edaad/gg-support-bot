@@ -48,6 +48,74 @@ export function yesterdayEasternDateString(now: Date = new Date()): string {
   return easternCalendarDateString(new Date(utcNoon - 24 * 60 * 60 * 1000))
 }
 
+const WEEKDAY_OFFSET_FROM_MONDAY: Record<string, number> = {
+  Mon: 0,
+  Tue: 1,
+  Wed: 2,
+  Thu: 3,
+  Fri: 4,
+  Sat: 5,
+  Sun: 6,
+}
+
+/** Most recent Monday on the America/New_York calendar (today if today is Monday). */
+export function latestMondayEasternDateString(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: EASTERN,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short',
+  }).formatToParts(now)
+  const get = (type: string) => parts.find((p) => p.type === type)?.value
+  const y = Number(get('year'))
+  const m = Number(get('month'))
+  const d = Number(get('day'))
+  const weekday = get('weekday') || 'Mon'
+  const back = WEEKDAY_OFFSET_FROM_MONDAY[weekday] ?? 0
+  const utcNoon = Date.UTC(y, m - 1, d, 12)
+  return easternCalendarDateString(new Date(utcNoon - back * 24 * 60 * 60 * 1000))
+}
+
+/** Start of an America/New_York calendar day as UTC ISO. */
+export function easternDayStartIso(dateYmd: string): string {
+  return fromEasternDatetimeLocalValue(`${dateYmd}T00:00`).toISOString()
+}
+
+/** End of an America/New_York calendar day (23:59:59.999 ET) as UTC ISO. */
+export function easternDayEndIso(dateYmd: string): string {
+  const at2359 = fromEasternDatetimeLocalValue(`${dateYmd}T23:59`)
+  return new Date(at2359.getTime() + 59_999).toISOString()
+}
+
+/** Human label for YYYY-MM-DD calendar dates (no timezone shift). */
+export function formatEasternCalendarDateLabel(dateYmd: string): string {
+  const [y, m, d] = dateYmd.split('-').map(Number)
+  if (![y, m, d].every(Number.isFinite)) return dateYmd
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+/** Applied from/to filter label for UI (“Mon → today” style). */
+export function formatAppliedEasternDateRange(
+  fromYmd: string,
+  toYmd: string,
+): string {
+  if (!fromYmd && !toYmd) return 'All time'
+  if (fromYmd && toYmd) {
+    return `${formatEasternCalendarDateLabel(fromYmd)} → ${formatEasternCalendarDateLabel(toYmd)} (US Eastern)`
+  }
+  if (fromYmd) {
+    return `From ${formatEasternCalendarDateLabel(fromYmd)} (US Eastern)`
+  }
+  return `Through ${formatEasternCalendarDateLabel(toYmd)} (US Eastern)`
+}
+
 export function formatEasternTime(value: string | Date | null | undefined): string {
   if (!value) return '—'
   const d = typeof value === 'string' ? parseApiUtcDate(value) : value
