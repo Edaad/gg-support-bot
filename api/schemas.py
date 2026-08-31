@@ -531,6 +531,8 @@ class MtProtoQrStartResponse(BaseModel):
 class MtProtoQrStatusResponse(BaseModel):
     status: str
     detail: Optional[str] = None
+    url: Optional[str] = None
+    expires_at: Optional[datetime] = None
 
 
 # ── Bonus Types & Records ─────────────────────────────────────────────────────

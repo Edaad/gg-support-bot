@@ -193,7 +193,7 @@ export const gcMtprotoQrStart = (token: string, body: { club_key: string }) =>
   )
 
 export const gcMtprotoQrStatus = (token: string, clubKey: string) =>
-  request<{ status: string; detail?: string | null }>(
+  request<{ status: string; detail?: string | null; url?: string | null; expires_at?: string | null }>(
     `/gc/mtproto/qr-status/${encodeURIComponent(clubKey)}`,
     {},
     token,

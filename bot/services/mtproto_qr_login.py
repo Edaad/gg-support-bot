@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 from telethon.errors import SessionPasswordNeededError
@@ -29,6 +29,42 @@ class QrLoginJob:
 
 
 _jobs: dict[str, QrLoginJob] = {}
+
+_MAX_QR_REFRESHES = 8
+
+
+def _seconds_until(expires_at: datetime) -> float:
+    now = datetime.now(tz=timezone.utc)
+    exp = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=timezone.utc)
+    return (exp - now).total_seconds()
+
+
+async def _wait_for_qr_scan(qr, job: QrLoginJob) -> None:
+    """Wait for scan; auto-refresh the QR when Telegram's ~30s token expires."""
+
+    refreshes = 0
+    while True:
+        timeout = _seconds_until(job.expires_at)
+        if timeout <= 1:
+            if refreshes >= _MAX_QR_REFRESHES:
+                raise asyncio.TimeoutError()
+            await qr.recreate()
+            job.url = qr.url
+            job.expires_at = qr.expires
+            refreshes += 1
+            logger.info("MTProto QR token refreshed refresh=%s", refreshes)
+            continue
+        try:
+            await qr.wait(timeout=timeout)
+            return
+        except asyncio.TimeoutError:
+            if refreshes >= _MAX_QR_REFRESHES:
+                raise
+            await qr.recreate()
+            job.url = qr.url
+            job.expires_at = qr.expires
+            refreshes += 1
+            logger.info("MTProto QR timed out; refreshed refresh=%s", refreshes)
 
 
 async def cancel_qr_login(club_key: str) -> None:
@@ -66,7 +102,7 @@ async def start_qr_login(cfg: ClubGcConfig) -> QrLoginJob:
         async def _run() -> None:
             try:
                 try:
-                    await qr.wait()
+                    await _wait_for_qr_scan(qr, job)
                     if await snapshot_disk_session_to_database(cfg):
                         job.status = "success"
                         logger.info("MTProto QR login succeeded club=%s", cfg.club_key)

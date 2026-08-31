@@ -26,6 +26,7 @@ export default function TelegramLogin({ token }: { token: string }) {
   const [info, setInfo] = useState<string | null>(null)
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [qrUrl, setQrUrl] = useState<string | null>(null)
+  const [qrExpiresAt, setQrExpiresAt] = useState<string | null>(null)
   const [qrPolling, setQrPolling] = useState(false)
 
   const selected = clubs.find((c) => c.club_key === clubKey)
@@ -56,7 +57,10 @@ export default function TelegramLogin({ token }: { token: string }) {
       try {
         const r = await gcMtprotoQrStatus(token, clubKey)
         if (cancelled) return
-        if (r.status === 'success') {
+        if (r.status === 'pending') {
+          if (r.url) setQrUrl(r.url)
+          if (r.expires_at) setQrExpiresAt(r.expires_at)
+        } else if (r.status === 'success') {
           setQrPolling(false)
           setQrUrl(null)
           setNeedsPassword(false)
@@ -143,8 +147,9 @@ export default function TelegramLogin({ token }: { token: string }) {
     try {
       const r = await gcMtprotoQrStart(token, { club_key: clubKey })
       setQrUrl(r.url)
+      setQrExpiresAt(r.expires_at)
       setQrPolling(true)
-      setInfo(r.message)
+      setInfo(`${r.message} The QR auto-refreshes if it expires (~30s each).`)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -297,6 +302,7 @@ export default function TelegramLogin({ token }: { token: string }) {
             setInfo(null)
             setConfirmLogout(false)
             setQrUrl(null)
+            setQrExpiresAt(null)
             setQrPolling(false)
           }}
           className={`${inputCls} cursor-pointer`}
@@ -401,7 +407,14 @@ export default function TelegramLogin({ token }: { token: string }) {
               Scan with the club Telegram account ({selected?.club_display_name}): Settings → Devices →
               Link Desktop Device.
             </p>
+            {qrExpiresAt && (
+              <p className="mt-2 text-xs text-ink-muted">
+                Current QR token expires {new Date(qrExpiresAt).toLocaleTimeString()} (auto-refreshes if
+                needed).
+              </p>
+            )}
             <img
+              key={qrUrl}
               src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrUrl)}`}
               alt="Telegram QR login"
               className="mt-3 rounded-lg border border-border bg-white p-2"

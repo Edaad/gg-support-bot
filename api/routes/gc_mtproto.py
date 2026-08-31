@@ -183,7 +183,12 @@ async def mtproto_qr_status(club_key: str):
     job = get_qr_login_status(club_key)
     if job is None:
         return MtProtoQrStatusResponse(status="idle")
-    return MtProtoQrStatusResponse(status=job.status, detail=job.detail)
+    return MtProtoQrStatusResponse(
+        status=job.status,
+        detail=job.detail,
+        url=job.url if job.status == "pending" else None,
+        expires_at=job.expires_at if job.status == "pending" else None,
+    )
 
 
 @router.post("/send-code", response_model=MtProtoSendCodeResponse)
