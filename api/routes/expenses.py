@@ -40,8 +40,8 @@ def _to_read(row: Expense) -> ExpenseRead:
 
 
 def _validate_amount(amount: Decimal) -> None:
-    if amount <= 0:
-        raise HTTPException(400, "Amount must be greater than 0")
+    if amount == 0:
+        raise HTTPException(400, "Amount must not be zero")
 
 
 def _require_club(db: Session, club_id: int) -> Club:
