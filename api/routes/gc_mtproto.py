@@ -25,7 +25,9 @@ from bot.services.mtproto_group_create import (
     authenticate_mtproto_code,
     authenticate_mtproto_password,
     send_code_for_phone,
+    send_code_user_message,
 )
+from bot.services.mtproto_session_db import clear_disk_login_session
 from bot.services.mtproto_club_health import (
     resolve_auxiliary_session_status,
     resolve_club_session_status,
@@ -108,8 +110,9 @@ async def list_gc_mtproto_clubs():
 @router.delete("/session/{club_key}", status_code=204)
 async def mtproto_delete_session(club_key: str):
     """Clear the stored Telethon session from DB. Worker will lose MTProto access until re-login."""
-    _cfg(club_key)  # 404 if unknown
+    cfg = _cfg(club_key)
     await asyncio.to_thread(delete_session_for_club, club_key)
+    await asyncio.to_thread(clear_disk_login_session, cfg)
 
 
 @router.post("/sync-disk-session", response_model=MtProtoSyncDiskResponse)
@@ -156,7 +159,7 @@ async def mtproto_send_code(body: MtProtoSendCodeRequest):
     phone = _resolve_phone(cfg, body.phone)
     try:
 
-        phone_code_hash = await send_code_for_phone(cfg, phone)
+        phone_code_hash, delivery = await send_code_for_phone(cfg, phone)
     except PhoneNumberInvalidError:
         logger.warning("MTProto SendCode invalid phone club=%s", cfg.club_key)
         raise HTTPException(status_code=400, detail=PHONE_INVALID_REPLY) from None
@@ -168,7 +171,7 @@ async def mtproto_send_code(body: MtProtoSendCodeRequest):
 
     return MtProtoSendCodeResponse(
         ok=True,
-        message="Enter the Telegram/SMS login code below (one attempt per code — request a new one if needed).",
+        message=send_code_user_message(delivery),
         phone_code_hash=phone_code_hash,
         phone_e164=phone,
     )
