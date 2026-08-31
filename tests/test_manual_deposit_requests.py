@@ -1042,6 +1042,59 @@ class DashboardManualDepositServiceTests(unittest.TestCase):
                     amount=Decimal("700"),
                 )
 
+    def test_update_marks_trade_record_checked_clears_pending_expiry(self):
+        from db.models import ManualDepositRequest
+
+        when = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+        expires = datetime(2026, 8, 1, 12, 10, tzinfo=timezone.utc)
+        session = self.Session()
+        session.add(
+            ManualDepositRequest(
+                id=37,
+                club_id=1,
+                method_id=10,
+                method_name="Zelle",
+                method_slug="zelle-union",
+                variant_name="pay@zelle",
+                group_title="RT / 1111-1111 / Alice",
+                telegram_chat_id=-1001,
+                amount=Decimal("500"),
+                trade_record_checked=False,
+                source="bot",
+                created_at=when,
+                instruction_expires_at=expires,
+                ack_expires_at=expires,
+            )
+        )
+        session.commit()
+        session.close()
+
+        with patch(
+            "bot.services.manual_deposit_requests.get_db",
+            side_effect=self._get_db,
+        ), patch(
+            "bot.services.union_instruction_expiry.get_db",
+            side_effect=AssertionError(
+                "cancel_union_instruction_expiry must reuse the open transaction"
+            ),
+        ):
+            updated = update_dashboard_manual_deposit_request(
+                request_id=37,
+                trade_record_checked=True,
+            )
+
+        self.assertTrue(updated.trade_record_checked)
+        verify = self.Session()
+        try:
+            row = verify.get(ManualDepositRequest, 37)
+            self.assertIsNotNone(row)
+            assert row is not None
+            self.assertTrue(row.trade_record_checked)
+            self.assertIsNone(row.instruction_expires_at)
+            self.assertIsNone(row.ack_expires_at)
+        finally:
+            verify.close()
+
 
 if __name__ == "__main__":
     unittest.main()

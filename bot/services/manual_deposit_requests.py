@@ -330,7 +330,7 @@ def update_dashboard_manual_deposit_request(
                     cancel_union_instruction_expiry,
                 )
 
-                cancel_union_instruction_expiry(int(row.id))
+                cancel_union_instruction_expiry(int(row.id), session=session)
 
         session.flush()
         session.refresh(row)

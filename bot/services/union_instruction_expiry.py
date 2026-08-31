@@ -158,35 +158,51 @@ def cancel_union_ack_expiry(
     request_id: int,
     *,
     job_queue: Any | None = None,
+    session: Any | None = None,
 ) -> None:
     jq = _resolve_job_queue(job_queue)
     _cancel_jobs_by_name(jq, _ack_expiry_job_name(int(request_id)))
 
-    with get_db() as session:
-        row = session.get(ManualDepositRequest, int(request_id))
+    def _clear_ack_expiry(db_session) -> None:
+        row = db_session.get(ManualDepositRequest, int(request_id))
         if row is None:
             return
         row.ack_expires_at = None
-        session.flush()
+        db_session.flush()
+
+    if session is not None:
+        _clear_ack_expiry(session)
+        return
+
+    with get_db() as db_session:
+        _clear_ack_expiry(db_session)
 
 
 def cancel_union_instruction_expiry(
     request_id: int,
     *,
     job_queue: Any | None = None,
+    session: Any | None = None,
 ) -> None:
     """Stop pending instruction and ack expiries (e.g. ops marked trade record checked)."""
     jq = _resolve_job_queue(job_queue)
     _cancel_jobs_by_name(jq, _instruction_expiry_job_name(int(request_id)))
     _cancel_jobs_by_name(jq, _ack_expiry_job_name(int(request_id)))
 
-    with get_db() as session:
-        row = session.get(ManualDepositRequest, int(request_id))
+    def _clear_instruction_expiry(db_session) -> None:
+        row = db_session.get(ManualDepositRequest, int(request_id))
         if row is None:
             return
         row.instruction_expires_at = None
         row.ack_expires_at = None
-        session.flush()
+        db_session.flush()
+
+    if session is not None:
+        _clear_instruction_expiry(session)
+        return
+
+    with get_db() as db_session:
+        _clear_instruction_expiry(db_session)
 
 
 async def _edit_message_text(
