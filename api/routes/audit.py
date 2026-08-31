@@ -52,10 +52,16 @@ from api.audit_reconcile import (
     run_audit_reconcile,
 )
 from api.audit_reconcile_export import build_all_clubs_matching_workbook
+from api.creator_weekly_audit import (
+    CreatorWeeklyAuditError,
+    build_creator_weekly_audit_from_uploads,
+)
 from api.gto_weekly_audit import (
     GtoWeeklyAuditError,
     build_gto_weekly_audit_from_uploads,
 )
+
+_PARTNER_WEEKLY_CLUBS = frozenset({"clubgto", "creator-club"})
 from db.connection import get_db_dependency
 from db.models import AuditReconcileRun, EarlyRakebackSnapshot, TradeRecordLine, TradeRecordUpload
 
@@ -587,16 +593,24 @@ def export_reconcile_all_clubs(
     )
 
 
-@router.post("/gto-weekly-audit/export")
-async def export_gto_weekly_audit(
+@router.post("/partner-weekly-audit/export")
+async def export_partner_weekly_audit(
     monday: str = Form(..., description="Week Monday (YYYY-MM-DD)"),
+    club: str = Form(..., description="clubgto or creator-club"),
     files: list[UploadFile] = File(
         ...,
         description="Exactly 7 reconcile-all-clubs-YYYY-MM-DD.xlsx Matching exports",
     ),
     db: Session = Depends(get_db_dependency),
 ):
-    """Build GTO weekly audit XLSX from human-corrected all-clubs Matching files."""
+    """Build partner weekly audit XLSX (GTO or Creator Club) from Matching files."""
+    club_slug = (club or "").strip()
+    if club_slug not in _PARTNER_WEEKLY_CLUBS:
+        raise HTTPException(
+            400,
+            f"club must be one of: {', '.join(sorted(_PARTNER_WEEKLY_CLUBS))}; got {club!r}.",
+        )
+
     if len(files) != 7:
         raise HTTPException(
             400,
@@ -616,12 +630,19 @@ async def export_gto_weekly_audit(
         uploads.append((filename, raw))
 
     try:
-        content, out_name = build_gto_weekly_audit_from_uploads(
-            monday=monday,
-            uploads=uploads,
-            session=db,
-        )
-    except GtoWeeklyAuditError as exc:
+        if club_slug == "clubgto":
+            content, out_name = build_gto_weekly_audit_from_uploads(
+                monday=monday,
+                uploads=uploads,
+                session=db,
+            )
+        else:
+            content, out_name = build_creator_weekly_audit_from_uploads(
+                monday=monday,
+                uploads=uploads,
+                session=db,
+            )
+    except (GtoWeeklyAuditError, CreatorWeeklyAuditError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
     return Response(

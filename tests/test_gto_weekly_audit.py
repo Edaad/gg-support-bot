@@ -491,7 +491,40 @@ class GtoWeeklyAuditFetchTestCase(unittest.TestCase):
         self.assertEqual(rows[0].audit_date, MONDAY)
 
 
-class GtoWeeklyAuditApiTestCase(unittest.TestCase):
+def _creator_week_files(monday: date = MONDAY) -> list[tuple[str, bytes]]:
+    files: list[tuple[str, bytes]] = []
+    for i in range(7):
+        day = monday + timedelta(days=i)
+        rows = [
+            (
+                datetime(day.year, day.month, day.day, 10, 0, 0),
+                "TrafficLight7",
+                -50.0,
+                "1111-0001",
+                "PlayerA",
+                "Mateos Zelle",
+                "Jane Doe",
+                datetime(day.year, day.month, day.day, 9, 30, 0),
+                50.0,
+                "@mateos-handle",
+            )
+        ]
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Creator Club"
+        for col, h in enumerate(MATCHING_HEADERS, start=1):
+            ws.cell(1, col, h)
+        for c_idx, value in enumerate(rows[0], start=1):
+            ws.cell(2, c_idx, value)
+        for title in ("Round Table", "Aces Table", "ClubGTO"):
+            wb.create_sheet(title)
+        buf = io.BytesIO()
+        wb.save(buf)
+        files.append((f"reconcile-all-clubs-{day.isoformat()}.xlsx", buf.getvalue()))
+    return files
+
+
+class PartnerWeeklyAuditApiTestCase(unittest.TestCase):
     def setUp(self):
         self.env_patch = patch.dict(
             os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False
@@ -510,24 +543,26 @@ class GtoWeeklyAuditApiTestCase(unittest.TestCase):
     def tearDown(self):
         self.env_patch.stop()
 
-    @patch("api.gto_weekly_audit.fetch_clubgto_bonus_rails", return_value=[])
-    @patch(
-        "api.gto_weekly_audit.fetch_vaughn_payment_rails",
-        return_value=_empty_payment_rails(),
-    )
-    def test_export_ok(self, _mock_payments, _mock_bonuses):
-        files = _week_files(MONDAY)
-        upload = [
+    def _upload_files(self, files: list[tuple[str, bytes]]) -> list:
+        return [
             (
                 "files",
                 (name, raw, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
             )
             for name, raw in files
         ]
+
+    @patch("api.gto_weekly_audit.fetch_clubgto_bonus_rails", return_value=[])
+    @patch(
+        "api.gto_weekly_audit.fetch_vaughn_payment_rails",
+        return_value=_empty_payment_rails(),
+    )
+    def test_export_gto_ok(self, _mock_payments, _mock_bonuses):
+        files = _week_files(MONDAY)
         res = self.client.post(
-            "/api/audit/gto-weekly-audit/export",
-            data={"monday": MONDAY.isoformat()},
-            files=upload,
+            "/api/audit/partner-weekly-audit/export",
+            data={"monday": MONDAY.isoformat(), "club": "clubgto"},
+            files=self._upload_files(files),
             headers={"Authorization": f"Bearer {TOKEN}"},
         )
         self.assertEqual(res.status_code, 200, res.text)
@@ -538,19 +573,44 @@ class GtoWeeklyAuditApiTestCase(unittest.TestCase):
         wb = load_workbook(io.BytesIO(res.content))
         self.assertEqual(wb.sheetnames[0], "Processed")
 
+    @patch("api.creator_weekly_audit.fetch_creator_club_bonus_rails", return_value=[])
+    @patch(
+        "api.creator_weekly_audit.fetch_mateos_payment_rails",
+        return_value=_empty_payment_rails(),
+    )
+    def test_export_creator_club_ok(self, _mock_payments, _mock_bonuses):
+        files = _creator_week_files(MONDAY)
+        res = self.client.post(
+            "/api/audit/partner-weekly-audit/export",
+            data={"monday": MONDAY.isoformat(), "club": "creator-club"},
+            files=self._upload_files(files),
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+        self.assertEqual(res.status_code, 200, res.text)
+        self.assertIn(
+            "Creator Audit Aug10_16-2026.xlsx",
+            res.headers.get("content-disposition", ""),
+        )
+        wb = load_workbook(io.BytesIO(res.content))
+        self.assertEqual(wb.sheetnames[0], "Processed")
+
+    def test_export_invalid_club(self):
+        files = _week_files(MONDAY)
+        res = self.client.post(
+            "/api/audit/partner-weekly-audit/export",
+            data={"monday": MONDAY.isoformat(), "club": "round-table"},
+            files=self._upload_files(files),
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("club must be one of", res.json()["detail"])
+
     def test_export_validation_error(self):
         files = _week_files(MONDAY)[:3]
-        upload = [
-            (
-                "files",
-                (name, raw, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-            )
-            for name, raw in files
-        ]
         res = self.client.post(
-            "/api/audit/gto-weekly-audit/export",
-            data={"monday": MONDAY.isoformat()},
-            files=upload,
+            "/api/audit/partner-weekly-audit/export",
+            data={"monday": MONDAY.isoformat(), "club": "clubgto"},
+            files=self._upload_files(files),
             headers={"Authorization": f"Bearer {TOKEN}"},
         )
         self.assertEqual(res.status_code, 400)
