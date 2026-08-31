@@ -14,6 +14,8 @@ from api.schemas import (
     GcMtProtoClubRead,
     MtProtoClubKeyBody,
     MtProtoPasswordRequest,
+    MtProtoQrStartResponse,
+    MtProtoQrStatusResponse,
     MtProtoSendCodeRequest,
     MtProtoSendCodeResponse,
     MtProtoSignInRequest,
@@ -25,7 +27,10 @@ from bot.services.mtproto_group_create import (
     authenticate_mtproto_code,
     authenticate_mtproto_password,
     send_code_for_phone,
+    send_code_user_message,
 )
+from bot.services.mtproto_qr_login import cancel_qr_login, get_qr_login_status, start_qr_login
+from bot.services.mtproto_session_db import clear_disk_login_session
 from bot.services.mtproto_club_health import (
     resolve_auxiliary_session_status,
     resolve_club_session_status,
@@ -108,8 +113,10 @@ async def list_gc_mtproto_clubs():
 @router.delete("/session/{club_key}", status_code=204)
 async def mtproto_delete_session(club_key: str):
     """Clear the stored Telethon session from DB. Worker will lose MTProto access until re-login."""
-    _cfg(club_key)  # 404 if unknown
+    cfg = _cfg(club_key)
+    await cancel_qr_login(club_key)
     await asyncio.to_thread(delete_session_for_club, club_key)
+    await asyncio.to_thread(clear_disk_login_session, cfg)
 
 
 @router.post("/sync-disk-session", response_model=MtProtoSyncDiskResponse)
@@ -148,6 +155,42 @@ def _resolve_phone(cfg: ClubGcConfig, body_phone: str | None) -> str:
     return plus
 
 
+@router.post("/qr-start", response_model=MtProtoQrStartResponse)
+async def mtproto_qr_start(body: MtProtoClubKeyBody):
+    """Start Telegram QR login (no SMS/app code). Poll ``GET /qr-status/{club_key}`` until done."""
+
+    await _require_api_credentials()
+    cfg = _cfg(body.club_key)
+    try:
+        job = await start_qr_login(cfg)
+    except Exception:
+        logger.exception("mtproto_qr_start club=%s", cfg.club_key)
+        raise HTTPException(status_code=500, detail="QR login start failed (see server logs).") from None
+
+    return MtProtoQrStartResponse(
+        ok=True,
+        message=(
+            "On your phone: Telegram → Settings → Devices → Link Desktop Device, then scan this QR."
+        ),
+        url=job.url,
+        expires_at=job.expires_at,
+    )
+
+
+@router.get("/qr-status/{club_key}", response_model=MtProtoQrStatusResponse)
+async def mtproto_qr_status(club_key: str):
+    _cfg(club_key)
+    job = get_qr_login_status(club_key)
+    if job is None:
+        return MtProtoQrStatusResponse(status="idle")
+    return MtProtoQrStatusResponse(
+        status=job.status,
+        detail=job.detail,
+        url=job.url if job.status == "pending" else None,
+        expires_at=job.expires_at if job.status == "pending" else None,
+    )
+
+
 @router.post("/send-code", response_model=MtProtoSendCodeResponse)
 async def mtproto_send_code(body: MtProtoSendCodeRequest):
     """Request Telegram login code. Returns ``phone_code_hash`` for the follow-up ``sign-in`` call."""
@@ -156,7 +199,7 @@ async def mtproto_send_code(body: MtProtoSendCodeRequest):
     phone = _resolve_phone(cfg, body.phone)
     try:
 
-        phone_code_hash = await send_code_for_phone(cfg, phone)
+        phone_code_hash, delivery = await send_code_for_phone(cfg, phone)
     except PhoneNumberInvalidError:
         logger.warning("MTProto SendCode invalid phone club=%s", cfg.club_key)
         raise HTTPException(status_code=400, detail=PHONE_INVALID_REPLY) from None
@@ -168,7 +211,7 @@ async def mtproto_send_code(body: MtProtoSendCodeRequest):
 
     return MtProtoSendCodeResponse(
         ok=True,
-        message="Enter the Telegram/SMS login code below (one attempt per code — request a new one if needed).",
+        message=send_code_user_message(delivery),
         phone_code_hash=phone_code_hash,
         phone_e164=phone,
     )

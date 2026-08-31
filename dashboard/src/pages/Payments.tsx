@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { listClubs, type Club } from '../api/client'
 import {
   bindCashAppPayment,
   bindCryptoPayment,
@@ -37,6 +38,13 @@ import IngestedPaymentTable from '../components/payments/IngestedPaymentTable'
 import PaymentSummaryHeader from '../components/payments/PaymentSummaryHeader'
 import UnionDepositTable from '../components/payments/UnionDepositTable'
 import { downloadCsv } from '../lib/csv'
+import {
+  easternCalendarDateString,
+  easternDayEndIso,
+  easternDayStartIso,
+  formatAppliedEasternDateRange,
+  latestMondayEasternDateString,
+} from '../lib/easternTime'
 
 type UnionFilter = 'all' | 'tmt' | 'massiv'
 
@@ -49,9 +57,15 @@ function bindableMethod(method: OwnerMethod): method is Exclude<OwnerMethod, 'st
   return method !== 'stripe'
 }
 
+function fmtClubLabel(clubId: number | null | undefined, clubNameById: Record<number, string>): string {
+  if (clubId == null) return 'Unbound'
+  return clubNameById[clubId] ?? `Club ${clubId}`
+}
+
 export default function Payments({ token }: { token: string }) {
   const methodSelectId = useId()
   const variantSelectId = useId()
+  const clubSelectId = useId()
   const unionSelectId = useId()
   const searchId = useId()
   const fromDateId = useId()
@@ -61,14 +75,16 @@ export default function Payments({ token }: { token: string }) {
   const [method, setMethod] = useState<OwnerMethod | UnionMethodType>('stripe')
   const [variant, setVariant] = useState('')
   const [unionFilter, setUnionFilter] = useState<UnionFilter>('all')
+  const [clubFilter, setClubFilter] = useState('')
+  const [clubs, setClubs] = useState<Club[]>([])
   const [variantOptions, setVariantOptions] = useState<{ value: string; label: string }[]>([])
 
   const [search, setSearch] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
-  const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate] = useState('')
-  const [appliedFrom, setAppliedFrom] = useState('')
-  const [appliedTo, setAppliedTo] = useState('')
+  const [fromDate, setFromDate] = useState(() => latestMondayEasternDateString())
+  const [toDate, setToDate] = useState(() => easternCalendarDateString())
+  const [appliedFrom, setAppliedFrom] = useState(() => latestMondayEasternDateString())
+  const [appliedTo, setAppliedTo] = useState(() => easternCalendarDateString())
 
   const [ingestedRows, setIngestedRows] = useState<
     | StripeSessionRow[]
@@ -96,24 +112,48 @@ export default function Payments({ token }: { token: string }) {
 
   const isUnionTab = ownerTab === 'union'
   const ownerSlug = isUnionTab ? null : ownerTab
+  const clubIdNum = clubFilter ? Number(clubFilter) : undefined
 
-  const methodOptions = useMemo(() => {
+  const clubNameById = useMemo(
+    () => Object.fromEntries(clubs.map((c) => [c.id, c.name])),
+    [clubs],
+  )
+
+  const methodsForTab = useMemo((): readonly (OwnerMethod | UnionMethodType)[] => {
     if (isUnionTab) return UNION_METHODS
-    return METHODS_BY_OWNER[ownerTab]
+    return METHODS_BY_OWNER[ownerTab as OwnerSlug]
   }, [isUnionTab, ownerTab])
+
+  const effectiveMethod = useMemo((): OwnerMethod | UnionMethodType => {
+    if (methodsForTab.includes(method)) return method
+    return methodsForTab[0]
+  }, [methodsForTab, method])
 
   const dateParams = useMemo(() => {
     const base: { from?: string; to?: string } = {}
-    if (appliedFrom) base.from = `${appliedFrom}T00:00:00Z`
-    if (appliedTo) base.to = `${appliedTo}T23:59:59Z`
+    if (appliedFrom) base.from = easternDayStartIso(appliedFrom)
+    if (appliedTo) base.to = easternDayEndIso(appliedTo)
     return base
   }, [appliedFrom, appliedTo])
 
+  const appliedDateRangeLabel = useMemo(
+    () => formatAppliedEasternDateRange(appliedFrom, appliedTo),
+    [appliedFrom, appliedTo],
+  )
+
   useEffect(() => {
-    const methods = isUnionTab ? UNION_METHODS : METHODS_BY_OWNER[ownerTab as OwnerSlug]
-    if (!methods.includes(method as never)) {
-      setMethod(methods[0])
+    listClubs(token)
+      .then((rows) => setClubs([...rows].sort((a, b) => a.name.localeCompare(b.name))))
+      .catch(() => setClubs([]))
+  }, [token])
+
+  useEffect(() => {
+    if (method !== effectiveMethod) {
+      setMethod(effectiveMethod)
     }
+  }, [method, effectiveMethod])
+
+  useEffect(() => {
     setVariant('')
     setPage(0)
     setErr('')
@@ -129,9 +169,10 @@ export default function Payments({ token }: { token: string }) {
     if (isUnionTab) {
       listManualDepositRequestVariants(token, {
         trade_record_checked: true,
-        type: method as UnionMethodType,
+        type: effectiveMethod as UnionMethodType,
         deposit_union: unionFilter === 'all' ? undefined : unionFilter,
         pool_pay_type: 'union_method',
+        club_id: clubIdNum,
         ...dateParams,
         q: appliedSearch || undefined,
       })
@@ -143,12 +184,12 @@ export default function Payments({ token }: { token: string }) {
     }
     if (!ownerSlug) return
     listOwnerVariants(token, ownerSlug, {
-      method: method as OwnerMethod,
+      method: effectiveMethod as OwnerMethod,
       ...dateParams,
     })
       .then((res) => setVariantOptions(res.items))
       .catch(() => setVariantOptions([]))
-  }, [token, isUnionTab, ownerSlug, method, unionFilter, dateParams, appliedSearch])
+  }, [token, isUnionTab, ownerSlug, effectiveMethod, unionFilter, clubIdNum, dateParams, appliedSearch])
 
   useEffect(() => {
     loadVariants()
@@ -160,9 +201,10 @@ export default function Payments({ token }: { token: string }) {
     if (isUnionTab) {
       listManualDepositRequests(token, {
         trade_record_checked: true,
-        type: method as UnionMethodType,
+        type: effectiveMethod as UnionMethodType,
         deposit_union: unionFilter === 'all' ? undefined : unionFilter,
         pool_pay_type: 'union_method',
+        club_id: clubIdNum,
         variant: variant || undefined,
         q: appliedSearch || undefined,
         limit: PAGE_SIZE,
@@ -183,8 +225,9 @@ export default function Payments({ token }: { token: string }) {
     }
     if (!ownerSlug) return
     listOwnerPayments(token, ownerSlug, {
-      method: method as OwnerMethod,
+      method: effectiveMethod as OwnerMethod,
       variant: variant || undefined,
+      clubId: clubIdNum,
       q: appliedSearch || undefined,
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
@@ -204,9 +247,10 @@ export default function Payments({ token }: { token: string }) {
     token,
     isUnionTab,
     ownerSlug,
-    method,
+    effectiveMethod,
     variant,
     unionFilter,
+    clubIdNum,
     appliedSearch,
     page,
     dateParams,
@@ -242,7 +286,7 @@ export default function Payments({ token }: { token: string }) {
   }
 
   const submitBind = async () => {
-    if (!bindRow || !bindableMethod(method as OwnerMethod)) return
+    if (!bindRow || !bindableMethod(effectiveMethod as OwnerMethod)) return
     const title = bindTitle.trim()
     if (!title) {
       setErr('Group title is required.')
@@ -252,7 +296,7 @@ export default function Payments({ token }: { token: string }) {
     setErr('')
     setSuccessMsg('')
     try {
-      const m = method as Exclude<OwnerMethod, 'stripe'>
+      const m = effectiveMethod as Exclude<OwnerMethod, 'stripe'>
       const result =
         m === 'zelle'
           ? await bindZellePayment(token, bindRow.id, title)
@@ -284,9 +328,10 @@ export default function Payments({ token }: { token: string }) {
       if (isUnionTab) {
         const rows = await fetchAllManualDepositRequests(token, {
           trade_record_checked: true,
-          type: method as UnionMethodType,
+          type: effectiveMethod as UnionMethodType,
           deposit_union: unionFilter === 'all' ? undefined : unionFilter,
           pool_pay_type: 'union_method',
+          club_id: clubIdNum,
           variant: variant || undefined,
           q: appliedSearch || undefined,
           ...dateParams,
@@ -295,7 +340,7 @@ export default function Payments({ token }: { token: string }) {
           setErr('No payments to export for the selected filters.')
           return
         }
-        const parts = ['union-payments', slugForFilename(String(method))]
+        const parts = ['union-payments', slugForFilename(String(effectiveMethod))]
         if (appliedFrom) parts.push(appliedFrom)
         if (appliedTo) parts.push(appliedTo)
         downloadCsv(
@@ -314,8 +359,9 @@ export default function Payments({ token }: { token: string }) {
       }
       if (!ownerSlug) return
       const { items: rows, summary } = await fetchAllOwnerPayments(token, ownerSlug, {
-        method: method as OwnerMethod,
+        method: effectiveMethod as OwnerMethod,
         variant: variant || undefined,
+        clubId: clubIdNum,
         q: appliedSearch || undefined,
         ...dateParams,
       })
@@ -323,10 +369,10 @@ export default function Payments({ token }: { token: string }) {
         setErr('No payments to export for the selected filters.')
         return
       }
-      const parts = ['payments', ownerSlug, String(method)]
+      const parts = ['payments', ownerSlug, String(effectiveMethod)]
       if (appliedFrom) parts.push(appliedFrom)
       if (appliedTo) parts.push(appliedTo)
-      if (method === 'stripe') {
+      if (effectiveMethod === 'stripe') {
         downloadCsv(
           `${parts.join('-')}.csv`,
           [
@@ -335,6 +381,7 @@ export default function Payments({ token }: { token: string }) {
             'gg_nickname',
             'gg_player_id',
             'method_name',
+            'club',
             'amount_usd',
             'currency',
             'stripe_payment_intent_id',
@@ -346,13 +393,14 @@ export default function Payments({ token }: { token: string }) {
             row.gg_nickname || '',
             row.gg_player_id || '',
             row.method_name || '',
+            fmtClubLabel(row.club_id, clubNameById),
             String(row.amount_usd),
             row.currency,
             row.stripe_payment_intent_id || '',
             row.stripe_checkout_session_id,
           ]),
         )
-      } else if (method === 'crypto') {
+      } else if (effectiveMethod === 'crypto') {
         downloadCsv(
           `${parts.join('-')}.csv`,
           [
@@ -365,6 +413,7 @@ export default function Payments({ token }: { token: string }) {
             'group_title',
             'gg_nickname',
             'gg_player_id',
+            'club',
             'amount_usd',
             'status',
           ],
@@ -378,21 +427,22 @@ export default function Payments({ token }: { token: string }) {
             row.group_title || '',
             row.gg_nickname || '',
             row.gg_player_id || '',
+            fmtClubLabel(row.club_id, clubNameById),
             String(row.amount_usd),
             row.status,
           ]),
         )
       } else {
         const accountKey =
-          method === 'zelle'
+          effectiveMethod === 'zelle'
             ? 'zelle_recipient'
-            : method === 'cashapp'
+            : effectiveMethod === 'cashapp'
               ? 'cashapp_handle'
-              : method === 'paypal'
+              : effectiveMethod === 'paypal'
                 ? 'paypal_email'
                 : 'venmo_handle'
         const headers =
-          method === 'venmo'
+          effectiveMethod === 'venmo'
             ? [
                 'created_at',
                 'payer_name',
@@ -400,6 +450,7 @@ export default function Payments({ token }: { token: string }) {
                 'group_title',
                 'gg_nickname',
                 'gg_player_id',
+                'club',
                 'amount_usd',
                 'status',
                 'auto_bound',
@@ -412,6 +463,7 @@ export default function Payments({ token }: { token: string }) {
                 'group_title',
                 'gg_nickname',
                 'gg_player_id',
+                'club',
                 'amount_usd',
                 'status',
                 'auto_bound',
@@ -434,11 +486,12 @@ export default function Payments({ token }: { token: string }) {
               row.group_title || '',
               row.gg_nickname || '',
               row.gg_player_id || '',
+              fmtClubLabel(row.club_id, clubNameById),
               String(row.amount_usd),
               row.status,
               String(row.auto_bound),
             ]
-            if (method === 'venmo') {
+            if (effectiveMethod === 'venmo') {
               base.push(String((row as VenmoPaymentRow).goods_or_services))
             }
             return base
@@ -489,11 +542,11 @@ export default function Payments({ token }: { token: string }) {
           </label>
           <select
             id={methodSelectId}
-            value={method}
+            value={effectiveMethod}
             onChange={(e) => setMethod(e.target.value as OwnerMethod | UnionMethodType)}
             className="input-field-sm min-w-[10rem]"
           >
-            {methodOptions.map((m) => (
+            {methodsForTab.map((m) => (
               <option key={m} value={m}>
                 {METHOD_LABELS[m]}
               </option>
@@ -517,6 +570,27 @@ export default function Payments({ token }: { token: string }) {
             {variantOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor={clubSelectId} className="label-field-xs">
+            Club
+          </label>
+          <select
+            id={clubSelectId}
+            value={clubFilter}
+            onChange={(e) => {
+              setClubFilter(e.target.value)
+              setPage(0)
+            }}
+            className="input-field-sm min-w-[12rem]"
+          >
+            <option value="">All clubs</option>
+            {clubs.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
               </option>
             ))}
           </select>
@@ -563,7 +637,7 @@ export default function Payments({ token }: { token: string }) {
         </button>
         <div>
           <label htmlFor={fromDateId} className="label-field-xs">
-            From
+            From (ET)
           </label>
           <input
             id={fromDateId}
@@ -575,7 +649,7 @@ export default function Payments({ token }: { token: string }) {
         </div>
         <div>
           <label htmlFor={toDateId} className="label-field-xs">
-            To
+            To (ET)
           </label>
           <input
             id={toDateId}
@@ -598,7 +672,12 @@ export default function Payments({ token }: { token: string }) {
         </button>
       </div>
 
-      <PaymentSummaryHeader totalUsd={summaryUsd} totalCount={summaryCount} loading={loading} />
+      <PaymentSummaryHeader
+        totalUsd={summaryUsd}
+        totalCount={summaryCount}
+        dateRangeLabel={appliedDateRangeLabel}
+        loading={loading}
+      />
 
       {successMsg && (
         <p className="mb-4 rounded-lg border border-success-border bg-success-bg px-4 py-3 text-sm text-success-ink">
@@ -618,9 +697,12 @@ export default function Payments({ token }: { token: string }) {
         <UnionDepositTable rows={unionRows} />
       ) : (
         <IngestedPaymentTable
-          method={method as OwnerMethod}
+          method={effectiveMethod as OwnerMethod}
           rows={ingestedRows}
-          onBind={bindableMethod(method as OwnerMethod) ? openBindModal : undefined}
+          clubNameById={clubNameById}
+          onBind={
+            bindableMethod(effectiveMethod as OwnerMethod) ? openBindModal : undefined
+          }
         />
       )}
 
@@ -654,7 +736,11 @@ export default function Payments({ token }: { token: string }) {
 
       <BindPaymentModal
         open={bindOpen}
-        method={bindableMethod(method as OwnerMethod) ? (method as OwnerMethod) : null}
+        method={
+          bindableMethod(effectiveMethod as OwnerMethod)
+            ? (effectiveMethod as OwnerMethod)
+            : null
+        }
         row={bindRow}
         title={bindTitle}
         loading={bindLoading}

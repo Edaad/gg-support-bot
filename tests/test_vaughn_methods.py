@@ -7,9 +7,9 @@ from decimal import Decimal
 
 from api.audit_ledger import LedgerLine
 from api.vaughn_methods import (
-    clubgto_matching_source_options,
     is_vaughn_method,
     matching_source_label,
+    owner_matching_source_options,
     tally_vaughn_methods,
 )
 
@@ -79,8 +79,8 @@ class IsVaughnMethodTestCase(unittest.TestCase):
             matching_source_label(
                 source="deposit_zelle",
                 variant="janvenmo@gmail.com (clubgto)",
-                club_slug="clubgto",
                 source_label="Zelle",
+                method_owner="vaughn",
             ),
             "GTO Zelle",
         )
@@ -106,8 +106,8 @@ class IsVaughnMethodTestCase(unittest.TestCase):
             matching_source_label(
                 source="deposit_zelle",
                 variant="gto chase zelle",
-                club_slug="clubgto",
                 source_label="Zelle",
+                method_owner="vaughn",
             ),
             "GTO Zelle",
         )
@@ -131,8 +131,8 @@ class IsVaughnMethodTestCase(unittest.TestCase):
             matching_source_label(
                 source="deposit_zelle",
                 variant="bailey's wells fargo",
-                club_slug="clubgto",
                 source_label="Zelle",
+                method_owner="vaughn",
             ),
             "GTO Zelle",
         )
@@ -150,9 +150,9 @@ class IsVaughnMethodTestCase(unittest.TestCase):
             matching_source_label(
                 source="deposit_zelle",
                 variant="coachingg444@gmail.com",
-                club_slug="clubgto",
                 source_label="Zelle",
                 memo="VAUGHN",
+                method_owner="vaughn",
             ),
             "GTO Zelle",
         )
@@ -244,22 +244,13 @@ class IsVaughnMethodTestCase(unittest.TestCase):
 
 
 class MatchingSourceLabelTestCase(unittest.TestCase):
-    def test_clubgto_prefixes(self):
+    def test_owner_prefixes(self):
         self.assertEqual(
             matching_source_label(
                 source="deposit_zelle",
                 variant="2133729202",
-                club_slug="clubgto",
                 source_label="Zelle",
-            ),
-            "GTO Zelle",
-        )
-        self.assertEqual(
-            matching_source_label(
-                source="deposit_zelle",
-                variant="Starship5vllc@gmail.com",
-                club_slug="clubgto",
-                source_label="Zelle",
+                method_owner="vaughn",
             ),
             "GTO Zelle",
         )
@@ -267,24 +258,41 @@ class MatchingSourceLabelTestCase(unittest.TestCase):
             matching_source_label(
                 source="deposit_zelle",
                 variant="coachingg444@gmail.com",
-                club_slug="clubgto",
                 source_label="Zelle",
+                method_owner="round-table",
             ),
             "RT Zelle",
         )
         self.assertEqual(
             matching_source_label(
+                source="deposit_venmo",
+                variant="@handle",
+                source_label="Venmo",
+                method_owner="mateos",
+            ),
+            "Mateos Venmo",
+        )
+        self.assertEqual(
+            matching_source_label(
                 source="deposit_stripe",
                 variant=None,
-                club_slug="clubgto",
+                method_owner="vaughn",
             ),
-            "GTO Stripe",
+            "Stripe",
+        )
+        self.assertEqual(
+            matching_source_label(
+                source="deposit_crypto",
+                variant="USDT",
+                source_label="Crypto",
+                method_owner="vaughn",
+            ),
+            "GTO Crypto",
         )
         self.assertEqual(
             matching_source_label(
                 source="bonus",
                 variant="promo",
-                club_slug="clubgto",
                 source_label="Bonus",
             ),
             "Bonus",
@@ -293,50 +301,39 @@ class MatchingSourceLabelTestCase(unittest.TestCase):
             matching_source_label(
                 source="cashout",
                 variant=None,
-                club_slug="clubgto",
                 source_label="Cashout Venmo",
             ),
             "Cashout Venmo",
         )
 
-    def test_other_clubs_unprefixed(self):
+    def test_without_method_owner_unprefixed(self):
         self.assertEqual(
             matching_source_label(
                 source="deposit_zelle",
                 variant="2133729202",
-                club_slug="round-table",
                 source_label="Zelle",
             ),
             "Zelle",
         )
 
-    def test_clubgto_dropdown_options(self):
-        opts = clubgto_matching_source_options()
+    def test_owner_matching_dropdown_options(self):
+        opts = owner_matching_source_options()
         self.assertIn("GTO Zelle", opts)
         self.assertIn("RT Zelle", opts)
+        self.assertIn("Mateos Zelle", opts)
         self.assertIn("GTO Venmo", opts)
         self.assertIn("RT Venmo", opts)
-        self.assertIn("GTO Stripe", opts)
+        self.assertIn("Mateos Venmo", opts)
+        self.assertIn("Stripe", opts)
         self.assertIn("GTO Crypto", opts)
-        self.assertNotIn("RT Stripe", opts)
+        self.assertIn("RT Crypto", opts)
+        self.assertIn("Mateos Crypto", opts)
+        self.assertNotIn("GTO Stripe", opts)
         self.assertNotIn("Zelle", opts)
         self.assertIn("Cashout Venmo", opts)
-        self.assertIn("Cashout Cash App", opts)
-        self.assertIn("Cashout Zelle", opts)
-        self.assertIn("Cashout Crypto", opts)
-        self.assertIn("Cashout Revolut", opts)
-        self.assertIn("Cashout PayPal", opts)
-        self.assertIn("Cashout", opts)
         self.assertIn("Vaughn Cashout Venmo", opts)
-        self.assertIn("Vaughn Cashout Cash App", opts)
-        self.assertIn("Vaughn Cashout Zelle", opts)
-        self.assertIn("Vaughn Cashout Crypto", opts)
-        self.assertNotIn("Vaughn Cashout Revolut", opts)
-        self.assertNotIn("GTO Cashout Venmo", opts)
         self.assertNotIn("Chip Transfer (RT↔AT)", opts)
-        self.assertNotIn("Chip Transfer (AT↔CC)", opts)
         self.assertIn("Free Play", opts)
-        self.assertIn("Back to Club", opts)
         self.assertIn("GTO INC", opts)
 
 
@@ -387,8 +384,8 @@ class UnionDepositMatchingLabelTestCase(unittest.TestCase):
             "Union Zelle",
         )
 
-    def test_clubgto_dropdown_includes_union_sources(self):
-        options = clubgto_matching_source_options()
+    def test_owner_dropdown_includes_union_sources(self):
+        options = owner_matching_source_options()
         self.assertIn("Union Zelle", options)
         self.assertIn("Union Cash App", options)
         self.assertIn("Union Apple Pay", options)

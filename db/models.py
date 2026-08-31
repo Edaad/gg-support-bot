@@ -408,7 +408,7 @@ class ClubPaymentTierVariant(Base):
     __tablename__ = "club_payment_tier_variants"
     __table_args__ = (
         UniqueConstraint("tier_id", "label", name="uq_cptv_tier_label"),
-        CheckConstraint("weight >= 1", name="ck_cptv_weight"),
+        CheckConstraint("weight >= 0", name="ck_cptv_weight"),
         Index("ix_cptv_tier_sort", "tier_id", "sort_order", "id"),
     )
 

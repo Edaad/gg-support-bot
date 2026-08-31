@@ -360,8 +360,8 @@ def list_tier_variants(tier_id: int, db: Session = Depends(get_db_dependency)):
 def create_tier_variant(tier_id: int, body: ClubPaymentTierVariantCreate, db: Session = Depends(get_db_dependency)):
     tier = _get_tier(db, tier_id)
     method = _get_method(db, tier.method_id)
-    if body.weight < 1:
-        raise HTTPException(400, "Weight must be at least 1")
+    if body.weight < 0:
+        raise HTTPException(400, "Weight must be 0 or greater")
     variant_data = body.model_dump()
     if is_primary_tier(tier, list(method.tiers or [])):
         variant_data["checkout_min_amount"] = None
@@ -386,8 +386,8 @@ def update_variant(variant_id: int, body: ClubPaymentTierVariantUpdate, db: Sess
     data = body.model_dump(exclude_unset=True)
     if is_primary_tier(tier, list(method.tiers or [])):
         data.pop("checkout_min_amount", None)
-    if "weight" in data and data["weight"] < 1:
-        raise HTTPException(400, "Weight must be at least 1")
+    if "weight" in data and data["weight"] < 0:
+        raise HTTPException(400, "Weight must be 0 or greater")
     merged_checkout_min = data.get("checkout_min_amount", variant.checkout_min_amount)
     merged_checkout_max = data.get("checkout_max_amount", variant.checkout_max_amount)
     if {"checkout_min_amount", "checkout_max_amount"}.intersection(data.keys()):

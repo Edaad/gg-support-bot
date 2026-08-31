@@ -32,6 +32,40 @@ def resolve_repo_path(rel_or_abs: str) -> Path:
     return (REPO_ROOT / p).resolve()
 
 
+def clear_disk_login_session(cfg: ClubGcConfig) -> None:
+    """Delete on-disk Telethon login scratch files (Dashboard OTP handshake only).
+
+    After ``AuthKeyDuplicatedError`` or a revoked Postgres row, the web dyno can still
+  have a stale ``.session`` SQLite file. Reusing it for ``SendCode`` can return HTTP 200
+    without delivering a code to the account's Telegram app.
+    """
+
+    resolved = resolve_repo_path(cfg.mtproto_session)
+    if resolved.suffix == ".session":
+        candidates = [resolved, Path(f"{resolved}-journal")]
+    else:
+        candidates = [
+            Path(f"{resolved}.session"),
+            Path(f"{resolved}.session-journal"),
+        ]
+    for path in candidates:
+        try:
+            if path.is_file():
+                path.unlink()
+                logger.info(
+                    "cleared disk mtproto login session club=%s file=%s",
+                    cfg.club_key,
+                    path.name,
+                )
+        except OSError as e:
+            logger.warning(
+                "failed to clear disk mtproto login session club=%s file=%s: %s",
+                cfg.club_key,
+                path.name,
+                e,
+            )
+
+
 def make_disk_sqlite_session_client(cfg: ClubGcConfig) -> TelegramClient:
     """SQLite session path only (no Postgres row). Matches Telethon ``.session`` file layout."""
 

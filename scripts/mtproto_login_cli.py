@@ -51,7 +51,8 @@ async def _run(club_key: str) -> None:
         print("Phone required.", file=sys.stderr)
         sys.exit(1)
 
-    phone_code_hash = await send_code_for_phone(cfg, phone)
+    phone_code_hash, delivery = await send_code_for_phone(cfg, phone)
+    print(f"Code delivery: {delivery} (check Telegram app chat or SMS as indicated).")
     code = input("Login code: ").strip()
     try:
         await authenticate_mtproto_code(

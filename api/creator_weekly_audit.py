@@ -1,4 +1,4 @@
-"""GTO weekly audit workbook from 7 days of all-clubs Matching exports."""
+"""Creator Club weekly audit workbook from 7 days of all-clubs Matching exports."""
 
 from __future__ import annotations
 
@@ -8,19 +8,20 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import BinaryIO, Callable, Literal
+from typing import BinaryIO, Callable
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.orm import Session
 
 from api.audit_ledger import _apply_audit_manual_filters, payment_in_audit_day_for_club
+from api.audit_reconcile_export import MATCHING_HEADERS
 from api.club_audit_timezone import audit_day_window_utc, zone_for_slug
 from api.club_slug import resolve_club_id
-from api.method_owner import METHOD_OWNER_VAUGHN
+from api.method_owner import METHOD_OWNER_MATEOS
 from api.payments_helpers import (
     build_crypto_payment_read,
     build_venmo_payment_read,
@@ -29,23 +30,17 @@ from api.payments_helpers import (
 from api.vaughn_methods import normalize_venmo_handle
 from bot.services.payment_method_binding import canonicalize_zelle_recipient
 from db.models import BonusRecord, CryptoPayment, VenmoPayment, ZellePayment
-from openpyxl.styles import Font, PatternFill, Alignment
-from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.table import Table, TableStyleInfo
-from openpyxl.worksheet.worksheet import Worksheet
-
-from api.audit_reconcile_export import MATCHING_HEADERS
-
-RailBucket = Literal["zelle", "venmo", "crypto", "bonuses"]
 
 FILENAME_RE = re.compile(
     r"^reconcile-all-clubs-(\d{4}-\d{2}-\d{2})\.xlsx$",
     re.IGNORECASE,
 )
 
-CLUBGTO_SHEET = "ClubGTO"
-_CLUBGTO_SLUG = "clubgto"
-TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "gto_weekly_audit_base.xlsx"
+CREATOR_CLUB_SHEET = "Creator Club"
+_CREATOR_CLUB_SLUG = "creator-club"
+TEMPLATE_PATH = (
+    Path(__file__).resolve().parent / "templates" / "creator_weekly_audit_base.xlsx"
+)
 
 PROCESSED_HEADERS = [
     "Date / Time",
@@ -69,8 +64,9 @@ _CURRENCY_FORMAT = '$#,##0.00;[Red]-$#,##0.00'
 _PROCESSED_TABLE = "ProcessedData"
 _PROCESSED_COL_COUNT = len(PROCESSED_HEADERS)
 
-class GtoWeeklyAuditError(ValueError):
-    """User-facing validation / parse error for GTO weekly audit export."""
+
+class CreatorWeeklyAuditError(ValueError):
+    """User-facing validation / parse error for Creator Club weekly audit export."""
 
 
 @dataclass(frozen=True)
@@ -116,7 +112,7 @@ def _display_cell(value: object) -> object:
 
 def expected_week_dates(monday: date) -> list[date]:
     if monday.weekday() != 0:
-        raise GtoWeeklyAuditError(
+        raise CreatorWeeklyAuditError(
             f"Week start must be a Monday; got {monday.isoformat()} "
             f"({monday.strftime('%A')})."
         )
@@ -128,7 +124,7 @@ def parse_monday(value: str) -> date:
     try:
         return date.fromisoformat(text)
     except ValueError as exc:
-        raise GtoWeeklyAuditError(
+        raise CreatorWeeklyAuditError(
             f"monday must be YYYY-MM-DD; got {value!r}."
         ) from exc
 
@@ -137,13 +133,13 @@ def date_from_filename(filename: str) -> date:
     base = Path(filename).name
     match = FILENAME_RE.match(base)
     if not match:
-        raise GtoWeeklyAuditError(
+        raise CreatorWeeklyAuditError(
             f"Filename must be reconcile-all-clubs-YYYY-MM-DD.xlsx; got {base!r}."
         )
     try:
         return date.fromisoformat(match.group(1))
     except ValueError as exc:
-        raise GtoWeeklyAuditError(
+        raise CreatorWeeklyAuditError(
             f"Filename date is not valid YYYY-MM-DD: {base!r}."
         ) from exc
 
@@ -151,7 +147,7 @@ def date_from_filename(filename: str) -> date:
 def validate_upload_set(monday: date, filenames: list[str]) -> list[date]:
     expected = expected_week_dates(monday)
     if len(filenames) != 7:
-        raise GtoWeeklyAuditError(
+        raise CreatorWeeklyAuditError(
             f"Expected exactly 7 files for {expected[0].isoformat()}–"
             f"{expected[-1].isoformat()}; got {len(filenames)}."
         )
@@ -161,7 +157,7 @@ def validate_upload_set(monday: date, filenames: list[str]) -> list[date]:
     for name in filenames:
         d = date_from_filename(name)
         if d in seen:
-            raise GtoWeeklyAuditError(
+            raise CreatorWeeklyAuditError(
                 f"Duplicate file for {d.isoformat()}: {Path(name).name!r}."
             )
         seen.add(d)
@@ -179,35 +175,16 @@ def validate_upload_set(monday: date, filenames: list[str]) -> list[date]:
             parts.append("Missing: " + ", ".join(d.isoformat() for d in missing) + ".")
         if extra:
             parts.append("Unexpected: " + ", ".join(d.isoformat() for d in extra) + ".")
-        raise GtoWeeklyAuditError(" ".join(parts))
+        raise CreatorWeeklyAuditError(" ".join(parts))
 
     return expected
 
 
-def rail_bucket(source: str) -> RailBucket | None:
-    s = (source or "").casefold()
-    if "cashout" in s:
-        return None
-    if "bonus" in s:
-        return "bonuses"
-    has_club = "gto" in s or "vaughn" in s
-    if not has_club:
-        return None
-    if "zelle" in s:
-        return "zelle"
-    if "venmo" in s:
-        return "venmo"
-    if "crypto" in s:
-        return "crypto"
-    return None
-
-
 def output_filename(monday: date) -> str:
     sunday = monday + timedelta(days=6)
-    # e.g. GTO Audit Aug10_16-2026.xlsx
     mon_part = f"{monday.strftime('%b')}{monday.day}"
     sun_part = str(sunday.day)
-    return f"GTO Audit {mon_part}_{sun_part}-{monday.year}.xlsx"
+    return f"Creator Audit {mon_part}_{sun_part}-{monday.year}.xlsx"
 
 
 def _cell_datetime(value: object) -> datetime | None:
@@ -264,7 +241,7 @@ def _row_is_empty(ws: Worksheet, row: int, cols: list[int]) -> bool:
     return True
 
 
-def parse_clubgto_rows(
+def parse_creator_club_rows(
     workbook: Workbook,
     *,
     filename: str = "",
@@ -274,18 +251,18 @@ def parse_clubgto_rows(
     day = audit_date
     if day is None:
         if not filename:
-            raise GtoWeeklyAuditError("audit_date is required when filename is empty.")
+            raise CreatorWeeklyAuditError("audit_date is required when filename is empty.")
         day = date_from_filename(filename)
-    if CLUBGTO_SHEET not in workbook.sheetnames:
-        raise GtoWeeklyAuditError(
-            f"{label}: missing sheet {CLUBGTO_SHEET!r}."
+    if CREATOR_CLUB_SHEET not in workbook.sheetnames:
+        raise CreatorWeeklyAuditError(
+            f"{label}: missing sheet {CREATOR_CLUB_SHEET!r}."
         )
-    ws = workbook[CLUBGTO_SHEET]
+    ws = workbook[CREATOR_CLUB_SHEET]
     headers = _header_map(ws)
     missing = [h for h in MATCHING_HEADERS if h not in headers]
     if missing:
-        raise GtoWeeklyAuditError(
-            f"{label}: ClubGTO sheet missing required headers: "
+        raise CreatorWeeklyAuditError(
+            f"{label}: Creator Club sheet missing required headers: "
             + ", ".join(missing)
             + "."
         )
@@ -312,8 +289,8 @@ def parse_clubgto_rows(
         )
 
     if not rows:
-        raise GtoWeeklyAuditError(
-            f"{label}: ClubGTO sheet has no data rows "
+        raise CreatorWeeklyAuditError(
+            f"{label}: Creator Club sheet has no data rows "
             f"(need at least one non-empty Matching row)."
         )
     return rows
@@ -329,8 +306,8 @@ def _rail_sort_key(row: PaymentRailRow | BonusRailRow) -> tuple[date, datetime]:
     return (row.audit_date, row.occurred_at or datetime.max)
 
 
-def _clubgto_excel_time(occurred_at: datetime | None) -> datetime | None:
-    """Payment/bonus time as naive datetime in ClubGTO audit timezone (UTC-5)."""
+def _creator_club_excel_time(occurred_at: datetime | None) -> datetime | None:
+    """Payment/bonus time as naive datetime in Creator Club audit timezone (UTC-4)."""
     if occurred_at is None:
         return None
     dt = occurred_at
@@ -338,7 +315,7 @@ def _clubgto_excel_time(occurred_at: datetime | None) -> datetime | None:
         dt = dt.replace(tzinfo=timezone.utc)
     else:
         dt = dt.astimezone(timezone.utc)
-    local = dt.astimezone(zone_for_slug(_CLUBGTO_SLUG))
+    local = dt.astimezone(zone_for_slug(_CREATOR_CLUB_SLUG))
     return local.replace(tzinfo=None)
 
 
@@ -358,7 +335,7 @@ def _zelle_variant(data: dict) -> str:
     return canonicalize_zelle_recipient(data.get("zelle_recipient") or "") or ""
 
 
-def _fetch_vaughn_payments_for_day(
+def _fetch_mateos_payments_for_day(
     session: Session,
     *,
     payment_cls,
@@ -367,7 +344,7 @@ def _fetch_vaughn_payments_for_day(
     name_fn: Callable[[dict], str],
     variant_fn: Callable[[dict], str],
 ) -> list[PaymentRailRow]:
-    from_dt, to_dt = audit_day_window_utc(_CLUBGTO_SLUG, audit_date)
+    from_dt, to_dt = audit_day_window_utc(_CREATOR_CLUB_SLUG, audit_date)
     query = _apply_audit_manual_filters(
         session,
         session.query(payment_cls),
@@ -375,14 +352,14 @@ def _fetch_vaughn_payments_for_day(
         from_dt=from_dt,
         to_dt=to_dt,
     )
-    query = query.filter(payment_cls.method_owner == METHOD_OWNER_VAUGHN)
+    query = query.filter(payment_cls.method_owner == METHOD_OWNER_MATEOS)
     query = query.order_by(payment_cls.created_at.asc(), payment_cls.id.asc())
     out: list[PaymentRailRow] = []
     for row in query.all():
         data = build_read(session, row)
         if not payment_in_audit_day_for_club(
             session,
-            club_slug=_CLUBGTO_SLUG,
+            club_slug=_CREATOR_CLUB_SLUG,
             audit_date=audit_date,
             club_id=data.get("club_id"),
             occurred_at=data.get("created_at"),
@@ -394,7 +371,7 @@ def _fetch_vaughn_payments_for_day(
         out.append(
             PaymentRailRow(
                 audit_date=audit_date,
-                occurred_at=_clubgto_excel_time(data.get("created_at")),
+                occurred_at=_creator_club_excel_time(data.get("created_at")),
                 name=name_fn(data),
                 variant=variant_fn(data),
                 amount_usd=amount_f,
@@ -403,11 +380,11 @@ def _fetch_vaughn_payments_for_day(
     return out
 
 
-def fetch_vaughn_payment_rails(
+def fetch_mateos_payment_rails(
     session: Session,
     audit_dates: list[date],
 ) -> dict[str, list[PaymentRailRow]]:
-    """Vaughn-owned Zelle/Venmo/Crypto deposits for ClubGTO audit days."""
+    """Mateos-owned Zelle/Venmo/Crypto deposits for Creator Club audit days."""
     buckets: dict[str, list[PaymentRailRow]] = {
         "zelle": [],
         "venmo": [],
@@ -439,7 +416,7 @@ def fetch_vaughn_payment_rails(
     for audit_date in audit_dates:
         for key, payment_cls, build_read, name_fn, variant_fn in configs:
             buckets[key].extend(
-                _fetch_vaughn_payments_for_day(
+                _fetch_mateos_payments_for_day(
                     session,
                     payment_cls=payment_cls,
                     build_read=build_read,
@@ -453,15 +430,15 @@ def fetch_vaughn_payment_rails(
     return buckets
 
 
-def fetch_clubgto_bonus_rails(
+def fetch_creator_club_bonus_rails(
     session: Session,
     audit_dates: list[date],
 ) -> list[BonusRailRow]:
-    """All ClubGTO bonus records for the given audit days."""
-    club_id = resolve_club_id(session, _CLUBGTO_SLUG)
+    """All Creator Club bonus records for the given audit days."""
+    club_id = resolve_club_id(session, _CREATOR_CLUB_SLUG)
     out: list[BonusRailRow] = []
     for audit_date in audit_dates:
-        from_dt, to_dt = audit_day_window_utc(_CLUBGTO_SLUG, audit_date)
+        from_dt, to_dt = audit_day_window_utc(_CREATOR_CLUB_SLUG, audit_date)
         records = (
             session.query(BonusRecord)
             .filter(
@@ -475,7 +452,7 @@ def fetch_clubgto_bonus_rails(
         for record in records:
             if not payment_in_audit_day_for_club(
                 session,
-                club_slug=_CLUBGTO_SLUG,
+                club_slug=_CREATOR_CLUB_SLUG,
                 audit_date=audit_date,
                 club_id=record.club_id,
                 occurred_at=record.created_at,
@@ -484,7 +461,7 @@ def fetch_clubgto_bonus_rails(
             out.append(
                 BonusRailRow(
                     audit_date=audit_date,
-                    occurred_at=_clubgto_excel_time(record.created_at),
+                    occurred_at=_creator_club_excel_time(record.created_at),
                     player=str(record.player_username).strip(),
                     amount_usd=float(Decimal(str(record.amount))),
                 )
@@ -527,15 +504,12 @@ def _resize_processed_table(ws: Worksheet, last_row: int) -> None:
 
 
 def _write_processed(ws: Worksheet, rows: list[MatchingRow]) -> None:
-    # Keep header row; replace body
     _clear_sheet_body(ws)
-    # Ensure headers match
     for col, header in enumerate(PROCESSED_HEADERS, start=1):
         cell = ws.cell(1, col, header)
         cell.fill = _HEADER_FILL
         cell.font = _HEADER_FONT
 
-    # Pivot sits to the right of the data table (col H+)
     if ws["H1"].value is None:
         ws["H1"] = "Pivot Table"
         ws["H1"].font = Font(bold=True)
@@ -628,7 +602,7 @@ def _write_rail_sheet(
         ws.column_dimensions[get_column_letter(col)].width = 18
 
 
-def build_gto_weekly_audit_workbook(
+def build_creator_weekly_audit_workbook(
     monday: date,
     files: list[tuple[str, bytes]],
     *,
@@ -642,19 +616,19 @@ def build_gto_weekly_audit_workbook(
     for day in expected:
         name, raw = by_date[day]
         if not raw:
-            raise GtoWeeklyAuditError(f"{Path(name).name}: file is empty.")
+            raise CreatorWeeklyAuditError(f"{Path(name).name}: file is empty.")
         try:
             wb = load_workbook(io.BytesIO(raw), data_only=False)
         except Exception as exc:  # noqa: BLE001 — surface as clear 400
-            raise GtoWeeklyAuditError(
+            raise CreatorWeeklyAuditError(
                 f"{Path(name).name}: could not read workbook ({exc})."
             ) from exc
-        all_rows.extend(parse_clubgto_rows(wb, filename=name))
+        all_rows.extend(parse_creator_club_rows(wb, filename=name))
 
     all_rows.sort(key=lambda r: _sort_key_time(r.trade_time))
 
-    payment_rails = fetch_vaughn_payment_rails(session, expected)
-    bonus_rails = fetch_clubgto_bonus_rails(session, expected)
+    payment_rails = fetch_mateos_payment_rails(session, expected)
+    bonus_rails = fetch_creator_club_bonus_rails(session, expected)
 
     if TEMPLATE_PATH.is_file():
         out_wb = load_workbook(TEMPLATE_PATH)
@@ -664,7 +638,6 @@ def build_gto_weekly_audit_workbook(
         for title in ("Zelle", "Venmo", "Crypto", "Bonuses"):
             out_wb.create_sheet(title)
 
-    # Ensure sheet order
     for title in ("Processed", "Zelle", "Venmo", "Crypto", "Bonuses"):
         if title not in out_wb.sheetnames:
             out_wb.create_sheet(title)
@@ -699,7 +672,6 @@ def build_gto_weekly_audit_workbook(
         amount_col=3,
     )
 
-    # Reorder sheets
     desired = ["Processed", "Zelle", "Venmo", "Crypto", "Bonuses"]
     for idx, title in enumerate(desired):
         out_wb.move_sheet(title, offset=idx - out_wb.sheetnames.index(title))
@@ -709,7 +681,7 @@ def build_gto_weekly_audit_workbook(
     return buf.getvalue()
 
 
-def build_gto_weekly_audit_from_uploads(
+def build_creator_weekly_audit_from_uploads(
     *,
     monday: str | date,
     uploads: list[tuple[str, BinaryIO | bytes]],
@@ -724,7 +696,7 @@ def build_gto_weekly_audit_from_uploads(
         else:
             raw = payload
         if not isinstance(raw, (bytes, bytearray)):
-            raise GtoWeeklyAuditError(f"{Path(name).name}: could not read file bytes.")
+            raise CreatorWeeklyAuditError(f"{Path(name).name}: could not read file bytes.")
         files.append((name, bytes(raw)))
-    content = build_gto_weekly_audit_workbook(monday_date, files, session=session)
+    content = build_creator_weekly_audit_workbook(monday_date, files, session=session)
     return content, output_filename(monday_date)

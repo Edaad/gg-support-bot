@@ -407,21 +407,30 @@ export async function downloadReconcileExportAll(
   URL.revokeObjectURL(url)
 }
 
-export async function downloadGtoWeeklyAudit(
+export type PartnerWeeklyAuditClub = 'clubgto' | 'creator-club'
+
+const PARTNER_CLUB_LABELS: Record<PartnerWeeklyAuditClub, string> = {
+  clubgto: 'GTO',
+  'creator-club': 'CC',
+}
+
+async function fetchPartnerWeeklyAudit(
   token: string,
   monday: string,
   files: File[],
-): Promise<void> {
+  club: PartnerWeeklyAuditClub,
+): Promise<{ blob: Blob; filename: string }> {
   if (files.length !== 7) {
     throw new Error(`Expected exactly 7 files; got ${files.length}.`)
   }
   const body = new FormData()
   body.append('monday', monday)
+  body.append('club', club)
   for (const file of files) {
     body.append('files', file, file.name)
   }
 
-  const res = await fetch(apiUrl('/api/audit/gto-weekly-audit/export'), {
+  const res = await fetch(apiUrl('/api/audit/partner-weekly-audit/export'), {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body,
@@ -439,14 +448,58 @@ export async function downloadGtoWeeklyAudit(
   const blob = await res.blob()
   const filename = filenameFromContentDisposition(
     res.headers.get('Content-Disposition'),
-    `GTO Audit ${monday}.xlsx`,
+    club === 'clubgto' ? `GTO Audit ${monday}.xlsx` : `Creator Audit ${monday}.xlsx`,
   )
+  return { blob, filename }
+}
+
+function triggerBlobDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
   link.download = filename
   link.click()
   URL.revokeObjectURL(url)
+}
+
+export async function downloadPartnerWeeklyAudits(
+  token: string,
+  monday: string,
+  files: File[],
+  clubs: PartnerWeeklyAuditClub[],
+): Promise<void> {
+  if (clubs.length === 0) {
+    throw new Error('Select at least one club (GTO or CC).')
+  }
+
+  const orderedClubs: PartnerWeeklyAuditClub[] = []
+  if (clubs.includes('clubgto')) orderedClubs.push('clubgto')
+  if (clubs.includes('creator-club')) orderedClubs.push('creator-club')
+
+  const settled = await Promise.allSettled(
+    orderedClubs.map((club) => fetchPartnerWeeklyAudit(token, monday, files, club)),
+  )
+
+  const failures: string[] = []
+  const results: { blob: Blob; filename: string }[] = []
+  settled.forEach((outcome, idx) => {
+    const label = PARTNER_CLUB_LABELS[orderedClubs[idx]]
+    if (outcome.status === 'fulfilled') {
+      results.push(outcome.value)
+      return
+    }
+    const message =
+      outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)
+    failures.push(`${label}: ${message}`)
+  })
+
+  if (failures.length > 0) {
+    throw new Error(failures.join('; '))
+  }
+
+  for (const { blob, filename } of results) {
+    triggerBlobDownload(blob, filename)
+  }
 }
 
 export async function downloadAuditExport(token: string, date: string): Promise<void> {

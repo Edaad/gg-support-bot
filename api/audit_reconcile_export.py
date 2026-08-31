@@ -37,11 +37,12 @@ from api.audit_reconcile_matching import (
     match_trade_lines_to_ledger,
 )
 from api.club_audit_timezone import zone_for_payment_display
+from api.method_owner import METHOD_OWNER_MATEOS, METHOD_OWNER_VAUGHN
 from api.vaughn_methods import (
-    VAUGHN_VENMO_HANDLES,
-    VAUGHN_ZELLE_RECIPIENTS,
-    clubgto_matching_source_options,
     matching_source_label,
+    normalize_venmo_handle,
+    normalize_zelle_recipient,
+    owner_matching_source_options,
 )
 
 _HEADER_FILL = PatternFill("solid", fgColor="38761D")
@@ -86,6 +87,11 @@ VAUGHN_TALLY_HEADERS = [
     "Total",
 ]
 
+_OWNER_TALLY_TITLES: dict[str, tuple[str, str]] = {
+    METHOD_OWNER_VAUGHN: ("Vaughn methods", "Vaughn methods (chips)"),
+    METHOD_OWNER_MATEOS: ("Mateos methods", "Mateos methods (chips)"),
+}
+
 # Excel Time number format (underlying value is full datetime).
 _EXCEL_TIME_FORMAT = "h:mm:ss AM/PM"
 
@@ -118,11 +124,13 @@ _MATCHING_SOURCE_FILL_HEX: dict[str, str] = {
     "RT Zelle": "F5D0F0",
     "Cashout Zelle": "F5D0F0",
     "GTO Zelle": "D98BCF",
+    "Mateos Zelle": "E8A87C",
     "Vaughn Cashout Zelle": "D98BCF",
     "Venmo": "D4E6F7",
     "RT Venmo": "D4E6F7",
     "Cashout Venmo": "D4E6F7",
     "GTO Venmo": "7FB3D5",
+    "Mateos Venmo": "E67E22",
     "Vaughn Cashout Venmo": "7FB3D5",
     "Cash App": "D5F5E3",
     "Union Cash App": "D5F5E3",
@@ -137,6 +145,8 @@ _MATCHING_SOURCE_FILL_HEX: dict[str, str] = {
     "Crypto": "FDEBD0",
     "Cashout Crypto": "FDEBD0",
     "GTO Crypto": "F0B27A",
+    "RT Crypto": "FDEBD0",
+    "Mateos Crypto": "D68910",
     "Vaughn Cashout Crypto": "F0B27A",
     "Cashout Revolut": "D5F5F5",
     "Early RB": "FCF3CF",
@@ -165,6 +175,7 @@ def _variant_options_by_source(
             club_slug=club_slug,
             source_label=line.source_label,
             memo=line.memo,
+            method_owner=line.method_owner,
         )
         if not label:
             continue
@@ -177,14 +188,12 @@ def _variant_options_by_source(
 
 def _matching_source_dropdown_options(club_slug: str) -> tuple[str, ...]:
     key = club_slug.strip().lower()
-    if key == "clubgto":
-        return clubgto_matching_source_options() + (CHIP_TRANSFER_PLAYER_LABEL,)
-    extra: tuple[str, ...] = ()
+    extra: tuple[str, ...] = (CHIP_TRANSFER_PLAYER_LABEL,)
     if key in {"round-table", "aces-table"}:
         extra += (CHIP_TRANSFER_RT_AT_LABEL,)
     if key in {"aces-table", "creator-club"}:
         extra += (CHIP_TRANSFER_AT_CC_LABEL,)
-    return MATCHING_SOURCE_OPTIONS + extra
+    return owner_matching_source_options() + extra
 
 
 # Far-right lookup cols on Matching (hidden). Source list is vertical so
@@ -322,6 +331,7 @@ def _write_unresolved_sheet(
                 club_slug=label_slug,
                 source_label=line.source_label,
                 memo=line.memo,
+                method_owner=line.method_owner,
             ),
         )
         ws.cell(
@@ -552,24 +562,24 @@ def _write_excel_time_cell(
     cell.number_format = _EXCEL_TIME_FORMAT
 
 
-def _vaughn_tag_scoped(tag: str) -> bool:
+def _owner_tag_scoped(tag: str) -> bool:
     return bool(tag) and not tag.startswith("(")
 
 
-def _vaughn_countifs_formula(*, source: str, tag: str) -> str:
-    """Count Matching rows for a GTO method; Zelle/Venmo also match Variant."""
+def _owner_countifs_formula(*, source: str, tag: str) -> str:
+    """Count Matching rows for an owner method; Zelle/Venmo also match Variant."""
     src_col = f"${get_column_letter(_MATCHING_SOURCE_COL)}:${get_column_letter(_MATCHING_SOURCE_COL)}"
-    if not _vaughn_tag_scoped(tag):
+    if not _owner_tag_scoped(tag):
         return f'=COUNTIF({src_col},"{source}")'
     tag_col = f"${get_column_letter(_MATCHING_VARIANT_COL)}:${get_column_letter(_MATCHING_VARIANT_COL)}"
     return f'=COUNTIFS({src_col},"{source}",{tag_col},"{tag}")'
 
 
-def _vaughn_sum_dollar_formula(*, source: str, tag: str) -> str:
-    """Sum $ column for a GTO method; Zelle/Venmo also match Variant."""
+def _owner_sum_dollar_formula(*, source: str, tag: str) -> str:
+    """Sum $ column for an owner method; Zelle/Venmo also match Variant."""
     src_col = f"${get_column_letter(_MATCHING_SOURCE_COL)}:${get_column_letter(_MATCHING_SOURCE_COL)}"
     dollar_col = f"${get_column_letter(_MATCHING_DOLLAR_COL)}:${get_column_letter(_MATCHING_DOLLAR_COL)}"
-    if not _vaughn_tag_scoped(tag):
+    if not _owner_tag_scoped(tag):
         return f'=SUMIF({src_col},"{source}",{dollar_col})'
     tag_col = f"${get_column_letter(_MATCHING_VARIANT_COL)}:${get_column_letter(_MATCHING_VARIANT_COL)}"
     return f'=SUMIFS({dollar_col},{src_col},"{source}",{tag_col},"{tag}")'
@@ -580,7 +590,7 @@ def _matching_data_col_range(col_idx: int, first_row: int, last_row: int) -> str
     return f"${letter}${first_row}:${letter}${last_row}"
 
 
-def _vaughn_sum_chips_formula(
+def _owner_sum_chips_formula(
     *,
     source: str,
     tag: str,
@@ -590,7 +600,7 @@ def _vaughn_sum_chips_formula(
     """Sum abs(Amount) chips; data rows only so Sheets ABS skips the header."""
     src_col = _matching_data_col_range(_MATCHING_SOURCE_COL, first_row, last_row)
     amount_col = _matching_data_col_range(_MATCHING_AMOUNT_COL, first_row, last_row)
-    if not _vaughn_tag_scoped(tag):
+    if not _owner_tag_scoped(tag):
         return f'=SUMPRODUCT(({src_col}="{source}")*ABS({amount_col}))'
     tag_col = _matching_data_col_range(_MATCHING_VARIANT_COL, first_row, last_row)
     return (
@@ -598,40 +608,79 @@ def _vaughn_sum_chips_formula(
     )
 
 
-def _vaughn_method_rows() -> list[tuple[str, str, str]]:
-    """(method_label, tag, matching Source label) for Vaughn tally tables."""
+def _owner_method_rows(
+    ledger_lines: list[LedgerLine],
+    owner_slug: str,
+) -> list[tuple[str, str, str]]:
+    """(method_label, tag, matching Source label) for owner tally tables."""
+    owner_key = owner_slug.strip().lower()
+    zelle_rows: dict[str, str] = {}
+    venmo_rows: dict[str, str] = {}
+    has_crypto = False
+    crypto_label = ""
+
+    for line in ledger_lines:
+        if (line.method_owner or "").strip().lower() != owner_key:
+            continue
+        source_label = matching_source_label(
+            source=line.source,
+            variant=line.variant,
+            club_slug=line.club_slug or "",
+            source_label=line.source_label,
+            memo=line.memo,
+            method_owner=line.method_owner,
+        )
+        if line.source == "deposit_zelle":
+            tag = normalize_zelle_recipient(line.variant or "") or (line.variant or "").strip()
+            if tag:
+                zelle_rows[tag] = source_label
+        elif line.source == "deposit_venmo":
+            handle = normalize_venmo_handle(line.variant or "")
+            tag = f"@{handle}" if handle else (line.variant or "").strip()
+            if tag:
+                venmo_rows[tag] = source_label
+        elif line.source == "deposit_crypto":
+            has_crypto = True
+            crypto_label = source_label
+
     method_rows: list[tuple[str, str, str]] = []
-    for digits in sorted(VAUGHN_ZELLE_RECIPIENTS):
-        method_rows.append(("Zelle", digits, "GTO Zelle"))
-    for handle in sorted(VAUGHN_VENMO_HANDLES):
-        method_rows.append(("Venmo", f"@{handle}", "GTO Venmo"))
-    method_rows.append(("Crypto", "(all ClubGTO)", "GTO Crypto"))
-    method_rows.append(("Stripe", "(all ClubGTO)", "GTO Stripe"))
+    for tag in sorted(zelle_rows):
+        method_rows.append(("Zelle", tag, zelle_rows[tag]))
+    for tag in sorted(venmo_rows):
+        method_rows.append(("Venmo", tag, venmo_rows[tag]))
+    if has_crypto:
+        aggregate_tag = (
+            "(all GTO Crypto)"
+            if owner_key == METHOD_OWNER_VAUGHN
+            else "(all Mateos Crypto)"
+        )
+        method_rows.append(("Crypto", aggregate_tag, crypto_label))
     return method_rows
 
 
-def _write_vaughn_tally_table(
+def _write_owner_tally_table(
     ws: Worksheet,
     *,
     title: str,
     section_row: int,
     start_col: int,
+    method_rows: list[tuple[str, str, str]],
     total_formula,
 ) -> int:
-    """Write one Vaughn tally; returns the Total row index."""
+    """Write one owner tally; returns the Total row index."""
     _style_section_title(ws, section_row, title, col=start_col)
     header_row = section_row + 1
     _style_header_row(ws, header_row, VAUGHN_TALLY_HEADERS, start_col=start_col)
 
     first_data = header_row + 1
     row_idx = first_data
-    for method_label, tag, source_label in _vaughn_method_rows():
+    for method_label, tag, source_label in method_rows:
         ws.cell(row=row_idx, column=start_col, value=method_label)
         ws.cell(row=row_idx, column=start_col + 1, value=tag)
         ws.cell(
             row=row_idx,
             column=start_col + 2,
-            value=_vaughn_countifs_formula(source=source_label, tag=tag),
+            value=_owner_countifs_formula(source=source_label, tag=tag),
         )
         total_cell = ws.cell(
             row=row_idx,
@@ -663,37 +712,43 @@ def _write_vaughn_tally_table(
     return row_idx
 
 
-def _write_vaughn_tally(
+def _write_owner_tally(
     ws: Worksheet,
     *,
+    owner_slug: str,
+    ledger_lines: list[LedgerLine],
     section_row: int,
     start_col: int,
     matching_first_row: int,
     matching_last_row: int,
 ) -> None:
-    """Vaughn receipt ($) tally, then chips (abs Amount) tally underneath."""
-    receipt_total_row = _write_vaughn_tally_table(
+    """Owner receipt ($) tally, then chips (abs Amount) tally underneath."""
+    titles = _OWNER_TALLY_TITLES[owner_slug]
+    method_rows = _owner_method_rows(ledger_lines, owner_slug)
+    receipt_total_row = _write_owner_tally_table(
         ws,
-        title="Vaughn methods",
+        title=titles[0],
         section_row=section_row,
         start_col=start_col,
-        total_formula=_vaughn_sum_dollar_formula,
+        method_rows=method_rows,
+        total_formula=_owner_sum_dollar_formula,
     )
     chips_section_row = receipt_total_row + 2  # blank spacer row
 
     def chips_formula(*, source: str, tag: str) -> str:
-        return _vaughn_sum_chips_formula(
+        return _owner_sum_chips_formula(
             source=source,
             tag=tag,
             first_row=matching_first_row,
             last_row=matching_last_row,
         )
 
-    _write_vaughn_tally_table(
+    _write_owner_tally_table(
         ws,
-        title="Vaughn methods (chips)",
+        title=titles[1],
         section_row=chips_section_row,
         start_col=start_col,
+        method_rows=method_rows,
         total_formula=chips_formula,
     )
 
@@ -706,7 +761,7 @@ def _write_matching_rows(
     table_slug: str,
     report_for_dropdowns: AuditReconcileReport,
     sheet_title: str | None = None,
-    include_vaughn_tally: bool = False,
+    owner_tally: str | None = None,
 ) -> None:
     if sheet_title:
         ws.title = sheet_title
@@ -766,9 +821,11 @@ def _write_matching_rows(
         last_row=last_data_row,
     )
 
-    if include_vaughn_tally:
-        _write_vaughn_tally(
+    if owner_tally:
+        _write_owner_tally(
             ws,
+            owner_slug=owner_tally,
+            ledger_lines=report_for_dropdowns.ledger_lines,
             section_row=header_row,
             start_col=_MATCHING_TALLY_START_COL,
             matching_first_row=header_row + 1,
@@ -841,6 +898,11 @@ def build_all_clubs_matching_workbook(
             dropdown_report = rt_report
         else:
             dropdown_report = reports_by_slug[slug]
+        owner_tally: str | None = None
+        if slug == "clubgto":
+            owner_tally = METHOD_OWNER_VAUGHN
+        elif slug == "creator-club":
+            owner_tally = METHOD_OWNER_MATEOS
         _write_matching_rows(
             ws,
             partitioned[slug],
@@ -848,7 +910,7 @@ def build_all_clubs_matching_workbook(
             table_slug=slug,
             report_for_dropdowns=dropdown_report,
             sheet_title=title,
-            include_vaughn_tally=slug == "clubgto",
+            owner_tally=owner_tally,
         )
         _set_column_widths(ws, MATCHING_WIDTHS)
 

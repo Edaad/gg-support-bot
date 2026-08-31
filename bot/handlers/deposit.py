@@ -54,7 +54,12 @@ from bot.services.union_deposit_picker import (
     build_deposit_picker_methods,
     pick_union_method,
 )
-from bot.services.union_method_types import UNION_METHOD_TYPES
+from bot.services.union_method_types import (
+    UNION_METHOD_TYPES,
+    UNION_TYPE_SLUGS,
+    union_type_display_name,
+    union_type_from_display_name,
+)
 from bot.services.round_table_unions import (
     ACES_TABLE_SHORTHAND,
     deposit_unions_for_chat,
@@ -951,6 +956,26 @@ def _parse_scheduled_at(job_data: dict | None) -> datetime | None:
     return scheduled_at
 
 
+def _unique_deposit_method_names(names: list[str]) -> list[str]:
+    """Dedupe payment method labels for player-facing copy (reminder/timeout)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for name in names:
+        stripped = (name or "").strip()
+        if not stripped or "paypal" in stripped.lower():
+            continue
+        union_slug = union_type_from_display_name(stripped)
+        key = union_slug or re.sub(r"[^a-z0-9]", "", stripped.lower())
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if key in UNION_TYPE_SLUGS:
+            out.append(union_type_display_name(key))
+        else:
+            out.append(stripped)
+    return out
+
+
 async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Job queue callback: delete deposit instructions and nudge the customer."""
     chat_id = int(context.job.chat_id)
@@ -999,8 +1024,9 @@ async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None
     )
     await _delete_deposit_info_messages(context.bot, chat_id)
 
-    methods = get_deposit_method_names(club_id) if club_id else []
-    methods = [name for name in methods if "paypal" not in name.lower()]
+    methods = _unique_deposit_method_names(
+        get_deposit_method_names(club_id) if club_id else []
+    )
     method_list = ", ".join(methods) if methods else ""
 
     text = (
@@ -3427,7 +3453,9 @@ async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
             popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
             return ConversationHandler.END
 
-        methods = get_deposit_method_names(club_id) if club_id else []
+        methods = _unique_deposit_method_names(
+            get_deposit_method_names(club_id) if club_id else []
+        )
         method_list = ", ".join(methods) if methods else ""
 
         text = (

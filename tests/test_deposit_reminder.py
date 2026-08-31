@@ -93,6 +93,58 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("We offer: Venmo, Zelle.", sent_text)
         self.assertNotIn("PayPal", sent_text)
 
+    async def test_reminder_deduplicates_offered_methods(self):
+        chat_id = -100129
+        deposit_module._DEPOSIT_INFO_MESSAGE_IDS[chat_id] = [26]
+
+        bot = AsyncMock()
+        bot.send_message = AsyncMock()
+        bot.delete_message = AsyncMock()
+
+        job = MagicMock()
+        job.chat_id = chat_id
+        job.data = {
+            "club_id": 1,
+            "scheduled_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        context = MagicMock()
+        context.job = job
+        context.bot = bot
+
+        with (
+            patch.object(
+                deposit_module,
+                "get_deposit_method_names",
+                return_value=[
+                    "Crypto",
+                    "Zelle",
+                    "Apple Pay",
+                    "Cashapp",
+                    "Venmo",
+                    "Zelle",
+                    "Cash App",
+                    "Venmo",
+                ],
+            ),
+            patch.object(deposit_module, "_should_skip_deposit_reminder", return_value=False),
+            patch(
+                "bot.services.group_activity.deposit_sent_watch_armed",
+                return_value=False,
+            ),
+            patch(
+                "bot.services.escalation_notification.clear_deposit_chase_after_payment",
+                new_callable=AsyncMock,
+            ),
+        ):
+            await deposit_module._deposit_reminder_callback(context)
+
+        sent_text = bot.send_message.await_args.kwargs["text"]
+        self.assertIn(
+            "We offer: Crypto, Zelle, Apple Pay, Cash App, Venmo.",
+            sent_text,
+        )
+
     async def test_reminder_skips_when_payment_bound_since_schedule(self):
         chat_id = -100124
         deposit_module._DEPOSIT_INFO_MESSAGE_IDS[chat_id] = [21]

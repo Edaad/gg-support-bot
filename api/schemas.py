@@ -521,6 +521,20 @@ class MtProtoSyncDiskResponse(BaseModel):
     message: str
 
 
+class MtProtoQrStartResponse(BaseModel):
+    ok: bool
+    message: str
+    url: str
+    expires_at: datetime
+
+
+class MtProtoQrStatusResponse(BaseModel):
+    status: str
+    detail: Optional[str] = None
+    url: Optional[str] = None
+    expires_at: Optional[datetime] = None
+
+
 # ── Bonus Types & Records ─────────────────────────────────────────────────────
 
 class BonusTypeCreate(BaseModel):

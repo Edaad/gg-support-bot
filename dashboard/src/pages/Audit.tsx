@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import {
   downloadAuditExport,
-  downloadGtoWeeklyAudit,
+  downloadPartnerWeeklyAudits,
+  type PartnerWeeklyAuditClub,
   runReconcilePipeline,
   syncEarlyRakeback,
   uploadAllTradeRecords,
@@ -126,8 +127,10 @@ function AllClubsUploadZone({ uploads, error, disabled, onUpload }: AllClubsUplo
 
 export default function Audit({ token }: { token: string }) {
   const exportDateId = useId()
-  const gtoMondayId = useId()
-  const gtoFilesId = useId()
+  const partnerMondayId = useId()
+  const partnerFilesId = useId()
+  const exportGtoId = useId()
+  const exportCcId = useId()
 
   const [uploads, setUploads] = useState<TradeRecordUploadReport[]>([])
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -138,10 +141,12 @@ export default function Audit({ token }: { token: string }) {
   const [exportErr, setExportErr] = useState('')
   const [exportWarn, setExportWarn] = useState('')
   const [depositExportPhase, setDepositExportPhase] = useState<'idle' | 'syncing' | 'exporting'>('idle')
-  const [gtoMonday, setGtoMonday] = useState('')
-  const [gtoFiles, setGtoFiles] = useState<File[]>([])
-  const [gtoErr, setGtoErr] = useState('')
-  const [gtoExporting, setGtoExporting] = useState(false)
+  const [partnerMonday, setPartnerMonday] = useState('')
+  const [partnerFiles, setPartnerFiles] = useState<File[]>([])
+  const [partnerErr, setPartnerErr] = useState('')
+  const [partnerExporting, setPartnerExporting] = useState(false)
+  const [exportGto, setExportGto] = useState(true)
+  const [exportCc, setExportCc] = useState(false)
 
   const exportBusy = depositExportPhase !== 'idle'
   const running = pipelineStep !== null && pipelineStep !== 'done' && pipelineStep !== 'failed'
@@ -239,30 +244,41 @@ export default function Audit({ token }: { token: string }) {
         ? 'Exporting…'
         : 'Export deposit audit XLSX'
 
-  const onDownloadGtoWeeklyAudit = async () => {
-    if (!gtoMonday) {
-      setGtoErr('Select the Monday that starts the audit week.')
+  const onDownloadPartnerWeeklyAudit = async () => {
+    if (!partnerMonday) {
+      setPartnerErr('Select the Monday that starts the audit week.')
       return
     }
-    const mondayDate = new Date(`${gtoMonday}T00:00:00`)
+    const mondayDate = new Date(`${partnerMonday}T00:00:00`)
     if (Number.isNaN(mondayDate.getTime()) || mondayDate.getDay() !== 1) {
-      setGtoErr('Week start must be a Monday.')
+      setPartnerErr('Week start must be a Monday.')
       return
     }
-    if (gtoFiles.length !== 7) {
-      setGtoErr(`Select exactly 7 Matching files; got ${gtoFiles.length}.`)
+    if (partnerFiles.length !== 7) {
+      setPartnerErr(`Select exactly 7 Matching files; got ${partnerFiles.length}.`)
       return
     }
-    setGtoErr('')
-    setGtoExporting(true)
+    if (!exportGto && !exportCc) {
+      setPartnerErr('Select at least one club (GTO or CC).')
+      return
+    }
+    const clubs: PartnerWeeklyAuditClub[] = []
+    if (exportGto) clubs.push('clubgto')
+    if (exportCc) clubs.push('creator-club')
+
+    setPartnerErr('')
+    setPartnerExporting(true)
     try {
-      await downloadGtoWeeklyAudit(token, gtoMonday, gtoFiles)
+      await downloadPartnerWeeklyAudits(token, partnerMonday, partnerFiles, clubs)
     } catch (e: unknown) {
-      setGtoErr(e instanceof Error ? e.message : 'GTO weekly audit export failed.')
+      setPartnerErr(e instanceof Error ? e.message : 'Partner weekly audit export failed.')
     } finally {
-      setGtoExporting(false)
+      setPartnerExporting(false)
     }
   }
+
+  const partnerExportReady =
+    Boolean(partnerMonday) && partnerFiles.length === 7 && (exportGto || exportCc)
 
   const activeStepIdx = pipelineStep ? stepIndex(pipelineStep) : -1
 
@@ -362,61 +378,91 @@ export default function Audit({ token }: { token: string }) {
       </section>
 
       <section className="panel mb-6">
-        <h2 className="mb-2 text-lg font-semibold text-ink">GTO weekly audit</h2>
+        <h2 className="mb-2 text-lg font-semibold text-ink">Partner weekly audit</h2>
         <p className="mb-4 text-sm text-ink-muted">
           Upload seven human-corrected all-clubs Matching exports (
           <code className="text-xs">reconcile-all-clubs-YYYY-MM-DD.xlsx</code>) for one Mon–Sun
-          week. Builds Processed (with Category pivot), Zelle, Venmo, Crypto, and Bonuses sheets.
+          week. Export GTO and/or Creator Club workbooks (Processed with Category pivot, Zelle,
+          Venmo, Crypto, and Bonuses).
         </p>
 
-        {gtoErr ? (
+        {partnerErr ? (
           <p role="alert" className="alert-danger mb-4">
-            {gtoErr}
+            {partnerErr}
           </p>
         ) : null}
 
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            <label htmlFor={gtoMondayId} className="label-field-xs">
+            <label htmlFor={partnerMondayId} className="label-field-xs">
               Week Monday
             </label>
             <input
-              id={gtoMondayId}
+              id={partnerMondayId}
               type="date"
-              value={gtoMonday}
+              value={partnerMonday}
               onChange={(e) => {
-                setGtoMonday(e.target.value)
-                setGtoErr('')
+                setPartnerMonday(e.target.value)
+                setPartnerErr('')
               }}
               className="input-field-sm"
             />
           </div>
           <div>
-            <label htmlFor={gtoFilesId} className="label-field-xs">
+            <label htmlFor={partnerFilesId} className="label-field-xs">
               Matching files (7)
             </label>
             <input
-              id={gtoFilesId}
+              id={partnerFilesId}
               type="file"
               accept={XLSX_ACCEPT}
               multiple
               onChange={(e) => {
-                setGtoFiles(Array.from(e.target.files ?? []))
-                setGtoErr('')
+                setPartnerFiles(Array.from(e.target.files ?? []))
+                setPartnerErr('')
               }}
               className="block max-w-xs text-sm text-ink-muted file:mr-3 file:rounded file:border-0 file:bg-surface-2 file:px-3 file:py-1.5 file:text-sm file:text-ink"
             />
-            {gtoFiles.length > 0 ? (
-              <p className="mt-1 text-xs text-ink-muted">{gtoFiles.length} file(s) selected</p>
+            {partnerFiles.length > 0 ? (
+              <p className="mt-1 text-xs text-ink-muted">{partnerFiles.length} file(s) selected</p>
             ) : null}
           </div>
+          <fieldset className="flex items-center gap-4">
+            <legend className="sr-only">Clubs to export</legend>
+            <label htmlFor={exportGtoId} className="flex items-center gap-2 text-sm text-ink">
+              <input
+                id={exportGtoId}
+                type="checkbox"
+                checked={exportGto}
+                onChange={(e) => {
+                  setExportGto(e.target.checked)
+                  setPartnerErr('')
+                }}
+                className="rounded border-border"
+              />
+              GTO
+            </label>
+            <label htmlFor={exportCcId} className="flex items-center gap-2 text-sm text-ink">
+              <input
+                id={exportCcId}
+                type="checkbox"
+                checked={exportCc}
+                onChange={(e) => {
+                  setExportCc(e.target.checked)
+                  setPartnerErr('')
+                }}
+                className="rounded border-border"
+              />
+              CC
+            </label>
+          </fieldset>
           <button
             type="button"
-            disabled={gtoExporting || !gtoMonday || gtoFiles.length !== 7}
-            onClick={() => void onDownloadGtoWeeklyAudit()}
+            disabled={partnerExporting || !partnerExportReady}
+            onClick={() => void onDownloadPartnerWeeklyAudit()}
             className="btn-primary-sm disabled:opacity-40"
           >
-            {gtoExporting ? 'Exporting…' : 'Export GTO weekly audit'}
+            {partnerExporting ? 'Exporting…' : 'Export partner weekly audit'}
           </button>
         </div>
       </section>

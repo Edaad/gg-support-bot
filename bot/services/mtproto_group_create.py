@@ -183,14 +183,45 @@ async def is_client_authorized(cfg: ClubGcConfig) -> bool:
         await client.disconnect()
 
 
-async def send_code_for_phone(cfg: ClubGcConfig, phone: str) -> str:
-    """Request Telegram login code; returns ``phone_code_hash`` (caller stores — never logged).
+def _send_code_delivery_key(sent: object) -> str:
+    """Map Telethon ``SentCode.type`` to a short delivery hint (no secrets)."""
+
+    type_name = type(getattr(sent, "type", None)).__name__
+    if type_name == "SentCodeTypeSms":
+        return "sms"
+    if type_name == "SentCodeTypeCall":
+        return "call"
+    if type_name == "SentCodeTypeFragmentSms":
+        return "fragment_sms"
+    if type_name == "SentCodeTypeApp":
+        return "telegram_app"
+    return "unknown"
+
+
+def send_code_user_message(delivery: str) -> str:
+    if delivery == "sms":
+        return "Enter the SMS login code below (one attempt per code — request a new one if needed)."
+    if delivery == "call":
+        return "Telegram is calling this number with the login code. Enter it below (one attempt per code)."
+    if delivery == "telegram_app":
+        return (
+            'Check the official "Telegram" chat in the app on a device logged into this account '
+            "(not SMS), then enter the code below (one attempt per code — request a new one if needed)."
+        )
+    return "Enter the Telegram login code below (one attempt per code — request a new one if needed)."
+
+
+async def send_code_for_phone(cfg: ClubGcConfig, phone: str) -> tuple[str, str]:
+    """Request Telegram login code; returns ``(phone_code_hash, delivery_key)``.
 
     **No FloodWait auto-retry:** a second ``SendCodeRequest`` invalidates the previous code.
     If Telegram rate-limits, we surface a single message so the next ``/gc`` does one fresh send.
     """
 
+    from bot.services.mtproto_session_db import clear_disk_login_session
+
     async with get_mtproto_lock(cfg.club_key):
+        clear_disk_login_session(cfg)
         client = make_client(cfg, prefer_database=False)
         await client.connect()
         try:
@@ -215,8 +246,13 @@ async def send_code_for_phone(cfg: ClubGcConfig, phone: str) -> str:
             hash_value = getattr(sent, "phone_code_hash", None)
             if not hash_value:
                 raise RuntimeError("Telegram returned no phone_code_hash (cannot continue login).")
-            logger.info("MTProto SendCode succeeded club=%s", cfg.club_key)
-            return str(hash_value)
+            delivery = _send_code_delivery_key(sent)
+            logger.info(
+                "MTProto SendCode succeeded club=%s delivery=%s",
+                cfg.club_key,
+                delivery,
+            )
+            return str(hash_value), delivery
         finally:
             await client.disconnect()
 

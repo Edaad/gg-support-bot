@@ -158,7 +158,7 @@ class ExpensesApiTestCase(unittest.TestCase):
         )
         self.assertEqual(len(after.json()), 1)
 
-    def test_amount_must_be_positive(self) -> None:
+    def test_amount_must_not_be_zero(self) -> None:
         r = self.client.post(
             "/api/expenses",
             headers=self.admin_headers,
@@ -170,6 +170,22 @@ class ExpensesApiTestCase(unittest.TestCase):
             },
         )
         self.assertEqual(r.status_code, 400)
+
+    def test_negative_amount_allowed(self) -> None:
+        r = self.client.post(
+            "/api/expenses",
+            headers=self.admin_headers,
+            json={
+                "amount": "-50.00",
+                "expense_type": "Credit",
+                "description": "Refund",
+                "club_id": 1,
+                "expense_date": "2026-08-01",
+                "pending": False,
+            },
+        )
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertEqual(Decimal(str(r.json()["amount"])), Decimal("-50.00"))
 
     def test_export_xlsx_respects_filters(self) -> None:
         self.client.post(

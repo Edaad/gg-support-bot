@@ -9,7 +9,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from api.audit_ledger import LedgerLine
 from api.audit_reconcile import TradeLineForMatch
 from api.club_audit_timezone import zone_for_payment_display
-from api.vaughn_methods import is_vaughn_method, matching_source_label
+from api.vaughn_methods import matching_source_label
 from bot.services.player_details import parse_group_title_parts
 
 MATCH_WINDOW = timedelta(minutes=15)
@@ -54,7 +54,7 @@ class MatchedTradeRow:
     match_time: str
     match_amount: Decimal | None
     variant: str
-    vaughn_method: bool = False
+    method_owner: str | None = None
     match_occurred_at: datetime | None = None
 
 
@@ -123,6 +123,7 @@ def _match_fields(
         club_slug=club_slug,
         source_label=line.source_label,
         memo=line.memo,
+        method_owner=line.method_owner,
     )
     time_label = _format_match_time(club_slug, line.occurred_at_utc)
     dollars = round_whole_usd(line.amount_signed)
@@ -137,7 +138,7 @@ def _empty_match_row(trade: TradeLineForMatch) -> MatchedTradeRow:
         match_time="",
         match_amount=None,
         variant="",
-        vaughn_method=False,
+        method_owner=None,
         match_occurred_at=None,
     )
 
@@ -340,12 +341,7 @@ def apply_cc_at_aces_ledger_fallback(
             match_time=time_label,
             match_amount=dollars,
             variant=variant,
-            vaughn_method=is_vaughn_method(
-                source=ledger.source,
-                variant=variant,
-                club_slug=_CC_SLUG,
-                memo=ledger.memo,
-            ),
+            method_owner=ledger.method_owner,
             match_occurred_at=ledger.occurred_at_utc,
         )
 
@@ -466,12 +462,7 @@ def match_trade_lines_to_ledger(
                 match_time=time_label,
                 match_amount=dollars,
                 variant=variant,
-                vaughn_method=is_vaughn_method(
-                    source=ledger.source,
-                    variant=variant,
-                    club_slug=club_slug,
-                    memo=ledger.memo,
-                ),
+                method_owner=ledger.method_owner,
                 match_occurred_at=ledger.occurred_at_utc,
             )
         )
@@ -510,7 +501,7 @@ def _clear_match_details(row: MatchedTradeRow, *, source: str) -> MatchedTradeRo
         match_time="",
         match_amount=None,
         variant="",
-        vaughn_method=False,
+        method_owner=None,
         match_occurred_at=None,
     )
 

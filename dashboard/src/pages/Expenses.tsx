@@ -121,7 +121,7 @@ export default function Expenses({ token }: { token: string }) {
 
   const save = async () => {
     const parsed = parseMoney(amount)
-    if (!clubId || !expenseType.trim() || !parsed || parsed <= 0 || !expenseDate) {
+    if (!clubId || !expenseType.trim() || Number.isNaN(parsed) || parsed === 0 || !expenseDate) {
       setError('Club, expense type, amount, and date are required')
       return
     }

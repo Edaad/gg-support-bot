@@ -20,6 +20,7 @@ type IngestedRow =
 type Props = {
   method: OwnerMethod
   rows: IngestedRow[]
+  clubNameById: Record<number, string>
   onBind?: (row: VenmoPaymentRow | ZellePaymentRow | CashAppPaymentRow | PayPalPaymentRow | CryptoPaymentRow) => void
 }
 
@@ -32,13 +33,18 @@ function fmtPaymentAt(iso: string | null | undefined): string {
   }
 }
 
-function fmtMoney(n: number): string {
-  return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function fmtMoney(value: number | string): string {
+  return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function fmtGgNickname(nickname: string | null | undefined): string {
   const s = nickname?.trim()
   return s ? s : 'Not available'
+}
+
+function fmtClub(clubId: number | null | undefined, clubNameById: Record<number, string>): string {
+  if (clubId == null) return 'Unbound'
+  return clubNameById[clubId] ?? `Club ${clubId}`
 }
 
 function isCrypto(row: IngestedRow): row is CryptoPaymentRow {
@@ -68,7 +74,7 @@ function accountHeader(method: OwnerMethod): string {
   return 'Handle'
 }
 
-export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
+export default function IngestedPaymentTable({ method, rows, clubNameById, onBind }: Props) {
   if (method === 'stripe') {
     return (
       <div className="table-scroll">
@@ -76,10 +82,11 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
           <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
             <tr>
               <th className="px-4 py-3">Time</th>
+              <th className="px-4 py-3">Amount</th>
               <th className="px-4 py-3">Group</th>
               <th className="px-4 py-3">Player</th>
               <th className="px-4 py-3">Method</th>
-              <th className="px-4 py-3">Amount</th>
+              <th className="px-4 py-3">Club</th>
               <th className="px-4 py-3">Stripe</th>
             </tr>
           </thead>
@@ -89,14 +96,15 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
                 <td className="px-4 py-3 whitespace-nowrap">
                   {fmtPaymentAt(row.completed_at || row.created_at)}
                 </td>
+                <td className="px-4 py-3 font-medium">
+                  {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
+                </td>
                 <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                   {row.group_title || '—'}
                 </td>
                 <td className="px-4 py-3">{fmtGgNickname(row.gg_nickname)}</td>
                 <td className="px-4 py-3">{row.method_name || '—'}</td>
-                <td className="px-4 py-3 font-medium">
-                  {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
-                </td>
+                <td className="px-4 py-3">{fmtClub(row.club_id, clubNameById)}</td>
                 <td className="px-4 py-3">
                   <a
                     href={row.stripe_payment_url || row.stripe_dashboard_url}
@@ -120,19 +128,17 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
   if (method === 'crypto') {
     return (
       <div className="table-scroll">
-        <table className="min-w-[64rem] text-left">
+        <table className="min-w-[52rem] text-left">
           <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
             <tr>
               <th className="px-4 py-3">Time</th>
-              <th className="px-4 py-3">Alert</th>
-              <th className="px-4 py-3">From</th>
-              <th className="px-4 py-3">Chain</th>
-              <th className="px-4 py-3">Token</th>
-              <th className="px-4 py-3">To</th>
-              <th className="px-4 py-3">Tx</th>
+              <th className="px-4 py-3">Amount</th>
               <th className="px-4 py-3">Group</th>
               <th className="px-4 py-3">Player</th>
-              <th className="px-4 py-3">Amount</th>
+              <th className="px-4 py-3">From</th>
+              <th className="px-4 py-3">Token</th>
+              <th className="px-4 py-3">Tx</th>
+              <th className="px-4 py-3">Club</th>
               <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
@@ -140,17 +146,8 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
             {rows.filter(isCrypto).map((row) => (
               <tr key={row.id} className="hover:bg-surface/80">
                 <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(row.created_at)}</td>
-                <td className="px-4 py-3">{row.alert_scope_label}</td>
-                <td className="px-4 py-3 max-w-[12rem] truncate" title={row.from_label}>
-                  {row.from_label}
-                </td>
-                <td className="px-4 py-3 uppercase">{row.chain}</td>
-                <td className="px-4 py-3">{row.token_symbol}</td>
-                <td className="px-4 py-3 font-mono text-xs max-w-[10rem] truncate" title={row.to_address}>
-                  {row.to_address}
-                </td>
-                <td className="px-4 py-3 font-mono text-xs max-w-[10rem] truncate" title={row.transaction_hash}>
-                  {row.transaction_hash}
+                <td className="px-4 py-3 font-medium">
+                  {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
                 </td>
                 <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                   {row.status === 'unbound' ? (
@@ -160,9 +157,14 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
                   )}
                 </td>
                 <td className="px-4 py-3">{fmtGgNickname(row.gg_nickname)}</td>
-                <td className="px-4 py-3 font-medium">
-                  ${fmtMoney(row.amount_usd)} {row.token_symbol}
+                <td className="px-4 py-3 max-w-[12rem] truncate" title={row.from_label}>
+                  {row.from_label}
                 </td>
+                <td className="px-4 py-3">{row.token_symbol}</td>
+                <td className="px-4 py-3 font-mono text-xs max-w-[10rem] truncate" title={row.transaction_hash}>
+                  {row.transaction_hash}
+                </td>
+                <td className="px-4 py-3">{fmtClub(row.club_id, clubNameById)}</td>
                 <td className="px-4 py-3">
                   {row.status === 'unbound' && onBind && (
                     <button
@@ -188,12 +190,13 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
         <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
           <tr>
             <th className="px-4 py-3">Time</th>
-            <th className="px-4 py-3">Payer</th>
-            <th className="px-4 py-3">{accountHeader(method)}</th>
+            <th className="px-4 py-3">Amount</th>
             <th className="px-4 py-3">Group</th>
             <th className="px-4 py-3">Player</th>
-            <th className="px-4 py-3">Amount</th>
+            <th className="px-4 py-3">Payer</th>
+            <th className="px-4 py-3">{accountHeader(method)}</th>
             <th className="px-4 py-3">Status</th>
+            <th className="px-4 py-3">Club</th>
             <th className="px-4 py-3">Actions</th>
           </tr>
         </thead>
@@ -201,8 +204,7 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
           {rows.filter(isManualIngest).map((row) => (
             <tr key={row.id} className="hover:bg-surface/80">
               <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(row.created_at)}</td>
-              <td className="px-4 py-3">{row.payer_name}</td>
-              <td className="px-4 py-3 font-mono text-xs">{accountCell(row)}</td>
+              <td className="px-4 py-3 font-medium">${fmtMoney(row.amount_usd)}</td>
               <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                 {row.status === 'unbound' ? (
                   <span className="text-warning-ink">Unbound</span>
@@ -211,13 +213,15 @@ export default function IngestedPaymentTable({ method, rows, onBind }: Props) {
                 )}
               </td>
               <td className="px-4 py-3">{fmtGgNickname(row.gg_nickname)}</td>
-              <td className="px-4 py-3 font-medium">${fmtMoney(row.amount_usd)}</td>
+              <td className="px-4 py-3">{row.payer_name}</td>
+              <td className="px-4 py-3 font-mono text-xs">{accountCell(row)}</td>
               <td className="px-4 py-3 capitalize">
                 {row.status}
                 {row.auto_bound && row.status === 'bound' && (
                   <span className="ml-1 text-xs text-ink-muted">(auto)</span>
                 )}
               </td>
+              <td className="px-4 py-3">{fmtClub(row.club_id, clubNameById)}</td>
               <td className="px-4 py-3">
                 {row.status === 'unbound' && onBind && (
                   <button

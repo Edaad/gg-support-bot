@@ -58,6 +58,7 @@ def _ledger(
     display_name: str | None = None,
     variant: str | None = None,
     detail: str | None = None,
+    method_owner: str | None = None,
 ) -> LedgerLine:
     return LedgerLine(
         gg_player_id=gg_id,
@@ -70,6 +71,7 @@ def _ledger(
         display_name=display_name,
         variant=variant,
         detail=detail,
+        method_owner=method_owner,
     )
 
 
@@ -107,7 +109,7 @@ class MatchTradeLinesTestCase(unittest.TestCase):
         self.assertEqual(rows[0].match_source, "Stripe")
         self.assertEqual(rows[0].match_amount, Decimal("100"))
         self.assertEqual(rows[0].variant, "")
-        self.assertFalse(rows[0].vaughn_method)
+        self.assertIsNone(rows[0].method_owner)
 
         trade2 = _trade(line_id=2, occurred=self.t0, amount="-100", sheet_row=2)
         rows2 = match_trade_lines_to_ledger(
@@ -150,7 +152,7 @@ class MatchTradeLinesTestCase(unittest.TestCase):
         self.assertEqual(rows[0].match_name, "Miah Xeshan")
         self.assertEqual(rows[0].match_source, "Zelle")
         self.assertEqual(rows[0].variant, "gto zelle")
-        self.assertFalse(rows[0].vaughn_method)
+        self.assertIsNone(rows[0].method_owner)
 
     def test_different_player_ids_not_matched(self):
         """HunnidPrblms must not consume Tiddlemouse19's Stripe (Aug 15)."""
@@ -289,13 +291,14 @@ class MatchTradeLinesTestCase(unittest.TestCase):
             external_id="deposit_zelle:vaughn",
             display_name="Payer",
             variant="2133729202",
+            method_owner="vaughn",
         )
         rows = match_trade_lines_to_ledger(
             [trade],
             [ledger],
             club_slug="clubgto",
         ).rows
-        self.assertTrue(rows[0].vaughn_method)
+        self.assertEqual(rows[0].method_owner, "vaughn")
         self.assertEqual(rows[0].match_source, "GTO Zelle")
 
     def test_rt_zelle_source_on_clubgto(self):
@@ -308,13 +311,14 @@ class MatchTradeLinesTestCase(unittest.TestCase):
             external_id="deposit_zelle:rt",
             display_name="Payer",
             variant="coachingg444@gmail.com",
+            method_owner="round-table",
         )
         rows = match_trade_lines_to_ledger(
             [trade],
             [ledger],
             club_slug="clubgto",
         ).rows
-        self.assertFalse(rows[0].vaughn_method)
+        self.assertEqual(rows[0].method_owner, "round-table")
         self.assertEqual(rows[0].match_source, "RT Zelle")
 
     def test_vaughn_crypto_clubgto(self):
@@ -327,23 +331,33 @@ class MatchTradeLinesTestCase(unittest.TestCase):
             external_id="deposit_crypto:1",
             display_name="Wallet",
             variant="USDT",
+            method_owner="vaughn",
         )
         rows = match_trade_lines_to_ledger(
             [trade],
             [ledger],
             club_slug="clubgto",
         ).rows
-        self.assertTrue(rows[0].vaughn_method)
+        self.assertEqual(rows[0].method_owner, "vaughn")
         self.assertEqual(rows[0].match_source, "GTO Crypto")
         rows_rt = match_trade_lines_to_ledger(
             [trade],
-            [ledger],
+            [_ledger(
+                occurred=self.t0,
+                amount_signed="-30",
+                source="deposit_crypto",
+                source_label="Crypto",
+                external_id="deposit_crypto:rt",
+                display_name="Wallet",
+                variant="USDT",
+                method_owner="round-table",
+            )],
             club_slug="round-table",
         ).rows
-        self.assertFalse(rows_rt[0].vaughn_method)
-        self.assertEqual(rows_rt[0].match_source, "Crypto")
+        self.assertEqual(rows_rt[0].method_owner, "round-table")
+        self.assertEqual(rows_rt[0].match_source, "RT Crypto")
 
-    def test_vaughn_stripe_clubgto(self):
+    def test_stripe_always_unprefixed(self):
         trade = _trade(occurred=self.t0, amount="-40")
         ledger = _ledger(
             occurred=self.t0,
@@ -353,20 +367,20 @@ class MatchTradeLinesTestCase(unittest.TestCase):
             external_id="deposit_stripe:1",
             display_name="Card",
             variant=None,
+            method_owner="vaughn",
         )
         rows = match_trade_lines_to_ledger(
             [trade],
             [ledger],
             club_slug="clubgto",
         ).rows
-        self.assertTrue(rows[0].vaughn_method)
-        self.assertEqual(rows[0].match_source, "GTO Stripe")
+        self.assertEqual(rows[0].method_owner, "vaughn")
+        self.assertEqual(rows[0].match_source, "Stripe")
         rows_rt = match_trade_lines_to_ledger(
             [trade],
             [ledger],
             club_slug="round-table",
         ).rows
-        self.assertFalse(rows_rt[0].vaughn_method)
         self.assertEqual(rows_rt[0].match_source, "Stripe")
 
     def test_sign_mismatch_rejected(self):
@@ -885,9 +899,11 @@ class CcAtAcesLedgerFallbackTestCase(unittest.TestCase):
             occurred=self.t0,
             amount_signed="-50",
             gg_id="8879-5560",
+            source="deposit_zelle",
             source_label="Zelle",
             external_id="deposit_zelle:1",
             display_name="AtPay",
+            method_owner="round-table",
         )
         matched = match_trade_lines_to_ledger(
             [at], [at_ledger], club_slug="aces-table"
@@ -900,7 +916,7 @@ class CcAtAcesLedgerFallbackTestCase(unittest.TestCase):
             external_id="deposit_stripe:cc",
         )
         rows, remaining = apply_cc_at_aces_ledger_fallback(matched, [cc_ledger])
-        self.assertEqual(rows[0].match_source, "Zelle")
+        self.assertEqual(rows[0].match_source, "RT Zelle")
         self.assertEqual(len(remaining), 1)
 
     def test_fallback_beats_at_cc_chip_transfer(self):
