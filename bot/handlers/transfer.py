@@ -287,7 +287,11 @@ async def transfer_amount_received(update: Update, context: ContextTypes.DEFAULT
         return TRANSFER_AMOUNT
     _mark_expected(context)
 
-    if context.chat_data.get("transfer_admin_initiated") and sender_id is not None:
+    if (
+        context.chat_data.get("transfer_admin_initiated")
+        and sender_id is not None
+        and sender_id not in ADMIN_USER_IDS
+    ):
         context.chat_data["transfer_user_id"] = sender_id
 
     amount = parse_deposit_amount(text)

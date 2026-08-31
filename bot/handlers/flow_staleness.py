@@ -292,7 +292,11 @@ def transfer_amount_actor_allowed(
     if sender_id is None or not looks_like_amount(text):
         return False
     if context.chat_data.get("transfer_admin_initiated"):
-        # Admin starts /transfer; the customer (not a global admin) enters the amount.
+        # A transfer only moves the group's own chips between unions, so the admin
+        # who started it can finish it themselves rather than waiting on the
+        # player. Other admins stay excluded so their chatter cannot fire one.
+        if sender_id == context.chat_data.get("transfer_admin_user_id"):
+            return True
         return sender_id not in ADMIN_USER_IDS
     transferrer_id = context.chat_data.get("transfer_user_id")
     return transferrer_id is not None and sender_id == transferrer_id

@@ -42,6 +42,23 @@ with reason `transfer_escalation`, and ends the conversation. A bare `/transfer`
 never treated as off-script, and staff/admin messages mid-flow are ignored rather
 than escalated.
 
+## Who can run it
+
+Chips always come from the **group's** player — the GG player id is read from the
+group title, never from whoever is typing. So it does not matter who answers the
+prompts.
+
+An admin can therefore run a transfer end to end in a player's chat: send
+`/transfer`, pick the destination, type the amount. The player can also answer an
+admin-started flow, which is the normal case when the admin is just kicking it off.
+Other admins in the group are ignored, so a stray number from someone else in the
+conversation cannot fire a transfer.
+
+This needs **Allow admin commands** (`clubs.allow_admin_commands`) on for the club,
+the same gate `/deposit` and `/cashout` use. With it off, `/transfer` is a silent
+no-op for global admins. Club staff are not global admins, so they run the flow as
+an ordinary participant and can always complete it.
+
 ## Why the claim runs first
 
 There is no balance API. The bot cannot check what a player holds, and a claim

@@ -345,16 +345,44 @@ class AmountAndRunTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out, ConversationHandler.END)
         self.assertEqual(mock_run.await_args.kwargs["amount"], Decimal("50"))
 
-    async def test_admin_started_flow_ignores_an_admins_own_amount(self):
+    async def test_admin_can_complete_the_transfer_themselves(self):
+        """Chips come from the group's player either way, so admins may finish it."""
         update = _text_update("50", user_id=ADMIN_ID)
         context = _context(
             transfer_club_id=RT_ID,
             transfer_chat_id=CHAT_ID,
             transfer_destination="AT",
             transfer_admin_initiated=True,
+            transfer_admin_user_id=ADMIN_ID,
+        )
+        ok = SimpleNamespace(
+            ok=True, failed_leg=None, reason="", claimed_amount=Decimal("50")
         )
         with patch(
             "bot.handlers.flow_staleness.ADMIN_USER_IDS", [ADMIN_ID]
+        ), patch.object(tr, "ADMIN_USER_IDS", [ADMIN_ID]), patch.object(
+            tr, "build_transfer_plan", return_value=_plan()
+        ), patch.object(tr, "run_transfer", AsyncMock(return_value=ok)) as mock_run:
+            out = await tr.transfer_amount_received(update, context)
+
+        self.assertEqual(out, ConversationHandler.END)
+        self.assertEqual(mock_run.await_args.kwargs["amount"], Decimal("50"))
+        # The chat's player owns the chips; the plan carries the group, not the admin.
+        self.assertEqual(mock_run.await_args.kwargs["plan"].chat_id, CHAT_ID)
+
+    async def test_a_different_admins_stray_number_is_ignored(self):
+        """Admins chat in these groups; only the one who ran /transfer can answer."""
+        other_admin = ADMIN_ID + 1
+        update = _text_update("50", user_id=other_admin)
+        context = _context(
+            transfer_club_id=RT_ID,
+            transfer_chat_id=CHAT_ID,
+            transfer_destination="AT",
+            transfer_admin_initiated=True,
+            transfer_admin_user_id=ADMIN_ID,
+        )
+        with patch(
+            "bot.handlers.flow_staleness.ADMIN_USER_IDS", [ADMIN_ID, other_admin]
         ), patch.object(tr, "run_transfer", AsyncMock()) as mock_run:
             out = await tr.transfer_amount_received(update, context)
 
