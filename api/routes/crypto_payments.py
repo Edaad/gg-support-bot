@@ -9,9 +9,11 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from api.method_owner import MethodOwnerSlug
+from api.webhook_ingest_audit import enrich_payment_ingest_success, set_webhook_ingest_error
 from bot.services.crypto_payments import (
     WEBHOOK_SECRET_ENV,
     ingest_crypto_payment,
+    parse_amount_cents,
 )
 from notification.constants import debug_notification_enabled
 
@@ -133,9 +135,11 @@ async def ingest_payment(
     except ValueError as e:
         if debug_notification_enabled():
             logger.warning("crypto ingest: rejected bad request — %s", e)
+        set_webhook_ingest_error(request, str(e))
         raise HTTPException(400, str(e)) from e
     except RuntimeError as e:
         logger.error("crypto ingest: failed — %s", e)
+        set_webhook_ingest_error(request, str(e))
         raise HTTPException(503, str(e)) from e
     except httpx.HTTPStatusError as e:
         logger.error(
@@ -143,13 +147,36 @@ async def ingest_payment(
             e.response.status_code,
             e.response.text[:500],
         )
+        set_webhook_ingest_error(request, "Telegram notification failed")
         raise HTTPException(503, "Telegram notification failed") from e
     except SQLAlchemyError as e:
         logger.exception("crypto ingest: database error")
+        set_webhook_ingest_error(request, "Invalid payment data for database storage")
         raise HTTPException(400, "Invalid payment data for database storage") from e
     except Exception:
         logger.exception("crypto ingest: unhandled error")
+        set_webhook_ingest_error(request, "Internal Server Error")
         raise HTTPException(500, "Internal Server Error") from None
+
+    amount_cents = None
+    try:
+        amount_cents = parse_amount_cents(body.amount)
+    except ValueError:
+        pass
+
+    payer_summary = body.from_entity_name or body.from_address
+    enrich_payment_ingest_success(
+        request,
+        source_external_id=body.source_external_id or body.transaction_hash,
+        payment_id=result.payment_id,
+        method_owner=body.method_owner,
+        payer_summary=payer_summary,
+        amount_cents=amount_cents,
+        is_test=body.test,
+        status=result.status,
+        auto_bound=result.auto_bound,
+        created=result.created,
+    )
 
     return CryptoPaymentIngestResponse(
         payment_id=result.payment_id,

@@ -43,6 +43,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
+from api.webhook_ingest_audit import WebhookIngestMiddleware
 from db.connection import init_engine
 from db.models import Base
 
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(WebhookIngestMiddleware)
 
     @app.on_event("startup")
     def on_startup():

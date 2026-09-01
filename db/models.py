@@ -2551,3 +2551,35 @@ class SupportGroupIdleEpisodeState(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class WebhookIngestRequest(Base):
+    """Append-only audit log for payment ingest and Stripe webhook HTTP requests."""
+
+    __tablename__ = "webhook_ingest_requests"
+    __table_args__ = (
+        Index("ix_wir_source_created_at", "source", "created_at"),
+        Index("ix_wir_outcome_created_at", "outcome", "created_at"),
+        Index("ix_wir_source_external_id", "source_external_id"),
+        Index("ix_wir_payment_id", "payment_id"),
+        Index("ix_wir_stripe_checkout_session_id", "stripe_checkout_session_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    source = Column(String(32), nullable=False)
+    endpoint_path = Column(String(255), nullable=False)
+    http_status_code = Column(Integer, nullable=False)
+    outcome = Column(String(32), nullable=False)
+    duration_ms = Column(Integer, nullable=False)
+    source_external_id = Column(String(255), nullable=True)
+    payment_id = Column(Integer, nullable=True)
+    method_owner = Column(String(32), nullable=True)
+    payer_summary = Column(String(64), nullable=True)
+    amount_cents = Column(Integer, nullable=True)
+    is_test = Column(Boolean, nullable=True)
+    stripe_event_type = Column(String(64), nullable=True)
+    stripe_checkout_session_id = Column(String(255), nullable=True)
+    error_message = Column(Text, nullable=True)
+    request_body = Column(JSONB, nullable=True)
+    response_json = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
