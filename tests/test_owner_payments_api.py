@@ -52,14 +52,36 @@ class OwnerPaymentsApiTestCase(unittest.TestCase):
         response = client.get("/api/payments/owner/round-table/payments?method=venmo")
         self.assertIn(response.status_code, (401, 403))
 
-    def test_vaughn_rejects_crypto(self):
-        client = TestClient(_make_app())
-        response = client.get(
-            "/api/payments/owner/vaughn/payments?method=crypto",
-            headers={"Authorization": f"Bearer {TOKEN}"},
-        )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("not available", response.json()["detail"].lower())
+    def test_vaughn_allows_crypto(self):
+        mock_db = MagicMock()
+        chain = mock_db.query.return_value
+        chain.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []
+        with (
+            patch(
+                "api.routes.owner_payments.apply_owner_ingest_filters",
+                side_effect=lambda query, *args, **kwargs: query,
+            ) as mock_filters,
+            patch(
+                "api.routes.owner_payments.aggregate_owner_payment_query",
+                return_value=(0, 0),
+            ),
+            patch.dict(
+                "api.routes.owner_payments._BUILD_READ_BY_METHOD",
+                {"crypto": lambda _db, _row: {}},
+            ),
+            patch.dict(
+                "api.routes.owner_payments._READ_MODEL_BY_METHOD",
+                {"crypto": MagicMock(model_validate=lambda payload: payload)},
+            ),
+        ):
+            client = TestClient(_make_app(mock_db))
+            response = client.get(
+                "/api/payments/owner/vaughn/payments?method=crypto",
+                headers={"Authorization": f"Bearer {TOKEN}"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["method"], "crypto")
+        self.assertEqual(mock_filters.call_args.kwargs.get("method_owner"), "vaughn")
 
     def test_stripe_only_on_round_table(self):
         client = TestClient(_make_app())

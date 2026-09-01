@@ -986,7 +986,7 @@ OWNER_VARIANT_COLUMNS: dict[str, str] = {
 
 OWNER_METHODS_BY_OWNER: dict[str, frozenset[str]] = {
     "round-table": frozenset({"stripe", "venmo", "zelle", "cashapp", "paypal", "crypto"}),
-    "vaughn": frozenset({"venmo", "zelle"}),
+    "vaughn": frozenset({"venmo", "zelle", "crypto"}),
     "mateos": frozenset({"venmo", "zelle"}),
 }
 

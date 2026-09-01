@@ -11,7 +11,7 @@ export const OWNER_TABS: { id: OwnerTab; label: string }[] = [
 
 export const METHODS_BY_OWNER: Record<OwnerSlug, OwnerMethod[]> = {
   'round-table': ['stripe', 'venmo', 'zelle', 'cashapp', 'paypal', 'crypto'],
-  vaughn: ['zelle', 'venmo'],
+  vaughn: ['zelle', 'venmo', 'crypto'],
   mateos: ['zelle', 'venmo'],
 }
 
