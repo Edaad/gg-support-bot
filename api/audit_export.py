@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from api.club_audit_timezone import (
     audit_day_bounds_utc as club_audit_day_bounds_utc,
     audit_day_window_utc as club_audit_day_window_utc,
-    occurred_at_in_audit_day,
+    occurred_at_in_partner_audit_day,
     union_audit_day_window_utc,
     zone_for_payment_display,
     zone_for_slug,
@@ -419,7 +419,7 @@ def _payment_in_audit_day(
     if occurred_at is None:
         return False
     slug = _slug_for_payment_club(session, club_id, data)
-    return occurred_at_in_audit_day(occurred_at, slug, audit_date)
+    return occurred_at_in_partner_audit_day(occurred_at, slug, audit_date)
 
 
 def _parse_audit_date_str(audit_date: str):

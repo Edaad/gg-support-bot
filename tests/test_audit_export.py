@@ -26,6 +26,7 @@ from api.audit_export import (
     _manual_club_name,
     _manual_group_cell,
     _manual_row,
+    _payment_in_audit_day,
     _stripe_player_cell,
     _tagged_manual_row,
     audit_day_window_utc,
@@ -81,6 +82,19 @@ class AuditExportFormattingTestCase(unittest.TestCase):
     def test_eastern_audit_end_utc_edt(self):
         end = eastern_audit_end_utc("2026-06-21")
         self.assertEqual(end, datetime(2026, 6, 22, 3, 59, 59, 999999, tzinfo=timezone.utc))
+
+    def test_payment_in_audit_day_uses_partner_window_for_round_table(self):
+        session = MagicMock()
+        ts = datetime(2026, 8, 31, 4, 17, 5, tzinfo=timezone.utc)
+        with patch("api.audit_export._slug_for_payment_club", return_value="round-table"):
+            self.assertTrue(
+                _payment_in_audit_day(
+                    session,
+                    audit_date="2026-08-30",
+                    club_id=2,
+                    occurred_at=ts,
+                )
+            )
 
     def test_eastern_audit_end_utc_est(self):
         end = eastern_audit_end_utc("2026-01-15")

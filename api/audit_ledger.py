@@ -17,7 +17,11 @@ from typing import Callable, Iterator
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from api.club_audit_timezone import audit_day_window_utc, occurred_at_in_audit_day
+from api.club_audit_timezone import (
+    audit_partner_slugs,
+    occurred_at_in_partner_audit_day,
+    partner_audit_day_window_utc,
+)
 from api.club_slug import resolve_club_id, slug_for_club_id
 from api.payments_helpers import (
     apply_analytics_payment_exclusion,
@@ -301,10 +305,11 @@ def payment_in_audit_day_for_club(
 ) -> bool:
     if occurred_at is None:
         return False
-    slug = slug_for_payment_club(session, club_id, data)
-    if slug != club_slug.strip().lower():
+    requested = club_slug.strip().lower()
+    payment_slug = slug_for_payment_club(session, club_id, data)
+    if payment_slug not in audit_partner_slugs(requested):
         return False
-    return occurred_at_in_audit_day(occurred_at, slug, audit_date)
+    return occurred_at_in_partner_audit_day(occurred_at, requested, audit_date)
 
 
 def _apply_audit_manual_filters(
@@ -442,7 +447,7 @@ def fetch_deposit_events(
     audit_date: date,
 ) -> list[LedgerEvent]:
     slug = club_slug.strip().lower()
-    from_dt, to_dt = audit_day_window_utc(slug, audit_date)
+    from_dt, to_dt = partner_audit_day_window_utc(slug, audit_date)
     events: list[LedgerEvent] = []
 
     stripe_query = _apply_audit_stripe_filters(
@@ -751,7 +756,7 @@ def fetch_bonus_events(
 ) -> list[LedgerEvent]:
     slug = club_slug.strip().lower()
     club_id = resolve_club_id(session, slug)
-    from_dt, to_dt = audit_day_window_utc(slug, audit_date)
+    from_dt, to_dt = partner_audit_day_window_utc(slug, audit_date)
     rows = (
         session.query(BonusRecord)
         .filter(
@@ -801,7 +806,7 @@ def fetch_cashout_events(
 ) -> list[LedgerEvent]:
     slug = club_slug.strip().lower()
     club_id = resolve_club_id(session, slug)
-    from_dt, to_dt = audit_day_window_utc(slug, audit_date)
+    from_dt, to_dt = partner_audit_day_window_utc(slug, audit_date)
     rows = (
         session.query(StaffCashoutRecord)
         .options(joinedload(StaffCashoutRecord.payments))

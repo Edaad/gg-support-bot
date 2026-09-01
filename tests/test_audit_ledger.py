@@ -14,16 +14,15 @@ from api.audit_ledger import (
     cashout_source_label,
     fetch_cashout_events,
     LedgerEvent,
+    payment_in_audit_day_for_club,
 )
 
 
 class ManualDepositEventsTestCase(unittest.TestCase):
     @patch("api.audit_ledger.payment_in_audit_day_for_club", return_value=True)
     @patch("api.audit_ledger._apply_audit_manual_filters")
-    @patch("api.audit_ledger.audit_day_window_utc")
     def test_skips_resolve_group_title_when_chat_id_missing(
         self,
-        _mock_window,
         mock_filters,
         _mock_in_day,
     ):
@@ -111,9 +110,39 @@ class BuildLedgerLinesSourceLabelTestCase(unittest.TestCase):
         self.assertEqual(lines[0].source_label, "Cashout")
 
 
+class PaymentInAuditDayForClubTestCase(unittest.TestCase):
+    def test_round_table_payment_counts_for_aces_slug_at_boundary(self):
+        session = MagicMock()
+        ts = datetime(2026, 8, 31, 4, 17, 5, tzinfo=timezone.utc)
+        rt_club = MagicMock()
+        rt_club.id = 1
+        rt_club.name = "Round Table"
+        session.query.return_value.filter.return_value.first.return_value = rt_club
+
+        with patch("api.audit_ledger.slug_for_club_id", return_value="round-table"):
+            self.assertTrue(
+                payment_in_audit_day_for_club(
+                    session,
+                    club_slug="aces-table",
+                    audit_date=date(2026, 8, 30),
+                    club_id=1,
+                    occurred_at=ts,
+                )
+            )
+            self.assertTrue(
+                payment_in_audit_day_for_club(
+                    session,
+                    club_slug="round-table",
+                    audit_date=date(2026, 8, 30),
+                    club_id=1,
+                    occurred_at=ts,
+                )
+            )
+
+
 class FetchCashoutEventsTestCase(unittest.TestCase):
     @patch("api.audit_ledger.payment_in_audit_day_for_club", return_value=True)
-    @patch("api.audit_ledger.audit_day_window_utc")
+    @patch("api.audit_ledger.partner_audit_day_window_utc")
     @patch("api.audit_ledger.resolve_club_id", return_value=4)
     def test_labels_from_payments(
         self,

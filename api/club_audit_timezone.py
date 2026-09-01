@@ -119,6 +119,50 @@ def union_audit_day_window_utc(date_val: date | str) -> tuple[datetime, datetime
     return min(starts), max(ends)
 
 
+# RT/CC pool-pay deposits reconcile against both home club and Aces trade records.
+_AUDIT_PARTNER_SLUGS: dict[str, frozenset[str]] = {
+    "round-table": frozenset({"round-table", "aces-table"}),
+    "creator-club": frozenset({"creator-club", "aces-table"}),
+    "aces-table": frozenset({"aces-table", "round-table", "creator-club"}),
+}
+
+
+def audit_partner_slugs(slug: str) -> frozenset[str]:
+    """Slugs whose audit-day windows apply when bucketing payments for slug."""
+    key = slug.strip().lower()
+    return _AUDIT_PARTNER_SLUGS.get(key, frozenset({key}))
+
+
+def partner_audit_day_window_utc(
+    slug: str,
+    date_val: date | str,
+) -> tuple[datetime, datetime]:
+    """Union of partner audit-day UTC bounds (min start, max end inclusive)."""
+    starts: list[datetime] = []
+    ends: list[datetime] = []
+    for partner in audit_partner_slugs(slug):
+        start, end = audit_day_window_utc(partner, date_val)
+        starts.append(start)
+        ends.append(end)
+    return min(starts), max(ends)
+
+
+def occurred_at_in_partner_audit_day(
+    ts: datetime,
+    slug: str,
+    date_val: date | str,
+) -> bool:
+    """True if ts falls in any partner audit-day window for slug + date."""
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    else:
+        ts = ts.astimezone(timezone.utc)
+    return any(
+        occurred_at_in_audit_day(ts, partner, date_val)
+        for partner in audit_partner_slugs(slug)
+    )
+
+
 def parse_row_datetime(
     raw: Any,
     audit_date: date,
