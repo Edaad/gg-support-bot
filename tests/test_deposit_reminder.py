@@ -40,7 +40,11 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
                     "bot.services.escalation_notification.clear_deposit_chase_after_payment",
                     new_callable=AsyncMock,
                 ) as clear_chase:
-                    await deposit_module._deposit_reminder_callback(context)
+                    with patch(
+                        "bot.services.deposit_incomplete_watch.notify_deposit_incomplete_escalation",
+                        new_callable=AsyncMock,
+                    ):
+                        await deposit_module._deposit_reminder_callback(context)
 
         clear_chase.assert_awaited_once()
         self.assertEqual(bot.delete_message.await_count, 3)
@@ -84,6 +88,10 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch(
                 "bot.services.escalation_notification.clear_deposit_chase_after_payment",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "bot.services.deposit_incomplete_watch.notify_deposit_incomplete_escalation",
                 new_callable=AsyncMock,
             ),
         ):
@@ -136,6 +144,10 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
                 "bot.services.escalation_notification.clear_deposit_chase_after_payment",
                 new_callable=AsyncMock,
             ),
+            patch(
+                "bot.services.deposit_incomplete_watch.notify_deposit_incomplete_escalation",
+                new_callable=AsyncMock,
+            ),
         ):
             await deposit_module._deposit_reminder_callback(context)
 
@@ -171,9 +183,13 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
                     "bot.services.escalation_notification.clear_deposit_chase_after_payment",
                     new_callable=AsyncMock,
                 ) as clear_chase:
-                    await deposit_module._deposit_reminder_callback(context)
+                    with patch(
+                        "bot.services.deposit_incomplete_watch.delete_deposit_incomplete_watch",
+                    ) as delete_watch:
+                        await deposit_module._deposit_reminder_callback(context)
 
         clear_chase.assert_awaited_once()
+        delete_watch.assert_called_once_with(chat_id)
         bot.send_message.assert_not_awaited()
         bot.delete_message.assert_not_awaited()
         self.assertNotIn(chat_id, deposit_module._DEPOSIT_INFO_MESSAGE_IDS)
@@ -281,7 +297,11 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
                     "bot.services.escalation_notification.clear_deposit_chase_after_payment",
                     new_callable=AsyncMock,
                 ) as clear_chase:
-                    await deposit_module._deposit_reminder_callback(context)
+                    with patch(
+                        "bot.services.deposit_incomplete_watch.notify_deposit_incomplete_escalation",
+                        new_callable=AsyncMock,
+                    ):
+                        await deposit_module._deposit_reminder_callback(context)
 
         clear_chase.assert_not_awaited()
         bot.send_message.assert_awaited_once()
@@ -612,6 +632,91 @@ class DepositTimeoutSkipTests(unittest.IsolatedAsyncioTestCase):
         body = context.bot.send_message.await_args.kwargs["text"]
         self.assertIn("canceling your request", body)
         abandon.assert_called_once()
+
+    async def test_reminder_fires_incomplete_deposit_slack(self):
+        chat_id = -100200
+        deposit_module._DEPOSIT_INFO_MESSAGE_IDS[chat_id] = [40]
+
+        bot = AsyncMock()
+        bot.send_message = AsyncMock()
+        bot.delete_message = AsyncMock()
+
+        job = MagicMock()
+        job.chat_id = chat_id
+        job.data = {
+            "club_id": 2,
+            "scheduled_at": datetime.now(timezone.utc).isoformat(),
+        }
+        context = MagicMock()
+        context.job = job
+        context.bot = bot
+
+        with (
+            patch.object(deposit_module, "_should_skip_deposit_reminder", return_value=False),
+            patch(
+                "bot.services.group_activity.deposit_sent_watch_armed",
+                return_value=False,
+            ),
+            patch(
+                "bot.services.escalation_notification.clear_deposit_chase_after_payment",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "bot.services.club.get_group_name",
+                return_value="GTO / 1 / Nick",
+            ),
+            patch(
+                "bot.services.deposit_incomplete_watch.notify_deposit_incomplete_escalation",
+                new_callable=AsyncMock,
+            ) as notify_incomplete,
+        ):
+            await deposit_module._deposit_reminder_callback(context)
+
+        notify_incomplete.assert_awaited_once_with(
+            chat_id=chat_id,
+            club_id=2,
+            title="GTO / 1 / Nick",
+        )
+
+    def test_cancel_for_chat_clears_incomplete_watch(self):
+        chat_id = -100201
+        pending_job = MagicMock()
+        app = MagicMock()
+        app.job_queue.get_jobs_by_name.return_value = [pending_job]
+        deposit_module.register_deposit_reminder_runtime(app)
+
+        with patch(
+            "bot.services.deposit_incomplete_watch.cancel_deposit_incomplete_watch",
+        ) as cancel_watch:
+            deposit_module.cancel_deposit_reminder_for_chat(chat_id)
+
+        cancel_watch.assert_called_once_with(chat_id, job_queue=None)
+
+    def test_schedule_reminder_arms_incomplete_watch(self):
+        chat_id = -100202
+        context = MagicMock()
+        context.job_queue.get_jobs_by_name.return_value = []
+        context.job_queue.run_once = MagicMock()
+
+        with (
+            patch(
+                "bot.services.club.get_group_title_for_chat",
+                return_value=("GTO / 1 / Nick", 2),
+            ),
+            patch(
+                "bot.services.deposit_incomplete_watch.arm_deposit_incomplete_watch",
+            ) as arm_watch,
+        ):
+            deposit_module._schedule_deposit_reminder(
+                context, club_id=2, chat_id=chat_id, user_id=999
+            )
+
+        arm_watch.assert_called_once()
+        kwargs = arm_watch.call_args.kwargs
+        self.assertEqual(kwargs["telegram_chat_id"], chat_id)
+        self.assertEqual(kwargs["club_id"], 2)
+        self.assertEqual(kwargs["customer_telegram_user_id"], 999)
+        self.assertEqual(kwargs["group_title"], "GTO / 1 / Nick")
 
 
 if __name__ == "__main__":

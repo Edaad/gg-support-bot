@@ -1013,6 +1013,23 @@ class SupportGroupChat(Base):
     )
 
 
+class DepositIncompleteWatch(Base):
+    """One active 10m incomplete-deposit escalation watch per support group chat."""
+
+    __tablename__ = "deposit_incomplete_watches"
+    __table_args__ = (Index("ix_deposit_incomplete_watches_armed_at", "armed_at"),)
+
+    telegram_chat_id = Column(BigInteger, primary_key=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    customer_telegram_user_id = Column(BigInteger, nullable=True)
+    group_title = Column(Text, nullable=True)
+    armed_at = Column(DateTime(timezone=True), nullable=False)
+
+    club = relationship("Club")
+
+
 class MigratedGroupRecovery(Base):
     """Queue for one-shot direct-add recovery after basic-group → supergroup migration."""
 

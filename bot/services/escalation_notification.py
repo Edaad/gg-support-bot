@@ -29,6 +29,7 @@ REASON_PLAYER_IDLE = "player_idle"
 REASON_PLAYER_IDLE_FOLLOWUP = "player_idle_followup"
 REASON_CASHOUT_STARTED = "cashout_started"
 REASON_DEPOSIT_SENT_TIMEOUT = "deposit_sent_timeout"
+REASON_DEPOSIT_INCOMPLETE = "deposit_incomplete"
 REASON_DEPOSIT_SENT_FOLLOWUP = "deposit_sent_followup"
 REASON_DEPOSIT_SENT_UNBOUND = "deposit_sent_unbound"
 REASON_DEPOSIT_PLAYER_MESSAGE = "deposit_player_message"
@@ -62,6 +63,10 @@ _HEADLINES = {
     REASON_DEPOSIT_SENT_TIMEOUT: (
         "5 minutes have passed since the player said they sent the payment — "
         "please look out for a payment in this group chat."
+    ),
+    REASON_DEPOSIT_INCOMPLETE: (
+        "10 minutes have passed since deposit instructions were sent — "
+        "no payment received or chips added. Please follow up."
     ),
     REASON_DEPOSIT_SENT_FOLLOWUP: (
         "Player sent a message after confirming they sent the payment."
@@ -131,6 +136,16 @@ def register_escalation_notification_runtime(app: Any) -> None:
     except Exception:
         logger.warning(
             "escalation: restore deposit sent watches failed", exc_info=True
+        )
+    try:
+        from bot.services.deposit_incomplete_watch import (
+            restore_deposit_incomplete_watches,
+        )
+
+        restore_deposit_incomplete_watches(getattr(app, "job_queue", None))
+    except Exception:
+        logger.warning(
+            "escalation: restore deposit incomplete watches failed", exc_info=True
         )
     try:
         from bot.services.support_group_idle_episode import (

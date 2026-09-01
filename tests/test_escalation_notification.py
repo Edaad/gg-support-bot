@@ -344,6 +344,20 @@ class EscalationCopyTests(unittest.TestCase):
             text,
         )
 
+    def test_deposit_incomplete_headline(self):
+        with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
+            text = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_INCOMPLETE,
+                club_id=1,
+                chat_id=-100,
+                title="GTO / 1 / Nick",
+            )
+        self.assertIn(
+            "*10 minutes have passed since deposit instructions were sent — "
+            "no payment received or chips added. Please follow up.*",
+            text,
+        )
+
     def test_new_player_onboarded_copy(self):
         with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
             text = esc.format_escalation_slack_text(

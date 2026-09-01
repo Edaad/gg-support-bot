@@ -1014,6 +1014,18 @@ async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None
         # Payment notify runs on the API process and cannot cancel this worker
         # job. Keep instructions in the group as the deposit paper trail.
         _DEPOSIT_INFO_MESSAGE_IDS.pop(chat_id, None)
+        try:
+            from bot.services.deposit_incomplete_watch import (
+                delete_deposit_incomplete_watch,
+            )
+
+            delete_deposit_incomplete_watch(chat_id)
+        except Exception:
+            logger.debug(
+                "deposit_reminder: clear incomplete watch failed chat_id=%s",
+                chat_id,
+                exc_info=True,
+            )
         return
 
     tracked_count = len(_DEPOSIT_INFO_MESSAGE_IDS.get(chat_id, []))
@@ -1045,6 +1057,27 @@ async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None
             "Failed to send deposit reminder to chat_id=%s", chat_id, exc_info=True
         )
 
+    try:
+        from bot.services.club import get_group_name
+        from bot.services.deposit_incomplete_watch import (
+            notify_deposit_incomplete_escalation,
+        )
+
+        title = (job_data.get("group_title") or "").strip() or None
+        if not title:
+            title = get_group_name(chat_id)
+        await notify_deposit_incomplete_escalation(
+            chat_id=chat_id,
+            club_id=int(club_id) if club_id is not None else None,
+            title=title,
+        )
+    except Exception:
+        logger.warning(
+            "deposit_reminder: incomplete escalation failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+
 
 def _schedule_deposit_reminder(
     context: ContextTypes.DEFAULT_TYPE,
@@ -1055,6 +1088,19 @@ def _schedule_deposit_reminder(
     """Schedule a follow-up reminder 10 minutes after a deposit completes."""
     if not club_id or not chat_id:
         return
+    armed_at = datetime.now(timezone.utc)
+    group_title: str | None = None
+    try:
+        from bot.services.club import get_group_title_for_chat
+
+        group_title, _ = get_group_title_for_chat(int(chat_id))
+        group_title = (group_title or "").strip() or None
+    except Exception:
+        logger.debug(
+            "deposit_reminder: group title lookup failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
     try:
         name = _reminder_job_name(chat_id)
         for job in context.job_queue.get_jobs_by_name(name):
@@ -1065,12 +1111,31 @@ def _schedule_deposit_reminder(
             chat_id=int(chat_id),
             data={
                 "club_id": club_id,
-                "scheduled_at": datetime.now(timezone.utc).isoformat(),
+                "scheduled_at": armed_at.isoformat(),
+                "group_title": group_title,
             },
             name=name,
         )
         if user_id:
             _PENDING_DEPOSIT_REMINDERS[int(chat_id)] = int(user_id)
+        try:
+            from bot.services.deposit_incomplete_watch import (
+                arm_deposit_incomplete_watch,
+            )
+
+            arm_deposit_incomplete_watch(
+                telegram_chat_id=int(chat_id),
+                club_id=int(club_id),
+                customer_telegram_user_id=int(user_id) if user_id else None,
+                group_title=group_title,
+                armed_at=armed_at,
+            )
+        except Exception:
+            logger.warning(
+                "deposit_reminder: arm incomplete watch failed chat_id=%s",
+                chat_id,
+                exc_info=True,
+            )
         logger.info(
             "deposit_reminder scheduled chat_id=%s in %ss tracked_messages=%s",
             chat_id,
@@ -1091,6 +1156,18 @@ def cancel_deposit_reminder_for_chat(
     """Cancel pending deposit follow-up for a chat (handlers, payment notify, etc.)."""
     _PENDING_DEPOSIT_REMINDERS.pop(int(chat_id), None)
     _DEPOSIT_INFO_MESSAGE_IDS.pop(int(chat_id), None)
+    try:
+        from bot.services.deposit_incomplete_watch import (
+            cancel_deposit_incomplete_watch,
+        )
+
+        cancel_deposit_incomplete_watch(int(chat_id), job_queue=job_queue)
+    except Exception:
+        logger.debug(
+            "deposit_reminder: cancel incomplete watch failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
     queue = job_queue
     if queue is None and _deposit_reminder_app is not None:
         queue = getattr(_deposit_reminder_app, "job_queue", None)
