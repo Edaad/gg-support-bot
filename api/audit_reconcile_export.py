@@ -45,6 +45,9 @@ from api.vaughn_methods import (
     owner_matching_source_options,
 )
 
+# Temporarily off: ClubGTO cashout auto-matching + Source labelling in export.
+CLUBGTO_CASHOUT_LABELING_ENABLED = False
+
 _HEADER_FILL = PatternFill("solid", fgColor="38761D")
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _SECTION_FONT = Font(bold=True, size=12)
@@ -305,6 +308,37 @@ def _unresolved_table_display_name(suffix: str = "all") -> str:
     return f"Unresolved_{safe or 'all'}"
 
 
+def _clubgto_ledger_for_matching(
+    ledger_lines: list[LedgerLine],
+    *,
+    club_slug: str,
+) -> tuple[list[LedgerLine], list[LedgerLine]]:
+    """When ClubGTO cashout labeling is off, exclude cashouts from the match pool."""
+    if CLUBGTO_CASHOUT_LABELING_ENABLED or club_slug.strip().lower() != "clubgto":
+        return ledger_lines, []
+    non_cashouts = [line for line in ledger_lines if line.source != "cashout"]
+    cashouts = [line for line in ledger_lines if line.source == "cashout"]
+    return non_cashouts, cashouts
+
+
+def _unresolved_source_label(line: LedgerLine, club_slug: str) -> str | None:
+    label_slug = (line.club_slug or club_slug or "").strip().lower()
+    if (
+        not CLUBGTO_CASHOUT_LABELING_ENABLED
+        and label_slug == "clubgto"
+        and line.source == "cashout"
+    ):
+        return None
+    return matching_source_label(
+        source=line.source,
+        variant=line.variant,
+        club_slug=label_slug,
+        source_label=line.source_label,
+        memo=line.memo,
+        method_owner=line.method_owner,
+    )
+
+
 def _write_unresolved_sheet(
     ws: Worksheet,
     rows: list[tuple[LedgerLine, str, str]],
@@ -321,18 +355,10 @@ def _write_unresolved_sheet(
     row_idx = header_row + 1
     amount_col = 3
     for line, club_slug, club_name in rows:
-        label_slug = (line.club_slug or club_slug or "").strip() or club_slug
         ws.cell(
             row=row_idx,
             column=1,
-            value=matching_source_label(
-                source=line.source,
-                variant=line.variant,
-                club_slug=label_slug,
-                source_label=line.source_label,
-                memo=line.memo,
-                method_owner=line.method_owner,
-            ),
+            value=_unresolved_source_label(line, club_slug),
         )
         ws.cell(
             row=row_idx,
@@ -870,11 +896,20 @@ def build_all_clubs_matching_workbook(
     other_matches: dict[str, TradeLedgerMatchResult] = {}
     for slug in ("clubgto", "creator-club"):
         report = reports_by_slug[slug]
-        result = match_trade_lines_to_ledger(
-            report.trade_lines,
+        ledger_for_match, forced_unmatched_cashouts = _clubgto_ledger_for_matching(
             report.ledger_lines,
             club_slug=report.club_slug,
         )
+        result = match_trade_lines_to_ledger(
+            report.trade_lines,
+            ledger_for_match,
+            club_slug=report.club_slug,
+        )
+        if forced_unmatched_cashouts:
+            result = TradeLedgerMatchResult(
+                rows=result.rows,
+                unmatched_ledger=result.unmatched_ledger + forced_unmatched_cashouts,
+            )
         other_matches[slug] = result
         all_rows.extend(result.rows)
 
