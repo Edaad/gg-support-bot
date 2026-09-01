@@ -28,6 +28,7 @@ from api.club_slug import (
     resolve_club_id,
 )
 from api.payments_helpers import lookup_gg_nickname
+from bot.services.player_details import parse_group_title_parts
 from api.gg_computer_settlement import (
     SettlementFetchError,
     fetch_netted_settlement_events,
@@ -236,6 +237,43 @@ def _stamp_ledger_events(
     return [replace(event, club_slug=slug) for event in events]
 
 
+def _home_club_slug_from_detail(detail: str | None) -> str | None:
+    """Infer ledger home club from support group title tokens (RT, AT, etc.)."""
+    parsed = parse_group_title_parts(detail)
+    if not parsed:
+        return None
+    for token in sorted(parsed.shorthands):
+        if token == "AT":
+            return "aces-table"
+        if token == "RT":
+            return "round-table"
+        if token == "GTO":
+            return "clubgto"
+        if token == "CC":
+            return "creator-club"
+    return None
+
+
+def _dedupe_ledger_events(events: list[LedgerEvent]) -> list[LedgerEvent]:
+    """Drop duplicate external_id rows from partner-slug double-fetch (RT composite)."""
+    by_external: dict[str, LedgerEvent] = {}
+    order: list[str] = []
+    for event in events:
+        eid = event.external_id
+        if eid not in by_external:
+            by_external[eid] = event
+            order.append(eid)
+            continue
+        existing = by_external[eid]
+        home = _home_club_slug_from_detail(existing.detail) or _home_club_slug_from_detail(
+            event.detail
+        )
+        if home and (existing.club_slug or "").strip().lower() != home:
+            if (event.club_slug or "").strip().lower() == home:
+                by_external[eid] = event
+    return [by_external[eid] for eid in order]
+
+
 def _ledger_events_for_club(
     session: Session,
     *,
@@ -362,7 +400,7 @@ def _ledger_events_for_clubs(
         else:
             warnings.append(f"Non-Monday audit day for {slug}; monday_settlement = 0")
 
-    return events, None
+    return _dedupe_ledger_events(events), None
 
 
 def _trade_nicknames_from_upload(

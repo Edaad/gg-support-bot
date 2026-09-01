@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from collections import Counter
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -20,7 +21,7 @@ from api.audit_ledger import (
     LedgerLine,
     UNION_MATCHING_SOURCE_OPTIONS,
 )
-from api.audit_reconcile import AuditReconcileReport
+from api.audit_reconcile import AuditReconcileReport, _home_club_slug_from_detail
 from api.audit_reconcile_matching import (
     BACK_TO_CLUB_LABEL,
     CHIP_TRANSFER_AT_CC_LABEL,
@@ -34,6 +35,7 @@ from api.audit_reconcile_matching import (
     apply_cc_at_aces_ledger_fallback,
     apply_chip_transfer_matches,
     apply_trade_record_source_overrides,
+    is_cc_at_group_title,
     match_trade_lines_to_ledger,
 )
 from api.club_audit_timezone import zone_for_payment_display
@@ -873,6 +875,53 @@ def _partition_matching_rows(
     return by_slug
 
 
+def _composite_rt_ledger_for_match(ledger_lines: list[LedgerLine]) -> list[LedgerLine]:
+    """RT/AT composite pool: CC-home and CC AT lines match via Creator Club fallback only."""
+    out: list[LedgerLine] = []
+    for line in ledger_lines:
+        if is_cc_at_group_title(line.detail):
+            continue
+        if _home_club_slug_from_detail(line.detail) == "creator-club":
+            continue
+        out.append(line)
+    return out
+
+
+def _ledger_consumed_external_ids(
+    ledger_lines: list[LedgerLine],
+    unmatched: list[LedgerLine],
+) -> set[str]:
+    unmatched_counts = Counter(line.external_id for line in unmatched)
+    ledger_counts = Counter(line.external_id for line in ledger_lines)
+    return {
+        eid
+        for eid, total in ledger_counts.items()
+        if total > unmatched_counts.get(eid, 0)
+    }
+
+
+def _append_unresolved_if_orphan(
+    unresolved_rows: list[tuple[LedgerLine, str, str]],
+    lines: list[LedgerLine],
+    *,
+    consumed_global: set[str],
+    seen_external: set[str],
+    default_club_slug: str,
+    default_club_name: str,
+) -> None:
+    """Add ledger lines to Unresolved unless matched in any club pool or already listed."""
+    for line in lines:
+        eid = line.external_id
+        if eid in consumed_global or eid in seen_external:
+            continue
+        seen_external.add(eid)
+        line_slug = (line.club_slug or default_club_slug or "").strip().lower()
+        if line_slug not in MATCHING_CLUB_DISPLAY:
+            line_slug = default_club_slug
+        club_name = MATCHING_CLUB_DISPLAY.get(line_slug, default_club_name)
+        unresolved_rows.append((line, line_slug, club_name))
+
+
 def build_all_clubs_matching_workbook(
     reports_by_slug: dict[str, AuditReconcileReport],
 ) -> bytes:
@@ -887,19 +936,23 @@ def build_all_clubs_matching_workbook(
     unresolved_rows: list[tuple[LedgerLine, str, str]] = []
 
     rt_report = reports_by_slug["round-table"]
+    rt_ledger = _composite_rt_ledger_for_match(rt_report.ledger_lines)
     rt_match = match_trade_lines_to_ledger(
         rt_report.trade_lines,
-        rt_report.ledger_lines,
+        rt_ledger,
         club_slug=rt_report.club_slug,
     )
     all_rows: list[MatchedTradeRow] = list(rt_match.rows)
     other_matches: dict[str, TradeLedgerMatchResult] = {}
+    gto_ledger_for_match: list[LedgerLine] = []
     for slug in ("clubgto", "creator-club"):
         report = reports_by_slug[slug]
         ledger_for_match, forced_unmatched_cashouts = _clubgto_ledger_for_matching(
             report.ledger_lines,
             club_slug=report.club_slug,
         )
+        if slug == "clubgto":
+            gto_ledger_for_match = ledger_for_match
         result = match_trade_lines_to_ledger(
             report.trade_lines,
             ledger_for_match,
@@ -913,6 +966,7 @@ def build_all_clubs_matching_workbook(
         other_matches[slug] = result
         all_rows.extend(result.rows)
 
+    cc_report = reports_by_slug["creator-club"]
     all_rows, cc_unmatched_ledger = apply_cc_at_aces_ledger_fallback(
         all_rows,
         other_matches["creator-club"].unmatched_ledger,
@@ -949,19 +1003,41 @@ def build_all_clubs_matching_workbook(
         )
         _set_column_widths(ws, MATCHING_WIDTHS)
 
-    for line in rt_match.unmatched_ledger:
-        line_slug = (line.club_slug or "round-table").strip().lower()
-        if line_slug not in MATCHING_CLUB_DISPLAY:
-            line_slug = "round-table"
-        unresolved_rows.append(
-            (line, line_slug, MATCHING_CLUB_DISPLAY[line_slug])
-        )
-    for line in other_matches["clubgto"].unmatched_ledger:
-        report = reports_by_slug["clubgto"]
-        unresolved_rows.append((line, report.club_slug, report.club_name))
-    cc_report = reports_by_slug["creator-club"]
-    for line in cc_unmatched_ledger:
-        unresolved_rows.append((line, cc_report.club_slug, cc_report.club_name))
+    consumed_global = _ledger_consumed_external_ids(rt_ledger, rt_match.unmatched_ledger)
+    consumed_global |= _ledger_consumed_external_ids(
+        cc_report.ledger_lines,
+        cc_unmatched_ledger,
+    )
+    consumed_global |= _ledger_consumed_external_ids(
+        gto_ledger_for_match,
+        other_matches["clubgto"].unmatched_ledger,
+    )
+    seen_external: set[str] = set()
+    _append_unresolved_if_orphan(
+        unresolved_rows,
+        rt_match.unmatched_ledger,
+        consumed_global=consumed_global,
+        seen_external=seen_external,
+        default_club_slug=rt_report.club_slug,
+        default_club_name=rt_report.club_name,
+    )
+    gto_report = reports_by_slug["clubgto"]
+    _append_unresolved_if_orphan(
+        unresolved_rows,
+        other_matches["clubgto"].unmatched_ledger,
+        consumed_global=consumed_global,
+        seen_external=seen_external,
+        default_club_slug=gto_report.club_slug,
+        default_club_name=gto_report.club_name,
+    )
+    _append_unresolved_if_orphan(
+        unresolved_rows,
+        cc_unmatched_ledger,
+        consumed_global=consumed_global,
+        seen_external=seen_external,
+        default_club_slug=cc_report.club_slug,
+        default_club_name=cc_report.club_name,
+    )
 
     unresolved_rows.sort(
         key=lambda item: (

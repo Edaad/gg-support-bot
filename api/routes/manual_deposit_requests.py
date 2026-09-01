@@ -107,6 +107,14 @@ class DepositGroupListResponse(BaseModel):
     items: List[DepositGroupRead]
 
 
+def _union_player_search_clause(session: Session, chat_id_column, term: str):
+    """Player/group search for union manual deposits (PostgreSQL only)."""
+    bind = session.get_bind()
+    if bind is not None and bind.dialect.name != "postgresql":
+        return None
+    return owner_payment_search_clause(chat_id_column, term)
+
+
 def _parse_dt(value: Optional[str]) -> Optional[datetime]:
     if not value or not value.strip():
         return None
@@ -238,8 +246,12 @@ def _list_query(
             ManualDepositRequest.method_slug.ilike(pattern),
             ManualDepositRequest.variant_name.ilike(pattern),
             cast(ManualDepositRequest.amount, String).ilike(pattern),
-            owner_payment_search_clause(ManualDepositRequest.telegram_chat_id, search),
         ]
+        player_clause = _union_player_search_clause(
+            db, ManualDepositRequest.telegram_chat_id, search
+        )
+        if player_clause is not None:
+            clauses.append(player_clause)
         try:
             amount = Decimal(search)
         except (InvalidOperation, ValueError):
