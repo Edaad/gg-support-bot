@@ -90,6 +90,9 @@ def create_app() -> FastAPI:
     from api.routes.cashout_records import router as cashout_records_router
     from api.routes.payments import router as payments_router
     from api.routes.owner_payments import router as owner_payments_router
+    from api.routes.all_payments import router as all_payments_router
+    from api.routes.union_unified_payments import router as union_unified_payments_router
+    from api.routes.payments_export import router as payments_export_router
     from api.routes.deposit_funnel import router as deposit_funnel_router
     from api.routes.stripe_deposit import router as stripe_deposit_router
     from api.routes.venmo_payments import router as venmo_payments_router
@@ -129,6 +132,9 @@ def create_app() -> FastAPI:
     app.include_router(cashout_records_router)
     app.include_router(payments_router)
     app.include_router(owner_payments_router)
+    app.include_router(all_payments_router)
+    app.include_router(union_unified_payments_router)
+    app.include_router(payments_export_router)
     app.include_router(deposit_funnel_router)
     app.include_router(early_rakeback_webhook_router)
     app.include_router(audit_router)

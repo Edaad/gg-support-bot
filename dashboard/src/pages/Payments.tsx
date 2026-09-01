@@ -6,15 +6,19 @@ import {
   bindPayPalPayment,
   bindVenmoPayment,
   bindZellePayment,
+  downloadPaymentsXlsx,
   fetchAllOwnerPayments,
   listOwnerPayments,
   listOwnerVariants,
+  listUnifiedPayments,
   type CashAppPaymentRow,
   type CryptoPaymentRow,
   type OwnerMethod,
   type OwnerSlug,
   type PayPalPaymentRow,
   type StripeSessionRow,
+  type UnifiedPaymentListParams,
+  type UnifiedPaymentRow,
   type VenmoPaymentRow,
   type ZellePaymentRow,
 } from '../api/paymentsClient'
@@ -26,17 +30,21 @@ import {
 } from '../api/manualDepositRequestsClient'
 import BindPaymentModal, { type BindableRow } from '../components/payments/BindPaymentModal'
 import {
+  ALL_METHOD,
   METHOD_LABELS,
-  METHODS_BY_OWNER,
+  methodsForOwnerTab,
   OWNER_TABS,
   PAGE_SIZE,
-  UNION_METHODS,
+  type MethodFilter,
   type OwnerTab,
   type UnionMethodType,
 } from '../components/payments/constants'
 import IngestedPaymentTable from '../components/payments/IngestedPaymentTable'
+import PaymentDetailModal from '../components/payments/PaymentDetailModal'
 import PaymentSummaryHeader from '../components/payments/PaymentSummaryHeader'
+import UnifiedPaymentTable from '../components/payments/UnifiedPaymentTable'
 import UnionDepositTable from '../components/payments/UnionDepositTable'
+import { bindableFromUnified } from '../components/payments/types'
 import { downloadCsv } from '../lib/csv'
 import {
   easternCalendarDateString,
@@ -72,7 +80,7 @@ export default function Payments({ token }: { token: string }) {
   const toDateId = useId()
 
   const [ownerTab, setOwnerTab] = useState<OwnerTab>('round-table')
-  const [method, setMethod] = useState<OwnerMethod | UnionMethodType>('stripe')
+  const [method, setMethod] = useState<MethodFilter>(ALL_METHOD)
   const [variant, setVariant] = useState('')
   const [unionFilter, setUnionFilter] = useState<UnionFilter>('all')
   const [clubFilter, setClubFilter] = useState('')
@@ -86,6 +94,7 @@ export default function Payments({ token }: { token: string }) {
   const [appliedFrom, setAppliedFrom] = useState(() => latestMondayEasternDateString())
   const [appliedTo, setAppliedTo] = useState(() => easternCalendarDateString())
 
+  const [unifiedRows, setUnifiedRows] = useState<UnifiedPaymentRow[]>([])
   const [ingestedRows, setIngestedRows] = useState<
     | StripeSessionRow[]
     | VenmoPaymentRow[]
@@ -105,13 +114,17 @@ export default function Payments({ token }: { token: string }) {
   const [err, setErr] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
 
+  const [detailRow, setDetailRow] = useState<UnifiedPaymentRow | null>(null)
   const [bindOpen, setBindOpen] = useState(false)
+  const [bindMethod, setBindMethod] = useState<Exclude<OwnerMethod, 'stripe'> | null>(null)
   const [bindRow, setBindRow] = useState<BindableRow | null>(null)
   const [bindTitle, setBindTitle] = useState('')
   const [bindLoading, setBindLoading] = useState(false)
 
+  const isAllTab = ownerTab === 'all'
   const isUnionTab = ownerTab === 'union'
-  const ownerSlug = isUnionTab ? null : ownerTab
+  const isOwnerTab = !isAllTab && !isUnionTab
+  const ownerSlug = isOwnerTab ? (ownerTab as OwnerSlug) : null
   const clubIdNum = clubFilter ? Number(clubFilter) : undefined
 
   const clubNameById = useMemo(
@@ -119,15 +132,18 @@ export default function Payments({ token }: { token: string }) {
     [clubs],
   )
 
-  const methodsForTab = useMemo((): readonly (OwnerMethod | UnionMethodType)[] => {
-    if (isUnionTab) return UNION_METHODS
-    return METHODS_BY_OWNER[ownerTab as OwnerSlug]
-  }, [isUnionTab, ownerTab])
+  const methodsForTab = useMemo(() => methodsForOwnerTab(ownerTab), [ownerTab])
 
-  const effectiveMethod = useMemo((): OwnerMethod | UnionMethodType => {
+  const effectiveMethod = useMemo((): MethodFilter => {
     if (methodsForTab.includes(method)) return method
     return methodsForTab[0]
   }, [methodsForTab, method])
+
+  const useUnifiedView = isAllTab || effectiveMethod === ALL_METHOD
+
+  const useXlsxExport = isAllTab || effectiveMethod === ALL_METHOD
+
+  const variantDisabled = effectiveMethod === ALL_METHOD
 
   const dateParams = useMemo(() => {
     const base: { from?: string; to?: string } = {}
@@ -140,6 +156,32 @@ export default function Payments({ token }: { token: string }) {
     () => formatAppliedEasternDateRange(appliedFrom, appliedTo),
     [appliedFrom, appliedTo],
   )
+
+  const unifiedListParams = useMemo((): UnifiedPaymentListParams => {
+    const scope = isAllTab ? 'all' : isUnionTab ? 'union' : 'owner'
+    const methodParam =
+      effectiveMethod === ALL_METHOD
+        ? 'all'
+        : (effectiveMethod as UnifiedPaymentListParams['method'])
+    return {
+      scope,
+      owner: ownerSlug ?? undefined,
+      method: methodParam,
+      depositUnion: unionFilter === 'all' ? undefined : unionFilter,
+      clubId: clubIdNum,
+      q: appliedSearch || undefined,
+      ...dateParams,
+    }
+  }, [
+    isAllTab,
+    isUnionTab,
+    ownerSlug,
+    effectiveMethod,
+    unionFilter,
+    clubIdNum,
+    appliedSearch,
+    dateParams,
+  ])
 
   useEffect(() => {
     listClubs(token)
@@ -154,11 +196,13 @@ export default function Payments({ token }: { token: string }) {
   }, [method, effectiveMethod])
 
   useEffect(() => {
+    setMethod(methodsForOwnerTab(ownerTab)[0])
     setVariant('')
     setPage(0)
     setErr('')
     setSuccessMsg('')
-  }, [ownerTab, isUnionTab])
+    setDetailRow(null)
+  }, [ownerTab])
 
   useEffect(() => {
     setVariant('')
@@ -166,6 +210,10 @@ export default function Payments({ token }: { token: string }) {
   }, [method])
 
   const loadVariants = useCallback(() => {
+    if (variantDisabled) {
+      setVariantOptions([])
+      return
+    }
     if (isUnionTab) {
       listManualDepositRequestVariants(token, {
         trade_record_checked: true,
@@ -189,7 +237,17 @@ export default function Payments({ token }: { token: string }) {
     })
       .then((res) => setVariantOptions(res.items))
       .catch(() => setVariantOptions([]))
-  }, [token, isUnionTab, ownerSlug, effectiveMethod, unionFilter, clubIdNum, dateParams, appliedSearch])
+  }, [
+    token,
+    variantDisabled,
+    isUnionTab,
+    ownerSlug,
+    effectiveMethod,
+    unionFilter,
+    clubIdNum,
+    dateParams,
+    appliedSearch,
+  ])
 
   useEffect(() => {
     loadVariants()
@@ -198,6 +256,24 @@ export default function Payments({ token }: { token: string }) {
   const loadRows = useCallback(() => {
     setLoading(true)
     setErr('')
+    if (useUnifiedView) {
+      listUnifiedPayments(token, {
+        ...unifiedListParams,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+      })
+        .then((res) => {
+          setUnifiedRows(res.items)
+          setTotal(res.total)
+          setSummaryCount(res.summary.total_count)
+          setSummaryUsd(Number(res.summary.total_amount_usd))
+        })
+        .catch((e: unknown) => {
+          setErr(e instanceof Error ? e.message : 'Could not load payments.')
+        })
+        .finally(() => setLoading(false))
+      return
+    }
     if (isUnionTab) {
       listManualDepositRequests(token, {
         trade_record_checked: true,
@@ -245,6 +321,8 @@ export default function Payments({ token }: { token: string }) {
       .finally(() => setLoading(false))
   }, [
     token,
+    useUnifiedView,
+    unifiedListParams,
     isUnionTab,
     ownerSlug,
     effectiveMethod,
@@ -271,22 +349,31 @@ export default function Payments({ token }: { token: string }) {
     setPage(0)
   }
 
-  const openBindModal = (row: BindableRow) => {
+  const openBindModal = (row: BindableRow, methodForBind: Exclude<OwnerMethod, 'stripe'>) => {
+    setBindMethod(methodForBind)
     setBindRow(row)
     setBindTitle(row.group_title || '')
     setBindOpen(true)
+    setDetailRow(null)
     setErr('')
   }
 
   const closeBindModal = () => {
     setBindOpen(false)
+    setBindMethod(null)
     setBindRow(null)
     setBindTitle('')
     setBindLoading(false)
   }
 
+  const handleDetailBind = (_method: OwnerMethod, row: UnifiedPaymentRow) => {
+    const bindable = bindableFromUnified(row)
+    if (!bindable) return
+    openBindModal(bindable.row, bindable.method)
+  }
+
   const submitBind = async () => {
-    if (!bindRow || !bindableMethod(effectiveMethod as OwnerMethod)) return
+    if (!bindRow || !bindMethod) return
     const title = bindTitle.trim()
     if (!title) {
       setErr('Group title is required.')
@@ -296,15 +383,14 @@ export default function Payments({ token }: { token: string }) {
     setErr('')
     setSuccessMsg('')
     try {
-      const m = effectiveMethod as Exclude<OwnerMethod, 'stripe'>
       const result =
-        m === 'zelle'
+        bindMethod === 'zelle'
           ? await bindZellePayment(token, bindRow.id, title)
-          : m === 'cashapp'
+          : bindMethod === 'cashapp'
             ? await bindCashAppPayment(token, bindRow.id, title)
-            : m === 'paypal'
+            : bindMethod === 'paypal'
               ? await bindPayPalPayment(token, bindRow.id, title)
-              : m === 'crypto'
+              : bindMethod === 'crypto'
                 ? await bindCryptoPayment(token, bindRow.id, title)
                 : await bindVenmoPayment(token, bindRow.id, title)
       if (!result.ok) {
@@ -321,10 +407,14 @@ export default function Payments({ token }: { token: string }) {
     }
   }
 
-  const exportCsv = async () => {
+  const exportPayments = async () => {
     setExporting(true)
     setErr('')
     try {
+      if (useXlsxExport) {
+        await downloadPaymentsXlsx(token, unifiedListParams)
+        return
+      }
       if (isUnionTab) {
         const rows = await fetchAllManualDepositRequests(token, {
           trade_record_checked: true,
@@ -510,7 +600,11 @@ export default function Payments({ token }: { token: string }) {
   }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-  const rowCount = isUnionTab ? unionRows.length : ingestedRows.length
+  const rowCount = useUnifiedView
+    ? unifiedRows.length
+    : isUnionTab
+      ? unionRows.length
+      : ingestedRows.length
 
   return (
     <div>
@@ -545,7 +639,7 @@ export default function Payments({ token }: { token: string }) {
           <select
             id={methodSelectId}
             value={effectiveMethod}
-            onChange={(e) => setMethod(e.target.value as OwnerMethod | UnionMethodType)}
+            onChange={(e) => setMethod(e.target.value as MethodFilter)}
             className="input-field-sm min-w-[10rem]"
           >
             {methodsForTab.map((m) => (
@@ -562,13 +656,16 @@ export default function Payments({ token }: { token: string }) {
           <select
             id={variantSelectId}
             value={variant}
+            disabled={variantDisabled}
             onChange={(e) => {
               setVariant(e.target.value)
               setPage(0)
             }}
-            className="input-field-sm min-w-[12rem]"
+            className="input-field-sm min-w-[12rem] disabled:opacity-50"
           >
-            <option value="">All variants</option>
+            <option value="">
+              {variantDisabled ? 'Select a method first' : 'All variants'}
+            </option>
             {variantOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
@@ -597,7 +694,7 @@ export default function Payments({ token }: { token: string }) {
             ))}
           </select>
         </div>
-        {isUnionTab && (
+        {(isUnionTab || isAllTab) && (
           <div>
             <label htmlFor={unionSelectId} className="label-field-xs">
               Union
@@ -667,10 +764,10 @@ export default function Payments({ token }: { token: string }) {
         <button
           type="button"
           disabled={loading || exporting}
-          onClick={() => void exportCsv()}
+          onClick={() => void exportPayments()}
           className="btn-secondary-sm disabled:opacity-40"
         >
-          {exporting ? 'Exporting…' : 'Export CSV'}
+          {exporting ? 'Exporting…' : useXlsxExport ? 'Export XLSX' : 'Export CSV'}
         </button>
       </div>
 
@@ -695,6 +792,12 @@ export default function Payments({ token }: { token: string }) {
 
       {rowCount === 0 && !loading ? (
         <p className="text-sm text-ink-muted">No payments match the selected filters.</p>
+      ) : useUnifiedView ? (
+        <UnifiedPaymentTable
+          rows={unifiedRows}
+          clubNameById={clubNameById}
+          onRowClick={setDetailRow}
+        />
       ) : isUnionTab ? (
         <UnionDepositTable rows={unionRows} />
       ) : (
@@ -703,7 +806,10 @@ export default function Payments({ token }: { token: string }) {
           rows={ingestedRows}
           clubNameById={clubNameById}
           onBind={
-            bindableMethod(effectiveMethod as OwnerMethod) ? openBindModal : undefined
+            bindableMethod(effectiveMethod as OwnerMethod)
+              ? (row) =>
+                  openBindModal(row, effectiveMethod as Exclude<OwnerMethod, 'stripe'>)
+              : undefined
           }
         />
       )}
@@ -736,13 +842,16 @@ export default function Payments({ token }: { token: string }) {
 
       {loading && <p className="mt-4 text-sm text-ink-muted">Loading…</p>}
 
+      <PaymentDetailModal
+        open={detailRow != null}
+        row={detailRow}
+        onClose={() => setDetailRow(null)}
+        onBind={handleDetailBind}
+      />
+
       <BindPaymentModal
         open={bindOpen}
-        method={
-          bindableMethod(effectiveMethod as OwnerMethod)
-            ? (effectiveMethod as OwnerMethod)
-            : null
-        }
+        method={bindMethod}
         row={bindRow}
         title={bindTitle}
         loading={bindLoading}

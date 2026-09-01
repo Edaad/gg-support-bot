@@ -1151,7 +1151,7 @@ export type OwnerPaymentList<T> = {
 }
 
 export type OwnerPaymentListParams = {
-  method: OwnerMethod
+  method: OwnerMethod | 'all'
   variant?: string
   clubId?: number
   from?: string
@@ -1212,4 +1212,136 @@ export async function fetchAllOwnerPayments<T>(
     if (offset >= res.total || res.items.length === 0) break
   }
   return { items: all, summary }
+}
+
+export type UnifiedPaymentScope = 'all' | 'owner' | 'union'
+
+export type UnifiedPaymentRow = {
+  source:
+    | 'stripe'
+    | 'venmo'
+    | 'zelle'
+    | 'cashapp'
+    | 'paypal'
+    | 'crypto'
+    | 'union_manual'
+  id: number
+  occurred_at: string
+  amount_cents: number
+  amount_usd: number | string
+  method_slug: string
+  method_label: string
+  owner_label: string
+  group_title: string | null
+  gg_nickname: string | null
+  club_id: number | null
+  status: string | null
+  variant: string | null
+  can_bind: boolean
+  detail: Record<string, unknown>
+}
+
+export type UnifiedPaymentList = {
+  scope: string
+  method: string
+  items: UnifiedPaymentRow[]
+  total: number
+  limit: number
+  offset: number
+  summary: OwnerPaymentSummary
+}
+
+export type UnifiedPaymentListParams = {
+  scope: UnifiedPaymentScope
+  owner?: OwnerSlug
+  method?: OwnerMethod | 'all' | 'zelle' | 'cashapp' | 'applepay' | 'venmo'
+  depositUnion?: 'tmt' | 'massiv'
+  clubId?: number
+  from?: string
+  to?: string
+  q?: string
+  limit?: number
+  offset?: number
+}
+
+function unifiedPaymentsPath(params: UnifiedPaymentListParams): string {
+  const method = params.method ?? 'all'
+  const q = new URLSearchParams({ method })
+  if (params.clubId != null) q.set('club_id', String(params.clubId))
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  if (params.q?.trim()) q.set('q', params.q.trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  if (params.depositUnion) q.set('deposit_union', params.depositUnion)
+
+  if (params.scope === 'all') {
+    return `/all/payments?${q}`
+  }
+  if (params.scope === 'union') {
+    return `/union/payments?${q}`
+  }
+  if (!params.owner) {
+    throw new Error('owner is required when scope is owner')
+  }
+  return `/owner/${params.owner}/payments?${q}`
+}
+
+export function listUnifiedPayments(token: string, params: UnifiedPaymentListParams) {
+  return request<UnifiedPaymentList>(unifiedPaymentsPath(params), {}, token)
+}
+
+function unifiedExportPath(params: UnifiedPaymentListParams): string {
+  const method = params.method ?? 'all'
+  const q = new URLSearchParams({ method })
+  if (params.clubId != null) q.set('club_id', String(params.clubId))
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  if (params.q?.trim()) q.set('q', params.q.trim())
+  if (params.depositUnion) q.set('deposit_union', params.depositUnion)
+
+  if (params.scope === 'all') {
+    return `/all/export.xlsx?${q}`
+  }
+  if (params.scope === 'union') {
+    return `/union/export.xlsx?${q}`
+  }
+  if (!params.owner) {
+    throw new Error('owner is required when scope is owner')
+  }
+  return `/owner/${params.owner}/export.xlsx?${q}`
+}
+
+export async function downloadPaymentsXlsx(
+  token: string,
+  params: UnifiedPaymentListParams,
+): Promise<void> {
+  const res = await fetch(apiUrl(`${BASE}${unifiedExportPath(params)}`), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
+  if (res.status === 401) {
+    clearAuthSession()
+    window.location.href = '/'
+    throw new Error('Unauthorized')
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: unknown }
+    let msg: string | undefined
+    const d = body.detail
+    if (typeof d === 'string') msg = d
+    else if (d != null) msg = String(d)
+    throw new Error(msg || `HTTP ${res.status}`)
+  }
+
+  const blob = await res.blob()
+  const header = res.headers.get('Content-Disposition')
+  const match = header ? /filename="([^"]+)"/.exec(header) : null
+  const filename = match?.[1] ?? 'payments-export.xlsx'
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
 }

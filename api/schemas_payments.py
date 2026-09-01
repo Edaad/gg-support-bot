@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -606,6 +606,36 @@ class OwnerVariantListResponse(BaseModel):
 class OwnerPaymentListResponse(BaseModel):
     method: str
     items: list
+    total: int
+    limit: int
+    offset: int
+    summary: OwnerPaymentSummary
+
+
+class UnifiedPaymentRowRead(BaseModel):
+    source: Literal[
+        "stripe", "venmo", "zelle", "cashapp", "paypal", "crypto", "union_manual"
+    ]
+    id: int
+    occurred_at: datetime
+    amount_cents: int
+    amount_usd: Decimal
+    method_slug: str
+    method_label: str
+    owner_label: str
+    group_title: Optional[str] = None
+    gg_nickname: Optional[str] = None
+    club_id: Optional[int] = None
+    status: Optional[str] = None
+    variant: Optional[str] = None
+    can_bind: bool = False
+    detail: dict
+
+
+class UnifiedPaymentListResponse(BaseModel):
+    scope: str
+    method: str
+    items: list[UnifiedPaymentRowRead]
     total: int
     limit: int
     offset: int
