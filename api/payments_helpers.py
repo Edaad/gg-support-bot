@@ -317,6 +317,11 @@ def cents_to_usd(amount_cents: int) -> Decimal:
     return (Decimal(amount_cents) / Decimal(100)).quantize(Decimal("0.01"))
 
 
+def stripe_fee_usd(amount_cents: int) -> Decimal:
+    """Estimated Stripe processing fee (2.9% + $0.30)."""
+    return Decimal(round(amount_cents * 0.029 + 30)) / Decimal(100)
+
+
 def venmo_payment_status(payment: VenmoPayment) -> str:
     return "bound" if payment.telegram_chat_id is not None else "unbound"
 

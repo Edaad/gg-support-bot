@@ -83,6 +83,7 @@ export default function IngestedPaymentTable({ method, rows, clubNameById, onBin
             <tr>
               <th className="px-4 py-3">Time</th>
               <th className="px-4 py-3">Amount</th>
+              <th className="px-4 py-3">Stripe fee</th>
               <th className="px-4 py-3">Group</th>
               <th className="px-4 py-3">Player</th>
               <th className="px-4 py-3">Method</th>
@@ -98,6 +99,9 @@ export default function IngestedPaymentTable({ method, rows, clubNameById, onBin
                 </td>
                 <td className="px-4 py-3 font-medium">
                   {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
+                </td>
+                <td className="px-4 py-3">
+                  {row.amount_cents > 0 ? `$${fmtMoney(row.stripe_fee_usd)}` : '—'}
                 </td>
                 <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                   {row.group_title || '—'}

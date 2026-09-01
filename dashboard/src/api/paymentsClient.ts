@@ -61,6 +61,7 @@ export type StripeSessionRow = {
   club_id: number
   amount_cents: number
   amount_usd: number
+  stripe_fee_usd: number
   currency: string
   status: string
   payment_method_id: number | null

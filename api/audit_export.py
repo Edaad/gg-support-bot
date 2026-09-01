@@ -41,6 +41,7 @@ from api.payments_helpers import (
     lookup_gg_nickname,
     resolve_group_title,
     resolve_method_display,
+    stripe_fee_usd,
 )
 from bot.services.payment_method_binding import canonicalize_zelle_recipient
 from config import CLUB_SHORTHAND_TO_NAME
@@ -128,10 +129,6 @@ class TaggedManualAuditRow:
 class _TimedTaggedManualAuditRow:
     occurred_at: datetime
     row: TaggedManualAuditRow
-
-
-def _stripe_fee_usd(amount_cents: int) -> Decimal:
-    return Decimal(round(amount_cents * 0.029 + 30)) / Decimal(100)
 
 
 def eastern_day_bounds_utc(date_str: str) -> tuple[datetime, datetime]:
@@ -687,7 +684,7 @@ def _fetch_stripe_rows(
                 group_title=(title or "").strip(),
                 club_label=club_label,
                 time_label=_fmt_stripe_audit_time(completed, club_slug),
-                stripe_fee_usd=_stripe_fee_usd(row.amount_cents),
+                stripe_fee_usd=stripe_fee_usd(row.amount_cents),
             )
         )
     return out

@@ -55,6 +55,7 @@ class StripeCheckoutSessionRead(BaseModel):
     club_id: int
     amount_cents: int
     amount_usd: Decimal
+    stripe_fee_usd: Decimal
     currency: str
     status: str
     payment_method_id: Optional[int] = None
