@@ -34,7 +34,7 @@ RESERVED_CMDS = {
     "start", "help", "whoami", "set", "cancel", "delete",
     "mycmds", "deposit", "cashout", "list", "botwelcome",
     "gc", "add", "cash", "refresh", "unbindmethod", "whosnext",
-    "stripe", "cashapp", "stageinactive", "unstageinactive", "stagedinactive",
+    "stripe", "stageinactive", "unstageinactive", "stagedinactive",
     "sendinactive",
     "bonus",
     "earlyrb",
