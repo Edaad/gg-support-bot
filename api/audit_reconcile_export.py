@@ -47,7 +47,7 @@ from api.vaughn_methods import (
     owner_matching_source_options,
 )
 
-# Temporarily off: ClubGTO cashout auto-matching + Source labelling in export.
+# Temporarily off: ClubGTO cashout auto-matching on the ClubGTO tab.
 CLUBGTO_CASHOUT_LABELING_ENABLED = False
 
 _HEADER_FILL = PatternFill("solid", fgColor="38761D")
@@ -325,12 +325,6 @@ def _clubgto_ledger_for_matching(
 
 def _unresolved_source_label(line: LedgerLine, club_slug: str) -> str | None:
     label_slug = (line.club_slug or club_slug or "").strip().lower()
-    if (
-        not CLUBGTO_CASHOUT_LABELING_ENABLED
-        and label_slug == "clubgto"
-        and line.source == "cashout"
-    ):
-        return None
     return matching_source_label(
         source=line.source,
         variant=line.variant,

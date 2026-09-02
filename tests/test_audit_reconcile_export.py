@@ -418,8 +418,8 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertIsNone(matching.cell(row=2, column=9).value)
         self.assertIn(matching.cell(row=2, column=10).value, ("", None))
         unresolved = wb["Unresolved"]
-        self.assertIsNone(unresolved.cell(row=2, column=1).value)
-        self.assertIsNone(unresolved.cell(row=3, column=1).value)
+        self.assertEqual(unresolved.cell(row=2, column=1).value, "Cashout Venmo")
+        self.assertEqual(unresolved.cell(row=3, column=1).value, "Cashout Zelle")
         self.assertEqual(unresolved.cell(row=2, column=4).value, "P1")
         self.assertEqual(unresolved.cell(row=3, column=4).value, "Charlie Kim")
 
