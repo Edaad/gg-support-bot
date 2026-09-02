@@ -207,9 +207,15 @@ class VenmoWebhookIngestIntegrationTestCase(unittest.TestCase):
     def tearDown(self):
         self.env_patch.stop()
 
+    @patch(
+        "bot.services.payment_ingest_escalation.maybe_notify_payment_ingest_escalation",
+        new_callable=AsyncMock,
+    )
     @patch("api.webhook_ingest_audit.record_webhook_ingest_request")
     @patch("api.routes.venmo_payments.ingest_venmo_payment", new_callable=AsyncMock)
-    def test_success_records_audit_with_request_body(self, mock_ingest, mock_record):
+    def test_success_records_audit_with_request_body(
+        self, mock_ingest, mock_record, _mock_notify
+    ):
         mock_ingest.return_value = IngestResult(
             payment_id=42,
             status="unbound",
@@ -235,8 +241,12 @@ class VenmoWebhookIngestIntegrationTestCase(unittest.TestCase):
         self.assertEqual(kwargs["ctx"].payment_id, 42)
         self.assertEqual(kwargs["ctx"].request_body["payer_name"], "Moshe Toussoun")
 
+    @patch(
+        "bot.services.payment_ingest_escalation.maybe_notify_payment_ingest_escalation",
+        new_callable=AsyncMock,
+    )
     @patch("api.webhook_ingest_audit.record_webhook_ingest_request")
-    def test_auth_failed_records_audit(self, mock_record):
+    def test_auth_failed_records_audit(self, mock_record, _mock_notify):
         response = self.client.post(
             "/api/venmo/payments",
             json={

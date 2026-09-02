@@ -269,7 +269,7 @@ class WebhookIngestMiddleware(BaseHTTPMiddleware):
                 http_status_code=status_code,
                 ctx=ctx,
             )
-            record_webhook_ingest_request(
+            recorded_id = record_webhook_ingest_request(
                 source=source,
                 endpoint_path=path,
                 http_status_code=status_code,
@@ -277,3 +277,20 @@ class WebhookIngestMiddleware(BaseHTTPMiddleware):
                 duration_ms=duration_ms,
                 ctx=ctx,
             )
+            try:
+                from bot.services.payment_ingest_escalation import (
+                    maybe_notify_payment_ingest_escalation,
+                )
+
+                await maybe_notify_payment_ingest_escalation(
+                    source=source,
+                    http_status_code=status_code,
+                    ctx=ctx,
+                    recorded_id=recorded_id,
+                )
+            except Exception:
+                logger.warning(
+                    "webhook_ingest_audit: escalation notify failed source=%s",
+                    source,
+                    exc_info=True,
+                )
