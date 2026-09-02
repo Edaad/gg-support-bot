@@ -149,7 +149,12 @@ class TestDmFlowCancel(unittest.IsolatedAsyncioTestCase):
             "ir_title": "Bug",
         }
 
-        await flow_cancel_handler(update, context)
+        with patch(
+            "bot.handlers.flow_cancel.clear_deposit_payment_wait",
+            new_callable=AsyncMock,
+            return_value=False,
+        ):
+            await flow_cancel_handler(update, context)
 
         update.message.reply_text.assert_awaited_once()
         msg = update.message.reply_text.await_args.args[0]
