@@ -9,13 +9,37 @@ from typing import Any
 from uuid import UUID
 
 from db.connection import get_db
-from db.models import EscalationEpisode, EscalationEvent, SupportGroupIdleEpisodeState
+from db.models import (
+    EscalationDecisionLog,
+    EscalationEpisode,
+    EscalationEvent,
+    SupportGroupIdleEpisodeState,
+)
 
 logger = logging.getLogger(__name__)
 
 CLOSE_REASON_SILENCE = "silence"
 CLOSE_REASON_HARD_CAP = "hard_cap"
 CLOSE_REASON_FLOW_END = "flow_end"
+
+DECISION_SKIPPED = "skipped"
+DECISION_FIRED = "fired"
+
+# Skip reasons (group_activity_handler)
+REASON_ESC_OFF = "escalation_off"
+REASON_STAFF_NO_EPISODE = "staff_no_episode"
+REASON_STAFF_CLEARED_BURST = "staff_cleared_burst"
+REASON_EMPTY_BODY = "empty_body"
+REASON_EXPECTED_FLOW = "expected_flow"
+REASON_FLOW_CMD = "flow_cmd"
+REASON_DEPOSIT_FLOW_ANSWER = "deposit_flow_answer"
+REASON_DEPOSIT_SENT_ACK_IGNORE = "deposit_sent_ack_ignore"
+
+# Fire reasons (group_activity_handler)
+REASON_PLAYER_IDLE_OPENED = "player_idle_opened"
+REASON_PLAYER_IDLE_FED = "player_idle_fed"
+# deposit_player_message / deposit_sent_followup reuse escalation_notification reason slugs
+
 
 _MEDIA_KINDS = (
     "photo",
@@ -266,3 +290,65 @@ def update_escalation_event_slack_ok(event_id: int | None, slack_ok: bool) -> No
             event_id,
             exc_info=True,
         )
+
+
+def record_escalation_decision(
+    *,
+    decision: str,
+    reason: str,
+    telegram_chat_id: int,
+    club_id: int | None = None,
+    group_title: str | None = None,
+    telegram_user_id: int | None = None,
+    role: str | None = None,
+    telegram_message_id: int | None = None,
+    trigger_messages: list[dict[str, Any]] | None = None,
+    episode_id: UUID | str | None = None,
+    escalation_event_id: int | None = None,
+) -> int | None:
+    """Insert one skip/fire decision. Never raises. Returns row id or None."""
+    eid = None
+    if episode_id is not None:
+        try:
+            eid = episode_id if isinstance(episode_id, UUID) else UUID(str(episode_id))
+        except (ValueError, TypeError):
+            eid = None
+    try:
+        with get_db() as session:
+            row = EscalationDecisionLog(
+                decision=(decision or "").strip() or DECISION_SKIPPED,
+                reason=(reason or "").strip() or "unknown",
+                club_id=int(club_id) if club_id is not None else None,
+                telegram_chat_id=int(telegram_chat_id),
+                group_title=group_title,
+                telegram_user_id=(
+                    int(telegram_user_id) if telegram_user_id is not None else None
+                ),
+                role=(role or "").strip() or None,
+                telegram_message_id=(
+                    int(telegram_message_id)
+                    if telegram_message_id is not None
+                    else None
+                ),
+                trigger_messages=normalize_trigger_messages(trigger_messages),
+                episode_id=eid,
+                escalation_event_id=(
+                    int(escalation_event_id)
+                    if escalation_event_id is not None
+                    else None
+                ),
+            )
+            session.add(row)
+            session.flush()
+            return int(row.id)
+    except Exception:
+        logger.warning(
+            "escalation_observability: record decision failed decision=%s "
+            "reason=%s chat_id=%s",
+            decision,
+            reason,
+            telegram_chat_id,
+            exc_info=True,
+        )
+        return None
+

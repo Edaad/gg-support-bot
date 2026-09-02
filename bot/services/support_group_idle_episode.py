@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
+from uuid import UUID
 
 from telegram.ext import ContextTypes
 
@@ -41,6 +43,13 @@ IDLE_EPISODE_HARD_CAP_SECONDS = 1800  # 30 minutes
 IDLE_EPISODE_HARD_CAP_SECONDS_TEST = 120
 
 _idle_app: Any | None = None
+
+
+@dataclass(frozen=True)
+class ReachOutResult:
+    outcome: Literal["opened", "fed", "ignored"]
+    episode_id: UUID | None = None
+    escalation_event_id: int | None = None
 
 
 def register_support_group_idle_episode_runtime(app: Any) -> None:
@@ -420,13 +429,13 @@ async def on_player_reach_out(
     bot: Any | None = None,
     now: datetime | None = None,
     trigger_message: dict[str, Any] | None = None,
-) -> bool:
-    """Open episode (Slack + no-op menu) or feed burst. Returns True if handled."""
+) -> ReachOutResult:
+    """Open episode (Slack + no-op menu) or feed burst."""
     cid = int(chat_id)
     body = (message_text or "").strip()
     if not body and not slack_already_sent:
         # Media-only still escalates via placeholder from caller; empty = ignore.
-        return False
+        return ReachOutResult(outcome="ignored")
 
     opened, burst, history_id = _persist_open_or_feed(
         cid,
@@ -442,10 +451,11 @@ async def on_player_reach_out(
     )
 
     jq = _resolve_job_queue(job_queue)
+    event_id: int | None = None
 
     if opened:
         if not slack_already_sent:
-            await notify_escalation_slack(
+            _ok, event_id = await notify_escalation_slack(
                 reason,
                 club_id=club_id,
                 chat_id=cid,
@@ -456,6 +466,7 @@ async def on_player_reach_out(
                 if trigger_message
                 else ([{"text": body}] if body else None),
             )
+            del _ok
         try:
             await offer_idle_help_prompt(
                 bot,
@@ -481,13 +492,20 @@ async def on_player_reach_out(
             cid,
             slack_already_sent,
         )
-        return True
+        return ReachOutResult(
+            outcome="opened",
+            episode_id=history_id if isinstance(history_id, UUID) else None,
+            escalation_event_id=event_id,
+        )
 
     # Already open: feed burst + reschedule debounce/silence (hardcap stays).
     _schedule_silence(cid, job_queue=jq)
     if burst:
         _schedule_debounce(cid, job_queue=jq, club_id=club_id, title=title)
-    return True
+    return ReachOutResult(
+        outcome="fed",
+        episode_id=history_id if isinstance(history_id, UUID) else None,
+    )
 
 
 async def feed_or_open_episode(
@@ -501,7 +519,7 @@ async def feed_or_open_episode(
     bot: Any | None = None,
     now: datetime | None = None,
     trigger_message: dict[str, Any] | None = None,
-) -> bool:
+) -> ReachOutResult:
     """Deposit path: reason Slack already sent; open/feed without double Slack."""
     return await on_player_reach_out(
         chat_id,
@@ -515,6 +533,7 @@ async def feed_or_open_episode(
         now=now,
         trigger_message=trigger_message,
     )
+
 
 
 def on_staff_human(

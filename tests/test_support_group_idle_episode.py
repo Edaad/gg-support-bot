@@ -106,12 +106,12 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
     async def test_open_slacks_once_and_schedules_timers(self):
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
         with patch.object(
-            ep, "notify_escalation_slack", new_callable=AsyncMock
+            ep, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
         ) as slack:
             with patch.object(
                 ep, "offer_idle_help_prompt", new_callable=AsyncMock, return_value=False
             ) as menu:
-                ok = await ep.on_player_reach_out(
+                result = await ep.on_player_reach_out(
                     1,
                     club_id=9,
                     title="GC",
@@ -119,7 +119,7 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
                     job_queue=self.jq,
                     now=t0,
                 )
-        self.assertTrue(ok)
+        self.assertEqual(result.outcome, "opened")
         slack.assert_awaited_once()
         self.assertEqual(slack.await_args.args[0], esc.REASON_PLAYER_IDLE)
         menu.assert_awaited_once()
@@ -133,7 +133,9 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_feed_schedules_debounce(self):
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
-        with patch.object(ep, "notify_escalation_slack", new_callable=AsyncMock):
+        with patch.object(
+            ep, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
+        ):
             with patch.object(
                 ep, "offer_idle_help_prompt", new_callable=AsyncMock, return_value=False
             ):
@@ -146,14 +148,17 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
                 )
         self.jq.run_once.reset_mock()
         t1 = t0 + timedelta(seconds=10)
-        with patch.object(ep, "notify_escalation_slack", new_callable=AsyncMock) as slack:
-            await ep.on_player_reach_out(
+        with patch.object(
+            ep, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 2)
+        ) as slack:
+            result = await ep.on_player_reach_out(
                 1,
                 club_id=9,
                 message_text="still here",
                 job_queue=self.jq,
                 now=t1,
             )
+        self.assertEqual(result.outcome, "fed")
         slack.assert_not_called()
         state = ep.load_episode_state(1)
         self.assertEqual(len(state["burst"]), 1)

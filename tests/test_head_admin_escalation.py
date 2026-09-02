@@ -139,7 +139,7 @@ class NotifyEscalationSlackFanoutTests(unittest.IsolatedAsyncioTestCase):
                     new_callable=AsyncMock,
                     return_value=True,
                 ) as head:
-                    ok = await esc.notify_escalation_slack(
+                    ok, _event_id = await esc.notify_escalation_slack(
                         esc.REASON_UNION_DEPOSIT_FIRST,
                         club_id=1,
                         chat_id=99,
@@ -172,7 +172,7 @@ class NotifyEscalationSlackFanoutTests(unittest.IsolatedAsyncioTestCase):
                     new_callable=AsyncMock,
                     return_value=True,
                 ) as head:
-                    ok = await esc.notify_escalation_slack(
+                    ok, _eid = await esc.notify_escalation_slack(
                         esc.REASON_RPA_DEPOSIT_FAILED,
                         club_id=1,
                         chat_id=99,
@@ -198,7 +198,7 @@ class NotifyEscalationSlackFanoutTests(unittest.IsolatedAsyncioTestCase):
                     new_callable=AsyncMock,
                     return_value=False,
                 ) as head:
-                    ok = await esc.notify_escalation_slack(
+                    ok, _eid = await esc.notify_escalation_slack(
                         esc.REASON_CASHOUT_STARTED,
                         club_id=1,
                         chat_id=99,
@@ -223,7 +223,7 @@ class NotifyEscalationSlackFanoutTests(unittest.IsolatedAsyncioTestCase):
                     new_callable=AsyncMock,
                     return_value=True,
                 ) as head:
-                    ok = await esc.notify_escalation_slack(
+                    ok, _eid = await esc.notify_escalation_slack(
                         esc.REASON_RPA_CASHOUT_FAILED,
                         club_id=1,
                         chat_id=99,

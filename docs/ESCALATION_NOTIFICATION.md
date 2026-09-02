@@ -238,10 +238,34 @@ DATABASE_URL=... python migrate_escalation_deposit_sent_button_message_id.py
 DATABASE_URL=... python migrate_escalation_post_deposit_idle.py
 DATABASE_URL=... python migrate_support_group_idle_episode_state.py
 DATABASE_URL=... python migrate_escalation_observability.py
+DATABASE_URL=... python migrate_escalation_decision_log.py
 DATABASE_URL=... python migrate_watched_group_escalation_state.py
 ```
 
 JWT read API (no dashboard page): `GET /api/escalations/events` and `GET /api/escalations/episodes/{id}`.
+
+## Decision log (debug)
+
+Append-only table `escalation_decision_log` records every miss-relevant **skip** or **fire** from `group_activity_handler` (not a Slack substitute — see `escalation_events` for notifies).
+
+| `decision` | Example `reason` values |
+|------------|-------------------------|
+| `skipped` | `escalation_off`, `staff_no_episode`, `staff_cleared_burst`, `empty_body`, `expected_flow`, `flow_cmd`, `deposit_flow_answer`, `deposit_sent_ack_ignore` |
+| `fired` | `player_idle_opened`, `player_idle_fed`, `deposit_player_message`, `deposit_sent_followup` |
+
+No API in v1 — query SQL:
+
+```sql
+SELECT created_at, decision, reason, telegram_user_id, telegram_message_id, episode_id
+FROM escalation_decision_log
+WHERE telegram_chat_id = -1003995457474
+ORDER BY created_at DESC
+LIMIT 50;
+```
+
+```bash
+DATABASE_URL=... python migrate_escalation_decision_log.py
+```
 
 
 ## Overlap with popup keyboard

@@ -117,7 +117,7 @@ SLACK_MESSAGE_BODY_MAX_CHARS = 500
 MEDIA_ONLY_PLACEHOLDER = "(media)"
 
 DEPOSIT_SENT_ACK_COPY = (
-    "Thank you! Chips will be added as soon as we receive the payment."
+    "Thank you! Credits will be added as soon as we receive the payment."
 )
 DEPOSIT_SENT_BUTTON_LABEL = "I have sent the payment"
 DEPOSIT_SENT_CALLBACK_PREFIX = "depsent"
@@ -668,13 +668,15 @@ async def notify_pool_pay_deposit_slack(
                 chat_id,
                 exc_info=True,
             )
-        return await notify_escalation_slack(
-            reason,
-            club_id=club_id,
-            chat_id=int(chat_id),
-            title=title,
-            slack_text=text,
-        )
+        return (
+            await notify_escalation_slack(
+                reason,
+                club_id=club_id,
+                chat_id=int(chat_id),
+                title=title,
+                slack_text=text,
+            )
+        )[0]
 
     from bot.services.manual_deposit_requests import UnionDepositSlackVariant
 
@@ -713,13 +715,15 @@ async def notify_pool_pay_deposit_slack(
             chat_id,
             exc_info=True,
         )
-    return await notify_escalation_slack(
-        reason,
-        club_id=club_id,
-        chat_id=int(chat_id),
-        title=title,
-        slack_text=text,
-    )
+    return (
+        await notify_escalation_slack(
+            reason,
+            club_id=club_id,
+            chat_id=int(chat_id),
+            title=title,
+            slack_text=text,
+        )
+    )[0]
 
 
 async def notify_union_deposit_request_slack(
@@ -758,7 +762,8 @@ async def notify_escalation_slack(
     episode_id=None,
     trigger_messages: list | None = None,
     slack_text: str | None = None,
-) -> bool:
+) -> tuple[bool, int | None]:
+    """Post Slack escalation. Returns ``(slack_ok, escalation_event_id)``."""
     from bot.services.escalation_observability import (
         live_history_episode_id,
         record_escalation_event,
@@ -821,7 +826,7 @@ async def notify_escalation_slack(
             exc_info=True,
         )
 
-    return ok
+    return ok, event_id
 
 
 async def offer_idle_help_prompt(

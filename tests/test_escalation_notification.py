@@ -591,7 +591,7 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
             "_notify_union_deposit_payment_chats",
             new_callable=AsyncMock,
         ) as payment_chats, patch.object(
-            esc, "notify_escalation_slack", new_callable=AsyncMock, return_value=True
+            esc, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
         ) as notify:
             ok = await esc.notify_union_deposit_request_slack(
                 variant="first",
@@ -629,7 +629,7 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
             "_notify_union_deposit_payment_chats",
             new_callable=AsyncMock,
         ), patch.object(
-            esc, "notify_escalation_slack", new_callable=AsyncMock, return_value=True
+            esc, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
         ) as notify:
             await esc.notify_union_deposit_request_slack(
                 variant="repeat_verified",

@@ -2531,6 +2531,41 @@ class EscalationEvent(Base):
     )
 
 
+class EscalationDecisionLog(Base):
+    """Append-only skip/fire decisions from support-group activity escalation."""
+
+    __tablename__ = "escalation_decision_log"
+    __table_args__ = (
+        Index("ix_esc_dec_chat_created_at", "telegram_chat_id", "created_at"),
+        Index("ix_esc_dec_decision_created_at", "decision", "created_at"),
+        Index("ix_esc_dec_reason_created_at", "reason", "created_at"),
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    decision = Column(String(16), nullable=False)
+    reason = Column(String(64), nullable=False)
+    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    group_title = Column(Text, nullable=True)
+    telegram_user_id = Column(BigInteger, nullable=True)
+    role = Column(String(16), nullable=True)
+    telegram_message_id = Column(BigInteger, nullable=True)
+    trigger_messages = Column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
+    )
+    episode_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("escalation_episodes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    escalation_event_id = Column(
+        BigInteger,
+        ForeignKey("escalation_events.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+
 class SupportGroupIdleEpisodeState(Base):
     """Durable idle episodes for support groups (1m burst / 5m silence / 30m cap)."""
 
