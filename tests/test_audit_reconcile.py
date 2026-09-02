@@ -626,7 +626,8 @@ class MondaySettlementTestCase(unittest.TestCase):
         self.assertEqual(events[0].gg_player_id, "1055-4566")
         self.assertEqual(events[0].amount_usd, Decimal("131"))
         self.assertEqual(
-            events[0].external_id, "monday:2026-08-17:2026-08-23:1055-4566"
+            events[0].external_id,
+            "monday:2026-08-17:2026-08-23:clubgto:1055-4566",
         )
         self.assertEqual(warnings, [])
 
@@ -711,7 +712,7 @@ class MondaySettlementTestCase(unittest.TestCase):
         self.assertEqual(events[0].detail, "OrphanAgent")
         self.assertEqual(
             events[0].external_id,
-            "monday:2026-08-17:2026-08-23:noid:OrphanAgent",
+            "monday:2026-08-17:2026-08-23:clubgto:noid:OrphanAgent",
         )
         self.assertTrue(any("missing playerId" in w for w in warnings))
 
@@ -914,6 +915,31 @@ class DedupeLedgerEventsTestCase(unittest.TestCase):
             club_slug="round-table",
         )
         self.assertEqual(len(_dedupe_ledger_events([a, b])), 2)
+
+    def test_keeps_monday_settlement_for_same_player_across_rt_and_at(self):
+        rt = LedgerEvent(
+            source="monday_settlement",
+            gg_player_id="1111-2222",
+            amount_usd=Decimal("50"),
+            occurred_at_utc=None,
+            external_id="monday:2026-08-17:2026-08-23:round-table:1111-2222",
+            detail="DualClub",
+            club_slug="round-table",
+        )
+        at = LedgerEvent(
+            source="monday_settlement",
+            gg_player_id="1111-2222",
+            amount_usd=Decimal("30"),
+            occurred_at_utc=None,
+            external_id="monday:2026-08-17:2026-08-23:aces-table:1111-2222",
+            detail="DualClub",
+            club_slug="aces-table",
+        )
+        out = _dedupe_ledger_events([rt, at])
+        self.assertEqual(len(out), 2)
+        by_slug = {e.club_slug: e.amount_usd for e in out}
+        self.assertEqual(by_slug["round-table"], Decimal("50"))
+        self.assertEqual(by_slug["aces-table"], Decimal("30"))
 
 
 if __name__ == "__main__":
