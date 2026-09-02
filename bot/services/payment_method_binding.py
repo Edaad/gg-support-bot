@@ -1739,7 +1739,7 @@ def format_first_time_zelle_amount_setup_message(
 def _first_time_payment_closing(*, use_html: bool = True) -> str:
     return _caps(
         "Send your payment, then post a screenshot here — "
-        "we'll confirm and add your chips. Thanks!"
+        "we'll confirm and add your credits. Thanks!"
     )
 
 
@@ -1818,7 +1818,7 @@ def format_first_time_memo_setup_message(
     )
     after_send = _caps(
         "After sending, please post a screenshot here. An agent will confirm "
-        "the transaction and add your chips as soon as it comes through."
+        "the transaction and add your credits as soon as it comes through."
     )
 
     if slug == "zelle":
@@ -1951,7 +1951,7 @@ def format_first_time_venmo_setup_message(
         "This is a one-time setup step for this payment method. Future deposits "
         "can be sent normally once your method is linked."
     )
-    post_screenshot = _caps("Post a screenshot when done. An agent will confirm and add your chips.")
+    post_screenshot = _caps("Post a screenshot when done. An agent will confirm and add your credits.")
 
     if use_html:
         safe_setup = html_module.escape(setup_display)
@@ -2006,7 +2006,7 @@ def format_first_time_zelle_setup_message(
         "This is a one-time setup step for this payment method. Future deposits "
         "can be sent normally once your method is linked."
     )
-    post_screenshot = _caps("Post a screenshot when done. An agent will confirm and add your chips.")
+    post_screenshot = _caps("Post a screenshot when done. An agent will confirm and add your credits.")
 
     if use_html:
         safe_setup = html_module.escape(setup_display)

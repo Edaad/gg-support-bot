@@ -18,7 +18,7 @@ class FormatPaymentReceivedMessageTestCase(unittest.TestCase):
         self.assertEqual(
             text,
             "We have received your payment for $50, "
-            "chips will be loaded to your account shortly!!",
+            "credits will be loaded to your account shortly!!",
         )
 
     def test_large_amount_with_commas(self):
@@ -59,7 +59,7 @@ class NotifyPlayerGroupPaymentReceivedTestCase(unittest.IsolatedAsyncioTestCase)
             chat_id=CHAT_ID,
             text=(
                 "We have received your payment for $50, "
-                "chips will be loaded to your account shortly!!"
+                "credits will be loaded to your account shortly!!"
             ),
         )
 
@@ -101,7 +101,7 @@ class NotifyPlayerGroupPaymentReceivedTestCase(unittest.IsolatedAsyncioTestCase)
             )
         self.assertTrue(ok)
         sent = mock_bot.send_message.await_args.kwargs["text"]
-        self.assertIn("chips will be loaded", sent)
+        self.assertIn("credits will be loaded", sent)
         self.assertIn("whole-dollar amounts from now on", sent)
         self.assertNotIn("refund", sent.lower())
 

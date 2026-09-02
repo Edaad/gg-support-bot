@@ -15,7 +15,7 @@ _STRIPE_PAY_TEXT = (
     "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
     "• Enter your deposit amount on the checkout page ($20 minimum, $100 maximum).\n\n"
     "• Once sent, please inform us, and an agent will confirm the transaction "
-    "and add your chips within 2 minutes!\n\n"
+    "and add your credits within 2 minutes!\n\n"
     "• Just post a screenshot of your transaction, and it will be credited to your account!\n\n"
     "{{hyperlink}}"
 )

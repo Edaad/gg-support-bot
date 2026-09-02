@@ -46,12 +46,12 @@ class ParseAddCommandTests(unittest.TestCase):
 class FormatAddConfirmationTests(unittest.TestCase):
     def test_decimal_amount_not_truncated(self) -> None:
         text = format_add_confirmation(Decimal("21.1"))
-        self.assertIn("21.1 chips", text)
-        self.assertNotIn("21 chips", text)
+        self.assertIn("21.1 credits", text)
+        self.assertNotIn("21 credits", text)
 
     def test_whole_amount_no_decimal_suffix(self) -> None:
         text = format_add_confirmation(Decimal("500"))
-        self.assertIn("500 chips", text)
+        self.assertIn("500 credits", text)
         self.assertNotIn("500.0", text)
 
     def test_decimal_bonus_not_truncated(self) -> None:

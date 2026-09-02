@@ -434,7 +434,7 @@ class SendAddConfirmationTestCase(unittest.IsolatedAsyncioTestCase):
                 "_send_add_confirmation_once",
                 new_callable=AsyncMock,
             ) as mock_mtproto,
-            patch.object(pad, "format_add_confirmation", return_value="Added 50 chips, good luck!!"),
+            patch.object(pad, "format_add_confirmation", return_value="Added 50 credits, good luck!!"),
         ):
             await pad._send_add_confirmation(
                 club_id=CLUB_ID_CREATOR,
@@ -442,14 +442,14 @@ class SendAddConfirmationTestCase(unittest.IsolatedAsyncioTestCase):
                 amount=Decimal(50),
                 group_title="CC / 1234-5678 / Jacob",
             )
-        mock_mtproto.assert_awaited_once_with(cfg, CHAT_ID, "Added 50 chips, good luck!!")
+        mock_mtproto.assert_awaited_once_with(cfg, CHAT_ID, "Added 50 credits, good luck!!")
 
     async def test_bot_fallback_when_mtproto_unavailable(self) -> None:
         mock_bot = MagicMock()
         mock_bot.send_message = AsyncMock()
         with (
             patch.object(pad, "get_club_gc_config_by_link_club_id", return_value=None),
-            patch.object(pad, "format_add_confirmation", return_value="Added 50 chips, good luck!!"),
+            patch.object(pad, "format_add_confirmation", return_value="Added 50 credits, good luck!!"),
             patch.object(pad, "support_bot_tokens_to_try", return_value=["token"]),
             patch.object(pad, "Bot", return_value=mock_bot),
         ):
@@ -461,7 +461,7 @@ class SendAddConfirmationTestCase(unittest.IsolatedAsyncioTestCase):
             )
         mock_bot.send_message.assert_awaited_once_with(
             chat_id=CHAT_ID,
-            text="Added 50 chips, good luck!!",
+            text="Added 50 credits, good luck!!",
         )
 
 

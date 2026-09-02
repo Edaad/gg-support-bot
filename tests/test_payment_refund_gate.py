@@ -111,7 +111,7 @@ class RefundCopyTests(unittest.TestCase):
     def test_appends_whole_dollar_nudge(self):
         gate = evaluate_refund_gate(amount_cents=5025, method_slug="zelle")
         text = append_whole_dollar_nudge(
-            "We have received your payment for $50, chips will be loaded to your account shortly!!",
+            "We have received your payment for $50, credits will be loaded to your account shortly!!",
             gate,
         )
         self.assertIn("whole-dollar amounts from now on", text)
@@ -120,7 +120,7 @@ class RefundCopyTests(unittest.TestCase):
             is_first_time_setup_bind=True,
             method_slug="zelle",
         )
-        unchanged = "We have received your payment for $50, chips will be loaded to your account shortly!!"
+        unchanged = "We have received your payment for $50, credits will be loaded to your account shortly!!"
         self.assertEqual(append_whole_dollar_nudge(unchanged, first), unchanged)
 
 

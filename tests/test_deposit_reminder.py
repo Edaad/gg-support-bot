@@ -414,7 +414,7 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
         update.effective_chat = MagicMock(id=chat_id)
         update.effective_user = MagicMock(id=999, is_bot=True)
         update.message = MagicMock(
-            text="We have received your payment for $500, chips will be loaded shortly!!",
+            text="We have received your payment for $500, credits will be loaded shortly!!",
             caption=None,
         )
 

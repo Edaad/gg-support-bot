@@ -30,7 +30,7 @@ def format_payment_received_message(amount_cents: int) -> str:
     amount = _format_amount_dollars(amount_cents)
     return (
         f"We have received your payment for {amount}, "
-        "chips will be loaded to your account shortly!!"
+        "credits will be loaded to your account shortly!!"
     )
 
 
