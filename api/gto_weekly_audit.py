@@ -380,15 +380,7 @@ def _fetch_vaughn_payments_for_day(
     out: list[PaymentRailRow] = []
     for row in query.all():
         data = build_read(session, row)
-        if not payment_in_audit_day_for_club(
-            session,
-            club_slug=_CLUBGTO_SLUG,
-            audit_date=audit_date,
-            club_id=data.get("club_id"),
-            occurred_at=data.get("created_at"),
-            data=data,
-        ):
-            continue
+        # method_owner=vaughn is the GTO ledger bucket; do not re-filter by bound group slug.
         amount = data.get("amount_usd")
         amount_f = abs(float(amount)) if amount is not None else 0.0
         out.append(

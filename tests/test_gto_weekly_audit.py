@@ -33,7 +33,7 @@ from api.gto_weekly_audit import (
 )
 from api.routes.audit import router
 from db.connection import get_db_dependency
-from db.models import ZellePayment
+from db.models import CryptoPayment, ZellePayment
 
 TOKEN = create_token()
 MONDAY = date(2026, 8, 10)
@@ -400,9 +400,8 @@ class GtoWeeklyAuditUnitTestCase(unittest.TestCase):
 
 
 class GtoWeeklyAuditFetchTestCase(unittest.TestCase):
-    @patch("api.gto_weekly_audit.payment_in_audit_day_for_club", return_value=True)
     @patch("api.gto_weekly_audit._apply_audit_manual_filters")
-    def test_fetch_vaughn_zelle_included(self, mock_filters, _mock_audit_day):
+    def test_fetch_vaughn_zelle_included(self, mock_filters):
         payment = MagicMock()
         query = MagicMock()
         query.filter.return_value = query
@@ -417,7 +416,7 @@ class GtoWeeklyAuditFetchTestCase(unittest.TestCase):
                 "zelle_recipient": "2133729202",
                 "amount_usd": "50.00",
                 "created_at": datetime(2026, 8, 10, 14, 0, tzinfo=timezone.utc),
-                "club_id": 2,
+                "club_id": None,
             }
         )
 
@@ -435,11 +434,9 @@ class GtoWeeklyAuditFetchTestCase(unittest.TestCase):
         self.assertEqual(rows[0].amount_usd, 50.0)
         query.filter.assert_called()
 
-    @patch("api.gto_weekly_audit.payment_in_audit_day_for_club", return_value=False)
     @patch("api.gto_weekly_audit._apply_audit_manual_filters")
-    def test_fetch_vaughn_zelle_excluded_when_not_clubgto_audit_day(
-        self, mock_filters, _mock_audit_day
-    ):
+    def test_fetch_vaughn_unbound_included_without_club_slug_check(self, mock_filters):
+        """Unbound Vaughn payments belong in GTO rails via method_owner alone."""
         payment = MagicMock()
         query = MagicMock()
         query.filter.return_value = query
@@ -450,21 +447,43 @@ class GtoWeeklyAuditFetchTestCase(unittest.TestCase):
         mock_filters.return_value = query
         mock_build = MagicMock(
             return_value={
-                "payer_name": "Jane",
-                "zelle_recipient": "2133729202",
-                "amount_usd": "50.00",
+                "from_address": "bc1qexample",
+                "token_symbol": "BTC",
+                "amount_usd": "73.37",
                 "created_at": datetime(2026, 8, 10, 14, 0, tzinfo=timezone.utc),
-                "club_id": 1,
+                "club_id": None,
+                "group_title": None,
             }
         )
 
         rows = _fetch_vaughn_payments_for_day(
             session,
-            payment_cls=ZellePayment,
+            payment_cls=CryptoPayment,
             build_read=mock_build,
             audit_date=MONDAY,
-            name_fn=lambda d: (d.get("payer_name") or "").strip(),
-            variant_fn=_zelle_variant,
+            name_fn=lambda d: (d.get("from_address") or "").strip(),
+            variant_fn=lambda d: (d.get("token_symbol") or "").strip(),
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].amount_usd, 73.37)
+
+    @patch("api.gto_weekly_audit._apply_audit_manual_filters")
+    def test_fetch_vaughn_empty_when_query_returns_no_rows(self, mock_filters):
+        query = MagicMock()
+        query.filter.return_value = query
+        query.order_by.return_value = query
+        query.all.return_value = []
+        session = MagicMock()
+        session.query.return_value = query
+        mock_filters.return_value = query
+
+        rows = _fetch_vaughn_payments_for_day(
+            session,
+            payment_cls=ZellePayment,
+            build_read=MagicMock(),
+            audit_date=MONDAY,
+            name_fn=lambda d: "",
+            variant_fn=lambda d: "",
         )
         self.assertEqual(rows, [])
 
