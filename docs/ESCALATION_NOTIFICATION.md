@@ -89,9 +89,9 @@ Classification is **per support group + union type** (prior rows in `manual_depo
 
 | Case | Headline | Instruction | Head-admin fan-out |
 |------|----------|-------------|-------------------|
-| First ever (no prior row for that type) | Union method deposit | Verify the time, ensure payment status is visible, and if you are unsure, contact head admins. | No |
-| Repeat, prior verified (`trade_record_checked`) | Union method deposit | Verify the time, ensure payment status is visible, and if you are unsure, contact head admins. | No |
-| Repeat, prior still open (unchecked priors only) | Union method deposit | Verify the time, ensure payment status is visible, and if you are unsure, contact head admins. | No |
+| First ever (no prior row for that type) | Union method deposit | Verify the time, ensure payment status is visible, and if you are unsure, contact head admins. | Yes |
+| Repeat, prior verified (`trade_record_checked`) | Union method deposit | Verify the time, ensure payment status is visible, and if you are unsure, contact head admins. | Yes |
+| Repeat, prior still open (unchecked priors only) | Union method deposit | Verify the time, ensure payment status is visible, and if you are unsure, contact head admins. | Yes |
 
 Slack body includes club, group title, amount, and method (union type name). Respects the club escalation toggle; skipped on the test bot worker.
 
@@ -138,7 +138,7 @@ SLACK_ESCALATION_CHANNEL_ID=C...
 # SLACK_ESCALATION_WEBHOOK_URL=https://hooks.slack.com/services/...
 ```
 
-**Head-admin fan-out:** `rpa_deposit_failed`, `rpa_cashout_failed`, `rpa_deposit_uncertain`, and `rpa_cashout_uncertain` also post the **same** text to a second channel, reusing `SLACK_ESCALATION_BOT_TOKEN`:
+**Head-admin fan-out:** `rpa_deposit_failed`, `rpa_cashout_failed`, `rpa_deposit_uncertain`, `rpa_cashout_uncertain`, `union_deposit_first`, and `union_deposit_repeat` also post the **same** text to a second channel, reusing `SLACK_ESCALATION_BOT_TOKEN`:
 
 ```bash
 SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID=C...

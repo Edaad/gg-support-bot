@@ -83,7 +83,7 @@ class HeadAdminAllowlistTests(unittest.IsolatedAsyncioTestCase):
         notify.assert_awaited_once()
 
 
-    async def test_union_deposit_first_does_not_call_head_admin(self) -> None:
+    async def test_union_deposit_first_calls_head_admin(self) -> None:
         with patch(
             "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
             new_callable=AsyncMock,
@@ -93,11 +93,67 @@ class HeadAdminAllowlistTests(unittest.IsolatedAsyncioTestCase):
                 "Union method deposit",
                 reason=esc.REASON_UNION_DEPOSIT_FIRST,
             )
-        self.assertFalse(ok)
-        notify.assert_not_awaited()
+        self.assertTrue(ok)
+        notify.assert_awaited_once_with(
+            "Union method deposit",
+            source=esc.REASON_UNION_DEPOSIT_FIRST,
+        )
+
+    async def test_union_deposit_repeat_calls_head_admin(self) -> None:
+        with patch(
+            "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as notify:
+            ok = await ha.maybe_notify_head_admin_escalation(
+                "Union method deposit",
+                reason=esc.REASON_UNION_DEPOSIT_REPEAT,
+            )
+        self.assertTrue(ok)
+        notify.assert_awaited_once_with(
+            "Union method deposit",
+            source=esc.REASON_UNION_DEPOSIT_REPEAT,
+        )
 
 
 class NotifyEscalationSlackFanoutTests(unittest.IsolatedAsyncioTestCase):
+    async def test_union_deposit_fans_out_identical_text(self) -> None:
+        with patch.object(esc, "_club_display_name", return_value="Creator Club"):
+            expected = esc.format_union_deposit_slack_text(
+                variant="first",
+                club_id=1,
+                chat_id=99,
+                title="CC / 5056-5013 / David Sobol",
+                amount=2000,
+                method_display_name="Zelle",
+                method_tag="mtmmarketingus@gmail.com",
+                requested_at=None,
+            )
+            with patch(
+                "bot.services.slack_ops_notify.notify_slack_escalation",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as normal:
+                with patch(
+                    "bot.services.head_admin_escalation.maybe_notify_head_admin_escalation",
+                    new_callable=AsyncMock,
+                    return_value=True,
+                ) as head:
+                    ok = await esc.notify_escalation_slack(
+                        esc.REASON_UNION_DEPOSIT_FIRST,
+                        club_id=1,
+                        chat_id=99,
+                        title="CC / 5056-5013 / David Sobol",
+                        slack_text=expected,
+                    )
+        self.assertTrue(ok)
+        normal.assert_awaited_once_with(
+            expected, source=esc.REASON_UNION_DEPOSIT_FIRST
+        )
+        head.assert_awaited_once_with(
+            expected, reason=esc.REASON_UNION_DEPOSIT_FIRST
+        )
+
     async def test_rpa_fans_out_identical_text(self) -> None:
         with patch.object(esc, "_club_display_name", return_value="Round Table"):
             expected = esc.format_escalation_slack_text(
