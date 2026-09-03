@@ -25,13 +25,12 @@ class ShouldAlertIngestTestCase(unittest.TestCase):
             pie.ALERT_HTTP_ERROR,
         )
 
-    def test_not_created(self):
-        self.assertEqual(
+    def test_created_false_no_alert(self):
+        self.assertIsNone(
             pie.should_alert_ingest(
                 http_status_code=200,
                 response_json={"created": False},
-            ),
-            pie.ALERT_NOT_CREATED,
+            )
         )
 
     def test_created_true_no_alert(self):
@@ -81,21 +80,6 @@ class FormatIngestEscalationTextTestCase(unittest.TestCase):
         self.assertNotIn("payment_id", text)
         self.assertNotIn("outcome", text)
 
-    def test_not_created_shape(self):
-        text = pie.format_ingest_escalation_text(
-            alert_kind=pie.ALERT_NOT_CREATED,
-            source="zelle",
-            amount_cents=10000,
-            error_message=None,
-        )
-        self.assertEqual(
-            text,
-            "Payment ingest not created\n"
-            "source: zelle\n"
-            "amount: $100.00\n"
-            "error: created=false (duplicate)",
-        )
-
     def test_unknown_amount(self):
         text = pie.format_ingest_escalation_text(
             alert_kind=pie.ALERT_HTTP_ERROR,
@@ -136,33 +120,25 @@ class MaybeNotifyPaymentIngestEscalationTestCase(unittest.IsolatedAsyncioTestCas
         self.assertIn("amount: $50.00", text)
         self.assertIn("error: Telegram notification failed", text)
 
-    async def test_not_created_notifies(self):
+    async def test_created_false_skips(self):
         ctx = WebhookIngestContext(
             amount_cents=10000,
             response_json={"created": False},
             source_external_id="zelle_1",
             payment_id=99,
         )
-        with (
-            patch.object(pie, "recent_ingest_alert_exists", return_value=False),
-            patch(
-                "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
-                new_callable=AsyncMock,
-                return_value=True,
-            ) as notify,
-        ):
+        with patch(
+            "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+            new_callable=AsyncMock,
+        ) as notify:
             ok = await pie.maybe_notify_payment_ingest_escalation(
                 source="zelle",
                 http_status_code=200,
                 ctx=ctx,
                 recorded_id=2,
             )
-        self.assertTrue(ok)
-        text = notify.await_args.args[0]
-        self.assertTrue(text.startswith("Payment ingest not created"))
-        self.assertEqual(
-            notify.await_args.kwargs["source"], pie.SOURCE_NOT_CREATED
-        )
+        self.assertFalse(ok)
+        notify.assert_not_awaited()
 
     async def test_created_true_skips(self):
         ctx = WebhookIngestContext(response_json={"created": True})

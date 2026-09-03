@@ -14,29 +14,24 @@ from db.models import WebhookIngestRequest
 logger = logging.getLogger(__name__)
 
 ALERT_HTTP_ERROR = "http_error"
-ALERT_NOT_CREATED = "not_created"
-AlertKind = Literal["http_error", "not_created"]
+AlertKind = Literal["http_error"]
 
 DEDUPE_WINDOW = timedelta(minutes=15)
 
 SOURCE_HTTP_ERROR = "payment_ingest_http_error"
-SOURCE_NOT_CREATED = "payment_ingest_not_created"
 
 TITLE_HTTP_ERROR = "Payment ingest failure"
-TITLE_NOT_CREATED = "Payment ingest not created"
-ERROR_NOT_CREATED = "created=false (duplicate)"
 
 
 def should_alert_ingest(
     *,
     http_status_code: int,
-    response_json: dict[str, Any] | None,
+    response_json: dict[str, Any] | None = None,
 ) -> AlertKind | None:
+    """Return alert kind for HTTP failures only; duplicates (created=false) are ignored."""
+    _ = response_json
     if http_status_code >= 400:
         return ALERT_HTTP_ERROR
-    if http_status_code == 200 and response_json is not None:
-        if response_json.get("created") is False:
-            return ALERT_NOT_CREATED
     return None
 
 
@@ -82,27 +77,14 @@ def format_ingest_escalation_text(
     amount_cents: int | None,
     error_message: str | None,
 ) -> str:
-    if alert_kind == ALERT_HTTP_ERROR:
-        title = TITLE_HTTP_ERROR
-        error = (error_message or "").strip() or "HTTP error"
-    else:
-        title = TITLE_NOT_CREATED
-        error = ERROR_NOT_CREATED
+    _ = alert_kind
+    error = (error_message or "").strip() or "HTTP error"
     return (
-        f"{title}\n"
+        f"{TITLE_HTTP_ERROR}\n"
         f"source: {source}\n"
         f"amount: {format_amount_line(amount_cents)}\n"
         f"error: {error}"
     )
-
-
-def _row_matches_not_created(row: WebhookIngestRequest) -> bool:
-    if int(row.http_status_code) != 200:
-        return False
-    response = row.response_json
-    if isinstance(response, dict) and response.get("created") is False:
-        return True
-    return row.outcome == "success_duplicate"
 
 
 def recent_ingest_alert_exists(
@@ -113,13 +95,15 @@ def recent_ingest_alert_exists(
     exclude_id: int | None,
     now: datetime | None = None,
 ) -> bool:
-    """True if a prior audit row in the window would have triggered the same alert."""
+    """True if a prior HTTP-error audit row in the window would have triggered an alert."""
+    _ = alert_kind
     cutoff = (now or datetime.now(timezone.utc)) - DEDUPE_WINDOW
     try:
         with get_db() as session:
             q = session.query(WebhookIngestRequest).filter(
                 WebhookIngestRequest.source == source,
                 WebhookIngestRequest.created_at >= cutoff,
+                WebhookIngestRequest.http_status_code >= 400,
             )
             if exclude_id is not None:
                 q = q.filter(WebhookIngestRequest.id != exclude_id)
@@ -150,18 +134,12 @@ def recent_ingest_alert_exists(
                     )
                 )
 
-            if alert_kind == ALERT_HTTP_ERROR:
-                q = q.filter(WebhookIngestRequest.http_status_code >= 400)
-                return q.first() is not None
-
-            q = q.filter(WebhookIngestRequest.http_status_code == 200)
-            rows = q.order_by(WebhookIngestRequest.id.desc()).limit(50).all()
-            return any(_row_matches_not_created(row) for row in rows)
+            return q.first() is not None
     except Exception:
         logger.warning(
             "payment_ingest_escalation: dedupe lookup failed source=%s kind=%s",
             source,
-            alert_kind,
+            ALERT_HTTP_ERROR,
             exc_info=True,
         )
         return False
@@ -174,7 +152,7 @@ async def maybe_notify_payment_ingest_escalation(
     ctx: Any,
     recorded_id: int | None,
 ) -> bool:
-    """Notify head-admin Slack when ingest fails or is not created. Never raises."""
+    """Notify head-admin Slack when ingest fails (HTTP >= 400). Never raises."""
     try:
         alert_kind = should_alert_ingest(
             http_status_code=http_status_code,
@@ -215,12 +193,9 @@ async def maybe_notify_payment_ingest_escalation(
             amount_cents=getattr(ctx, "amount_cents", None),
             error_message=getattr(ctx, "error_message", None),
         )
-        slack_source = (
-            SOURCE_HTTP_ERROR if alert_kind == ALERT_HTTP_ERROR else SOURCE_NOT_CREATED
-        )
         from bot.services.slack_ops_notify import notify_slack_head_admin_escalation
 
-        return await notify_slack_head_admin_escalation(text, source=slack_source)
+        return await notify_slack_head_admin_escalation(text, source=SOURCE_HTTP_ERROR)
     except Exception:
         logger.warning(
             "payment_ingest_escalation: notify failed source=%s",
