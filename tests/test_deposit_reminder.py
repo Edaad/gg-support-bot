@@ -157,6 +157,62 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
             sent_text,
         )
 
+    async def test_reminder_rt_cc_only_lists_venmo_cashapp_crypto(self):
+        chat_id = -100130
+        deposit_module._DEPOSIT_INFO_MESSAGE_IDS[chat_id] = [27]
+
+        bot = AsyncMock()
+        bot.send_message = AsyncMock()
+        bot.delete_message = AsyncMock()
+
+        job = MagicMock()
+        job.chat_id = chat_id
+        job.data = {
+            "club_id": 1,
+            "scheduled_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        context = MagicMock()
+        context.job = job
+        context.bot = bot
+
+        with (
+            patch.object(
+                deposit_module,
+                "get_deposit_method_names",
+                return_value=[
+                    "Crypto",
+                    "Zelle",
+                    "Apple Pay",
+                    "Cashapp",
+                    "Venmo",
+                    "Debit Card",
+                ],
+            ),
+            patch.object(deposit_module, "is_round_table_club", return_value=True),
+            patch.object(deposit_module, "is_creator_club", return_value=False),
+            patch.object(deposit_module, "_should_skip_deposit_reminder", return_value=False),
+            patch(
+                "bot.services.group_activity.deposit_sent_watch_armed",
+                return_value=False,
+            ),
+            patch(
+                "bot.services.escalation_notification.clear_deposit_chase_after_payment",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "bot.services.deposit_incomplete_watch.notify_deposit_incomplete_escalation",
+                new_callable=AsyncMock,
+            ),
+        ):
+            await deposit_module._deposit_reminder_callback(context)
+
+        sent_text = bot.send_message.await_args.kwargs["text"]
+        self.assertIn("We offer: Venmo, Cash App, Crypto.", sent_text)
+        self.assertNotIn("Zelle", sent_text)
+        self.assertNotIn("Apple Pay", sent_text)
+        self.assertNotIn("Debit Card", sent_text)
+
     async def test_reminder_skips_when_payment_bound_since_schedule(self):
         chat_id = -100124
         deposit_module._DEPOSIT_INFO_MESSAGE_IDS[chat_id] = [21]

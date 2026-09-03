@@ -64,6 +64,7 @@ from bot.services.round_table_unions import (
     ACES_TABLE_SHORTHAND,
     deposit_unions_for_chat,
     is_creator_club,
+    is_round_table_club,
     union_label_for_shorthand,
     union_shorthands_for_club,
 )
@@ -976,6 +977,38 @@ def _unique_deposit_method_names(names: list[str]) -> list[str]:
     return out
 
 
+_RT_CC_REMINDER_METHOD_KEYS = ("venmo", "cashapp", "crypto")
+
+
+def _deposit_method_copy_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (name or "").strip().lower())
+
+
+def _is_rt_cc_club(club_id: int | None) -> bool:
+    if not club_id:
+        return False
+    try:
+        return is_round_table_club(club_id) or is_creator_club(club_id)
+    except Exception:
+        logger.debug("rt/cc club check failed club_id=%s", club_id, exc_info=True)
+        return False
+
+
+def _player_facing_deposit_method_names(club_id: int | None) -> list[str]:
+    """Payment methods listed in deposit reminder/timeout copy."""
+    methods = _unique_deposit_method_names(
+        get_deposit_method_names(club_id) if club_id else []
+    )
+    if not _is_rt_cc_club(club_id):
+        return methods
+    by_key: dict[str, str] = {}
+    for name in methods:
+        key = _deposit_method_copy_key(name)
+        if key in _RT_CC_REMINDER_METHOD_KEYS:
+            by_key.setdefault(key, name)
+    return [by_key[key] for key in _RT_CC_REMINDER_METHOD_KEYS if key in by_key]
+
+
 async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Job queue callback: delete deposit instructions and nudge the customer."""
     chat_id = int(context.job.chat_id)
@@ -1036,9 +1069,7 @@ async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None
     )
     await _delete_deposit_info_messages(context.bot, chat_id)
 
-    methods = _unique_deposit_method_names(
-        get_deposit_method_names(club_id) if club_id else []
-    )
+    methods = _player_facing_deposit_method_names(club_id)
     method_list = ", ".join(methods) if methods else ""
 
     text = (
@@ -3530,9 +3561,7 @@ async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
             popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
             return ConversationHandler.END
 
-        methods = _unique_deposit_method_names(
-            get_deposit_method_names(club_id) if club_id else []
-        )
+        methods = _player_facing_deposit_method_names(club_id)
         method_list = ", ".join(methods) if methods else ""
 
         text = (
