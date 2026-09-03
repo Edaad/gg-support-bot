@@ -18,6 +18,7 @@ CHIP_TRANSFER_PLAYER_LABEL = "Chip Transfer (Player)"
 CHIP_TRANSFER_RT_AT_LABEL = "Chip Transfer (RT↔AT)"
 CHIP_TRANSFER_AT_CC_LABEL = "Chip Transfer (AT↔CC)"
 FREE_PLAY_LABEL = "Free Play"
+RB_SETTLEMENT_MONDAY_LABEL = "RB settlement (Monday)"
 BACK_TO_CLUB_LABEL = "Back to Club"
 GTO_INC_LABEL = "GTO INC"
 GTO_INC_NICKNAME = "GTO INC"
@@ -509,7 +510,11 @@ def _clear_match_details(row: MatchedTradeRow, *, source: str) -> MatchedTradeRo
 def apply_trade_record_source_overrides(
     rows: list[MatchedTradeRow],
 ) -> list[MatchedTradeRow]:
-    """Apply trade-record Source labels after ledger + chip-transfer matching."""
+    """Apply trade-record Source labels after ledger + chip-transfer matching.
+
+    Free Play (−1…0) only applies when the trade did not already match
+    RB settlement (Monday) or a chip transfer.
+    """
     out = list(rows)
     for idx, row in enumerate(out):
         if _is_gto_inc_trade(row.trade):
@@ -520,6 +525,8 @@ def apply_trade_record_source_overrides(
         if not _is_free_play_amount(row.trade.amount):
             continue
         if _is_chip_transfer_source(row.match_source):
+            continue
+        if row.match_source == RB_SETTLEMENT_MONDAY_LABEL:
             continue
         out[idx] = _clear_match_details(row, source=FREE_PLAY_LABEL)
     return out
