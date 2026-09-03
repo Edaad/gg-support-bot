@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import unittest
 
+from types import SimpleNamespace
+
 from bot.services.payment_refund_gate import (
     REASON_BANNED_MEMO,
     REASON_GOODS_SERVICES,
@@ -11,6 +13,7 @@ from bot.services.payment_refund_gate import (
     evaluate_refund_gate,
     find_banned_memo_hits,
     format_player_refund_message,
+    format_refund_issue_report_description,
     inject_refund_banner,
 )
 
@@ -74,6 +77,34 @@ class EvaluateRefundGateTests(unittest.TestCase):
             method_slug="cashapp",
         )
         self.assertFalse(gate.requires_refund)
+
+
+class RefundIssueReportDescriptionTests(unittest.TestCase):
+    def test_banned_memo_omits_ids_and_bolds_hits(self):
+        payment = SimpleNamespace(
+            id=2614,
+            payer_name="Drew berry",
+            amount_cents=4999,
+            venmo_handle="@michaelc4444",
+            memo="Chips",
+        )
+        gate = evaluate_refund_gate(
+            amount_cents=4999, memo="Chips", method_slug="venmo"
+        )
+        text = format_refund_issue_report_description(
+            payment,
+            gate,
+            method_slug="venmo",
+            group_title="RT / 1758-7219 / drubby459",
+            notification_chat_id=-5549765036,
+            notification_message_id=37711,
+        )
+        self.assertIn("Memo contains banned keyword(s): *chips*.", text)
+        self.assertNotIn("Payment ID:", text)
+        self.assertNotIn("Staff notification:", text)
+        self.assertIn("Payer: Drew berry", text)
+        self.assertIn("Amount: $49.99", text)
+        self.assertIn("Memo: Chips", text)
 
 
 class RefundCopyTests(unittest.TestCase):

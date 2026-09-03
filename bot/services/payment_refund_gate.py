@@ -354,6 +354,7 @@ def format_refund_issue_report_description(
     notification_chat_id: Optional[int] = None,
     notification_message_id: Optional[int] = None,
 ) -> str:
+    _ = (notification_chat_id, notification_message_id)
     amount = format_amount_exact(int(payment.amount_cents))
     bound_label = group_title or "(unbound — bind via notification reply)"
     lines = [
@@ -363,12 +364,13 @@ def format_refund_issue_report_description(
     if REASON_GOODS_SERVICES in gate.reasons:
         lines.append("Venmo payment was sent as Goods & Services.")
     if REASON_BANNED_MEMO in gate.reasons:
-        hits = ", ".join(gate.banned_hits) or "banned keyword"
-        lines.append(f"Memo contains banned keyword(s): {hits}.")
+        hits = gate.banned_hits or ("banned keyword",)
+        # Slack mrkdwn bold on each hit (issue reports post to Slack).
+        bold_hits = ", ".join(f"*{h}*" for h in hits)
+        lines.append(f"Memo contains banned keyword(s): {bold_hits}.")
     lines.extend(
         [
             "",
-            f"Payment ID: {payment.id}",
             f"Payer: {getattr(payment, 'payer_name', '')}",
             f"Amount: {amount}",
             f"Method: {_method_handle(payment, method_slug)}",
@@ -378,11 +380,6 @@ def format_refund_issue_report_description(
     memo = (getattr(payment, "memo", None) or "").strip()
     if memo:
         lines.append(f"Memo: {memo}")
-    if notification_chat_id is not None and notification_message_id is not None:
-        lines.append(
-            f"Staff notification: chat_id={notification_chat_id} "
-            f"message_id={notification_message_id}"
-        )
     return "\n".join(lines)
 
 

@@ -94,8 +94,9 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["telegram_chat_id"], CHAT_ID)
         self.assertIn("Jackson Taylor", kwargs["title"])
         self.assertIn("DO NOT ADD", kwargs["description"])
-        self.assertIn("Payment ID: 42", kwargs["description"])
-        self.assertIn(f"message_id={NOTIF_MSG_ID}", kwargs["description"])
+        self.assertNotIn("Payment ID:", kwargs["description"])
+        self.assertNotIn("Staff notification:", kwargs["description"])
+        self.assertIn("Payer: Jackson Taylor", kwargs["description"])
 
     async def test_ingest_goods_services_creates_issue_report(self):
         payment_obj = VenmoPayment(
