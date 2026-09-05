@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import DateTime, and_, cast, exists, func, or_, select
 from sqlalchemy.orm import Session, Query, joinedload
 
 from db.models import (
@@ -354,6 +354,26 @@ def _payment_linked_to_club(payment_cls, club_id: int):
     )
 
 
+def _payment_display_at_column(payment_cls):
+    """SQL column for dashboard Time: prefer paid_at, else created_at."""
+    paid_col = getattr(payment_cls, "paid_at", None)
+    if paid_col is None:
+        return payment_cls.created_at
+    paid_ts = cast(func.nullif(paid_col, ""), DateTime(timezone=True))
+    return func.coalesce(paid_ts, payment_cls.created_at)
+
+
+def _apply_payment_display_at_range(query, payment_cls, *, from_dt, to_dt):
+    if from_dt is None and to_dt is None:
+        return query
+    col = _payment_display_at_column(payment_cls)
+    if from_dt is not None:
+        query = query.filter(col >= from_dt)
+    if to_dt is not None:
+        query = query.filter(col <= to_dt)
+    return query
+
+
 def _apply_manual_payment_club_filters(query, payment_cls, *, club_id: int, status: str | None):
     status_norm = (status or "all").strip().lower()
     if status_norm == "bound":
@@ -388,10 +408,9 @@ def apply_venmo_payment_filters(
         query, VenmoPayment, club_id=club_id, status=status
     )
 
-    if from_dt is not None:
-        query = query.filter(VenmoPayment.created_at >= from_dt)
-    if to_dt is not None:
-        query = query.filter(VenmoPayment.created_at <= to_dt)
+    query = _apply_payment_display_at_range(
+        query, VenmoPayment, from_dt=from_dt, to_dt=to_dt
+    )
 
     if q and q.strip():
         term = q.strip()
@@ -493,10 +512,9 @@ def apply_zelle_payment_filters(
         query, ZellePayment, club_id=club_id, status=status
     )
 
-    if from_dt is not None:
-        query = query.filter(ZellePayment.created_at >= from_dt)
-    if to_dt is not None:
-        query = query.filter(ZellePayment.created_at <= to_dt)
+    query = _apply_payment_display_at_range(
+        query, ZellePayment, from_dt=from_dt, to_dt=to_dt
+    )
 
     if q and q.strip():
         term = q.strip()
@@ -569,10 +587,9 @@ def apply_zelle_summary_filters(
         query = _apply_manual_payment_club_filters(
             query, ZellePayment, club_id=club_id, status="all"
         )
-    if from_dt is not None:
-        query = query.filter(ZellePayment.created_at >= from_dt)
-    if to_dt is not None:
-        query = query.filter(ZellePayment.created_at <= to_dt)
+    query = _apply_payment_display_at_range(
+        query, ZellePayment, from_dt=from_dt, to_dt=to_dt
+    )
     return query
 
 
@@ -661,10 +678,9 @@ def apply_cashapp_payment_filters(
         query, CashAppPayment, club_id=club_id, status=status
     )
 
-    if from_dt is not None:
-        query = query.filter(CashAppPayment.created_at >= from_dt)
-    if to_dt is not None:
-        query = query.filter(CashAppPayment.created_at <= to_dt)
+    query = _apply_payment_display_at_range(
+        query, CashAppPayment, from_dt=from_dt, to_dt=to_dt
+    )
 
     if q and q.strip():
         term = q.strip()
@@ -764,10 +780,9 @@ def apply_paypal_payment_filters(
         query, PayPalPayment, club_id=club_id, status=status
     )
 
-    if from_dt is not None:
-        query = query.filter(PayPalPayment.created_at >= from_dt)
-    if to_dt is not None:
-        query = query.filter(PayPalPayment.created_at <= to_dt)
+    query = _apply_payment_display_at_range(
+        query, PayPalPayment, from_dt=from_dt, to_dt=to_dt
+    )
 
     if q and q.strip():
         term = q.strip()
@@ -908,10 +923,9 @@ def apply_crypto_payment_filters(
         query, CryptoPayment, club_id=club_id, status=status
     )
 
-    if from_dt is not None:
-        query = query.filter(CryptoPayment.created_at >= from_dt)
-    if to_dt is not None:
-        query = query.filter(CryptoPayment.created_at <= to_dt)
+    query = _apply_payment_display_at_range(
+        query, CryptoPayment, from_dt=from_dt, to_dt=to_dt
+    )
 
     if q and q.strip():
         term = q.strip()
@@ -1089,7 +1103,17 @@ def apply_owner_ingest_filters(
         payment_cls.is_test.is_(False),
     )
     if club_id is not None:
-        query = query.filter(_payment_linked_to_club(payment_cls, club_id))
+        if payment_cls is CryptoPayment:
+            club = query.session.query(Club).filter(Club.id == int(club_id)).first()
+            from bot.services.crypto_payments import alert_scope_for_club_name
+
+            alert_scope = alert_scope_for_club_name(club.name) if club else None
+            if alert_scope is None:
+                return query.filter(CryptoPayment.id.is_(None))
+            query = query.filter(CryptoPayment.alert_scope == alert_scope)
+        query = _apply_manual_payment_club_filters(
+            query, payment_cls, club_id=int(club_id), status="all"
+        )
     variant_col_name = None
     for method_slug, cls in OWNER_INGEST_METHODS.items():
         if cls is payment_cls:
@@ -1098,10 +1122,9 @@ def apply_owner_ingest_filters(
     if variant and variant.strip() and variant_col_name:
         variant_col = getattr(payment_cls, variant_col_name)
         query = query.filter(variant_col == variant.strip())
-    if from_dt is not None:
-        query = query.filter(payment_cls.created_at >= from_dt)
-    if to_dt is not None:
-        query = query.filter(payment_cls.created_at <= to_dt)
+    query = _apply_payment_display_at_range(
+        query, payment_cls, from_dt=from_dt, to_dt=to_dt
+    )
     if q and q.strip():
         query = query.filter(_owner_ingest_search_filters(payment_cls, q))
     return query

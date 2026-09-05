@@ -20,7 +20,7 @@ from api.payments_helpers import (
 )
 from api.routes.owner_payments import router
 from db.connection import get_db_dependency
-from db.models import VenmoPayment, ZellePayment
+from db.models import CryptoPayment, VenmoPayment, ZellePayment
 
 TOKEN = create_token()
 
@@ -218,14 +218,14 @@ class OwnerPaymentsHelperTestCase(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertTrue(query.filter.called)
 
-    @patch("api.payments_helpers._payment_linked_to_club")
-    def test_apply_owner_ingest_filters_with_club_id(self, mock_linked):
+    @patch("api.payments_helpers._apply_manual_payment_club_filters")
+    def test_apply_owner_ingest_filters_with_club_id(self, mock_club_filters):
         query = MagicMock()
-        payment_cls = VenmoPayment
-        mock_linked.return_value = "club_clause"
+        query.filter.return_value = query
+        mock_club_filters.return_value = query
         apply_owner_ingest_filters(
             query,
-            payment_cls,
+            VenmoPayment,
             method_owner="round-table",
             variant=None,
             from_dt=None,
@@ -233,7 +233,38 @@ class OwnerPaymentsHelperTestCase(unittest.TestCase):
             q=None,
             club_id=2,
         )
-        mock_linked.assert_called_once_with(payment_cls, 2)
+        mock_club_filters.assert_called_once_with(
+            query, VenmoPayment, club_id=2, status="all"
+        )
+
+    @patch("api.payments_helpers._apply_manual_payment_club_filters")
+    def test_apply_owner_ingest_filters_crypto_club_uses_alert_scope(
+        self, mock_club_filters
+    ):
+        query = MagicMock()
+        query.filter.return_value = query
+        club = SimpleNamespace(name="ClubGTO")
+        query.session.query.return_value.filter.return_value.first.return_value = club
+        mock_club_filters.return_value = query
+
+        with patch(
+            "bot.services.crypto_payments.alert_scope_for_club_name",
+            return_value="clubgto",
+        ) as mock_scope:
+            apply_owner_ingest_filters(
+                query,
+                CryptoPayment,
+                method_owner="vaughn",
+                variant=None,
+                from_dt=None,
+                to_dt=None,
+                q=None,
+                club_id=4,
+            )
+            mock_scope.assert_called_once_with("ClubGTO")
+        mock_club_filters.assert_called_once_with(
+            query, CryptoPayment, club_id=4, status="all"
+        )
 
     def test_apply_owner_stripe_filters_with_club_id(self):
         query = MagicMock()
