@@ -94,7 +94,7 @@ def _crypto_detail_rows(
     club_names: dict[int, str],
 ) -> tuple[list[str], list[list[Any]]]:
     headers = [
-        "created_at",
+        "paid_at",
         "from_label",
         "chain",
         "token_symbol",
@@ -113,7 +113,7 @@ def _crypto_detail_rows(
         d = row.detail
         data.append(
             [
-                d.get("created_at") or "",
+                d.get("paid_at") or d.get("created_at") or "",
                 d.get("from_label") or "",
                 d.get("chain") or "",
                 d.get("token_symbol") or "",
@@ -143,7 +143,7 @@ def _manual_ingest_detail_rows(
         "venmo": "venmo_handle",
     }.get(method_slug, "venmo_handle")
     headers = [
-        "created_at",
+        "paid_at",
         "payer_name",
         account_key,
         "group_title",
@@ -161,7 +161,7 @@ def _manual_ingest_detail_rows(
     for row in rows:
         d = row.detail
         base = [
-            d.get("created_at") or "",
+            d.get("paid_at") or d.get("created_at") or "",
             d.get("payer_name") or "",
             d.get(account_key) or "",
             d.get("group_title") or "",

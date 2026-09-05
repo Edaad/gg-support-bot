@@ -18,10 +18,41 @@ from api.routes.all_payments import router as all_payments_router
 from api.routes.owner_payments import router as owner_payments_router
 from api.routes.payments_export import router as payments_export_router
 from api.schemas_payments import OwnerPaymentSummary, UnifiedPaymentRowRead
-from api.unified_payments import PaymentSourceSpec, _merge_rows, resolve_sources
+from api.unified_payments import PaymentSourceSpec, _ingest_occurred_at, _merge_rows, resolve_sources
 from db.connection import get_db_dependency
 
 TOKEN = create_token()
+
+
+class IngestOccurredAtTests(unittest.TestCase):
+    def test_crypto_prefers_paid_at_over_created_at(self):
+        occurred = _ingest_occurred_at(
+            "crypto",
+            {
+                "paid_at": "2026-08-14T00:17:21Z",
+                "created_at": "2026-09-05T05:48:24.165413+00:00",
+            },
+        )
+        self.assertEqual(occurred, datetime(2026, 8, 14, 0, 17, 21, tzinfo=timezone.utc))
+
+    def test_falls_back_to_created_at_when_paid_at_missing(self):
+        created = "2026-09-05T05:48:24.165413+00:00"
+        self.assertEqual(
+            _ingest_occurred_at("venmo", {"paid_at": None, "created_at": created}),
+            created,
+        )
+
+    def test_stripe_prefers_completed_at(self):
+        self.assertEqual(
+            _ingest_occurred_at(
+                "stripe",
+                {
+                    "completed_at": "2026-09-01T12:00:00Z",
+                    "created_at": "2026-09-01T11:00:00Z",
+                },
+            ),
+            "2026-09-01T12:00:00Z",
+        )
 
 
 def _make_app(*routers) -> FastAPI:

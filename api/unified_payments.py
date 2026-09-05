@@ -172,6 +172,21 @@ def _stripe_occurred_at(row: StripeCheckoutSession) -> datetime:
     return row.completed_at or row.created_at
 
 
+def _ingest_occurred_at(method_slug: str, read_payload: dict[str, Any]) -> Any:
+    """Prefer transfer paid_at (or Stripe completed_at) over ingest created_at."""
+    created_at = read_payload["created_at"]
+    if method_slug == "stripe":
+        return read_payload.get("completed_at") or created_at
+    from bot.services.payment_chip_match import parse_payment_reference_at
+
+    paid_raw = read_payload.get("paid_at")
+    if paid_raw:
+        parsed = parse_payment_reference_at(paid_at=str(paid_raw), created_at=None)
+        if parsed is not None:
+            return parsed
+    return created_at
+
+
 def _ingest_to_unified(
     db: Session,
     *,
@@ -179,9 +194,7 @@ def _ingest_to_unified(
     owner_slug: str,
     read_payload: dict[str, Any],
 ) -> UnifiedPaymentRowRead:
-    occurred_at = read_payload["created_at"]
-    if method_slug == "stripe":
-        occurred_at = read_payload.get("completed_at") or read_payload["created_at"]
+    occurred_at = _ingest_occurred_at(method_slug, read_payload)
     status = read_payload.get("status")
     can_bind = (
         method_slug != "stripe"

@@ -496,7 +496,7 @@ export default function Payments({ token }: { token: string }) {
         downloadCsv(
           `${parts.join('-')}.csv`,
           [
-            'created_at',
+            'paid_at',
             'from_label',
             'chain',
             'token_symbol',
@@ -510,7 +510,7 @@ export default function Payments({ token }: { token: string }) {
             'status',
           ],
           (rows as CryptoPaymentRow[]).map((row) => [
-            row.created_at,
+            row.paid_at || row.created_at,
             row.from_label,
             row.chain,
             row.token_symbol,
@@ -536,7 +536,7 @@ export default function Payments({ token }: { token: string }) {
         const headers =
           effectiveMethod === 'venmo'
             ? [
-                'created_at',
+                'paid_at',
                 'payer_name',
                 'venmo_handle',
                 'group_title',
@@ -549,7 +549,7 @@ export default function Payments({ token }: { token: string }) {
                 'goods_or_services',
               ]
             : [
-                'created_at',
+                'paid_at',
                 'payer_name',
                 accountKey,
                 'group_title',
@@ -572,7 +572,7 @@ export default function Payments({ token }: { token: string }) {
             )[]
           ).map((row) => {
             const base = [
-              row.created_at,
+              row.paid_at || row.created_at,
               row.payer_name,
               String((row as Record<string, unknown>)[accountKey] ?? ''),
               row.group_title || '',
