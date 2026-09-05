@@ -536,7 +536,7 @@ export default function Payments({ token }: { token: string }) {
         const headers =
           effectiveMethod === 'venmo'
             ? [
-                'paid_at',
+                'created_at',
                 'payer_name',
                 'venmo_handle',
                 'group_title',
@@ -549,7 +549,7 @@ export default function Payments({ token }: { token: string }) {
                 'goods_or_services',
               ]
             : [
-                'paid_at',
+                'created_at',
                 'payer_name',
                 accountKey,
                 'group_title',
@@ -572,7 +572,7 @@ export default function Payments({ token }: { token: string }) {
             )[]
           ).map((row) => {
             const base = [
-              row.paid_at || row.created_at,
+              row.created_at,
               row.payer_name,
               String((row as Record<string, unknown>)[accountKey] ?? ''),
               row.group_title || '',

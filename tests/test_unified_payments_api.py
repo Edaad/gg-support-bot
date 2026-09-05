@@ -38,7 +38,17 @@ class IngestOccurredAtTests(unittest.TestCase):
     def test_falls_back_to_created_at_when_paid_at_missing(self):
         created = "2026-09-05T05:48:24.165413+00:00"
         self.assertEqual(
-            _ingest_occurred_at("venmo", {"paid_at": None, "created_at": created}),
+            _ingest_occurred_at("crypto", {"paid_at": None, "created_at": created}),
+            created,
+        )
+
+    def test_non_crypto_ignores_paid_at(self):
+        created = "2026-09-05T05:48:24.165413+00:00"
+        self.assertEqual(
+            _ingest_occurred_at(
+                "venmo",
+                {"paid_at": "2026-08-14T00:17:21Z", "created_at": created},
+            ),
             created,
         )
 

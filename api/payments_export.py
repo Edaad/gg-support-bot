@@ -143,7 +143,7 @@ def _manual_ingest_detail_rows(
         "venmo": "venmo_handle",
     }.get(method_slug, "venmo_handle")
     headers = [
-        "paid_at",
+        "created_at",
         "payer_name",
         account_key,
         "group_title",
@@ -161,7 +161,7 @@ def _manual_ingest_detail_rows(
     for row in rows:
         d = row.detail
         base = [
-            d.get("paid_at") or d.get("created_at") or "",
+            d.get("created_at") or "",
             d.get("payer_name") or "",
             d.get(account_key) or "",
             d.get("group_title") or "",

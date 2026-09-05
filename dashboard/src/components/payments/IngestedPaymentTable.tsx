@@ -33,13 +33,22 @@ function fmtPaymentAt(iso: string | null | undefined): string {
   }
 }
 
-/** Prefer on-chain/transfer paid_at (or Stripe completed_at) over ingest created_at. */
-function paymentDisplayAt(row: {
-  paid_at?: string | null
-  completed_at?: string | null
-  created_at: string
-}): string {
-  return row.paid_at || row.completed_at || row.created_at
+/** Prefer paid_at for crypto; Stripe completed_at; else created_at. */
+function paymentDisplayAt(
+  method: OwnerMethod,
+  row: {
+    paid_at?: string | null
+    completed_at?: string | null
+    created_at: string
+  },
+): string {
+  if (method === 'crypto') {
+    return row.paid_at || row.created_at
+  }
+  if (method === 'stripe') {
+    return row.completed_at || row.created_at
+  }
+  return row.created_at
 }
 
 function fmtMoney(value: number | string): string {
@@ -104,7 +113,7 @@ export default function IngestedPaymentTable({ method, rows, clubNameById, onBin
             {rows.filter(isStripe).map((row) => (
               <tr key={row.id} className="hover:bg-surface/80">
                 <td className="px-4 py-3 whitespace-nowrap">
-                  {fmtPaymentAt(paymentDisplayAt(row))}
+                  {fmtPaymentAt(paymentDisplayAt(method, row))}
                 </td>
                 <td className="px-4 py-3 font-medium">
                   {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
@@ -158,7 +167,7 @@ export default function IngestedPaymentTable({ method, rows, clubNameById, onBin
           <tbody className="divide-y divide-border text-sm">
             {rows.filter(isCrypto).map((row) => (
               <tr key={row.id} className="hover:bg-surface/80">
-                <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(paymentDisplayAt(row))}</td>
+                <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(paymentDisplayAt(method, row))}</td>
                 <td className="px-4 py-3 font-medium">
                   {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
                 </td>
@@ -216,7 +225,7 @@ export default function IngestedPaymentTable({ method, rows, clubNameById, onBin
         <tbody className="divide-y divide-border text-sm">
           {rows.filter(isManualIngest).map((row) => (
             <tr key={row.id} className="hover:bg-surface/80">
-              <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(paymentDisplayAt(row))}</td>
+              <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(paymentDisplayAt(method, row))}</td>
               <td className="px-4 py-3 font-medium">${fmtMoney(row.amount_usd)}</td>
               <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                 {row.status === 'unbound' ? (

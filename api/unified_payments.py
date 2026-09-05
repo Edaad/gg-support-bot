@@ -173,17 +173,18 @@ def _stripe_occurred_at(row: StripeCheckoutSession) -> datetime:
 
 
 def _ingest_occurred_at(method_slug: str, read_payload: dict[str, Any]) -> Any:
-    """Prefer transfer paid_at (or Stripe completed_at) over ingest created_at."""
+    """Time for unified list: crypto prefers paid_at; Stripe completed_at; else created_at."""
     created_at = read_payload["created_at"]
     if method_slug == "stripe":
         return read_payload.get("completed_at") or created_at
-    from bot.services.payment_chip_match import parse_payment_reference_at
+    if method_slug == "crypto":
+        from bot.services.payment_chip_match import parse_payment_reference_at
 
-    paid_raw = read_payload.get("paid_at")
-    if paid_raw:
-        parsed = parse_payment_reference_at(paid_at=str(paid_raw), created_at=None)
-        if parsed is not None:
-            return parsed
+        paid_raw = read_payload.get("paid_at")
+        if paid_raw:
+            parsed = parse_payment_reference_at(paid_at=str(paid_raw), created_at=None)
+            if parsed is not None:
+                return parsed
     return created_at
 
 

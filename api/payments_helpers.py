@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, and_, cast, exists, func, or_, select
+from sqlalchemy import DateTime, and_, case, cast, exists, func, or_, select
 from sqlalchemy.orm import Session, Query, joinedload
 
 from db.models import (
@@ -354,23 +354,34 @@ def _payment_linked_to_club(payment_cls, club_id: int):
     )
 
 
-def _payment_display_at_column(payment_cls):
-    """SQL column for dashboard Time: prefer paid_at, else created_at."""
-    paid_col = getattr(payment_cls, "paid_at", None)
-    if paid_col is None:
-        return payment_cls.created_at
-    paid_ts = cast(func.nullif(paid_col, ""), DateTime(timezone=True))
-    return func.coalesce(paid_ts, payment_cls.created_at)
+def _crypto_paid_at_column():
+    """SQL timestamp for crypto dashboard filters: ISO paid_at, else created_at."""
+    iso_paid = case(
+        (
+            CryptoPayment.paid_at.op("~")(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}"),
+            cast(CryptoPayment.paid_at, DateTime(timezone=True)),
+        ),
+        else_=None,
+    )
+    return func.coalesce(iso_paid, CryptoPayment.created_at)
 
 
-def _apply_payment_display_at_range(query, payment_cls, *, from_dt, to_dt):
+def _apply_crypto_paid_at_range(query, *, from_dt, to_dt):
     if from_dt is None and to_dt is None:
         return query
-    col = _payment_display_at_column(payment_cls)
+    col = _crypto_paid_at_column()
     if from_dt is not None:
         query = query.filter(col >= from_dt)
     if to_dt is not None:
         query = query.filter(col <= to_dt)
+    return query
+
+
+def _apply_created_at_range(query, payment_cls, *, from_dt, to_dt):
+    if from_dt is not None:
+        query = query.filter(payment_cls.created_at >= from_dt)
+    if to_dt is not None:
+        query = query.filter(payment_cls.created_at <= to_dt)
     return query
 
 
@@ -408,7 +419,7 @@ def apply_venmo_payment_filters(
         query, VenmoPayment, club_id=club_id, status=status
     )
 
-    query = _apply_payment_display_at_range(
+    query = _apply_created_at_range(
         query, VenmoPayment, from_dt=from_dt, to_dt=to_dt
     )
 
@@ -512,7 +523,7 @@ def apply_zelle_payment_filters(
         query, ZellePayment, club_id=club_id, status=status
     )
 
-    query = _apply_payment_display_at_range(
+    query = _apply_created_at_range(
         query, ZellePayment, from_dt=from_dt, to_dt=to_dt
     )
 
@@ -587,7 +598,7 @@ def apply_zelle_summary_filters(
         query = _apply_manual_payment_club_filters(
             query, ZellePayment, club_id=club_id, status="all"
         )
-    query = _apply_payment_display_at_range(
+    query = _apply_created_at_range(
         query, ZellePayment, from_dt=from_dt, to_dt=to_dt
     )
     return query
@@ -678,7 +689,7 @@ def apply_cashapp_payment_filters(
         query, CashAppPayment, club_id=club_id, status=status
     )
 
-    query = _apply_payment_display_at_range(
+    query = _apply_created_at_range(
         query, CashAppPayment, from_dt=from_dt, to_dt=to_dt
     )
 
@@ -780,7 +791,7 @@ def apply_paypal_payment_filters(
         query, PayPalPayment, club_id=club_id, status=status
     )
 
-    query = _apply_payment_display_at_range(
+    query = _apply_created_at_range(
         query, PayPalPayment, from_dt=from_dt, to_dt=to_dt
     )
 
@@ -923,8 +934,8 @@ def apply_crypto_payment_filters(
         query, CryptoPayment, club_id=club_id, status=status
     )
 
-    query = _apply_payment_display_at_range(
-        query, CryptoPayment, from_dt=from_dt, to_dt=to_dt
+    query = _apply_crypto_paid_at_range(
+        query, from_dt=from_dt, to_dt=to_dt
     )
 
     if q and q.strip():
@@ -1122,9 +1133,14 @@ def apply_owner_ingest_filters(
     if variant and variant.strip() and variant_col_name:
         variant_col = getattr(payment_cls, variant_col_name)
         query = query.filter(variant_col == variant.strip())
-    query = _apply_payment_display_at_range(
-        query, payment_cls, from_dt=from_dt, to_dt=to_dt
-    )
+    if payment_cls is CryptoPayment:
+        query = _apply_crypto_paid_at_range(
+            query, from_dt=from_dt, to_dt=to_dt
+        )
+    else:
+        query = _apply_created_at_range(
+            query, payment_cls, from_dt=from_dt, to_dt=to_dt
+        )
     if q and q.strip():
         query = query.filter(_owner_ingest_search_filters(payment_cls, q))
     return query
