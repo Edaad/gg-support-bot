@@ -119,8 +119,23 @@ MEDIA_ONLY_PLACEHOLDER = "(media)"
 DEPOSIT_SENT_ACK_COPY = (
     "Thank you! Credits will be added as soon as we receive the payment."
 )
+DEPOSIT_SENT_ACK_COPY_CRYPTO = (
+    "Thanks! Please send your transaction hash (TxID) here.\n"
+    "\n"
+    "That's the long ID on your wallet/exchange for this transfer — "
+    "open the completed payment → copy TxID / Hash → paste it in this chat.\n"
+    "\n"
+    "We'll add credits as soon as we verify it."
+)
 DEPOSIT_SENT_BUTTON_LABEL = "I have sent the payment"
 DEPOSIT_SENT_CALLBACK_PREFIX = "depsent"
+
+
+def deposit_sent_ack_copy(method_slug: str | None) -> str:
+    """Player ack after tapping 'I have sent the payment' (crypto asks for TxID)."""
+    if (method_slug or "").strip().lower() == "crypto":
+        return DEPOSIT_SENT_ACK_COPY_CRYPTO
+    return DEPOSIT_SENT_ACK_COPY
 
 # While the 5m wait is armed: ignore expected payment acks / proofs.
 _DEPOSIT_FOLLOWUP_IGNORE_RE = re.compile(r"sent|done", re.IGNORECASE)
@@ -1448,6 +1463,7 @@ async def handle_deposit_sent_claim(
     chat_id = int(chat.id)
     club_id = get_club_for_chat(chat_id)
     title = getattr(chat, "title", None)
+    slug = ga.deposit_method_slug(chat_id)
 
     await query.answer()
     try:
@@ -1462,7 +1478,7 @@ async def handle_deposit_sent_claim(
     try:
         await context.bot.send_message(
             chat_id=chat_id,
-            text=DEPOSIT_SENT_ACK_COPY,
+            text=deposit_sent_ack_copy(slug),
         )
     except Exception:
         logger.warning(
@@ -1482,8 +1498,6 @@ async def handle_deposit_sent_claim(
     ):
         # Stale button after cancel; still acked above.
         return
-
-    slug = ga.deposit_method_slug(chat_id)
     bound = False
     if slug:
         try:

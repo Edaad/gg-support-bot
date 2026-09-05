@@ -1114,6 +1114,16 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                     esc.DEPOSIT_SENT_ACK_COPY,
                 )
 
+    def test_deposit_sent_ack_copy_crypto_only(self):
+        self.assertEqual(
+            esc.deposit_sent_ack_copy("crypto"),
+            esc.DEPOSIT_SENT_ACK_COPY_CRYPTO,
+        )
+        self.assertIn("transaction hash", esc.DEPOSIT_SENT_ACK_COPY_CRYPTO.lower())
+        self.assertEqual(esc.deposit_sent_ack_copy("zelle"), esc.DEPOSIT_SENT_ACK_COPY)
+        self.assertEqual(esc.deposit_sent_ack_copy(None), esc.DEPOSIT_SENT_ACK_COPY)
+        self.assertEqual(esc.deposit_sent_ack_copy("CRYPTO"), esc.DEPOSIT_SENT_ACK_COPY_CRYPTO)
+
     async def test_claim_bound_schedules_watch(self):
         with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
             with patch.object(ga, "_persist_activity_state"):
@@ -1142,6 +1152,10 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                             with patch.object(esc, "schedule_deposit_sent_watch") as sched:
                                 await esc.handle_deposit_sent_claim(update, context)
                                 sched.assert_called_once()
+                self.assertEqual(
+                    context.bot.send_message.await_args.kwargs["text"],
+                    esc.DEPOSIT_SENT_ACK_COPY,
+                )
 
     async def test_claim_crypto_wallet_binding_schedules_watch(self):
         """Crypto bound via crypto_wallet_bindings must not Slack unbound."""
@@ -1186,6 +1200,10 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                                         )
                 notify.assert_not_awaited()
                 sched.assert_called_once()
+                self.assertEqual(
+                    context.bot.send_message.await_args.kwargs["text"],
+                    esc.DEPOSIT_SENT_ACK_COPY_CRYPTO,
+                )
 
     async def test_timeout_skips_when_payment_seen(self):
         with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
