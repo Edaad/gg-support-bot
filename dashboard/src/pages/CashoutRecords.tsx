@@ -25,7 +25,10 @@ import {
   downloadCashoutMoneySendsCsv,
   downloadCashoutRecordsCsv,
 } from '../api/csvExportClient'
-import { easternCalendarDateString } from '../lib/easternTime'
+import {
+  easternCalendarDateString,
+  formatEasternDateTime,
+} from '../lib/easternTime'
 import type { DashboardRole } from '../lib/rbac'
 
 type PageTab = CashoutLedgerStatus | 'money_sent'
@@ -49,30 +52,6 @@ function daysAgoEastern(days: number): string {
   const d = new Date()
   d.setDate(d.getDate() - days)
   return easternCalendarDateString(d)
-}
-
-function fmtDate(iso: string | null) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
-}
-
-function fmtSendDate(iso: string | null) {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  const datePart = d.toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
-  const timePart = d.toLocaleTimeString('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-  return `${datePart} at ${timePart}`
 }
 
 function MoneySentRowMenu({
@@ -537,7 +516,7 @@ export default function CashoutRecords({
                       <td className="px-4 py-3 text-ink">{s.sender_name}</td>
                       <td className="px-4 py-3 text-ink">{s.method_display_name}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-ink">
-                        {fmtSendDate(s.created_at)}
+                        {formatEasternDateTime(s.created_at)}
                       </td>
                       <td className="px-4 py-3 text-ink">{s.group_title}</td>
                       <td className="px-4 py-3 text-right">
@@ -605,7 +584,7 @@ export default function CashoutRecords({
               >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
-                    <p className="text-sm text-ink-muted">{fmtDate(r.created_at)}</p>
+                    <p className="text-sm text-ink-muted">{formatEasternDateTime(r.created_at)}</p>
                     <h2 className="mt-1 text-xl font-semibold text-ink">{r.group_title}</h2>
                     <p className="mt-1 text-base text-ink-muted">{r.club_name || '—'}</p>
                   </div>

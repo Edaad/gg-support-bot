@@ -2,6 +2,7 @@ import Modal from '../Modal'
 import type { OwnerMethod } from '../../api/paymentsClient'
 import type { UnifiedPaymentRow } from './types'
 import { fmtGgNickname, fmtUnifiedStatus } from './types'
+import { formatEasternDateTime } from '../../lib/easternTime'
 
 type Props = {
   open: boolean
@@ -87,7 +88,9 @@ export default function PaymentDetailModal({ open, row, onClose, onBind }: Props
           <DetailField label="Status" value={fmtUnifiedStatus(row.status)} />
           <DetailField
             label="Paid at"
-            value={typeof d.paid_at === 'string' ? d.paid_at : null}
+            value={
+              typeof d.paid_at === 'string' ? formatEasternDateTime(d.paid_at) : null
+            }
           />
           <DetailField label="From" value={typeof d.from_label === 'string' ? d.from_label : null} />
           <DetailField label="Token" value={typeof d.token_symbol === 'string' ? d.token_symbol : null} />

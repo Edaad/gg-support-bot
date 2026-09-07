@@ -6,6 +6,7 @@ import {
 } from '../api/paymentsClient'
 import Modal from './Modal'
 import { AUTO_DEPOSIT_SKIP_REASON_LABELS } from './autoDepositLabels'
+import { formatEasternDate } from '../lib/easternTime'
 
 const PAGE_SIZE = 50
 
@@ -33,19 +34,6 @@ type Props = {
   token: string
   listParams: AutoDepositListParams
   onClose: () => void
-}
-
-function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  try {
-    const d = new Date(iso)
-    const day = d.getDate()
-    const month = d.toLocaleDateString('en-GB', { month: 'short' })
-    const year = d.getFullYear()
-    return `${day} ${month}, ${year}`
-  } catch {
-    return iso
-  }
 }
 
 function statusClass(status: string): string {
@@ -158,7 +146,7 @@ export default function AutoDepositDrilldownModal({
                 <tbody>
                   {rows.map((row) => (
                     <tr key={row.id}>
-                      <td>{fmtDate(row.payment_at)}</td>
+                      <td>{formatEasternDate(row.payment_at)}</td>
                       <td>${row.amount_usd}</td>
                       <td className="max-w-[14rem] truncate" title={row.group_title ?? undefined}>
                         {row.group_title ?? row.gg_player_id ?? '—'}

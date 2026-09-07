@@ -10,8 +10,12 @@ export function parseApiUtcDate(raw: string): Date {
   return new Date(s.includes('T') ? `${s}Z` : `${s}T00:00:00Z`)
 }
 
-export function formatEasternDateTime(value: string | Date): string {
+export function formatEasternDateTime(
+  value: string | Date | null | undefined,
+): string {
+  if (value == null || value === '') return '—'
   const d = typeof value === 'string' ? parseApiUtcDate(value) : value
+  if (Number.isNaN(d.getTime())) return '—'
   return d.toLocaleString('en-US', {
     timeZone: EASTERN,
     month: 'numeric',
@@ -22,6 +26,31 @@ export function formatEasternDateTime(value: string | Date): string {
     second: '2-digit',
     hour12: true,
     timeZoneName: 'short',
+  })
+}
+
+/** Date-only in America/New_York. YYYY-MM-DD strings are calendar dates (no TZ shift). */
+export function formatEasternDate(
+  value: string | Date | null | undefined,
+): string {
+  if (value == null || value === '') return '—'
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    const [y, m, d] = value.trim().split('-').map(Number)
+    if (![y, m, d].every(Number.isFinite)) return value
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', {
+      timeZone: 'UTC',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })
+  }
+  const d = typeof value === 'string' ? parseApiUtcDate(value) : value
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-US', {
+    timeZone: EASTERN,
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
   })
 }
 

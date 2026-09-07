@@ -22,15 +22,8 @@ import CashoutMethodFields, {
 } from '../components/CashoutMethodFields'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
+import { formatEasternDateTime } from '../lib/easternTime'
 import type { DashboardRole } from '../lib/rbac'
-
-function fmtDate(iso: string | null) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
-}
 
 function applyRecord(row: StaffCashoutRecordT): StaffCashoutRecordT {
   return {
@@ -334,7 +327,7 @@ export default function CashoutRecordDetail({
         </div>
       )}
 
-      <p className="mt-4 text-sm text-ink-muted">{fmtDate(record.created_at)}</p>
+      <p className="mt-4 text-sm text-ink-muted">{formatEasternDateTime(record.created_at)}</p>
       <h1 className="mt-1 text-2xl font-bold text-ink">{record.group_title}</h1>
       <p className="mt-1 text-base text-ink-muted">{record.club_name || '—'}</p>
 
@@ -469,7 +462,7 @@ export default function CashoutRecordDetail({
                     {fmtMoney(s.amount)} / {s.sender_name}
                   </p>
                   <p className="mt-1 text-sm text-ink-muted">
-                    {s.method_display_name} · {fmtDate(s.created_at)}
+                    {s.method_display_name} · {formatEasternDateTime(s.created_at)}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">

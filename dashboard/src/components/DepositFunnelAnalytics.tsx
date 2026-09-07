@@ -6,6 +6,7 @@ import {
   type DepositFunnelSummary,
 } from '../api/depositFunnelClient'
 import { AUTO_DEPOSIT_METHOD_OPTIONS, type AutoDepositMethodSlug } from '../api/paymentsClient'
+import { formatEasternDateTime } from '../lib/easternTime'
 import KpiStat from './KpiStat'
 
 type Filters = {
@@ -294,7 +295,7 @@ export default function DepositFunnelAnalytics({
                     {events.map((row) => (
                       <tr key={row.id} className="border-t border-border">
                         <td className="px-2 py-2 whitespace-nowrap">
-                          {new Date(row.created_at).toLocaleString()}
+                          {formatEasternDateTime(row.created_at)}
                         </td>
                         <td className="px-2 py-2">{row.club_name ?? row.club_id ?? '—'}</td>
                         <td className="px-2 py-2 font-mono text-xs">{row.telegram_chat_id}</td>

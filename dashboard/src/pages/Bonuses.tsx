@@ -15,14 +15,7 @@ import DateRangeCsvExport from '../components/DateRangeCsvExport'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
 import { downloadBonusRecordsCsv } from '../api/csvExportClient'
-
-function fmtDate(iso: string | null) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
-}
+import { formatEasternDateTime } from '../lib/easternTime'
 
 function recordMatchesSearch(r: BonusRecordT, needle: string) {
   const n = needle.toLowerCase()
@@ -306,7 +299,7 @@ export default function Bonuses({ token }: { token: string }) {
             >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
-                  <p className="text-sm text-ink-muted">{fmtDate(r.created_at)}</p>
+                  <p className="text-sm text-ink-muted">{formatEasternDateTime(r.created_at)}</p>
                   <h2 className="mt-1 text-xl font-semibold text-ink">
                     {r.group_title || r.player_username}
                   </h2>
