@@ -70,8 +70,11 @@ class CashoutSourceLabelTestCase(unittest.TestCase):
         self.assertEqual(cashout_method_token("cashapp"), "Cash App")
         self.assertEqual(cashout_method_token("Venmo — first deposit"), "Venmo")
         self.assertEqual(cashout_method_token("PayPal email"), "PayPal")
+        self.assertEqual(cashout_method_token("Chips"), "Chips")
+        self.assertEqual(cashout_method_token("chips"), "Chips")
         self.assertIsNone(cashout_method_token("Other"))
         self.assertIsNone(cashout_method_token(""))
+        self.assertIsNone(cashout_method_token("Added back"))
 
     def test_join_unique_in_order(self):
         self.assertEqual(

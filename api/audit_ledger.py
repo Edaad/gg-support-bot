@@ -95,6 +95,7 @@ CASHOUT_METHOD_TOKENS: tuple[str, ...] = (
     "Crypto",
     "Revolut",
     "PayPal",
+    "Chips",
 )
 CASHOUT_SOURCE_LABELS: tuple[str, ...] = tuple(
     f"Cashout {token}" for token in CASHOUT_METHOD_TOKENS
@@ -107,6 +108,7 @@ _CASHOUT_METHOD_ALIASES: dict[str, str] = {
     "crypto": "Crypto",
     "revolut": "Revolut",
     "paypal": "PayPal",
+    "chips": "Chips",
 }
 
 DEPOSIT_METHOD_ORDER: tuple[str, ...] = (

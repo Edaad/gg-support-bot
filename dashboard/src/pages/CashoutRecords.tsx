@@ -268,7 +268,7 @@ export default function CashoutRecords({
     let cancelled = false
     listV2Methods(token, Number(clubId), 'cashout')
       .then((rows) => {
-        if (!cancelled) setCreateMethods(rows.filter((m) => m.is_active))
+        if (!cancelled) setCreateMethods(rows.filter((m) => m.is_active && m.slug !== 'chips'))
       })
       .catch(() => {
         if (!cancelled) setCreateMethods([])

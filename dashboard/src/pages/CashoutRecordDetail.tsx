@@ -123,7 +123,7 @@ export default function CashoutRecordDetail({
       setRecord(applyRecord(row))
       setOriginalDraft(String(row.amount))
       const clubMethods = await listV2Methods(token, row.club_id, 'cashout')
-      setMethods(clubMethods.filter((m) => m.is_active))
+      setMethods(clubMethods.filter((m) => m.is_active && m.slug !== 'chips'))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load')
     } finally {
@@ -537,7 +537,12 @@ export default function CashoutRecordDetail({
               className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
             />
           </div>
-          <CashoutMethodFields methods={methods} choice={sendChoice} onChange={setSendChoice} />
+          <CashoutMethodFields
+            methods={methods}
+            choice={sendChoice}
+            onChange={setSendChoice}
+            staffOnlyLabels={['Chips']}
+          />
           <button type="button" onClick={saveSend} disabled={saving} className="btn-primary w-full">
             Save
           </button>

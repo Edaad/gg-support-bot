@@ -21,11 +21,20 @@ type Props = {
   methods: V2Method[]
   choice: MethodChoice
   onChange: (next: MethodChoice) => void
+  /** Display-name-only options (no catalog id) — e.g. money-sent "Chips". */
+  staffOnlyLabels?: string[]
 }
 
-export default function CashoutMethodFields({ methods, choice, onChange }: Props) {
+export default function CashoutMethodFields({
+  methods,
+  choice,
+  onChange,
+  staffOnlyLabels = [],
+}: Props) {
   const selected = methods.find((m) => m.id === choice.payment_method_id) ?? null
   const subs = (selected?.sub_options ?? []).filter((s) => s.is_active)
+  const staffLabelSelected =
+    choice.custom && staffOnlyLabels.some((label) => choice.custom_name === label)
 
   return (
     <div className="space-y-3">
@@ -55,6 +64,30 @@ export default function CashoutMethodFields({ methods, choice, onChange }: Props
             </button>
           )
         })}
+        {staffOnlyLabels.map((label) => {
+          const on = choice.custom && choice.custom_name === label
+          return (
+            <button
+              key={`staff-${label}`}
+              type="button"
+              onClick={() =>
+                onChange({
+                  custom: true,
+                  payment_method_id: null,
+                  payment_sub_option_id: null,
+                  custom_name: label,
+                })
+              }
+              className={
+                on
+                  ? 'rounded-full border border-accent bg-accent/12 px-3 py-2 text-sm font-medium text-accent'
+                  : 'rounded-full border border-border bg-surface-raised px-3 py-2 text-sm font-medium text-ink hover:bg-control'
+              }
+            >
+              {label}
+            </button>
+          )
+        })}
         <button
           type="button"
           onClick={() =>
@@ -62,11 +95,11 @@ export default function CashoutMethodFields({ methods, choice, onChange }: Props
               custom: true,
               payment_method_id: null,
               payment_sub_option_id: null,
-              custom_name: choice.custom_name,
+              custom_name: staffLabelSelected ? '' : choice.custom_name,
             })
           }
           className={
-            choice.custom
+            choice.custom && !staffLabelSelected
               ? 'rounded-full border border-accent bg-accent/12 px-3 py-2 text-sm font-medium text-accent'
               : 'rounded-full border border-border bg-surface-raised px-3 py-2 text-sm font-medium text-ink hover:bg-control'
           }
@@ -74,7 +107,7 @@ export default function CashoutMethodFields({ methods, choice, onChange }: Props
           Custom
         </button>
       </div>
-      {choice.custom && (
+      {choice.custom && !staffLabelSelected && (
         <input
           value={choice.custom_name}
           onChange={(e) => onChange({ ...choice, custom_name: e.target.value })}
