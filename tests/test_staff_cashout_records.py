@@ -84,6 +84,15 @@ class SearchMatchTestCase(unittest.TestCase):
             )
         )
 
+    def test_matches_club_name(self) -> None:
+        row = {
+            "group_title": "GTO / 1 / X",
+            "gg_player_id": "1",
+            "club_name": "Round Table",
+        }
+        self.assertTrue(_matches_search(row, "round"))
+        self.assertFalse(_matches_search(row, "aces"))
+
 
 class LedgerStatusTestCase(unittest.TestCase):
     def test_legacy_always_cleared(self) -> None:
@@ -286,12 +295,65 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
             self.assertEqual(added.method_display_name, "Revolut")
             self.assertIsNone(added.payment_method_id)
 
+    def test_list_paginates_active_status(self) -> None:
+        from datetime import datetime
+
+        from db.models import StaffCashoutRecord
+        from bot.services.staff_cashout_records import list_staff_cashout_records
+
+        def _active(i: int) -> MagicMock:
+            record = MagicMock(spec=StaffCashoutRecord)
+            record.id = i
+            record.cashier_job_id = None
+            record.club_id = 2
+            record.chat_id = None
+            record.group_title = f"RT / {i} / P"
+            record.gg_player_id = str(i)
+            record.amount = Decimal("100")
+            record.recorded_by_telegram_user_id = None
+            record.trigger = "dashboard"
+            record.tracks_money_sent = True
+            record.do_not_send = False
+            record.created_at = datetime(2026, 1, i)
+            record.updated_at = None
+            record.payments = []
+            record.money_sends = []
+            return record
+
+        rows = [_active(i) for i in range(3, 0, -1)]  # newest first: 3,2,1
+        session = MagicMock()
+        club_q = MagicMock()
+        club_q.all.return_value = [MagicMock(id=2, name="Round Table")]
+        query = MagicMock()
+        query.outerjoin.return_value = query
+        query.order_by.return_value = query
+        query.filter.return_value = query
+        query.all.return_value = rows
+
+        def query_side_effect(*args):
+            if len(args) == 2:
+                return club_q
+            return query
+
+        session.query.side_effect = query_side_effect
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+
+        with patch("bot.services.staff_cashout_records.get_db", return_value=cm):
+            items, total = list_staff_cashout_records(
+                status="active", limit=2, offset=1
+            )
+        self.assertEqual(total, 3)
+        self.assertEqual(len(items), 2)
+        self.assertEqual([r["id"] for r in items], [2, 1])
+
 
 class CashoutRecordsApiTestCase(unittest.TestCase):
     def test_list_returns_records(self) -> None:
         with patch(
             "api.routes.cashout_records.list_staff_cashout_records",
-            return_value=[_sample_record()],
+            return_value=([_sample_record()], 1),
         ), patch(
             "api.routes.cashout_records._club_name_map",
             return_value={2: "Round Table"},
@@ -300,27 +362,34 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
             resp = client.get("/api/cashout-records?status=active")
             self.assertEqual(resp.status_code, 200)
             body = resp.json()
-            self.assertEqual(len(body), 1)
-            self.assertEqual(body[0]["group_title"], "RT / 2427-3267 / Samin")
-            self.assertEqual(body[0]["club_name"], "Round Table")
-            self.assertEqual(body[0]["status"], "active")
+            self.assertEqual(body["total"], 1)
+            self.assertEqual(body["limit"], 50)
+            self.assertEqual(body["offset"], 0)
+            self.assertEqual(len(body["items"]), 1)
+            self.assertEqual(body["items"][0]["group_title"], "RT / 2427-3267 / Samin")
+            self.assertEqual(body["items"][0]["club_name"], "Round Table")
+            self.assertEqual(body["items"][0]["status"], "active")
 
     def test_list_passes_club_and_search(self) -> None:
         with patch(
             "api.routes.cashout_records.list_staff_cashout_records",
-            return_value=[],
+            return_value=([], 0),
         ) as mock_list, patch(
             "api.routes.cashout_records._club_name_map",
             return_value={},
         ):
             client = TestClient(_make_api_app())
-            resp = client.get("/api/cashout-records?status=active&club_id=2&q=Samin")
+            resp = client.get(
+                "/api/cashout-records?status=active&club_id=2&q=Samin&limit=25&offset=50"
+            )
         self.assertEqual(resp.status_code, 200)
         mock_list.assert_called_once()
         kwargs = mock_list.call_args.kwargs
         self.assertEqual(kwargs["club_id"], 2)
         self.assertEqual(kwargs["status"], "active")
         self.assertEqual(kwargs["q"], "Samin")
+        self.assertEqual(kwargs["limit"], 25)
+        self.assertEqual(kwargs["offset"], 50)
 
     def test_create_manual_cashout(self) -> None:
         created = _sample_record()
@@ -433,7 +502,7 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         }
         with patch(
             "api.routes.cashout_records.list_staff_cashout_money_sends",
-            return_value=[row],
+            return_value=([row], 1),
         ) as mock_list:
             client = TestClient(_make_api_app())
             resp = client.get(
@@ -441,15 +510,51 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
             )
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
-        self.assertEqual(len(body), 1)
-        self.assertEqual(body[0]["sender_name"], "Rtsupport")
-        self.assertEqual(body[0]["group_title"], "RT AT / 4283-2447 / Raff")
+        self.assertEqual(body["total"], 1)
+        self.assertEqual(len(body["items"]), 1)
+        self.assertEqual(body["items"][0]["sender_name"], "Rtsupport")
+        self.assertEqual(body["items"][0]["group_title"], "RT AT / 4283-2447 / Raff")
         kwargs = mock_list.call_args.kwargs
         self.assertEqual(kwargs["club_id"], 2)
         self.assertEqual(kwargs["method_display_name"], "Venmo")
         self.assertEqual(kwargs["q"], "Raff")
+        self.assertEqual(kwargs["limit"], 50)
+        self.assertEqual(kwargs["offset"], 0)
         self.assertIsNotNone(kwargs["from_dt"])
         self.assertIsNotNone(kwargs["to_dt"])
+
+    def test_money_sends_ledger_pagination(self) -> None:
+        row = {
+            "id": 9,
+            "cashout_record_id": 1,
+            "sender_name": "Rtsupport",
+            "amount": Decimal("385"),
+            "payment_method_id": None,
+            "payment_sub_option_id": None,
+            "method_display_name": "Venmo",
+            "created_at": None,
+            "club_id": 2,
+            "club_name": "Round Table",
+            "group_title": "RT AT / 4283-2447 / Raff",
+            "gg_player_id": "4283-2447",
+        }
+        with patch(
+            "api.routes.cashout_records.list_staff_cashout_money_sends",
+            return_value=([row], 75),
+        ) as mock_list:
+            client = TestClient(_make_api_app())
+            resp = client.get(
+                "/api/cashout-records/sends?from=2026-07-22&to=2026-08-21&limit=50&offset=50"
+            )
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body["total"], 75)
+        self.assertEqual(body["limit"], 50)
+        self.assertEqual(body["offset"], 50)
+        self.assertEqual(len(body["items"]), 1)
+        kwargs = mock_list.call_args.kwargs
+        self.assertEqual(kwargs["limit"], 50)
+        self.assertEqual(kwargs["offset"], 50)
 
     def test_money_sends_ledger_am_forbidden(self) -> None:
         app = _make_api_app()
@@ -490,7 +595,7 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         parked["do_not_send"] = True
         with patch(
             "api.routes.cashout_records.list_staff_cashout_records",
-            return_value=[parked],
+            return_value=([parked], 1),
         ) as mock_list, patch(
             "api.routes.cashout_records._club_name_map",
             return_value={2: "Round Table"},
@@ -498,8 +603,30 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
             client = TestClient(_make_api_app())
             resp = client.get("/api/cashout-records?status=do_not_send")
         self.assertEqual(resp.status_code, 200)
-        self.assertTrue(resp.json()[0]["do_not_send"])
+        self.assertTrue(resp.json()["items"][0]["do_not_send"])
         self.assertEqual(mock_list.call_args.kwargs["status"], "do_not_send")
+
+    def test_list_pagination_offset(self) -> None:
+        second = _sample_record()
+        second["id"] = 2
+        second["group_title"] = "RT / 9999 / PageTwo"
+        with patch(
+            "api.routes.cashout_records.list_staff_cashout_records",
+            return_value=([second], 51),
+        ) as mock_list, patch(
+            "api.routes.cashout_records._club_name_map",
+            return_value={2: "Round Table"},
+        ):
+            client = TestClient(_make_api_app())
+            resp = client.get("/api/cashout-records?status=active&limit=50&offset=50")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body["total"], 51)
+        self.assertEqual(body["offset"], 50)
+        self.assertEqual(len(body["items"]), 1)
+        self.assertEqual(body["items"][0]["group_title"], "RT / 9999 / PageTwo")
+        self.assertEqual(mock_list.call_args.kwargs["offset"], 50)
+        self.assertEqual(mock_list.call_args.kwargs["limit"], 50)
 
     def test_list_do_not_send_am_forbidden(self) -> None:
         app = _make_api_app()

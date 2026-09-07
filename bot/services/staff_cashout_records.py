@@ -564,7 +564,7 @@ def delete_staff_cashout_send(record_id: int, send_id: int) -> Optional[dict[str
 
 def _matches_search(out: dict[str, Any], needle: str) -> bool:
     blob = " ".join(
-        str(out.get(k) or "") for k in ("group_title", "gg_player_id")
+        str(out.get(k) or "") for k in ("group_title", "gg_player_id", "club_name")
     ).lower()
     return needle.lower() in blob
 
@@ -574,17 +574,26 @@ def list_staff_cashout_records(
     club_id: Optional[int] = None,
     status: Optional[str] = None,
     q: Optional[str] = None,
-    limit: int = 200,
-) -> list[dict[str, Any]]:
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
     if status is not None and status not in STATUSES:
         raise ValueError("status must be active, cleared, oversent, or do_not_send")
+    cap = max(1, min(int(limit), 500))
+    skip = max(0, int(offset))
     needle = None
     if q:
         cleaned = str(q).replace("%", "").replace("_", "").strip()
         needle = cleaned or None
     with get_db() as session:
-        query = session.query(StaffCashoutRecord).order_by(
-            StaffCashoutRecord.created_at.desc()
+        club_names = {
+            int(row.id): str(row.name)
+            for row in session.query(Club.id, Club.name).all()
+        }
+        query = (
+            session.query(StaffCashoutRecord)
+            .outerjoin(Club, Club.id == StaffCashoutRecord.club_id)
+            .order_by(StaffCashoutRecord.created_at.desc())
         )
         if club_id is not None:
             query = query.filter(StaffCashoutRecord.club_id == int(club_id))
@@ -598,12 +607,14 @@ def list_staff_cashout_records(
                 or_(
                     StaffCashoutRecord.group_title.ilike(like),
                     StaffCashoutRecord.gg_player_id.ilike(like),
+                    Club.name.ilike(like),
                 )
             )
         rows = query.all()
-        results = []
+        filtered: list[dict[str, Any]] = []
         for record in rows:
             out = _record_to_dict(record)
+            out["club_name"] = club_names.get(int(record.club_id))
             if status == "do_not_send":
                 if not out.get("do_not_send"):
                     continue
@@ -612,10 +623,9 @@ def list_staff_cashout_records(
                     continue
             if needle and not _matches_search(out, needle):
                 continue
-            results.append(out)
-            if len(results) >= limit:
-                break
-        return results
+            filtered.append(out)
+        total = len(filtered)
+        return filtered[skip : skip + cap], total
 
 
 def _money_send_ledger_dict(
@@ -687,10 +697,12 @@ def list_staff_cashout_money_sends(
     to_dt: Optional[datetime] = None,
     method_display_name: Optional[str] = None,
     q: Optional[str] = None,
-    limit: int = 500,
-) -> list[dict[str, Any]]:
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
     """Flat ledger of money-sent rows across cashouts (newest first)."""
     cap = max(1, min(int(limit), 10000))
+    skip = max(0, int(offset))
     with get_db() as session:
         club_names = {
             int(row.id): str(row.name)
@@ -703,14 +715,16 @@ def list_staff_cashout_money_sends(
             to_dt=to_dt,
             method_display_name=method_display_name,
             q=q,
-        ).order_by(
+        )
+        total = query.count()
+        ordered = query.order_by(
             StaffCashoutMoneySend.created_at.desc(),
             StaffCashoutMoneySend.id.desc(),
         )
         results = []
-        for send, record in query.limit(cap).all():
+        for send, record in ordered.offset(skip).limit(cap).all():
             results.append(_money_send_ledger_dict(send, record, club_names))
-        return results
+        return results, total
 
 
 def list_money_send_method_names(

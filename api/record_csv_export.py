@@ -432,13 +432,14 @@ def build_cashout_money_sends_csv(
     from bot.services.staff_cashout_records import list_staff_cashout_money_sends
 
     start, end = et_range_to_utc_naive(from_day, to_day)
-    rows_data = list_staff_cashout_money_sends(
+    rows_data, _total = list_staff_cashout_money_sends(
         club_id=club_id,
         from_dt=start,
         to_dt=end,
         method_display_name=method_display_name,
         q=q,
         limit=10000,
+        offset=0,
     )
     # Export oldest-first for reconciliation spreadsheets
     rows_data = list(reversed(rows_data))

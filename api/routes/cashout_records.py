@@ -18,10 +18,12 @@ from api.record_csv_export import (
 )
 from api.schemas import (
     StaffCashoutMoneySendLedgerRead,
+    StaffCashoutMoneySendListResponse,
     StaffCashoutPaymentCreate,
     StaffCashoutPaymentRead,
     StaffCashoutPaymentUpdate,
     StaffCashoutRecordCreate,
+    StaffCashoutRecordListResponse,
     StaffCashoutRecordRead,
     StaffCashoutRecordUpdate,
     StaffCashoutSendCreate,
@@ -85,12 +87,13 @@ def _to_read(data: dict, club_names: dict[int, str]) -> StaffCashoutRecordRead:
     )
 
 
-@router.get("", response_model=List[StaffCashoutRecordRead])
+@router.get("", response_model=StaffCashoutRecordListResponse)
 def list_cashout_records(
     club_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
     q: Optional[str] = Query(None),
-    limit: int = Query(200, ge=1, le=500),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
@@ -98,10 +101,21 @@ def list_cashout_records(
         raise HTTPException(403, "Admin only")
     club_names = _club_name_map(db)
     try:
-        rows = list_staff_cashout_records(club_id=club_id, status=status, q=q, limit=limit)
+        rows, total = list_staff_cashout_records(
+            club_id=club_id,
+            status=status,
+            q=q,
+            limit=limit,
+            offset=offset,
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return [_to_read(row, club_names) for row in rows]
+    return StaffCashoutRecordListResponse(
+        items=[_to_read(row, club_names) for row in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/export")
@@ -131,7 +145,7 @@ def _ledger_to_read(data: dict) -> StaffCashoutMoneySendLedgerRead:
     return StaffCashoutMoneySendLedgerRead.model_validate(data)
 
 
-@router.get("/sends", response_model=List[StaffCashoutMoneySendLedgerRead])
+@router.get("/sends", response_model=StaffCashoutMoneySendListResponse)
 def list_cashout_money_sends(
     _admin: str = Depends(require_admin),
     club_id: Optional[int] = Query(None),
@@ -139,22 +153,29 @@ def list_cashout_money_sends(
     to_date: str = Query(..., alias="to", description="YYYY-MM-DD (ET, inclusive)"),
     method: Optional[str] = Query(None, description="Exact method_display_name"),
     q: Optional[str] = Query(None),
-    limit: int = Query(500, ge=1, le=500),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ):
     try:
         from_day, to_day = parse_inclusive_date_range(from_date, to_date)
         start, end = et_range_to_utc_naive(from_day, to_day)
-        rows = list_staff_cashout_money_sends(
+        rows, total = list_staff_cashout_money_sends(
             club_id=club_id,
             from_dt=start,
             to_dt=end,
             method_display_name=method,
             q=q,
             limit=limit,
+            offset=offset,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return [_ledger_to_read(row) for row in rows]
+    return StaffCashoutMoneySendListResponse(
+        items=[_ledger_to_read(row) for row in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/sends/methods", response_model=List[str])

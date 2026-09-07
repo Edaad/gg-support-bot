@@ -696,6 +696,20 @@ class StaffCashoutRecordRead(BaseModel):
     sends: List[StaffCashoutSendRead] = []
 
 
+class StaffCashoutRecordListResponse(BaseModel):
+    items: List[StaffCashoutRecordRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class StaffCashoutMoneySendListResponse(BaseModel):
+    items: List[StaffCashoutMoneySendLedgerRead]
+    total: int
+    limit: int
+    offset: int
+
+
 class StaffCashoutRecordCreate(BaseModel):
     club_id: int
     group_title: str
