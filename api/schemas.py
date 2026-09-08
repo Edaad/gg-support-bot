@@ -575,6 +575,7 @@ class BonusRecordRead(BaseModel):
     chat_id: Optional[int] = None
     player_details_id: Optional[int] = None
     admin_telegram_user_id: Optional[int] = None
+    issued_at: Optional[datetime] = None
     created_at: Optional[datetime]
     player_resolved: bool = False
 
@@ -585,6 +586,7 @@ class BonusRecordCreate(BaseModel):
     amount: Decimal
     bonus_type_id: Optional[int] = None
     custom_description: Optional[str] = None
+    issued_at: Optional[datetime] = None
 
 
 class BonusRecordUpdate(BaseModel):
@@ -593,6 +595,7 @@ class BonusRecordUpdate(BaseModel):
     amount: Optional[Decimal] = None
     bonus_type_id: Optional[int] = None
     custom_description: Optional[str] = None
+    issued_at: Optional[datetime] = None
 
 
 # ── Expenses (admin ledger) ───────────────────────────────────────────────────

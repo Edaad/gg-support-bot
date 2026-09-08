@@ -927,10 +927,10 @@ def _fetch_bonus_rows(
     rows = (
         session.query(BonusRecord)
         .filter(
-            BonusRecord.created_at >= from_dt,
-            BonusRecord.created_at <= to_dt,
+            BonusRecord.issued_at >= from_dt,
+            BonusRecord.issued_at <= to_dt,
         )
-        .order_by(BonusRecord.created_at.desc(), BonusRecord.id.desc())
+        .order_by(BonusRecord.issued_at.desc(), BonusRecord.id.desc())
         .all()
     )
     out: list[ManualAuditRow] = []
@@ -939,7 +939,7 @@ def _fetch_bonus_rows(
             session,
             audit_date=audit_date,
             club_id=row.club_id,
-            occurred_at=row.created_at,
+            occurred_at=row.issued_at,
         ):
             continue
         club_slug = _slug_for_payment_club(session, row.club_id)
@@ -951,7 +951,7 @@ def _fetch_bonus_rows(
                 payer_name=_bonus_payer_display(row),
                 group_title=_bonus_group_cell(row),
                 club_label=_club_name(club_names, row.club_id),
-                time_label=_fmt_manual_audit_time(row.created_at, club_slug),
+                time_label=_fmt_manual_audit_time(row.issued_at, club_slug),
             )
         )
     return out

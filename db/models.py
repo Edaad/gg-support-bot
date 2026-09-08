@@ -704,6 +704,7 @@ class BonusRecord(Base):
     __table_args__ = (
         Index("ix_bonus_records_gg_player_id", "gg_player_id"),
         Index("ix_bonus_records_player_details_id", "player_details_id"),
+        Index("ix_bonus_records_issued_at", "issued_at"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -726,6 +727,7 @@ class BonusRecord(Base):
     group_title = Column(String(512), nullable=True)
     admin_telegram_user_id = Column(BigInteger, nullable=True)
     metadata_json = Column("metadata", JSONB, nullable=True)
+    issued_at = Column(DateTime, nullable=False, server_default=func.now())
     created_at = Column(DateTime, server_default=func.now())
 
     bonus_type = relationship("BonusType")

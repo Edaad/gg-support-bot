@@ -131,6 +131,7 @@ def create_bonus_record_api(body: BonusRecordCreate):
             amount=body.amount,
             bonus_type_id=body.bonus_type_id,
             custom_description=body.custom_description,
+            issued_at=body.issued_at,
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e

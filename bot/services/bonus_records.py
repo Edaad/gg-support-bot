@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -27,6 +28,22 @@ def _as_decimal(value: Any) -> Decimal:
     return Decimal(str(value or 0))
 
 
+def _normalize_issued_at(value: Optional[datetime]) -> datetime:
+    when = value or datetime.now(timezone.utc)
+    if when.tzinfo is None:
+        return when.replace(tzinfo=timezone.utc)
+    return when.astimezone(timezone.utc)
+
+
+def _issued_at_iso(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        dt = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return str(value)
+
+
 def build_bonus_zapier_payload(data: dict[str, Any]) -> dict[str, Any]:
     admin_id = data.get("admin_user_id")
     if admin_id is None:
@@ -40,6 +57,7 @@ def build_bonus_zapier_payload(data: dict[str, Any]) -> dict[str, Any]:
         "description": data.get("custom_description") or "",
         "club": data.get("club_name") or "",
         "admin_telegram_user_id": admin_id,
+        "issued_at": _issued_at_iso(data.get("issued_at")),
     }
 
 
@@ -73,6 +91,7 @@ def record_to_dict(record: BonusRecord) -> dict[str, Any]:
         "chat_id": int(record.chat_id) if record.chat_id is not None else None,
         "player_details_id": record.player_details_id,
         "admin_telegram_user_id": record.admin_telegram_user_id,
+        "issued_at": record.issued_at,
         "created_at": record.created_at,
         "player_resolved": bool(record.gg_player_id),
     }
@@ -123,6 +142,7 @@ def _zapier_data_from_record(record: BonusRecord, *, type_name: str, club_name: 
         "custom_description": record.custom_description or "",
         "club_name": club_name,
         "admin_user_id": "",
+        "issued_at": record.issued_at,
     }
 
 
@@ -146,7 +166,7 @@ def list_bonus_records(
         query = (
             session.query(BonusRecord)
             .options(joinedload(BonusRecord.bonus_type), joinedload(BonusRecord.club))
-            .order_by(BonusRecord.created_at.desc())
+            .order_by(BonusRecord.issued_at.desc())
         )
         if club_id is not None:
             query = query.filter(BonusRecord.club_id == int(club_id))
@@ -175,6 +195,7 @@ def create_bonus_record(
     amount: Decimal,
     bonus_type_id: Optional[int] = None,
     custom_description: Optional[str] = None,
+    issued_at: Optional[datetime] = None,
 ) -> dict[str, Any]:
     title = (group_title or "").strip()
     if not title:
@@ -182,6 +203,7 @@ def create_bonus_record(
     amt = _as_decimal(amount)
     if amt <= 0:
         raise ValueError("Amount must be greater than zero")
+    when = _normalize_issued_at(issued_at)
 
     with get_db() as session:
         club = session.get(Club, int(club_id))
@@ -200,6 +222,7 @@ def create_bonus_record(
             chat_id=player["chat_id"],
             group_title=title,
             admin_telegram_user_id=None,
+            issued_at=when,
         )
         session.add(rec)
         session.flush()
@@ -247,6 +270,10 @@ def update_bonus_record(record_id: int, **updates: Any) -> Optional[dict[str, An
             new_id, new_desc, _type_name = _validate_type(session, type_id, desc)
             record.bonus_type_id = new_id
             record.custom_description = new_desc
+        if "issued_at" in updates:
+            if updates["issued_at"] is None:
+                raise ValueError("Issued time is required")
+            record.issued_at = _normalize_issued_at(updates["issued_at"])
         if record.club_id is None:
             raise ValueError("Club is required")
         title = (record.group_title or "").strip() or record.player_username

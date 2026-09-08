@@ -228,6 +228,7 @@ export const createBonusRecord = (
     amount: number
     bonus_type_id: number | null
     custom_description?: string | null
+    issued_at: string
   },
 ) => request<BonusRecordT>('/bonus/records', { method: 'POST', body: JSON.stringify(data) }, token)
 export const updateBonusRecord = (
@@ -239,6 +240,7 @@ export const updateBonusRecord = (
     amount?: number
     bonus_type_id?: number | null
     custom_description?: string | null
+    issued_at?: string
   },
 ) => request<BonusRecordT>(`/bonus/records/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token)
 export const deleteBonusRecord = (token: string, id: number) =>
@@ -742,6 +744,7 @@ export interface BonusRecordT {
   chat_id: number | null
   player_details_id: number | null
   admin_telegram_user_id: number | null
+  issued_at: string | null
   created_at: string | null
   player_resolved: boolean
 }

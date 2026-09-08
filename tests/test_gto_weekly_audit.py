@@ -495,6 +495,7 @@ class GtoWeeklyAuditFetchTestCase(unittest.TestCase):
         record.player_username = "bonus_player"
         record.amount = Decimal("12.50")
         record.created_at = datetime(2026, 8, 10, 16, 0, tzinfo=timezone.utc)
+        record.issued_at = datetime(2026, 8, 10, 16, 0, tzinfo=timezone.utc)
 
         query = MagicMock()
         query.filter.return_value = query

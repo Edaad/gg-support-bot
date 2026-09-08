@@ -763,10 +763,10 @@ def fetch_bonus_events(
         session.query(BonusRecord)
         .filter(
             BonusRecord.club_id == club_id,
-            BonusRecord.created_at >= from_dt,
-            BonusRecord.created_at <= to_dt,
+            BonusRecord.issued_at >= from_dt,
+            BonusRecord.issued_at <= to_dt,
         )
-        .order_by(BonusRecord.created_at.desc(), BonusRecord.id.desc())
+        .order_by(BonusRecord.issued_at.desc(), BonusRecord.id.desc())
         .all()
     )
     out: list[LedgerEvent] = []
@@ -776,7 +776,7 @@ def fetch_bonus_events(
             club_slug=slug,
             audit_date=audit_date,
             club_id=row.club_id,
-            occurred_at=row.created_at,
+            occurred_at=row.issued_at,
         ):
             continue
         gg_id = (row.gg_player_id or "").strip() or _resolve_bonus_gg_player_id(
@@ -790,7 +790,7 @@ def fetch_bonus_events(
                 source="bonus",
                 gg_player_id=gg_id,
                 amount_usd=Decimal(str(row.amount)),
-                occurred_at_utc=row.created_at,
+                occurred_at_utc=row.issued_at,
                 external_id=f"bonus:{row.id}",
                 detail=detail,
                 display_name=display or None,

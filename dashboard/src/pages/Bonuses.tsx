@@ -15,7 +15,7 @@ import DateRangeCsvExport from '../components/DateRangeCsvExport'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
 import { downloadBonusRecordsCsv } from '../api/csvExportClient'
-import { formatEasternDateTime } from '../lib/easternTime'
+import { formatEasternDateTime, fromEasternDatetimeLocalValue, toEasternDatetimeLocalValue } from '../lib/easternTime'
 
 function recordMatchesSearch(r: BonusRecordT, needle: string) {
   const n = needle.toLowerCase()
@@ -51,6 +51,7 @@ export default function Bonuses({ token }: { token: string }) {
   const [amount, setAmount] = useState('')
   const [typeId, setTypeId] = useState<number | 'other' | null>(null)
   const [description, setDescription] = useState('')
+  const [issuedAtLocal, setIssuedAtLocal] = useState('')
 
   const reload = () => {
     const id = ++reqId.current
@@ -108,6 +109,7 @@ export default function Bonuses({ token }: { token: string }) {
     setAmount('')
     setTypeId(activeTypes[0]?.id ?? 'other')
     setDescription('')
+    setIssuedAtLocal(toEasternDatetimeLocalValue())
     setError(null)
     setModalOpen(true)
   }
@@ -119,6 +121,9 @@ export default function Bonuses({ token }: { token: string }) {
     setAmount(String(row.amount))
     setTypeId(row.bonus_type_id == null ? 'other' : row.bonus_type_id)
     setDescription(row.custom_description || '')
+    setIssuedAtLocal(
+      row.issued_at ? toEasternDatetimeLocalValue(row.issued_at) : toEasternDatetimeLocalValue(),
+    )
     setError(null)
     setModalOpen(true)
   }
@@ -137,12 +142,18 @@ export default function Bonuses({ token }: { token: string }) {
       setError('Type is required')
       return
     }
+    const issuedUtc = fromEasternDatetimeLocalValue(issuedAtLocal)
+    if (!issuedAtLocal.trim() || Number.isNaN(issuedUtc.getTime())) {
+      setError('Issued time is required')
+      return
+    }
     const payload = {
       club_id: Number(clubId),
       group_title: name.trim(),
       amount: parsed,
       bonus_type_id: typeId === 'other' ? null : typeId,
       custom_description: typeId === 'other' ? description.trim() : null,
+      issued_at: issuedUtc.toISOString(),
     }
     setSaving(true)
     setError(null)
@@ -299,7 +310,7 @@ export default function Bonuses({ token }: { token: string }) {
             >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
-                  <p className="text-sm text-ink-muted">{formatEasternDateTime(r.created_at)}</p>
+                  <p className="text-sm text-ink-muted">{formatEasternDateTime(r.issued_at)}</p>
                   <h2 className="mt-1 text-xl font-semibold text-ink">
                     {r.group_title || r.player_username}
                   </h2>
@@ -347,6 +358,18 @@ export default function Bonuses({ token }: { token: string }) {
         title={editRow ? 'Edit bonus' : 'New bonus'}
       >
         <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-muted" htmlFor="bonus-issued-at">
+              Issued (US Eastern)
+            </label>
+            <input
+              id="bonus-issued-at"
+              type="datetime-local"
+              value={issuedAtLocal}
+              onChange={(e) => setIssuedAtLocal(e.target.value)}
+              className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+            />
+          </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-muted">Club</label>
             <select

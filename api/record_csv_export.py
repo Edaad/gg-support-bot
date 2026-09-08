@@ -285,6 +285,7 @@ CASHOUT_CSV_HEADER = [
 
 BONUS_CSV_HEADER = [
     "id",
+    "issued_at",
     "created_at",
     "club_id",
     "club_name",
@@ -478,10 +479,10 @@ def build_bonus_records_csv(
         session.query(BonusRecord)
         .options(joinedload(BonusRecord.bonus_type))
         .filter(
-            BonusRecord.created_at >= start,
-            BonusRecord.created_at <= end,
+            BonusRecord.issued_at >= start,
+            BonusRecord.issued_at <= end,
         )
-        .order_by(BonusRecord.created_at.asc(), BonusRecord.id.asc())
+        .order_by(BonusRecord.issued_at.asc(), BonusRecord.id.asc())
     )
     if club_id is not None:
         query = query.filter(BonusRecord.club_id == int(club_id))
@@ -497,6 +498,7 @@ def build_bonus_records_csv(
         rows.append(
             [
                 record.id,
+                record.issued_at,
                 record.created_at,
                 cid or "",
                 club_names.get(cid, "") if cid is not None else "",

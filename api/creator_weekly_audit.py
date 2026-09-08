@@ -443,10 +443,10 @@ def fetch_creator_club_bonus_rails(
             session.query(BonusRecord)
             .filter(
                 BonusRecord.club_id == club_id,
-                BonusRecord.created_at >= from_dt,
-                BonusRecord.created_at <= to_dt,
+                BonusRecord.issued_at >= from_dt,
+                BonusRecord.issued_at <= to_dt,
             )
-            .order_by(BonusRecord.created_at.asc(), BonusRecord.id.asc())
+            .order_by(BonusRecord.issued_at.asc(), BonusRecord.id.asc())
             .all()
         )
         for record in records:
@@ -455,13 +455,13 @@ def fetch_creator_club_bonus_rails(
                 club_slug=_CREATOR_CLUB_SLUG,
                 audit_date=audit_date,
                 club_id=record.club_id,
-                occurred_at=record.created_at,
+                occurred_at=record.issued_at,
             ):
                 continue
             out.append(
                 BonusRailRow(
                     audit_date=audit_date,
-                    occurred_at=_creator_club_excel_time(record.created_at),
+                    occurred_at=_creator_club_excel_time(record.issued_at),
                     player=str(record.player_username).strip(),
                     amount_usd=float(Decimal(str(record.amount))),
                 )

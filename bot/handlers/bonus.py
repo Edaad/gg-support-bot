@@ -149,6 +149,9 @@ def _apply_player_context(
 
 
 def _save_record(data: dict) -> int:
+    from datetime import datetime, timezone
+
+    issued_at = data.get("issued_at") or datetime.now(timezone.utc)
     with get_db() as session:
         rec = BonusRecord(
             player_username=data["player_username"],
@@ -162,6 +165,7 @@ def _save_record(data: dict) -> int:
             group_title=data.get("group_title"),
             admin_telegram_user_id=data["admin_user_id"],
             metadata_json=data.get("metadata"),
+            issued_at=issued_at,
         )
         session.add(rec)
         session.flush()
@@ -268,6 +272,8 @@ async def _finalize_bonus_record(
     query=None,
     chat=None,
 ) -> None:
+    from datetime import datetime, timezone
+
     club_id = context.user_data.get("bonus_club_id")
     club_name = context.user_data.get("bonus_club_name") or (
         _club_name_for_id(int(club_id)) if club_id else "Unknown"
@@ -277,6 +283,7 @@ async def _finalize_bonus_record(
     )
     amount = context.user_data.get("bonus_amount", "?")
     type_name = context.user_data.get("bonus_type_name", "?")
+    issued_at = datetime.now(timezone.utc)
 
     record_data = {
         "player_username": display_name,
@@ -292,6 +299,7 @@ async def _finalize_bonus_record(
         "chat_id": context.user_data.get("bonus_chat_id"),
         "group_title": context.user_data.get("bonus_group_title"),
         "metadata": context.user_data.get("bonus_metadata"),
+        "issued_at": issued_at,
     }
 
     _save_record(record_data)
