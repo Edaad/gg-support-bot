@@ -302,6 +302,16 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         ApplicationBuilder()
         .token(token)
         .concurrent_updates(False)
+        # Default PTB HTTP timeouts are 5s; raise to reduce telegram.error.TimedOut
+        # under slow api.telegram.org responses.
+        .connect_timeout(20.0)
+        .read_timeout(20.0)
+        .write_timeout(20.0)
+        .pool_timeout(20.0)
+        .get_updates_connect_timeout(20.0)
+        .get_updates_read_timeout(20.0)
+        .get_updates_write_timeout(20.0)
+        .get_updates_pool_timeout(20.0)
         .post_init(lambda app: _post_init_dm_gc_listener(app, test_mode=test_mode))
         .post_shutdown(lambda app: _post_shutdown_dm_gc_listener(app, test_mode=test_mode))
         .build()
