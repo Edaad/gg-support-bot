@@ -25,13 +25,6 @@ GTO_INC_NICKNAME = "GTO INC"
 _FREE_PLAY_MIN = Decimal("-1")
 _FREE_PLAY_MAX = Decimal("0")
 _GTO_SLUG = "clubgto"
-_CHIP_TRANSFER_SOURCES = frozenset(
-    {
-        CHIP_TRANSFER_PLAYER_LABEL,
-        CHIP_TRANSFER_RT_AT_LABEL,
-        CHIP_TRANSFER_AT_CC_LABEL,
-    }
-)
 # Whole-dollar slack after round_whole_usd (e.g. early RB $18.60 ↔ ClubGG $18).
 MATCH_AMOUNT_TOLERANCE_USD = Decimal("1")
 _WHOLE = Decimal("1")
@@ -490,10 +483,6 @@ def _is_gto_inc_trade(trade: TradeLineForMatch) -> bool:
     return manager == GTO_INC_NICKNAME and member == GTO_INC_NICKNAME
 
 
-def _is_chip_transfer_source(source: str) -> bool:
-    return (source or "").strip() in _CHIP_TRANSFER_SOURCES
-
-
 def _clear_match_details(row: MatchedTradeRow, *, source: str) -> MatchedTradeRow:
     return replace(
         row,
@@ -512,21 +501,18 @@ def apply_trade_record_source_overrides(
 ) -> list[MatchedTradeRow]:
     """Apply trade-record Source labels after ledger + chip-transfer matching.
 
-    Free Play (−1…0) only applies when the trade did not already match
-    RB settlement (Monday) or a chip transfer.
+    Free Play (−1…0) is last resort: only when match_source is still empty
+    after ledger matching, chip transfers, and GTO INC.
     """
     out = list(rows)
     for idx, row in enumerate(out):
         if _is_gto_inc_trade(row.trade):
             out[idx] = _clear_match_details(row, source=GTO_INC_LABEL)
     for idx, row in enumerate(out):
-        if row.match_source == GTO_INC_LABEL:
+        row = out[idx]
+        if not _is_unmatched_row(row):
             continue
         if not _is_free_play_amount(row.trade.amount):
-            continue
-        if _is_chip_transfer_source(row.match_source):
-            continue
-        if row.match_source == RB_SETTLEMENT_MONDAY_LABEL:
             continue
         out[idx] = _clear_match_details(row, source=FREE_PLAY_LABEL)
     return out

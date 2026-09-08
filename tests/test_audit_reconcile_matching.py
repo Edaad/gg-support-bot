@@ -960,7 +960,7 @@ class ApplyTradeRecordSourceOverridesTestCase(unittest.TestCase):
     def setUp(self):
         self.t0 = datetime(2026, 7, 3, 6, 30, tzinfo=timezone.utc)
 
-    def test_free_play_overrides_ledger_match(self):
+    def test_free_play_does_not_override_ledger_match(self):
         trade = _trade(occurred=self.t0, amount="-0.50")
         ledger = _ledger(
             occurred=self.t0,
@@ -970,8 +970,8 @@ class ApplyTradeRecordSourceOverridesTestCase(unittest.TestCase):
         rows = apply_trade_record_source_overrides(
             match_trade_lines_to_ledger([trade], [ledger], club_slug="round-table").rows
         )
-        self.assertEqual(rows[0].match_source, FREE_PLAY_LABEL)
-        self.assertEqual(rows[0].match_name, "")
+        self.assertEqual(rows[0].match_source, "Stripe")
+        self.assertEqual(rows[0].match_name, "Jane Doe")
 
     def test_monday_settlement_beats_free_play(self):
         trade = _trade(
