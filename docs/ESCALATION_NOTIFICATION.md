@@ -25,7 +25,7 @@ Durable state: table `support_group_idle_episode_state` ([`bot/services/support_
 | Open Slack | Immediate `player_idle` (*A player just reached out.*) with the player message |
 | Follow-up burst | After **1 minute** of quiet with a non-empty burst → `player_idle_followup` (*Player follow-up.*) |
 | Staff unanswered | After a **successful** follow-up Slack, if no staff reply for **5 minutes** → one-time `player_idle_staff_unanswered` to the **issue-report** Slack channel (not an open `/reports` ticket; escalation message template) |
-| Silence end | **5 minutes** with no human (player or staff) → close episode |
+| Silence end | **5 minutes** with no human (player or staff) → close episode (**deferred** while staff-unanswered is still armed) |
 | Hard cap | **30 minutes** from episode open → close episode |
 
 Behavior:
@@ -33,7 +33,7 @@ Behavior:
 1. First player free text (not a flow command, not expected wizard input) **opens** an episode: Slack `player_idle`, call no-op in-group menu hook (`offer_idle_help_prompt` → false for now), arm silence + hard-cap timers.
 2. Further player messages while open **feed** the burst and reset the 1m debounce + 5m silence.
 3. Staff/AM message while open: clear burst, cancel 1m debounce, clear staff-unanswered latch, bump `last_human_at`, reschedule 5m silence; episode stays open.
-4. After successful follow-up Slack: arm durable staff-unanswered (player messages do not reset it; another follow-up re-arms only if not yet fired). Fire once to issue-report channel, then latch until staff replies.
+4. After successful follow-up Slack: arm durable staff-unanswered (player messages do not reset it; another follow-up re-arms only if not yet fired). Fire once to issue-report channel, then latch until staff replies. Silence close is deferred until that ping fires (or staff clears the latch); after the ping, close if the chat is still quiet.
 5. Flow end (deposit/cashout success, cancel, timeout): quietly `close_episode`; next free text opens a fresh episode.
 6. Denied `/cashout` / `/earlyrb`: no special arm — next free text opens a normal episode (no 5m silence gate).
 

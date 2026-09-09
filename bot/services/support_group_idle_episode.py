@@ -437,6 +437,31 @@ def arm_staff_unanswered_after_followup(
     return True
 
 
+def _staff_unanswered_pending(state: dict[str, Any] | None) -> bool:
+    if not state:
+        return False
+    return (
+        state.get("staff_unanswered_armed_at") is not None
+        and state.get("staff_unanswered_fired_at") is None
+    )
+
+
+def _staff_unanswered_remaining(
+    state: dict[str, Any],
+    *,
+    now: datetime | None = None,
+) -> float:
+    """Seconds until staff-unanswered due; at least 0.1 when pending."""
+    armed_at = state.get("staff_unanswered_armed_at")
+    if armed_at is None:
+        return 0.1
+    ts = _as_utc(now) or _now()
+    remaining = float(staff_unanswered_seconds()) - (ts - armed_at).total_seconds()
+    if remaining <= 0:
+        return 0.1
+    return remaining
+
+
 def _burst_entry(
     message_text: str | None,
     trigger_message: dict[str, Any] | None,
@@ -742,7 +767,8 @@ async def _idle_staff_unanswered_callback(context: ContextTypes.DEFAULT_TYPE) ->
     if armed_at is None:
         return
 
-    elapsed = (_now() - armed_at).total_seconds()
+    now = _now()
+    elapsed = (now - armed_at).total_seconds()
     if elapsed + 0.5 < float(staff_unanswered_seconds()):
         return
 
@@ -767,36 +793,61 @@ async def _idle_staff_unanswered_callback(context: ContextTypes.DEFAULT_TYPE) ->
         row = session.get(SupportGroupIdleEpisodeState, chat_id)
         if row is None or row.episode_started_at is None:
             return
-        row.staff_unanswered_fired_at = _now()
+        row.staff_unanswered_fired_at = now
         row.staff_unanswered_armed_at = None
-        row.updated_at = _now()
+        row.updated_at = now
     logger.info(
         "support_group_idle_episode: staff_unanswered fired chat_id=%s",
         chat_id,
     )
 
-
-async def _idle_silence_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
-    data = context.job.data or {}
-    chat_id = int(data.get("chat_id") or context.job.chat_id)
-    state = load_episode_state(chat_id)
-    if state is None:
-        return
+    # Quiet chat: silence was deferred for this ping — close now if still quiet.
     last_at = state.get("last_human_at")
-    if last_at is None:
+    if last_at is None or (
+        (now - last_at).total_seconds() + 0.5
+        >= float(idle_episode_silence_seconds())
+    ):
         close_episode(
             chat_id,
             job_queue=getattr(context, "job_queue", None),
             close_reason=CLOSE_REASON_SILENCE,
         )
+        logger.info(
+            "support_group_idle_episode: silence closed after staff_unanswered "
+            "chat_id=%s",
+            chat_id,
+        )
+
+
+async def _idle_silence_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
+    data = context.job.data or {}
+    chat_id = int(data.get("chat_id") or context.job.chat_id)
+    jq = getattr(context, "job_queue", None)
+    state = load_episode_state(chat_id)
+    if state is None:
         return
-    elapsed = (_now() - last_at).total_seconds()
-    if elapsed + 0.5 < float(idle_episode_silence_seconds()):
-        # Newer human activity should have rescheduled; bail.
+    last_at = state.get("last_human_at")
+    if last_at is not None:
+        elapsed = (_now() - last_at).total_seconds()
+        if elapsed + 0.5 < float(idle_episode_silence_seconds()):
+            # Newer human activity should have rescheduled; bail.
+            return
+
+    # Defer close while staff-unanswered is still armed (quiet-chat race).
+    if _staff_unanswered_pending(state):
+        remaining = _staff_unanswered_remaining(state)
+        _schedule_silence(chat_id, job_queue=jq, when=remaining)
+        logger.info(
+            "support_group_idle_episode: silence deferred for staff_unanswered "
+            "chat_id=%s when=%.1f",
+            chat_id,
+            remaining,
+        )
         return
+
     close_episode(
         chat_id,
-        job_queue=getattr(context, "job_queue", None),
+        job_queue=jq,
         close_reason=CLOSE_REASON_SILENCE,
     )
     logger.info("support_group_idle_episode: silence closed chat_id=%s", chat_id)
@@ -822,7 +873,6 @@ def restore_support_group_idle_episode_jobs(job_queue: Any | None = None) -> Non
     debounce_s = float(awaiting_agent_debounce_seconds())
     silence_s = float(idle_episode_silence_seconds())
     hardcap_s = float(idle_episode_hard_cap_seconds())
-    staff_unanswered_s = float(staff_unanswered_seconds())
 
     for state in list_open_episodes():
         chat_id = int(state["telegram_chat_id"])
@@ -838,14 +888,20 @@ def restore_support_group_idle_episode_jobs(job_queue: Any | None = None) -> Non
 
         last_at = state.get("last_human_at") or started
         silence_remaining = silence_s - (now - last_at).total_seconds()
-        if silence_remaining <= 0:
+        pending_staff_ua = _staff_unanswered_pending(state)
+        if silence_remaining <= 0 and not pending_staff_ua:
             close_episode(
                 chat_id, job_queue=jq, close_reason=CLOSE_REASON_SILENCE
             )
             continue
 
         _schedule_hardcap(chat_id, job_queue=jq, when=hardcap_remaining)
-        _schedule_silence(chat_id, job_queue=jq, when=silence_remaining)
+
+        if silence_remaining <= 0 and pending_staff_ua:
+            silence_when = _staff_unanswered_remaining(state, now=now)
+        else:
+            silence_when = silence_remaining
+        _schedule_silence(chat_id, job_queue=jq, when=silence_when)
 
         burst = state.get("burst") or []
         if burst:
@@ -857,10 +913,8 @@ def restore_support_group_idle_episode_jobs(job_queue: Any | None = None) -> Non
                 title=state.get("title"),
             )
 
-        armed_at = state.get("staff_unanswered_armed_at")
-        fired_at = state.get("staff_unanswered_fired_at")
-        if armed_at is not None and fired_at is None:
-            remaining = staff_unanswered_s - (now - armed_at).total_seconds()
+        if pending_staff_ua:
+            remaining = _staff_unanswered_remaining(state, now=now)
             _schedule_staff_unanswered(
                 chat_id,
                 job_queue=jq,
@@ -873,7 +927,7 @@ def restore_support_group_idle_episode_jobs(job_queue: Any | None = None) -> Non
             "silence_remaining=%.1f burst=%s staff_unanswered=%s",
             chat_id,
             hardcap_remaining,
-            silence_remaining,
+            silence_when if silence_remaining <= 0 else silence_remaining,
             bool(burst),
-            armed_at is not None and fired_at is None,
+            pending_staff_ua,
         )

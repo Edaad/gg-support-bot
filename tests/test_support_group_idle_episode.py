@@ -290,11 +290,13 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(ep._staff_unanswered_job_name(1), names)
 
     async def test_staff_unanswered_fires_once_and_blocks_rearm(self):
+        # Recent human activity so silence is not due — episode stays open after fire.
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        fire_at = t0 + timedelta(seconds=301)
         _FakeSession.store[1] = _FakeRow(1)
         row = _FakeSession.store[1]
         row.episode_started_at = t0
-        row.last_human_at = t0
+        row.last_human_at = fire_at - timedelta(seconds=10)
         row.staff_unanswered_armed_at = t0
         row.staff_unanswered_message_text = "still waiting"
         row.title = "GC"
@@ -305,7 +307,7 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
             ),
             job_queue=self.jq,
         )
-        with patch.object(ep, "_now", return_value=t0 + timedelta(seconds=301)):
+        with patch.object(ep, "_now", return_value=fire_at):
             with patch.object(
                 ep,
                 "notify_staff_unanswered_issue_channel",
@@ -315,6 +317,7 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
                 await ep._idle_staff_unanswered_callback(ctx)
         notify.assert_awaited_once()
         state = ep.load_episode_state(1)
+        self.assertIsNotNone(state)
         self.assertIsNone(state["staff_unanswered_armed_at"])
         self.assertIsNotNone(state["staff_unanswered_fired_at"])
 
@@ -324,7 +327,7 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
             club_id=9,
             title="GC",
             job_queue=self.jq,
-            now=t0 + timedelta(seconds=400),
+            now=fire_at + timedelta(seconds=1),
         )
         self.assertFalse(armed)
         state = ep.load_episode_state(1)
@@ -354,6 +357,97 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state["staff_unanswered_message_text"], "new burst")
         names = [c.kwargs.get("name") for c in self.jq.run_once.call_args_list]
         self.assertIn(ep._staff_unanswered_job_name(1), names)
+
+    async def test_silence_defers_when_staff_unanswered_pending(self):
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        _FakeSession.store[1] = _FakeRow(1)
+        row = _FakeSession.store[1]
+        row.episode_started_at = t0
+        row.last_human_at = t0
+        row.staff_unanswered_armed_at = t0 + timedelta(seconds=60)
+        row.staff_unanswered_message_text = "follow"
+        ctx = SimpleNamespace(
+            job=SimpleNamespace(data={"chat_id": 1}, chat_id=1),
+            job_queue=self.jq,
+        )
+        # Silence due (301s after last human) but staff-unanswered still pending.
+        with patch.object(ep, "_now", return_value=t0 + timedelta(seconds=301)):
+            await ep._idle_silence_callback(ctx)
+        self.assertIsNotNone(ep.load_episode_state(1))
+        names = [c.kwargs.get("name") for c in self.jq.run_once.call_args_list]
+        self.assertIn(ep._silence_job_name(1), names)
+
+    async def test_staff_unanswered_closes_when_already_quiet(self):
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        _FakeSession.store[1] = _FakeRow(1)
+        row = _FakeSession.store[1]
+        row.episode_started_at = t0
+        row.last_human_at = t0
+        row.staff_unanswered_armed_at = t0
+        row.staff_unanswered_message_text = "still waiting"
+        row.title = "GC"
+        ctx = SimpleNamespace(
+            job=SimpleNamespace(
+                data={"chat_id": 1, "club_id": 9, "title": "GC"},
+                chat_id=1,
+            ),
+            job_queue=self.jq,
+        )
+        with patch.object(ep, "_now", return_value=t0 + timedelta(seconds=301)):
+            with patch.object(
+                ep,
+                "notify_staff_unanswered_issue_channel",
+                new_callable=AsyncMock,
+                return_value=(True, 7),
+            ):
+                await ep._idle_staff_unanswered_callback(ctx)
+        self.assertIsNone(ep.load_episode_state(1))
+
+    async def test_staff_unanswered_keeps_episode_when_recent_human(self):
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        fire_at = t0 + timedelta(seconds=301)
+        _FakeSession.store[1] = _FakeRow(1)
+        row = _FakeSession.store[1]
+        row.episode_started_at = t0
+        row.last_human_at = fire_at - timedelta(seconds=30)
+        row.staff_unanswered_armed_at = t0
+        row.staff_unanswered_message_text = "still waiting"
+        row.title = "GC"
+        ctx = SimpleNamespace(
+            job=SimpleNamespace(
+                data={"chat_id": 1, "club_id": 9, "title": "GC"},
+                chat_id=1,
+            ),
+            job_queue=self.jq,
+        )
+        with patch.object(ep, "_now", return_value=fire_at):
+            with patch.object(
+                ep,
+                "notify_staff_unanswered_issue_channel",
+                new_callable=AsyncMock,
+                return_value=(True, 7),
+            ):
+                await ep._idle_staff_unanswered_callback(ctx)
+        state = ep.load_episode_state(1)
+        self.assertIsNotNone(state)
+        self.assertIsNotNone(state["staff_unanswered_fired_at"])
+
+    def test_restore_overdue_silence_defers_for_staff_unanswered(self):
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        now = t0 + timedelta(seconds=400)
+        _FakeSession.store[1] = _FakeRow(1)
+        row = _FakeSession.store[1]
+        row.episode_started_at = t0
+        row.last_human_at = t0
+        row.staff_unanswered_armed_at = t0 + timedelta(seconds=60)
+        row.staff_unanswered_message_text = "follow"
+        with patch.object(ep, "_now", return_value=now):
+            ep.restore_support_group_idle_episode_jobs(self.jq)
+        self.assertIsNotNone(ep.load_episode_state(1))
+        names = [c.kwargs.get("name") for c in self.jq.run_once.call_args_list]
+        self.assertIn(ep._silence_job_name(1), names)
+        self.assertIn(ep._staff_unanswered_job_name(1), names)
+        self.assertIn(ep._hardcap_job_name(1), names)
 
     async def test_silence_closes(self):
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
