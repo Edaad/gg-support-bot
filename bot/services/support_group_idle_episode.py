@@ -1,8 +1,10 @@
 """Durable idle episodes for support groups.
 
 Open on player free text (or deposit Slack feed): immediate Slack (unless already
-sent), no-op menu hook, then 1m quiet burst for follow-ups. Episode ends on
-5 minutes of any-human silence, 30m hard cap from open, or flow-end close.
+sent), no-op menu hook, then 1m quiet burst for follow-ups. After a successful
+follow-up Slack, arm a 5m staff-unanswered timer (issue-report channel, once).
+Episode ends on 5 minutes of any-human silence, 30m hard cap from open, or
+flow-end close.
 
 Observe-only relative to /deposit and /cashout wizards.
 """
@@ -23,7 +25,9 @@ from bot.services.escalation_notification import (
     REASON_PLAYER_IDLE_FOLLOWUP,
     awaiting_agent_debounce_seconds,
     notify_escalation_slack,
+    notify_staff_unanswered_issue_channel,
     offer_idle_help_prompt,
+    staff_unanswered_seconds,
 )
 from bot.services.escalation_observability import (
     CLOSE_REASON_FLOW_END,
@@ -126,6 +130,10 @@ def _hardcap_job_name(chat_id: int | str) -> str:
     return f"sg_idle_hardcap_{int(chat_id)}"
 
 
+def _staff_unanswered_job_name(chat_id: int | str) -> str:
+    return f"sg_idle_staff_unanswered_{int(chat_id)}"
+
+
 def _cancel_jobs(
     chat_id: int,
     *,
@@ -133,6 +141,7 @@ def _cancel_jobs(
     include_hardcap: bool = True,
     include_silence: bool = True,
     include_debounce: bool = True,
+    include_staff_unanswered: bool = True,
 ) -> None:
     jq = _resolve_job_queue(job_queue)
     if jq is None:
@@ -144,6 +153,8 @@ def _cancel_jobs(
         names.append(_silence_job_name(chat_id))
     if include_hardcap:
         names.append(_hardcap_job_name(chat_id))
+    if include_staff_unanswered:
+        names.append(_staff_unanswered_job_name(chat_id))
     for name in names:
         try:
             jobs = jq.get_jobs_by_name(name)
@@ -181,6 +192,15 @@ def _row_to_dict(row: SupportGroupIdleEpisodeState) -> dict[str, Any]:
         "last_human_at": _as_utc(row.last_human_at),
         "burst": list(burst),
         "history_episode_id": getattr(row, "history_episode_id", None),
+        "staff_unanswered_armed_at": _as_utc(
+            getattr(row, "staff_unanswered_armed_at", None)
+        ),
+        "staff_unanswered_fired_at": _as_utc(
+            getattr(row, "staff_unanswered_fired_at", None)
+        ),
+        "staff_unanswered_message_text": getattr(
+            row, "staff_unanswered_message_text", None
+        ),
     }
 
 
@@ -225,6 +245,9 @@ def close_episode(
         row.last_human_at = None
         row.burst_json = []
         row.history_episode_id = None
+        row.staff_unanswered_armed_at = None
+        row.staff_unanswered_fired_at = None
+        row.staff_unanswered_message_text = None
         row.updated_at = _now()
     close_history_episode(history_id, close_reason=close_reason)
     logger.info(
@@ -337,6 +360,81 @@ def _schedule_hardcap(
         name=name,
         job_kwargs={"misfire_grace_time": 60},
     )
+
+
+def _schedule_staff_unanswered(
+    chat_id: int,
+    *,
+    job_queue: Any | None = None,
+    when: float | None = None,
+    club_id: int | None = None,
+    title: str | None = None,
+) -> None:
+    jq = _resolve_job_queue(job_queue)
+    if jq is None:
+        logger.warning(
+            "support_group_idle_episode: no job_queue for staff_unanswered "
+            "chat_id=%s",
+            chat_id,
+        )
+        return
+    name = _staff_unanswered_job_name(chat_id)
+    try:
+        for job in jq.get_jobs_by_name(name):
+            job.schedule_removal()
+    except Exception:
+        pass
+    delay = float(staff_unanswered_seconds() if when is None else when)
+    if delay <= 0:
+        delay = 0.1
+    jq.run_once(
+        _idle_staff_unanswered_callback,
+        when=delay,
+        data={
+            "chat_id": int(chat_id),
+            "club_id": club_id,
+            "title": title,
+        },
+        name=name,
+        job_kwargs={"misfire_grace_time": 60},
+    )
+
+
+def arm_staff_unanswered_after_followup(
+    chat_id: int,
+    *,
+    message_text: str | None,
+    club_id: int | None = None,
+    title: str | None = None,
+    job_queue: Any | None = None,
+    now: datetime | None = None,
+) -> bool:
+    """Arm 5m staff-unanswered after successful follow-up Slack. No-op if fired."""
+    cid = int(chat_id)
+    ts = _as_utc(now) or _now()
+    body = (message_text or "").strip() or None
+    with get_db() as session:
+        row = session.get(SupportGroupIdleEpisodeState, cid)
+        if row is None or row.episode_started_at is None:
+            return False
+        if getattr(row, "staff_unanswered_fired_at", None) is not None:
+            return False
+        if title:
+            row.title = title
+        row.staff_unanswered_armed_at = ts
+        row.staff_unanswered_message_text = body
+        row.updated_at = ts
+    _schedule_staff_unanswered(
+        cid,
+        job_queue=job_queue,
+        club_id=club_id,
+        title=title,
+    )
+    logger.info(
+        "support_group_idle_episode: staff_unanswered armed chat_id=%s",
+        cid,
+    )
+    return True
 
 
 def _burst_entry(
@@ -557,6 +655,9 @@ def on_staff_human(
             row.title = title
         row.last_human_at = ts
         row.burst_json = []
+        row.staff_unanswered_armed_at = None
+        row.staff_unanswered_fired_at = None
+        row.staff_unanswered_message_text = None
         row.updated_at = ts
     _cancel_jobs(
         cid,
@@ -564,6 +665,7 @@ def on_staff_human(
         include_hardcap=False,
         include_silence=False,
         include_debounce=True,
+        include_staff_unanswered=True,
     )
     _schedule_silence(cid, job_queue=job_queue)
     logger.info("support_group_idle_episode: staff cleared burst chat_id=%s", cid)
@@ -589,8 +691,9 @@ async def _idle_debounce_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     body = format_burst_message_text(burst)
+    slack_ok = False
     try:
-        await notify_escalation_slack(
+        slack_ok, _event_id = await notify_escalation_slack(
             REASON_PLAYER_IDLE_FOLLOWUP,
             club_id=int(club_id) if club_id is not None else None,
             chat_id=chat_id,
@@ -605,6 +708,7 @@ async def _idle_debounce_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
             chat_id,
             exc_info=True,
         )
+        slack_ok = False
 
     with get_db() as session:
         row = session.get(SupportGroupIdleEpisodeState, chat_id)
@@ -613,6 +717,63 @@ async def _idle_debounce_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
         row.burst_json = []
         row.updated_at = _now()
     logger.info("support_group_idle_episode: followup slacked chat_id=%s", chat_id)
+
+    if slack_ok:
+        arm_staff_unanswered_after_followup(
+            chat_id,
+            message_text=body,
+            club_id=int(club_id) if club_id is not None else None,
+            title=title or state.get("title"),
+            job_queue=getattr(context, "job_queue", None),
+        )
+
+
+async def _idle_staff_unanswered_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
+    data = context.job.data or {}
+    chat_id = int(data.get("chat_id") or context.job.chat_id)
+    club_id = data.get("club_id")
+    title = data.get("title")
+    state = load_episode_state(chat_id)
+    if state is None:
+        return
+    if state.get("staff_unanswered_fired_at") is not None:
+        return
+    armed_at = state.get("staff_unanswered_armed_at")
+    if armed_at is None:
+        return
+
+    elapsed = (_now() - armed_at).total_seconds()
+    if elapsed + 0.5 < float(staff_unanswered_seconds()):
+        return
+
+    body = state.get("staff_unanswered_message_text")
+    try:
+        await notify_staff_unanswered_issue_channel(
+            club_id=int(club_id) if club_id is not None else None,
+            chat_id=chat_id,
+            title=title or state.get("title"),
+            message_text=body,
+            episode_id=state.get("history_episode_id"),
+            trigger_messages=[{"text": body}] if body else None,
+        )
+    except Exception:
+        logger.warning(
+            "support_group_idle_episode: staff_unanswered notify failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+
+    with get_db() as session:
+        row = session.get(SupportGroupIdleEpisodeState, chat_id)
+        if row is None or row.episode_started_at is None:
+            return
+        row.staff_unanswered_fired_at = _now()
+        row.staff_unanswered_armed_at = None
+        row.updated_at = _now()
+    logger.info(
+        "support_group_idle_episode: staff_unanswered fired chat_id=%s",
+        chat_id,
+    )
 
 
 async def _idle_silence_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -661,6 +822,7 @@ def restore_support_group_idle_episode_jobs(job_queue: Any | None = None) -> Non
     debounce_s = float(awaiting_agent_debounce_seconds())
     silence_s = float(idle_episode_silence_seconds())
     hardcap_s = float(idle_episode_hard_cap_seconds())
+    staff_unanswered_s = float(staff_unanswered_seconds())
 
     for state in list_open_episodes():
         chat_id = int(state["telegram_chat_id"])
@@ -694,11 +856,24 @@ def restore_support_group_idle_episode_jobs(job_queue: Any | None = None) -> Non
                 when=debounce_remaining,
                 title=state.get("title"),
             )
+
+        armed_at = state.get("staff_unanswered_armed_at")
+        fired_at = state.get("staff_unanswered_fired_at")
+        if armed_at is not None and fired_at is None:
+            remaining = staff_unanswered_s - (now - armed_at).total_seconds()
+            _schedule_staff_unanswered(
+                chat_id,
+                job_queue=jq,
+                when=remaining,
+                title=state.get("title"),
+            )
+
         logger.info(
             "support_group_idle_episode: restored chat_id=%s hardcap_remaining=%.1f "
-            "silence_remaining=%.1f burst=%s",
+            "silence_remaining=%.1f burst=%s staff_unanswered=%s",
             chat_id,
             hardcap_remaining,
             silence_remaining,
             bool(burst),
+            armed_at is not None and fired_at is None,
         )

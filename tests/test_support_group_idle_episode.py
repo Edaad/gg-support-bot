@@ -19,6 +19,9 @@ class _FakeRow:
         self.last_human_at = None
         self.burst_json = []
         self.history_episode_id = None
+        self.staff_unanswered_armed_at = None
+        self.staff_unanswered_fired_at = None
+        self.staff_unanswered_message_text = None
         self.updated_at = None
 
 
@@ -99,6 +102,11 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.silence_patch.start()
         self.addCleanup(self.silence_patch.stop)
+        self.staff_unanswered_patch = patch.object(
+            ep, "staff_unanswered_seconds", return_value=300
+        )
+        self.staff_unanswered_patch.start()
+        self.addCleanup(self.staff_unanswered_patch.stop)
         self.close_hist_patch = patch.object(ep, "close_history_episode")
         self.close_hist_patch.start()
         self.addCleanup(self.close_hist_patch.stop)
@@ -210,9 +218,15 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         row.episode_started_at = t0
         row.last_human_at = t0
         row.burst_json = [{"text": "x"}]
+        row.staff_unanswered_armed_at = t0
+        row.staff_unanswered_message_text = "follow"
         ep.close_episode(1, job_queue=self.jq, close_reason=ep.CLOSE_REASON_SILENCE)
         self.assertIsNone(ep.load_episode_state(1))
         ep.close_history_episode.assert_called()
+        cleared = _FakeSession.store[1]
+        self.assertIsNone(cleared.staff_unanswered_armed_at)
+        self.assertIsNone(cleared.staff_unanswered_fired_at)
+        self.assertIsNone(cleared.staff_unanswered_message_text)
 
     async def test_debounce_slacks_followup_and_clears_burst(self):
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
@@ -232,7 +246,10 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         )
         with patch.object(ep, "_now", return_value=t0 + timedelta(seconds=61)):
             with patch.object(
-                ep, "notify_escalation_slack", new_callable=AsyncMock
+                ep,
+                "notify_escalation_slack",
+                new_callable=AsyncMock,
+                return_value=(True, 1),
             ) as slack:
                 await ep._idle_debounce_callback(ctx)
         slack.assert_awaited_once()
@@ -240,6 +257,103 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         state = ep.load_episode_state(1)
         self.assertIsNotNone(state)
         self.assertEqual(state["burst"], [])
+        self.assertIsNotNone(state["staff_unanswered_armed_at"])
+        self.assertEqual(state["staff_unanswered_message_text"], "follow")
+        names = [c.kwargs.get("name") for c in self.jq.run_once.call_args_list]
+        self.assertIn(ep._staff_unanswered_job_name(1), names)
+
+    async def test_debounce_failed_followup_does_not_arm(self):
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        _FakeSession.store[1] = _FakeRow(1)
+        row = _FakeSession.store[1]
+        row.episode_started_at = t0
+        row.last_human_at = t0
+        row.burst_json = [{"text": "follow"}]
+        ctx = SimpleNamespace(
+            job=SimpleNamespace(
+                data={"chat_id": 1, "club_id": 9, "title": "GC"},
+                chat_id=1,
+            ),
+            job_queue=self.jq,
+        )
+        with patch.object(ep, "_now", return_value=t0 + timedelta(seconds=61)):
+            with patch.object(
+                ep,
+                "notify_escalation_slack",
+                new_callable=AsyncMock,
+                return_value=(False, 1),
+            ):
+                await ep._idle_debounce_callback(ctx)
+        state = ep.load_episode_state(1)
+        self.assertIsNone(state["staff_unanswered_armed_at"])
+        names = [c.kwargs.get("name") for c in self.jq.run_once.call_args_list]
+        self.assertNotIn(ep._staff_unanswered_job_name(1), names)
+
+    async def test_staff_unanswered_fires_once_and_blocks_rearm(self):
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        _FakeSession.store[1] = _FakeRow(1)
+        row = _FakeSession.store[1]
+        row.episode_started_at = t0
+        row.last_human_at = t0
+        row.staff_unanswered_armed_at = t0
+        row.staff_unanswered_message_text = "still waiting"
+        row.title = "GC"
+        ctx = SimpleNamespace(
+            job=SimpleNamespace(
+                data={"chat_id": 1, "club_id": 9, "title": "GC"},
+                chat_id=1,
+            ),
+            job_queue=self.jq,
+        )
+        with patch.object(ep, "_now", return_value=t0 + timedelta(seconds=301)):
+            with patch.object(
+                ep,
+                "notify_staff_unanswered_issue_channel",
+                new_callable=AsyncMock,
+                return_value=(True, 7),
+            ) as notify:
+                await ep._idle_staff_unanswered_callback(ctx)
+        notify.assert_awaited_once()
+        state = ep.load_episode_state(1)
+        self.assertIsNone(state["staff_unanswered_armed_at"])
+        self.assertIsNotNone(state["staff_unanswered_fired_at"])
+
+        armed = ep.arm_staff_unanswered_after_followup(
+            1,
+            message_text="again",
+            club_id=9,
+            title="GC",
+            job_queue=self.jq,
+            now=t0 + timedelta(seconds=400),
+        )
+        self.assertFalse(armed)
+        state = ep.load_episode_state(1)
+        self.assertIsNone(state["staff_unanswered_armed_at"])
+
+    def test_staff_clears_unanswered_latch_allows_rearm(self):
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        _FakeSession.store[1] = _FakeRow(1)
+        row = _FakeSession.store[1]
+        row.episode_started_at = t0
+        row.last_human_at = t0
+        row.staff_unanswered_fired_at = t0
+        row.staff_unanswered_message_text = "old"
+        ep.on_staff_human(1, job_queue=self.jq, now=t0 + timedelta(seconds=5))
+        state = ep.load_episode_state(1)
+        self.assertIsNone(state["staff_unanswered_fired_at"])
+        self.assertIsNone(state["staff_unanswered_armed_at"])
+        armed = ep.arm_staff_unanswered_after_followup(
+            1,
+            message_text="new burst",
+            club_id=9,
+            job_queue=self.jq,
+            now=t0 + timedelta(seconds=10),
+        )
+        self.assertTrue(armed)
+        state = ep.load_episode_state(1)
+        self.assertEqual(state["staff_unanswered_message_text"], "new burst")
+        names = [c.kwargs.get("name") for c in self.jq.run_once.call_args_list]
+        self.assertIn(ep._staff_unanswered_job_name(1), names)
 
     async def test_silence_closes(self):
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
@@ -292,6 +406,34 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(ep._hardcap_job_name(1), names)
         self.assertIn(ep._silence_job_name(1), names)
         self.assertIn(ep._debounce_job_name(1), names)
+
+    def test_restore_reschedules_staff_unanswered(self):
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        now = t0 + timedelta(seconds=60)
+        _FakeSession.store[1] = _FakeRow(1)
+        row = _FakeSession.store[1]
+        row.episode_started_at = t0
+        row.last_human_at = now
+        row.staff_unanswered_armed_at = t0
+        row.staff_unanswered_message_text = "follow"
+        with patch.object(ep, "_now", return_value=now):
+            ep.restore_support_group_idle_episode_jobs(self.jq)
+        names = [c.kwargs.get("name") for c in self.jq.run_once.call_args_list]
+        self.assertIn(ep._staff_unanswered_job_name(1), names)
+
+
+class StaffUnansweredFormatTests(unittest.TestCase):
+    def test_headline_and_body(self):
+        text = esc.format_escalation_slack_text(
+            esc.REASON_PLAYER_IDLE_STAFF_UNANSWERED,
+            club_id=None,
+            chat_id=1,
+            title="JohnDoe | 123 | RT",
+            message_text="still waiting",
+        )
+        self.assertIn("*⚠️ 5 minutes have passed since follow-up.*", text)
+        self.assertIn("`JohnDoe | 123 | RT`", text)
+        self.assertIn("still waiting", text)
 
 
 if __name__ == "__main__":

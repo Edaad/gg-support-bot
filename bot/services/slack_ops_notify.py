@@ -300,6 +300,77 @@ async def notify_slack_escalation(text: str, *, source: str) -> bool:
     return False
 
 
+async def notify_slack_issue_channel_plain(text: str, *, source: str) -> bool:
+    """Post plain text to the issue-report channel (no ticket header/tags).
+
+    Uses issue-report bot token + channel; webhook fallback with the same raw
+    body. Never raises.
+    """
+    message = (text or "").strip()
+    if not message:
+        return False
+    if len(message) > _MAX_SLACK_TEXT_LEN:
+        message = message[: _MAX_SLACK_TEXT_LEN - 1] + "…"
+
+    token = _issue_report_bot_token()
+    channel = _issue_report_channel_id()
+    if token and channel:
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json; charset=utf-8",
+        }
+        payload = {"channel": channel, "text": message, "unfurl_links": False}
+        try:
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SEC) as client:
+                resp = await client.post(
+                    SLACK_CHAT_POST_MESSAGE_URL,
+                    headers=headers,
+                    json=payload,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            if data.get("ok"):
+                logger.info(
+                    "slack_issue_channel_plain: chat.postMessage ok channel=%s "
+                    "ts=%s source=%s",
+                    channel,
+                    data.get("ts"),
+                    source,
+                )
+                return True
+            logger.warning(
+                "slack_issue_channel_plain: chat.postMessage failed error=%s "
+                "source=%s",
+                data.get("error"),
+                source,
+            )
+        except Exception:
+            logger.warning(
+                "slack_issue_channel_plain: bot API request failed source=%s",
+                source,
+                exc_info=True,
+            )
+        if _issue_report_webhook_url():
+            logger.info(
+                "slack_issue_channel_plain: bot API failed; trying webhook "
+                "fallback source=%s",
+                source,
+            )
+            return await _post_issue_report_via_webhook(message)
+        return False
+
+    if _issue_report_webhook_url():
+        return await _post_issue_report_via_webhook(message)
+
+    logger.warning(
+        "slack_issue_channel_plain: skipped source=%s "
+        "(set SLACK_ISSUE_REPORT_BOT_TOKEN+SLACK_ISSUE_REPORT_CHANNEL_ID "
+        "or SLACK_ISSUE_REPORT_WEBHOOK_URL)",
+        source,
+    )
+    return False
+
+
 async def notify_slack_head_admin_escalation(text: str, *, source: str) -> bool:
     """Post to head-admin escalation channel using escalation bot token. Never raises."""
 

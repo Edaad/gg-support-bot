@@ -24,6 +24,7 @@ Durable state: table `support_group_idle_episode_state` ([`bot/services/support_
 |-------|--------|
 | Open Slack | Immediate `player_idle` (*A player just reached out.*) with the player message |
 | Follow-up burst | After **1 minute** of quiet with a non-empty burst → `player_idle_followup` (*Player follow-up.*) |
+| Staff unanswered | After a **successful** follow-up Slack, if no staff reply for **5 minutes** → one-time `player_idle_staff_unanswered` to the **issue-report** Slack channel (not an open `/reports` ticket; escalation message template) |
 | Silence end | **5 minutes** with no human (player or staff) → close episode |
 | Hard cap | **30 minutes** from episode open → close episode |
 
@@ -31,14 +32,16 @@ Behavior:
 
 1. First player free text (not a flow command, not expected wizard input) **opens** an episode: Slack `player_idle`, call no-op in-group menu hook (`offer_idle_help_prompt` → false for now), arm silence + hard-cap timers.
 2. Further player messages while open **feed** the burst and reset the 1m debounce + 5m silence.
-3. Staff/AM message while open: clear burst, cancel 1m debounce, bump `last_human_at`, reschedule 5m silence; episode stays open.
-4. Flow end (deposit/cashout success, cancel, timeout): quietly `close_episode`; next free text opens a fresh episode.
-5. Denied `/cashout` / `/earlyrb`: no special arm — next free text opens a normal episode (no 5m silence gate).
+3. Staff/AM message while open: clear burst, cancel 1m debounce, clear staff-unanswered latch, bump `last_human_at`, reschedule 5m silence; episode stays open.
+4. After successful follow-up Slack: arm durable staff-unanswered (player messages do not reset it; another follow-up re-arms only if not yet fired). Fire once to issue-report channel, then latch until staff replies.
+5. Flow end (deposit/cashout success, cancel, timeout): quietly `close_episode`; next free text opens a fresh episode.
+6. Denied `/cashout` / `/earlyrb`: no special arm — next free text opens a normal episode (no 5m silence gate).
 
-Worker restart: open episodes restore remaining debounce / silence / hard-cap delays.
+Worker restart: open episodes restore remaining debounce / silence / hard-cap / staff-unanswered delays.
 
 ```bash
 DATABASE_URL=... python migrate_support_group_idle_episode_state.py
+DATABASE_URL=... python migrate_support_group_idle_staff_unanswered.py
 ```
 
 `/earlyrb`:
@@ -205,6 +208,7 @@ Copy (no user id, no chat id):
 |--------|----------|----------------------|
 | `player_idle` | A player just reached out. | Yes (the player's message that triggered idle) |
 | `player_idle_followup` | Player follow-up. | Yes (burst body after 1m quiet) |
+| `player_idle_staff_unanswered` | ⚠️ 5 minutes have passed since follow-up. | Yes (snapshot of last follow-up body); posts to **issue-report** channel only |
 | `cashout_started` | Cash out initiated. | No |
 | `earlyrb_requested` | Early rakeback requested. | No |
 | `deposit_sent_timeout` | 5 minutes have passed since the player said they sent the payment — please look out for a payment in this group chat. | No |
