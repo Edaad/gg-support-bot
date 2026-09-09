@@ -80,7 +80,7 @@ class EvaluateRefundGateTests(unittest.TestCase):
 
 
 class RefundIssueReportDescriptionTests(unittest.TestCase):
-    def test_banned_memo_omits_ids_and_bolds_hits(self):
+    def test_banned_memo_is_lean_slack_mrkdwn(self):
         payment = SimpleNamespace(
             id=2614,
             payer_name="Drew berry",
@@ -99,12 +99,36 @@ class RefundIssueReportDescriptionTests(unittest.TestCase):
             notification_chat_id=-5549765036,
             notification_message_id=37711,
         )
-        self.assertIn("Memo contains banned keyword(s): *chips*.", text)
-        self.assertNotIn("Payment ID:", text)
-        self.assertNotIn("Staff notification:", text)
-        self.assertIn("Payer: Drew berry", text)
-        self.assertIn("Amount: $49.99", text)
-        self.assertIn("Memo: Chips", text)
+        self.assertEqual(
+            text,
+            "*Banned memo:* `chips`\n*Venmo:* `@michaelc4444`\n*Memo:* `Chips`",
+        )
+        self.assertNotIn("DO NOT ADD", text)
+        self.assertNotIn("Payer:", text)
+        self.assertNotIn("Amount:", text)
+        self.assertNotIn("Group:", text)
+        self.assertNotIn("1758-7219", text)
+
+    def test_gs_and_banned_memo_combined(self):
+        payment = SimpleNamespace(
+            payer_name="Jane",
+            amount_cents=8000,
+            venmo_handle="jane",
+            memo="poker night",
+            goods_or_services=True,
+        )
+        gate = evaluate_refund_gate(
+            amount_cents=8000,
+            memo="poker night",
+            goods_or_services=True,
+            method_slug="venmo",
+        )
+        text = format_refund_issue_report_description(
+            payment, gate, method_slug="venmo"
+        )
+        self.assertIn("*Goods & Services* · *Banned memo:* `poker`", text)
+        self.assertIn("*Venmo:* `@jane`", text)
+        self.assertIn("*Memo:* `poker night`", text)
 
 
 class RefundCopyTests(unittest.TestCase):

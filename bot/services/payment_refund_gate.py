@@ -354,32 +354,28 @@ def format_refund_issue_report_description(
     notification_chat_id: Optional[int] = None,
     notification_message_id: Optional[int] = None,
 ) -> str:
-    _ = (notification_chat_id, notification_message_id)
-    amount = format_amount_exact(int(payment.amount_cents))
-    bound_label = group_title or "(unbound — bind via notification reply)"
-    lines = [
-        "DO NOT ADD — refund required.",
-        "",
-    ]
+    """Slack mrkdwn details for auto refund tickets (payer/amount/group live in title/header)."""
+    _ = (group_title, notification_chat_id, notification_message_id)
+    slug = (method_slug or "").strip().lower()
+    handle = _method_handle(payment, method_slug).strip()
+    memo = (getattr(payment, "memo", None) or "").strip()
+
+    reason_bits: list[str] = []
     if REASON_GOODS_SERVICES in gate.reasons:
-        lines.append("Venmo payment was sent as Goods & Services.")
+        reason_bits.append("*Goods & Services*")
     if REASON_BANNED_MEMO in gate.reasons:
         hits = gate.banned_hits or ("banned keyword",)
-        # Slack mrkdwn bold on each hit (issue reports post to Slack).
-        bold_hits = ", ".join(f"*{h}*" for h in hits)
-        lines.append(f"Memo contains banned keyword(s): {bold_hits}.")
-    lines.extend(
-        [
-            "",
-            f"Payer: {getattr(payment, 'payer_name', '')}",
-            f"Amount: {amount}",
-            f"Method: {_method_handle(payment, method_slug)}",
-            f"Group: {bound_label}",
-        ]
-    )
-    memo = (getattr(payment, "memo", None) or "").strip()
+        hit_bits = ", ".join(f"`{h}`" for h in hits)
+        reason_bits.append(f"*Banned memo:* {hit_bits}")
+
+    lines: list[str] = []
+    if reason_bits:
+        lines.append(" · ".join(reason_bits))
+    if handle:
+        label = "Venmo" if slug == "venmo" else "Zelle"
+        lines.append(f"*{label}:* `{handle}`")
     if memo:
-        lines.append(f"Memo: {memo}")
+        lines.append(f"*Memo:* `{memo}`")
     return "\n".join(lines)
 
 
