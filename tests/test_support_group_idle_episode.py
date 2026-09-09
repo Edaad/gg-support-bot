@@ -174,6 +174,47 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         names = [c.kwargs.get("name") for c in self.jq.run_once.call_args_list]
         self.assertIn(ep._debounce_job_name(1), names)
 
+    async def test_gratitude_feed_does_not_reset_silence(self):
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        with patch.object(
+            ep, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
+        ):
+            with patch.object(
+                ep, "offer_idle_help_prompt", new_callable=AsyncMock, return_value=False
+            ):
+                await ep.on_player_reach_out(
+                    1,
+                    club_id=9,
+                    message_text="need help",
+                    job_queue=self.jq,
+                    now=t0,
+                )
+        self.jq.run_once.reset_mock()
+        t1 = t0 + timedelta(seconds=30)
+        result = await ep.on_player_reach_out(
+            1,
+            club_id=9,
+            message_text="thanks!",
+            job_queue=self.jq,
+            now=t1,
+        )
+        self.assertEqual(result.outcome, "fed")
+        state = ep.load_episode_state(1)
+        self.assertEqual(state["last_human_at"], t0)
+        self.assertEqual(state["burst"][0]["text"], "thanks!")
+        names = [c.kwargs.get("name") for c in self.jq.run_once.call_args_list]
+        self.assertNotIn(ep._silence_job_name(1), names)
+        self.assertIn(ep._debounce_job_name(1), names)
+
+    def test_is_player_gratitude_ack(self):
+        self.assertTrue(ep.is_player_gratitude_ack("Thanks!"))
+        self.assertTrue(ep.is_player_gratitude_ack("ty"))
+        self.assertTrue(ep.is_player_gratitude_ack("thank you so much"))
+        self.assertTrue(ep.is_player_gratitude_ack("ok thanks"))
+        self.assertFalse(ep.is_player_gratitude_ack("thanks but I need chips"))
+        self.assertFalse(ep.is_player_gratitude_ack("hello"))
+        self.assertFalse(ep.is_player_gratitude_ack(""))
+
     async def test_deposit_feed_opens_without_second_slack(self):
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
         with patch.object(

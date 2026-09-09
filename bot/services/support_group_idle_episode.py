@@ -3,6 +3,7 @@
 Open on player free text (or deposit Slack feed): immediate Slack (unless already
 sent), no-op menu hook, then 1m quiet burst for follow-ups. After a successful
 follow-up Slack, arm a 5m staff-unanswered timer (issue-report channel, once).
+Player gratitude closers (thanks/ty/…) do not reset the 5m silence clock.
 Episode ends on 5 minutes of any-human silence, 30m hard cap from open, or
 flow-end close.
 
@@ -12,6 +13,7 @@ Observe-only relative to /deposit and /cashout wizards.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -46,7 +48,49 @@ EXPECTED_FLOW_INPUT_KEY = "expected_flow_input"
 IDLE_EPISODE_HARD_CAP_SECONDS = 1800  # 30 minutes
 IDLE_EPISODE_HARD_CAP_SECONDS_TEST = 120
 
+# Whole-message player closers: do not reset the 5m silence clock (feeds still count).
+_GRATITUDE_EXACT = frozenset(
+    {
+        "thanks",
+        "thank you",
+        "thank u",
+        "thankyou",
+        "thx",
+        "thnx",
+        "thanx",
+        "ty",
+        "tysm",
+        "tyvm",
+        "appreciate it",
+        "appreciated",
+        "much appreciated",
+        "thanks a lot",
+        "thanks so much",
+        "thank you so much",
+        "thanks man",
+        "thanks bro",
+        "ok thanks",
+        "okay thanks",
+        "ok thank you",
+        "okay thank you",
+        "got it thanks",
+        "got it thank you",
+    }
+)
+_GRATITUDE_NORMALIZE_RE = re.compile(r"[^\w\s]+", re.UNICODE)
+_GRATITUDE_SPACE_RE = re.compile(r"\s+")
+
 _idle_app: Any | None = None
+
+
+def is_player_gratitude_ack(message_text: str | None) -> bool:
+    """True when player text is a short thanks/ty closer (silence clock ignore)."""
+    raw = (message_text or "").strip().lower()
+    if not raw:
+        return False
+    body = _GRATITUDE_NORMALIZE_RE.sub(" ", raw)
+    body = _GRATITUDE_SPACE_RE.sub(" ", body).strip()
+    return body in _GRATITUDE_EXACT
 
 
 @dataclass(frozen=True)
@@ -483,6 +527,7 @@ def _persist_open_or_feed(
     feed_burst: bool,
     club_id: int | None = None,
     trigger_message: dict[str, Any] | None = None,
+    bump_last_human: bool = True,
 ) -> tuple[bool, list[dict[str, Any]], Any]:
     """Write DB. Returns (opened_new, burst_after, history_episode_id)."""
     cid = int(chat_id)
@@ -495,9 +540,12 @@ def _persist_open_or_feed(
         if title:
             row.title = title
         row.updated_at = ts
-        row.last_human_at = ts
+        opening = row.episode_started_at is None
+        # Opening always stamps last_human; gratitude feeds skip so silence can end.
+        if opening or bump_last_human:
+            row.last_human_at = ts
 
-        if row.episode_started_at is None:
+        if opening:
             history_id = uuid.uuid4()
             try:
                 session.add(
@@ -560,6 +608,7 @@ async def on_player_reach_out(
         # Media-only still escalates via placeholder from caller; empty = ignore.
         return ReachOutResult(outcome="ignored")
 
+    gratitude = is_player_gratitude_ack(body)
     opened, burst, history_id = _persist_open_or_feed(
         cid,
         title=title,
@@ -571,6 +620,7 @@ async def on_player_reach_out(
         feed_burst=bool(slack_already_sent),
         club_id=club_id,
         trigger_message=trigger_message,
+        bump_last_human=not gratitude,
     )
 
     jq = _resolve_job_queue(job_queue)
@@ -621,8 +671,9 @@ async def on_player_reach_out(
             escalation_event_id=event_id,
         )
 
-    # Already open: feed burst + reschedule debounce/silence (hardcap stays).
-    _schedule_silence(cid, job_queue=jq)
+    # Already open: feed burst; gratitude does not reset the 5m silence clock.
+    if not gratitude:
+        _schedule_silence(cid, job_queue=jq)
     if burst:
         _schedule_debounce(cid, job_queue=jq, club_id=club_id, title=title)
     return ReachOutResult(

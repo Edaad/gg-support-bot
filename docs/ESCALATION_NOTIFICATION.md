@@ -31,7 +31,7 @@ Durable state: table `support_group_idle_episode_state` ([`bot/services/support_
 Behavior:
 
 1. First player free text (not a flow command, not expected wizard input) **opens** an episode: Slack `player_idle`, call no-op in-group menu hook (`offer_idle_help_prompt` → false for now), arm silence + hard-cap timers.
-2. Further player messages while open **feed** the burst and reset the 1m debounce + 5m silence.
+2. Further player messages while open **feed** the burst and reset the 1m debounce + 5m silence. **Exception (player only):** short gratitude closers (`thanks`, `ty`, `thank you`, `thx`, …) still feed/Slack but do **not** reset the 5m silence clock.
 3. Staff/AM message while open: clear burst, cancel 1m debounce, clear staff-unanswered latch, bump `last_human_at`, reschedule 5m silence; episode stays open.
 4. After successful follow-up Slack: arm durable staff-unanswered (player messages do not reset it; another follow-up re-arms only if not yet fired). Fire once to issue-report channel, then latch until staff replies. Silence close is deferred until that ping fires (or staff clears the latch); after the ping, close if the chat is still quiet.
 5. Flow end (deposit/cashout success, cancel, timeout): quietly `close_episode`; next free text opens a fresh episode.
