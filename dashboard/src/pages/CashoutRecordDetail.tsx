@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import {
   addCashoutPayment,
   addCashoutSend,
@@ -86,9 +86,18 @@ export default function CashoutRecordDetail({
   role: DashboardRole
 }) {
   const { id } = useParams()
+  const location = useLocation()
   const recordId = Number(id)
   const askConfirm = useConfirm()
   const isAdmin = role === 'admin'
+  const listSearch =
+    typeof location.state === 'object' &&
+    location.state != null &&
+    'listSearch' in location.state &&
+    typeof (location.state as { listSearch?: unknown }).listSearch === 'string'
+      ? (location.state as { listSearch: string }).listSearch
+      : ''
+  const backTo = `/cashout-records${listSearch}`
   const [record, setRecord] = useState<StaffCashoutRecordT | null>(null)
   const [methods, setMethods] = useState<V2Method[]>([])
   const [loading, setLoading] = useState(true)
@@ -307,7 +316,7 @@ export default function CashoutRecordDetail({
   if (!record) {
     return (
       <div>
-        <Link to="/cashout-records" className="text-sm text-accent hover:underline">
+        <Link to={backTo} className="text-sm text-accent hover:underline">
           Back to cashout records
         </Link>
         <p className="mt-4 text-sm text-danger-ink">{error || 'Not found'}</p>
@@ -317,7 +326,7 @@ export default function CashoutRecordDetail({
 
   return (
     <div>
-      <Link to="/cashout-records" className="text-sm text-accent hover:underline">
+      <Link to={backTo} className="text-sm text-accent hover:underline">
         Back to cashout records
       </Link>
 

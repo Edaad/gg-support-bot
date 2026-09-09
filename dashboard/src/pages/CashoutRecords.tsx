@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   addCashoutPayment,
   createCashoutRecord,
@@ -112,6 +112,8 @@ export default function CashoutRecords({
   role: DashboardRole
 }) {
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const isAdmin = role === 'admin'
   const [tab, setTab] = useState<PageTab>('active')
   const [records, setRecords] = useState<StaffCashoutRecordT[]>([])
@@ -135,9 +137,42 @@ export default function CashoutRecords({
   const [fromDate, setFromDate] = useState(() => daysAgoEastern(30))
   const [toDate, setToDate] = useState(() => easternCalendarDateString())
   const [menuExporting, setMenuExporting] = useState(false)
-  const [page, setPage] = useState(0)
   const [total, setTotal] = useState(0)
   const reqId = useRef(0)
+  const skipPageReset = useRef(true)
+
+  const pageParam = searchParams.get('page')
+  const page =
+    pageParam && /^\d+$/.test(pageParam) ? Math.max(0, Number(pageParam) - 1) : 0
+
+  const setQuery = useCallback(
+    (patch: Record<string, string | null>) => {
+      const next = new URLSearchParams(searchParams)
+      for (const [k, v] of Object.entries(patch)) {
+        if (v == null || v === '') next.delete(k)
+        else next.set(k, v)
+      }
+      setSearchParams(next, { replace: true })
+    },
+    [searchParams, setSearchParams],
+  )
+
+  const goToPage = useCallback(
+    (nextPage: number) => {
+      const p = Math.max(0, nextPage)
+      setQuery({ page: p <= 0 ? null : String(p + 1) })
+    },
+    [setQuery],
+  )
+
+  const openRecord = useCallback(
+    (id: number) => {
+      navigate(`/cashout-records/${id}`, {
+        state: { listSearch: location.search },
+      })
+    },
+    [navigate, location.search],
+  )
 
   const isMoneySent = tab === 'money_sent'
   const isDoNotSend = tab === 'do_not_send'
@@ -227,8 +262,20 @@ export default function CashoutRecords({
   }, [search])
 
   useEffect(() => {
-    setPage(0)
-  }, [tab, clubFilter, q, fromDate, toDate, methodFilter])
+    if (skipPageReset.current) {
+      skipPageReset.current = false
+      return
+    }
+    setSearchParams(
+      (prev) => {
+        if (!prev.has('page')) return prev
+        const next = new URLSearchParams(prev)
+        next.delete('page')
+        return next
+      },
+      { replace: true },
+    )
+  }, [tab, clubFilter, q, fromDate, toDate, methodFilter, setSearchParams])
 
   useEffect(() => {
     if (isMoneySent) reloadSends()
@@ -301,7 +348,7 @@ export default function CashoutRecords({
         // Record exists; finish on detail so destination can be added there.
       }
       setCreateOpen(false)
-      navigate(`/cashout-records/${created.id}`)
+      openRecord(created.id)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Create failed')
     } finally {
@@ -522,7 +569,7 @@ export default function CashoutRecords({
                       <td className="px-4 py-3 text-right">
                         <MoneySentRowMenu
                           recordId={s.cashout_record_id}
-                          onOpen={(id) => navigate(`/cashout-records/${id}`)}
+                          onOpen={openRecord}
                         />
                       </td>
                     </tr>
@@ -539,7 +586,7 @@ export default function CashoutRecords({
                   <button
                     type="button"
                     disabled={page === 0}
-                    onClick={() => setPage((p) => p - 1)}
+                    onClick={() => goToPage(page - 1)}
                     className="btn-secondary-sm disabled:opacity-40"
                   >
                     Previous
@@ -547,7 +594,7 @@ export default function CashoutRecords({
                   <button
                     type="button"
                     disabled={page + 1 >= totalPages}
-                    onClick={() => setPage((p) => p + 1)}
+                    onClick={() => goToPage(page + 1)}
                     className="btn-secondary-sm disabled:opacity-40"
                   >
                     Next
@@ -573,11 +620,11 @@ export default function CashoutRecords({
                 key={r.id}
                 role="link"
                 tabIndex={0}
-                onClick={() => navigate(`/cashout-records/${r.id}`)}
+                onClick={() => openRecord(r.id)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault()
-                    navigate(`/cashout-records/${r.id}`)
+                    openRecord(r.id)
                   }
                 }}
                 className="cursor-pointer rounded-2xl border border-border bg-surface p-5 shadow-sm transition hover:border-accent/40 hover:bg-surface-raised"
@@ -590,6 +637,7 @@ export default function CashoutRecords({
                   </div>
                   <Link
                     to={`/cashout-records/${r.id}`}
+                    state={{ listSearch: location.search }}
                     onClick={(e) => e.stopPropagation()}
                     className="btn-primary inline-flex min-h-12 min-w-[7rem] items-center justify-center px-6 text-base"
                   >
@@ -622,7 +670,7 @@ export default function CashoutRecords({
                 <button
                   type="button"
                   disabled={page === 0}
-                  onClick={() => setPage((p) => p - 1)}
+                  onClick={() => goToPage(page - 1)}
                   className="btn-secondary-sm disabled:opacity-40"
                 >
                   Previous
@@ -630,7 +678,7 @@ export default function CashoutRecords({
                 <button
                   type="button"
                   disabled={page + 1 >= totalPages}
-                  onClick={() => setPage((p) => p + 1)}
+                  onClick={() => goToPage(page + 1)}
                   className="btn-secondary-sm disabled:opacity-40"
                 >
                   Next
