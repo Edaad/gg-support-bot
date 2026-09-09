@@ -863,6 +863,17 @@ class StaffCashoutRecord(Base):
         UniqueConstraint("cashier_job_id", name="uq_staff_cashout_records_cashier_job_id"),
         Index("ix_staff_cashout_records_club_id", "club_id"),
         Index("ix_staff_cashout_records_created_at", "created_at"),
+        Index(
+            "ix_staff_cashout_records_do_not_send_created_at",
+            "do_not_send",
+            "created_at",
+        ),
+        Index(
+            "ix_staff_cashout_records_do_not_send_club_created_at",
+            "do_not_send",
+            "club_id",
+            "created_at",
+        ),
     )
 
     id = Column(Integer, primary_key=True)
