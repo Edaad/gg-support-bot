@@ -16,24 +16,33 @@ class _EventStore:
     def __init__(self):
         self.events: dict[int, MagicMock] = {}
         self.episodes: dict = {}
+        self.decisions: dict[int, object] = {}
         self._next = 1
+        self._next_dec = 1
 
     def get(self, model, key):
         if model is obs.EscalationEvent:
             return self.events.get(int(key))
         if model is obs.EscalationEpisode:
             return self.episodes.get(key)
+        if model is obs.EscalationDecisionLog:
+            return self.decisions.get(int(key))
         if model is obs.SupportGroupIdleEpisodeState:
             return None
         return None
 
     def add(self, row):
-        if isinstance(row, obs.EscalationEvent) or row.__class__.__name__ == "EscalationEvent":
+        name = row.__class__.__name__
+        if isinstance(row, obs.EscalationEvent) or name == "EscalationEvent":
             row.id = self._next
             self._next += 1
             self.events[int(row.id)] = row
-        elif isinstance(row, obs.EscalationEpisode) or row.__class__.__name__ == "EscalationEpisode":
+        elif isinstance(row, obs.EscalationEpisode) or name == "EscalationEpisode":
             self.episodes[row.id] = row
+        elif isinstance(row, obs.EscalationDecisionLog) or name == "EscalationDecisionLog":
+            row.id = self._next_dec
+            self._next_dec += 1
+            self.decisions[int(row.id)] = row
 
     def flush(self):
         return None
@@ -104,6 +113,39 @@ class RecordEventTests(unittest.TestCase):
             )
 
 
+class RecordDecisionTests(unittest.TestCase):
+    def test_record_decision(self):
+        store = _EventStore()
+        with patch.object(obs, "get_db", side_effect=lambda: _DbCtx(store)):
+            did = obs.record_escalation_decision(
+                decision=obs.DECISION_SKIPPED,
+                reason=obs.REASON_ESC_OFF,
+                telegram_chat_id=-100,
+                club_id=2,
+                group_title="G",
+                telegram_user_id=7,
+                role="player",
+                telegram_message_id=44,
+                trigger_messages=[{"text": "hi"}],
+            )
+            self.assertEqual(did, 1)
+        row = store.decisions[1]
+        self.assertEqual(row.decision, obs.DECISION_SKIPPED)
+        self.assertEqual(row.reason, obs.REASON_ESC_OFF)
+        self.assertEqual(row.telegram_user_id, 7)
+        self.assertEqual(row.trigger_messages[0]["text"], "hi")
+
+    def test_record_decision_never_raises(self):
+        with patch.object(obs, "get_db", side_effect=RuntimeError("db down")):
+            self.assertIsNone(
+                obs.record_escalation_decision(
+                    decision=obs.DECISION_FIRED,
+                    reason=obs.REASON_PLAYER_IDLE_OPENED,
+                    telegram_chat_id=-1,
+                )
+            )
+
+
 class NotifyPersistTests(unittest.IsolatedAsyncioTestCase):
     async def test_persists_when_slack_fails(self):
         recorded = {}
@@ -136,7 +178,7 @@ class NotifyPersistTests(unittest.IsolatedAsyncioTestCase):
                 return_value=False,
             ),
         ):
-            ok = await esc.notify_escalation_slack(
+            ok, event_id = await esc.notify_escalation_slack(
                 esc.REASON_PLAYER_IDLE,
                 club_id=1,
                 chat_id=-5,
@@ -145,6 +187,7 @@ class NotifyPersistTests(unittest.IsolatedAsyncioTestCase):
                 trigger_messages=[{"text": "hi", "telegram_message_id": 1}],
             )
         self.assertFalse(ok)
+        self.assertEqual(event_id, 9)
         self.assertEqual(recorded["reason"], esc.REASON_PLAYER_IDLE)
         self.assertEqual(recorded["slack_ok"], False)
         upd.assert_called_once_with(9, False)
@@ -173,13 +216,14 @@ class NotifyPersistTests(unittest.IsolatedAsyncioTestCase):
                 new_callable=AsyncMock,
             ),
         ):
-            ok = await esc.notify_escalation_slack(
+            ok, event_id = await esc.notify_escalation_slack(
                 esc.REASON_CASHOUT_STARTED,
                 club_id=1,
                 chat_id=-5,
                 title="GC",
             )
         self.assertTrue(ok)
+        self.assertIsNone(event_id)
         slack.assert_awaited_once()
 
 
@@ -216,12 +260,12 @@ class IdleEpisodeLinkTests(unittest.IsolatedAsyncioTestCase):
             "telegram_user_id": 1,
         }
         with patch.object(
-            ep, "notify_escalation_slack", new_callable=AsyncMock
+            ep, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
         ) as slack:
             with patch.object(
                 ep, "offer_idle_help_prompt", new_callable=AsyncMock, return_value=False
             ):
-                await ep.on_player_reach_out(
+                result = await ep.on_player_reach_out(
                     1,
                     club_id=9,
                     title="GC",
@@ -230,6 +274,7 @@ class IdleEpisodeLinkTests(unittest.IsolatedAsyncioTestCase):
                     now=t0,
                     trigger_message=trigger,
                 )
+        self.assertEqual(result.outcome, "opened")
         slack.assert_awaited_once()
         kwargs = slack.await_args.kwargs
         self.assertEqual(kwargs["trigger_messages"][0]["telegram_message_id"], 9)

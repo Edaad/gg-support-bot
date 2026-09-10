@@ -12,22 +12,15 @@ import {
 import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
-import { easternCalendarDateString } from '../lib/easternTime'
+import {
+  easternCalendarDateString,
+  formatEasternDate,
+} from '../lib/easternTime'
 
 function daysAgoEastern(days: number): string {
   const d = new Date()
   d.setDate(d.getDate() - days)
   return easternCalendarDateString(d)
-}
-
-function fmtExpenseDate(iso: string | null) {
-  if (!iso) return '—'
-  // Calendar date YYYY-MM-DD — avoid timezone shift by formatting locally as date-only
-  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
-    const [y, m, day] = iso.split('-').map(Number)
-    return new Date(y, m - 1, day).toLocaleDateString(undefined, { dateStyle: 'medium' })
-  }
-  return new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' })
 }
 
 export default function Expenses({ token }: { token: string }) {
@@ -317,7 +310,7 @@ export default function Expenses({ token }: { token: string }) {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id} className="border-b border-border last:border-0">
-                  <td className="px-4 py-3 whitespace-nowrap">{fmtExpenseDate(r.expense_date)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{formatEasternDate(r.expense_date)}</td>
                   <td className="px-4 py-3">{r.club_name || '—'}</td>
                   <td className="px-4 py-3">{r.expense_type}</td>
                   <td className="px-4 py-3 max-w-[16rem] truncate text-ink-muted">

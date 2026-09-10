@@ -43,6 +43,7 @@ def _sample_record_dict(**overrides):
         "chat_id": None,
         "player_details_id": 10,
         "admin_telegram_user_id": None,
+        "issued_at": None,
         "created_at": None,
         "player_resolved": True,
     }
@@ -87,6 +88,7 @@ def _make_create_session(club, bonus_type=None):
     def flush():
         rec = session.add.call_args[0][0]
         rec.id = 1
+        rec.issued_at = getattr(rec, "issued_at", None)
         rec.created_at = None
         rec.bonus_type = bonus_type
         rec.club = club
@@ -112,15 +114,20 @@ def _make_api_app() -> FastAPI:
 
 class ZapierPayloadTestCase(unittest.TestCase):
     def test_dashboard_admin_id_is_empty_string(self) -> None:
+        from datetime import datetime, timezone
+
+        issued = datetime(2026, 7, 3, 12, 0, tzinfo=timezone.utc)
         payload = build_bonus_zapier_payload(
             {
                 "player_username": "Jacob",
                 "amount": Decimal("10"),
                 "admin_user_id": "",
+                "issued_at": issued,
             }
         )
         self.assertEqual(payload["admin_telegram_user_id"], "")
         self.assertEqual(payload["amount"], "10")
+        self.assertEqual(payload["issued_at"], "2026-07-03T12:00:00Z")
 
 
 class BonusRecordServiceTestCase(unittest.TestCase):
@@ -158,6 +165,37 @@ class BonusRecordServiceTestCase(unittest.TestCase):
         rec = session.add.call_args[0][0]
         self.assertIsInstance(rec, BonusRecord)
         self.assertIsNone(rec.admin_telegram_user_id)
+        self.assertIsNotNone(rec.issued_at)
+        zap_data = zap.call_args[0][0]
+        self.assertIn("issued_at", zap_data)
+
+    def test_create_with_explicit_issued_at(self) -> None:
+        from datetime import datetime, timezone
+
+        club = _club()
+        bt = _bonus_type()
+        session = _make_create_session(club, bt)
+        when = datetime(2026, 6, 1, 15, 30, tzinfo=timezone.utc)
+        with patch("bot.services.bonus_records.get_db", return_value=_session_cm(session)), patch(
+            "bot.services.bonus_records.resolve_bonus_player",
+            return_value=_sample_player_ctx(),
+        ), patch(
+            "bot.services.bonus_records.fire_bonus_zapier_webhook"
+        ), patch(
+            "bot.services.bonus_records.build_zapier_name",
+            return_value="CC / 8190-5287 / Jacob",
+        ):
+            from bot.services.bonus_records import create_bonus_record
+
+            create_bonus_record(
+                club_id=1,
+                group_title="CC / 8190-5287 / Jacob",
+                amount=Decimal("50"),
+                bonus_type_id=2,
+                issued_at=when,
+            )
+        rec = session.add.call_args[0][0]
+        self.assertEqual(rec.issued_at, when)
 
     def test_create_unresolved_still_fires_zapier(self) -> None:
         club = _club()
@@ -222,6 +260,7 @@ class BonusRecordServiceTestCase(unittest.TestCase):
         record.gg_player_id = None
         record.player_details_id = None
         record.chat_id = None
+        record.issued_at = None
         record.created_at = None
         session = MagicMock()
         session.get.return_value = record
@@ -235,10 +274,13 @@ class BonusRecordServiceTestCase(unittest.TestCase):
             return_value=None,
         ):
             from bot.services.bonus_records import update_bonus_record
+            from datetime import datetime, timezone
 
-            update_bonus_record(1, amount=Decimal("20"))
+            when = datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc)
+            update_bonus_record(1, amount=Decimal("20"), issued_at=when)
         zap.assert_not_called()
         self.assertEqual(record.amount, Decimal("20"))
+        self.assertEqual(record.issued_at, when)
 
     def test_delete_does_not_fire_zapier(self) -> None:
         record = MagicMock()

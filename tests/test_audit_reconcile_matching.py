@@ -14,6 +14,7 @@ from api.audit_reconcile_matching import (
     CHIP_TRANSFER_RT_AT_LABEL,
     FREE_PLAY_LABEL,
     GTO_INC_LABEL,
+    RB_SETTLEMENT_MONDAY_LABEL,
     apply_cc_at_aces_ledger_fallback,
     apply_chip_transfer_matches,
     apply_trade_record_source_overrides,
@@ -959,7 +960,7 @@ class ApplyTradeRecordSourceOverridesTestCase(unittest.TestCase):
     def setUp(self):
         self.t0 = datetime(2026, 7, 3, 6, 30, tzinfo=timezone.utc)
 
-    def test_free_play_overrides_ledger_match(self):
+    def test_free_play_does_not_override_ledger_match(self):
         trade = _trade(occurred=self.t0, amount="-0.50")
         ledger = _ledger(
             occurred=self.t0,
@@ -969,8 +970,32 @@ class ApplyTradeRecordSourceOverridesTestCase(unittest.TestCase):
         rows = apply_trade_record_source_overrides(
             match_trade_lines_to_ledger([trade], [ledger], club_slug="round-table").rows
         )
-        self.assertEqual(rows[0].match_source, FREE_PLAY_LABEL)
-        self.assertEqual(rows[0].match_name, "")
+        self.assertEqual(rows[0].match_source, "Stripe")
+        self.assertEqual(rows[0].match_name, "Jane Doe")
+
+    def test_monday_settlement_beats_free_play(self):
+        trade = _trade(
+            occurred=self.t0,
+            amount="-0.50",
+            gg_id="1055-4566",
+            nick="HunnidPrblms",
+        )
+        ledger = _ledger(
+            occurred=None,
+            amount_signed="-0.50",
+            source="monday_settlement",
+            source_label=RB_SETTLEMENT_MONDAY_LABEL,
+            external_id="monday:week:1055-4566",
+            gg_id="1055-4566",
+            nick="HunnidPrblms",
+            display_name="HunnidPrblms",
+        )
+        rows = apply_trade_record_source_overrides(
+            match_trade_lines_to_ledger([trade], [ledger], club_slug="aces-table").rows
+        )
+        self.assertEqual(rows[0].match_source, RB_SETTLEMENT_MONDAY_LABEL)
+        self.assertEqual(rows[0].match_name, "HunnidPrblms")
+        self.assertEqual(rows[0].match_amount, Decimal("1"))
 
     def test_free_play_unmatched(self):
         trade = _trade(occurred=self.t0, amount="-0.50")

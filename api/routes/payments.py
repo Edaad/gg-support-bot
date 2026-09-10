@@ -41,6 +41,7 @@ from api.payments_helpers import (
     resolve_method_display,
     stripe_dashboard_payment_url,
     stripe_dashboard_session_url,
+    stripe_fee_usd,
 )
 from api.schemas_payments import (
     AutoDepositEventListResponse,
@@ -504,6 +505,7 @@ def list_stripe_sessions(
                 club_id=row.club_id,
                 amount_cents=row.amount_cents,
                 amount_usd=cents_to_usd(row.amount_cents),
+                stripe_fee_usd=stripe_fee_usd(row.amount_cents),
                 currency=row.currency,
                 status=row.status,
                 payment_method_id=row.payment_method_id,

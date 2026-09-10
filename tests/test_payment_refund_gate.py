@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import unittest
 
+from types import SimpleNamespace
+
 from bot.services.payment_refund_gate import (
     REASON_BANNED_MEMO,
     REASON_GOODS_SERVICES,
@@ -11,6 +13,7 @@ from bot.services.payment_refund_gate import (
     evaluate_refund_gate,
     find_banned_memo_hits,
     format_player_refund_message,
+    format_refund_issue_report_description,
     inject_refund_banner,
 )
 
@@ -76,6 +79,58 @@ class EvaluateRefundGateTests(unittest.TestCase):
         self.assertFalse(gate.requires_refund)
 
 
+class RefundIssueReportDescriptionTests(unittest.TestCase):
+    def test_banned_memo_is_lean_slack_mrkdwn(self):
+        payment = SimpleNamespace(
+            id=2614,
+            payer_name="Drew berry",
+            amount_cents=4999,
+            venmo_handle="@michaelc4444",
+            memo="Chips",
+        )
+        gate = evaluate_refund_gate(
+            amount_cents=4999, memo="Chips", method_slug="venmo"
+        )
+        text = format_refund_issue_report_description(
+            payment,
+            gate,
+            method_slug="venmo",
+            group_title="RT / 1758-7219 / drubby459",
+            notification_chat_id=-5549765036,
+            notification_message_id=37711,
+        )
+        self.assertEqual(
+            text,
+            "*Banned memo:* `chips`\n*Venmo:* `@michaelc4444`\n*Memo:* `Chips`",
+        )
+        self.assertNotIn("DO NOT ADD", text)
+        self.assertNotIn("Payer:", text)
+        self.assertNotIn("Amount:", text)
+        self.assertNotIn("Group:", text)
+        self.assertNotIn("1758-7219", text)
+
+    def test_gs_and_banned_memo_combined(self):
+        payment = SimpleNamespace(
+            payer_name="Jane",
+            amount_cents=8000,
+            venmo_handle="jane",
+            memo="poker night",
+            goods_or_services=True,
+        )
+        gate = evaluate_refund_gate(
+            amount_cents=8000,
+            memo="poker night",
+            goods_or_services=True,
+            method_slug="venmo",
+        )
+        text = format_refund_issue_report_description(
+            payment, gate, method_slug="venmo"
+        )
+        self.assertIn("*Goods & Services* · *Banned memo:* `poker`", text)
+        self.assertIn("*Venmo:* `@jane`", text)
+        self.assertIn("*Memo:* `poker night`", text)
+
+
 class RefundCopyTests(unittest.TestCase):
     def test_injects_staff_banner(self):
         gate = evaluate_refund_gate(amount_cents=5025, memo="poker")
@@ -111,7 +166,7 @@ class RefundCopyTests(unittest.TestCase):
     def test_appends_whole_dollar_nudge(self):
         gate = evaluate_refund_gate(amount_cents=5025, method_slug="zelle")
         text = append_whole_dollar_nudge(
-            "We have received your payment for $50, chips will be loaded to your account shortly!!",
+            "We have received your payment for $50, credits will be loaded to your account shortly!!",
             gate,
         )
         self.assertIn("whole-dollar amounts from now on", text)
@@ -120,7 +175,7 @@ class RefundCopyTests(unittest.TestCase):
             is_first_time_setup_bind=True,
             method_slug="zelle",
         )
-        unchanged = "We have received your payment for $50, chips will be loaded to your account shortly!!"
+        unchanged = "We have received your payment for $50, credits will be loaded to your account shortly!!"
         self.assertEqual(append_whole_dollar_nudge(unchanged, first), unchanged)
 
 

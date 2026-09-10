@@ -3,13 +3,15 @@
 import logging
 import os
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from api.method_owner import MethodOwnerSlug
+from api.webhook_ingest_audit import enrich_payment_ingest_success, set_webhook_ingest_error
 from bot.services.venmo_payments import (
     WEBHOOK_SECRET_ENV,
     ingest_venmo_payment,
+    parse_amount_cents,
 )
 from notification.constants import debug_notification_enabled
 
@@ -61,6 +63,7 @@ class VenmoPaymentIngestResponse(BaseModel):
 
 @router.post("/payments", response_model=VenmoPaymentIngestResponse)
 async def ingest_payment(
+    request: Request,
     body: VenmoPaymentIngestBody,
     x_venmo_webhook_secret: str | None = Header(None, alias=LOOKUP_HEADER),
 ):
@@ -99,10 +102,12 @@ async def ingest_payment(
     except ValueError as e:
         if debug_notification_enabled():
             logger.warning("venmo ingest: rejected bad request — %s", e)
+        set_webhook_ingest_error(request, str(e))
         raise HTTPException(400, str(e)) from e
     except RuntimeError as e:
         if debug_notification_enabled():
             logger.error("venmo ingest: failed — %s", e)
+        set_webhook_ingest_error(request, str(e))
         raise HTTPException(503, str(e)) from e
 
     if debug_notification_enabled():
@@ -113,6 +118,25 @@ async def ingest_payment(
             result.auto_bound,
             result.created,
         )
+
+    amount_cents = None
+    try:
+        amount_cents = parse_amount_cents(body.amount)
+    except ValueError:
+        pass
+
+    enrich_payment_ingest_success(
+        request,
+        source_external_id=body.source_external_id,
+        payment_id=result.payment_id,
+        method_owner=body.method_owner,
+        payer_summary=body.payer_name,
+        amount_cents=amount_cents,
+        is_test=body.test,
+        status=result.status,
+        auto_bound=result.auto_bound,
+        created=result.created,
+    )
 
     return VenmoPaymentIngestResponse(
         payment_id=result.payment_id,

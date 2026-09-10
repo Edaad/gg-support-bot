@@ -88,7 +88,10 @@ export default function ChatPreview({ clubName, direction, methods }: Props) {
     if (method.has_sub_options && method.sub_options.length > 0) {
       addMsg({
         from: 'bot',
-        text: `You selected ${method.name}. Which option?`,
+        text:
+          direction === 'deposit' && method.slug === 'crypto'
+            ? `You selected ${method.name}. Which option?\n\nNote: Bitcoin and Ethereum can take a while to come through.`
+            : `You selected ${method.name}. Which option?`,
         buttons: method.sub_options.map((s) => ({
           label: s.name,
           onClick: () => handleSubSelect(method, s, amt),

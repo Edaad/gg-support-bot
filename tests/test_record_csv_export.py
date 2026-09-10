@@ -85,7 +85,8 @@ class RecordCsvExportBuildTestCase(unittest.TestCase):
 
         record = MagicMock()
         record.id = 1
-        record.created_at = datetime(2026, 7, 17, 12, 0, 0)
+        record.issued_at = datetime(2026, 7, 17, 12, 0, 0)
+        record.created_at = datetime(2026, 7, 17, 12, 5, 0)
         record.club_id = 4
         record.player_username = "player"
         record.gg_player_id = "1234-5678"
@@ -122,9 +123,11 @@ class RecordCsvExportBuildTestCase(unittest.TestCase):
         )
         rows = list(csv.reader(io.StringIO(content.decode("utf-8"))))
         self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0][1], "issued_at")
+        self.assertEqual(rows[0][2], "created_at")
         self.assertEqual(rows[1][0], "1")
-        self.assertEqual(rows[1][7], "25.00")
-        self.assertEqual(rows[1][8], "Referral")
+        self.assertEqual(rows[1][8], "25.00")
+        self.assertEqual(rows[1][9], "Referral")
 
 
 if __name__ == "__main__":

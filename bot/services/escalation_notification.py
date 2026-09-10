@@ -27,8 +27,10 @@ DEPOSIT_SENT_WAIT_SECONDS_TEST = 30
 
 REASON_PLAYER_IDLE = "player_idle"
 REASON_PLAYER_IDLE_FOLLOWUP = "player_idle_followup"
+REASON_PLAYER_IDLE_STAFF_UNANSWERED = "player_idle_staff_unanswered"
 REASON_CASHOUT_STARTED = "cashout_started"
 REASON_DEPOSIT_SENT_TIMEOUT = "deposit_sent_timeout"
+REASON_DEPOSIT_INCOMPLETE = "deposit_incomplete"
 REASON_DEPOSIT_SENT_FOLLOWUP = "deposit_sent_followup"
 REASON_DEPOSIT_SENT_UNBOUND = "deposit_sent_unbound"
 REASON_DEPOSIT_PLAYER_MESSAGE = "deposit_player_message"
@@ -58,10 +60,17 @@ _ET = ZoneInfo("America/New_York")
 _HEADLINES = {
     REASON_PLAYER_IDLE: "A player just reached out.",
     REASON_PLAYER_IDLE_FOLLOWUP: "Player follow-up.",
+    REASON_PLAYER_IDLE_STAFF_UNANSWERED: (
+        "⚠️ 5 minutes have passed since follow-up."
+    ),
     REASON_CASHOUT_STARTED: "Cash out initiated.",
     REASON_DEPOSIT_SENT_TIMEOUT: (
         "5 minutes have passed since the player said they sent the payment — "
         "please look out for a payment in this group chat."
+    ),
+    REASON_DEPOSIT_INCOMPLETE: (
+        "10 minutes have passed since deposit instructions were sent — "
+        "no payment received or chips added. Please follow up."
     ),
     REASON_DEPOSIT_SENT_FOLLOWUP: (
         "Player sent a message after confirming they sent the payment."
@@ -95,6 +104,7 @@ _REASONS_WITH_MESSAGE_BODY = frozenset(
     {
         REASON_PLAYER_IDLE,
         REASON_PLAYER_IDLE_FOLLOWUP,
+        REASON_PLAYER_IDLE_STAFF_UNANSWERED,
         REASON_DEPOSIT_SENT_FOLLOWUP,
         REASON_DEPOSIT_PLAYER_MESSAGE,
         REASON_RPA_DEPOSIT_UNCERTAIN,
@@ -108,14 +118,32 @@ AWAITING_AGENT_DEBOUNCE_SECONDS_TEST = 5
 AWAITING_AGENT_EPISODE_SECONDS = 600  # 10 minutes
 AWAITING_AGENT_EPISODE_SECONDS_TEST = 60
 
+STAFF_UNANSWERED_SECONDS = 300  # 5 minutes after follow-up Slack
+STAFF_UNANSWERED_SECONDS_TEST = 30
+
 SLACK_MESSAGE_BODY_MAX_CHARS = 500
 MEDIA_ONLY_PLACEHOLDER = "(media)"
 
 DEPOSIT_SENT_ACK_COPY = (
-    "Thank you! Chips will be added as soon as we receive the payment."
+    "Thank you! Credits will be added as soon as we receive the payment."
+)
+DEPOSIT_SENT_ACK_COPY_CRYPTO = (
+    "Thanks! Please send your transaction hash (TxID) here.\n"
+    "\n"
+    "That's the long ID on your wallet/exchange for this transfer — "
+    "open the completed payment → copy TxID / Hash → paste it in this chat.\n"
+    "\n"
+    "We'll add credits as soon as we verify it."
 )
 DEPOSIT_SENT_BUTTON_LABEL = "I have sent the payment"
 DEPOSIT_SENT_CALLBACK_PREFIX = "depsent"
+
+
+def deposit_sent_ack_copy(method_slug: str | None) -> str:
+    """Player ack after tapping 'I have sent the payment' (crypto asks for TxID)."""
+    if (method_slug or "").strip().lower() == "crypto":
+        return DEPOSIT_SENT_ACK_COPY_CRYPTO
+    return DEPOSIT_SENT_ACK_COPY
 
 # While the 5m wait is armed: ignore expected payment acks / proofs.
 _DEPOSIT_FOLLOWUP_IGNORE_RE = re.compile(r"sent|done", re.IGNORECASE)
@@ -131,6 +159,16 @@ def register_escalation_notification_runtime(app: Any) -> None:
     except Exception:
         logger.warning(
             "escalation: restore deposit sent watches failed", exc_info=True
+        )
+    try:
+        from bot.services.deposit_incomplete_watch import (
+            restore_deposit_incomplete_watches,
+        )
+
+        restore_deposit_incomplete_watches(getattr(app, "job_queue", None))
+    except Exception:
+        logger.warning(
+            "escalation: restore deposit incomplete watches failed", exc_info=True
         )
     try:
         from bot.services.support_group_idle_episode import (
@@ -169,6 +207,12 @@ def awaiting_agent_episode_seconds() -> int:
     if is_test_bot_worker():
         return AWAITING_AGENT_EPISODE_SECONDS_TEST
     return AWAITING_AGENT_EPISODE_SECONDS
+
+
+def staff_unanswered_seconds() -> int:
+    if is_test_bot_worker():
+        return STAFF_UNANSWERED_SECONDS_TEST
+    return STAFF_UNANSWERED_SECONDS
 
 
 def _sent_watch_job_name(chat_id: int | str) -> str:
@@ -653,13 +697,15 @@ async def notify_pool_pay_deposit_slack(
                 chat_id,
                 exc_info=True,
             )
-        return await notify_escalation_slack(
-            reason,
-            club_id=club_id,
-            chat_id=int(chat_id),
-            title=title,
-            slack_text=text,
-        )
+        return (
+            await notify_escalation_slack(
+                reason,
+                club_id=club_id,
+                chat_id=int(chat_id),
+                title=title,
+                slack_text=text,
+            )
+        )[0]
 
     from bot.services.manual_deposit_requests import UnionDepositSlackVariant
 
@@ -698,13 +744,15 @@ async def notify_pool_pay_deposit_slack(
             chat_id,
             exc_info=True,
         )
-    return await notify_escalation_slack(
-        reason,
-        club_id=club_id,
-        chat_id=int(chat_id),
-        title=title,
-        slack_text=text,
-    )
+    return (
+        await notify_escalation_slack(
+            reason,
+            club_id=club_id,
+            chat_id=int(chat_id),
+            title=title,
+            slack_text=text,
+        )
+    )[0]
 
 
 async def notify_union_deposit_request_slack(
@@ -743,7 +791,8 @@ async def notify_escalation_slack(
     episode_id=None,
     trigger_messages: list | None = None,
     slack_text: str | None = None,
-) -> bool:
+) -> tuple[bool, int | None]:
+    """Post Slack escalation. Returns ``(slack_ok, escalation_event_id)``."""
     from bot.services.escalation_observability import (
         live_history_episode_id,
         record_escalation_event,
@@ -806,7 +855,66 @@ async def notify_escalation_slack(
             exc_info=True,
         )
 
-    return ok
+    return ok, event_id
+
+
+async def notify_staff_unanswered_issue_channel(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None = None,
+    message_text: str | None = None,
+    episode_id=None,
+    trigger_messages: list | None = None,
+) -> tuple[bool, int | None]:
+    """Post staff-unanswered alert to issue-report channel (no ticket).
+
+    Uses escalation message template; does not post to the escalation channel.
+    Returns ``(slack_ok, escalation_event_id)``.
+    """
+    from bot.services.escalation_observability import (
+        live_history_episode_id,
+        record_escalation_event,
+        update_escalation_event_slack_ok,
+    )
+
+    reason = REASON_PLAYER_IDLE_STAFF_UNANSWERED
+    text = format_escalation_slack_text(
+        reason,
+        club_id=club_id,
+        chat_id=chat_id,
+        title=title,
+        message_text=message_text,
+    )
+    resolved_episode_id = episode_id
+    if resolved_episode_id is None:
+        resolved_episode_id = live_history_episode_id(int(chat_id))
+    event_id = record_escalation_event(
+        reason=reason,
+        telegram_chat_id=int(chat_id),
+        club_id=club_id,
+        group_title=title,
+        episode_id=resolved_episode_id,
+        slack_ok=False,
+        head_admin_fanout=False,
+        trigger_messages=trigger_messages,
+    )
+
+    ok = False
+    try:
+        from bot.services.slack_ops_notify import notify_slack_issue_channel_plain
+
+        ok = await notify_slack_issue_channel_plain(text, source=reason)
+    except Exception:
+        logger.warning(
+            "escalation: staff-unanswered issue channel failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+        ok = False
+
+    update_escalation_event_slack_ok(event_id, ok)
+    return ok, event_id
 
 
 async def offer_idle_help_prompt(
@@ -1428,6 +1536,7 @@ async def handle_deposit_sent_claim(
     chat_id = int(chat.id)
     club_id = get_club_for_chat(chat_id)
     title = getattr(chat, "title", None)
+    slug = ga.deposit_method_slug(chat_id)
 
     await query.answer()
     try:
@@ -1442,7 +1551,7 @@ async def handle_deposit_sent_claim(
     try:
         await context.bot.send_message(
             chat_id=chat_id,
-            text=DEPOSIT_SENT_ACK_COPY,
+            text=deposit_sent_ack_copy(slug),
         )
     except Exception:
         logger.warning(
@@ -1462,8 +1571,6 @@ async def handle_deposit_sent_claim(
     ):
         # Stale button after cancel; still acked above.
         return
-
-    slug = ga.deposit_method_slug(chat_id)
     bound = False
     if slug:
         try:

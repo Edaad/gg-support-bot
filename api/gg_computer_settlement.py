@@ -267,7 +267,7 @@ def fetch_settlement_events(
                     gg_player_id=None,
                     amount_usd=row.amount,
                     occurred_at_utc=None,
-                    external_id=f"monday:{start_s}:{end_s}:noid:{nick_part}",
+                    external_id=f"monday:{start_s}:{end_s}:{slug}:noid:{nick_part}",
                     detail=row.nickname or None,
                     display_name=MISSING_PLAYER_ID_LABEL,
                 )
@@ -279,7 +279,7 @@ def fetch_settlement_events(
                 gg_player_id=key,
                 amount_usd=row.amount,
                 occurred_at_utc=None,
-                external_id=f"monday:{start_s}:{end_s}:{key}",
+                external_id=f"monday:{start_s}:{end_s}:{slug}:{key}",
                 detail=row.nickname or None,
             )
         )

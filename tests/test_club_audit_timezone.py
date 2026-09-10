@@ -11,9 +11,12 @@ from api.club_audit_timezone import (
     audit_date_for_occurred_at,
     audit_day_bounds_utc,
     audit_day_window_utc,
+    audit_partner_slugs,
     audit_timezone_for_slug,
     audit_timezone_label,
     occurred_at_in_audit_day,
+    occurred_at_in_partner_audit_day,
+    partner_audit_day_window_utc,
     parse_row_datetime,
     period_timezone_warning,
 )
@@ -173,6 +176,39 @@ class ClubAuditTimezoneTestCase(unittest.TestCase):
             "round-table",
         )
         self.assertIsNone(warning_rt)
+
+
+class PartnerAuditDayWindowTestCase(unittest.TestCase):
+    def test_audit_partner_slugs_round_table_includes_aces(self):
+        partners = audit_partner_slugs("round-table")
+        self.assertEqual(partners, frozenset({"round-table", "aces-table"}))
+
+    def test_audit_partner_slugs_clubgto_is_singleton(self):
+        self.assertEqual(audit_partner_slugs("clubgto"), frozenset({"clubgto"}))
+
+    def test_partner_window_round_table_extends_past_rt_only_end(self):
+        audit_d = date(2026, 8, 30)
+        rt_start, rt_end = audit_day_window_utc("round-table", audit_d)
+        _, partner_end = partner_audit_day_window_utc("round-table", audit_d)
+        self.assertEqual(rt_start, datetime(2026, 8, 30, 4, 0, tzinfo=timezone.utc))
+        self.assertEqual(
+            rt_end, datetime(2026, 8, 31, 3, 59, 59, 999999, tzinfo=timezone.utc)
+        )
+        self.assertEqual(
+            partner_end, datetime(2026, 8, 31, 4, 59, 59, 999999, tzinfo=timezone.utc)
+        )
+        self.assertGreater(partner_end, rt_end)
+
+    def test_late_night_payment_in_partner_round_table_aug_30(self):
+        """12:17 AM Aug 31 EDT = 04:17 UTC — outside RT Aug 30, inside Aces Aug 30."""
+        audit_d = date(2026, 8, 30)
+        ts = datetime(2026, 8, 31, 4, 17, 5, tzinfo=timezone.utc)
+        self.assertFalse(occurred_at_in_audit_day(ts, "round-table", audit_d))
+        self.assertTrue(occurred_at_in_partner_audit_day(ts, "round-table", audit_d))
+        self.assertTrue(occurred_at_in_partner_audit_day(ts, "creator-club", audit_d))
+        self.assertTrue(occurred_at_in_partner_audit_day(ts, "aces-table", audit_d))
+        after_clubgto = datetime(2026, 8, 31, 5, 30, tzinfo=timezone.utc)
+        self.assertFalse(occurred_at_in_partner_audit_day(after_clubgto, "clubgto", audit_d))
 
 
 if __name__ == "__main__":

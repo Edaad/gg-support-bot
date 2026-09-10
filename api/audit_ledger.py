@@ -17,7 +17,11 @@ from typing import Callable, Iterator
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from api.club_audit_timezone import audit_day_window_utc, occurred_at_in_audit_day
+from api.club_audit_timezone import (
+    audit_partner_slugs,
+    occurred_at_in_partner_audit_day,
+    partner_audit_day_window_utc,
+)
 from api.club_slug import resolve_club_id, slug_for_club_id
 from api.payments_helpers import (
     apply_analytics_payment_exclusion,
@@ -91,6 +95,7 @@ CASHOUT_METHOD_TOKENS: tuple[str, ...] = (
     "Crypto",
     "Revolut",
     "PayPal",
+    "Chips",
 )
 CASHOUT_SOURCE_LABELS: tuple[str, ...] = tuple(
     f"Cashout {token}" for token in CASHOUT_METHOD_TOKENS
@@ -103,6 +108,7 @@ _CASHOUT_METHOD_ALIASES: dict[str, str] = {
     "crypto": "Crypto",
     "revolut": "Revolut",
     "paypal": "PayPal",
+    "chips": "Chips",
 }
 
 DEPOSIT_METHOD_ORDER: tuple[str, ...] = (
@@ -301,10 +307,11 @@ def payment_in_audit_day_for_club(
 ) -> bool:
     if occurred_at is None:
         return False
-    slug = slug_for_payment_club(session, club_id, data)
-    if slug != club_slug.strip().lower():
+    requested = club_slug.strip().lower()
+    payment_slug = slug_for_payment_club(session, club_id, data)
+    if payment_slug not in audit_partner_slugs(requested):
         return False
-    return occurred_at_in_audit_day(occurred_at, slug, audit_date)
+    return occurred_at_in_partner_audit_day(occurred_at, requested, audit_date)
 
 
 def _apply_audit_manual_filters(
@@ -442,7 +449,7 @@ def fetch_deposit_events(
     audit_date: date,
 ) -> list[LedgerEvent]:
     slug = club_slug.strip().lower()
-    from_dt, to_dt = audit_day_window_utc(slug, audit_date)
+    from_dt, to_dt = partner_audit_day_window_utc(slug, audit_date)
     events: list[LedgerEvent] = []
 
     stripe_query = _apply_audit_stripe_filters(
@@ -751,15 +758,15 @@ def fetch_bonus_events(
 ) -> list[LedgerEvent]:
     slug = club_slug.strip().lower()
     club_id = resolve_club_id(session, slug)
-    from_dt, to_dt = audit_day_window_utc(slug, audit_date)
+    from_dt, to_dt = partner_audit_day_window_utc(slug, audit_date)
     rows = (
         session.query(BonusRecord)
         .filter(
             BonusRecord.club_id == club_id,
-            BonusRecord.created_at >= from_dt,
-            BonusRecord.created_at <= to_dt,
+            BonusRecord.issued_at >= from_dt,
+            BonusRecord.issued_at <= to_dt,
         )
-        .order_by(BonusRecord.created_at.desc(), BonusRecord.id.desc())
+        .order_by(BonusRecord.issued_at.desc(), BonusRecord.id.desc())
         .all()
     )
     out: list[LedgerEvent] = []
@@ -769,7 +776,7 @@ def fetch_bonus_events(
             club_slug=slug,
             audit_date=audit_date,
             club_id=row.club_id,
-            occurred_at=row.created_at,
+            occurred_at=row.issued_at,
         ):
             continue
         gg_id = (row.gg_player_id or "").strip() or _resolve_bonus_gg_player_id(
@@ -783,7 +790,7 @@ def fetch_bonus_events(
                 source="bonus",
                 gg_player_id=gg_id,
                 amount_usd=Decimal(str(row.amount)),
-                occurred_at_utc=row.created_at,
+                occurred_at_utc=row.issued_at,
                 external_id=f"bonus:{row.id}",
                 detail=detail,
                 display_name=display or None,
@@ -801,7 +808,7 @@ def fetch_cashout_events(
 ) -> list[LedgerEvent]:
     slug = club_slug.strip().lower()
     club_id = resolve_club_id(session, slug)
-    from_dt, to_dt = audit_day_window_utc(slug, audit_date)
+    from_dt, to_dt = partner_audit_day_window_utc(slug, audit_date)
     rows = (
         session.query(StaffCashoutRecord)
         .options(joinedload(StaffCashoutRecord.payments))

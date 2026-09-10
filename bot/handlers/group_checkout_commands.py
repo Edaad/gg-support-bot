@@ -1,4 +1,4 @@
-"""Shared helpers for /stripe and /cashapp group-only Stripe checkout commands."""
+"""Shared helpers for /stripe group-only Stripe checkout command."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ GROUP_CHECKOUT_DM_MESSAGE = (
     "for your support group."
 )
 
-GROUP_ONLY_CHECKOUT_COMMANDS = frozenset({"stripe", "cashapp"})
+GROUP_ONLY_CHECKOUT_COMMANDS = frozenset({"stripe"})
 
 
 def is_group_chat(update: Update) -> bool:

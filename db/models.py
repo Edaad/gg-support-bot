@@ -704,6 +704,7 @@ class BonusRecord(Base):
     __table_args__ = (
         Index("ix_bonus_records_gg_player_id", "gg_player_id"),
         Index("ix_bonus_records_player_details_id", "player_details_id"),
+        Index("ix_bonus_records_issued_at", "issued_at"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -726,6 +727,7 @@ class BonusRecord(Base):
     group_title = Column(String(512), nullable=True)
     admin_telegram_user_id = Column(BigInteger, nullable=True)
     metadata_json = Column("metadata", JSONB, nullable=True)
+    issued_at = Column(DateTime, nullable=False, server_default=func.now())
     created_at = Column(DateTime, server_default=func.now())
 
     bonus_type = relationship("BonusType")
@@ -861,6 +863,17 @@ class StaffCashoutRecord(Base):
         UniqueConstraint("cashier_job_id", name="uq_staff_cashout_records_cashier_job_id"),
         Index("ix_staff_cashout_records_club_id", "club_id"),
         Index("ix_staff_cashout_records_created_at", "created_at"),
+        Index(
+            "ix_staff_cashout_records_do_not_send_created_at",
+            "do_not_send",
+            "created_at",
+        ),
+        Index(
+            "ix_staff_cashout_records_do_not_send_club_created_at",
+            "do_not_send",
+            "club_id",
+            "created_at",
+        ),
     )
 
     id = Column(Integer, primary_key=True)
@@ -1011,6 +1024,23 @@ class SupportGroupChat(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class DepositIncompleteWatch(Base):
+    """One active 10m incomplete-deposit escalation watch per support group chat."""
+
+    __tablename__ = "deposit_incomplete_watches"
+    __table_args__ = (Index("ix_deposit_incomplete_watches_armed_at", "armed_at"),)
+
+    telegram_chat_id = Column(BigInteger, primary_key=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    customer_telegram_user_id = Column(BigInteger, nullable=True)
+    group_title = Column(Text, nullable=True)
+    armed_at = Column(DateTime(timezone=True), nullable=False)
+
+    club = relationship("Club")
 
 
 class MigratedGroupRecovery(Base):
@@ -2514,6 +2544,41 @@ class EscalationEvent(Base):
     )
 
 
+class EscalationDecisionLog(Base):
+    """Append-only skip/fire decisions from support-group activity escalation."""
+
+    __tablename__ = "escalation_decision_log"
+    __table_args__ = (
+        Index("ix_esc_dec_chat_created_at", "telegram_chat_id", "created_at"),
+        Index("ix_esc_dec_decision_created_at", "decision", "created_at"),
+        Index("ix_esc_dec_reason_created_at", "reason", "created_at"),
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    decision = Column(String(16), nullable=False)
+    reason = Column(String(64), nullable=False)
+    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    group_title = Column(Text, nullable=True)
+    telegram_user_id = Column(BigInteger, nullable=True)
+    role = Column(String(16), nullable=True)
+    telegram_message_id = Column(BigInteger, nullable=True)
+    trigger_messages = Column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
+    )
+    episode_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("escalation_episodes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    escalation_event_id = Column(
+        BigInteger,
+        ForeignKey("escalation_events.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+
 class SupportGroupIdleEpisodeState(Base):
     """Durable idle episodes for support groups (1m burst / 5m silence / 30m cap)."""
 
@@ -2529,8 +2594,44 @@ class SupportGroupIdleEpisodeState(Base):
         ForeignKey("escalation_episodes.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # After successful player_idle_followup: 5m staff-unanswered → issue-report channel.
+    staff_unanswered_armed_at = Column(DateTime(timezone=True), nullable=True)
+    staff_unanswered_fired_at = Column(DateTime(timezone=True), nullable=True)
+    staff_unanswered_message_text = Column(Text, nullable=True)
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class WebhookIngestRequest(Base):
+    """Append-only audit log for payment ingest and Stripe webhook HTTP requests."""
+
+    __tablename__ = "webhook_ingest_requests"
+    __table_args__ = (
+        Index("ix_wir_source_created_at", "source", "created_at"),
+        Index("ix_wir_outcome_created_at", "outcome", "created_at"),
+        Index("ix_wir_source_external_id", "source_external_id"),
+        Index("ix_wir_payment_id", "payment_id"),
+        Index("ix_wir_stripe_checkout_session_id", "stripe_checkout_session_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    source = Column(String(32), nullable=False)
+    endpoint_path = Column(String(255), nullable=False)
+    http_status_code = Column(Integer, nullable=False)
+    outcome = Column(String(32), nullable=False)
+    duration_ms = Column(Integer, nullable=False)
+    source_external_id = Column(String(255), nullable=True)
+    payment_id = Column(Integer, nullable=True)
+    method_owner = Column(String(32), nullable=True)
+    payer_summary = Column(String(64), nullable=True)
+    amount_cents = Column(Integer, nullable=True)
+    is_test = Column(Boolean, nullable=True)
+    stripe_event_type = Column(String(64), nullable=True)
+    stripe_checkout_session_id = Column(String(255), nullable=True)
+    error_message = Column(Text, nullable=True)
+    request_body = Column(JSONB, nullable=True)
+    response_json = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

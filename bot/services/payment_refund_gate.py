@@ -354,35 +354,28 @@ def format_refund_issue_report_description(
     notification_chat_id: Optional[int] = None,
     notification_message_id: Optional[int] = None,
 ) -> str:
-    amount = format_amount_exact(int(payment.amount_cents))
-    bound_label = group_title or "(unbound — bind via notification reply)"
-    lines = [
-        "DO NOT ADD — refund required.",
-        "",
-    ]
-    if REASON_GOODS_SERVICES in gate.reasons:
-        lines.append("Venmo payment was sent as Goods & Services.")
-    if REASON_BANNED_MEMO in gate.reasons:
-        hits = ", ".join(gate.banned_hits) or "banned keyword"
-        lines.append(f"Memo contains banned keyword(s): {hits}.")
-    lines.extend(
-        [
-            "",
-            f"Payment ID: {payment.id}",
-            f"Payer: {getattr(payment, 'payer_name', '')}",
-            f"Amount: {amount}",
-            f"Method: {_method_handle(payment, method_slug)}",
-            f"Group: {bound_label}",
-        ]
-    )
+    """Slack mrkdwn details for auto refund tickets (payer/amount/group live in title/header)."""
+    _ = (group_title, notification_chat_id, notification_message_id)
+    slug = (method_slug or "").strip().lower()
+    handle = _method_handle(payment, method_slug).strip()
     memo = (getattr(payment, "memo", None) or "").strip()
+
+    reason_bits: list[str] = []
+    if REASON_GOODS_SERVICES in gate.reasons:
+        reason_bits.append("*Goods & Services*")
+    if REASON_BANNED_MEMO in gate.reasons:
+        hits = gate.banned_hits or ("banned keyword",)
+        hit_bits = ", ".join(f"`{h}`" for h in hits)
+        reason_bits.append(f"*Banned memo:* {hit_bits}")
+
+    lines: list[str] = []
+    if reason_bits:
+        lines.append(" · ".join(reason_bits))
+    if handle:
+        label = "Venmo" if slug == "venmo" else "Zelle"
+        lines.append(f"*{label}:* `{handle}`")
     if memo:
-        lines.append(f"Memo: {memo}")
-    if notification_chat_id is not None and notification_message_id is not None:
-        lines.append(
-            f"Staff notification: chat_id={notification_chat_id} "
-            f"message_id={notification_message_id}"
-        )
+        lines.append(f"*Memo:* `{memo}`")
     return "\n".join(lines)
 
 

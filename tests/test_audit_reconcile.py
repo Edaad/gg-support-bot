@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import unittest
 import json
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
@@ -24,6 +25,7 @@ from api.audit_reconcile import (
     load_stored_reconcile_report,
     report_from_json,
     run_audit_reconcile,
+    _dedupe_ledger_events,
     _report_to_json,
     _within_match_tolerance,
 )
@@ -624,7 +626,8 @@ class MondaySettlementTestCase(unittest.TestCase):
         self.assertEqual(events[0].gg_player_id, "1055-4566")
         self.assertEqual(events[0].amount_usd, Decimal("131"))
         self.assertEqual(
-            events[0].external_id, "monday:2026-08-17:2026-08-23:1055-4566"
+            events[0].external_id,
+            "monday:2026-08-17:2026-08-23:clubgto:1055-4566",
         )
         self.assertEqual(warnings, [])
 
@@ -709,7 +712,7 @@ class MondaySettlementTestCase(unittest.TestCase):
         self.assertEqual(events[0].detail, "OrphanAgent")
         self.assertEqual(
             events[0].external_id,
-            "monday:2026-08-17:2026-08-23:noid:OrphanAgent",
+            "monday:2026-08-17:2026-08-23:clubgto:noid:OrphanAgent",
         )
         self.assertTrue(any("missing playerId" in w for w in warnings))
 
@@ -858,6 +861,85 @@ class ReportJsonRoundTripTestCase(unittest.TestCase):
         self.assertEqual(loaded.run_id, 7)
         self.assertEqual(loaded.status, "pass")
         self.assertEqual(loaded.players_matched, 1)
+
+
+class DedupeLedgerEventsTestCase(unittest.TestCase):
+    def test_dedupes_partner_double_fetch_prefers_home_club_slug(self):
+        occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
+        base = LedgerEvent(
+            source="deposit_zelle",
+            gg_player_id="1111-2222",
+            amount_usd=Decimal("50"),
+            occurred_at_utc=occurred,
+            external_id="deposit_zelle:99",
+            detail="RT / 1111-2222 / Player",
+            club_slug="round-table",
+        )
+        duplicate = replace(base, club_slug="aces-table")
+        out = _dedupe_ledger_events([duplicate, base])
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0].club_slug, "round-table")
+
+    def test_dedupes_at_payment_stamped_to_aces_table(self):
+        occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
+        base = LedgerEvent(
+            source="deposit_venmo",
+            gg_player_id="2222-3333",
+            amount_usd=Decimal("75"),
+            occurred_at_utc=occurred,
+            external_id="deposit_venmo:42",
+            detail="AT / 2222-3333 / AtPlayer",
+            club_slug="aces-table",
+        )
+        duplicate = replace(base, club_slug="round-table")
+        out = _dedupe_ledger_events([duplicate, base])
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0].club_slug, "aces-table")
+
+    def test_keeps_distinct_external_ids(self):
+        occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
+        a = LedgerEvent(
+            source="deposit_zelle",
+            gg_player_id="1111-2222",
+            amount_usd=Decimal("50"),
+            occurred_at_utc=occurred,
+            external_id="deposit_zelle:1",
+            club_slug="round-table",
+        )
+        b = LedgerEvent(
+            source="deposit_zelle",
+            gg_player_id="3333-4444",
+            amount_usd=Decimal("22"),
+            occurred_at_utc=occurred,
+            external_id="deposit_zelle:2",
+            club_slug="round-table",
+        )
+        self.assertEqual(len(_dedupe_ledger_events([a, b])), 2)
+
+    def test_keeps_monday_settlement_for_same_player_across_rt_and_at(self):
+        rt = LedgerEvent(
+            source="monday_settlement",
+            gg_player_id="1111-2222",
+            amount_usd=Decimal("50"),
+            occurred_at_utc=None,
+            external_id="monday:2026-08-17:2026-08-23:round-table:1111-2222",
+            detail="DualClub",
+            club_slug="round-table",
+        )
+        at = LedgerEvent(
+            source="monday_settlement",
+            gg_player_id="1111-2222",
+            amount_usd=Decimal("30"),
+            occurred_at_utc=None,
+            external_id="monday:2026-08-17:2026-08-23:aces-table:1111-2222",
+            detail="DualClub",
+            club_slug="aces-table",
+        )
+        out = _dedupe_ledger_events([rt, at])
+        self.assertEqual(len(out), 2)
+        by_slug = {e.club_slug: e.amount_usd for e in out}
+        self.assertEqual(by_slug["round-table"], Decimal("50"))
+        self.assertEqual(by_slug["aces-table"], Decimal("30"))
 
 
 if __name__ == "__main__":

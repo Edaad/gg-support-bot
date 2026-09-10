@@ -13,6 +13,7 @@ import {
 import V2MethodEditor from '../components/V2MethodEditor'
 import ResponseEditor from '../components/ResponseEditor'
 import { useConfirm } from '../components/ConfirmProvider'
+import { formatEasternDate } from '../lib/easternTime'
 
 const TABS = ['General', 'Deposit Methods', 'Cashout Methods', 'Custom Commands', 'Broadcast', 'Groups'] as const
 type Tab = (typeof TABS)[number]
@@ -1200,7 +1201,7 @@ function GroupsTab({ token, clubId }: { token: string; clubId: number }) {
                   <td className="px-4 py-3 text-ink">{g.name || '—'}</td>
                   <td className="px-4 py-3 font-mono text-ink-muted">{g.chat_id}</td>
                   <td className="px-4 py-3 text-ink-muted">
-                    {g.added_at ? new Date(g.added_at).toLocaleDateString() : '—'}
+                    {formatEasternDate(g.added_at)}
                   </td>
                 </tr>
               ))}

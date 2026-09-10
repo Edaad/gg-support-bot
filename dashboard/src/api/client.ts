@@ -228,6 +228,7 @@ export const createBonusRecord = (
     amount: number
     bonus_type_id: number | null
     custom_description?: string | null
+    issued_at: string
   },
 ) => request<BonusRecordT>('/bonus/records', { method: 'POST', body: JSON.stringify(data) }, token)
 export const updateBonusRecord = (
@@ -239,6 +240,7 @@ export const updateBonusRecord = (
     amount?: number
     bonus_type_id?: number | null
     custom_description?: string | null
+    issued_at?: string
   },
 ) => request<BonusRecordT>(`/bonus/records/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token)
 export const deleteBonusRecord = (token: string, id: number) =>
@@ -395,16 +397,35 @@ export interface StaffCashoutRecordT {
   sends: StaffCashoutSendT[]
 }
 
+export type PaginatedListT<T> = {
+  items: T[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export const listCashoutRecords = (
   token: string,
-  opts?: { clubId?: number; status?: CashoutLedgerStatus; q?: string },
+  opts?: {
+    clubId?: number
+    status?: CashoutLedgerStatus
+    q?: string
+    limit?: number
+    offset?: number
+  },
 ) => {
   const params = new URLSearchParams()
   if (opts?.clubId != null) params.set('club_id', String(opts.clubId))
   if (opts?.status) params.set('status', opts.status)
   if (opts?.q) params.set('q', opts.q)
+  if (opts?.limit != null) params.set('limit', String(opts.limit))
+  if (opts?.offset != null) params.set('offset', String(opts.offset))
   const q = params.toString()
-  return request<StaffCashoutRecordT[]>(`/cashout-records${q ? `?${q}` : ''}`, {}, token)
+  return request<PaginatedListT<StaffCashoutRecordT>>(
+    `/cashout-records${q ? `?${q}` : ''}`,
+    {},
+    token,
+  )
 }
 
 export type CashoutMoneySendListOpts = {
@@ -413,6 +434,8 @@ export type CashoutMoneySendListOpts = {
   clubId?: number
   method?: string
   q?: string
+  limit?: number
+  offset?: number
 }
 
 export const listCashoutMoneySends = (token: string, opts: CashoutMoneySendListOpts) => {
@@ -422,7 +445,9 @@ export const listCashoutMoneySends = (token: string, opts: CashoutMoneySendListO
   if (opts.clubId != null) params.set('club_id', String(opts.clubId))
   if (opts.method) params.set('method', opts.method)
   if (opts.q) params.set('q', opts.q)
-  return request<StaffCashoutMoneySendLedgerT[]>(
+  if (opts.limit != null) params.set('limit', String(opts.limit))
+  if (opts.offset != null) params.set('offset', String(opts.offset))
+  return request<PaginatedListT<StaffCashoutMoneySendLedgerT>>(
     `/cashout-records/sends?${params}`,
     {},
     token,
@@ -719,6 +744,7 @@ export interface BonusRecordT {
   chat_id: number | null
   player_details_id: number | null
   admin_telegram_user_id: number | null
+  issued_at: string | null
   created_at: string | null
   player_resolved: boolean
 }

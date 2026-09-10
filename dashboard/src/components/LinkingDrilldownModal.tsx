@@ -8,6 +8,7 @@ import {
   type LinkingMethodSlug,
 } from '../api/paymentsClient'
 import Modal from './Modal'
+import { formatEasternDate } from '../lib/easternTime'
 
 const PAGE_SIZE = 50
 
@@ -50,19 +51,6 @@ type Props = {
   listParams: LinkingListParams
   accountColumn: string
   onClose: () => void
-}
-
-function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  try {
-    const d = new Date(iso)
-    const day = d.getDate()
-    const month = d.toLocaleDateString('en-GB', { month: 'short' })
-    const year = d.getFullYear()
-    return `${day} ${month}, ${year}`
-  } catch {
-    return iso
-  }
 }
 
 function boundViaLabel(via: string): string {
@@ -198,7 +186,7 @@ export default function LinkingDrilldownModal({
                     <td className="px-3 py-2">{row.club_name || '—'}</td>
                     <td className="px-3 py-2">{row.venmo_handle || '—'}</td>
                     <td className="px-3 py-2">{boundViaLabel(row.bound_via)}</td>
-                    <td className="whitespace-nowrap px-3 py-2">{fmtDate(row.bound_at)}</td>
+                    <td className="whitespace-nowrap px-3 py-2">{formatEasternDate(row.bound_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -241,7 +229,7 @@ export default function LinkingDrilldownModal({
                     <td className={`px-3 py-2 capitalize ${attemptStatusClass(row.status)}`}>
                       {row.status}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2">{fmtDate(row.created_at)}</td>
+                    <td className="whitespace-nowrap px-3 py-2">{formatEasternDate(row.created_at)}</td>
                   </tr>
                 ))}
               </tbody>

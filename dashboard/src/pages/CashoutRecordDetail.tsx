@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import {
   addCashoutPayment,
   addCashoutSend,
@@ -22,15 +22,8 @@ import CashoutMethodFields, {
 } from '../components/CashoutMethodFields'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
+import { formatEasternDateTime } from '../lib/easternTime'
 import type { DashboardRole } from '../lib/rbac'
-
-function fmtDate(iso: string | null) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
-}
 
 function applyRecord(row: StaffCashoutRecordT): StaffCashoutRecordT {
   return {
@@ -93,9 +86,18 @@ export default function CashoutRecordDetail({
   role: DashboardRole
 }) {
   const { id } = useParams()
+  const location = useLocation()
   const recordId = Number(id)
   const askConfirm = useConfirm()
   const isAdmin = role === 'admin'
+  const listSearch =
+    typeof location.state === 'object' &&
+    location.state != null &&
+    'listSearch' in location.state &&
+    typeof (location.state as { listSearch?: unknown }).listSearch === 'string'
+      ? (location.state as { listSearch: string }).listSearch
+      : ''
+  const backTo = `/cashout-records${listSearch}`
   const [record, setRecord] = useState<StaffCashoutRecordT | null>(null)
   const [methods, setMethods] = useState<V2Method[]>([])
   const [loading, setLoading] = useState(true)
@@ -123,7 +125,7 @@ export default function CashoutRecordDetail({
       setRecord(applyRecord(row))
       setOriginalDraft(String(row.amount))
       const clubMethods = await listV2Methods(token, row.club_id, 'cashout')
-      setMethods(clubMethods.filter((m) => m.is_active))
+      setMethods(clubMethods.filter((m) => m.is_active && m.slug !== 'chips'))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load')
     } finally {
@@ -314,7 +316,7 @@ export default function CashoutRecordDetail({
   if (!record) {
     return (
       <div>
-        <Link to="/cashout-records" className="text-sm text-accent hover:underline">
+        <Link to={backTo} className="text-sm text-accent hover:underline">
           Back to cashout records
         </Link>
         <p className="mt-4 text-sm text-danger-ink">{error || 'Not found'}</p>
@@ -324,7 +326,7 @@ export default function CashoutRecordDetail({
 
   return (
     <div>
-      <Link to="/cashout-records" className="text-sm text-accent hover:underline">
+      <Link to={backTo} className="text-sm text-accent hover:underline">
         Back to cashout records
       </Link>
 
@@ -334,7 +336,7 @@ export default function CashoutRecordDetail({
         </div>
       )}
 
-      <p className="mt-4 text-sm text-ink-muted">{fmtDate(record.created_at)}</p>
+      <p className="mt-4 text-sm text-ink-muted">{formatEasternDateTime(record.created_at)}</p>
       <h1 className="mt-1 text-2xl font-bold text-ink">{record.group_title}</h1>
       <p className="mt-1 text-base text-ink-muted">{record.club_name || '—'}</p>
 
@@ -469,7 +471,7 @@ export default function CashoutRecordDetail({
                     {fmtMoney(s.amount)} / {s.sender_name}
                   </p>
                   <p className="mt-1 text-sm text-ink-muted">
-                    {s.method_display_name} · {fmtDate(s.created_at)}
+                    {s.method_display_name} · {formatEasternDateTime(s.created_at)}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -537,7 +539,12 @@ export default function CashoutRecordDetail({
               className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
             />
           </div>
-          <CashoutMethodFields methods={methods} choice={sendChoice} onChange={setSendChoice} />
+          <CashoutMethodFields
+            methods={methods}
+            choice={sendChoice}
+            onChange={setSendChoice}
+            staffOnlyLabels={['Chips']}
+          />
           <button type="button" onClick={saveSend} disabled={saving} className="btn-primary w-full">
             Save
           </button>

@@ -33,6 +33,24 @@ function fmtPaymentAt(iso: string | null | undefined): string {
   }
 }
 
+/** Prefer paid_at for crypto; Stripe completed_at; else created_at. */
+function paymentDisplayAt(
+  method: OwnerMethod,
+  row: {
+    paid_at?: string | null
+    completed_at?: string | null
+    created_at: string
+  },
+): string {
+  if (method === 'crypto') {
+    return row.paid_at || row.created_at
+  }
+  if (method === 'stripe') {
+    return row.completed_at || row.created_at
+  }
+  return row.created_at
+}
+
 function fmtMoney(value: number | string): string {
   return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
@@ -83,6 +101,7 @@ export default function IngestedPaymentTable({ method, rows, clubNameById, onBin
             <tr>
               <th className="px-4 py-3">Time</th>
               <th className="px-4 py-3">Amount</th>
+              <th className="px-4 py-3">Stripe fee</th>
               <th className="px-4 py-3">Group</th>
               <th className="px-4 py-3">Player</th>
               <th className="px-4 py-3">Method</th>
@@ -94,10 +113,13 @@ export default function IngestedPaymentTable({ method, rows, clubNameById, onBin
             {rows.filter(isStripe).map((row) => (
               <tr key={row.id} className="hover:bg-surface/80">
                 <td className="px-4 py-3 whitespace-nowrap">
-                  {fmtPaymentAt(row.completed_at || row.created_at)}
+                  {fmtPaymentAt(paymentDisplayAt(method, row))}
                 </td>
                 <td className="px-4 py-3 font-medium">
                   {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
+                </td>
+                <td className="px-4 py-3">
+                  {row.amount_cents > 0 ? `$${fmtMoney(row.stripe_fee_usd)}` : '—'}
                 </td>
                 <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                   {row.group_title || '—'}
@@ -145,7 +167,7 @@ export default function IngestedPaymentTable({ method, rows, clubNameById, onBin
           <tbody className="divide-y divide-border text-sm">
             {rows.filter(isCrypto).map((row) => (
               <tr key={row.id} className="hover:bg-surface/80">
-                <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(row.created_at)}</td>
+                <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(paymentDisplayAt(method, row))}</td>
                 <td className="px-4 py-3 font-medium">
                   {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
                 </td>
@@ -203,7 +225,7 @@ export default function IngestedPaymentTable({ method, rows, clubNameById, onBin
         <tbody className="divide-y divide-border text-sm">
           {rows.filter(isManualIngest).map((row) => (
             <tr key={row.id} className="hover:bg-surface/80">
-              <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(row.created_at)}</td>
+              <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(paymentDisplayAt(method, row))}</td>
               <td className="px-4 py-3 font-medium">${fmtMoney(row.amount_usd)}</td>
               <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                 {row.status === 'unbound' ? (

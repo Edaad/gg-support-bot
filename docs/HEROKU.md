@@ -401,7 +401,10 @@ heroku run -a YOUR_APP -- python migrate_escalation_activity_state.py
 heroku run -a YOUR_APP -- python migrate_escalation_post_deposit_idle.py
 # Support-group idle episodes (1m burst / 5m silence / 30m hard cap)
 heroku run -a YOUR_APP -- python migrate_support_group_idle_episode_state.py
+# Staff-unanswered after follow-up (issue-report channel ping)
+heroku run -a YOUR_APP -- python migrate_support_group_idle_staff_unanswered.py
 heroku run -a YOUR_APP -- python migrate_escalation_observability.py
+heroku run -a YOUR_APP -- python migrate_escalation_decision_log.py
 heroku config:set SLACK_ESCALATION_BOT_TOKEN=xoxb-... -a YOUR_APP
 heroku config:set SLACK_ESCALATION_CHANNEL_ID=C... -a YOUR_APP
 heroku config:set SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID=C... -a YOUR_APP
@@ -427,18 +430,20 @@ Include an `account_managers` key (Slack user-group mention for `@accmanagers`) 
 heroku run -a YOUR_APP -- python migrate_staff_cashout_records.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_ledger.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_do_not_send.py
+heroku run -a YOUR_APP -- python migrate_staff_cashout_list_indexes.py
 heroku run -a YOUR_APP -- python migrate_bonus_records.py
 heroku run -a YOUR_APP -- python migrate_bonus_drafts.py
 heroku run -a YOUR_APP -- python migrate_bonus_records_player_details.py
 heroku run -a YOUR_APP -- python migrate_bonus_records_dashboard.py
 heroku run -a YOUR_APP -- python migrate_bonus_records_metadata.py
+heroku run -a YOUR_APP -- python migrate_bonus_records_issued_at.py
 heroku run -a YOUR_APP -- python migrate_expenses.py
 # optional: backfill completed cashier jobs into staff_cashout_records
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py --apply
 ```
 
-Dashboard **Cashout records** and **Bonuses** pages include CSV export (inclusive ET date range on `created_at`). JWT API: `GET /api/cashout-records/export?from=…&to=…` and `GET /api/bonus/records/export?from=…&to=…`.
+Dashboard **Cashout records** and **Bonuses** pages include CSV export (inclusive ET date range: cashouts on `created_at`, bonuses on `issued_at`). JWT API: `GET /api/cashout-records/export?from=…&to=…` and `GET /api/bonus/records/export?from=…&to=…`.
 
 Dashboard **Expenses** (admin only) uses `expenses` and XLSX export: `GET /api/expenses/export?from=…&to=…` (plus optional `club_id`, `pending`, `q`).
 Set app-wide (worker + notification dynos). Restart after deploy: `heroku restart worker notification -a YOUR_APP`
@@ -545,7 +550,7 @@ CSV export (JWT, inclusive ET date range):
 
 Ticket list includes `frt_seconds` (customer first message → admin first response). Dashboard **Tickets** has an Admin FRT column, “Over (min)” filter (unanswered counts as over), and optional message zip on export. `min_frt_seconds` keeps tickets slower than that plus unanswered. `include_messages=true` returns a zip (`tickets-*.csv` + `messages-*.csv`).
 
-Cashout/bonus exports filter on `created_at` (ET day bounds). Ticket export filters on `activity_date` (ET calendar day). Each dashboard page has an Export section with from/to pickers; current list filters (club, status, category, over-FRT) apply to the export.
+Cashout exports filter on `created_at`; bonus exports filter on `issued_at` (ET day bounds). Ticket export filters on `activity_date` (ET calendar day). Each dashboard page has an Export section with from/to pickers; current list filters (club, status, category, over-FRT) apply to the export.
 
 Categories: `auto_deposit`, `manual_deposit`, `unfinished_deposit`, `cashout`, `unfinished_cashout`, `early_rakeback`, `rakeback`, `bonus`, `other`.
 

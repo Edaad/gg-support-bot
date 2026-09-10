@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import io
 import unittest
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from unittest.mock import patch
 
 from openpyxl import load_workbook
 
 from api.audit_ledger import LedgerBreakdown, LedgerLine
 from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport, TradeLineForMatch
 from api.audit_reconcile_export import (
+    CLUBGTO_CASHOUT_LABELING_ENABLED,
     MATCHING_HEADERS,
     MATCHING_WIDTHS,
     UNRESOLVED_HEADERS,
@@ -75,6 +78,50 @@ def _all_clubs_reports(
         "creator-club": creator_club
         or _empty_report(club_slug="creator-club", club_name="Creator Club"),
     }
+
+
+def _clubgto_cashout_label_report() -> AuditReconcileReport:
+    occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
+    return AuditReconcileReport(
+        audit_date=date(2026, 7, 3),
+        club_slug="clubgto",
+        club_name="ClubGTO",
+        status="pass",
+        players=[],
+        trade_lines=[
+            TradeLineForMatch(
+                line_id=1,
+                occurred_at=occurred,
+                amount=Decimal("50"),
+                member_gg_player_id="1111-2222",
+                member_nickname="P1",
+                sheet_row=1,
+                manager_nickname="Mgr",
+                trade_club_slug="clubgto",
+            ),
+        ],
+        ledger_lines=[
+            LedgerLine(
+                gg_player_id="1111-2222",
+                member_nickname="P1",
+                source="cashout",
+                source_label="Cashout Venmo",
+                amount_signed=Decimal("50"),
+                occurred_at_utc=occurred,
+                external_id="cashout:1",
+            ),
+            LedgerLine(
+                gg_player_id="3333-4444",
+                member_nickname="LeftOver",
+                source="cashout",
+                source_label="Cashout Zelle",
+                amount_signed=Decimal("22"),
+                occurred_at_utc=occurred,
+                external_id="cashout:2",
+                display_name="Charlie Kim",
+            ),
+        ],
+    )
 
 
 class ReconcileExportTestCase(unittest.TestCase):
@@ -355,47 +402,30 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertIn("Unresolved_all", unresolved.tables)
 
     def test_cashout_method_label_matching_and_unresolved(self):
-        occurred = datetime(2026, 7, 3, 15, 30, tzinfo=timezone.utc)
-        report = AuditReconcileReport(
-            audit_date=date(2026, 7, 3),
-            club_slug="clubgto",
-            club_name="ClubGTO",
-            status="pass",
-            players=[],
-            trade_lines=[
-                TradeLineForMatch(
-                    line_id=1,
-                    occurred_at=occurred,
-                    amount=Decimal("50"),
-                    member_gg_player_id="1111-2222",
-                    member_nickname="P1",
-                    sheet_row=1,
-                    manager_nickname="Mgr",
-                    trade_club_slug="clubgto",
-                ),
-            ],
-            ledger_lines=[
-                LedgerLine(
-                    gg_player_id="1111-2222",
-                    member_nickname="P1",
-                    source="cashout",
-                    source_label="Cashout Venmo",
-                    amount_signed=Decimal("50"),
-                    occurred_at_utc=occurred,
-                    external_id="cashout:1",
-                ),
-                LedgerLine(
-                    gg_player_id="3333-4444",
-                    member_nickname="LeftOver",
-                    source="cashout",
-                    source_label="Cashout Zelle",
-                    amount_signed=Decimal("22"),
-                    occurred_at_utc=occurred,
-                    external_id="cashout:2",
-                    display_name="Charlie Kim",
-                ),
-            ],
+        self.assertFalse(CLUBGTO_CASHOUT_LABELING_ENABLED)
+        report = _clubgto_cashout_label_report()
+        wb = load_workbook(
+            io.BytesIO(
+                build_all_clubs_matching_workbook(_all_clubs_reports(clubgto=report))
+            )
         )
+        matching = wb["ClubGTO"]
+        self.assertEqual(matching.cell(row=2, column=2).value, "Mgr")
+        self.assertEqual(matching.cell(row=2, column=5).value, "P1")
+        self.assertIn(matching.cell(row=2, column=6).value, ("", None))
+        self.assertIn(matching.cell(row=2, column=7).value, ("", None))
+        self.assertIn(matching.cell(row=2, column=8).value, ("", None))
+        self.assertIsNone(matching.cell(row=2, column=9).value)
+        self.assertIn(matching.cell(row=2, column=10).value, ("", None))
+        unresolved = wb["Unresolved"]
+        self.assertEqual(unresolved.cell(row=2, column=1).value, "Cashout Venmo")
+        self.assertEqual(unresolved.cell(row=3, column=1).value, "Cashout Zelle")
+        self.assertEqual(unresolved.cell(row=2, column=4).value, "P1")
+        self.assertEqual(unresolved.cell(row=3, column=4).value, "Charlie Kim")
+
+    @patch("api.audit_reconcile_export.CLUBGTO_CASHOUT_LABELING_ENABLED", True)
+    def test_clubgto_cashout_labeling_when_enabled(self):
+        report = _clubgto_cashout_label_report()
         wb = load_workbook(
             io.BytesIO(
                 build_all_clubs_matching_workbook(_all_clubs_reports(clubgto=report))
@@ -873,6 +903,92 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(at_sheet.cell(row=2, column=6).value, "Stripe")
         self.assertEqual(at_sheet.cell(row=2, column=7).value, "V")
         self.assertEqual(at_sheet.cell(row=2, column=9).value, 50.0)
+        unresolved = wb["Unresolved"]
+        self.assertIsNone(unresolved.cell(row=2, column=1).value)
+
+    def test_cc_at_duplicate_in_composite_not_on_unresolved_when_matched(self):
+        """CC AT payments can appear in both RT composite and CC ledgers."""
+        occurred = datetime(2026, 7, 3, 15, 0, tzinfo=timezone.utc)
+        cc_line = LedgerLine(
+            gg_player_id="8879-5560",
+            member_nickname="V",
+            source="deposit_stripe",
+            source_label="Stripe",
+            amount_signed=Decimal("-50"),
+            occurred_at_utc=occurred,
+            external_id="deposit_stripe:1",
+            display_name="V",
+            detail="CC AT / 8879-5560 / V",
+            club_slug="creator-club",
+        )
+        rt_report = _empty_report(club_slug="round-table", club_name="Round Table")
+        rt_report.trade_lines = [
+            TradeLineForMatch(
+                line_id=1,
+                occurred_at=occurred,
+                amount=Decimal("-50"),
+                member_gg_player_id="8879-5560",
+                member_nickname="V",
+                sheet_row=1,
+                trade_club_slug="aces-table",
+            ),
+        ]
+        rt_report.ledger_lines = [replace(cc_line, club_slug="aces-table")]
+        cc_report = _empty_report(
+            club_slug="creator-club", club_name="Creator Club"
+        )
+        cc_report.ledger_lines = [cc_line]
+        reports = {
+            "round-table": rt_report,
+            "clubgto": _empty_report(club_slug="clubgto", club_name="ClubGTO"),
+            "creator-club": cc_report,
+        }
+        wb = load_workbook(io.BytesIO(build_all_clubs_matching_workbook(reports)))
+        at_sheet = wb["Aces Table"]
+        self.assertEqual(at_sheet.cell(row=2, column=6).value, "Stripe")
+        unresolved = wb["Unresolved"]
+        self.assertIsNone(unresolved.cell(row=2, column=1).value)
+
+    def test_rt_at_duplicate_ledger_not_on_unresolved_when_matched(self):
+        """Partner double-fetch can leave a second copy in unmatched_ledger."""
+        occurred = datetime(2026, 7, 3, 15, 0, tzinfo=timezone.utc)
+        rt_line = LedgerLine(
+            gg_player_id="1111-1111",
+            member_nickname="RtPlayer",
+            source="deposit_zelle",
+            source_label="RT Zelle",
+            amount_signed=Decimal("-50"),
+            occurred_at_utc=occurred,
+            external_id="deposit_zelle:1",
+            display_name="RtPlayer",
+            detail="RT / 1111-1111 / RtPlayer",
+            club_slug="round-table",
+        )
+        rt_report = _empty_report(club_slug="round-table", club_name="Round Table")
+        rt_report.trade_lines = [
+            TradeLineForMatch(
+                line_id=1,
+                occurred_at=occurred,
+                amount=Decimal("-50"),
+                member_gg_player_id="1111-1111",
+                member_nickname="RtPlayer",
+                sheet_row=1,
+                trade_club_slug="round-table",
+            ),
+        ]
+        rt_report.ledger_lines = [
+            rt_line,
+            replace(rt_line, club_slug="aces-table"),
+        ]
+        reports = {
+            "round-table": rt_report,
+            "clubgto": _empty_report(club_slug="clubgto", club_name="ClubGTO"),
+            "creator-club": _empty_report(
+                club_slug="creator-club", club_name="Creator Club"
+            ),
+        }
+        wb = load_workbook(io.BytesIO(build_all_clubs_matching_workbook(reports)))
+        self.assertEqual(wb["Round Table"].cell(row=2, column=6).value, "RT Zelle")
         unresolved = wb["Unresolved"]
         self.assertIsNone(unresolved.cell(row=2, column=1).value)
 

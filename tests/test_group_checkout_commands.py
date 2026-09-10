@@ -1,10 +1,8 @@
 import unittest
 from datetime import datetime, timezone
-from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from bot.handlers.cashapp import cashapp_handler
 from bot.handlers.commands import command_router
 from bot.handlers.group_checkout_commands import GROUP_CHECKOUT_DM_MESSAGE
 from bot.handlers.stripe import stripe_handler
@@ -42,14 +40,6 @@ class GroupCheckoutDmTestCase(unittest.IsolatedAsyncioTestCase):
         context = SimpleNamespace()
 
         await stripe_handler(update, context)
-
-        message.reply_text.assert_awaited_once_with(GROUP_CHECKOUT_DM_MESSAGE)
-
-    async def test_cashapp_dm_rejects_with_group_message(self):
-        update, message = _private_update("/cashapp")
-        context = SimpleNamespace()
-
-        await cashapp_handler(update, context)
 
         message.reply_text.assert_awaited_once_with(GROUP_CHECKOUT_DM_MESSAGE)
 
@@ -93,37 +83,6 @@ class GroupCheckoutDmTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.reply_text.await_count, 2)
         pay_call = message.reply_text.await_args_list[1]
         self.assertIn("checkout.stripe.com/group-session", pay_call.args[0])
-
-    async def test_cashapp_group_creates_checkout_with_cashapp_limits(self):
-        update, message = _group_update("/cashapp")
-        context = SimpleNamespace()
-        result = SimpleNamespace(
-            checkout_url="https://checkout.stripe.com/cashapp-session",
-            session_id="cs_cashapp",
-            customer_id="cus_cashapp",
-            expires_at=datetime.now(timezone.utc),
-        )
-
-        with (
-            patch("bot.handlers.cashapp.get_club_for_chat", return_value=2),
-            patch("bot.handlers.cashapp.deposit_method_id_for_slug", return_value=9),
-            patch("bot.handlers.group_checkout_commands.stripe_configured", return_value=True),
-            patch(
-                "bot.handlers.group_checkout_commands.create_stripe_checkout_session",
-                return_value=result,
-            ) as create_session,
-            patch("bot.handlers.group_checkout_commands.update_group_name"),
-        ):
-            await cashapp_handler(update, context)
-
-        create_session.assert_called_once()
-        kwargs = create_session.call_args.kwargs
-        self.assertEqual(kwargs["payment_method_id"], 9)
-        self.assertEqual(kwargs["checkout_min_usd"], Decimal("101"))
-        self.assertEqual(kwargs["checkout_max_usd"], Decimal("2000"))
-        pay_call = message.reply_text.await_args_list[1]
-        self.assertIn("For Cashapp ONLY", pay_call.args[0])
-        self.assertIn("checkout.stripe.com/cashapp-session", pay_call.args[0])
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from api.club_audit_timezone import (
     audit_day_bounds_utc as club_audit_day_bounds_utc,
     audit_day_window_utc as club_audit_day_window_utc,
-    occurred_at_in_audit_day,
+    occurred_at_in_partner_audit_day,
     union_audit_day_window_utc,
     zone_for_payment_display,
     zone_for_slug,
@@ -41,6 +41,7 @@ from api.payments_helpers import (
     lookup_gg_nickname,
     resolve_group_title,
     resolve_method_display,
+    stripe_fee_usd,
 )
 from bot.services.payment_method_binding import canonicalize_zelle_recipient
 from config import CLUB_SHORTHAND_TO_NAME
@@ -128,10 +129,6 @@ class TaggedManualAuditRow:
 class _TimedTaggedManualAuditRow:
     occurred_at: datetime
     row: TaggedManualAuditRow
-
-
-def _stripe_fee_usd(amount_cents: int) -> Decimal:
-    return Decimal(round(amount_cents * 0.029 + 30)) / Decimal(100)
 
 
 def eastern_day_bounds_utc(date_str: str) -> tuple[datetime, datetime]:
@@ -419,7 +416,7 @@ def _payment_in_audit_day(
     if occurred_at is None:
         return False
     slug = _slug_for_payment_club(session, club_id, data)
-    return occurred_at_in_audit_day(occurred_at, slug, audit_date)
+    return occurred_at_in_partner_audit_day(occurred_at, slug, audit_date)
 
 
 def _parse_audit_date_str(audit_date: str):
@@ -687,7 +684,7 @@ def _fetch_stripe_rows(
                 group_title=(title or "").strip(),
                 club_label=club_label,
                 time_label=_fmt_stripe_audit_time(completed, club_slug),
-                stripe_fee_usd=_stripe_fee_usd(row.amount_cents),
+                stripe_fee_usd=stripe_fee_usd(row.amount_cents),
             )
         )
     return out
@@ -930,10 +927,10 @@ def _fetch_bonus_rows(
     rows = (
         session.query(BonusRecord)
         .filter(
-            BonusRecord.created_at >= from_dt,
-            BonusRecord.created_at <= to_dt,
+            BonusRecord.issued_at >= from_dt,
+            BonusRecord.issued_at <= to_dt,
         )
-        .order_by(BonusRecord.created_at.desc(), BonusRecord.id.desc())
+        .order_by(BonusRecord.issued_at.desc(), BonusRecord.id.desc())
         .all()
     )
     out: list[ManualAuditRow] = []
@@ -942,7 +939,7 @@ def _fetch_bonus_rows(
             session,
             audit_date=audit_date,
             club_id=row.club_id,
-            occurred_at=row.created_at,
+            occurred_at=row.issued_at,
         ):
             continue
         club_slug = _slug_for_payment_club(session, row.club_id)
@@ -954,7 +951,7 @@ def _fetch_bonus_rows(
                 payer_name=_bonus_payer_display(row),
                 group_title=_bonus_group_cell(row),
                 club_label=_club_name(club_names, row.club_id),
-                time_label=_fmt_manual_audit_time(row.created_at, club_slug),
+                time_label=_fmt_manual_audit_time(row.issued_at, club_slug),
             )
         )
     return out

@@ -64,6 +64,7 @@ from bot.services.round_table_unions import (
     ACES_TABLE_SHORTHAND,
     deposit_unions_for_chat,
     is_creator_club,
+    is_round_table_club,
     union_label_for_shorthand,
     union_shorthands_for_club,
 )
@@ -157,6 +158,18 @@ ACES_TABLE_JOIN_COPY = (
     "Tap below once you’ve joined."
 )
 ACES_TABLE_JOIN_BUTTON = "I HAVE JOINED"
+
+CRYPTO_SUB_PICKER_NOTE = (
+    "Note: Bitcoin and Ethereum can take a while to come through."
+)
+
+
+def sub_option_picker_text(method_name: str, method_slug: str | None) -> str:
+    """Copy for the deposit sub-option keyboard after a method is chosen."""
+    text = f"You selected {method_name}. Which option?"
+    if (method_slug or "").strip().lower() == "crypto":
+        return f"{text}\n\n{CRYPTO_SUB_PICKER_NOTE}"
+    return text
 
 
 def _init_deposit_flow_session(
@@ -406,7 +419,7 @@ _STRIPE_HARDCODE_DEFAULT_TEXT = (
     "🚨 NO CREDIT CARDS. They will be refunded immediately\n\n"
     "• Enter your deposit amount on the checkout page ($20 minimum, $100 maximum).\n\n"
     "• Once sent, please inform us, and an agent will confirm the transaction "
-    "and add your chips within 2 minutes!\n\n"
+    "and add your credits within 2 minutes!\n\n"
     "• Just post a screenshot of your transaction, and it will be credited to your account!\n\n"
     "{{hyperlink}}"
 )
@@ -947,6 +960,38 @@ def _unique_deposit_method_names(names: list[str]) -> list[str]:
     return out
 
 
+_RT_CC_REMINDER_METHOD_KEYS = ("venmo", "cashapp", "crypto")
+
+
+def _deposit_method_copy_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (name or "").strip().lower())
+
+
+def _is_rt_cc_club(club_id: int | None) -> bool:
+    if not club_id:
+        return False
+    try:
+        return is_round_table_club(club_id) or is_creator_club(club_id)
+    except Exception:
+        logger.debug("rt/cc club check failed club_id=%s", club_id, exc_info=True)
+        return False
+
+
+def _player_facing_deposit_method_names(club_id: int | None) -> list[str]:
+    """Payment methods listed in deposit reminder/timeout copy."""
+    methods = _unique_deposit_method_names(
+        get_deposit_method_names(club_id) if club_id else []
+    )
+    if not _is_rt_cc_club(club_id):
+        return methods
+    by_key: dict[str, str] = {}
+    for name in methods:
+        key = _deposit_method_copy_key(name)
+        if key in _RT_CC_REMINDER_METHOD_KEYS:
+            by_key.setdefault(key, name)
+    return [by_key[key] for key in _RT_CC_REMINDER_METHOD_KEYS if key in by_key]
+
+
 async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Job queue callback: delete deposit instructions and nudge the customer."""
     chat_id = int(context.job.chat_id)
@@ -985,6 +1030,18 @@ async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None
         # Payment notify runs on the API process and cannot cancel this worker
         # job. Keep instructions in the group as the deposit paper trail.
         _DEPOSIT_INFO_MESSAGE_IDS.pop(chat_id, None)
+        try:
+            from bot.services.deposit_incomplete_watch import (
+                delete_deposit_incomplete_watch,
+            )
+
+            delete_deposit_incomplete_watch(chat_id)
+        except Exception:
+            logger.debug(
+                "deposit_reminder: clear incomplete watch failed chat_id=%s",
+                chat_id,
+                exc_info=True,
+            )
         return
 
     tracked_count = len(_DEPOSIT_INFO_MESSAGE_IDS.get(chat_id, []))
@@ -995,9 +1052,7 @@ async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None
     )
     await _delete_deposit_info_messages(context.bot, chat_id)
 
-    methods = _unique_deposit_method_names(
-        get_deposit_method_names(club_id) if club_id else []
-    )
+    methods = _player_facing_deposit_method_names(club_id)
     method_list = ", ".join(methods) if methods else ""
 
     text = (
@@ -1016,6 +1071,27 @@ async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None
             "Failed to send deposit reminder to chat_id=%s", chat_id, exc_info=True
         )
 
+    try:
+        from bot.services.club import get_group_name
+        from bot.services.deposit_incomplete_watch import (
+            notify_deposit_incomplete_escalation,
+        )
+
+        title = (job_data.get("group_title") or "").strip() or None
+        if not title:
+            title = get_group_name(chat_id)
+        await notify_deposit_incomplete_escalation(
+            chat_id=chat_id,
+            club_id=int(club_id) if club_id is not None else None,
+            title=title,
+        )
+    except Exception:
+        logger.warning(
+            "deposit_reminder: incomplete escalation failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+
 
 def _schedule_deposit_reminder(
     context: ContextTypes.DEFAULT_TYPE,
@@ -1026,6 +1102,19 @@ def _schedule_deposit_reminder(
     """Schedule a follow-up reminder 10 minutes after a deposit completes."""
     if not club_id or not chat_id:
         return
+    armed_at = datetime.now(timezone.utc)
+    group_title: str | None = None
+    try:
+        from bot.services.club import get_group_title_for_chat
+
+        group_title, _ = get_group_title_for_chat(int(chat_id))
+        group_title = (group_title or "").strip() or None
+    except Exception:
+        logger.debug(
+            "deposit_reminder: group title lookup failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
     try:
         name = _reminder_job_name(chat_id)
         for job in context.job_queue.get_jobs_by_name(name):
@@ -1036,12 +1125,31 @@ def _schedule_deposit_reminder(
             chat_id=int(chat_id),
             data={
                 "club_id": club_id,
-                "scheduled_at": datetime.now(timezone.utc).isoformat(),
+                "scheduled_at": armed_at.isoformat(),
+                "group_title": group_title,
             },
             name=name,
         )
         if user_id:
             _PENDING_DEPOSIT_REMINDERS[int(chat_id)] = int(user_id)
+        try:
+            from bot.services.deposit_incomplete_watch import (
+                arm_deposit_incomplete_watch,
+            )
+
+            arm_deposit_incomplete_watch(
+                telegram_chat_id=int(chat_id),
+                club_id=int(club_id),
+                customer_telegram_user_id=int(user_id) if user_id else None,
+                group_title=group_title,
+                armed_at=armed_at,
+            )
+        except Exception:
+            logger.warning(
+                "deposit_reminder: arm incomplete watch failed chat_id=%s",
+                chat_id,
+                exc_info=True,
+            )
         logger.info(
             "deposit_reminder scheduled chat_id=%s in %ss tracked_messages=%s",
             chat_id,
@@ -1062,6 +1170,18 @@ def cancel_deposit_reminder_for_chat(
     """Cancel pending deposit follow-up for a chat (handlers, payment notify, etc.)."""
     _PENDING_DEPOSIT_REMINDERS.pop(int(chat_id), None)
     _DEPOSIT_INFO_MESSAGE_IDS.pop(int(chat_id), None)
+    try:
+        from bot.services.deposit_incomplete_watch import (
+            cancel_deposit_incomplete_watch,
+        )
+
+        cancel_deposit_incomplete_watch(int(chat_id), job_queue=job_queue)
+    except Exception:
+        logger.debug(
+            "deposit_reminder: cancel incomplete watch failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
     queue = job_queue
     if queue is None and _deposit_reminder_app is not None:
         queue = getattr(_deposit_reminder_app, "job_queue", None)
@@ -2426,7 +2546,7 @@ async def _continue_deposit_for_method_dict(
             if row:
                 buttons.append(row)
             await query.edit_message_text(
-                f"You selected {method['name']}. Which option?",
+                sub_option_picker_text(method["name"], method_slug),
                 reply_markup=InlineKeyboardMarkup(buttons),
             )
             return DEPOSIT_SUB
@@ -3424,9 +3544,7 @@ async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
             popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
             return ConversationHandler.END
 
-        methods = _unique_deposit_method_names(
-            get_deposit_method_names(club_id) if club_id else []
-        )
+        methods = _player_facing_deposit_method_names(club_id)
         method_list = ", ".join(methods) if methods else ""
 
         text = (

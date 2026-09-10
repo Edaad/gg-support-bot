@@ -33,7 +33,7 @@ class BuildUnionDepositInstructionTests(unittest.TestCase):
             text,
         )
         self.assertIn("random emoji", text)
-        self.assertIn("Chips will be added", text)
+        self.assertIn("Credits will be added", text)
 
     def test_omits_min_when_unset(self):
         text = build_union_deposit_instruction(

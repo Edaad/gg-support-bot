@@ -10,7 +10,7 @@ from bot.services.union_method_types import union_type_display_name, validate_un
 
 _FOOTER_LINES = (
     "Please put a random emoji in the payment caption when sending",
-    "Chips will be added as soon as we receive them.",
+    "Credits will be added as soon as we receive them.",
 )
 _TAG_COPY_HINT = "Tap the tag below to copy it."
 

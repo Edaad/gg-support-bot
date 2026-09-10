@@ -117,8 +117,8 @@ def parse_add_amount(text: str) -> Decimal | None:
 
 
 def _format_chips(amount: Decimal) -> str:
-    """Chips count with decimals preserved when present (e.g. 500 chips, 21.1 chips)."""
-    return f"{_format_decimal_display(amount)} chips"
+    """Credit count with decimals preserved when present (e.g. 500 credits, 21.1 credits)."""
+    return f"{_format_decimal_display(amount)} credits"
 
 
 def format_add_confirmation(

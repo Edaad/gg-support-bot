@@ -181,7 +181,10 @@ def format_issue_report_slack_body(report: IssueReport, *, session: Session | No
         f"Title: {report.title}",
         f"Notify: {_notify_labels(list(report.notify_tags or []))}",
     ]
-    if report.group_title:
+    # Refund ingest tickets already name payer/amount in the title; skip Group
+    # so Slack isn't cluttered with GG player ids from support-group titles.
+    ingest = (report.reporter_source or "").strip().lower()
+    if report.group_title and ingest not in ("venmo_ingest", "zelle_ingest"):
         lines.append(f"Group: {report.group_title}")
     if report.club_id and session is not None:
         lines.append(f"Club: {club_label_for_id(session, int(report.club_id))}")

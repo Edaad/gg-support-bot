@@ -29,6 +29,7 @@ from api.payments_helpers import (
     resolve_method_display,
     stripe_dashboard_payment_url,
     stripe_dashboard_session_url,
+    stripe_fee_usd,
 )
 from api.routes.payments import _clamp_limit, _get_club_or_404, _parse_dt, _raise_db_schema_error
 from api.schemas_payments import (
@@ -40,9 +41,11 @@ from api.schemas_payments import (
     OwnerVariantOptionRead,
     PayPalPaymentRead,
     StripeCheckoutSessionRead,
+    UnifiedPaymentListResponse,
     VenmoPaymentRead,
     ZellePaymentRead,
 )
+from api.unified_payments import UnifiedPaymentFilters, fetch_unified_page
 from db.connection import get_db_dependency
 from db.models import StripeCheckoutSession, StripeCustomer
 
@@ -74,13 +77,15 @@ _READ_MODEL_BY_METHOD = {
 def _validate_owner_method(owner: str, method: str) -> tuple[str, str]:
     owner_slug = normalize_method_owner(owner)
     method_slug = (method or "").strip().lower()
+    if method_slug == "all":
+        return owner_slug, method_slug
     allowed = OWNER_METHODS_BY_OWNER.get(owner_slug)
     if allowed is None or method_slug not in allowed:
         allowed_labels = ", ".join(sorted(allowed or ()))
         raise HTTPException(
             400,
             f"Method '{method_slug}' is not available for owner '{owner_slug}'. "
-            f"Allowed: {allowed_labels}",
+            f"Allowed: {allowed_labels}, all",
         )
     return owner_slug, method_slug
 
@@ -109,6 +114,7 @@ def _build_stripe_session_read(db: Session, row: StripeCheckoutSession) -> Strip
         club_id=row.club_id,
         amount_cents=row.amount_cents,
         amount_usd=cents_to_usd(row.amount_cents),
+        stripe_fee_usd=stripe_fee_usd(row.amount_cents),
         currency=row.currency,
         status=row.status,
         payment_method_id=row.payment_method_id,
@@ -126,7 +132,7 @@ def _build_stripe_session_read(db: Session, row: StripeCheckoutSession) -> Strip
     )
 
 
-@router.get("/{owner}/payments", response_model=OwnerPaymentListResponse)
+@router.get("/{owner}/payments", response_model=OwnerPaymentListResponse | UnifiedPaymentListResponse)
 def list_owner_payments(
     owner: str,
     method: str = Query(...),
@@ -146,6 +152,37 @@ def list_owner_payments(
     parsed_to = _parse_dt(to_dt)
     if club_id is not None:
         _get_club_or_404(db, club_id)
+
+    if method_slug == "all":
+        if variant:
+            raise HTTPException(400, "Variant filter is not supported when method=all.")
+        filters = UnifiedPaymentFilters(
+            from_dt=parsed_from,
+            to_dt=parsed_to,
+            q=q,
+            club_id=club_id,
+        )
+        try:
+            items, total, summary = fetch_unified_page(
+                db,
+                scope="owner",
+                owner=owner_slug,
+                method="all",
+                filters=filters,
+                limit=limit,
+                offset=offset,
+            )
+        except ProgrammingError as exc:
+            _raise_db_schema_error(exc)
+        return UnifiedPaymentListResponse(
+            scope="owner",
+            method="all",
+            items=items,
+            total=total,
+            limit=limit,
+            offset=offset,
+            summary=summary,
+        )
 
     try:
         if method_slug == "stripe":
@@ -224,6 +261,8 @@ def list_owner_variants(
     db: Session = Depends(get_db_dependency),
 ):
     owner_slug, method_slug = _validate_owner_method(owner, method)
+    if method_slug == "all":
+        raise HTTPException(400, "Use method=all on the payments endpoint, not variants.")
     parsed_from = _parse_dt(from_dt)
     parsed_to = _parse_dt(to_dt)
 

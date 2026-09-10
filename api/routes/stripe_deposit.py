@@ -6,6 +6,7 @@ import os
 import stripe
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 
+from api.webhook_ingest_audit import set_webhook_ingest_error
 from bot.services.stripe_deposit import (
     STRIPE_WEBHOOK_SECRET_ENV,
     apply_checkout_session_webhook_event,
@@ -63,6 +64,8 @@ def deposit_context(
 @router.post("/webhook")
 async def stripe_webhook(request: Request):
     """Stripe webhook: update checkout session amount/status on complete or expire."""
+    audit_ctx = getattr(request.state, "webhook_ingest", None)
+
     if not (os.getenv(STRIPE_WEBHOOK_SECRET_ENV) or "").strip():
         raise HTTPException(503, f"{STRIPE_WEBHOOK_SECRET_ENV} is not configured on the server")
 
@@ -71,18 +74,32 @@ async def stripe_webhook(request: Request):
     try:
         event = construct_stripe_webhook_event(payload, sig_header)
     except RuntimeError as e:
+        set_webhook_ingest_error(request, str(e))
         raise HTTPException(503, str(e)) from e
     except ValueError as e:
+        set_webhook_ingest_error(request, str(e))
         raise HTTPException(400, str(e)) from e
     except stripe.SignatureVerificationError as e:
+        set_webhook_ingest_error(request, "Invalid Stripe signature")
         raise HTTPException(400, "Invalid Stripe signature") from e
 
-    if event.get("type") in _CHECKOUT_WEBHOOK_EVENTS:
+    event_type = event.get("type")
+    if audit_ctx is not None:
+        audit_ctx.stripe_event_type = event_type
+
+    if event_type in _CHECKOUT_WEBHOOK_EVENTS:
         obj = (event.get("data") or {}).get("object") or {}
+        if audit_ctx is not None:
+            audit_ctx.stripe_checkout_session_id = obj.get("id")
         recorded = apply_checkout_session_webhook_event(event)
+        if audit_ctx is not None:
+            audit_ctx.stripe_processed = bool(recorded)
         if recorded:
             try:
                 await notify_stripe_payment_completed(obj)
             except RuntimeError as e:
                 logger.error("stripe webhook: notification failed — %s", e)
+    elif audit_ctx is not None:
+        audit_ctx.stripe_processed = False
+
     return {"received": True}

@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from api.audit_ledger import _apply_audit_manual_filters, payment_in_audit_day_for_club
 from api.audit_reconcile_export import MATCHING_HEADERS
-from api.club_audit_timezone import audit_day_window_utc, zone_for_slug
+from api.club_audit_timezone import partner_audit_day_window_utc, zone_for_slug
 from api.club_slug import resolve_club_id
 from api.method_owner import METHOD_OWNER_MATEOS
 from api.payments_helpers import (
@@ -344,7 +344,7 @@ def _fetch_mateos_payments_for_day(
     name_fn: Callable[[dict], str],
     variant_fn: Callable[[dict], str],
 ) -> list[PaymentRailRow]:
-    from_dt, to_dt = audit_day_window_utc(_CREATOR_CLUB_SLUG, audit_date)
+    from_dt, to_dt = partner_audit_day_window_utc(_CREATOR_CLUB_SLUG, audit_date)
     query = _apply_audit_manual_filters(
         session,
         session.query(payment_cls),
@@ -438,15 +438,15 @@ def fetch_creator_club_bonus_rails(
     club_id = resolve_club_id(session, _CREATOR_CLUB_SLUG)
     out: list[BonusRailRow] = []
     for audit_date in audit_dates:
-        from_dt, to_dt = audit_day_window_utc(_CREATOR_CLUB_SLUG, audit_date)
+        from_dt, to_dt = partner_audit_day_window_utc(_CREATOR_CLUB_SLUG, audit_date)
         records = (
             session.query(BonusRecord)
             .filter(
                 BonusRecord.club_id == club_id,
-                BonusRecord.created_at >= from_dt,
-                BonusRecord.created_at <= to_dt,
+                BonusRecord.issued_at >= from_dt,
+                BonusRecord.issued_at <= to_dt,
             )
-            .order_by(BonusRecord.created_at.asc(), BonusRecord.id.asc())
+            .order_by(BonusRecord.issued_at.asc(), BonusRecord.id.asc())
             .all()
         )
         for record in records:
@@ -455,13 +455,13 @@ def fetch_creator_club_bonus_rails(
                 club_slug=_CREATOR_CLUB_SLUG,
                 audit_date=audit_date,
                 club_id=record.club_id,
-                occurred_at=record.created_at,
+                occurred_at=record.issued_at,
             ):
                 continue
             out.append(
                 BonusRailRow(
                     audit_date=audit_date,
-                    occurred_at=_creator_club_excel_time(record.created_at),
+                    occurred_at=_creator_club_excel_time(record.issued_at),
                     player=str(record.player_username).strip(),
                     amount_usd=float(Decimal(str(record.amount))),
                 )

@@ -344,6 +344,20 @@ class EscalationCopyTests(unittest.TestCase):
             text,
         )
 
+    def test_deposit_incomplete_headline(self):
+        with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
+            text = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_INCOMPLETE,
+                club_id=1,
+                chat_id=-100,
+                title="GTO / 1 / Nick",
+            )
+        self.assertIn(
+            "*10 minutes have passed since deposit instructions were sent — "
+            "no payment received or chips added. Please follow up.*",
+            text,
+        )
+
     def test_new_player_onboarded_copy(self):
         with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
             text = esc.format_escalation_slack_text(
@@ -577,7 +591,7 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
             "_notify_union_deposit_payment_chats",
             new_callable=AsyncMock,
         ) as payment_chats, patch.object(
-            esc, "notify_escalation_slack", new_callable=AsyncMock, return_value=True
+            esc, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
         ) as notify:
             ok = await esc.notify_union_deposit_request_slack(
                 variant="first",
@@ -615,7 +629,7 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
             "_notify_union_deposit_payment_chats",
             new_callable=AsyncMock,
         ), patch.object(
-            esc, "notify_escalation_slack", new_callable=AsyncMock, return_value=True
+            esc, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
         ) as notify:
             await esc.notify_union_deposit_request_slack(
                 variant="repeat_verified",
@@ -1100,6 +1114,16 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                     esc.DEPOSIT_SENT_ACK_COPY,
                 )
 
+    def test_deposit_sent_ack_copy_crypto_only(self):
+        self.assertEqual(
+            esc.deposit_sent_ack_copy("crypto"),
+            esc.DEPOSIT_SENT_ACK_COPY_CRYPTO,
+        )
+        self.assertIn("transaction hash", esc.DEPOSIT_SENT_ACK_COPY_CRYPTO.lower())
+        self.assertEqual(esc.deposit_sent_ack_copy("zelle"), esc.DEPOSIT_SENT_ACK_COPY)
+        self.assertEqual(esc.deposit_sent_ack_copy(None), esc.DEPOSIT_SENT_ACK_COPY)
+        self.assertEqual(esc.deposit_sent_ack_copy("CRYPTO"), esc.DEPOSIT_SENT_ACK_COPY_CRYPTO)
+
     async def test_claim_bound_schedules_watch(self):
         with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
             with patch.object(ga, "_persist_activity_state"):
@@ -1128,6 +1152,10 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                             with patch.object(esc, "schedule_deposit_sent_watch") as sched:
                                 await esc.handle_deposit_sent_claim(update, context)
                                 sched.assert_called_once()
+                self.assertEqual(
+                    context.bot.send_message.await_args.kwargs["text"],
+                    esc.DEPOSIT_SENT_ACK_COPY,
+                )
 
     async def test_claim_crypto_wallet_binding_schedules_watch(self):
         """Crypto bound via crypto_wallet_bindings must not Slack unbound."""
@@ -1172,6 +1200,10 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                                         )
                 notify.assert_not_awaited()
                 sched.assert_called_once()
+                self.assertEqual(
+                    context.bot.send_message.await_args.kwargs["text"],
+                    esc.DEPOSIT_SENT_ACK_COPY_CRYPTO,
+                )
 
     async def test_timeout_skips_when_payment_seen(self):
         with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):

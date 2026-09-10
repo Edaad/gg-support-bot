@@ -12,6 +12,7 @@ from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from api.auth import get_current_admin
+from api.payments_helpers import owner_payment_search_clause
 from bot.services.deposit_union_types import validate_deposit_union
 from bot.services.pool_pay_types import pool_pay_type_from_method, validate_pool_pay_type
 from bot.services.manual_deposit_requests import (
@@ -104,6 +105,14 @@ class DepositGroupRead(BaseModel):
 
 class DepositGroupListResponse(BaseModel):
     items: List[DepositGroupRead]
+
+
+def _union_player_search_clause(session: Session, chat_id_column, term: str):
+    """Player/group search for union manual deposits (PostgreSQL only)."""
+    bind = session.get_bind()
+    if bind is not None and bind.dialect.name != "postgresql":
+        return None
+    return owner_payment_search_clause(chat_id_column, term)
 
 
 def _parse_dt(value: Optional[str]) -> Optional[datetime]:
@@ -238,6 +247,11 @@ def _list_query(
             ManualDepositRequest.variant_name.ilike(pattern),
             cast(ManualDepositRequest.amount, String).ilike(pattern),
         ]
+        player_clause = _union_player_search_clause(
+            db, ManualDepositRequest.telegram_chat_id, search
+        )
+        if player_clause is not None:
+            clauses.append(player_clause)
         try:
             amount = Decimal(search)
         except (InvalidOperation, ValueError):

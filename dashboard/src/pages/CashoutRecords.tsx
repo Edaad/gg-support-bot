@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
+  addCashoutPayment,
   createCashoutRecord,
   listCashoutMoneySendMethods,
   listCashoutMoneySends,
@@ -11,17 +12,35 @@ import {
   type StaffCashoutMoneySendLedgerT,
   type StaffCashoutRecordT,
 } from '../api/client'
-import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
+import { listV2Methods, type V2Method } from '../api/v2Client'
+import CashoutMethodFields, {
+  choicePayload,
+  fmtMoney,
+  parseMoney,
+  type MethodChoice,
+} from '../components/CashoutMethodFields'
 import DateRangeCsvExport from '../components/DateRangeCsvExport'
 import Modal from '../components/Modal'
 import {
   downloadCashoutMoneySendsCsv,
   downloadCashoutRecordsCsv,
 } from '../api/csvExportClient'
-import { easternCalendarDateString } from '../lib/easternTime'
+import {
+  easternCalendarDateString,
+  formatEasternDateTime,
+} from '../lib/easternTime'
 import type { DashboardRole } from '../lib/rbac'
 
 type PageTab = CashoutLedgerStatus | 'money_sent'
+
+const PAGE_SIZE = 50
+
+const emptyChoice = (): MethodChoice => ({
+  custom: false,
+  payment_method_id: null,
+  payment_sub_option_id: null,
+  custom_name: '',
+})
 
 const LEDGER_TABS: { id: Exclude<CashoutLedgerStatus, 'do_not_send'>; label: string }[] = [
   { id: 'active', label: 'Active' },
@@ -33,37 +52,6 @@ function daysAgoEastern(days: number): string {
   const d = new Date()
   d.setDate(d.getDate() - days)
   return easternCalendarDateString(d)
-}
-
-function fmtDate(iso: string | null) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
-}
-
-function fmtSendDate(iso: string | null) {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  const datePart = d.toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
-  const timePart = d.toLocaleTimeString('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-  return `${datePart} at ${timePart}`
-}
-
-function recordMatchesSearch(r: StaffCashoutRecordT, needle: string) {
-  const n = needle.toLowerCase()
-  return [r.group_title, r.gg_player_id, r.club_name].some(
-    (v) => v && String(v).toLowerCase().includes(n),
-  )
 }
 
 function MoneySentRowMenu({
@@ -124,6 +112,8 @@ export default function CashoutRecords({
   role: DashboardRole
 }) {
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const isAdmin = role === 'admin'
   const [tab, setTab] = useState<PageTab>('active')
   const [records, setRecords] = useState<StaffCashoutRecordT[]>([])
@@ -137,6 +127,9 @@ export default function CashoutRecords({
   const [clubId, setClubId] = useState('')
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
+  const [createMethods, setCreateMethods] = useState<V2Method[]>([])
+  const [createChoice, setCreateChoice] = useState<MethodChoice>(emptyChoice())
+  const [createPayoutDetails, setCreatePayoutDetails] = useState('')
   const [search, setSearch] = useState('')
   const [q, setQ] = useState('')
   const [clubFilter, setClubFilter] = useState('')
@@ -144,11 +137,47 @@ export default function CashoutRecords({
   const [fromDate, setFromDate] = useState(() => daysAgoEastern(30))
   const [toDate, setToDate] = useState(() => easternCalendarDateString())
   const [menuExporting, setMenuExporting] = useState(false)
+  const [total, setTotal] = useState(0)
   const reqId = useRef(0)
+  const skipPageReset = useRef(true)
+
+  const pageParam = searchParams.get('page')
+  const page =
+    pageParam && /^\d+$/.test(pageParam) ? Math.max(0, Number(pageParam) - 1) : 0
+
+  const setQuery = useCallback(
+    (patch: Record<string, string | null>) => {
+      const next = new URLSearchParams(searchParams)
+      for (const [k, v] of Object.entries(patch)) {
+        if (v == null || v === '') next.delete(k)
+        else next.set(k, v)
+      }
+      setSearchParams(next, { replace: true })
+    },
+    [searchParams, setSearchParams],
+  )
+
+  const goToPage = useCallback(
+    (nextPage: number) => {
+      const p = Math.max(0, nextPage)
+      setQuery({ page: p <= 0 ? null : String(p + 1) })
+    },
+    [setQuery],
+  )
+
+  const openRecord = useCallback(
+    (id: number) => {
+      navigate(`/cashout-records/${id}`, {
+        state: { listSearch: location.search },
+      })
+    },
+    [navigate, location.search],
+  )
 
   const isMoneySent = tab === 'money_sent'
   const isDoNotSend = tab === 'do_not_send'
   const statusTab = isMoneySent ? null : (tab as CashoutLedgerStatus)
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   const tabs: { id: PageTab; label: string }[] = [
     { id: 'active', label: 'Active' },
@@ -170,10 +199,13 @@ export default function CashoutRecords({
       status: statusTab,
       clubId: clubFilter ? Number(clubFilter) : undefined,
       q: q || undefined,
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
     })
-      .then((rows) => {
+      .then((res) => {
         if (id !== reqId.current) return
-        setRecords(rows)
+        setRecords(res.items)
+        setTotal(res.total)
       })
       .catch((e) => {
         if (id !== reqId.current) return
@@ -197,6 +229,8 @@ export default function CashoutRecords({
         clubId: clubIdNum,
         method: methodFilter || undefined,
         q: q || undefined,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
       }),
       listCashoutMoneySendMethods(token, {
         from: fromDate,
@@ -204,9 +238,10 @@ export default function CashoutRecords({
         clubId: clubIdNum,
       }),
     ])
-      .then(([rows, methods]) => {
+      .then(([res, methods]) => {
         if (id !== reqId.current) return
-        setSends(rows)
+        setSends(res.items)
+        setTotal(res.total)
         setMethodOptions(methods)
         if (methodFilter && !methods.includes(methodFilter)) {
           setMethodFilter('')
@@ -227,31 +262,54 @@ export default function CashoutRecords({
   }, [search])
 
   useEffect(() => {
+    if (skipPageReset.current) {
+      skipPageReset.current = false
+      return
+    }
+    setSearchParams(
+      (prev) => {
+        if (!prev.has('page')) return prev
+        const next = new URLSearchParams(prev)
+        next.delete('page')
+        return next
+      },
+      { replace: true },
+    )
+  }, [tab, clubFilter, q, fromDate, toDate, methodFilter, setSearchParams])
+
+  useEffect(() => {
     if (isMoneySent) reloadSends()
     else reloadRecords()
-  }, [token, tab, clubFilter, q, fromDate, toDate, methodFilter])
+  }, [token, tab, clubFilter, q, fromDate, toDate, methodFilter, page])
 
   useEffect(() => {
     listClubs(token).then(setClubs).catch(() => undefined)
   }, [token])
 
-  const needle = search.trim().toLowerCase()
-  const visible = statusTab
-    ? records.filter((r) => {
-        if (statusTab === 'do_not_send') {
-          if (!r.do_not_send) return false
-        } else {
-          if (r.do_not_send || r.status !== statusTab) return false
-        }
-        if (needle && !recordMatchesSearch(r, needle)) return false
-        return true
+  useEffect(() => {
+    if (!createOpen || !clubId) {
+      setCreateMethods([])
+      return
+    }
+    let cancelled = false
+    listV2Methods(token, Number(clubId), 'cashout')
+      .then((rows) => {
+        if (!cancelled) setCreateMethods(rows.filter((m) => m.is_active && m.slug !== 'chips'))
       })
-    : []
+      .catch(() => {
+        if (!cancelled) setCreateMethods([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token, createOpen, clubId])
 
   const openCreate = () => {
     setClubId(clubs[0] ? String(clubs[0].id) : '')
     setName('')
     setAmount('')
+    setCreateChoice(emptyChoice())
+    setCreatePayoutDetails('')
     setCreateOpen(true)
   }
 
@@ -259,6 +317,18 @@ export default function CashoutRecords({
     const parsed = parseMoney(amount)
     if (!clubId || !name.trim() || !parsed || parsed <= 0) {
       setError('Club, name, and amount are required')
+      return
+    }
+    const hasMethod =
+      createChoice.custom
+        ? Boolean(createChoice.custom_name.trim())
+        : createChoice.payment_method_id != null
+    if (!hasMethod) {
+      setError('Payment method is required')
+      return
+    }
+    if (!createChoice.custom && !createPayoutDetails.trim()) {
+      setError('Payout details are required for the selected method')
       return
     }
     setSaving(true)
@@ -269,8 +339,16 @@ export default function CashoutRecords({
         group_title: name.trim(),
         amount: parsed,
       })
+      try {
+        await addCashoutPayment(token, created.id, {
+          ...choicePayload(createChoice),
+          payout_details: createPayoutDetails.trim() || null,
+        })
+      } catch {
+        // Record exists; finish on detail so destination can be added there.
+      }
       setCreateOpen(false)
-      navigate(`/cashout-records/${created.id}`)
+      openRecord(created.id)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Create failed')
     } finally {
@@ -458,102 +536,157 @@ export default function CashoutRecords({
           <p className="text-sm text-ink-muted">Loading…</p>
         ) : sends.length === 0 ? (
           <p className="text-sm text-ink-muted">
-            {clubFilter || needle || methodFilter
+            {clubFilter || q || methodFilter
               ? 'No matching money-sent records.'
               : 'No money-sent records in this date range.'}
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-            <table className="min-w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-ink-muted">
-                  <th className="px-4 py-3">Amount</th>
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">Method</th>
-                  <th className="px-4 py-3">Date / time</th>
-                  <th className="px-4 py-3">Sent to</th>
-                  <th className="px-4 py-3">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sends.map((s) => (
-                  <tr key={s.id} className="border-b border-border last:border-0">
-                    <td className="px-4 py-3 font-medium text-ink">{fmtMoney(s.amount)}</td>
-                    <td className="px-4 py-3 text-ink">{s.sender_name}</td>
-                    <td className="px-4 py-3 text-ink">{s.method_display_name}</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-ink">
-                      {fmtSendDate(s.created_at)}
-                    </td>
-                    <td className="px-4 py-3 text-ink">{s.group_title}</td>
-                    <td className="px-4 py-3 text-right">
-                      <MoneySentRowMenu
-                        recordId={s.cashout_record_id}
-                        onOpen={(id) => navigate(`/cashout-records/${id}`)}
-                      />
-                    </td>
+          <>
+            <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+              <table className="min-w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-ink-muted">
+                    <th className="px-4 py-3">Amount</th>
+                    <th className="px-4 py-3">Name</th>
+                    <th className="px-4 py-3">Method</th>
+                    <th className="px-4 py-3">Date / time</th>
+                    <th className="px-4 py-3">Sent to</th>
+                    <th className="px-4 py-3">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {sends.map((s) => (
+                    <tr key={s.id} className="border-b border-border last:border-0">
+                      <td className="px-4 py-3 font-medium text-ink">{fmtMoney(s.amount)}</td>
+                      <td className="px-4 py-3 text-ink">{s.sender_name}</td>
+                      <td className="px-4 py-3 text-ink">{s.method_display_name}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-ink">
+                        {formatEasternDateTime(s.created_at)}
+                      </td>
+                      <td className="px-4 py-3 text-ink">{s.group_title}</td>
+                      <td className="px-4 py-3 text-right">
+                        <MoneySentRowMenu
+                          recordId={s.cashout_record_id}
+                          onOpen={openRecord}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {total > PAGE_SIZE && (
+              <div className="mt-4 flex items-center justify-between text-sm text-ink-muted">
+                <span>
+                  {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={page === 0}
+                    onClick={() => goToPage(page - 1)}
+                    className="btn-secondary-sm disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={page + 1 >= totalPages}
+                    onClick={() => goToPage(page + 1)}
+                    className="btn-secondary-sm disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )
-      ) : loading && visible.length === 0 ? (
+      ) : loading && records.length === 0 ? (
         <p className="text-sm text-ink-muted">Loading…</p>
-      ) : visible.length === 0 ? (
+      ) : records.length === 0 ? (
         <p className="text-sm text-ink-muted">
-          {clubFilter || needle
+          {clubFilter || q
             ? `No matching ${isDoNotSend ? 'do not send' : tab} cashouts.`
             : `No ${isDoNotSend ? 'do not send' : tab} cashouts.`}
         </p>
       ) : (
-        <div className="space-y-4">
-          {visible.map((r) => (
-            <article
-              key={r.id}
-              role="link"
-              tabIndex={0}
-              onClick={() => navigate(`/cashout-records/${r.id}`)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  navigate(`/cashout-records/${r.id}`)
-                }
-              }}
-              className="cursor-pointer rounded-2xl border border-border bg-surface p-5 shadow-sm transition hover:border-accent/40 hover:bg-surface-raised"
-            >
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-sm text-ink-muted">{fmtDate(r.created_at)}</p>
-                  <h2 className="mt-1 text-xl font-semibold text-ink">{r.group_title}</h2>
-                  <p className="mt-1 text-base text-ink-muted">{r.club_name || '—'}</p>
+        <>
+          <div className="space-y-4">
+            {records.map((r) => (
+              <article
+                key={r.id}
+                role="link"
+                tabIndex={0}
+                onClick={() => openRecord(r.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    openRecord(r.id)
+                  }
+                }}
+                className="cursor-pointer rounded-2xl border border-border bg-surface p-5 shadow-sm transition hover:border-accent/40 hover:bg-surface-raised"
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm text-ink-muted">{formatEasternDateTime(r.created_at)}</p>
+                    <h2 className="mt-1 text-xl font-semibold text-ink">{r.group_title}</h2>
+                    <p className="mt-1 text-base text-ink-muted">{r.club_name || '—'}</p>
+                  </div>
+                  <Link
+                    to={`/cashout-records/${r.id}`}
+                    state={{ listSearch: location.search }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="btn-primary inline-flex min-h-12 min-w-[7rem] items-center justify-center px-6 text-base"
+                  >
+                    Edit
+                  </Link>
                 </div>
-                <Link
-                  to={`/cashout-records/${r.id}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="btn-primary inline-flex min-h-12 min-w-[7rem] items-center justify-center px-6 text-base"
+                <dl className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-border bg-bg px-4 py-3">
+                    <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Original</dt>
+                    <dd className="mt-1 text-lg font-semibold">{fmtMoney(r.amount)}</dd>
+                  </div>
+                  <div className="rounded-xl border border-border bg-bg px-4 py-3">
+                    <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Sent</dt>
+                    <dd className="mt-1 text-lg font-semibold">{fmtMoney(r.sent)}</dd>
+                  </div>
+                  <div className="rounded-xl border border-border bg-bg px-4 py-3">
+                    <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Remaining</dt>
+                    <dd className="mt-1 text-lg font-semibold">{fmtMoney(r.remaining)}</dd>
+                  </div>
+                </dl>
+              </article>
+            ))}
+          </div>
+          {total > PAGE_SIZE && (
+            <div className="mt-4 flex items-center justify-between text-sm text-ink-muted">
+              <span>
+                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={page === 0}
+                  onClick={() => goToPage(page - 1)}
+                  className="btn-secondary-sm disabled:opacity-40"
                 >
-                  Edit
-                </Link>
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  disabled={page + 1 >= totalPages}
+                  onClick={() => goToPage(page + 1)}
+                  className="btn-secondary-sm disabled:opacity-40"
+                >
+                  Next
+                </button>
               </div>
-              <dl className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-border bg-bg px-4 py-3">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Original</dt>
-                  <dd className="mt-1 text-lg font-semibold">{fmtMoney(r.amount)}</dd>
-                </div>
-                <div className="rounded-xl border border-border bg-bg px-4 py-3">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Sent</dt>
-                  <dd className="mt-1 text-lg font-semibold">{fmtMoney(r.sent)}</dd>
-                </div>
-                <div className="rounded-xl border border-border bg-bg px-4 py-3">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Remaining</dt>
-                  <dd className="mt-1 text-lg font-semibold">{fmtMoney(r.remaining)}</dd>
-                </div>
-              </dl>
-            </article>
-          ))}
-        </div>
+            </div>
+          )}
+        </>
       )}
 
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New cashout">
@@ -562,7 +695,10 @@ export default function CashoutRecords({
             <label className="mb-1 block text-xs font-medium text-ink-muted">Club</label>
             <select
               value={clubId}
-              onChange={(e) => setClubId(e.target.value)}
+              onChange={(e) => {
+                setClubId(e.target.value)
+                setCreateChoice(emptyChoice())
+              }}
               className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
             >
               {clubs.length === 0 && <option value="">No clubs</option>}
@@ -588,6 +724,20 @@ export default function CashoutRecords({
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
+              className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+            />
+          </div>
+          <CashoutMethodFields
+            methods={createMethods}
+            choice={createChoice}
+            onChange={setCreateChoice}
+          />
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-muted">Payout details</label>
+            <input
+              value={createPayoutDetails}
+              onChange={(e) => setCreatePayoutDetails(e.target.value)}
+              placeholder="Handle, phone, address…"
               className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
             />
           </div>

@@ -84,6 +84,22 @@ class TestFormatIssueReportSlackBody(unittest.TestCase):
         self.assertNotIn("Tags:", body)
         self.assertNotIn("Chat ID:", body)
 
+    def test_refund_ingest_omits_group_from_slack_body(self) -> None:
+        report = IssueReport(
+            id=8,
+            title="Venmo banned memo — Jane $50",
+            description="*Banned memo:* `chips`\n*Venmo:* `@jane`\n*Memo:* `Chips`",
+            tags=["deposit"],
+            notify_tags=["head_admin"],
+            reporter_name="GG Support Bot",
+            reporter_source="venmo_ingest",
+            group_title="RT / 1758-7219 / jane",
+        )
+        body = format_issue_report_slack_body(report)
+        self.assertNotIn("Group:", body)
+        self.assertNotIn("1758-7219", body)
+        self.assertIn("*Banned memo:* `chips`", body)
+
 
 class TestCreateIssueReport(unittest.IsolatedAsyncioTestCase):
     async def test_creates_report_and_calls_slack(self) -> None:
