@@ -211,9 +211,24 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ep.is_player_gratitude_ack("ty"))
         self.assertTrue(ep.is_player_gratitude_ack("thank you so much"))
         self.assertTrue(ep.is_player_gratitude_ack("ok thanks"))
+        self.assertTrue(ep.is_player_gratitude_ack("Thanks man"))
         self.assertFalse(ep.is_player_gratitude_ack("thanks but I need chips"))
         self.assertFalse(ep.is_player_gratitude_ack("hello"))
         self.assertFalse(ep.is_player_gratitude_ack(""))
+
+    def test_is_gratitude_only_burst(self):
+        self.assertTrue(
+            ep.is_gratitude_only_burst([{"text": "Thank you"}, {"text": "Thanks man"}])
+        )
+        self.assertFalse(
+            ep.is_gratitude_only_burst(
+                [{"text": "need chips"}, {"text": "thanks"}]
+            )
+        )
+        self.assertFalse(ep.is_gratitude_only_burst([]))
+        self.assertTrue(ep.is_gratitude_only_message_text("Thank you"))
+        self.assertTrue(ep.is_gratitude_only_message_text("Thank you\n---\nThanks man"))
+        self.assertFalse(ep.is_gratitude_only_message_text("need help\n---\nthanks"))
 
     async def test_deposit_feed_opens_without_second_slack(self):
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
@@ -329,6 +344,66 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(state["staff_unanswered_armed_at"])
         names = [c.kwargs.get("name") for c in self.jq.run_once.call_args_list]
         self.assertNotIn(ep._staff_unanswered_job_name(1), names)
+
+    async def test_debounce_gratitude_followup_does_not_arm(self):
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        _FakeSession.store[1] = _FakeRow(1)
+        row = _FakeSession.store[1]
+        row.episode_started_at = t0
+        row.last_human_at = t0
+        row.burst_json = [{"text": "Thank you"}, {"text": "Thanks man"}]
+        ctx = SimpleNamespace(
+            job=SimpleNamespace(
+                data={"chat_id": 1, "club_id": 9, "title": "GC"},
+                chat_id=1,
+            ),
+            job_queue=self.jq,
+        )
+        with patch.object(ep, "_now", return_value=t0 + timedelta(seconds=61)):
+            with patch.object(
+                ep,
+                "notify_escalation_slack",
+                new_callable=AsyncMock,
+                return_value=(True, 1),
+            ) as slack:
+                await ep._idle_debounce_callback(ctx)
+        slack.assert_awaited_once()
+        state = ep.load_episode_state(1)
+        self.assertEqual(state["burst"], [])
+        self.assertIsNone(state["staff_unanswered_armed_at"])
+        names = [c.kwargs.get("name") for c in self.jq.run_once.call_args_list]
+        self.assertNotIn(ep._staff_unanswered_job_name(1), names)
+
+    async def test_staff_unanswered_skips_fire_for_gratitude_body(self):
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        fire_at = t0 + timedelta(seconds=301)
+        _FakeSession.store[1] = _FakeRow(1)
+        row = _FakeSession.store[1]
+        row.episode_started_at = t0
+        row.last_human_at = fire_at - timedelta(seconds=10)
+        row.staff_unanswered_armed_at = t0
+        row.staff_unanswered_message_text = "Thank you"
+        row.title = "GC"
+        ctx = SimpleNamespace(
+            job=SimpleNamespace(
+                data={"chat_id": 1, "club_id": 9, "title": "GC"},
+                chat_id=1,
+            ),
+            job_queue=self.jq,
+        )
+        with patch.object(ep, "_now", return_value=fire_at):
+            with patch.object(
+                ep,
+                "notify_staff_unanswered_issue_channel",
+                new_callable=AsyncMock,
+            ) as notify:
+                await ep._idle_staff_unanswered_callback(ctx)
+        notify.assert_not_awaited()
+        state = ep.load_episode_state(1)
+        self.assertIsNotNone(state)
+        self.assertIsNone(state["staff_unanswered_armed_at"])
+        self.assertIsNone(state["staff_unanswered_fired_at"])
+        self.assertIsNone(state["staff_unanswered_message_text"])
 
     async def test_staff_unanswered_fires_once_and_blocks_rearm(self):
         # Recent human activity so silence is not due — episode stays open after fire.

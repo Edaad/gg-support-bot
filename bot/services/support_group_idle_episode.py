@@ -93,6 +93,34 @@ def is_player_gratitude_ack(message_text: str | None) -> bool:
     return body in _GRATITUDE_EXACT
 
 
+def is_gratitude_only_burst(burst: list | None) -> bool:
+    """True when every burst text entry is a gratitude closer (no real ask)."""
+    if not burst:
+        return False
+    saw_text = False
+    for item in burst:
+        if not isinstance(item, dict):
+            return False
+        text = (item.get("text") or "").strip()
+        if not text:
+            return False
+        saw_text = True
+        if not is_player_gratitude_ack(text):
+            return False
+    return saw_text
+
+
+def is_gratitude_only_message_text(message_text: str | None) -> bool:
+    """True when formatted follow-up body is only gratitude closer(s)."""
+    raw = (message_text or "").strip()
+    if not raw:
+        return False
+    parts = [p.strip() for p in raw.split("\n---\n") if p.strip()]
+    if not parts:
+        return False
+    return all(is_player_gratitude_ack(p) for p in parts)
+
+
 @dataclass(frozen=True)
 class ReachOutResult:
     outcome: Literal["opened", "fed", "ignored"]
@@ -795,13 +823,20 @@ async def _idle_debounce_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.info("support_group_idle_episode: followup slacked chat_id=%s", chat_id)
 
     if slack_ok:
-        arm_staff_unanswered_after_followup(
-            chat_id,
-            message_text=body,
-            club_id=int(club_id) if club_id is not None else None,
-            title=title or state.get("title"),
-            job_queue=getattr(context, "job_queue", None),
-        )
+        if is_gratitude_only_burst(burst):
+            logger.info(
+                "support_group_idle_episode: skip staff_unanswered arm "
+                "(gratitude-only follow-up) chat_id=%s",
+                chat_id,
+            )
+        else:
+            arm_staff_unanswered_after_followup(
+                chat_id,
+                message_text=body,
+                club_id=int(club_id) if club_id is not None else None,
+                title=title or state.get("title"),
+                job_queue=getattr(context, "job_queue", None),
+            )
 
 
 async def _idle_staff_unanswered_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -824,6 +859,32 @@ async def _idle_staff_unanswered_callback(context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     body = state.get("staff_unanswered_message_text")
+    # Already-armed gratitude-only follow-ups (or legacy rows): drop without Slack.
+    if is_gratitude_only_message_text(body):
+        with get_db() as session:
+            row = session.get(SupportGroupIdleEpisodeState, chat_id)
+            if row is None or row.episode_started_at is None:
+                return
+            row.staff_unanswered_armed_at = None
+            row.staff_unanswered_message_text = None
+            row.updated_at = now
+        logger.info(
+            "support_group_idle_episode: skip staff_unanswered fire "
+            "(gratitude-only) chat_id=%s",
+            chat_id,
+        )
+        last_at = state.get("last_human_at")
+        if last_at is None or (
+            (now - last_at).total_seconds() + 0.5
+            >= float(idle_episode_silence_seconds())
+        ):
+            close_episode(
+                chat_id,
+                job_queue=getattr(context, "job_queue", None),
+                close_reason=CLOSE_REASON_SILENCE,
+            )
+        return
+
     try:
         await notify_staff_unanswered_issue_channel(
             club_id=int(club_id) if club_id is not None else None,
