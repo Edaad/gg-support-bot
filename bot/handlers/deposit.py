@@ -159,6 +159,18 @@ ACES_TABLE_JOIN_COPY = (
 )
 ACES_TABLE_JOIN_BUTTON = "I HAVE JOINED"
 
+CRYPTO_SUB_PICKER_NOTE = (
+    "Note: Bitcoin and Ethereum can take a while to come through."
+)
+
+
+def sub_option_picker_text(method_name: str, method_slug: str | None) -> str:
+    """Copy for the deposit sub-option keyboard after a method is chosen."""
+    text = f"You selected {method_name}. Which option?"
+    if (method_slug or "").strip().lower() == "crypto":
+        return f"{text}\n\n{CRYPTO_SUB_PICKER_NOTE}"
+    return text
+
 
 def _init_deposit_flow_session(
     context: ContextTypes.DEFAULT_TYPE,
@@ -2563,7 +2575,7 @@ async def _continue_deposit_for_method_dict(
             if row:
                 buttons.append(row)
             await query.edit_message_text(
-                f"You selected {method['name']}. Which option?",
+                sub_option_picker_text(method["name"], method_slug),
                 reply_markup=InlineKeyboardMarkup(buttons),
             )
             return DEPOSIT_SUB
