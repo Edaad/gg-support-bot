@@ -462,13 +462,35 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
 
 
 class DepositResponseContentTestCase(unittest.TestCase):
-    def test_strip_legacy_emoji_does_not_wipe_entire_message(self):
-        only_emoji = "• Please put a random emoji in the payment caption when sending"
-        result = dep._strip_legacy_random_emoji_instruction(
-            {"response_type": "text", "response_text": only_emoji},
-            "zelle",
+    def test_configured_text_is_sent_verbatim(self):
+        """Whatever the dashboard text box holds goes out unedited.
+
+        A stripper used to delete the "random emoji" line from venmo/zelle/
+        cashapp/paypal copy, which silently collapsed variants whose only line
+        below the payment link was that instruction.
+        """
+        text = (
+            "Venmo: https://venmo.com/u/jagger4444\n\n"
+            "• Please put a random emoji in the payment caption when sending"
         )
-        self.assertEqual(result["response_text"], only_emoji)
+        for slug in ("venmo", "zelle", "cashapp", "paypal"):
+            prepared = dep._prepare_deposit_response_data(
+                {"response_type": "text", "response_text": text},
+                method_slug=slug,
+            )
+            self.assertEqual(prepared["response_text"], text, slug)
+
+    def test_configured_caption_is_sent_verbatim(self):
+        caption = (
+            "Cashapp: https://cash.app/$eduardok4444\n\n"
+            "• Please put a random emoji in the payment caption when you sending\n\n"
+            "• Once sent, send a screenshot!"
+        )
+        prepared = dep._prepare_deposit_response_data(
+            {"response_type": "photo", "response_file_id": "f1", "response_caption": caption},
+            method_slug="cashapp",
+        )
+        self.assertEqual(prepared["response_caption"], caption)
 
     def test_merge_response_layers_falls_back_to_tier(self):
         variant = {"response_type": "text", "response_text": None}

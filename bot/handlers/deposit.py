@@ -249,34 +249,6 @@ _CHECKOUT_SETTING_KEYS = (
     "checkout_max_amount",
 )
 
-_LEGACY_RANDOM_EMOJI_RE = re.compile(
-    r"\n?\s*•\s*Please put a random emoji in the payment caption when (?:you )?sending\s*",
-    re.IGNORECASE,
-)
-
-
-def _strip_legacy_random_emoji_instruction(
-    data: dict,
-    method_slug: str,
-) -> dict:
-    """Remove seeded copy that asked for a random emoji on every deposit."""
-    slug = (method_slug or "").strip().lower()
-    if slug not in ("venmo", "zelle", "cashapp", "paypal"):
-        return data
-    out = dict(data)
-    changed = False
-    for field in ("response_text", "response_caption"):
-        text = out.get(field)
-        if not text or not isinstance(text, str):
-            continue
-        cleaned = _LEGACY_RANDOM_EMOJI_RE.sub("\n", text)
-        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
-        if cleaned != text and cleaned:
-            out[field] = cleaned
-            changed = True
-    return out if changed else data
-
-
 def _response_data_has_content(data: dict | None) -> bool:
     if not data:
         return False
@@ -353,8 +325,7 @@ def _prepare_deposit_response_data(
     tier: dict | None = None,
     allow_destination_fallback: bool = True,
 ) -> dict:
-    data = _strip_legacy_random_emoji_instruction(response_data, method_slug)
-    data = _merge_response_layers(data, tier, method)
+    data = _merge_response_layers(response_data, tier, method)
     data = _normalize_misconfigured_response_type(data)
     if not _response_data_has_content(data):
         if allow_destination_fallback:
