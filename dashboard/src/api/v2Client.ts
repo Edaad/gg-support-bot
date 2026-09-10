@@ -37,6 +37,19 @@ async function request<T>(path: string, opts: RequestInit = {}, token?: string):
   return res.json()
 }
 
+/**
+ * Money fields are `Decimal` server-side and Pydantic serializes Decimal as a JSON
+ * *string* ("200.00"), not a number. The interfaces below declare them as `number`
+ * and TS types are erased at runtime, so without coercing here a comparison like
+ * `checkoutMin < absoluteMin` runs lexicographically — "200.00" < "50.00" is true
+ * because "2" sorts before "5". Normalize on the way in so the declared types hold.
+ */
+function toNum(value: unknown): number | null {
+  if (value == null || value === '') return null
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
 export interface V2Variant {
   id: number
   method_id: number
@@ -117,18 +130,56 @@ export interface V2Method {
   tiers: V2Tier[]
 }
 
+function normalizeVariant(v: V2Variant): V2Variant {
+  return {
+    ...v,
+    checkout_min_amount: toNum(v.checkout_min_amount),
+    checkout_max_amount: toNum(v.checkout_max_amount),
+  }
+}
+
+function normalizeTier(t: V2Tier): V2Tier {
+  return {
+    ...t,
+    min_amount: toNum(t.min_amount),
+    max_amount: toNum(t.max_amount),
+    checkout_min_amount: toNum(t.checkout_min_amount),
+    checkout_max_amount: toNum(t.checkout_max_amount),
+    variants: (t.variants ?? []).map(normalizeVariant),
+  }
+}
+
+function normalizeMethod(m: V2Method): V2Method {
+  return {
+    ...m,
+    min_amount: toNum(m.min_amount),
+    max_amount: toNum(m.max_amount),
+    deposit_limit: toNum(m.deposit_limit),
+    accumulated_amount: toNum(m.accumulated_amount),
+    tiers: (m.tiers ?? []).map(normalizeTier),
+  }
+}
+
 export const listV2Methods = (token: string, clubId: number, direction?: string) =>
   request<V2Method[]>(
     `/clubs/${clubId}/methods${direction ? `?direction=${direction}` : ''}`,
     {},
     token,
-  )
+  ).then((rows) => rows.map(normalizeMethod))
 
 export const createV2Method = (token: string, clubId: number, data: Partial<V2Method>) =>
-  request<V2Method>(`/clubs/${clubId}/methods`, { method: 'POST', body: JSON.stringify(data) }, token)
+  request<V2Method>(
+    `/clubs/${clubId}/methods`,
+    { method: 'POST', body: JSON.stringify(data) },
+    token,
+  ).then(normalizeMethod)
 
 export const updateV2Method = (token: string, id: number, data: Partial<V2Method>) =>
-  request<V2Method>(`/methods/${id}`, { method: 'PUT', body: JSON.stringify(data) }, token)
+  request<V2Method>(
+    `/methods/${id}`,
+    { method: 'PUT', body: JSON.stringify(data) },
+    token,
+  ).then(normalizeMethod)
 
 export const deleteV2Method = (token: string, id: number) =>
   request<void>(`/methods/${id}`, { method: 'DELETE' }, token)
@@ -137,28 +188,52 @@ export const reorderV2Methods = (token: string, clubId: number, order: number[])
   request<{ ok: boolean }>(`/clubs/${clubId}/methods/reorder`, { method: 'PUT', body: JSON.stringify({ order }) }, token)
 
 export const resetV2MethodAccumulated = (token: string, methodId: number) =>
-  request<V2Method>(`/methods/${methodId}/reset-accumulated`, { method: 'POST' }, token)
+  request<V2Method>(
+    `/methods/${methodId}/reset-accumulated`,
+    { method: 'POST' },
+    token,
+  ).then(normalizeMethod)
 
 export const listV2Tiers = (token: string, methodId: number) =>
-  request<V2Tier[]>(`/methods/${methodId}/tiers`, {}, token)
+  request<V2Tier[]>(`/methods/${methodId}/tiers`, {}, token).then((rows) =>
+    rows.map(normalizeTier),
+  )
 
 export const createV2Tier = (token: string, methodId: number, data: Partial<V2Tier>) =>
-  request<V2Tier>(`/methods/${methodId}/tiers`, { method: 'POST', body: JSON.stringify(data) }, token)
+  request<V2Tier>(
+    `/methods/${methodId}/tiers`,
+    { method: 'POST', body: JSON.stringify(data) },
+    token,
+  ).then(normalizeTier)
 
 export const updateV2Tier = (token: string, id: number, data: Partial<V2Tier>) =>
-  request<V2Tier>(`/tiers/${id}`, { method: 'PUT', body: JSON.stringify(data) }, token)
+  request<V2Tier>(
+    `/tiers/${id}`,
+    { method: 'PUT', body: JSON.stringify(data) },
+    token,
+  ).then(normalizeTier)
 
 export const deleteV2Tier = (token: string, id: number) =>
   request<void>(`/tiers/${id}`, { method: 'DELETE' }, token)
 
 export const listV2TierVariants = (token: string, tierId: number) =>
-  request<V2Variant[]>(`/tiers/${tierId}/variants`, {}, token)
+  request<V2Variant[]>(`/tiers/${tierId}/variants`, {}, token).then((rows) =>
+    rows.map(normalizeVariant),
+  )
 
 export const createV2TierVariant = (token: string, tierId: number, data: Partial<V2Variant>) =>
-  request<V2Variant>(`/tiers/${tierId}/variants`, { method: 'POST', body: JSON.stringify(data) }, token)
+  request<V2Variant>(
+    `/tiers/${tierId}/variants`,
+    { method: 'POST', body: JSON.stringify(data) },
+    token,
+  ).then(normalizeVariant)
 
 export const updateV2Variant = (token: string, id: number, data: Partial<V2Variant>) =>
-  request<V2Variant>(`/variants/${id}`, { method: 'PUT', body: JSON.stringify(data) }, token)
+  request<V2Variant>(
+    `/variants/${id}`,
+    { method: 'PUT', body: JSON.stringify(data) },
+    token,
+  ).then(normalizeVariant)
 
 export const deleteV2Variant = (token: string, id: number) =>
   request<void>(`/variants/${id}`, { method: 'DELETE' }, token)
