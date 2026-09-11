@@ -1292,5 +1292,56 @@ class PersistenceReloadTests(unittest.TestCase):
             self.assertTrue(state.post_deposit_idle_pending)
 
 
+class EscalationEligibilityTests(unittest.TestCase):
+    def test_empty_player_id_gc_title_is_eligible(self):
+        with (
+            patch.object(esc, "escalation_notification_enabled", return_value=True),
+            patch.object(esc, "get_group_name", return_value="GTO / / Bibhu"),
+        ):
+            self.assertTrue(
+                esc.escalation_notification_eligible(
+                    -5035949696, club_id=4, title="GTO // Bibhu"
+                )
+            )
+            self.assertTrue(
+                esc.escalation_notification_eligible(
+                    -5035949696, club_id=4, title="GTO / / Bibhu"
+                )
+            )
+
+    def test_titled_gc_still_eligible(self):
+        with (
+            patch.object(esc, "escalation_notification_enabled", return_value=True),
+            patch.object(esc, "get_group_name", return_value=None),
+        ):
+            self.assertTrue(
+                esc.escalation_notification_eligible(
+                    1, club_id=4, title="GTO / 1234-5678 / Bibhu"
+                )
+            )
+
+    def test_non_gc_title_not_eligible(self):
+        with (
+            patch.object(esc, "escalation_notification_enabled", return_value=True),
+            patch.object(esc, "get_group_name", return_value="Random chat"),
+        ):
+            self.assertFalse(
+                esc.escalation_notification_eligible(
+                    1, club_id=4, title="Random chat"
+                )
+            )
+
+    def test_club_flag_off(self):
+        with (
+            patch.object(esc, "escalation_notification_enabled", return_value=False),
+            patch.object(esc, "get_group_name", return_value="GTO / / Bibhu"),
+        ):
+            self.assertFalse(
+                esc.escalation_notification_eligible(
+                    1, club_id=4, title="GTO / / Bibhu"
+                )
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

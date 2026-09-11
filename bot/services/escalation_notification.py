@@ -16,7 +16,7 @@ from telegram.ext import CallbackQueryHandler, ContextTypes
 from bot.runtime_config import is_test_bot_worker
 from bot.services.club import get_club_for_chat, get_group_name
 from bot.services import group_activity as ga
-from bot.services.popup_keyboard import group_has_gg_player_id
+from bot.services.player_details import is_gc_group_title
 from db.connection import get_db
 from db.models import Club
 
@@ -230,16 +230,26 @@ def escalation_notification_enabled(club_id: int | None) -> bool:
         return bool(getattr(club, "enable_escalation_notification", False))
 
 
+def _group_is_support_gc(chat_id: int, title: str | None = None) -> bool:
+    """True for ``CLUB / PLAYER_ID / NAME`` and new-GC ``CLUB / / NAME`` titles."""
+    stored = get_group_name(chat_id)
+    for candidate in (stored, title):
+        if is_gc_group_title(candidate):
+            return True
+    return False
+
+
 def escalation_notification_eligible(
     chat_id: int,
     *,
     club_id: int | None = None,
     title: str | None = None,
 ) -> bool:
+    """Club toggle on, and the chat is a support GC (including empty player-id titles)."""
     cid = club_id if club_id is not None else get_club_for_chat(chat_id)
     if not escalation_notification_enabled(cid):
         return False
-    return group_has_gg_player_id(chat_id, title=title)
+    return _group_is_support_gc(chat_id, title=title)
 
 
 def _club_display_name(club_id: int | None) -> str:
