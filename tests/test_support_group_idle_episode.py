@@ -137,7 +137,32 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         names = [c.kwargs.get("name") for c in self.jq.run_once.call_args_list]
         self.assertIn(ep._silence_job_name(1), names)
         self.assertIn(ep._hardcap_job_name(1), names)
+        self.assertIn(ep._staff_unanswered_job_name(1), names)
         self.assertNotIn(ep._debounce_job_name(1), names)
+        self.assertIsNotNone(state["staff_unanswered_armed_at"])
+        self.assertEqual(state["staff_unanswered_message_text"], "hello")
+
+    async def test_open_gratitude_does_not_arm_staff_unanswered(self):
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        with patch.object(
+            ep, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
+        ):
+            with patch.object(
+                ep, "offer_idle_help_prompt", new_callable=AsyncMock, return_value=False
+            ):
+                result = await ep.on_player_reach_out(
+                    1,
+                    club_id=9,
+                    title="GC",
+                    message_text="sounds good",
+                    job_queue=self.jq,
+                    now=t0,
+                )
+        self.assertEqual(result.outcome, "opened")
+        state = ep.load_episode_state(1)
+        self.assertIsNone(state["staff_unanswered_armed_at"])
+        names = [c.kwargs.get("name") for c in self.jq.run_once.call_args_list]
+        self.assertNotIn(ep._staff_unanswered_job_name(1), names)
 
     async def test_feed_schedules_debounce(self):
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
@@ -212,7 +237,15 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ep.is_player_gratitude_ack("thank you so much"))
         self.assertTrue(ep.is_player_gratitude_ack("ok thanks"))
         self.assertTrue(ep.is_player_gratitude_ack("Thanks man"))
+        self.assertTrue(ep.is_player_gratitude_ack("Sounds good"))
+        self.assertTrue(ep.is_player_gratitude_ack("ok sounds good"))
+        self.assertTrue(ep.is_player_gratitude_ack("gotcha"))
+        self.assertTrue(ep.is_player_gratitude_ack("ok"))
+        self.assertTrue(ep.is_player_gratitude_ack("Okay"))
+        self.assertTrue(ep.is_player_gratitude_ack("k"))
         self.assertFalse(ep.is_player_gratitude_ack("thanks but I need chips"))
+        self.assertFalse(ep.is_player_gratitude_ack("sounds good but what's the min"))
+        self.assertFalse(ep.is_player_gratitude_ack("ok what's the min"))
         self.assertFalse(ep.is_player_gratitude_ack("hello"))
         self.assertFalse(ep.is_player_gratitude_ack(""))
 

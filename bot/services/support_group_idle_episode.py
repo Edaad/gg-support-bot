@@ -48,7 +48,8 @@ EXPECTED_FLOW_INPUT_KEY = "expected_flow_input"
 IDLE_EPISODE_HARD_CAP_SECONDS = 1800  # 30 minutes
 IDLE_EPISODE_HARD_CAP_SECONDS_TEST = 120
 
-# Whole-message player closers: do not reset the 5m silence clock (feeds still count).
+# Whole-message player closers: do not reset the 5m silence clock / do not arm
+# staff-unanswered (feeds and open Slack still count).
 _GRATITUDE_EXACT = frozenset(
     {
         "thanks",
@@ -75,6 +76,45 @@ _GRATITUDE_EXACT = frozenset(
         "okay thank you",
         "got it thanks",
         "got it thank you",
+        # Soft acknowledgments (same closer treatment)
+        "sounds good",
+        "sound good",
+        "sounds great",
+        "sounds good thanks",
+        "sounds good thank you",
+        "ok sounds good",
+        "okay sounds good",
+        "sounds good to me",
+        "works for me",
+        "that works",
+        "all good",
+        "all set",
+        "got it",
+        "gotcha",
+        "will do",
+        "copy",
+        "copy that",
+        "noted",
+        "perfect",
+        "perfect thanks",
+        "awesome",
+        "awesome thanks",
+        "cool",
+        "cool thanks",
+        "ok cool",
+        "okay cool",
+        "sweet",
+        "bet",
+        "np",
+        "no problem",
+        "no worries",
+        "ok",
+        "okay",
+        "k",
+        "kk",
+        "okie",
+        "okey",
+        "okie dokie",
     }
 )
 _GRATITUDE_NORMALIZE_RE = re.compile(r"[^\w\s]+", re.UNICODE)
@@ -84,7 +124,7 @@ _idle_app: Any | None = None
 
 
 def is_player_gratitude_ack(message_text: str | None) -> bool:
-    """True when player text is a short thanks/ty closer (silence clock ignore)."""
+    """True when player text is a short thanks/ack closer (silence + unanswered skip)."""
     raw = (message_text or "").strip().lower()
     if not raw:
         return False
@@ -655,8 +695,9 @@ async def on_player_reach_out(
     event_id: int | None = None
 
     if opened:
+        slack_ok = bool(slack_already_sent)
         if not slack_already_sent:
-            _ok, event_id = await notify_escalation_slack(
+            slack_ok, event_id = await notify_escalation_slack(
                 reason,
                 club_id=club_id,
                 chat_id=cid,
@@ -667,7 +708,6 @@ async def on_player_reach_out(
                 if trigger_message
                 else ([{"text": body}] if body else None),
             )
-            del _ok
         try:
             await offer_idle_help_prompt(
                 bot,
@@ -687,6 +727,22 @@ async def on_player_reach_out(
         if slack_already_sent and burst:
             _schedule_debounce(
                 cid, job_queue=jq, club_id=club_id, title=title
+            )
+        # Same 5m staff-unanswered latch as follow-up (skip gratitude-only).
+        if slack_ok and not gratitude and body:
+            arm_staff_unanswered_after_followup(
+                cid,
+                message_text=body,
+                club_id=club_id,
+                title=title,
+                job_queue=jq,
+                now=now,
+            )
+        elif slack_ok and gratitude:
+            logger.info(
+                "support_group_idle_episode: skip staff_unanswered arm "
+                "(gratitude-only open) chat_id=%s",
+                cid,
             )
         logger.info(
             "support_group_idle_episode: opened chat_id=%s slack_already_sent=%s",
