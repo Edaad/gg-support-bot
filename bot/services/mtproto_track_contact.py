@@ -127,8 +127,8 @@ async def notify_club_gc_channels_too_much(
     """DM club GC admin when group creation hits Telegram's group/channel cap."""
 
     now = time.monotonic()
-    last = _channels_too_much_last_notify.get(cfg.club_key, 0.0)
-    if now - last < _CHANNELS_TOO_MUCH_NOTIFY_COOLDOWN_SEC:
+    last = _channels_too_much_last_notify.get(cfg.club_key)
+    if last is not None and now - last < _CHANNELS_TOO_MUCH_NOTIFY_COOLDOWN_SEC:
         return
     _channels_too_much_last_notify[cfg.club_key] = now
 
@@ -155,8 +155,8 @@ async def notify_club_gc_mtproto_disconnected(
     """DM club GC admin when the worker loses this club's MTProto session."""
 
     now = time.monotonic()
-    last = _mtproto_disconnect_last_notify.get(cfg.club_key, 0.0)
-    if now - last < _MTPROTO_DISCONNECT_NOTIFY_COOLDOWN_SEC:
+    last = _mtproto_disconnect_last_notify.get(cfg.club_key)
+    if last is not None and now - last < _MTPROTO_DISCONNECT_NOTIFY_COOLDOWN_SEC:
         return
     _mtproto_disconnect_last_notify[cfg.club_key] = now
 
