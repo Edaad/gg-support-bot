@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 from typing import List, Optional
 
@@ -29,6 +30,8 @@ from api.schemas import (
     StaffCashoutSendCreate,
     StaffCashoutSendRead,
     StaffCashoutSendUpdate,
+    StaffCashoutSlackReminderRead,
+    StaffCashoutSlackReminderUpdate,
 )
 from bot.services.staff_cashout_records import (
     CashoutRecordNotActive,
@@ -48,6 +51,8 @@ from bot.services.staff_cashout_records import (
 )
 from db.connection import get_db_dependency
 from db.models import Club
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/cashout-records",
@@ -219,6 +224,38 @@ def export_cashout_money_sends_csv(
         raise HTTPException(400, str(exc)) from exc
     filename = f"cashout-money-sends-{from_day.isoformat()}-to-{to_day.isoformat()}.csv"
     return csv_streaming_response(content, filename)
+
+
+@router.get("/slack-reminder", response_model=StaffCashoutSlackReminderRead)
+def get_cashout_slack_reminder(
+    _admin: str = Depends(require_admin),
+):
+    from bot.services.staff_cashout_slack_reminders import get_slack_reminder_enabled
+
+    return StaffCashoutSlackReminderRead(enabled=get_slack_reminder_enabled())
+
+
+@router.patch("/slack-reminder", response_model=StaffCashoutSlackReminderRead)
+async def patch_cashout_slack_reminder(
+    body: StaffCashoutSlackReminderUpdate,
+    _admin: str = Depends(require_admin),
+):
+    from bot.services.staff_cashout_slack_reminders import (
+        send_due_cashout_reminders,
+        set_slack_reminder_enabled,
+    )
+
+    state = set_slack_reminder_enabled(bool(body.enabled))
+    if state["enabled"]:
+        try:
+            sent = await send_due_cashout_reminders()
+            if sent:
+                logger.info(
+                    "cashout_slack_reminder: immediate send count=%s", sent
+                )
+        except Exception:
+            logger.exception("cashout_slack_reminder: immediate send failed")
+    return StaffCashoutSlackReminderRead(enabled=bool(state["enabled"]))
 
 
 @router.post("", response_model=StaffCashoutRecordRead, status_code=201)

@@ -112,6 +112,12 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
 
         schedule_issue_report_reminder_job(app)
 
+        from bot.services.staff_cashout_slack_reminders import (
+            schedule_cashout_slack_reminder_job,
+        )
+
+        schedule_cashout_slack_reminder_job(app)
+
         from bot.services.group_chat_transcript_cron import (
             schedule_group_chat_transcript_job,
         )

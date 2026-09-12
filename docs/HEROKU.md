@@ -431,6 +431,7 @@ heroku run -a YOUR_APP -- python migrate_staff_cashout_records.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_ledger.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_do_not_send.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_list_indexes.py
+heroku run -a YOUR_APP -- python migrate_staff_cashout_slack_reminder.py
 heroku run -a YOUR_APP -- python migrate_bonus_records.py
 heroku run -a YOUR_APP -- python migrate_bonus_drafts.py
 heroku run -a YOUR_APP -- python migrate_bonus_records_player_details.py
@@ -442,6 +443,8 @@ heroku run -a YOUR_APP -- python migrate_expenses.py
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py --apply
 ```
+
+Dashboard **Cashout records** admin toggle **5 min Slack reminder** posts one urgent message per overdue Active cashout to `SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID` (same bot token as escalation). Requires `migrate_staff_cashout_slack_reminder.py`. Optional `DASHBOARD_PUBLIC_URL` (else `https://{HEROKU_APP_NAME}.herokuapp.com`) for the Slack **Open cashout** link. Worker polls every 30s; per-record cadence is 5 minutes. Turning the toggle on fires immediately.
 
 Dashboard **Cashout records** and **Bonuses** pages include CSV export (inclusive ET date range: cashouts on `created_at`, bonuses on `issued_at`). JWT API: `GET /api/cashout-records/export?from=…&to=…` and `GET /api/bonus/records/export?from=…&to=…`.
 

@@ -893,6 +893,7 @@ class StaffCashoutRecord(Base):
     trigger = Column(String(20), nullable=False)  # group_cash | dm_cashout | dashboard
     tracks_money_sent = Column(Boolean, nullable=False, default=False)
     do_not_send = Column(Boolean, nullable=False, default=False)
+    last_slack_reminder_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(
         DateTime, server_default=func.now(), onupdate=func.now()
@@ -911,6 +912,19 @@ class StaffCashoutRecord(Base):
         back_populates="cashout_record",
         cascade="all, delete-orphan",
         order_by="StaffCashoutMoneySend.created_at",
+    )
+
+
+class StaffCashoutSlackReminderControl(Base):
+    """Singleton row: page-level 5-minute head-admin Slack reminder for Active cashouts."""
+
+    __tablename__ = "staff_cashout_slack_reminder_control"
+
+    id = Column(Integer, primary_key=True, default=1)
+    enabled = Column(Boolean, nullable=False, default=False)
+    enabled_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
 

@@ -725,6 +725,14 @@ class StaffCashoutRecordUpdate(BaseModel):
     do_not_send: Optional[bool] = None
 
 
+class StaffCashoutSlackReminderRead(BaseModel):
+    enabled: bool = False
+
+
+class StaffCashoutSlackReminderUpdate(BaseModel):
+    enabled: bool
+
+
 class StaffCashoutPaymentCreate(BaseModel):
     payment_method_id: Optional[int] = None
     payment_sub_option_id: Optional[int] = None

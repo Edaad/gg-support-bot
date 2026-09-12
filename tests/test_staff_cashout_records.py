@@ -658,6 +658,70 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         resp = client.patch("/api/cashout-records/1", json={"do_not_send": True})
         self.assertEqual(resp.status_code, 403)
 
+    def test_get_slack_reminder_admin_ok(self) -> None:
+        with patch(
+            "bot.services.staff_cashout_slack_reminders.get_slack_reminder_enabled",
+            return_value=True,
+        ):
+            client = TestClient(_make_api_app())
+            resp = client.get("/api/cashout-records/slack-reminder")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"enabled": True})
+
+    def test_get_slack_reminder_am_forbidden(self) -> None:
+        app = _make_api_app()
+        app.dependency_overrides[get_current_admin] = lambda: ROLE_ACCOUNT_MANAGER
+        client = TestClient(app)
+        resp = client.get("/api/cashout-records/slack-reminder")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_patch_slack_reminder_on_fires_immediately(self) -> None:
+        with patch(
+            "bot.services.staff_cashout_slack_reminders.set_slack_reminder_enabled",
+            return_value={"enabled": True, "enabled_at": None, "updated_at": None},
+        ) as mock_set, patch(
+            "bot.services.staff_cashout_slack_reminders.send_due_cashout_reminders",
+            new_callable=AsyncMock,
+            return_value=2,
+        ) as mock_send:
+            client = TestClient(_make_api_app())
+            resp = client.patch(
+                "/api/cashout-records/slack-reminder",
+                json={"enabled": True},
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"enabled": True})
+        mock_set.assert_called_once_with(True)
+        mock_send.assert_awaited_once()
+
+    def test_patch_slack_reminder_off_does_not_send(self) -> None:
+        with patch(
+            "bot.services.staff_cashout_slack_reminders.set_slack_reminder_enabled",
+            return_value={"enabled": False, "enabled_at": None, "updated_at": None},
+        ), patch(
+            "bot.services.staff_cashout_slack_reminders.send_due_cashout_reminders",
+            new_callable=AsyncMock,
+            return_value=0,
+        ) as mock_send:
+            client = TestClient(_make_api_app())
+            resp = client.patch(
+                "/api/cashout-records/slack-reminder",
+                json={"enabled": False},
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"enabled": False})
+        mock_send.assert_not_awaited()
+
+    def test_patch_slack_reminder_am_forbidden(self) -> None:
+        app = _make_api_app()
+        app.dependency_overrides[get_current_admin] = lambda: ROLE_ACCOUNT_MANAGER
+        client = TestClient(app)
+        resp = client.patch(
+            "/api/cashout-records/slack-reminder",
+            json={"enabled": True},
+        )
+        self.assertEqual(resp.status_code, 403)
+
     def test_patch_title_am_allowed(self) -> None:
         updated = _sample_record()
         updated["group_title"] = "RT / 1 / X"

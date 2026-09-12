@@ -487,6 +487,17 @@ export const updateCashoutRecord = (
     body: JSON.stringify(data),
   }, token)
 
+export type CashoutSlackReminderT = { enabled: boolean }
+
+export const getCashoutSlackReminder = (token: string) =>
+  request<CashoutSlackReminderT>(`/cashout-records/slack-reminder`, {}, token)
+
+export const setCashoutSlackReminder = (token: string, enabled: boolean) =>
+  request<CashoutSlackReminderT>(`/cashout-records/slack-reminder`, {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
+  }, token)
+
 export const addCashoutPayment = (
   token: string,
   recordId: number,
