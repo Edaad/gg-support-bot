@@ -50,7 +50,15 @@ def list_bonus_types(db: Session = Depends(get_db_dependency)):
 
 @router.post("/types", response_model=BonusTypeRead, status_code=201)
 def create_bonus_type(body: BonusTypeCreate, db: Session = Depends(get_db_dependency)):
-    bt = BonusType(**body.model_dump())
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "Name is required")
+    existing = (
+        db.query(BonusType).filter(BonusType.name.ilike(name)).first()
+    )
+    if existing:
+        raise HTTPException(409, f"Bonus type {existing.name!r} already exists")
+    bt = BonusType(**{**body.model_dump(), "name": name})
     db.add(bt)
     db.flush()
     db.refresh(bt)
