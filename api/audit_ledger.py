@@ -24,12 +24,14 @@ from api.club_audit_timezone import (
 )
 from api.club_slug import resolve_club_id, slug_for_club_id
 from api.payments_helpers import (
+    _apply_crypto_paid_at_range,
     apply_analytics_payment_exclusion,
     build_cashapp_payment_read,
     build_crypto_payment_read,
     build_paypal_payment_read,
     build_venmo_payment_read,
     build_zelle_payment_read,
+    crypto_occurred_at,
     resolve_group_title,
 )
 from bot.services.payment_method_binding import canonicalize_zelle_recipient
@@ -314,6 +316,12 @@ def payment_in_audit_day_for_club(
     return occurred_at_in_partner_audit_day(occurred_at, requested, audit_date)
 
 
+def _manual_payment_occurred_at(payment_cls, data: dict) -> datetime | None:
+    if payment_cls is CryptoPayment:
+        return crypto_occurred_at(data)
+    return data.get("created_at")
+
+
 def _apply_audit_manual_filters(
     session: Session,
     query,
@@ -322,11 +330,14 @@ def _apply_audit_manual_filters(
     from_dt: datetime,
     to_dt: datetime,
 ):
-    query = query.filter(
-        payment_cls.is_test.is_(False),
-        payment_cls.created_at >= from_dt,
-        payment_cls.created_at <= to_dt,
-    )
+    query = query.filter(payment_cls.is_test.is_(False))
+    if payment_cls is CryptoPayment:
+        query = _apply_crypto_paid_at_range(query, from_dt=from_dt, to_dt=to_dt)
+    else:
+        query = query.filter(
+            payment_cls.created_at >= from_dt,
+            payment_cls.created_at <= to_dt,
+        )
     return apply_analytics_payment_exclusion(
         session, query, payment_cls.telegram_chat_id
     )
@@ -389,7 +400,7 @@ def _fetch_manual_deposit_events(
     out: list[LedgerEvent] = []
     for row in rows:
         data = build_read(session, row)
-        occurred_at = data.get("created_at")
+        occurred_at = _manual_payment_occurred_at(payment_cls, data)
         if not payment_in_audit_day_for_club(
             session,
             club_slug=club_slug,

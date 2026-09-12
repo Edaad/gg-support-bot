@@ -24,7 +24,7 @@ from api.creator_weekly_audit import (
     validate_upload_set,
     _zelle_variant,
 )
-from db.models import ZellePayment
+from db.models import CryptoPayment, ZellePayment
 
 MONDAY = date(2026, 8, 10)
 
@@ -261,6 +261,42 @@ class CreatorWeeklyAuditFetchTestCase(unittest.TestCase):
             variant_fn=_zelle_variant,
         )
         self.assertEqual(rows, [])
+
+    @patch("api.creator_weekly_audit.payment_in_audit_day_for_club", return_value=True)
+    @patch("api.creator_weekly_audit._apply_audit_manual_filters")
+    def test_fetch_mateos_crypto_uses_paid_at(self, mock_filters, mock_audit_day):
+        payment = MagicMock()
+        query = MagicMock()
+        query.filter.return_value = query
+        query.order_by.return_value = query
+        query.all.return_value = [payment]
+        session = MagicMock()
+        session.query.return_value = query
+        mock_filters.return_value = query
+        paid = datetime(2026, 8, 10, 14, 0, tzinfo=timezone.utc)
+        created = datetime(2026, 8, 11, 18, 0, tzinfo=timezone.utc)
+        mock_build = MagicMock(
+            return_value={
+                "from_address": "bc1qexample",
+                "token_symbol": "BTC",
+                "amount_usd": "73.37",
+                "paid_at": "2026-08-10T14:00:00Z",
+                "created_at": created,
+                "club_id": 3,
+            }
+        )
+
+        rows = _fetch_mateos_payments_for_day(
+            session,
+            payment_cls=CryptoPayment,
+            build_read=mock_build,
+            audit_date=MONDAY,
+            name_fn=lambda d: (d.get("from_address") or "").strip(),
+            variant_fn=lambda d: (d.get("token_symbol") or "").strip(),
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(mock_audit_day.call_args.kwargs["occurred_at"], paid)
+        self.assertNotEqual(rows[0].occurred_at, created.replace(tzinfo=None))
 
     @patch("api.creator_weekly_audit.payment_in_audit_day_for_club", return_value=True)
     @patch("api.creator_weekly_audit.resolve_club_id", return_value=3)

@@ -8,6 +8,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from api.audit_ledger import (
+    _apply_audit_manual_filters,
     _fetch_manual_deposit_events,
     build_ledger_lines,
     cashout_method_token,
@@ -16,6 +17,7 @@ from api.audit_ledger import (
     LedgerEvent,
     payment_in_audit_day_for_club,
 )
+from db.models import CryptoPayment, ZellePayment
 
 
 class ManualDepositEventsTestCase(unittest.TestCase):
@@ -61,6 +63,89 @@ class ManualDepositEventsTestCase(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertIsNone(events[0].gg_player_id)
         self.assertEqual(events[0].amount_usd, Decimal("25.00"))
+
+    @patch("api.audit_ledger.payment_in_audit_day_for_club", return_value=True)
+    @patch("api.audit_ledger._apply_audit_manual_filters")
+    def test_crypto_events_use_paid_at_not_created_at(
+        self,
+        mock_filters,
+        mock_in_day,
+    ):
+        payment = MagicMock()
+        payment.id = 12
+        created = datetime(2026, 8, 11, 18, 0, tzinfo=timezone.utc)
+        paid = datetime(2026, 8, 10, 14, 0, tzinfo=timezone.utc)
+
+        query = MagicMock()
+        query.order_by.return_value.all.return_value = [payment]
+        mock_filters.return_value = query
+
+        def build_read(_session, _payment):
+            return {
+                "created_at": created,
+                "paid_at": "2026-08-10T14:00:00Z",
+                "club_id": 1,
+                "gg_player_id": None,
+                "telegram_chat_id": None,
+                "amount_usd": Decimal("73.37"),
+                "from_label": "bc1qexample",
+                "token_symbol": "BTC",
+            }
+
+        events = _fetch_manual_deposit_events(
+            MagicMock(),
+            CryptoPayment,
+            build_read,
+            club_slug="clubgto",
+            audit_date=date(2026, 8, 10),
+            from_dt=datetime(2026, 8, 10, 5, 0, tzinfo=timezone.utc),
+            to_dt=datetime(2026, 8, 11, 4, 59, 59, tzinfo=timezone.utc),
+            source="deposit_crypto",
+        )
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].occurred_at_utc, paid)
+        self.assertEqual(mock_in_day.call_args.kwargs["occurred_at"], paid)
+
+
+class AuditManualFiltersTestCase(unittest.TestCase):
+    @patch("api.audit_ledger.apply_analytics_payment_exclusion", side_effect=lambda s, q, c: q)
+    @patch("api.audit_ledger._apply_crypto_paid_at_range")
+    def test_crypto_filters_by_paid_at(self, mock_paid_range, _mock_excl):
+        query = MagicMock()
+        query.filter.return_value = query
+        mock_paid_range.return_value = query
+        from_dt = datetime(2026, 8, 10, 5, 0, tzinfo=timezone.utc)
+        to_dt = datetime(2026, 8, 11, 4, 59, 59, tzinfo=timezone.utc)
+
+        _apply_audit_manual_filters(
+            MagicMock(),
+            query,
+            CryptoPayment,
+            from_dt=from_dt,
+            to_dt=to_dt,
+        )
+
+        mock_paid_range.assert_called_once_with(query, from_dt=from_dt, to_dt=to_dt)
+
+    @patch("api.audit_ledger.apply_analytics_payment_exclusion", side_effect=lambda s, q, c: q)
+    @patch("api.audit_ledger._apply_crypto_paid_at_range")
+    def test_zelle_filters_by_created_at(self, mock_paid_range, _mock_excl):
+        query = MagicMock()
+        query.filter.return_value = query
+        from_dt = datetime(2026, 8, 10, 5, 0, tzinfo=timezone.utc)
+        to_dt = datetime(2026, 8, 11, 4, 59, 59, tzinfo=timezone.utc)
+
+        _apply_audit_manual_filters(
+            MagicMock(),
+            query,
+            ZellePayment,
+            from_dt=from_dt,
+            to_dt=to_dt,
+        )
+
+        mock_paid_range.assert_not_called()
+        self.assertEqual(query.filter.call_count, 2)
 
 
 class CashoutSourceLabelTestCase(unittest.TestCase):

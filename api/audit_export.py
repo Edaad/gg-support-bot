@@ -26,18 +26,20 @@ from api.club_audit_timezone import (
 from api.club_slug import CLUB_SLUG_TO_NAME, slug_for_club_id
 
 from api.audit_ledger import (
+    _apply_audit_manual_filters,
     _iter_checked_union_deposit_requests,
+    _manual_payment_occurred_at,
     _resolve_union_group_title,
     _union_method_tag,
     union_type_from_display_name,
 )
 from api.payments_helpers import (
-    apply_analytics_payment_exclusion,
     build_cashapp_payment_read,
     build_crypto_payment_read,
     build_paypal_payment_read,
     build_venmo_payment_read,
     build_zelle_payment_read,
+    crypto_occurred_at,
     lookup_gg_nickname,
     resolve_group_title,
     resolve_method_display,
@@ -269,24 +271,6 @@ def _club_name(club_names: dict[int, str], club_id: int | None) -> str:
     if club_id is None:
         return ""
     return club_names.get(int(club_id), "")
-
-
-def _apply_audit_manual_filters(
-    session: Session,
-    query,
-    payment_cls,
-    *,
-    from_dt: datetime,
-    to_dt: datetime,
-):
-    query = query.filter(
-        payment_cls.is_test.is_(False),
-        payment_cls.created_at >= from_dt,
-        payment_cls.created_at <= to_dt,
-    )
-    return apply_analytics_payment_exclusion(
-        session, query, payment_cls.telegram_chat_id
-    )
 
 
 def _apply_audit_stripe_filters(query, *, from_dt: datetime, to_dt: datetime):
@@ -818,7 +802,7 @@ def _fetch_tagged_manual_rows_timed(
     out: list[_TimedTaggedManualAuditRow] = []
     for row in rows:
         data = build_read(session, row)
-        occurred_at = data.get("created_at")
+        occurred_at = _manual_payment_occurred_at(payment_cls, data)
         if not _payment_in_audit_day(
             session,
             audit_date=audit_date,
@@ -855,13 +839,16 @@ def _tagged_manual_row(
     account_tag = str(data.get(tag_field) or "").strip()
     if tag_field == "zelle_recipient" and account_tag:
         account_tag = canonicalize_zelle_recipient(account_tag) or account_tag
+    time_value = (
+        crypto_occurred_at(data) if tag_field == "token_symbol" else data.get("created_at")
+    )
     return TaggedManualAuditRow(
         amount_usd=amount_usd,
         payer_name=payer,
         account_tag=account_tag,
         group_title=_manual_group_cell(data),
         club_label=_manual_club_name(data, club_names),
-        time_label=_fmt_manual_audit_time(data["created_at"], club_slug),
+        time_label=_fmt_manual_audit_time(time_value, club_slug),
     )
 
 

@@ -20,6 +20,7 @@ from api.gto_weekly_audit import (
     BonusRailRow,
     GtoWeeklyAuditError,
     PaymentRailRow,
+    _clubgto_excel_time,
     _fetch_vaughn_payments_for_day,
     build_gto_weekly_audit_workbook,
     date_from_filename,
@@ -466,6 +467,42 @@ class GtoWeeklyAuditFetchTestCase(unittest.TestCase):
         )
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].amount_usd, 73.37)
+
+    @patch("api.gto_weekly_audit._apply_audit_manual_filters")
+    def test_fetch_vaughn_crypto_uses_paid_at_for_time(self, mock_filters):
+        payment = MagicMock()
+        query = MagicMock()
+        query.filter.return_value = query
+        query.order_by.return_value = query
+        query.all.return_value = [payment]
+        session = MagicMock()
+        session.query.return_value = query
+        mock_filters.return_value = query
+        paid = datetime(2026, 8, 10, 14, 0, tzinfo=timezone.utc)
+        created = datetime(2026, 8, 11, 18, 0, tzinfo=timezone.utc)
+        mock_build = MagicMock(
+            return_value={
+                "from_address": "bc1qexample",
+                "token_symbol": "BTC",
+                "amount_usd": "73.37",
+                "paid_at": "2026-08-10T14:00:00Z",
+                "created_at": created,
+                "club_id": None,
+                "group_title": None,
+            }
+        )
+
+        rows = _fetch_vaughn_payments_for_day(
+            session,
+            payment_cls=CryptoPayment,
+            build_read=mock_build,
+            audit_date=MONDAY,
+            name_fn=lambda d: (d.get("from_address") or "").strip(),
+            variant_fn=lambda d: (d.get("token_symbol") or "").strip(),
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].occurred_at, _clubgto_excel_time(paid))
+        self.assertNotEqual(rows[0].occurred_at, _clubgto_excel_time(created))
 
     @patch("api.gto_weekly_audit._apply_audit_manual_filters")
     def test_fetch_vaughn_empty_when_query_returns_no_rows(self, mock_filters):

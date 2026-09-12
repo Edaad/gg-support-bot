@@ -17,7 +17,11 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.orm import Session
 
-from api.audit_ledger import _apply_audit_manual_filters, payment_in_audit_day_for_club
+from api.audit_ledger import (
+    _apply_audit_manual_filters,
+    _manual_payment_occurred_at,
+    payment_in_audit_day_for_club,
+)
 from api.audit_reconcile_export import MATCHING_HEADERS
 from api.club_audit_timezone import partner_audit_day_window_utc, zone_for_slug
 from api.club_slug import resolve_club_id
@@ -357,12 +361,13 @@ def _fetch_mateos_payments_for_day(
     out: list[PaymentRailRow] = []
     for row in query.all():
         data = build_read(session, row)
+        occurred_at = _manual_payment_occurred_at(payment_cls, data)
         if not payment_in_audit_day_for_club(
             session,
             club_slug=_CREATOR_CLUB_SLUG,
             audit_date=audit_date,
             club_id=data.get("club_id"),
-            occurred_at=data.get("created_at"),
+            occurred_at=occurred_at,
             data=data,
         ):
             continue
@@ -371,7 +376,7 @@ def _fetch_mateos_payments_for_day(
         out.append(
             PaymentRailRow(
                 audit_date=audit_date,
-                occurred_at=_creator_club_excel_time(data.get("created_at")),
+                occurred_at=_creator_club_excel_time(occurred_at),
                 name=name_fn(data),
                 variant=variant_fn(data),
                 amount_usd=amount_f,

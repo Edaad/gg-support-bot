@@ -17,7 +17,11 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.orm import Session
 
-from api.audit_ledger import _apply_audit_manual_filters, payment_in_audit_day_for_club
+from api.audit_ledger import (
+    _apply_audit_manual_filters,
+    _manual_payment_occurred_at,
+    payment_in_audit_day_for_club,
+)
 from api.club_audit_timezone import audit_day_window_utc, zone_for_slug
 from api.club_slug import resolve_club_id
 from api.method_owner import METHOD_OWNER_VAUGHN
@@ -386,7 +390,9 @@ def _fetch_vaughn_payments_for_day(
         out.append(
             PaymentRailRow(
                 audit_date=audit_date,
-                occurred_at=_clubgto_excel_time(data.get("created_at")),
+                occurred_at=_clubgto_excel_time(
+                    _manual_payment_occurred_at(payment_cls, data)
+                ),
                 name=name_fn(data),
                 variant=variant_fn(data),
                 amount_usd=amount_f,

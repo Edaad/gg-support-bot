@@ -18,6 +18,7 @@ from api.payments_helpers import (
     apply_owner_ingest_filters,
     apply_owner_stripe_filters,
     cents_to_usd,
+    crypto_occurred_at,
     lookup_gg_nickname,
     resolve_group_title,
 )
@@ -178,13 +179,7 @@ def _ingest_occurred_at(method_slug: str, read_payload: dict[str, Any]) -> Any:
     if method_slug == "stripe":
         return read_payload.get("completed_at") or created_at
     if method_slug == "crypto":
-        from bot.services.payment_chip_match import parse_payment_reference_at
-
-        paid_raw = read_payload.get("paid_at")
-        if paid_raw:
-            parsed = parse_payment_reference_at(paid_at=str(paid_raw), created_at=None)
-            if parsed is not None:
-                return parsed
+        return crypto_occurred_at(read_payload) or created_at
     return created_at
 
 

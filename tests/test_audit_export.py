@@ -323,6 +323,30 @@ class AuditExportFormattingTestCase(unittest.TestCase):
         self.assertEqual(row.group_title, "GTO / 3011-9668 / Pvtenis")
         self.assertEqual(row.club_label, "ClubGTO")
 
+    def test_tagged_manual_row_crypto_time_uses_paid_at(self):
+        created = datetime(2026, 8, 11, 18, 0, tzinfo=timezone.utc)
+        data = {
+            "amount_usd": Decimal("122.00"),
+            "from_label": "Binance (0x8894…D4E3)",
+            "token_symbol": "USDC",
+            "group_title": "GTO / 3011-9668 / Pvtenis",
+            "club_id": 1,
+            "created_at": created,
+        }
+        created_row = _tagged_manual_row(
+            MagicMock(),
+            data,
+            {1: "ClubGTO"},
+            tag_field="token_symbol",
+        )
+        paid_row = _tagged_manual_row(
+            MagicMock(),
+            {**data, "paid_at": "2026-08-10T14:00:00Z"},
+            {1: "ClubGTO"},
+            tag_field="token_symbol",
+        )
+        self.assertNotEqual(paid_row.time_label, created_row.time_label)
+
 
 class AuditExportWorkbookTestCase(unittest.TestCase):
     def test_alert_scope_labels_importable(self):

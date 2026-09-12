@@ -355,7 +355,7 @@ def _payment_linked_to_club(payment_cls, club_id: int):
 
 
 def _crypto_paid_at_column():
-    """SQL timestamp for crypto dashboard filters: ISO paid_at, else created_at."""
+    """SQL timestamp for crypto date filters: ISO paid_at, else created_at."""
     iso_paid = case(
         (
             CryptoPayment.paid_at.op("~")(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}"),
@@ -364,6 +364,18 @@ def _crypto_paid_at_column():
         else_=None,
     )
     return func.coalesce(iso_paid, CryptoPayment.created_at)
+
+
+def crypto_occurred_at(data: dict) -> datetime | None:
+    """Prefer ISO paid_at for crypto date windows; else created_at."""
+    from bot.services.payment_chip_match import parse_payment_reference_at
+
+    paid_raw = data.get("paid_at")
+    if paid_raw:
+        parsed = parse_payment_reference_at(paid_at=str(paid_raw), created_at=None)
+        if parsed is not None:
+            return parsed
+    return data.get("created_at")
 
 
 def _apply_crypto_paid_at_range(query, *, from_dt, to_dt):
@@ -1225,10 +1237,13 @@ def distinct_owner_ingest_variants(
         variant_col.isnot(None),
         variant_col != "",
     )
-    if from_dt is not None:
-        query = query.filter(payment_cls.created_at >= from_dt)
-    if to_dt is not None:
-        query = query.filter(payment_cls.created_at <= to_dt)
+    if payment_cls is CryptoPayment:
+        query = _apply_crypto_paid_at_range(query, from_dt=from_dt, to_dt=to_dt)
+    else:
+        if from_dt is not None:
+            query = query.filter(payment_cls.created_at >= from_dt)
+        if to_dt is not None:
+            query = query.filter(payment_cls.created_at <= to_dt)
     rows = query.distinct().order_by(variant_col.asc()).all()
     return [str(row[0]) for row in rows if row[0]]
 
