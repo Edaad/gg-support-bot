@@ -63,9 +63,9 @@ class DepositFunnelDisplayStepsTest(unittest.TestCase):
     def test_display_steps_include_union_for_round_table(self):
         steps = display_funnel_step_order(show_union_step=True)
         self.assertIn(STEP_UNION_CHOSEN, steps)
-        idx_instructions = steps.index(STEP_INSTRUCTIONS_SENT)
+        idx_amount = steps.index(STEP_AMOUNT_ENTERED)
         idx_union = steps.index(STEP_UNION_CHOSEN)
-        self.assertLess(idx_instructions, idx_union)
+        self.assertLess(idx_amount, idx_union)
 
 
 class DepositFunnelLatencyMathTest(unittest.TestCase):
