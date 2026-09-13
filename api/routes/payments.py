@@ -11,7 +11,7 @@ from sqlalchemy import func, case
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
-from api.auth import get_current_admin
+from api.auth import get_current_admin, require_not_gto
 from api.audit_export import build_audit_workbook
 from api.payments_helpers import (
     apply_analytics_chat_exclusion,
@@ -121,7 +121,7 @@ from db.models import (
 router = APIRouter(
     prefix="/api/payments",
     tags=["payments"],
-    dependencies=[Depends(get_current_admin)],
+    dependencies=[Depends(get_current_admin), Depends(require_not_gto)],
 )
 
 _DEFAULT_LIMIT = 50

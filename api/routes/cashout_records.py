@@ -9,7 +9,12 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from api.auth import ROLE_ADMIN, get_current_admin, require_admin
+from api.auth import ROLE_ADMIN, ROLE_GTO, get_current_admin, require_admin
+from api.gto_club import (
+    assert_gto_record_club,
+    require_gto_club_id_for_write,
+    resolve_gto_list_club_id,
+)
 from api.record_csv_export import (
     build_cashout_money_sends_csv,
     build_cashout_records_csv,
@@ -92,6 +97,17 @@ def _to_read(data: dict, club_names: dict[int, str]) -> StaffCashoutRecordRead:
     )
 
 
+def _load_and_assert_gto(record_id: int, role: str, db: Session) -> dict | None:
+    """For GTO, load the record and enforce ClubGTO. Returns data when loaded."""
+    if role != ROLE_GTO:
+        return None
+    data = get_staff_cashout_record(record_id)
+    if not data:
+        raise HTTPException(404, "Cashout record not found")
+    assert_gto_record_club(role, data.get("club_id"), db)
+    return data
+
+
 @router.get("", response_model=StaffCashoutRecordListResponse)
 def list_cashout_records(
     club_id: Optional[int] = Query(None),
@@ -104,10 +120,13 @@ def list_cashout_records(
 ):
     if status == "do_not_send" and role != ROLE_ADMIN:
         raise HTTPException(403, "Admin only")
+    effective_club_id, empty = resolve_gto_list_club_id(role, club_id, db)
+    if empty:
+        return StaffCashoutRecordListResponse(items=[], total=0, limit=limit, offset=offset)
     club_names = _club_name_map(db)
     try:
         rows, total = list_staff_cashout_records(
-            club_id=club_id,
+            club_id=effective_club_id,
             status=status,
             q=q,
             limit=limit,
@@ -129,17 +148,28 @@ def export_cashout_records_csv(
     to_date: str = Query(..., alias="to", description="YYYY-MM-DD (ET, inclusive)"),
     club_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
+    effective_club_id, empty = resolve_gto_list_club_id(role, club_id, db)
     try:
         from_day, to_day = parse_inclusive_date_range(from_date, to_date)
-        content = build_cashout_records_csv(
-            db,
-            from_day=from_day,
-            to_day=to_day,
-            club_id=club_id,
-            status=status,
-        )
+        if empty:
+            content = build_cashout_records_csv(
+                db,
+                from_day=from_day,
+                to_day=to_day,
+                club_id=-1,
+                status=status,
+            )
+        else:
+            content = build_cashout_records_csv(
+                db,
+                from_day=from_day,
+                to_day=to_day,
+                club_id=effective_club_id,
+                status=status,
+            )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     filename = f"cashout-records-{from_day.isoformat()}-to-{to_day.isoformat()}.csv"
@@ -261,11 +291,13 @@ async def patch_cashout_slack_reminder(
 @router.post("", response_model=StaffCashoutRecordRead, status_code=201)
 def create_cashout_record(
     body: StaffCashoutRecordCreate,
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
+    club_id = require_gto_club_id_for_write(role, body.club_id, db)
     try:
         data = create_staff_cashout_record_manual(
-            club_id=body.club_id,
+            club_id=club_id,
             group_title=body.group_title,
             amount=body.amount,
         )
@@ -277,9 +309,11 @@ def create_cashout_record(
 @router.get("/{record_id}", response_model=StaffCashoutRecordRead)
 def get_cashout_record(
     record_id: int,
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
-    data = get_staff_cashout_record(record_id)
+    loaded = _load_and_assert_gto(record_id, role, db)
+    data = loaded if loaded is not None else get_staff_cashout_record(record_id)
     if not data:
         raise HTTPException(404, "Cashout record not found")
     return _to_read(data, _club_name_map(db))
@@ -292,6 +326,7 @@ def patch_cashout_record(
     role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
+    _load_and_assert_gto(record_id, role, db)
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         data = get_staff_cashout_record(record_id)
@@ -320,8 +355,10 @@ def patch_cashout_record(
 def replace_payments(
     record_id: int,
     body: List[StaffCashoutPaymentCreate],
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
+    _load_and_assert_gto(record_id, role, db)
     try:
         data = replace_staff_cashout_payments(
             record_id,
@@ -338,8 +375,10 @@ def replace_payments(
 def add_payment(
     record_id: int,
     body: StaffCashoutPaymentCreate,
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
+    _load_and_assert_gto(record_id, role, db)
     try:
         data = add_staff_cashout_payment(record_id, body.model_dump())
     except ValueError as exc:
@@ -354,8 +393,10 @@ def patch_payment(
     record_id: int,
     payment_id: int,
     body: StaffCashoutPaymentUpdate,
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
+    _load_and_assert_gto(record_id, role, db)
     updates = body.model_dump(exclude_unset=True)
     try:
         data = update_staff_cashout_payment(record_id, payment_id, updates)
@@ -370,8 +411,10 @@ def patch_payment(
 def remove_payment(
     record_id: int,
     payment_id: int,
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
+    _load_and_assert_gto(record_id, role, db)
     data = delete_staff_cashout_payment(record_id, payment_id)
     if not data:
         raise HTTPException(404, "Cashout record or payment not found")
@@ -382,8 +425,10 @@ def remove_payment(
 def add_send(
     record_id: int,
     body: StaffCashoutSendCreate,
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
+    _load_and_assert_gto(record_id, role, db)
     try:
         data = add_staff_cashout_send(record_id, body.model_dump())
     except ValueError as exc:
@@ -398,8 +443,10 @@ def patch_send(
     record_id: int,
     send_id: int,
     body: StaffCashoutSendUpdate,
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
+    _load_and_assert_gto(record_id, role, db)
     try:
         data = update_staff_cashout_send(
             record_id, send_id, body.model_dump(exclude_unset=True)
@@ -415,8 +462,10 @@ def patch_send(
 def remove_send(
     record_id: int,
     send_id: int,
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
+    _load_and_assert_gto(record_id, role, db)
     data = delete_staff_cashout_send(record_id, send_id)
     if not data:
         raise HTTPException(404, "Cashout record or send not found")

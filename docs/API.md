@@ -24,7 +24,7 @@ Base URL is the host where Uvicorn is bound (for example `http://localhost:8000`
 { "password": "string" }
 ```
 
-The password must match `DASHBOARD_PASSWORD` (role `admin`) or, if set, `DASHBOARD_AM_PASSWORD` (role `account_manager`). JWT signing always uses `DASHBOARD_PASSWORD`. Default admin password in code: `changeme`.
+The password must match `DASHBOARD_PASSWORD` (role `admin`), or if set `DASHBOARD_AM_PASSWORD` (role `account_manager`), or if set `DASHBOARD_GTO_PASSWORD` (role `gto`). Collision order: admin, then account_manager, then gto. JWT signing always uses `DASHBOARD_PASSWORD`. Default admin password in code: `changeme`.
 
 **Response** `200` — body:
 
@@ -32,7 +32,7 @@ The password must match `DASHBOARD_PASSWORD` (role `admin`) or, if set, `DASHBOA
 { "token": "string", "role": "admin" }
 ```
 
-`role` is `admin` or `account_manager`. Most API routes accept any valid JWT. **Expenses** (`/api/expenses*`) requires `role=admin` (403 for account managers).
+`role` is `admin`, `account_manager`, or `gto`. Most API routes accept any valid JWT. **Expenses** (`/api/expenses*`) and **Pool Pay** (`/api/manual-deposit-requests*`) require `role=admin`. **Payments ledger** (`/api/payments*`) rejects `gto`. Cashout records and bonus records force ClubGTO for `gto`.
 
 JWT (`HS256`), expires after 24 hours. Implementation: [`api/auth.py`](../api/auth.py).
 
@@ -726,7 +726,7 @@ Types are defined in [`api/schemas.py`](../api/schemas.py). Decimal fields seria
 | Field | Type | Notes |
 |-------|------|--------|
 | `token` | string | |
-| `role` | string | `admin` or `account_manager` (default `admin`) |
+| `role` | string | `admin`, `account_manager`, or `gto` (default `admin`) |
 
 ### ClubCreate
 
@@ -922,6 +922,7 @@ Partial update; all fields optional.
 | `DATABASE_URL` | Required — SQLAlchemy URL |
 | `DASHBOARD_PASSWORD` | JWT signing and admin login password |
 | `DASHBOARD_AM_PASSWORD` | Optional account-manager login password |
+| `DASHBOARD_GTO_PASSWORD` | Optional GTO login password (ClubGTO-scoped cashouts/bonuses) |
 | `TELEGRAM_BOT_TOKEN` | Required for **broadcast** sends |
 
 ---

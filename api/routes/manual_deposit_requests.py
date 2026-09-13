@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session, joinedload
 
-from api.auth import get_current_admin
+from api.auth import require_admin
 from api.payments_helpers import owner_payment_search_clause
 from bot.services.deposit_union_types import validate_deposit_union
 from bot.services.pool_pay_types import pool_pay_type_from_method, validate_pool_pay_type
@@ -34,7 +34,7 @@ from db.models import Club, ClubPaymentMethod, Group, ManualDepositRequest
 router = APIRouter(
     prefix="/api",
     tags=["manual-deposit-requests"],
-    dependencies=[Depends(get_current_admin)],
+    dependencies=[Depends(require_admin)],
 )
 
 _DEFAULT_LIMIT = 50

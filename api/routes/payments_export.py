@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
-from api.auth import get_current_admin
+from api.auth import get_current_admin, require_not_gto
 from api.method_owner import normalize_method_owner
 from api.payments_export import build_payments_workbook
 from api.routes.payments import _get_club_or_404, _parse_dt, _raise_db_schema_error
@@ -21,7 +21,7 @@ from db.connection import get_db_dependency
 router = APIRouter(
     prefix="/api/payments",
     tags=["payments"],
-    dependencies=[Depends(get_current_admin)],
+    dependencies=[Depends(get_current_admin), Depends(require_not_gto)],
 )
 
 

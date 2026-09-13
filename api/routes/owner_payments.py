@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
-from api.auth import get_current_admin
+from api.auth import get_current_admin, require_not_gto
 from api.method_owner import normalize_method_owner
 from api.payments_helpers import (
     OWNER_INGEST_METHODS,
@@ -52,7 +52,7 @@ from db.models import StripeCheckoutSession, StripeCustomer
 router = APIRouter(
     prefix="/api/payments/owner",
     tags=["payments"],
-    dependencies=[Depends(get_current_admin)],
+    dependencies=[Depends(get_current_admin), Depends(require_not_gto)],
 )
 
 _DEFAULT_LIMIT = 50

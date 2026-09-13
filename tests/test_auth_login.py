@@ -1,4 +1,4 @@
-"""Dashboard auth: dual-password login and JWT role claim."""
+"""Dashboard auth: multi-password login and JWT role claim."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from api.app import app
 from api.auth import (
     ROLE_ACCOUNT_MANAGER,
     ROLE_ADMIN,
+    ROLE_GTO,
     create_token,
     resolve_role,
     _get_secret,
@@ -48,6 +49,29 @@ class ResolveRoleTests(unittest.TestCase):
             auth_mod._SECRET = None
             self.assertIsNone(resolve_role("am-secret"))
 
+    def test_gto_password(self):
+        with patch.dict(
+            os.environ,
+            {
+                "DASHBOARD_PASSWORD": "admin-secret",
+                "DASHBOARD_GTO_PASSWORD": "gto-secret",
+            },
+            clear=False,
+        ):
+            import api.auth as auth_mod
+
+            auth_mod._SECRET = None
+            self.assertEqual(resolve_role("gto-secret"), ROLE_GTO)
+
+    def test_gto_unset_rejects(self):
+        env = {"DASHBOARD_PASSWORD": "admin-secret"}
+        with patch.dict(os.environ, env, clear=False):
+            os.environ.pop("DASHBOARD_GTO_PASSWORD", None)
+            import api.auth as auth_mod
+
+            auth_mod._SECRET = None
+            self.assertIsNone(resolve_role("gto-secret"))
+
     def test_admin_wins_when_passwords_match(self):
         with patch.dict(
             os.environ,
@@ -59,6 +83,21 @@ class ResolveRoleTests(unittest.TestCase):
             auth_mod._SECRET = None
             self.assertEqual(resolve_role("same"), ROLE_ADMIN)
 
+    def test_am_wins_over_gto_when_passwords_match(self):
+        with patch.dict(
+            os.environ,
+            {
+                "DASHBOARD_PASSWORD": "admin-secret",
+                "DASHBOARD_AM_PASSWORD": "shared",
+                "DASHBOARD_GTO_PASSWORD": "shared",
+            },
+            clear=False,
+        ):
+            import api.auth as auth_mod
+
+            auth_mod._SECRET = None
+            self.assertEqual(resolve_role("shared"), ROLE_ACCOUNT_MANAGER)
+
 
 class LoginRouteTests(unittest.TestCase):
     def setUp(self):
@@ -67,7 +106,11 @@ class LoginRouteTests(unittest.TestCase):
         auth_mod._SECRET = None
         self.env_patch = patch.dict(
             os.environ,
-            {"DASHBOARD_PASSWORD": "admin-secret", "DASHBOARD_AM_PASSWORD": "am-secret"},
+            {
+                "DASHBOARD_PASSWORD": "admin-secret",
+                "DASHBOARD_AM_PASSWORD": "am-secret",
+                "DASHBOARD_GTO_PASSWORD": "gto-secret",
+            },
             clear=False,
         )
         self.env_patch.start()
@@ -96,6 +139,14 @@ class LoginRouteTests(unittest.TestCase):
         self.assertEqual(body["role"], ROLE_ACCOUNT_MANAGER)
         payload = jwt.decode(body["token"], _get_secret(), algorithms=["HS256"])
         self.assertEqual(payload["role"], ROLE_ACCOUNT_MANAGER)
+
+    def test_gto_login(self):
+        r = self.client.post("/api/auth/login", json={"password": "gto-secret"})
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["role"], ROLE_GTO)
+        payload = jwt.decode(body["token"], _get_secret(), algorithms=["HS256"])
+        self.assertEqual(payload["role"], ROLE_GTO)
 
     def test_invalid_password(self):
         r = self.client.post("/api/auth/login", json={"password": "wrong"})

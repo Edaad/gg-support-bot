@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 
 from db.connection import get_db_dependency
 
-from api.auth import get_current_admin
+from api.auth import ROLE_GTO, get_current_admin
+from api.gto_club import (
+    assert_gto_record_club,
+    require_gto_club_id_for_write,
+    resolve_gto_list_club_id,
+)
 from api.record_csv_export import (
     build_bonus_records_csv,
     csv_streaming_response,
@@ -27,7 +32,7 @@ from bot.services.bonus_records import (
     list_bonus_records as list_bonus_record_rows,
     update_bonus_record,
 )
-from db.models import BonusType
+from db.models import BonusRecord, BonusType
 
 router = APIRouter(
     prefix="/api/bonus",
@@ -38,6 +43,15 @@ router = APIRouter(
 
 def _to_read(data: dict) -> BonusRecordRead:
     return BonusRecordRead.model_validate(data)
+
+
+def _load_bonus_and_assert_gto(record_id: int, role: str, db: Session) -> None:
+    if role != ROLE_GTO:
+        return
+    record = db.query(BonusRecord).get(record_id)
+    if not record:
+        raise HTTPException(404, "Bonus record not found")
+    assert_gto_record_club(role, record.club_id, db)
 
 
 @router.get("/types", response_model=List[BonusTypeRead])
@@ -93,11 +107,16 @@ def list_bonus_records(
     bonus_type_id: Optional[int] = Query(None),
     other: bool = Query(False),
     q: Optional[str] = Query(None),
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
 ):
+    effective_club_id, empty = resolve_gto_list_club_id(role, club_id, db)
+    if empty:
+        return []
     return [
         _to_read(row)
         for row in list_bonus_record_rows(
-            club_id=club_id,
+            club_id=effective_club_id,
             bonus_type_id=bonus_type_id,
             other=other,
             q=q,
@@ -112,18 +131,30 @@ def export_bonus_records_csv(
     club_id: Optional[int] = Query(None),
     bonus_type_id: Optional[int] = Query(None),
     other: bool = Query(False),
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
+    effective_club_id, empty = resolve_gto_list_club_id(role, club_id, db)
     try:
         from_day, to_day = parse_inclusive_date_range(from_date, to_date)
-        content = build_bonus_records_csv(
-            db,
-            from_day=from_day,
-            to_day=to_day,
-            club_id=club_id,
-            bonus_type_id=bonus_type_id,
-            other=other,
-        )
+        if empty:
+            content = build_bonus_records_csv(
+                db,
+                from_day=from_day,
+                to_day=to_day,
+                club_id=-1,
+                bonus_type_id=bonus_type_id,
+                other=other,
+            )
+        else:
+            content = build_bonus_records_csv(
+                db,
+                from_day=from_day,
+                to_day=to_day,
+                club_id=effective_club_id,
+                bonus_type_id=bonus_type_id,
+                other=other,
+            )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     filename = f"bonus-records-{from_day.isoformat()}-to-{to_day.isoformat()}.csv"
@@ -131,10 +162,15 @@ def export_bonus_records_csv(
 
 
 @router.post("/records", response_model=BonusRecordRead, status_code=201)
-def create_bonus_record_api(body: BonusRecordCreate):
+def create_bonus_record_api(
+    body: BonusRecordCreate,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    club_id = require_gto_club_id_for_write(role, body.club_id, db)
     try:
         data = create_bonus_record(
-            club_id=body.club_id,
+            club_id=club_id,
             group_title=body.group_title,
             amount=body.amount,
             bonus_type_id=body.bonus_type_id,
@@ -147,9 +183,18 @@ def create_bonus_record_api(body: BonusRecordCreate):
 
 
 @router.patch("/records/{record_id}", response_model=BonusRecordRead)
-def update_bonus_record_api(record_id: int, body: BonusRecordUpdate):
+def update_bonus_record_api(
+    record_id: int,
+    body: BonusRecordUpdate,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    _load_bonus_and_assert_gto(record_id, role, db)
+    updates = body.model_dump(exclude_unset=True)
+    if "club_id" in updates and updates["club_id"] is not None:
+        updates["club_id"] = require_gto_club_id_for_write(role, int(updates["club_id"]), db)
     try:
-        data = update_bonus_record(record_id, **body.model_dump(exclude_unset=True))
+        data = update_bonus_record(record_id, **updates)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     if not data:
@@ -158,6 +203,11 @@ def update_bonus_record_api(record_id: int, body: BonusRecordUpdate):
 
 
 @router.delete("/records/{record_id}", status_code=204)
-def delete_bonus_record_api(record_id: int):
+def delete_bonus_record_api(
+    record_id: int,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    _load_bonus_and_assert_gto(record_id, role, db)
     if not delete_bonus_record(record_id):
         raise HTTPException(404, "Bonus record not found")

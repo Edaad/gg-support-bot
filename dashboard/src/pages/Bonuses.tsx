@@ -16,6 +16,7 @@ import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
 import { downloadBonusRecordsCsv } from '../api/csvExportClient'
 import { formatEasternDateTime, fromEasternDatetimeLocalValue, toEasternDatetimeLocalValue } from '../lib/easternTime'
+import { GTO_CLUB_NAME, type DashboardRole } from '../lib/rbac'
 
 function recordMatchesSearch(r: BonusRecordT, needle: string) {
   const n = needle.toLowerCase()
@@ -29,8 +30,15 @@ function recordMatchesSearch(r: BonusRecordT, needle: string) {
   ].some((v) => v && String(v).toLowerCase().includes(n))
 }
 
-export default function Bonuses({ token }: { token: string }) {
+export default function Bonuses({
+  token,
+  role,
+}: {
+  token: string
+  role: DashboardRole
+}) {
   const askConfirm = useConfirm()
+  const isGto = role === 'gto'
   const [records, setRecords] = useState<BonusRecordT[]>([])
   const [clubs, setClubs] = useState<Club[]>([])
   const [types, setTypes] = useState<BonusTypeT[]>([])
@@ -86,9 +94,17 @@ export default function Bonuses({ token }: { token: string }) {
   }, [token, clubFilter, typeFilter, q])
 
   useEffect(() => {
-    listClubs(token).then(setClubs).catch(() => undefined)
+    listClubs(token)
+      .then((rows) => {
+        const scoped = isGto ? rows.filter((c) => c.name === GTO_CLUB_NAME) : rows
+        setClubs(scoped)
+        if (isGto && scoped[0]) {
+          setClubFilter(String(scoped[0].id))
+        }
+      })
+      .catch(() => undefined)
     listBonusTypes(token).then(setTypes).catch(() => undefined)
-  }, [token])
+  }, [token, isGto])
 
   const needle = search.trim().toLowerCase()
   const visible = needle ? records.filter((r) => recordMatchesSearch(r, needle)) : records
@@ -231,8 +247,9 @@ export default function Bonuses({ token }: { token: string }) {
             value={clubFilter}
             onChange={(e) => setClubFilter(e.target.value)}
             className="input-field-sm min-w-[12rem]"
+            disabled={isGto}
           >
-            <option value="">All clubs</option>
+            {!isGto && <option value="">All clubs</option>}
             {clubs.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -376,6 +393,7 @@ export default function Bonuses({ token }: { token: string }) {
               value={clubId}
               onChange={(e) => setClubId(e.target.value)}
               className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+              disabled={isGto}
             >
               {clubs.length === 0 && <option value="">No clubs</option>}
               {clubs.map((c) => (

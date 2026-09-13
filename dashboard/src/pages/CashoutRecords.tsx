@@ -32,6 +32,7 @@ import {
   formatEasternDateTime,
 } from '../lib/easternTime'
 import type { DashboardRole } from '../lib/rbac'
+import { GTO_CLUB_NAME } from '../lib/rbac'
 
 type PageTab = CashoutLedgerStatus | 'money_sent'
 
@@ -117,6 +118,7 @@ export default function CashoutRecords({
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const isAdmin = role === 'admin'
+  const isGto = role === 'gto'
   const [tab, setTab] = useState<PageTab>('active')
   const [records, setRecords] = useState<StaffCashoutRecordT[]>([])
   const [sends, setSends] = useState<StaffCashoutMoneySendLedgerT[]>([])
@@ -326,8 +328,16 @@ export default function CashoutRecords({
   }, [token, tab, clubFilter, q, fromDate, toDate, methodFilter, page])
 
   useEffect(() => {
-    listClubs(token).then(setClubs).catch(() => undefined)
-  }, [token])
+    listClubs(token)
+      .then((rows) => {
+        const scoped = isGto ? rows.filter((c) => c.name === GTO_CLUB_NAME) : rows
+        setClubs(scoped)
+        if (isGto && scoped[0]) {
+          setClubFilter(String(scoped[0].id))
+        }
+      })
+      .catch(() => undefined)
+  }, [token, isGto])
 
   useEffect(() => {
     if (!createOpen || !clubId) {
@@ -509,8 +519,9 @@ export default function CashoutRecords({
             value={clubFilter}
             onChange={(e) => setClubFilter(e.target.value)}
             className="input-field-sm min-w-[12rem]"
+            disabled={isGto}
           >
-            <option value="">All clubs</option>
+            {!isGto && <option value="">All clubs</option>}
             {clubs.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -767,6 +778,7 @@ export default function CashoutRecords({
                 setCreateChoice(emptyChoice())
               }}
               className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+              disabled={isGto}
             >
               {clubs.length === 0 && <option value="">No clubs</option>}
               {clubs.map((c) => (

@@ -3,7 +3,6 @@ import type { ReactNode } from 'react'
 import ThemeToggle from './ThemeToggle'
 import {
   ADMIN_SECTION_HOME,
-  canAccessPath,
   homePathForRole,
   isAdminSectionPath,
   type DashboardRole,
@@ -13,8 +12,8 @@ type NavLinkItem = { to: string; label: string; external?: boolean }
 
 const RAKEBACK_URL = 'https://elevateautomations.io/'
 
-/** Top-level links in display order (Admin is injected separately for admins). */
-const TOP_NAV: NavLinkItem[] = [
+/** Admin top-level links (Admin is injected separately). */
+const ADMIN_TOP_NAV: NavLinkItem[] = [
   { to: '/payments', label: 'Payments' },
   { to: '/manual-deposit-requests', label: 'Pool Pay' },
   { to: '/bonuses', label: 'Bonuses' },
@@ -22,6 +21,19 @@ const TOP_NAV: NavLinkItem[] = [
   { to: '/cashout-records', label: 'Cashout records' },
   { to: RAKEBACK_URL, label: 'Rakeback', external: true },
   { to: '/settings', label: 'Settings' },
+]
+
+const AM_TOP_NAV: NavLinkItem[] = [
+  { to: '/cashout-records', label: 'Cashout records' },
+  { to: '/payments', label: 'Payments' },
+  { to: '/bonuses', label: 'Bonuses' },
+  { to: RAKEBACK_URL, label: 'Rakeback', external: true },
+]
+
+const GTO_TOP_NAV: NavLinkItem[] = [
+  { to: '/cashout-records', label: 'Cashout records' },
+  { to: '/bonuses', label: 'Bonuses' },
+  { to: RAKEBACK_URL, label: 'Rakeback', external: true },
 ]
 
 const ADMIN_SUBNAV: NavLinkItem[] = [
@@ -32,6 +44,12 @@ const ADMIN_SUBNAV: NavLinkItem[] = [
   { to: '/telegram-login', label: 'Telegram login' },
   { to: '/weekly-stats', label: 'Weekly stats' },
 ]
+
+function topNavForRole(role: DashboardRole): NavLinkItem[] {
+  if (role === 'account_manager') return AM_TOP_NAV
+  if (role === 'gto') return GTO_TOP_NAV
+  return ADMIN_TOP_NAV
+}
 
 function isNavActive(pathname: string, to: string): boolean {
   if (to === '/clubs') return pathname === '/clubs' || pathname.startsWith('/clubs/')
@@ -63,7 +81,7 @@ export default function Layout({
   const { pathname } = useLocation()
   const isAdmin = role === 'admin'
   const showAdminSubnav = isAdmin && isAdminSectionPath(pathname)
-  const topItems = TOP_NAV.filter((n) => n.external || canAccessPath(role, n.to))
+  const topItems = topNavForRole(role)
 
   return (
     <div className="min-h-screen bg-bg text-ink">

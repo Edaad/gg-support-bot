@@ -28,7 +28,8 @@ Heroku-style split: `web` runs Uvicorn, `worker` runs the support bot, `cashier`
 | `TELEGRAM_CASHIER_BOT_TOKEN` | Yes (cashier) | Separate GGCashier bot token for staff cashout wizard. |
 | `ZAPIER_CASHOUT_WEBHOOK_URL` | No | Zapier webhook for completed cashouts (Glide). Defaults to production URL when unset in code; omit to skip POST in dev. |
 | `DASHBOARD_PASSWORD` | No | Admin dashboard login password and JWT signing secret. Defaults to `changeme` — **set in production**. |
-| `DASHBOARD_AM_PASSWORD` | No | Optional account-manager login. Same JWT signing secret as above; UI limited to Payments, Bonuses, Cashout records. |
+| `DASHBOARD_AM_PASSWORD` | No | Optional account-manager login. Same JWT signing secret as above; UI limited to Cashout records, Payments, Bonuses. |
+| `DASHBOARD_GTO_PASSWORD` | No | Optional GTO login. Same JWT signing secret as above; UI limited to Cashout records and Bonuses (ClubGTO only). |
 | `TG_API_ID` | Yes for `/gc` | Integer app id from [my.telegram.org](https://my.telegram.org/apps) — used only for MTProto (Telethon) sessions that create megagroups. |
 | `TG_API_HASH` | Yes for `/gc` | Api hash paired with `TG_API_ID`. Do not expose publicly. |
 | `GC_DM_GC_LISTENER_ENABLED` | No | **Default on.** Telethon runs `/gc` when a player **DMs the club MTProto account** (any incoming private message) and when staff send **`/gc` in a private DM with a player** (outgoing). Set to `false` / `0` / `no` / `off` to disable. Use **one** bot worker only (same MTProto session must not connect twice). |

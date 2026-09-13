@@ -1,14 +1,18 @@
-export type DashboardRole = 'admin' | 'account_manager'
+export type DashboardRole = 'admin' | 'account_manager' | 'gto'
 
 export const ROLE_STORAGE_KEY = 'dashboard_role'
 
+export const GTO_CLUB_NAME = 'ClubGTO'
+
 /** Paths account_manager may open (prefix match for nested routes). */
 export const ACCOUNT_MANAGER_PATHS = [
-  '/payments',
-  '/manual-deposit-requests',
-  '/bonuses',
   '/cashout-records',
+  '/payments',
+  '/bonuses',
 ] as const
+
+/** Paths gto may open (prefix match for nested routes). */
+export const GTO_PATHS = ['/cashout-records', '/bonuses'] as const
 
 /** Paths that live under the Admin two-level nav (admin only). */
 export const ADMIN_SECTION_PATHS = [
@@ -24,18 +28,24 @@ export const ADMIN_SECTION_HOME = '/clubs'
 
 export function normalizeRole(raw: string | null | undefined): DashboardRole {
   if (raw === 'account_manager') return 'account_manager'
+  if (raw === 'gto') return 'gto'
   return 'admin'
 }
 
 export function homePathForRole(role: DashboardRole): string {
-  return role === 'account_manager' ? '/payments' : '/clubs'
+  if (role === 'account_manager' || role === 'gto') return '/cashout-records'
+  return '/clubs'
+}
+
+function pathAllowed(paths: readonly string[], pathname: string): boolean {
+  return paths.some((p) => pathname === p || pathname.startsWith(`${p}/`))
 }
 
 export function canAccessPath(role: DashboardRole, pathname: string): boolean {
-  if (role !== 'account_manager') return true
-  return ACCOUNT_MANAGER_PATHS.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`),
-  )
+  if (role === 'admin') return true
+  if (role === 'account_manager') return pathAllowed(ACCOUNT_MANAGER_PATHS, pathname)
+  if (role === 'gto') return pathAllowed(GTO_PATHS, pathname)
+  return false
 }
 
 export function isAdminSectionPath(pathname: string): boolean {

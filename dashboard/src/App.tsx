@@ -84,7 +84,7 @@ export default function App() {
               <Route path="/settings" element={<Settings token={token} />} />
               <Route path="/telegram-login" element={<TelegramLogin token={token} />} />
               <Route path="/bonus-types" element={<BonusTypes token={token} />} />
-              <Route path="/bonuses" element={<Bonuses token={token} />} />
+              <Route path="/bonuses" element={<Bonuses token={token} role={role} />} />
               <Route path="/expenses" element={<Expenses token={token} />} />
               <Route path="/cashout-records" element={<CashoutRecords token={token} role={role} />} />
               <Route path="/cashout-records/:id" element={<CashoutRecordDetail token={token} role={role} />} />
