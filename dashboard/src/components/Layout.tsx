@@ -33,7 +33,6 @@ const AM_TOP_NAV: NavLinkItem[] = [
 const GTO_TOP_NAV: NavLinkItem[] = [
   { to: '/cashout-records', label: 'Cashout records' },
   { to: '/bonuses', label: 'Bonuses' },
-  { to: RAKEBACK_URL, label: 'Rakeback', external: true },
 ]
 
 const ADMIN_SUBNAV: NavLinkItem[] = [
