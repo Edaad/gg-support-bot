@@ -446,6 +446,12 @@ heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py --app
 
 Dashboard **Cashout records** admin toggle **5 min Slack reminder** posts one urgent message per overdue Active cashout to `SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID` (same bot token as escalation). Requires `migrate_staff_cashout_slack_reminder.py`. Optional `DASHBOARD_PUBLIC_URL` (else `https://{HEROKU_APP_NAME}.herokuapp.com`) for the Slack **Open cashout** link. Worker polls every 30s; per-record cadence is 5 minutes. Turning the toggle on fires immediately.
 
+After a successful Slack send, the same reminder also posts to **Pushover** when both `PUSHOVER_APP_TOKEN` and `PUSHOVER_USER_KEY` are set (user or group key). Priority `1` (bypasses quiet hours). If either env is unset, Slack-only. Pushover failure does not block stamping `last_slack_reminder_at` (additive fan-out; no extra schema).
+
+```bash
+heroku config:set PUSHOVER_APP_TOKEN=... PUSHOVER_USER_KEY=... -a YOUR_APP
+```
+
 Dashboard **Cashout records** and **Bonuses** pages include CSV export (inclusive ET date range: cashouts on `created_at`, bonuses on `issued_at`). JWT API: `GET /api/cashout-records/export?from=…&to=…` and `GET /api/bonus/records/export?from=…&to=…`.
 
 Dashboard **Expenses** (admin only) uses `expenses` and XLSX export: `GET /api/expenses/export?from=…&to=…` (plus optional `club_id`, `pending`, `q`).

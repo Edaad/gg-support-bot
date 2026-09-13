@@ -88,6 +88,25 @@ def format_cashout_slack_reminder(
     return "\n".join(lines)
 
 
+def format_cashout_pushover_reminder(
+    *,
+    group_title: str,
+    remaining: Any,
+) -> str:
+    """Plain-text body for Pushover (no Slack mrkdwn)."""
+    title = (group_title or "").strip() or "(unnamed)"
+    return "\n".join(
+        [
+            "Contact head admins immediately to cash the following player "
+            "on the Hub who has been waiting longer than 5 minutes:",
+            "",
+            title,
+            "",
+            f"Remaining: {format_remaining_money(remaining)}",
+        ]
+    )
+
+
 def _ensure_control_row(session) -> StaffCashoutSlackReminderControl:
     row = (
         session.query(StaffCashoutSlackReminderControl)
@@ -212,7 +231,8 @@ def list_due_cashout_reminders(
 async def send_due_cashout_reminders(
     now: datetime | None = None,
 ) -> int:
-    """Post head-admin Slack for each due cashout. Returns count sent."""
+    """Post head-admin Slack (then Pushover) for each due cashout. Returns count sent."""
+    from bot.services.pushover_notify import notify_pushover
     from bot.services.slack_ops_notify import notify_slack_head_admin_escalation
 
     due = list_due_cashout_reminders(now=now)
@@ -231,10 +251,12 @@ async def send_due_cashout_reminders(
     ping_at = _now_naive_utc()
     for item in due:
         record_id = int(item["id"])
+        group_title = str(item.get("group_title") or "")
+        remaining = item.get("remaining")
         url = f"{base}/cashout-records/{record_id}" if base else None
         text = format_cashout_slack_reminder(
-            group_title=str(item.get("group_title") or ""),
-            remaining=item.get("remaining"),
+            group_title=group_title,
+            remaining=remaining,
             record_id=record_id,
             dashboard_url=url,
         )
@@ -246,6 +268,25 @@ async def send_due_cashout_reminders(
             )
             continue
 
+        # Additive: Pushover only after Slack succeeds. Stamp regardless of
+        # Pushover outcome so we do not re-fire every 30s poll.
+        push_ok = await notify_pushover(
+            format_cashout_pushover_reminder(
+                group_title=group_title,
+                remaining=remaining,
+            ),
+            title="URGENT cashout",
+            url=url,
+            url_title="Open cashout",
+            priority=1,
+            source=SLACK_SOURCE,
+        )
+        if not push_ok:
+            logger.warning(
+                "cashout_slack_reminder: pushover failed record_id=%s",
+                record_id,
+            )
+
         with get_db() as session:
             row = (
                 session.query(StaffCashoutRecord)
@@ -256,9 +297,10 @@ async def send_due_cashout_reminders(
                 row.last_slack_reminder_at = ping_at
         sent += 1
         logger.info(
-            "cashout_slack_reminder: sent record_id=%s title=%r",
+            "cashout_slack_reminder: sent record_id=%s title=%r pushover=%s",
             record_id,
             item.get("group_title"),
+            push_ok,
         )
 
     return sent
