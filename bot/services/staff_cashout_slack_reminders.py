@@ -20,7 +20,6 @@ REMINDER_INTERVAL = timedelta(minutes=5)
 JOB_POLL_INTERVAL = timedelta(seconds=30)
 SLACK_SOURCE = "cashout_slack_reminder"
 DASHBOARD_PUBLIC_URL_ENV = "DASHBOARD_PUBLIC_URL"
-HEROKU_APP_NAME_ENV = "HEROKU_APP_NAME"
 
 
 def _naive_utc(dt: datetime | None) -> datetime | None:
@@ -46,12 +45,7 @@ def format_remaining_money(amount: Any) -> str:
 
 def dashboard_public_base_url() -> str | None:
     raw = (os.getenv(DASHBOARD_PUBLIC_URL_ENV) or "").strip().rstrip("/")
-    if raw:
-        return raw
-    app_name = (os.getenv(HEROKU_APP_NAME_ENV) or "").strip()
-    if app_name:
-        return f"https://{app_name}.herokuapp.com"
-    return None
+    return raw or None
 
 
 def cashout_record_dashboard_url(record_id: int) -> str | None:
@@ -244,9 +238,8 @@ async def send_due_cashout_reminders(
     base = dashboard_public_base_url()
     if not base:
         logger.warning(
-            "cashout_slack_reminder: %s / %s unset; Open cashout link omitted",
+            "cashout_slack_reminder: %s unset; Open cashout link omitted",
             DASHBOARD_PUBLIC_URL_ENV,
-            HEROKU_APP_NAME_ENV,
         )
 
     sent = 0

@@ -470,7 +470,17 @@ export const getCashoutRecord = (token: string, id: number) =>
 
 export const createCashoutRecord = (
   token: string,
-  data: { club_id: number; group_title: string; amount: number },
+  data: {
+    club_id: number
+    group_title: string
+    amount: number
+    payments: Array<{
+      payment_method_id?: number | null
+      payment_sub_option_id?: number | null
+      method_display_name?: string | null
+      payout_details?: string | null
+    }>
+  },
 ) =>
   request<StaffCashoutRecordT>(`/cashout-records`, {
     method: 'POST',
@@ -485,6 +495,11 @@ export const updateCashoutRecord = (
   request<StaffCashoutRecordT>(`/cashout-records/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
+  }, token)
+
+export const deleteCashoutRecord = (token: string, id: number) =>
+  request<void>(`/cashout-records/${id}`, {
+    method: 'DELETE',
   }, token)
 
 export type CashoutSlackReminderT = { enabled: boolean }
@@ -554,6 +569,21 @@ export const addCashoutPayment = (
   request<StaffCashoutRecordT>(`/cashout-records/${recordId}/payments`, {
     method: 'POST',
     body: JSON.stringify(data),
+  }, token)
+
+export const replaceCashoutPayments = (
+  token: string,
+  recordId: number,
+  payments: Array<{
+    payment_method_id?: number | null
+    payment_sub_option_id?: number | null
+    method_display_name?: string | null
+    payout_details?: string | null
+  }>,
+) =>
+  request<StaffCashoutRecordT>(`/cashout-records/${recordId}/payments`, {
+    method: 'PUT',
+    body: JSON.stringify(payments),
   }, token)
 
 export const updateCashoutPayment = (

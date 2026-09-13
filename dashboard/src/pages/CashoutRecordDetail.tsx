@@ -1,19 +1,22 @@
 import { useEffect, useState } from 'react'
-import { Link, useLocation, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
-  addCashoutPayment,
   addCashoutSend,
-  deleteCashoutPayment,
+  deleteCashoutRecord,
   deleteCashoutSend,
   getCashoutRecord,
-  updateCashoutPayment,
+  replaceCashoutPayments,
   updateCashoutRecord,
   updateCashoutSend,
-  type StaffCashoutPaymentT,
   type StaffCashoutRecordT,
   type StaffCashoutSendT,
 } from '../api/client'
 import { listV2Methods, type V2Method } from '../api/v2Client'
+import CashoutDestinationList, {
+  collectDestinationPayloads,
+  rowsFromPayments,
+  type DestinationRow,
+} from '../components/CashoutDestinationList'
 import CashoutMethodFields, {
   choicePayload,
   fmtMoney,
@@ -44,23 +47,6 @@ const emptyChoice = (): MethodChoice => ({
   custom_name: '',
 })
 
-function choiceFromPayment(p: StaffCashoutPaymentT): MethodChoice {
-  if (p.payment_method_id == null) {
-    return {
-      custom: true,
-      payment_method_id: null,
-      payment_sub_option_id: null,
-      custom_name: p.method_display_name || '',
-    }
-  }
-  return {
-    custom: false,
-    payment_method_id: p.payment_method_id,
-    payment_sub_option_id: p.payment_sub_option_id,
-    custom_name: '',
-  }
-}
-
 function choiceFromSend(s: StaffCashoutSendT): MethodChoice {
   if (s.payment_method_id == null) {
     return {
@@ -87,6 +73,7 @@ export default function CashoutRecordDetail({
 }) {
   const { id } = useParams()
   const location = useLocation()
+  const navigate = useNavigate()
   const recordId = Number(id)
   const askConfirm = useConfirm()
   const isAdmin = role === 'admin'
@@ -100,15 +87,11 @@ export default function CashoutRecordDetail({
   const backTo = `/cashout-records${listSearch}`
   const [record, setRecord] = useState<StaffCashoutRecordT | null>(null)
   const [methods, setMethods] = useState<V2Method[]>([])
+  const [destRows, setDestRows] = useState<DestinationRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [originalDraft, setOriginalDraft] = useState('')
-
-  const [destOpen, setDestOpen] = useState(false)
-  const [destEdit, setDestEdit] = useState<StaffCashoutPaymentT | null>(null)
-  const [destChoice, setDestChoice] = useState<MethodChoice>(emptyChoice())
-  const [destDetails, setDestDetails] = useState('')
 
   const [sendOpen, setSendOpen] = useState(false)
   const [sendEdit, setSendEdit] = useState<StaffCashoutSendT | null>(null)
@@ -116,16 +99,23 @@ export default function CashoutRecordDetail({
   const [sendName, setSendName] = useState('')
   const [sendAmount, setSendAmount] = useState('')
 
+  const syncDestRows = (next: StaffCashoutRecordT, clubMethods: V2Method[]) => {
+    setDestRows(rowsFromPayments(clubMethods, next.payments))
+  }
+
   const load = async () => {
     if (!Number.isFinite(recordId)) return
     setLoading(true)
     setError(null)
     try {
       const row = await getCashoutRecord(token, recordId)
-      setRecord(applyRecord(row))
+      const applied = applyRecord(row)
+      setRecord(applied)
       setOriginalDraft(String(row.amount))
       const clubMethods = await listV2Methods(token, row.club_id, 'cashout')
-      setMethods(clubMethods.filter((m) => m.is_active && m.slug !== 'chips'))
+      const active = clubMethods.filter((m) => m.is_active && m.slug !== 'chips')
+      setMethods(active)
+      syncDestRows(applied, active)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load')
     } finally {
@@ -143,20 +133,15 @@ export default function CashoutRecordDetail({
       const next = applyRecord(row)
       setRecord(next)
       setOriginalDraft(String(next.amount))
+      syncDestRows(next, methods)
     } catch {
       if (fallback) {
         const next = applyRecord(fallback)
         setRecord(next)
         setOriginalDraft(String(next.amount))
+        syncDestRows(next, methods)
       }
     }
-  }
-
-  const openDest = (p?: StaffCashoutPaymentT) => {
-    setDestEdit(p ?? null)
-    setDestChoice(p ? choiceFromPayment(p) : emptyChoice())
-    setDestDetails(p?.payout_details || '')
-    setDestOpen(true)
   }
 
   const openSend = (s?: StaffCashoutSendT) => {
@@ -202,20 +187,18 @@ export default function CashoutRecordDetail({
     }
   }
 
-  const saveDest = async () => {
+  const saveDestinations = async () => {
     if (!record) return
-    const payload = {
-      ...choicePayload(destChoice),
-      payout_details: destDetails.trim() || null,
+    const collected = collectDestinationPayloads(destRows, methods)
+    if (!collected.ok) {
+      setError(collected.error)
+      return
     }
     setSaving(true)
     setError(null)
     try {
-      const updated = destEdit
-        ? await updateCashoutPayment(token, record.id, destEdit.id, payload)
-        : await addCashoutPayment(token, record.id, payload)
+      const updated = await replaceCashoutPayments(token, record.id, collected.payments)
       await refreshRecord(updated)
-      setDestOpen(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed')
     } finally {
@@ -223,22 +206,22 @@ export default function CashoutRecordDetail({
     }
   }
 
-  const removeDest = async (p: StaffCashoutPaymentT) => {
+  const handleDeleteRecord = async () => {
     if (!record) return
     const ok = await askConfirm({
-      title: 'Remove destination?',
-      message: 'This does not delete money-sent rows.',
-      confirmLabel: 'Remove',
+      title: 'Delete cashout?',
+      message: `Permanently delete ${record.group_title} (${fmtMoney(Number(record.amount))})? Destinations and money-sent rows are removed.`,
+      confirmLabel: 'Delete',
       destructive: true,
     })
     if (!ok) return
     setSaving(true)
     setError(null)
     try {
-      await refreshRecord(await deleteCashoutPayment(token, record.id, p.id))
+      await deleteCashoutRecord(token, record.id)
+      navigate(backTo)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Delete failed')
-    } finally {
       setSaving(false)
     }
   }
@@ -248,6 +231,21 @@ export default function CashoutRecordDetail({
     const amount = parseMoney(sendAmount)
     if (!sendName.trim() || !amount || amount <= 0) {
       setError('Name and amount are required')
+      return
+    }
+    const hasMethod = sendChoice.custom
+      ? Boolean(sendChoice.custom_name.trim())
+      : sendChoice.payment_method_id != null
+    if (!hasMethod) {
+      setError('Payment method is required')
+      return
+    }
+    if (
+      !sendChoice.custom &&
+      methods.find((m) => m.id === sendChoice.payment_method_id)?.has_sub_options &&
+      sendChoice.payment_sub_option_id == null
+    ) {
+      setError('Sub-option is required for this method')
       return
     }
     const currentSent = Number(record.sent)
@@ -302,14 +300,6 @@ export default function CashoutRecordDetail({
     }
   }
 
-  const copyDetails = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      setError('Could not copy')
-    }
-  }
-
   if (loading && !record) {
     return <p className="text-sm text-ink-muted">Loading…</p>
   }
@@ -326,9 +316,19 @@ export default function CashoutRecordDetail({
 
   return (
     <div>
-      <Link to={backTo} className="text-sm text-accent hover:underline">
-        Back to cashout records
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link to={backTo} className="text-sm text-accent hover:underline">
+          Back to cashout records
+        </Link>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => void handleDeleteRecord()}
+          className="btn-danger-outline"
+        >
+          Delete cashout
+        </button>
+      </div>
 
       {error && (
         <div className="mt-4 rounded-lg border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger-ink">
@@ -403,51 +403,18 @@ export default function CashoutRecordDetail({
       </div>
 
       <section className="mt-8">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold">Methods</h2>
-          <button type="button" onClick={() => openDest()} className="btn-primary-sm" disabled={saving}>
-            Add
+          <button
+            type="button"
+            onClick={() => void saveDestinations()}
+            className="btn-primary-sm"
+            disabled={saving}
+          >
+            Save methods
           </button>
         </div>
-        {record.payments.length === 0 ? (
-          <p className="text-sm text-ink-muted">No destinations yet.</p>
-        ) : (
-          <ul className="space-y-3">
-            {record.payments.map((p) => (
-              <li
-                key={p.id}
-                className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0">
-                  <p className="font-medium text-ink">{p.method_display_name || '—'}</p>
-                  <p className="mt-1 break-all text-sm text-ink-muted">{p.payout_details || '—'}</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {p.payout_details && (
-                    <button
-                      type="button"
-                      className="btn-secondary-sm"
-                      onClick={() => copyDetails(p.payout_details || '')}
-                    >
-                      Copy
-                    </button>
-                  )}
-                  <button type="button" className="btn-secondary-sm" onClick={() => openDest(p)}>
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-danger-outline"
-                    onClick={() => removeDest(p)}
-                    disabled={saving}
-                  >
-                    Remove
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        <CashoutDestinationList methods={methods} rows={destRows} onChange={setDestRows} />
       </section>
 
       <section className="mt-8">
@@ -492,28 +459,6 @@ export default function CashoutRecordDetail({
           </ul>
         )}
       </section>
-
-      <Modal
-        open={destOpen}
-        onClose={() => setDestOpen(false)}
-        title={destEdit ? 'Edit destination' : 'Add destination'}
-      >
-        <div className="space-y-4">
-          <CashoutMethodFields methods={methods} choice={destChoice} onChange={setDestChoice} />
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-muted">Payout details</label>
-            <input
-              value={destDetails}
-              onChange={(e) => setDestDetails(e.target.value)}
-              placeholder="Handle, phone, address…"
-              className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
-            />
-          </div>
-          <button type="button" onClick={saveDest} disabled={saving} className="btn-primary w-full">
-            Save
-          </button>
-        </div>
-      </Modal>
 
       <Modal
         open={sendOpen}

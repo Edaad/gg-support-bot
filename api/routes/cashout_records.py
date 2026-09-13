@@ -48,6 +48,7 @@ from bot.services.staff_cashout_records import (
     add_staff_cashout_send,
     create_staff_cashout_record_manual,
     delete_staff_cashout_payment,
+    delete_staff_cashout_record,
     delete_staff_cashout_send,
     get_staff_cashout_record,
     list_money_send_method_names,
@@ -394,6 +395,7 @@ def create_cashout_record(
             club_id=club_id,
             group_title=body.group_title,
             amount=body.amount,
+            payments=[p.model_dump() for p in body.payments],
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -411,6 +413,18 @@ def get_cashout_record(
     if not data:
         raise HTTPException(404, "Cashout record not found")
     return _to_read(data, _club_name_map(db))
+
+
+@router.delete("/{record_id}", status_code=204)
+def remove_cashout_record(
+    record_id: int,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    _load_and_assert_gto(record_id, role, db)
+    if not delete_staff_cashout_record(record_id):
+        raise HTTPException(404, "Cashout record not found")
+    return None
 
 
 @router.patch("/{record_id}", response_model=StaffCashoutRecordRead)

@@ -713,10 +713,20 @@ class StaffCashoutMoneySendListResponse(BaseModel):
     offset: int
 
 
+class StaffCashoutPaymentCreate(BaseModel):
+    payment_method_id: Optional[int] = None
+    payment_sub_option_id: Optional[int] = None
+    method_display_name: Optional[str] = None
+    payout_details: Optional[str] = None
+    amount: Optional[Decimal] = None
+    sort_order: Optional[int] = None
+
+
 class StaffCashoutRecordCreate(BaseModel):
     club_id: int
     group_title: str
     amount: Decimal
+    payments: List[StaffCashoutPaymentCreate] = []
 
 
 class StaffCashoutRecordUpdate(BaseModel):
@@ -757,15 +767,6 @@ class StaffCashoutNotifyRecipientUpdate(BaseModel):
 class StaffCashoutNotifyRecipientsListResponse(BaseModel):
     rails: List[dict]
     recipients: List[StaffCashoutNotifyRecipientRead]
-
-
-class StaffCashoutPaymentCreate(BaseModel):
-    payment_method_id: Optional[int] = None
-    payment_sub_option_id: Optional[int] = None
-    method_display_name: Optional[str] = None
-    payout_details: Optional[str] = None
-    amount: Optional[Decimal] = None
-    sort_order: Optional[int] = None
 
 
 class StaffCashoutPaymentUpdate(BaseModel):

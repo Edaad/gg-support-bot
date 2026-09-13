@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  addCashoutPayment,
   createCashoutRecord,
+  deleteCashoutRecord,
   listCashoutMoneySendMethods,
   listCashoutMoneySends,
   listCashoutRecords,
@@ -13,13 +13,14 @@ import {
   type StaffCashoutRecordT,
 } from '../api/client'
 import { listV2Methods, type V2Method } from '../api/v2Client'
-import CashoutMethodFields, {
-  choicePayload,
-  fmtMoney,
-  parseMoney,
-  type MethodChoice,
-} from '../components/CashoutMethodFields'
+import CashoutDestinationList, {
+  collectDestinationPayloads,
+  emptyDestinationRows,
+  type DestinationRow,
+} from '../components/CashoutDestinationList'
+import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
 import CashoutNotifyConfigModal from '../components/CashoutNotifyConfigModal'
+import { useConfirm } from '../components/ConfirmProvider'
 import DateRangeCsvExport from '../components/DateRangeCsvExport'
 import Modal from '../components/Modal'
 import {
@@ -36,13 +37,6 @@ import { GTO_CLUB_NAME } from '../lib/rbac'
 type PageTab = CashoutLedgerStatus | 'money_sent'
 
 const PAGE_SIZE = 50
-
-const emptyChoice = (): MethodChoice => ({
-  custom: false,
-  payment_method_id: null,
-  payment_sub_option_id: null,
-  custom_name: '',
-})
 
 const LEDGER_TABS: { id: Exclude<CashoutLedgerStatus, 'do_not_send'>; label: string }[] = [
   { id: 'active', label: 'Active' },
@@ -116,6 +110,7 @@ export default function CashoutRecords({
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
+  const askConfirm = useConfirm()
   const isAdmin = role === 'admin'
   const isGto = role === 'gto'
   const [tab, setTab] = useState<PageTab>('active')
@@ -131,8 +126,7 @@ export default function CashoutRecords({
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [createMethods, setCreateMethods] = useState<V2Method[]>([])
-  const [createChoice, setCreateChoice] = useState<MethodChoice>(emptyChoice())
-  const [createPayoutDetails, setCreatePayoutDetails] = useState('')
+  const [createRows, setCreateRows] = useState<DestinationRow[]>([])
   const [search, setSearch] = useState('')
   const [q, setQ] = useState('')
   const [clubFilter, setClubFilter] = useState('')
@@ -301,15 +295,22 @@ export default function CashoutRecords({
   useEffect(() => {
     if (!createOpen || !clubId) {
       setCreateMethods([])
+      setCreateRows([])
       return
     }
     let cancelled = false
     listV2Methods(token, Number(clubId), 'cashout')
       .then((rows) => {
-        if (!cancelled) setCreateMethods(rows.filter((m) => m.is_active && m.slug !== 'chips'))
+        if (cancelled) return
+        const methods = rows.filter((m) => m.is_active && m.slug !== 'chips')
+        setCreateMethods(methods)
+        setCreateRows(emptyDestinationRows(methods))
       })
       .catch(() => {
-        if (!cancelled) setCreateMethods([])
+        if (!cancelled) {
+          setCreateMethods([])
+          setCreateRows([])
+        }
       })
     return () => {
       cancelled = true
@@ -320,8 +321,7 @@ export default function CashoutRecords({
     setClubId(clubs[0] ? String(clubs[0].id) : '')
     setName('')
     setAmount('')
-    setCreateChoice(emptyChoice())
-    setCreatePayoutDetails('')
+    setCreateRows([])
     setCreateOpen(true)
   }
 
@@ -331,16 +331,9 @@ export default function CashoutRecords({
       setError('Club, name, and amount are required')
       return
     }
-    const hasMethod =
-      createChoice.custom
-        ? Boolean(createChoice.custom_name.trim())
-        : createChoice.payment_method_id != null
-    if (!hasMethod) {
-      setError('Payment method is required')
-      return
-    }
-    if (!createChoice.custom && !createPayoutDetails.trim()) {
-      setError('Payout details are required for the selected method')
+    const collected = collectDestinationPayloads(createRows, createMethods)
+    if (!collected.ok) {
+      setError(collected.error)
       return
     }
     setSaving(true)
@@ -350,19 +343,33 @@ export default function CashoutRecords({
         club_id: Number(clubId),
         group_title: name.trim(),
         amount: parsed,
+        payments: collected.payments,
       })
-      try {
-        await addCashoutPayment(token, created.id, {
-          ...choicePayload(createChoice),
-          payout_details: createPayoutDetails.trim() || null,
-        })
-      } catch {
-        // Record exists; finish on detail so destination can be added there.
-      }
       setCreateOpen(false)
       openRecord(created.id)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Create failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeleteRecord = async (r: StaffCashoutRecordT) => {
+    const ok = await askConfirm({
+      title: 'Delete cashout?',
+      message: `Permanently delete ${r.group_title} (${fmtMoney(Number(r.amount))})? Destinations and money-sent rows are removed.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
+    setSaving(true)
+    setError(null)
+    try {
+      await deleteCashoutRecord(token, r.id)
+      if (isMoneySent) reloadSends()
+      else reloadRecords()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Delete failed')
     } finally {
       setSaving(false)
     }
@@ -659,14 +666,27 @@ export default function CashoutRecords({
                     <h2 className="mt-1 text-xl font-semibold text-ink">{r.group_title}</h2>
                     <p className="mt-1 text-base text-ink-muted">{r.club_name || '—'}</p>
                   </div>
-                  <Link
-                    to={`/cashout-records/${r.id}`}
-                    state={{ listSearch: location.search }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="btn-primary inline-flex min-h-12 min-w-[7rem] items-center justify-center px-6 text-base"
-                  >
-                    Edit
-                  </Link>
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      to={`/cashout-records/${r.id}`}
+                      state={{ listSearch: location.search }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="btn-primary inline-flex min-h-12 min-w-[7rem] items-center justify-center px-6 text-base"
+                    >
+                      Edit
+                    </Link>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void handleDeleteRecord(r)
+                      }}
+                      className="btn-danger-outline inline-flex min-h-12 min-w-[7rem] items-center justify-center px-6 text-base"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
                 <dl className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div className="rounded-xl border border-border bg-bg px-4 py-3">
@@ -719,10 +739,7 @@ export default function CashoutRecords({
             <label className="mb-1 block text-xs font-medium text-ink-muted">Club</label>
             <select
               value={clubId}
-              onChange={(e) => {
-                setClubId(e.target.value)
-                setCreateChoice(emptyChoice())
-              }}
+              onChange={(e) => setClubId(e.target.value)}
               className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
               disabled={isGto}
             >
@@ -752,20 +769,11 @@ export default function CashoutRecords({
               className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
             />
           </div>
-          <CashoutMethodFields
+          <CashoutDestinationList
             methods={createMethods}
-            choice={createChoice}
-            onChange={setCreateChoice}
+            rows={createRows}
+            onChange={setCreateRows}
           />
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-muted">Payout details</label>
-            <input
-              value={createPayoutDetails}
-              onChange={(e) => setCreatePayoutDetails(e.target.value)}
-              placeholder="Handle, phone, address…"
-              className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
-            />
-          </div>
           <button type="button" onClick={handleCreate} disabled={saving} className="btn-primary w-full min-h-12">
             {saving ? 'Creating…' : 'Create'}
           </button>

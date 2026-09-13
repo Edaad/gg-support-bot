@@ -70,7 +70,6 @@ class DashboardUrlTests(unittest.TestCase):
             "os.environ",
             {
                 rem.DASHBOARD_PUBLIC_URL_ENV: "https://dash.example/",
-                rem.HEROKU_APP_NAME_ENV: "ignored-app",
             },
             clear=False,
         ):
@@ -83,23 +82,25 @@ class DashboardUrlTests(unittest.TestCase):
                 "https://dash.example/cashout-records/9",
             )
 
-    def test_falls_back_to_heroku_app_name(self) -> None:
-        with patch.dict(
-            "os.environ",
-            {rem.HEROKU_APP_NAME_ENV: "gg-support-bot-2025"},
-            clear=False,
-        ):
-            env = {
-                k: v
-                for k, v in __import__("os").environ.items()
-                if k != rem.DASHBOARD_PUBLIC_URL_ENV
-            }
-            env[rem.HEROKU_APP_NAME_ENV] = "gg-support-bot-2025"
-            with patch.dict("os.environ", env, clear=True):
-                self.assertEqual(
-                    rem.dashboard_public_base_url(),
-                    "https://gg-support-bot-2025.herokuapp.com",
-                )
+    def test_unset_returns_none(self) -> None:
+        env = {
+            k: v
+            for k, v in __import__("os").environ.items()
+            if k != rem.DASHBOARD_PUBLIC_URL_ENV
+        }
+        with patch.dict("os.environ", env, clear=True):
+            self.assertIsNone(rem.dashboard_public_base_url())
+            self.assertIsNone(rem.cashout_record_dashboard_url(9))
+
+    def test_ignores_heroku_app_name(self) -> None:
+        env = {
+            k: v
+            for k, v in __import__("os").environ.items()
+            if k != rem.DASHBOARD_PUBLIC_URL_ENV
+        }
+        env["HEROKU_APP_NAME"] = "gg-support-bot-2025"
+        with patch.dict("os.environ", env, clear=True):
+            self.assertIsNone(rem.dashboard_public_base_url())
 
 
 class IsDueTests(unittest.TestCase):

@@ -214,6 +214,83 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
             self.assertIsInstance(record, StaffCashoutRecord)
             self.assertTrue(record.tracks_money_sent)
 
+    def test_manual_create_writes_payments_before_notify(self) -> None:
+        from db.models import Club, StaffCashoutPayment, StaffCashoutRecord
+
+        session = MagicMock()
+        club = MagicMock(spec=Club)
+        club.id = 2
+        session.get.return_value = club
+
+        def flush() -> None:
+            for call in session.add.call_args_list:
+                obj = call[0][0]
+                if isinstance(obj, StaffCashoutRecord) and getattr(obj, "id", None) is None:
+                    obj.id = 11
+
+        session.flush.side_effect = flush
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+
+        order: list[str] = []
+
+        def track_add(obj: object) -> None:
+            if isinstance(obj, StaffCashoutRecord):
+                order.append("record")
+            elif isinstance(obj, StaffCashoutPayment):
+                order.append("payment")
+
+        session.add.side_effect = track_add
+
+        notify = MagicMock(return_value=1)
+        with patch("bot.services.staff_cashout_records.get_db", return_value=cm), patch(
+            "bot.services.staff_cashout_records._validate_method_choice",
+            return_value=(None, None, "Venmo", "@player"),
+        ), patch(
+            "bot.services.staff_cashout_records._record_to_dict",
+            return_value={"id": 11, "payments": [{"method_display_name": "Venmo"}]},
+        ), patch(
+            "bot.services.staff_cashout_pushover.notify_cashout_pushover_sync",
+            notify,
+        ):
+            from bot.services.staff_cashout_records import (
+                create_staff_cashout_record_manual,
+            )
+
+            data = create_staff_cashout_record_manual(
+                club_id=2,
+                group_title="RT / 1-2 / X",
+                amount=Decimal("100"),
+                payments=[
+                    {
+                        "payment_method_id": None,
+                        "method_display_name": "Venmo",
+                        "payout_details": "@player",
+                    }
+                ],
+            )
+
+        self.assertEqual(data["id"], 11)
+        self.assertEqual(order, ["record", "payment"])
+        notify.assert_called_once()
+        self.assertEqual(notify.call_args.args[0], 11)
+        self.assertTrue(notify.call_args.kwargs.get("require_master_toggle"))
+
+    def test_manual_create_requires_payments(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            from bot.services.staff_cashout_records import (
+                create_staff_cashout_record_manual,
+            )
+
+            create_staff_cashout_record_manual(
+                club_id=2,
+                group_title="RT / 1-2 / X",
+                amount=Decimal("100"),
+                payments=[],
+            )
+        self.assertIn("payment", str(ctx.exception).lower())
+
     def test_update_amount_blocked_when_not_active(self) -> None:
         from db.models import StaffCashoutRecord
 
@@ -400,18 +477,90 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         with patch(
             "api.routes.cashout_records.create_staff_cashout_record_manual",
             return_value=created,
-        ), patch(
+        ) as create_mock, patch(
             "api.routes.cashout_records._club_name_map",
             return_value={2: "Round Table"},
         ):
             client = TestClient(_make_api_app())
             resp = client.post(
                 "/api/cashout-records",
-                json={"club_id": 2, "group_title": "RT / 2427-3267 / Samin", "amount": "500"},
+                json={
+                    "club_id": 2,
+                    "group_title": "RT / 2427-3267 / Samin",
+                    "amount": "500",
+                    "payments": [
+                        {
+                            "payment_method_id": None,
+                            "method_display_name": "Venmo",
+                            "payout_details": "@player",
+                        }
+                    ],
+                },
             )
             self.assertEqual(resp.status_code, 201)
             self.assertEqual(resp.json()["trigger"], "dashboard")
             self.assertIsNone(resp.json()["cashier_job_id"])
+            create_mock.assert_called_once()
+            kwargs = create_mock.call_args.kwargs
+            self.assertEqual(len(kwargs["payments"]), 1)
+            self.assertEqual(kwargs["payments"][0]["method_display_name"], "Venmo")
+
+    def test_create_manual_cashout_requires_payments(self) -> None:
+        with patch(
+            "api.routes.cashout_records.create_staff_cashout_record_manual",
+            side_effect=ValueError("At least one payment destination is required"),
+        ):
+            client = TestClient(_make_api_app())
+            resp = client.post(
+                "/api/cashout-records",
+                json={
+                    "club_id": 2,
+                    "group_title": "RT / 2427-3267 / Samin",
+                    "amount": "500",
+                    "payments": [],
+                },
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertIn("payment", resp.json()["detail"].lower())
+
+    def test_delete_cashout_record_ok(self) -> None:
+        with patch(
+            "api.routes.cashout_records.delete_staff_cashout_record",
+            return_value=True,
+        ):
+            client = TestClient(_make_api_app())
+            resp = client.delete("/api/cashout-records/1")
+            self.assertEqual(resp.status_code, 204)
+
+    def test_delete_cashout_record_not_found(self) -> None:
+        with patch(
+            "api.routes.cashout_records.delete_staff_cashout_record",
+            return_value=False,
+        ):
+            client = TestClient(_make_api_app())
+            resp = client.delete("/api/cashout-records/99")
+            self.assertEqual(resp.status_code, 404)
+
+    def test_delete_cashout_record_gto_scope(self) -> None:
+        from api.auth import ROLE_GTO
+        from fastapi import HTTPException
+
+        app = _make_api_app()
+
+        def override_gto():
+            return ROLE_GTO
+
+        app.dependency_overrides[get_current_admin] = override_gto
+        with patch(
+            "api.routes.cashout_records.get_staff_cashout_record",
+            return_value=_sample_record(),
+        ), patch(
+            "api.routes.cashout_records.assert_gto_record_club",
+            side_effect=HTTPException(403, "GTO club only"),
+        ):
+            client = TestClient(app)
+            resp = client.delete("/api/cashout-records/1")
+            self.assertEqual(resp.status_code, 403)
 
     def test_patch_does_not_call_zapier(self) -> None:
         updated = _sample_record()

@@ -49,6 +49,26 @@ Missing or invalid token → **401** (`Invalid token`, `Token expired`, etc.).
 
 ---
 
+## Staff cashout records
+
+Prefix: `/api/cashout-records` — Bearer JWT (`admin`, `account_manager`, or `gto`; GTO is ClubGTO-only).
+
+| | |
+|---|---|
+| **POST** | `/api/cashout-records` |
+| **DELETE** | `/api/cashout-records/{id}` |
+| **PUT** | `/api/cashout-records/{id}/payments` |
+
+**Create body:** `club_id`, `group_title`, `amount`, and `payments` (non-empty list of destinations). Each payment: `payment_method_id` / `payment_sub_option_id` / `method_display_name` / `payout_details`. Catalog methods require payout details; custom methods require `method_display_name`. Destinations are written before the New cashout Pushover notify.
+
+**Delete:** hard-deletes the record and cascaded destinations / money-sent rows. Any ledger status.
+
+**Replace payments:** full replacement of destination rows for a record.
+
+Slack/Pushover **Open cashout** links use `DASHBOARD_PUBLIC_URL` only (no `HEROKU_APP_NAME` hostname fallback).
+
+---
+
 ## Expenses (admin only)
 
 Prefix: `/api/expenses` — requires Bearer JWT with `role=admin`.

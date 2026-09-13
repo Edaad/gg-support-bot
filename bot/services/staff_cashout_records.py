@@ -319,6 +319,7 @@ def create_staff_cashout_record_manual(
     club_id: int,
     group_title: str,
     amount: Decimal,
+    payments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     title = (group_title or "").strip()
     if not title:
@@ -326,6 +327,9 @@ def create_staff_cashout_record_manual(
     amt = _as_decimal(amount)
     if amt <= 0:
         raise ValueError("Amount must be greater than zero")
+    payment_rows = list(payments or [])
+    if not payment_rows:
+        raise ValueError("At least one payment destination is required")
 
     with get_db() as session:
         club = session.get(Club, int(club_id))
@@ -344,9 +348,33 @@ def create_staff_cashout_record_manual(
         )
         session.add(record)
         session.flush()
+
+        for idx, pdata in enumerate(payment_rows):
+            method_id, sub_id, display, details = _validate_method_choice(
+                payment_method_id=pdata.get("payment_method_id"),
+                payment_sub_option_id=pdata.get("payment_sub_option_id"),
+                method_display_name=pdata.get("method_display_name"),
+                payout_details=pdata.get("payout_details"),
+                require_payout_details=pdata.get("payment_method_id") is not None,
+            )
+            session.add(
+                StaffCashoutPayment(
+                    cashout_record_id=int(record.id),
+                    payment_method_id=method_id,
+                    payment_sub_option_id=sub_id,
+                    method_display_name=display,
+                    payout_details=details,
+                    amount=pdata.get("amount"),
+                    sort_order=pdata.get("sort_order", idx),
+                )
+            )
+
+        session.flush()
         record_id = int(record.id)
         logger.info(
-            "staff_cashout_record created from dashboard record_id=%s", record_id
+            "staff_cashout_record created from dashboard record_id=%s payments=%s",
+            record_id,
+            len(payment_rows),
         )
         session.expire(record, ["payments", "money_sends"])
         data = _record_to_dict(record)
@@ -369,6 +397,17 @@ def create_staff_cashout_record_manual(
             record_id,
         )
     return data
+
+
+def delete_staff_cashout_record(record_id: int) -> bool:
+    with get_db() as session:
+        record = session.get(StaffCashoutRecord, int(record_id))
+        if not record:
+            return False
+        session.delete(record)
+        session.flush()
+        logger.info("staff_cashout_record deleted record_id=%s", record_id)
+        return True
 
 
 def update_staff_cashout_record(
