@@ -9,7 +9,9 @@ import {
   type DashboardRole,
 } from '../lib/rbac'
 
-type NavLinkItem = { to: string; label: string }
+type NavLinkItem = { to: string; label: string; external?: boolean }
+
+const RAKEBACK_URL = 'https://elevateautomations.io/'
 
 /** Top-level links in display order (Admin is injected separately for admins). */
 const TOP_NAV: NavLinkItem[] = [
@@ -18,6 +20,7 @@ const TOP_NAV: NavLinkItem[] = [
   { to: '/bonuses', label: 'Bonuses' },
   { to: '/bonus-types', label: 'Bonus types' },
   { to: '/cashout-records', label: 'Cashout records' },
+  { to: RAKEBACK_URL, label: 'Rakeback', external: true },
   { to: '/settings', label: 'Settings' },
 ]
 
@@ -60,7 +63,7 @@ export default function Layout({
   const { pathname } = useLocation()
   const isAdmin = role === 'admin'
   const showAdminSubnav = isAdmin && isAdminSectionPath(pathname)
-  const topItems = TOP_NAV.filter((n) => canAccessPath(role, n.to))
+  const topItems = TOP_NAV.filter((n) => n.external || canAccessPath(role, n.to))
 
   return (
     <div className="min-h-screen bg-bg text-ink">
@@ -106,6 +109,20 @@ export default function Layout({
               </Link>
             )}
             {topItems.map((n) => {
+              if (n.external) {
+                return (
+                  <a
+                    key={n.to}
+                    href={n.to}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={navLinkClass(false)}
+                  >
+                    {n.label}
+                    <span className="sr-only"> (opens in a new tab)</span>
+                  </a>
+                )
+              }
               const active = isNavActive(pathname, n.to)
               return (
                 <Link
