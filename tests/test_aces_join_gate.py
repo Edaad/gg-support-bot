@@ -19,7 +19,10 @@ PLAYER_ID = 8132930521
 def _union_callback_update(shorthand: str):
     chat = SimpleNamespace(id=CHAT_ID, type="supergroup")
     message = SimpleNamespace(
-        chat=chat, date=datetime.now(timezone.utc), message_id=99
+        chat=chat,
+        date=datetime.now(timezone.utc),
+        message_id=99,
+        reply_text=AsyncMock(),
     )
     query = SimpleNamespace(
         data=f"depunion:{shorthand}",
@@ -89,6 +92,11 @@ class AcesJoinGateTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(dep, "_record_funnel_from_context"),
             patch.object(dep, "register_flow_callback_message"),
+            patch.object(
+                dep,
+                "_exit_deposit_flow",
+                new=AsyncMock(return_value=ConversationHandler.END),
+            ),
             patch.object(dep, "_prompt_deposit_methods", new=AsyncMock(return_value=True)),
         ]
         for p in patches:
@@ -107,6 +115,7 @@ class AcesJoinGateTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, dep.DEPOSIT_ACES_JOIN)
         dep._prompt_deposit_methods.assert_not_awaited()
+        dep._exit_deposit_flow.assert_not_awaited()
         text, kwargs = update.callback_query.edit_message_text.await_args
         self.assertIn(dep.ACES_TABLE_JOIN_LINK, text[0])
         # No link preview card — the bare link only.
@@ -125,8 +134,9 @@ class AcesJoinGateTests(unittest.IsolatedAsyncioTestCase):
         context = _context()
         result = await dep.deposit_union_chosen(update, context)
 
-        self.assertEqual(result, dep.DEPOSIT_CHOOSE)
-        dep._prompt_deposit_methods.assert_awaited_once()
+        self.assertEqual(result, ConversationHandler.END)
+        dep._prompt_deposit_methods.assert_not_awaited()
+        dep._exit_deposit_flow.assert_awaited_once()
 
     @patch.object(dep, "has_aces_join_ack", return_value=False)
     @patch.object(dep, "is_creator_club", return_value=True)
@@ -138,8 +148,9 @@ class AcesJoinGateTests(unittest.IsolatedAsyncioTestCase):
         context = _context()
         result = await dep.deposit_union_chosen(update, context)
 
-        self.assertEqual(result, dep.DEPOSIT_CHOOSE)
-        dep._prompt_deposit_methods.assert_awaited_once()
+        self.assertEqual(result, ConversationHandler.END)
+        dep._prompt_deposit_methods.assert_not_awaited()
+        dep._exit_deposit_flow.assert_awaited_once()
 
     @patch.object(dep, "has_aces_join_ack", return_value=False)
     @patch.object(dep, "is_creator_club", return_value=False)
@@ -151,8 +162,9 @@ class AcesJoinGateTests(unittest.IsolatedAsyncioTestCase):
         context = _context(club_id=2)
         result = await dep.deposit_union_chosen(update, context)
 
-        self.assertEqual(result, dep.DEPOSIT_CHOOSE)
-        dep._prompt_deposit_methods.assert_awaited_once()
+        self.assertEqual(result, ConversationHandler.END)
+        dep._prompt_deposit_methods.assert_not_awaited()
+        dep._exit_deposit_flow.assert_awaited_once()
 
     @patch.object(
         dep, "union_shorthands_for_club", return_value=frozenset({"CC", "AT"})
@@ -165,13 +177,14 @@ class AcesJoinGateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, ConversationHandler.END)
         dep._prompt_deposit_methods.assert_not_awaited()
 
-    async def test_ack_continues_to_methods(self):
+    async def test_ack_ends_flow_without_methods(self):
         update = _ack_callback_update()
         context = _context()
         result = await dep.deposit_aces_join_ack(update, context)
 
-        self.assertEqual(result, dep.DEPOSIT_CHOOSE)
-        dep._prompt_deposit_methods.assert_awaited_once()
+        self.assertEqual(result, ConversationHandler.END)
+        dep._prompt_deposit_methods.assert_not_awaited()
+        dep._exit_deposit_flow.assert_awaited_once()
 
     async def test_ack_keeps_join_link_and_only_drops_the_button(self):
         update = _ack_callback_update()
@@ -183,9 +196,7 @@ class AcesJoinGateTests(unittest.IsolatedAsyncioTestCase):
         update.callback_query.edit_message_reply_markup.assert_awaited_once_with(
             reply_markup=None
         )
-        # Methods must go out as a new message, not by editing the link away.
-        _args, kwargs = dep._prompt_deposit_methods.await_args
-        self.assertIsNone(kwargs.get("edit_message"))
+        dep._prompt_deposit_methods.assert_not_awaited()
 
     async def test_ack_survives_button_removal_failure(self):
         update = _ack_callback_update()
@@ -195,8 +206,9 @@ class AcesJoinGateTests(unittest.IsolatedAsyncioTestCase):
         context = _context()
         result = await dep.deposit_aces_join_ack(update, context)
 
-        self.assertEqual(result, dep.DEPOSIT_CHOOSE)
-        dep._prompt_deposit_methods.assert_awaited_once()
+        self.assertEqual(result, ConversationHandler.END)
+        dep._prompt_deposit_methods.assert_not_awaited()
+        dep._exit_deposit_flow.assert_awaited_once()
 
     async def test_only_the_player_can_tap_i_have_joined(self):
         update = _ack_callback_update(from_user_id=7516419496)
@@ -213,27 +225,49 @@ class AcesJoinGateTests(unittest.IsolatedAsyncioTestCase):
     @patch.object(
         dep, "union_shorthands_for_club", return_value=frozenset({"CC", "AT"})
     )
-    async def test_unpostable_join_gate_ends_flow(self, *_mocks):
+    async def test_unpostable_join_gate_falls_back_to_new_message(self, *_mocks):
         """A failed edit must not strand the player with no button to tap."""
         update = _union_callback_update("AT")
         update.callback_query.edit_message_text = AsyncMock(
             side_effect=RuntimeError("message to edit not found")
         )
         context = _context()
-        with patch.object(dep, "_cleanup"):
-            result = await dep.deposit_union_chosen(update, context)
+        result = await dep.deposit_union_chosen(update, context)
+
+        self.assertEqual(result, dep.DEPOSIT_ACES_JOIN)
+        update.callback_query.message.reply_text.assert_awaited_once()
+        dep._exit_deposit_flow.assert_not_awaited()
+
+    @patch.object(dep, "_abandon_deposit_flow_session")
+    @patch.object(dep, "has_aces_join_ack", return_value=False)
+    @patch.object(dep, "is_creator_club", return_value=True)
+    @patch.object(
+        dep, "union_shorthands_for_club", return_value=frozenset({"CC", "AT"})
+    )
+    async def test_unpostable_join_gate_ends_flow_when_reply_also_fails(self, *_mocks):
+        update = _union_callback_update("AT")
+        update.callback_query.edit_message_text = AsyncMock(
+            side_effect=RuntimeError("message to edit not found")
+        )
+        update.callback_query.message.reply_text = AsyncMock(
+            side_effect=RuntimeError("can't send")
+        )
+        context = _context()
+        result = await dep.deposit_union_chosen(update, context)
 
         self.assertEqual(result, ConversationHandler.END)
+        dep._exit_deposit_flow.assert_awaited_once()
 
     async def test_ack_after_session_expired_ends_flow(self):
         update = _ack_callback_update()
         context = _context()
-        context.chat_data.pop("deposit_amount")
+        context.chat_data.pop("deposit_club_id")
         with patch.object(dep, "_cleanup"):
             result = await dep.deposit_aces_join_ack(update, context)
 
         self.assertEqual(result, ConversationHandler.END)
         dep._prompt_deposit_methods.assert_not_awaited()
+        dep._exit_deposit_flow.assert_not_awaited()
 
 
 class AcesAckPersistenceTests(unittest.TestCase):

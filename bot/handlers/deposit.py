@@ -1627,6 +1627,10 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _send_simple_response(message, simple)
             _record_funnel_from_context(context, STEP_INSTRUCTIONS_SENT)
             _schedule_deposit_reminder(context, club_id, chat.id, user_id=None)
+            if _deposit_unions_for_flow(context, club_id):
+                mark_active_flow(context, "deposit")
+                await _prompt_deposit_union(message, context)
+                return DEPOSIT_UNION
             _cleanup(context)
             popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat.id)
             return ConversationHandler.END
@@ -1801,10 +1805,6 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         return ConversationHandler.END
 
     try:
-        if _deposit_unions_for_flow(context, club_id):
-            await _prompt_deposit_union(update.message, context)
-            return DEPOSIT_UNION
-
         shown = await _prompt_deposit_methods(update.message, context, amount=amount)
         if not shown:
             _abandon_deposit_flow_session(context, end_reason=END_REASON_CANCELLED)
@@ -1859,65 +1859,17 @@ async def deposit_union_chosen(update: Update, context: ContextTypes.DEFAULT_TYP
         metadata={"union_shorthand": shorthand, "union_label": label},
     )
 
-    amount = context.chat_data.get("deposit_amount")
-    if not isinstance(amount, Decimal):
-        await query.edit_message_text("Deposit session expired. Use /deposit again.")
-        _cleanup(context)
-        return ConversationHandler.END
-
     if _needs_aces_join_gate(context, club_id=club_id, shorthand=shorthand):
-        try:
-            await query.edit_message_text(
-                ACES_TABLE_JOIN_COPY,
-                disable_web_page_preview=True,
-                reply_markup=InlineKeyboardMarkup(
-                    [
-                        [
-                            InlineKeyboardButton(
-                                ACES_TABLE_JOIN_BUTTON, callback_data="depaces"
-                            )
-                        ]
-                    ]
-                ),
-            )
-        except Exception:
-            # Never strand the player on the gate with no button to tap.
-            logger.exception(
-                "deposit_union_chosen: failed showing aces join gate chat_id=%s",
-                context.chat_data.get("deposit_chat_id"),
-            )
-            _abandon_deposit_flow_session(context, end_reason=END_REASON_CANCELLED)
-            _cleanup(context)
-            return ConversationHandler.END
-        if query.message is not None:
-            register_flow_callback_message(
-                context, query.message.message_id, flow="deposit"
-            )
+        shown = await _show_aces_join_gate(query, context)
+        if not shown:
+            return await _exit_deposit_flow(context)
         return DEPOSIT_ACES_JOIN
 
     try:
-        shown = await _prompt_deposit_methods(
-            query.message,
-            context,
-            amount=amount,
-            edit_message=query,
-        )
+        await query.edit_message_text(f"Your deposit will be added to {label}.")
     except Exception:
-        logger.exception(
-            "deposit_union_chosen: failed prompting methods shorthand=%s amount=%s",
-            shorthand,
-            amount,
-        )
-        await query.edit_message_text(
-            "Something went wrong showing deposit methods. Try /deposit again."
-        )
-        _cleanup(context)
-        return ConversationHandler.END
-    if not shown:
-        _abandon_deposit_flow_session(context, end_reason=END_REASON_CANCELLED)
-        _cleanup(context)
-        return ConversationHandler.END
-    return DEPOSIT_CHOOSE
+        pass
+    return await _exit_deposit_flow(context)
 
 
 def _needs_aces_join_gate(context, *, club_id, shorthand: str) -> bool:
@@ -1934,6 +1886,45 @@ def _needs_aces_join_gate(context, *, club_id, shorthand: str) -> bool:
     except Exception:
         logger.exception(
             "aces join gate: check failed chat_id=%s club_id=%s", chat_id, club_id
+        )
+        return False
+
+
+def _aces_join_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(ACES_TABLE_JOIN_BUTTON, callback_data="depaces")]]
+    )
+
+
+async def _show_aces_join_gate(query, context) -> bool:
+    """Post the Aces join link. Prefer editing the club picker so it stays last."""
+    kwargs = {
+        "disable_web_page_preview": True,
+        "reply_markup": _aces_join_markup(),
+    }
+    chat_id = context.chat_data.get("deposit_chat_id")
+    try:
+        await query.edit_message_text(ACES_TABLE_JOIN_COPY, **kwargs)
+        if query.message is not None:
+            register_flow_callback_message(
+                context, query.message.message_id, flow="deposit"
+            )
+        return True
+    except Exception:
+        logger.exception(
+            "deposit_union_chosen: failed editing aces join gate chat_id=%s",
+            chat_id,
+        )
+    if query.message is None:
+        return False
+    try:
+        sent = await query.message.reply_text(ACES_TABLE_JOIN_COPY, **kwargs)
+        register_flow_callback_message(context, sent.message_id, flow="deposit")
+        return True
+    except Exception:
+        logger.exception(
+            "deposit_union_chosen: failed sending aces join gate chat_id=%s",
+            chat_id,
         )
         return False
 
@@ -1961,42 +1952,19 @@ async def deposit_aces_join_ack(update: Update, context: ContextTypes.DEFAULT_TY
         return DEPOSIT_ACES_JOIN
     await query.answer()
 
-    amount = context.chat_data.get("deposit_amount")
-    if not isinstance(amount, Decimal):
+    if not context.chat_data.get("deposit_club_id"):
         await query.edit_message_text("Deposit session expired. Use /deposit again.")
         _cleanup(context)
         return ConversationHandler.END
 
     # Leave the join link in the chat for reference; only retire the button so it
-    # cannot be tapped twice. Methods go out as a new message.
+    # cannot be tapped twice. No further bot message — this stays last.
     try:
         await query.edit_message_reply_markup(reply_markup=None)
     except Exception:
         pass
 
-    try:
-        shown = await _prompt_deposit_methods(
-            query.message,
-            context,
-            amount=amount,
-        )
-    except Exception:
-        logger.exception(
-            "deposit_aces_join_ack: failed prompting methods amount=%s", amount
-        )
-        try:
-            await query.message.reply_text(
-                "Something went wrong showing deposit methods. Try /deposit again."
-            )
-        except Exception:
-            pass
-        _cleanup(context)
-        return ConversationHandler.END
-    if not shown:
-        _abandon_deposit_flow_session(context, end_reason=END_REASON_CANCELLED)
-        _cleanup(context)
-        return ConversationHandler.END
-    return DEPOSIT_CHOOSE
+    return await _exit_deposit_flow(context)
 
 
 def _deposit_method_buttons(methods) -> list[list[InlineKeyboardButton]]:
@@ -2031,7 +1999,7 @@ def _deposit_unions_for_flow(context, club_id=None):
     )
 
 
-async def _prompt_deposit_union(message, context) -> None:
+async def _prompt_deposit_union(source, context) -> None:
     unions = _deposit_unions_for_flow(context)
     buttons = [
         [
@@ -2041,11 +2009,15 @@ async def _prompt_deposit_union(message, context) -> None:
         ]
         for union in (unions or ())
     ]
-    sent = await message.reply_text(
-        "Which club would you like your deposit to be added to?",
-        reply_markup=InlineKeyboardMarkup(buttons),
-    )
+    text = "Which club would you like your deposit to be added to?"
+    markup = InlineKeyboardMarkup(buttons)
+    reply = getattr(source, "reply_text", None)
+    if callable(reply):
+        sent = await reply(text, reply_markup=markup)
+    else:
+        sent = await source.send_message(text, reply_markup=markup)
     register_flow_callback_message(context, sent.message_id, flow="deposit")
+    context.chat_data["deposit_awaiting_union"] = True
 
 
 async def _prompt_deposit_methods(
@@ -2427,6 +2399,17 @@ async def handle_deposit_union_ack(
     )
     _DEPOSIT_INSTRUCTION_MESSAGE_IDS[chat_id] = [int(instruction_msg.message_id)]
     _exclude_union_instructions_from_deposit_reminder_deletes(chat_id)
+
+    if context.chat_data.get("deposit_prompt_union_after_ack"):
+        context.chat_data.pop("deposit_prompt_union_after_ack", None)
+        try:
+            await _prompt_deposit_union(query.message, context)
+        except Exception:
+            logger.exception(
+                "union deposit ack: failed prompting club picker chat_id=%s",
+                chat_id,
+            )
+            await _exit_deposit_flow(context)
 
 
 def get_deposit_union_ack_handler() -> CallbackQueryHandler:
@@ -2888,6 +2871,9 @@ async def _finish_simple_deposit(message, context):
             pass
 
     _schedule_deposit_reminder(context, club_id, chat_id, user_id=user_id)
+    if _deposit_unions_for_flow(context, club_id):
+        await _prompt_deposit_union(message, context)
+        return DEPOSIT_UNION
     _cleanup(context)
     popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
     return ConversationHandler.END
@@ -2947,13 +2933,29 @@ async def _complete_deposit_flow(chat, context: ContextTypes.DEFAULT_TYPE):
         method_slug=method_slug,
     )
     _record_deposit(context)
-    _persist_deposit_union(context)
-    _persist_aces_join_ack(context)
-    await _maybe_rename_group_for_union(context)
     await _send_bonus_message(chat, context)
     tracks_manual = bool(context.chat_data.get("deposit_tracks_manual_requests"))
     if not tracks_manual:
         _schedule_deposit_reminder(context, club_id, chat_id, user_id=customer_uid)
+
+    if _deposit_unions_for_flow(context):
+        if tracks_manual:
+            context.chat_data["deposit_prompt_union_after_ack"] = True
+            context.chat_data["deposit_awaiting_union"] = True
+            return DEPOSIT_UNION
+        await _prompt_deposit_union(chat, context)
+        return DEPOSIT_UNION
+
+    return await _exit_deposit_flow(context)
+
+
+async def _exit_deposit_flow(context: ContextTypes.DEFAULT_TYPE):
+    """Persist union routing, then end the conversation. No further player messages."""
+    chat_id = context.chat_data.get("deposit_chat_id")
+    tracks_manual = bool(context.chat_data.get("deposit_tracks_manual_requests"))
+    _persist_deposit_union(context)
+    _persist_aces_join_ack(context)
+    await _maybe_rename_group_for_union(context)
 
     defer_popup = bool(context.chat_data.pop("deposit_defer_popup_idle", False))
     setup_attempt_id = context.chat_data.get("deposit_setup_attempt_id")
@@ -3491,6 +3493,9 @@ def _cleanup(context, *, close_idle_episode: bool = True):
         "deposit_amount_message_id",
         "deposit_union_shorthand",
         "deposit_union_label",
+        "deposit_awaiting_union",
+        "deposit_prompt_union_after_ack",
+        "deposit_tracks_manual_requests",
         "deposit_setup_attempt_id",
         "deposit_setup_response_data",
         "deposit_session_id",
@@ -3536,6 +3541,20 @@ async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "deposit_timeout skipped chat_id=%s payment or chips already landed",
                 chat_id,
             )
+            await clear_deposit_payment_wait(
+                chat_id,
+                job_queue=getattr(context, "job_queue", None),
+            )
+            _cleanup(context, close_idle_episode=False)
+            popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
+            return ConversationHandler.END
+
+        if context.chat_data.get("deposit_awaiting_union"):
+            logger.info(
+                "deposit_timeout after instructions awaiting union chat_id=%s",
+                chat_id,
+            )
+            _abandon_deposit_flow_session(context, end_reason=END_REASON_TIMEOUT)
             await clear_deposit_payment_wait(
                 chat_id,
                 job_queue=getattr(context, "job_queue", None),
