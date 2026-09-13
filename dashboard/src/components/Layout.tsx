@@ -8,17 +8,16 @@ import {
   type DashboardRole,
 } from '../lib/rbac'
 
-type NavLinkItem = { to: string; label: string; external?: boolean }
+type NavLinkItem = { to: string; label: string; external?: boolean; exact?: boolean }
 
 const RAKEBACK_URL = 'https://elevateautomations.io/'
 
 /** Admin top-level links (Admin is injected separately). */
 const ADMIN_TOP_NAV: NavLinkItem[] = [
+  { to: '/cashout-records', label: 'Cashout records' },
   { to: '/payments', label: 'Payments' },
   { to: '/manual-deposit-requests', label: 'Pool Pay' },
   { to: '/bonuses', label: 'Bonuses' },
-  { to: '/bonus-types', label: 'Bonus types' },
-  { to: '/cashout-records', label: 'Cashout records' },
   { to: RAKEBACK_URL, label: 'Rakeback', external: true },
   { to: '/settings', label: 'Settings' },
 ]
@@ -44,15 +43,25 @@ const ADMIN_SUBNAV: NavLinkItem[] = [
   { to: '/weekly-stats', label: 'Weekly stats' },
 ]
 
+const BONUSES_SUBNAV: NavLinkItem[] = [
+  { to: '/bonuses', label: 'Records', exact: true },
+  { to: '/bonuses/types', label: 'Bonus types' },
+]
+
 function topNavForRole(role: DashboardRole): NavLinkItem[] {
   if (role === 'account_manager') return AM_TOP_NAV
   if (role === 'gto') return GTO_TOP_NAV
   return ADMIN_TOP_NAV
 }
 
-function isNavActive(pathname: string, to: string): boolean {
+function isNavActive(pathname: string, to: string, exact?: boolean): boolean {
+  if (exact) return pathname === to
   if (to === '/clubs') return pathname === '/clubs' || pathname.startsWith('/clubs/')
   return pathname === to || pathname.startsWith(`${to}/`)
+}
+
+function isBonusesSectionPath(pathname: string): boolean {
+  return pathname === '/bonuses' || pathname.startsWith('/bonuses/')
 }
 
 const focusRing =
@@ -80,6 +89,7 @@ export default function Layout({
   const { pathname } = useLocation()
   const isAdmin = role === 'admin'
   const showAdminSubnav = isAdmin && isAdminSectionPath(pathname)
+  const showBonusesSubnav = isAdmin && isBonusesSectionPath(pathname)
   const topItems = topNavForRole(role)
 
   return (
@@ -140,7 +150,7 @@ export default function Layout({
                   </a>
                 )
               }
-              const active = isNavActive(pathname, n.to)
+              const active = isNavActive(pathname, n.to, n.exact)
               return (
                 <Link
                   key={n.to}
@@ -160,7 +170,28 @@ export default function Layout({
               aria-label="Admin"
             >
               {ADMIN_SUBNAV.map((n) => {
-                const active = isNavActive(pathname, n.to)
+                const active = isNavActive(pathname, n.to, n.exact)
+                return (
+                  <Link
+                    key={n.to}
+                    to={n.to}
+                    aria-current={active ? 'page' : undefined}
+                    className={navLinkClass(active)}
+                  >
+                    {n.label}
+                  </Link>
+                )
+              })}
+            </nav>
+          )}
+
+          {showBonusesSubnav && (
+            <nav
+              className="-mx-4 flex gap-1 overflow-x-auto border-t border-border px-4 py-2 sm:mx-0 sm:px-0"
+              aria-label="Bonuses"
+            >
+              {BONUSES_SUBNAV.map((n) => {
+                const active = isNavActive(pathname, n.to, n.exact)
                 return (
                   <Link
                     key={n.to}

@@ -83,7 +83,8 @@ export default function App() {
               <Route path="/clubs/:id/test" element={<FlowSimulator token={token} />} />
               <Route path="/settings" element={<Settings token={token} />} />
               <Route path="/telegram-login" element={<TelegramLogin token={token} />} />
-              <Route path="/bonus-types" element={<BonusTypes token={token} />} />
+              <Route path="/bonus-types" element={<Navigate to="/bonuses/types" replace />} />
+              <Route path="/bonuses/types" element={<BonusTypes token={token} />} />
               <Route path="/bonuses" element={<Bonuses token={token} role={role} />} />
               <Route path="/expenses" element={<Expenses token={token} />} />
               <Route path="/cashout-records" element={<CashoutRecords token={token} role={role} />} />
