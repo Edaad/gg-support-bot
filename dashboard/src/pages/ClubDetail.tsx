@@ -450,11 +450,11 @@ function GeneralTab({
                   onChange={(e) => setField('cashout_hours_enabled', e.target.checked)}
                   className="h-4 w-4 rounded border-border bg-control text-accent"
                 />
-                Enable cashout business hours
+                Enable off-hours cashout processing notice
               </label>
               <p className="ml-6 mt-1 text-xs text-ink-muted">
-                When enabled, cashouts are only allowed during set hours (EST). Outside these hours
-                the bot tells the player when to come back.
+                When enabled, cashouts outside these hours (EST) still go through, but the bot
+                tells the player payouts are handled during the configured window.
               </p>
             </div>
             {form.cashout_hours_enabled && (

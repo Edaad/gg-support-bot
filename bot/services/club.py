@@ -1135,23 +1135,6 @@ def _is_within_hours(est_dt, hours_start: str, hours_end: str) -> bool:
     return (h_start_h * 60 + h_start_m) <= current < (h_end_h * 60 + h_end_m)
 
 
-def _next_open_time(est_dt, hours_start: str, hours_end: str):
-    """Return the next business-hours open moment at or after est_dt."""
-    h_start_h, h_start_m = _parse_time(hours_start)
-    h_end_h, h_end_m = _parse_time(hours_end)
-    current = est_dt.hour * 60 + est_dt.minute
-    start = h_start_h * 60 + h_start_m
-    end = h_end_h * 60 + h_end_m
-
-    if current < start:
-        return est_dt.replace(hour=h_start_h, minute=h_start_m, second=0, microsecond=0)
-    if current >= end:
-        return (est_dt + timedelta(days=1)).replace(
-            hour=h_start_h, minute=h_start_m, second=0, microsecond=0
-        )
-    return est_dt
-
-
 def _hours_range_str(settings: dict) -> str:
     """Format business hours as e.g. '8 AM - 11 PM'."""
     sh, sm = _parse_time(settings["hours_start"])
@@ -1230,9 +1213,10 @@ def check_earlyrb_eligibility(
 def cashout_shown_on_popup_keyboard(club_id: int, chat_id: int) -> bool:
     """Whether idle popup install should include /cashout (read-only).
 
-    Hides cashout when the raw cooldown timer or cashout hours would block.
-    Permanent bypass always shows cashout. One-time bypass is ignored here
-    (still applies on real /cashout via check_cashout_eligibility). Fail open.
+    Hides cashout when the raw cooldown timer would block. Business hours are
+    advisory only and do not hide the button. Permanent bypass always shows
+    cashout. One-time bypass is ignored here (still applies on real /cashout
+    via check_cashout_eligibility). Fail open.
     """
     try:
         if has_permanent_cashout_bypass(int(club_id), int(chat_id)):
@@ -1242,9 +1226,7 @@ def cashout_shown_on_popup_keyboard(club_id: int, chat_id: int) -> bool:
             return True
 
         now_utc = datetime.now(timezone.utc)
-        now_est = now_utc.astimezone(EST)
         cooldown_on = settings["cooldown_enabled"]
-        hours_on = settings["hours_enabled"]
 
         if cooldown_on:
             last = get_last_activity(int(club_id), int(chat_id))
@@ -1255,10 +1237,6 @@ def cashout_shown_on_popup_keyboard(club_id: int, chat_id: int) -> bool:
                 if not passed:
                     return False
 
-        if hours_on and not _is_within_hours(
-            now_est, settings["hours_start"], settings["hours_end"]
-        ):
-            return False
         return True
     except Exception:
         logger.warning(
@@ -1273,7 +1251,13 @@ def cashout_shown_on_popup_keyboard(club_id: int, chat_id: int) -> bool:
 def check_cashout_eligibility(
     club_id: int, chat_id: int
 ) -> tuple[bool, Optional[str]]:
-    """Check cooldown + business hours for this support group. Returns (eligible, denial_message)."""
+    """Check cooldown (hard) + business hours (advisory).
+
+    Returns ``(eligible, message)``:
+    - cooldown not passed → ``(False, denial)``
+    - eligible + outside hours → ``(True, advisory)``
+    - eligible + within hours / hours off → ``(True, None)``
+    """
     settings = get_cooldown_settings(club_id)
     if not settings:
         return True, None
@@ -1283,11 +1267,7 @@ def check_cashout_eligibility(
     hours_on = settings["hours_enabled"]
     cooldown_on = settings["cooldown_enabled"]
 
-    # ── Determine if cooldown has passed ──────────────────────────────────
-    cooldown_passed = True
-    eligible_at_est = None
-    wait_str = ""
-
+    # ── Cooldown hard gate ────────────────────────────────────────────────
     if cooldown_on:
         bypass = check_and_consume_bypass(club_id, chat_id)
         if not bypass:
@@ -1297,59 +1277,32 @@ def check_cashout_eligibility(
                     last, settings["cooldown_hours"], now_utc
                 )
                 if not passed:
-                    cooldown_passed = False
+                    cooldown_hours = settings["cooldown_hours"]
+                    elig_time = (
+                        eligible_at_est.strftime("%-I:%M %p") if eligible_at_est else ""
+                    )
+                    elig_day = (
+                        _day_label(eligible_at_est.date(), now_est.date())
+                        if eligible_at_est
+                        else ""
+                    )
+                    return False, (
+                        f"Sorry, you must wait {cooldown_hours} hours since your last "
+                        f"deposit or cashout! Your remaining waiting time is {wait_str}.\n\n"
+                        f"You can reach back out at {elig_time} EST {elig_day} "
+                        f"and you will be cashed out instantly!\n\n"
+                        f"Deposits and any other inquiries are open 24/7 so feel free "
+                        f"to reach out to our team about anything else!"
+                    )
 
-    # ── Eligible + within business hours → allow ──────────────────────────
-    if cooldown_passed and (not hours_on or _is_within_hours(now_est, settings["hours_start"], settings["hours_end"])):
-        return True, None
-
-    hours_range = _hours_range_str(settings) if hours_on else ""
-
-    # ── Eligible + outside business hours → block with "come back at open" ─
-    if cooldown_passed and hours_on:
-        open_at = _next_open_time(now_est, settings["hours_start"], settings["hours_end"])
-        open_time = open_at.strftime("%-I:%M %p")
-        open_day = _day_label(open_at.date(), now_est.date())
-        return False, (
-            f"It is currently outside active instant cashout hours ({hours_range} EST).\n\n"
-            f"Please request a cashout at {open_time} EST {open_day} "
-            f"and it will be sent instantly! Keep in mind, cashouts are only available "
-            f"after 24 hours have passed since your last deposit and cashout.\n\n"
-            f"Deposits and any other inquiries are open 24/7, so feel free "
-            f"to reach out to our team about anything else!"
-        )
-
-    # ── Not eligible (in cooldown) ────────────────────────────────────────
-
-    cooldown_hours = settings["cooldown_hours"]
-    rule_line = (
-        f"Sorry, you must wait {cooldown_hours} hours since your last deposit or cashout! "
-        f"Your remaining waiting time is {wait_str}."
-    )
-
-    # Check if the eligible time falls outside business hours
-    if hours_on and eligible_at_est and not _is_within_hours(
-        eligible_at_est, settings["hours_start"], settings["hours_end"]
+    # ── Outside hours → allow with advisory notice ────────────────────────
+    if hours_on and not _is_within_hours(
+        now_est, settings["hours_start"], settings["hours_end"]
     ):
-        open_at = _next_open_time(eligible_at_est, settings["hours_start"], settings["hours_end"])
-        open_time = open_at.strftime("%-I:%M %p")
-        open_day = _day_label(open_at.date(), now_est.date())
-        return False, (
-            f"{rule_line}\n\n"
-            f"Since that time falls outside of our active instant cashout hours "
-            f"({hours_range} EST) you can reach back out to us at "
-            f"{open_time} EST {open_day} and we will get you cashed out instantly!\n\n"
-            f"Deposits and any other inquiries are open 24/7 so feel free "
-            f"to reach out to our team about anything else!"
+        hours_range = _hours_range_str(settings)
+        return True, (
+            f"Cashouts submitted now are processed during business hours "
+            f"({hours_range} EST). You can continue — we'll handle payout when hours open."
         )
 
-    # Eligible time is within business hours
-    elig_time = eligible_at_est.strftime("%-I:%M %p") if eligible_at_est else ""
-    elig_day = _day_label(eligible_at_est.date(), now_est.date()) if eligible_at_est else ""
-    return False, (
-        f"{rule_line}\n\n"
-        f"You can reach back out at {elig_time} EST {elig_day} "
-        f"and you will be cashed out instantly!\n\n"
-        f"Deposits and any other inquiries are open 24/7 so feel free "
-        f"to reach out to our team about anything else!"
-    )
+    return True, None

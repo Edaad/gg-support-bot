@@ -24,7 +24,8 @@ every other flow are unchanged.
 ## Flow
 
 1. Player runs `/cashout` (or `/withdraw`) and enters an amount. Existing
-   eligibility (24-hour cooldown + business hours) still gates entry.
+   eligibility (24-hour cooldown hard gate; business hours advisory notice) still
+   runs at entry.
 2. The bot verifies at least one **active** cashout method with an automated handle
    format is available for the amount (below-min / no-method ends the flow with the
    usual message).

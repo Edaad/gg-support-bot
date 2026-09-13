@@ -170,10 +170,12 @@ async def cashout_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Cooldown + business hours check (admins/staff are exempt)
     is_staff = is_club_staff(user_id, club_id)
     if not is_staff:
-        eligible, deny_msg = check_cashout_eligibility(club_id, chat.id)
+        eligible, msg = check_cashout_eligibility(club_id, chat.id)
         if not eligible:
-            await message.reply_text(deny_msg)
+            await message.reply_text(msg)
             return ConversationHandler.END
+        if msg:
+            await message.reply_text(msg)
         # Auto-mode cashouts are hands-off; skip the "Cash out initiated." ping so
         # admins are only alerted when the flow actually needs a human.
         if not get_auto_cashout_enabled(club_id):
@@ -270,13 +272,15 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
             cashout_chat_id = context.chat_data.get("cashout_chat_id")
             if club_id and cashout_chat_id:
                 if not is_club_staff(uid, club_id):
-                    eligible, deny_msg = check_cashout_eligibility(
+                    eligible, msg = check_cashout_eligibility(
                         club_id, cashout_chat_id
                     )
                     if not eligible:
-                        await update.message.reply_text(deny_msg)
+                        await update.message.reply_text(msg)
                         _cleanup_after_flow(context)
                         return ConversationHandler.END
+                    if msg:
+                        await update.message.reply_text(msg)
 
     club_id = context.chat_data.get("cashout_club_id")
     if not club_id:
@@ -338,13 +342,15 @@ async def cashout_simple_amount_received(
             cashout_chat_id = context.chat_data.get("cashout_chat_id")
             if club_id and cashout_chat_id:
                 if not is_club_staff(uid, club_id):
-                    eligible, deny_msg = check_cashout_eligibility(
+                    eligible, msg = check_cashout_eligibility(
                         club_id, cashout_chat_id
                     )
                     if not eligible:
-                        await update.message.reply_text(deny_msg)
+                        await update.message.reply_text(msg)
                         _cleanup_after_flow(context)
                         return ConversationHandler.END
+                    if msg:
+                        await update.message.reply_text(msg)
 
     club_id = context.chat_data.get("cashout_club_id")
     if not club_id:
@@ -507,13 +513,15 @@ async def cashout_auto_amount_received(update, context):
             club_id0 = context.chat_data.get("cashout_club_id")
             cashout_chat_id = context.chat_data.get("cashout_chat_id")
             if club_id0 and cashout_chat_id and not is_club_staff(uid, club_id0):
-                eligible, deny_msg = check_cashout_eligibility(
+                eligible, msg = check_cashout_eligibility(
                     club_id0, cashout_chat_id
                 )
                 if not eligible:
-                    await update.message.reply_text(deny_msg)
+                    await update.message.reply_text(msg)
                     _cleanup_after_flow(context)
                     return ConversationHandler.END
+                if msg:
+                    await update.message.reply_text(msg)
 
     club_id = context.chat_data.get("cashout_club_id")
     if not club_id:

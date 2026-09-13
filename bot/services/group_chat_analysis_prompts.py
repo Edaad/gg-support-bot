@@ -102,9 +102,9 @@ Category rules:
 but **no** deposit fulfillment line — includes bot auto-cancel, customer ghosted, method issues, \
 KYC hold with no chips added
 - `cashout`: cashout attempt that **progressed past** the policy gate (amount / rails / working / \
-sent). Do **not** use this for 24h-wait or outside-hours blocks alone
-- `unfinished_cashout`: cashout blocked by **24-hour wait** or **outside cashout hours** before the \
-payout flow really starts (bot or admin policy block)
+sent). Do **not** use this for 24h-wait blocks alone (off-hours is advisory and still allows the flow)
+- `unfinished_cashout`: cashout blocked by **24-hour wait** before the payout flow really starts \
+(bot or admin cooldown policy block)
 - `early_rakeback`: **all** early rakeback ask / fulfill / deny (load early RB, `/earlyrb`, \
 under-minimum denials, cooldown denials, "Added N in early rb", including early-rb exceptions \
 granted during other threads)
@@ -135,7 +135,8 @@ line that credits the deposit chips; a later admin `added N bonus chips` after a
 ### Cashout vs unfinished_cashout
 
 - `unfinished_cashout`: `/cashout` or a cashout ask hits "wait X hours since last deposit/cashout" \
-or "outside active instant cashout hours (8 AM–11 PM EST)" and the payout flow never really starts.
+and the payout flow never really starts. Off-hours processing notices alone are **not** unfinished \
+(player can continue the wizard).
 - `cashout`: the attempt progressed (amount collected, rails collected, working, sent) even if it \
 later stalls.
 - For `unfinished_cashout`, set `resolution` to the timestamp of the blocking message and mention \

@@ -43,7 +43,7 @@ One row per **club** (poker/gaming room operator). The **primary** Telegram iden
 | `cashout_simple_mode` + `cashout_simple_*` | bool + content | Same for `/cashout`; no cooldown UI in-flow (eligibility still checked first). |
 | `cashout_cooldown_enabled` | bool | Enforces wait between **cashouts** based on last activity (see **Player activity**). |
 | `cashout_cooldown_hours` | int | Hours after last **deposit or cashout** before another cashout is allowed. |
-| `cashout_hours_enabled` | bool | Restricts cashout to a daily window (interpreted in **America/New_York** in code). |
+| `cashout_hours_enabled` | bool | When on, outside the daily window the bot shows an **advisory** that payouts are processed during hours (cashout still accepted). Interpreted in **America/New_York**. |
 | `cashout_hours_start` / `cashout_hours_end` | string(5) | e.g. `08:00`–`23:00` local to that timezone. |
 | `aces_option_min_deposits` | int, not null, default 0 | **Creator Club only.** Deposits a group must already have (non-cancelled `player_activities` `deposit` rows) before `/deposit` offers the Creator Club / Aces Table picker. `0` = always offer. Groups that already deposit to Aces Table keep the picker regardless (see [`migrate_aces_option_min_deposits.py`](../migrate_aces_option_min_deposits.py)). |
 | `enable_transfer` | bool, not null, default false | Enables `/transfer`, moving chips between the club's two unions (Round Table `RT<->AT`, Creator Club `CC<->AT`). Also needs the deposit API and `auto_claim_enabled`; single-union clubs ignore it (see [`migrate_enable_transfer.py`](../migrate_enable_transfer.py) and [`docs/TRANSFER.md`](TRANSFER.md)). |
@@ -214,13 +214,13 @@ Append-only style log of **completed** deposit and cashout actions for **cooldow
 | `cancelled` | bool | |
 | `created_at` | datetime | |
 
-**Business logic:** `check_cashout_eligibility` uses the **latest non-cancelled** deposit or cashout timestamp for that **support group** (`club_id` + `chat_id`). If cooldown is enabled, the next `/cashout` in that group must wait `cashout_cooldown_hours` after that timestamp (subject to business hours and bypasses). Admin `/add` and `/cash` set the timer for the current group without replying to a message.
+**Business logic:** `check_cashout_eligibility` uses the **latest non-cancelled** deposit or cashout timestamp for that **support group** (`club_id` + `chat_id`). If cooldown is enabled, the next `/cashout` in that group must wait `cashout_cooldown_hours` after that timestamp (subject to bypasses). Business hours are advisory only (off-hours notice). Admin `/add` and `/cash` set the timer for the current group without replying to a message.
 
 ---
 
 ### `cooldown_bypasses`
 
-Per **support group chat** exceptions for cooldown only (not for business hours alone—see code in `check_cashout_eligibility`).
+Per **support group chat** exceptions for cooldown only (business hours are advisory — see `check_cashout_eligibility`).
 
 | Column | Type | Business meaning |
 |--------|------|------------------|

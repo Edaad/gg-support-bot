@@ -47,7 +47,7 @@ class CashoutShownOnPopupKeyboardTests(unittest.TestCase):
                         club_svc.cashout_shown_on_popup_keyboard(2, -100)
                     )
 
-    def test_outside_hours_hides_cashout(self):
+    def test_outside_hours_shows_cashout(self):
         with patch.object(club_svc, "has_permanent_cashout_bypass", return_value=False):
             with patch.object(
                 club_svc,
@@ -61,7 +61,7 @@ class CashoutShownOnPopupKeyboardTests(unittest.TestCase):
                 },
             ):
                 with patch.object(club_svc, "_is_within_hours", return_value=False):
-                    self.assertFalse(
+                    self.assertTrue(
                         club_svc.cashout_shown_on_popup_keyboard(2, -100)
                     )
 
