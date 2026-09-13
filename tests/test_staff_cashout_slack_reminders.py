@@ -58,7 +58,10 @@ class FormatCashoutPushoverReminderTests(unittest.TestCase):
         self.assertNotIn(":siren:", text)
         self.assertNotIn("`", text)
         self.assertNotIn("|Open cashout>", text)
-        self.assertIn("waiting longer than 5 minutes", text)
+        self.assertIn(
+            "The following player has been waiting longer than 5 minutes:",
+            text,
+        )
 
 
 class DashboardUrlTests(unittest.TestCase):
@@ -261,7 +264,7 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
             },
         ]
         notify = AsyncMock(side_effect=[True, False])
-        pushover = AsyncMock(return_value=True)
+        pushover = AsyncMock(return_value=1)
         session = MagicMock()
         row1 = MagicMock()
         row1.id = 1
@@ -282,7 +285,7 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
             "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
             notify,
         ), patch(
-            "bot.services.pushover_notify.notify_pushover",
+            "bot.services.staff_cashout_pushover.notify_cashout_pushover_async",
             pushover,
         ), patch(
             "bot.services.staff_cashout_slack_reminders.get_db"
@@ -305,13 +308,7 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
             notify.await_args_list[0].kwargs.get("source"),
             rem.SLACK_SOURCE,
         )
-        push_msg = pushover.await_args.args[0]
-        self.assertIn("RT / 1 / A", push_msg)
-        self.assertNotIn("`", push_msg)
-        self.assertEqual(
-            pushover.await_args.kwargs.get("url"),
-            "https://dash.example/cashout-records/1",
-        )
+        self.assertEqual(pushover.await_args.args[0], 1)
 
     async def test_pushover_failure_still_stamps(self) -> None:
         due = [
@@ -322,7 +319,7 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
             },
         ]
         notify = AsyncMock(return_value=True)
-        pushover = AsyncMock(return_value=False)
+        pushover = AsyncMock(return_value=0)
         session = MagicMock()
         row1 = MagicMock()
         row1.id = 1
@@ -342,7 +339,7 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
             "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
             notify,
         ), patch(
-            "bot.services.pushover_notify.notify_pushover",
+            "bot.services.staff_cashout_pushover.notify_cashout_pushover_async",
             pushover,
         ), patch(
             "bot.services.staff_cashout_slack_reminders.get_db"
@@ -364,7 +361,7 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
             },
         ]
         notify = AsyncMock(return_value=False)
-        pushover = AsyncMock(return_value=True)
+        pushover = AsyncMock(return_value=1)
 
         with patch(
             "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
@@ -376,7 +373,7 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
             "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
             notify,
         ), patch(
-            "bot.services.pushover_notify.notify_pushover",
+            "bot.services.staff_cashout_pushover.notify_cashout_pushover_async",
             pushover,
         ), patch(
             "bot.services.staff_cashout_slack_reminders.get_db"
@@ -396,7 +393,7 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
             "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
             new_callable=AsyncMock,
         ) as notify, patch(
-            "bot.services.pushover_notify.notify_pushover",
+            "bot.services.staff_cashout_pushover.notify_cashout_pushover_async",
             new_callable=AsyncMock,
         ) as pushover:
             sent = await rem.send_due_cashout_reminders()

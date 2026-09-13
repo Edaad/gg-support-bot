@@ -25,6 +25,10 @@ from api.record_csv_export import (
 from api.schemas import (
     StaffCashoutMoneySendLedgerRead,
     StaffCashoutMoneySendListResponse,
+    StaffCashoutNotifyRecipientCreate,
+    StaffCashoutNotifyRecipientRead,
+    StaffCashoutNotifyRecipientsListResponse,
+    StaffCashoutNotifyRecipientUpdate,
     StaffCashoutPaymentCreate,
     StaffCashoutPaymentRead,
     StaffCashoutPaymentUpdate,
@@ -286,6 +290,96 @@ async def patch_cashout_slack_reminder(
         except Exception:
             logger.exception("cashout_slack_reminder: immediate send failed")
     return StaffCashoutSlackReminderRead(enabled=bool(state["enabled"]))
+
+
+def _recipient_read(data: dict) -> StaffCashoutNotifyRecipientRead:
+    return StaffCashoutNotifyRecipientRead(
+        id=int(data["id"]),
+        name=str(data["name"]),
+        pushover_user_key=str(data["pushover_user_key"]),
+        methods=list(data.get("methods") or []),
+        created_at=data.get("created_at"),
+        updated_at=data.get("updated_at"),
+    )
+
+
+@router.get(
+    "/notify-recipients",
+    response_model=StaffCashoutNotifyRecipientsListResponse,
+)
+def list_cashout_notify_recipients(
+    _admin: str = Depends(require_admin),
+):
+    from bot.services.staff_cashout_pushover import (
+        FIXED_RAILS,
+        RAIL_LABELS,
+        list_notify_recipients,
+    )
+
+    return StaffCashoutNotifyRecipientsListResponse(
+        rails=[{"slug": s, "label": RAIL_LABELS[s]} for s in FIXED_RAILS],
+        recipients=[_recipient_read(r) for r in list_notify_recipients()],
+    )
+
+
+@router.post(
+    "/notify-recipients",
+    response_model=StaffCashoutNotifyRecipientRead,
+    status_code=201,
+)
+def create_cashout_notify_recipient(
+    body: StaffCashoutNotifyRecipientCreate,
+    _admin: str = Depends(require_admin),
+):
+    from bot.services.staff_cashout_pushover import create_notify_recipient
+
+    try:
+        data = create_notify_recipient(
+            name=body.name,
+            pushover_user_key=body.pushover_user_key,
+            methods=list(body.methods or []),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _recipient_read(data)
+
+
+@router.patch(
+    "/notify-recipients/{recipient_id}",
+    response_model=StaffCashoutNotifyRecipientRead,
+)
+def patch_cashout_notify_recipient(
+    recipient_id: int,
+    body: StaffCashoutNotifyRecipientUpdate,
+    _admin: str = Depends(require_admin),
+):
+    from bot.services.staff_cashout_pushover import update_notify_recipient
+
+    updates = body.model_dump(exclude_unset=True)
+    try:
+        data = update_notify_recipient(
+            recipient_id,
+            name=updates.get("name"),
+            pushover_user_key=updates.get("pushover_user_key"),
+            methods=updates.get("methods"),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not data:
+        raise HTTPException(404, "Recipient not found")
+    return _recipient_read(data)
+
+
+@router.delete("/notify-recipients/{recipient_id}", status_code=204)
+def delete_cashout_notify_recipient(
+    recipient_id: int,
+    _admin: str = Depends(require_admin),
+):
+    from bot.services.staff_cashout_pushover import delete_notify_recipient
+
+    if not delete_notify_recipient(recipient_id):
+        raise HTTPException(404, "Recipient not found")
+    return None
 
 
 @router.post("", response_model=StaffCashoutRecordRead, status_code=201)

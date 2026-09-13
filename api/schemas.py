@@ -733,6 +733,32 @@ class StaffCashoutSlackReminderUpdate(BaseModel):
     enabled: bool
 
 
+class StaffCashoutNotifyRecipientRead(BaseModel):
+    id: int
+    name: str
+    pushover_user_key: str
+    methods: List[str] = []
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class StaffCashoutNotifyRecipientCreate(BaseModel):
+    name: str
+    pushover_user_key: str
+    methods: List[str] = []
+
+
+class StaffCashoutNotifyRecipientUpdate(BaseModel):
+    name: Optional[str] = None
+    pushover_user_key: Optional[str] = None
+    methods: Optional[List[str]] = None
+
+
+class StaffCashoutNotifyRecipientsListResponse(BaseModel):
+    rails: List[dict]
+    recipients: List[StaffCashoutNotifyRecipientRead]
+
+
 class StaffCashoutPaymentCreate(BaseModel):
     payment_method_id: Optional[int] = None
     payment_sub_option_id: Optional[int] = None

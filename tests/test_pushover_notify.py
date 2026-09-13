@@ -9,16 +9,23 @@ from bot.services import pushover_notify as push
 
 
 class NotifyPushoverTests(unittest.IsolatedAsyncioTestCase):
-    async def test_skips_when_env_unset(self) -> None:
+    async def test_skips_when_token_unset(self) -> None:
         with patch.dict(
             "os.environ",
-            {
-                push.PUSHOVER_APP_TOKEN_ENV: "",
-                push.PUSHOVER_USER_KEY_ENV: "",
-            },
+            {push.PUSHOVER_APP_TOKEN_ENV: ""},
             clear=False,
         ), patch("bot.services.pushover_notify.httpx.AsyncClient") as client_cls:
-            ok = await push.notify_pushover("hello", source="test")
+            ok = await push.notify_pushover("hello", user="usr456", source="test")
+        self.assertFalse(ok)
+        client_cls.assert_not_called()
+
+    async def test_skips_when_user_empty(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {push.PUSHOVER_APP_TOKEN_ENV: "tok123"},
+            clear=False,
+        ), patch("bot.services.pushover_notify.httpx.AsyncClient") as client_cls:
+            ok = await push.notify_pushover("hello", user="  ", source="test")
         self.assertFalse(ok)
         client_cls.assert_not_called()
 
@@ -33,10 +40,7 @@ class NotifyPushoverTests(unittest.IsolatedAsyncioTestCase):
 
         with patch.dict(
             "os.environ",
-            {
-                push.PUSHOVER_APP_TOKEN_ENV: "tok123",
-                push.PUSHOVER_USER_KEY_ENV: "usr456",
-            },
+            {push.PUSHOVER_APP_TOKEN_ENV: "tok123"},
             clear=False,
         ), patch(
             "bot.services.pushover_notify.httpx.AsyncClient",
@@ -44,6 +48,7 @@ class NotifyPushoverTests(unittest.IsolatedAsyncioTestCase):
         ):
             ok = await push.notify_pushover(
                 "Player waiting",
+                user="usr456",
                 title="URGENT cashout",
                 url="https://dash.example/cashout-records/1",
                 url_title="Open cashout",
@@ -79,24 +84,43 @@ class NotifyPushoverTests(unittest.IsolatedAsyncioTestCase):
 
         with patch.dict(
             "os.environ",
-            {
-                push.PUSHOVER_APP_TOKEN_ENV: "tok123",
-                push.PUSHOVER_USER_KEY_ENV: "bad",
-            },
+            {push.PUSHOVER_APP_TOKEN_ENV: "tok123"},
             clear=False,
         ), patch(
             "bot.services.pushover_notify.httpx.AsyncClient",
             return_value=client,
         ):
-            ok = await push.notify_pushover("hello", source="test")
+            ok = await push.notify_pushover("hello", user="bad", source="test")
 
         self.assertFalse(ok)
 
     async def test_empty_message_returns_false(self) -> None:
         with patch("bot.services.pushover_notify.httpx.AsyncClient") as client_cls:
-            ok = await push.notify_pushover("   ", source="test")
+            ok = await push.notify_pushover("   ", user="usr", source="test")
         self.assertFalse(ok)
         client_cls.assert_not_called()
+
+    def test_sync_success(self) -> None:
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"status": 1, "request": "req-2"}
+        client = MagicMock()
+        client.post.return_value = resp
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+
+        with patch.dict(
+            "os.environ",
+            {push.PUSHOVER_APP_TOKEN_ENV: "tok123"},
+            clear=False,
+        ), patch(
+            "bot.services.pushover_notify.httpx.Client",
+            return_value=client,
+        ):
+            ok = push.notify_pushover_sync("hi", user="usr456", source="test")
+
+        self.assertTrue(ok)
+        client.post.assert_called_once()
 
 
 if __name__ == "__main__":

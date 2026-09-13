@@ -233,12 +233,31 @@ def create_staff_cashout_record_from_job(job: dict[str, Any]) -> Optional[int]:
         )
         session.add(payment)
         session.flush()
+        record_id = int(record.id)
         logger.info(
             "staff_cashout_record created job_id=%s record_id=%s",
             job_id,
-            record.id,
+            record_id,
         )
-        return record.id
+
+    try:
+        from bot.services.staff_cashout_pushover import (
+            SOURCE_CREATE,
+            notify_cashout_pushover_sync,
+        )
+
+        notify_cashout_pushover_sync(
+            record_id,
+            title="New cashout",
+            source=SOURCE_CREATE,
+            require_master_toggle=True,
+        )
+    except Exception:
+        logger.exception(
+            "staff_cashout_record: create pushover failed record_id=%s",
+            record_id,
+        )
+    return record_id
 
 
 def apply_low_deposit_cashout_hold(record_id: int) -> Optional[dict[str, Any]]:
@@ -325,9 +344,31 @@ def create_staff_cashout_record_manual(
         )
         session.add(record)
         session.flush()
-        logger.info("staff_cashout_record created from dashboard record_id=%s", record.id)
+        record_id = int(record.id)
+        logger.info(
+            "staff_cashout_record created from dashboard record_id=%s", record_id
+        )
         session.expire(record, ["payments", "money_sends"])
-        return _record_to_dict(record)
+        data = _record_to_dict(record)
+
+    try:
+        from bot.services.staff_cashout_pushover import (
+            SOURCE_CREATE,
+            notify_cashout_pushover_sync,
+        )
+
+        notify_cashout_pushover_sync(
+            record_id,
+            title="New cashout",
+            source=SOURCE_CREATE,
+            require_master_toggle=True,
+        )
+    except Exception:
+        logger.exception(
+            "staff_cashout_record: create pushover failed record_id=%s",
+            record_id,
+        )
+    return data
 
 
 def update_staff_cashout_record(

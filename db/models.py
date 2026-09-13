@@ -928,6 +928,21 @@ class StaffCashoutSlackReminderControl(Base):
     )
 
 
+class StaffCashoutNotifyRecipient(Base):
+    """Pushover recipient for cashout create / overdue alerts (method-filtered)."""
+
+    __tablename__ = "staff_cashout_notify_recipients"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    pushover_user_key = Column(String(64), nullable=False)
+    methods = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class StaffCashoutPayment(Base):
     """Payout line(s) for a staff cashout record — supports multiple payment methods."""
 

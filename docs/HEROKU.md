@@ -432,6 +432,7 @@ heroku run -a YOUR_APP -- python migrate_staff_cashout_ledger.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_do_not_send.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_list_indexes.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_slack_reminder.py
+heroku run -a YOUR_APP -- python migrate_staff_cashout_notify_recipients.py
 heroku run -a YOUR_APP -- python migrate_bonus_records.py
 heroku run -a YOUR_APP -- python migrate_bonus_drafts.py
 heroku run -a YOUR_APP -- python migrate_bonus_records_player_details.py
@@ -444,12 +445,12 @@ heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py --apply
 ```
 
-Dashboard **Cashout records** admin toggle **5 min Slack reminder** posts one urgent message per overdue Active cashout to `SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID` (same bot token as escalation). Requires `migrate_staff_cashout_slack_reminder.py`. Optional `DASHBOARD_PUBLIC_URL` (else `https://{HEROKU_APP_NAME}.herokuapp.com`) for the Slack **Open cashout** link. Worker polls every 30s; per-record cadence is 5 minutes. Turning the toggle on fires immediately.
+Dashboard **Cashout records** admin **Configure notifications** modal holds the **5 min Slack reminder** master toggle and Pushover recipients (name, user key, method ticks). When the toggle is on: overdue Active cashouts post to `SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`, and method-filtered Pushover fires on create + after each overdue Slack send. Requires `migrate_staff_cashout_slack_reminder.py` and `migrate_staff_cashout_notify_recipients.py`. Optional `DASHBOARD_PUBLIC_URL` (else `https://{HEROKU_APP_NAME}.herokuapp.com`) for **Open cashout** links. Worker polls every 30s; per-record overdue cadence is 5 minutes. Turning the toggle on fires overdue Slack immediately.
 
-After a successful Slack send, the same reminder also posts to **Pushover** when both `PUSHOVER_APP_TOKEN` and `PUSHOVER_USER_KEY` are set (user or group key). Priority `1` (bypasses quiet hours). If either env is unset, Slack-only. Pushover failure does not block stamping `last_slack_reminder_at` (additive fan-out; no extra schema).
+Pushover needs `PUSHOVER_APP_TOKEN` only; recipient keys and Venmo/Zelle/Crypto/Cash App/PayPal prefs are stored in `staff_cashout_notify_recipients` (Other/custom methods notify everyone with a key). Priority `1`. If the app token is unset or no recipients match, Slack-only for overdue.
 
 ```bash
-heroku config:set PUSHOVER_APP_TOKEN=... PUSHOVER_USER_KEY=... -a YOUR_APP
+heroku config:set PUSHOVER_APP_TOKEN=... -a YOUR_APP
 ```
 
 Dashboard **Cashout records** and **Bonuses** pages include CSV export (inclusive ET date range: cashouts on `created_at`, bonuses on `issued_at`). JWT API: `GET /api/cashout-records/export?from=…&to=…` and `GET /api/bonus/records/export?from=…&to=…`.

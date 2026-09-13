@@ -3,12 +3,10 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import {
   addCashoutPayment,
   createCashoutRecord,
-  getCashoutSlackReminder,
   listCashoutMoneySendMethods,
   listCashoutMoneySends,
   listCashoutRecords,
   listClubs,
-  setCashoutSlackReminder,
   type CashoutLedgerStatus,
   type Club,
   type StaffCashoutMoneySendLedgerT,
@@ -21,6 +19,7 @@ import CashoutMethodFields, {
   parseMoney,
   type MethodChoice,
 } from '../components/CashoutMethodFields'
+import CashoutNotifyConfigModal from '../components/CashoutNotifyConfigModal'
 import DateRangeCsvExport from '../components/DateRangeCsvExport'
 import Modal from '../components/Modal'
 import {
@@ -142,9 +141,7 @@ export default function CashoutRecords({
   const [toDate, setToDate] = useState(() => easternCalendarDateString())
   const [menuExporting, setMenuExporting] = useState(false)
   const [total, setTotal] = useState(0)
-  const [slackReminderOn, setSlackReminderOn] = useState(false)
-  const [slackReminderLoading, setSlackReminderLoading] = useState(false)
-  const [slackReminderSaving, setSlackReminderSaving] = useState(false)
+  const [notifyConfigOpen, setNotifyConfigOpen] = useState(false)
   const reqId = useRef(0)
   const skipPageReset = useRef(true)
 
@@ -196,44 +193,6 @@ export default function CashoutRecords({
   useEffect(() => {
     if (!isAdmin && (tab === 'money_sent' || tab === 'do_not_send')) setTab('active')
   }, [isAdmin, tab])
-
-  useEffect(() => {
-    if (!isAdmin) return
-    let cancelled = false
-    setSlackReminderLoading(true)
-    getCashoutSlackReminder(token)
-      .then((res) => {
-        if (!cancelled) setSlackReminderOn(Boolean(res.enabled))
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : 'Failed to load Slack reminder')
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setSlackReminderLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [isAdmin, token])
-
-  const toggleSlackReminder = async () => {
-    if (!isAdmin || slackReminderSaving) return
-    const next = !slackReminderOn
-    setSlackReminderOn(next)
-    setSlackReminderSaving(true)
-    setError(null)
-    try {
-      const res = await setCashoutSlackReminder(token, next)
-      setSlackReminderOn(Boolean(res.enabled))
-    } catch (e) {
-      setSlackReminderOn(!next)
-      setError(e instanceof Error ? e.message : 'Failed to update Slack reminder')
-    } finally {
-      setSlackReminderSaving(false)
-    }
-  }
 
   const reloadRecords = () => {
     if (!statusTab) return
@@ -450,26 +409,13 @@ export default function CashoutRecords({
         </div>
         <div className="flex flex-col items-stretch gap-3 sm:items-end">
           {isAdmin && (
-            <label
-              className={`inline-flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink ${
-                slackReminderLoading || slackReminderSaving ? 'opacity-60' : ''
-              }`}
+            <button
+              type="button"
+              onClick={() => setNotifyConfigOpen(true)}
+              className="btn-secondary min-h-11 shrink-0 px-4 text-sm"
             >
-              <span className="font-medium">5 min Slack reminder</span>
-              <span className="relative inline-flex h-6 w-11 shrink-0 items-center">
-                <input
-                  type="checkbox"
-                  className="peer sr-only"
-                  role="switch"
-                  aria-checked={slackReminderOn}
-                  checked={slackReminderOn}
-                  disabled={slackReminderLoading || slackReminderSaving}
-                  onChange={() => void toggleSlackReminder()}
-                />
-                <span className="h-6 w-11 rounded-full bg-control transition peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40" />
-                <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-surface shadow transition peer-checked:translate-x-5" />
-              </span>
-            </label>
+              Configure notifications
+            </button>
           )}
           {tab === 'active' && (
             <button type="button" onClick={openCreate} className="btn-primary min-h-12 shrink-0 px-6 text-base">
@@ -825,6 +771,14 @@ export default function CashoutRecords({
           </button>
         </div>
       </Modal>
+      {isAdmin && (
+        <CashoutNotifyConfigModal
+          open={notifyConfigOpen}
+          onClose={() => setNotifyConfigOpen(false)}
+          token={token}
+          onError={(message) => setError(message)}
+        />
+      )}
     </div>
   )
 }

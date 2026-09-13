@@ -498,6 +498,49 @@ export const setCashoutSlackReminder = (token: string, enabled: boolean) =>
     body: JSON.stringify({ enabled }),
   }, token)
 
+export type CashoutNotifyRailT = { slug: string; label: string }
+
+export type CashoutNotifyRecipientT = {
+  id: number
+  name: string
+  pushover_user_key: string
+  methods: string[]
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export type CashoutNotifyRecipientsListT = {
+  rails: CashoutNotifyRailT[]
+  recipients: CashoutNotifyRecipientT[]
+}
+
+export const listCashoutNotifyRecipients = (token: string) =>
+  request<CashoutNotifyRecipientsListT>(`/cashout-records/notify-recipients`, {}, token)
+
+export const createCashoutNotifyRecipient = (
+  token: string,
+  data: { name: string; pushover_user_key: string; methods: string[] },
+) =>
+  request<CashoutNotifyRecipientT>(`/cashout-records/notify-recipients`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }, token)
+
+export const updateCashoutNotifyRecipient = (
+  token: string,
+  id: number,
+  data: { name?: string; pushover_user_key?: string; methods?: string[] },
+) =>
+  request<CashoutNotifyRecipientT>(`/cashout-records/notify-recipients/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }, token)
+
+export const deleteCashoutNotifyRecipient = (token: string, id: number) =>
+  request<void>(`/cashout-records/notify-recipients/${id}`, {
+    method: 'DELETE',
+  }, token)
+
 export const addCashoutPayment = (
   token: string,
   recordId: number,

@@ -97,8 +97,7 @@ def format_cashout_pushover_reminder(
     title = (group_title or "").strip() or "(unnamed)"
     return "\n".join(
         [
-            "Contact head admins immediately to cash the following player "
-            "on the Hub who has been waiting longer than 5 minutes:",
+            "The following player has been waiting longer than 5 minutes:",
             "",
             title,
             "",
@@ -232,7 +231,10 @@ async def send_due_cashout_reminders(
     now: datetime | None = None,
 ) -> int:
     """Post head-admin Slack (then Pushover) for each due cashout. Returns count sent."""
-    from bot.services.pushover_notify import notify_pushover
+    from bot.services.staff_cashout_pushover import (
+        SOURCE_OVERDUE,
+        notify_cashout_pushover_async,
+    )
     from bot.services.slack_ops_notify import notify_slack_head_admin_escalation
 
     due = list_due_cashout_reminders(now=now)
@@ -268,22 +270,17 @@ async def send_due_cashout_reminders(
             )
             continue
 
-        # Additive: Pushover only after Slack succeeds. Stamp regardless of
-        # Pushover outcome so we do not re-fire every 30s poll.
-        push_ok = await notify_pushover(
-            format_cashout_pushover_reminder(
-                group_title=group_title,
-                remaining=remaining,
-            ),
+        # Additive: method-filtered Pushover after Slack succeeds. Stamp
+        # regardless of Pushover outcome so we do not re-fire every 30s poll.
+        push_sent = await notify_cashout_pushover_async(
+            record_id,
             title="URGENT cashout",
-            url=url,
-            url_title="Open cashout",
-            priority=1,
-            source=SLACK_SOURCE,
+            source=SOURCE_OVERDUE,
+            require_master_toggle=False,
         )
-        if not push_ok:
+        if not push_sent:
             logger.warning(
-                "cashout_slack_reminder: pushover failed record_id=%s",
+                "cashout_slack_reminder: pushover none_sent record_id=%s",
                 record_id,
             )
 
@@ -297,10 +294,10 @@ async def send_due_cashout_reminders(
                 row.last_slack_reminder_at = ping_at
         sent += 1
         logger.info(
-            "cashout_slack_reminder: sent record_id=%s title=%r pushover=%s",
+            "cashout_slack_reminder: sent record_id=%s title=%r pushover_count=%s",
             record_id,
             item.get("group_title"),
-            push_ok,
+            push_sent,
         )
 
     return sent
