@@ -416,7 +416,7 @@ async def cashout_simple_amount_received(
 
 # ---------------------------------------------------------------------------
 # Automated cashout (per-club enable_auto_cashout): claim chips, collect a
-# validated payout handle, and record to the hub. Anything off-script escalates
+# validated payout handle, and record to the dashboard. Anything off-script escalates
 # with a single "an agent will be with you shortly" and the bot bows out.
 # ---------------------------------------------------------------------------
 

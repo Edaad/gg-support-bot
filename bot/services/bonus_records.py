@@ -1,14 +1,11 @@
-"""CRUD helpers for bonus_records and the bonus Zapier webhook."""
+"""CRUD helpers for bonus_records (dashboard Bonuses page)."""
 
 from __future__ import annotations
 
-import logging
-import os
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Optional
 
-import httpx
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 
@@ -16,10 +13,6 @@ from bot.services.bonus_player_resolve import resolve_bonus_player
 from cashier.services.zapier import build_zapier_name
 from db.connection import get_db
 from db.models import BonusRecord, BonusType, Club
-
-logger = logging.getLogger(__name__)
-
-ZAPIER_WEBHOOK_ENV = "ZAPIER_BONUS_WEBHOOK_URL"
 
 
 def _as_decimal(value: Any) -> Decimal:
@@ -33,44 +26,6 @@ def _normalize_issued_at(value: Optional[datetime]) -> datetime:
     if when.tzinfo is None:
         return when.replace(tzinfo=timezone.utc)
     return when.astimezone(timezone.utc)
-
-
-def _issued_at_iso(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, datetime):
-        dt = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-    return str(value)
-
-
-def build_bonus_zapier_payload(data: dict[str, Any]) -> dict[str, Any]:
-    admin_id = data.get("admin_user_id")
-    if admin_id is None:
-        admin_id = ""
-    return {
-        "player_username": data.get("player_username") or "",
-        "gg_player_id": data.get("gg_player_id") or "",
-        "group_title": data.get("group_title") or "",
-        "amount": str(data["amount"]),
-        "bonus_type": data.get("bonus_type_name") or "",
-        "description": data.get("custom_description") or "",
-        "club": data.get("club_name") or "",
-        "admin_telegram_user_id": admin_id,
-        "issued_at": _issued_at_iso(data.get("issued_at")),
-    }
-
-
-def fire_bonus_zapier_webhook(data: dict[str, Any]) -> None:
-    url = os.getenv(ZAPIER_WEBHOOK_ENV)
-    if not url:
-        return
-    payload = build_bonus_zapier_payload(data)
-    try:
-        with httpx.Client(timeout=10) as client:
-            client.post(url, json=payload)
-    except Exception:
-        logger.exception("bonus zapier webhook failed")
 
 
 def record_to_dict(record: BonusRecord) -> dict[str, Any]:
@@ -118,32 +73,18 @@ def _validate_type(
     session,
     bonus_type_id: Optional[int],
     custom_description: Optional[str],
-) -> tuple[Optional[int], Optional[str], str]:
+) -> tuple[Optional[int], Optional[str]]:
     desc = (custom_description or "").strip() or None
     if bonus_type_id is None:
         if not desc:
             raise ValueError("Description is required for Other")
-        return None, desc, "Other"
+        return None, desc
     bt = session.get(BonusType, int(bonus_type_id))
     if not bt:
         raise ValueError("Bonus type not found")
     if not bt.is_active:
         raise ValueError("Bonus type is not active")
-    return int(bt.id), desc, bt.name
-
-
-def _zapier_data_from_record(record: BonusRecord, *, type_name: str, club_name: str) -> dict[str, Any]:
-    return {
-        "player_username": record.player_username,
-        "gg_player_id": record.gg_player_id or "",
-        "group_title": record.group_title or "",
-        "amount": record.amount,
-        "bonus_type_name": type_name,
-        "custom_description": record.custom_description or "",
-        "club_name": club_name,
-        "admin_user_id": "",
-        "issued_at": record.issued_at,
-    }
+    return int(bt.id), desc
 
 
 def _search_needle(q: Optional[str]) -> Optional[str]:
@@ -209,7 +150,7 @@ def create_bonus_record(
         club = session.get(Club, int(club_id))
         if not club:
             raise ValueError("Club not found")
-        type_id, desc, type_name = _validate_type(session, bonus_type_id, custom_description)
+        type_id, desc = _validate_type(session, bonus_type_id, custom_description)
         player = _player_fields(title, int(club_id))
         rec = BonusRecord(
             player_username=player["player_username"],
@@ -227,11 +168,7 @@ def create_bonus_record(
         session.add(rec)
         session.flush()
         session.refresh(rec)
-        data = record_to_dict(rec)
-        zapier_data = _zapier_data_from_record(rec, type_name=type_name, club_name=club.name)
-
-    fire_bonus_zapier_webhook(zapier_data)
-    return data
+        return record_to_dict(rec)
 
 
 def update_bonus_record(record_id: int, **updates: Any) -> Optional[dict[str, Any]]:
@@ -267,7 +204,7 @@ def update_bonus_record(record_id: int, **updates: Any) -> Optional[dict[str, An
                 if "custom_description" in updates
                 else record.custom_description
             )
-            new_id, new_desc, _type_name = _validate_type(session, type_id, desc)
+            new_id, new_desc = _validate_type(session, type_id, desc)
             record.bonus_type_id = new_id
             record.custom_description = new_desc
         if "issued_at" in updates:

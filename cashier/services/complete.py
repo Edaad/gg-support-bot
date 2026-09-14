@@ -1,4 +1,4 @@
-"""Complete a cashier cashout job: Zapier, owed pin/ASAP, cooldown."""
+"""Complete a cashier cashout job: dashboard record, owed pin/ASAP, cooldown."""
 
 from __future__ import annotations
 
@@ -23,7 +23,6 @@ from bot.services.staff_cashout_records import (
 )
 from cashier.services.jobs import complete_job, get_job
 from cashier.services.notify import dm_staff
-from cashier.services.zapier import fire_zapier_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +112,7 @@ async def _notify_low_deposit_hold(hold: dict[str, Any], job: dict[str, Any]) ->
 
 
 async def complete_cashout_job(job_id: int) -> tuple[bool, Optional[str]]:
-    """Finalize job: Zapier POST, pin owed + ASAP, record cooldown."""
+    """Finalize job: dashboard record, pin owed + ASAP, record cooldown."""
     logger.info("complete_cashout_job start job_id=%s", job_id)
     job = get_job(job_id)
     if not job:
@@ -125,15 +124,6 @@ async def complete_cashout_job(job_id: int) -> tuple[bool, Optional[str]]:
     if job["status"] == "cancelled":
         logger.warning("complete_cashout_job: job cancelled id=%s", job_id)
         return False, "Job was cancelled."
-
-    ok, zap_err = await fire_zapier_webhook(job)
-    if not ok:
-        logger.warning(
-            "complete_cashout_job: zapier failed id=%s err=%s",
-            job_id,
-            zap_err,
-        )
-        return False, zap_err
 
     try:
         record_id = create_staff_cashout_record_from_job(job)

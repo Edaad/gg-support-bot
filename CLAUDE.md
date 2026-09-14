@@ -47,7 +47,7 @@ Three independent long-running processes (see `Procfile`):
 |---------|------------|------|
 | `web` | `api/app.py` (Uvicorn) | FastAPI REST API + serves `dashboard/dist` in production |
 | `worker` | `run_bot.py` → `bot/main.py` | Support bot: player-facing commands (`/start`, `/deposit`, `/cashout`, `/gc`, `/list`, `/set`, etc.) |
-| `cashier` | `run_cashier.py` → `cashier/main.py` | Staff wizard bot: guided cashout flow via DM, Zapier → Glide integration |
+| `cashier` | `run_cashier.py` → `cashier/main.py` | Staff wizard bot: guided cashout flow via DM, writes dashboard cashout records |
 
 ### Bot (`bot/`)
 
@@ -60,7 +60,7 @@ Three independent long-running processes (see `Procfile`):
 
 - `cashier/handlers/wizard.py` — ConversationHandler driving the multi-step cashout wizard
 - `cashier/services/jobs.py` — `CashierCashoutJob` state management in Postgres
-- `cashier/services/zapier.py` — POST to Zapier webhook on cashout completion
+- `cashier/services/complete.py` — finalize job: dashboard record, owed pin, cooldown
 - Staff trigger: `/cash <amount>` in a linked support group → bot → GGCashier DM wizard
 
 ### API (`api/`)

@@ -18,7 +18,6 @@ from bot.handlers.flow_cancel import (
 )
 from bot.services.bonus_drafts import cancel_draft, draft_to_context, get_pending_draft, mark_draft_submitted
 from bot.services.bonus_player_resolve import BonusPlayerContext, resolve_bonus_player
-from bot.services.bonus_records import fire_bonus_zapier_webhook
 from db.connection import get_db
 from db.models import BonusType, BonusRecord, Club
 
@@ -172,10 +171,6 @@ def _save_record(data: dict) -> int:
         return rec.id
 
 
-async def _fire_zapier_webhook(data: dict):
-    fire_bonus_zapier_webhook(data)
-
-
 def bonus_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return bool(context.user_data.get(BONUS_STEP_KEY))
 
@@ -303,7 +298,6 @@ async def _finalize_bonus_record(
     }
 
     _save_record(record_data)
-    await _fire_zapier_webhook(record_data)
 
     draft_id = context.user_data.get("bonus_draft_id")
     if draft_id:

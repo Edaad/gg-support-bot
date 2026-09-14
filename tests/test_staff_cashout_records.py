@@ -1,4 +1,4 @@
-"""Tests for staff cashout records service, Zapier payload, and API routes."""
+"""Tests for staff cashout records service and API routes."""
 
 from __future__ import annotations
 
@@ -16,10 +16,7 @@ from bot.services.staff_cashout_records import (
     _matches_search,
     compute_ledger,
 )
-from cashier.services.zapier import (
-    build_zapier_name,
-    build_zapier_payload_from_cashout_record,
-)
+from cashier.services.zapier import build_zapier_name
 from db.connection import get_db_dependency
 
 
@@ -123,7 +120,7 @@ class LedgerStatusTestCase(unittest.TestCase):
         self.assertEqual(ledger["remaining"], Decimal("-50"))
 
 
-class ZapierPayloadTestCase(unittest.TestCase):
+class ZapierNameTestCase(unittest.TestCase):
     def test_build_zapier_name_parses_title(self) -> None:
         name = build_zapier_name("RT / 2427-3267 / Samin")
         self.assertEqual(name, "RT / 2427-3267 / Samin")
@@ -131,23 +128,6 @@ class ZapierPayloadTestCase(unittest.TestCase):
     def test_build_zapier_name_cc_at_keeps_cc_first(self) -> None:
         name = build_zapier_name("CC AT / 8879-5560 / V")
         self.assertEqual(name, "CC AT / 8879-5560 / V")
-
-    def test_build_payload_from_record_uses_primary_payment(self) -> None:
-        record = _sample_record()
-        payload, err = build_zapier_payload_from_cashout_record(
-            record, record["payments"]
-        )
-        self.assertIsNone(err)
-        assert payload is not None
-        self.assertEqual(payload["name"], "RT / 2427-3267 / Samin")
-        self.assertEqual(payload["opening_balance"], 500.0)
-        self.assertEqual(payload["other"], "@player")
-
-    def test_build_payload_fails_without_payment(self) -> None:
-        record = _sample_record()
-        payload, err = build_zapier_payload_from_cashout_record(record, [])
-        self.assertIsNone(payload)
-        self.assertIn("no payment method", err or "")
 
 
 class StaffCashoutRecordServiceTestCase(unittest.TestCase):
@@ -892,7 +872,7 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
 
 
 class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
-    async def test_complete_creates_staff_record_after_zapier(self) -> None:
+    async def test_complete_creates_staff_record(self) -> None:
         job = {
             "id": 7,
             "club_id": 2,
@@ -908,9 +888,6 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
         with patch(
             "cashier.services.complete.get_job",
             return_value=job,
-        ), patch(
-            "cashier.services.complete.fire_zapier_webhook",
-            new=AsyncMock(return_value=(True, None)),
         ), patch(
             "cashier.services.complete.create_staff_cashout_record_from_job",
             return_value=99,
@@ -976,9 +953,6 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             "cashier.services.complete.get_job",
             return_value=job,
         ), patch(
-            "cashier.services.complete.fire_zapier_webhook",
-            new=AsyncMock(return_value=(True, None)),
-        ) as mock_zapier, patch(
             "cashier.services.complete.create_staff_cashout_record_from_job",
             return_value=99,
         ), patch(
@@ -1011,7 +985,6 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             ok, err = await complete_cashout_job(7)
             self.assertTrue(ok)
             self.assertIsNone(err)
-            mock_zapier.assert_awaited_once()
             mock_slack.assert_awaited_once()
             text = mock_slack.await_args.args[0]
             self.assertTrue(

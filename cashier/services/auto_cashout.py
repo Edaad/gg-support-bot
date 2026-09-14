@@ -1,11 +1,11 @@
-"""Complete a fully automated player cashout via the shared GGCashier hub path.
+"""Complete a fully automated player cashout via the shared GGCashier dashboard path.
 
 The player-facing bot collects amount, method, sub-option, and a validated payout
 handle, then calls :func:`complete_auto_cashout`. This creates a
 ``cashier_cashout_jobs`` row (trigger ``auto_cashout``), fills in the payment
 fields, marks the trade-record / 24-hour attestations (both are enforced by the
 bot before this point), and runs the same ``complete_cashout_job`` used by staff
-cashouts so the row reaches Zapier -> Glide, the audit table, the group owed pin
+cashouts so the row reaches the dashboard audit table, the group owed pin
 + ASAP message, and the cooldown activity.
 """
 

@@ -2,8 +2,8 @@
 
 Turns the player-facing `/cashout` and `/withdraw` flow into a fully automated
 cashout for clubs that opt in. The bot claims the chips, collects a validated
-payout handle from the player, and records the cashout to the hub using the exact
-same GGCashier/Zapier completion path that staff use today. Anything that falls
+payout handle from the player, and records the cashout to the dashboard using the
+same GGCashier completion path that staff use today. Anything that falls
 outside the strict procedure posts a single "an agent will be with you shortly"
 message and Slack-escalates, then the bot bows out so a human can finish.
 
@@ -56,9 +56,9 @@ every other flow are unchanged.
    the ClubGG auto-claim for the chosen club/union. On failure or an UNCERTAIN
    result it escalates and stops. Claiming last means the player is never waiting on
    ClubGG before being asked for their method and handle.
-7. On a clean claim, the cashout is recorded via `complete_cashout_job` → Zapier
-   (Glide RT Hub) + `staff_cashout_records` audit + the group "$X owed" pin + the
-   cooldown activity. The player gets a short confirmation.
+7. On a clean claim, the cashout is recorded via `complete_cashout_job` →
+   `staff_cashout_records` (dashboard Cashout Records) + the group "$X owed" pin +
+   the cooldown activity. The player gets a short confirmation.
 
 Because the bot only allows cashouts 24h after the last deposit/cashout and the
 trade record is enforced by the bot, both attestations are auto-marked on the job.
@@ -71,7 +71,7 @@ The bot posts "An agent will be with you shortly." exactly once and Slack-escala
 - The chip claim fails or is UNCERTAIN.
 - The player's reply is not a valid handle for the chosen method.
 - Any off-script message arrives from the target customer (free text, media, etc.).
-- Recording the cashout to the hub fails.
+- Recording the cashout to the dashboard fails.
 
 Only the **target customer's** messages are evaluated. Global admins and club staff
 can message freely to take over quietly — their messages are ignored, not escalated.

@@ -7,7 +7,7 @@ Telegram bot and web dashboard for club operators: configurable welcome and list
 | Component | Role |
 |-----------|------|
 | **Bot** (`bot/main.py`, `run_bot.py`) | Long-polling Telegram worker: `/start`, `/deposit`, `/cashout`, `/gc` (Telethon-backed megagroups), `/list`, `/set`, linked groups, cooldown bypass, etc. |
-| **GGCashier** (`cashier/main.py`, `run_cashier.py`) | Separate staff bot: cashout wizard in DM, Zapier → Glide, defers group pin/ASAP until completion. |
+| **GGCashier** (`cashier/main.py`, `run_cashier.py`) | Separate staff bot: cashout wizard in DM, writes the dashboard cashout record, defers group pin/ASAP until completion. |
 | **API** (`api/`, `run_api.py`) | FastAPI backend for the dashboard; creates tables on startup (`Base.metadata.create_all`). |
 | **Dashboard** (`dashboard/`) | React + Vite + Tailwind SPA; in production the API serves `dashboard/dist`. |
 
@@ -26,7 +26,6 @@ Heroku-style split: `web` runs Uvicorn, `worker` runs the support bot, `cashier`
 | `DATABASE_URL` | Yes | PostgreSQL URL (e.g. `postgresql://user:pass@host:5432/dbname`). `postgres://` is normalized to `postgresql://`. |
 | `TELEGRAM_BOT_TOKEN` | Yes (bot) | Token from [@BotFather](https://t.me/BotFather). |
 | `TELEGRAM_CASHIER_BOT_TOKEN` | Yes (cashier) | Separate GGCashier bot token for staff cashout wizard. |
-| `ZAPIER_CASHOUT_WEBHOOK_URL` | No | Zapier webhook for completed cashouts (Glide). Defaults to production URL when unset in code; omit to skip POST in dev. |
 | `DASHBOARD_PASSWORD` | No | Admin dashboard login password and JWT signing secret. Defaults to `changeme` — **set in production**. |
 | `DASHBOARD_AM_PASSWORD` | No | Optional account-manager login. Same JWT signing secret as above; UI limited to Cashout records, Payments, Bonuses. |
 | `DASHBOARD_GTO_PASSWORD` | No | Optional GTO login. Same JWT signing secret as above; UI limited to Cashout records and Bonuses (ClubGTO only). |
@@ -105,7 +104,7 @@ Migrate the jobs table on existing databases:
 DATABASE_URL=postgresql://... python migrate_cashier_jobs.py
 ```
 
-**Flow:** Staff runs `/cash <amount>` in a linked support group → group shows “Working on your cashout” → staff gets a GGCashier DM to complete attestation, method selection, and payout details → on confirm, Zapier creates a Glide row and the group gets the pinned owed amount + ASAP message. Staff can also start from scratch with `/cashout` in a private chat with GGCashier (paste group title, then amount).
+**Flow:** Staff runs `/cash <amount>` in a linked support group → group shows “Working on your cashout” → staff gets a GGCashier DM to complete attestation, method selection, and payout details → on confirm, a Cashout Records row is created on the dashboard and the group gets the pinned owed amount + ASAP message. Staff can also start from scratch with `/cashout` in a private chat with GGCashier (paste group title, then amount).
 
 ## Production build
 

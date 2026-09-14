@@ -1,4 +1,4 @@
-"""Tests for bonus record dashboard CRUD and Zapier-on-create."""
+"""Tests for bonus record dashboard CRUD."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from fastapi.testclient import TestClient
 from api.auth import get_current_admin
 from api.routes.bonus import router
 from bot.services.bonus_player_resolve import BonusPlayerContext
-from bot.services.bonus_records import build_bonus_zapier_payload
 from db.connection import get_db_dependency
 from db.models import BonusRecord, BonusType, Club
 
@@ -112,24 +111,6 @@ def _make_api_app() -> FastAPI:
     return app
 
 
-class ZapierPayloadTestCase(unittest.TestCase):
-    def test_dashboard_admin_id_is_empty_string(self) -> None:
-        from datetime import datetime, timezone
-
-        issued = datetime(2026, 7, 3, 12, 0, tzinfo=timezone.utc)
-        payload = build_bonus_zapier_payload(
-            {
-                "player_username": "Jacob",
-                "amount": Decimal("10"),
-                "admin_user_id": "",
-                "issued_at": issued,
-            }
-        )
-        self.assertEqual(payload["admin_telegram_user_id"], "")
-        self.assertEqual(payload["amount"], "10")
-        self.assertEqual(payload["issued_at"], "2026-07-03T12:00:00Z")
-
-
 class BonusRecordServiceTestCase(unittest.TestCase):
     def test_search_needle_strips_wildcards(self) -> None:
         from bot.services.bonus_records import _search_needle
@@ -138,7 +119,7 @@ class BonusRecordServiceTestCase(unittest.TestCase):
         self.assertIsNone(_search_needle("   "))
         self.assertIsNone(_search_needle(None))
 
-    def test_create_resolved_fires_zapier(self) -> None:
+    def test_create_resolved_writes_dashboard_record(self) -> None:
         club = _club()
         bt = _bonus_type()
         session = _make_create_session(club, bt)
@@ -146,8 +127,6 @@ class BonusRecordServiceTestCase(unittest.TestCase):
             "bot.services.bonus_records.resolve_bonus_player",
             return_value=_sample_player_ctx(),
         ), patch(
-            "bot.services.bonus_records.fire_bonus_zapier_webhook"
-        ) as zap, patch(
             "bot.services.bonus_records.build_zapier_name",
             return_value="CC / 8190-5287 / Jacob",
         ):
@@ -161,13 +140,11 @@ class BonusRecordServiceTestCase(unittest.TestCase):
             )
         self.assertTrue(data["player_resolved"])
         self.assertEqual(data["gg_player_id"], "8190-5287")
-        zap.assert_called_once()
         rec = session.add.call_args[0][0]
         self.assertIsInstance(rec, BonusRecord)
         self.assertIsNone(rec.admin_telegram_user_id)
         self.assertIsNotNone(rec.issued_at)
-        zap_data = zap.call_args[0][0]
-        self.assertIn("issued_at", zap_data)
+        self.assertEqual(rec.amount, Decimal("50"))
 
     def test_create_with_explicit_issued_at(self) -> None:
         from datetime import datetime, timezone
@@ -179,8 +156,6 @@ class BonusRecordServiceTestCase(unittest.TestCase):
         with patch("bot.services.bonus_records.get_db", return_value=_session_cm(session)), patch(
             "bot.services.bonus_records.resolve_bonus_player",
             return_value=_sample_player_ctx(),
-        ), patch(
-            "bot.services.bonus_records.fire_bonus_zapier_webhook"
         ), patch(
             "bot.services.bonus_records.build_zapier_name",
             return_value="CC / 8190-5287 / Jacob",
@@ -197,7 +172,7 @@ class BonusRecordServiceTestCase(unittest.TestCase):
         rec = session.add.call_args[0][0]
         self.assertEqual(rec.issued_at, when)
 
-    def test_create_unresolved_still_fires_zapier(self) -> None:
+    def test_create_unresolved_still_writes_dashboard_record(self) -> None:
         club = _club()
         bt = _bonus_type()
         session = _make_create_session(club, bt)
@@ -205,8 +180,6 @@ class BonusRecordServiceTestCase(unittest.TestCase):
             "bot.services.bonus_records.resolve_bonus_player",
             return_value=None,
         ), patch(
-            "bot.services.bonus_records.fire_bonus_zapier_webhook"
-        ) as zap, patch(
             "bot.services.bonus_records.build_zapier_name",
             return_value=None,
         ):
@@ -220,14 +193,14 @@ class BonusRecordServiceTestCase(unittest.TestCase):
             )
         self.assertFalse(data["player_resolved"])
         self.assertEqual(data["group_title"], "Jacob")
-        zap.assert_called_once()
+        rec = session.add.call_args[0][0]
+        self.assertIsInstance(rec, BonusRecord)
+        self.assertEqual(rec.group_title, "Jacob")
 
     def test_other_requires_description(self) -> None:
         club = _club()
         session = _make_create_session(club)
-        with patch("bot.services.bonus_records.get_db", return_value=_session_cm(session)), patch(
-            "bot.services.bonus_records.fire_bonus_zapier_webhook"
-        ) as zap:
+        with patch("bot.services.bonus_records.get_db", return_value=_session_cm(session)):
             from bot.services.bonus_records import create_bonus_record
 
             with self.assertRaises(ValueError) as ctx:
@@ -239,10 +212,9 @@ class BonusRecordServiceTestCase(unittest.TestCase):
                     custom_description="",
                 )
         self.assertIn("Description", str(ctx.exception))
-        zap.assert_not_called()
         session.add.assert_not_called()
 
-    def test_update_does_not_fire_zapier(self) -> None:
+    def test_update_persists_amount_and_issued_at(self) -> None:
         club = _club()
         bt = _bonus_type()
         record = BonusRecord(
@@ -268,8 +240,6 @@ class BonusRecordServiceTestCase(unittest.TestCase):
             "bot.services.bonus_records.resolve_bonus_player",
             return_value=None,
         ), patch(
-            "bot.services.bonus_records.fire_bonus_zapier_webhook"
-        ) as zap, patch(
             "bot.services.bonus_records.build_zapier_name",
             return_value=None,
         ):
@@ -278,23 +248,19 @@ class BonusRecordServiceTestCase(unittest.TestCase):
 
             when = datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc)
             update_bonus_record(1, amount=Decimal("20"), issued_at=when)
-        zap.assert_not_called()
         self.assertEqual(record.amount, Decimal("20"))
         self.assertEqual(record.issued_at, when)
 
-    def test_delete_does_not_fire_zapier(self) -> None:
+    def test_delete_removes_record(self) -> None:
         record = MagicMock()
         session = MagicMock()
         session.get.return_value = record
-        with patch("bot.services.bonus_records.get_db", return_value=_session_cm(session)), patch(
-            "bot.services.bonus_records.fire_bonus_zapier_webhook"
-        ) as zap:
+        with patch("bot.services.bonus_records.get_db", return_value=_session_cm(session)):
             from bot.services.bonus_records import delete_bonus_record
 
             ok = delete_bonus_record(1)
         self.assertTrue(ok)
         session.delete.assert_called_once_with(record)
-        zap.assert_not_called()
 
 
 class BonusRecordsApiTestCase(unittest.TestCase):
@@ -383,26 +349,20 @@ class BonusRecordsApiTestCase(unittest.TestCase):
             )
         self.assertEqual(resp.status_code, 400)
 
-    def test_patch_does_not_call_zapier(self) -> None:
+    def test_patch_ok(self) -> None:
         with patch(
             "api.routes.bonus.update_bonus_record",
             return_value=_sample_record_dict(amount=Decimal("75")),
-        ), patch(
-            "bot.services.bonus_records.fire_bonus_zapier_webhook"
-        ) as zap:
+        ):
             client = TestClient(_make_api_app())
             resp = client.patch("/api/bonus/records/1", json={"amount": "75"})
         self.assertEqual(resp.status_code, 200)
-        zap.assert_not_called()
 
-    def test_delete_does_not_call_zapier(self) -> None:
+    def test_delete_ok(self) -> None:
         with patch(
             "api.routes.bonus.delete_bonus_record",
             return_value=True,
-        ), patch(
-            "bot.services.bonus_records.fire_bonus_zapier_webhook"
-        ) as zap:
+        ):
             client = TestClient(_make_api_app())
             resp = client.delete("/api/bonus/records/1")
         self.assertEqual(resp.status_code, 204)
-        zap.assert_not_called()
