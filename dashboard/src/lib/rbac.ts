@@ -42,7 +42,6 @@ function pathAllowed(paths: readonly string[], pathname: string): boolean {
 
 export function canAccessPath(role: DashboardRole, pathname: string): boolean {
   if (role === 'admin') return true
-  if (pathname === '/bonuses/types' || pathname.startsWith('/bonuses/types/')) return false
   if (role === 'account_manager') return pathAllowed(ACCOUNT_MANAGER_PATHS, pathname)
   if (role === 'gto') return pathAllowed(GTO_PATHS, pathname)
   return false

@@ -13,6 +13,7 @@ import {
 import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
+import BonusTypes from './BonusTypes'
 import { downloadBonusRecordsCsv } from '../api/csvExportClient'
 import {
   easternCalendarDateString,
@@ -48,6 +49,7 @@ export default function Bonuses({
   role: DashboardRole
 }) {
   const askConfirm = useConfirm()
+  const isAdmin = role === 'admin'
   const isGto = role === 'gto'
   const [records, setRecords] = useState<BonusRecordT[]>([])
   const [clubs, setClubs] = useState<Club[]>([])
@@ -75,6 +77,7 @@ export default function Bonuses({
   const [exportTo, setExportTo] = useState(() => easternCalendarDateString())
   const [exporting, setExporting] = useState(false)
   const [exportErr, setExportErr] = useState<string | null>(null)
+  const [typesOpen, setTypesOpen] = useState(false)
 
   const reload = () => {
     const id = ++reqId.current
@@ -262,28 +265,54 @@ export default function Bonuses({
     <div>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold">Bonuses</h1>
-        <button
-          type="button"
-          onClick={openCreate}
-          aria-label="Add bonus"
-          className="btn-primary inline-flex items-center gap-1.5"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-4 w-4"
-            aria-hidden="true"
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={openCreate}
+            aria-label="Add bonus"
+            className="btn-primary inline-flex items-center gap-1.5"
           >
-            <path d="M12 5v14" />
-            <path d="M5 12h14" />
-          </svg>
-          Add
-        </button>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+              aria-hidden="true"
+            >
+              <path d="M12 5v14" />
+              <path d="M5 12h14" />
+            </svg>
+            Add
+          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setTypesOpen(true)}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-raised text-ink hover:bg-control"
+              aria-label="Configure bonus types"
+              title="Configure bonus types"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-4 w-4"
+                aria-hidden="true"
+              >
+                <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="mb-6 flex flex-wrap items-end gap-3">
@@ -615,6 +644,17 @@ export default function Bonuses({
           </button>
         </div>
       </Modal>
+
+      {isAdmin && (
+        <BonusTypes
+          token={token}
+          open={typesOpen}
+          onClose={() => setTypesOpen(false)}
+          onChanged={() => {
+            listBonusTypes(token).then(setTypes).catch(() => undefined)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -7,8 +7,19 @@ import {
   type BonusTypeT,
 } from '../api/client'
 import { useConfirm } from '../components/ConfirmProvider'
+import Modal from '../components/Modal'
 
-export default function BonusTypes({ token }: { token: string }) {
+export default function BonusTypes({
+  token,
+  open,
+  onClose,
+  onChanged,
+}: {
+  token: string
+  open: boolean
+  onClose: () => void
+  onChanged?: () => void
+}) {
   const askConfirm = useConfirm()
   const nameInputRef = useRef<HTMLInputElement>(null)
   const [types, setTypes] = useState<BonusTypeT[]>([])
@@ -27,12 +38,20 @@ export default function BonusTypes({ token }: { token: string }) {
   }
 
   useEffect(() => {
+    if (!open) return
+    setError(null)
+    setEditId(null)
+    setNewName('')
     reload()
-  }, [token])
+  }, [open, token])
+
+  const notifyChanged = () => {
+    reload()
+    onChanged?.()
+  }
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Read the live DOM value so autofill / paste still works if React state lagged.
     const name = (nameInputRef.current?.value ?? newName).trim()
     if (!name) {
       setError('Enter a bonus type name')
@@ -43,7 +62,7 @@ export default function BonusTypes({ token }: { token: string }) {
     try {
       await createBonusType(token, { name, sort_order: types.length })
       setNewName('')
-      reload()
+      notifyChanged()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to add bonus type')
     } finally {
@@ -62,7 +81,7 @@ export default function BonusTypes({ token }: { token: string }) {
     setError(null)
     try {
       await deleteBonusType(token, id)
-      reload()
+      notifyChanged()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to delete')
     }
@@ -80,7 +99,7 @@ export default function BonusTypes({ token }: { token: string }) {
       await updateBonusType(token, editId, { name })
       setEditId(null)
       setEditName('')
-      reload()
+      notifyChanged()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to save')
     }
@@ -90,16 +109,14 @@ export default function BonusTypes({ token }: { token: string }) {
     setError(null)
     try {
       await updateBonusType(token, bt.id, { is_active: !bt.is_active })
-      reload()
+      notifyChanged()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to update')
     }
   }
 
   return (
-    <div>
-      <h1 className="mb-6 text-2xl font-bold">Bonus types</h1>
-
+    <Modal open={open} onClose={onClose} title="Bonus types" wide>
       <div className="space-y-4">
         {error && (
           <div role="alert" className="alert-danger">
@@ -180,7 +197,10 @@ export default function BonusTypes({ token }: { token: string }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setEditId(bt.id); setEditName(bt.name) }}
+                      onClick={() => {
+                        setEditId(bt.id)
+                        setEditName(bt.name)
+                      }}
                       className="rounded bg-control px-3 py-1 text-xs font-medium text-ink hover:bg-control-hover"
                     >
                       Edit
@@ -199,6 +219,6 @@ export default function BonusTypes({ token }: { token: string }) {
           ))}
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

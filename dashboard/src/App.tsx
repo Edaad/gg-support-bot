@@ -5,7 +5,6 @@ import Clubs from './pages/Clubs'
 import ClubDetail from './pages/ClubDetail'
 import FlowSimulator from './pages/FlowSimulator'
 import Settings from './pages/Settings'
-import BonusTypes from './pages/BonusTypes'
 import Bonuses from './pages/Bonuses'
 import Expenses from './pages/Expenses'
 import CashoutRecords from './pages/CashoutRecords'
@@ -84,8 +83,8 @@ export default function App() {
                 element={<Settings token={token} role={role} onLogout={handleLogout} />}
               />
               <Route path="/telegram-login" element={<Navigate to="/settings" replace />} />
-              <Route path="/bonus-types" element={<Navigate to="/bonuses/types" replace />} />
-              <Route path="/bonuses/types" element={<BonusTypes token={token} />} />
+              <Route path="/bonus-types" element={<Navigate to="/bonuses" replace />} />
+              <Route path="/bonuses/types" element={<Navigate to="/bonuses" replace />} />
               <Route path="/bonuses" element={<Bonuses token={token} role={role} />} />
               <Route path="/expenses" element={<Expenses token={token} />} />
               <Route path="/cashout-records" element={<CashoutRecords token={token} role={role} />} />
