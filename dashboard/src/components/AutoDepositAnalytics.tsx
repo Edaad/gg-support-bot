@@ -14,6 +14,7 @@ import AutoDepositDrilldownModal, {
   type AutoDepositListParams,
 } from './AutoDepositDrilldownModal'
 import { AUTO_DEPOSIT_SKIP_REASON_LABELS } from './autoDepositLabels'
+import { MethodName } from './PaymentMethodIcon'
 
 const METHOD_SECTION_LABELS: Record<AutoDepositMethodSlug, string> = {
   venmo: 'Venmo',
@@ -348,7 +349,17 @@ function AutoDepositAnalytics({
 
   const content = (
     <>
-      <h2 className="section-label">{methodLabel} e2e auto-deposit</h2>
+      <h2 className="section-label">
+        {method === 'all' ? (
+          `${methodLabel} e2e auto-deposit`
+        ) : (
+          <MethodName
+            name={`${methodLabel} e2e auto-deposit`}
+            slug={method}
+            iconClassName="h-4 w-4"
+          />
+        )}
+      </h2>
 
       {summaryLoading ? (
         <p className="status-muted" aria-live="polite">

@@ -1,6 +1,7 @@
 import { formatEasternDateTime } from '../../lib/easternTime'
 import type { UnifiedPaymentRow } from './types'
 import { fmtClub, fmtGgNickname, fmtUnifiedStatus } from './types'
+import { MethodName } from '../PaymentMethodIcon'
 
 type Props = {
   rows: UnifiedPaymentRow[]
@@ -54,7 +55,9 @@ export default function UnifiedPaymentTable({ rows, clubNameById, onRowClick }: 
                 )}
               </td>
               <td className="px-4 py-3">{fmtGgNickname(row.gg_nickname)}</td>
-              <td className="px-4 py-3">{row.method_label}</td>
+              <td className="px-4 py-3">
+                <MethodName name={row.method_label} slug={row.method_slug} />
+              </td>
               <td className="px-4 py-3">{row.owner_label}</td>
               <td className="px-4 py-3">{fmtClub(row.club_id, clubNameById)}</td>
               <td className="px-4 py-3 capitalize">{fmtUnifiedStatus(row.status)}</td>

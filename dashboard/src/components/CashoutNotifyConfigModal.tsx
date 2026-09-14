@@ -10,6 +10,7 @@ import {
   type CashoutNotifyRecipientT,
 } from '../api/client'
 import Modal from './Modal'
+import PaymentMethodIcon from './PaymentMethodIcon'
 
 type Draft = {
   name: string
@@ -273,6 +274,7 @@ export default function CashoutNotifyConfigModal({
                                 }))
                               }
                             />
+                            <PaymentMethodIcon slug={rail.slug} className="h-4 w-4" />
                             {rail.label}
                           </label>
                         )
@@ -331,7 +333,7 @@ export default function CashoutNotifyConfigModal({
                 </label>
               </div>
               <div className="flex flex-wrap gap-3">
-                {rails.map((rail) => (
+                    {rails.map((rail) => (
                   <label
                     key={rail.slug}
                     className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink"
@@ -346,6 +348,7 @@ export default function CashoutNotifyConfigModal({
                         }))
                       }
                     />
+                    <PaymentMethodIcon slug={rail.slug} className="h-4 w-4" />
                     {rail.label}
                   </label>
                 ))}

@@ -2,6 +2,7 @@ import Modal from '../Modal'
 import type { OwnerMethod } from '../../api/paymentsClient'
 import type { UnifiedPaymentRow } from './types'
 import { fmtGgNickname, fmtUnifiedStatus } from './types'
+import { MethodName } from '../PaymentMethodIcon'
 import { formatEasternDateTime } from '../../lib/easternTime'
 
 type Props = {
@@ -11,12 +12,26 @@ type Props = {
   onBind?: (method: OwnerMethod, row: UnifiedPaymentRow) => void
 }
 
-function DetailField({ label, value }: { label: string; value: string | null | undefined }) {
+function DetailField({
+  label,
+  value,
+  methodSlug,
+}: {
+  label: string
+  value: string | null | undefined
+  methodSlug?: string
+}) {
   const display = value?.trim() ? value : '—'
   return (
     <div>
       <dt className="text-xs uppercase text-ink-muted">{label}</dt>
-      <dd className="mt-0.5 text-sm text-ink break-all">{display}</dd>
+      <dd className="mt-0.5 text-sm text-ink break-all">
+        {label === 'Method' && display !== '—' ? (
+          <MethodName name={display} slug={methodSlug} iconClassName="h-4 w-4" />
+        ) : (
+          display
+        )}
+      </dd>
     </div>
   )
 }
@@ -44,7 +59,7 @@ export default function PaymentDetailModal({ open, row, onClose, onBind }: Props
         (typeof d.stripe_dashboard_url === 'string' ? d.stripe_dashboard_url : '')
       return (
         <dl className="grid gap-4 sm:grid-cols-2">
-          <DetailField label="Method" value={row.method_label} />
+          <DetailField label="Method" value={row.method_label} methodSlug={row.method_slug} />
           <DetailField label="Owner" value={row.owner_label} />
           <DetailField label="Group" value={row.group_title} />
           <DetailField label="Player" value={fmtGgNickname(row.gg_nickname)} />
@@ -80,7 +95,7 @@ export default function PaymentDetailModal({ open, row, onClose, onBind }: Props
     if (row.source === 'crypto') {
       return (
         <dl className="grid gap-4 sm:grid-cols-2">
-          <DetailField label="Method" value={row.method_label} />
+          <DetailField label="Method" value={row.method_label} methodSlug={row.method_slug} />
           <DetailField label="Owner" value={row.owner_label} />
           <DetailField label="Group" value={row.group_title} />
           <DetailField label="Player" value={fmtGgNickname(row.gg_nickname)} />
@@ -111,7 +126,7 @@ export default function PaymentDetailModal({ open, row, onClose, onBind }: Props
       const club = d.club as { name?: string } | null | undefined
       return (
         <dl className="grid gap-4 sm:grid-cols-2">
-          <DetailField label="Method" value={row.method_label} />
+          <DetailField label="Method" value={row.method_label} methodSlug={row.method_slug} />
           <DetailField label="Owner" value={row.owner_label} />
           <DetailField label="Variant" value={row.variant} />
           <DetailField label="Club" value={club?.name ?? null} />
@@ -136,7 +151,7 @@ export default function PaymentDetailModal({ open, row, onClose, onBind }: Props
 
     return (
       <dl className="grid gap-4 sm:grid-cols-2">
-        <DetailField label="Method" value={row.method_label} />
+        <DetailField label="Method" value={row.method_label} methodSlug={row.method_slug} />
         <DetailField label="Owner" value={row.owner_label} />
         <DetailField label="Group" value={row.group_title} />
         <DetailField label="Player" value={fmtGgNickname(row.gg_nickname)} />

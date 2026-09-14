@@ -7,6 +7,7 @@ import {
 } from '../api/paymentsClient'
 import KpiStat from './KpiStat'
 import LinkingDrilldownModal, { type LinkingKpiCategory, type LinkingListParams } from './LinkingDrilldownModal'
+import { MethodName } from './PaymentMethodIcon'
 
 const BOUND_VIA_LABELS: Record<string, string> = {
   special_amount: 'First-time (amount)',
@@ -257,7 +258,9 @@ function PaymentMethodLinkingAnalytics({
 
   const content = (
     <>
-      <h2 className="section-label">{labels.section}</h2>
+      <h2 className="section-label">
+        <MethodName name={labels.section} slug={method} iconClassName="h-4 w-4" />
+      </h2>
 
       {summaryLoading ? (
         <p className="status-muted" aria-live="polite">

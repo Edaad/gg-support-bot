@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import ManualDepositRequestsTable from '../components/ManualDepositRequestsTable'
 import ManualDepositRequestModal from '../components/ManualDepositRequestModal'
 import { useConfirm } from '../components/ConfirmProvider'
+import { MethodName } from '../components/PaymentMethodIcon'
 import { listClubs, type Club } from '../api/client'
 import {
   createPoolPayMethod,
@@ -819,7 +820,12 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-xl font-semibold text-ink text-balance">
-                      {methodCardTitle(selected)}
+                      <MethodName
+                        name={methodCardTitle(selected)}
+                        slug={selected.type}
+                        iconClassName="h-7 w-7"
+                        className="font-semibold"
+                      />
                     </h2>
                     <span className="rounded-md border border-border bg-surface-raised px-2 py-0.5 text-xs font-medium text-ink">
                       {poolPayTypeLabel(selected.pool_pay_type)}
@@ -1186,7 +1192,14 @@ export default function ManualDepositRequests({ token }: { token: string }) {
               if (section.length === 0) return null
               return (
                 <section key={typeOpt.value} className="space-y-3">
-                  <h3 className="text-sm font-semibold text-ink">{typeOpt.label}</h3>
+                  <h3 className="text-sm font-semibold text-ink">
+                    <MethodName
+                      name={typeOpt.label}
+                      slug={typeOpt.value}
+                      iconClassName="h-5 w-5"
+                      className="font-semibold"
+                    />
+                  </h3>
                   <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                     {section.map((m, index) => {
                       const pct = capacityPct(m.used_sum, m.deposit_limit)
@@ -1215,7 +1228,12 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="text-lg font-semibold text-ink group-hover:text-accent">
-                                  {methodCardTitle(m)}
+                                  <MethodName
+                                    name={methodCardTitle(m)}
+                                    slug={m.type}
+                                    iconClassName="h-6 w-6"
+                                    className="font-semibold"
+                                  />
                                 </div>
                                 <div className="mt-1 flex flex-wrap items-center gap-2">
                                   <span className="rounded-md border border-border bg-surface-raised px-2 py-0.5 text-xs font-medium text-ink">

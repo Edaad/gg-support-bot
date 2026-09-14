@@ -23,11 +23,13 @@ import CashoutMethodFields, {
   choicePayload,
   fmtMoney,
   parseMoney,
+  validateMethodChoice,
   type MethodChoice,
 } from '../components/CashoutMethodFields'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
 import { formatEasternDateTime } from '../lib/easternTime'
+import { MethodName } from '../components/PaymentMethodIcon'
 import type { DashboardRole } from '../lib/rbac'
 
 function applyRecord(row: StaffCashoutRecordT): StaffCashoutRecordT {
@@ -310,19 +312,9 @@ export default function CashoutRecordDetail({
       setError('Name and amount are required')
       return
     }
-    const hasMethod = sendChoice.custom
-      ? Boolean(sendChoice.custom_name.trim())
-      : sendChoice.payment_method_id != null
-    if (!hasMethod) {
-      setError('Payment method is required')
-      return
-    }
-    if (
-      !sendChoice.custom &&
-      methods.find((m) => m.id === sendChoice.payment_method_id)?.has_sub_options &&
-      sendChoice.payment_sub_option_id == null
-    ) {
-      setError('Sub-option is required for this method')
+    const methodError = validateMethodChoice(sendChoice, methods, ['Chips'])
+    if (methodError) {
+      setError(methodError)
       return
     }
     const currentSent = Number(record.sent)
@@ -502,7 +494,9 @@ export default function CashoutRecordDetail({
                 key={p.id}
                 className="rounded-xl border border-border bg-surface p-4"
               >
-                <p className="text-sm font-medium text-ink">{paymentLabel(p)}</p>
+                <p className="text-sm font-medium text-ink">
+                  <MethodName name={paymentLabel(p)} iconClassName="h-5 w-5" />
+                </p>
                 {p.payout_details?.trim() ? (
                   <PayoutTag value={p.payout_details.trim()} />
                 ) : (
@@ -516,7 +510,7 @@ export default function CashoutRecordDetail({
 
       <section className="mt-8">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Money sent</h2>
+          <h2 className="text-lg font-semibold">Money Sent</h2>
           <button type="button" onClick={() => openSend()} className="btn-primary-sm" disabled={saving}>
             Add
           </button>
@@ -534,8 +528,9 @@ export default function CashoutRecordDetail({
                   <p className="text-lg font-semibold">
                     {fmtMoney(s.amount)} / {s.sender_name}
                   </p>
-                  <p className="mt-1 text-sm text-ink-muted">
-                    {s.method_display_name} · {formatEasternDateTime(s.created_at)}
+                  <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-muted">
+                    <MethodName name={s.method_display_name} />
+                    <span>· {formatEasternDateTime(s.created_at)}</span>
                   </p>
                 </div>
                 <div className="flex flex-nowrap items-center gap-2">
@@ -589,7 +584,7 @@ export default function CashoutRecordDetail({
       <Modal
         open={sendOpen}
         onClose={() => setSendOpen(false)}
-        title={sendEdit ? 'Edit money sent' : 'Add money sent'}
+        title={sendEdit ? 'Edit Money Sent' : 'Add Money Sent'}
       >
         <div className="space-y-4">
           <div>

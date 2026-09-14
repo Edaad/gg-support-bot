@@ -31,8 +31,8 @@ import {
   easternCalendarDateString,
   formatEasternDateTime,
 } from '../lib/easternTime'
-import type { DashboardRole } from '../lib/rbac'
-import { GTO_CLUB_NAME } from '../lib/rbac'
+import { GTO_CLUB_NAME, type DashboardRole } from '../lib/rbac'
+import PaymentMethodIcon, { MethodName } from '../components/PaymentMethodIcon'
 
 type PageTab = 'active' | 'cleared' | 'money_sent'
 
@@ -252,7 +252,7 @@ export default function CashoutRecords({
   const tabs: { id: PageTab; label: string }[] = [
     { id: 'active', label: 'Active' },
     { id: 'cleared', label: 'Cleared' },
-    ...(isAdmin ? [{ id: 'money_sent' as const, label: 'Money sent' }] : []),
+    ...(isAdmin ? [{ id: 'money_sent' as const, label: 'Money Sent' }] : []),
   ]
 
   useEffect(() => {
@@ -670,19 +670,24 @@ export default function CashoutRecords({
               <label className="label-field-xs" htmlFor="money-sent-method">
                 Method
               </label>
-              <select
-                id="money-sent-method"
-                value={methodFilter}
-                onChange={(e) => setMethodFilter(e.target.value)}
-                className="input-field-sm min-w-[10rem]"
-              >
-                <option value="">All methods</option>
-                {methodOptions.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2">
+                {methodFilter ? (
+                  <PaymentMethodIcon slug={methodFilter} className="h-7 w-7" />
+                ) : null}
+                <select
+                  id="money-sent-method"
+                  value={methodFilter}
+                  onChange={(e) => setMethodFilter(e.target.value)}
+                  className="input-field-sm min-w-[10rem]"
+                >
+                  <option value="">All methods</option>
+                  {methodOptions.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </>
         )}
@@ -725,7 +730,9 @@ export default function CashoutRecords({
                     <tr key={s.id} className="border-b border-border last:border-0">
                       <td className="px-4 py-3 font-medium text-ink">{fmtMoney(s.amount)}</td>
                       <td className="px-4 py-3 text-ink">{s.sender_name}</td>
-                      <td className="px-4 py-3 text-ink">{s.method_display_name}</td>
+                      <td className="px-4 py-3 text-ink">
+                        <MethodName name={s.method_display_name} />
+                      </td>
                       <td className="px-4 py-3 whitespace-nowrap text-ink">
                         {formatEasternDateTime(s.created_at)}
                       </td>

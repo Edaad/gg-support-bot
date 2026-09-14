@@ -8,6 +8,7 @@ import {
 } from '../api/manualDepositRequestsClient'
 import { formatEasternDateTime } from '../lib/easternTime'
 import ManualDepositRequestModal from './ManualDepositRequestModal'
+import { MethodName } from './PaymentMethodIcon'
 
 function formatUsd(amount: number | string): string {
   return Number(amount).toLocaleString('en-US', {
@@ -244,7 +245,12 @@ export default function ManualDepositRequestsTable({
                   <td className="px-3 py-2 font-medium text-ink">{formatUsd(row.amount)}</td>
                   {showMethodColumns && (
                     <>
-                      <td className="px-3 py-2 text-ink">{row.method_name}</td>
+                      <td className="px-3 py-2 text-ink">
+                        <MethodName
+                          name={row.method_name}
+                          slug={row.method_slug}
+                        />
+                      </td>
                       <td className="px-3 py-2 text-ink-muted">{row.method_slug}</td>
                     </>
                   )}

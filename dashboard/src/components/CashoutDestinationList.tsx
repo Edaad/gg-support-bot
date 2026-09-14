@@ -13,7 +13,7 @@ export const ADDABLE_CASHOUT_SLUGS = [
 
 export type CashoutRailSlug = (typeof ADDABLE_CASHOUT_SLUGS)[number]
 
-const METHOD_CHIPS: { slug: string; label: string }[] = [
+export const CASHOUT_METHOD_CHIPS: { slug: string; label: string }[] = [
   { slug: 'crypto', label: 'Crypto' },
   { slug: 'venmo', label: 'Venmo' },
   { slug: 'cashapp', label: 'Cashapp' },
@@ -22,7 +22,7 @@ const METHOD_CHIPS: { slug: string; label: string }[] = [
   { slug: 'other', label: 'Other' },
 ]
 
-const RAIL_DISPLAY: Record<CashoutRailSlug, string> = {
+export const RAIL_DISPLAY: Record<CashoutRailSlug, string> = {
   crypto: 'Crypto',
   venmo: 'Venmo',
   cashapp: 'Cash App',
@@ -372,7 +372,7 @@ export default function CashoutDestinationList({ methods, rows, onChange }: Prop
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
-        {METHOD_CHIPS.map((chip) => {
+        {CASHOUT_METHOD_CHIPS.map((chip) => {
           const on = chip.slug === 'other' ? otherOn : selectedSlugs.has(chip.slug)
           return (
             <button
@@ -390,7 +390,7 @@ export default function CashoutDestinationList({ methods, rows, onChange }: Prop
                   : 'inline-flex items-center gap-2 rounded-full border border-border bg-surface-raised px-3 py-2 text-sm font-medium text-ink hover:bg-control'
               }
             >
-              <PaymentMethodIcon slug={chip.slug} />
+              <PaymentMethodIcon slug={chip.slug} className="h-6 w-6" />
               {chip.label}
             </button>
           )
@@ -423,7 +423,7 @@ export default function CashoutDestinationList({ methods, rows, onChange }: Prop
             className="space-y-2 rounded-xl border border-border bg-surface-raised p-3"
           >
             <p className="flex items-center gap-2 text-sm font-medium text-ink">
-              <PaymentMethodIcon slug={iconSlug} className="h-5 w-5 shrink-0" />
+              <PaymentMethodIcon slug={iconSlug} className="h-6 w-6 shrink-0" />
               {title}
             </p>
             {row.kind === 'catalog' && isCrypto && (

@@ -7,6 +7,7 @@ import type {
   VenmoPaymentRow,
   ZellePaymentRow,
 } from '../../api/paymentsClient'
+import PaymentMethodIcon from '../PaymentMethodIcon'
 
 export type BindableRow =
   | VenmoPaymentRow
@@ -68,7 +69,12 @@ export default function BindPaymentModal({
         Enter the full support group title, e.g.{' '}
         <span className="font-mono text-xs">RT / 6485-8168 / Angus Mcgoon</span>.
       </p>
-      {summary && <p className="mb-3 text-sm text-ink">{summary}</p>}
+      {summary && (
+        <p className="mb-3 flex items-center gap-2 text-sm text-ink">
+          {method && <PaymentMethodIcon slug={method} className="h-5 w-5" />}
+          <span>{summary}</span>
+        </p>
+      )}
       <label className="label-field-xs" htmlFor="bind-group-title">
         Group title
       </label>

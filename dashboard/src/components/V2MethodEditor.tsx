@@ -18,6 +18,7 @@ import {
 } from '../api/v2Client'
 import V2TierEditor from './V2TierEditor'
 import V2SubOptionEditor from './V2SubOptionEditor'
+import { MethodName } from './PaymentMethodIcon'
 import FirstTimeDepositLinkingSection, {
   type FirstTimeBindMode,
 } from './FirstTimeDepositLinkingSection'
@@ -781,7 +782,12 @@ export default function V2MethodEditor({ token, clubId, direction }: Props) {
                     </span>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium text-ink">{m.name}</span>
+                        <MethodName
+                          name={m.name}
+                          slug={m.slug}
+                          iconClassName="h-5 w-5"
+                          className="font-medium text-ink"
+                        />
                         <span className="text-xs text-ink-muted">({m.slug})</span>
                         {!m.is_active && (
                           <span className="rounded bg-surface-raised px-1.5 py-0.5 text-xs text-ink-muted">
