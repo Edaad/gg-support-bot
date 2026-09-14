@@ -10,6 +10,7 @@ import {
   type ExpenseT,
 } from '../api/client'
 import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
+import ExportIconButton from '../components/ExportIconButton'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
 import {
@@ -290,9 +291,7 @@ export default function Expenses({ token }: { token: string }) {
             className="input-field-sm"
           />
         </div>
-        <button type="button" onClick={openExport} className="btn-secondary-sm">
-          Export
-        </button>
+        <ExportIconButton onClick={openExport} />
       </div>
 
       {error && (

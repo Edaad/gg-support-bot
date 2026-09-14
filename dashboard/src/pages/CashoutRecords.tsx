@@ -7,7 +7,6 @@ import {
   listCashoutMoneySends,
   listCashoutRecords,
   listClubs,
-  type CashoutLedgerStatus,
   type Club,
   type StaffCashoutMoneySendLedgerT,
   type StaffCashoutRecordT,
@@ -22,6 +21,7 @@ import CashoutDestinationList, {
 import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
 import CashoutNotifyConfigModal from '../components/CashoutNotifyConfigModal'
 import { useConfirm } from '../components/ConfirmProvider'
+import ExportIconButton from '../components/ExportIconButton'
 import Modal from '../components/Modal'
 import {
   downloadCashoutMoneySendsCsv,
@@ -34,15 +34,82 @@ import {
 import type { DashboardRole } from '../lib/rbac'
 import { GTO_CLUB_NAME } from '../lib/rbac'
 
-type PageTab = CashoutLedgerStatus | 'money_sent'
+type PageTab = 'active' | 'cleared' | 'money_sent'
 
 const PAGE_SIZE = 50
+const EXTRA_SECTION_LIMIT = 200
 
-const LEDGER_TABS: { id: Exclude<CashoutLedgerStatus, 'do_not_send'>; label: string }[] = [
-  { id: 'active', label: 'Active' },
-  { id: 'cleared', label: 'Cleared' },
-  { id: 'oversent', label: 'Oversent' },
-]
+function CashoutRecordCard({
+  record,
+  listSearch,
+  saving,
+  onOpen,
+  onDelete,
+}: {
+  record: StaffCashoutRecordT
+  listSearch: string
+  saving: boolean
+  onOpen: (id: number) => void
+  onDelete: (r: StaffCashoutRecordT) => void
+}) {
+  return (
+    <article
+      role="link"
+      tabIndex={0}
+      onClick={() => onOpen(record.id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen(record.id)
+        }
+      }}
+      className="cursor-pointer rounded-2xl border border-border bg-surface p-5 shadow-sm transition hover:border-accent/40 hover:bg-surface-raised"
+    >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm text-ink-muted">{formatEasternDateTime(record.created_at)}</p>
+          <h3 className="mt-1 text-xl font-semibold text-ink">{record.group_title}</h3>
+          <p className="mt-1 text-base text-ink-muted">{record.club_name || '—'}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to={`/cashout-records/${record.id}`}
+            state={{ listSearch }}
+            onClick={(e) => e.stopPropagation()}
+            className="btn-primary inline-flex min-h-12 min-w-[7rem] items-center justify-center px-6 text-base"
+          >
+            Edit
+          </Link>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete(record)
+            }}
+            className="btn-danger-outline inline-flex min-h-12 min-w-[7rem] items-center justify-center px-6 text-base"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+      <dl className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-border bg-bg px-4 py-3">
+          <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Original</dt>
+          <dd className="mt-1 text-lg font-semibold">{fmtMoney(record.amount)}</dd>
+        </div>
+        <div className="rounded-xl border border-border bg-bg px-4 py-3">
+          <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Sent</dt>
+          <dd className="mt-1 text-lg font-semibold">{fmtMoney(record.sent)}</dd>
+        </div>
+        <div className="rounded-xl border border-border bg-bg px-4 py-3">
+          <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Remaining</dt>
+          <dd className="mt-1 text-lg font-semibold">{fmtMoney(record.remaining)}</dd>
+        </div>
+      </dl>
+    </article>
+  )
+}
 
 function daysAgoEastern(days: number): string {
   const d = new Date()
@@ -115,6 +182,8 @@ export default function CashoutRecords({
   const isGto = role === 'gto'
   const [tab, setTab] = useState<PageTab>('active')
   const [records, setRecords] = useState<StaffCashoutRecordT[]>([])
+  const [doNotSendRecords, setDoNotSendRecords] = useState<StaffCashoutRecordT[]>([])
+  const [oversentRecords, setOversentRecords] = useState<StaffCashoutRecordT[]>([])
   const [sends, setSends] = useState<StaffCashoutMoneySendLedgerT[]>([])
   const [methodOptions, setMethodOptions] = useState<string[]>([])
   const [clubs, setClubs] = useState<Club[]>([])
@@ -177,19 +246,17 @@ export default function CashoutRecords({
   )
 
   const isMoneySent = tab === 'money_sent'
-  const isDoNotSend = tab === 'do_not_send'
-  const statusTab = isMoneySent ? null : (tab as CashoutLedgerStatus)
+  const statusTab = isMoneySent ? null : tab
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   const tabs: { id: PageTab; label: string }[] = [
     { id: 'active', label: 'Active' },
-    ...(isAdmin ? [{ id: 'do_not_send' as const, label: 'Do not send' }] : []),
-    ...LEDGER_TABS.filter((t) => t.id !== 'active'),
+    { id: 'cleared', label: 'Cleared' },
     ...(isAdmin ? [{ id: 'money_sent' as const, label: 'Money sent' }] : []),
   ]
 
   useEffect(() => {
-    if (!isAdmin && (tab === 'money_sent' || tab === 'do_not_send')) setTab('active')
+    if (!isAdmin && tab === 'money_sent') setTab('active')
   }, [isAdmin, tab])
 
   const reloadRecords = () => {
@@ -197,17 +264,50 @@ export default function CashoutRecords({
     const id = ++reqId.current
     setError(null)
     setLoading(true)
-    listCashoutRecords(token, {
-      status: statusTab,
+    if (statusTab !== 'active') {
+      setDoNotSendRecords([])
+      setOversentRecords([])
+    }
+    const shared = {
       clubId: clubFilter ? Number(clubFilter) : undefined,
       q: q || undefined,
-      limit: PAGE_SIZE,
-      offset: page * PAGE_SIZE,
-    })
-      .then((res) => {
+    }
+    const emptyExtra = Promise.resolve({ items: [] as StaffCashoutRecordT[], total: 0 })
+    const extras =
+      statusTab === 'active'
+        ? Promise.all([
+            isAdmin
+              ? listCashoutRecords(token, {
+                  ...shared,
+                  status: 'do_not_send',
+                  limit: EXTRA_SECTION_LIMIT,
+                  offset: 0,
+                }).catch(() => ({ items: [] as StaffCashoutRecordT[], total: 0 }))
+              : emptyExtra,
+            listCashoutRecords(token, {
+              ...shared,
+              status: 'oversent',
+              limit: EXTRA_SECTION_LIMIT,
+              offset: 0,
+            }).catch(() => ({ items: [] as StaffCashoutRecordT[], total: 0 })),
+          ])
+        : Promise.all([emptyExtra, emptyExtra])
+
+    Promise.all([
+      listCashoutRecords(token, {
+        ...shared,
+        status: statusTab,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+      }),
+      extras,
+    ])
+      .then(([res, [dns, oversent]]) => {
         if (id !== reqId.current) return
         setRecords(res.items)
         setTotal(res.total)
+        setDoNotSendRecords(dns.items)
+        setOversentRecords(oversent.items)
       })
       .catch((e) => {
         if (id !== reqId.current) return
@@ -581,11 +681,7 @@ export default function CashoutRecords({
             </div>
           </>
         )}
-        {!isDoNotSend && (
-          <button type="button" onClick={openExport} className="btn-secondary-sm">
-            Export
-          </button>
-        )}
+        <ExportIconButton onClick={openExport} />
       </div>
 
       {error && (
@@ -667,100 +763,113 @@ export default function CashoutRecords({
             )}
           </>
         )
-      ) : loading && records.length === 0 ? (
+      ) : loading &&
+        records.length === 0 &&
+        doNotSendRecords.length === 0 &&
+        oversentRecords.length === 0 ? (
         <p className="text-sm text-ink-muted">Loading…</p>
-      ) : records.length === 0 ? (
+      ) : records.length === 0 &&
+        doNotSendRecords.length === 0 &&
+        oversentRecords.length === 0 ? (
         <p className="text-sm text-ink-muted">
-          {clubFilter || q
-            ? `No matching ${isDoNotSend ? 'do not send' : tab} cashouts.`
-            : `No ${isDoNotSend ? 'do not send' : tab} cashouts.`}
+          {clubFilter || q ? `No matching ${tab} cashouts.` : `No ${tab} cashouts.`}
         </p>
       ) : (
         <>
-          <div className="space-y-4">
-            {records.map((r) => (
-              <article
-                key={r.id}
-                role="link"
-                tabIndex={0}
-                onClick={() => openRecord(r.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    openRecord(r.id)
-                  }
-                }}
-                className="cursor-pointer rounded-2xl border border-border bg-surface p-5 shadow-sm transition hover:border-accent/40 hover:bg-surface-raised"
-              >
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-sm text-ink-muted">{formatEasternDateTime(r.created_at)}</p>
-                    <h2 className="mt-1 text-xl font-semibold text-ink">{r.group_title}</h2>
-                    <p className="mt-1 text-base text-ink-muted">{r.club_name || '—'}</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Link
-                      to={`/cashout-records/${r.id}`}
-                      state={{ listSearch: location.search }}
-                      onClick={(e) => e.stopPropagation()}
-                      className="btn-primary inline-flex min-h-12 min-w-[7rem] items-center justify-center px-6 text-base"
-                    >
-                      Edit
-                    </Link>
+          {records.length === 0 ? (
+            <p className="text-sm text-ink-muted">
+              {clubFilter || q ? `No matching ${tab} cashouts.` : `No ${tab} cashouts.`}
+            </p>
+          ) : (
+            <>
+              <div className="space-y-4">
+                {records.map((r) => (
+                  <CashoutRecordCard
+                    key={r.id}
+                    record={r}
+                    listSearch={location.search}
+                    saving={saving}
+                    onOpen={openRecord}
+                    onDelete={handleDeleteRecord}
+                  />
+                ))}
+              </div>
+              {total > PAGE_SIZE && (
+                <div className="mt-4 flex items-center justify-between text-sm text-ink-muted">
+                  <span>
+                    {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
+                  </span>
+                  <div className="flex gap-2">
                     <button
                       type="button"
-                      disabled={saving}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        void handleDeleteRecord(r)
-                      }}
-                      className="btn-danger-outline inline-flex min-h-12 min-w-[7rem] items-center justify-center px-6 text-base"
+                      disabled={page === 0}
+                      onClick={() => goToPage(page - 1)}
+                      className="btn-secondary-sm disabled:opacity-40"
                     >
-                      Delete
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      disabled={page + 1 >= totalPages}
+                      onClick={() => goToPage(page + 1)}
+                      className="btn-secondary-sm disabled:opacity-40"
+                    >
+                      Next
                     </button>
                   </div>
                 </div>
-                <dl className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-border bg-bg px-4 py-3">
-                    <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Original</dt>
-                    <dd className="mt-1 text-lg font-semibold">{fmtMoney(r.amount)}</dd>
-                  </div>
-                  <div className="rounded-xl border border-border bg-bg px-4 py-3">
-                    <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Sent</dt>
-                    <dd className="mt-1 text-lg font-semibold">{fmtMoney(r.sent)}</dd>
-                  </div>
-                  <div className="rounded-xl border border-border bg-bg px-4 py-3">
-                    <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Remaining</dt>
-                    <dd className="mt-1 text-lg font-semibold">{fmtMoney(r.remaining)}</dd>
-                  </div>
-                </dl>
-              </article>
-            ))}
-          </div>
-          {total > PAGE_SIZE && (
-            <div className="mt-4 flex items-center justify-between text-sm text-ink-muted">
-              <span>
-                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
-              </span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={page === 0}
-                  onClick={() => goToPage(page - 1)}
-                  className="btn-secondary-sm disabled:opacity-40"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  disabled={page + 1 >= totalPages}
-                  onClick={() => goToPage(page + 1)}
-                  className="btn-secondary-sm disabled:opacity-40"
-                >
-                  Next
-                </button>
+              )}
+            </>
+          )}
+          {doNotSendRecords.length > 0 && (
+            <section
+              className="mt-10 border-t border-border pt-8"
+              aria-labelledby="do-not-send-heading"
+            >
+              <h2
+                id="do-not-send-heading"
+                className="mb-4 text-lg font-semibold tracking-tight text-ink"
+              >
+                Do Not Send
+              </h2>
+              <div className="space-y-4">
+                {doNotSendRecords.map((r) => (
+                  <CashoutRecordCard
+                    key={r.id}
+                    record={r}
+                    listSearch={location.search}
+                    saving={saving}
+                    onOpen={openRecord}
+                    onDelete={handleDeleteRecord}
+                  />
+                ))}
               </div>
-            </div>
+            </section>
+          )}
+          {oversentRecords.length > 0 && (
+            <section
+              className="mt-10 border-t border-border pt-8"
+              aria-labelledby="oversent-heading"
+            >
+              <h2
+                id="oversent-heading"
+                className="mb-4 text-lg font-semibold tracking-tight text-ink"
+              >
+                Oversent
+              </h2>
+              <div className="space-y-4">
+                {oversentRecords.map((r) => (
+                  <CashoutRecordCard
+                    key={r.id}
+                    record={r}
+                    listSearch={location.search}
+                    saving={saving}
+                    onOpen={openRecord}
+                    onDelete={handleDeleteRecord}
+                  />
+                ))}
+              </div>
+            </section>
           )}
         </>
       )}

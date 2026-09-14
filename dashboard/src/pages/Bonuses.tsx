@@ -11,6 +11,7 @@ import {
   type Club,
 } from '../api/client'
 import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
+import ExportIconButton from '../components/ExportIconButton'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
 import BonusTypes from './BonusTypes'
@@ -39,6 +40,90 @@ function recordMatchesSearch(r: BonusRecordT, needle: string) {
     r.bonus_type_name,
     r.custom_description,
   ].some((v) => v && String(v).toLowerCase().includes(n))
+}
+
+function BonusRowMenu({
+  disabled,
+  onEdit,
+  onDelete,
+}: {
+  disabled: boolean
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ top: 0, right: 0 })
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    const close = () => setOpen(false)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [open])
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        aria-label="Row actions"
+        aria-expanded={open}
+        onClick={() => {
+          const next = !open
+          if (next && rootRef.current) {
+            const r = rootRef.current.getBoundingClientRect()
+            setPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
+          }
+          setOpen(next)
+        }}
+        className="rounded-md px-2 py-1 text-lg leading-none text-ink-muted hover:bg-control hover:text-ink"
+      >
+        ⋯
+      </button>
+      {open && (
+        <div
+          className="fixed z-50 min-w-[9rem] rounded-lg border border-border bg-surface-raised py-1 shadow-md"
+          style={{ top: pos.top, right: pos.right }}
+        >
+          <button
+            type="button"
+            className="block w-full px-3 py-2 text-left text-sm text-ink hover:bg-control"
+            onClick={() => {
+              setOpen(false)
+              onEdit()
+            }}
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            className="block w-full px-3 py-2 text-left text-sm text-danger-ink hover:bg-danger-bg disabled:opacity-40"
+            onClick={() => {
+              setOpen(false)
+              onDelete()
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function Bonuses({
@@ -367,9 +452,7 @@ export default function Bonuses({
             <option value="other">Other</option>
           </select>
         </div>
-        <button type="button" onClick={openExport} className="btn-secondary-sm">
-          Export
-        </button>
+        <ExportIconButton onClick={openExport} />
       </div>
 
       {error && (
@@ -400,7 +483,7 @@ export default function Bonuses({
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Club</th>
                 <th className="px-4 py-3">Description</th>
-                <th className="px-4 py-3">
+                <th className="sticky right-0 z-20 w-12 border-l border-border bg-surface px-2 py-3 shadow-[-10px_0_12px_-10px_oklch(0_0_0/0.28)]">
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>
@@ -409,7 +492,7 @@ export default function Bonuses({
               {visible.map((r) => (
                 <tr
                   key={r.id}
-                  className="cursor-pointer hover:bg-surface/80"
+                  className="group cursor-pointer hover:bg-surface/80"
                   onClick={() => openEdit(r)}
                 >
                   <td className="px-4 py-3 whitespace-nowrap">
@@ -434,57 +517,17 @@ export default function Bonuses({
                   >
                     {r.custom_description || '—'}
                   </td>
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="inline-flex flex-nowrap items-center justify-end gap-1">
-                      <button
-                        type="button"
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-raised text-ink hover:bg-control"
-                        aria-label="Edit bonus"
-                        title="Edit"
-                        onClick={() => openEdit(r)}
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="h-4 w-4"
-                          aria-hidden="true"
-                        >
-                          <path d="M12 20h9" />
-                          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-danger-border bg-surface-raised text-danger-ink hover:bg-danger-bg disabled:opacity-40"
-                        aria-label="Delete bonus"
-                        title="Delete"
-                        disabled={saving}
-                        onClick={() => remove(r)}
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="h-4 w-4"
-                          aria-hidden="true"
-                        >
-                          <path d="M3 6h18" />
-                          <path d="M8 6V4h8v2" />
-                          <path d="M19 6l-1 14H6L5 6" />
-                          <path d="M10 11v6" />
-                          <path d="M14 11v6" />
-                        </svg>
-                      </button>
-                    </div>
+                  <td
+                    className="sticky right-0 z-20 border-l border-border bg-surface px-2 py-3 text-center shadow-[-10px_0_12px_-10px_oklch(0_0_0/0.28)] group-hover:bg-surface"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <BonusRowMenu
+                      disabled={saving}
+                      onEdit={() => openEdit(r)}
+                      onDelete={() => {
+                        void remove(r)
+                      }}
+                    />
                   </td>
                 </tr>
               ))}

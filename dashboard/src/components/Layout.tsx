@@ -6,12 +6,18 @@ import {
   type DashboardRole,
 } from '../lib/rbac'
 
-type NavLinkItem = { to: string; label: string; external?: boolean; exact?: boolean }
+type NavLinkItem = {
+  to: string
+  label: string
+  external?: boolean
+  exact?: boolean
+  icon?: 'telegram'
+}
 
 const RAKEBACK_URL = 'https://elevateautomations.io/'
 
 const ADMIN_TOP_NAV: NavLinkItem[] = [
-  { to: ADMIN_SECTION_HOME, label: 'TG Bot' },
+  { to: ADMIN_SECTION_HOME, label: 'Bot', icon: 'telegram' },
   { to: '/payments', label: 'Payments' },
   { to: '/cashout-records', label: 'Cashouts' },
   { to: '/bonuses', label: 'Bonuses' },
@@ -55,6 +61,30 @@ function isMoreNavActive(pathname: string): boolean {
 
 const focusRing =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
+
+function TelegramIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      <path d="M21.5 3.2 2.7 10.4c-1.3.5-1.3 1.2-.2 1.5l4.8 1.5 1.8 5.6c.2.7.4.9.9.9.3 0 .5-.1.7-.4l2.1-2 5.2 3.8c1 .6 1.7.3 2-.9L22.3 4.6c.3-1.2-.5-1.8-1.8-1.4Z" />
+    </svg>
+  )
+}
+
+function navItemLabel(n: NavLinkItem) {
+  if (n.icon !== 'telegram') return n.label
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <TelegramIcon />
+      {n.label}
+    </span>
+  )
+}
 
 function navLinkClass(active: boolean): string {
   return [
@@ -240,7 +270,7 @@ export default function Layout({
                     rel="noopener noreferrer"
                     className={navLinkClass(false)}
                   >
-                    {n.label}
+                    {navItemLabel(n)}
                     <span className="sr-only"> (opens in a new tab)</span>
                   </a>
                 )
@@ -252,8 +282,9 @@ export default function Layout({
                   to={n.to}
                   aria-current={active ? 'page' : undefined}
                   className={navLinkClass(active)}
+                  aria-label={n.icon === 'telegram' ? 'Telegram Bot' : undefined}
                 >
-                  {n.label}
+                  {navItemLabel(n)}
                 </Link>
               )
             })}

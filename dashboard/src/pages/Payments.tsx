@@ -20,6 +20,7 @@ import {
   type MethodFilter,
 } from '../components/payments/constants'
 import PaymentDetailModal from '../components/payments/PaymentDetailModal'
+import ExportIconButton from '../components/ExportIconButton'
 import PaymentsExportModal from '../components/payments/PaymentsExportModal'
 import UnifiedPaymentTable from '../components/payments/UnifiedPaymentTable'
 import { bindableFromUnified } from '../components/payments/types'
@@ -224,13 +225,7 @@ export default function Payments({ token }: { token: string }) {
             ))}
           </select>
         </div>
-        <button
-          type="button"
-          onClick={() => setExportOpen(true)}
-          className="btn-secondary-sm"
-        >
-          Export
-        </button>
+        <ExportIconButton onClick={() => setExportOpen(true)} />
       </div>
 
       {successMsg && (
