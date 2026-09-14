@@ -610,27 +610,6 @@ export default function Payments({ token }: { token: string }) {
     <div>
       <h1 className="mb-6 text-2xl font-bold">Payments</h1>
 
-      <div
-        role="tablist"
-        aria-label="Payment owner"
-        className="mb-6 flex gap-1 overflow-x-auto rounded-lg bg-surface p-1"
-      >
-        {OWNER_TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={ownerTab === tab.id}
-            onClick={() => setOwnerTab(tab.id)}
-            className={`shrink-0 rounded-md px-4 py-2 text-sm font-medium transition ${
-              ownerTab === tab.id ? 'bg-accent/12 text-accent' : 'text-ink-muted hover:bg-control hover:text-ink'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
       <div className="mb-4 flex flex-wrap items-end gap-4">
         <div>
           <label htmlFor={methodSelectId} className="label-field-xs">
@@ -669,6 +648,23 @@ export default function Payments({ token }: { token: string }) {
             {variantOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="payments-owner" className="label-field-xs">
+            Owner
+          </label>
+          <select
+            id="payments-owner"
+            value={ownerTab}
+            onChange={(e) => setOwnerTab(e.target.value as OwnerTab)}
+            className="input-field-sm min-w-[10rem]"
+          >
+            {OWNER_TABS.map((tab) => (
+              <option key={tab.id} value={tab.id}>
+                {tab.label}
               </option>
             ))}
           </select>

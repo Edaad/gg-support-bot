@@ -91,6 +91,7 @@ def _to_read(data: dict, club_names: dict[int, str]) -> StaffCashoutRecordRead:
         recorded_by_telegram_user_id=data.get("recorded_by_telegram_user_id"),
         trigger=data["trigger"],
         tracks_money_sent=bool(data.get("tracks_money_sent")),
+        sending=bool(data.get("sending")),
         do_not_send=bool(data.get("do_not_send")),
         sent=sent,
         remaining=remaining,
@@ -450,6 +451,7 @@ def patch_cashout_record(
             record_id,
             group_title=updates.get("group_title"),
             amount=updates.get("amount"),
+            sending=updates.get("sending") if "sending" in updates else None,
             do_not_send=updates.get("do_not_send") if "do_not_send" in updates else None,
         )
     except CashoutRecordNotActive as exc:

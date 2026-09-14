@@ -387,6 +387,7 @@ export interface StaffCashoutRecordT {
   recorded_by_telegram_user_id: number | null
   trigger: string
   tracks_money_sent: boolean
+  sending: boolean
   do_not_send: boolean
   sent: number
   remaining: number
@@ -490,7 +491,7 @@ export const createCashoutRecord = (
 export const updateCashoutRecord = (
   token: string,
   id: number,
-  data: { group_title?: string; amount?: number; do_not_send?: boolean },
+  data: { group_title?: string; amount?: number; sending?: boolean; do_not_send?: boolean },
 ) =>
   request<StaffCashoutRecordT>(`/cashout-records/${id}`, {
     method: 'PATCH',

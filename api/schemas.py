@@ -689,6 +689,7 @@ class StaffCashoutRecordRead(BaseModel):
     recorded_by_telegram_user_id: Optional[int] = None
     trigger: str
     tracks_money_sent: bool = False
+    sending: bool = False
     do_not_send: bool = False
     sent: Decimal = Decimal("0")
     remaining: Decimal = Decimal("0")
@@ -732,6 +733,7 @@ class StaffCashoutRecordCreate(BaseModel):
 class StaffCashoutRecordUpdate(BaseModel):
     group_title: Optional[str] = None
     amount: Optional[Decimal] = None
+    sending: Optional[bool] = None
     do_not_send: Optional[bool] = None
 
 

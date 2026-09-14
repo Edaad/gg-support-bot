@@ -32,6 +32,7 @@ def _sample_record() -> dict:
         "recorded_by_telegram_user_id": 999,
         "trigger": "group_cash",
         "tracks_money_sent": True,
+        "sending": False,
         "do_not_send": False,
         "sent": Decimal("0"),
         "remaining": Decimal("500"),
@@ -786,6 +787,27 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         client = TestClient(app)
         resp = client.patch("/api/cashout-records/1", json={"do_not_send": True})
         self.assertEqual(resp.status_code, 403)
+
+    def test_patch_sending_am_ok(self) -> None:
+        updated = _sample_record()
+        updated["sending"] = True
+        app = _make_api_app()
+        app.dependency_overrides[get_current_admin] = lambda: ROLE_ACCOUNT_MANAGER
+        with patch(
+            "api.routes.cashout_records.update_staff_cashout_record",
+            return_value=updated,
+        ) as mock_update, patch(
+            "api.routes.cashout_records._club_name_map",
+            return_value={2: "Round Table"},
+        ), patch(
+            "api.routes.cashout_records._load_and_assert_gto",
+            return_value=None,
+        ):
+            client = TestClient(app)
+            resp = client.patch("/api/cashout-records/1", json={"sending": True})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["sending"])
+        self.assertEqual(mock_update.call_args.kwargs["sending"], True)
 
     def test_get_slack_reminder_admin_ok(self) -> None:
         with patch(

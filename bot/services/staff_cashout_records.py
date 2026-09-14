@@ -105,6 +105,7 @@ def _record_to_dict(record: StaffCashoutRecord) -> dict[str, Any]:
         "recorded_by_telegram_user_id": record.recorded_by_telegram_user_id,
         "trigger": record.trigger,
         "tracks_money_sent": tracks,
+        "sending": bool(getattr(record, "sending", False)),
         "do_not_send": bool(getattr(record, "do_not_send", False)),
         "created_at": record.created_at,
         "updated_at": record.updated_at,
@@ -413,6 +414,7 @@ def update_staff_cashout_record(
     *,
     group_title: Optional[str] = None,
     amount: Optional[Decimal] = None,
+    sending: Optional[bool] = None,
     do_not_send: Optional[bool] = None,
 ) -> Optional[dict[str, Any]]:
     with get_db() as session:
@@ -427,6 +429,8 @@ def update_staff_cashout_record(
             record.gg_player_id = _gg_player_id_from_title(group_title)
         if amount is not None:
             record.amount = amount
+        if sending is not None:
+            record.sending = bool(sending)
         if do_not_send is not None:
             record.do_not_send = bool(do_not_send)
         record.updated_at = datetime.utcnow()

@@ -430,6 +430,7 @@ Include an `account_managers` key (Slack user-group mention for `@accmanagers`) 
 heroku run -a YOUR_APP -- python migrate_staff_cashout_records.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_ledger.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_do_not_send.py
+heroku run -a YOUR_APP -- python migrate_staff_cashout_sending.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_list_indexes.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_slack_reminder.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_notify_recipients.py
@@ -445,7 +446,7 @@ heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py --apply
 ```
 
-Dashboard **Cashout records** admin **Configure notifications** modal holds the **5 min Slack reminder** master toggle and Pushover recipients (name, user key, method ticks). When the toggle is on: overdue Active cashouts post to `SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`, and method-filtered Pushover fires on create + after each overdue Slack send. Requires `migrate_staff_cashout_slack_reminder.py` and `migrate_staff_cashout_notify_recipients.py`. Set `DASHBOARD_PUBLIC_URL` (e.g. `https://gg-support-bot-2025-6f96168018cf.herokuapp.com`) for **Open cashout** links; if unset, the link is omitted. Worker polls every 30s; per-record overdue cadence is 5 minutes. Turning the toggle on fires overdue Slack immediately.
+Dashboard **Cashout records** admin **Configure notifications** modal holds the **5 min Slack reminder** master toggle and Pushover recipients (name, user key, method ticks). When the toggle is on: overdue Active cashouts post to `SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`, and method-filtered Pushover fires on create + after each overdue Slack send. Checking **Sending** on a record pauses those 5-minute Slack/Pushover pings (`migrate_staff_cashout_sending.py`). Requires `migrate_staff_cashout_slack_reminder.py` and `migrate_staff_cashout_notify_recipients.py`. Set `DASHBOARD_PUBLIC_URL` (e.g. `https://gg-support-bot-2025-6f96168018cf.herokuapp.com`) for **Open cashout** links; if unset, the link is omitted. Worker polls every 30s; per-record overdue cadence is 5 minutes. Turning the toggle on fires overdue Slack immediately.
 
 Pushover needs `PUSHOVER_APP_TOKEN` only; recipient keys and Venmo/Zelle/Crypto/Cash App/PayPal prefs are stored in `staff_cashout_notify_recipients` (Other/custom methods notify everyone with a key). Priority `1`. If the app token is unset or no recipients match, Slack-only for overdue.
 

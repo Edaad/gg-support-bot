@@ -198,6 +198,7 @@ def list_due_cashout_reminders(
             .options(joinedload(StaffCashoutRecord.money_sends))
             .filter(
                 StaffCashoutRecord.do_not_send.is_(False),
+                StaffCashoutRecord.sending.is_(False),
                 StaffCashoutRecord.tracks_money_sent.is_(True),
                 StaffCashoutRecord.created_at.isnot(None),
                 StaffCashoutRecord.created_at <= cutoff,
@@ -217,6 +218,8 @@ def list_due_cashout_reminders(
             ]
             ledger = compute_ledger(True, record.amount, sends)
             if ledger["status"] != "active":
+                continue
+            if bool(getattr(record, "sending", False)):
                 continue
             if not _is_due(
                 created_at=record.created_at,

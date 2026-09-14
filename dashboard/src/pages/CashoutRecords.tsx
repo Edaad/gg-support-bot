@@ -14,6 +14,7 @@ import {
 } from '../api/client'
 import { listV2Methods, type V2Method } from '../api/v2Client'
 import CashoutDestinationList, {
+  addableCashoutMethods,
   collectDestinationPayloads,
   emptyDestinationRows,
   type DestinationRow,
@@ -302,7 +303,9 @@ export default function CashoutRecords({
     listV2Methods(token, Number(clubId), 'cashout')
       .then((rows) => {
         if (cancelled) return
-        const methods = rows.filter((m) => m.is_active && m.slug !== 'chips')
+        const methods = addableCashoutMethods(
+          rows.filter((m) => m.is_active && m.slug !== 'chips'),
+        )
         setCreateMethods(methods)
         setCreateRows(emptyDestinationRows(methods))
       })

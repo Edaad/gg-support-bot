@@ -194,6 +194,7 @@ class ListDueTests(unittest.TestCase):
         created_at: datetime | None = None,
         last_ping: datetime | None = None,
         do_not_send: bool = False,
+        sending: bool = False,
         tracks: bool = True,
         sends: list | None = None,
     ) -> MagicMock:
@@ -204,6 +205,7 @@ class ListDueTests(unittest.TestCase):
         row.created_at = created_at or (datetime.utcnow() - timedelta(minutes=10))
         row.last_slack_reminder_at = last_ping
         row.do_not_send = do_not_send
+        row.sending = sending
         row.tracks_money_sent = tracks
         row.money_sends = sends or []
         return row
@@ -272,6 +274,41 @@ class ListDueTests(unittest.TestCase):
         self.assertEqual(len(due), 1)
         self.assertEqual(due[0]["id"], 1)
         self.assertEqual(due[0]["remaining"], Decimal("500"))
+
+    def test_skips_sending(self) -> None:
+        now = datetime(2026, 9, 11, 18, 0, 0)
+        control = MagicMock(
+            enabled=True,
+            enabled_at=now - timedelta(hours=1),
+        )
+        sending = self._record(
+            record_id=9,
+            created_at=now - timedelta(minutes=10),
+            sending=True,
+        )
+        session = MagicMock()
+
+        def query_side_effect(model):
+            q = MagicMock()
+            q.filter.return_value = q
+            q.options.return_value = q
+            q.order_by.return_value = q
+            if model is rem.StaffCashoutSlackReminderControl:
+                q.first.return_value = control
+            else:
+                q.all.return_value = [sending]
+            return q
+
+        session.query.side_effect = query_side_effect
+
+        with patch(
+            "bot.services.staff_cashout_slack_reminders.get_db"
+        ) as get_db:
+            get_db.return_value.__enter__.return_value = session
+            get_db.return_value.__exit__.return_value = False
+            due = rem.list_due_cashout_reminders(now=now)
+
+        self.assertEqual(due, [])
 
 
 class SendDueTests(unittest.IsolatedAsyncioTestCase):

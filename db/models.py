@@ -892,6 +892,7 @@ class StaffCashoutRecord(Base):
     recorded_by_telegram_user_id = Column(BigInteger, nullable=True)
     trigger = Column(String(20), nullable=False)  # group_cash | dm_cashout | dashboard
     tracks_money_sent = Column(Boolean, nullable=False, default=False)
+    sending = Column(Boolean, nullable=False, default=False)
     do_not_send = Column(Boolean, nullable=False, default=False)
     last_slack_reminder_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())

@@ -100,7 +100,7 @@ export default function CashoutMethodFields({
             {label}
           </option>
         ))}
-        <option value="custom">Custom</option>
+        <option value="custom">Other</option>
       </select>
       {choice.custom && !staffLabelSelected && (
         <input

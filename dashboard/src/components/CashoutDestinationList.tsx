@@ -1,6 +1,21 @@
 import type { StaffCashoutPaymentT } from '../api/client'
 import type { V2Method } from '../api/v2Client'
 
+/** Catalog slugs shown when adding/editing a cashout, in this order. */
+export const ADDABLE_CASHOUT_SLUGS = [
+  'crypto',
+  'venmo',
+  'cashapp',
+  'zelle',
+  'paypal',
+] as const
+
+export function addableCashoutMethods(methods: V2Method[]): V2Method[] {
+  return ADDABLE_CASHOUT_SLUGS.flatMap((slug) =>
+    methods.filter((m) => (m.slug || '').toLowerCase() === slug),
+  )
+}
+
 export type DestinationRow = {
   key: string
   kind: 'catalog' | 'custom' | 'extra'
@@ -206,7 +221,7 @@ export default function CashoutDestinationList({ methods, rows, onChange }: Prop
             ? method?.name || 'Method'
             : row.kind === 'extra'
               ? row.label || 'Method'
-              : 'Custom'
+              : 'Other'
 
         return (
           <div
