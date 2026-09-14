@@ -193,7 +193,7 @@ export default function Bonuses({
   const remove = async (row: BonusRecordT) => {
     const ok = await askConfirm({
       title: 'Delete bonus?',
-      message: 'This removes the bonus record. Hub is not updated.',
+      message: 'This removes the bonus record.',
       confirmLabel: 'Delete',
       destructive: true,
     })
@@ -310,62 +310,73 @@ export default function Bonuses({
           {clubFilter || typeFilter || needle ? 'No matching bonuses.' : 'No bonus records yet.'}
         </p>
       ) : (
-        <div className="space-y-4">
-          {visible.map((r) => (
-            <article
-              key={r.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => openEdit(r)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  openEdit(r)
-                }
-              }}
-              className="cursor-pointer rounded-2xl border border-border bg-surface p-5 shadow-sm transition hover:border-accent/40 hover:bg-surface-raised"
-            >
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-sm text-ink-muted">{formatEasternDateTime(r.issued_at)}</p>
-                  <h2 className="mt-1 text-xl font-semibold text-ink">
-                    {r.group_title || r.player_username}
-                  </h2>
-                  <p className="mt-1 text-base text-ink-muted">{r.club_name || '—'}</p>
-                  <p className="mt-3 text-lg font-semibold">{fmtMoney(Number(r.amount))}</p>
-                  <p className="mt-1 text-base text-ink">
+        <div className="table-scroll">
+          <table className="min-w-[56rem] text-left">
+            <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
+              <tr>
+                <th className="px-4 py-3">Time</th>
+                <th className="px-4 py-3">Amount</th>
+                <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Club</th>
+                <th className="px-4 py-3">Description</th>
+                <th className="px-4 py-3">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border text-sm">
+              {visible.map((r) => (
+                <tr
+                  key={r.id}
+                  className="cursor-pointer hover:bg-surface/80"
+                  onClick={() => openEdit(r)}
+                >
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {formatEasternDateTime(r.issued_at)}
+                  </td>
+                  <td className="px-4 py-3 font-medium whitespace-nowrap">
+                    {fmtMoney(Number(r.amount))}
+                  </td>
+                  <td
+                    className="px-4 py-3 max-w-[16rem] truncate"
+                    title={r.group_title || r.player_username || undefined}
+                  >
+                    {r.group_title || r.player_username || '—'}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
                     {r.bonus_type_name || 'Other'}
-                    {r.custom_description ? (
-                      <span className="text-ink-muted"> — {r.custom_description}</span>
-                    ) : null}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="btn-primary inline-flex min-h-12 min-w-[7rem] items-center justify-center px-6 text-base"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      openEdit(r)
-                    }}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">{r.club_name || '—'}</td>
+                  <td
+                    className="px-4 py-3 max-w-[14rem] truncate text-ink-muted"
+                    title={r.custom_description || undefined}
                   >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-danger-outline min-h-12 px-6 text-base"
-                    disabled={saving}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      remove(r)
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </article>
-          ))}
+                    {r.custom_description || '—'}
+                  </td>
+                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        className="btn-primary min-h-10 px-4 text-sm"
+                        onClick={() => openEdit(r)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-danger-outline min-h-10 px-4 text-sm"
+                        disabled={saving}
+                        onClick={() => remove(r)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
