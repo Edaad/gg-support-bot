@@ -22,7 +22,6 @@ import CashoutDestinationList, {
 import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
 import CashoutNotifyConfigModal from '../components/CashoutNotifyConfigModal'
 import { useConfirm } from '../components/ConfirmProvider'
-import DateRangeCsvExport from '../components/DateRangeCsvExport'
 import Modal from '../components/Modal'
 import {
   downloadCashoutMoneySendsCsv,
@@ -135,6 +134,10 @@ export default function CashoutRecords({
   const [fromDate, setFromDate] = useState(() => daysAgoEastern(30))
   const [toDate, setToDate] = useState(() => easternCalendarDateString())
   const [menuExporting, setMenuExporting] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportFrom, setExportFrom] = useState(() => daysAgoEastern(6))
+  const [exportTo, setExportTo] = useState(() => easternCalendarDateString())
+  const [exportErr, setExportErr] = useState<string | null>(null)
   const [total, setTotal] = useState(0)
   const [notifyConfigOpen, setNotifyConfigOpen] = useState(false)
   const reqId = useRef(0)
@@ -378,29 +381,49 @@ export default function CashoutRecords({
     }
   }
 
-  const handleMoneySentExport = async () => {
-    if (!fromDate || !toDate) {
-      setError('From and to dates are required')
+  const openExport = () => {
+    if (isMoneySent) {
+      setExportFrom(fromDate)
+      setExportTo(toDate)
+    } else {
+      setExportFrom(daysAgoEastern(6))
+      setExportTo(easternCalendarDateString())
+    }
+    setExportErr(null)
+    setExportOpen(true)
+  }
+
+  const exportCashouts = async () => {
+    if (!exportFrom || !exportTo) {
+      setExportErr('From and to dates are required')
       return
     }
-    if (fromDate > toDate) {
-      setError('From must be on or before to')
+    if (exportFrom > exportTo) {
+      setExportErr('From must be on or before to')
       return
     }
     setMenuExporting(true)
-    setError(null)
+    setExportErr(null)
     try {
-      await downloadCashoutMoneySendsCsv(
-        token,
-        { from: fromDate, to: toDate },
-        {
+      if (isMoneySent) {
+        await downloadCashoutMoneySendsCsv(
+          token,
+          { from: exportFrom, to: exportTo },
+          {
+            clubId: clubFilter ? Number(clubFilter) : undefined,
+            method: methodFilter || undefined,
+            q: q || undefined,
+          },
+        )
+      } else {
+        await downloadCashoutRecordsCsv(token, { from: exportFrom, to: exportTo }, {
           clubId: clubFilter ? Number(clubFilter) : undefined,
-          method: methodFilter || undefined,
-          q: q || undefined,
-        },
-      )
+          status: statusTab || undefined,
+        })
+      }
+      setExportOpen(false)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Export failed')
+      setExportErr(e instanceof Error ? e.message : 'Export failed')
     } finally {
       setMenuExporting(false)
     }
@@ -408,15 +431,8 @@ export default function CashoutRecords({
 
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="mb-2 text-2xl font-bold">Cashout records</h1>
-          <p className="text-sm text-ink-muted">
-            {isMoneySent
-              ? 'All money-sent ledger entries across cashouts. Read-only.'
-              : 'Orders from GGCashier or created here. Log money sent on each record; remaining is original minus sent.'}
-          </p>
-        </div>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold">Cashouts</h1>
         <div className="flex flex-col items-stretch gap-3 sm:items-end">
           {isAdmin && (
             <button
@@ -531,33 +547,12 @@ export default function CashoutRecords({
             </div>
           </>
         )}
-      </div>
-
-      {isMoneySent ? (
-        <div className="mb-6 rounded-lg border border-border bg-surface-raised p-4">
-          <p className="mb-3 text-sm font-medium text-ink">Export</p>
-          <button
-            type="button"
-            onClick={handleMoneySentExport}
-            disabled={menuExporting}
-            className="btn-primary min-h-11 px-4 text-sm"
-          >
-            {menuExporting ? 'Exporting…' : 'Export CSV'}
+        {!isDoNotSend && (
+          <button type="button" onClick={openExport} className="btn-secondary-sm">
+            Export
           </button>
-        </div>
-      ) : isDoNotSend ? null : (
-        <div className="mb-6 rounded-lg border border-border bg-surface-raised p-4">
-          <p className="mb-3 text-sm font-medium text-ink">Export</p>
-          <DateRangeCsvExport
-            onExport={(range) =>
-              downloadCashoutRecordsCsv(token, range, {
-                clubId: clubFilter ? Number(clubFilter) : undefined,
-                status: statusTab || undefined,
-              })
-            }
-          />
-        </div>
-      )}
+        )}
+      </div>
 
       {error && (
         <div className="mb-4 rounded-lg border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger-ink">
@@ -790,6 +785,58 @@ export default function CashoutRecords({
           onError={(message) => setError(message)}
         />
       )}
+
+      <Modal open={exportOpen} onClose={() => setExportOpen(false)} title="Export cashouts">
+        <p className="mb-4 text-sm text-ink-muted">
+          {isMoneySent
+            ? 'Downloads money-sent rows in this date range. Club, method, and search match the filters on the page.'
+            : 'Downloads cashouts in this date range. Club and status match the filters on the page.'}
+        </p>
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="label-field-xs" htmlFor="cashout-export-from">
+              From (ET)
+            </label>
+            <input
+              id="cashout-export-from"
+              type="date"
+              value={exportFrom}
+              onChange={(e) => setExportFrom(e.target.value)}
+              className="input-field-sm w-full"
+            />
+          </div>
+          <div>
+            <label className="label-field-xs" htmlFor="cashout-export-to">
+              To (ET)
+            </label>
+            <input
+              id="cashout-export-to"
+              type="date"
+              value={exportTo}
+              onChange={(e) => setExportTo(e.target.value)}
+              className="input-field-sm w-full"
+            />
+          </div>
+        </div>
+        {exportErr && (
+          <p className="mb-4 rounded-lg border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger-ink">
+            {exportErr}
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={() => setExportOpen(false)} className="btn-secondary-sm">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={menuExporting}
+            onClick={() => void exportCashouts()}
+            className="btn-primary-sm disabled:opacity-40"
+          >
+            {menuExporting ? 'Exporting…' : 'Download CSV'}
+          </button>
+        </div>
+      </Modal>
     </div>
   )
 }

@@ -31,6 +31,8 @@ export default function Expenses({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportErr, setExportErr] = useState<string | null>(null)
 
   const [search, setSearch] = useState('')
   const [q, setQ] = useState('')
@@ -163,21 +165,27 @@ export default function Expenses({ token }: { token: string }) {
     }
   }
 
+  const openExport = () => {
+    setExportErr(null)
+    setExportOpen(true)
+  }
+
   const onExport = async () => {
     if (!fromDate || !toDate) {
-      setError('From and to dates are required for export')
+      setExportErr('From and to dates are required for export')
       return
     }
     if (fromDate > toDate) {
-      setError('From must be on or before to')
+      setExportErr('From must be on or before to')
       return
     }
     setExporting(true)
-    setError(null)
+    setExportErr(null)
     try {
       await downloadExpensesXlsx(token, listOpts())
+      setExportOpen(false)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Export failed')
+      setExportErr(e instanceof Error ? e.message : 'Export failed')
     } finally {
       setExporting(false)
     }
@@ -185,11 +193,8 @@ export default function Expenses({ token }: { token: string }) {
 
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="mb-2 text-2xl font-bold">Expenses</h1>
-          <p className="text-sm text-ink-muted">Admin expense ledger by club and date.</p>
-        </div>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold">Expenses</h1>
         <button type="button" onClick={openCreate} className="btn-primary min-h-12 shrink-0 px-6 text-base">
           New expense
         </button>
@@ -266,20 +271,8 @@ export default function Expenses({ token }: { token: string }) {
             className="input-field-sm"
           />
         </div>
-      </div>
-
-      <div className="mb-6 rounded-lg border border-border bg-surface-raised p-4">
-        <p className="mb-3 text-sm font-medium text-ink">Export</p>
-        <p className="mb-3 text-xs text-ink-muted">
-          Downloads the current filtered rows (same club, pending, search, and date range) as XLSX.
-        </p>
-        <button
-          type="button"
-          onClick={onExport}
-          disabled={exporting}
-          className="btn-primary min-h-11 px-5 text-sm"
-        >
-          {exporting ? 'Exporting…' : 'Export XLSX'}
+        <button type="button" onClick={openExport} className="btn-secondary-sm">
+          Export
         </button>
       </div>
 
@@ -424,6 +417,30 @@ export default function Expenses({ token }: { token: string }) {
           </label>
           <button type="button" onClick={save} disabled={saving} className="btn-primary w-full min-h-12">
             {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal open={exportOpen} onClose={() => setExportOpen(false)} title="Export expenses">
+        <p className="mb-4 text-sm text-ink-muted">
+          Downloads the current filtered rows (club, pending, search, and date range) as XLSX.
+        </p>
+        {exportErr && (
+          <p className="mb-4 rounded-lg border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger-ink">
+            {exportErr}
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={() => setExportOpen(false)} className="btn-secondary-sm">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={exporting}
+            onClick={() => void onExport()}
+            className="btn-primary-sm disabled:opacity-40"
+          >
+            {exporting ? 'Exporting…' : 'Download XLSX'}
           </button>
         </div>
       </Modal>

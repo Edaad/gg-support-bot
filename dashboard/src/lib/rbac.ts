@@ -9,10 +9,11 @@ export const ACCOUNT_MANAGER_PATHS = [
   '/cashout-records',
   '/payments',
   '/bonuses',
+  '/settings',
 ] as const
 
 /** Paths gto may open (prefix match for nested routes). */
-export const GTO_PATHS = ['/cashout-records', '/bonuses'] as const
+export const GTO_PATHS = ['/cashout-records', '/bonuses', '/settings'] as const
 
 /** Paths that live under the Admin two-level nav (admin only). */
 export const ADMIN_SECTION_PATHS = [
@@ -20,8 +21,6 @@ export const ADMIN_SECTION_PATHS = [
   '/audit',
   '/analytics',
   '/expenses',
-  '/telegram-login',
-  '/weekly-stats',
 ] as const
 
 export const ADMIN_SECTION_HOME = '/clubs'

@@ -5,8 +5,6 @@ import Clubs from './pages/Clubs'
 import ClubDetail from './pages/ClubDetail'
 import FlowSimulator from './pages/FlowSimulator'
 import Settings from './pages/Settings'
-import WeeklyStats from './pages/WeeklyStats'
-import TelegramLogin from './pages/TelegramLogin'
 import BonusTypes from './pages/BonusTypes'
 import Bonuses from './pages/Bonuses'
 import Expenses from './pages/Expenses'
@@ -74,15 +72,18 @@ export default function App() {
       {!token ? (
         <Login onLogin={handleLogin} />
       ) : (
-        <Layout role={role} onLogout={handleLogout}>
+        <Layout role={role}>
           <RoleGate role={role}>
             <Routes>
               <Route path="/" element={<Navigate to={homePathForRole(role)} replace />} />
               <Route path="/clubs" element={<Clubs token={token} />} />
               <Route path="/clubs/:id" element={<ClubDetail token={token} />} />
               <Route path="/clubs/:id/test" element={<FlowSimulator token={token} />} />
-              <Route path="/settings" element={<Settings token={token} />} />
-              <Route path="/telegram-login" element={<TelegramLogin token={token} />} />
+              <Route
+                path="/settings"
+                element={<Settings token={token} role={role} onLogout={handleLogout} />}
+              />
+              <Route path="/telegram-login" element={<Navigate to="/settings" replace />} />
               <Route path="/bonus-types" element={<Navigate to="/bonuses/types" replace />} />
               <Route path="/bonuses/types" element={<BonusTypes token={token} />} />
               <Route path="/bonuses" element={<Bonuses token={token} role={role} />} />
@@ -104,7 +105,10 @@ export default function App() {
                 }
               />
               <Route path="/tickets" element={<Navigate to="/analytics" replace />} />
-              <Route path="/weekly-stats" element={<WeeklyStats token={token} />} />
+              <Route
+                path="/weekly-stats"
+                element={<Navigate to="/analytics?section=weekly_player_stats" replace />}
+              />
             </Routes>
           </RoleGate>
         </Layout>

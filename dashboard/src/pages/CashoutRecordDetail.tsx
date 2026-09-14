@@ -384,7 +384,7 @@ export default function CashoutRecordDetail({
     return (
       <div>
         <Link to={backTo} className="text-sm text-accent hover:underline">
-          Back to cashout records
+          Back to cashouts
         </Link>
         <p className="mt-4 text-sm text-danger-ink">{error || 'Not found'}</p>
       </div>
@@ -403,7 +403,7 @@ export default function CashoutRecordDetail({
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link to={backTo} className="text-sm text-accent hover:underline">
-          Back to cashout records
+          Back to cashouts
         </Link>
         <div className="flex flex-wrap items-center gap-2">
           <button

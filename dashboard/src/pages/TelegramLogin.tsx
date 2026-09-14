@@ -274,9 +274,9 @@ export default function TelegramLogin({ token }: { token: string }) {
   const banner = sessionBanner(selected)
 
   return (
-    <div>
-      <h1 className="mb-2 text-2xl font-bold">Telegram login</h1>
-      <p className="mb-6 max-w-2xl text-sm text-ink-muted">
+    <section>
+      <h2 className="mb-2 text-lg font-semibold text-ink">Telegram login</h2>
+      <p className="mb-4 max-w-2xl text-sm text-ink-muted">
         Signs in each club&apos;s Telethon (<code className="text-accent">/gc</code>) account with an SMS /
         Telegram app code instead of DMing credentials to the bot. After logging in here,{' '}
         <strong className="text-ink">/gc</strong> only creates megagroups.
@@ -487,6 +487,6 @@ export default function TelegramLogin({ token }: { token: string }) {
         <code className="text-ink-muted">.session</code>{' '}file under <code className="text-ink-muted">sessions/</code>.
         Set <code className="text-ink-muted">GC_MTPROTO_DB_SESSIONS=false</code> to force file-only (single-host dev).
       </p>
-    </div>
+    </section>
   )
 }

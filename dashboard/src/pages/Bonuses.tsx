@@ -11,12 +11,22 @@ import {
   type Club,
 } from '../api/client'
 import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
-import DateRangeCsvExport from '../components/DateRangeCsvExport'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
 import { downloadBonusRecordsCsv } from '../api/csvExportClient'
-import { formatEasternDateTime, fromEasternDatetimeLocalValue, toEasternDatetimeLocalValue } from '../lib/easternTime'
+import {
+  easternCalendarDateString,
+  formatEasternDateTime,
+  fromEasternDatetimeLocalValue,
+  toEasternDatetimeLocalValue,
+} from '../lib/easternTime'
 import { GTO_CLUB_NAME, type DashboardRole } from '../lib/rbac'
+
+function daysAgoEastern(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  return easternCalendarDateString(d)
+}
 
 function recordMatchesSearch(r: BonusRecordT, needle: string) {
   const n = needle.toLowerCase()
@@ -60,6 +70,11 @@ export default function Bonuses({
   const [typeId, setTypeId] = useState<number | 'other' | null>(null)
   const [description, setDescription] = useState('')
   const [issuedAtLocal, setIssuedAtLocal] = useState('')
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportFrom, setExportFrom] = useState(() => daysAgoEastern(6))
+  const [exportTo, setExportTo] = useState(() => easternCalendarDateString())
+  const [exporting, setExporting] = useState(false)
+  const [exportErr, setExportErr] = useState<string | null>(null)
 
   const reload = () => {
     const id = ++reqId.current
@@ -210,15 +225,43 @@ export default function Bonuses({
     }
   }
 
+  const openExport = () => {
+    setExportFrom(daysAgoEastern(6))
+    setExportTo(easternCalendarDateString())
+    setExportErr(null)
+    setExportOpen(true)
+  }
+
+  const exportBonuses = async () => {
+    if (!exportFrom || !exportTo) {
+      setExportErr('From and to dates are required')
+      return
+    }
+    if (exportFrom > exportTo) {
+      setExportErr('From must be on or before to')
+      return
+    }
+    setExporting(true)
+    setExportErr(null)
+    try {
+      await downloadBonusRecordsCsv(token, { from: exportFrom, to: exportTo }, {
+        clubId: clubFilter ? Number(clubFilter) : undefined,
+        bonusTypeId:
+          typeFilter && typeFilter !== 'other' ? Number(typeFilter) : undefined,
+        other: typeFilter === 'other',
+      })
+      setExportOpen(false)
+    } catch (e) {
+      setExportErr(e instanceof Error ? e.message : 'Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="mb-2 text-2xl font-bold">Bonuses</h1>
-          <p className="text-sm text-ink-muted">
-            Bonuses from Telegram /bonus or created here.
-          </p>
-        </div>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold">Bonuses</h1>
         <button type="button" onClick={openCreate} className="btn-primary min-h-12 shrink-0 px-6 text-base">
           New bonus
         </button>
@@ -276,20 +319,9 @@ export default function Bonuses({
             <option value="other">Other</option>
           </select>
         </div>
-      </div>
-
-      <div className="mb-6 rounded-lg border border-border bg-surface-raised p-4">
-        <p className="mb-3 text-sm font-medium text-ink">Export</p>
-        <DateRangeCsvExport
-          onExport={(range) =>
-            downloadBonusRecordsCsv(token, range, {
-              clubId: clubFilter ? Number(clubFilter) : undefined,
-              bonusTypeId:
-                typeFilter && typeFilter !== 'other' ? Number(typeFilter) : undefined,
-              other: typeFilter === 'other',
-            })
-          }
-        />
+        <button type="button" onClick={openExport} className="btn-secondary-sm">
+          Export
+        </button>
       </div>
 
       {error && (
@@ -511,6 +543,56 @@ export default function Bonuses({
           )}
           <button type="button" onClick={save} disabled={saving} className="btn-primary w-full min-h-12">
             {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal open={exportOpen} onClose={() => setExportOpen(false)} title="Export bonuses">
+        <p className="mb-4 text-sm text-ink-muted">
+          Downloads bonuses in this date range. Club and type match the filters on the page.
+        </p>
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="label-field-xs" htmlFor="bonus-export-from">
+              From (ET)
+            </label>
+            <input
+              id="bonus-export-from"
+              type="date"
+              value={exportFrom}
+              onChange={(e) => setExportFrom(e.target.value)}
+              className="input-field-sm w-full"
+            />
+          </div>
+          <div>
+            <label className="label-field-xs" htmlFor="bonus-export-to">
+              To (ET)
+            </label>
+            <input
+              id="bonus-export-to"
+              type="date"
+              value={exportTo}
+              onChange={(e) => setExportTo(e.target.value)}
+              className="input-field-sm w-full"
+            />
+          </div>
+        </div>
+        {exportErr && (
+          <p className="mb-4 rounded-lg border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger-ink">
+            {exportErr}
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={() => setExportOpen(false)} className="btn-secondary-sm">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={exporting}
+            onClick={() => void exportBonuses()}
+            className="btn-primary-sm disabled:opacity-40"
+          >
+            {exporting ? 'Exporting…' : 'Download CSV'}
           </button>
         </div>
       </Modal>

@@ -1,6 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
-import ThemeToggle from './ThemeToggle'
 import {
   ADMIN_SECTION_HOME,
   homePathForRole,
@@ -14,7 +13,7 @@ const RAKEBACK_URL = 'https://elevateautomations.io/'
 
 /** Admin top-level links (Admin is injected separately). */
 const ADMIN_TOP_NAV: NavLinkItem[] = [
-  { to: '/cashout-records', label: 'Cashout records' },
+  { to: '/cashout-records', label: 'Cashouts' },
   { to: '/payments', label: 'Payments' },
   { to: '/manual-deposit-requests', label: 'Pool Pay' },
   { to: '/bonuses', label: 'Bonuses' },
@@ -23,15 +22,17 @@ const ADMIN_TOP_NAV: NavLinkItem[] = [
 ]
 
 const AM_TOP_NAV: NavLinkItem[] = [
-  { to: '/cashout-records', label: 'Cashout records' },
+  { to: '/cashout-records', label: 'Cashouts' },
   { to: '/payments', label: 'Payments' },
   { to: '/bonuses', label: 'Bonuses' },
   { to: RAKEBACK_URL, label: 'Rakeback', external: true },
+  { to: '/settings', label: 'Settings' },
 ]
 
 const GTO_TOP_NAV: NavLinkItem[] = [
-  { to: '/cashout-records', label: 'Cashout records' },
+  { to: '/cashout-records', label: 'Cashouts' },
   { to: '/bonuses', label: 'Bonuses' },
+  { to: '/settings', label: 'Settings' },
 ]
 
 const ADMIN_SUBNAV: NavLinkItem[] = [
@@ -39,8 +40,6 @@ const ADMIN_SUBNAV: NavLinkItem[] = [
   { to: '/audit', label: 'Audit' },
   { to: '/analytics', label: 'Analytics' },
   { to: '/expenses', label: 'Expenses' },
-  { to: '/telegram-login', label: 'Telegram login' },
-  { to: '/weekly-stats', label: 'Weekly stats' },
 ]
 
 const BONUSES_SUBNAV: NavLinkItem[] = [
@@ -80,11 +79,9 @@ function navLinkClass(active: boolean): string {
 export default function Layout({
   children,
   role,
-  onLogout,
 }: {
   children: ReactNode
   role: DashboardRole
-  onLogout: () => void
 }) {
   const { pathname } = useLocation()
   const isAdmin = role === 'admin'
@@ -103,24 +100,13 @@ export default function Layout({
 
       <header className="sticky top-0 z-40 border-b border-border bg-surface pt-[env(safe-area-inset-top)]">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="flex min-h-14 items-center justify-between gap-3 py-2">
+          <div className="flex min-h-14 items-center py-2">
             <Link
               to={homePathForRole(role)}
               className={`shrink-0 text-lg font-bold tracking-tight text-ink transition hover:text-accent ${focusRing}`}
             >
               GG&nbsp;Dashboard
             </Link>
-
-            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-              <ThemeToggle />
-              <button
-                type="button"
-                onClick={onLogout}
-                className={`min-h-11 rounded-md border border-border bg-surface-raised px-3 text-sm font-medium text-ink-muted transition hover:bg-control hover:text-ink ${focusRing}`}
-              >
-                Log out
-              </button>
-            </div>
           </div>
 
           <nav

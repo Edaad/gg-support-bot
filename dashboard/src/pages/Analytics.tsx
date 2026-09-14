@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { listClubs, type Club } from '../api/client'
 import {
   AUTO_DEPOSIT_METHOD_OPTIONS,
@@ -10,6 +11,7 @@ import PaymentMethodLinkingAnalytics from '../components/PaymentMethodLinkingAna
 import AutoDepositAnalytics from '../components/AutoDepositAnalytics'
 import DepositFunnelAnalytics from '../components/DepositFunnelAnalytics'
 import Tickets from './Tickets'
+import WeeklyStats from './WeeklyStats'
 
 const SOURCE_FILTER_OPTIONS: { value: BoundViaFilter; label: string }[] = [
   { value: 'all', label: 'All sources' },
@@ -37,6 +39,7 @@ const ANALYTICS_SECTIONS = [
   { id: 'gc_binding', label: 'GC binding' },
   { id: 'full_auto_deposit', label: 'Full auto deposit' },
   { id: 'tickets', label: 'Tickets' },
+  { id: 'weekly_player_stats', label: 'Weekly Player Stats' },
 ] as const
 
 type AnalyticsSection = (typeof ANALYTICS_SECTIONS)[number]['id']
@@ -45,6 +48,15 @@ type MethodSetupFilter = (typeof METHOD_SETUP_FILTER_OPTIONS)[number]['value']
 
 function analyticsSectionTabId(section: AnalyticsSection): string {
   return `analytics-section-${section}`
+}
+
+function isStandaloneAnalyticsSection(section: AnalyticsSection): boolean {
+  return section === 'tickets' || section === 'weekly_player_stats'
+}
+
+function sectionFromSearch(raw: string | null): AnalyticsSection {
+  if (ANALYTICS_SECTIONS.some((s) => s.id === raw)) return raw as AnalyticsSection
+  return 'deposit_funnel'
 }
 
 export default function Analytics({ token }: { token: string }) {
@@ -79,7 +91,15 @@ export default function Analytics({ token }: { token: string }) {
     useState<MethodSetupFilter>('all')
   const [appliedFrom, setAppliedFrom] = useState('')
   const [appliedTo, setAppliedTo] = useState('')
-  const [section, setSection] = useState<AnalyticsSection>('deposit_funnel')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const section = sectionFromSearch(searchParams.get('section'))
+  const setSection = (id: AnalyticsSection) => {
+    if (id === 'deposit_funnel') {
+      setSearchParams({}, { replace: true })
+      return
+    }
+    setSearchParams({ section: id }, { replace: true })
+  }
   const [err, setErr] = useState('')
 
   useEffect(() => {
@@ -140,7 +160,7 @@ export default function Analytics({ token }: { token: string }) {
   )
 
   const filtersDirty =
-    section !== 'tickets' &&
+    !isStandaloneAnalyticsSection(section) &&
     ((section === 'deposit_funnel'
       ? funnelMethod !== appliedFunnelMethod
       : section === 'full_auto_deposit'
@@ -197,7 +217,7 @@ export default function Analytics({ token }: { token: string }) {
         ))}
       </div>
 
-      {section !== 'tickets' && (
+      {!isStandaloneAnalyticsSection(section) && (
         <form
           className="mb-6 flex flex-wrap items-end gap-4"
           onSubmit={(e) => {
@@ -355,7 +375,7 @@ export default function Analytics({ token }: { token: string }) {
         </p>
       )}
 
-      {err && section !== 'tickets' && (
+      {err && !isStandaloneAnalyticsSection(section) && (
         <p className="alert-danger mb-4" role="alert">
           {err}
         </p>
@@ -366,7 +386,7 @@ export default function Analytics({ token }: { token: string }) {
         role="tabpanel"
         aria-labelledby={analyticsSectionTabId(section)}
         className={
-          section === 'tickets'
+          isStandaloneAnalyticsSection(section)
             ? undefined
             : `panel transition-opacity ${filtersDirty ? 'opacity-80' : ''}`
         }
@@ -397,6 +417,8 @@ export default function Analytics({ token }: { token: string }) {
             filters={appliedAutoDepositFilters}
             onError={handleLinkingError}
           />
+        ) : section === 'weekly_player_stats' ? (
+          <WeeklyStats token={token} embedded />
         ) : (
           <Tickets token={token} embedded />
         )}

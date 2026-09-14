@@ -149,7 +149,7 @@ This repo ignores them via [`.gitignore`](../.gitignore):
 
 If the club’s Telethon session is missing or Telegram revokes authorization:
 
-1. Open the **GG Dashboard** (JWT login) → **Telegram login** (`/telegram-login` in dev).
+1. Open the **GG Dashboard** (JWT login) → **Settings** → Telegram login (`/settings` in dev).
 2. Pick the club, **Send login code**, then paste the OTP (and Cloud Password if 2FA is enabled).
 3. During the OTP flow the web dyno writes the usual Telethon **SQLite `.session`** under `sessions/` (ephemeral during login). Once Telegram accepts OTP/2FA, the server snapshots that authorization into Postgres (`mtproto_session_credentials`).
 

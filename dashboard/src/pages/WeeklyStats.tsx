@@ -63,7 +63,13 @@ function buildFilters(f: FilterState): PlayerFilters {
   return out
 }
 
-export default function WeeklyStats({ token }: { token: string }) {
+export default function WeeklyStats({
+  token,
+  embedded = false,
+}: {
+  token: string
+  embedded?: boolean
+}) {
   const clubSelectId = useId()
   const weekSelectId = useId()
   const searchId = useId()
@@ -364,7 +370,7 @@ export default function WeeklyStats({ token }: { token: string }) {
 
   return (
     <div>
-      <h1 className="mb-2 text-2xl font-bold">Weekly player stats</h1>
+      {!embedded ? <h1 className="mb-2 text-2xl font-bold">Weekly player stats</h1> : null}
       <p className="mb-6 text-sm text-ink-muted">
         Data from gg-computer. Messages are sent to the player&apos;s linked Telegram group via this bot (
         <code className="text-ink">player_details</code>).

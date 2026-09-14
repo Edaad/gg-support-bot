@@ -179,7 +179,7 @@ def _compose_status_text(
 
 _EXPIRED_REPLY = (
     "MTProto session for your club has expired or isn’t logged in.\n\n"
-    "Sign in once from GG Dashboard → Telegram login (navigation tab). Then send /gc again here."
+    "Sign in once from GG Dashboard → Settings → Telegram login. Then send /gc again here."
 )
 
 
