@@ -130,6 +130,7 @@ function CashoutRecordCard({
   onOpen: (id: number) => void
   onDelete: (r: StaffCashoutRecordT) => void
 }) {
+  const methods = paymentMethodSummary(record)
   const when = formatEasternDateTime(record.created_at)
   const meta = [
     record.club_name?.trim() || null,
