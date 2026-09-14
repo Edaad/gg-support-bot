@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   createCashoutRecord,
   deleteCashoutRecord,
@@ -39,19 +39,108 @@ type PageTab = 'active' | 'cleared' | 'money_sent'
 const PAGE_SIZE = 50
 const EXTRA_SECTION_LIMIT = 200
 
+function paymentMethodSummary(record: StaffCashoutRecordT): string {
+  const names: string[] = []
+  const seen = new Set<string>()
+  for (const p of record.payments ?? []) {
+    const name = (p.method_display_name || '').trim()
+    if (!name || seen.has(name)) continue
+    seen.add(name)
+    names.push(name)
+  }
+  return names.join(', ')
+}
+
+function CashoutCardMenu({
+  saving,
+  onEdit,
+  onDelete,
+}: {
+  saving: boolean
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  return (
+    <div
+      ref={rootRef}
+      className="relative shrink-0"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        aria-label="Cashout actions"
+        aria-expanded={open}
+        disabled={saving}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-lg leading-none text-ink-muted hover:bg-control hover:text-ink disabled:opacity-40"
+      >
+        ⋯
+      </button>
+      {open && (
+        <div className="absolute right-0 z-10 mt-1 min-w-[9rem] rounded-lg border border-border bg-surface-raised py-1 shadow-md">
+          <button
+            type="button"
+            className="block w-full px-3 py-2 text-left text-sm text-ink hover:bg-control"
+            onClick={() => {
+              setOpen(false)
+              onEdit()
+            }}
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            className="block w-full px-3 py-2 text-left text-sm text-danger-ink hover:bg-danger-bg"
+            onClick={() => {
+              setOpen(false)
+              onDelete()
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CashoutRecordCard({
   record,
-  listSearch,
   saving,
   onOpen,
   onDelete,
 }: {
   record: StaffCashoutRecordT
-  listSearch: string
   saving: boolean
   onOpen: (id: number) => void
   onDelete: (r: StaffCashoutRecordT) => void
 }) {
+  const when = formatEasternDateTime(record.created_at)
+  const meta = [
+    record.club_name?.trim() || null,
+    methods || null,
+    when === '—' ? null : when,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  const remainingClass =
+    record.status === 'oversent' ? 'text-danger-ink' : 'text-ink'
+
   return (
     <article
       role="link"
@@ -63,50 +152,27 @@ function CashoutRecordCard({
           onOpen(record.id)
         }
       }}
-      className="cursor-pointer rounded-2xl border border-border bg-surface p-5 shadow-sm transition hover:border-accent/40 hover:bg-surface-raised"
+      className="cursor-pointer rounded-2xl border border-border bg-surface px-4 py-3 shadow-sm transition hover:border-accent/40 hover:bg-surface-raised"
     >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm text-ink-muted">{formatEasternDateTime(record.created_at)}</p>
-          <h3 className="mt-1 text-xl font-semibold text-ink">{record.group_title}</h3>
-          <p className="mt-1 text-base text-ink-muted">{record.club_name || '—'}</p>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-base font-semibold text-ink">
+            {record.group_title}
+          </h3>
+          <p className="mt-0.5 truncate text-sm text-ink-muted">{meta || '—'}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            to={`/cashout-records/${record.id}`}
-            state={{ listSearch }}
-            onClick={(e) => e.stopPropagation()}
-            className="btn-primary inline-flex min-h-12 min-w-[7rem] items-center justify-center px-6 text-base"
-          >
-            Edit
-          </Link>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete(record)
-            }}
-            className="btn-danger-outline inline-flex min-h-12 min-w-[7rem] items-center justify-center px-6 text-base"
-          >
-            Delete
-          </button>
+        <div className="shrink-0 pt-0.5 text-right">
+          <p className={`text-base font-semibold tabular-nums ${remainingClass}`}>
+            {fmtMoney(record.remaining)}
+          </p>
+          <p className="text-xs text-ink-muted">remaining</p>
         </div>
+        <CashoutCardMenu
+          saving={saving}
+          onEdit={() => onOpen(record.id)}
+          onDelete={() => onDelete(record)}
+        />
       </div>
-      <dl className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border border-border bg-bg px-4 py-3">
-          <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Original</dt>
-          <dd className="mt-1 text-lg font-semibold">{fmtMoney(record.amount)}</dd>
-        </div>
-        <div className="rounded-xl border border-border bg-bg px-4 py-3">
-          <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Sent</dt>
-          <dd className="mt-1 text-lg font-semibold">{fmtMoney(record.sent)}</dd>
-        </div>
-        <div className="rounded-xl border border-border bg-bg px-4 py-3">
-          <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">Remaining</dt>
-          <dd className="mt-1 text-lg font-semibold">{fmtMoney(record.remaining)}</dd>
-        </div>
-      </dl>
     </article>
   )
 }
@@ -794,12 +860,11 @@ export default function CashoutRecords({
             </p>
           ) : (
             <>
-              <div className="space-y-4">
+              <div className="space-y-2">
                 {records.map((r) => (
                   <CashoutRecordCard
                     key={r.id}
                     record={r}
-                    listSearch={location.search}
                     saving={saving}
                     onOpen={openRecord}
                     onDelete={handleDeleteRecord}
@@ -844,12 +909,11 @@ export default function CashoutRecords({
               >
                 Do Not Send
               </h2>
-              <div className="space-y-4">
+              <div className="space-y-2">
                 {doNotSendRecords.map((r) => (
                   <CashoutRecordCard
                     key={r.id}
                     record={r}
-                    listSearch={location.search}
                     saving={saving}
                     onOpen={openRecord}
                     onDelete={handleDeleteRecord}
@@ -869,12 +933,11 @@ export default function CashoutRecords({
               >
                 Oversent
               </h2>
-              <div className="space-y-4">
+              <div className="space-y-2">
                 {oversentRecords.map((r) => (
                   <CashoutRecordCard
                     key={r.id}
                     record={r}
-                    listSearch={location.search}
                     saving={saving}
                     onOpen={openRecord}
                     onDelete={handleDeleteRecord}
