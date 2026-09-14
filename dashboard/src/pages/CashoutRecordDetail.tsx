@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   addCashoutSend,
@@ -114,6 +114,69 @@ function PayoutTag({ value }: { value: string }) {
 
 function paymentLabel(p: StaffCashoutPaymentT): string {
   return (p.method_display_name || '').trim() || 'Method'
+}
+
+function SendCardMenu({
+  saving,
+  onEdit,
+  onDelete,
+}: {
+  saving: boolean
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  return (
+    <div ref={rootRef} className="relative shrink-0">
+      <button
+        type="button"
+        aria-label="Money sent actions"
+        aria-expanded={open}
+        disabled={saving}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-lg leading-none text-ink-muted hover:bg-control hover:text-ink disabled:opacity-40"
+      >
+        ⋯
+      </button>
+      {open && (
+        <div className="absolute right-0 z-10 mt-1 min-w-[9rem] rounded-lg border border-border bg-surface-raised py-1 shadow-md">
+          <button
+            type="button"
+            className="block w-full px-3 py-2 text-left text-sm text-ink hover:bg-control"
+            onClick={() => {
+              setOpen(false)
+              onEdit()
+            }}
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            className="block w-full px-3 py-2 text-left text-sm text-danger-ink hover:bg-danger-bg"
+            onClick={() => {
+              setOpen(false)
+              onDelete()
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 const iconBtnClass =
@@ -566,34 +629,26 @@ export default function CashoutRecordDetail({
         {record.sends.length === 0 ? (
           <p className="text-sm text-ink-muted">No money sent yet.</p>
         ) : (
-          <ul className="space-y-3">
+          <ul className="space-y-2">
             {record.sends.map((s) => (
               <li
                 key={s.id}
-                className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between"
+                className="flex items-start gap-3 rounded-xl border border-border bg-surface px-4 py-3"
               >
-                <div>
-                  <p className="text-lg font-semibold">
+                <div className="min-w-0 flex-1">
+                  <p className="text-base font-semibold">
                     {fmtMoney(s.amount)} / {s.sender_name}
                   </p>
-                  <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-muted">
+                  <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-muted">
                     <MethodName name={s.method_display_name} />
                     <span>· {formatEasternDateTime(s.created_at)}</span>
                   </p>
                 </div>
-                <div className="flex flex-nowrap items-center gap-2">
-                  <button type="button" className="btn-secondary-sm" onClick={() => openSend(s)}>
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-danger-outline"
-                    onClick={() => removeSend(s)}
-                    disabled={saving}
-                  >
-                    Remove
-                  </button>
-                </div>
+                <SendCardMenu
+                  saving={saving}
+                  onEdit={() => openSend(s)}
+                  onDelete={() => void removeSend(s)}
+                />
               </li>
             ))}
           </ul>
