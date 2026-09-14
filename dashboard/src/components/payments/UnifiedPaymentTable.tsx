@@ -23,6 +23,11 @@ function fmtMoney(value: number | string): string {
   return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function cryptoMethodLabel(row: UnifiedPaymentRow): string {
+  const asset = cryptoAssetFromDetail(row.detail)
+  return asset ? `Crypto - ${asset}` : row.method_label
+}
+
 export default function UnifiedPaymentTable({
   rows,
   clubNameById,
@@ -46,7 +51,12 @@ export default function UnifiedPaymentTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-border text-sm">
-          {rows.map((row) => (
+          {rows.map((row) => {
+            const methodName =
+              row.source === 'crypto' && !showAsset
+                ? cryptoMethodLabel(row)
+                : row.method_label
+            return (
             <tr
               key={`${row.source}-${row.id}`}
               className="cursor-pointer hover:bg-surface/80"
@@ -62,8 +72,12 @@ export default function UnifiedPaymentTable({
                 )}
               </td>
               <td className="px-4 py-3">{fmtGgNickname(row.gg_nickname)}</td>
-              <td className="px-4 py-3">
-                <MethodName name={row.method_label} slug={row.method_slug} />
+              <td className="w-[8.5rem] max-w-[8.5rem] overflow-hidden px-4 py-3" title={methodName}>
+                <MethodName
+                  name={methodName}
+                  slug={row.method_slug}
+                  className="w-full max-w-full"
+                />
               </td>
               {showAsset ? (
                 <td className="px-4 py-3 whitespace-nowrap">
@@ -74,7 +88,8 @@ export default function UnifiedPaymentTable({
               <td className="px-4 py-3">{fmtClub(row.club_id, clubNameById)}</td>
               <td className="px-4 py-3 capitalize">{fmtUnifiedStatus(row.status)}</td>
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
     </div>
