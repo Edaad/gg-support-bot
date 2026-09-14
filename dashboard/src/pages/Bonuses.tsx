@@ -355,21 +355,54 @@ export default function Bonuses({
                     {r.custom_description || '—'}
                   </td>
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex flex-wrap justify-end gap-2">
+                    <div className="inline-flex flex-nowrap items-center justify-end gap-1">
                       <button
                         type="button"
-                        className="btn-primary min-h-10 px-4 text-sm"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-raised text-ink hover:bg-control"
+                        aria-label="Edit bonus"
+                        title="Edit"
                         onClick={() => openEdit(r)}
                       >
-                        Edit
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-4 w-4"
+                          aria-hidden="true"
+                        >
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                        </svg>
                       </button>
                       <button
                         type="button"
-                        className="btn-danger-outline min-h-10 px-4 text-sm"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-danger-border bg-surface-raised text-danger-ink hover:bg-danger-bg disabled:opacity-40"
+                        aria-label="Delete bonus"
+                        title="Delete"
                         disabled={saving}
                         onClick={() => remove(r)}
                       >
-                        Delete
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-4 w-4"
+                          aria-hidden="true"
+                        >
+                          <path d="M3 6h18" />
+                          <path d="M8 6V4h8v2" />
+                          <path d="M19 6l-1 14H6L5 6" />
+                          <path d="M10 11v6" />
+                          <path d="M14 11v6" />
+                        </svg>
                       </button>
                     </div>
                   </td>

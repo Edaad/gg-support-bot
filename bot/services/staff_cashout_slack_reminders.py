@@ -86,16 +86,36 @@ def format_cashout_pushover_reminder(
     *,
     group_title: str,
     remaining: Any,
+    method_label: str | None = None,
 ) -> str:
-    """Plain-text body for Pushover (no Slack mrkdwn)."""
-    title = (group_title or "").strip() or "(unnamed)"
+    """Plain-text body for the 5-minute overdue Pushover alert."""
+    player = (group_title or "").strip() or "(unnamed)"
+    method = (method_label or "").strip() or "Other"
     return "\n".join(
         [
-            "The following player has been waiting longer than 5 minutes:",
+            "This player has been waiting longer than 5 minutes to get cashed out!",
             "",
-            title,
-            "",
-            f"Remaining: {format_remaining_money(remaining)}",
+            f"Player: {player}",
+            f"Amount: {format_remaining_money(remaining)}",
+            f"Tag: {method}",
+        ]
+    )
+
+
+def format_cashout_pushover_create(
+    *,
+    group_title: str,
+    amount: Any,
+    method_label: str,
+) -> str:
+    """Plain-text body for a new-cashout Pushover alert."""
+    player = (group_title or "").strip() or "(unnamed)"
+    method = (method_label or "").strip() or "Other"
+    return "\n".join(
+        [
+            f"Player: {player}",
+            f"Amount: {format_remaining_money(amount)}",
+            f"Tag: {method}",
         ]
     )
 
@@ -267,7 +287,6 @@ async def send_due_cashout_reminders(
         # regardless of Pushover outcome so we do not re-fire every 30s poll.
         push_sent = await notify_cashout_pushover_async(
             record_id,
-            title="URGENT cashout",
             source=SOURCE_OVERDUE,
             require_master_toggle=False,
         )

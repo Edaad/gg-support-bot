@@ -41,6 +41,56 @@ class RailsForDisplayNamesTests(unittest.TestCase):
         )
 
 
+class PrimaryMethodLabelTests(unittest.TestCase):
+    def test_maps_rail_label(self) -> None:
+        self.assertEqual(push.primary_method_label(["RT Venmo"]), "Venmo")
+        self.assertEqual(push.primary_method_label(["Cash App"]), "Cash App")
+
+    def test_custom_keeps_display_name(self) -> None:
+        self.assertEqual(push.primary_method_label(["Wire transfer"]), "Wire transfer")
+
+    def test_empty_is_other(self) -> None:
+        self.assertEqual(push.primary_method_label([]), "Other")
+        self.assertEqual(push.primary_method_label([""]), "Other")
+
+
+class TitleAndMessageTests(unittest.TestCase):
+    def test_create_title_and_body(self) -> None:
+        title, message = push._title_and_message_for_context(
+            {
+                "group_title": "RT / 1 / Sam",
+                "amount": Decimal("50"),
+                "remaining": Decimal("50"),
+                "method_label": "Venmo",
+            },
+            source=push.SOURCE_CREATE,
+        )
+        self.assertEqual(title, "New Venmo Cashout")
+        self.assertEqual(
+            message,
+            "Player: RT / 1 / Sam\nAmount: $50.00\nTag: Venmo",
+        )
+
+    def test_overdue_title_and_body(self) -> None:
+        title, message = push._title_and_message_for_context(
+            {
+                "group_title": "RT / 1 / Sam",
+                "amount": Decimal("50"),
+                "remaining": Decimal("40"),
+                "method_label": "Zelle",
+            },
+            source=push.SOURCE_OVERDUE,
+        )
+        self.assertEqual(title, "URGENT CASHOUT")
+        self.assertIn(
+            "This player has been waiting longer than 5 minutes to get cashed out!",
+            message,
+        )
+        self.assertIn("Player: RT / 1 / Sam", message)
+        self.assertIn("Amount: $40.00", message)
+        self.assertIn("Tag: Zelle", message)
+
+
 class RecipientsForRailsTests(unittest.TestCase):
     def test_filters_by_method_intersection(self) -> None:
         session = MagicMock()

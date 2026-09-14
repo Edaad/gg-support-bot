@@ -48,19 +48,43 @@ class FormatCashoutSlackReminderTests(unittest.TestCase):
 
 
 class FormatCashoutPushoverReminderTests(unittest.TestCase):
-    def test_plain_text_no_slack_mrkdwn(self) -> None:
+    def test_plain_text_player_amount_tag(self) -> None:
         text = rem.format_cashout_pushover_reminder(
             group_title="RT AT / 2208-1964 / Nathan",
             remaining=Decimal("1250"),
+            method_label="Venmo",
         )
-        self.assertIn("RT AT / 2208-1964 / Nathan", text)
-        self.assertIn("Remaining: $1,250.00", text)
+        self.assertEqual(
+            text,
+            "\n".join(
+                [
+                    "This player has been waiting longer than 5 minutes to get cashed out!",
+                    "",
+                    "Player: RT AT / 2208-1964 / Nathan",
+                    "Amount: $1,250.00",
+                    "Tag: Venmo",
+                ]
+            ),
+        )
         self.assertNotIn(":siren:", text)
         self.assertNotIn("`", text)
         self.assertNotIn("|Open cashout>", text)
-        self.assertIn(
-            "The following player has been waiting longer than 5 minutes:",
+
+    def test_create_body_player_amount_tag(self) -> None:
+        text = rem.format_cashout_pushover_create(
+            group_title="RT / 1 / Sam",
+            amount=Decimal("50"),
+            method_label="Zelle",
+        )
+        self.assertEqual(
             text,
+            "\n".join(
+                [
+                    "Player: RT / 1 / Sam",
+                    "Amount: $50.00",
+                    "Tag: Zelle",
+                ]
+            ),
         )
 
 

@@ -11,6 +11,7 @@ from sqlalchemy.orm import joinedload
 from bot.services.staff_cashout_records import compute_ledger
 from bot.services.staff_cashout_slack_reminders import (
     cashout_record_dashboard_url,
+    format_cashout_pushover_create,
     format_cashout_pushover_reminder,
     get_slack_reminder_enabled,
 )
@@ -27,11 +28,15 @@ RAIL_LABELS: dict[str, str] = {
     "crypto": "Crypto",
     "cashapp": "Cash App",
     "paypal": "PayPal",
+    "other": "Other",
 }
 OTHER_RAIL = "other"
 
 SOURCE_CREATE = "cashout_create_pushover"
 SOURCE_OVERDUE = "cashout_slack_reminder"
+
+CREATE_TITLE_TMPL = "New {method} Cashout"
+OVERDUE_TITLE = "URGENT CASHOUT"
 
 
 def _alnum_lower(value: str) -> str:
@@ -201,6 +206,22 @@ def delete_notify_recipient(recipient_id: int) -> bool:
         return True
 
 
+def primary_method_label(method_names: Iterable[str | None]) -> str:
+    """Human method label for titles/tags from the first payment display name."""
+    for raw in method_names:
+        name = (raw or "").strip()
+        if not name:
+            continue
+        rails = rails_for_display_names([name])
+        known = sorted(rails & FIXED_RAIL_SET)
+        if len(known) == 1:
+            return RAIL_LABELS[known[0]]
+        if known:
+            return RAIL_LABELS[known[0]]
+        return name
+    return RAIL_LABELS[OTHER_RAIL]
+
+
 def _load_record_notify_context(record_id: int) -> dict[str, Any] | None:
     with get_db() as session:
         record = (
@@ -223,29 +244,46 @@ def _load_record_notify_context(record_id: int) -> dict[str, Any] | None:
             for s in (record.money_sends or [])
         ]
         ledger = compute_ledger(True, record.amount, sends)
+        method_label = primary_method_label(names)
         return {
             "id": int(record.id),
             "group_title": record.group_title or "",
+            "amount": record.amount,
             "remaining": ledger["remaining"],
             "method_names": names,
+            "method_label": method_label,
             "rails": rails_for_display_names(names),
         }
 
 
-def _message_for_context(ctx: dict[str, Any]) -> str:
-    remaining = ctx.get("remaining")
-    if remaining is None:
-        remaining = 0
-    return format_cashout_pushover_reminder(
-        group_title=str(ctx.get("group_title") or ""),
-        remaining=remaining,
+def _title_and_message_for_context(
+    ctx: dict[str, Any], *, source: str
+) -> tuple[str, str]:
+    method_label = str(ctx.get("method_label") or RAIL_LABELS[OTHER_RAIL])
+    group_title = str(ctx.get("group_title") or "")
+    if source == SOURCE_CREATE:
+        return (
+            CREATE_TITLE_TMPL.format(method=method_label),
+            format_cashout_pushover_create(
+                group_title=group_title,
+                amount=ctx.get("amount"),
+                method_label=method_label,
+            ),
+        )
+    return (
+        OVERDUE_TITLE,
+        format_cashout_pushover_reminder(
+            group_title=group_title,
+            remaining=ctx.get("remaining"),
+            method_label=method_label,
+        ),
     )
 
 
 def notify_cashout_pushover_sync(
     record_id: int,
     *,
-    title: str = "New cashout",
+    title: str | None = None,
     source: str = SOURCE_CREATE,
     require_master_toggle: bool = True,
 ) -> int:
@@ -261,14 +299,15 @@ def notify_cashout_pushover_sync(
             return 0
         from bot.services.pushover_notify import notify_pushover_sync
 
-        message = _message_for_context(ctx)
+        computed_title, message = _title_and_message_for_context(ctx, source=source)
+        push_title = (title or "").strip() or computed_title
         url = cashout_record_dashboard_url(int(record_id))
         sent = 0
         for person in targets:
             ok = notify_pushover_sync(
                 message,
                 user=person["pushover_user_key"],
-                title=title,
+                title=push_title,
                 url=url,
                 url_title="Open cashout",
                 priority=1,
@@ -293,7 +332,7 @@ def notify_cashout_pushover_sync(
 async def notify_cashout_pushover_async(
     record_id: int,
     *,
-    title: str = "URGENT cashout",
+    title: str | None = None,
     source: str = SOURCE_OVERDUE,
     require_master_toggle: bool = False,
 ) -> int:
@@ -309,14 +348,15 @@ async def notify_cashout_pushover_async(
             return 0
         from bot.services.pushover_notify import notify_pushover
 
-        message = _message_for_context(ctx)
+        computed_title, message = _title_and_message_for_context(ctx, source=source)
+        push_title = (title or "").strip() or computed_title
         url = cashout_record_dashboard_url(int(record_id))
         sent = 0
         for person in targets:
             ok = await notify_pushover(
                 message,
                 user=person["pushover_user_key"],
-                title=title,
+                title=push_title,
                 url=url,
                 url_title="Open cashout",
                 priority=1,
