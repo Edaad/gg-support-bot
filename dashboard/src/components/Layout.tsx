@@ -1,9 +1,8 @@
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import type { ReactNode } from 'react'
 import {
   ADMIN_SECTION_HOME,
   homePathForRole,
-  isAdminSectionPath,
   type DashboardRole,
 } from '../lib/rbac'
 
@@ -11,18 +10,24 @@ type NavLinkItem = { to: string; label: string; external?: boolean; exact?: bool
 
 const RAKEBACK_URL = 'https://elevateautomations.io/'
 
-/** Admin top-level links (Admin is injected separately). */
 const ADMIN_TOP_NAV: NavLinkItem[] = [
-  { to: '/cashout-records', label: 'Cashouts' },
+  { to: ADMIN_SECTION_HOME, label: 'TG Bot' },
   { to: '/payments', label: 'Payments' },
-  { to: '/manual-deposit-requests', label: 'Pool Pay' },
+  { to: '/cashout-records', label: 'Cashouts' },
   { to: '/bonuses', label: 'Bonuses' },
   { to: RAKEBACK_URL, label: 'Rakeback', external: true },
 ]
 
+const ADMIN_MORE_NAV: NavLinkItem[] = [
+  { to: '/expenses', label: 'Expenses' },
+  { to: '/analytics', label: 'Analytics' },
+  { to: '/audit', label: 'Audit' },
+  { to: '/manual-deposit-requests', label: 'Pool Pay' },
+]
+
 const AM_TOP_NAV: NavLinkItem[] = [
-  { to: '/cashout-records', label: 'Cashouts' },
   { to: '/payments', label: 'Payments' },
+  { to: '/cashout-records', label: 'Cashouts' },
   { to: '/bonuses', label: 'Bonuses' },
   { to: RAKEBACK_URL, label: 'Rakeback', external: true },
 ]
@@ -30,13 +35,6 @@ const AM_TOP_NAV: NavLinkItem[] = [
 const GTO_TOP_NAV: NavLinkItem[] = [
   { to: '/cashout-records', label: 'Cashouts' },
   { to: '/bonuses', label: 'Bonuses' },
-]
-
-const ADMIN_SUBNAV: NavLinkItem[] = [
-  { to: '/clubs', label: 'Clubs' },
-  { to: '/audit', label: 'Audit' },
-  { to: '/analytics', label: 'Analytics' },
-  { to: '/expenses', label: 'Expenses' },
 ]
 
 function topNavForRole(role: DashboardRole): NavLinkItem[] {
@@ -49,6 +47,10 @@ function isNavActive(pathname: string, to: string, exact?: boolean): boolean {
   if (exact) return pathname === to
   if (to === '/clubs') return pathname === '/clubs' || pathname.startsWith('/clubs/')
   return pathname === to || pathname.startsWith(`${to}/`)
+}
+
+function isMoreNavActive(pathname: string): boolean {
+  return ADMIN_MORE_NAV.some((n) => isNavActive(pathname, n.to))
 }
 
 const focusRing =
@@ -64,6 +66,107 @@ function navLinkClass(active: boolean): string {
   ].join(' ')
 }
 
+function MoreNav({ pathname }: { pathname: string }) {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+  const moreActive = isMoreNavActive(pathname)
+
+  useEffect(() => {
+    setOpen(false)
+  }, [pathname])
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return
+      setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      const width = 176
+      setPos({
+        top: r.bottom + 6,
+        left: Math.min(window.innerWidth - width - 8, Math.max(8, r.right - width)),
+      })
+    }
+    setOpen((v) => !v)
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onClick={toggle}
+        className={`${navLinkClass(moreActive || open)} inline-flex items-center gap-1`}
+      >
+        More
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`h-3.5 w-3.5 transition ${open ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label="More"
+          className="fixed z-50 w-44 rounded-lg border border-border bg-surface-raised py-1 shadow-lg"
+          style={{ top: pos.top, left: pos.left }}
+        >
+          {ADMIN_MORE_NAV.map((n) => {
+            const active = isNavActive(pathname, n.to, n.exact)
+            return (
+              <Link
+                key={n.to}
+                to={n.to}
+                role="menuitem"
+                aria-current={active ? 'page' : undefined}
+                onClick={() => setOpen(false)}
+                className={[
+                  'block px-3 py-2 text-sm font-medium',
+                  focusRing,
+                  active
+                    ? 'bg-accent/12 text-accent'
+                    : 'text-ink hover:bg-control',
+                ].join(' ')}
+              >
+                {n.label}
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </>
+  )
+}
+
 export default function Layout({
   children,
   role,
@@ -73,7 +176,6 @@ export default function Layout({
 }) {
   const { pathname } = useLocation()
   const isAdmin = role === 'admin'
-  const showAdminSubnav = isAdmin && isAdminSectionPath(pathname)
   const topItems = topNavForRole(role)
 
   return (
@@ -128,14 +230,6 @@ export default function Layout({
             className="-mx-4 flex gap-1 overflow-x-auto border-t border-border px-4 py-2 sm:mx-0 sm:border-t-0 sm:px-0 sm:pb-3 sm:pt-0"
             aria-label="Main"
           >
-            {isAdmin && (
-              <Link
-                to={ADMIN_SECTION_HOME}
-                className={navLinkClass(showAdminSubnav)}
-              >
-                Admin
-              </Link>
-            )}
             {topItems.map((n) => {
               if (n.external) {
                 return (
@@ -163,28 +257,8 @@ export default function Layout({
                 </Link>
               )
             })}
+            {isAdmin && <MoreNav pathname={pathname} />}
           </nav>
-
-          {showAdminSubnav && (
-            <nav
-              className="-mx-4 flex gap-1 overflow-x-auto border-t border-border px-4 py-2 sm:mx-0 sm:px-0"
-              aria-label="Admin"
-            >
-              {ADMIN_SUBNAV.map((n) => {
-                const active = isNavActive(pathname, n.to, n.exact)
-                return (
-                  <Link
-                    key={n.to}
-                    to={n.to}
-                    aria-current={active ? 'page' : undefined}
-                    className={navLinkClass(active)}
-                  >
-                    {n.label}
-                  </Link>
-                )
-              })}
-            </nav>
-          )}
         </div>
       </header>
 

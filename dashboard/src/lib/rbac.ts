@@ -15,14 +15,6 @@ export const ACCOUNT_MANAGER_PATHS = [
 /** Paths gto may open (prefix match for nested routes). */
 export const GTO_PATHS = ['/cashout-records', '/bonuses', '/settings'] as const
 
-/** Paths that live under the Admin two-level nav (admin only). */
-export const ADMIN_SECTION_PATHS = [
-  '/clubs',
-  '/audit',
-  '/analytics',
-  '/expenses',
-] as const
-
 export const ADMIN_SECTION_HOME = '/clubs'
 
 export function normalizeRole(raw: string | null | undefined): DashboardRole {
@@ -47,8 +39,3 @@ export function canAccessPath(role: DashboardRole, pathname: string): boolean {
   return false
 }
 
-export function isAdminSectionPath(pathname: string): boolean {
-  return ADMIN_SECTION_PATHS.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`),
-  )
-}
