@@ -636,9 +636,16 @@ export default function CashoutRecordDetail({
                 className="flex items-start gap-3 rounded-xl border border-border bg-surface px-4 py-3"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="text-base font-semibold">
-                    {fmtMoney(s.amount)} / {s.sender_name}
-                  </p>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <p className="shrink-0 text-base font-semibold tabular-nums">
+                      {fmtMoney(s.amount)}
+                    </p>
+                    <span
+                      className="h-4 w-px shrink-0 bg-border"
+                      aria-hidden="true"
+                    />
+                    <p className="min-w-0 truncate text-base text-ink">{s.sender_name}</p>
+                  </div>
                   <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-muted">
                     <MethodName name={s.method_display_name} />
                     <span>· {formatEasternDateTime(s.created_at)}</span>
