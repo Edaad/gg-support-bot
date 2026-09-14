@@ -544,9 +544,7 @@ export default function CashoutRecordDetail({
                 key={p.id}
                 className="rounded-xl border border-border bg-surface p-4"
               >
-                <p className="text-sm font-medium text-ink">
-                  <MethodName name={paymentLabel(p)} iconClassName="h-5 w-5" />
-                </p>
+                <p className="text-sm font-medium text-ink">{paymentLabel(p)}</p>
                 {p.payout_details?.trim() ? (
                   <PayoutTag value={p.payout_details.trim()} />
                 ) : (

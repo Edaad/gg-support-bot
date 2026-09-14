@@ -27,17 +27,18 @@ import PaymentsExportModal from '../components/payments/PaymentsExportModal'
 import PaymentsQuickLinksModal from '../components/PaymentsQuickLinksModal'
 import UnifiedPaymentTable from '../components/payments/UnifiedPaymentTable'
 import { bindableFromUnified } from '../components/payments/types'
-import PaymentMethodIcon from '../components/PaymentMethodIcon'
 import { GTO_CLUB_NAME, type DashboardRole } from '../lib/rbac'
 
 function quickLinkVisible(
   link: PaymentQuickLinkT,
   method: MethodFilter,
   clubFilter: string,
+  isGto: boolean,
 ) {
   const methodOk = !link.method || link.method === method
   const clubOk = link.club_id == null || String(link.club_id) === clubFilter
-  return methodOk && clubOk
+  const gtoOk = !isGto || /gto/i.test(link.title)
+  return methodOk && clubOk && gtoOk
 }
 
 export default function Payments({
@@ -213,7 +214,7 @@ export default function Payments({
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const visibleQuickLinks = quickLinks.filter((link) =>
-    quickLinkVisible(link, effectiveMethod, clubFilter),
+    quickLinkVisible(link, effectiveMethod, clubFilter, isGto),
   )
 
   return (
@@ -238,23 +239,18 @@ export default function Payments({
           <label htmlFor={methodSelectId} className="label-field-xs">
             Method
           </label>
-          <div className="flex items-center gap-2">
-            {effectiveMethod !== ALL_METHOD && (
-              <PaymentMethodIcon slug={effectiveMethod} className="h-7 w-7" />
-            )}
-            <select
-              id={methodSelectId}
-              value={effectiveMethod}
-              onChange={(e) => setMethod(e.target.value as MethodFilter)}
-              className="input-field-sm min-w-[10rem]"
-            >
-              {methods.map((m) => (
-                <option key={m} value={m}>
-                  {METHOD_LABELS[m]}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            id={methodSelectId}
+            value={effectiveMethod}
+            onChange={(e) => setMethod(e.target.value as MethodFilter)}
+            className="input-field-sm min-w-[10rem]"
+          >
+            {methods.map((m) => (
+              <option key={m} value={m}>
+                {METHOD_LABELS[m]}
+              </option>
+            ))}
+          </select>
         </div>
         <div>
           <label htmlFor={clubSelectId} className="label-field-xs">

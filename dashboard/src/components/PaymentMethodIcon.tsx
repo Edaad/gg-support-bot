@@ -1,6 +1,8 @@
 import cashappSrc from '../assets/icons/cashapp.webp'
+import chipsSrc from '../assets/icons/chips.png'
 import cryptoSrc from '../assets/icons/crypto.webp'
 import paypalSrc from '../assets/icons/paypal.webp'
+import stripeSrc from '../assets/icons/stripe.webp'
 import venmoSrc from '../assets/icons/venmo.webp'
 import zelleSrc from '../assets/icons/zelle.webp'
 
@@ -10,6 +12,8 @@ const BRAND_ICONS: Record<string, string> = {
   zelle: zelleSrc,
   paypal: paypalSrc,
   crypto: cryptoSrc,
+  chips: chipsSrc,
+  stripe: stripeSrc,
 }
 
 /** Map a slug or display name (e.g. "Crypto / SOL", "Cash App") to an icon key. */
@@ -22,6 +26,8 @@ export function methodIconSlug(raw: string | null | undefined): string {
   if (compact.includes('zelle')) return 'zelle'
   if (compact.includes('cashapp')) return 'cashapp'
   if (compact.includes('paypal')) return 'paypal'
+  if (compact.includes('chips')) return 'chips'
+  if (compact.includes('stripe')) return 'stripe'
   if (BRAND_ICONS[s]) return s
   return 'other'
 }
