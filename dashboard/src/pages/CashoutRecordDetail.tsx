@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   addCashoutSend,
@@ -114,6 +114,27 @@ function PayoutTag({ value }: { value: string }) {
 
 function paymentLabel(p: StaffCashoutPaymentT): string {
   return (p.method_display_name || '').trim() || 'Method'
+}
+
+const iconBtnClass =
+  'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-raised text-ink transition hover:bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-50'
+
+function IconGlyph({ children }: { children: ReactNode }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  )
 }
 
 export default function CashoutRecordDetail({
@@ -375,8 +396,16 @@ export default function CashoutRecordDetail({
   if (!record) {
     return (
       <div>
-        <Link to={backTo} className="text-sm text-accent hover:underline">
-          Back to cashouts
+        <Link
+          to={backTo}
+          aria-label="Back to cashouts"
+          title="Back to cashouts"
+          className={iconBtnClass}
+        >
+          <IconGlyph>
+            <path d="m12 19-7-7 7-7" />
+            <path d="M19 12H5" />
+          </IconGlyph>
         </Link>
         <p className="mt-4 text-sm text-danger-ink">{error || 'Not found'}</p>
       </div>
@@ -394,25 +423,46 @@ export default function CashoutRecordDetail({
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link to={backTo} className="text-sm text-accent hover:underline">
-          Back to cashouts
+        <Link
+          to={backTo}
+          aria-label="Back to cashouts"
+          title="Back to cashouts"
+          className={iconBtnClass}
+        >
+          <IconGlyph>
+            <path d="m12 19-7-7 7-7" />
+            <path d="M19 12H5" />
+          </IconGlyph>
         </Link>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             disabled={saving}
             onClick={openEdit}
-            className="btn-secondary"
+            aria-label="Edit cashout"
+            title="Edit cashout"
+            className={iconBtnClass}
           >
-            Edit
+            <IconGlyph>
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </IconGlyph>
           </button>
           <button
             type="button"
             disabled={saving}
             onClick={() => void handleDeleteRecord()}
-            className="btn-danger-outline"
+            aria-label="Delete cashout"
+            title="Delete cashout"
+            className={`${iconBtnClass} text-danger-ink hover:bg-danger-bg hover:text-danger-ink`}
           >
-            Delete cashout
+            <IconGlyph>
+              <path d="M3 6h18" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              <line x1="10" x2="10" y1="11" y2="17" />
+              <line x1="14" x2="14" y1="11" y2="17" />
+            </IconGlyph>
           </button>
         </div>
       </div>
