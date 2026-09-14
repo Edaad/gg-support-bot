@@ -6,8 +6,10 @@ import {
   bindPayPalPayment,
   bindVenmoPayment,
   bindZellePayment,
+  listPaymentQuickLinks,
   listUnifiedPayments,
   type OwnerMethod,
+  type PaymentQuickLinkT,
   type UnifiedPaymentListParams,
   type UnifiedPaymentRow,
 } from '../api/paymentsClient'
@@ -22,9 +24,20 @@ import {
 import PaymentDetailModal from '../components/payments/PaymentDetailModal'
 import ExportIconButton from '../components/ExportIconButton'
 import PaymentsExportModal from '../components/payments/PaymentsExportModal'
+import PaymentsQuickLinksModal from '../components/PaymentsQuickLinksModal'
 import UnifiedPaymentTable from '../components/payments/UnifiedPaymentTable'
 import { bindableFromUnified } from '../components/payments/types'
 import { GTO_CLUB_NAME, type DashboardRole } from '../lib/rbac'
+
+function quickLinkVisible(
+  link: PaymentQuickLinkT,
+  method: MethodFilter,
+  clubFilter: string,
+) {
+  const methodOk = !link.method || link.method === method
+  const clubOk = link.club_id == null || String(link.club_id) === clubFilter
+  return methodOk && clubOk
+}
 
 export default function Payments({
   token,
@@ -37,6 +50,7 @@ export default function Payments({
   const clubSelectId = useId()
   const searchId = useId()
   const isGto = role === 'gto'
+  const isAdmin = role === 'admin'
 
   const [method, setMethod] = useState<MethodFilter>(ALL_METHOD)
   const [clubFilter, setClubFilter] = useState('')
@@ -52,6 +66,8 @@ export default function Payments({
   const [err, setErr] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
   const [exportOpen, setExportOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [quickLinks, setQuickLinks] = useState<PaymentQuickLinkT[]>([])
 
   const [detailRow, setDetailRow] = useState<UnifiedPaymentRow | null>(null)
   const [bindOpen, setBindOpen] = useState(false)
@@ -93,6 +109,16 @@ export default function Payments({
       })
       .catch(() => setClubs([]))
   }, [token, isGto])
+
+  const loadQuickLinks = useCallback(() => {
+    listPaymentQuickLinks(token)
+      .then((res) => setQuickLinks(res.links))
+      .catch(() => setQuickLinks([]))
+  }, [token])
+
+  useEffect(() => {
+    loadQuickLinks()
+  }, [loadQuickLinks])
 
   useEffect(() => {
     const t = window.setTimeout(() => setAppliedSearch(search.trim()), 300)
@@ -185,6 +211,9 @@ export default function Payments({
   }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const visibleQuickLinks = quickLinks.filter((link) =>
+    quickLinkVisible(link, effectiveMethod, clubFilter),
+  )
 
   return (
     <div>
@@ -241,7 +270,47 @@ export default function Payments({
           </select>
         </div>
         <ExportIconButton onClick={() => setExportOpen(true)} />
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-raised text-ink transition hover:bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+            aria-label="Payment settings"
+            title="Payment settings"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+              aria-hidden="true"
+            >
+              <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+            </svg>
+          </button>
+        )}
       </div>
+
+      {visibleQuickLinks.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-x-4 gap-y-2">
+          {visibleQuickLinks.map((link) => (
+            <a
+              key={link.id}
+              href={link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="link-accent text-sm font-medium underline-offset-2 hover:underline"
+            >
+              {link.title}
+            </a>
+          ))}
+        </div>
+      )}
 
       {successMsg && (
         <p className="mb-4 rounded-lg border border-success-border bg-success-bg px-4 py-3 text-sm text-success-ink">
@@ -322,6 +391,17 @@ export default function Payments({
         initialSearch={appliedSearch}
         lockClub={isGto}
       />
+
+      {isAdmin && (
+        <PaymentsQuickLinksModal
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          token={token}
+          clubs={clubs}
+          onChanged={loadQuickLinks}
+          onError={(message) => setErr(message)}
+        />
+      )}
     </div>
   )
 }

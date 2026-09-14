@@ -1345,3 +1345,48 @@ export async function downloadPaymentsXlsx(
   link.click()
   URL.revokeObjectURL(url)
 }
+
+export type PaymentQuickLinkT = {
+  id: number
+  title: string
+  url: string
+  method: string | null
+  club_id: number | null
+  club_name: string | null
+  sort_order: number
+}
+
+export type PaymentQuickLinkPayload = {
+  title: string
+  url: string
+  method?: string | null
+  club_id?: number | null
+}
+
+export function listPaymentQuickLinks(token: string) {
+  return request<{ links: PaymentQuickLinkT[] }>('/quick-links', {}, token)
+}
+
+export function createPaymentQuickLink(token: string, body: PaymentQuickLinkPayload) {
+  return request<PaymentQuickLinkT>(
+    '/quick-links',
+    { method: 'POST', body: JSON.stringify(body) },
+    token,
+  )
+}
+
+export function updatePaymentQuickLink(
+  token: string,
+  id: number,
+  body: PaymentQuickLinkPayload,
+) {
+  return request<PaymentQuickLinkT>(
+    `/quick-links/${id}`,
+    { method: 'PATCH', body: JSON.stringify(body) },
+    token,
+  )
+}
+
+export function deletePaymentQuickLink(token: string, id: number) {
+  return request<void>(`/quick-links/${id}`, { method: 'DELETE' }, token)
+}

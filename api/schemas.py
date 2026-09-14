@@ -829,3 +829,33 @@ class IssueReportCreate(BaseModel):
     description: str
     tags: List[str] = []
     reporter_name: Optional[str] = None
+
+
+class PaymentQuickLinkRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    url: str
+    method: Optional[str] = None
+    club_id: Optional[int] = None
+    club_name: Optional[str] = None
+    sort_order: int
+
+
+class PaymentQuickLinkCreate(BaseModel):
+    title: str
+    url: str
+    method: Optional[str] = None
+    club_id: Optional[int] = None
+
+
+class PaymentQuickLinkUpdate(BaseModel):
+    title: Optional[str] = None
+    url: Optional[str] = None
+    method: Optional[str] = None
+    club_id: Optional[int] = None
+
+
+class PaymentQuickLinkListResponse(BaseModel):
+    links: List[PaymentQuickLinkRead]
