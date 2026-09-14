@@ -1,4 +1,5 @@
 import { formatEasternDateTime } from '../../lib/easternTime'
+import { formatCryptoAsset } from './types'
 import type {
   CashAppPaymentRow,
   CryptoPaymentRow,
@@ -158,7 +159,7 @@ export default function IngestedPaymentTable({ method, rows, clubNameById, onBin
               <th className="px-4 py-3">Group</th>
               <th className="px-4 py-3">Player</th>
               <th className="px-4 py-3">From</th>
-              <th className="px-4 py-3">Token</th>
+              <th className="px-4 py-3">Asset</th>
               <th className="px-4 py-3">Tx</th>
               <th className="px-4 py-3">Club</th>
               <th className="px-4 py-3">Actions</th>
@@ -182,7 +183,9 @@ export default function IngestedPaymentTable({ method, rows, clubNameById, onBin
                 <td className="px-4 py-3 max-w-[12rem] truncate" title={row.from_label}>
                   {row.from_label}
                 </td>
-                <td className="px-4 py-3">{row.token_symbol}</td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  {formatCryptoAsset(row.token_symbol, row.chain) || row.token_symbol}
+                </td>
                 <td className="px-4 py-3 font-mono text-xs max-w-[10rem] truncate" title={row.transaction_hash}>
                   {row.transaction_hash}
                 </td>

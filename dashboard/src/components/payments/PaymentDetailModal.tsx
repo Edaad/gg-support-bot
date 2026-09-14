@@ -1,7 +1,7 @@
 import Modal from '../Modal'
 import type { OwnerMethod } from '../../api/paymentsClient'
 import type { UnifiedPaymentRow } from './types'
-import { fmtGgNickname, fmtUnifiedStatus } from './types'
+import { cryptoAssetFromDetail, fmtGgNickname, fmtUnifiedStatus } from './types'
 import { MethodName } from '../PaymentMethodIcon'
 import { formatEasternDateTime } from '../../lib/easternTime'
 
@@ -108,7 +108,7 @@ export default function PaymentDetailModal({ open, row, onClose, onBind }: Props
             }
           />
           <DetailField label="From" value={typeof d.from_label === 'string' ? d.from_label : null} />
-          <DetailField label="Token" value={typeof d.token_symbol === 'string' ? d.token_symbol : null} />
+          <DetailField label="Asset" value={cryptoAssetFromDetail(d) || null} />
           <DetailField label="Chain" value={typeof d.chain === 'string' ? d.chain : null} />
           <DetailField
             label="Transaction"

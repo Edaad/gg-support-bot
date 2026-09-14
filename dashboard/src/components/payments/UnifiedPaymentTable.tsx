@@ -1,12 +1,13 @@
 import { formatEasternDateTime } from '../../lib/easternTime'
 import type { UnifiedPaymentRow } from './types'
-import { fmtClub, fmtGgNickname, fmtUnifiedStatus } from './types'
+import { cryptoAssetFromDetail, fmtClub, fmtGgNickname, fmtUnifiedStatus } from './types'
 import { MethodName } from '../PaymentMethodIcon'
 
 type Props = {
   rows: UnifiedPaymentRow[]
   clubNameById: Record<number, string>
   onRowClick: (row: UnifiedPaymentRow) => void
+  showAsset?: boolean
 }
 
 function fmtPaymentAt(iso: string | null | undefined): string {
@@ -22,7 +23,12 @@ function fmtMoney(value: number | string): string {
   return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-export default function UnifiedPaymentTable({ rows, clubNameById, onRowClick }: Props) {
+export default function UnifiedPaymentTable({
+  rows,
+  clubNameById,
+  onRowClick,
+  showAsset = false,
+}: Props) {
   return (
     <div className="table-scroll">
       <table className="min-w-[72rem] text-left">
@@ -33,6 +39,7 @@ export default function UnifiedPaymentTable({ rows, clubNameById, onRowClick }: 
             <th className="px-4 py-3">Group</th>
             <th className="px-4 py-3">Player</th>
             <th className="px-4 py-3">Method</th>
+            {showAsset ? <th className="px-4 py-3">Asset</th> : null}
             <th className="px-4 py-3">Owner</th>
             <th className="px-4 py-3">Club</th>
             <th className="px-4 py-3">Status</th>
@@ -58,6 +65,11 @@ export default function UnifiedPaymentTable({ rows, clubNameById, onRowClick }: 
               <td className="px-4 py-3">
                 <MethodName name={row.method_label} slug={row.method_slug} />
               </td>
+              {showAsset ? (
+                <td className="px-4 py-3 whitespace-nowrap">
+                  {row.source === 'crypto' ? cryptoAssetFromDetail(row.detail) || '—' : '—'}
+                </td>
+              ) : null}
               <td className="px-4 py-3">{row.owner_label}</td>
               <td className="px-4 py-3">{fmtClub(row.club_id, clubNameById)}</td>
               <td className="px-4 py-3 capitalize">{fmtUnifiedStatus(row.status)}</td>

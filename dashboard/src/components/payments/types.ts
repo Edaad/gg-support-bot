@@ -67,6 +67,55 @@ export function fmtClub(
   return clubNameById[clubId] ?? `Club ${clubId}`
 }
 
+const NATIVE_SYMBOL_BY_CHAIN: Record<string, string> = {
+  bitcoin: 'BTC',
+  ethereum: 'ETH',
+  litecoin: 'LTC',
+  solana: 'SOL',
+  tron: 'TRX',
+  bsc: 'BNB',
+  binance: 'BNB',
+  ripple: 'XRP',
+}
+
+const CHAIN_ASSET_SUFFIX: Record<string, string> = {
+  bsc: 'BEP20',
+  binance: 'BEP20',
+  binancesmartchain: 'BEP20',
+  ethereum: 'ETH',
+  eth: 'ETH',
+  erc20: 'ETH',
+  tron: 'TRC20',
+  trx: 'TRC20',
+  trc20: 'TRC20',
+  polygon: 'POLYGON',
+  matic: 'POLYGON',
+  solana: 'SOL',
+  bitcoin: 'BTC',
+  litecoin: 'LTC',
+}
+
+/** BTC, ETH, USDT ETH, USDT BEP20, USDT TRC20, … */
+export function formatCryptoAsset(
+  tokenSymbol?: string | null,
+  chain?: string | null,
+): string {
+  const symbol = (tokenSymbol || '').trim().toUpperCase()
+  if (!symbol) return ''
+  const chainKey = (chain || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (!chainKey) return symbol
+  if (NATIVE_SYMBOL_BY_CHAIN[chainKey] === symbol) return symbol
+  const suffix = CHAIN_ASSET_SUFFIX[chainKey]
+  if (!suffix || suffix === symbol) return symbol
+  return `${symbol} ${suffix}`
+}
+
+export function cryptoAssetFromDetail(detail: Record<string, unknown>): string {
+  const symbol = typeof detail.token_symbol === 'string' ? detail.token_symbol : null
+  const chain = typeof detail.chain === 'string' ? detail.chain : null
+  return formatCryptoAsset(symbol, chain)
+}
+
 export type IngestDetail =
   | VenmoPaymentRow
   | ZellePaymentRow

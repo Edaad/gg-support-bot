@@ -333,6 +333,7 @@ export default function Payments({
           rows={unifiedRows}
           clubNameById={clubNameById}
           onRowClick={setDetailRow}
+          showAsset={effectiveMethod === ALL_METHOD || effectiveMethod === 'crypto'}
         />
       )}
 
