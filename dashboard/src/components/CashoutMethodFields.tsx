@@ -158,30 +158,16 @@ export default function CashoutMethodFields({
     <div className="space-y-3">
       <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Method</p>
       <div className="flex flex-wrap gap-2">
-        {CASHOUT_METHOD_CHIPS.map((item) => {
+        {CASHOUT_METHOD_CHIPS.filter((item) => item.slug !== 'other').map((item) => {
           const on = chip === item.slug
           return (
             <button
               key={item.slug}
               type="button"
               aria-pressed={on}
-              onClick={() => {
-                if (item.slug === 'other') {
-                  onChange({
-                    custom: true,
-                    payment_method_id: null,
-                    payment_sub_option_id: null,
-                    custom_name:
-                      chip === 'other' &&
-                      !staffOnlyLabels.includes(choice.custom_name) &&
-                      methodIconSlug(choice.custom_name) === 'other'
-                        ? choice.custom_name
-                        : '',
-                  })
-                  return
-                }
+              onClick={() =>
                 onChange(selectRail(item.slug as CashoutRailSlug, methods, choice))
-              }}
+              }
               className={
                 on
                   ? 'inline-flex items-center gap-2 rounded-full border border-accent bg-accent/12 px-3 py-2 text-sm font-medium text-accent'
@@ -216,6 +202,37 @@ export default function CashoutMethodFields({
             >
               <PaymentMethodIcon slug={label} className="h-6 w-6" />
               {label}
+            </button>
+          )
+        })}
+        {CASHOUT_METHOD_CHIPS.filter((item) => item.slug === 'other').map((item) => {
+          const on = chip === item.slug
+          return (
+            <button
+              key={item.slug}
+              type="button"
+              aria-pressed={on}
+              onClick={() =>
+                onChange({
+                  custom: true,
+                  payment_method_id: null,
+                  payment_sub_option_id: null,
+                  custom_name:
+                    chip === 'other' &&
+                    !staffOnlyLabels.includes(choice.custom_name) &&
+                    methodIconSlug(choice.custom_name) === 'other'
+                      ? choice.custom_name
+                      : '',
+                })
+              }
+              className={
+                on
+                  ? 'inline-flex items-center gap-2 rounded-full border border-accent bg-accent/12 px-3 py-2 text-sm font-medium text-accent'
+                  : 'inline-flex items-center gap-2 rounded-full border border-border bg-surface-raised px-3 py-2 text-sm font-medium text-ink hover:bg-control'
+              }
+            >
+              <PaymentMethodIcon slug={item.slug} className="h-6 w-6" />
+              {item.label}
             </button>
           )
         })}
