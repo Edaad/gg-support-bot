@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
-from api.auth import get_current_admin, require_not_gto
+from api.auth import get_current_admin
+from api.gto_club import resolve_gto_list_club_id
 from api.routes.payments import _clamp_limit, _get_club_or_404, _parse_dt, _raise_db_schema_error
-from api.schemas_payments import UnifiedPaymentListResponse
+from api.schemas_payments import OwnerPaymentSummary, UnifiedPaymentListResponse
 from api.unified_payments import (
     UnifiedPaymentFilters,
     fetch_unified_page,
@@ -19,7 +22,7 @@ from db.connection import get_db_dependency
 router = APIRouter(
     prefix="/api/payments/all",
     tags=["payments"],
-    dependencies=[Depends(get_current_admin), Depends(require_not_gto)],
+    dependencies=[Depends(get_current_admin)],
 )
 
 _DEFAULT_LIMIT = 50
@@ -35,6 +38,7 @@ def list_all_payments(
     club_id: int | None = Query(None),
     limit: int = Query(_DEFAULT_LIMIT),
     offset: int = Query(0),
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
     method_slug = validate_unified_method_for_scope("all", method)
@@ -42,6 +46,21 @@ def list_all_payments(
     offset = max(0, offset)
     parsed_from = _parse_dt(from_dt)
     parsed_to = _parse_dt(to_dt)
+    club_id, empty = resolve_gto_list_club_id(role, club_id, db)
+    if empty:
+        return UnifiedPaymentListResponse(
+            scope="all",
+            method=method_slug,
+            items=[],
+            total=0,
+            limit=limit,
+            offset=offset,
+            summary=OwnerPaymentSummary(
+                total_count=0,
+                total_amount_cents=0,
+                total_amount_usd=Decimal("0"),
+            ),
+        )
     if club_id is not None:
         _get_club_or_404(db, club_id)
 

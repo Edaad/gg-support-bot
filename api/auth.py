@@ -69,10 +69,3 @@ def require_admin(role: str = Depends(get_current_admin)) -> str:
     if role != ROLE_ADMIN:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin only")
     return role
-
-
-def require_not_gto(role: str = Depends(get_current_admin)) -> str:
-    """Reject GTO role from Payments ledger APIs."""
-    if role == ROLE_GTO:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Payments access denied")
-    return role

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { type DashboardRole } from '../lib/rbac'
 import {
   getClub, updateClub, listGroups, listCommands,
   createCommand, updateCommand, deleteCommand,
@@ -22,24 +23,44 @@ function clubTabId(t: Tab): string {
   return `club-tab-${t.toLowerCase().replace(/\s+/g, '-')}`
 }
 
-export default function ClubDetail({ token }: { token: string }) {
+export default function ClubDetail({
+  token,
+  role,
+}: {
+  token: string
+  role: DashboardRole
+}) {
   const { id } = useParams<{ id: string }>()
   const clubId = Number(id)
   const [club, setClub] = useState<Club | null>(null)
   const [tab, setTab] = useState<Tab>('General')
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  const [loadError, setLoadError] = useState('')
 
-  useEffect(() => { getClub(token, clubId).then(setClub) }, [clubId])
+  useEffect(() => {
+    setLoadError('')
+    setClub(null)
+    getClub(token, clubId)
+      .then(setClub)
+      .catch((e: unknown) => {
+        setLoadError(e instanceof Error ? e.message : 'Could not load club')
+      })
+  }, [clubId, token])
 
+  if (loadError) return <div className="py-12 text-center text-sm text-danger-ink">{loadError}</div>
   if (!club) return <div className="py-12 text-center text-ink-muted">Loading...</div>
 
   return (
     <div>
       <div className="page-header mb-6">
         <div className="min-w-0">
-          <Link to="/clubs" className="text-sm text-ink-muted hover:text-ink">&larr; Clubs</Link>
-          <h1 className="mt-1 truncate text-2xl font-bold text-balance">{club.name}</h1>
+          {role !== 'gto' && (
+            <Link to="/clubs" className="text-sm text-ink-muted hover:text-ink">&larr; Clubs</Link>
+          )}
+          <h1 className={`truncate text-2xl font-bold text-balance${role === 'gto' ? '' : ' mt-1'}`}>
+            {club.name}
+          </h1>
         </div>
         <Link
           to={`/clubs/${clubId}/test`}

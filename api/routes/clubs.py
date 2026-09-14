@@ -3,7 +3,8 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from api.auth import get_current_admin
+from api.auth import ROLE_GTO, get_current_admin
+from api.gto_club import GTO_CLUB_NAME, assert_gto_club_id
 from api.schemas import (
     ClubCreate,
     ClubUpdate,
@@ -73,14 +74,33 @@ def _club_to_read(club: Club) -> ClubRead:
     )
 
 
+def _club_for_role(club_id: int, role: str, db: Session) -> Club:
+    club = db.query(Club).get(club_id)
+    if not club:
+        raise HTTPException(404, "Club not found")
+    assert_gto_club_id(role, club_id, db)
+    return club
+
+
 @router.get("", response_model=List[ClubRead])
-def list_clubs(db: Session = Depends(get_db_dependency)):
+def list_clubs(
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
     clubs = db.query(Club).order_by(Club.id).all()
+    if role == ROLE_GTO:
+        clubs = [c for c in clubs if c.name == GTO_CLUB_NAME]
     return [_club_to_read(c) for c in clubs]
 
 
 @router.post("", response_model=ClubRead, status_code=201)
-def create_club(body: ClubCreate, db: Session = Depends(get_db_dependency)):
+def create_club(
+    body: ClubCreate,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    if role == ROLE_GTO:
+        raise HTTPException(403, "Club access denied")
     existing = db.query(Club).filter_by(telegram_user_id=body.telegram_user_id).first()
     if existing:
         raise HTTPException(409, "A club with that Telegram user ID already exists")
@@ -96,20 +116,23 @@ def create_club(body: ClubCreate, db: Session = Depends(get_db_dependency)):
 
 
 @router.get("/{club_id}/linked-accounts", response_model=List[LinkedAccountRead])
-def list_linked_accounts(club_id: int, db: Session = Depends(get_db_dependency)):
-    club = db.query(Club).get(club_id)
-    if not club:
-        raise HTTPException(404, "Club not found")
+def list_linked_accounts(
+    club_id: int,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    club = _club_for_role(club_id, role, db)
     return [LinkedAccountRead.model_validate(a) for a in club.linked_accounts]
 
 
 @router.post("/{club_id}/linked-accounts", response_model=LinkedAccountRead, status_code=201)
 def add_linked_account(
-    club_id: int, body: LinkedAccountCreate, db: Session = Depends(get_db_dependency)
+    club_id: int,
+    body: LinkedAccountCreate,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
 ):
-    club = db.query(Club).get(club_id)
-    if not club:
-        raise HTTPException(404, "Club not found")
+    club = _club_for_role(club_id, role, db)
     tid = body.telegram_user_id
     if tid == club.telegram_user_id:
         raise HTTPException(
@@ -130,8 +153,12 @@ def add_linked_account(
 
 @router.delete("/{club_id}/linked-accounts/{account_id}", status_code=204)
 def delete_linked_account(
-    club_id: int, account_id: int, db: Session = Depends(get_db_dependency)
+    club_id: int,
+    account_id: int,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
 ):
+    _club_for_role(club_id, role, db)
     row = db.query(ClubLinkedAccount).filter_by(id=account_id, club_id=club_id).first()
     if not row:
         raise HTTPException(404, "Linked account not found")
@@ -139,18 +166,22 @@ def delete_linked_account(
 
 
 @router.get("/{club_id}", response_model=ClubRead)
-def get_club(club_id: int, db: Session = Depends(get_db_dependency)):
-    club = db.query(Club).get(club_id)
-    if not club:
-        raise HTTPException(404, "Club not found")
-    return _club_to_read(club)
+def get_club(
+    club_id: int,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    return _club_to_read(_club_for_role(club_id, role, db))
 
 
 @router.put("/{club_id}", response_model=ClubRead)
-def update_club(club_id: int, body: ClubUpdate, db: Session = Depends(get_db_dependency)):
-    club = db.query(Club).get(club_id)
-    if not club:
-        raise HTTPException(404, "Club not found")
+def update_club(
+    club_id: int,
+    body: ClubUpdate,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    club = _club_for_role(club_id, role, db)
     data = body.model_dump(exclude_unset=True)
     if "telegram_user_id" in data:
         new_tid = data["telegram_user_id"]
@@ -175,7 +206,13 @@ def update_club(club_id: int, body: ClubUpdate, db: Session = Depends(get_db_dep
 
 
 @router.delete("/{club_id}", status_code=204)
-def delete_club(club_id: int, db: Session = Depends(get_db_dependency)):
+def delete_club(
+    club_id: int,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    if role == ROLE_GTO:
+        raise HTTPException(403, "Club access denied")
     club = db.query(Club).get(club_id)
     if not club:
         raise HTTPException(404, "Club not found")
@@ -183,8 +220,10 @@ def delete_club(club_id: int, db: Session = Depends(get_db_dependency)):
 
 
 @router.get("/{club_id}/groups", response_model=List[GroupRead])
-def list_club_groups(club_id: int, db: Session = Depends(get_db_dependency)):
-    club = db.query(Club).get(club_id)
-    if not club:
-        raise HTTPException(404, "Club not found")
+def list_club_groups(
+    club_id: int,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    club = _club_for_role(club_id, role, db)
     return [GroupRead.model_validate(g) for g in club.groups]

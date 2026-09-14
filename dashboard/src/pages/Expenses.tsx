@@ -93,7 +93,7 @@ export default function Expenses({ token }: { token: string }) {
 
   const openCreate = () => {
     setEditRow(null)
-    setClubId(clubs[0] ? String(clubs[0].id) : '')
+    setClubId('')
     setAmount('')
     setExpenseType('')
     setDescription('')
@@ -380,12 +380,18 @@ export default function Expenses({ token }: { token: string }) {
               onChange={(e) => setClubId(e.target.value)}
               className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
             >
-              {clubs.length === 0 && <option value="">No clubs</option>}
-              {clubs.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
+              {clubs.length === 0 ? (
+                <option value="">No clubs</option>
+              ) : (
+                <>
+                  <option value="">Select club…</option>
+                  {clubs.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </>
+              )}
             </select>
           </div>
           <div>
@@ -433,6 +439,7 @@ export default function Expenses({ token }: { token: string }) {
             />
             Pending
           </label>
+          {error && <p className="text-sm text-danger-ink">{error}</p>}
           <button type="button" onClick={save} disabled={saving} className="btn-primary w-full min-h-12">
             {saving ? 'Saving…' : 'Save'}
           </button>

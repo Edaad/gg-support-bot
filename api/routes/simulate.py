@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from api.auth import get_current_admin
+from api.gto_club import assert_gto_club_id
 from api.payment_v2_helpers import DEFAULT_TIER_LABEL
 from api.schemas import SimulateResponse, SimulateMethodOut, SubOptionRead
 from db.connection import get_db_dependency
@@ -29,12 +30,18 @@ def _variant_preview(tier: ClubPaymentTier | None) -> tuple[str | None, str | No
 
 
 @router.get("/clubs/{club_id}/simulate/{direction}", response_model=SimulateResponse)
-def simulate_flow(club_id: int, direction: str, db: Session = Depends(get_db_dependency)):
+def simulate_flow(
+    club_id: int,
+    direction: str,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
     if direction not in ("deposit", "cashout"):
         raise HTTPException(400, "direction must be 'deposit' or 'cashout'")
     club = db.query(Club).get(club_id)
     if not club:
         raise HTTPException(404, "Club not found")
+    assert_gto_club_id(role, club_id, db)
     methods = (
         db.query(ClubPaymentMethod)
         .options(

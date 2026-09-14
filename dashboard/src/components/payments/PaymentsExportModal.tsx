@@ -52,6 +52,7 @@ type Props = {
   initialMethod: MethodFilter
   initialClubFilter: string
   initialSearch: string
+  lockClub?: boolean
 }
 
 function slugForFilename(name: string): string {
@@ -73,6 +74,7 @@ export default function PaymentsExportModal({
   initialMethod,
   initialClubFilter,
   initialSearch,
+  lockClub = false,
 }: Props) {
   const searchId = useId()
   const methodId = useId()
@@ -560,8 +562,9 @@ export default function PaymentsExportModal({
             value={clubFilter}
             onChange={(e) => setClubFilter(e.target.value)}
             className="input-field-sm w-full"
+            disabled={lockClub}
           >
-            <option value="">All clubs</option>
+            {!lockClub && <option value="">All clubs</option>}
             {clubs.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}

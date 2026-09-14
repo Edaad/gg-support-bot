@@ -223,7 +223,7 @@ export default function Bonuses({
 
   const openCreate = () => {
     setEditRow(null)
-    setClubId(clubs[0] ? String(clubs[0].id) : '')
+    setClubId(isGto && clubs[0] ? String(clubs[0].id) : '')
     setName('')
     setAmount('')
     setTypeId(activeTypes[0]?.id ?? 'other')
@@ -235,7 +235,13 @@ export default function Bonuses({
 
   const openEdit = (row: BonusRecordT) => {
     setEditRow(row)
-    setClubId(row.club_id != null ? String(row.club_id) : clubs[0] ? String(clubs[0].id) : '')
+    setClubId(
+      row.club_id != null
+        ? String(row.club_id)
+        : isGto && clubs[0]
+          ? String(clubs[0].id)
+          : '',
+    )
     setName(row.group_title || row.player_username || '')
     setAmount(String(row.amount))
     setTypeId(row.bonus_type_id == null ? 'other' : row.bonus_type_id)
@@ -562,12 +568,18 @@ export default function Bonuses({
               className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
               disabled={isGto}
             >
-              {clubs.length === 0 && <option value="">No clubs</option>}
-              {clubs.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
+              {clubs.length === 0 ? (
+                <option value="">No clubs</option>
+              ) : (
+                <>
+                  {!isGto && <option value="">Select club…</option>}
+                  {clubs.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </>
+              )}
             </select>
           </div>
           <div>
@@ -632,6 +644,7 @@ export default function Bonuses({
               />
             </div>
           )}
+          {error && <p className="text-sm text-danger-ink">{error}</p>}
           <button type="button" onClick={save} disabled={saving} className="btn-primary w-full min-h-12">
             {saving ? 'Saving…' : 'Save'}
           </button>

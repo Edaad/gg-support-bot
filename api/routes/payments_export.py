@@ -7,7 +7,8 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
-from api.auth import get_current_admin, require_not_gto
+from api.auth import get_current_admin
+from api.gto_club import resolve_gto_list_club_id
 from api.method_owner import normalize_method_owner
 from api.payments_export import build_payments_workbook
 from api.routes.payments import _get_club_or_404, _parse_dt, _raise_db_schema_error
@@ -21,7 +22,7 @@ from db.connection import get_db_dependency
 router = APIRouter(
     prefix="/api/payments",
     tags=["payments"],
-    dependencies=[Depends(get_current_admin), Depends(require_not_gto)],
+    dependencies=[Depends(get_current_admin)],
 )
 
 
@@ -50,9 +51,13 @@ def export_all_payments_xlsx(
     to_dt: str | None = Query(None, alias="to"),
     q: str | None = Query(None),
     club_id: int | None = Query(None),
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
     method_slug = validate_unified_method_for_scope("all", method)
+    club_id, empty = resolve_gto_list_club_id(role, club_id, db)
+    if empty:
+        raise HTTPException(400, "No payments to export for the selected filters.")
     if club_id is not None:
         _get_club_or_404(db, club_id)
     filters = UnifiedPaymentFilters(
@@ -86,12 +91,16 @@ def export_owner_payments_xlsx(
     to_dt: str | None = Query(None, alias="to"),
     q: str | None = Query(None),
     club_id: int | None = Query(None),
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
     owner_slug = normalize_method_owner(owner)
     method_slug = (method or "all").strip().lower()
     if method_slug != "all":
         raise HTTPException(400, "XLSX export is only supported when method=all.")
+    club_id, empty = resolve_gto_list_club_id(role, club_id, db)
+    if empty:
+        raise HTTPException(400, "No payments to export for the selected filters.")
     if club_id is not None:
         _get_club_or_404(db, club_id)
     filters = UnifiedPaymentFilters(
@@ -127,11 +136,15 @@ def export_union_payments_xlsx(
     to_dt: str | None = Query(None, alias="to"),
     q: str | None = Query(None),
     club_id: int | None = Query(None),
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
     method_slug = validate_unified_method_for_scope("union", method)
     if method_slug != "all":
         raise HTTPException(400, "XLSX export is only supported when method=all.")
+    club_id, empty = resolve_gto_list_club_id(role, club_id, db)
+    if empty:
+        raise HTTPException(400, "No payments to export for the selected filters.")
     if club_id is not None:
         _get_club_or_404(db, club_id)
     filters = UnifiedPaymentFilters(

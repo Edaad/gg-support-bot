@@ -24,11 +24,19 @@ import ExportIconButton from '../components/ExportIconButton'
 import PaymentsExportModal from '../components/payments/PaymentsExportModal'
 import UnifiedPaymentTable from '../components/payments/UnifiedPaymentTable'
 import { bindableFromUnified } from '../components/payments/types'
+import { GTO_CLUB_NAME, type DashboardRole } from '../lib/rbac'
 
-export default function Payments({ token }: { token: string }) {
+export default function Payments({
+  token,
+  role,
+}: {
+  token: string
+  role: DashboardRole
+}) {
   const methodSelectId = useId()
   const clubSelectId = useId()
   const searchId = useId()
+  const isGto = role === 'gto'
 
   const [method, setMethod] = useState<MethodFilter>(ALL_METHOD)
   const [clubFilter, setClubFilter] = useState('')
@@ -76,9 +84,15 @@ export default function Payments({ token }: { token: string }) {
 
   useEffect(() => {
     listClubs(token)
-      .then((rows) => setClubs([...rows].sort((a, b) => a.name.localeCompare(b.name))))
+      .then((rows) => {
+        const scoped = isGto ? rows.filter((c) => c.name === GTO_CLUB_NAME) : rows
+        setClubs([...scoped].sort((a, b) => a.name.localeCompare(b.name)))
+        if (isGto && scoped[0]) {
+          setClubFilter(String(scoped[0].id))
+        }
+      })
       .catch(() => setClubs([]))
-  }, [token])
+  }, [token, isGto])
 
   useEffect(() => {
     const t = window.setTimeout(() => setAppliedSearch(search.trim()), 300)
@@ -216,8 +230,9 @@ export default function Payments({ token }: { token: string }) {
             value={clubFilter}
             onChange={(e) => setClubFilter(e.target.value)}
             className="input-field-sm min-w-[12rem]"
+            disabled={isGto}
           >
-            <option value="">All clubs</option>
+            {!isGto && <option value="">All clubs</option>}
             {clubs.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -305,6 +320,7 @@ export default function Payments({ token }: { token: string }) {
         initialMethod={effectiveMethod}
         initialClubFilter={clubFilter}
         initialSearch={appliedSearch}
+        lockClub={isGto}
       />
     </div>
   )

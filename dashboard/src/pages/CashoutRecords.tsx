@@ -14,8 +14,8 @@ import {
 import { listV2Methods, type V2Method } from '../api/v2Client'
 import CashoutDestinationList, {
   addableCashoutMethods,
+  bindDestinationRows,
   collectDestinationPayloads,
-  emptyDestinationRows,
   type DestinationRow,
 } from '../components/CashoutDestinationList'
 import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
@@ -397,9 +397,14 @@ export default function CashoutRecords({
   }, [token, isGto])
 
   useEffect(() => {
-    if (!createOpen || !clubId) {
+    if (!createOpen) {
       setCreateMethods([])
       setCreateRows([])
+      return
+    }
+    if (!clubId) {
+      setCreateMethods([])
+      setCreateRows((prev) => bindDestinationRows(prev, []))
       return
     }
     let cancelled = false
@@ -410,12 +415,11 @@ export default function CashoutRecords({
           rows.filter((m) => m.is_active && m.slug !== 'chips'),
         )
         setCreateMethods(methods)
-        setCreateRows(emptyDestinationRows(methods))
+        setCreateRows((prev) => bindDestinationRows(prev, methods))
       })
       .catch(() => {
         if (!cancelled) {
           setCreateMethods([])
-          setCreateRows([])
         }
       })
     return () => {
@@ -424,10 +428,11 @@ export default function CashoutRecords({
   }, [token, createOpen, clubId])
 
   const openCreate = () => {
-    setClubId(clubs[0] ? String(clubs[0].id) : '')
+    setClubId(isGto && clubs[0] ? String(clubs[0].id) : '')
     setName('')
     setAmount('')
     setCreateRows([])
+    setError(null)
     setCreateOpen(true)
   }
 
@@ -884,12 +889,18 @@ export default function CashoutRecords({
               className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
               disabled={isGto}
             >
-              {clubs.length === 0 && <option value="">No clubs</option>}
-              {clubs.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
+              {clubs.length === 0 ? (
+                <option value="">No clubs</option>
+              ) : (
+                <>
+                  {!isGto && <option value="">Select club…</option>}
+                  {clubs.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </>
+              )}
             </select>
           </div>
           <div>
@@ -915,6 +926,9 @@ export default function CashoutRecords({
             rows={createRows}
             onChange={setCreateRows}
           />
+          {error && (
+            <p className="text-sm text-danger-ink">{error}</p>
+          )}
           <button type="button" onClick={handleCreate} disabled={saving} className="btn-primary w-full min-h-12">
             {saving ? 'Creating…' : 'Create'}
           </button>

@@ -75,8 +75,8 @@ export default function App() {
           <RoleGate role={role}>
             <Routes>
               <Route path="/" element={<Navigate to={homePathForRole(role)} replace />} />
-              <Route path="/clubs" element={<Clubs token={token} />} />
-              <Route path="/clubs/:id" element={<ClubDetail token={token} />} />
+              <Route path="/clubs" element={<Clubs token={token} role={role} />} />
+              <Route path="/clubs/:id" element={<ClubDetail token={token} role={role} />} />
               <Route path="/clubs/:id/test" element={<FlowSimulator token={token} />} />
               <Route
                 path="/settings"
@@ -89,7 +89,7 @@ export default function App() {
               <Route path="/expenses" element={<Expenses token={token} />} />
               <Route path="/cashout-records" element={<CashoutRecords token={token} role={role} />} />
               <Route path="/cashout-records/:id" element={<CashoutRecordDetail token={token} role={role} />} />
-              <Route path="/payments" element={<Payments token={token} />} />
+              <Route path="/payments" element={<Payments token={token} role={role} />} />
               <Route
                 path="/manual-deposit-requests"
                 element={<ManualDepositRequests token={token} />}

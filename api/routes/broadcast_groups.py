@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from api.auth import get_current_admin
+from api.gto_club import assert_gto_club_id
 from db.connection import get_db_dependency
 from db.models import BroadcastGroup, BroadcastGroupMember, Club, Group
 
@@ -58,19 +59,30 @@ def _bg_to_read(bg: BroadcastGroup, session: Session) -> BroadcastGroupRead:
 
 
 @router.get("/{club_id}/broadcast-groups", response_model=List[BroadcastGroupRead])
-def list_broadcast_groups(club_id: int, db: Session = Depends(get_db_dependency)):
+def list_broadcast_groups(
+    club_id: int,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
     club = db.query(Club).get(club_id)
     if not club:
         raise HTTPException(404, "Club not found")
+    assert_gto_club_id(role, club_id, db)
     bgs = db.query(BroadcastGroup).filter_by(club_id=club_id).order_by(BroadcastGroup.name).all()
     return [_bg_to_read(bg, db) for bg in bgs]
 
 
 @router.post("/{club_id}/broadcast-groups", response_model=BroadcastGroupRead, status_code=201)
-def create_broadcast_group(club_id: int, body: BroadcastGroupCreate, db: Session = Depends(get_db_dependency)):
+def create_broadcast_group(
+    club_id: int,
+    body: BroadcastGroupCreate,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
     club = db.query(Club).get(club_id)
     if not club:
         raise HTTPException(404, "Club not found")
+    assert_gto_club_id(role, club_id, db)
     bg = BroadcastGroup(club_id=club_id, name=body.name)
     db.add(bg)
     db.flush()
@@ -79,7 +91,14 @@ def create_broadcast_group(club_id: int, body: BroadcastGroupCreate, db: Session
 
 
 @router.put("/{club_id}/broadcast-groups/{bg_id}", response_model=BroadcastGroupRead)
-def update_broadcast_group(club_id: int, bg_id: int, body: BroadcastGroupUpdate, db: Session = Depends(get_db_dependency)):
+def update_broadcast_group(
+    club_id: int,
+    bg_id: int,
+    body: BroadcastGroupUpdate,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    assert_gto_club_id(role, club_id, db)
     bg = db.query(BroadcastGroup).filter_by(id=bg_id, club_id=club_id).first()
     if not bg:
         raise HTTPException(404, "Broadcast group not found")
@@ -91,7 +110,13 @@ def update_broadcast_group(club_id: int, bg_id: int, body: BroadcastGroupUpdate,
 
 
 @router.delete("/{club_id}/broadcast-groups/{bg_id}", status_code=204)
-def delete_broadcast_group(club_id: int, bg_id: int, db: Session = Depends(get_db_dependency)):
+def delete_broadcast_group(
+    club_id: int,
+    bg_id: int,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    assert_gto_club_id(role, club_id, db)
     bg = db.query(BroadcastGroup).filter_by(id=bg_id, club_id=club_id).first()
     if not bg:
         raise HTTPException(404, "Broadcast group not found")
@@ -99,7 +124,14 @@ def delete_broadcast_group(club_id: int, bg_id: int, db: Session = Depends(get_d
 
 
 @router.post("/{club_id}/broadcast-groups/{bg_id}/members", response_model=BroadcastGroupRead)
-def add_member(club_id: int, bg_id: int, body: MemberInfo, db: Session = Depends(get_db_dependency)):
+def add_member(
+    club_id: int,
+    bg_id: int,
+    body: MemberInfo,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    assert_gto_club_id(role, club_id, db)
     bg = db.query(BroadcastGroup).filter_by(id=bg_id, club_id=club_id).first()
     if not bg:
         raise HTTPException(404, "Broadcast group not found")
@@ -115,7 +147,14 @@ def add_member(club_id: int, bg_id: int, body: MemberInfo, db: Session = Depends
 
 
 @router.delete("/{club_id}/broadcast-groups/{bg_id}/members/{chat_id}", response_model=BroadcastGroupRead)
-def remove_member(club_id: int, bg_id: int, chat_id: int, db: Session = Depends(get_db_dependency)):
+def remove_member(
+    club_id: int,
+    bg_id: int,
+    chat_id: int,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    assert_gto_club_id(role, club_id, db)
     bg = db.query(BroadcastGroup).filter_by(id=bg_id, club_id=club_id).first()
     if not bg:
         raise HTTPException(404, "Broadcast group not found")

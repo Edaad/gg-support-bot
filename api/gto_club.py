@@ -71,3 +71,8 @@ def assert_gto_record_club(
     gto_id = lookup_gto_club_id(db)
     if gto_id is None or record_club_id is None or int(record_club_id) != gto_id:
         raise HTTPException(403, "Club access denied")
+
+
+def assert_gto_club_id(role: str, club_id: int, db: Session) -> None:
+    """Path/id access: GTO may only use ClubGTO."""
+    assert_gto_record_club(role, club_id, db)

@@ -1,9 +1,52 @@
 import { useEffect, useId, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { listClubs, createClub, deleteClub, type Club } from '../api/client'
 import { useConfirm } from '../components/ConfirmProvider'
+import { GTO_CLUB_NAME, type DashboardRole } from '../lib/rbac'
 
-export default function Clubs({ token }: { token: string }) {
+export default function Clubs({
+  token,
+  role,
+}: {
+  token: string
+  role: DashboardRole
+}) {
+  if (role === 'gto') return <GtoClubRedirect token={token} />
+
+  return <ClubsAdmin token={token} />
+}
+
+function GtoClubRedirect({ token }: { token: string }) {
+  const navigate = useNavigate()
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    listClubs(token)
+      .then((rows) => {
+        if (cancelled) return
+        const club = rows.find((c) => c.name === GTO_CLUB_NAME) || rows[0]
+        if (!club) {
+          setError('ClubGTO was not found.')
+          return
+        }
+        navigate(`/clubs/${club.id}`, { replace: true })
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load ClubGTO.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [navigate, token])
+
+  if (error) {
+    return <p className="text-sm text-danger-ink">{error}</p>
+  }
+  return <p className="text-sm text-ink-muted">Opening ClubGTO…</p>
+}
+
+function ClubsAdmin({ token }: { token: string }) {
   const askConfirm = useConfirm()
   const nameId = useId()
   const tgId = useId()

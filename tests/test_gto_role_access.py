@@ -1,4 +1,4 @@
-"""GTO role: payments/pool-pay denial and ClubGTO scoping on cashouts/bonuses."""
+"""GTO role: ClubGTO-scoped payments/clubs/cashouts/bonuses; pool-pay still denied."""
 
 from __future__ import annotations
 
@@ -16,9 +16,11 @@ from api.auth import (
     ROLE_GTO,
     get_current_admin,
 )
-from api.gto_club import GTO_CLUB_NAME
+from api.schemas_payments import OwnerPaymentSummary
+from api.routes import all_payments as all_payments_routes
 from api.routes import bonus as bonus_routes
 from api.routes import cashout_records as cashout_routes
+from api.routes import clubs as clubs_routes
 from api.routes import manual_deposit_requests as mdr_routes
 from api.routes import payments as payments_routes
 from db.connection import get_db_dependency
@@ -61,17 +63,101 @@ class PaymentsGtoAccessTests(unittest.TestCase):
         self.env_patch.stop()
         self.app.dependency_overrides.clear()
 
-    def test_gto_forbidden(self) -> None:
+    def test_gto_providers_allowed(self) -> None:
         self.app.dependency_overrides[get_current_admin] = lambda: ROLE_GTO
         client = TestClient(self.app)
         resp = client.get("/api/payments/providers")
-        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 200)
 
     def test_am_allowed(self) -> None:
         self.app.dependency_overrides[get_current_admin] = lambda: ROLE_ACCOUNT_MANAGER
         client = TestClient(self.app)
         resp = client.get("/api/payments/providers")
         self.assertEqual(resp.status_code, 200)
+
+
+class AllPaymentsGtoScopeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.env_patch = patch.dict(os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False)
+        self.env_patch.start()
+        self.gto = _gto_club(7)
+        self.db = _db_with_gto(self.gto)
+        self.app = FastAPI()
+        self.app.include_router(all_payments_routes.router)
+        self.app.dependency_overrides[get_current_admin] = lambda: ROLE_GTO
+        self.app.dependency_overrides[get_db_dependency] = _override_db(self.db)
+
+    def tearDown(self) -> None:
+        self.env_patch.stop()
+        self.app.dependency_overrides.clear()
+
+    def test_list_forces_clubgto(self) -> None:
+        summary = OwnerPaymentSummary(
+            total_count=0,
+            total_amount_cents=0,
+            total_amount_usd=Decimal("0"),
+        )
+        with patch(
+            "api.routes.all_payments.fetch_unified_page",
+            return_value=([], 0, summary),
+        ) as mock_fetch, patch(
+            "api.routes.all_payments._get_club_or_404",
+            return_value=self.gto,
+        ):
+            client = TestClient(self.app)
+            resp = client.get("/api/payments/all/payments")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(mock_fetch.call_args.kwargs["filters"].club_id, 7)
+
+    def test_list_other_club_forbidden(self) -> None:
+        client = TestClient(self.app)
+        resp = client.get("/api/payments/all/payments?club_id=2")
+        self.assertEqual(resp.status_code, 403)
+
+
+class ClubsGtoScopeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.env_patch = patch.dict(os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False)
+        self.env_patch.start()
+        self.gto = _gto_club(7)
+        self.other = MagicMock()
+        self.other.id = 2
+        self.other.name = "Round Table"
+        self.db = MagicMock()
+        q = MagicMock()
+        q.filter.return_value.first.return_value = self.gto
+        q.order_by.return_value.all.return_value = [self.other, self.gto]
+        q.get.side_effect = lambda cid: self.gto if cid == 7 else self.other
+        self.db.query.return_value = q
+        self.app = FastAPI()
+        self.app.include_router(clubs_routes.router)
+        self.app.dependency_overrides[get_current_admin] = lambda: ROLE_GTO
+        self.app.dependency_overrides[get_db_dependency] = _override_db(self.db)
+
+    def tearDown(self) -> None:
+        self.env_patch.stop()
+        self.app.dependency_overrides.clear()
+
+    def test_list_only_clubgto(self) -> None:
+        with patch("api.routes.clubs._club_to_read") as to_read:
+            to_read.side_effect = lambda c: MagicMock()
+            client = TestClient(self.app)
+            client.get("/api/clubs")
+        self.assertEqual(to_read.call_count, 1)
+        self.assertEqual(to_read.call_args[0][0].id, 7)
+
+    def test_get_other_club_forbidden(self) -> None:
+        client = TestClient(self.app)
+        resp = client.get("/api/clubs/2")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_create_forbidden(self) -> None:
+        client = TestClient(self.app)
+        resp = client.post(
+            "/api/clubs",
+            json={"name": "X", "telegram_user_id": 1},
+        )
+        self.assertEqual(resp.status_code, 403)
 
 
 class PoolPayRoleAccessTests(unittest.TestCase):

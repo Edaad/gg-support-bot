@@ -17,6 +17,7 @@ from telegram import Bot, InputMediaPhoto
 from telegram.error import RetryAfter, TimedOut
 
 from api.auth import get_current_admin
+from api.gto_club import assert_gto_club_id
 from db.connection import get_db_dependency, get_db
 from db.models import Club, BroadcastJob, BroadcastGroup
 
@@ -159,11 +160,15 @@ async def _run_broadcast(job_id: int, chat_ids: List[int], message_data: dict) -
 
 @router.post("/{club_id}/broadcast", response_model=BroadcastJobRead, status_code=202)
 async def broadcast(
-    club_id: int, body: BroadcastRequest, db: Session = Depends(get_db_dependency)
+    club_id: int,
+    body: BroadcastRequest,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
 ):
     club = db.query(Club).get(club_id)
     if not club:
         raise HTTPException(404, "Club not found")
+    assert_gto_club_id(role, club_id, db)
 
     has_content = (
         (body.response_type == "photo" and body.response_file_id)
@@ -223,8 +228,12 @@ async def broadcast(
 
 @router.get("/{club_id}/broadcast/{job_id}", response_model=BroadcastJobRead)
 def get_broadcast_status(
-    club_id: int, job_id: int, db: Session = Depends(get_db_dependency)
+    club_id: int,
+    job_id: int,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
 ):
+    assert_gto_club_id(role, club_id, db)
     job = db.query(BroadcastJob).filter_by(id=job_id, club_id=club_id).first()
     if not job:
         raise HTTPException(404, "Broadcast job not found")
@@ -233,8 +242,12 @@ def get_broadcast_status(
 
 @router.post("/{club_id}/broadcast/{job_id}/cancel", response_model=BroadcastJobRead)
 def cancel_broadcast(
-    club_id: int, job_id: int, db: Session = Depends(get_db_dependency)
+    club_id: int,
+    job_id: int,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
 ):
+    assert_gto_club_id(role, club_id, db)
     job = db.query(BroadcastJob).filter_by(id=job_id, club_id=club_id).first()
     if not job:
         raise HTTPException(404, "Broadcast job not found")

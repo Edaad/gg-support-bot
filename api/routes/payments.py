@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import List
 
@@ -11,7 +12,8 @@ from sqlalchemy import func, case
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
-from api.auth import get_current_admin, require_not_gto
+from api.auth import ROLE_GTO, get_current_admin
+from api.gto_club import assert_gto_club_id, assert_gto_record_club, resolve_gto_list_club_id
 from api.audit_export import build_audit_workbook
 from api.payments_helpers import (
     apply_analytics_chat_exclusion,
@@ -118,10 +120,18 @@ from db.models import (
     CryptoPayment,
 )
 
+_payments_role: ContextVar[str] = ContextVar("payments_role", default="")
+
+
+def _bind_payments_role(role: str = Depends(get_current_admin)) -> str:
+    _payments_role.set(role)
+    return role
+
+
 router = APIRouter(
     prefix="/api/payments",
     tags=["payments"],
-    dependencies=[Depends(get_current_admin), Depends(require_not_gto)],
+    dependencies=[Depends(get_current_admin), Depends(_bind_payments_role)],
 )
 
 _DEFAULT_LIMIT = 50
@@ -195,7 +205,28 @@ def _get_club_or_404(db: Session, club_id: int) -> Club:
     club = db.query(Club).filter(Club.id == club_id).first()
     if not club:
         raise HTTPException(404, "Club not found")
+    role = _payments_role.get()
+    if role:
+        assert_gto_club_id(role, club_id, db)
     return club
+
+
+def _scope_club_id(club_id: int | None, db: Session) -> tuple[int | None, bool]:
+    return resolve_gto_list_club_id(_payments_role.get() or "", club_id, db)
+
+
+def _assert_payment_club(model, payment_id: int, db: Session) -> None:
+    row = db.query(model).filter(model.id == payment_id).first()
+    if row is None:
+        return
+    assert_gto_record_club(_payments_role.get() or "", getattr(row, "club_id", None), db)
+
+
+def _apply_optional_club(club_id: int | None, db: Session) -> int | None:
+    club_id, empty = _scope_club_id(club_id, db)
+    if empty:
+        return -1
+    return club_id
 
 
 def _raise_db_schema_error(exc: ProgrammingError) -> None:
@@ -353,6 +384,8 @@ def audit_export(
     date: str = Query(...),
     db: Session = Depends(get_db_dependency),
 ):
+    if (_payments_role.get() or "") == ROLE_GTO:
+        raise HTTPException(403, "Admin only")
     if not date.strip():
         raise HTTPException(400, "date is required.")
     date_label = date.strip()[:10]
@@ -619,6 +652,7 @@ async def bind_venmo_payment(
     if not group_title:
         return VenmoBindResponse(ok=False, error="Group title is required.")
 
+    _assert_payment_club(VenmoPayment, payment_id, db)
     result = await bind_venmo_payment_by_id(
         payment_id=payment_id,
         group_title_input=group_title,
@@ -733,6 +767,7 @@ def zelle_payment_summary(
     exclude_test_chats: bool = Query(False),
     db: Session = Depends(get_db_dependency),
 ):
+    club_id = _apply_optional_club(club_id, db)
     if club_id is not None:
         _get_club_or_404(db, club_id)
 
@@ -793,6 +828,7 @@ async def bind_zelle_payment(
     if not group_title:
         return ZelleBindResponse(ok=False, error="Group title is required.")
 
+    _assert_payment_club(ZellePayment, payment_id, db)
     result = await bind_zelle_payment_by_id(
         payment_id=payment_id,
         group_title_input=group_title,
@@ -910,6 +946,7 @@ async def bind_cashapp_payment(
     if not group_title:
         return CashAppBindResponse(ok=False, error="Group title is required.")
 
+    _assert_payment_club(CashAppPayment, payment_id, db)
     result = await bind_cashapp_payment_by_id(
         payment_id=payment_id,
         group_title_input=group_title,
@@ -1029,6 +1066,7 @@ async def bind_paypal_payment(
     if not group_title:
         return PayPalBindResponse(ok=False, error="Group title is required.")
 
+    _assert_payment_club(PayPalPayment, payment_id, db)
     result = await bind_paypal_payment_by_id(
         payment_id=payment_id,
         group_title_input=group_title,
@@ -1105,6 +1143,7 @@ async def bind_crypto_payment(
     if not group_title:
         return CryptoBindResponse(ok=False, error="Group title is required.")
 
+    _assert_payment_club(CryptoPayment, payment_id, db)
     result = await bind_crypto_payment_by_id(
         payment_id=payment_id,
         group_title_input=group_title,
@@ -1143,6 +1182,7 @@ def list_group_bindings(
     db: Session = Depends(get_db_dependency),
 ):
     slug = (method or "venmo").strip().lower()
+    club_id = _apply_optional_club(club_id, db)
     if club_id is not None:
         _get_club_or_404(db, club_id)
     limit = _clamp_limit(limit)
@@ -1254,6 +1294,7 @@ def bindings_summary(
     db: Session = Depends(get_db_dependency),
 ):
     slug = (method or "venmo").strip().lower()
+    club_id = _apply_optional_club(club_id, db)
     if club_id is not None:
         _get_club_or_404(db, club_id)
 
@@ -1372,6 +1413,7 @@ def list_bind_attempts(
     db: Session = Depends(get_db_dependency),
 ):
     slug = (method or "venmo").strip().lower()
+    club_id = _apply_optional_club(club_id, db)
     if club_id is not None:
         _get_club_or_404(db, club_id)
 
@@ -1469,6 +1511,7 @@ def auto_deposits_summary(
     db: Session = Depends(get_db_dependency),
 ):
     slug = (method or "all").strip().lower() or "all"
+    club_id = _apply_optional_club(club_id, db)
     if club_id is not None:
         _get_club_or_404(db, club_id)
 
@@ -1587,6 +1630,7 @@ def list_auto_deposit_events(
     db: Session = Depends(get_db_dependency),
 ):
     slug = (method or "all").strip().lower() or "all"
+    club_id = _apply_optional_club(club_id, db)
     if club_id is not None:
         _get_club_or_404(db, club_id)
 

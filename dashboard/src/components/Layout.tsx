@@ -51,6 +51,8 @@ const AM_TOP_NAV: NavLinkItem[] = [
 ]
 
 const GTO_TOP_NAV: NavLinkItem[] = [
+  { to: ADMIN_SECTION_HOME, label: 'Bot', icon: 'telegram' },
+  { to: '/payments', label: 'Payments', icon: 'payments' },
   { to: '/cashout-records', label: 'Cashouts', icon: 'cashouts' },
   { to: '/bonuses', label: 'Bonuses', icon: 'bonuses' },
 ]

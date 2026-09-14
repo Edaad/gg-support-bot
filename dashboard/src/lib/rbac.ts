@@ -13,7 +13,13 @@ export const ACCOUNT_MANAGER_PATHS = [
 ] as const
 
 /** Paths gto may open (prefix match for nested routes). */
-export const GTO_PATHS = ['/cashout-records', '/bonuses', '/settings'] as const
+export const GTO_PATHS = [
+  '/clubs',
+  '/payments',
+  '/cashout-records',
+  '/bonuses',
+  '/settings',
+] as const
 
 export const ADMIN_SECTION_HOME = '/clubs'
 

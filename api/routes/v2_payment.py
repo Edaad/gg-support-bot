@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from api.auth import get_current_admin
+from api.gto_club import assert_gto_club_id
 from api.payment_v2_helpers import (
     DEFAULT_TIER_LABEL,
     RESPONSE_UPDATE_FIELDS,
@@ -50,7 +52,23 @@ from db.models import (
     ClubPaymentTierVariant,
 )
 
-router = APIRouter(prefix="/api/v2", tags=["payment-v2"], dependencies=[Depends(get_current_admin)])
+_v2_role: ContextVar[str] = ContextVar("v2_role", default="")
+
+
+def _bind_v2_role(role: str = Depends(get_current_admin)) -> str:
+    _v2_role.set(role)
+    return role
+
+
+router = APIRouter(
+    prefix="/api/v2",
+    tags=["payment-v2"],
+    dependencies=[Depends(get_current_admin), Depends(_bind_v2_role)],
+)
+
+
+def _assert_club(club_id: int, db: Session) -> None:
+    assert_gto_club_id(_v2_role.get() or "", club_id, db)
 
 
 def _method_query(db: Session):
@@ -68,6 +86,7 @@ def _get_method(db: Session, method_id: int) -> ClubPaymentMethod:
     method = _method_query(db).filter(ClubPaymentMethod.id == method_id).first()
     if not method:
         raise HTTPException(404, "Method not found")
+    _assert_club(int(method.club_id), db)
     return method
 
 
@@ -80,6 +99,10 @@ def _get_tier(db: Session, tier_id: int) -> ClubPaymentTier:
     )
     if not tier:
         raise HTTPException(404, "Tier not found")
+    method = db.query(ClubPaymentMethod).get(tier.method_id)
+    if not method:
+        raise HTTPException(404, "Method not found")
+    _assert_club(int(method.club_id), db)
     return tier
 
 
@@ -87,6 +110,7 @@ def _get_variant(db: Session, variant_id: int) -> ClubPaymentTierVariant:
     variant = db.query(ClubPaymentTierVariant).get(variant_id)
     if not variant:
         raise HTTPException(404, "Variant not found")
+    _get_tier(db, int(variant.tier_id))
     return variant
 
 
@@ -98,6 +122,7 @@ def list_methods(club_id: int, direction: str | None = None, db: Session = Depen
     club = db.query(Club).get(club_id)
     if not club:
         raise HTTPException(404, "Club not found")
+    _assert_club(club_id, db)
     q = _method_query(db).filter_by(club_id=club_id)
     if direction:
         q = q.filter_by(direction=direction)
@@ -114,6 +139,7 @@ def create_method(club_id: int, body: ClubPaymentMethodCreate, db: Session = Dep
     club = db.query(Club).get(club_id)
     if not club:
         raise HTTPException(404, "Club not found")
+    _assert_club(club_id, db)
     if body.direction not in ("deposit", "cashout"):
         raise HTTPException(400, "direction must be 'deposit' or 'cashout'")
     if bool(getattr(body, "tracks_manual_requests", False)):
@@ -187,9 +213,7 @@ def update_method(method_id: int, body: ClubPaymentMethodUpdate, db: Session = D
 
 @router.delete("/methods/{method_id}", status_code=204)
 def delete_method(method_id: int, db: Session = Depends(get_db_dependency)):
-    method = db.query(ClubPaymentMethod).get(method_id)
-    if not method:
-        raise HTTPException(404, "Method not found")
+    method = _get_method(db, method_id)
     from db.models import ManualDepositRequest
 
     has_requests = (
@@ -216,6 +240,7 @@ def reset_accumulated(method_id: int, db: Session = Depends(get_db_dependency)):
 
 @router.put("/clubs/{club_id}/methods/reorder")
 def reorder_methods(club_id: int, body: dict, db: Session = Depends(get_db_dependency)):
+    _assert_club(club_id, db)
     order = body.get("order", [])
     for idx, method_id in enumerate(order):
         m = db.query(ClubPaymentMethod).filter_by(id=method_id, club_id=club_id).first()
@@ -446,6 +471,7 @@ def update_sub_option(sub_option_id: int, body: ClubPaymentSubOptionUpdate, db: 
     sub = db.query(ClubPaymentSubOption).get(sub_option_id)
     if not sub:
         raise HTTPException(404, "Sub-option not found")
+    _get_method(db, int(sub.method_id))
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(sub, field, value)
     db.flush()
@@ -458,4 +484,5 @@ def delete_sub_option(sub_option_id: int, db: Session = Depends(get_db_dependenc
     sub = db.query(ClubPaymentSubOption).get(sub_option_id)
     if not sub:
         raise HTTPException(404, "Sub-option not found")
+    _get_method(db, int(sub.method_id))
     db.delete(sub)

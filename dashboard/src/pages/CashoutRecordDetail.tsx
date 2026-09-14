@@ -579,6 +579,7 @@ export default function CashoutRecordDetail({
             />
           </div>
           <CashoutDestinationList methods={methods} rows={destRows} onChange={setDestRows} />
+          {error && <p className="text-sm text-danger-ink">{error}</p>}
           <button type="button" onClick={saveEdit} disabled={saving} className="btn-primary w-full min-h-12">
             {saving ? 'Saving…' : 'Save'}
           </button>

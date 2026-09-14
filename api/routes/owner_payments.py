@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
-from api.auth import get_current_admin, require_not_gto
+from api.auth import get_current_admin
+from api.gto_club import resolve_gto_list_club_id
 from api.method_owner import normalize_method_owner
 from api.payments_helpers import (
     OWNER_INGEST_METHODS,
@@ -52,7 +54,7 @@ from db.models import StripeCheckoutSession, StripeCustomer
 router = APIRouter(
     prefix="/api/payments/owner",
     tags=["payments"],
-    dependencies=[Depends(get_current_admin), Depends(require_not_gto)],
+    dependencies=[Depends(get_current_admin)],
 )
 
 _DEFAULT_LIMIT = 50
@@ -143,6 +145,7 @@ def list_owner_payments(
     club_id: int | None = Query(None),
     limit: int = Query(_DEFAULT_LIMIT),
     offset: int = Query(0),
+    role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
     owner_slug, method_slug = _validate_owner_method(owner, method)
@@ -150,6 +153,31 @@ def list_owner_payments(
     offset = max(0, offset)
     parsed_from = _parse_dt(from_dt)
     parsed_to = _parse_dt(to_dt)
+    club_id, empty = resolve_gto_list_club_id(role, club_id, db)
+    if empty:
+        empty_summary = OwnerPaymentSummary(
+            total_count=0,
+            total_amount_cents=0,
+            total_amount_usd=Decimal("0"),
+        )
+        if method_slug == "all":
+            return UnifiedPaymentListResponse(
+                scope="owner",
+                method=method_slug,
+                items=[],
+                total=0,
+                limit=limit,
+                offset=offset,
+                summary=empty_summary,
+            )
+        return OwnerPaymentListResponse(
+            method=method_slug,
+            items=[],
+            total=0,
+            limit=limit,
+            offset=offset,
+            summary=empty_summary,
+        )
     if club_id is not None:
         _get_club_or_404(db, club_id)
 
