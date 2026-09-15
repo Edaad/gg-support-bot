@@ -175,7 +175,7 @@ function CashoutRecordCard({
           </h3>
           <p className="mt-0.5 truncate text-sm text-ink-muted">{meta || '—'}</p>
         </div>
-        {isAdmin && (
+        {isAdmin && record.status === 'cleared' && (
           <div
             className="flex shrink-0 items-center gap-2 pt-0.5"
             onClick={(e) => e.stopPropagation()}
@@ -370,9 +370,11 @@ export default function CashoutRecords({
   useEffect(() => {
     if (!isAdmin && tab === 'money_sent') setTab('active')
     if (!isAdmin && auditedFilter !== 'all') setAuditedFilter('all')
+    if (tab !== 'cleared' && auditedFilter !== 'all') setAuditedFilter('all')
   }, [isAdmin, tab, auditedFilter])
 
-  const auditedParam = isAdmin ? auditedQueryParam(auditedFilter) : undefined
+  const auditedParam =
+    isAdmin && tab === 'cleared' ? auditedQueryParam(auditedFilter) : undefined
 
   const reloadRecords = () => {
     if (!statusTab) return
@@ -609,7 +611,7 @@ export default function CashoutRecords({
   ) => list.map((row) => (row.id === id ? { ...row, audited } : row))
 
   const handleToggleAudited = async (r: StaffCashoutRecordT) => {
-    if (!isAdmin) return
+    if (!isAdmin || r.status !== 'cleared') return
     const next = !Boolean(r.audited)
     setSaving(true)
     setError(null)
@@ -784,7 +786,7 @@ export default function CashoutRecords({
             ))}
           </select>
         </div>
-        {isAdmin && !isMoneySent && (
+        {isAdmin && tab === 'cleared' && (
           <div>
             <label className="label-field-xs" htmlFor="cashout-audited">
               Audited

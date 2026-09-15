@@ -333,7 +333,7 @@ export default function CashoutRecordDetail({
   }
 
   const toggleAudited = async () => {
-    if (!record || !isAdmin) return
+    if (!record || !isAdmin || record.status !== 'cleared') return
     setSaving(true)
     setError(null)
     try {
@@ -597,7 +597,7 @@ export default function CashoutRecordDetail({
             Do not send
           </label>
         )}
-        {isAdmin && (
+        {isAdmin && record.status === 'cleared' && (
           <label
             className={`inline-flex min-h-11 cursor-pointer items-center gap-3 text-sm text-ink ${
               saving ? 'opacity-60' : ''

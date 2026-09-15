@@ -436,6 +436,8 @@ def update_staff_cashout_record(
         if do_not_send is not None:
             record.do_not_send = bool(do_not_send)
         if audited is not None:
+            if bool(audited) and current["status"] != "cleared":
+                raise ValueError("Audited can only be set when remaining is zero")
             record.audited = bool(audited)
         record.updated_at = datetime.utcnow()
         return _record_dict_reloaded(session, record)
