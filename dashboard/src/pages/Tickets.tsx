@@ -10,11 +10,8 @@ import KpiStat from '../components/KpiStat'
 import DateRangeCsvExport from '../components/DateRangeCsvExport'
 import TicketDetailModal from '../components/TicketDetailModal'
 import { downloadGroupChatTicketsCsv } from '../api/csvExportClient'
-import {
-  formatDurationSeconds,
-  formatEasternTime,
-  yesterdayEasternDateString,
-} from '../lib/easternTime'
+import EasternInstant from '../components/EasternInstant'
+import { formatDurationSeconds, yesterdayEasternDateString } from '../lib/easternTime'
 
 const CATEGORY_LABELS: Record<TicketCategory, string> = {
   auto_deposit: 'Auto deposit',
@@ -308,7 +305,7 @@ export default function Tickets({
                       </td>
                       <td className="px-4 py-3 text-ink-muted">{t.category}</td>
                       <td className="px-4 py-3 text-ink-muted">
-                        {formatEasternTime(t.customer_first_message)}
+                        <EasternInstant value={t.customer_first_message} />
                       </td>
                       <td
                         className={`px-4 py-3 tabular-nums ${

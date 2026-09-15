@@ -10,7 +10,7 @@ import {
   clubStatusLabel,
   type GcMtProtoClub,
 } from '../api/client'
-import { formatEasternDateTime, formatEasternTime } from '../lib/easternTime'
+import EasternInstant from '../components/EasternInstant'
 
 export default function TelegramLogin({ token }: { token: string }) {
   const [clubs, setClubs] = useState<GcMtProtoClub[]>([])
@@ -330,7 +330,7 @@ export default function TelegramLogin({ token }: { token: string }) {
             {banner.text}
             {selected?.worker_checked_at && (
               <span className="ml-1 text-ink-muted">
-                (worker checked {formatEasternDateTime(selected.worker_checked_at)})
+                (worker checked <EasternInstant value={selected.worker_checked_at} />)
               </span>
             )}
           </p>
@@ -410,8 +410,8 @@ export default function TelegramLogin({ token }: { token: string }) {
             </p>
             {qrExpiresAt && (
               <p className="mt-2 text-xs text-ink-muted">
-                Current QR token expires {formatEasternTime(qrExpiresAt)} (auto-refreshes if
-                needed).
+                Current QR token expires <EasternInstant value={qrExpiresAt} variant="time" />{' '}
+                (auto-refreshes if needed).
               </p>
             )}
             <img

@@ -1,4 +1,3 @@
-import { formatEasternDateTime } from '../../lib/easternTime'
 import { formatCryptoAsset } from './types'
 import type {
   CashAppPaymentRow,
@@ -9,6 +8,7 @@ import type {
   VenmoPaymentRow,
   ZellePaymentRow,
 } from '../../api/paymentsClient'
+import EasternInstant from '../EasternInstant'
 
 type IngestedRow =
   | StripeSessionRow
@@ -23,15 +23,6 @@ type Props = {
   rows: IngestedRow[]
   clubNameById: Record<number, string>
   onBind?: (row: VenmoPaymentRow | ZellePaymentRow | CashAppPaymentRow | PayPalPaymentRow | CryptoPaymentRow) => void
-}
-
-function fmtPaymentAt(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  try {
-    return formatEasternDateTime(iso)
-  } catch {
-    return iso
-  }
 }
 
 /** Prefer paid_at for crypto; Stripe completed_at; else created_at. */
@@ -114,7 +105,7 @@ export default function IngestedPaymentTable({ method, rows, clubNameById, onBin
             {rows.filter(isStripe).map((row) => (
               <tr key={row.id} className="hover:bg-surface/80">
                 <td className="px-4 py-3 whitespace-nowrap">
-                  {fmtPaymentAt(paymentDisplayAt(method, row))}
+                  <EasternInstant value={paymentDisplayAt(method, row)} />
                 </td>
                 <td className="px-4 py-3 font-medium">
                   {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
@@ -168,7 +159,9 @@ export default function IngestedPaymentTable({ method, rows, clubNameById, onBin
           <tbody className="divide-y divide-border text-sm">
             {rows.filter(isCrypto).map((row) => (
               <tr key={row.id} className="hover:bg-surface/80">
-                <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(paymentDisplayAt(method, row))}</td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <EasternInstant value={paymentDisplayAt(method, row)} />
+                </td>
                 <td className="px-4 py-3 font-medium">
                   {row.amount_cents > 0 ? `$${fmtMoney(row.amount_usd)}` : '—'}
                 </td>
@@ -228,7 +221,9 @@ export default function IngestedPaymentTable({ method, rows, clubNameById, onBin
         <tbody className="divide-y divide-border text-sm">
           {rows.filter(isManualIngest).map((row) => (
             <tr key={row.id} className="hover:bg-surface/80">
-              <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(paymentDisplayAt(method, row))}</td>
+              <td className="px-4 py-3 whitespace-nowrap">
+                <EasternInstant value={paymentDisplayAt(method, row)} />
+              </td>
               <td className="px-4 py-3 font-medium">${fmtMoney(row.amount_usd)}</td>
               <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                 {row.status === 'unbound' ? (

@@ -1,9 +1,10 @@
+import type { ReactNode } from 'react'
 import Modal from '../Modal'
 import type { OwnerMethod } from '../../api/paymentsClient'
 import type { UnifiedPaymentRow } from './types'
 import { cryptoAssetFromDetail, fmtGgNickname, fmtUnifiedStatus } from './types'
 import { MethodName } from '../PaymentMethodIcon'
-import { formatEasternDateTime } from '../../lib/easternTime'
+import EasternInstant from '../EasternInstant'
 
 type Props = {
   open: boolean
@@ -18,15 +19,17 @@ function DetailField({
   methodSlug,
 }: {
   label: string
-  value: string | null | undefined
+  value: ReactNode
   methodSlug?: string
 }) {
-  const display = value?.trim() ? value : '—'
+  const empty =
+    value == null || (typeof value === 'string' && !value.trim())
+  const display = empty ? '—' : value
   return (
     <div>
       <dt className="text-xs uppercase text-ink-muted">{label}</dt>
       <dd className="mt-0.5 text-sm text-ink break-all">
-        {label === 'Method' && display !== '—' ? (
+        {label === 'Method' && typeof display === 'string' && display !== '—' ? (
           <MethodName name={display} slug={methodSlug} iconClassName="h-4 w-4" />
         ) : (
           display
@@ -103,9 +106,7 @@ export default function PaymentDetailModal({ open, row, onClose, onBind }: Props
           <DetailField label="Status" value={fmtUnifiedStatus(row.status)} />
           <DetailField
             label="Paid at"
-            value={
-              typeof d.paid_at === 'string' ? formatEasternDateTime(d.paid_at) : null
-            }
+            value={<EasternInstant value={typeof d.paid_at === 'string' ? d.paid_at : null} />}
           />
           <DetailField label="From" value={typeof d.from_label === 'string' ? d.from_label : null} />
           <DetailField label="Asset" value={cryptoAssetFromDetail(d) || null} />

@@ -10,6 +10,21 @@ export function parseApiUtcDate(raw: string): Date {
   return new Date(s.includes('T') ? `${s}Z` : `${s}T00:00:00Z`)
 }
 
+function currentEasternYear(now: Date = new Date()): number {
+  return Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: EASTERN,
+      year: 'numeric',
+    }).format(now),
+  )
+}
+
+function easternYearOf(d: Date, timeZone: string = EASTERN): number {
+  return Number(
+    new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric' }).format(d),
+  )
+}
+
 export function formatEasternDateTime(
   value: string | Date | null | undefined,
 ): string {
@@ -26,6 +41,24 @@ export function formatEasternDateTime(
     second: '2-digit',
     hour12: true,
     timeZoneName: 'short',
+  })
+}
+
+/** Compact timestamp for UI: "Sep 15, 1:53 PM" (year if not this year). */
+export function formatEasternDateTimeShort(
+  value: string | Date | null | undefined,
+): string {
+  if (value == null || value === '') return '—'
+  const d = typeof value === 'string' ? parseApiUtcDate(value) : value
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleString('en-US', {
+    timeZone: EASTERN,
+    month: 'short',
+    day: 'numeric',
+    year: easternYearOf(d) === currentEasternYear() ? undefined : 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
   })
 }
 
@@ -51,6 +84,32 @@ export function formatEasternDate(
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+  })
+}
+
+/** Compact date for UI: "Sep 15" (year if not this year). */
+export function formatEasternDateShort(
+  value: string | Date | null | undefined,
+): string {
+  if (value == null || value === '') return '—'
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    const [y, m, d] = value.trim().split('-').map(Number)
+    if (![y, m, d].every(Number.isFinite)) return value
+    const utc = new Date(Date.UTC(y, m - 1, d))
+    return utc.toLocaleDateString('en-US', {
+      timeZone: 'UTC',
+      month: 'short',
+      day: 'numeric',
+      year: y === currentEasternYear() ? undefined : 'numeric',
+    })
+  }
+  const d = typeof value === 'string' ? parseApiUtcDate(value) : value
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-US', {
+    timeZone: EASTERN,
+    month: 'short',
+    day: 'numeric',
+    year: easternYearOf(d) === currentEasternYear() ? undefined : 'numeric',
   })
 }
 
@@ -157,6 +216,38 @@ export function formatEasternTime(value: string | Date | null | undefined): stri
     hour12: true,
     timeZoneName: 'short',
   })
+}
+
+/** Compact time for UI: "1:53 PM". */
+export function formatEasternTimeShort(
+  value: string | Date | null | undefined,
+): string {
+  if (!value) return '—'
+  const d = typeof value === 'string' ? parseApiUtcDate(value) : value
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleString('en-US', {
+    timeZone: EASTERN,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+}
+
+export function easternInstantDateTimeAttr(
+  value: string | Date | null | undefined,
+  variant: 'datetime' | 'date' | 'time' = 'datetime',
+): string | undefined {
+  if (value == null || value === '') return undefined
+  if (
+    variant === 'date' &&
+    typeof value === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value.trim())
+  ) {
+    return value.trim()
+  }
+  const d = typeof value === 'string' ? parseApiUtcDate(value) : value
+  if (Number.isNaN(d.getTime())) return undefined
+  return d.toISOString()
 }
 
 export function formatDurationSeconds(seconds: number | null | undefined): string {

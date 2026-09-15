@@ -1,17 +1,8 @@
-import { formatEasternDateTime } from '../../lib/easternTime'
 import type { ManualDepositRequestRow } from '../../api/manualDepositRequestsClient'
+import EasternInstant from '../EasternInstant'
 
 type Props = {
   rows: ManualDepositRequestRow[]
-}
-
-function fmtPaymentAt(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  try {
-    return formatEasternDateTime(iso)
-  } catch {
-    return iso
-  }
 }
 
 function fmtMoney(value: number | string): string {
@@ -35,7 +26,9 @@ export default function UnionDepositTable({ rows }: Props) {
         <tbody className="divide-y divide-border text-sm">
           {rows.map((row) => (
             <tr key={row.id} className="hover:bg-surface/80">
-              <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(row.created_at)}</td>
+              <td className="px-4 py-3 whitespace-nowrap">
+                <EasternInstant value={row.created_at} />
+              </td>
               <td className="px-4 py-3 font-medium">${fmtMoney(row.amount)}</td>
               <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                 {row.group_title || '—'}

@@ -6,7 +6,7 @@ import {
   updateManualDepositRequest,
   type ManualDepositRequestRow,
 } from '../api/manualDepositRequestsClient'
-import { formatEasternDateTime } from '../lib/easternTime'
+import EasternInstant from './EasternInstant'
 import ManualDepositRequestModal from './ManualDepositRequestModal'
 import { MethodName } from './PaymentMethodIcon'
 
@@ -259,7 +259,7 @@ export default function ManualDepositRequestsTable({
                     <td className="px-3 py-2 text-ink">{row.club?.name || '—'}</td>
                   )}
                   <td className="px-3 py-2 text-ink-muted">
-                    {formatEasternDateTime(row.created_at)}
+                    <EasternInstant value={row.created_at} />
                   </td>
                   <td className="px-3 py-2">
                     <label className="inline-flex items-center gap-2 text-ink">

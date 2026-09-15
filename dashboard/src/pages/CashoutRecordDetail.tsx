@@ -28,7 +28,7 @@ import CashoutMethodFields, {
 } from '../components/CashoutMethodFields'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
-import { formatEasternDateTime } from '../lib/easternTime'
+import EasternInstant from '../components/EasternInstant'
 import { MethodName } from '../components/PaymentMethodIcon'
 import type { DashboardRole } from '../lib/rbac'
 
@@ -553,7 +553,9 @@ export default function CashoutRecordDetail({
         </div>
       )}
 
-      <p className="mt-4 text-sm text-ink-muted">{formatEasternDateTime(record.created_at)}</p>
+      <p className="mt-4 text-sm text-ink-muted">
+        <EasternInstant value={record.created_at} />
+      </p>
       <h1 className="mt-1 text-2xl font-bold text-ink">{record.group_title}</h1>
       <p className="mt-1 text-base text-ink-muted">{record.club_name || '—'}</p>
 
@@ -687,7 +689,9 @@ export default function CashoutRecordDetail({
                   </div>
                   <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-muted">
                     <MethodName name={s.method_display_name} />
-                    <span>· {formatEasternDateTime(s.created_at)}</span>
+                    <span>
+                      · <EasternInstant value={s.created_at} />
+                    </span>
                   </p>
                 </div>
                 <SendCardMenu

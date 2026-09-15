@@ -6,7 +6,7 @@ import {
 } from '../api/paymentsClient'
 import Modal from './Modal'
 import { AUTO_DEPOSIT_SKIP_REASON_LABELS } from './autoDepositLabels'
-import { formatEasternDate } from '../lib/easternTime'
+import EasternInstant from './EasternInstant'
 
 const PAGE_SIZE = 50
 
@@ -146,7 +146,9 @@ export default function AutoDepositDrilldownModal({
                 <tbody>
                   {rows.map((row) => (
                     <tr key={row.id}>
-                      <td>{formatEasternDate(row.payment_at)}</td>
+                      <td>
+                        <EasternInstant value={row.payment_at} variant="date" />
+                      </td>
                       <td>${row.amount_usd}</td>
                       <td className="max-w-[14rem] truncate" title={row.group_title ?? undefined}>
                         {row.group_title ?? row.gg_player_id ?? '—'}

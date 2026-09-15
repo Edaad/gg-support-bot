@@ -1,22 +1,13 @@
-import { formatEasternDateTime } from '../../lib/easternTime'
 import type { UnifiedPaymentRow } from './types'
 import { cryptoAssetFromDetail, fmtClub, fmtGgNickname, fmtUnifiedStatus } from './types'
 import { MethodName } from '../PaymentMethodIcon'
+import EasternInstant from '../EasternInstant'
 
 type Props = {
   rows: UnifiedPaymentRow[]
   clubNameById: Record<number, string>
   onRowClick: (row: UnifiedPaymentRow) => void
   showAsset?: boolean
-}
-
-function fmtPaymentAt(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  try {
-    return formatEasternDateTime(iso)
-  } catch {
-    return iso
-  }
 }
 
 function fmtMoney(value: number | string): string {
@@ -62,7 +53,9 @@ export default function UnifiedPaymentTable({
               className="cursor-pointer hover:bg-surface/80"
               onClick={() => onRowClick(row)}
             >
-              <td className="px-4 py-3 whitespace-nowrap">{fmtPaymentAt(row.occurred_at)}</td>
+              <td className="px-4 py-3 whitespace-nowrap">
+                <EasternInstant value={row.occurred_at} />
+              </td>
               <td className="px-4 py-3 font-medium">${fmtMoney(row.amount_usd)}</td>
               <td className="px-4 py-3 max-w-[14rem] truncate" title={row.group_title || undefined}>
                 {row.status === 'unbound' ? (

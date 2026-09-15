@@ -13,9 +13,9 @@ import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
 import ExportIconButton from '../components/ExportIconButton'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
+import EasternInstant from '../components/EasternInstant'
 import {
   easternCalendarDateString,
-  formatEasternDate,
 } from '../lib/easternTime'
 
 function daysAgoEastern(days: number): string {
@@ -321,7 +321,9 @@ export default function Expenses({ token }: { token: string }) {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id} className="border-b border-border last:border-0">
-                  <td className="px-4 py-3 whitespace-nowrap">{formatEasternDate(r.expense_date)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <EasternInstant value={r.expense_date} variant="date" />
+                  </td>
                   <td className="px-4 py-3">{r.club_name || '—'}</td>
                   <td className="px-4 py-3">{r.expense_type}</td>
                   <td className="px-4 py-3 max-w-[16rem] truncate text-ink-muted">

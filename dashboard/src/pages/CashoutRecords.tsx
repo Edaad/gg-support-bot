@@ -28,9 +28,9 @@ import {
   downloadCashoutMoneySendsCsv,
   downloadCashoutRecordsCsv,
 } from '../api/csvExportClient'
+import EasternInstant from '../components/EasternInstant'
 import {
   easternCalendarDateString,
-  formatEasternDateTime,
 } from '../lib/easternTime'
 import { GTO_CLUB_NAME, type DashboardRole } from '../lib/rbac'
 import PaymentMethodIcon, { MethodName } from '../components/PaymentMethodIcon'
@@ -143,14 +143,7 @@ function CashoutRecordCard({
   onToggleAudited: (r: StaffCashoutRecordT) => void
 }) {
   const methods = paymentMethodSummary(record)
-  const when = formatEasternDateTime(record.created_at)
-  const meta = [
-    record.club_name?.trim() || null,
-    methods || null,
-    when === '—' ? null : when,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  const club = record.club_name?.trim() || null
   const remainingClass =
     record.status === 'oversent' ? 'text-danger-ink' : 'text-ink'
   const isAudited = Boolean(record.audited)
@@ -173,7 +166,25 @@ function CashoutRecordCard({
           <h3 className="truncate text-base font-semibold text-ink">
             {record.group_title}
           </h3>
-          <p className="mt-0.5 truncate text-sm text-ink-muted">{meta || '—'}</p>
+          <p className="mt-0.5 truncate text-sm text-ink-muted">
+            {club ? (
+              <>
+                {club}
+                {methods || record.created_at ? ' · ' : null}
+              </>
+            ) : null}
+            {methods ? (
+              <>
+                {methods}
+                {record.created_at ? ' · ' : null}
+              </>
+            ) : null}
+            {record.created_at ? (
+              <EasternInstant value={record.created_at} />
+            ) : !club && !methods ? (
+              '—'
+            ) : null}
+          </p>
         </div>
         {isAdmin && record.status === 'cleared' && (
           <div
@@ -897,7 +908,7 @@ export default function CashoutRecords({
                         <MethodName name={s.method_display_name} />
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-ink">
-                        {formatEasternDateTime(s.created_at)}
+                        <EasternInstant value={s.created_at} />
                       </td>
                       <td className="px-4 py-3 text-ink">{s.group_title}</td>
                       <td className="px-4 py-3 text-right">

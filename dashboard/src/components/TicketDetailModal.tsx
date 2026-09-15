@@ -5,10 +5,9 @@ import {
   type TicketMessageT,
 } from '../api/ticketsClient'
 import Modal from './Modal'
+import EasternInstant from './EasternInstant'
 import {
   formatDurationSeconds,
-  formatEasternDateTime,
-  formatEasternTime,
 } from '../lib/easternTime'
 
 type Props = {
@@ -47,7 +46,9 @@ function Bubble({ msg }: { msg: TicketMessageT }) {
         <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-ink-muted">
           <span className="font-medium text-ink">{msg.sender_name || msg.username || 'Unknown'}</span>
           {isBot ? <span className="uppercase tracking-wide">bot</span> : null}
-          <span>{formatEasternTime(msg.date)}</span>
+          <span>
+            <EasternInstant value={msg.date} variant="time" />
+          </span>
         </div>
         {body ? <p className="whitespace-pre-wrap break-words">{body}</p> : null}
         {placeholder ? (
@@ -60,11 +61,12 @@ function Bubble({ msg }: { msg: TicketMessageT }) {
 }
 
 function MetaCell({ label, value }: { label: string; value: string | null | undefined }) {
-  const display = value ? formatEasternDateTime(value) : '—'
   return (
     <div>
       <dt className="text-xs font-medium text-ink-muted">{label}</dt>
-      <dd className="mt-0.5 text-sm text-ink">{display}</dd>
+      <dd className="mt-0.5 text-sm text-ink">
+        <EasternInstant value={value} />
+      </dd>
     </div>
   )
 }

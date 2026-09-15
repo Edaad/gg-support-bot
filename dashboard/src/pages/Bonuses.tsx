@@ -16,9 +16,9 @@ import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
 import BonusTypes from './BonusTypes'
 import { downloadBonusRecordsCsv } from '../api/csvExportClient'
+import EasternInstant from '../components/EasternInstant'
 import {
   easternCalendarDateString,
-  formatEasternDateTime,
   fromEasternDatetimeLocalValue,
   toEasternDatetimeLocalValue,
 } from '../lib/easternTime'
@@ -502,7 +502,7 @@ export default function Bonuses({
                   onClick={() => openEdit(r)}
                 >
                   <td className="px-4 py-3 whitespace-nowrap">
-                    {formatEasternDateTime(r.issued_at)}
+                    <EasternInstant value={r.issued_at} />
                   </td>
                   <td className="px-4 py-3 font-medium whitespace-nowrap">
                     {fmtMoney(Number(r.amount))}
