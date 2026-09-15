@@ -281,6 +281,7 @@ CASHOUT_CSV_HEADER = [
     "chat_id",
     "recorded_by_telegram_user_id",
     "updated_at",
+    "audited",
 ]
 
 BONUS_CSV_HEADER = [
@@ -329,6 +330,7 @@ def build_cashout_records_csv(
     to_day: date,
     club_id: int | None = None,
     status: str | None = None,
+    audited: bool | None = None,
 ) -> bytes:
     if status is not None and status not in LEDGER_STATUSES:
         raise ValueError("status must be active, cleared, or oversent")
@@ -354,6 +356,8 @@ def build_cashout_records_csv(
     )
     if club_id is not None:
         query = query.filter(StaffCashoutRecord.club_id == int(club_id))
+    if audited is not None:
+        query = query.filter(StaffCashoutRecord.audited.is_(bool(audited)))
 
     rows: list[list[Any]] = []
     for record in query.all():
@@ -381,6 +385,7 @@ def build_cashout_records_csv(
             if (p.payout_details or "").strip()
         ]
         send_total = sum((Decimal(str(s.amount or 0)) for s in sends), Decimal("0"))
+        is_audited = bool(getattr(record, "audited", False))
 
         rows.append(
             [
@@ -404,6 +409,7 @@ def build_cashout_records_csv(
                 record.chat_id or "",
                 record.recorded_by_telegram_user_id or "",
                 record.updated_at,
+                "Yes" if is_audited else "No",
             ]
         )
 

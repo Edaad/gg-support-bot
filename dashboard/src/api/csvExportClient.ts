@@ -55,13 +55,14 @@ export type CsvExportRange = {
 export async function downloadCashoutRecordsCsv(
   token: string,
   range: CsvExportRange,
-  opts?: { clubId?: number; status?: string },
+  opts?: { clubId?: number; status?: string; audited?: boolean },
 ): Promise<void> {
   const q = new URLSearchParams()
   q.set('from', range.from)
   q.set('to', range.to)
   if (opts?.clubId != null) q.set('club_id', String(opts.clubId))
   if (opts?.status) q.set('status', opts.status)
+  if (opts?.audited != null) q.set('audited', String(opts.audited))
   await downloadCsv(
     `/api/cashout-records/export?${q}`,
     token,

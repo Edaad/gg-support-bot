@@ -120,12 +120,15 @@ def list_cashout_records(
     club_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
     q: Optional[str] = Query(None),
+    audited: Optional[bool] = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
     if status == "do_not_send" and role != ROLE_ADMIN:
+        raise HTTPException(403, "Admin only")
+    if audited is not None and role != ROLE_ADMIN:
         raise HTTPException(403, "Admin only")
     effective_club_id, empty = resolve_gto_list_club_id(role, club_id, db)
     if empty:
@@ -136,6 +139,7 @@ def list_cashout_records(
             club_id=effective_club_id,
             status=status,
             q=q,
+            audited=audited,
             limit=limit,
             offset=offset,
         )
@@ -155,9 +159,12 @@ def export_cashout_records_csv(
     to_date: str = Query(..., alias="to", description="YYYY-MM-DD (ET, inclusive)"),
     club_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
+    audited: Optional[bool] = Query(None),
     role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
+    if audited is not None and role != ROLE_ADMIN:
+        raise HTTPException(403, "Admin only")
     effective_club_id, empty = resolve_gto_list_club_id(role, club_id, db)
     try:
         from_day, to_day = parse_inclusive_date_range(from_date, to_date)
@@ -168,6 +175,7 @@ def export_cashout_records_csv(
                 to_day=to_day,
                 club_id=-1,
                 status=status,
+                audited=audited,
             )
         else:
             content = build_cashout_records_csv(
@@ -176,6 +184,7 @@ def export_cashout_records_csv(
                 to_day=to_day,
                 club_id=effective_club_id,
                 status=status,
+                audited=audited,
             )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -445,6 +454,8 @@ def patch_cashout_record(
         return _to_read(data, _club_name_map(db))
 
     if "do_not_send" in updates and role != ROLE_ADMIN:
+        raise HTTPException(403, "Admin only")
+    if "audited" in updates and role != ROLE_ADMIN:
         raise HTTPException(403, "Admin only")
 
     try:

@@ -7,6 +7,7 @@ import {
   listCashoutMoneySends,
   listCashoutRecords,
   listClubs,
+  updateCashoutRecord,
   type Club,
   type StaffCashoutMoneySendLedgerT,
   type StaffCashoutRecordT,
@@ -35,9 +36,16 @@ import { GTO_CLUB_NAME, type DashboardRole } from '../lib/rbac'
 import PaymentMethodIcon, { MethodName } from '../components/PaymentMethodIcon'
 
 type PageTab = 'active' | 'cleared' | 'money_sent'
+type AuditedFilter = 'all' | 'audited' | 'not_audited'
 
 const PAGE_SIZE = 50
 const EXTRA_SECTION_LIMIT = 200
+
+function auditedQueryParam(filter: AuditedFilter): boolean | undefined {
+  if (filter === 'audited') return true
+  if (filter === 'not_audited') return false
+  return undefined
+}
 
 function paymentMethodSummary(record: StaffCashoutRecordT): string {
   const names: string[] = []
@@ -122,13 +130,17 @@ function CashoutCardMenu({
 function CashoutRecordCard({
   record,
   saving,
+  isAdmin,
   onOpen,
   onDelete,
+  onToggleAudited,
 }: {
   record: StaffCashoutRecordT
   saving: boolean
+  isAdmin: boolean
   onOpen: (id: number) => void
   onDelete: (r: StaffCashoutRecordT) => void
+  onToggleAudited: (r: StaffCashoutRecordT) => void
 }) {
   const methods = paymentMethodSummary(record)
   const when = formatEasternDateTime(record.created_at)
@@ -141,6 +153,7 @@ function CashoutRecordCard({
     .join(' · ')
   const remainingClass =
     record.status === 'oversent' ? 'text-danger-ink' : 'text-ink'
+  const isAudited = Boolean(record.audited)
 
   return (
     <article
@@ -162,21 +175,42 @@ function CashoutRecordCard({
           </h3>
           <p className="mt-0.5 truncate text-sm text-ink-muted">{meta || '—'}</p>
         </div>
-        <div className="shrink-0 pt-0.5 text-right">
-          {record.status === 'cleared' ? (
+        {isAdmin && (
+          <div
+            className="flex shrink-0 items-center gap-2 pt-0.5"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             <span
-              className={record.audited ? 'chip-success' : 'chip-warning'}
+              className={
+                isAudited
+                  ? 'inline-flex rounded-full bg-accent/12 px-2.5 py-0.5 text-xs font-medium text-accent'
+                  : 'inline-flex rounded-full bg-control px-2.5 py-0.5 text-xs font-medium text-ink-muted'
+              }
             >
-              {record.audited ? 'Audited' : 'Pending Audit'}
+              {isAudited ? 'Audited' : 'Not audited'}
             </span>
-          ) : (
-            <>
-              <p className={`text-base font-semibold tabular-nums ${remainingClass}`}>
-                {fmtMoney(record.remaining)}
-              </p>
-              <p className="text-xs text-ink-muted">remaining</p>
-            </>
-          )}
+            <label className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center">
+              <input
+                type="checkbox"
+                className="peer sr-only"
+                role="switch"
+                aria-label={isAudited ? 'Mark not audited' : 'Mark audited'}
+                aria-checked={isAudited}
+                checked={isAudited}
+                disabled={saving}
+                onChange={() => onToggleAudited(record)}
+              />
+              <span className="h-6 w-11 rounded-full bg-control transition peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40" />
+              <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-surface shadow transition peer-checked:translate-x-5" />
+            </label>
+          </div>
+        )}
+        <div className="shrink-0 pt-0.5 text-right">
+          <p className={`text-base font-semibold tabular-nums ${remainingClass}`}>
+            {fmtMoney(record.remaining)}
+          </p>
+          <p className="text-xs text-ink-muted">remaining</p>
         </div>
         <CashoutCardMenu
           saving={saving}
@@ -276,6 +310,7 @@ export default function CashoutRecords({
   const [search, setSearch] = useState('')
   const [q, setQ] = useState('')
   const [clubFilter, setClubFilter] = useState('')
+  const [auditedFilter, setAuditedFilter] = useState<AuditedFilter>('all')
   const [methodFilter, setMethodFilter] = useState('')
   const [fromDate, setFromDate] = useState(() => daysAgoEastern(30))
   const [toDate, setToDate] = useState(() => easternCalendarDateString())
@@ -334,7 +369,10 @@ export default function CashoutRecords({
 
   useEffect(() => {
     if (!isAdmin && tab === 'money_sent') setTab('active')
-  }, [isAdmin, tab])
+    if (!isAdmin && auditedFilter !== 'all') setAuditedFilter('all')
+  }, [isAdmin, tab, auditedFilter])
+
+  const auditedParam = isAdmin ? auditedQueryParam(auditedFilter) : undefined
 
   const reloadRecords = () => {
     if (!statusTab) return
@@ -348,6 +386,7 @@ export default function CashoutRecords({
     const shared = {
       clubId: clubFilter ? Number(clubFilter) : undefined,
       q: q || undefined,
+      audited: auditedParam,
     }
     const emptyExtra = Promise.resolve({ items: [] as StaffCashoutRecordT[], total: 0 })
     const extras =
@@ -454,12 +493,12 @@ export default function CashoutRecords({
       },
       { replace: true },
     )
-  }, [tab, clubFilter, q, fromDate, toDate, methodFilter, setSearchParams])
+  }, [tab, clubFilter, auditedFilter, q, fromDate, toDate, methodFilter, setSearchParams])
 
   useEffect(() => {
     if (isMoneySent) reloadSends()
     else reloadRecords()
-  }, [token, tab, clubFilter, q, fromDate, toDate, methodFilter, page])
+  }, [token, tab, clubFilter, auditedFilter, q, fromDate, toDate, methodFilter, page])
 
   useEffect(() => {
     listClubs(token)
@@ -563,6 +602,33 @@ export default function CashoutRecords({
     }
   }
 
+  const patchRecordAudited = (
+    list: StaffCashoutRecordT[],
+    id: number,
+    audited: boolean,
+  ) => list.map((row) => (row.id === id ? { ...row, audited } : row))
+
+  const handleToggleAudited = async (r: StaffCashoutRecordT) => {
+    if (!isAdmin) return
+    const next = !Boolean(r.audited)
+    setSaving(true)
+    setError(null)
+    try {
+      const updated = await updateCashoutRecord(token, r.id, { audited: next })
+      const audited = Boolean(updated.audited)
+      setRecords((prev) => patchRecordAudited(prev, r.id, audited))
+      setDoNotSendRecords((prev) => patchRecordAudited(prev, r.id, audited))
+      setOversentRecords((prev) => patchRecordAudited(prev, r.id, audited))
+      if (auditedParam != null && audited !== auditedParam) {
+        reloadRecords()
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Update failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const openExport = () => {
     if (isMoneySent) {
       setExportFrom(fromDate)
@@ -601,6 +667,7 @@ export default function CashoutRecords({
         await downloadCashoutRecordsCsv(token, { from: exportFrom, to: exportTo }, {
           clubId: clubFilter ? Number(clubFilter) : undefined,
           status: statusTab || undefined,
+          audited: auditedParam,
         })
       }
       setExportOpen(false)
@@ -717,6 +784,23 @@ export default function CashoutRecords({
             ))}
           </select>
         </div>
+        {isAdmin && !isMoneySent && (
+          <div>
+            <label className="label-field-xs" htmlFor="cashout-audited">
+              Audited
+            </label>
+            <select
+              id="cashout-audited"
+              value={auditedFilter}
+              onChange={(e) => setAuditedFilter(e.target.value as AuditedFilter)}
+              className="input-field-sm min-w-[10rem]"
+            >
+              <option value="all">All</option>
+              <option value="audited">Audited</option>
+              <option value="not_audited">Not audited</option>
+            </select>
+          </div>
+        )}
         {isMoneySent && (
           <>
             <div>
@@ -877,8 +961,10 @@ export default function CashoutRecords({
                     key={r.id}
                     record={r}
                     saving={saving}
+                    isAdmin={isAdmin}
                     onOpen={openRecord}
                     onDelete={handleDeleteRecord}
+                    onToggleAudited={handleToggleAudited}
                   />
                 ))}
               </div>
@@ -926,8 +1012,10 @@ export default function CashoutRecords({
                     key={r.id}
                     record={r}
                     saving={saving}
+                    isAdmin={isAdmin}
                     onOpen={openRecord}
                     onDelete={handleDeleteRecord}
+                    onToggleAudited={handleToggleAudited}
                   />
                 ))}
               </div>
@@ -950,8 +1038,10 @@ export default function CashoutRecords({
                     key={r.id}
                     record={r}
                     saving={saving}
+                    isAdmin={isAdmin}
                     onOpen={openRecord}
                     onDelete={handleDeleteRecord}
+                    onToggleAudited={handleToggleAudited}
                   />
                 ))}
               </div>
@@ -1028,7 +1118,7 @@ export default function CashoutRecords({
         <p className="mb-4 text-sm text-ink-muted">
           {isMoneySent
             ? 'Downloads money-sent rows in this date range. Club, method, and search match the filters on the page.'
-            : 'Downloads cashouts in this date range. Club and status match the filters on the page.'}
+            : 'Downloads cashouts in this date range. Club, status, and audited match the filters on the page.'}
         </p>
         <div className="mb-4 grid gap-3 sm:grid-cols-2">
           <div>

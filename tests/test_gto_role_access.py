@@ -16,6 +16,8 @@ from api.auth import (
     ROLE_GTO,
     get_current_admin,
 )
+from api.gto_club import GTO_CLUB_NAME
+from api.schemas import ClubRead
 from api.schemas_payments import OwnerPaymentSummary
 from api.routes import all_payments as all_payments_routes
 from api.routes import bonus as bonus_routes
@@ -24,6 +26,47 @@ from api.routes import clubs as clubs_routes
 from api.routes import manual_deposit_requests as mdr_routes
 from api.routes import payments as payments_routes
 from db.connection import get_db_dependency
+
+
+def _minimal_club_read(club_id: int = 7, name: str = GTO_CLUB_NAME) -> ClubRead:
+    return ClubRead(
+        id=club_id,
+        name=name,
+        telegram_user_id=1,
+        welcome_type=None,
+        welcome_text=None,
+        welcome_file_id=None,
+        welcome_caption=None,
+        member_join_preamble_text=None,
+        member_join_tos_file_id=None,
+        member_join_tos_caption=None,
+        list_type=None,
+        list_text=None,
+        list_file_id=None,
+        list_caption=None,
+        allow_multi_cashout=False,
+        allow_admin_commands=False,
+        deposit_simple_mode=False,
+        deposit_simple_type=None,
+        deposit_simple_text=None,
+        deposit_simple_file_id=None,
+        deposit_simple_caption=None,
+        cashout_simple_mode=False,
+        cashout_simple_type=None,
+        cashout_simple_text=None,
+        cashout_simple_file_id=None,
+        cashout_simple_caption=None,
+        cashout_cooldown_enabled=False,
+        cashout_cooldown_hours=24,
+        cashout_hours_enabled=False,
+        cashout_hours_start=None,
+        cashout_hours_end=None,
+        referral_enabled=False,
+        first_deposit_bonus_enabled=False,
+        first_deposit_bonus_pct=0,
+        is_active=True,
+        created_at=None,
+    )
 
 
 def _gto_club(club_id: int = 7) -> MagicMock:
@@ -140,7 +183,7 @@ class ClubsGtoScopeTests(unittest.TestCase):
 
     def test_list_only_clubgto(self) -> None:
         with patch("api.routes.clubs._club_to_read") as to_read:
-            to_read.side_effect = lambda c: MagicMock()
+            to_read.side_effect = lambda c: _minimal_club_read(c.id, c.name)
             client = TestClient(self.app)
             client.get("/api/clubs")
         self.assertEqual(to_read.call_count, 1)

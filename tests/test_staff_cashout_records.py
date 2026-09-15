@@ -312,40 +312,6 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
             with self.assertRaises(CashoutRecordNotActive):
                 update_staff_cashout_record(1, amount=Decimal("200"))
 
-    def test_audited_blocked_when_not_cleared(self) -> None:
-        from db.models import StaffCashoutRecord
-
-        record = MagicMock(spec=StaffCashoutRecord)
-        record.id = 1
-        record.cashier_job_id = 1
-        record.club_id = 2
-        record.chat_id = -1
-        record.group_title = "RT / 1 / X"
-        record.gg_player_id = "1"
-        record.amount = Decimal("100")
-        record.recorded_by_telegram_user_id = 1
-        record.trigger = "group_cash"
-        record.tracks_money_sent = True
-        record.sending = False
-        record.do_not_send = False
-        record.audited = False
-        record.created_at = None
-        record.updated_at = None
-        record.payments = []
-        record.money_sends = []
-        session = MagicMock()
-        session.get.return_value = record
-        cm = MagicMock()
-        cm.__enter__.return_value = session
-        cm.__exit__.return_value = False
-
-        with patch("bot.services.staff_cashout_records.get_db", return_value=cm):
-            from bot.services.staff_cashout_records import update_staff_cashout_record
-
-            with self.assertRaises(ValueError) as ctx:
-                update_staff_cashout_record(1, audited=True)
-        self.assertIn("remaining is zero", str(ctx.exception).lower())
-
     def test_custom_destination_skips_method_lookup(self) -> None:
         from db.models import StaffCashoutRecord
 
@@ -823,6 +789,65 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         resp = client.patch("/api/cashout-records/1", json={"do_not_send": True})
         self.assertEqual(resp.status_code, 403)
 
+    def test_list_audited_admin_ok(self) -> None:
+        audited = _sample_record()
+        audited["audited"] = True
+        with patch(
+            "api.routes.cashout_records.list_staff_cashout_records",
+            return_value=([audited], 1),
+        ) as mock_list, patch(
+            "api.routes.cashout_records._club_name_map",
+            return_value={2: "Round Table"},
+        ):
+            client = TestClient(_make_api_app())
+            resp = client.get("/api/cashout-records?audited=true")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["items"][0]["audited"])
+        self.assertEqual(mock_list.call_args.kwargs["audited"], True)
+
+    def test_list_audited_am_forbidden(self) -> None:
+        app = _make_api_app()
+        app.dependency_overrides[get_current_admin] = lambda: ROLE_ACCOUNT_MANAGER
+        client = TestClient(app)
+        resp = client.get("/api/cashout-records?audited=true")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_patch_audited_admin_ok(self) -> None:
+        updated = _sample_record()
+        updated["audited"] = True
+        with patch(
+            "api.routes.cashout_records.update_staff_cashout_record",
+            return_value=updated,
+        ) as mock_update, patch(
+            "api.routes.cashout_records._club_name_map",
+            return_value={2: "Round Table"},
+        ):
+            client = TestClient(_make_api_app())
+            resp = client.patch("/api/cashout-records/1", json={"audited": True})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["audited"])
+        self.assertEqual(mock_update.call_args.kwargs["audited"], True)
+
+    def test_patch_audited_am_forbidden(self) -> None:
+        app = _make_api_app()
+        app.dependency_overrides[get_current_admin] = lambda: ROLE_ACCOUNT_MANAGER
+        client = TestClient(app)
+        resp = client.patch("/api/cashout-records/1", json={"audited": True})
+        self.assertEqual(resp.status_code, 403)
+
+    def test_patch_audited_gto_forbidden(self) -> None:
+        from api.auth import ROLE_GTO
+
+        app = _make_api_app()
+        app.dependency_overrides[get_current_admin] = lambda: ROLE_GTO
+        with patch(
+            "api.routes.cashout_records._load_and_assert_gto",
+            return_value=None,
+        ):
+            client = TestClient(app)
+            resp = client.patch("/api/cashout-records/1", json={"audited": True})
+        self.assertEqual(resp.status_code, 403)
+
     def test_patch_sending_am_ok(self) -> None:
         updated = _sample_record()
         updated["sending"] = True
@@ -843,29 +868,6 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json()["sending"])
         self.assertEqual(mock_update.call_args.kwargs["sending"], True)
-
-    def test_patch_audited_am_ok(self) -> None:
-        updated = _sample_record()
-        updated["status"] = "cleared"
-        updated["remaining"] = Decimal("0")
-        updated["audited"] = True
-        app = _make_api_app()
-        app.dependency_overrides[get_current_admin] = lambda: ROLE_ACCOUNT_MANAGER
-        with patch(
-            "api.routes.cashout_records.update_staff_cashout_record",
-            return_value=updated,
-        ) as mock_update, patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={2: "Round Table"},
-        ), patch(
-            "api.routes.cashout_records._load_and_assert_gto",
-            return_value=None,
-        ):
-            client = TestClient(app)
-            resp = client.patch("/api/cashout-records/1", json={"audited": True})
-        self.assertEqual(resp.status_code, 200)
-        self.assertTrue(resp.json()["audited"])
-        self.assertEqual(mock_update.call_args.kwargs["audited"], True)
 
     def test_get_slack_reminder_admin_ok(self) -> None:
         with patch(

@@ -412,6 +412,7 @@ export const listCashoutRecords = (
     clubId?: number
     status?: CashoutLedgerStatus
     q?: string
+    audited?: boolean
     limit?: number
     offset?: number
   },
@@ -420,6 +421,7 @@ export const listCashoutRecords = (
   if (opts?.clubId != null) params.set('club_id', String(opts.clubId))
   if (opts?.status) params.set('status', opts.status)
   if (opts?.q) params.set('q', opts.q)
+  if (opts?.audited != null) params.set('audited', String(opts.audited))
   if (opts?.limit != null) params.set('limit', String(opts.limit))
   if (opts?.offset != null) params.set('offset', String(opts.offset))
   const q = params.toString()
@@ -492,7 +494,13 @@ export const createCashoutRecord = (
 export const updateCashoutRecord = (
   token: string,
   id: number,
-  data: { group_title?: string; amount?: number; sending?: boolean; do_not_send?: boolean; audited?: boolean },
+  data: {
+    group_title?: string
+    amount?: number
+    sending?: boolean
+    do_not_send?: boolean
+    audited?: boolean
+  },
 ) =>
   request<StaffCashoutRecordT>(`/cashout-records/${id}`, {
     method: 'PATCH',

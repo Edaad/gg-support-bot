@@ -316,13 +316,13 @@ export default function CashoutRecordDetail({
     }
   }
 
-  const toggleAudited = async () => {
-    if (!record || record.status !== 'cleared') return
+  const toggleDoNotSend = async () => {
+    if (!record || !isAdmin) return
     setSaving(true)
     setError(null)
     try {
       const updated = await updateCashoutRecord(token, record.id, {
-        audited: !record.audited,
+        do_not_send: !record.do_not_send,
       })
       await refreshRecord(updated)
     } catch (e) {
@@ -332,13 +332,13 @@ export default function CashoutRecordDetail({
     }
   }
 
-  const toggleDoNotSend = async () => {
+  const toggleAudited = async () => {
     if (!record || !isAdmin) return
     setSaving(true)
     setError(null)
     try {
       const updated = await updateCashoutRecord(token, record.id, {
-        do_not_send: !record.do_not_send,
+        audited: !record.audited,
       })
       await refreshRecord(updated)
     } catch (e) {
@@ -585,18 +585,6 @@ export default function CashoutRecordDetail({
           />
           Sending
         </label>
-        {record.status === 'cleared' && (
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-border"
-              checked={record.audited}
-              disabled={saving}
-              onChange={() => toggleAudited()}
-            />
-            Audited
-          </label>
-        )}
         {isAdmin && (
           <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink">
             <input
@@ -607,6 +595,28 @@ export default function CashoutRecordDetail({
               onChange={() => toggleDoNotSend()}
             />
             Do not send
+          </label>
+        )}
+        {isAdmin && (
+          <label
+            className={`inline-flex min-h-11 cursor-pointer items-center gap-3 text-sm text-ink ${
+              saving ? 'opacity-60' : ''
+            }`}
+          >
+            <span className="font-medium">Audited</span>
+            <span className="relative inline-flex h-6 w-11 shrink-0 items-center">
+              <input
+                type="checkbox"
+                className="peer sr-only"
+                role="switch"
+                aria-checked={Boolean(record.audited)}
+                checked={Boolean(record.audited)}
+                disabled={saving}
+                onChange={() => void toggleAudited()}
+              />
+              <span className="h-6 w-11 rounded-full bg-control transition peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40" />
+              <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-surface shadow transition peer-checked:translate-x-5" />
+            </span>
           </label>
         )}
       </div>

@@ -1,4 +1,4 @@
-"""Add audited flag on staff_cashout_records (cleared cashouts pending review).
+"""Add audited flag on staff_cashout_records (admin metadata only).
 
 Usage:
     DATABASE_URL=... python migrate_staff_cashout_audited.py

@@ -399,18 +399,6 @@ def create_staff_cashout_record_manual(
     return data
 
 
-def _clear_audited_if_not_cleared(session, record: StaffCashoutRecord) -> None:
-    session.flush()
-    session.expire(record, ["money_sends"])
-    sends = [
-        _send_to_dict(s)
-        for s in sorted(record.money_sends, key=lambda r: r.created_at or datetime.min)
-    ]
-    ledger = compute_ledger(bool(record.tracks_money_sent), record.amount, sends)
-    if ledger.get("status") != "cleared" and bool(getattr(record, "audited", False)):
-        record.audited = False
-
-
 def delete_staff_cashout_record(record_id: int) -> bool:
     with get_db() as session:
         record = session.get(StaffCashoutRecord, int(record_id))
@@ -448,12 +436,8 @@ def update_staff_cashout_record(
         if do_not_send is not None:
             record.do_not_send = bool(do_not_send)
         if audited is not None:
-            if bool(audited) and current["status"] != "cleared":
-                raise ValueError("Audited can only be set when remaining is zero")
             record.audited = bool(audited)
         record.updated_at = datetime.utcnow()
-        if amount is not None:
-            _clear_audited_if_not_cleared(session, record)
         return _record_dict_reloaded(session, record)
 
 
@@ -602,7 +586,6 @@ def add_staff_cashout_send(record_id: int, pdata: dict[str, Any]) -> Optional[di
             )
         )
         record.updated_at = datetime.utcnow()
-        _clear_audited_if_not_cleared(session, record)
         return _record_dict_reloaded(session, record)
 
 
@@ -649,7 +632,6 @@ def update_staff_cashout_send(
             row.payment_sub_option_id = sub_id
             row.method_display_name = display
         record.updated_at = datetime.utcnow()
-        _clear_audited_if_not_cleared(session, record)
         return _record_dict_reloaded(session, record)
 
 
@@ -663,7 +645,6 @@ def delete_staff_cashout_send(record_id: int, send_id: int) -> Optional[dict[str
             return None
         session.delete(row)
         record.updated_at = datetime.utcnow()
-        _clear_audited_if_not_cleared(session, record)
         return _record_dict_reloaded(session, record)
 
 
@@ -679,6 +660,7 @@ def list_staff_cashout_records(
     club_id: Optional[int] = None,
     status: Optional[str] = None,
     q: Optional[str] = None,
+    audited: Optional[bool] = None,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
@@ -706,6 +688,8 @@ def list_staff_cashout_records(
             query = query.filter(StaffCashoutRecord.do_not_send.is_(True))
         elif status in LEDGER_STATUSES:
             query = query.filter(StaffCashoutRecord.do_not_send.is_(False))
+        if audited is not None:
+            query = query.filter(StaffCashoutRecord.audited.is_(bool(audited)))
         if needle:
             like = f"%{needle}%"
             query = query.filter(
