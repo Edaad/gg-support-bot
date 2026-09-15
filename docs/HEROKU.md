@@ -465,6 +465,12 @@ Dashboard **Payments** admin settings (gear next to Export) stores quick-access 
 heroku run -a YOUR_APP -- python migrate_payment_quick_links.py
 ```
 
+**Referral deep links:** `/referral_link` in titled support groups; clickers hop via bot DM then club support account. Tables `referral_links` + `referral_attributions`:
+
+```bash
+heroku run -a YOUR_APP -- python migrate_referral_tables.py
+```
+
 Set app-wide (worker + notification dynos). Restart after deploy: `heroku restart worker notification -a YOUR_APP`
 
 ## Payment method_owner column

@@ -205,6 +205,8 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
     res = bind_chat_from_title(chat_id=live_id, title=update.effective_chat.title)
     if context.bot:
         try:
+            from bot.services.referrals import on_player_id_bound
+
             if res.ok and res.gg_player_id:
                 live_id = await _bot_call_chat(
                     context.bot,
@@ -217,6 +219,19 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
                         ),
                     ),
                 )
+                for msg in on_player_id_bound(
+                    chat_id=live_id,
+                    club_id=res.club_id,
+                    gg_player_id=res.gg_player_id,
+                    previous_gg_player_id=None,
+                    conflict=False,
+                ):
+                    try:
+                        await context.bot.send_message(
+                            chat_id=msg.chat_id, text=msg.text
+                        )
+                    except Exception:
+                        pass
             elif res.error and is_same_club_player_conflict_message(res.error):
                 live_id = await _bot_call_chat(
                     context.bot,
@@ -224,6 +239,13 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
                     lambda cid: context.bot.send_message(
                         chat_id=cid, text=res.error, parse_mode="HTML"
                     ),
+                )
+                on_player_id_bound(
+                    chat_id=live_id,
+                    club_id=res.club_id,
+                    gg_player_id=res.gg_player_id,
+                    previous_gg_player_id=None,
+                    conflict=True,
                 )
         except Exception:
             pass

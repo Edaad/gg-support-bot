@@ -4,7 +4,7 @@ from telegram.ext import ContextTypes
 from bot.runtime_config import use_payment_v2
 
 
-async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _send_command_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.effective_user:
         return
     lines = [
@@ -41,8 +41,16 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 
+async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from bot.handlers.referral import maybe_handle_referral_start
+
+    if await maybe_handle_referral_start(update, context):
+        return
+    await _send_command_list(update, context)
+
+
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await start_handler(update, context)
+    await _send_command_list(update, context)
 
 
 async def whoami_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

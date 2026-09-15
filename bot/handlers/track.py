@@ -61,8 +61,18 @@ def _bind_result(update: Update) -> BindResult:
     return bind_chat_from_title(chat_id=chat.id, title=chat.title)
 
 
+async def _send_referral_bind_messages(bot, messages) -> None:
+    for msg in messages:
+        try:
+            await bot.send_message(chat_id=msg.chat_id, text=msg.text)
+        except Exception:
+            pass
+
+
 async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Auto-bind on group title change. Silent on invalid."""
+    from bot.services.referrals import on_player_id_bound
+
     chat = update.effective_chat
     previous_gg_player_id = None
     if chat:
@@ -81,6 +91,21 @@ async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await context.bot.send_message(
                 chat_id=update.effective_chat.id, text=res.error, parse_mode="HTML"
             )
+            club_id = (
+                res.club_id
+                if res.club_id is not None
+                else _club_id_for_contact_sync(update.effective_chat)
+            )
+            await _send_referral_bind_messages(
+                context.bot,
+                on_player_id_bound(
+                    chat_id=update.effective_chat.id,
+                    club_id=club_id,
+                    gg_player_id=res.gg_player_id,
+                    previous_gg_player_id=previous_gg_player_id,
+                    conflict=True,
+                ),
+            )
         return
     if context.bot and update.effective_chat and res.gg_player_id:
         chat = update.effective_chat
@@ -94,6 +119,17 @@ async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 ),
             )
         club_id = _club_id_for_contact_sync(chat)
+        if player_id_changed:
+            await _send_referral_bind_messages(
+                context.bot,
+                on_player_id_bound(
+                    chat_id=chat.id,
+                    club_id=club_id if club_id is not None else res.club_id,
+                    gg_player_id=res.gg_player_id,
+                    previous_gg_player_id=previous_gg_player_id,
+                    conflict=False,
+                ),
+            )
         schedule_save_player_contact_named_group(
             chat_id=chat.id,
             club_id=club_id,
@@ -156,6 +192,8 @@ async def override_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manual bind command. Replies with invalid format if not parsable/resolvable."""
+    from bot.services.referrals import on_player_id_bound
+
     if not update.message or not update.effective_chat:
         return
     if not update.effective_user or update.effective_user.id not in ADMIN_USER_IDS:
@@ -164,6 +202,7 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if chat.type not in ("group", "supergroup"):
         await update.message.reply_text("Use /track in a club group chat.")
         return
+    previous_gg_player_id = gg_player_id_from_title(get_group_name(chat.id))
     res = _bind_result(update)
     if res.ok and res.gg_player_id:
         update_group_name(chat.id, chat.title)
@@ -171,6 +210,17 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             f"Successfully tracking player id: {res.gg_player_id}"
         )
         club_id = _club_id_for_contact_sync(chat)
+        if res.gg_player_id != previous_gg_player_id and context.bot:
+            await _send_referral_bind_messages(
+                context.bot,
+                on_player_id_bound(
+                    chat_id=chat.id,
+                    club_id=club_id if club_id is not None else res.club_id,
+                    gg_player_id=res.gg_player_id,
+                    previous_gg_player_id=previous_gg_player_id,
+                    conflict=False,
+                ),
+            )
         schedule_save_player_contact_named_group(
             chat_id=chat.id,
             club_id=club_id,
@@ -179,6 +229,22 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     else:
         if res.error and is_same_club_player_conflict_message(res.error):
             await update.message.reply_text(res.error, parse_mode="HTML")
+            club_id = (
+                res.club_id
+                if res.club_id is not None
+                else _club_id_for_contact_sync(chat)
+            )
+            if context.bot:
+                await _send_referral_bind_messages(
+                    context.bot,
+                    on_player_id_bound(
+                        chat_id=chat.id,
+                        club_id=club_id,
+                        gg_player_id=res.gg_player_id,
+                        previous_gg_player_id=previous_gg_player_id,
+                        conflict=True,
+                    ),
+                )
         else:
             await update.message.reply_text(f"Invalid group name format. {_EXPECTED}")
 

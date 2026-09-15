@@ -592,6 +592,93 @@ class PlayerDetails(Base):
     club = relationship("Club", back_populates="player_details")
 
 
+class ReferralLink(Base):
+    """Stable deep-link code for one titled support group (referrer)."""
+
+    __tablename__ = "referral_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "club_id",
+            "referrer_chat_id",
+            name="uq_referral_links_club_chat",
+        ),
+        UniqueConstraint(
+            "club_id",
+            "referrer_gg_player_id",
+            name="uq_referral_links_club_player",
+        ),
+        Index("ix_referral_links_code", "code", unique=True),
+        Index("ix_referral_links_club_id", "club_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String(32), nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    referrer_gg_player_id = Column(String(255), nullable=False)
+    referrer_chat_id = Column(BigInteger, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    club = relationship("Club")
+    attributions = relationship(
+        "ReferralAttribution", back_populates="referral_link", cascade="all, delete-orphan"
+    )
+
+
+class ReferralAttribution(Base):
+    """First-click referral attribution for a Telegram user at a club."""
+
+    __tablename__ = "referral_attributions"
+    __table_args__ = (
+        UniqueConstraint(
+            "club_id",
+            "clicker_telegram_user_id",
+            name="uq_referral_attr_club_clicker",
+        ),
+        Index(
+            "uq_referral_attr_club_referred_chat",
+            "club_id",
+            "referred_chat_id",
+            unique=True,
+            postgresql_where=text("referred_chat_id IS NOT NULL"),
+        ),
+        Index("ix_referral_attr_link_id", "referral_link_id"),
+        Index("ix_referral_attr_club_id", "club_id"),
+        Index("ix_referral_attr_status", "status"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    referral_link_id = Column(
+        Integer,
+        ForeignKey("referral_links.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    clicker_telegram_user_id = Column(BigInteger, nullable=False)
+    referred_gg_player_id = Column(String(255), nullable=True)
+    referred_chat_id = Column(BigInteger, nullable=True)
+    status = Column(String(32), nullable=False, default="pending")
+    credited_at = Column(DateTime(timezone=True), nullable=True)
+    acked_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    club = relationship("Club")
+    referral_link = relationship("ReferralLink", back_populates="attributions")
+
+
 class BroadcastJob(Base):
     __tablename__ = "broadcast_jobs"
 

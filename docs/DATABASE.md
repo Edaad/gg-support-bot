@@ -147,6 +147,43 @@ Maps a **Telegram group/supergroup** (`chat_id` = Telegram chat id) to exactly o
 
 ---
 
+### `referral_links`
+
+Stable deep-link codes for player support groups. One row per **`(club_id, referrer_chat_id)`**. `/referral_link` creates or reprints the same `code` (`ref_` + 12 alphanumeric). When the group title’s ClubGG player id changes, `referrer_gg_player_id` is updated in place; `code` does not change.
+
+| Column | Type | Business meaning |
+|--------|------|------------------|
+| `id` | integer PK | |
+| `code` | string(32), unique | Opaque `?start=` payload. |
+| `club_id` | FK → `clubs.id` CASCADE | RT / CC / GTO dashboard club. |
+| `referrer_gg_player_id` | string(255) | From the titled support group; updated on retitle. |
+| `referrer_chat_id` | bigint | Support group where `/referral_link` ran. |
+| `created_at` / `updated_at` | timestamptz | |
+
+**Constraints:** `uq_referral_links_club_chat` — unique `(club_id, referrer_chat_id)`; `uq_referral_links_club_player` — unique `(club_id, referrer_gg_player_id)`.
+
+**Migration:** [`migrate_referral_tables.py`](../migrate_referral_tables.py).
+
+### `referral_attributions`
+
+First-click attribution: clicker Telegram user → referrer link for one club. Status: `pending` (clicked, no titled bind yet), `credited` (new group titled with a new player id; both groups acked), `closed_duplicate` (title bind hit same-club player-id conflict).
+
+| Column | Type | Business meaning |
+|--------|------|------------------|
+| `id` | integer PK | |
+| `referral_link_id` | FK → `referral_links.id` CASCADE | First-click winner. |
+| `club_id` | FK → `clubs.id` CASCADE | |
+| `clicker_telegram_user_id` | bigint | Person who opened the deep link. |
+| `referred_gg_player_id` | string(255) nullable | Set on first credit; updated on referred retitle. |
+| `referred_chat_id` | bigint nullable | New support group chat id. |
+| `status` | string(32) | `pending` / `credited` / `closed_duplicate`. |
+| `credited_at` / `acked_at` | timestamptz nullable | First credit / first dual-group ack. |
+| `created_at` / `updated_at` | timestamptz | |
+
+**Constraints:** `uq_referral_attr_club_clicker` — unique `(club_id, clicker_telegram_user_id)` (first click wins); partial unique `uq_referral_attr_club_referred_chat` on `(club_id, referred_chat_id)` where chat id is set.
+
+**Migration:** same [`migrate_referral_tables.py`](../migrate_referral_tables.py).
+
 ### `player_details`
 
 Maps an external **GG player id** to a **club** and a list of **Telegram group chat ids** (`chat_ids`). One row per **`(gg_player_id, club_id)`**; multiple groups are stored in the **`BIGINT[]`** column (not `INTEGER[]`, so typical Telegram supergroup ids fit).
@@ -373,6 +410,9 @@ New deploys also get tables from `Base.metadata.create_all` once the models exis
 | `uq_method_slug` | `payment_sub_options` — unique `(method_id, slug)` |
 | `uq_club_command` | `custom_commands` — unique `(club_id, command_name)` |
 | `uq_player_details_gg_player_club` | `player_details` — unique `(gg_player_id, club_id)` |
+| `uq_referral_links_club_chat` | `referral_links` — unique `(club_id, referrer_chat_id)` |
+| `uq_referral_links_club_player` | `referral_links` — unique `(club_id, referrer_gg_player_id)` |
+| `uq_referral_attr_club_clicker` | `referral_attributions` — unique `(club_id, clicker_telegram_user_id)` |
 | Unique | `clubs.telegram_user_id`, `club_linked_accounts.telegram_user_id` |
 
 Foreign keys generally use **ON DELETE CASCADE** from `clubs` so child rows disappear if a club is deleted.
