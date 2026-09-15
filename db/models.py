@@ -913,6 +913,7 @@ class StaffCashoutRecord(Base):
     tracks_money_sent = Column(Boolean, nullable=False, default=False)
     sending = Column(Boolean, nullable=False, default=False)
     do_not_send = Column(Boolean, nullable=False, default=False)
+    audited = Column(Boolean, nullable=False, default=False)
     last_slack_reminder_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(

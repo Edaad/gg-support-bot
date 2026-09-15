@@ -431,6 +431,7 @@ heroku run -a YOUR_APP -- python migrate_staff_cashout_records.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_ledger.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_do_not_send.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_sending.py
+heroku run -a YOUR_APP -- python migrate_staff_cashout_audited.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_list_indexes.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_slack_reminder.py
 heroku run -a YOUR_APP -- python migrate_staff_cashout_notify_recipients.py

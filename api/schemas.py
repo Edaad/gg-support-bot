@@ -691,6 +691,7 @@ class StaffCashoutRecordRead(BaseModel):
     tracks_money_sent: bool = False
     sending: bool = False
     do_not_send: bool = False
+    audited: bool = False
     sent: Decimal = Decimal("0")
     remaining: Decimal = Decimal("0")
     status: str = "cleared"
@@ -735,6 +736,7 @@ class StaffCashoutRecordUpdate(BaseModel):
     amount: Optional[Decimal] = None
     sending: Optional[bool] = None
     do_not_send: Optional[bool] = None
+    audited: Optional[bool] = None
 
 
 class StaffCashoutSlackReminderRead(BaseModel):

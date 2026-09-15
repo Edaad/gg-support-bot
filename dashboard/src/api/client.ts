@@ -389,6 +389,7 @@ export interface StaffCashoutRecordT {
   tracks_money_sent: boolean
   sending: boolean
   do_not_send: boolean
+  audited: boolean
   sent: number
   remaining: number
   status: 'active' | 'cleared' | 'oversent'
@@ -491,7 +492,7 @@ export const createCashoutRecord = (
 export const updateCashoutRecord = (
   token: string,
   id: number,
-  data: { group_title?: string; amount?: number; sending?: boolean; do_not_send?: boolean },
+  data: { group_title?: string; amount?: number; sending?: boolean; do_not_send?: boolean; audited?: boolean },
 ) =>
   request<StaffCashoutRecordT>(`/cashout-records/${id}`, {
     method: 'PATCH',

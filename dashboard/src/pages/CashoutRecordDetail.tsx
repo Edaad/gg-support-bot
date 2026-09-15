@@ -40,6 +40,7 @@ function applyRecord(row: StaffCashoutRecordT): StaffCashoutRecordT {
     remaining: Number(row.remaining),
     sending: Boolean(row.sending),
     do_not_send: Boolean(row.do_not_send),
+    audited: Boolean(row.audited),
     payments: [...(row.payments ?? [])],
     sends: [...(row.sends ?? [])],
   }
@@ -315,6 +316,22 @@ export default function CashoutRecordDetail({
     }
   }
 
+  const toggleAudited = async () => {
+    if (!record || record.status !== 'cleared') return
+    setSaving(true)
+    setError(null)
+    try {
+      const updated = await updateCashoutRecord(token, record.id, {
+        audited: !record.audited,
+      })
+      await refreshRecord(updated)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const toggleDoNotSend = async () => {
     if (!record || !isAdmin) return
     setSaving(true)
@@ -568,6 +585,18 @@ export default function CashoutRecordDetail({
           />
           Sending
         </label>
+        {record.status === 'cleared' && (
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-border"
+              checked={record.audited}
+              disabled={saving}
+              onChange={() => toggleAudited()}
+            />
+            Audited
+          </label>
+        )}
         {isAdmin && (
           <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink">
             <input

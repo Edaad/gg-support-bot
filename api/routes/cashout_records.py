@@ -93,6 +93,7 @@ def _to_read(data: dict, club_names: dict[int, str]) -> StaffCashoutRecordRead:
         tracks_money_sent=bool(data.get("tracks_money_sent")),
         sending=bool(data.get("sending")),
         do_not_send=bool(data.get("do_not_send")),
+        audited=bool(data.get("audited")),
         sent=sent,
         remaining=remaining,
         status=str(data.get("status") or "cleared"),
@@ -453,9 +454,12 @@ def patch_cashout_record(
             amount=updates.get("amount"),
             sending=updates.get("sending") if "sending" in updates else None,
             do_not_send=updates.get("do_not_send") if "do_not_send" in updates else None,
+            audited=updates.get("audited") if "audited" in updates else None,
         )
     except CashoutRecordNotActive as exc:
         raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     if not data:
         raise HTTPException(404, "Cashout record not found")
     return _to_read(data, _club_name_map(db))

@@ -160,6 +160,15 @@ function CashoutRecordCard({
           <h3 className="truncate text-base font-semibold text-ink">
             {record.group_title}
           </h3>
+          {record.status === 'cleared' ? (
+            <p className="mt-1">
+              <span
+                className={record.audited ? 'chip-success' : 'chip-warning'}
+              >
+                {record.audited ? 'Audited' : 'Pending Audit'}
+              </span>
+            </p>
+          ) : null}
           <p className="mt-0.5 truncate text-sm text-ink-muted">{meta || '—'}</p>
         </div>
         <div className="shrink-0 pt-0.5 text-right">

@@ -107,6 +107,7 @@ def _record_to_dict(record: StaffCashoutRecord) -> dict[str, Any]:
         "tracks_money_sent": tracks,
         "sending": bool(getattr(record, "sending", False)),
         "do_not_send": bool(getattr(record, "do_not_send", False)),
+        "audited": bool(getattr(record, "audited", False)),
         "created_at": record.created_at,
         "updated_at": record.updated_at,
         "payments": payments,
@@ -398,6 +399,18 @@ def create_staff_cashout_record_manual(
     return data
 
 
+def _clear_audited_if_not_cleared(session, record: StaffCashoutRecord) -> None:
+    session.flush()
+    session.expire(record, ["money_sends"])
+    sends = [
+        _send_to_dict(s)
+        for s in sorted(record.money_sends, key=lambda r: r.created_at or datetime.min)
+    ]
+    ledger = compute_ledger(bool(record.tracks_money_sent), record.amount, sends)
+    if ledger.get("status") != "cleared" and bool(getattr(record, "audited", False)):
+        record.audited = False
+
+
 def delete_staff_cashout_record(record_id: int) -> bool:
     with get_db() as session:
         record = session.get(StaffCashoutRecord, int(record_id))
@@ -416,6 +429,7 @@ def update_staff_cashout_record(
     amount: Optional[Decimal] = None,
     sending: Optional[bool] = None,
     do_not_send: Optional[bool] = None,
+    audited: Optional[bool] = None,
 ) -> Optional[dict[str, Any]]:
     with get_db() as session:
         record = session.get(StaffCashoutRecord, int(record_id))
@@ -433,7 +447,13 @@ def update_staff_cashout_record(
             record.sending = bool(sending)
         if do_not_send is not None:
             record.do_not_send = bool(do_not_send)
+        if audited is not None:
+            if bool(audited) and current["status"] != "cleared":
+                raise ValueError("Audited can only be set when remaining is zero")
+            record.audited = bool(audited)
         record.updated_at = datetime.utcnow()
+        if amount is not None:
+            _clear_audited_if_not_cleared(session, record)
         return _record_dict_reloaded(session, record)
 
 
@@ -582,6 +602,7 @@ def add_staff_cashout_send(record_id: int, pdata: dict[str, Any]) -> Optional[di
             )
         )
         record.updated_at = datetime.utcnow()
+        _clear_audited_if_not_cleared(session, record)
         return _record_dict_reloaded(session, record)
 
 
@@ -628,6 +649,7 @@ def update_staff_cashout_send(
             row.payment_sub_option_id = sub_id
             row.method_display_name = display
         record.updated_at = datetime.utcnow()
+        _clear_audited_if_not_cleared(session, record)
         return _record_dict_reloaded(session, record)
 
 
@@ -641,6 +663,7 @@ def delete_staff_cashout_send(record_id: int, send_id: int) -> Optional[dict[str
             return None
         session.delete(row)
         record.updated_at = datetime.utcnow()
+        _clear_audited_if_not_cleared(session, record)
         return _record_dict_reloaded(session, record)
 
 
