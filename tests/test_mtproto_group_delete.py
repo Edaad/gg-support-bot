@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,8 +13,10 @@ from bot.handlers.commands import delete_handler
 from bot.services.mtproto_group_delete import (
     _kick_all_basic_chat_participants,
     _resolve_club_id_for_delete,
+    handle_group_delete_outgoing,
     parse_delete_confirm_command,
 )
+from bot.services.support_group_chats import delete_active_support_group_records
 
 
 class TestParseDeleteConfirmCommand(unittest.TestCase):
@@ -98,6 +101,76 @@ class TestKickBasicChatParticipants(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kicked, 1)
         self.assertEqual(failed, 0)
         client.assert_called()
+
+
+class TestDeleteActiveSupportGroupRecords(unittest.TestCase):
+    @patch(
+        "notification.chat_id.telegram_chat_id_variants",
+        return_value={-100123, -123},
+    )
+    @patch("bot.services.support_group_chats.get_db")
+    def test_removes_all_active_ownership_records(
+        self, mock_get_db, _mock_variants
+    ) -> None:
+        session = MagicMock()
+        mock_get_db.return_value.__enter__.return_value = session
+        session.query.return_value.filter.return_value.delete.side_effect = [1, 2]
+
+        result = delete_active_support_group_records(
+            club_id=2,
+            club_key="round_table",
+            telegram_chat_id=-100123,
+        )
+
+        self.assertEqual(result, (1, 2))
+        self.assertEqual(session.execute.call_count, 2)
+        self.assertEqual(session.query.call_count, 2)
+
+
+class TestHandleGroupDeleteOutgoing(unittest.IsolatedAsyncioTestCase):
+    async def test_success_deletes_active_database_records(self) -> None:
+        @asynccontextmanager
+        async def unlocked():
+            yield
+
+        event = SimpleNamespace(
+            is_private=False,
+            raw_text="/delete confirm",
+            chat_id=-100123,
+            client=MagicMock(),
+            delete=AsyncMock(),
+        )
+        cfg = MagicMock(club_key="round_table", link_club_id=2)
+
+        with (
+            patch(
+                "bot.services.mtproto_group_delete._resolve_club_id_for_delete",
+                return_value=2,
+            ),
+            patch(
+                "bot.services.mtproto_group_delete.get_mtproto_lock",
+                return_value=unlocked(),
+            ),
+            patch(
+                "bot.services.mtproto_group_delete.erase_group_chat",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "bot.services.mtproto_group_delete.delete_active_support_group_records",
+                return_value=(1, 1),
+            ) as cleanup,
+        ):
+            await handle_group_delete_outgoing(
+                event,
+                cfg,
+                listener_label="test",
+            )
+
+        cleanup.assert_called_once_with(
+            club_id=2,
+            club_key="round_table",
+            telegram_chat_id=-100123,
+        )
 
 
 class TestBotApiDeleteHandlerSkipsConfirm(unittest.IsolatedAsyncioTestCase):

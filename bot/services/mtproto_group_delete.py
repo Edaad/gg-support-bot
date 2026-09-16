@@ -1,7 +1,8 @@
 """MTProto ``/delete confirm`` in support groups: kick participants and delete the group.
 
 Outgoing-only (staff type on the club MTProto account). Requires a linked group for that club.
-Does not remove Postgres rows (``groups``, ``player_details``, ``support_group_chats``, etc.).
+After Telegram deletion, removes active ownership records from ``groups``, ``player_details``,
+and ``support_group_chats`` while preserving transaction and audit history.
 
 Basic groups (``/gc`` since 2026-06) and legacy megagroups are both supported. The MTProto
 account should be the creator; older groups where that account lacks admin may still fail.
@@ -31,7 +32,10 @@ from telethon.utils import get_input_channel
 from club_gc_settings import ClubGcConfig
 from bot.services.club import get_club_for_chat
 from bot.services.mtproto_group_create import _with_single_flood_retry, get_mtproto_lock
-from bot.services.support_group_chats import fetch_support_group_chat_row_for_chat
+from bot.services.support_group_chats import (
+    delete_active_support_group_records,
+    fetch_support_group_chat_row_for_chat,
+)
 from notification.chat_id import telegram_chat_id_variants
 
 logger = logging.getLogger(__name__)
@@ -352,3 +356,35 @@ async def handle_group_delete_outgoing(
         )
         if err:
             await _notify_delete_failure(client, cfg=cfg, chat_id=chat_id, reason=err)
+            return
+
+        try:
+            groups_deleted, support_rows_deleted = await asyncio.to_thread(
+                delete_active_support_group_records,
+                club_id=club_id,
+                club_key=cfg.club_key,
+                telegram_chat_id=chat_id,
+            )
+            logger.info(
+                "group_delete: database cleanup club=%s chat_id=%s "
+                "groups_deleted=%s support_rows_deleted=%s",
+                cfg.club_key,
+                chat_id,
+                groups_deleted,
+                support_rows_deleted,
+            )
+        except Exception as exc:
+            logger.exception(
+                "group_delete: database cleanup failed club=%s chat_id=%s",
+                cfg.club_key,
+                chat_id,
+            )
+            await _notify_delete_failure(
+                client,
+                cfg=cfg,
+                chat_id=chat_id,
+                reason=(
+                    "Telegram group was deleted, but active Postgres records could "
+                    f"not be cleaned up ({type(exc).__name__})."
+                ),
+            )

@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from db.connection import get_db, get_session
-from db.models import SupportGroupChat
+from db.models import Group, SupportGroupChat
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +178,59 @@ def fetch_support_group_chat_by_club_player(
         if row is not None:
             session.expunge(row)
         return row
+
+
+def delete_active_support_group_records(
+    *, club_id: int, club_key: str, telegram_chat_id: int
+) -> tuple[int, int]:
+    """Remove a deleted chat from active group ownership records.
+
+    Returns ``(groups_deleted, support_group_chats_deleted)``.
+    """
+    from notification.chat_id import telegram_chat_id_variants
+
+    chat_ids = sorted(telegram_chat_id_variants(int(telegram_chat_id)))
+    with get_db() as session:
+        for chat_id in chat_ids:
+            session.execute(
+                text(
+                    """
+                    UPDATE player_details
+                    SET chat_ids = COALESCE(
+                        (
+                            SELECT ARRAY(
+                                SELECT x
+                                FROM unnest(chat_ids) AS x
+                                WHERE x <> :chat_id
+                                ORDER BY 1
+                            )
+                        ),
+                        '{}'::bigint[]
+                    )
+                    WHERE club_id = :club_id
+                      AND chat_ids @> ARRAY[:chat_id]::bigint[]
+                    """
+                ),
+                {"club_id": int(club_id), "chat_id": int(chat_id)},
+            )
+
+        groups_deleted = (
+            session.query(Group)
+            .filter(
+                Group.club_id == int(club_id),
+                Group.chat_id.in_(chat_ids),
+            )
+            .delete(synchronize_session=False)
+        )
+        support_rows_deleted = (
+            session.query(SupportGroupChat)
+            .filter(
+                SupportGroupChat.club_key == club_key,
+                SupportGroupChat.telegram_chat_id.in_(chat_ids),
+            )
+            .delete(synchronize_session=False)
+        )
+        return int(groups_deleted), int(support_rows_deleted)
 
 
 def persist_support_group_chat_row(
