@@ -24,7 +24,9 @@ from bot.services.mtproto_bot_fallback import bot_delete_message, telethon_misse
 from bot.services.mtproto_dm_gc_listener import _clients, get_dm_gc_listener_status
 from bot.services.mtproto_group_add import (
     format_add_confirmation,
+    format_bonus_confirmation,
     parse_add_command,
+    parse_bonus_command,
     schedule_send_add_confirmation_from_club,
 )
 from bot.services.bonus_from_add import maybe_start_bonus_recording_from_add
@@ -331,4 +333,149 @@ async def add_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     amount, bonus, name = parsed
     await _execute_add(
         update, context, club_id=club_id, amount=amount, bonus=bonus, name=name
+    )
+
+
+async def _bonus_bot_api_path(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    club_id: int,
+    bonus_amount: Decimal,
+    command_already_deleted: bool = False,
+) -> None:
+    chat = update.effective_chat
+    assert chat is not None and update.message is not None
+
+    confirmation = format_bonus_confirmation(bonus_amount)
+
+    if not command_already_deleted:
+        deleted = await bot_delete_message(
+            context.bot,
+            chat_id=chat.id,
+            message_id=update.message.message_id,
+        )
+        if not deleted:
+            logger.warning(
+                "bonus: could not delete command message chat_id=%s message_id=%s",
+                chat.id,
+                update.message.message_id,
+            )
+
+    schedule_send_add_confirmation_from_club(
+        chat_id=chat.id,
+        club_id=club_id,
+        text=confirmation,
+    )
+
+    _schedule_auto_chip_add(
+        context,
+        chat_id=chat.id,
+        club_id=club_id,
+        message_id=update.message.message_id,
+        amount=Decimal("0"),
+        bonus=bonus_amount,
+        group_title=chat.title,
+    )
+
+    context.application.create_task(
+        maybe_start_bonus_recording_from_add(
+            context.bot,
+            staff_user_id=update.effective_user.id,
+            club_id=club_id,
+            chat_id=chat.id,
+            group_title=chat.title,
+            bonus_amount=bonus_amount,
+        ),
+        name=f"bonus-from-group-{chat.id}",
+    )
+
+
+async def _bonus_telethon_fallback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    club_id: int,
+    bonus_amount: Decimal,
+) -> None:
+    chat = update.effective_chat
+    assert chat is not None and update.message is not None
+
+    missed = await telethon_missed_command_message(
+        context.bot,
+        chat_id=chat.id,
+        message_id=update.message.message_id,
+        command="/bonus",
+    )
+    if not missed:
+        return
+
+    await _bonus_bot_api_path(
+        update,
+        context,
+        club_id=club_id,
+        bonus_amount=bonus_amount,
+        command_already_deleted=True,
+    )
+
+
+async def _execute_group_bonus(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    club_id: int,
+    bonus_amount: Decimal,
+) -> None:
+    admin_id = update.effective_user.id
+    assert update.effective_chat is not None and update.message is not None
+
+    if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
+        context.application.create_task(
+            _bonus_telethon_fallback(
+                update,
+                context,
+                club_id=club_id,
+                bonus_amount=bonus_amount,
+            ),
+            name=f"bonus-telethon-fallback-{update.effective_chat.id}",
+        )
+        return
+
+    await _bonus_bot_api_path(
+        update,
+        context,
+        club_id=club_id,
+        bonus_amount=bonus_amount,
+    )
+
+
+async def handle_group_bonus_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Staff /bonus <amount> in a linked support group (chips + recording draft)."""
+    if not update.message or not update.effective_chat or not update.effective_user:
+        return
+
+    chat = update.effective_chat
+    if chat.type not in ("group", "supergroup"):
+        return
+
+    club_id = get_club_for_chat(chat.id)
+    if club_id is None:
+        await update.message.reply_text("This group isn't linked to a club.")
+        return
+
+    if not _can_use_add(update.effective_user.id, club_id):
+        return
+
+    text = update.message.text or ""
+    bonus_amount = parse_bonus_command(text)
+    if bonus_amount is None:
+        await update.message.reply_text(
+            "Usage: /bonus <amount> (Example: /bonus 50)"
+        )
+        return
+
+    await _execute_group_bonus(
+        update, context, club_id=club_id, bonus_amount=bonus_amount
     )

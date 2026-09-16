@@ -305,5 +305,31 @@ class TestChipAddUnionOverride(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(used, "RT")
 
 
+class TestDepositTransactions(unittest.TestCase):
+    def test_deposit_only(self) -> None:
+        self.assertEqual(
+            api._deposit_transactions(Decimal("500"), None),
+            [("deposit", Decimal("500"), "base")],
+        )
+
+    def test_deposit_plus_bonus(self) -> None:
+        self.assertEqual(
+            api._deposit_transactions(Decimal("500"), Decimal("50")),
+            [
+                ("deposit", Decimal("500"), "base"),
+                ("bonus", Decimal("50"), "bonus"),
+            ],
+        )
+
+    def test_bonus_only_skips_zero_deposit(self) -> None:
+        self.assertEqual(
+            api._deposit_transactions(Decimal("0"), Decimal("50")),
+            [("bonus", Decimal("50"), "bonus")],
+        )
+
+    def test_empty_when_neither(self) -> None:
+        self.assertEqual(api._deposit_transactions(Decimal("0"), None), [])
+
+
 if __name__ == "__main__":
     unittest.main()

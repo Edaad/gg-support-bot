@@ -10,6 +10,7 @@ from telegram.constants import ChatType
 from telegram.ext import ApplicationHandlerStop, ContextTypes
 
 from config import ADMIN_USER_IDS
+from bot.handlers.add import handle_group_bonus_command
 from bot.handlers.flow_cancel import (
     ACTIVE_FLOW_KEY,
     block_if_dm_flow_active,
@@ -322,8 +323,11 @@ async def bonus_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not update.message or not update.effective_user or not update.effective_chat:
         return
 
+    if update.effective_chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
+        await handle_group_bonus_command(update, context)
+        return
+
     if update.effective_chat.type != ChatType.PRIVATE:
-        await update.message.reply_text("Use /bonus in a private chat with this bot.")
         return
 
     if not _is_bonus_admin(update):

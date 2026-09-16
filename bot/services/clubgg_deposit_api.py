@@ -1,9 +1,10 @@
 """Optional bridge from /add to the ClubGG deposit bot's remote-trigger HTTP API.
 
 When a club has ``auto_chip_adding_enabled`` turned on in the dashboard, an admin
-``/add <amount>`` in a linked support group will (in addition to the existing
-confirmation behaviour, which is unchanged) POST a deposit to the ClubGG deposit
-bot so chips are added automatically.
+``/add <amount>`` or ``/bonus <amount>`` in a linked support group will (in
+addition to the existing confirmation behaviour, which is unchanged) POST to the
+ClubGG deposit bot so chips are added automatically. ``/bonus`` sends only the
+bonus chips, not a deposit.
 
 Design goals:
 - **Purely additive / fail-safe.** If the feature is off, the API is not
@@ -196,7 +197,9 @@ def _deposit_transactions(
     amount: Decimal, bonus: Optional[Decimal]
 ) -> list[tuple[str, Decimal, str]]:
     """Return (label, chip_amount, request_id_part) for each ClubGG deposit."""
-    txs: list[tuple[str, Decimal, str]] = [("deposit", amount, "base")]
+    txs: list[tuple[str, Decimal, str]] = []
+    if amount is not None and amount > 0:
+        txs.append(("deposit", amount, "base"))
     if bonus is not None and bonus > 0:
         txs.append(("bonus", bonus, "bonus"))
     return txs
@@ -537,6 +540,8 @@ async def run_auto_chip_add(
         return False, "request_claim_failed"
 
     transactions = _deposit_transactions(amount, bonus)
+    if not transactions:
+        return False, "no_transactions"
 
     title = group_title
     if not title:

@@ -424,7 +424,7 @@ Include an `account_managers` key (Slack user-group mention for `@accmanagers`) 
 
 **Issue reports (AMs):** `/escalate` (group) and `/report` (DM) — see [`docs/ISSUE_REPORTS_BOT.md`](ISSUE_REPORTS_BOT.md). Run `python migrate_issue_reports_v2.py`, `python migrate_issue_report_drafts.py`, and `python migrate_issue_reports_resolve.py` once after deploy.
 
-**Staff cashout records + bonus tables:** Editable GGCashier cashout history lives in `staff_cashout_records` / `staff_cashout_payments`; money-sent ledger is `staff_cashout_money_sends`. `/bonus` uses `bonus_records`. `/add` with a bonus amount DMs staff a **Continue bonus** wizard (pending rows in `bonus_drafts`). Run once after deploy:
+**Staff cashout records + bonus tables:** Editable GGCashier cashout history lives in `staff_cashout_records` / `staff_cashout_payments`; money-sent ledger is `staff_cashout_money_sends`. `/bonus` (private DM) uses `bonus_records`. `/add` with a bonus amount, or `/bonus <amount>` in a linked support group, DMs staff a **Continue bonus** wizard (pending rows in `bonus_drafts`). Run once after deploy:
 
 ```bash
 heroku run -a YOUR_APP -- python migrate_staff_cashout_records.py
@@ -649,8 +649,8 @@ Also set `STRIPE_WEBHOOK_SECRET` on the **web** dyno and register `https://YOUR_
 
 ## Auto chip-adding on /add (ClubGG deposit bot)
 
-Lets an admin `/add <amount>` in a linked group also send the chips to the ClubGG
-deposit bot automatically. It is **off** unless (1) the per-club toggle "Auto chip
+Lets an admin `/add <amount>` or `/bonus <amount>` in a linked group also send the chips to the ClubGG
+deposit bot automatically. `/bonus <amount>` adds only the bonus chips (no deposit). It is **off** unless (1) the per-club toggle "Auto chip
 adding on /add" is enabled in the dashboard (Club → General) **and** (2) the worker
 has the deposit-bot API configured. The customer-facing `/add` confirmation is
 unchanged; failures alert staff out-of-band and degrade to today's manual behaviour.

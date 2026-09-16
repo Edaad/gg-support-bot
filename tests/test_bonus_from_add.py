@@ -258,5 +258,53 @@ class TestBonusPrefilledClubFinalize(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.user_data["bonus_type_name"], "Deposit Match")
 
 
+class TestGroupBonusCommand(unittest.IsolatedAsyncioTestCase):
+    def _group_update(self, *, text: str, user_id: int = 100):
+        chat = SimpleNamespace(id=-1001, type="supergroup", title="CC / 8190-5287 / Jacob")
+        message = SimpleNamespace(
+            text=text,
+            message_id=9,
+            reply_text=AsyncMock(),
+        )
+        return SimpleNamespace(
+            message=message,
+            effective_chat=chat,
+            effective_user=SimpleNamespace(id=user_id),
+        )
+
+    @patch("bot.handlers.add.get_club_for_chat", return_value=1)
+    @patch("bot.handlers.add._can_use_add", return_value=True)
+    @patch("bot.handlers.add._execute_group_bonus", new_callable=AsyncMock)
+    async def test_runs_group_bonus_when_amount_present(
+        self, mock_execute, _can, _club
+    ) -> None:
+        from bot.handlers.add import handle_group_bonus_command
+
+        update = self._group_update(text="/bonus 50")
+        context = SimpleNamespace(args=["50"])
+        await handle_group_bonus_command(update, context)
+        mock_execute.assert_awaited_once()
+        self.assertEqual(mock_execute.await_args.kwargs["bonus_amount"], Decimal("50"))
+        update.message.reply_text.assert_not_awaited()
+
+    @patch("bot.handlers.add.get_club_for_chat", return_value=1)
+    @patch("bot.handlers.add._can_use_add", return_value=True)
+    async def test_usage_without_amount(self, _can, _club) -> None:
+        from bot.handlers.add import handle_group_bonus_command
+
+        update = self._group_update(text="/bonus")
+        await handle_group_bonus_command(update, SimpleNamespace(args=[]))
+        update.message.reply_text.assert_awaited_once()
+        self.assertIn("/bonus <amount>", update.message.reply_text.await_args.args[0])
+
+    @patch("bot.handlers.bonus.handle_group_bonus_command", new_callable=AsyncMock)
+    async def test_bonus_entry_routes_groups(self, mock_group) -> None:
+        update = self._group_update(text="/bonus 50")
+        update.effective_chat.type = "supergroup"
+        context = SimpleNamespace(args=["50"], user_data={})
+        await bonus_mod.bonus_entry(update, context)
+        mock_group.assert_awaited_once_with(update, context)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -5,7 +5,9 @@ import unittest
 
 from bot.services.mtproto_group_add import (
     format_add_confirmation,
+    format_bonus_confirmation,
     parse_add_command,
+    parse_bonus_command,
 )
 
 
@@ -57,6 +59,42 @@ class FormatAddConfirmationTests(unittest.TestCase):
     def test_decimal_bonus_not_truncated(self) -> None:
         text = format_add_confirmation(Decimal("100"), Decimal("5.5"))
         self.assertIn("5.5 bonus", text)
+
+
+class ParseBonusCommandTests(unittest.TestCase):
+    def test_whole_amount(self) -> None:
+        self.assertEqual(parse_bonus_command("/bonus 50"), Decimal("50"))
+
+    def test_decimal_amount(self) -> None:
+        self.assertEqual(parse_bonus_command("/bonus 21.1"), Decimal("21.1"))
+
+    def test_bot_mention(self) -> None:
+        self.assertEqual(parse_bonus_command("/bonus@SomeBot 50"), Decimal("50"))
+
+    def test_ignores_trailing_tokens(self) -> None:
+        self.assertEqual(parse_bonus_command("/bonus 50 Jacob"), Decimal("50"))
+
+    def test_missing_amount(self) -> None:
+        self.assertIsNone(parse_bonus_command("/bonus"))
+        self.assertIsNone(parse_bonus_command("/bonus "))
+
+    def test_does_not_match_add(self) -> None:
+        self.assertIsNone(parse_bonus_command("/add 50"))
+        self.assertIsNone(parse_add_command("/bonus 50"))
+
+
+class FormatBonusConfirmationTests(unittest.TestCase):
+    def test_whole_amount(self) -> None:
+        self.assertEqual(
+            format_bonus_confirmation(Decimal("50")),
+            "Added 50 credits as a bonus!",
+        )
+
+    def test_decimal_amount(self) -> None:
+        self.assertEqual(
+            format_bonus_confirmation(Decimal("21.1")),
+            "Added 21.1 credits as a bonus!",
+        )
 
 
 if __name__ == "__main__":

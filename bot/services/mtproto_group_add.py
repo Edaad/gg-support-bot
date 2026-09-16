@@ -39,6 +39,7 @@ _ADD_CMD_RE = re.compile(r"^/add(?:@\w+)?\s+(.+?)\s*$", re.IGNORECASE)
 _ADD_SHORTHAND_RE = re.compile(
     r"^/(\d+(?:\.\d+)?)(?:@\w+)?(?:\s+(.+?))?\s*$", re.IGNORECASE
 )
+_BONUS_CMD_RE = re.compile(r"^/bonus(?:@\w+)?\s+(.+?)\s*$", re.IGNORECASE)
 
 
 def _parse_money_token(raw: str) -> Decimal | None:
@@ -116,6 +117,18 @@ def parse_add_amount(text: str) -> Decimal | None:
     return parsed[0]
 
 
+def parse_bonus_command(text: str) -> Decimal | None:
+    """Return bonus amount from ``/bonus <amount>``, else None."""
+    raw = (text or "").strip()
+    m = _BONUS_CMD_RE.match(raw)
+    if not m:
+        return None
+    parts = m.group(1).split()
+    if not parts:
+        return None
+    return _parse_money_token(parts[0])
+
+
 def _format_chips(amount: Decimal) -> str:
     """Credit count with decimals preserved when present (e.g. 500 credits, 21.1 credits)."""
     return f"{_format_decimal_display(amount)} credits"
@@ -136,6 +149,10 @@ def format_add_confirmation(
     if name:
         return f"{core} {name}!!"
     return f"{core}!!"
+
+
+def format_bonus_confirmation(amount: Decimal) -> str:
+    return f"Added {_format_chips(amount)} as a bonus!"
 
 
 async def _send_add_confirmation_once(cfg: ClubGcConfig, chat_id: int, text: str) -> None:
@@ -219,7 +236,21 @@ async def handle_group_add_outgoing(
     listener_label: str,
     ptb_bot: Any | None = None,
 ) -> None:
-    """Outgoing /add in a megagroup: delete command, send new message, record cooldown."""
+    """Outgoing /add or /bonus in a megagroup: delete command, send confirmation."""
+    if event.is_private:
+        return
+
+    bonus_amount = parse_bonus_command(event.raw_text or "")
+    if bonus_amount is not None:
+        await handle_group_bonus_outgoing(
+            event,
+            cfg,
+            listener_label=listener_label,
+            ptb_bot=ptb_bot,
+            bonus_amount=bonus_amount,
+        )
+        return
+
     _raw = (event.raw_text or "")[:120]
     _stripped = _raw.lstrip().lower()
     _is_add_candidate = _stripped.startswith("/add") or (
@@ -241,8 +272,6 @@ async def handle_group_add_outgoing(
             },
         )
         # #endregion
-    if event.is_private:
-        return
 
     parsed = parse_add_command(event.raw_text or "")
     if parsed is None:
@@ -451,3 +480,90 @@ async def handle_group_add_outgoing(
                 ),
                 name=f"bonus-from-add-{event.chat_id}",
             )
+
+
+async def handle_group_bonus_outgoing(
+    event: events.NewMessage.Event,
+    cfg: ClubGcConfig,
+    *,
+    listener_label: str,
+    bonus_amount: Decimal,
+    ptb_bot: Any | None = None,
+) -> None:
+    """Outgoing /bonus in a megagroup: confirmation, bonus chips, recording draft."""
+    club_id = await asyncio.to_thread(get_club_for_chat, event.chat_id)
+    if club_id is None or int(club_id) != int(cfg.link_club_id):
+        return
+
+    confirmation = format_bonus_confirmation(bonus_amount)
+
+    await _delete_add_command_message(
+        event,
+        ptb_bot=ptb_bot,
+        club_key=cfg.club_key,
+        listener_label=listener_label,
+    )
+
+    try:
+        await event.client.send_message(event.chat_id, confirmation)
+    except Exception:
+        logger.exception(
+            "group_bonus: send failed club=%s chat_id=%s",
+            cfg.club_key,
+            event.chat_id,
+        )
+        return
+
+    try:
+        from bot.services.clubgg_deposit_api import trigger_auto_chip_add
+
+        message_id = event.message.id if event.message else None
+        if message_id is not None:
+            asyncio.create_task(
+                trigger_auto_chip_add(
+                    club_id=int(club_id),
+                    chat_id=int(event.chat_id),
+                    message_id=int(message_id),
+                    amount=Decimal("0"),
+                    bonus=bonus_amount,
+                    group_title=None,
+                    ptb_bot=ptb_bot,
+                )
+            )
+    except Exception:
+        logger.exception(
+            "group_bonus: failed to schedule auto chip-add club_id=%s chat_id=%s",
+            club_id,
+            event.chat_id,
+        )
+
+    if ptb_bot is None:
+        return
+
+    invoker_user_id = event.sender_id
+    if invoker_user_id is None:
+        logger.warning(
+            "group_bonus: no sender_id for bonus draft chat_id=%s",
+            event.chat_id,
+        )
+        return
+
+    from bot.services.bonus_from_add import maybe_start_bonus_recording_from_add
+
+    group_title = "Unknown group"
+    try:
+        chat = await event.get_chat()
+        group_title = getattr(chat, "title", None) or group_title
+    except Exception:
+        pass
+    asyncio.create_task(
+        maybe_start_bonus_recording_from_add(
+            ptb_bot,
+            staff_user_id=int(invoker_user_id),
+            club_id=int(club_id),
+            chat_id=int(event.chat_id),
+            group_title=group_title,
+            bonus_amount=bonus_amount,
+        ),
+        name=f"bonus-from-group-{event.chat_id}",
+    )
