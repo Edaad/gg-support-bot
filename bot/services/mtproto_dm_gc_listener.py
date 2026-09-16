@@ -14,6 +14,7 @@ from telethon.tl.types import PeerUser, User
 
 from club_gc_settings import (
     CLUB_GC_CONFIG,
+    get_club_gc_config_by_link_club_id,
     get_dm_gc_listener_restart_config,
     get_tg_mtproto_credentials,
     is_dm_gc_listener_enabled,
@@ -137,6 +138,91 @@ def get_listener_client(club_key: str) -> TelegramClient | None:
     return None
 
 
+async def _run_referral_gc_on_listener_loop(
+    *,
+    club_id: int,
+    player_telegram_user_id: int,
+    player_username: str | None,
+) -> str | None:
+    """Resolve a referral clicker and run GC work on the Telethon listener loop."""
+    cfg = get_club_gc_config_by_link_club_id(int(club_id))
+    if cfg is None:
+        return None
+
+    client = get_listener_client(cfg.club_key)
+    if client is None or not client.is_connected():
+        return None
+
+    markers: list[str | int] = []
+    username = (player_username or "").strip().lstrip("@")
+    if username:
+        markers.append(f"@{username}")
+    markers.append(int(player_telegram_user_id))
+
+    player: User | None = None
+    for marker in markers:
+        try:
+            entity = await client.get_entity(marker)
+        except Exception:
+            continue
+        if (
+            isinstance(entity, User)
+            and not getattr(entity, "bot", False)
+            and int(entity.id) == int(player_telegram_user_id)
+        ):
+            player = entity
+            break
+    if player is None:
+        logger.info(
+            "dm_gc referral fallback: player unresolved club=%s player=%s username=%s",
+            cfg.club_key,
+            player_telegram_user_id,
+            username or "(none)",
+        )
+        return None
+
+    return await _run_gc_flow_for_player_client(
+        client,
+        cfg,
+        player,
+        _loop_holder.get("bot_dm_username"),
+        _loop_holder.get("ptb_bot"),
+        listener_label=f"{cfg.club_key}:referral",
+        trigger="referral_link",
+        send_player_dm=False,
+    )
+
+
+async def run_referral_gc_for_bot_user(
+    *,
+    club_id: int,
+    player_telegram_user_id: int,
+    player_username: str | None,
+) -> str | None:
+    """Run referral GC automation on the listener thread; None means use fallback."""
+    loop = _loop_holder.get("loop")
+    if loop is None or not loop.is_running():
+        return None
+
+    future = asyncio.run_coroutine_threadsafe(
+        _run_referral_gc_on_listener_loop(
+            club_id=int(club_id),
+            player_telegram_user_id=int(player_telegram_user_id),
+            player_username=player_username,
+        ),
+        loop,
+    )
+    try:
+        return await asyncio.wrap_future(future)
+    except Exception:
+        logger.exception(
+            "dm_gc referral bridge failed club_id=%s player=%s",
+            club_id,
+            player_telegram_user_id,
+        )
+        return None
+
+
 def get_dm_gc_listener_status() -> dict[str, Any]:
     """Public snapshot of the background Telethon listener thread."""
     loop = _loop_holder.get("loop")
@@ -244,6 +330,7 @@ async def _flow_existing_group(
     *,
     listener_label: str,
     trigger: str = "incoming_dm",
+    send_player_dm: bool = True,
 ) -> str | None:
     player_label_existing = _telethon_user_label(player)
     try:
@@ -306,7 +393,10 @@ async def _flow_existing_group(
     else:
         dm_status = "existing_invite_fallback"
 
-    dm_ok, dm_err = await _send_player_dm_safe(client, player, dm_body)
+    if send_player_dm:
+        dm_ok, dm_err = await _send_player_dm_safe(client, player, dm_body)
+    else:
+        dm_ok, dm_err = True, None
     if not dm_ok:
         logger.warning(
             "dm_gc /gc player_dm_issue club_key=%s listener=%s player=%s err=%s template=%s(flow=existing)",
@@ -409,7 +499,8 @@ async def _flow_new_group(
     *,
     listener_label: str,
     trigger: str,
-) -> None:
+    send_player_dm: bool = True,
+) -> str | None:
     me = await client.get_me()
     admin_id = me.id
     uname = player.username.strip() if player.username else None
@@ -501,7 +592,10 @@ async def _flow_new_group(
         )
         dm_status = "player_invite_fallback"
 
-    dm_ok, dm_err = await _send_player_dm_safe(client, player, dm_body)
+    if send_player_dm:
+        dm_ok, dm_err = await _send_player_dm_safe(client, player, dm_body)
+    else:
+        dm_ok, dm_err = True, None
     if not dm_ok:
         logger.warning(
             "dm_gc /gc player_dm_issue club_key=%s listener=%s player=%s err=%s template=%s",
@@ -557,15 +651,20 @@ async def _flow_new_group(
         )
         existing = fetch_support_group_chat_by_club_player(cfg.club_key, player.id)
         if existing:
-            await _flow_existing_group(
+            existing_link = await _flow_existing_group(
                 client,
                 cfg,
                 existing,
                 player,
                 listener_label=listener_label,
                 trigger=trigger,
+                send_player_dm=send_player_dm,
             )
-        return
+            if existing_link:
+                return PLAYER_EXISTING_INVITE_MESSAGE.format(
+                    invite_link=existing_link
+                )
+        return None
 
     if pk is None:
         logger.warning(
@@ -648,6 +747,7 @@ async def _flow_new_group(
             cid,
             exc_info=True,
         )
+    return dm_body
 
 
 async def _run_gc_flow_for_player(
@@ -660,19 +760,8 @@ async def _run_gc_flow_for_player(
     listener_label: str,
     trigger: str,
     delete_trigger_message: bool = False,
-) -> None:
+) -> str | None:
     """Create or reuse a support group for ``player`` (shared by incoming DM and outgoing /gc)."""
-    player_id = player.id
-    player_label = _telethon_user_label(player)
-
-    _dm_gc_verbose_info(
-        "dm_gc sensed %s club_key=%s listener_account=%s player=%s",
-        trigger,
-        cfg.club_key,
-        listener_label,
-        player_label,
-    )
-
     if delete_trigger_message:
         try:
             await event.delete()
@@ -685,6 +774,40 @@ async def _run_gc_flow_for_player(
                 type(e).__name__,
             )
 
+    return await _run_gc_flow_for_player_client(
+        event.client,
+        cfg,
+        player,
+        bot_dm_username,
+        ptb_bot,
+        listener_label=listener_label,
+        trigger=trigger,
+    )
+
+
+async def _run_gc_flow_for_player_client(
+    client: TelegramClient,
+    cfg,
+    player: User,
+    bot_dm_username: str | None,
+    ptb_bot,
+    *,
+    listener_label: str,
+    trigger: str,
+    send_player_dm: bool = True,
+) -> str | None:
+    """Create/recover a player's group using an already-connected club client."""
+    player_id = player.id
+    player_label = _telethon_user_label(player)
+
+    _dm_gc_verbose_info(
+        "dm_gc sensed %s club_key=%s listener_account=%s player=%s",
+        trigger,
+        cfg.club_key,
+        listener_label,
+        player_label,
+    )
+
     lock_sess, acquired = try_pg_advisory_lock_club_player(cfg.club_key, player_id)
     if not acquired:
         logger.warning(
@@ -695,22 +818,26 @@ async def _run_gc_flow_for_player(
             player_label,
             trigger,
         )
-        return
+        return None
 
     try:
-        client = event.client
         existing = fetch_support_group_chat_by_club_player(cfg.club_key, player_id)
         if existing:
-            await _flow_existing_group(
+            existing_link = await _flow_existing_group(
                 client,
                 cfg,
                 existing,
                 player,
                 listener_label=listener_label,
                 trigger=trigger,
+                send_player_dm=send_player_dm,
             )
+            if existing_link:
+                return PLAYER_EXISTING_INVITE_MESSAGE.format(
+                    invite_link=existing_link
+                )
         elif is_dm_gc_new_groups_enabled():
-            await _flow_new_group(
+            return await _flow_new_group(
                 client,
                 cfg,
                 player,
@@ -718,6 +845,7 @@ async def _run_gc_flow_for_player(
                 ptb_bot,
                 listener_label=listener_label,
                 trigger=trigger,
+                send_player_dm=send_player_dm,
             )
         else:
             logger.warning(
@@ -729,6 +857,7 @@ async def _run_gc_flow_for_player(
                 player_label,
                 trigger,
             )
+        return None
     except Exception as e:
         logger.exception(
             "dm_gc /gc failed: unexpected handler_error club_key=%s listener=%s player=%s trigger=%s: %s",
@@ -738,6 +867,7 @@ async def _run_gc_flow_for_player(
             trigger,
             type(e).__name__,
         )
+        return None
     finally:
         pg_advisory_unlock_session(lock_sess, cfg.club_key, player_id)
 
@@ -1427,6 +1557,7 @@ async def _teardown_listener_cycle(
             pass
     _clients.clear()
     _loop_holder.pop("ptb_bot", None)
+    _loop_holder.pop("bot_dm_username", None)
 
 
 async def _run_listener_cycle(bot_token: str) -> str:
@@ -1452,6 +1583,7 @@ async def _run_listener_cycle(bot_token: str) -> str:
     )
     _clients[:] = started
     _loop_holder["ptb_bot"] = ptb_bot
+    _loop_holder["bot_dm_username"] = bot_dm_username
 
     logger.info(
         "dm_gc listener cycle started telethon_sessions=%s",

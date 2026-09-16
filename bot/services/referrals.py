@@ -11,10 +11,7 @@ from typing import Literal
 
 from sqlalchemy.exc import IntegrityError
 
-from club_gc_settings import (
-    get_club_gc_config_by_link_club_id,
-    get_gc_users_to_add,
-)
+from club_gc_settings import get_club_gc_config_by_link_club_id
 from db.connection import get_db
 from db.models import ReferralAttribution, ReferralLink
 from bot.services.support_group_chats import (
@@ -51,6 +48,7 @@ class GroupMessage:
 class StartResult:
     kind: Literal["hop", "existing", "unknown", "noop"]
     text: str
+    club_id: int | None = None
 
 
 def generate_referral_code() -> str:
@@ -77,14 +75,63 @@ def format_referral_link_message(url: str) -> str:
     return REFERRAL_LINK_MESSAGE.format(url=url)
 
 
+def get_credited_referral_player_ids(
+    *, club_id: int, referrer_chat_id: int
+) -> list[str]:
+    """Return current credited player ids for a referrer group, newest first."""
+    with get_db() as session:
+        rows = (
+            session.query(ReferralAttribution)
+            .join(
+                ReferralLink,
+                ReferralAttribution.referral_link_id == ReferralLink.id,
+            )
+            .filter(
+                ReferralLink.club_id == int(club_id),
+                ReferralLink.referrer_chat_id == int(referrer_chat_id),
+                ReferralAttribution.status == STATUS_CREDITED,
+                ReferralAttribution.referred_gg_player_id.isnot(None),
+            )
+            .order_by(
+                ReferralAttribution.credited_at.desc(),
+                ReferralAttribution.id.desc(),
+            )
+            .all()
+        )
+        return [
+            row.referred_gg_player_id.strip()
+            for row in rows
+            if row.referred_gg_player_id and row.referred_gg_player_id.strip()
+        ]
+
+
+def format_my_referrals_messages(
+    player_ids: list[str], *, max_chars: int = 4096
+) -> list[str]:
+    """Render all credited referrals without exceeding Telegram message limits."""
+    if not player_ids:
+        return ["You haven't referred any players yet."]
+
+    header = f"You have referred {len(player_ids)} players:"
+    messages: list[str] = []
+    current = header
+    for player_id in player_ids:
+        line = f"• {player_id}"
+        candidate = f"{current}\n\n{line}" if current == header else f"{current}\n{line}"
+        if len(candidate) <= max_chars:
+            current = candidate
+            continue
+        messages.append(current)
+        current = line
+    messages.append(current)
+    return messages
+
+
 def support_account_username(club_id: int) -> str | None:
     cfg = get_club_gc_config_by_link_club_id(int(club_id))
     if cfg is None:
         return None
-    users = get_gc_users_to_add(cfg)
-    if not users:
-        return None
-    raw = str(users[0]).strip()
+    raw = str(cfg.referral_support_account or "").strip()
     if not raw:
         return None
     return raw if raw.startswith("@") else f"@{raw}"
@@ -210,6 +257,7 @@ def handle_start_payload(
                 text=existing_player_message(
                     existing.invite_link if isinstance(existing.invite_link, str) else None
                 ),
+                club_id=int(link.club_id),
             )
 
     try:
@@ -237,7 +285,11 @@ def handle_start_payload(
         # First click already recorded (race or second code).
         pass
 
-    return StartResult(kind="hop", text=hop_message(link.club_id))
+    return StartResult(
+        kind="hop",
+        text=hop_message(link.club_id),
+        club_id=int(link.club_id),
+    )
 
 
 def pending_hop_for_user(clicker_telegram_user_id: int) -> StartResult | None:
@@ -263,7 +315,11 @@ def pending_hop_for_user(clicker_telegram_user_id: int) -> StartResult | None:
             existing = fetch_support_group_chat_by_club_player(club_key, uid)
             if existing is not None:
                 continue
-        return StartResult(kind="hop", text=hop_message(attr.club_id))
+        return StartResult(
+            kind="hop",
+            text=hop_message(attr.club_id),
+            club_id=int(attr.club_id),
+        )
     return None
 
 

@@ -128,6 +128,7 @@ class ClubGcConfig:
     initial_group_message_template: str
     # Dashboard clubs.id — link megagroups from /gc so the bot sends welcome + member-join bundle.
     link_club_id: int
+    referral_support_account: str | None = None
     # Elevate Admin flow (Round Table): optional alternate creator + link-join admin target.
     group_creator_club_key: str | None = None
     link_join_club_key: str | None = None
@@ -183,6 +184,9 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
                 "Group created. Invite link: {invite_link}",
             ),
             link_club_id=_link_club_id_for_gc("GC_LINK_CLUB_ID_ROUND_TABLE", default_dashboard_id=2),
+            referral_support_account=_env_str(
+                "REFERRAL_SUPPORT_ACCOUNT_ROUND_TABLE", "@RoundTableSupport2"
+            ),
         ),
         "creator_club": ClubGcConfig(
             club_key="creator_club",
@@ -203,6 +207,9 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
                 "Group created. Invite link: {invite_link}",
             ),
             link_club_id=_link_club_id_for_gc("GC_LINK_CLUB_ID_CREATOR_CLUB", default_dashboard_id=3),
+            referral_support_account=_env_str(
+                "REFERRAL_SUPPORT_ACCOUNT_CREATOR_CLUB", "@CreatorClubSupport2"
+            ),
         ),
         "clubgto": ClubGcConfig(
             club_key="clubgto",
@@ -221,6 +228,9 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
                 "Group created. Invite link: {invite_link}",
             ),
             link_club_id=_link_club_id_for_gc("GC_LINK_CLUB_ID_CLUB_GTO", default_dashboard_id=4),
+            referral_support_account=_env_str(
+                "REFERRAL_SUPPORT_ACCOUNT_CLUB_GTO", "@ClubGTOAdmin"
+            ),
         ),
     }
 

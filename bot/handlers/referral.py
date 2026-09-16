@@ -16,7 +16,10 @@ from bot.services.referrals import (
     build_referral_url,
     ensure_referral_link,
     format_referral_link_message,
+    format_my_referrals_messages,
+    get_credited_referral_player_ids,
     handle_start_payload,
+    hop_message,
     is_referral_start_payload,
     pending_hop_for_user,
 )
@@ -84,6 +87,37 @@ async def referral_link_handler(update: Update, context: ContextTypes.DEFAULT_TY
     await update.message.reply_text(format_referral_link_message(url))
 
 
+async def my_referrals_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """List credited referrals for this titled support group."""
+    if not update.message or not update.effective_chat:
+        return
+    chat = update.effective_chat
+    if chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+        return
+
+    sgc = fetch_support_group_chat_by_telegram_chat_id(chat.id)
+    if sgc is None:
+        return
+
+    club_id = get_club_for_chat(chat.id)
+    if club_id is None:
+        return
+
+    title = chat.title or sgc.telegram_chat_title or ""
+    if not gg_player_id_from_title(title):
+        await update.message.reply_text(UNTITLED_GROUP_ERROR)
+        return
+
+    player_ids = get_credited_referral_player_ids(
+        club_id=int(club_id),
+        referrer_chat_id=int(chat.id),
+    )
+    for text in format_my_referrals_messages(player_ids):
+        await update.message.reply_text(text)
+
+
 async def maybe_handle_referral_start(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> bool:
@@ -101,7 +135,19 @@ async def maybe_handle_referral_start(
             clicker_telegram_user_id=int(update.effective_user.id),
             code=payload,
         )
-        await update.message.reply_text(result.text)
+        text = result.text
+        if result.kind in ("hop", "existing") and result.club_id is not None:
+            from bot.services.mtproto_dm_gc_listener import (
+                run_referral_gc_for_bot_user,
+            )
+
+            automated_text = await run_referral_gc_for_bot_user(
+                club_id=int(result.club_id),
+                player_telegram_user_id=int(update.effective_user.id),
+                player_username=update.effective_user.username,
+            )
+            text = automated_text or hop_message(int(result.club_id))
+        await update.message.reply_text(text)
         return True
 
     pending = pending_hop_for_user(int(update.effective_user.id))

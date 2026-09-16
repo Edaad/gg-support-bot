@@ -39,6 +39,7 @@ RESERVED_CMDS = {
     "bonus",
     "earlyrb",
     "referral_link",
+    "myreferrals",
     "depositaccess",
     "listdepositaccess",
     "depositaccesslist",  # common typo alias; real handler is /listdepositaccess

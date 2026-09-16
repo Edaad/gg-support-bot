@@ -61,6 +61,50 @@ class ResolveSupportGroupInviteLinkTests(unittest.IsolatedAsyncioTestCase):
 
 
 class TestFlowExistingGroupInvite(unittest.IsolatedAsyncioTestCase):
+    async def test_referral_flow_returns_link_without_admin_dm(self) -> None:
+        client = MagicMock()
+        client.get_entity = AsyncMock(return_value=MagicMock())
+        client.send_message = AsyncMock()
+        cfg = MagicMock(club_key="creator_club")
+        row = MagicMock(
+            id=3,
+            telegram_chat_id=-100789,
+            invite_link="https://t.me/+existing",
+            telegram_chat_title="CC / / Player",
+        )
+        player = MagicMock(
+            id=555,
+            username="player",
+            first_name="Test",
+            last_name="Player",
+        )
+
+        with (
+            patch(
+                "bot.services.mtproto_dm_gc_listener.ensure_player_in_support_group",
+                new=AsyncMock(return_value="already_member"),
+            ),
+            patch(
+                "bot.services.group_chat_invite_links.resolve_support_group_invite_link",
+                new=AsyncMock(
+                    return_value=("https://t.me/+existing", "stored_valid")
+                ),
+            ),
+            patch("bot.services.mtproto_dm_gc_listener.update_support_group_chat_row"),
+        ):
+            link = await _flow_existing_group(
+                client,
+                cfg,
+                row,
+                player,
+                listener_label="creator_club:referral",
+                trigger="referral_link",
+                send_player_dm=False,
+            )
+
+        self.assertEqual(link, "https://t.me/+existing")
+        client.send_message.assert_not_awaited()
+
     async def test_does_not_reuse_stale_db_link_when_refresh_fails(self) -> None:
         client = MagicMock()
         client.get_entity = AsyncMock(return_value=MagicMock())
