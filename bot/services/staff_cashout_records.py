@@ -251,7 +251,6 @@ def create_staff_cashout_record_from_job(job: dict[str, Any]) -> Optional[int]:
         notify_cashout_pushover_sync(
             record_id,
             source=SOURCE_CREATE,
-            require_master_toggle=True,
         )
     except Exception:
         logger.exception(
@@ -389,7 +388,6 @@ def create_staff_cashout_record_manual(
         notify_cashout_pushover_sync(
             record_id,
             source=SOURCE_CREATE,
-            require_master_toggle=True,
         )
     except Exception:
         logger.exception(

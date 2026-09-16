@@ -1002,6 +1002,7 @@ class StaffCashoutRecord(Base):
     do_not_send = Column(Boolean, nullable=False, default=False)
     audited = Column(Boolean, nullable=False, default=False)
     last_slack_reminder_at = Column(DateTime, nullable=True)
+    create_notified_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(
         DateTime, server_default=func.now(), onupdate=func.now()
@@ -1031,6 +1032,9 @@ class StaffCashoutSlackReminderControl(Base):
     id = Column(Integer, primary_key=True, default=1)
     enabled = Column(Boolean, nullable=False, default=False)
     enabled_at = Column(DateTime(timezone=True), nullable=True)
+    hours_enabled = Column(Boolean, nullable=False, default=True)
+    hours_start = Column(String(5), nullable=False, default="08:00")
+    hours_end = Column(String(5), nullable=False, default="23:00")
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

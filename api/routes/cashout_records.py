@@ -276,9 +276,15 @@ def export_cashout_money_sends_csv(
 def get_cashout_slack_reminder(
     _admin: str = Depends(require_admin),
 ):
-    from bot.services.staff_cashout_slack_reminders import get_slack_reminder_enabled
+    from bot.services.staff_cashout_slack_reminders import get_notify_control
 
-    return StaffCashoutSlackReminderRead(enabled=get_slack_reminder_enabled())
+    state = get_notify_control()
+    return StaffCashoutSlackReminderRead(
+        enabled=bool(state["enabled"]),
+        hours_enabled=bool(state["hours_enabled"]),
+        hours_start=str(state["hours_start"]),
+        hours_end=str(state["hours_end"]),
+    )
 
 
 @router.patch("/slack-reminder", response_model=StaffCashoutSlackReminderRead)
@@ -287,12 +293,18 @@ async def patch_cashout_slack_reminder(
     _admin: str = Depends(require_admin),
 ):
     from bot.services.staff_cashout_slack_reminders import (
+        cashout_staff_alerts_open,
+        get_notify_control,
         send_due_cashout_reminders,
-        set_slack_reminder_enabled,
+        set_notify_control,
     )
 
-    state = set_slack_reminder_enabled(bool(body.enabled))
-    if state["enabled"]:
+    updates = body.model_dump(exclude_unset=True)
+    try:
+        state = set_notify_control(**updates) if updates else get_notify_control()
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if state["enabled"] and cashout_staff_alerts_open():
         try:
             sent = await send_due_cashout_reminders()
             if sent:
@@ -301,7 +313,12 @@ async def patch_cashout_slack_reminder(
                 )
         except Exception:
             logger.exception("cashout_slack_reminder: immediate send failed")
-    return StaffCashoutSlackReminderRead(enabled=bool(state["enabled"]))
+    return StaffCashoutSlackReminderRead(
+        enabled=bool(state["enabled"]),
+        hours_enabled=bool(state["hours_enabled"]),
+        hours_start=str(state["hours_start"]),
+        hours_end=str(state["hours_end"]),
+    )
 
 
 def _recipient_read(data: dict) -> StaffCashoutNotifyRecipientRead:

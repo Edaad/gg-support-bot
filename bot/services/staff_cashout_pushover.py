@@ -11,9 +11,10 @@ from sqlalchemy.orm import joinedload
 from bot.services.staff_cashout_records import compute_ledger
 from bot.services.staff_cashout_slack_reminders import (
     cashout_record_dashboard_url,
+    cashout_staff_alerts_open,
     format_cashout_pushover_create,
     format_cashout_pushover_reminder,
-    get_slack_reminder_enabled,
+    mark_create_notified,
 )
 from db.connection import get_db
 from db.models import StaffCashoutNotifyRecipient, StaffCashoutRecord
@@ -285,17 +286,18 @@ def notify_cashout_pushover_sync(
     *,
     title: str | None = None,
     source: str = SOURCE_CREATE,
-    require_master_toggle: bool = True,
 ) -> int:
     """Fan-out sync Pushover. Returns count of successful sends. Never raises."""
     try:
-        if require_master_toggle and not get_slack_reminder_enabled():
+        if not cashout_staff_alerts_open():
             return 0
         ctx = _load_record_notify_context(record_id)
         if ctx is None:
             return 0
         targets = recipients_for_rails(ctx["rails"])
         if not targets:
+            if source == SOURCE_CREATE:
+                mark_create_notified(record_id)
             return 0
         from bot.services.pushover_notify import notify_pushover_sync
 
@@ -321,6 +323,8 @@ def notify_cashout_pushover_sync(
                     record_id,
                     person.get("id"),
                 )
+        if source == SOURCE_CREATE:
+            mark_create_notified(record_id)
         return sent
     except Exception:
         logger.exception(
@@ -334,11 +338,10 @@ async def notify_cashout_pushover_async(
     *,
     title: str | None = None,
     source: str = SOURCE_OVERDUE,
-    require_master_toggle: bool = False,
 ) -> int:
     """Fan-out async Pushover. Returns count of successful sends. Never raises."""
     try:
-        if require_master_toggle and not get_slack_reminder_enabled():
+        if not cashout_staff_alerts_open():
             return 0
         ctx = _load_record_notify_context(record_id)
         if ctx is None:

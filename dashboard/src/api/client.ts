@@ -512,15 +512,28 @@ export const deleteCashoutRecord = (token: string, id: number) =>
     method: 'DELETE',
   }, token)
 
-export type CashoutSlackReminderT = { enabled: boolean }
+export type CashoutSlackReminderT = {
+  enabled: boolean
+  hours_enabled: boolean
+  hours_start: string
+  hours_end: string
+}
 
 export const getCashoutSlackReminder = (token: string) =>
   request<CashoutSlackReminderT>(`/cashout-records/slack-reminder`, {}, token)
 
-export const setCashoutSlackReminder = (token: string, enabled: boolean) =>
+export const setCashoutSlackReminder = (
+  token: string,
+  body: {
+    enabled?: boolean
+    hours_enabled?: boolean
+    hours_start?: string
+    hours_end?: string
+  },
+) =>
   request<CashoutSlackReminderT>(`/cashout-records/slack-reminder`, {
     method: 'PATCH',
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify(body),
   }, token)
 
 export type CashoutNotifyRailT = { slug: string; label: string }

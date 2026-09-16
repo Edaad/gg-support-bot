@@ -44,6 +44,10 @@ export default function CashoutNotifyConfigModal({
   onError,
 }: Props) {
   const [slackOn, setSlackOn] = useState(false)
+  const [hoursEnabled, setHoursEnabled] = useState(true)
+  const [hoursStart, setHoursStart] = useState('08:00')
+  const [hoursEnd, setHoursEnd] = useState('23:00')
+  const [hoursSaving, setHoursSaving] = useState(false)
   const [slackLoading, setSlackLoading] = useState(false)
   const [slackSaving, setSlackSaving] = useState(false)
   const [rails, setRails] = useState<CashoutNotifyRailT[]>([])
@@ -63,6 +67,9 @@ export default function CashoutNotifyConfigModal({
     ])
       .then(([slack, list]) => {
         setSlackOn(Boolean(slack.enabled))
+        setHoursEnabled(slack.hours_enabled !== false)
+        setHoursStart(slack.hours_start || '08:00')
+        setHoursEnd(slack.hours_end || '23:00')
         setRails(list.rails)
         setRecipients(list.recipients)
         const next: Record<number, Draft> = {}
@@ -97,13 +104,32 @@ export default function CashoutNotifyConfigModal({
     setSlackOn(next)
     setSlackSaving(true)
     try {
-      const res = await setCashoutSlackReminder(token, next)
+      const res = await setCashoutSlackReminder(token, { enabled: next })
       setSlackOn(Boolean(res.enabled))
     } catch (e) {
       setSlackOn(!next)
       onError(e instanceof Error ? e.message : 'Failed to update Slack reminder')
     } finally {
       setSlackSaving(false)
+    }
+  }
+
+  const saveHours = async (patch: {
+    hours_enabled?: boolean
+    hours_start?: string
+    hours_end?: string
+  }) => {
+    if (hoursSaving) return
+    setHoursSaving(true)
+    try {
+      const res = await setCashoutSlackReminder(token, patch)
+      setHoursEnabled(res.hours_enabled !== false)
+      setHoursStart(res.hours_start || '08:00')
+      setHoursEnd(res.hours_end || '23:00')
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed to update cashout hours')
+    } finally {
+      setHoursSaving(false)
     }
   }
 
@@ -200,9 +226,63 @@ export default function CashoutNotifyConfigModal({
           </span>
         </label>
         <p className="text-sm text-ink-muted">
-          When on: overdue Active cashouts post Slack, and creation/overdue Pushover
-          goes to people below whose methods match (Other/custom notifies everyone).
+          When on: overdue Active cashouts also post to Slack. Creation and overdue
+          Pushover always go to people below whose methods match (Other/custom
+          notifies everyone), including when this switch is off.
         </p>
+
+        <div
+          className={`space-y-3 rounded-lg border border-border bg-surface-raised px-3 py-3 ${
+            hoursSaving ? 'opacity-60' : ''
+          }`}
+        >
+          <label className="inline-flex min-h-11 cursor-pointer items-center gap-3 text-sm text-ink">
+            <span className="font-medium">Active cashout hours</span>
+            <span className="relative inline-flex h-6 w-11 shrink-0 items-center">
+              <input
+                type="checkbox"
+                className="peer sr-only"
+                role="switch"
+                aria-checked={hoursEnabled}
+                checked={hoursEnabled}
+                disabled={hoursSaving}
+                onChange={() => void saveHours({ hours_enabled: !hoursEnabled })}
+              />
+              <span className="h-6 w-11 rounded-full bg-control transition peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40" />
+              <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-surface shadow transition peer-checked:translate-x-5" />
+            </span>
+          </label>
+          <p className="text-sm text-ink-muted">
+            Staff alerts (new + 5 min urgent) pause outside this window and resume
+            when hours open. Players can still request cashouts. Times are EST.
+          </p>
+          {hoursEnabled ? (
+            <div className="flex flex-wrap gap-4">
+              <label className="block text-sm">
+                <span className="mb-1 block text-ink-muted">Open (EST)</span>
+                <input
+                  type="time"
+                  value={hoursStart}
+                  disabled={hoursSaving}
+                  onChange={(e) => setHoursStart(e.target.value)}
+                  onBlur={(e) => void saveHours({ hours_start: e.target.value })}
+                  className="rounded-lg border border-border bg-surface px-3 py-2 text-ink"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block text-ink-muted">Close (EST)</span>
+                <input
+                  type="time"
+                  value={hoursEnd}
+                  disabled={hoursSaving}
+                  onChange={(e) => setHoursEnd(e.target.value)}
+                  onBlur={(e) => void saveHours({ hours_end: e.target.value })}
+                  className="rounded-lg border border-border bg-surface px-3 py-2 text-ink"
+                />
+              </label>
+            </div>
+          ) : null}
+        </div>
 
         {loading ? (
           <p className="text-sm text-ink-muted">Loading…</p>

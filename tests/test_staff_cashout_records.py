@@ -257,7 +257,7 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
         self.assertEqual(order, ["record", "payment"])
         notify.assert_called_once()
         self.assertEqual(notify.call_args.args[0], 11)
-        self.assertTrue(notify.call_args.kwargs.get("require_master_toggle"))
+        self.assertNotIn("require_master_toggle", notify.call_args.kwargs)
 
     def test_manual_create_requires_payments(self) -> None:
         with self.assertRaises(ValueError) as ctx:
@@ -918,13 +918,28 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
 
     def test_get_slack_reminder_admin_ok(self) -> None:
         with patch(
-            "bot.services.staff_cashout_slack_reminders.get_slack_reminder_enabled",
-            return_value=True,
+            "bot.services.staff_cashout_slack_reminders.get_notify_control",
+            return_value={
+                "enabled": True,
+                "hours_enabled": True,
+                "hours_start": "08:00",
+                "hours_end": "23:00",
+                "enabled_at": None,
+                "updated_at": None,
+            },
         ):
             client = TestClient(_make_api_app())
             resp = client.get("/api/cashout-records/slack-reminder")
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json(), {"enabled": True})
+        self.assertEqual(
+            resp.json(),
+            {
+                "enabled": True,
+                "hours_enabled": True,
+                "hours_start": "08:00",
+                "hours_end": "23:00",
+            },
+        )
 
     def test_get_slack_reminder_am_forbidden(self) -> None:
         app = _make_api_app()
@@ -935,9 +950,19 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
 
     def test_patch_slack_reminder_on_fires_immediately(self) -> None:
         with patch(
-            "bot.services.staff_cashout_slack_reminders.set_slack_reminder_enabled",
-            return_value={"enabled": True, "enabled_at": None, "updated_at": None},
+            "bot.services.staff_cashout_slack_reminders.set_notify_control",
+            return_value={
+                "enabled": True,
+                "hours_enabled": True,
+                "hours_start": "08:00",
+                "hours_end": "23:00",
+                "enabled_at": None,
+                "updated_at": None,
+            },
         ) as mock_set, patch(
+            "bot.services.staff_cashout_slack_reminders.cashout_staff_alerts_open",
+            return_value=True,
+        ), patch(
             "bot.services.staff_cashout_slack_reminders.send_due_cashout_reminders",
             new_callable=AsyncMock,
             return_value=2,
@@ -948,14 +973,24 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
                 json={"enabled": True},
             )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json(), {"enabled": True})
-        mock_set.assert_called_once_with(True)
+        self.assertTrue(resp.json()["enabled"])
+        mock_set.assert_called_once_with(enabled=True)
         mock_send.assert_awaited_once()
 
     def test_patch_slack_reminder_off_does_not_send(self) -> None:
         with patch(
-            "bot.services.staff_cashout_slack_reminders.set_slack_reminder_enabled",
-            return_value={"enabled": False, "enabled_at": None, "updated_at": None},
+            "bot.services.staff_cashout_slack_reminders.set_notify_control",
+            return_value={
+                "enabled": False,
+                "hours_enabled": True,
+                "hours_start": "08:00",
+                "hours_end": "23:00",
+                "enabled_at": None,
+                "updated_at": None,
+            },
+        ), patch(
+            "bot.services.staff_cashout_slack_reminders.cashout_staff_alerts_open",
+            return_value=True,
         ), patch(
             "bot.services.staff_cashout_slack_reminders.send_due_cashout_reminders",
             new_callable=AsyncMock,
@@ -967,8 +1002,50 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
                 json={"enabled": False},
             )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json(), {"enabled": False})
+        self.assertFalse(resp.json()["enabled"])
         mock_send.assert_not_awaited()
+
+    def test_patch_notify_hours_admin_ok(self) -> None:
+        with patch(
+            "bot.services.staff_cashout_slack_reminders.set_notify_control",
+            return_value={
+                "enabled": True,
+                "hours_enabled": True,
+                "hours_start": "09:00",
+                "hours_end": "22:00",
+                "enabled_at": None,
+                "updated_at": None,
+            },
+        ) as mock_set, patch(
+            "bot.services.staff_cashout_slack_reminders.cashout_staff_alerts_open",
+            return_value=True,
+        ), patch(
+            "bot.services.staff_cashout_slack_reminders.send_due_cashout_reminders",
+            new_callable=AsyncMock,
+            return_value=0,
+        ) as mock_send:
+            client = TestClient(_make_api_app())
+            resp = client.patch(
+                "/api/cashout-records/slack-reminder",
+                json={"hours_start": "09:00", "hours_end": "22:00"},
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["hours_start"], "09:00")
+        self.assertEqual(resp.json()["hours_end"], "22:00")
+        mock_set.assert_called_once_with(hours_start="09:00", hours_end="22:00")
+        mock_send.assert_awaited_once()
+
+    def test_patch_notify_hours_invalid_400(self) -> None:
+        with patch(
+            "bot.services.staff_cashout_slack_reminders.set_notify_control",
+            side_effect=ValueError("Hours must be HH:MM"),
+        ):
+            client = TestClient(_make_api_app())
+            resp = client.patch(
+                "/api/cashout-records/slack-reminder",
+                json={"hours_start": "25:00"},
+            )
+        self.assertEqual(resp.status_code, 400)
 
     def test_patch_slack_reminder_am_forbidden(self) -> None:
         app = _make_api_app()

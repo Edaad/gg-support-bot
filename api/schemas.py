@@ -741,10 +741,16 @@ class StaffCashoutRecordUpdate(BaseModel):
 
 class StaffCashoutSlackReminderRead(BaseModel):
     enabled: bool = False
+    hours_enabled: bool = True
+    hours_start: str = "08:00"
+    hours_end: str = "23:00"
 
 
 class StaffCashoutSlackReminderUpdate(BaseModel):
-    enabled: bool
+    enabled: Optional[bool] = None
+    hours_enabled: Optional[bool] = None
+    hours_start: Optional[str] = None
+    hours_end: Optional[str] = None
 
 
 class StaffCashoutNotifyRecipientRead(BaseModel):

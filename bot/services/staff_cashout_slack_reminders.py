@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import joinedload
 
@@ -20,6 +22,10 @@ REMINDER_INTERVAL = timedelta(minutes=5)
 JOB_POLL_INTERVAL = timedelta(seconds=30)
 SLACK_SOURCE = "cashout_slack_reminder"
 DASHBOARD_PUBLIC_URL_ENV = "DASHBOARD_PUBLIC_URL"
+EASTERN = ZoneInfo("America/New_York")
+DEFAULT_HOURS_START = "08:00"
+DEFAULT_HOURS_END = "23:00"
+_HHMM_RE = re.compile(r"^(\d{1,2}):(\d{2})(?::\d{2})?$")
 
 
 def _naive_utc(dt: datetime | None) -> datetime | None:
@@ -33,6 +39,82 @@ def _naive_utc(dt: datetime | None) -> datetime | None:
 
 def _now_naive_utc() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _as_utc(dt: datetime | None) -> datetime:
+    if dt is None:
+        return datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def parse_notify_hhmm(value: str) -> str:
+    """Normalize HH:MM (optional seconds). Raises ValueError if invalid."""
+    raw = (value or "").strip()
+    match = _HHMM_RE.fullmatch(raw)
+    if not match:
+        raise ValueError("Hours must be HH:MM")
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    if hour > 23 or minute > 59:
+        raise ValueError("Hours must be HH:MM")
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _hhmm_to_minutes(value: str) -> int:
+    hour, minute = (int(p) for p in parse_notify_hhmm(value).split(":"))
+    return hour * 60 + minute
+
+
+def is_within_est_window(
+    now: datetime | None,
+    hours_start: str,
+    hours_end: str,
+) -> bool:
+    """True if `now` (UTC naive or aware) falls in [start, end) America/New_York.
+
+    Equal start and end means 24h. If start > end the window wraps midnight.
+    """
+    est = _as_utc(now).astimezone(EASTERN)
+    current = est.hour * 60 + est.minute
+    start_m = _hhmm_to_minutes(hours_start or DEFAULT_HOURS_START)
+    end_m = _hhmm_to_minutes(hours_end or DEFAULT_HOURS_END)
+    if start_m == end_m:
+        return True
+    if start_m < end_m:
+        return start_m <= current < end_m
+    return current >= start_m or current < end_m
+
+
+def _control_hours_start(row: StaffCashoutSlackReminderControl) -> str:
+    return str(getattr(row, "hours_start", None) or DEFAULT_HOURS_START)
+
+
+def _control_hours_end(row: StaffCashoutSlackReminderControl) -> str:
+    return str(getattr(row, "hours_end", None) or DEFAULT_HOURS_END)
+
+
+def _hours_open_for_control(
+    row: StaffCashoutSlackReminderControl,
+    now: datetime | None,
+) -> bool:
+    if not bool(getattr(row, "hours_enabled", True)):
+        return True
+    return is_within_est_window(
+        now, _control_hours_start(row), _control_hours_end(row)
+    )
+
+
+def _control_to_dict(row: StaffCashoutSlackReminderControl) -> dict[str, Any]:
+    return {
+        "enabled": bool(row.enabled),
+        "enabled_at": row.enabled_at,
+        "updated_at": row.updated_at,
+        "hours_enabled": bool(getattr(row, "hours_enabled", True)),
+        "hours_start": _control_hours_start(row),
+        "hours_end": _control_hours_end(row),
+    }
 
 
 def format_remaining_money(amount: Any) -> str:
@@ -127,33 +209,75 @@ def _ensure_control_row(session) -> StaffCashoutSlackReminderControl:
         .first()
     )
     if row is None:
-        row = StaffCashoutSlackReminderControl(id=1, enabled=False)
+        row = StaffCashoutSlackReminderControl(
+            id=1,
+            enabled=False,
+            hours_enabled=True,
+            hours_start=DEFAULT_HOURS_START,
+            hours_end=DEFAULT_HOURS_END,
+        )
         session.add(row)
         session.flush()
     return row
 
 
+def get_notify_control() -> dict[str, Any]:
+    with get_db() as session:
+        return _control_to_dict(_ensure_control_row(session))
+
+
 def get_slack_reminder_enabled() -> bool:
+    return bool(get_notify_control()["enabled"])
+
+
+def cashout_staff_alerts_open(now: datetime | None = None) -> bool:
+    """False while active-hours are enabled and `now` is outside the EST window."""
     with get_db() as session:
         row = _ensure_control_row(session)
-        return bool(row.enabled)
+        return _hours_open_for_control(row, now)
+
+
+def set_notify_control(
+    *,
+    enabled: bool | None = None,
+    hours_enabled: bool | None = None,
+    hours_start: str | None = None,
+    hours_end: str | None = None,
+) -> dict[str, Any]:
+    """Persist notify toggle and/or EST hours. Enabling refreshes enabled_at."""
+    now = datetime.now(timezone.utc)
+    start = parse_notify_hhmm(hours_start) if hours_start is not None else None
+    end = parse_notify_hhmm(hours_end) if hours_end is not None else None
+    with get_db() as session:
+        row = _ensure_control_row(session)
+        if enabled is not None:
+            row.enabled = bool(enabled)
+            if enabled:
+                row.enabled_at = now
+        if hours_enabled is not None:
+            row.hours_enabled = bool(hours_enabled)
+        if start is not None:
+            row.hours_start = start
+        if end is not None:
+            row.hours_end = end
+        row.updated_at = now
+        session.flush()
+        return _control_to_dict(row)
 
 
 def set_slack_reminder_enabled(enabled: bool) -> dict[str, Any]:
     """Persist toggle. When enabling, set enabled_at so overdue rows re-fire."""
-    now = datetime.now(timezone.utc)
+    return set_notify_control(enabled=enabled)
+
+
+def mark_create_notified(record_id: int, at: datetime | None = None) -> None:
+    """Stamp initial create alert so it is not deferred or retried."""
+    ping_at = _naive_utc(at) if at is not None else _now_naive_utc()
     with get_db() as session:
-        row = _ensure_control_row(session)
-        row.enabled = bool(enabled)
-        if enabled:
-            row.enabled_at = now
-        row.updated_at = now
-        session.flush()
-        return {
-            "enabled": bool(row.enabled),
-            "enabled_at": row.enabled_at,
-            "updated_at": row.updated_at,
-        }
+        row = session.get(StaffCashoutRecord, int(record_id))
+        if row is None or getattr(row, "create_notified_at", None) is not None:
+            return
+        row.create_notified_at = ping_at
 
 
 def _is_due(
@@ -162,11 +286,12 @@ def _is_due(
     last_slack_reminder_at: datetime | None,
     enabled_at: datetime | None,
     now: datetime,
+    create_notified_at: datetime | None = None,
 ) -> bool:
-    created = _naive_utc(created_at)
-    if created is None:
+    notified = _naive_utc(create_notified_at)
+    if notified is None:
         return False
-    if created > now - REMINDER_INTERVAL:
+    if notified > now - REMINDER_INTERVAL:
         return False
 
     last = _naive_utc(last_slack_reminder_at)
@@ -182,14 +307,14 @@ def _is_due(
 def list_due_cashout_reminders(
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
-    """Active overdue cashouts due for a Slack ping while the control is enabled."""
+    """Active overdue cashouts due for a 5-minute reminder (Slack and/or Pushover)."""
     now_naive = _naive_utc(now) if now is not None else _now_naive_utc()
     assert now_naive is not None
     cutoff = now_naive - REMINDER_INTERVAL
 
     with get_db() as session:
         control = _ensure_control_row(session)
-        if not control.enabled:
+        if not _hours_open_for_control(control, now_naive):
             return []
 
         enabled_at = control.enabled_at
@@ -202,6 +327,7 @@ def list_due_cashout_reminders(
                 StaffCashoutRecord.tracks_money_sent.is_(True),
                 StaffCashoutRecord.created_at.isnot(None),
                 StaffCashoutRecord.created_at <= cutoff,
+                StaffCashoutRecord.create_notified_at.isnot(None),
             )
             .order_by(StaffCashoutRecord.created_at.asc(), StaffCashoutRecord.id.asc())
             .all()
@@ -228,6 +354,7 @@ def list_due_cashout_reminders(
                 ),
                 enabled_at=enabled_at,
                 now=now_naive,
+                create_notified_at=getattr(record, "create_notified_at", None),
             ):
                 continue
             due.append(
@@ -244,20 +371,84 @@ def list_due_cashout_reminders(
         return due
 
 
+def list_pending_create_notifies(
+    now: datetime | None = None,
+) -> list[int]:
+    """Active cashouts that still need the initial create Pushover."""
+    now_naive = _naive_utc(now) if now is not None else _now_naive_utc()
+    assert now_naive is not None
+
+    with get_db() as session:
+        control = _ensure_control_row(session)
+        if not _hours_open_for_control(control, now_naive):
+            return []
+
+        rows = (
+            session.query(StaffCashoutRecord)
+            .options(joinedload(StaffCashoutRecord.money_sends))
+            .filter(
+                StaffCashoutRecord.do_not_send.is_(False),
+                StaffCashoutRecord.sending.is_(False),
+                StaffCashoutRecord.tracks_money_sent.is_(True),
+                StaffCashoutRecord.create_notified_at.is_(None),
+            )
+            .order_by(StaffCashoutRecord.created_at.asc(), StaffCashoutRecord.id.asc())
+            .all()
+        )
+        pending: list[int] = []
+        for record in rows:
+            sends = [
+                {
+                    "amount": s.amount,
+                    "created_at": s.created_at,
+                }
+                for s in (record.money_sends or [])
+            ]
+            ledger = compute_ledger(True, record.amount, sends)
+            if ledger["status"] != "active":
+                continue
+            pending.append(int(record.id))
+        return pending
+
+
+def send_pending_create_notifies(now: datetime | None = None) -> int:
+    """Send deferred New Cashout Pushover. Returns records attempted."""
+    from bot.services.staff_cashout_pushover import (
+        SOURCE_CREATE,
+        notify_cashout_pushover_sync,
+    )
+
+    pending = list_pending_create_notifies(now=now)
+    sent = 0
+    for record_id in pending:
+        notify_cashout_pushover_sync(
+            record_id,
+            source=SOURCE_CREATE,
+        )
+        sent += 1
+        logger.info(
+            "cashout_create_notify: deferred record_id=%s",
+            record_id,
+        )
+    return sent
+
+
 async def send_due_cashout_reminders(
     now: datetime | None = None,
 ) -> int:
-    """Post head-admin Slack (then Pushover) for each due cashout. Returns count sent."""
+    """Post overdue Pushover, and Slack when the 5 min Slack reminder is on."""
     from bot.services.staff_cashout_pushover import (
         SOURCE_OVERDUE,
         notify_cashout_pushover_async,
     )
     from bot.services.slack_ops_notify import notify_slack_head_admin_escalation
 
+    send_pending_create_notifies(now=now)
     due = list_due_cashout_reminders(now=now)
     if not due:
         return 0
 
+    slack_on = get_slack_reminder_enabled()
     base = dashboard_public_base_url()
     if not base:
         logger.warning(
@@ -272,26 +463,26 @@ async def send_due_cashout_reminders(
         group_title = str(item.get("group_title") or "")
         remaining = item.get("remaining")
         url = f"{base}/cashout-records/{record_id}" if base else None
-        text = format_cashout_slack_reminder(
-            group_title=group_title,
-            remaining=remaining,
-            record_id=record_id,
-            dashboard_url=url,
-        )
-        ok = await notify_slack_head_admin_escalation(text, source=SLACK_SOURCE)
-        if not ok:
-            logger.warning(
-                "cashout_slack_reminder: slack failed record_id=%s",
-                record_id,
+        if slack_on:
+            text = format_cashout_slack_reminder(
+                group_title=group_title,
+                remaining=remaining,
+                record_id=record_id,
+                dashboard_url=url,
             )
-            continue
+            ok = await notify_slack_head_admin_escalation(text, source=SLACK_SOURCE)
+            if not ok:
+                logger.warning(
+                    "cashout_slack_reminder: slack failed record_id=%s",
+                    record_id,
+                )
+                continue
 
-        # Additive: method-filtered Pushover after Slack succeeds. Stamp
-        # regardless of Pushover outcome so we do not re-fire every 30s poll.
+        # Method-filtered Pushover. Stamp regardless of Pushover outcome so we
+        # do not re-fire every 30s poll. Slack (when on) must succeed first.
         push_sent = await notify_cashout_pushover_async(
             record_id,
             source=SOURCE_OVERDUE,
-            require_master_toggle=False,
         )
         if not push_sent:
             logger.warning(

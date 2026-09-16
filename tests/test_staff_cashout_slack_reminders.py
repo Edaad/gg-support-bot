@@ -136,6 +136,7 @@ class IsDueTests(unittest.TestCase):
                 last_slack_reminder_at=None,
                 enabled_at=now - timedelta(hours=1),
                 now=now,
+                create_notified_at=now - timedelta(minutes=2),
             )
         )
 
@@ -147,6 +148,7 @@ class IsDueTests(unittest.TestCase):
                 last_slack_reminder_at=None,
                 enabled_at=now - timedelta(hours=1),
                 now=now,
+                create_notified_at=now - timedelta(minutes=6),
             )
         )
 
@@ -158,6 +160,7 @@ class IsDueTests(unittest.TestCase):
                 last_slack_reminder_at=now - timedelta(minutes=2),
                 enabled_at=now - timedelta(hours=1),
                 now=now,
+                create_notified_at=now - timedelta(minutes=30),
             )
         )
 
@@ -169,6 +172,7 @@ class IsDueTests(unittest.TestCase):
                 last_slack_reminder_at=now - timedelta(minutes=1),
                 enabled_at=now,
                 now=now,
+                create_notified_at=now - timedelta(minutes=30),
             )
         )
 
@@ -180,6 +184,31 @@ class IsDueTests(unittest.TestCase):
                 last_slack_reminder_at=now - timedelta(minutes=5),
                 enabled_at=now - timedelta(hours=1),
                 now=now,
+                create_notified_at=now - timedelta(minutes=30),
+            )
+        )
+
+    def test_pending_create_not_due(self) -> None:
+        now = datetime(2026, 9, 11, 12, 0, 0)
+        self.assertFalse(
+            rem._is_due(
+                created_at=now - timedelta(hours=1),
+                last_slack_reminder_at=None,
+                enabled_at=now - timedelta(hours=1),
+                now=now,
+                create_notified_at=None,
+            )
+        )
+
+    def test_five_minutes_after_deferred_create_is_due(self) -> None:
+        now = datetime(2026, 9, 16, 12, 5, 0)
+        self.assertTrue(
+            rem._is_due(
+                created_at=now - timedelta(hours=11),
+                last_slack_reminder_at=None,
+                enabled_at=now - timedelta(hours=1),
+                now=now,
+                create_notified_at=now - timedelta(minutes=5),
             )
         )
 
@@ -197,12 +226,15 @@ class ListDueTests(unittest.TestCase):
         sending: bool = False,
         tracks: bool = True,
         sends: list | None = None,
+        pending_create: bool = False,
     ) -> MagicMock:
         row = MagicMock()
         row.id = record_id
         row.group_title = title
         row.amount = amount
-        row.created_at = created_at or (datetime.utcnow() - timedelta(minutes=10))
+        created = created_at or (datetime.utcnow() - timedelta(minutes=10))
+        row.created_at = created
+        row.create_notified_at = None if pending_create else created
         row.last_slack_reminder_at = last_ping
         row.do_not_send = do_not_send
         row.sending = sending
@@ -210,26 +242,48 @@ class ListDueTests(unittest.TestCase):
         row.money_sends = sends or []
         return row
 
-    def test_disabled_returns_empty(self) -> None:
-        control = MagicMock(enabled=False, enabled_at=None)
+    def test_slack_off_still_lists_due(self) -> None:
+        now = datetime(2026, 9, 11, 18, 0, 0)
+        control = MagicMock(
+            enabled=False,
+            enabled_at=now - timedelta(hours=1),
+            hours_enabled=False,
+        )
+        active = self._record(
+            record_id=1,
+            created_at=now - timedelta(minutes=10),
+        )
         session = MagicMock()
-        q = MagicMock()
-        session.query.return_value = q
-        q.filter.return_value = q
-        q.first.return_value = control
+
+        def query_side_effect(model):
+            q = MagicMock()
+            q.filter.return_value = q
+            q.options.return_value = q
+            q.order_by.return_value = q
+            if model is rem.StaffCashoutSlackReminderControl:
+                q.first.return_value = control
+            else:
+                q.all.return_value = [active]
+            return q
+
+        session.query.side_effect = query_side_effect
 
         with patch(
             "bot.services.staff_cashout_slack_reminders.get_db"
         ) as get_db:
             get_db.return_value.__enter__.return_value = session
             get_db.return_value.__exit__.return_value = False
-            self.assertEqual(rem.list_due_cashout_reminders(), [])
+            due = rem.list_due_cashout_reminders(now=now)
+
+        self.assertEqual(len(due), 1)
+        self.assertEqual(due[0]["id"], 1)
 
     def test_skips_cleared_oversent_do_not_send_too_new(self) -> None:
         now = datetime(2026, 9, 11, 18, 0, 0)
         control = MagicMock(
             enabled=True,
             enabled_at=now - timedelta(hours=1),
+            hours_enabled=False,
         )
         active = self._record(
             record_id=1,
@@ -280,6 +334,7 @@ class ListDueTests(unittest.TestCase):
         control = MagicMock(
             enabled=True,
             enabled_at=now - timedelta(hours=1),
+            hours_enabled=False,
         )
         sending = self._record(
             record_id=9,
@@ -309,6 +364,48 @@ class ListDueTests(unittest.TestCase):
             due = rem.list_due_cashout_reminders(now=now)
 
         self.assertEqual(due, [])
+
+    def test_off_hours_returns_empty(self) -> None:
+        now = datetime(2026, 9, 16, 5, 0, 0)
+        control = MagicMock(
+            enabled=True,
+            enabled_at=now - timedelta(hours=1),
+            hours_enabled=True,
+            hours_start="08:00",
+            hours_end="23:00",
+        )
+        session = MagicMock()
+        q = MagicMock()
+        session.query.return_value = q
+        q.filter.return_value = q
+        q.first.return_value = control
+
+        with patch(
+            "bot.services.staff_cashout_slack_reminders.get_db"
+        ) as get_db:
+            get_db.return_value.__enter__.return_value = session
+            get_db.return_value.__exit__.return_value = False
+            self.assertEqual(rem.list_due_cashout_reminders(now=now), [])
+
+
+class EstWindowTests(unittest.TestCase):
+    def test_eight_to_eleven_open_at_8am(self) -> None:
+        now = datetime(2026, 9, 16, 12, 0, 0)
+        self.assertTrue(rem.is_within_est_window(now, "08:00", "23:00"))
+
+    def test_eight_to_eleven_closed_at_1am(self) -> None:
+        now = datetime(2026, 9, 16, 5, 0, 0)
+        self.assertFalse(rem.is_within_est_window(now, "08:00", "23:00"))
+
+    def test_eight_to_eleven_closed_at_11pm(self) -> None:
+        now = datetime(2026, 9, 16, 3, 0, 0)
+        self.assertFalse(rem.is_within_est_window(now, "08:00", "23:00"))
+
+    def test_wraps_midnight(self) -> None:
+        late = datetime(2026, 9, 16, 2, 0, 0)
+        self.assertTrue(rem.is_within_est_window(late, "22:00", "08:00"))
+        midday = datetime(2026, 9, 16, 16, 0, 0)
+        self.assertFalse(rem.is_within_est_window(midday, "22:00", "08:00"))
 
 
 class SendDueTests(unittest.IsolatedAsyncioTestCase):
@@ -340,6 +437,12 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
         with patch(
             "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
             return_value=due,
+        ), patch(
+            "bot.services.staff_cashout_slack_reminders.send_pending_create_notifies",
+            return_value=0,
+        ), patch(
+            "bot.services.staff_cashout_slack_reminders.get_slack_reminder_enabled",
+            return_value=True,
         ), patch(
             "bot.services.staff_cashout_slack_reminders.dashboard_public_base_url",
             return_value="https://dash.example",
@@ -395,6 +498,12 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
             "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
             return_value=due,
         ), patch(
+            "bot.services.staff_cashout_slack_reminders.send_pending_create_notifies",
+            return_value=0,
+        ), patch(
+            "bot.services.staff_cashout_slack_reminders.get_slack_reminder_enabled",
+            return_value=True,
+        ), patch(
             "bot.services.staff_cashout_slack_reminders.dashboard_public_base_url",
             return_value="https://dash.example",
         ), patch(
@@ -429,6 +538,12 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
             "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
             return_value=due,
         ), patch(
+            "bot.services.staff_cashout_slack_reminders.send_pending_create_notifies",
+            return_value=0,
+        ), patch(
+            "bot.services.staff_cashout_slack_reminders.get_slack_reminder_enabled",
+            return_value=True,
+        ), patch(
             "bot.services.staff_cashout_slack_reminders.dashboard_public_base_url",
             return_value="https://dash.example",
         ), patch(
@@ -452,6 +567,9 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
             "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
             return_value=[],
         ), patch(
+            "bot.services.staff_cashout_slack_reminders.send_pending_create_notifies",
+            return_value=0,
+        ), patch(
             "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
             new_callable=AsyncMock,
         ) as notify, patch(
@@ -462,6 +580,55 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent, 0)
         notify.assert_not_awaited()
         pushover.assert_not_awaited()
+
+    async def test_slack_off_still_sends_pushover(self) -> None:
+        due = [
+            {
+                "id": 1,
+                "group_title": "RT / 1 / A",
+                "remaining": Decimal("100"),
+            },
+        ]
+        notify = AsyncMock(return_value=True)
+        pushover = AsyncMock(return_value=1)
+        session = MagicMock()
+        row1 = MagicMock()
+        row1.id = 1
+        row1.last_slack_reminder_at = None
+        q = MagicMock()
+        session.query.return_value = q
+        q.filter.return_value = q
+        q.first.return_value = row1
+
+        with patch(
+            "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
+            return_value=due,
+        ), patch(
+            "bot.services.staff_cashout_slack_reminders.send_pending_create_notifies",
+            return_value=0,
+        ), patch(
+            "bot.services.staff_cashout_slack_reminders.get_slack_reminder_enabled",
+            return_value=False,
+        ), patch(
+            "bot.services.staff_cashout_slack_reminders.dashboard_public_base_url",
+            return_value="https://dash.example",
+        ), patch(
+            "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+            notify,
+        ), patch(
+            "bot.services.staff_cashout_pushover.notify_cashout_pushover_async",
+            pushover,
+        ), patch(
+            "bot.services.staff_cashout_slack_reminders.get_db"
+        ) as get_db:
+            get_db.return_value.__enter__.return_value = session
+            get_db.return_value.__exit__.return_value = False
+            sent = await rem.send_due_cashout_reminders()
+
+        self.assertEqual(sent, 1)
+        notify.assert_not_awaited()
+        pushover.assert_awaited_once()
+        self.assertIsNotNone(row1.last_slack_reminder_at)
 
 
 if __name__ == "__main__":
