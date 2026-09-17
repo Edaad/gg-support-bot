@@ -19,5 +19,15 @@ dashboard/dist/
 # Graphify 
 graphify-out/
 
-# DB config snapshots (may contain prod copy)
+# DB config snapshots / one-off pulls (may contain prod copy)
 backups/
+data/
+
+# Telegram history dumps
+telegram_raw_logs.txt
+telegram_raw_logs*.txt
+telegram_raw_logs*.json
+telegram_*moodezzela*
+
+# Spreadsheet exports
+*.csv

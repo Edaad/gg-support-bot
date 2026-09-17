@@ -11,7 +11,6 @@ async def _send_command_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "Welcome to GG Support Bot!\n",
         "In a group:",
         "• /deposit — Make a deposit",
-        "• /stripe — Stripe checkout link (group chats only)",
         "• /cashout — Request a cashout",
         "• /list — View the club's list",
     ]

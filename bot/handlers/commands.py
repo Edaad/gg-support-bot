@@ -19,10 +19,6 @@ from bot.services.club import (
     is_club_primary_owner,
     is_club_staff,
 )
-from bot.handlers.group_checkout_commands import (
-    GROUP_CHECKOUT_DM_MESSAGE,
-    GROUP_ONLY_CHECKOUT_COMMANDS,
-)
 from bot.handlers.response_utils import send_response_messages
 from bot.services.mtproto_group_delete import parse_delete_confirm_command
 from db.connection import get_db
@@ -295,10 +291,6 @@ async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text or ""
     cmd = text.split()[0].lstrip("/").split("@")[0].lower()
     chat = update.effective_chat
-
-    if cmd in GROUP_ONLY_CHECKOUT_COMMANDS and chat.type == "private":
-        await update.message.reply_text(GROUP_CHECKOUT_DM_MESSAGE)
-        return
 
     if cmd in RESERVED_CMDS:
         return
