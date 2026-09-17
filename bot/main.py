@@ -108,6 +108,10 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
 
         setup_inactive_group_outreach_dm_job(app)
 
+        from bot.services.group_photo_backfill import setup_group_photo_backfill_job
+
+        setup_group_photo_backfill_job(app)
+
         from bot.services.issue_report_reminders import schedule_issue_report_reminder_job
 
         schedule_issue_report_reminder_job(app)

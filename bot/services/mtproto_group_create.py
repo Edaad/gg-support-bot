@@ -18,7 +18,15 @@ from telethon.tl.functions.channels import (
     InviteToChannelRequest,
 )
 from telethon.tl.functions.messages import AddChatUserRequest, CreateChatRequest, EditChatPhotoRequest
-from telethon.tl.types import Channel, Chat, InputChatUploadedPhoto, MessageActionChatCreate, User
+from telethon.tl.types import (
+    Channel,
+    Chat,
+    ChatPhotoEmpty,
+    InputChatUploadedPhoto,
+    MessageActionChatCreate,
+    PhotoEmpty,
+    User,
+)
 from telethon.tl.types.messages import InvitedUsers
 
 from club_gc_settings import (
@@ -561,6 +569,17 @@ class MtProtoGroupOutcome:
     link_joined_users: list[dict] = field(default_factory=list)
     promoted_admins: list[dict] = field(default_factory=list)
     link_join_failures: list[dict] = field(default_factory=list)
+
+
+def entity_has_group_photo(entity: Any) -> bool:
+    """True when Telegram reports a non-empty chat/channel photo."""
+
+    photo = getattr(entity, "photo", None)
+    if photo is None:
+        return False
+    if isinstance(photo, (ChatPhotoEmpty, PhotoEmpty)):
+        return False
+    return True
 
 
 async def apply_club_group_photo(

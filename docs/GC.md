@@ -313,6 +313,20 @@ Implementation: [`bot/services/inactive_group_outreach_dm.py`](../bot/services/i
 
 Local single-target debug: [`scripts/run_inactive_outreach_dm.py`](../scripts/run_inactive_outreach_dm.py) (`--row-id` / `--chat-id`, default dry-run).
 
+## Group photo backfill (hourly, active RT/CC only)
+
+Worker JobQueue job that sets club photos on unique **Round Table / Creator Club** chats in `support_group_idle_episode_state`. **10 groups per hour.** Reuses [`get_listener_client()`](../bot/services/mtproto_dm_gc_listener.py) so `/gc` stays up.
+
+Implementation: [`bot/services/group_photo_backfill.py`](../bot/services/group_photo_backfill.py). Default on after deploy (`GC_GROUP_PHOTO_BACKFILL_ENABLED`).
+
+```bash
+heroku run -a YOUR_APP -- python migrate_group_photo_backfill.py
+```
+
+Knobs: `GC_GROUP_PHOTO_BACKFILL_BATCH_SIZE` (default `10`), `GC_GROUP_PHOTO_BACKFILL_INTERVAL_SEC` (default `3600`), `GC_GROUP_PHOTO_BACKFILL_DELAY_SEC` (default `2`), `GC_GROUP_PHOTO_BACKFILL_FIRST_DELAY_SEC` (default `300`). Pin one chat with `GC_GROUP_PHOTO_BACKFILL_CHAT_ID` for a single-group test.
+
+See [`docs/HEROKU.md`](HEROKU.md) for SQL monitoring.
+
 ## Troubleshooting
 
 - **Unauthorized**: Your Telegram user id does not match any `command_admin_user_id` in `club_gc_settings.py`.

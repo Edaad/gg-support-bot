@@ -336,6 +336,52 @@ Then set `GC_INACTIVE_OUTREACH_SCAN_ENABLED=true` and restart the worker.
 
 Local single-group debug: [`scripts/run_inactive_group_outreach_scan.py`](../scripts/run_inactive_group_outreach_scan.py) (`--chat-id` / `--row-id`, default dry-run). Uses a dedicated MTProto session — do not run against a club session held by the worker.
 
+## Group photo backfill (hourly, active RT/CC only)
+
+Sets club photos on **Round Table and Creator Club** support groups that appear in `support_group_idle_episode_state` (the escalation tracker) and currently have no Telegram photo. **10 groups per hour.** Reuses the worker's live MTProto listener — no `heroku run` and no `GC_MTPROTO_ENABLED=false`. `/gc` and other Telethon work stay up.
+
+**Migration** (optional — worker `create_all` also creates the table):
+
+```bash
+heroku run -a YOUR_APP -- python migrate_group_photo_backfill.py
+```
+
+On by default after deploy. Optional knobs:
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `GC_GROUP_PHOTO_BACKFILL_ENABLED` | `true` | Set `false` to disable |
+| `GC_GROUP_PHOTO_BACKFILL_BATCH_SIZE` | `10` | Groups processed per tick |
+| `GC_GROUP_PHOTO_BACKFILL_INTERVAL_SEC` | `3600` | Hourly |
+| `GC_GROUP_PHOTO_BACKFILL_DELAY_SEC` | `2` | Pause between uploads |
+| `GC_GROUP_PHOTO_BACKFILL_FIRST_DELAY_SEC` | `300` | Delay after boot |
+| `GC_GROUP_PHOTO_BACKFILL_CHAT_ID` | unset | Pin to one chat for a single-group test |
+
+Requires `GC_DM_GC_LISTENER_ENABLED` (default on). Already-photographed groups are recorded in `group_photo_backfill_rows` and skipped. Admin-not-in-group is recorded and not retried.
+
+**Monitor:**
+
+```sql
+SELECT status, COUNT(*) FROM group_photo_backfill_rows GROUP BY status;
+
+SELECT club_key, telegram_chat_id, group_title, status, processed_at
+FROM group_photo_backfill_rows
+ORDER BY processed_at DESC
+LIMIT 20;
+```
+
+Tail worker logs: `heroku logs -a YOUR_APP --dyno worker --tail | rg group_photo_backfill`
+
+To test one group first:
+
+```bash
+heroku config:set GC_GROUP_PHOTO_BACKFILL_CHAT_ID=-1001234567890 -a YOUR_APP
+heroku restart worker -a YOUR_APP
+# verify in Telegram, then:
+heroku config:unset GC_GROUP_PHOTO_BACKFILL_CHAT_ID -a YOUR_APP
+heroku restart worker -a YOUR_APP
+```
+
 ### Inactive outreach DM batch (phase 3)
 
 After staging groups and resolving players (`entity_resolvable=true`), staff compose outreach copy via **`/sendinactive`** in a private DM with the support bot (preview + Confirm/Cancel). The worker sends DMs from the club MTProto account when:

@@ -612,6 +612,37 @@ def get_inactive_outreach_dm_first_delay_sec() -> float:
     return max(0.0, _env_float("GC_INACTIVE_OUTREACH_DM_FIRST_DELAY_SEC", 5.0))
 
 
+GROUP_PHOTO_BACKFILL_CLUB_KEYS: tuple[str, ...] = ("round_table", "creator_club")
+
+
+def is_group_photo_backfill_enabled() -> bool:
+    """Hourly RT/CC group-photo backfill on the worker listener. Default on."""
+
+    return _env_bool("GC_GROUP_PHOTO_BACKFILL_ENABLED", default=True)
+
+
+def get_group_photo_backfill_batch_size() -> int:
+    return max(1, min(_env_int("GC_GROUP_PHOTO_BACKFILL_BATCH_SIZE", 10), 25))
+
+
+def get_group_photo_backfill_interval_sec() -> int:
+    return max(60, _env_int("GC_GROUP_PHOTO_BACKFILL_INTERVAL_SEC", 3600))
+
+
+def get_group_photo_backfill_delay_sec() -> float:
+    return max(0.0, _env_float("GC_GROUP_PHOTO_BACKFILL_DELAY_SEC", 2.0))
+
+
+def get_group_photo_backfill_first_delay_sec() -> float:
+    return max(0.0, _env_float("GC_GROUP_PHOTO_BACKFILL_FIRST_DELAY_SEC", 300.0))
+
+
+def get_group_photo_backfill_chat_id() -> int | None:
+    """Optional pin to one chat id for a single-group test."""
+
+    return _env_optional_int("GC_GROUP_PHOTO_BACKFILL_CHAT_ID")
+
+
 def get_dm_gc_listener_restart_config() -> tuple[float, float, float]:
     """``(initial_delay_sec, max_delay_sec, backoff_multiplier)`` for listener supervision."""
 

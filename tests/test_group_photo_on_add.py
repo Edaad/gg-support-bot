@@ -5,7 +5,10 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from bot.services.mtproto_group_create import ensure_player_in_support_group
+from bot.services.mtproto_group_create import (
+    ensure_player_in_support_group,
+    entity_has_group_photo,
+)
 
 
 class TestEnsurePlayerInSupportGroupPhoto(unittest.IsolatedAsyncioTestCase):
@@ -61,6 +64,31 @@ class TestEnsurePlayerInSupportGroupPhoto(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, "already_member")
         mock_photo.assert_not_awaited()
+
+
+class TestEntityHasGroupPhoto(unittest.TestCase):
+    def test_none_and_empty(self) -> None:
+        from telethon.tl.types import ChatPhotoEmpty, PhotoEmpty
+
+        self.assertFalse(entity_has_group_photo(MagicMock(photo=None)))
+        self.assertFalse(entity_has_group_photo(MagicMock(spec=[])))
+        empty = MagicMock()
+        empty.photo = ChatPhotoEmpty()
+        self.assertFalse(entity_has_group_photo(empty))
+        photo_empty = MagicMock()
+        photo_empty.photo = PhotoEmpty(id=0)
+        self.assertFalse(entity_has_group_photo(photo_empty))
+
+    def test_present(self) -> None:
+        from telethon.tl.types import ChatPhoto
+
+        entity = MagicMock()
+        entity.photo = ChatPhoto(
+            photo_id=123,
+            dc_id=2,
+            has_video=False,
+        )
+        self.assertTrue(entity_has_group_photo(entity))
 
 
 if __name__ == "__main__":

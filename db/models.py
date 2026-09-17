@@ -2746,6 +2746,33 @@ class SupportGroupIdleEpisodeState(Base):
     )
 
 
+class GroupPhotoBackfillRow(Base):
+    """Per-chat outcome for the hourly RT/CC group-photo backfill job."""
+
+    __tablename__ = "group_photo_backfill_rows"
+    __table_args__ = (
+        UniqueConstraint(
+            "club_key",
+            "telegram_chat_id",
+            name="uq_group_photo_backfill_club_chat",
+        ),
+        Index("ix_group_photo_backfill_status", "status"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    club_key = Column(String(64), nullable=False)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    support_group_chat_id = Column(Integer, nullable=True)
+    group_title = Column(Text, nullable=True)
+    status = Column(String(32), nullable=False)
+    error = Column(Text, nullable=True)
+    processed_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class WebhookIngestRequest(Base):
     """Append-only audit log for payment ingest and Stripe webhook HTTP requests."""
 

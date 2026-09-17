@@ -307,6 +307,7 @@ def update_support_group_chat_row(
     telegram_chat_title: str | None = None,
     player_telegram_user_id: int | None = None,
     telegram_chat_id: int | None = None,
+    group_photo_path: str | None = None,
     popup_keyboard_installed: bool | None = None,
     escalation_last_human_at: Any | None = ...,
     escalation_last_human_role: str | None = ...,
@@ -349,6 +350,8 @@ def update_support_group_chat_row(
                 row.player_telegram_user_id = int(player_telegram_user_id)
             if telegram_chat_id is not None:
                 row.telegram_chat_id = int(telegram_chat_id)
+            if group_photo_path is not None:
+                row.group_photo_path = group_photo_path
             if popup_keyboard_installed is not None:
                 row.popup_keyboard_installed = bool(popup_keyboard_installed)
             if escalation_last_human_at is not ...:
