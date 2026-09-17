@@ -820,9 +820,12 @@ toggle off — or either API unconfigured — `/earlyrb` behaves exactly as befo
 The minimum claimable amount comes only from Elevate's per-club
 `earlyRakebackThreshold`; the dashboard supplies the enable toggle and the
 **maximum** auto-claim amount (over it, an admin confirms and records by hand). The
-24h cooldown burns only when Elevate actually records, so failures cost the player
-nothing — `EARLYRB_RECHECK_THROTTLE_SECONDS` (default 300) is what stops repeat
-lookups hammering the single-threaded screen robot.
+There is **no daily limit** on early feeback: a player may claim as often as they
+have feeback remaining, and Elevate's `nothing_remaining` is what stops a second
+claim. A recorded claim still counts as a deposit and resets the cashout timer,
+which the Claim prompt says out loud. `EARLYRB_RECHECK_THROTTLE_SECONDS`
+(default 300) only spaces out repeat fee lookups so they cannot hammer the
+single-threaded screen robot.
 
 Recording happens before the chip-add because the bot cannot undo an Elevate record
 (`delete`/`patch` there are JWT-only). A recorded-but-chips-failed claim therefore

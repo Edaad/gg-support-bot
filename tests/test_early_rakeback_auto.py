@@ -133,6 +133,24 @@ class AmountFormattingTests(unittest.TestCase):
         self.assertEqual(auto.format_feeback_amount(Decimal("240"), 7), "$240.00")
 
 
+class ClaimPromptTests(unittest.TestCase):
+    def test_prompt_shows_amount_and_the_cashout_timer_notice(self) -> None:
+        prompt = auto.format_claim_prompt(_quote(remaining="240.5"))
+
+        self.assertIn("Your total remaining feeback for this week is: $240.50", prompt)
+        self.assertIn("Would you like to claim?", prompt)
+        self.assertIn(
+            "Early rake back counts as a deposit and will reset the cashout timer",
+            prompt,
+        )
+
+    def test_prompt_never_mentions_a_daily_limit(self) -> None:
+        prompt = auto.format_claim_prompt(_quote()).lower()
+
+        self.assertNotIn("24 hour", prompt)
+        self.assertNotIn("once every", prompt)
+
+
 class IdempotencyKeyTests(unittest.TestCase):
     def test_key_is_chat_scoped_and_unique_per_press(self) -> None:
         first = auto.new_idempotency_key(-1001234)
@@ -290,7 +308,7 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.record = AsyncMock()
         self.chip_add = AsyncMock(return_value=(True, "success"))
-        self.burn = patch.object(auto, "burn_cooldown").start()
+        self.timer = patch.object(auto, "reset_cashout_timer").start()
         self.updates = patch.object(auto, "update_claim_row").start()
         self.notify_failed = patch.object(
             auto, "notify_earlyrb_auto_failed", AsyncMock()
@@ -332,7 +350,7 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stage.kind, "added")
         self.assertEqual(stage.amount, Decimal("240"))
         self.assertEqual(stage.player_message, "$240.00 feeback added to your account!")
-        self.burn.assert_called_once_with(1, -100, 555)
+        self.timer.assert_called_once_with(1, -100, 555)
         self.record.assert_awaited_once()
         self.assertEqual(
             self.record.call_args.kwargs["idempotency_key"], "tg:-100:abc"
@@ -354,9 +372,9 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
         )
         stage = await self._claim()
         self.assertEqual(stage.kind, "added")
-        self.burn.assert_called_once()
+        self.timer.assert_called_once()
 
-    async def test_record_failed_never_burns_cooldown_or_adds_chips(self) -> None:
+    async def test_record_failed_never_resets_timer_or_adds_chips(self) -> None:
         self.record.return_value = elevate.RecordResult(
             False, "club_not_found", "Unknown club"
         )
@@ -364,7 +382,7 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(stage.kind, "escalate")
         self.assertEqual(stage.player_message, auto.ADMIN_SHORTLY_COPY)
-        self.burn.assert_not_called()
+        self.timer.assert_not_called()
         self.chip_add.assert_not_awaited()
         self.notify_failed.assert_awaited_once()
 
@@ -377,7 +395,7 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(stage.kind, "amount_changed")
         self.assertEqual(stage.amount, Decimal("310"))
-        self.burn.assert_not_called()
+        self.timer.assert_not_called()
         self.chip_add.assert_not_awaited()
 
     async def test_second_amount_mismatch_escalates(self) -> None:
@@ -410,8 +428,8 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(stage.kind, "chips_failed")
         self.assertEqual(stage.player_message, auto.ADMIN_SHORTLY_COPY)
-        # Cooldown still burns: the money is on the ledger either way.
-        self.burn.assert_called_once()
+        # The claim still counts as a deposit: the money is on the ledger either way.
+        self.timer.assert_called_once()
         self.notify_chips.assert_awaited_once()
         kwargs = self.notify_chips.call_args.kwargs
         self.assertEqual(kwargs["amount"], Decimal("240"))
@@ -422,7 +440,7 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(stage.kind, "added")
         self.record.assert_not_awaited()
-        self.burn.assert_not_called()
+        self.timer.assert_not_called()
         self.notify_failed.assert_awaited_once()
         self.assertIn("DRY RUN", self.notify_failed.call_args.kwargs["detail"])
 

@@ -1191,44 +1191,6 @@ def _format_cooldown_wait(
     return False, wait_str, eligible_at_est
 
 
-EARLYRB_COOLDOWN_DENIAL_MESSAGE = (
-    "Sorry, you must wait 24 hours between early rakeback requests. "
-    "Inquiries are limited to once every 24 hours. "
-    "If you don't meet the 50 minimum, you'll need to wait another 24 hours before trying again.\n\n"
-    "Early rake back counts as deposit and will reset the cashout timer"
-)
-
-
-def check_earlyrb_eligibility(
-    club_id: int, chat_id: int
-) -> tuple[bool, Optional[str]]:
-    """Check early-rakeback cooldown for this support group. Returns (eligible, denial_message)."""
-    settings = get_cooldown_settings(club_id)
-    cooldown_hours = (settings or {}).get("cooldown_hours") or 24
-
-    now_utc = datetime.now(timezone.utc)
-    last = get_last_activity_by_type(club_id, chat_id, "earlyrb")
-    if last is None:
-        return True, None
-
-    cooldown_passed, _, eligible_at_est = _format_cooldown_wait(
-        last, cooldown_hours, now_utc
-    )
-    if cooldown_passed:
-        return True, None
-
-    elig_time = eligible_at_est.strftime("%-I:%M %p") if eligible_at_est else ""
-    elig_day = (
-        _day_label(eligible_at_est.date(), now_utc.astimezone(EST).date())
-        if eligible_at_est
-        else ""
-    )
-    return False, (
-        f"{EARLYRB_COOLDOWN_DENIAL_MESSAGE}\n\n"
-        f"You can use /earlyrb again at {elig_time} EST {elig_day}."
-    )
-
-
 EARLYRB_RECHECK_THROTTLE_MESSAGE = (
     "You just checked your feeback — please wait a few minutes before checking again."
 )
@@ -1246,9 +1208,9 @@ def check_earlyrb_recheck_throttle(
 ) -> tuple[bool, Optional[str]]:
     """Throttle repeat fee lookups. Returns (allowed, denial_message).
 
-    The 24h cooldown is only burned when Elevate actually records a claim, so
-    nothing stops a player re-running /earlyrb after a below-minimum or failed
-    quote. Each lookup drives the single-threaded screen robot, hence this.
+    Early feeback has no daily limit — a player may claim as often as they have
+    feeback remaining. Each lookup drives the single-threaded screen robot
+    though, so back-to-back checks are spaced out.
     """
     last = get_last_activity_by_type(club_id, chat_id, "earlyrb_check")
     if last is None:

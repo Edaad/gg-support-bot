@@ -14,7 +14,7 @@ All player-facing copy says **fee** and **feeback**, never rake or rakeback.
 ## The flow
 
 1. Player sends `/earlyrb` in their support group.
-2. 24h cooldown check (unchanged), then the re-check throttle.
+2. Re-check throttle (there is no daily limit — see below).
 3. If the club has two unions, *"Which club would you like to claim your early feeback in?"*
    Single-union clubs skip straight through.
 4. *"Finding your total fee for this week..."* — `POST /rake` on the RPA bot, Monday to
@@ -22,7 +22,8 @@ All player-facing copy says **fee** and **feeback**, never rake or rakeback.
 5. *"Calculating your remaining feeback for this week..."* — `GET bot/quote` on Elevate with
    the **filtered** rake and PnL.
 6. *"Your total remaining feeback for this week is: $X.XX — Would you like to claim?"*
-   with **Claim** / **Cancel**.
+   with **Claim** / **Cancel**, plus *"Early rake back counts as a deposit and will reset
+   the cashout timer"*.
 7. On Claim: `POST bot/record` on Elevate, then `POST /deposit` on the RPA bot, then
    *"$X.XX feeback added to your account!"*
 
@@ -51,14 +52,17 @@ that never hit the ledger, which nothing would catch.
 single gate, so there is no minimum field on the dashboard. Set each club's
 `earlyRakebackThreshold` on Elevate.
 
-**The cooldown burns only on a successful record.** A below-minimum quote, zero fee, or any
-error costs the player nothing. That leaves nothing stopping repeat lookups against a
-single-threaded screen robot, so each lookup writes an `earlyrb_check` activity and the next
-one within `EARLYRB_RECHECK_THROTTLE_SECONDS` (default 300) is refused.
+**There is no daily limit.** A player may claim as often as they have feeback remaining.
+Elevate is the real guard: once the week's feeback is taken, the next quote comes back
+`nothing_remaining`, so repeat claims are bounded by the ledger rather than by a cooldown of
+ours. What *is* limited is the fee lookup — each one writes an `earlyrb_check` activity and
+the next within `EARLYRB_RECHECK_THROTTLE_SECONDS` (default 300) is refused, because every
+lookup drives the single-threaded screen robot. That throttle spaces out checks; it never
+costs a player a claim.
 
-**A recorded claim counts as a deposit.** Alongside the `earlyrb` cooldown the bot records a
-`deposit` activity and invalidates pending one-time bypasses, which is what finally makes the
-long-standing "counts as a deposit and will reset the cashout timer" copy true.
+**A recorded claim counts as a deposit.** On a successful record the bot writes a `deposit`
+activity and invalidates pending one-time bypasses, so the claim resets the 24h cashout
+timer. The Claim prompt says so before the player taps it.
 
 **Dry run stops before Elevate.** When `GG_DEPOSIT_API_DRY_RUN=true` the Claim press skips
 the record entirely and posts a dry-run Slack summary. Otherwise a rollout test would write

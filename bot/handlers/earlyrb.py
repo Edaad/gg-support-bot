@@ -30,7 +30,6 @@ from bot.handlers.flow_staleness import (
     reset_flow_callback_messages,
 )
 from bot.services.club import (
-    check_earlyrb_eligibility,
     check_earlyrb_recheck_throttle,
     get_auto_early_rakeback_enabled,
     get_club_by_id,
@@ -51,8 +50,7 @@ logger = logging.getLogger(__name__)
 EARLYRB_ELIGIBLE_MESSAGE = (
     "We're checking your early rakeback now. Your account manager will follow up "
     "in this group shortly.\n\n"
-    "Early rakeback can be requested once every 24 hours.\n\n"
-    "Early rake back counts as deposit and will reset the cashout timer"
+    "Early rake back counts as a deposit and will reset the cashout timer"
 )
 
 EARLYRB_RECORD_FAILED_MESSAGE = (
@@ -157,11 +155,6 @@ async def earlyrb_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     update_group_name(chat.id, chat.title)
-
-    eligible, deny_msg = check_earlyrb_eligibility(club_id, chat.id)
-    if not eligible:
-        await update.message.reply_text(deny_msg)
-        return ConversationHandler.END
 
     if not auto_earlyrb_available(club_id):
         await _canned_request(update, club_id)
@@ -344,7 +337,6 @@ async def _run_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def _prompt_claim(update: Update, context: ContextTypes.DEFAULT_TYPE, quote):
     from bot.services import early_rakeback_auto as auto
 
-    amount = auto.format_feeback_amount(quote.remaining, quote.display_decimal_places)
     markup = InlineKeyboardMarkup(
         [
             [
@@ -354,9 +346,7 @@ async def _prompt_claim(update: Update, context: ContextTypes.DEFAULT_TYPE, quot
         ]
     )
     sent = await update.effective_chat.send_message(
-        f"Your total remaining feeback for this week is: {amount}\n\n"
-        f"Would you like to claim?",
-        reply_markup=markup,
+        auto.format_claim_prompt(quote), reply_markup=markup
     )
     register_flow_callback_message(context, sent.message_id, flow="earlyrb")
     return EARLYRB_CONFIRM

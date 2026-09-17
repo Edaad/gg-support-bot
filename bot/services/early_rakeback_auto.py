@@ -53,6 +53,12 @@ NO_FEE_COPY = "You don't have any fee recorded for this week yet."
 NOTHING_REMAINING_COPY = "You've already claimed all of your feeback for this week."
 CLAIM_CANCELLED_COPY = "No problem — your feeback is still there whenever you want it."
 
+# There is no daily limit on claiming, so the only thing the player needs warning
+# about before tapping Claim is the effect on their cashout timer.
+CASHOUT_TIMER_NOTICE = (
+    "Early rake back counts as a deposit and will reset the cashout timer"
+)
+
 # Elevate's record endpoint serialises per member, and the screen robot queues
 # behind live deposits, so a retry that waits is worth more than a fast failure.
 _RECORD_RETRY_DELAYS_SEC = (3.0, 8.0)
@@ -93,6 +99,16 @@ def format_feeback_amount(amount: Decimal, decimal_places: int = 2) -> str:
     places = decimal_places if decimal_places in (0, 1, 2) else 2
     quantum = Decimal(1).scaleb(-places)
     return f"${amount.quantize(quantum):,.{places}f}"
+
+
+def format_claim_prompt(quote: Any) -> str:
+    """The Claim / Cancel question shown once a quote clears every gate."""
+    amount = format_feeback_amount(quote.remaining, quote.display_decimal_places)
+    return (
+        f"Your total remaining feeback for this week is: {amount}\n\n"
+        f"Would you like to claim?\n\n"
+        f"{CASHOUT_TIMER_NOTICE}"
+    )
 
 
 def date_filter_is_suspect(fee: Any) -> bool:
@@ -308,28 +324,25 @@ def update_claim_row(claim_id: Optional[int], **fields: Any) -> None:
         logger.exception("earlyrb_auto: could not update claim row id=%s", claim_id)
 
 
-def burn_cooldown(club_id: int, chat_id: int, user_id: Optional[int]) -> None:
-    """Start the 24h ``/earlyrb`` cooldown and the cashout timer.
+def reset_cashout_timer(club_id: int, chat_id: int, user_id: Optional[int]) -> None:
+    """Record the claim as a deposit, which resets the 24h cashout timer.
 
     Only called once Elevate has actually recorded, so a below-minimum quote or
-    a technical failure never costs the player their daily claim. Recording a
-    ``deposit`` activity is what finally makes the long-standing "counts as a
-    deposit and will reset the cashout timer" copy true.
+    a technical failure never costs the player anything. There is no daily limit
+    on claiming itself — Elevate's ``nothing_remaining`` is what stops a second
+    claim, not a cooldown of ours.
     """
-    for activity in ("earlyrb", "deposit"):
-        try:
-            record_activity_for_chat(
-                int(club_id),
-                int(chat_id),
-                activity,
-                telegram_user_id=int(user_id) if user_id is not None else None,
-            )
-        except Exception:
-            logger.exception(
-                "earlyrb_auto: could not record %s activity chat_id=%s",
-                activity,
-                chat_id,
-            )
+    try:
+        record_activity_for_chat(
+            int(club_id),
+            int(chat_id),
+            "deposit",
+            telegram_user_id=int(user_id) if user_id is not None else None,
+        )
+    except Exception:
+        logger.exception(
+            "earlyrb_auto: could not record deposit activity chat_id=%s", chat_id
+        )
     try:
         invalidate_pending_one_time_bypasses(int(club_id), int(chat_id))
     except Exception:
@@ -476,7 +489,7 @@ async def claim_feeback(
         elevate_total_given=record.total_given,
         detail="duplicate replay" if record.duplicate else None,
     )
-    burn_cooldown(club_id, chat_id, user_id)
+    reset_cashout_timer(club_id, chat_id, user_id)
 
     add_request_id = f"earlyrb-add-{claim_id or idempotency_key}"
     ok, status = await run_auto_chip_add(
