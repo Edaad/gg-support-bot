@@ -50,7 +50,7 @@ export default function Expenses({ token }: { token: string }) {
   const [expenseType, setExpenseType] = useState('')
   const [description, setDescription] = useState('')
   const [expenseDate, setExpenseDate] = useState(() => easternCalendarDateString())
-  const [pending, setPending] = useState(true)
+  const [pending, setPending] = useState(false)
 
   const listOpts = () => ({
     clubId: clubFilter ? Number(clubFilter) : undefined,
@@ -98,7 +98,7 @@ export default function Expenses({ token }: { token: string }) {
     setExpenseType('')
     setDescription('')
     setExpenseDate(easternCalendarDateString())
-    setPending(true)
+    setPending(false)
     setError(null)
     setModalOpen(true)
   }
