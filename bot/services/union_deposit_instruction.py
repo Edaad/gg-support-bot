@@ -12,6 +12,9 @@ _FOOTER_LINES = (
     "Please put a random emoji in the payment caption when sending",
     "Credits will be added as soon as we receive them.",
 )
+_VENMO_FRIENDS_FAMILY_LINE = (
+    "Ensure the payment is for friends and family. Anything else will be refunded"
+)
 _TAG_COPY_HINT = "Tap the tag below to copy it."
 
 
@@ -96,6 +99,8 @@ def build_union_deposit_instruction(
 
     lines.append("")
     lines.extend(_FOOTER_LINES)
+    if type_slug == "venmo":
+        lines.append(_VENMO_FRIENDS_FAMILY_LINE)
     return "\n".join(lines)
 
 

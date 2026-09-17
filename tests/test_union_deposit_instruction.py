@@ -103,6 +103,25 @@ class BuildUnionDepositInstructionTests(unittest.TestCase):
         self.assertIn("Tap the tag below to copy it.", text)
         self.assertIn("<code>$cashapp</code>", text)
 
+    def test_venmo_appends_friends_and_family_line(self):
+        text = build_union_deposit_instruction(
+            _method(union_type="venmo", method_tag="@venmo"),
+            used_sum=Decimal("0"),
+        )
+        self.assertIsNotNone(text)
+        assert text is not None
+        self.assertTrue(
+            text.endswith(
+                "Ensure the payment is for friends and family. Anything else will be refunded"
+            )
+        )
+
+    def test_non_venmo_omits_friends_and_family_line(self):
+        text = build_union_deposit_instruction(_method(), used_sum=Decimal("0"))
+        self.assertIsNotNone(text)
+        assert text is not None
+        self.assertNotIn("friends and family", text)
+
 
 if __name__ == "__main__":
     unittest.main()
