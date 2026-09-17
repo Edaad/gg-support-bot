@@ -1,5 +1,7 @@
 /**
- * Reads weekly processed stats from the external gg-computer service (MongoDB).
+ * Weekly stats from the external gg-computer service.
+ * Player rows: GET /week-data-rakebacks/:clubId (source weekdatas).
+ * Nickname backfill still runs POST /process-week/sync then this app's sync-nicknames.
  * Base URL: VITE_WEEKLY_STATS_BASE_URL, or `/weekly-stats` (Vite dev proxy → localhost:3000).
  */
 export function getWeeklyStatsBase(): string {
@@ -10,51 +12,90 @@ export function getWeeklyStatsBase(): string {
   return '/weekly-stats'
 }
 
-export type ProcessedWeekSummary = {
-  clubId: string
-  weekId: string
-  weekNumber?: number
-  startDate?: string
-  endDate?: string
-  createdAt?: string
-  missingRakebackPlayerCount?: number
-  zeroRakePlayerCount?: number
-  playerCount?: number
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+export function isIsoDate(value: string): boolean {
+  return ISO_DATE.test(value)
 }
 
-/** Most recent processed week for a club (by end/start date, then week number). */
-export function pickLatestProcessedWeek(weeks: ProcessedWeekSummary[]): ProcessedWeekSummary | null {
-  if (!weeks.length) return null
-  const sorted = [...weeks].sort((a, b) => {
-    const da = a.endDate || a.startDate || ''
-    const db = b.endDate || b.startDate || ''
-    if (da !== db) return db.localeCompare(da)
-    const na = a.weekNumber ?? 0
-    const nb = b.weekNumber ?? 0
-    if (nb !== na) return nb - na
-    return String(b.weekId).localeCompare(String(a.weekId))
-  })
-  return sorted[0] ?? null
+function utcDate(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d))
+}
+
+export function addDaysIso(iso: string, days: number): string {
+  const dt = utcDate(iso)
+  dt.setUTCDate(dt.getUTCDate() + days)
+  return dt.toISOString().slice(0, 10)
+}
+
+/** Monday on or before the calendar date (UTC date parts; YYYY-MM-DD is not shifted). */
+export function mondayOnOrBefore(iso: string): string {
+  const dow = utcDate(iso).getUTCDay()
+  const daysFromMonday = (dow + 6) % 7
+  return addDaysIso(iso, -daysFromMonday)
+}
+
+export type LocalWeek = {
+  weekId: string
+  startDate: string
+  endDate: string
+}
+
+export function localWeekId(startDate: string, endDate: string): string {
+  return `${startDate}_${endDate}`
+}
+
+/** Last complete Mon–Sun week on or before todayIso (today on Sunday counts as complete). */
+export function lastCompleteMonSun(todayIso: string): LocalWeek {
+  const dow = utcDate(todayIso).getUTCDay()
+  const lastSunday = dow === 0 ? todayIso : addDaysIso(todayIso, -dow)
+  const startDate = addDaysIso(lastSunday, -6)
+  return { weekId: localWeekId(startDate, lastSunday), startDate, endDate: lastSunday }
+}
+
+/** ClubGG Mon–Sun weeks whose [Mon, Sun] intersects [rangeStart, rangeEnd]. */
+export function monSunWeeksIntersecting(rangeStart: string, rangeEnd: string): LocalWeek[] {
+  if (!isIsoDate(rangeStart) || !isIsoDate(rangeEnd) || rangeStart > rangeEnd) return []
+  const weeks: LocalWeek[] = []
+  let weekStart = mondayOnOrBefore(rangeStart)
+  while (weekStart <= rangeEnd) {
+    const weekEnd = addDaysIso(weekStart, 6)
+    if (weekEnd >= rangeStart) {
+      weeks.push({
+        weekId: localWeekId(weekStart, weekEnd),
+        startDate: weekStart,
+        endDate: weekEnd,
+      })
+    }
+    weekStart = addDaysIso(weekStart, 7)
+  }
+  return weeks
 }
 
 export type WeeklyPlayerRow = {
+  weekId: string
+  startDate: string
+  endDate: string
   nickname: string
   gg_id: string | null
   rake: number
   rakeback: number
   profit: number
   agent?: string | null
+  superAgent?: string | null
 }
 
-export type PlayersResponse = {
-  total: number
-  page: number
-  pageSize: number
-  players: WeeklyPlayerRow[]
+export type PlayerFilters = {
+  minProfit?: number
+  maxProfit?: number
+  minRake?: number
+  maxRake?: number
+  minRakeback?: number
+  maxRakeback?: number
 }
 
-/** Unwrap common API shapes, e.g. `{ player: { ... } }`. */
-function unwrapPlayerRow(raw: unknown): Record<string, unknown> | null {
+function unwrapEntry(raw: unknown): Record<string, unknown> | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
   if (o.player && typeof o.player === 'object') {
@@ -72,7 +113,6 @@ function num(v: unknown): number {
   return 0
 }
 
-/** Safe string for display — never returns a plain object (avoids React "invalid child" errors). */
 function stringField(v: unknown, fallback: string): string {
   if (typeof v === 'string') return v
   if (typeof v === 'number' || typeof v === 'boolean') return String(v)
@@ -86,44 +126,73 @@ function stringField(v: unknown, fallback: string): string {
 
 function ggIdField(v: unknown): string | null {
   if (v == null || v === '') return null
-  if (typeof v === 'string') return v
+  if (typeof v === 'string') return v.trim() || null
   if (typeof v === 'number' && Number.isFinite(v)) return String(v)
   return null
 }
 
-function agentField(v: unknown): string | null {
+/** Preserve explicit stored values such as "-"; only blank/missing become null. */
+function hierarchyField(v: unknown): string | null {
   if (v == null || v === '') return null
   if (typeof v === 'string') return v
   if (typeof v === 'number' || typeof v === 'boolean') return String(v)
   return null
 }
 
-/**
- * Normalize a raw /players row from gg-computer (field shapes can vary).
- * Ensures we never pass objects into React text nodes.
- */
-export function normalizeWeeklyPlayer(raw: unknown): WeeklyPlayerRow {
-  const p = unwrapPlayerRow(raw)
+export function normalizeWeekDataEntry(raw: unknown, week: LocalWeek): WeeklyPlayerRow {
+  const p = unwrapEntry(raw)
   if (!p) {
-    return { nickname: '—', gg_id: null, rake: 0, rakeback: 0, profit: 0, agent: null }
+    return {
+      ...week,
+      nickname: '—',
+      gg_id: null,
+      rake: 0,
+      rakeback: 0,
+      profit: 0,
+      agent: null,
+      superAgent: null,
+    }
   }
+  const rake = num(p.rake)
+  const rakeback = num(p.rakebackAmount ?? p.rakeback)
   return {
+    ...week,
     nickname: stringField(p.nickname, '—'),
-    gg_id: ggIdField(p.gg_id),
-    rake: num(p.rake),
-    rakeback: num(p.rakeback),
-    profit: num(p.profit),
-    agent: agentField(p.agent),
+    gg_id: ggIdField(p.playerId ?? p.gg_id),
+    rake,
+    rakeback,
+    profit: rake - rakeback,
+    agent: hierarchyField(p.agent),
+    superAgent: hierarchyField(p.superAgent),
   }
 }
 
-export type PlayerFilters = {
-  minProfit?: number
-  maxProfit?: number
-  minRake?: number
-  maxRake?: number
-  minRakeback?: number
-  maxRakeback?: number
+export function rowMatchesFilters(row: WeeklyPlayerRow, filters: PlayerFilters): boolean {
+  if (filters.minProfit != null && row.profit < filters.minProfit) return false
+  if (filters.maxProfit != null && row.profit > filters.maxProfit) return false
+  if (filters.minRake != null && row.rake < filters.minRake) return false
+  if (filters.maxRake != null && row.rake > filters.maxRake) return false
+  if (filters.minRakeback != null && row.rakeback < filters.minRakeback) return false
+  if (filters.maxRakeback != null && row.rakeback > filters.maxRakeback) return false
+  return true
+}
+
+export function rowMatchesSearch(row: WeeklyPlayerRow, q: string): boolean {
+  const needle = q.trim().toLowerCase()
+  if (!needle) return true
+  const hay = [
+    row.nickname,
+    row.gg_id,
+    row.agent,
+    row.superAgent,
+    row.weekId,
+    row.startDate,
+    row.endDate,
+  ]
+    .filter((v) => v != null && v !== '')
+    .join(' ')
+    .toLowerCase()
+  return hay.includes(needle)
 }
 
 async function weeklyFetch<T>(path: string): Promise<T> {
@@ -167,6 +236,7 @@ export type ProcessWeekSyncResponse = {
 
 /**
  * Run gg-computer batch processing for weeks missing `weekly_profits` rows.
+ * Still required so Mongo player_details nicknames exist for Postgres backfill.
  * @param clubId - Optional club slug; omit to scan all clubs.
  */
 export async function processWeekSync(clubId?: string): Promise<ProcessWeekSyncResponse> {
@@ -174,36 +244,41 @@ export async function processWeekSync(clubId?: string): Promise<ProcessWeekSyncR
   return weeklyPost<ProcessWeekSyncResponse>('/process-week/sync', body)
 }
 
-export async function getProcessedWeeks(clubSlug: string): Promise<ProcessedWeekSummary[]> {
-  const q = new URLSearchParams({ clubId: clubSlug })
-  return weeklyFetch<ProcessedWeekSummary[]>(`/processed-weeks?${q.toString()}`)
+type WeekDataRakebacksResponse = {
+  clubId?: string
+  startDate?: string
+  endDate?: string
+  weekDataCount?: number
+  count?: number
+  entries?: unknown[]
 }
 
-export async function getPlayers(params: {
-  clubId: string
-  weekId: string
-  page?: number
-  pageSize?: number
-  q?: string
-  filters?: PlayerFilters
-}): Promise<PlayersResponse> {
-  const { clubId, weekId, page = 1, pageSize = 50, q, filters = {} } = params
-  const qs = new URLSearchParams({
-    clubId,
-    weekId,
-    page: String(page),
-    pageSize: String(pageSize),
-  })
-  const trimmedQ = q?.trim()
-  if (trimmedQ) qs.set('q', trimmedQ)
-  const f = filters
-  if (f.minProfit != null) qs.set('minProfit', String(f.minProfit))
-  if (f.maxProfit != null) qs.set('maxProfit', String(f.maxProfit))
-  if (f.minRake != null) qs.set('minRake', String(f.minRake))
-  if (f.maxRake != null) qs.set('maxRake', String(f.maxRake))
-  if (f.minRakeback != null) qs.set('minRakeback', String(f.minRakeback))
-  if (f.maxRakeback != null) qs.set('maxRakeback', String(f.maxRakeback))
-  const res = await weeklyFetch<PlayersResponse>(`/players?${qs.toString()}`)
-  const players = Array.isArray(res.players) ? res.players.map((row) => normalizeWeeklyPlayer(row)) : []
-  return { ...res, players }
+export async function getWeekDataRakebacks(
+  clubId: string,
+  startDate: string,
+  endDate: string,
+): Promise<WeeklyPlayerRow[]> {
+  const qs = new URLSearchParams({ startDate, endDate })
+  const path = `/week-data-rakebacks/${encodeURIComponent(clubId)}?${qs.toString()}`
+  const res = await weeklyFetch<WeekDataRakebacksResponse>(path)
+  const entries = Array.isArray(res.entries) ? res.entries : []
+  const week: LocalWeek = {
+    weekId: localWeekId(startDate, endDate),
+    startDate,
+    endDate,
+  }
+  return entries.map((row) => normalizeWeekDataEntry(row, week))
+}
+
+/** Fetch every intersecting Mon–Sun week; empty weeks contribute no rows. */
+export async function getWeekDataRakebacksForRange(
+  clubId: string,
+  rangeStart: string,
+  rangeEnd: string,
+): Promise<WeeklyPlayerRow[]> {
+  const weeks = monSunWeeksIntersecting(rangeStart, rangeEnd)
+  const batches = await Promise.all(
+    weeks.map((w) => getWeekDataRakebacks(clubId, w.startDate, w.endDate)),
+  )
+  return batches.flat()
 }

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { CLUB_OPTIONS, displayLabelForSlug, slugForClubName } from '../config/clubMap'
 import {
-  getProcessedWeeks,
-  getPlayers,
-  pickLatestProcessedWeek,
+  getWeekDataRakebacksForRange,
+  lastCompleteMonSun,
   processWeekSync,
+  rowMatchesFilters,
+  rowMatchesSearch,
   type PlayerFilters,
-  type ProcessedWeekSummary,
   type WeeklyPlayerRow,
 } from '../api/weeklyStats'
 import {
@@ -15,12 +15,22 @@ import {
   sendWeeklyPlayerMessage,
   syncWeeklyPlayerNicknames,
 } from '../api/client'
+import { easternCalendarDateString } from '../lib/easternTime'
 import Modal from '../components/Modal'
 import { LabeledSelect, LabeledTextarea } from '../components/Field'
 
 function fmtMoney(n: number): string {
   const v = Math.max(0, Number(n) || 0)
   return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function fmtProfit(n: number): string {
+  const v = Number(n) || 0
+  const abs = Math.abs(v).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+  return v < 0 ? `-$${abs}` : `$${abs}`
 }
 
 function rbPercent(row: WeeklyPlayerRow): string {
@@ -71,11 +81,16 @@ export default function WeeklyStats({
   embedded?: boolean
 }) {
   const clubSelectId = useId()
-  const weekSelectId = useId()
+  const fromDateId = useId()
+  const toDateId = useId()
   const searchId = useId()
   const [slug, setSlug] = useState<string | null>(null)
-  const [weeks, setWeeks] = useState<ProcessedWeekSummary[]>([])
-  const [weekId, setWeekId] = useState<string | null>(null)
+  const [fromDate, setFromDate] = useState(
+    () => lastCompleteMonSun(easternCalendarDateString()).startDate,
+  )
+  const [toDate, setToDate] = useState(
+    () => lastCompleteMonSun(easternCalendarDateString()).endDate,
+  )
   const [filterInputs, setFilterInputs] = useState<FilterState>({
     minProfit: '',
     maxProfit: '',
@@ -89,10 +104,11 @@ export default function WeeklyStats({
   const [appliedSearch, setAppliedSearch] = useState('')
   const [page, setPage] = useState(1)
   const pageSize = 50
-  const [data, setData] = useState<{ total: number; players: WeeklyPlayerRow[] } | null>(null)
-  const [loadingWeeks, setLoadingWeeks] = useState(false)
+  const [allRows, setAllRows] = useState<WeeklyPlayerRow[] | null>(null)
+  const [loadingSync, setLoadingSync] = useState(false)
   const [loadingPlayers, setLoadingPlayers] = useState(false)
   const [err, setErr] = useState('')
+  const [syncErr, setSyncErr] = useState('')
 
   const [sendOpen, setSendOpen] = useState(false)
   const [sendRow, setSendRow] = useState<WeeklyPlayerRow | null>(null)
@@ -115,13 +131,25 @@ export default function WeeklyStats({
     [appliedFilters],
   )
 
+  const filteredRows = useMemo(() => {
+    if (!allRows) return []
+    return allRows.filter(
+      (row) => rowMatchesFilters(row, appliedFilters) && rowMatchesSearch(row, appliedSearch),
+    )
+  }, [allRows, appliedFilters, appliedSearch])
+
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize))
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filteredRows.slice(start, start + pageSize)
+  }, [filteredRows, page, pageSize])
+
   const messageableOnPage = useMemo(
-    () => data?.players.filter((p) => p.gg_id) ?? [],
-    [data],
+    () => pageRows.filter((p) => p.gg_id),
+    [pageRows],
   )
 
   const resetFiltersAndPage = useCallback(() => {
-    setData(null)
     setPage(1)
     setAppliedFilters({})
     setPlayerSearch('')
@@ -138,11 +166,9 @@ export default function WeeklyStats({
 
   const refreshClub = useCallback(
     async (clubSlug: string) => {
-      setLoadingWeeks(true)
-      setWeekId(null)
-      setWeeks([])
-      setData(null)
-      setErr('')
+      setLoadingSync(true)
+      setSyncErr('')
+      resetFiltersAndPage()
       try {
         await processWeekSync(clubSlug)
         try {
@@ -150,18 +176,10 @@ export default function WeeklyStats({
         } catch {
           /* nickname backfill is best-effort */
         }
-        const list = await getProcessedWeeks(clubSlug)
-        setWeeks(list)
-        const latest = pickLatestProcessedWeek(list)
-        setWeekId(latest?.weekId ?? null)
-        resetFiltersAndPage()
       } catch (e: unknown) {
-        setErr(e instanceof Error ? e.message : 'Failed to sync or load weeks')
-        setWeeks([])
-        setWeekId(null)
-        setData(null)
+        setSyncErr(e instanceof Error ? e.message : 'Failed to sync nicknames / previous weeks')
       } finally {
-        setLoadingWeeks(false)
+        setLoadingSync(false)
       }
     },
     [resetFiltersAndPage, token],
@@ -192,29 +210,29 @@ export default function WeeklyStats({
   }, [slug, refreshClub])
 
   const loadPlayers = useCallback(async () => {
-    if (!slug || !weekId) {
-      setData(null)
+    if (!slug || !fromDate || !toDate) {
+      setAllRows(null)
+      return
+    }
+    if (fromDate > toDate) {
+      setErr('From date must be on or before to date.')
+      setAllRows(null)
       return
     }
     setLoadingPlayers(true)
     setErr('')
+    setAllRows(null)
     try {
-      const res = await getPlayers({
-        clubId: slug,
-        weekId,
-        page,
-        pageSize,
-        q: appliedSearch || undefined,
-        filters: appliedFilters,
-      })
-      setData({ total: res.total, players: res.players })
+      const rows = await getWeekDataRakebacksForRange(slug, fromDate, toDate)
+      setAllRows(rows)
+      setPage(1)
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to load players')
-      setData(null)
+      setErr(e instanceof Error ? e.message : 'Failed to load week data')
+      setAllRows(null)
     } finally {
       setLoadingPlayers(false)
     }
-  }, [slug, weekId, page, pageSize, appliedFilters, appliedSearch])
+  }, [slug, fromDate, toDate])
 
   useEffect(() => {
     void loadPlayers()
@@ -225,17 +243,11 @@ export default function WeeklyStats({
     setBulkModalOpen(false)
     setBulkModalText('')
     setBulkModalErr('')
-  }, [slug, weekId, page, appliedFilters, appliedSearch])
+  }, [slug, fromDate, toDate, page, appliedFilters, appliedSearch])
 
-  const weekLabel = useMemo(() => {
-    return (w: ProcessedWeekSummary) => {
-      const parts = [
-        w.weekNumber != null ? `W${w.weekNumber}` : null,
-        w.startDate && w.endDate ? `${w.startDate}–${w.endDate}` : w.startDate || w.endDate || null,
-      ].filter(Boolean)
-      return parts.length ? parts.join(' · ') : String(w.weekId)
-    }
-  }, [])
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount)
+  }, [page, pageCount])
 
   const openSend = async (row: WeeklyPlayerRow) => {
     if (!slug || !row.gg_id) return
@@ -372,12 +384,18 @@ export default function WeeklyStats({
     <div>
       {!embedded ? <h1 className="mb-2 text-2xl font-bold">Weekly player stats</h1> : null}
       <p className="mb-6 text-sm text-ink-muted">
-        Data from gg-computer. Messages are sent to the player&apos;s linked Telegram group via this bot (
+        Rakeback from gg-computer weekdatas (same source as Monday reconcile). Profit is rake minus
+        rakeback. Messages go to the player&apos;s linked Telegram group (
         <code className="text-ink">player_details</code>).
       </p>
 
       {err && (
         <div className="mb-4 rounded-lg bg-danger-bg px-4 py-2 text-sm text-danger-ink">{err}</div>
+      )}
+      {syncErr && (
+        <div className="mb-4 rounded-lg bg-warning-bg px-4 py-2 text-sm text-warning-ink">
+          Nickname / previous-week backfill: {syncErr}
+        </div>
       )}
 
       <div className="mb-6 flex flex-wrap items-end gap-4 rounded-xl border border-border bg-surface p-4">
@@ -389,7 +407,7 @@ export default function WeeklyStats({
             id={clubSelectId}
             value={slug ?? ''}
             onChange={(e) => setSlug(e.target.value || null)}
-            disabled={!slug || loadingWeeks}
+            disabled={!slug || loadingSync}
             className="input-field-sm"
           >
             {CLUB_OPTIONS.map((c) => (
@@ -400,34 +418,35 @@ export default function WeeklyStats({
           </select>
         </div>
         <div>
-          <label htmlFor={weekSelectId} className="mb-1 block text-xs font-medium text-ink-muted">
-            Week
+          <label htmlFor={fromDateId} className="mb-1 block text-xs font-medium text-ink-muted">
+            From
           </label>
-          <select
-            id={weekSelectId}
-            value={weekId ?? ''}
-            onChange={(e) => {
-              setWeekId(e.target.value || null)
-              setPage(1)
-            }}
-            disabled={!slug || loadingWeeks || weeks.length === 0}
-            className="w-full min-w-0 rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink sm:min-w-[240px] sm:w-auto disabled:opacity-50"
-          >
-            {loadingWeeks ? (
-              <option value="">Loading…</option>
-            ) : weeks.length === 0 ? (
-              <option value="">No weeks</option>
-            ) : null}
-            {weeks.map((w) => (
-              <option key={w.weekId} value={w.weekId}>
-                {weekLabel(w)} — {w.playerCount ?? '?'} players
-              </option>
-            ))}
-          </select>
+          <input
+            id={fromDateId}
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="input-field-sm"
+          />
         </div>
+        <div>
+          <label htmlFor={toDateId} className="mb-1 block text-xs font-medium text-ink-muted">
+            To
+          </label>
+          <input
+            id={toDateId}
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="input-field-sm"
+          />
+        </div>
+        {loadingSync && (
+          <p className="text-xs text-ink-muted">Backfilling previous weeks and nicknames…</p>
+        )}
       </div>
 
-      {weekId && (
+      {slug && (
         <>
           <div className="mb-4 flex flex-wrap gap-2">
             <input
@@ -499,12 +518,12 @@ export default function WeeklyStats({
 
           <div className="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm text-ink-muted">
             <span>
-              {data != null ? (
+              {allRows != null ? (
                 <>
-                  Total matching: <strong className="text-ink">{data.total}</strong>
-                  {data.total === 0 && (
+                  Total matching: <strong className="text-ink">{filteredRows.length}</strong>
+                  {filteredRows.length === 0 && (
                     <span className="ml-2 text-chart-3/90">
-                      (Week may not be processed yet, or search/filters exclude everyone.)
+                      (No weekdatas in this range, or search/filters exclude everyone.)
                     </span>
                   )}
                 </>
@@ -513,7 +532,7 @@ export default function WeeklyStats({
               )}
             </span>
             <div className="flex flex-wrap items-center gap-3">
-              {data && data.players.length > 0 && (
+              {pageRows.length > 0 && (
                 <button
                   type="button"
                   disabled={bulkBusy || loadingPlayers || messageableOnPage.length === 0}
@@ -524,9 +543,9 @@ export default function WeeklyStats({
                   {bulkBusy ? 'Sending…' : `Message all on this page (${messageableOnPage.length})`}
                 </button>
               )}
-              {data && data.total > 0 && (
+              {filteredRows.length > 0 && (
                 <span>
-                  Page {page} of {Math.max(1, Math.ceil(data.total / pageSize))}
+                  Page {page} of {pageCount}
                 </span>
               )}
             </div>
@@ -541,6 +560,7 @@ export default function WeeklyStats({
             <table className="min-w-[48rem]">
               <thead className="bg-surface text-ink-muted">
                 <tr>
+                  <th className="px-3 py-2 text-left font-medium">Week</th>
                   <th className="px-3 py-2 text-left font-medium">Nickname</th>
                   <th className="px-3 py-2 text-left font-medium">GG ID</th>
                   <th className="px-3 py-2 text-right font-medium">Rake</th>
@@ -554,28 +574,38 @@ export default function WeeklyStats({
               <tbody className="divide-y divide-border">
                 {loadingPlayers && (
                   <tr>
-                    <td colSpan={8} className="px-3 py-8 text-center text-ink-muted">
+                    <td colSpan={9} className="px-3 py-8 text-center text-ink-muted">
                       Loading players…
                     </td>
                   </tr>
                 )}
-                {!loadingPlayers && data && data.players.length === 0 && (
+                {!loadingPlayers && allRows && pageRows.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-3 py-8 text-center text-ink-muted">
+                    <td colSpan={9} className="px-3 py-8 text-center text-ink-muted">
                       No data for this selection.
                     </td>
                   </tr>
                 )}
                 {!loadingPlayers &&
-                  data?.players.map((row) => (
-                    <tr key={`${row.nickname}-${row.gg_id ?? 'x'}`} className="bg-bg hover:bg-surface">
+                  pageRows.map((row, i) => (
+                    <tr
+                      key={`${row.weekId}-${row.gg_id ?? row.nickname}-${i}`}
+                      className="bg-bg hover:bg-surface"
+                    >
+                      <td className="px-3 py-2 font-mono text-xs text-ink-muted whitespace-nowrap">
+                        {row.startDate}–{row.endDate}
+                      </td>
                       <td className="px-3 py-2 font-medium text-ink">{row.nickname}</td>
                       <td className="px-3 py-2 font-mono text-xs text-ink-muted">{row.gg_id ?? '—'}</td>
                       <td className="px-3 py-2 text-right tabular-nums">${fmtMoney(row.rake)}</td>
                       <td className="px-3 py-2 text-right">{rbPercent(row)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">${fmtMoney(row.rakeback)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-success-ink">
-                        ${fmtMoney(row.profit)}
+                      <td
+                        className={`px-3 py-2 text-right tabular-nums ${
+                          row.profit < 0 ? 'text-danger-ink' : 'text-success-ink'
+                        }`}
+                      >
+                        {fmtProfit(row.profit)}
                       </td>
                       <td className="px-3 py-2 text-ink-muted">
                         {row.agent != null && row.agent !== '' ? row.agent : '—'}
@@ -601,7 +631,7 @@ export default function WeeklyStats({
             </table>
           </div>
 
-          {data && data.total > pageSize && (
+          {filteredRows.length > pageSize && (
             <div className="mt-4 flex justify-center gap-2">
               <button
                 type="button"
@@ -613,8 +643,8 @@ export default function WeeklyStats({
               </button>
               <button
                 type="button"
-                disabled={page >= Math.ceil(data.total / pageSize)}
-                onClick={() => setPage((p) => p + 1)}
+                disabled={page >= pageCount}
+                onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
                 className="rounded border border-border px-4 py-2 text-sm disabled:opacity-40"
               >
                 Next
