@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 
 from bot.services.escalation_notification import (
+    REASON_EARLYRB_AUTO_OVER_MAX,
+    REASON_EARLYRB_CHIPS_NOT_ADDED,
     REASON_RPA_CASHOUT_FAILED,
     REASON_RPA_CASHOUT_UNCERTAIN,
     REASON_RPA_DEPOSIT_FAILED,
@@ -23,6 +25,8 @@ HEAD_ADMIN_ESCALATION_REASONS = frozenset(
         REASON_RPA_CASHOUT_UNCERTAIN,
         REASON_UNION_DEPOSIT_FIRST,
         REASON_UNION_DEPOSIT_REPEAT,
+        REASON_EARLYRB_AUTO_OVER_MAX,
+        REASON_EARLYRB_CHIPS_NOT_ADDED,
     }
 )
 

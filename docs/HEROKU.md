@@ -807,6 +807,49 @@ correct ClubGG club, a valid handle records a dashboard row + owed pin, an inval
 handle escalates, and a forced claim failure escalates with the "chips already
 claimed" note.
 
+## Automated early feeback on /earlyrb (fully automated)
+
+Turns player `/earlyrb` into an end-to-end flow across three systems: the ClubGG
+RPA bot reads this week's fee (`POST /rake`), Elevate quotes the remaining feeback
+(`bot/quote`), and on the player's **Claim** tap the bot records it (`bot/record`)
+then adds the chips. Off by default; requires the deposit API **and**
+`AON_BETA_BASE_URL` / `AON_BETA_INTERNAL_API_KEY` on the **worker** dyno. With the
+toggle off — or either API unconfigured — `/earlyrb` behaves exactly as before. See
+[`docs/AUTO_EARLY_RAKEBACK.md`](AUTO_EARLY_RAKEBACK.md).
+
+The minimum claimable amount comes only from Elevate's per-club
+`earlyRakebackThreshold`; the dashboard supplies the enable toggle and the
+**maximum** auto-claim amount (over it, an admin confirms and records by hand). The
+24h cooldown burns only when Elevate actually records, so failures cost the player
+nothing — `EARLYRB_RECHECK_THROTTLE_SECONDS` (default 300) is what stops repeat
+lookups hammering the single-threaded screen robot.
+
+Recording happens before the chip-add because the bot cannot undo an Elevate record
+(`delete`/`patch` there are JWT-only). A recorded-but-chips-failed claim therefore
+Slack-escalates to head admins with "add the chips manually, DO NOT re-record", and
+the `early_rakeback_claims` row carries everything needed to fix it.
+
+Run the migration once after deploy (adds `clubs.enable_auto_early_rakeback`,
+`clubs.early_rakeback_max_auto_amount` and the `early_rakeback_claims` table):
+
+```bash
+heroku run -a YOUR_APP -- python migrate_auto_early_rakeback.py
+```
+
+**Manual setup first:** the "Members / rake check" card must be calibrated on every
+ClubGG VM (`/rake` fails without it and `/health` does **not** report those regions
+as missing), the deposit bot needs a build exposing `POST /rake`, and Elevate needs
+`bot/quote` + `bot/record` deployed with club slugs `round-table`, `aces-table`,
+`creator-club`, `clubgto`. Full checklist in
+[`docs/AUTO_EARLY_RAKEBACK.md`](AUTO_EARLY_RAKEBACK.md).
+
+**Rollout / single-group test (do this before enabling widely):** enable
+**Automated early feeback** for **one** club only, keep `GG_DEPOSIT_API_DRY_RUN=true`
+(which skips the Elevate record entirely, so nothing hits the real ledger), and run
+a real `/earlyrb` in one known group: confirm the union picker, the fee figures and
+date range in the logs, the quoted amount, and that the max-amount gate escalates
+instead of claiming.
+
 ## Chip transfers between unions (/transfer)
 
 Lets a player in a two-union club move chips between them: `/transfer` → pick the

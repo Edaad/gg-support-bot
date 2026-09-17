@@ -305,6 +305,175 @@ class TestChipAddUnionOverride(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(used, "RT")
 
 
+class _FakeResponse:
+    def __init__(self, status_code: int, payload: dict) -> None:
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class _FakeAsyncClient:
+    """httpx.AsyncClient stand-in with one scripted POST and queued GETs."""
+
+    def __init__(self, *, post_response, get_responses=()) -> None:
+        self._post_response = post_response
+        self._get_responses = list(get_responses)
+        self.get_urls: list[str] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc):
+        return False
+
+    async def post(self, url, **_kwargs):
+        return self._post_response
+
+    async def get(self, url, **_kwargs):
+        self.get_urls.append(url)
+        return self._get_responses.pop(0)
+
+
+_RAKE_DATA = {
+    "rake": {"overall": 1234.56, "filtered": 42.10},
+    "pnl": {"overall": -318.0, "filtered": 12.34},
+    "range": {"start": "2026-09-14", "end": "2026-09-16"},
+}
+
+
+class TestRunRakeCheck(unittest.IsolatedAsyncioTestCase):
+    def _cfg(self):
+        return SimpleNamespace(
+            base_url="https://tunnel.test",
+            token="tok",
+            expected_host=None,
+            expected_profile=None,
+            union_max_age_hours=24.0,
+            timeout_sec=10.0,
+            poll_interval_sec=0.0,
+            poll_timeout_sec=180.0,
+            rake_poll_timeout_sec=420.0,
+        )
+
+    async def _run(self, client, *, title="RT / 8272-5942 / Player", **kwargs):
+        with patch.object(api, "load_config", return_value=self._cfg()), patch.object(
+            api, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
+        ), patch.object(
+            api, "_health_ok", AsyncMock(return_value=(True, "ok"))
+        ), patch.object(
+            api.httpx, "AsyncClient", return_value=client
+        ):
+            return await api.run_rake_check(
+                club_id=2,
+                chat_id=-100,
+                request_id="earlyrb-rake-test",
+                group_title=title,
+                union_shorthand="RT",
+                **kwargs,
+            )
+
+    async def test_queued_then_polled_success(self) -> None:
+        client = _FakeAsyncClient(
+            post_response=_FakeResponse(202, {"job_id": "abc", "status": "queued"}),
+            get_responses=[
+                _FakeResponse(200, {"status": "success", "data": _RAKE_DATA})
+            ],
+        )
+        outcome = await self._run(client)
+
+        self.assertTrue(outcome.ok)
+        self.assertEqual(outcome.status, "success")
+        self.assertEqual(outcome.player_id, "8272-5942")
+        self.assertEqual(outcome.clubgg_club, "Round Table")
+        self.assertEqual(outcome.rake_overall, Decimal("1234.56"))
+        self.assertEqual(outcome.rake_filtered, Decimal("42.10"))
+        self.assertEqual(outcome.pnl_overall, Decimal("-318.0"))
+        self.assertEqual(outcome.pnl_filtered, Decimal("12.34"))
+        self.assertEqual(outcome.range_start, "2026-09-14")
+        self.assertEqual(outcome.range_end, "2026-09-16")
+        self.assertEqual(client.get_urls, ["https://tunnel.test/rake/abc"])
+
+    async def test_terminal_in_post_skips_polling(self) -> None:
+        client = _FakeAsyncClient(
+            post_response=_FakeResponse(
+                200, {"job_id": "abc", "status": "success", "data": _RAKE_DATA}
+            )
+        )
+        outcome = await self._run(client)
+
+        self.assertTrue(outcome.ok)
+        self.assertEqual(client.get_urls, [])
+
+    async def test_fail_status_is_not_ok(self) -> None:
+        client = _FakeAsyncClient(
+            post_response=_FakeResponse(202, {"job_id": "abc", "status": "queued"}),
+            get_responses=[
+                _FakeResponse(
+                    200,
+                    {"status": "fail", "reason": "date range never matched"},
+                )
+            ],
+        )
+        outcome = await self._run(client)
+
+        self.assertFalse(outcome.ok)
+        self.assertEqual(outcome.status, "fail")
+        self.assertEqual(outcome.reason, "date range never matched")
+        self.assertIsNone(outcome.rake_filtered)
+
+    async def test_null_numbers_become_none(self) -> None:
+        client = _FakeAsyncClient(
+            post_response=_FakeResponse(
+                200,
+                {
+                    "status": "success",
+                    "data": {
+                        "rake": {"overall": None, "filtered": None},
+                        "pnl": {"overall": None, "filtered": None},
+                        "range": {"start": "2026-09-14", "end": "2026-09-14"},
+                    },
+                },
+            )
+        )
+        outcome = await self._run(client)
+
+        self.assertTrue(outcome.ok)
+        self.assertIsNone(outcome.rake_filtered)
+        self.assertIsNone(outcome.pnl_filtered)
+
+    async def test_unknown_club_error_detail(self) -> None:
+        client = _FakeAsyncClient(
+            post_response=_FakeResponse(
+                422, {"error": "unknown_club", "club": "Nope"}
+            )
+        )
+        outcome = await self._run(client)
+
+        self.assertFalse(outcome.ok)
+        self.assertEqual(outcome.status, "fail")
+        self.assertIn("unknown_club", outcome.reason)
+
+    async def test_title_without_player_id(self) -> None:
+        client = _FakeAsyncClient(post_response=_FakeResponse(200, {}))
+        outcome = await self._run(client, title="no player id here")
+
+        self.assertFalse(outcome.ok)
+        self.assertEqual(outcome.status, "no_player_id")
+
+    async def test_not_configured(self) -> None:
+        with patch.object(api, "load_config", return_value=None):
+            outcome = await api.run_rake_check(
+                club_id=2,
+                chat_id=-100,
+                request_id="r",
+                group_title="RT / 8272-5942 / Player",
+            )
+        self.assertFalse(outcome.ok)
+        self.assertEqual(outcome.status, "not_configured")
+
+
 class TestDepositTransactions(unittest.TestCase):
     def test_deposit_only(self) -> None:
         self.assertEqual(

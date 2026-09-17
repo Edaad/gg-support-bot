@@ -396,6 +396,46 @@ function GeneralTab({
             agent will be with you shortly" and escalates. Requires the deposit API and Auto
             claim on /cash. Clubs without unions ignore this. Off by default.
           </p>
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={form.enable_auto_early_rakeback ?? false}
+              onChange={(e) => setField('enable_auto_early_rakeback', e.target.checked)}
+              className="h-4 w-4 rounded border-border bg-control text-accent"
+            />
+            Automated early feeback
+          </label>
+          <p className="ml-6 text-xs text-ink-muted">
+            When enabled, player /earlyrb runs end-to-end: read this week's fee from ClubGG,
+            quote the remaining feeback on Elevate, and on the player's confirmation record
+            it and add the chips. The minimum claimable amount comes from Elevate's own
+            per-club threshold, not from here. Requires the deposit API and the Elevate
+            early rakeback API. Off by default — otherwise /earlyrb just pings an agent.
+          </p>
+          <div className="ml-6">
+            <label className="mb-1 block text-xs font-medium text-ink-muted">
+              Maximum auto-claim early feeback ($)
+            </label>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={form.early_rakeback_max_auto_amount ?? ''}
+              onChange={(e) =>
+                setField(
+                  'early_rakeback_max_auto_amount',
+                  e.target.value ? Number(e.target.value) : null,
+                )
+              }
+              placeholder="No limit"
+              className="field-narrow rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none"
+            />
+            <p className="mt-1 text-xs text-ink-muted">
+              Remaining feeback above this is never auto-claimed: the player is told an
+              admin will be with them shortly and staff get a Slack alert to confirm and
+              record it manually. Blank = no limit.
+            </p>
+          </div>
           {club.name.trim().toLowerCase() === 'creator club' && (
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-muted">

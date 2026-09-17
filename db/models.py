@@ -62,6 +62,12 @@ class Club(Base):
     enable_transfer = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
+    enable_auto_early_rakeback = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    # Remaining feeback above this goes to an admin instead of auto-claiming.
+    # NULL = no cap. The *minimum* comes from Elevate, not from here.
+    early_rakeback_max_auto_amount = Column(Numeric(12, 2), nullable=True)
     # Creator Club only: deposits a support group must already have before the
     # Creator Club / Aces Table picker is offered. 0 = always offer.
     aces_option_min_deposits = Column(
@@ -2548,6 +2554,71 @@ class EarlyRakebackLine(Base):
     occurred_at = Column(DateTime(timezone=True), nullable=True)
 
     snapshot = relationship("EarlyRakebackSnapshot", back_populates="lines")
+
+
+class EarlyRakebackClaim(Base):
+    """One automated ``/earlyrb`` claim attempt, for reconciliation.
+
+    The bot cannot undo an Elevate record (``delete``/``patch`` there are
+    JWT-only), so a record that succeeds while the ClubGG chip-add fails needs a
+    human. This table is what tells them which player, club and amount to fix.
+    """
+
+    __tablename__ = "early_rakeback_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_key", name="uq_early_rakeback_claims_idempotency_key"
+        ),
+        Index("ix_early_rakeback_claims_club_id", "club_id"),
+        Index("ix_early_rakeback_claims_chat_id", "telegram_chat_id"),
+        Index("ix_early_rakeback_claims_gg_player_id", "gg_player_id"),
+        Index("ix_early_rakeback_claims_status", "status"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    telegram_user_id = Column(BigInteger, nullable=True)
+    group_title = Column(Text, nullable=True)
+    gg_player_id = Column(String(255), nullable=False)
+    nickname = Column(String(255), nullable=True)
+    union_shorthand = Column(String(8), nullable=True)
+    clubgg_club = Column(String(64), nullable=True)
+    elevate_club_slug = Column(String(64), nullable=False)
+
+    rake_overall = Column(Numeric(14, 2), nullable=True)
+    rake_filtered = Column(Numeric(14, 2), nullable=True)
+    pnl_overall = Column(Numeric(14, 2), nullable=True)
+    pnl_filtered = Column(Numeric(14, 2), nullable=True)
+    range_start = Column(String(16), nullable=True)
+    range_end = Column(String(16), nullable=True)
+
+    quoted_amount = Column(Numeric(14, 2), nullable=True)
+    recorded_amount = Column(Numeric(14, 2), nullable=True)
+    rakeback_percentage = Column(Numeric(8, 4), nullable=True)
+    member_type = Column(String(32), nullable=True)
+    warnings = Column(JSONB, nullable=True)
+
+    idempotency_key = Column(String(128), nullable=False)
+    elevate_record_id = Column(String(64), nullable=True)
+    elevate_entry_id = Column(String(64), nullable=True)
+    elevate_total_given = Column(Numeric(14, 2), nullable=True)
+
+    rpa_rake_job_id = Column(String(64), nullable=True)
+    rpa_add_request_id = Column(String(128), nullable=True)
+    chip_add_status = Column(String(32), nullable=True)
+
+    # quoted | recorded | chips_added | chips_failed | chips_uncertain | escalated
+    status = Column(String(32), nullable=False, default="quoted")
+    detail = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    club = relationship("Club")
 
 
 class AuditReconcileRun(Base):

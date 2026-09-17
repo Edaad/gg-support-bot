@@ -11,6 +11,7 @@ FlowName = Literal[
     "deposit",
     "cashout",
     "transfer",
+    "earlyrb",
     "bonus",
     "issue_report",
     "inactive_outreach_send",
@@ -58,6 +59,11 @@ _TRANSFER_ACTIVE_KEYS = (
     "transfer_amount",
     "transfer_destination",
     "transfer_admin_initiated",
+)
+_EARLYRB_ACTIVE_KEYS = (
+    "earlyrb_club_id",
+    "earlyrb_quote",
+    "earlyrb_union_shorthand",
 )
 _BONUS_ACTIVE_KEYS = (
     "bonus_admin_id",
@@ -140,6 +146,10 @@ def transfer_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return any(k in context.chat_data for k in _TRANSFER_ACTIVE_KEYS)
 
 
+def earlyrb_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    return any(k in context.chat_data for k in _EARLYRB_ACTIVE_KEYS)
+
+
 def deposit_payment_wait_active(chat_id: int | None) -> bool:
     """True while post-instructions deposit chase is still open for this group."""
     if chat_id is None:
@@ -166,12 +176,13 @@ def cashout_blocking_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return cashout_flow_active(context)
 
 
-GroupMoneyFlow = Literal["deposit", "cashout", "transfer"]
+GroupMoneyFlow = Literal["deposit", "cashout", "transfer", "earlyrb"]
 
 _GROUP_MONEY_FLOW_COMMANDS: dict[GroupMoneyFlow, str] = {
     "deposit": "/deposit",
     "cashout": "/cashout",
     "transfer": "/transfer",
+    "earlyrb": "/earlyrb",
 }
 
 
@@ -202,6 +213,7 @@ async def block_if_group_money_flow_active(
         "deposit": deposit_blocking_active(context, cid),
         "cashout": cashout_blocking_active(context),
         "transfer": transfer_flow_active(context),
+        "earlyrb": earlyrb_flow_active(context),
     }
     # Report a different open flow first; only fall back to naming the same one.
     others = [f for f, is_open in open_flows.items() if is_open and f != starting]
@@ -409,6 +421,7 @@ def _cancel_order(context: ContextTypes.DEFAULT_TYPE) -> list[FlowName]:
     if latest in (
         "deposit",
         "cashout",
+        "earlyrb",
         "bonus",
         "issue_report",
         "inactive_outreach_send",
@@ -426,6 +439,7 @@ def _cancel_order(context: ContextTypes.DEFAULT_TYPE) -> list[FlowName]:
         "cashout_access",
         "deposit",
         "cashout",
+        "earlyrb",
     ):
         if name not in order:
             order.append(name)
@@ -480,6 +494,11 @@ async def flow_cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             from bot.handlers.cashout import cashout_cancel
 
             await cashout_cancel(update, context)
+            return
+        if flow == "earlyrb" and earlyrb_flow_active(context):
+            from bot.handlers.earlyrb import earlyrb_cancel
+
+            await earlyrb_cancel(update, context)
             return
 
     # Wizard already ended, but payment-wait flag still blocks /cashout|/deposit.

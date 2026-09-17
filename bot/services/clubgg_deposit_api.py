@@ -97,6 +97,7 @@ class _Config:
     timeout_sec: float
     poll_interval_sec: float
     poll_timeout_sec: float
+    rake_poll_timeout_sec: float
 
 
 def _env_bool(key: str, default: bool = False) -> bool:
@@ -144,6 +145,9 @@ def load_config() -> Optional[_Config]:
         timeout_sec=_env_float("GG_DEPOSIT_API_TIMEOUT_SEC", 10.0),
         poll_interval_sec=_env_float("GG_DEPOSIT_API_POLL_INTERVAL_SEC", 3.0),
         poll_timeout_sec=_env_float("GG_DEPOSIT_API_POLL_TIMEOUT_SEC", 180.0),
+        rake_poll_timeout_sec=_env_float(
+            "GG_DEPOSIT_API_RAKE_POLL_TIMEOUT_SEC", 420.0
+        ),
     )
 
 
@@ -314,15 +318,22 @@ async def _submit_operation(
 
 
 async def _poll_until_terminal(
-    cfg: _Config, client: httpx.AsyncClient, job_id: str
+    cfg: _Config,
+    client: httpx.AsyncClient,
+    job_id: str,
+    *,
+    path: str = "deposit",
+    timeout_sec: Optional[float] = None,
 ) -> dict[str, Any]:
-    """Poll GET /deposit/<job_id> until terminal/timeout. Returns the last job dict."""
-    deadline = time.monotonic() + cfg.poll_timeout_sec
+    """Poll GET /<path>/<job_id> until terminal/timeout. Returns the last job dict."""
+    deadline = time.monotonic() + (
+        cfg.poll_timeout_sec if timeout_sec is None else timeout_sec
+    )
     last: dict[str, Any] = {"status": "timeout", "reason": "no terminal status in time"}
     while time.monotonic() < deadline:
         try:
             resp = await client.get(
-                f"{cfg.base_url}/deposit/{job_id}", headers=_auth_headers(cfg)
+                f"{cfg.base_url}/{path}/{job_id}", headers=_auth_headers(cfg)
             )
             if resp.status_code == 200:
                 last = resp.json()
@@ -733,6 +744,12 @@ def deposit_api_configured() -> bool:
     return load_config() is not None
 
 
+def deposit_api_dry_run() -> bool:
+    """True when the deposit bot is in dry-run (jobs report ``dry_run``, no chips move)."""
+    cfg = load_config()
+    return bool(cfg and cfg.dry_run)
+
+
 async def run_auto_claim(
     *,
     club_id: int,
@@ -864,6 +881,197 @@ async def run_auto_claim(
             "auto_claim: unexpected error (chat_id=%s job_id=%s)", chat_id, job_id
         )
         return ClaimOutcome(False, "error", f"unexpected error: {type(exc).__name__}")
+
+
+@dataclass(frozen=True)
+class RakeOutcome:
+    """Result of a read-only member rake/PnL check (never raised; always returned)."""
+
+    ok: bool
+    status: str
+    reason: str = ""
+    player_id: Optional[str] = None
+    clubgg_club: Optional[str] = None
+    rake_overall: Optional[Decimal] = None
+    rake_filtered: Optional[Decimal] = None
+    pnl_overall: Optional[Decimal] = None
+    pnl_filtered: Optional[Decimal] = None
+    range_start: Optional[str] = None
+    range_end: Optional[str] = None
+    job_id: Optional[str] = None
+
+
+def _optional_decimal(raw: Any) -> Optional[Decimal]:
+    """Parse a JSON number the deposit API may report as null."""
+    if raw is None:
+        return None
+    try:
+        return Decimal(str(raw))
+    except Exception:
+        return None
+
+
+async def run_rake_check(
+    *,
+    club_id: int,
+    chat_id: int,
+    request_id: str,
+    group_title: Optional[str] = None,
+    union_shorthand: Optional[str] = None,
+) -> RakeOutcome:
+    """Read a member's rake/PnL for this week via the deposit bot's ``/rake`` endpoint.
+
+    Read-only and never raises. Player id + club/union resolve exactly like
+    ``/add`` auto chip-adding, unless ``union_shorthand`` pins the union (early
+    feeback asks the player which club to claim in). Returns both the overall and
+    the week-filtered numbers so the caller can confirm the date range applied.
+    """
+    try:
+        cfg = load_config()
+        if cfg is None:
+            return RakeOutcome(False, "not_configured", "deposit API not configured")
+
+        title = group_title
+        if not title:
+            title, _cid = await asyncio.to_thread(get_group_title_for_chat, int(chat_id))
+        player_id = gg_player_id_from_title(title)
+        if not player_id:
+            return RakeOutcome(
+                False, "no_player_id", "could not read a player id from the group title"
+            )
+
+        club = await asyncio.to_thread(get_club_by_id, int(club_id))
+        club_name = club.name if club else None
+
+        resolved_union: Optional[str] = (union_shorthand or "").strip().upper() or None
+        if resolved_union is None and union_shorthands_for_club_name(club_name):
+            stored_union, _recorded_at = await asyncio.to_thread(
+                get_last_deposit_union, int(chat_id)
+            )
+            resolved_union = _resolve_union_for_auto_chip_add(
+                club_name, title, stored_union
+            )
+
+        clubgg_club = resolve_clubgg_club_name(club_name, resolved_union)
+        if not clubgg_club:
+            return RakeOutcome(
+                False,
+                "unmapped",
+                f"could not map club {club_name!r}/union {resolved_union!r} to a ClubGG club",
+                player_id=player_id,
+            )
+
+        body: dict[str, Any] = {
+            "club": clubgg_club,
+            "player_id": player_id,
+            "request_id": request_id,
+        }
+        if cfg.expected_host:
+            body["expected_host"] = cfg.expected_host
+        if cfg.expected_profile:
+            body["expected_profile"] = cfg.expected_profile
+
+        timeout = httpx.Timeout(cfg.timeout_sec)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            ok_health, detail = await _health_ok(cfg, client)
+            if not ok_health:
+                return RakeOutcome(
+                    False,
+                    "no_machine",
+                    detail,
+                    player_id=player_id,
+                    clubgg_club=clubgg_club,
+                )
+
+            logger.info(
+                "rake_check: submitting club=%s (id=%s) player=%s request_id=%s",
+                clubgg_club,
+                CLUBGG_CLUB_IDS.get(clubgg_club),
+                player_id,
+                request_id,
+            )
+            try:
+                resp = await client.post(
+                    f"{cfg.base_url}/rake", headers=_auth_headers(cfg), json=body
+                )
+            except Exception as exc:
+                return RakeOutcome(
+                    False,
+                    "fail",
+                    f"request failed: {type(exc).__name__}",
+                    player_id=player_id,
+                    clubgg_club=clubgg_club,
+                )
+
+            try:
+                data = resp.json()
+            except Exception:
+                data = {}
+
+            if resp.status_code not in (200, 202):
+                err = data.get("error") or f"HTTP {resp.status_code}"
+                if err == "missing_fields":
+                    err = f"missing_fields: {data.get('fields')}"
+                elif err == "unknown_club":
+                    err = f"unknown_club: {data.get('club')}"
+                elif err == "identity_mismatch":
+                    err = "identity_mismatch (wrong deposit machine)"
+                elif resp.status_code == 401:
+                    err = "unauthorized (bad API token)"
+                return RakeOutcome(
+                    False,
+                    "fail",
+                    str(err),
+                    player_id=player_id,
+                    clubgg_club=clubgg_club,
+                )
+
+            remote_job_id = data.get("job_id") or request_id
+            status = (data.get("status") or "").lower()
+            if status in _TERMINAL_STATUSES:
+                job = data
+            else:
+                job = await _poll_until_terminal(
+                    cfg,
+                    client,
+                    str(remote_job_id),
+                    path="rake",
+                    timeout_sec=cfg.rake_poll_timeout_sec,
+                )
+
+        final = (job.get("status") or "unknown").lower()
+        reason = str(job.get("reason") or "")
+        payload = job.get("data") if isinstance(job.get("data"), dict) else {}
+        rake = payload.get("rake") if isinstance(payload.get("rake"), dict) else {}
+        pnl = payload.get("pnl") if isinstance(payload.get("pnl"), dict) else {}
+        rng = payload.get("range") if isinstance(payload.get("range"), dict) else {}
+
+        logger.info(
+            "rake_check: result club=%s player=%s status=%s reason=%s range=%s..%s",
+            clubgg_club,
+            player_id,
+            final,
+            reason,
+            rng.get("start"),
+            rng.get("end"),
+        )
+        return RakeOutcome(
+            ok=final == "success",
+            status=final,
+            reason=reason,
+            player_id=player_id,
+            clubgg_club=clubgg_club,
+            rake_overall=_optional_decimal(rake.get("overall")),
+            rake_filtered=_optional_decimal(rake.get("filtered")),
+            pnl_overall=_optional_decimal(pnl.get("overall")),
+            pnl_filtered=_optional_decimal(pnl.get("filtered")),
+            range_start=rng.get("start"),
+            range_end=rng.get("end"),
+            job_id=str(remote_job_id),
+        )
+    except Exception as exc:
+        logger.exception("rake_check: unexpected error (chat_id=%s)", chat_id)
+        return RakeOutcome(False, "error", f"unexpected error: {type(exc).__name__}")
 
 
 async def _notify_result(

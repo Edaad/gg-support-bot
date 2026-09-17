@@ -708,6 +708,8 @@ export interface Club {
   enable_escalation_notification: boolean
   enable_auto_cashout: boolean
   enable_transfer: boolean
+  enable_auto_early_rakeback: boolean
+  early_rakeback_max_auto_amount: number | null
   aces_option_min_deposits: number
   deposit_simple_mode: boolean
   deposit_simple_type: string | null

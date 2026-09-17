@@ -6,7 +6,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from bot.handlers.earlyrb import EARLYRB_ELIGIBLE_MESSAGE, earlyrb_handler
+from bot.handlers.earlyrb import EARLYRB_ELIGIBLE_MESSAGE, earlyrb_entry
 from bot.services.club import check_earlyrb_eligibility
 
 
@@ -80,12 +80,13 @@ class EarlyrbHandlerTestCase(unittest.IsolatedAsyncioTestCase):
         update.effective_user.id = user_id
         return update
 
+    @patch("bot.handlers.earlyrb.auto_earlyrb_available", return_value=False)
     @patch("bot.handlers.earlyrb.record_activity")
     @patch("bot.handlers.earlyrb.check_earlyrb_eligibility")
     @patch("bot.handlers.earlyrb.update_group_name")
     @patch("bot.handlers.earlyrb.get_club_for_chat")
     async def test_player_eligible_records_and_replies(
-        self, mock_club, mock_rename, mock_eligibility, mock_record
+        self, mock_club, mock_rename, mock_eligibility, mock_record, mock_auto
     ):
         mock_club.return_value = 1
         mock_eligibility.return_value = (True, None)
@@ -93,7 +94,7 @@ class EarlyrbHandlerTestCase(unittest.IsolatedAsyncioTestCase):
         update = self._make_update()
         context = MagicMock()
 
-        await earlyrb_handler(update, context)
+        await earlyrb_entry(update, context)
 
         mock_eligibility.assert_called_once_with(1, update.effective_chat.id)
         mock_record.assert_called_once_with(
@@ -101,12 +102,13 @@ class EarlyrbHandlerTestCase(unittest.IsolatedAsyncioTestCase):
         )
         update.message.reply_text.assert_called_once_with(EARLYRB_ELIGIBLE_MESSAGE)
 
+    @patch("bot.handlers.earlyrb.auto_earlyrb_available", return_value=False)
     @patch("bot.handlers.earlyrb.record_activity")
     @patch("bot.handlers.earlyrb.check_earlyrb_eligibility")
     @patch("bot.handlers.earlyrb.update_group_name")
     @patch("bot.handlers.earlyrb.get_club_for_chat")
     async def test_player_in_cooldown_denied_without_record(
-        self, mock_club, mock_rename, mock_eligibility, mock_record
+        self, mock_club, mock_rename, mock_eligibility, mock_record, mock_auto
     ):
         mock_club.return_value = 1
         mock_eligibility.return_value = (False, "Please wait.")
@@ -114,22 +116,23 @@ class EarlyrbHandlerTestCase(unittest.IsolatedAsyncioTestCase):
         update = self._make_update()
         context = MagicMock()
 
-        await earlyrb_handler(update, context)
+        await earlyrb_entry(update, context)
 
         mock_record.assert_not_called()
         update.message.reply_text.assert_called_once_with("Please wait.")
 
+    @patch("bot.handlers.earlyrb.auto_earlyrb_available", return_value=False)
     @patch("bot.handlers.earlyrb.record_activity", side_effect=RuntimeError("db down"))
     @patch("bot.handlers.earlyrb.check_earlyrb_eligibility", return_value=(True, None))
     @patch("bot.handlers.earlyrb.update_group_name")
     @patch("bot.handlers.earlyrb.get_club_for_chat", return_value=1)
     async def test_record_failure_does_not_send_success(
-        self, mock_club, mock_rename, mock_eligibility, mock_record
+        self, mock_club, mock_rename, mock_eligibility, mock_record, mock_auto
     ):
         update = self._make_update()
         context = MagicMock()
 
-        await earlyrb_handler(update, context)
+        await earlyrb_entry(update, context)
 
         mock_record.assert_called_once()
         update.message.reply_text.assert_called_once()
@@ -138,12 +141,13 @@ class EarlyrbHandlerTestCase(unittest.IsolatedAsyncioTestCase):
             update.message.reply_text.call_args[0][0],
         )
 
+    @patch("bot.handlers.earlyrb.auto_earlyrb_available", return_value=False)
     @patch("bot.handlers.earlyrb.record_activity")
     @patch("bot.handlers.earlyrb.check_earlyrb_eligibility")
     @patch("bot.handlers.earlyrb.update_group_name")
     @patch("bot.handlers.earlyrb.get_club_for_chat")
     async def test_staff_still_subject_to_cooldown(
-        self, mock_club, mock_rename, mock_eligibility, mock_record
+        self, mock_club, mock_rename, mock_eligibility, mock_record, mock_auto
     ):
         mock_club.return_value = 1
         mock_eligibility.return_value = (False, "Please wait.")
@@ -151,7 +155,7 @@ class EarlyrbHandlerTestCase(unittest.IsolatedAsyncioTestCase):
         update = self._make_update(user_id=999)
         context = MagicMock()
 
-        await earlyrb_handler(update, context)
+        await earlyrb_entry(update, context)
 
         mock_eligibility.assert_called_once_with(1, update.effective_chat.id)
         mock_record.assert_not_called()

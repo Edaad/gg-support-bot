@@ -37,6 +37,9 @@ REASON_DEPOSIT_PLAYER_MESSAGE = "deposit_player_message"
 REASON_NEW_PLAYER_ONBOARDED = "new_player_onboarded"
 REASON_PLAYER_DM_REACHED_OUT = "player_dm_reached_out"
 REASON_EARLYRB_REQUESTED = "earlyrb_requested"
+REASON_EARLYRB_AUTO_FAILED = "earlyrb_auto_failed"
+REASON_EARLYRB_AUTO_OVER_MAX = "earlyrb_auto_over_max"
+REASON_EARLYRB_CHIPS_NOT_ADDED = "earlyrb_chips_not_added"
 REASON_RPA_DEPOSIT_FAILED = "rpa_deposit_failed"
 REASON_RPA_CASHOUT_FAILED = "rpa_cashout_failed"
 REASON_RPA_DEPOSIT_UNCERTAIN = "rpa_deposit_uncertain"
@@ -82,6 +85,15 @@ _HEADLINES = {
     ),
     REASON_PLAYER_DM_REACHED_OUT: "A player reached out in DM.",
     REASON_EARLYRB_REQUESTED: "Early rakeback requested.",
+    REASON_EARLYRB_AUTO_FAILED: (
+        "Automated early feeback needs a human — please assist this player."
+    ),
+    REASON_EARLYRB_AUTO_OVER_MAX: (
+        "Early feeback over the auto-claim limit — confirm and record manually."
+    ),
+    REASON_EARLYRB_CHIPS_NOT_ADDED: (
+        "Early feeback RECORDED but chips NOT added — add chips manually."
+    ),
     REASON_RPA_DEPOSIT_FAILED: "RPA deposit failed — add chips manually.",
     REASON_RPA_CASHOUT_FAILED: "RPA cashout failed — claim chips manually.",
     REASON_RPA_DEPOSIT_UNCERTAIN: (
@@ -110,6 +122,9 @@ _REASONS_WITH_MESSAGE_BODY = frozenset(
         REASON_RPA_DEPOSIT_UNCERTAIN,
         REASON_RPA_CASHOUT_UNCERTAIN,
         REASON_AUTO_CASHOUT_ESCALATION,
+        REASON_EARLYRB_AUTO_FAILED,
+        REASON_EARLYRB_AUTO_OVER_MAX,
+        REASON_EARLYRB_CHIPS_NOT_ADDED,
     }
 )
 
@@ -1111,13 +1126,17 @@ async def notify_auto_cashout_escalation(
     )
 
 
-def _format_transfer_amount(value) -> str:
+def _format_money_amount(value) -> str:
     if isinstance(value, Decimal):
         amt = value.quantize(Decimal("0.01"))
         if amt == amt.to_integral_value():
             return f"${int(amt):,}"
         return f"${amt:,.2f}"
     return f"${value}"
+
+
+def _format_transfer_amount(value) -> str:
+    return _format_money_amount(value)
 
 
 async def notify_transfer_escalation(
@@ -1152,6 +1171,96 @@ async def notify_transfer_escalation(
         parts.append(str(detail))
     await notify_escalation_slack(
         REASON_TRANSFER_ESCALATION,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+        message_text="\n".join(parts),
+    )
+
+
+async def notify_earlyrb_auto_failed(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None = None,
+    detail: str | None = None,
+) -> None:
+    """Slack when the automated /earlyrb flow stops before anything is recorded.
+
+    Always posts (``enable_auto_early_rakeback`` is the feature's own gate). No
+    money has moved in any of these cases — the player was told an admin is on
+    the way, so the alert only needs to say why.
+    """
+    await notify_escalation_slack(
+        REASON_EARLYRB_AUTO_FAILED,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+        message_text=detail,
+    )
+
+
+async def notify_earlyrb_auto_over_max(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None = None,
+    gg_player_id: str | None = None,
+    remaining=None,
+    max_amount=None,
+    rake=None,
+    pl=None,
+) -> None:
+    """Slack when remaining feeback exceeds the club's auto-claim limit.
+
+    Nothing is recorded and no chips move: an admin has to confirm the figure and
+    record it on Elevate by hand, so every input they need is in the message.
+    """
+    lines = [
+        f"Remaining feeback {_format_money_amount(remaining)} is over the "
+        f"{_format_money_amount(max_amount)} auto-claim limit — confirm and record manually.",
+    ]
+    if gg_player_id:
+        lines.append(f"Player ID: {gg_player_id}")
+    if rake is not None:
+        lines.append(f"Week fee: {_format_money_amount(rake)}")
+    if pl is not None:
+        lines.append(f"Week PnL: {_format_money_amount(pl)}")
+    await notify_escalation_slack(
+        REASON_EARLYRB_AUTO_OVER_MAX,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+        message_text="\n".join(lines),
+    )
+
+
+async def notify_earlyrb_chips_not_added(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None = None,
+    gg_player_id: str | None = None,
+    amount=None,
+    clubgg_club: str | None = None,
+    detail: str | None = None,
+) -> None:
+    """Slack when Elevate recorded the claim but the chip-add failed.
+
+    The one-way door: the bot cannot undo an Elevate record, so the player is
+    owed chips that no retry will deliver and a re-record would double-pay.
+    """
+    club = clubgg_club or _club_display_name(club_id)
+    player = gg_player_id or "(unknown player)"
+    parts = [
+        f"Early feeback of {_format_money_amount(amount)} was RECORDED on Elevate "
+        f"for {club} player {player} but chips were NOT added — add the chips "
+        f"manually. DO NOT re-record.",
+    ]
+    if detail:
+        parts.append(str(detail))
+    await notify_escalation_slack(
+        REASON_EARLYRB_CHIPS_NOT_ADDED,
         club_id=club_id,
         chat_id=int(chat_id),
         title=title,

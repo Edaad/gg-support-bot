@@ -88,7 +88,7 @@ def log_stale_update(update: Update, *, handler: str, reason: str = "age") -> No
     )
 
 
-FlowName = Literal["deposit", "cashout", "transfer"]
+FlowName = Literal["deposit", "cashout", "transfer", "earlyrb"]
 
 
 def _flow_message_ids_key(flow: FlowName) -> str:
@@ -134,6 +134,10 @@ def has_active_transfer_flow(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return context.chat_data.get("transfer_destination") is not None
 
 
+def has_active_earlyrb_flow(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    return context.chat_data.get("earlyrb_club_id") is not None
+
+
 def is_flow_callback_stale(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -155,6 +159,8 @@ def is_flow_callback_stale(
         active = has_active_deposit_flow(context)
     elif flow == "transfer":
         active = has_active_transfer_flow(context)
+    elif flow == "earlyrb":
+        active = has_active_earlyrb_flow(context)
     else:
         active = has_active_cashout_flow(context)
     if active:

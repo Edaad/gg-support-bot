@@ -1,6 +1,7 @@
 """Shared database queries used by bot handlers."""
 
 import logging
+import os
 import random
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -647,6 +648,24 @@ def get_auto_cashout_enabled(club_id: int) -> bool:
         return bool(getattr(club, "enable_auto_cashout", False))
 
 
+def get_auto_early_rakeback_enabled(club_id: int) -> bool:
+    """True if /earlyrb should run the automated quote-and-claim flow."""
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club:
+            return False
+        return bool(getattr(club, "enable_auto_early_rakeback", False))
+
+
+def get_early_rakeback_max_auto_amount(club_id: int) -> Optional[Decimal]:
+    """Remaining feeback above this goes to an admin. None = no cap."""
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club or club.early_rakeback_max_auto_amount is None:
+            return None
+        return Decimal(str(club.early_rakeback_max_auto_amount))
+
+
 def get_transfer_enabled(club_id: int) -> bool:
     """True if /transfer may move chips between this club's two unions."""
     with get_db() as session:
@@ -1208,6 +1227,37 @@ def check_earlyrb_eligibility(
         f"{EARLYRB_COOLDOWN_DENIAL_MESSAGE}\n\n"
         f"You can use /earlyrb again at {elig_time} EST {elig_day}."
     )
+
+
+EARLYRB_RECHECK_THROTTLE_MESSAGE = (
+    "You just checked your feeback — please wait a few minutes before checking again."
+)
+
+
+def _earlyrb_recheck_throttle_seconds() -> int:
+    try:
+        return int(os.getenv("EARLYRB_RECHECK_THROTTLE_SECONDS", "300"))
+    except ValueError:
+        return 300
+
+
+def check_earlyrb_recheck_throttle(
+    club_id: int, chat_id: int
+) -> tuple[bool, Optional[str]]:
+    """Throttle repeat fee lookups. Returns (allowed, denial_message).
+
+    The 24h cooldown is only burned when Elevate actually records a claim, so
+    nothing stops a player re-running /earlyrb after a below-minimum or failed
+    quote. Each lookup drives the single-threaded screen robot, hence this.
+    """
+    last = get_last_activity_by_type(club_id, chat_id, "earlyrb_check")
+    if last is None:
+        return True, None
+
+    elapsed = (datetime.now(timezone.utc) - last).total_seconds()
+    if elapsed >= _earlyrb_recheck_throttle_seconds():
+        return True, None
+    return False, EARLYRB_RECHECK_THROTTLE_MESSAGE
 
 
 def cashout_shown_on_popup_keyboard(club_id: int, chat_id: int) -> bool:
