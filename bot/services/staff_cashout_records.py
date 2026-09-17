@@ -7,7 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Optional
 
-from sqlalchemy import or_
+from sqlalchemy import exists, or_
 
 from bot.services.club import count_deposits_for_chat, get_method_by_id, get_sub_option_by_id
 from bot.services.player_details import parse_tracking_title
@@ -649,9 +649,9 @@ def delete_staff_cashout_send(record_id: int, send_id: int) -> Optional[dict[str
 
 
 def _matches_search(out: dict[str, Any], needle: str) -> bool:
-    blob = " ".join(
-        str(out.get(k) or "") for k in ("group_title", "gg_player_id", "club_name")
-    ).lower()
+    values = [out.get(k) for k in ("group_title", "gg_player_id", "club_name")]
+    values.extend(payment.get("payout_details") for payment in out.get("payments", []))
+    blob = " ".join(str(value or "") for value in values).lower()
     return needle.lower() in blob
 
 
@@ -697,6 +697,11 @@ def list_staff_cashout_records(
                     StaffCashoutRecord.group_title.ilike(like),
                     StaffCashoutRecord.gg_player_id.ilike(like),
                     Club.name.ilike(like),
+                    exists().where(
+                        StaffCashoutPayment.cashout_record_id
+                        == StaffCashoutRecord.id,
+                        StaffCashoutPayment.payout_details.ilike(like),
+                    ),
                 )
             )
         rows = query.all()

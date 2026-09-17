@@ -92,6 +92,31 @@ class SearchMatchTestCase(unittest.TestCase):
         self.assertTrue(_matches_search(row, "round"))
         self.assertFalse(_matches_search(row, "aces"))
 
+    def test_matches_any_destination_tag_case_insensitive(self) -> None:
+        row = {
+            "group_title": "GTO / 1 / X",
+            "gg_player_id": "1",
+            "club_name": "Round Table",
+            "payments": [
+                {"method_display_name": "Venmo", "payout_details": "@Johnny"},
+                {"method_display_name": "Zelle", "payout_details": "player@example.com"},
+            ],
+        }
+        self.assertTrue(_matches_search(row, "johnny"))
+        self.assertTrue(_matches_search(row, "PLAYER@EXAMPLE"))
+
+    def test_does_not_match_method_name_or_normalize_tag(self) -> None:
+        row = {
+            "group_title": "GTO / 1 / X",
+            "gg_player_id": "1",
+            "club_name": "Round Table",
+            "payments": [
+                {"method_display_name": "Venmo", "payout_details": "johnny"},
+            ],
+        }
+        self.assertFalse(_matches_search(row, "venmo"))
+        self.assertFalse(_matches_search(row, "@johnny"))
+
 
 class LedgerStatusTestCase(unittest.TestCase):
     def test_legacy_always_cleared(self) -> None:

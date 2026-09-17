@@ -774,7 +774,9 @@ export default function CashoutRecords({
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder={isMoneySent ? 'Sender, sent to, player ID…' : 'Name, player ID…'}
+            placeholder={
+              isMoneySent ? 'Sender, sent to, player ID…' : 'Name, player ID, tag…'
+            }
             className="input-field-sm w-full"
           />
         </div>
