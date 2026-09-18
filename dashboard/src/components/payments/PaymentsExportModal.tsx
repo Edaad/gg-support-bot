@@ -114,7 +114,7 @@ export default function PaymentsExportModal({
   }, [methodsForTab, method])
 
   const variantDisabled = effectiveMethod === ALL_METHOD || isAllTab
-  const showUnion = isAllTab || isUnionTab
+  const showUnion = isUnionTab
   const useXlsxExport = (isAllTab || effectiveMethod === ALL_METHOD) && !variant
 
   const dateError =
@@ -142,7 +142,7 @@ export default function PaymentsExportModal({
       scope,
       owner: ownerSlug ?? undefined,
       method: methodParam,
-      depositUnion: unionFilter === 'all' ? undefined : unionFilter,
+      depositUnion: isUnionTab && unionFilter !== 'all' ? unionFilter : undefined,
       clubId: clubIdNum,
       q: search.trim() || undefined,
       ...dateParams,
@@ -178,6 +178,10 @@ export default function PaymentsExportModal({
   useEffect(() => {
     setVariant('')
   }, [ownerTab, method])
+
+  useEffect(() => {
+    setUnionFilter('all')
+  }, [ownerTab])
 
   const loadVariants = useCallback(() => {
     if (!open || variantDisabled) {

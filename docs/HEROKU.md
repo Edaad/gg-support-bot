@@ -570,7 +570,7 @@ JWT (dashboard) reads:
 
 ## Nightly group-chat transcript extraction
 
-Stores previous-day conversation history (JSONB) for each active support group. Runs on the **worker** at **3:00 AM America/New_York**, pauses the MTProto dm_gc listener for up to 30 minutes, and posts start/done notices to the issue-report Slack channel (mentions `account_managers` from `ISSUE_REPORT_TAG_MENTIONS`).
+Stores previous-day conversation history (JSONB) for each active support group. Runs on the **worker** at **3:00 AM America/New_York**, pauses the MTProto dm_gc listener for up to 30 minutes, and posts start/done notices to the **escalation** Slack channel (`SLACK_ESCALATION_*`).
 
 After deploy, run the migration once:
 

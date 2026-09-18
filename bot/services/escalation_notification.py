@@ -58,6 +58,10 @@ _UNION_DEPOSIT_INSTRUCTION = (
     "Verify the time, ensure payment status is visible, and if you are unsure, "
     "contact head admins."
 )
+_UNION_DEPOSIT_EVIDENCE_GROUPS = {
+    "tmt": "RoundTableClub 🤝 TMT Union",
+    "massiv": "#2 Aces Table : Settlements/Support",
+}
 _ET = ZoneInfo("America/New_York")
 
 _HEADLINES = {
@@ -491,6 +495,14 @@ def _format_union_deposit_time(requested_at: datetime | None) -> str:
     return f"{month} {local.day}, {local.year} at {clock} ET"
 
 
+def _union_deposit_evidence_line(deposit_union: str | None) -> str | None:
+    key = (deposit_union or "").strip().lower()
+    group = _UNION_DEPOSIT_EVIDENCE_GROUPS.get(key)
+    if not group:
+        return None
+    return f"Forward the evidence to {group}"
+
+
 def format_union_deposit_slack_text(
     *,
     variant: str,
@@ -501,6 +513,7 @@ def format_union_deposit_slack_text(
     method_display_name: str,
     method_tag: str | None,
     requested_at: datetime | None,
+    deposit_union: str | None = None,
 ) -> str:
     del variant, method_display_name
     club = _club_display_name(club_id)
@@ -520,6 +533,9 @@ def format_union_deposit_slack_text(
         "",
         _UNION_DEPOSIT_INSTRUCTION,
     ]
+    evidence = _union_deposit_evidence_line(deposit_union)
+    if evidence:
+        lines.append(evidence)
     return "\n".join(lines)
 
 
@@ -608,6 +624,7 @@ async def format_union_deposit_telegram_text(
     method_display_name: str,
     method_tag: str | None,
     requested_at: datetime | None,
+    deposit_union: str | None = None,
 ) -> str:
     del variant, method_display_name
     from notification.formatting import format_player_id_line, resolve_and_format_group_chat_line
@@ -642,6 +659,9 @@ async def format_union_deposit_telegram_text(
             html.escape(_UNION_DEPOSIT_INSTRUCTION, quote=False),
         ]
     )
+    evidence = _union_deposit_evidence_line(deposit_union)
+    if evidence:
+        lines.append(html.escape(evidence, quote=False))
     return "\n".join(lines)
 
 
@@ -683,6 +703,7 @@ async def notify_pool_pay_deposit_slack(
     method_display_name: str,
     method_tag: str | None,
     requested_at: datetime | None,
+    deposit_union: str | None = None,
 ) -> bool:
     """Slack AMs when a pool pay manual deposit is created."""
     if is_test_bot_worker():
@@ -747,6 +768,7 @@ async def notify_pool_pay_deposit_slack(
         method_display_name=method_display_name,
         method_tag=method_tag,
         requested_at=requested_at,
+        deposit_union=deposit_union,
     )
     try:
         telegram_text = await format_union_deposit_telegram_text(
@@ -758,6 +780,7 @@ async def notify_pool_pay_deposit_slack(
             method_display_name=method_display_name,
             method_tag=method_tag,
             requested_at=requested_at,
+            deposit_union=deposit_union,
         )
         await _notify_union_deposit_payment_chats(
             telegram_text=telegram_text,
@@ -790,6 +813,7 @@ async def notify_union_deposit_request_slack(
     method_display_name: str,
     method_tag: str | None,
     requested_at: datetime | None,
+    deposit_union: str | None = None,
 ) -> bool:
     """Slack AMs when a union manual deposit is created."""
     return await notify_pool_pay_deposit_slack(
@@ -802,6 +826,7 @@ async def notify_union_deposit_request_slack(
         method_display_name=method_display_name,
         method_tag=method_tag,
         requested_at=requested_at,
+        deposit_union=deposit_union,
     )
 
 

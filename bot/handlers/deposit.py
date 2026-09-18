@@ -2294,6 +2294,7 @@ async def _run_union_deposit_from_choice(
                 method_tag=(getattr(db_method, "method_tag", None) or "").strip()
                 or None,
                 requested_at=row.created_at,
+                deposit_union=getattr(db_method, "deposit_union", None),
             )
         except Exception:
             logger.exception(
