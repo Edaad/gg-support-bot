@@ -30,6 +30,7 @@ from bot.services.club import (
     record_activity_for_chat,
 )
 from bot.services.clubgg_deposit_api import (
+    LABEL_FEEBACK,
     deposit_api_dry_run,
     resolve_clubgg_club_name,
     run_auto_chip_add,
@@ -543,6 +544,7 @@ async def claim_feeback(
         request_id=add_request_id,
         group_title=group_title,
         union_shorthand=target.union_shorthand,
+        label=LABEL_FEEBACK,
     )
     amount_str = format_feeback_amount(amount, decimals)
 

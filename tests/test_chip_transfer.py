@@ -113,6 +113,8 @@ class RunTransferTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.chips_in_limbo)
         self.assertEqual(mock_claim.await_args.kwargs["union_shorthand"], "RT")
         self.assertEqual(mock_add.await_args.kwargs["union_shorthand"], "AT")
+        self.assertEqual(mock_claim.await_args.kwargs["label"], "Transfer")
+        self.assertEqual(mock_add.await_args.kwargs["label"], "Transfer")
 
     async def test_legs_use_distinct_request_ids(self):
         _r, mock_claim, mock_add = await self._run(

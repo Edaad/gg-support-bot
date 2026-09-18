@@ -37,6 +37,9 @@ Creator Club player can never target the Round Table union, and vice versa.
 6. On a successful claim: `Adding N chips to <destination>...`
 7. On a successful add: `Successfully transferred N chips from <source> to <destination>!`
 
+Both RPA jobs send `label` **Transfer**, so VM notifications read *Transfer success*
+rather than *Claim success* / *Add success*.
+
 Anything off-script posts `An agent will be with you shortly.` once, Slack-escalates
 with reason `transfer_escalation`, and ends the conversation. A bare `/transfer` is
 never treated as off-script, and staff/admin messages mid-flow are ignored rather

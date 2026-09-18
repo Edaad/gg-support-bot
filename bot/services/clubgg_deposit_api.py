@@ -78,6 +78,14 @@ _TERMINAL_STATUSES = frozenset(
 )
 _PROBLEM_STATUSES = frozenset({"fail", "uncertain", "error", "cancelled"})
 
+# Sent as POST /deposit and POST /claim ``label`` so RPA notifications read
+# "<label> success" instead of the API defaults Add / Claim.
+LABEL_DEPOSIT = "Deposit"
+LABEL_BONUS = "Bonus"
+LABEL_FEEBACK = "Feeback"
+LABEL_CASHOUT = "Cashout"
+LABEL_TRANSFER = "Transfer"
+
 # Idempotency / double-fire guard shared across the PTB and Telethon event loops.
 _seen_lock = threading.Lock()
 _seen_request_ids: dict[str, float] = {}
@@ -198,14 +206,17 @@ def request_id_with_part(base_request_id: str, *, part: str = "base") -> str:
 
 
 def _deposit_transactions(
-    amount: Decimal, bonus: Optional[Decimal]
+    amount: Decimal,
+    bonus: Optional[Decimal],
+    *,
+    deposit_label: str = LABEL_DEPOSIT,
 ) -> list[tuple[str, Decimal, str]]:
     """Return (label, chip_amount, request_id_part) for each ClubGG deposit."""
     txs: list[tuple[str, Decimal, str]] = []
     if amount is not None and amount > 0:
-        txs.append(("deposit", amount, "base"))
+        txs.append((deposit_label, amount, "base"))
     if bonus is not None and bonus > 0:
-        txs.append(("bonus", bonus, "bonus"))
+        txs.append((LABEL_BONUS, bonus, "bonus"))
     return txs
 
 
@@ -275,6 +286,7 @@ async def _submit_operation(
     player_id: str,
     amount: str,
     request_id: str,
+    label: Optional[str] = None,
 ) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """POST /deposit or /claim (same body). Returns (job_id, status, error_message)."""
     body: dict[str, Any] = {
@@ -283,6 +295,9 @@ async def _submit_operation(
         "amount": amount,
         "request_id": request_id,
     }
+    cleaned_label = (label or "").strip()
+    if cleaned_label:
+        body["label"] = cleaned_label
     if cfg.dry_run:
         body["dry_run"] = True
     if cfg.expected_host:
@@ -447,6 +462,7 @@ async def _run_single_deposit(
         player_id=player_id,
         amount=amount_str,
         request_id=request_id,
+        label=label,
     )
     if error or not job_id:
         await _send_alert(
@@ -533,6 +549,7 @@ async def run_auto_chip_add(
     group_title: Optional[str] = None,
     union_shorthand: Optional[str] = None,
     ptb_bot: Any | None = None,
+    label: Optional[str] = None,
 ) -> tuple[bool, str]:
     """Submit chip-add to ClubGG and poll to terminal.
 
@@ -542,6 +559,8 @@ async def run_auto_chip_add(
     ``union_shorthand`` pins the destination union (``/transfer`` needs to add to a
     specific one). When omitted the union is resolved from the group title and the
     stored deposit union, which is what every deposit-side caller wants.
+    ``label`` overrides the amount job's RPA notification title (Deposit by
+    default). A bonus leg is always labelled Bonus.
     """
     cfg = load_config()
     if cfg is None:
@@ -550,7 +569,8 @@ async def run_auto_chip_add(
     if not _claim_request(request_id):
         return False, "request_claim_failed"
 
-    transactions = _deposit_transactions(amount, bonus)
+    deposit_label = (label or "").strip() or LABEL_DEPOSIT
+    transactions = _deposit_transactions(amount, bonus, deposit_label=deposit_label)
     if not transactions:
         return False, "no_transactions"
 
@@ -759,6 +779,7 @@ async def run_auto_claim(
     group_title: Optional[str] = None,
     union_shorthand: Optional[str] = None,
     request_id: Optional[str] = None,
+    label: str = LABEL_CASHOUT,
 ) -> ClaimOutcome:
     """Claim chips back via the deposit bot's ``/claim`` endpoint.
 
@@ -767,8 +788,9 @@ async def run_auto_claim(
     which case the caller's explicit union choice is used (automated cashouts).
     ``request_id`` defaults to a value derived from the cashout job id so a given
     job can never double-claim; callers without a job id (automated cashout) may
-    pass a stable per-flow key instead. Returns a rich :class:`ClaimOutcome` the
-    caller uses to decide what to tell staff.
+    pass a stable per-flow key instead. ``label`` is the RPA notification title
+    (Cashout by default). Returns a rich :class:`ClaimOutcome` the caller uses to
+    decide what to tell staff.
     """
     try:
         cfg = load_config()
@@ -827,13 +849,14 @@ async def run_auto_claim(
 
             logger.info(
                 "auto_claim: submitting club=%s (id=%s) player=%s amount=%s dry_run=%s "
-                "request_id=%s",
+                "request_id=%s label=%s",
                 clubgg_club,
                 CLUBGG_CLUB_IDS.get(clubgg_club),
                 player_id,
                 amount_str,
                 cfg.dry_run,
                 request_id,
+                label,
             )
             remote_job_id, status, error = await _submit_operation(
                 cfg,
@@ -843,6 +866,7 @@ async def run_auto_claim(
                 player_id=player_id,
                 amount=amount_str,
                 request_id=request_id,
+                label=label,
             )
             if error or not remote_job_id:
                 return ClaimOutcome(
@@ -1092,7 +1116,7 @@ async def _notify_result(
     player_id: str,
     amount_str: str,
     *,
-    label: str = "deposit",
+    label: str = LABEL_DEPOSIT,
 ) -> None:
     status = (job.get("status") or "unknown").lower()
     reason = job.get("reason") or ""

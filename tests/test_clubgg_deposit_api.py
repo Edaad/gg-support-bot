@@ -516,26 +516,209 @@ class TestDepositTransactions(unittest.TestCase):
     def test_deposit_only(self) -> None:
         self.assertEqual(
             api._deposit_transactions(Decimal("500"), None),
-            [("deposit", Decimal("500"), "base")],
+            [(api.LABEL_DEPOSIT, Decimal("500"), "base")],
         )
 
     def test_deposit_plus_bonus(self) -> None:
         self.assertEqual(
             api._deposit_transactions(Decimal("500"), Decimal("50")),
             [
-                ("deposit", Decimal("500"), "base"),
-                ("bonus", Decimal("50"), "bonus"),
+                (api.LABEL_DEPOSIT, Decimal("500"), "base"),
+                (api.LABEL_BONUS, Decimal("50"), "bonus"),
             ],
         )
 
     def test_bonus_only_skips_zero_deposit(self) -> None:
         self.assertEqual(
             api._deposit_transactions(Decimal("0"), Decimal("50")),
-            [("bonus", Decimal("50"), "bonus")],
+            [(api.LABEL_BONUS, Decimal("50"), "bonus")],
         )
 
     def test_empty_when_neither(self) -> None:
         self.assertEqual(api._deposit_transactions(Decimal("0"), None), [])
+
+    def test_deposit_label_override_does_not_change_bonus(self) -> None:
+        self.assertEqual(
+            api._deposit_transactions(
+                Decimal("12"), Decimal("3"), deposit_label=api.LABEL_FEEBACK
+            ),
+            [
+                (api.LABEL_FEEBACK, Decimal("12"), "base"),
+                (api.LABEL_BONUS, Decimal("3"), "bonus"),
+            ],
+        )
+
+
+class _CapturingClient:
+    """httpx stand-in that records POST JSON for label assertions."""
+
+    def __init__(self) -> None:
+        self.posts: list[tuple[str, dict]] = []
+
+    async def post(self, url, **kwargs):
+        body = kwargs.get("json") or {}
+        self.posts.append((url, body))
+        return _FakeResponse(202, {"job_id": body.get("request_id") or "j", "status": "success"})
+
+    async def get(self, url, **_kwargs):
+        return _FakeResponse(200, {"ok": True})
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc):
+        return False
+
+
+class TestSubmitOperationLabel(unittest.IsolatedAsyncioTestCase):
+    def _cfg(self):
+        return SimpleNamespace(
+            base_url="https://tunnel.test",
+            token="tok",
+            dry_run=False,
+            expected_host=None,
+            expected_profile=None,
+        )
+
+    async def test_deposit_body_includes_label(self) -> None:
+        client = _CapturingClient()
+        job_id, status, err = await api._submit_operation(
+            self._cfg(),
+            client,
+            club="Round Table",
+            player_id="8272-5942",
+            amount="100",
+            request_id="r1",
+            label=api.LABEL_DEPOSIT,
+        )
+        self.assertIsNone(err)
+        self.assertEqual(status, "success")
+        self.assertEqual(job_id, "r1")
+        url, body = client.posts[0]
+        self.assertEqual(url, "https://tunnel.test/deposit")
+        self.assertEqual(body["label"], "Deposit")
+
+    async def test_claim_body_includes_label(self) -> None:
+        client = _CapturingClient()
+        await api._submit_operation(
+            self._cfg(),
+            client,
+            operation="claim",
+            club="Round Table",
+            player_id="8272-5942",
+            amount="50",
+            request_id="c1",
+            label=api.LABEL_CASHOUT,
+        )
+        url, body = client.posts[0]
+        self.assertEqual(url, "https://tunnel.test/claim")
+        self.assertEqual(body["label"], "Cashout")
+
+    async def test_blank_label_is_omitted(self) -> None:
+        client = _CapturingClient()
+        await api._submit_operation(
+            self._cfg(),
+            client,
+            club="Round Table",
+            player_id="8272-5942",
+            amount="100",
+            request_id="r2",
+            label="  ",
+        )
+        self.assertNotIn("label", client.posts[0][1])
+
+
+class TestChipAddPostsLabels(unittest.IsolatedAsyncioTestCase):
+    def _cfg(self):
+        return SimpleNamespace(
+            base_url="https://tunnel.test",
+            token="tok",
+            dry_run=False,
+            expected_host=None,
+            expected_profile=None,
+            union_max_age_hours=24.0,
+            timeout_sec=10.0,
+            poll_interval_sec=0.0,
+            poll_timeout_sec=180.0,
+            rake_poll_timeout_sec=420.0,
+            alert_on_success=False,
+        )
+
+    async def _run(self, client, **kwargs):
+        with patch.object(api, "load_config", return_value=self._cfg()), patch.object(
+            api, "_claim_request", return_value=True
+        ), patch.object(
+            api, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
+        ), patch.object(
+            api, "get_last_deposit_union", return_value=(None, None)
+        ), patch.object(
+            api, "_health_ok", AsyncMock(return_value=(True, "ok"))
+        ), patch.object(
+            api, "_send_alert", AsyncMock()
+        ), patch.object(
+            api.httpx, "AsyncClient", return_value=client
+        ):
+            return await api.run_auto_chip_add(
+                club_id=2,
+                chat_id=-100,
+                amount=kwargs.pop("amount", Decimal("500")),
+                request_id="add-1",
+                group_title="RT / 8272-5942 / Player",
+                **kwargs,
+            )
+
+    async def test_add_with_bonus_posts_deposit_then_bonus(self) -> None:
+        client = _CapturingClient()
+        ok, status = await self._run(client, bonus=Decimal("50"))
+        self.assertTrue(ok)
+        self.assertEqual(status, "success")
+        self.assertEqual([body["label"] for _url, body in client.posts], ["Deposit", "Bonus"])
+        self.assertEqual(client.posts[0][1]["amount"], "500")
+        self.assertEqual(client.posts[1][1]["amount"], "50")
+
+    async def test_feeback_override_is_posted(self) -> None:
+        client = _CapturingClient()
+        ok, status = await self._run(
+            client, amount=Decimal("12"), label=api.LABEL_FEEBACK
+        )
+        self.assertTrue(ok)
+        self.assertEqual(status, "success")
+        self.assertEqual(client.posts[0][1]["label"], "Feeback")
+
+
+class TestClaimPostsCashoutLabel(unittest.IsolatedAsyncioTestCase):
+    async def test_default_claim_label_is_cashout(self) -> None:
+        client = _CapturingClient()
+        cfg = SimpleNamespace(
+            base_url="https://tunnel.test",
+            token="tok",
+            dry_run=False,
+            expected_host=None,
+            expected_profile=None,
+            timeout_sec=10.0,
+            poll_interval_sec=0.0,
+            poll_timeout_sec=180.0,
+        )
+        with patch.object(api, "load_config", return_value=cfg), patch.object(
+            api, "get_auto_claim_enabled", return_value=True
+        ), patch.object(
+            api, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
+        ), patch.object(
+            api, "_health_ok", AsyncMock(return_value=(True, "ok"))
+        ), patch.object(
+            api.httpx, "AsyncClient", return_value=client
+        ):
+            outcome = await api.run_auto_claim(
+                club_id=2,
+                chat_id=-100,
+                job_id=9,
+                amount=Decimal("80"),
+                group_title="RT / 8272-5942 / Player",
+                union_shorthand="RT",
+            )
+        self.assertTrue(outcome.ok)
+        self.assertEqual(client.posts[0][0], "https://tunnel.test/claim")
+        self.assertEqual(client.posts[0][1]["label"], "Cashout")
 
 
 if __name__ == "__main__":

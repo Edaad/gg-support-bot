@@ -58,9 +58,10 @@ every other flow are unchanged.
    renders it clickable) and a handle stays a handle. PayPal prefers the link when
    a message has both.
 6. **Only once everything above succeeds**, the bot posts "Claiming chips…" and runs
-   the ClubGG auto-claim for the chosen club/union. On failure or an UNCERTAIN
-   result it escalates and stops. Claiming last means the player is never waiting on
-   ClubGG before being asked for their method and handle.
+   the ClubGG auto-claim for the chosen club/union (`label` **Cashout**, so the VM
+   notification reads *Cashout success*; staff `/cash` uses the same label). On failure
+   or an UNCERTAIN result it escalates and stops. Claiming last means the player is
+   never waiting on ClubGG before being asked for their method and handle.
 7. On a clean claim, the cashout is recorded via `complete_cashout_job` →
    `staff_cashout_records` (dashboard Cashout Records) + the group "$X owed" pin +
    the cooldown activity. The player gets a short confirmation.

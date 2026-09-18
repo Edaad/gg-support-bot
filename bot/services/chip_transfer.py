@@ -21,6 +21,7 @@ from typing import Optional
 
 from bot.services.club import get_auto_claim_enabled, get_club_by_id
 from bot.services.clubgg_deposit_api import (
+    LABEL_TRANSFER,
     load_config,
     resolve_clubgg_club_name,
     run_auto_chip_add,
@@ -160,6 +161,7 @@ async def run_transfer(
             group_title=group_title,
             union_shorthand=plan.source_shorthand,
             request_id=claim_request_id,
+            label=LABEL_TRANSFER,
         )
     except Exception:
         logger.exception(
@@ -212,6 +214,7 @@ async def run_transfer(
             request_id=add_request_id,
             group_title=group_title,
             union_shorthand=plan.destination_shorthand,
+            label=LABEL_TRANSFER,
         )
     except Exception:
         logger.exception(

@@ -26,7 +26,8 @@ All player-facing copy says **fee** and **feeback**, never rake or rakeback.
    with **Claim** / **Cancel**, plus *"Early feeback counts as a deposit and will reset
    the cashout timer"*.
 7. On Claim: *"Adding early feeback..."*, then `POST bot/record` on Elevate, then
-   `POST /deposit` on the RPA bot. That status message is replaced with
+   `POST /deposit` on the RPA bot (`label` **Feeback**, so the VM notification
+   reads *Feeback success*). That status message is replaced with
    *"$X.XX feeback added to your account!"*
 
 Fee lookup and chip-add run as ConversationHandler **non-blocking** callbacks
