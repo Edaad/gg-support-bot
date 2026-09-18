@@ -99,9 +99,9 @@ class CronPauseResumeTest(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(
                 cron,
-                "notify_slack_issue_report",
+                "notify_slack_escalation",
                 new_callable=AsyncMock,
-                return_value=(True, "1.0", []),
+                return_value=True,
             ) as slack,
             patch.object(cron, "fetch_with_retries", new_callable=AsyncMock) as fetch_mock,
             patch(
@@ -149,8 +149,12 @@ class CronPauseResumeTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("automatic /gc", start_text)
         self.assertIn("available again", done_text)
         self.assertEqual(
-            slack.await_args_list[0].kwargs.get("tags"),
-            ["account_managers"],
+            slack.await_args_list[0].kwargs.get("source"),
+            "group_chat_transcript",
+        )
+        self.assertEqual(
+            slack.await_args_list[1].kwargs.get("source"),
+            "group_chat_transcript",
         )
         # Analysis runs after Slack done (second notify), then analyze.
         self.assertGreaterEqual(analyze_mock.await_count, 1)
@@ -159,9 +163,9 @@ class CronPauseResumeTest(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(
                 cron,
-                "notify_slack_issue_report",
+                "notify_slack_escalation",
                 new_callable=AsyncMock,
-                return_value=(True, "1.0", []),
+                return_value=True,
             ),
             patch.object(
                 cron,

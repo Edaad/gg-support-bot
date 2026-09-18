@@ -12,7 +12,7 @@ from bot.services.group_chat_transcript_fetch import (
     fetch_with_retries,
     previous_et_activity_date,
 )
-from bot.services.slack_ops_notify import notify_slack_issue_report
+from bot.services.slack_ops_notify import notify_slack_escalation
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ _CRON_MINUTE = 0
 _BUDGET_SECONDS = 30 * 60
 _ANALYSIS_BUDGET_SECONDS = 30 * 60
 _JOB_NAME = "group_chat_transcript_extraction"
-_SLACK_TAGS = ["account_managers"]
+_SLACK_SOURCE = "group_chat_transcript"
 
 _START_SLACK_BODY = (
     "Nightly group-chat transcript extraction is starting.\n\n"
@@ -78,7 +78,7 @@ async def run_group_chat_transcript_extraction(
         "timed_out": 0,
     }
 
-    await notify_slack_issue_report(_START_SLACK_BODY, tags=_SLACK_TAGS)
+    await notify_slack_escalation(_START_SLACK_BODY, source=_SLACK_SOURCE)
 
     set_planned_mtproto_pause(True)
     try:
@@ -108,14 +108,14 @@ async def run_group_chat_transcript_extraction(
             logger.exception("group_transcript_cron: failed to resume MTProto listener")
         set_planned_mtproto_pause(False)
 
-    await notify_slack_issue_report(
+    await notify_slack_escalation(
         _done_slack_body(
             activity_date=activity_date,
             complete=int(summary_dict["complete"]),
             failed=int(summary_dict["failed"]),
             timed_out=int(summary_dict["timed_out"]),
         ),
-        tags=_SLACK_TAGS,
+        source=_SLACK_SOURCE,
     )
     logger.info(
         "group_transcript_cron: extract done activity_date=%s complete=%s failed=%s timed_out=%s",
