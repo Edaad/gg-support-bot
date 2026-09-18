@@ -18,16 +18,38 @@ class HandleValidationTests(unittest.TestCase):
         self.assertEqual(cv.validate_cashout_handle("venmo", "@John_Doe"), "@john_doe")
         self.assertEqual(
             cv.validate_cashout_handle("venmo", "pay https://venmo.com/u/jane"),
-            "@jane",
+            "https://venmo.com/u/jane",
         )
+
+    def test_venmo_link_is_recorded_whole(self):
+        # The link is the destination, not a wrapper to pull a handle out of.
+        for sent, expected in [
+            ("https://venmo.com/u/John-Doe", "https://venmo.com/u/John-Doe"),
+            ("venmo.com/u/jane", "https://venmo.com/u/jane"),
+            ("https://account.venmo.com/u/jane", "https://account.venmo.com/u/jane"),
+            ("https://venmo.com/u/jane?txn=pay", "https://venmo.com/u/jane?txn=pay"),
+            ("here: https://venmo.com/u/jane.", "https://venmo.com/u/jane"),
+        ]:
+            with self.subTest(sent=sent):
+                self.assertEqual(cv.validate_cashout_handle("venmo", sent), expected)
 
     def test_venmo_rejects_bare_word(self):
         self.assertIsNone(cv.validate_cashout_handle("venmo", "my venmo is john"))
 
+    def test_venmo_rejects_lookalike_domain(self):
+        self.assertIsNone(cv.validate_cashout_handle("venmo", "fakevenmo.com/jane"))
+
     def test_cashapp_accepts_tag_and_link(self):
         self.assertEqual(cv.validate_cashout_handle("cashapp", "$Johnny"), "$johnny")
         self.assertEqual(
-            cv.validate_cashout_handle("cashapp", "https://cash.app/$jane"), "$jane"
+            cv.validate_cashout_handle("cashapp", "https://cash.app/$jane"),
+            "https://cash.app/$jane",
+        )
+
+    def test_cashapp_link_is_recorded_whole(self):
+        self.assertEqual(
+            cv.validate_cashout_handle("cashapp", "cash.app/$Jane"),
+            "https://cash.app/$Jane",
         )
 
     def test_cashapp_rejects_bare_word(self):
@@ -68,7 +90,22 @@ class HandleValidationTests(unittest.TestCase):
         )
         self.assertEqual(
             cv.validate_cashout_handle("paypal", "https://paypal.me/john"),
-            "paypal.me/john",
+            "https://paypal.me/john",
+        )
+        self.assertEqual(
+            cv.validate_cashout_handle("paypal", "paypal.me/John"),
+            "https://paypal.me/John",
+        )
+        # The share link PayPal gives players today, not just the legacy short one.
+        self.assertEqual(
+            cv.validate_cashout_handle("paypal", "https://www.paypal.com/paypalme/John"),
+            "https://www.paypal.com/paypalme/John",
+        )
+
+    def test_paypal_prefers_the_link_over_an_email(self):
+        self.assertEqual(
+            cv.validate_cashout_handle("paypal", "me@example.com or paypal.me/john"),
+            "https://paypal.me/john",
         )
 
     def test_unsupported_slug(self):

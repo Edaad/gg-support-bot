@@ -48,10 +48,15 @@ every other flow are unchanged.
    | Cash App| `$cashtag` or a `cash.app` link |
    | Zelle   | US phone number or email |
    | Crypto  | wallet-address-looking token (case preserved) |
-   | PayPal  | email or a `paypal.me` link |
+   | PayPal  | email or a `paypal.me` / `paypal.com/paypalme` link |
 
    A plain email is **not** accepted as a Venmo handle — that escalates rather than
    recording `@gmail.com` as the payout destination.
+
+   Whichever form the player sends is the form that gets recorded: a link stays a
+   whole link (`https://` added when the player left it off, so the dashboard
+   renders it clickable) and a handle stays a handle. PayPal prefers the link when
+   a message has both.
 6. **Only once everything above succeeds**, the bot posts "Claiming chips…" and runs
    the ClubGG auto-claim for the chosen club/union. On failure or an UNCERTAIN
    result it escalates and stops. Claiming last means the player is never waiting on
