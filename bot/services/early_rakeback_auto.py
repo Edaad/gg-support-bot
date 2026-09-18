@@ -4,12 +4,10 @@ Three systems, in a fixed order: the ClubGG RPA bot reads the player's fee for
 the week, Elevate quotes what is still owed on it, and — only if the player taps
 Claim — Elevate records the payout and the RPA bot adds the chips.
 
-Record-then-add is deliberate and asymmetric. The bot holds only Elevate's
-internal key, which reaches ``bot/quote`` and ``bot/record`` but not ``delete``
-or ``patch``, so a record cannot be walked back. A failed chip-add after a good
-record is therefore a manual fix, which is what ``early_rakeback_claims`` and
-the loud Slack alert are for; the reverse order would instead risk paying chips
-that never land on the ledger.
+Record-then-add is deliberate. If the chip-add then fails, ``DELETE bot/record``
+undoes the Elevate write so the player is not left owing chips the bot will
+never deliver. A rollback that itself fails is the remaining one-way door, which
+is what ``early_rakeback_claims`` and the loud Slack alert are for.
 
 Player-facing copy says **fee** and **feeback**, never rake or rakeback.
 """
@@ -50,6 +48,11 @@ FINDING_FEE_COPY = "Finding your total fee for this week..."
 CALCULATING_COPY = "Calculating your remaining feeback for this week..."
 ADMIN_SHORTLY_COPY = "An Admin will be with you shortly."
 NO_FEE_COPY = "You don't have any fee recorded for this week yet."
+UPLINE_INELIGIBLE_COPY = (
+    "Unfortunately, members under an agency or a super agency are ineligible for "
+    "early feeback. Please contact your agent for more information. If you have "
+    "any questions, let us know!"
+)
 NOTHING_REMAINING_COPY = "You've already claimed all of your feeback for this week."
 CLAIM_CANCELLED_COPY = "No problem — your feeback is still there whenever you want it."
 
@@ -127,7 +130,7 @@ def date_filter_is_suspect(fee: Any) -> bool:
 
 @dataclass(frozen=True)
 class FeeStage:
-    """Outcome of the fee lookup. ``kind`` is ok | no_fee | escalate."""
+    """Outcome of the fee lookup. ``kind`` is ok | no_fee | has_upline | escalate."""
 
     kind: str
     fee: Any = None
@@ -156,6 +159,19 @@ async def check_fee(
             fee,
             f"fee lookup {fee.status}: {fee.reason or 'no filtered fee returned'}",
         )
+
+    # An agency member's feeback is their agent's to pay out, so eligibility is
+    # settled before the week's numbers matter. An upline the bot could not read
+    # is nobody's answer: say nothing to the player and let an admin look.
+    if fee.has_upline is None:
+        return FeeStage(
+            "escalate",
+            fee,
+            "fee lookup did not report has_upline — cannot tell whether this "
+            "member sits under an agency",
+        )
+    if fee.has_upline:
+        return FeeStage("has_upline", fee)
 
     if date_filter_is_suspect(fee):
         return FeeStage(
@@ -327,10 +343,10 @@ def update_claim_row(claim_id: Optional[int], **fields: Any) -> None:
 def reset_cashout_timer(club_id: int, chat_id: int, user_id: Optional[int]) -> None:
     """Record the claim as a deposit, which resets the 24h cashout timer.
 
-    Only called once Elevate has actually recorded, so a below-minimum quote or
-    a technical failure never costs the player anything. There is no daily limit
-    on claiming itself — Elevate's ``nothing_remaining`` is what stops a second
-    claim, not a cooldown of ours.
+    Only called once the claim has actually stuck — chips added, or chips failed
+    but the Elevate rollback also failed, so the ledger still holds the money.
+    A below-minimum quote, a technical failure, or a rolled-back chip-add never
+    costs the player a cashout window.
     """
     try:
         record_activity_for_chat(
@@ -394,6 +410,33 @@ async def _record_with_retries(
     return result
 
 
+async def _delete_with_retries(
+    *,
+    target: ClubTarget,
+    idempotency_key: str,
+    record_id: Optional[str],
+) -> Any:
+    """Undo an Elevate record. Safe to retry: ``already_deleted`` is a success."""
+    result = None
+    for attempt, delay in enumerate((0.0, *_RECORD_RETRY_DELAYS_SEC)):
+        if delay:
+            await asyncio.sleep(delay)
+        result = await elevate.delete_early_rakeback(
+            club_slug=target.elevate_slug,
+            idempotency_key=idempotency_key,
+            record_id=record_id,
+        )
+        if result.ok or result.code not in ("request_failed",):
+            return result
+        logger.warning(
+            "earlyrb_auto: delete retry %s after %s key=%s",
+            attempt + 1,
+            result.code,
+            idempotency_key,
+        )
+    return result
+
+
 @dataclass(frozen=True)
 class ClaimStage:
     """Outcome of a Claim press.
@@ -428,7 +471,7 @@ async def claim_feeback(
 
     if deposit_api_dry_run():
         # Recording for real while no chips can move would leave a ledger entry
-        # the bot cannot undo, so a dry-run rollout stops before Elevate.
+        # we then have to roll back, so a dry-run rollout stops before Elevate.
         amount_str = format_feeback_amount(quote.remaining, decimals)
         update_claim_row(
             claim_id, status="chips_added", chip_add_status="dry_run", detail="dry run"
@@ -489,7 +532,6 @@ async def claim_feeback(
         elevate_total_given=record.total_given,
         detail="duplicate replay" if record.duplicate else None,
     )
-    reset_cashout_timer(club_id, chat_id, user_id)
 
     add_request_id = f"earlyrb-add-{claim_id or idempotency_key}"
     ok, status = await run_auto_chip_add(
@@ -503,6 +545,7 @@ async def claim_feeback(
     amount_str = format_feeback_amount(amount, decimals)
 
     if ok:
+        reset_cashout_timer(club_id, chat_id, user_id)
         update_claim_row(
             claim_id,
             status="chips_added",
@@ -516,12 +559,44 @@ async def claim_feeback(
             player_message=f"{amount_str} feeback added to your account!",
         )
 
+    rollback = await _delete_with_retries(
+        target=target,
+        idempotency_key=idempotency_key,
+        record_id=record.record_id,
+    )
+    if rollback.ok:
+        update_claim_row(
+            claim_id,
+            status="rolled_back",
+            chip_add_status=status,
+            rpa_add_request_id=add_request_id,
+            detail=f"chip add {status}; Elevate record rolled back ({rollback.code})",
+        )
+        await notify_earlyrb_auto_failed(
+            club_id=club_id,
+            chat_id=chat_id,
+            title=group_title,
+            detail=(
+                f"Chip-add {status} for {amount_str} of early feeback on "
+                f"{target.clubgg_club} player {gg_player_id}. Elevate record was "
+                f"rolled back ({rollback.code}) — player can claim again."
+            ),
+        )
+        return ClaimStage(
+            "chips_failed",
+            amount,
+            quote,
+            detail=f"chip add {status}; rolled back ({rollback.code})",
+            player_message=ADMIN_SHORTLY_COPY,
+        )
+
+    reset_cashout_timer(club_id, chat_id, user_id)
     update_claim_row(
         claim_id,
         status="chips_failed",
         chip_add_status=status,
         rpa_add_request_id=add_request_id,
-        detail=f"chip add {status}",
+        detail=f"chip add {status}; Elevate rollback failed ({rollback.code})",
     )
     await notify_earlyrb_chips_not_added(
         club_id=club_id,
@@ -530,13 +605,16 @@ async def claim_feeback(
         gg_player_id=gg_player_id,
         amount=amount,
         clubgg_club=target.clubgg_club,
-        detail=f"Chip-add result: {status}.",
+        detail=(
+            f"Chip-add result: {status}. Elevate rollback failed "
+            f"({rollback.code}): {rollback.detail}."
+        ),
     )
     return ClaimStage(
         "chips_failed",
         amount,
         quote,
-        detail=f"chip add {status}",
+        detail=f"chip add {status}; rollback {rollback.code}",
         player_message=ADMIN_SHORTLY_COPY,
     )
 

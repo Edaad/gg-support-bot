@@ -60,6 +60,12 @@ class _FakeAsyncClient:
         self.calls.append(("POST", url, {"json": json, "headers": headers}))
         return self._response
 
+    async def delete(self, url, params=None, json=None, headers=None):
+        self.calls.append(
+            ("DELETE", url, {"params": params, "json": json, "headers": headers})
+        )
+        return self._response
+
 
 def _cfg():
     return SimpleNamespace(
@@ -333,6 +339,93 @@ class RecordTests(unittest.IsolatedAsyncioTestCase):
                 pl=Decimal("0"),
                 expected_amount=Decimal("50"),
                 idempotency_key="k",
+            )
+        self.assertFalse(result.ok)
+        self.assertEqual(result.code, "request_failed")
+
+
+class DeleteTests(unittest.IsolatedAsyncioTestCase):
+    async def _delete(self, response, **kwargs):
+        client = _FakeAsyncClient(response)
+        with patch.object(api, "load_config", return_value=_cfg()), patch.object(
+            api.httpx, "AsyncClient", return_value=client
+        ):
+            result = await api.delete_early_rakeback(
+                club_slug="round-table",
+                idempotency_key="tg:-100:12345",
+                **kwargs,
+            )
+        return result, client
+
+    async def test_deleted(self) -> None:
+        payload = {
+            "deleted": True,
+            "code": "ok",
+            "amountRemoved": 540,
+            "entryDeleted": False,
+            "record": {"_id": "rec1", "calculatedAmount": 540, "source": "bot"},
+        }
+        result, client = await self._delete(_FakeResponse(200, payload))
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.code, "ok")
+        self.assertEqual(result.amount_removed, Decimal("540"))
+        self.assertFalse(result.entry_deleted)
+        self.assertEqual(result.record_id, "rec1")
+
+        method, url, kwargs = client.calls[0]
+        self.assertEqual(method, "DELETE")
+        self.assertEqual(
+            url, "https://aon.test/api/round-table/early-rakeback/bot/record"
+        )
+        self.assertEqual(kwargs["params"]["idempotency_key"], "tg:-100:12345")
+        self.assertEqual(kwargs["headers"], {"X-Internal-Api-Key": "secret"})
+
+    async def test_already_deleted_is_ok(self) -> None:
+        result, _client = await self._delete(
+            _FakeResponse(
+                200, {"deleted": False, "code": "already_deleted", "amountRemoved": 0}
+            )
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual(result.code, api.CODE_ALREADY_DELETED)
+
+    async def test_sends_record_id_alongside_the_key(self) -> None:
+        _result, client = await self._delete(
+            _FakeResponse(200, {"deleted": True, "code": "ok"}),
+            record_id="rec1",
+        )
+        self.assertEqual(client.calls[0][2]["params"]["record_id"], "rec1")
+
+    async def test_not_bot_record(self) -> None:
+        result, _client = await self._delete(
+            _FakeResponse(403, {"error": "not a bot record", "code": "not_bot_record"})
+        )
+        self.assertFalse(result.ok)
+        self.assertEqual(result.code, api.CODE_NOT_BOT_RECORD)
+
+    async def test_missing_reference_never_hits_the_network(self) -> None:
+        with patch.object(api, "load_config", return_value=_cfg()), patch.object(
+            api.httpx, "AsyncClient"
+        ) as client_cls:
+            result = await api.delete_early_rakeback(club_slug="round-table")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.code, api.CODE_MISSING_RECORD_REFERENCE)
+        client_cls.assert_not_called()
+
+    async def test_transport_failure_never_raises(self) -> None:
+        class _Boom:
+            async def __aenter__(self):
+                raise RuntimeError("boom")
+
+            async def __aexit__(self, *_exc):
+                return False
+
+        with patch.object(api, "load_config", return_value=_cfg()), patch.object(
+            api.httpx, "AsyncClient", return_value=_Boom()
+        ):
+            result = await api.delete_early_rakeback(
+                club_slug="round-table", idempotency_key="k"
             )
         self.assertFalse(result.ok)
         self.assertEqual(result.code, "request_failed")

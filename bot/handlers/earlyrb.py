@@ -267,6 +267,11 @@ async def _run_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _cleanup(context)
         return ConversationHandler.END
 
+    if fee_stage.kind == "has_upline":
+        await chat.send_message(auto.UPLINE_INELIGIBLE_COPY)
+        _cleanup(context)
+        return ConversationHandler.END
+
     if fee_stage.kind == "no_fee":
         await chat.send_message(auto.NO_FEE_COPY)
         _cleanup(context)

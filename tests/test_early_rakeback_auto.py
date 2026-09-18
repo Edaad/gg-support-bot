@@ -20,6 +20,7 @@ def _fee(
     ok=True,
     status="success",
     reason="",
+    has_upline=False,
 ):
     def dec(v):
         return None if v is None else Decimal(v)
@@ -36,6 +37,7 @@ def _fee(
         pnl_filtered=dec(pnl_filtered),
         range_start="2026-09-14",
         range_end="2026-09-17",
+        has_upline=has_upline,
         job_id="job-1",
     )
 
@@ -192,6 +194,27 @@ class CheckFeeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(stage.kind, "no_fee")
 
+    async def test_member_with_an_upline_is_ineligible(self) -> None:
+        stage = await self._check(_fee(has_upline=True))
+        self.assertEqual(stage.kind, "has_upline")
+
+    async def test_upline_outranks_the_weeks_numbers(self) -> None:
+        # Ineligible is ineligible: an agency member is told so rather than
+        # "no fee this week" or an admin escalation over the date filter.
+        for fee in (
+            _fee(has_upline=True, rake_filtered="0"),
+            _fee(has_upline=True, rake_overall="400", rake_filtered="400",
+                 pnl_overall="-9", pnl_filtered="-9"),
+        ):
+            with self.subTest(rake_filtered=fee.rake_filtered):
+                stage = await self._check(fee)
+                self.assertEqual(stage.kind, "has_upline")
+
+    async def test_unreadable_upline_escalates(self) -> None:
+        stage = await self._check(_fee(has_upline=None))
+        self.assertEqual(stage.kind, "escalate")
+        self.assertIn("has_upline", stage.detail)
+
 
 class QuoteStageTests(unittest.IsolatedAsyncioTestCase):
     async def _quote_stage(self, quote_result, *, max_amount=None):
@@ -307,6 +330,9 @@ class QuoteStageTests(unittest.IsolatedAsyncioTestCase):
 class ClaimTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.record = AsyncMock()
+        self.delete = AsyncMock(
+            return_value=elevate.DeleteResult(True, "ok", amount_removed=Decimal("240"))
+        )
         self.chip_add = AsyncMock(return_value=(True, "success"))
         self.timer = patch.object(auto, "reset_cashout_timer").start()
         self.updates = patch.object(auto, "update_claim_row").start()
@@ -321,6 +347,8 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
     async def _claim(self, *, dry_run=False, allow_requote=True):
         with patch.object(
             auto.elevate, "record_early_rakeback", self.record
+        ), patch.object(
+            auto.elevate, "delete_early_rakeback", self.delete
         ), patch.object(auto, "run_auto_chip_add", self.chip_add), patch.object(
             auto, "deposit_api_dry_run", return_value=dry_run
         ), patch.object(
@@ -357,6 +385,7 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.chip_add.call_args.kwargs["amount"], Decimal("240"))
         self.assertEqual(self.chip_add.call_args.kwargs["union_shorthand"], "RT")
+        self.delete.assert_not_awaited()
 
     async def test_records_the_amount_elevate_returns_not_the_quote(self) -> None:
         self.record.return_value = elevate.RecordResult(
@@ -385,6 +414,7 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
         self.timer.assert_not_called()
         self.chip_add.assert_not_awaited()
         self.notify_failed.assert_awaited_once()
+        self.delete.assert_not_awaited()
 
     async def test_amount_changed_returns_the_fresh_quote(self) -> None:
         fresh = _quote(remaining="310")
@@ -419,27 +449,85 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
         keys = {c.kwargs["idempotency_key"] for c in self.record.call_args_list}
         self.assertEqual(keys, {"tg:-100:abc"})
 
-    async def test_record_ok_but_chips_failed_alerts_loudly(self) -> None:
+    async def test_record_ok_but_chips_failed_rolls_back_elevate(self) -> None:
         self.record.return_value = elevate.RecordResult(
-            True, "ok", amount_recorded=Decimal("240")
+            True, "ok", amount_recorded=Decimal("240"), record_id="r1"
         )
         self.chip_add.return_value = (False, "uncertain")
         stage = await self._claim()
 
         self.assertEqual(stage.kind, "chips_failed")
         self.assertEqual(stage.player_message, auto.ADMIN_SHORTLY_COPY)
-        # The claim still counts as a deposit: the money is on the ledger either way.
+        self.delete.assert_awaited_once()
+        self.assertEqual(
+            self.delete.call_args.kwargs["idempotency_key"], "tg:-100:abc"
+        )
+        self.assertEqual(self.delete.call_args.kwargs["record_id"], "r1")
+        # Rolled back: not a deposit, and not the "add chips by hand" alert.
+        self.timer.assert_not_called()
+        self.notify_chips.assert_not_awaited()
+        self.notify_failed.assert_awaited_once()
+        self.assertIn("rolled back", self.notify_failed.call_args.kwargs["detail"])
+        statuses = [c.kwargs.get("status") for c in self.updates.call_args_list]
+        self.assertIn("rolled_back", statuses)
+
+    async def test_already_deleted_counts_as_rolled_back(self) -> None:
+        self.record.return_value = elevate.RecordResult(
+            True, "ok", amount_recorded=Decimal("240")
+        )
+        self.chip_add.return_value = (False, "fail")
+        self.delete.return_value = elevate.DeleteResult(
+            True, elevate.CODE_ALREADY_DELETED
+        )
+        stage = await self._claim()
+
+        self.assertEqual(stage.kind, "chips_failed")
+        self.timer.assert_not_called()
+        self.notify_chips.assert_not_awaited()
+
+    async def test_chips_failed_and_rollback_failed_alerts_loudly(self) -> None:
+        self.record.return_value = elevate.RecordResult(
+            True, "ok", amount_recorded=Decimal("240")
+        )
+        self.chip_add.return_value = (False, "uncertain")
+        self.delete.return_value = elevate.DeleteResult(
+            False, "request_failed", "request failed: TimeoutException"
+        )
+        stage = await self._claim()
+
+        self.assertEqual(stage.kind, "chips_failed")
+        self.assertEqual(stage.player_message, auto.ADMIN_SHORTLY_COPY)
+        # Still on the ledger, so it counts as a deposit and needs a human to add chips.
         self.timer.assert_called_once()
         self.notify_chips.assert_awaited_once()
         kwargs = self.notify_chips.call_args.kwargs
         self.assertEqual(kwargs["amount"], Decimal("240"))
         self.assertEqual(kwargs["gg_player_id"], "8272-5942")
+        self.assertIn("rollback failed", kwargs["detail"])
+        self.notify_failed.assert_not_awaited()
+
+    async def test_delete_retries_the_same_key_on_transport_failure(self) -> None:
+        self.record.return_value = elevate.RecordResult(
+            True, "ok", amount_recorded=Decimal("240")
+        )
+        self.chip_add.return_value = (False, "fail")
+        self.delete.side_effect = [
+            elevate.DeleteResult(False, "request_failed", "timeout"),
+            elevate.DeleteResult(True, "ok"),
+        ]
+        stage = await self._claim()
+
+        self.assertEqual(stage.kind, "chips_failed")
+        self.assertEqual(self.delete.await_count, 2)
+        self.timer.assert_not_called()
+        self.notify_chips.assert_not_awaited()
 
     async def test_dry_run_never_touches_elevate(self) -> None:
         stage = await self._claim(dry_run=True)
 
         self.assertEqual(stage.kind, "added")
         self.record.assert_not_awaited()
+        self.delete.assert_not_awaited()
         self.timer.assert_not_called()
         self.notify_failed.assert_awaited_once()
         self.assertIn("DRY RUN", self.notify_failed.call_args.kwargs["detail"])

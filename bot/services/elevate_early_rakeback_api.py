@@ -1,10 +1,11 @@
 """Async client for the Elevate (aon-beta) early rakeback bot API.
 
-Two endpoints, always used in order: ``bot/quote`` says what a member is owed for
-a rake figure, then ``bot/record`` writes it to the early rakeback ledger. The
-rakeback maths lives entirely on the Elevate side — we never compute money here,
-and ``record`` recomputes the quote server-side and ignores any amount we send
-(``expected_amount`` is only a staleness check).
+Three endpoints, always used in this order: ``bot/quote`` says what a member is
+owed for a rake figure, ``bot/record`` writes it to the early rakeback ledger,
+and ``DELETE bot/record`` undoes that write if the downstream chip deposit
+fails. The rakeback maths lives entirely on the Elevate side — we never compute
+money here, and ``record`` recomputes the quote server-side and ignores any
+amount we send (``expected_amount`` is only a staleness check).
 
 Config reuses the env vars the audit sync already needs (``AON_BETA_BASE_URL``
 includes the ``/api`` prefix). Nothing here raises: every call returns a typed
@@ -35,6 +36,9 @@ CODE_ALREADY_RECORDED = "already_recorded"
 CODE_AMOUNT_CHANGED = "amount_changed"
 CODE_RECORD_IN_PROGRESS = "record_in_progress"
 CODE_BELOW_MINIMUM = "below_minimum_threshold"
+CODE_ALREADY_DELETED = "already_deleted"
+CODE_NOT_BOT_RECORD = "not_bot_record"
+CODE_MISSING_RECORD_REFERENCE = "missing_record_reference"
 
 _DEFAULT_TIMEOUT_SEC = 30.0
 
@@ -89,6 +93,22 @@ class RecordResult:
     record_id: Optional[str] = None
     entry_id: Optional[str] = None
     quote: Optional[Quote] = None
+
+
+@dataclass(frozen=True)
+class DeleteResult:
+    """Outcome of a record undo.
+
+    ``ok`` means the ledger is clean — including ``already_deleted``, so a
+    timeout retry does not need special-casing.
+    """
+
+    ok: bool
+    code: str = ""
+    detail: str = ""
+    amount_removed: Optional[Decimal] = None
+    entry_deleted: bool = False
+    record_id: Optional[str] = None
 
 
 class _Config:
@@ -348,3 +368,92 @@ async def record_early_rakeback(
         idempotency_key,
     )
     return RecordResult(False, code, detail, quote=quote)
+
+
+async def delete_early_rakeback(
+    *,
+    club_slug: str,
+    idempotency_key: Optional[str] = None,
+    record_id: Optional[str] = None,
+) -> DeleteResult:
+    """DELETE ``/{club_slug}/early-rakeback/bot/record``. Never raises.
+
+    Identify the line with the ``idempotency_key`` used on the original record,
+    or with ``record._id``. A retry after a timeout is safe: ``already_deleted``
+    means the ledger is already clean. Only bot-written rows can be removed.
+    """
+    cfg = load_config()
+    if cfg is None:
+        return DeleteResult(False, "not_configured", "Elevate API not configured")
+
+    key = (idempotency_key or "").strip() or None
+    rid = (record_id or "").strip() or None
+    if not key and not rid:
+        return DeleteResult(
+            False,
+            CODE_MISSING_RECORD_REFERENCE,
+            "neither idempotency_key nor record_id was sent",
+        )
+
+    slug = club_slug.strip().lower()
+    params: dict[str, str] = {}
+    if key:
+        params["idempotency_key"] = key
+    if rid:
+        params["record_id"] = rid
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(cfg.timeout_sec)) as client:
+            resp = await client.delete(
+                f"{cfg.base_url}/{slug}/early-rakeback/bot/record",
+                params=params,
+                headers=_headers(cfg),
+            )
+    except Exception as exc:
+        logger.warning(
+            "early_rb_delete: request failed slug=%s key=%s record_id=%s err=%s",
+            slug,
+            key,
+            rid,
+            type(exc).__name__,
+        )
+        return DeleteResult(
+            False, "request_failed", f"request failed: {type(exc).__name__}"
+        )
+
+    try:
+        data = resp.json()
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+
+    if resp.status_code == 200:
+        record = data.get("record") if isinstance(data.get("record"), dict) else {}
+        result = DeleteResult(
+            ok=True,
+            code=str(data.get("code") or CODE_OK),
+            amount_removed=_decimal(data.get("amountRemoved")),
+            entry_deleted=bool(data.get("entryDeleted")),
+            record_id=(str(record.get("_id")) if record.get("_id") else rid),
+        )
+        logger.info(
+            "early_rb_delete: slug=%s code=%s key=%s record_id=%s amount=%s",
+            slug,
+            result.code,
+            key,
+            result.record_id,
+            result.amount_removed,
+        )
+        return result
+
+    code, detail = _error_detail(data, resp.status_code)
+    logger.warning(
+        "early_rb_delete: HTTP %s slug=%s code=%s key=%s record_id=%s",
+        resp.status_code,
+        slug,
+        code,
+        key,
+        rid,
+    )
+    return DeleteResult(False, code, detail)

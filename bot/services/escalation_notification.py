@@ -1245,10 +1245,11 @@ async def notify_earlyrb_chips_not_added(
     clubgg_club: str | None = None,
     detail: str | None = None,
 ) -> None:
-    """Slack when Elevate recorded the claim but the chip-add failed.
+    """Slack when Elevate recorded the claim, chips failed, and rollback failed.
 
-    The one-way door: the bot cannot undo an Elevate record, so the player is
-    owed chips that no retry will deliver and a re-record would double-pay.
+    The remaining one-way door: the player is owed chips that no retry will
+    deliver and a re-record would double-pay. A successful rollback uses
+    ``notify_earlyrb_auto_failed`` instead.
     """
     club = clubgg_club or _club_display_name(club_id)
     player = gg_player_id or "(unknown player)"

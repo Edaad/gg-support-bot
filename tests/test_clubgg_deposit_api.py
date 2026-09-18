@@ -340,6 +340,8 @@ _RAKE_DATA = {
     "rake": {"overall": 1234.56, "filtered": 42.10},
     "pnl": {"overall": -318.0, "filtered": 12.34},
     "range": {"start": "2026-09-14", "end": "2026-09-16"},
+    "role": "player",
+    "has_upline": False,
 }
 
 
@@ -393,7 +395,43 @@ class TestRunRakeCheck(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(outcome.pnl_filtered, Decimal("12.34"))
         self.assertEqual(outcome.range_start, "2026-09-14")
         self.assertEqual(outcome.range_end, "2026-09-16")
+        self.assertIs(outcome.has_upline, False)
         self.assertEqual(client.get_urls, ["https://tunnel.test/rake/abc"])
+
+    async def test_has_upline_is_read_verbatim(self) -> None:
+        client = _FakeAsyncClient(
+            post_response=_FakeResponse(
+                200,
+                {
+                    "status": "success",
+                    "data": dict(_RAKE_DATA, role="agent", has_upline=True),
+                },
+            )
+        )
+        outcome = await self._run(client)
+
+        self.assertIs(outcome.has_upline, True)
+
+    async def test_missing_has_upline_stays_none(self) -> None:
+        # An older bot that does not report the field must not read as "no upline".
+        data = {k: v for k, v in _RAKE_DATA.items() if k != "has_upline"}
+        client = _FakeAsyncClient(
+            post_response=_FakeResponse(200, {"status": "success", "data": data})
+        )
+        outcome = await self._run(client)
+
+        self.assertIsNone(outcome.has_upline)
+
+    async def test_non_boolean_has_upline_stays_none(self) -> None:
+        client = _FakeAsyncClient(
+            post_response=_FakeResponse(
+                200,
+                {"status": "success", "data": dict(_RAKE_DATA, has_upline="yes")},
+            )
+        )
+        outcome = await self._run(client)
+
+        self.assertIsNone(outcome.has_upline)
 
     async def test_terminal_in_post_skips_polling(self) -> None:
         client = _FakeAsyncClient(

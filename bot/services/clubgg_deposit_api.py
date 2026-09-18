@@ -898,6 +898,9 @@ class RakeOutcome:
     pnl_filtered: Optional[Decimal] = None
     range_start: Optional[str] = None
     range_end: Optional[str] = None
+    # None when the bot did not report it — an unreadable upline is not the same
+    # as "no upline", and callers that gate on it must not read None as False.
+    has_upline: Optional[bool] = None
     job_id: Optional[str] = None
 
 
@@ -1046,14 +1049,20 @@ async def run_rake_check(
         pnl = payload.get("pnl") if isinstance(payload.get("pnl"), dict) else {}
         rng = payload.get("range") if isinstance(payload.get("range"), dict) else {}
 
+        raw_upline = payload.get("has_upline")
+        has_upline = raw_upline if isinstance(raw_upline, bool) else None
+
         logger.info(
-            "rake_check: result club=%s player=%s status=%s reason=%s range=%s..%s",
+            "rake_check: result club=%s player=%s status=%s reason=%s range=%s..%s "
+            "role=%s has_upline=%s",
             clubgg_club,
             player_id,
             final,
             reason,
             rng.get("start"),
             rng.get("end"),
+            payload.get("role"),
+            has_upline,
         )
         return RakeOutcome(
             ok=final == "success",
@@ -1067,6 +1076,7 @@ async def run_rake_check(
             pnl_filtered=_optional_decimal(pnl.get("filtered")),
             range_start=rng.get("start"),
             range_end=rng.get("end"),
+            has_upline=has_upline,
             job_id=str(remote_job_id),
         )
     except Exception as exc:

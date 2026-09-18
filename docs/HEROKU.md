@@ -822,15 +822,17 @@ The minimum claimable amount comes only from Elevate's per-club
 **maximum** auto-claim amount (over it, an admin confirms and records by hand). The
 There is **no daily limit** on early feeback: a player may claim as often as they
 have feeback remaining, and Elevate's `nothing_remaining` is what stops a second
-claim. A recorded claim still counts as a deposit and resets the cashout timer,
+claim. A claim that actually lands (chips added, or chips failed but the Elevate
+rollback also failed) still counts as a deposit and resets the cashout timer,
 which the Claim prompt says out loud. `EARLYRB_RECHECK_THROTTLE_SECONDS`
 (default 300) only spaces out repeat fee lookups so they cannot hammer the
 single-threaded screen robot.
 
-Recording happens before the chip-add because the bot cannot undo an Elevate record
-(`delete`/`patch` there are JWT-only). A recorded-but-chips-failed claim therefore
-Slack-escalates to head admins with "add the chips manually, DO NOT re-record", and
-the `early_rakeback_claims` row carries everything needed to fix it.
+Recording happens before the chip-add. If chips then fail, the bot
+`DELETE`s the Elevate record (same `idempotency_key`) so the player can claim
+again. Only a rollback that itself fails Slack-escalates to head admins with
+"add the chips manually, DO NOT re-record", and the `early_rakeback_claims` row
+carries everything needed to fix it.
 
 Run the migration once after deploy (adds `clubs.enable_auto_early_rakeback`,
 `clubs.early_rakeback_max_auto_amount` and the `early_rakeback_claims` table):

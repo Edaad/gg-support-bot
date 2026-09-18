@@ -2559,9 +2559,9 @@ class EarlyRakebackLine(Base):
 class EarlyRakebackClaim(Base):
     """One automated ``/earlyrb`` claim attempt, for reconciliation.
 
-    The bot cannot undo an Elevate record (``delete``/``patch`` there are
-    JWT-only), so a record that succeeds while the ClubGG chip-add fails needs a
-    human. This table is what tells them which player, club and amount to fix.
+    The bot undoes an Elevate record if the ClubGG chip-add then fails
+    (``DELETE bot/record``). A rollback that itself fails still needs a human:
+    this table is what tells them which player, club and amount to fix.
     """
 
     __tablename__ = "early_rakeback_claims"
@@ -2610,7 +2610,7 @@ class EarlyRakebackClaim(Base):
     rpa_add_request_id = Column(String(128), nullable=True)
     chip_add_status = Column(String(32), nullable=True)
 
-    # quoted | recorded | chips_added | chips_failed | chips_uncertain | escalated
+    # quoted | recorded | chips_added | chips_failed | rolled_back | chips_uncertain | escalated
     status = Column(String(32), nullable=False, default="quoted")
     detail = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
