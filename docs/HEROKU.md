@@ -834,11 +834,13 @@ again. Only a rollback that itself fails Slack-escalates to head admins with
 "add the chips manually, DO NOT re-record", and the `early_rakeback_claims` row
 carries everything needed to fix it.
 
-Run the migration once after deploy (adds `clubs.enable_auto_early_rakeback`,
-`clubs.early_rakeback_max_auto_amount` and the `early_rakeback_claims` table):
+Run the migrations once after deploy (adds `clubs.enable_auto_early_rakeback`,
+`clubs.early_rakeback_max_auto_amount`, `clubs.escalate_auto_early_rakeback` and
+the `early_rakeback_claims` table):
 
 ```bash
 heroku run -a YOUR_APP -- python migrate_auto_early_rakeback.py
+heroku run -a YOUR_APP -- python migrate_escalate_auto_early_rakeback.py
 ```
 
 **Manual setup first:** the "Members / rake check" card must be calibrated on every

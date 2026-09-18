@@ -46,6 +46,7 @@ def _club_to_read(club: Club) -> ClubRead:
         enable_transfer=club.enable_transfer or False,
         enable_auto_early_rakeback=club.enable_auto_early_rakeback or False,
         early_rakeback_max_auto_amount=club.early_rakeback_max_auto_amount,
+        escalate_auto_early_rakeback=club.escalate_auto_early_rakeback or False,
         aces_option_min_deposits=club.aces_option_min_deposits or 0,
         deposit_simple_mode=club.deposit_simple_mode or False,
         deposit_simple_type=club.deposit_simple_type,

@@ -68,6 +68,11 @@ class Club(Base):
     # Remaining feeback above this goes to an admin instead of auto-claiming.
     # NULL = no cap. The *minimum* comes from Elevate, not from here.
     early_rakeback_max_auto_amount = Column(Numeric(12, 2), nullable=True)
+    # After a successful auto-claim, Slack staff so they can confirm the amount.
+    # Off = chips land with no success ping. Failures still always alert.
+    escalate_auto_early_rakeback = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
     # Creator Club only: deposits a support group must already have before the
     # Creator Club / Aces Table picker is offered. 0 = always offer.
     aces_option_min_deposits = Column(

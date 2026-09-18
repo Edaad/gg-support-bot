@@ -342,6 +342,12 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
         self.notify_chips = patch.object(
             auto, "notify_earlyrb_chips_not_added", AsyncMock()
         ).start()
+        self.notify_added = patch.object(
+            auto, "notify_earlyrb_auto_added", AsyncMock()
+        ).start()
+        self.escalate_after = patch.object(
+            auto, "get_escalate_auto_early_rakeback", return_value=False
+        ).start()
         self.addCleanup(patch.stopall)
 
     async def _claim(self, *, dry_run=False, allow_requote=True):
@@ -386,6 +392,22 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.chip_add.call_args.kwargs["amount"], Decimal("240"))
         self.assertEqual(self.chip_add.call_args.kwargs["union_shorthand"], "RT")
         self.delete.assert_not_awaited()
+        self.notify_added.assert_not_awaited()
+
+    async def test_success_escalates_when_verify_toggle_is_on(self) -> None:
+        self.record.return_value = elevate.RecordResult(
+            True, "ok", amount_recorded=Decimal("240")
+        )
+        self.escalate_after.return_value = True
+        stage = await self._claim()
+
+        self.assertEqual(stage.kind, "added")
+        self.assertEqual(stage.player_message, "$240.00 feeback added to your account!")
+        self.notify_added.assert_awaited_once()
+        kwargs = self.notify_added.call_args.kwargs
+        self.assertEqual(kwargs["amount"], Decimal("240"))
+        self.assertEqual(kwargs["gg_player_id"], "8272-5942")
+        self.assertEqual(kwargs["clubgg_club"], "Round Table")
 
     async def test_records_the_amount_elevate_returns_not_the_quote(self) -> None:
         self.record.return_value = elevate.RecordResult(

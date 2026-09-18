@@ -45,6 +45,7 @@ class ClubCreate(BaseModel):
     enable_transfer: bool = False
     enable_auto_early_rakeback: bool = False
     early_rakeback_max_auto_amount: Optional[Decimal] = None
+    escalate_auto_early_rakeback: bool = False
     aces_option_min_deposits: int = 0
     deposit_simple_mode: bool = False
     deposit_simple_type: str = "text"
@@ -95,6 +96,7 @@ class ClubUpdate(BaseModel):
     enable_transfer: Optional[bool] = None
     enable_auto_early_rakeback: Optional[bool] = None
     early_rakeback_max_auto_amount: Optional[Decimal] = None
+    escalate_auto_early_rakeback: Optional[bool] = None
     aces_option_min_deposits: Optional[int] = None
     deposit_simple_mode: Optional[bool] = None
     deposit_simple_type: Optional[str] = None
@@ -148,6 +150,7 @@ class ClubRead(BaseModel):
     enable_transfer: bool = False
     enable_auto_early_rakeback: bool = False
     early_rakeback_max_auto_amount: Optional[Decimal] = None
+    escalate_auto_early_rakeback: bool = False
     aces_option_min_deposits: int = 0
     deposit_simple_mode: bool
     deposit_simple_type: Optional[str]

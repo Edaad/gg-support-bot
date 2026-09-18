@@ -40,6 +40,7 @@ REASON_EARLYRB_REQUESTED = "earlyrb_requested"
 REASON_EARLYRB_AUTO_FAILED = "earlyrb_auto_failed"
 REASON_EARLYRB_AUTO_OVER_MAX = "earlyrb_auto_over_max"
 REASON_EARLYRB_CHIPS_NOT_ADDED = "earlyrb_chips_not_added"
+REASON_EARLYRB_AUTO_ADDED = "earlyrb_auto_added"
 REASON_RPA_DEPOSIT_FAILED = "rpa_deposit_failed"
 REASON_RPA_CASHOUT_FAILED = "rpa_cashout_failed"
 REASON_RPA_DEPOSIT_UNCERTAIN = "rpa_deposit_uncertain"
@@ -98,6 +99,9 @@ _HEADLINES = {
     REASON_EARLYRB_CHIPS_NOT_ADDED: (
         "Early feeback RECORDED but chips NOT added — add chips manually."
     ),
+    REASON_EARLYRB_AUTO_ADDED: (
+        "Early feeback auto-added — please confirm the amount."
+    ),
     REASON_RPA_DEPOSIT_FAILED: "RPA deposit failed — add chips manually.",
     REASON_RPA_CASHOUT_FAILED: "RPA cashout failed — claim chips manually.",
     REASON_RPA_DEPOSIT_UNCERTAIN: (
@@ -129,6 +133,7 @@ _REASONS_WITH_MESSAGE_BODY = frozenset(
         REASON_EARLYRB_AUTO_FAILED,
         REASON_EARLYRB_AUTO_OVER_MAX,
         REASON_EARLYRB_CHIPS_NOT_ADDED,
+        REASON_EARLYRB_AUTO_ADDED,
     }
 )
 
@@ -1291,6 +1296,42 @@ async def notify_earlyrb_chips_not_added(
         chat_id=int(chat_id),
         title=title,
         message_text="\n".join(parts),
+    )
+
+
+async def notify_earlyrb_auto_added(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None = None,
+    gg_player_id: str | None = None,
+    amount=None,
+    clubgg_club: str | None = None,
+    rake=None,
+    pl=None,
+) -> None:
+    """Slack after a successful auto-claim when the club's verify toggle is on.
+
+    The player already has their chips; this is only a check for staff. Failures
+    still alert whether the toggle is on or off.
+    """
+    club = clubgg_club or _club_display_name(club_id)
+    player = gg_player_id or "(unknown player)"
+    lines = [
+        f"Early feeback of {_format_money_amount(amount)} was auto-added for "
+        f"{club} player {player}. Please confirm the amount looks right and "
+        f"report it if it does not.",
+    ]
+    if rake is not None:
+        lines.append(f"Week fee: {_format_money_amount(rake)}")
+    if pl is not None:
+        lines.append(f"Week PnL: {_format_money_amount(pl)}")
+    await notify_escalation_slack(
+        REASON_EARLYRB_AUTO_ADDED,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+        message_text="\n".join(lines),
     )
 
 

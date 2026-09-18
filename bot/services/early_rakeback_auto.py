@@ -25,6 +25,7 @@ from api.club_slug import CLUB_LABEL_TO_SLUG
 from bot.services import elevate_early_rakeback_api as elevate
 from bot.services.club import (
     get_early_rakeback_max_auto_amount,
+    get_escalate_auto_early_rakeback,
     invalidate_pending_one_time_bypasses,
     record_activity_for_chat,
 )
@@ -35,6 +36,7 @@ from bot.services.clubgg_deposit_api import (
     run_rake_check,
 )
 from bot.services.escalation_notification import (
+    notify_earlyrb_auto_added,
     notify_earlyrb_auto_failed,
     notify_earlyrb_auto_over_max,
     notify_earlyrb_chips_not_added,
@@ -552,6 +554,17 @@ async def claim_feeback(
             chip_add_status=status,
             rpa_add_request_id=add_request_id,
         )
+        if get_escalate_auto_early_rakeback(int(club_id)):
+            await notify_earlyrb_auto_added(
+                club_id=club_id,
+                chat_id=chat_id,
+                title=group_title,
+                gg_player_id=gg_player_id,
+                amount=amount,
+                clubgg_club=target.clubgg_club,
+                rake=fee.rake_filtered,
+                pl=fee.pnl_filtered,
+            )
         return ClaimStage(
             "added",
             amount,

@@ -666,6 +666,15 @@ def get_early_rakeback_max_auto_amount(club_id: int) -> Optional[Decimal]:
         return Decimal(str(club.early_rakeback_max_auto_amount))
 
 
+def get_escalate_auto_early_rakeback(club_id: int) -> bool:
+    """True if a successful auto-claim should Slack staff to confirm the amount."""
+    with get_db() as session:
+        club = session.query(Club).get(club_id)
+        if not club:
+            return False
+        return bool(getattr(club, "escalate_auto_early_rakeback", False))
+
+
 def get_transfer_enabled(club_id: int) -> bool:
     """True if /transfer may move chips between this club's two unions."""
     with get_db() as session:

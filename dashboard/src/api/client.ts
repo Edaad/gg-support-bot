@@ -710,6 +710,7 @@ export interface Club {
   enable_transfer: boolean
   enable_auto_early_rakeback: boolean
   early_rakeback_max_auto_amount: number | null
+  escalate_auto_early_rakeback: boolean
   aces_option_min_deposits: number
   deposit_simple_mode: boolean
   deposit_simple_type: string | null

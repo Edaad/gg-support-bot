@@ -436,6 +436,23 @@ function GeneralTab({
               record it manually. Blank = no limit.
             </p>
           </div>
+          <label className="ml-6 flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={form.escalate_auto_early_rakeback ?? false}
+              onChange={(e) =>
+                setField('escalate_auto_early_rakeback', e.target.checked)
+              }
+              className="h-4 w-4 rounded border-border bg-control text-accent"
+            />
+            Escalate after auto early feeback
+          </label>
+          <p className="ml-12 text-xs text-ink-muted">
+            Verification ping: a successful auto-claim also Slack-alerts staff with the
+            amount so they can confirm it looks right. Off = chips land with no success
+            ping. Failures still always alert. Player questions in the group still
+            escalate as usual. Off by default.
+          </p>
           {club.name.trim().toLowerCase() === 'creator club' && (
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-muted">

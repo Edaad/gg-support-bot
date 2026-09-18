@@ -119,6 +119,11 @@ Dashboard → club → General:
 
 - **Automated early feeback** — the toggle. Off means `/earlyrb` behaves exactly as before.
 - **Maximum auto-claim early feeback ($)** — blank for no limit.
+- **Escalate after auto early feeback** — verification ping. On, a successful auto-claim
+  also Slack-alerts staff with the amount so they can confirm it. Off (default) = chips
+  land with no success ping. Failures still always alert. A player question in the group
+  during or after the flow still Slack-escalates as `player_idle`; this toggle does not
+  change that.
 
 Environment (worker dyno):
 
@@ -156,12 +161,15 @@ the canned request.
    at Monday to today, US Eastern.
 6. Set `AON_BETA_BASE_URL` and `AON_BETA_INTERNAL_API_KEY` on the **worker** dyno; today they
    only need to exist for the web dyno's audit sync.
-7. Run the migration:
+7. Run the migrations:
    ```bash
    heroku run -a gg-support-bot-2025 -- python migrate_auto_early_rakeback.py
+   heroku run -a gg-support-bot-2025 -- python migrate_escalate_auto_early_rakeback.py
    ```
 8. Enable the toggle and set the max for **one** club, keep `GG_DEPOSIT_API_DRY_RUN=true`, and
-   test one known group end to end before turning dry run off.
+   test one known group end to end before turning dry run off. Tick **Escalate after auto
+   early feeback** for the verification period so staff get a Slack ping after each
+   successful auto-add.
 
 ## Reconciliation
 
