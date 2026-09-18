@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 EARLYRB_ELIGIBLE_MESSAGE = (
     "We're checking your early rakeback now. Your account manager will follow up "
     "in this group shortly.\n\n"
-    "Early rake back counts as a deposit and will reset the cashout timer"
+    "Early feeback counts as a deposit and will reset the cashout timer"
 )
 
 EARLYRB_RECORD_FAILED_MESSAGE = (
@@ -224,7 +224,7 @@ async def earlyrb_union_chosen(update: Update, context: ContextTypes.DEFAULT_TYP
     context.chat_data["earlyrb_union_shorthand"] = shorthand
     label = union_label_for_shorthand(shorthand) or shorthand
     try:
-        await query.edit_message_text(f"Claiming your early feeback in {label}.")
+        await query.edit_message_text(f"Early feeback in {label} requested.")
     except Exception:
         pass
 

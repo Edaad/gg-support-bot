@@ -92,7 +92,7 @@ class CannedFallbackTestCase(unittest.IsolatedAsyncioTestCase):
 class CopyTestCase(unittest.TestCase):
     def test_canned_message_keeps_the_cashout_timer_warning(self) -> None:
         self.assertIn(
-            "Early rake back counts as a deposit and will reset the cashout timer",
+            "Early feeback counts as a deposit and will reset the cashout timer",
             EARLYRB_ELIGIBLE_MESSAGE,
         )
 

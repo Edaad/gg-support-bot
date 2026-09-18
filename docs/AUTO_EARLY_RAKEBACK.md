@@ -22,7 +22,7 @@ All player-facing copy says **fee** and **feeback**, never rake or rakeback.
 5. *"Calculating your remaining feeback for this week..."* — `GET bot/quote` on Elevate with
    the **filtered** rake and PnL.
 6. *"Your total remaining feeback for this week is: $X.XX — Would you like to claim?"*
-   with **Claim** / **Cancel**, plus *"Early rake back counts as a deposit and will reset
+   with **Claim** / **Cancel**, plus *"Early feeback counts as a deposit and will reset
    the cashout timer"*.
 7. On Claim: `POST bot/record` on Elevate, then `POST /deposit` on the RPA bot, then
    *"$X.XX feeback added to your account!"*

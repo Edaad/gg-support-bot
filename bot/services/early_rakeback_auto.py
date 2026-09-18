@@ -56,7 +56,7 @@ CLAIM_CANCELLED_COPY = "No problem — your feeback is still there whenever you 
 # There is no daily limit on claiming, so the only thing the player needs warning
 # about before tapping Claim is the effect on their cashout timer.
 CASHOUT_TIMER_NOTICE = (
-    "Early rake back counts as a deposit and will reset the cashout timer"
+    "Early feeback counts as a deposit and will reset the cashout timer"
 )
 
 # Elevate's record endpoint serialises per member, and the screen robot queues

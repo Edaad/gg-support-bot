@@ -140,7 +140,7 @@ class ClaimPromptTests(unittest.TestCase):
         self.assertIn("Your total remaining feeback for this week is: $240.50", prompt)
         self.assertIn("Would you like to claim?", prompt)
         self.assertIn(
-            "Early rake back counts as a deposit and will reset the cashout timer",
+            "Early feeback counts as a deposit and will reset the cashout timer",
             prompt,
         )
 
