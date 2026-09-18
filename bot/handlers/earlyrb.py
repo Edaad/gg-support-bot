@@ -61,6 +61,10 @@ EARLYRB_RECORD_FAILED_MESSAGE = (
 UNION_PROMPT = "Which club would you like to claim your early feeback in?"
 CANCELLED_COPY = "Early feeback cancelled."
 TIMEOUT_COPY = "This early feeback request timed out. Send /earlyrb to start again."
+ADDING_COPY = "Adding early feeback..."
+AMOUNT_CHANGED_COPY = (
+    "Your feeback changed while we were claiming it — here's the latest."
+)
 
 EARLYRB_UNION, EARLYRB_CONFIRM = range(2)
 
@@ -84,6 +88,21 @@ def _cleanup(context: ContextTypes.DEFAULT_TYPE) -> None:
     for key in _CHAT_DATA_KEYS:
         context.chat_data.pop(key, None)
     reset_flow_callback_messages(context, flow="earlyrb")
+
+
+async def _replace_status(status_msg, chat, text: str) -> None:
+    """Edit the in-progress status message, or send a new one if that fails."""
+    if status_msg is not None:
+        try:
+            await status_msg.edit_text(text)
+            return
+        except Exception:
+            logger.exception(
+                "earlyrb: could not edit status message chat_id=%s",
+                getattr(chat, "id", None),
+            )
+    if chat is not None:
+        await chat.send_message(text)
 
 
 def auto_earlyrb_available(club_id: int) -> bool:
@@ -385,6 +404,16 @@ async def earlyrb_claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
+    chat = update.effective_chat
+    status_msg = None
+    if chat is not None:
+        try:
+            status_msg = await chat.send_message(ADDING_COPY)
+        except Exception:
+            logger.exception(
+                "earlyrb: could not send adding status chat_id=%s", chat.id
+            )
+
     club_id = int(context.chat_data["earlyrb_club_id"])
     chat_id = int(context.chat_data["earlyrb_chat_id"])
     user_id = context.chat_data.get("earlyrb_user_id")
@@ -427,12 +456,10 @@ async def earlyrb_claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if stage.kind == "amount_changed":
         context.chat_data["earlyrb_quote"] = stage.quote
         context.chat_data["earlyrb_requoted"] = True
-        await update.effective_chat.send_message(
-            "Your feeback changed while we were claiming it — here's the latest."
-        )
+        await _replace_status(status_msg, chat, AMOUNT_CHANGED_COPY)
         return await _prompt_claim(update, context, stage.quote)
 
-    await update.effective_chat.send_message(stage.player_message)
+    await _replace_status(status_msg, chat, stage.player_message)
     _cleanup(context)
     return ConversationHandler.END
 

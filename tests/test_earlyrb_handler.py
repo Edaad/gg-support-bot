@@ -9,9 +9,15 @@ single-threaded screen robot.
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from bot.handlers.earlyrb import EARLYRB_ELIGIBLE_MESSAGE, earlyrb_entry
+from bot.handlers.earlyrb import (
+    ADDING_COPY,
+    EARLYRB_ELIGIBLE_MESSAGE,
+    earlyrb_claim,
+    earlyrb_entry,
+)
 from telegram.ext import ConversationHandler
 
 
@@ -137,6 +143,60 @@ class RecheckThrottleTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state, ConversationHandler.END)
         update.message.reply_text.assert_called_once_with(
             "please wait a few minutes"
+        )
+
+
+class ClaimStatusMessageTests(unittest.IsolatedAsyncioTestCase):
+    def _make(self):
+        status = MagicMock()
+        status.edit_text = AsyncMock()
+        chat = MagicMock()
+        chat.id = -100
+        chat.send_message = AsyncMock(return_value=status)
+        update = MagicMock()
+        update.callback_query = MagicMock()
+        update.callback_query.answer = AsyncMock()
+        update.callback_query.edit_message_reply_markup = AsyncMock()
+        update.effective_chat = chat
+        update.effective_user = MagicMock()
+        update.effective_user.id = 111
+        context = MagicMock()
+        context.chat_data = {
+            "earlyrb_club_id": 1,
+            "earlyrb_chat_id": -100,
+            "earlyrb_user_id": 111,
+            "earlyrb_title": "RT / 8272-5942 / P",
+            "earlyrb_fee": MagicMock(),
+            "earlyrb_quote": MagicMock(nickname="P"),
+            "earlyrb_target": MagicMock(),
+            "earlyrb_player_id": "8272-5942",
+        }
+        return update, context, chat, status
+
+    async def test_adding_status_is_replaced_with_the_result(self) -> None:
+        update, context, chat, status = self._make()
+        result = SimpleNamespace(
+            kind="added",
+            player_message="$12.00 feeback added to your account!",
+            quote=None,
+        )
+        with patch(
+            "bot.handlers.earlyrb.handle_stale_flow_callback",
+            AsyncMock(return_value=False),
+        ), patch(
+            "bot.services.early_rakeback_auto.claim_feeback",
+            AsyncMock(return_value=result),
+        ), patch(
+            "bot.services.early_rakeback_auto.create_claim_row", return_value=7
+        ), patch(
+            "bot.services.early_rakeback_auto.new_idempotency_key", return_value="k"
+        ):
+            state = await earlyrb_claim(update, context)
+
+        self.assertEqual(state, ConversationHandler.END)
+        chat.send_message.assert_awaited_once_with(ADDING_COPY)
+        status.edit_text.assert_awaited_once_with(
+            "$12.00 feeback added to your account!"
         )
 
 
