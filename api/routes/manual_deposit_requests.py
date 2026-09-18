@@ -522,6 +522,7 @@ async def create_method_manual_deposit_request(
                 method_display_name=method_display_name,
                 method_tag=(getattr(method, "method_tag", None) or "").strip() or None,
                 requested_at=row.created_at,
+                deposit_union=getattr(method, "deposit_union", None),
             )
         except Exception:
             pass

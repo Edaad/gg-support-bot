@@ -443,6 +443,7 @@ class EscalationCopyTests(unittest.TestCase):
                 title="RT AT / 3333-3333 / @jz034",
                 amount=Decimal("500"),
                 method_display_name="Zelle",
+                deposit_union="tmt",
                 **_UNION_DEPOSIT_KWARGS,
             )
         self.assertIn("*Union method deposit*", text)
@@ -456,6 +457,11 @@ class EscalationCopyTests(unittest.TestCase):
             "contact head admins.",
             text,
         )
+        self.assertIn(
+            "Forward the evidence to RoundTableClub 🤝 TMT Union",
+            text,
+        )
+        self.assertNotIn("#2 Aces Table : Settlements/Support", text)
 
     def test_large_cashout_slack_copy(self):
         with patch.object(esc, "_club_display_name", return_value="Round Table"):
@@ -471,6 +477,7 @@ class EscalationCopyTests(unittest.TestCase):
         self.assertIn("Check dashboard trade record.", text)
         self.assertIn("*SCREEN RECORDING REQUIRED*", text)
         self.assertIn("Amount: $5,000", text)
+        self.assertNotIn("Forward the evidence to", text)
 
     def test_union_deposit_repeat_verified_copy(self):
         with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
@@ -483,10 +490,16 @@ class EscalationCopyTests(unittest.TestCase):
                 method_display_name="Cash App",
                 method_tag="$cashapp-tag",
                 requested_at=_UNION_DEPOSIT_REQUESTED_AT,
+                deposit_union="massiv",
             )
         self.assertIn("*Union method deposit*", text)
         self.assertIn("Amount: $100.50", text)
         self.assertIn("Tag: $cashapp-tag", text)
+        self.assertIn(
+            "Forward the evidence to #2 Aces Table : Settlements/Support",
+            text,
+        )
+        self.assertNotIn("RoundTableClub 🤝 TMT Union", text)
 
     def test_union_deposit_repeat_open_copy(self):
         with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
@@ -543,6 +556,51 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Amount: $500", text)
         self.assertIn("Tag: zelle email", text)
         self.assertIn("<b>SCREEN RECORDING REQUIRED</b>", text)
+        self.assertNotIn("Forward the evidence to", text)
+
+    async def test_union_deposit_telegram_copy_tmt(self):
+        with patch.object(esc, "_club_display_name", return_value="Round Table"), patch(
+            "notification.formatting.resolve_and_format_group_chat_line",
+            new_callable=AsyncMock,
+            return_value="Group Chat: RT / 1234-5678 / Player",
+        ):
+            text = await esc.format_union_deposit_telegram_text(
+                variant="first",
+                club_id=2,
+                chat_id=-300,
+                title="RT / 1234-5678 / Player",
+                amount=Decimal("500"),
+                method_display_name="Zelle",
+                deposit_union="tmt",
+                **_UNION_DEPOSIT_KWARGS,
+            )
+        self.assertIn(
+            "Forward the evidence to RoundTableClub 🤝 TMT Union",
+            text,
+        )
+        self.assertNotIn("#2 Aces Table : Settlements/Support", text)
+
+    async def test_union_deposit_telegram_copy_massiv(self):
+        with patch.object(esc, "_club_display_name", return_value="Aces Table"), patch(
+            "notification.formatting.resolve_and_format_group_chat_line",
+            new_callable=AsyncMock,
+            return_value="Group Chat: AT / 1234-5678 / Player",
+        ):
+            text = await esc.format_union_deposit_telegram_text(
+                variant="first",
+                club_id=3,
+                chat_id=-300,
+                title="AT / 1234-5678 / Player",
+                amount=Decimal("500"),
+                method_display_name="Zelle",
+                deposit_union="massiv",
+                **_UNION_DEPOSIT_KWARGS,
+            )
+        self.assertIn(
+            "Forward the evidence to #2 Aces Table : Settlements/Support",
+            text,
+        )
+        self.assertNotIn("RoundTableClub 🤝 TMT Union", text)
 
     async def test_skips_on_test_bot(self):
         with patch.object(esc, "is_test_bot_worker", return_value=True):
