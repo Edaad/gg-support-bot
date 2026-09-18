@@ -62,6 +62,9 @@ UNION_PROMPT = "Which club would you like to claim your early feeback in?"
 CANCELLED_COPY = "Early feeback cancelled."
 TIMEOUT_COPY = "This early feeback request timed out. Send /earlyrb to start again."
 ADDING_COPY = "Adding early feeback..."
+ADDING_IN_PROGRESS_COPY = (
+    "Adding is already in progress — this can't be cancelled."
+)
 AMOUNT_CHANGED_COPY = (
     "Your feeback changed while we were claiming it — here's the latest."
 )
@@ -81,6 +84,7 @@ _CHAT_DATA_KEYS = (
     "earlyrb_target",
     "earlyrb_player_id",
     "earlyrb_requoted",
+    "earlyrb_committing",
 )
 
 
@@ -103,6 +107,14 @@ async def _replace_status(status_msg, chat, text: str) -> None:
             )
     if chat is not None:
         await chat.send_message(text)
+
+
+def _session_is(context: ContextTypes.DEFAULT_TYPE, club_id: int, chat_id: int) -> bool:
+    """False when /cancel cleared this lookup, so a finishing task must stay quiet."""
+    return (
+        context.chat_data.get("earlyrb_club_id") == club_id
+        and context.chat_data.get("earlyrb_chat_id") == chat_id
+    )
 
 
 def auto_earlyrb_available(club_id: int) -> bool:
@@ -255,8 +267,11 @@ async def _run_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from bot.services import early_rakeback_auto as auto
 
     chat = update.effective_chat
-    club_id = int(context.chat_data["earlyrb_club_id"])
-    chat_id = int(context.chat_data["earlyrb_chat_id"])
+    try:
+        club_id = int(context.chat_data["earlyrb_club_id"])
+        chat_id = int(context.chat_data["earlyrb_chat_id"])
+    except (KeyError, TypeError, ValueError):
+        return ConversationHandler.END
     user_id = context.chat_data.get("earlyrb_user_id")
     title = context.chat_data.get("earlyrb_title")
     union = context.chat_data.get("earlyrb_union_shorthand")
@@ -271,9 +286,13 @@ async def _run_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("earlyrb: could not record check activity chat_id=%s", chat_id)
 
     await chat.send_message(auto.FINDING_FEE_COPY)
+    if not _session_is(context, club_id, chat_id):
+        return ConversationHandler.END
     fee_stage = await auto.check_fee(
         club_id=club_id, chat_id=chat_id, group_title=title, union_shorthand=union
     )
+    if not _session_is(context, club_id, chat_id):
+        return ConversationHandler.END
 
     if fee_stage.kind == "escalate":
         await auto.escalate_fee_stage(
@@ -314,6 +333,8 @@ async def _run_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     await chat.send_message(auto.CALCULATING_COPY)
+    if not _session_is(context, club_id, chat_id):
+        return ConversationHandler.END
     quote_stage = await auto.quote_feeback(
         club_id=club_id,
         target=target,
@@ -321,6 +342,8 @@ async def _run_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         fee=fee,
         nickname=None,
     )
+    if not _session_is(context, club_id, chat_id):
+        return ConversationHandler.END
 
     if quote_stage.kind == "escalate":
         await auto.escalate_fee_stage(
@@ -399,6 +422,7 @@ async def earlyrb_claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return EARLYRB_CONFIRM
     await query.answer()
+    context.chat_data["earlyrb_committing"] = True
     try:
         await query.edit_message_reply_markup(reply_markup=None)
     except Exception:
@@ -456,6 +480,7 @@ async def earlyrb_claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if stage.kind == "amount_changed":
         context.chat_data["earlyrb_quote"] = stage.quote
         context.chat_data["earlyrb_requoted"] = True
+        context.chat_data.pop("earlyrb_committing", None)
         await _replace_status(status_msg, chat, AMOUNT_CHANGED_COPY)
         return await _prompt_claim(update, context, stage.quote)
 
@@ -491,6 +516,10 @@ async def earlyrb_decline(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def earlyrb_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.chat_data.get("earlyrb_committing"):
+        if update.message:
+            await update.message.reply_text(ADDING_IN_PROGRESS_COPY)
+        return EARLYRB_CONFIRM
     _cleanup(context)
     if update.message:
         await update.message.reply_text(CANCELLED_COPY)
@@ -512,20 +541,31 @@ _EARLYRB_CANCEL = CommandHandler("cancel", earlyrb_cancel)
 
 
 def get_earlyrb_handler() -> ConversationHandler:
+    """The fee lookup and chip-add await the ClubGG screen robot for minutes.
+
+    Those callbacks are ``block=False`` so ConversationHandler runs them as a
+    background task (state ``WAITING``) instead of occupying the bot's single
+    update slot — otherwise every other group waits on /deposit, /cashout, and
+    method copy until the robot is done. /cancel during WAITING is registered
+    explicitly: fallbacks are not consulted while a task is pending.
+    """
     return ConversationHandler(
-        entry_points=[CommandHandler("earlyrb", earlyrb_entry)],
+        entry_points=[CommandHandler("earlyrb", earlyrb_entry, block=False)],
         states={
             EARLYRB_UNION: [
                 CallbackQueryHandler(
-                    earlyrb_union_chosen, pattern=r"^ebunion:(RT|AT|CC)$"
+                    earlyrb_union_chosen,
+                    pattern=r"^ebunion:(RT|AT|CC)$",
+                    block=False,
                 ),
                 _EARLYRB_CANCEL,
             ],
             EARLYRB_CONFIRM: [
-                CallbackQueryHandler(earlyrb_claim, pattern=r"^ebclaim$"),
+                CallbackQueryHandler(earlyrb_claim, pattern=r"^ebclaim$", block=False),
                 CallbackQueryHandler(earlyrb_decline, pattern=r"^ebcancel$"),
                 _EARLYRB_CANCEL,
             ],
+            ConversationHandler.WAITING: [_EARLYRB_CANCEL],
             ConversationHandler.TIMEOUT: [
                 MessageHandler(filters.ALL, earlyrb_timeout),
             ],

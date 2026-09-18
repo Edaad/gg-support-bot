@@ -14,7 +14,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.handlers.earlyrb import (
     ADDING_COPY,
+    ADDING_IN_PROGRESS_COPY,
+    EARLYRB_CONFIRM,
     EARLYRB_ELIGIBLE_MESSAGE,
+    earlyrb_cancel,
     earlyrb_claim,
     earlyrb_entry,
 )
@@ -198,6 +201,70 @@ class ClaimStatusMessageTests(unittest.IsolatedAsyncioTestCase):
         status.edit_text.assert_awaited_once_with(
             "$12.00 feeback added to your account!"
         )
+
+
+class LookupCancelTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cancelled_lookup_does_not_prompt_claim(self) -> None:
+        from bot.handlers.earlyrb import _cleanup, _run_lookup
+        from bot.services.early_rakeback_auto import FINDING_FEE_COPY, CALCULATING_COPY
+
+        chat = MagicMock()
+        chat.send_message = AsyncMock()
+        update = MagicMock()
+        update.effective_chat = chat
+        context = MagicMock()
+        context.chat_data = {
+            "earlyrb_club_id": 1,
+            "earlyrb_chat_id": -100,
+            "earlyrb_user_id": 111,
+            "earlyrb_title": "t",
+        }
+
+        async def fee_then_cancel(**_kwargs):
+            _cleanup(context)
+            return SimpleNamespace(kind="ok", fee=MagicMock(), detail="")
+
+        with patch("bot.handlers.earlyrb.record_activity_for_chat"), patch(
+            "bot.services.early_rakeback_auto.check_fee", fee_then_cancel
+        ):
+            state = await _run_lookup(update, context)
+
+        self.assertEqual(state, ConversationHandler.END)
+        sent = [c.args[0] for c in chat.send_message.await_args_list]
+        self.assertIn(FINDING_FEE_COPY, sent)
+        self.assertNotIn(CALCULATING_COPY, sent)
+
+
+class CancelDuringAddTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cancel_during_chip_add_is_refused(self) -> None:
+        update = MagicMock()
+        update.message = MagicMock()
+        update.message.reply_text = AsyncMock()
+        context = MagicMock()
+        context.chat_data = {
+            "earlyrb_club_id": 1,
+            "earlyrb_chat_id": -100,
+            "earlyrb_committing": True,
+        }
+
+        state = await earlyrb_cancel(update, context)
+
+        self.assertEqual(state, EARLYRB_CONFIRM)
+        update.message.reply_text.assert_awaited_once_with(ADDING_IN_PROGRESS_COPY)
+        self.assertEqual(context.chat_data.get("earlyrb_club_id"), 1)
+
+
+class HandlerRegistrationTests(unittest.TestCase):
+    def test_long_rpa_callbacks_are_non_blocking(self) -> None:
+        from bot.handlers.earlyrb import get_earlyrb_handler
+
+        handler = get_earlyrb_handler()
+        self.assertFalse(handler.entry_points[0].block)
+        union_cb = handler.states[0][0]
+        self.assertFalse(union_cb.block)
+        confirm_cbs = handler.states[1]
+        self.assertFalse(confirm_cbs[0].block)
+        self.assertIn(ConversationHandler.WAITING, handler.states)
 
 
 if __name__ == "__main__":

@@ -29,6 +29,11 @@ All player-facing copy says **fee** and **feeback**, never rake or rakeback.
    `POST /deposit` on the RPA bot. That status message is replaced with
    *"$X.XX feeback added to your account!"*
 
+Fee lookup and chip-add run as ConversationHandler **non-blocking** callbacks
+(`block=False`). The bot's update loop stays free for `/deposit`, `/cashout`, and
+method copy in other groups while the screen robot works. `/cancel` during that
+wait aborts the prompt; once chips are actually being added, cancel is refused.
+
 ## Where it stops instead
 
 | Situation | Player sees | Staff see |
