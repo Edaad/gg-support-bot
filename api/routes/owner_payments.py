@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -33,7 +32,12 @@ from api.payments_helpers import (
     stripe_dashboard_session_url,
     stripe_fee_usd,
 )
-from api.routes.payments import _clamp_limit, _get_club_or_404, _parse_dt, _raise_db_schema_error
+from api.routes.payments import (
+    _clamp_limit,
+    _get_club_or_404,
+    _parse_dt,
+    _raise_db_schema_error,
+)
 from api.schemas_payments import (
     CashAppPaymentRead,
     CryptoPaymentRead,
@@ -92,7 +96,9 @@ def _validate_owner_method(owner: str, method: str) -> tuple[str, str]:
     return owner_slug, method_slug
 
 
-def _build_stripe_session_read(db: Session, row: StripeCheckoutSession) -> StripeCheckoutSessionRead:
+def _build_stripe_session_read(
+    db: Session, row: StripeCheckoutSession
+) -> StripeCheckoutSessionRead:
     club_id = int(row.club_id)
     cust = (
         db.query(StripeCustomer)
@@ -107,7 +113,9 @@ def _build_stripe_session_read(db: Session, row: StripeCheckoutSession) -> Strip
         row.telegram_chat_id,
         fallback_gg_player_id=cust.gg_player_id if cust else None,
     )
-    method_name, method_slug = resolve_method_display(db, club_id, row.payment_method_id)
+    method_name, method_slug = resolve_method_display(
+        db, club_id, row.payment_method_id
+    )
     return StripeCheckoutSessionRead(
         id=row.id,
         stripe_checkout_session_id=row.stripe_checkout_session_id,
@@ -126,7 +134,9 @@ def _build_stripe_session_read(db: Session, row: StripeCheckoutSession) -> Strip
         group_title=title,
         gg_player_id=gg_id,
         gg_nickname=lookup_gg_nickname(db, club_id, gg_id),
-        stripe_dashboard_url=stripe_dashboard_session_url(row.stripe_checkout_session_id),
+        stripe_dashboard_url=stripe_dashboard_session_url(
+            row.stripe_checkout_session_id
+        ),
         stripe_payment_url=stripe_dashboard_payment_url(row.stripe_payment_intent_id),
         created_at=row.created_at,
         completed_at=row.completed_at,
@@ -134,7 +144,10 @@ def _build_stripe_session_read(db: Session, row: StripeCheckoutSession) -> Strip
     )
 
 
-@router.get("/{owner}/payments", response_model=OwnerPaymentListResponse | UnifiedPaymentListResponse)
+@router.get(
+    "/{owner}/payments",
+    response_model=OwnerPaymentListResponse | UnifiedPaymentListResponse,
+)
 def list_owner_payments(
     owner: str,
     method: str = Query(...),
@@ -215,7 +228,9 @@ def list_owner_payments(
     try:
         if method_slug == "stripe":
             if owner_slug != "round-table":
-                raise HTTPException(400, "Stripe is only available for owner round-table.")
+                raise HTTPException(
+                    400, "Stripe is only available for owner round-table."
+                )
             base = db.query(StripeCheckoutSession)
             base = apply_owner_stripe_filters(
                 base,
@@ -290,14 +305,18 @@ def list_owner_variants(
 ):
     owner_slug, method_slug = _validate_owner_method(owner, method)
     if method_slug == "all":
-        raise HTTPException(400, "Use method=all on the payments endpoint, not variants.")
+        raise HTTPException(
+            400, "Use method=all on the payments endpoint, not variants."
+        )
     parsed_from = _parse_dt(from_dt)
     parsed_to = _parse_dt(to_dt)
 
     try:
         if method_slug == "stripe":
             if owner_slug != "round-table":
-                raise HTTPException(400, "Stripe is only available for owner round-table.")
+                raise HTTPException(
+                    400, "Stripe is only available for owner round-table."
+                )
             stripe_variants = distinct_owner_stripe_variants(
                 db, from_dt=parsed_from, to_dt=parsed_to
             )

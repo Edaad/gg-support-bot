@@ -33,10 +33,6 @@ from api.payments_helpers import (
 from api.vaughn_methods import normalize_venmo_handle
 from bot.services.payment_method_binding import canonicalize_zelle_recipient
 from db.models import BonusRecord, CryptoPayment, VenmoPayment, ZellePayment
-from openpyxl.styles import Font, PatternFill, Alignment
-from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.table import Table, TableStyleInfo
-from openpyxl.worksheet.worksheet import Worksheet
 
 from api.audit_reconcile_export import MATCHING_HEADERS
 
@@ -49,7 +45,9 @@ FILENAME_RE = re.compile(
 
 CLUBGTO_SHEET = "ClubGTO"
 _CLUBGTO_SLUG = "clubgto"
-TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "gto_weekly_audit_base.xlsx"
+TEMPLATE_PATH = (
+    Path(__file__).resolve().parent / "templates" / "gto_weekly_audit_base.xlsx"
+)
 
 PROCESSED_HEADERS = [
     "Date / Time",
@@ -69,9 +67,10 @@ MISSING_DATA = "Missing data"
 
 _HEADER_FILL = PatternFill("solid", fgColor="38761D")
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
-_CURRENCY_FORMAT = '$#,##0.00;[Red]-$#,##0.00'
+_CURRENCY_FORMAT = "$#,##0.00;[Red]-$#,##0.00"
 _PROCESSED_TABLE = "ProcessedData"
 _PROCESSED_COL_COUNT = len(PROCESSED_HEADERS)
+
 
 class GtoWeeklyAuditError(ValueError):
     """User-facing validation / parse error for GTO weekly audit export."""
@@ -132,9 +131,7 @@ def parse_monday(value: str) -> date:
     try:
         return date.fromisoformat(text)
     except ValueError as exc:
-        raise GtoWeeklyAuditError(
-            f"monday must be YYYY-MM-DD; got {value!r}."
-        ) from exc
+        raise GtoWeeklyAuditError(f"monday must be YYYY-MM-DD; got {value!r}.") from exc
 
 
 def date_from_filename(filename: str) -> date:
@@ -281,9 +278,7 @@ def parse_clubgto_rows(
             raise GtoWeeklyAuditError("audit_date is required when filename is empty.")
         day = date_from_filename(filename)
     if CLUBGTO_SHEET not in workbook.sheetnames:
-        raise GtoWeeklyAuditError(
-            f"{label}: missing sheet {CLUBGTO_SHEET!r}."
-        )
+        raise GtoWeeklyAuditError(f"{label}: missing sheet {CLUBGTO_SHEET!r}.")
     ws = workbook[CLUBGTO_SHEET]
     headers = _header_map(ws)
     missing = [h for h in MATCHING_HEADERS if h not in headers]
@@ -301,14 +296,18 @@ def parse_clubgto_rows(
             continue
         rows.append(
             MatchingRow(
-                trade_time=_cell_datetime(ws.cell(row_idx, headers["Trade Time"]).value),
+                trade_time=_cell_datetime(
+                    ws.cell(row_idx, headers["Trade Time"]).value
+                ),
                 manager=_cell_str(ws.cell(row_idx, headers["Manager"]).value),
                 amount=_cell_number(ws.cell(row_idx, headers["Amount"]).value),
                 player_id=_cell_str(ws.cell(row_idx, headers["Player ID"]).value),
                 nickname=_cell_str(ws.cell(row_idx, headers["Nickname"]).value),
                 source=_cell_str(ws.cell(row_idx, headers["Source"]).value),
                 name=_cell_str(ws.cell(row_idx, headers["Name"]).value),
-                match_time=_cell_datetime(ws.cell(row_idx, headers["Match Time"]).value),
+                match_time=_cell_datetime(
+                    ws.cell(row_idx, headers["Match Time"]).value
+                ),
                 match_amount=_cell_number(ws.cell(row_idx, headers["$"]).value),
                 variant=_cell_str(ws.cell(row_idx, headers["Variant"]).value),
                 audit_date=day,
@@ -411,7 +410,9 @@ def fetch_vaughn_payment_rails(
         "venmo": [],
         "crypto": [],
     }
-    configs: list[tuple[str, type, Callable, Callable[[dict], str], Callable[[dict], str]]] = [
+    configs: list[
+        tuple[str, type, Callable, Callable[[dict], str], Callable[[dict], str]]
+    ] = [
         (
             "zelle",
             ZellePayment,

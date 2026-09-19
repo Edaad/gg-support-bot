@@ -51,7 +51,9 @@ class CryptoAlertScopeTestCase(unittest.TestCase):
         self.assertEqual(resolve_alert_scope("RT Crypto Payment"), ALERT_SCOPE_RT_AT_CC)
 
     def test_resolve_alert_scope_at_cc_tokens(self):
-        self.assertEqual(resolve_alert_scope("AT/CC Crypto Payment"), ALERT_SCOPE_RT_AT_CC)
+        self.assertEqual(
+            resolve_alert_scope("AT/CC Crypto Payment"), ALERT_SCOPE_RT_AT_CC
+        )
 
     def test_resolve_alert_scope_plain_crypto_payment_rejected(self):
         with self.assertRaises(ValueError):
@@ -64,7 +66,9 @@ class CryptoAlertScopeTestCase(unittest.TestCase):
     def test_club_name_to_alert_scope(self):
         self.assertEqual(alert_scope_for_club_name("ClubGTO"), ALERT_SCOPE_CLUBGTO)
         self.assertEqual(alert_scope_for_club_name("Round Table"), ALERT_SCOPE_RT_AT_CC)
-        self.assertEqual(alert_scope_for_club_name("Creator Club"), ALERT_SCOPE_RT_AT_CC)
+        self.assertEqual(
+            alert_scope_for_club_name("Creator Club"), ALERT_SCOPE_RT_AT_CC
+        )
         self.assertIsNone(alert_scope_for_club_name("Some Other Club"))
 
     def test_validate_bind_scope_clubgto_mismatch(self):

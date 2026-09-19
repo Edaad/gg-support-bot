@@ -84,7 +84,9 @@ def _clamp_limit(limit: int) -> int:
 def _raise_db_schema_error(exc: ProgrammingError) -> None:
     msg = str(exc.orig) if exc.orig else str(exc)
     if "deposit_funnel_events" in msg and "does not exist" in msg:
-        raise HTTPException(503, f"Deposit funnel analytics table is missing. {_MIGRATION_HINT}")
+        raise HTTPException(
+            503, f"Deposit funnel analytics table is missing. {_MIGRATION_HINT}"
+        )
 
 
 def _show_union_step(club_id: int | None) -> bool:
@@ -114,20 +116,15 @@ def _funnel_events_query(
     if is_first_deposit is not None:
         q = q.filter(DepositFunnelEvent.is_first_deposit == is_first_deposit)
     if requires_method_setup is not None:
-        q = q.filter(
-            DepositFunnelEvent.requires_method_setup == requires_method_setup
-        )
+        q = q.filter(DepositFunnelEvent.requires_method_setup == requires_method_setup)
     if step and step.strip():
         q = q.filter(DepositFunnelEvent.step == step.strip())
     if exclude_test_chats:
-        q = apply_analytics_chat_exclusion(
-            db, q, DepositFunnelEvent.telegram_chat_id
-        )
+        q = apply_analytics_chat_exclusion(db, q, DepositFunnelEvent.telegram_chat_id)
     slug = (method_slug or "").strip().lower()
     if slug and slug != "all":
-        matching_sessions = (
-            db.query(DepositFunnelEvent.deposit_session_id)
-            .filter(DepositFunnelEvent.method_slug == slug)
+        matching_sessions = db.query(DepositFunnelEvent.deposit_session_id).filter(
+            DepositFunnelEvent.method_slug == slug
         )
         if club_id is not None:
             matching_sessions = matching_sessions.filter(
@@ -202,9 +199,7 @@ def _union_breakdown(
     if to_dt is not None:
         q = q.filter(DepositFunnelEvent.created_at <= to_dt)
     if exclude_test_chats:
-        q = apply_analytics_chat_exclusion(
-            db, q, DepositFunnelEvent.telegram_chat_id
-        )
+        q = apply_analytics_chat_exclusion(db, q, DepositFunnelEvent.telegram_chat_id)
     rt_sessions: set[str] = set()
     at_sessions: set[str] = set()
     for meta, session_id in q.all():
@@ -220,7 +215,6 @@ def _union_breakdown(
         round_table=len(rt_sessions),
         aces_table=len(at_sessions),
     )
-
 
 
 def _metadata_auto_bound(meta: dict | None) -> bool:
@@ -252,10 +246,15 @@ def _full_auto_e2e_session_ids(
         step=None,
         exclude_test_chats=exclude_test_chats,
     )
-    e2e_rows = base_q.filter(
-        DepositFunnelEvent.step == STEP_CHIPS_CONFIRMED,
-        DepositFunnelEvent.metadata_json["path"].as_string() == "e2e_auto_deposit",
-    ).with_entities(DepositFunnelEvent.deposit_session_id).distinct().all()
+    e2e_rows = (
+        base_q.filter(
+            DepositFunnelEvent.step == STEP_CHIPS_CONFIRMED,
+            DepositFunnelEvent.metadata_json["path"].as_string() == "e2e_auto_deposit",
+        )
+        .with_entities(DepositFunnelEvent.deposit_session_id)
+        .distinct()
+        .all()
+    )
     e2e_ids = {str(row[0]) for row in e2e_rows}
     if not e2e_ids:
         return set()
@@ -274,13 +273,17 @@ def _full_auto_e2e_session_ids(
     if not candidates:
         return set()
 
-    bound_rows = base_q.filter(
-        DepositFunnelEvent.step == STEP_PAYMENT_BOUND,
-        DepositFunnelEvent.deposit_session_id.in_(candidates),
-    ).with_entities(
-        DepositFunnelEvent.deposit_session_id,
-        DepositFunnelEvent.metadata_json,
-    ).all()
+    bound_rows = (
+        base_q.filter(
+            DepositFunnelEvent.step == STEP_PAYMENT_BOUND,
+            DepositFunnelEvent.deposit_session_id.in_(candidates),
+        )
+        .with_entities(
+            DepositFunnelEvent.deposit_session_id,
+            DepositFunnelEvent.metadata_json,
+        )
+        .all()
+    )
     auto_bound_ids: set[str] = set()
     for session_id, meta in bound_rows:
         if _metadata_auto_bound(meta):
@@ -381,7 +384,9 @@ def _build_step_counts(
     return steps
 
 
-def _event_read(row: DepositFunnelEvent, club_name: str | None) -> DepositFunnelEventRead:
+def _event_read(
+    row: DepositFunnelEvent, club_name: str | None
+) -> DepositFunnelEventRead:
     amount_cents = int(row.amount_cents) if row.amount_cents is not None else None
     return DepositFunnelEventRead(
         id=int(row.id),
@@ -429,9 +434,7 @@ def deposit_funnel_summary(
             requires_method_setup=requires_method_setup,
             exclude_test_chats=exclude_test_chats,
         )
-        counts_by_step = _step_counts_for_sessions(
-            db, valid_session_ids, display_steps
-        )
+        counts_by_step = _step_counts_for_sessions(db, valid_session_ids, display_steps)
         events = (
             db.query(DepositFunnelEvent)
             .filter(DepositFunnelEvent.deposit_session_id.in_(valid_session_ids))
@@ -495,14 +498,17 @@ def deposit_funnel_latency_summary(
             requires_method_setup=None,
             exclude_test_chats=exclude_test_chats,
         )
-        session_ids = _full_auto_e2e_session_ids(
-            db,
-            club_id=club_id,
-            method_slug=method,
-            from_dt=dt_from,
-            to_dt=dt_to,
-            exclude_test_chats=exclude_test_chats,
-        ) & valid_started
+        session_ids = (
+            _full_auto_e2e_session_ids(
+                db,
+                club_id=club_id,
+                method_slug=method,
+                from_dt=dt_from,
+                to_dt=dt_to,
+                exclude_test_chats=exclude_test_chats,
+            )
+            & valid_started
+        )
         counts_by_step = _step_counts_for_sessions(db, session_ids, display_steps)
         events = (
             db.query(DepositFunnelEvent)

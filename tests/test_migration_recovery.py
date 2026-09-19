@@ -11,7 +11,6 @@ from bot.services.migration_recovery_priority import (
 )
 from bot.services.migration_recovery import (
     RECOVERY_CLUB_KEYS,
-    ELEVATE_CATCHUP_PAUSE_KEY,
     build_readd_result_payload,
     claim_pending_batch,
     compute_migration_recovery_first_delay_sec,
@@ -25,7 +24,6 @@ from bot.services.migration_recovery import (
     is_club_rate_limited,
     is_rate_limit_pause_pending,
     map_readd_status,
-    maybe_apply_rate_limit_resume,
     maybe_clear_expired_club_rate_limits,
     pause_club_for_rate_limit,
     peek_next_recovery_rows,
@@ -298,12 +296,15 @@ class TestBuildSeedCandidates(unittest.TestCase):
         active_agg.touch("payment", None)
         activity_by_chat = {-1002: active_agg}
 
-        with patch(
-            "scripts.seed_migrated_group_recovery.load_player_rows_by_chat",
-            return_value={},
-        ), patch(
-            "scripts.seed_migrated_group_recovery.load_player_display_names_by_chat",
-            return_value={},
+        with (
+            patch(
+                "scripts.seed_migrated_group_recovery.load_player_rows_by_chat",
+                return_value={},
+            ),
+            patch(
+                "scripts.seed_migrated_group_recovery.load_player_display_names_by_chat",
+                return_value={},
+            ),
         ):
             candidates = build_seed_candidates(
                 groups,
@@ -351,32 +352,38 @@ class TestFormatAutoDisableNotification(unittest.TestCase):
 
 class TestMaybeAutoDisableAfterTick(unittest.TestCase):
     def test_does_not_trigger_when_one_club_empty_but_others_have_work(self) -> None:
-        with patch(
-            "bot.services.migration_recovery.pending_count_by_club",
-            return_value={
-                "round_table": 10,
-                "creator_club": 0,
-                "clubgto": 5,
-            },
-        ), patch(
-            "bot.services.migration_recovery.auto_disable_migration_recovery",
-            new_callable=AsyncMock,
-        ) as mock_disable:
+        with (
+            patch(
+                "bot.services.migration_recovery.pending_count_by_club",
+                return_value={
+                    "round_table": 10,
+                    "creator_club": 0,
+                    "clubgto": 5,
+                },
+            ),
+            patch(
+                "bot.services.migration_recovery.auto_disable_migration_recovery",
+                new_callable=AsyncMock,
+            ) as mock_disable,
+        ):
             asyncio.run(_maybe_auto_disable_after_tick())
         mock_disable.assert_not_awaited()
 
     def test_triggers_when_all_active_clubs_empty(self) -> None:
-        with patch(
-            "bot.services.migration_recovery.pending_count_by_club",
-            return_value={
-                "round_table": 0,
-                "creator_club": 0,
-                "clubgto": 0,
-            },
-        ), patch(
-            "bot.services.migration_recovery.auto_disable_migration_recovery",
-            new_callable=AsyncMock,
-        ) as mock_disable:
+        with (
+            patch(
+                "bot.services.migration_recovery.pending_count_by_club",
+                return_value={
+                    "round_table": 0,
+                    "creator_club": 0,
+                    "clubgto": 0,
+                },
+            ),
+            patch(
+                "bot.services.migration_recovery.auto_disable_migration_recovery",
+                new_callable=AsyncMock,
+            ) as mock_disable,
+        ):
             asyncio.run(_maybe_auto_disable_after_tick())
         mock_disable.assert_awaited_once_with(
             reason="all_clubs_drained",
@@ -389,32 +396,38 @@ class TestMaybeAutoDisableAfterTick(unittest.TestCase):
         )
 
     def test_does_not_trigger_when_rt_has_tier12_but_cc_gto_tier3_empty(self) -> None:
-        with patch(
-            "bot.services.migration_recovery.pending_count_by_club",
-            return_value={
-                "round_table": 39,
-                "creator_club": 0,
-                "clubgto": 0,
-            },
-        ), patch(
-            "bot.services.migration_recovery.auto_disable_migration_recovery",
-            new_callable=AsyncMock,
-        ) as mock_disable:
+        with (
+            patch(
+                "bot.services.migration_recovery.pending_count_by_club",
+                return_value={
+                    "round_table": 39,
+                    "creator_club": 0,
+                    "clubgto": 0,
+                },
+            ),
+            patch(
+                "bot.services.migration_recovery.auto_disable_migration_recovery",
+                new_callable=AsyncMock,
+            ) as mock_disable,
+        ):
             asyncio.run(_maybe_auto_disable_after_tick())
         mock_disable.assert_not_awaited()
 
     def test_all_drained_reason(self) -> None:
-        with patch(
-            "bot.services.migration_recovery.pending_count_by_club",
-            return_value={
-                "round_table": 0,
-                "creator_club": 0,
-                "clubgto": 0,
-            },
-        ), patch(
-            "bot.services.migration_recovery.auto_disable_migration_recovery",
-            new_callable=AsyncMock,
-        ) as mock_disable:
+        with (
+            patch(
+                "bot.services.migration_recovery.pending_count_by_club",
+                return_value={
+                    "round_table": 0,
+                    "creator_club": 0,
+                    "clubgto": 0,
+                },
+            ),
+            patch(
+                "bot.services.migration_recovery.auto_disable_migration_recovery",
+                new_callable=AsyncMock,
+            ) as mock_disable,
+        ):
             asyncio.run(_maybe_auto_disable_after_tick())
         mock_disable.assert_awaited_once_with(
             reason="all_clubs_drained",
@@ -427,17 +440,20 @@ class TestMaybeAutoDisableAfterTick(unittest.TestCase):
         )
 
     def test_no_trigger_when_all_clubs_have_queue(self) -> None:
-        with patch(
-            "bot.services.migration_recovery.pending_count_by_club",
-            return_value={
-                "round_table": 1,
-                "creator_club": 2,
-                "clubgto": 3,
-            },
-        ), patch(
-            "bot.services.migration_recovery.auto_disable_migration_recovery",
-            new_callable=AsyncMock,
-        ) as mock_disable:
+        with (
+            patch(
+                "bot.services.migration_recovery.pending_count_by_club",
+                return_value={
+                    "round_table": 1,
+                    "creator_club": 2,
+                    "clubgto": 3,
+                },
+            ),
+            patch(
+                "bot.services.migration_recovery.auto_disable_migration_recovery",
+                new_callable=AsyncMock,
+            ) as mock_disable,
+        ):
             asyncio.run(_maybe_auto_disable_after_tick())
         mock_disable.assert_not_awaited()
 
@@ -462,7 +478,10 @@ class TestClaimPendingBatchPerClub(unittest.TestCase):
             setattr(row, key, value)
         return row
 
-    @patch("bot.services.migration_recovery.get_migration_recovery_batch_size", return_value=1)
+    @patch(
+        "bot.services.migration_recovery.get_migration_recovery_batch_size",
+        return_value=1,
+    )
     @patch("db.connection.get_db")
     def test_claims_up_to_batch_size_per_club(
         self, mock_get_db: MagicMock, _mock_batch_size: MagicMock
@@ -479,9 +498,15 @@ class TestClaimPendingBatchPerClub(unittest.TestCase):
         mock_get_db.return_value.__enter__.return_value = session
 
         execute_results = {
-            "round_table": MagicMock(scalars=MagicMock(return_value=MagicMock(all=lambda: [1]))),
-            "creator_club": MagicMock(scalars=MagicMock(return_value=MagicMock(all=lambda: [2]))),
-            "clubgto": MagicMock(scalars=MagicMock(return_value=MagicMock(all=lambda: [3]))),
+            "round_table": MagicMock(
+                scalars=MagicMock(return_value=MagicMock(all=lambda: [1]))
+            ),
+            "creator_club": MagicMock(
+                scalars=MagicMock(return_value=MagicMock(all=lambda: [2]))
+            ),
+            "clubgto": MagicMock(
+                scalars=MagicMock(return_value=MagicMock(all=lambda: [3]))
+            ),
         }
 
         def fake_execute(stmt):
@@ -551,22 +576,30 @@ class TestMigrationRecoveryDisabledClubs(unittest.TestCase):
         "bot.services.migration_recovery.migration_recovery_active_club_keys",
         return_value=("creator_club", "clubgto"),
     )
-    def test_auto_disable_ignores_disabled_round_table_queue(self, _mock_active: MagicMock) -> None:
-        with patch(
-            "bot.services.migration_recovery.pending_count_by_club",
-            return_value={
-                "round_table": 999,
-                "creator_club": 0,
-                "clubgto": 4,
-            },
-        ), patch(
-            "bot.services.migration_recovery.auto_disable_migration_recovery",
-            new_callable=AsyncMock,
-        ) as mock_disable:
+    def test_auto_disable_ignores_disabled_round_table_queue(
+        self, _mock_active: MagicMock
+    ) -> None:
+        with (
+            patch(
+                "bot.services.migration_recovery.pending_count_by_club",
+                return_value={
+                    "round_table": 999,
+                    "creator_club": 0,
+                    "clubgto": 4,
+                },
+            ),
+            patch(
+                "bot.services.migration_recovery.auto_disable_migration_recovery",
+                new_callable=AsyncMock,
+            ) as mock_disable,
+        ):
             asyncio.run(_maybe_auto_disable_after_tick())
         mock_disable.assert_not_awaited()
 
-    @patch("bot.services.migration_recovery.get_migration_recovery_batch_size", return_value=1)
+    @patch(
+        "bot.services.migration_recovery.get_migration_recovery_batch_size",
+        return_value=1,
+    )
     @patch(
         "bot.services.migration_recovery.migration_recovery_active_club_keys",
         return_value=("creator_club", "clubgto"),
@@ -733,22 +766,28 @@ class TestHandleRateLimitAbort(unittest.TestCase):
             player_username=None,
         )
         resume_at = datetime(2026, 6, 21, 13, 1, 30, tzinfo=timezone.utc)
-        with patch(
-            "bot.services.migration_recovery.finalize_row",
-            return_value="failed",
-        ) as mock_finalize, patch(
-            "bot.services.migration_recovery.release_processing_rows",
-            return_value=1,
-        ) as mock_release, patch(
-            "bot.services.migration_recovery.pause_club_for_rate_limit",
-            return_value=resume_at,
-        ) as mock_pause, patch(
-            "bot.services.migration_recovery.auto_disable_migration_recovery",
-            new_callable=AsyncMock,
-        ) as mock_disable, patch(
-            "bot.services.slack_ops_notify.notify_slack_ops",
-            new_callable=AsyncMock,
-        ) as mock_slack:
+        with (
+            patch(
+                "bot.services.migration_recovery.finalize_row",
+                return_value="failed",
+            ) as mock_finalize,
+            patch(
+                "bot.services.migration_recovery.release_processing_rows",
+                return_value=1,
+            ) as mock_release,
+            patch(
+                "bot.services.migration_recovery.pause_club_for_rate_limit",
+                return_value=resume_at,
+            ) as mock_pause,
+            patch(
+                "bot.services.migration_recovery.auto_disable_migration_recovery",
+                new_callable=AsyncMock,
+            ) as mock_disable,
+            patch(
+                "bot.services.slack_ops_notify.notify_slack_ops",
+                new_callable=AsyncMock,
+            ) as mock_slack,
+        ):
             asyncio.run(
                 _handle_rate_limit_abort(
                     exc=FloodWaitAbortError(90, "InviteToChannelRequest"),
@@ -870,7 +909,9 @@ class TestMigrationRecoverySlackSummaryFirstDelay(unittest.TestCase):
                 "club_gc_settings.get_migration_recovery_slack_summary_interval_sec",
                 return_value=21600,
             ):
-                delay = compute_migration_recovery_slack_summary_first_delay_sec(now=now)
+                delay = compute_migration_recovery_slack_summary_first_delay_sec(
+                    now=now
+                )
         self.assertAlmostEqual(delay, 14400.0, places=3)
 
     def test_overdue_summary_uses_min_boot_delay(self) -> None:
@@ -886,7 +927,9 @@ class TestMigrationRecoverySlackSummaryFirstDelay(unittest.TestCase):
                 "club_gc_settings.get_migration_recovery_slack_summary_interval_sec",
                 return_value=21600,
             ):
-                delay = compute_migration_recovery_slack_summary_first_delay_sec(now=now)
+                delay = compute_migration_recovery_slack_summary_first_delay_sec(
+                    now=now
+                )
         self.assertEqual(delay, 60.0)
 
 
@@ -922,7 +965,9 @@ class TestRateLimitResume(unittest.TestCase):
 
     @patch("bot.services.migration_recovery._recovery_app", None)
     @patch("db.connection.get_db")
-    def test_pause_club_for_rate_limit_persists_map(self, mock_get_db: MagicMock) -> None:
+    def test_pause_club_for_rate_limit_persists_map(
+        self, mock_get_db: MagicMock
+    ) -> None:
         from datetime import datetime, timezone
 
         row = MagicMock()
@@ -932,13 +977,15 @@ class TestRateLimitResume(unittest.TestCase):
         mock_get_db.return_value.__enter__.return_value = session
         session.get.return_value = row
 
-        now = datetime(2026, 6, 21, 12, 0, 0, tzinfo=timezone.utc)
-        with patch(
-            "club_gc_settings.get_migration_recovery_rate_limit_cooldown_sec",
-            return_value=3600,
-        ), patch(
-            "bot.services.migration_recovery.compute_rate_limit_resume_at",
-            return_value=datetime(2026, 6, 21, 13, 1, 30, tzinfo=timezone.utc),
+        with (
+            patch(
+                "club_gc_settings.get_migration_recovery_rate_limit_cooldown_sec",
+                return_value=3600,
+            ),
+            patch(
+                "bot.services.migration_recovery.compute_rate_limit_resume_at",
+                return_value=datetime(2026, 6, 21, 13, 1, 30, tzinfo=timezone.utc),
+            ),
         ):
             resume_at = pause_club_for_rate_limit("round_table", 90)
         self.assertEqual(
@@ -970,13 +1017,17 @@ class TestRateLimitResume(unittest.TestCase):
         self.assertIn("creator_club", row.club_rate_limit_resume_at)
 
     @patch("db.connection.get_db")
-    def test_is_rate_limit_pause_pending_from_club_map(self, mock_get_db: MagicMock) -> None:
+    def test_is_rate_limit_pause_pending_from_club_map(
+        self, mock_get_db: MagicMock
+    ) -> None:
         from datetime import datetime, timezone
 
         row = MagicMock()
         row.auto_disabled_reason = None
         row.club_rate_limit_resume_at = {
-            "round_table": datetime(2026, 6, 21, 13, 0, 0, tzinfo=timezone.utc).isoformat(),
+            "round_table": datetime(
+                2026, 6, 21, 13, 0, 0, tzinfo=timezone.utc
+            ).isoformat(),
         }
         session = MagicMock()
         mock_get_db.return_value.__enter__.return_value = session
@@ -992,7 +1043,9 @@ class TestRateLimitResume(unittest.TestCase):
         row = MagicMock()
         row.auto_disabled_reason = None
         row.club_rate_limit_resume_at = {
-            "round_table": datetime(2026, 6, 21, 13, 0, 0, tzinfo=timezone.utc).isoformat(),
+            "round_table": datetime(
+                2026, 6, 21, 13, 0, 0, tzinfo=timezone.utc
+            ).isoformat(),
         }
         session = MagicMock()
         mock_get_db.return_value.__enter__.return_value = session
@@ -1017,20 +1070,41 @@ class TestRateLimitResume(unittest.TestCase):
 
 class TestTickAsyncPerClubFloodWait(unittest.IsolatedAsyncioTestCase):
     @patch("bot.services.migration_recovery.record_migration_recovery_tick")
-    @patch("bot.services.migration_recovery._maybe_auto_disable_after_tick", new_callable=AsyncMock)
-    @patch("bot.services.migration_recovery.maybe_clear_expired_club_rate_limits", return_value=[])
-    @patch("bot.services.migration_recovery.is_round_table_elevate_recovery_enabled", return_value=False)
+    @patch(
+        "bot.services.migration_recovery._maybe_auto_disable_after_tick",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "bot.services.migration_recovery.maybe_clear_expired_club_rate_limits",
+        return_value=[],
+    )
+    @patch(
+        "bot.services.migration_recovery.is_round_table_elevate_recovery_enabled",
+        return_value=False,
+    )
     @patch("bot.services.migration_recovery.set_flood_wait_policy")
     @patch("bot.services.migration_recovery.set_flood_wait_observer")
-    @patch("bot.services.migration_recovery.get_migration_recovery_invite_delay_sec", return_value=0.0)
-    @patch("bot.services.migration_recovery.get_migration_recovery_batch_size", return_value=2)
+    @patch(
+        "bot.services.migration_recovery.get_migration_recovery_invite_delay_sec",
+        return_value=0.0,
+    )
+    @patch(
+        "bot.services.migration_recovery.get_migration_recovery_batch_size",
+        return_value=2,
+    )
     @patch("bot.services.migration_recovery.is_club_rate_limited", return_value=False)
     @patch(
         "bot.services.migration_recovery.migration_recovery_active_club_keys",
         return_value=("round_table", "creator_club"),
     )
-    @patch("bot.services.migration_recovery.is_migration_recovery_enabled", return_value=True)
-    @patch("bot.services.migration_recovery._handle_rate_limit_abort", new_callable=AsyncMock)
+    @patch(
+        "bot.services.migration_recovery.is_migration_recovery_enabled",
+        return_value=True,
+    )
+    @patch(
+        "bot.services.migration_recovery._handle_rate_limit_abort",
+        new_callable=AsyncMock,
+    )
     @patch("bot.services.migration_recovery._process_row", new_callable=AsyncMock)
     @patch("bot.services.migration_recovery.claim_next_pending_row")
     async def test_flood_wait_on_first_club_continues_to_second(

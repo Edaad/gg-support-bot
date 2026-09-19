@@ -236,10 +236,7 @@ def _load_record_notify_context(record_id: int) -> dict[str, Any] | None:
         )
         if record is None:
             return None
-        names = [
-            (p.method_display_name or "").strip()
-            for p in (record.payments or [])
-        ]
+        names = [(p.method_display_name or "").strip() for p in (record.payments or [])]
         sends = [
             {"amount": s.amount, "created_at": s.created_at}
             for s in (record.money_sends or [])
@@ -379,4 +376,3 @@ async def notify_cashout_pushover_async(
             "cashout_pushover: async fan-out failed record_id=%s", record_id
         )
         return 0
-

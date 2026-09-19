@@ -76,8 +76,9 @@ def _cfg():
 class QuoteTests(unittest.IsolatedAsyncioTestCase):
     async def _quote(self, response, **kwargs):
         client = _FakeAsyncClient(response)
-        with patch.object(api, "load_config", return_value=_cfg()), patch.object(
-            api.httpx, "AsyncClient", return_value=client
+        with (
+            patch.object(api, "load_config", return_value=_cfg()),
+            patch.object(api.httpx, "AsyncClient", return_value=client),
         ):
             result = await api.quote_early_rakeback(
                 club_slug="Round-Table",
@@ -104,7 +105,9 @@ class QuoteTests(unittest.IsolatedAsyncioTestCase):
 
         method, url, kwargs = client.calls[0]
         self.assertEqual(method, "GET")
-        self.assertEqual(url, "https://aon.test/api/round-table/early-rakeback/bot/quote")
+        self.assertEqual(
+            url, "https://aon.test/api/round-table/early-rakeback/bot/quote"
+        )
         self.assertEqual(kwargs["headers"], {"X-Internal-Api-Key": "secret"})
         self.assertEqual(kwargs["params"]["rake"], "1000.00")
         self.assertEqual(kwargs["params"]["pl"], "-400.00")
@@ -126,9 +129,7 @@ class QuoteTests(unittest.IsolatedAsyncioTestCase):
         result, _client = await self._quote(_FakeResponse(200, payload))
 
         self.assertTrue(result.ok)
-        self.assertEqual(
-            result.quote.warnings, ("excluded_manual", "multiple_lists")
-        )
+        self.assertEqual(result.quote.warnings, ("excluded_manual", "multiple_lists"))
 
     async def test_ineligible_reasons_are_preserved(self) -> None:
         for reason in (
@@ -177,8 +178,9 @@ class QuoteTests(unittest.IsolatedAsyncioTestCase):
             async def __aexit__(self, *_exc):
                 return False
 
-        with patch.object(api, "load_config", return_value=_cfg()), patch.object(
-            api.httpx, "AsyncClient", return_value=_Boom()
+        with (
+            patch.object(api, "load_config", return_value=_cfg()),
+            patch.object(api.httpx, "AsyncClient", return_value=_Boom()),
         ):
             result = await api.quote_early_rakeback(
                 club_slug="round-table",
@@ -204,8 +206,9 @@ class QuoteTests(unittest.IsolatedAsyncioTestCase):
 class RecordTests(unittest.IsolatedAsyncioTestCase):
     async def _record(self, response, **kwargs):
         client = _FakeAsyncClient(response)
-        with patch.object(api, "load_config", return_value=_cfg()), patch.object(
-            api.httpx, "AsyncClient", return_value=client
+        with (
+            patch.object(api, "load_config", return_value=_cfg()),
+            patch.object(api.httpx, "AsyncClient", return_value=client),
         ):
             result = await api.record_early_rakeback(
                 club_slug="round-table",
@@ -309,7 +312,9 @@ class RecordTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_duplicate_nickname_conflict(self) -> None:
         result, _client = await self._record(
-            _FakeResponse(409, {"error": "nickname taken", "code": "duplicate_nickname"})
+            _FakeResponse(
+                409, {"error": "nickname taken", "code": "duplicate_nickname"}
+            )
         )
         self.assertFalse(result.ok)
         self.assertEqual(result.code, "duplicate_nickname")
@@ -329,8 +334,9 @@ class RecordTests(unittest.IsolatedAsyncioTestCase):
             async def __aexit__(self, *_exc):
                 return False
 
-        with patch.object(api, "load_config", return_value=_cfg()), patch.object(
-            api.httpx, "AsyncClient", return_value=_Boom()
+        with (
+            patch.object(api, "load_config", return_value=_cfg()),
+            patch.object(api.httpx, "AsyncClient", return_value=_Boom()),
         ):
             result = await api.record_early_rakeback(
                 club_slug="round-table",
@@ -347,8 +353,9 @@ class RecordTests(unittest.IsolatedAsyncioTestCase):
 class DeleteTests(unittest.IsolatedAsyncioTestCase):
     async def _delete(self, response, **kwargs):
         client = _FakeAsyncClient(response)
-        with patch.object(api, "load_config", return_value=_cfg()), patch.object(
-            api.httpx, "AsyncClient", return_value=client
+        with (
+            patch.object(api, "load_config", return_value=_cfg()),
+            patch.object(api.httpx, "AsyncClient", return_value=client),
         ):
             result = await api.delete_early_rakeback(
                 club_slug="round-table",
@@ -405,9 +412,10 @@ class DeleteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.code, api.CODE_NOT_BOT_RECORD)
 
     async def test_missing_reference_never_hits_the_network(self) -> None:
-        with patch.object(api, "load_config", return_value=_cfg()), patch.object(
-            api.httpx, "AsyncClient"
-        ) as client_cls:
+        with (
+            patch.object(api, "load_config", return_value=_cfg()),
+            patch.object(api.httpx, "AsyncClient") as client_cls,
+        ):
             result = await api.delete_early_rakeback(club_slug="round-table")
         self.assertFalse(result.ok)
         self.assertEqual(result.code, api.CODE_MISSING_RECORD_REFERENCE)
@@ -421,8 +429,9 @@ class DeleteTests(unittest.IsolatedAsyncioTestCase):
             async def __aexit__(self, *_exc):
                 return False
 
-        with patch.object(api, "load_config", return_value=_cfg()), patch.object(
-            api.httpx, "AsyncClient", return_value=_Boom()
+        with (
+            patch.object(api, "load_config", return_value=_cfg()),
+            patch.object(api.httpx, "AsyncClient", return_value=_Boom()),
         ):
             result = await api.delete_early_rakeback(
                 club_slug="round-table", idempotency_key="k"
@@ -449,7 +458,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg.base_url, "https://aon.test/api")
 
     def test_missing_key_is_unconfigured(self) -> None:
-        env = {"AON_BETA_BASE_URL": "https://aon.test/api", "AON_BETA_INTERNAL_API_KEY": ""}
+        env = {
+            "AON_BETA_BASE_URL": "https://aon.test/api",
+            "AON_BETA_INTERNAL_API_KEY": "",
+        }
         with patch.dict(api.os.environ, env, clear=False):
             self.assertIsNone(api.load_config())
 

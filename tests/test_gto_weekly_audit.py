@@ -208,7 +208,9 @@ class GtoWeeklyAuditUnitTestCase(unittest.TestCase):
             f"reconcile-all-clubs-{(MONDAY + timedelta(days=i)).isoformat()}.xlsx"
             for i in range(7)
         ]
-        self.assertEqual(validate_upload_set(MONDAY, names), expected_week_dates(MONDAY))
+        self.assertEqual(
+            validate_upload_set(MONDAY, names), expected_week_dates(MONDAY)
+        )
 
     def test_validate_wrong_count(self):
         with self.assertRaises(GtoWeeklyAuditError) as ctx:
@@ -291,7 +293,10 @@ class GtoWeeklyAuditUnitTestCase(unittest.TestCase):
         processed = wb["Processed"]
         data_rows = []
         for r in range(2, processed.max_row + 1):
-            if processed.cell(r, 6).value and processed.cell(r, 6).value != "Missing data":
+            if (
+                processed.cell(r, 6).value
+                and processed.cell(r, 6).value != "Missing data"
+            ):
                 data_rows.append(
                     (
                         processed.cell(r, 2).value,
@@ -604,7 +609,11 @@ class PartnerWeeklyAuditApiTestCase(unittest.TestCase):
         return [
             (
                 "files",
-                (name, raw, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                (
+                    name,
+                    raw,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ),
             )
             for name, raw in files
         ]

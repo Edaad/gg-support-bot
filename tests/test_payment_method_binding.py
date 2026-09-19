@@ -29,7 +29,6 @@ from bot.services.payment_method_binding import (
     format_first_time_zelle_amount_setup_message,
     format_first_time_payment_destination_message,
     format_first_time_venmo_setup_message,
-    get_pending_bind_attempt,
     get_last_bound_deposit_at,
     match_pending_memo_setup_in_session,
     unbind_chat_from_all_methods,
@@ -80,8 +79,8 @@ class TestBindModeForMethod(unittest.TestCase):
         with patch("bot.services.payment_method_binding.get_db") as mock_get_db:
             session = MagicMock()
             mock_get_db.return_value.__enter__.return_value = session
-            session.query.return_value.filter_by.return_value.one_or_none.return_value = (
-                _mock_method_row(enabled=True, mode=BIND_KIND_MEMO_EMOJI)
+            session.query.return_value.filter_by.return_value.one_or_none.return_value = _mock_method_row(
+                enabled=True, mode=BIND_KIND_MEMO_EMOJI
             )
             self.assertEqual(
                 bind_mode_for_method("venmo", club_id=2),
@@ -92,8 +91,8 @@ class TestBindModeForMethod(unittest.TestCase):
         with patch("bot.services.payment_method_binding.get_db") as mock_get_db:
             session = MagicMock()
             mock_get_db.return_value.__enter__.return_value = session
-            session.query.return_value.filter_by.return_value.one_or_none.return_value = (
-                _mock_method_row(enabled=False, mode=BIND_KIND_SPECIAL_AMOUNT)
+            session.query.return_value.filter_by.return_value.one_or_none.return_value = _mock_method_row(
+                enabled=False, mode=BIND_KIND_SPECIAL_AMOUNT
             )
             self.assertIsNone(bind_mode_for_method("venmo", club_id=2))
 
@@ -107,8 +106,8 @@ class TestBindModeForMethod(unittest.TestCase):
         with patch("bot.services.payment_method_binding.get_db") as mock_get_db:
             session = MagicMock()
             mock_get_db.return_value.__enter__.return_value = session
-            session.query.return_value.filter_by.return_value.one_or_none.return_value = (
-                _mock_method_row(enabled=True, mode=BIND_KIND_MEMO_EMOJI)
+            session.query.return_value.filter_by.return_value.one_or_none.return_value = _mock_method_row(
+                enabled=True, mode=BIND_KIND_MEMO_EMOJI
             )
             self.assertIsNone(bind_mode_for_method("zelle", club_id=2))
 
@@ -116,8 +115,8 @@ class TestBindModeForMethod(unittest.TestCase):
         with patch("bot.services.payment_method_binding.get_db") as mock_get_db:
             session = MagicMock()
             mock_get_db.return_value.__enter__.return_value = session
-            session.query.return_value.filter_by.return_value.one_or_none.return_value = (
-                _mock_method_row(enabled=True, mode=BIND_KIND_MEMO_EMOJI)
+            session.query.return_value.filter_by.return_value.one_or_none.return_value = _mock_method_row(
+                enabled=True, mode=BIND_KIND_MEMO_EMOJI
             )
             self.assertEqual(
                 bind_mode_for_method("cashapp", club_id=2),
@@ -127,17 +126,13 @@ class TestBindModeForMethod(unittest.TestCase):
 
 class TestUnbind(unittest.TestCase):
     def test_unbind_delegates(self):
-        with patch(
-            "bot.services.payment_method_binding.get_db"
-        ) as mock_get_db:
+        with patch("bot.services.payment_method_binding.get_db") as mock_get_db:
             session = MagicMock()
             mock_get_db.return_value.__enter__.return_value = session
             row = MagicMock()
             row.telegram_chat_id = -1001
             row.payment_method_slug = "venmo"
-            session.query.return_value.filter_by.return_value.one_or_none.return_value = (
-                row
-            )
+            session.query.return_value.filter_by.return_value.one_or_none.return_value = row
             self.assertTrue(unbind_chat_from_method(-1001, "venmo"))
             session.delete.assert_called_once_with(row)
 
@@ -382,9 +377,7 @@ class TestMemoSetupMessage(unittest.TestCase):
     def test_zelle_payment_destination(self):
         text = format_first_time_payment_destination_message(
             payment_method_slug="zelle",
-            variant_response_text=(
-                "Zelle Email: a@b.com\nZelle Name: ACME INC\n"
-            ),
+            variant_response_text=("Zelle Email: a@b.com\nZelle Name: ACME INC\n"),
         )
         self.assertIn("a@b.com", text)
         self.assertIn("ACME", text)
@@ -402,9 +395,7 @@ class TestMemoSetupMessage(unittest.TestCase):
     def test_zelle_memo_html_legacy_combined(self):
         text = format_first_time_memo_setup_message(
             payment_method_slug="zelle",
-            variant_response_text=(
-                "Zelle Email: a@b.com\nZelle Name: ACME INC\n"
-            ),
+            variant_response_text=("Zelle Email: a@b.com\nZelle Name: ACME INC\n"),
         )
         self.assertIn("FIRST-TIME ZELLE SETUP", text)
         self.assertIn("a@b.com", text)
@@ -473,9 +464,7 @@ class TestAllocateSetupAmount(unittest.TestCase):
     def test_deposit_too_small_raises(self):
         session = MagicMock()
         with self.assertRaises(ValueError):
-            allocate_setup_amount_cents(
-                session, variant_id=1, deposit_amount_cents=1
-            )
+            allocate_setup_amount_cents(session, variant_id=1, deposit_amount_cents=1)
 
 
 class TestSetupMessage(unittest.TestCase):
@@ -627,7 +616,9 @@ class TestZelleRecipientHelpers(unittest.TestCase):
         text = "Zelle: 310-567-0961"
         self.assertEqual(extract_zelle_recipient_from_text(text), "3105670961")
         self.assertEqual(normalize_zelle_recipient("310-567-0961"), "3105670961")
-        self.assertEqual(normalize_zelle_recipient("Pay@Example.com"), "pay@example.com")
+        self.assertEqual(
+            normalize_zelle_recipient("Pay@Example.com"), "pay@example.com"
+        )
 
     def test_extract_zelle_recipient_bare_zelle_email(self):
         text = (
@@ -676,7 +667,9 @@ class TestZelleRecipientHelpers(unittest.TestCase):
     def test_zelle_memo_setup_requires_recipient_match(self):
         from datetime import datetime, timedelta, timezone
 
-        from bot.services.payment_method_binding import match_pending_memo_setup_in_session
+        from bot.services.payment_method_binding import (
+            match_pending_memo_setup_in_session,
+        )
         from db.models import PaymentMethodBindAttempt
 
         attempt = PaymentMethodBindAttempt(

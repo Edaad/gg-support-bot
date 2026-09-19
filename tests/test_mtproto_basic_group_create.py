@@ -206,9 +206,7 @@ class TestExportInviteLink(unittest.IsolatedAsyncioTestCase):
             new_callable=AsyncMock,
             return_value=inv,
         ) as mock_retry:
-            link = await _export_invite_link(
-                client, MagicMock(), revoke_previous=True
-            )
+            link = await _export_invite_link(client, MagicMock(), revoke_previous=True)
 
         self.assertEqual(link, "https://t.me/+fresh")
         client.export_chat_invite_link.assert_not_awaited()
@@ -239,10 +237,13 @@ class TestReloadGroupEntityAfterInvites(unittest.IsolatedAsyncioTestCase):
         client = MagicMock()
         client.get_entity = AsyncMock(side_effect=[old_chat, new_channel])
 
-        with patch(
-            "telethon.utils.get_peer_id",
-            side_effect=lambda ent: -100999001 if ent is new_channel else -555,
-        ), patch("bot.handlers.groups._mark_post_gc_bundle_window") as mark:
+        with (
+            patch(
+                "telethon.utils.get_peer_id",
+                side_effect=lambda ent: -100999001 if ent is new_channel else -555,
+            ),
+            patch("bot.handlers.groups._mark_post_gc_bundle_window") as mark,
+        ):
             entity, chat_id = await reload_group_entity_after_invites(
                 client, old_chat, -555
             )

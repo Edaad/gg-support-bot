@@ -117,7 +117,9 @@ def _method_row(club: Club, method: PaymentMethod) -> dict[str, Any]:
     }
 
 
-def _tier_row(club: Club, method: PaymentMethod, tier: PaymentMethodTier) -> dict[str, Any]:
+def _tier_row(
+    club: Club, method: PaymentMethod, tier: PaymentMethodTier
+) -> dict[str, Any]:
     base = _method_row(club, method)
     base.update(
         {
@@ -156,9 +158,13 @@ def _variant_row(
             "variant_id": variant.id,
             "variant_label": variant.label,
             "variant_weight": variant.weight,
-            "variant_stripe": "yes" if link is True else ("no" if link is False else ""),
+            "variant_stripe": "yes"
+            if link is True
+            else ("no" if link is False else ""),
             "response_type": variant.response_type or "text",
-            "response_preview": _preview(variant.response_text or variant.response_caption),
+            "response_preview": _preview(
+                variant.response_text or variant.response_caption
+            ),
             "stripe_provider": variant.group_checkout_provider or "",
             "hyperlink_text": variant.hyperlink_text or "",
         }
@@ -173,7 +179,9 @@ def build_rows(session) -> list[dict[str, Any]]:
         methods = (
             session.query(PaymentMethod)
             .filter_by(club_id=club.id)
-            .order_by(PaymentMethod.direction, PaymentMethod.sort_order, PaymentMethod.id)
+            .order_by(
+                PaymentMethod.direction, PaymentMethod.sort_order, PaymentMethod.id
+            )
             .all()
         )
         for method in methods:
@@ -192,7 +200,11 @@ def build_rows(session) -> list[dict[str, Any]]:
             variants = (
                 session.query(MethodVariant)
                 .filter_by(method_id=method.id)
-                .order_by(MethodVariant.tier_id.nullsfirst(), MethodVariant.sort_order, MethodVariant.id)
+                .order_by(
+                    MethodVariant.tier_id.nullsfirst(),
+                    MethodVariant.sort_order,
+                    MethodVariant.id,
+                )
                 .all()
             )
             for variant in variants:
@@ -232,7 +244,9 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         kinds[r["row_kind"]] = kinds.get(r["row_kind"], 0) + 1
 
     print(f"Wrote {out}")
-    print(f"  {len(rows)} rows total: {kinds.get('method', 0)} methods, {kinds.get('tier', 0)} tiers, {kinds.get('variant', 0)} variants")
+    print(
+        f"  {len(rows)} rows total: {kinds.get('method', 0)} methods, {kinds.get('tier', 0)} tiers, {kinds.get('variant', 0)} variants"
+    )
 
 
 if __name__ == "__main__":

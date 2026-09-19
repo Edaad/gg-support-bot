@@ -7,11 +7,18 @@ import os
 import sys
 import warnings
 
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    CallbackQueryHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 from telegram.warnings import PTBUserWarning
 
-warnings.filterwarnings("ignore", message=r".*CallbackQueryHandler.*", category=PTBUserWarning)
+warnings.filterwarnings(
+    "ignore", message=r".*CallbackQueryHandler.*", category=PTBUserWarning
+)
 
 from db.connection import init_engine
 from db.models import Base
@@ -86,14 +93,12 @@ def run_notification_bot(token: str | None = None) -> None:
     engine = init_engine()
     Base.metadata.create_all(engine)
 
-    app = (
-        ApplicationBuilder()
-        .token(token)
-        .build()
-    )
+    app = ApplicationBuilder().token(token).build()
 
     app.add_handler(get_report_handler())
-    app.add_handler(CallbackQueryHandler(payment_bind_callback_handler, pattern=r"^pb:"))
+    app.add_handler(
+        CallbackQueryHandler(payment_bind_callback_handler, pattern=r"^pb:")
+    )
     app.add_handler(
         MessageHandler(
             filters.REPLY & filters.TEXT & ~filters.COMMAND,

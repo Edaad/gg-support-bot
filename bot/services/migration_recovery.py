@@ -39,9 +39,7 @@ logger = logging.getLogger(__name__)
 RECOVERY_CLUB_KEYS = MIGRATION_RECOVERY_CLUB_KEYS
 ELEVATE_CATCHUP_PAUSE_KEY = "elevate_catchup"
 
-TERMINAL_STATUSES = frozenset(
-    {"complete", "privacy_blocked", "failed", "skipped"}
-)
+TERMINAL_STATUSES = frozenset({"complete", "privacy_blocked", "failed", "skipped"})
 
 HIGH_PRIORITY_TIERS = (1, 2)
 LOW_PRIORITY_TIERS = (3,)
@@ -56,6 +54,7 @@ CLUB_RECOVERY_PRIORITY_TIERS: dict[str, tuple[int, ...]] = {
 
 def recovery_priority_tiers_for_club(club_key: str) -> tuple[int, ...]:
     return CLUB_RECOVERY_PRIORITY_TIERS.get(club_key, HIGH_PRIORITY_TIERS)
+
 
 _FLOOD_WAIT_ABORT_RE = re.compile(
     r"FloodWait (\d+)s during ([^\s]+(?:\:\d+)?)",
@@ -142,7 +141,9 @@ def consumes_direct_add_quota(result: ReaddGroupResult) -> bool:
     return True
 
 
-def should_skip_admin_dm_for_result(result: ReaddGroupResult, terminal_status: str) -> bool:
+def should_skip_admin_dm_for_result(
+    result: ReaddGroupResult, terminal_status: str
+) -> bool:
     return terminal_status == "complete" and is_already_in_only_result(result)
 
 
@@ -174,7 +175,9 @@ def map_readd_status(result: ReaddGroupResult) -> tuple[str, str | None]:
     return "failed", result.status
 
 
-def flood_wait_abort_from_readd_result(result: ReaddGroupResult) -> FloodWaitAbortError | None:
+def flood_wait_abort_from_readd_result(
+    result: ReaddGroupResult,
+) -> FloodWaitAbortError | None:
     """Parse a swallowed FloodWait abort from readd_group failure blobs."""
 
     for blob in (result.error, "; ".join(result.failed)):
@@ -322,7 +325,9 @@ def should_persist_resolved_player(
     """True when re-add resolved a different player id and invite succeeded."""
     if result.resolved_player_id is None:
         return False
-    if stored_player_id is not None and int(result.resolved_player_id) == int(stored_player_id):
+    if stored_player_id is not None and int(result.resolved_player_id) == int(
+        stored_player_id
+    ):
         return False
     return bool(result.added or result.already_member)
 
@@ -609,7 +614,13 @@ def should_notify_rt_ops(
             [pre_error, result.error, "; ".join(result.failed[:5])],
         )
     ).lower()
-    rate_markers = ("floodwait", "flood wait", "retryafter", "rate limit", "too many requests")
+    rate_markers = (
+        "floodwait",
+        "flood wait",
+        "retryafter",
+        "rate limit",
+        "too many requests",
+    )
     return any(marker in err_blob for marker in rate_markers)
 
 
@@ -778,9 +789,7 @@ def _parse_club_rate_limit_map(raw: object | None) -> dict[str, datetime]:
                     continue
                 if text.endswith("Z"):
                     text = text[:-1] + "+00:00"
-                parsed[str(club_key)] = _ensure_aware_dt(
-                    datetime.fromisoformat(text)
-                )
+                parsed[str(club_key)] = _ensure_aware_dt(datetime.fromisoformat(text))
         except (TypeError, ValueError):
             logger.warning(
                 "migration_recovery: invalid club_rate_limit_resume_at entry "
@@ -1348,7 +1357,11 @@ def peek_next_recovery_rows(limit: int = 10) -> list[RecoveryRow]:
     scope_filters = [
         (
             (MigratedGroupRecovery.club_key == club_key)
-            & (MigratedGroupRecovery.priority_tier.in_(recovery_priority_tiers_for_club(club_key)))
+            & (
+                MigratedGroupRecovery.priority_tier.in_(
+                    recovery_priority_tiers_for_club(club_key)
+                )
+            )
         )
         for club_key in active_clubs
     ]
@@ -1761,7 +1774,9 @@ async def _process_elevate_catchup() -> tuple[str, RecoveryRow | None]:
 
     rt_client = get_listener_client("round_table")
     if rt_client is None or not rt_client.is_connected():
-        logger.warning("migration_recovery: elevate catch-up skipped (RT listener down)")
+        logger.warning(
+            "migration_recovery: elevate catch-up skipped (RT listener down)"
+        )
         return "failed", row
 
     invite_link = _load_row_invite_link(row.id)
@@ -1856,9 +1871,7 @@ async def tick_async() -> dict[str, int]:
                 try:
                     status, result = await _process_row(row)
                 except FloodWaitAbortError as exc:
-                    to_release = [
-                        rid for rid in club_processing_ids if rid != row.id
-                    ]
+                    to_release = [rid for rid in club_processing_ids if rid != row.id]
                     await _handle_rate_limit_abort(
                         exc=exc,
                         row=row,
@@ -2246,9 +2259,7 @@ def format_recovery_slack_summary(
             f"({entry.done}/{entry.total})"
         )
         if entry.in_group_pending:
-            lines.append(
-                f"  in group pending queue: {entry.in_group_pending}"
-            )
+            lines.append(f"  in group pending queue: {entry.in_group_pending}")
         lines.append(
             "  direct added: "
             f"{entry.direct_added} | joined via link: {entry.invite_link} | "
@@ -2264,9 +2275,7 @@ async def post_slack_recovery_summary() -> bool:
     if _recovery_app is None:
         logger.warning("migration_recovery: slack summary skipped (no app)")
         return False
-    logger.info(
-        "migration_recovery: MTProto membership sync + slack summary starting"
-    )
+    logger.info("migration_recovery: MTProto membership sync + slack summary starting")
     stats = await compute_recovery_slack_stats()
     if not stats:
         logger.info("migration_recovery: slack summary skipped (no tier 1+2 rows)")
@@ -2391,9 +2400,7 @@ def format_recovery_queue_snapshot(
             f"  tier 1+2 pending: {entry.tier12_pending} | "
             f"tier 3 pending: {entry.tier3_pending} | processing: {entry.processing}"
         )
-        lines.append(
-            f"  skipped: {entry.skipped} | failed: {entry.failed}"
-        )
+        lines.append(f"  skipped: {entry.skipped} | failed: {entry.failed}")
         lines.append("")
     return "\n".join(lines).rstrip()
 

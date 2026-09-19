@@ -6,7 +6,7 @@ import io
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Callable, Literal
+from typing import Callable, Literal
 
 from openpyxl import Workbook
 from openpyxl.comments import Comment
@@ -182,7 +182,9 @@ def _ordinal_day(day: int) -> str:
     return f"{day}{suffix}"
 
 
-def _fmt_stripe_audit_time(value: datetime | None, club_slug: str = "round-table") -> str:
+def _fmt_stripe_audit_time(
+    value: datetime | None, club_slug: str = "round-table"
+) -> str:
     if value is None:
         return ""
     dt = _to_audit_display_local(value)
@@ -193,7 +195,9 @@ def _fmt_stripe_audit_time(value: datetime | None, club_slug: str = "round-table
     return f"{month} {day} {year}, {clock}"
 
 
-def _fmt_manual_audit_time(value: datetime | None, club_slug: str = "round-table") -> str:
+def _fmt_manual_audit_time(
+    value: datetime | None, club_slug: str = "round-table"
+) -> str:
     if value is None:
         return ""
     dt = _to_audit_display_local(value)
@@ -264,7 +268,9 @@ def _manual_club_name(data: dict, club_names: dict[int, str]) -> str:
 
 
 def _club_name_map(session: Session) -> dict[int, str]:
-    return {int(row.id): str(row.name) for row in session.query(Club.id, Club.name).all()}
+    return {
+        int(row.id): str(row.name) for row in session.query(Club.id, Club.name).all()
+    }
 
 
 def _club_name(club_names: dict[int, str], club_id: int | None) -> str:
@@ -840,7 +846,9 @@ def _tagged_manual_row(
     if tag_field == "zelle_recipient" and account_tag:
         account_tag = canonicalize_zelle_recipient(account_tag) or account_tag
     time_value = (
-        crypto_occurred_at(data) if tag_field == "token_symbol" else data.get("created_at")
+        crypto_occurred_at(data)
+        if tag_field == "token_symbol"
+        else data.get("created_at")
     )
     return TaggedManualAuditRow(
         amount_usd=amount_usd,
@@ -944,7 +952,9 @@ def _fetch_bonus_rows(
     return out
 
 
-def _manual_row(session: Session, data: dict, club_names: dict[int, str]) -> ManualAuditRow:
+def _manual_row(
+    session: Session, data: dict, club_names: dict[int, str]
+) -> ManualAuditRow:
     amount = data["amount_usd"]
     if isinstance(amount, Decimal):
         amount_usd = float(amount)

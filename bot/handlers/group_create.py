@@ -9,7 +9,11 @@ from telegram import Update
 from telegram.constants import ChatType
 from telegram.ext import CommandHandler, ContextTypes, filters
 
-from club_gc_settings import ClubGcConfig, get_club_config_for_admin, get_tg_mtproto_credentials
+from club_gc_settings import (
+    ClubGcConfig,
+    get_club_config_for_admin,
+    get_tg_mtproto_credentials,
+)
 from bot.handlers.groups import send_post_gc_intro_bundle
 from bot.services.club import ensure_group_chat_linked
 from bot.services.mtproto_group_create import (
@@ -55,7 +59,9 @@ def parse_gc_player_args(args: list[str]) -> str | None:
 
 def _player_fields(player_user: Any) -> tuple[int, str | None, str | None]:
     uid = int(player_user.id)
-    uname = player_user.username.strip() if getattr(player_user, "username", None) else None
+    uname = (
+        player_user.username.strip() if getattr(player_user, "username", None) else None
+    )
     dname = (
         f"{getattr(player_user, 'first_name', '') or ''} {getattr(player_user, 'last_name', '') or ''}"
     ).strip() or None
@@ -212,7 +218,9 @@ async def _run_existing_player_gc(
         listener_label="bot /gc",
         trigger="bot_gc",
     )
-    title = (getattr(existing, "telegram_chat_title", None) or "").strip() or "(untitled)"
+    title = (
+        getattr(existing, "telegram_chat_title", None) or ""
+    ).strip() or "(untitled)"
     await update.message.reply_text(
         "This player already has a support group — invite checked and player DM sent.\n\n"
         f"{title}\n"
@@ -220,14 +228,18 @@ async def _run_existing_player_gc(
     )
 
 
-async def _resolve_outcome_invite_link(cfg: ClubGcConfig, outcome: MtProtoGroupOutcome) -> None:
+async def _resolve_outcome_invite_link(
+    cfg: ClubGcConfig, outcome: MtProtoGroupOutcome
+) -> None:
     """Ensure ``outcome.invite_link`` is valid before DM/export; refresh via API if expired."""
     cid = outcome.telegram_chat_id
     if cid is None or outcome.player_direct_add_ok:
         return
 
     try:
-        from bot.services.group_chat_invite_links import resolve_support_group_invite_link
+        from bot.services.group_chat_invite_links import (
+            resolve_support_group_invite_link,
+        )
         from bot.services.mtproto_dm_gc_listener import get_listener_client
 
         client = get_listener_client(cfg.club_key)
@@ -296,7 +308,9 @@ async def _finish_gc_creation(
     )
 
     if persist_err == "duplicate_club_player" and player_user is not None:
-        existing = fetch_support_group_chat_by_club_player(cfg.club_key, int(player_user.id))
+        existing = fetch_support_group_chat_by_club_player(
+            cfg.club_key, int(player_user.id)
+        )
         if existing:
             await _run_existing_player_gc(update, cfg, existing, player_user)
             return
@@ -304,7 +318,9 @@ async def _finish_gc_creation(
     cid = outcome.telegram_chat_id
     dash_club_id = cfg.link_club_id
     if cid is not None:
-        linked = ensure_group_chat_linked(cid, dash_club_id, outcome.telegram_chat_title)
+        linked = ensure_group_chat_linked(
+            cid, dash_club_id, outcome.telegram_chat_title
+        )
         if not linked:
             logger.warning(
                 "/gc ensure_group_chat_linked failed chat_id=%s dashboard_club_id=%s (inactive club or bad id)",
@@ -364,7 +380,9 @@ async def gc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         or update.effective_chat.type != ChatType.PRIVATE
     ):
         if update.effective_message:
-            await update.effective_message.reply_text("Use /gc in a private chat with this bot.")
+            await update.effective_message.reply_text(
+                "Use /gc in a private chat with this bot."
+            )
         return
 
     commander = update.effective_user.id
@@ -382,13 +400,17 @@ async def gc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player_marker = parse_gc_player_args(context.args or [])
     player_user = None
     if player_marker:
-        player_user, resolve_err = await resolve_telegram_user_marker(cfg, player_marker)
+        player_user, resolve_err = await resolve_telegram_user_marker(
+            cfg, player_marker
+        )
         if player_user is None:
             await update.message.reply_text(
                 f"Could not resolve player {player_marker} ({resolve_err or 'unknown'}).\n\n{_GC_USAGE}"
             )
             return
-        existing = fetch_support_group_chat_by_club_player(cfg.club_key, int(player_user.id))
+        existing = fetch_support_group_chat_by_club_player(
+            cfg.club_key, int(player_user.id)
+        )
         if existing:
             await _run_existing_player_gc(update, cfg, existing, player_user)
             return
@@ -420,7 +442,9 @@ async def gc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         hint = type(e).__name__
         logger.exception("MTProto group creation failed (%s)", hint)
         if hint == "ChannelsTooMuchError":
-            from bot.services.mtproto_track_contact import notify_club_gc_channels_too_much
+            from bot.services.mtproto_track_contact import (
+                notify_club_gc_channels_too_much,
+            )
 
             player_label = player_marker or "(generic group)"
             await notify_club_gc_channels_too_much(

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from telethon.tl.types import Channel, Chat, User
+from telethon.tl.types import Chat, User
 
 from bot.handlers.commands import delete_handler
 from bot.services.mtproto_group_delete import (
@@ -37,9 +37,7 @@ class TestParseDeleteConfirmCommand(unittest.TestCase):
 class TestResolveClubIdForDelete(unittest.TestCase):
     @patch("bot.services.mtproto_group_delete.fetch_support_group_chat_row_for_chat")
     @patch("bot.services.mtproto_group_delete.get_club_for_chat")
-    def test_groups_table_match(
-        self, mock_get_club, mock_fetch_row
-    ) -> None:
+    def test_groups_table_match(self, mock_get_club, mock_fetch_row) -> None:
         cfg = MagicMock(club_key="round_table", link_club_id=2)
         mock_get_club.return_value = 2
 
@@ -48,9 +46,7 @@ class TestResolveClubIdForDelete(unittest.TestCase):
 
     @patch("bot.services.mtproto_group_delete.fetch_support_group_chat_row_for_chat")
     @patch("bot.services.mtproto_group_delete.get_club_for_chat")
-    def test_support_group_fallback(
-        self, mock_get_club, mock_fetch_row
-    ) -> None:
+    def test_support_group_fallback(self, mock_get_club, mock_fetch_row) -> None:
         cfg = MagicMock(club_key="round_table", link_club_id=2)
         mock_get_club.return_value = None
         row = MagicMock(club_key="round_table")
@@ -60,9 +56,7 @@ class TestResolveClubIdForDelete(unittest.TestCase):
 
     @patch("bot.services.mtproto_group_delete.fetch_support_group_chat_row_for_chat")
     @patch("bot.services.mtproto_group_delete.get_club_for_chat")
-    def test_wrong_club_rejected(
-        self, mock_get_club, mock_fetch_row
-    ) -> None:
+    def test_wrong_club_rejected(self, mock_get_club, mock_fetch_row) -> None:
         cfg = MagicMock(club_key="round_table", link_club_id=2)
         mock_get_club.return_value = 99
         mock_fetch_row.return_value = None
@@ -174,7 +168,9 @@ class TestHandleGroupDeleteOutgoing(unittest.IsolatedAsyncioTestCase):
 
 
 class TestBotApiDeleteHandlerSkipsConfirm(unittest.IsolatedAsyncioTestCase):
-    async def test_delete_confirm_does_not_reply_as_missing_custom_command(self) -> None:
+    async def test_delete_confirm_does_not_reply_as_missing_custom_command(
+        self,
+    ) -> None:
         message = MagicMock()
         message.text = "/delete confirm"
         message.reply_text = AsyncMock()

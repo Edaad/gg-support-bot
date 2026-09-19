@@ -22,7 +22,9 @@ STMTS = [
 ]
 
 
-def _method_type_slug(union_type: str | None, name: str | None, slug: str | None) -> str | None:
+def _method_type_slug(
+    union_type: str | None, name: str | None, slug: str | None
+) -> str | None:
     if union_type:
         try:
             return validate_union_method_type(str(union_type))
@@ -57,7 +59,9 @@ def main() -> None:
             old_slug = (row[1] or "").strip().lower()
             type_slug = _method_type_slug(row[2], row[3], old_slug)
             if not type_slug:
-                print(f"  skip id={method_id}: could not resolve union type for slug={old_slug!r}")
+                print(
+                    f"  skip id={method_id}: could not resolve union type for slug={old_slug!r}"
+                )
                 continue
 
             parsed = parse_pool_pay_slug(old_slug)

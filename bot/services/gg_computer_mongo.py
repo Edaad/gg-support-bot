@@ -6,9 +6,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
-WEEKLY_CLUB_SLUGS = frozenset(
-    {"round-table", "aces-table", "creator-club", "clubgto"}
-)
+WEEKLY_CLUB_SLUGS = frozenset({"round-table", "aces-table", "creator-club", "clubgto"})
 
 LEGACY_CLUB_TO_WEEKLY = {
     "aces-tables": "aces-table",
@@ -66,7 +64,9 @@ def _to_iso(value: Any) -> Optional[str]:
     return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def format_player_details_row(doc: dict[str, Any], club_slug: str) -> Optional[dict[str, Any]]:
+def format_player_details_row(
+    doc: dict[str, Any], club_slug: str
+) -> Optional[dict[str, Any]]:
     """Normalize one Mongo player_details doc for a target weekly club slug."""
     gg_id = doc.get("gg_id")
     if not isinstance(gg_id, str) or not gg_id.strip():
@@ -100,7 +100,9 @@ def format_player_details_row(doc: dict[str, Any], club_slug: str) -> Optional[d
     }
 
 
-def list_player_details_rows_for_club(docs: list[dict[str, Any]], club_slug: str) -> List[dict[str, Any]]:
+def list_player_details_rows_for_club(
+    docs: list[dict[str, Any]], club_slug: str
+) -> List[dict[str, Any]]:
     slug = normalize_weekly_club_slug(club_slug)
     if not slug:
         raise ValueError(f"Unknown club slug: {club_slug!r}")
@@ -142,7 +144,14 @@ def list_player_details_from_mongo(club_slug: str) -> List[dict[str, Any]]:
         docs = list(
             coll.find(
                 player_details_club_filter(slug),
-                {"gg_id": 1, "nickname": 1, "agent": 1, "updated_at": 1, "clubId": 1, "clubs": 1},
+                {
+                    "gg_id": 1,
+                    "nickname": 1,
+                    "agent": 1,
+                    "updated_at": 1,
+                    "clubId": 1,
+                    "clubs": 1,
+                },
             )
         )
     finally:

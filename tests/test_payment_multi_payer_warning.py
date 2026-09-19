@@ -145,7 +145,9 @@ class TestMaybeWarnMultiPayer(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs.get("chat_id"), -100999)
         self.assertIn("DO NOT ADD CHIPS", send_tg.await_args.args[0])
         send_slack.assert_awaited_once()
-        self.assertEqual(send_slack.await_args.kwargs.get("source"), "multi_payer_warning")
+        self.assertEqual(
+            send_slack.await_args.kwargs.get("source"), "multi_payer_warning"
+        )
         self.assertIn("3 different accounts", send_slack.await_args.args[0])
 
     async def test_skips_test_payments(self) -> None:

@@ -21,7 +21,9 @@ class GetClubForChatTests(unittest.TestCase):
         )
         self.Session = sessionmaker(bind=self.engine)
         session = self.Session()
-        session.add(Club(id=2, name="Round Table", telegram_user_id=1001, is_active=True))
+        session.add(
+            Club(id=2, name="Round Table", telegram_user_id=1001, is_active=True)
+        )
         session.add(Group(chat_id=-5287778428, club_id=2, name="RT / 1 / Test"))
         session.commit()
         session.close()
@@ -58,9 +60,7 @@ class GetClubForChatTests(unittest.TestCase):
         session = MagicMock()
         session.query.return_value.filter_by.return_value.first.return_value = None
         session.query.return_value.filter.return_value.first.return_value = None
-        session.query.return_value.filter.return_value.order_by.return_value.first.return_value = (
-            sgc
-        )
+        session.query.return_value.filter.return_value.order_by.return_value.first.return_value = sgc
         ctx = MagicMock()
         ctx.__enter__.return_value = session
         ctx.__exit__.return_value = False

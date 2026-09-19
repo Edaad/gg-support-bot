@@ -96,7 +96,9 @@ def _override_db(db: MagicMock):
 
 class PaymentsGtoAccessTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.env_patch = patch.dict(os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False)
+        self.env_patch = patch.dict(
+            os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False
+        )
         self.env_patch.start()
         self.app = FastAPI()
         self.app.include_router(payments_routes.router)
@@ -121,7 +123,9 @@ class PaymentsGtoAccessTests(unittest.TestCase):
 
 class AllPaymentsGtoScopeTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.env_patch = patch.dict(os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False)
+        self.env_patch = patch.dict(
+            os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False
+        )
         self.env_patch.start()
         self.gto = _gto_club(7)
         self.db = _db_with_gto(self.gto)
@@ -140,12 +144,15 @@ class AllPaymentsGtoScopeTests(unittest.TestCase):
             total_amount_cents=0,
             total_amount_usd=Decimal("0"),
         )
-        with patch(
-            "api.routes.all_payments.fetch_unified_page",
-            return_value=([], 0, summary),
-        ) as mock_fetch, patch(
-            "api.routes.all_payments._get_club_or_404",
-            return_value=self.gto,
+        with (
+            patch(
+                "api.routes.all_payments.fetch_unified_page",
+                return_value=([], 0, summary),
+            ) as mock_fetch,
+            patch(
+                "api.routes.all_payments._get_club_or_404",
+                return_value=self.gto,
+            ),
         ):
             client = TestClient(self.app)
             resp = client.get("/api/payments/all/payments")
@@ -160,7 +167,9 @@ class AllPaymentsGtoScopeTests(unittest.TestCase):
 
 class ClubsGtoScopeTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.env_patch = patch.dict(os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False)
+        self.env_patch = patch.dict(
+            os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False
+        )
         self.env_patch.start()
         self.gto = _gto_club(7)
         self.other = MagicMock()
@@ -205,7 +214,9 @@ class ClubsGtoScopeTests(unittest.TestCase):
 
 class PoolPayRoleAccessTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.env_patch = patch.dict(os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False)
+        self.env_patch = patch.dict(
+            os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False
+        )
         self.env_patch.start()
         self.app = FastAPI()
         self.app.include_router(mdr_routes.router)
@@ -222,9 +233,7 @@ class PoolPayRoleAccessTests(unittest.TestCase):
             query = MagicMock()
             mock_lq.return_value = query
             summary = MagicMock(total_count=0, total_amount=Decimal("0"))
-            query.order_by.return_value.enable_eagerloads.return_value.with_entities.return_value.one.return_value = (
-                summary
-            )
+            query.order_by.return_value.enable_eagerloads.return_value.with_entities.return_value.one.return_value = summary
             query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []
             client = TestClient(self.app)
             resp = client.get("/api/manual-deposit-requests")
@@ -245,7 +254,9 @@ class PoolPayRoleAccessTests(unittest.TestCase):
 
 class CashoutGtoScopeTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.env_patch = patch.dict(os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False)
+        self.env_patch = patch.dict(
+            os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False
+        )
         self.env_patch.start()
         self.gto = _gto_club(7)
         self.db = _db_with_gto(self.gto)
@@ -259,12 +270,15 @@ class CashoutGtoScopeTests(unittest.TestCase):
         self.app.dependency_overrides.clear()
 
     def test_list_forces_clubgto(self) -> None:
-        with patch(
-            "api.routes.cashout_records.list_staff_cashout_records",
-            return_value=([], 0),
-        ) as mock_list, patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={7: GTO_CLUB_NAME},
+        with (
+            patch(
+                "api.routes.cashout_records.list_staff_cashout_records",
+                return_value=([], 0),
+            ) as mock_list,
+            patch(
+                "api.routes.cashout_records._club_name_map",
+                return_value={7: GTO_CLUB_NAME},
+            ),
         ):
             client = TestClient(self.app)
             resp = client.get("/api/cashout-records")
@@ -329,7 +343,9 @@ class CashoutGtoScopeTests(unittest.TestCase):
 
 class BonusGtoScopeTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.env_patch = patch.dict(os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False)
+        self.env_patch = patch.dict(
+            os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False
+        )
         self.env_patch.start()
         self.gto = _gto_club(7)
         self.db = _db_with_gto(self.gto)

@@ -14,7 +14,10 @@ from sqlalchemy.orm import Session, joinedload
 from api.auth import require_admin
 from api.payments_helpers import owner_payment_search_clause
 from bot.services.deposit_union_types import validate_deposit_union
-from bot.services.pool_pay_types import pool_pay_type_from_method, validate_pool_pay_type
+from bot.services.pool_pay_types import (
+    pool_pay_type_from_method,
+    validate_pool_pay_type,
+)
 from bot.services.manual_deposit_requests import (
     ManualDepositCapacityError,
     ManualDepositValidationError,
@@ -276,7 +279,9 @@ def _list_summary(query) -> ManualDepositRequestSummary:
         .enable_eagerloads(False)
         .with_entities(
             func.count().label("total_count"),
-            func.coalesce(func.sum(ManualDepositRequest.amount), 0).label("total_amount"),
+            func.coalesce(func.sum(ManualDepositRequest.amount), 0).label(
+                "total_amount"
+            ),
         )
         .one()
     )
@@ -503,10 +508,17 @@ async def create_method_manual_deposit_request(
             created_at=created_at,
             trade_record_checked=bool(body.trade_record_checked),
         )
-    except (ManualDepositCapacityError, ManualDepositValidationError, ValueError) as exc:
+    except (
+        ManualDepositCapacityError,
+        ManualDepositValidationError,
+        ValueError,
+    ) as exc:
         raise _http_error_from_service(exc) from exc
 
-    if slack_variant is not None or pool_pay_type_from_method(method) == "large_cashout":
+    if (
+        slack_variant is not None
+        or pool_pay_type_from_method(method) == "large_cashout"
+    ):
         try:
             from bot.services.escalation_notification import (
                 notify_pool_pay_deposit_slack,
@@ -562,10 +574,16 @@ def update_manual_deposit_request(
             ),
             created_at=created_at if "created_at" in fields_set else None,
             trade_record_checked=(
-                body.trade_record_checked if "trade_record_checked" in fields_set else None
+                body.trade_record_checked
+                if "trade_record_checked" in fields_set
+                else None
             ),
         )
-    except (ManualDepositCapacityError, ManualDepositValidationError, ValueError) as exc:
+    except (
+        ManualDepositCapacityError,
+        ManualDepositValidationError,
+        ValueError,
+    ) as exc:
         raise _http_error_from_service(exc) from exc
 
     refreshed = (

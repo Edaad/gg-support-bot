@@ -9,7 +9,9 @@ from api.schemas import CommandCreate, CommandUpdate, CommandRead
 from db.connection import get_db_dependency
 from db.models import Club, CustomCommand
 
-router = APIRouter(prefix="/api", tags=["commands"], dependencies=[Depends(get_current_admin)])
+router = APIRouter(
+    prefix="/api", tags=["commands"], dependencies=[Depends(get_current_admin)]
+)
 
 
 @router.get("/clubs/{club_id}/commands", response_model=List[CommandRead])

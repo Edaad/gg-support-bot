@@ -18,7 +18,6 @@ from bot.services.manual_deposit_requests import (
     ManualDepositCapacityError,
     ManualDepositValidationError,
     capacity_allows,
-    capacity_allows_for_update,
     create_dashboard_manual_deposit_request,
     create_request_atomic,
     sum_for_method_excluding_request,
@@ -178,9 +177,7 @@ class MethodBelongsToClubTests(unittest.TestCase):
 
 class WhitelistOnlyTests(unittest.TestCase):
     def test_empty_whitelist_hides_private_method(self):
-        self.assertFalse(
-            method_visible_for_chat(is_public=False, access_type=None)
-        )
+        self.assertFalse(method_visible_for_chat(is_public=False, access_type=None))
         self.assertTrue(
             method_visible_for_chat(is_public=False, access_type="whitelist")
         )
@@ -190,11 +187,12 @@ class WhitelistOnlyTests(unittest.TestCase):
             {"id": 10, "is_public": False, "name": "Union"},
             {"id": 11, "is_public": True, "name": "Venmo"},
         ]
-        with patch(
-            "bot.services.deposit_method_access.get_db"
-        ) as get_db, patch(
-            "bot.services.deposit_method_access._access_map_for_chat",
-            return_value={10: "whitelist"},
+        with (
+            patch("bot.services.deposit_method_access.get_db") as get_db,
+            patch(
+                "bot.services.deposit_method_access._access_map_for_chat",
+                return_value={10: "whitelist"},
+            ),
         ):
             session = MagicMock()
             cm = MagicMock()
@@ -204,11 +202,12 @@ class WhitelistOnlyTests(unittest.TestCase):
             shown = filter_deposit_methods_for_chat(-100, methods)
         self.assertEqual([m["id"] for m in shown], [10, 11])
 
-        with patch(
-            "bot.services.deposit_method_access.get_db"
-        ) as get_db, patch(
-            "bot.services.deposit_method_access._access_map_for_chat",
-            return_value={},
+        with (
+            patch("bot.services.deposit_method_access.get_db") as get_db,
+            patch(
+                "bot.services.deposit_method_access._access_map_for_chat",
+                return_value={},
+            ),
         ):
             session = MagicMock()
             cm = MagicMock()
@@ -278,22 +277,26 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
         cm.__enter__.return_value = session
         cm.__exit__.return_value = False
 
-        with patch.object(club_payment_v2, "get_db", return_value=cm), patch(
-            "bot.services.manual_deposit_requests.sum_for_method",
-            return_value=Decimal("900"),
+        with (
+            patch.object(club_payment_v2, "get_db", return_value=cm),
+            patch(
+                "bot.services.manual_deposit_requests.sum_for_method",
+                return_value=Decimal("900"),
+            ),
         ):
-            shown = club_payment_v2.get_methods_for_amount(
-                1, "deposit", Decimal("200")
-            )
+            shown = club_payment_v2.get_methods_for_amount(1, "deposit", Decimal("200"))
             self.assertEqual(shown, [])
 
         session2 = _mock_session_for_get_methods(normal=[], union=[method])
         cm2 = MagicMock()
         cm2.__enter__.return_value = session2
         cm2.__exit__.return_value = False
-        with patch.object(club_payment_v2, "get_db", return_value=cm2), patch(
-            "bot.services.manual_deposit_requests.sum_for_method",
-            return_value=Decimal("900"),
+        with (
+            patch.object(club_payment_v2, "get_db", return_value=cm2),
+            patch(
+                "bot.services.manual_deposit_requests.sum_for_method",
+                return_value=Decimal("900"),
+            ),
         ):
             shown_ok = club_payment_v2.get_methods_for_amount(
                 1, "deposit", Decimal("50")
@@ -338,13 +341,14 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
         cm = MagicMock()
         cm.__enter__.return_value = session
         cm.__exit__.return_value = False
-        with patch.object(club_payment_v2, "get_db", return_value=cm), patch(
-            "bot.services.manual_deposit_requests.sum_for_method",
-            return_value=Decimal("0"),
+        with (
+            patch.object(club_payment_v2, "get_db", return_value=cm),
+            patch(
+                "bot.services.manual_deposit_requests.sum_for_method",
+                return_value=Decimal("0"),
+            ),
         ):
-            shown = club_payment_v2.get_methods_for_amount(
-                1, "deposit", Decimal("100")
-            )
+            shown = club_payment_v2.get_methods_for_amount(1, "deposit", Decimal("100"))
         self.assertEqual([m["slug"] for m in shown], ["venmo", "zelle-union"])
 
     def test_hides_when_amount_outside_min_max(self):
@@ -371,9 +375,12 @@ class GetMethodsForAmountManualTests(unittest.TestCase):
             cm = MagicMock()
             cm.__enter__.return_value = session
             cm.__exit__.return_value = False
-            with patch.object(club_payment_v2, "get_db", return_value=cm), patch(
-                "bot.services.manual_deposit_requests.sum_for_method",
-                return_value=Decimal("0"),
+            with (
+                patch.object(club_payment_v2, "get_db", return_value=cm),
+                patch(
+                    "bot.services.manual_deposit_requests.sum_for_method",
+                    return_value=Decimal("0"),
+                ),
             ):
                 return club_payment_v2.get_methods_for_amount(1, "deposit", amount)
 
@@ -392,7 +399,12 @@ class ClubDepositDeliverableTests(unittest.TestCase):
         variant_count: int = 1,
         active_sub_count: int = 0,
     ):
-        from db.models import ClubPaymentMethod, ClubPaymentSubOption, ClubPaymentTier, ClubPaymentTierVariant
+        from db.models import (
+            ClubPaymentMethod,
+            ClubPaymentSubOption,
+            ClubPaymentTier,
+            ClubPaymentTierVariant,
+        )
 
         tier_q = MagicMock()
         tier_q.filter_by.return_value = tier_q
@@ -451,14 +463,10 @@ class ClubDepositDeliverableTests(unittest.TestCase):
         session = self._deliverable_session(tiers=[tier_under, tier_over])
 
         self.assertTrue(
-            club_payment_v2.club_deposit_method_deliverable(
-                session, 9, Decimal("499")
-            )
+            club_payment_v2.club_deposit_method_deliverable(session, 9, Decimal("499"))
         )
         self.assertFalse(
-            club_payment_v2.club_deposit_method_deliverable(
-                session, 9, Decimal("2000")
-            )
+            club_payment_v2.club_deposit_method_deliverable(session, 9, Decimal("2000"))
         )
 
     def test_requires_variant_or_checkout_on_matching_tier(self):
@@ -474,9 +482,7 @@ class ClubDepositDeliverableTests(unittest.TestCase):
         session = self._deliverable_session(tiers=[tier], variant_count=0)
 
         self.assertFalse(
-            club_payment_v2.club_deposit_method_deliverable(
-                session, 1, Decimal("2000")
-            )
+            club_payment_v2.club_deposit_method_deliverable(session, 1, Decimal("2000"))
         )
 
     def test_crypto_deliverable_with_active_sub_options(self):
@@ -498,9 +504,7 @@ class ClubDepositDeliverableTests(unittest.TestCase):
         )
 
         self.assertTrue(
-            club_payment_v2.club_deposit_method_deliverable(
-                session, 3, Decimal("100")
-            )
+            club_payment_v2.club_deposit_method_deliverable(session, 3, Decimal("100"))
         )
 
     def test_crypto_not_deliverable_without_active_sub_options(self):
@@ -522,9 +526,7 @@ class ClubDepositDeliverableTests(unittest.TestCase):
         )
 
         self.assertFalse(
-            club_payment_v2.club_deposit_method_deliverable(
-                session, 3, Decimal("100")
-            )
+            club_payment_v2.club_deposit_method_deliverable(session, 3, Decimal("100"))
         )
 
 
@@ -540,9 +542,7 @@ class CreateRequestAtomicTests(unittest.TestCase):
             manual_request_variant_name="Union",
         )
         session = MagicMock()
-        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = (
-            method
-        )
+        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = method
 
         def _add(row):
             row.id = 99
@@ -552,11 +552,12 @@ class CreateRequestAtomicTests(unittest.TestCase):
         cm.__enter__.return_value = session
         cm.__exit__.return_value = False
 
-        with patch(
-            "bot.services.manual_deposit_requests.get_db", return_value=cm
-        ), patch(
-            "bot.services.manual_deposit_requests.capacity_allows",
-            return_value=True,
+        with (
+            patch("bot.services.manual_deposit_requests.get_db", return_value=cm),
+            patch(
+                "bot.services.manual_deposit_requests.capacity_allows",
+                return_value=True,
+            ),
         ):
             row = create_request_atomic(
                 club_id=1,
@@ -581,18 +582,17 @@ class CreateRequestAtomicTests(unittest.TestCase):
             manual_request_variant_name="Union",
         )
         session = MagicMock()
-        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = (
-            method
-        )
+        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = method
         cm = MagicMock()
         cm.__enter__.return_value = session
         cm.__exit__.return_value = False
 
-        with patch(
-            "bot.services.manual_deposit_requests.get_db", return_value=cm
-        ), patch(
-            "bot.services.manual_deposit_requests.capacity_allows",
-            return_value=False,
+        with (
+            patch("bot.services.manual_deposit_requests.get_db", return_value=cm),
+            patch(
+                "bot.services.manual_deposit_requests.capacity_allows",
+                return_value=False,
+            ),
         ):
             with self.assertRaises(ManualDepositCapacityError):
                 create_request_atomic(
@@ -674,16 +674,20 @@ class ManualTradeLedgerFetchTests(unittest.TestCase):
             trade_record_checked=True,
         )
         session = MagicMock()
-        with patch.object(
-            audit_ledger,
-            "_iter_checked_union_deposit_requests",
-            return_value=[checked],
-        ), patch.object(
-            audit_ledger, "payment_in_audit_day_for_club", return_value=True
-        ), patch.object(
-            audit_ledger,
-            "resolve_group_title",
-            return_value=("GTO / 2222-2222 / jz", "2222-2222"),
+        with (
+            patch.object(
+                audit_ledger,
+                "_iter_checked_union_deposit_requests",
+                return_value=[checked],
+            ),
+            patch.object(
+                audit_ledger, "payment_in_audit_day_for_club", return_value=True
+            ),
+            patch.object(
+                audit_ledger,
+                "resolve_group_title",
+                return_value=("GTO / 2222-2222 / jz", "2222-2222"),
+            ),
         ):
             events = audit_ledger._fetch_manual_trade_request_events(
                 session,
@@ -751,7 +755,9 @@ class ManualDepositRequestListQueryTests(unittest.TestCase):
         )
         self.Session = sessionmaker(bind=self.engine)
         session = self.Session()
-        session.add(Club(id=1, name="Round Table", telegram_user_id=1001, is_active=True))
+        session.add(
+            Club(id=1, name="Round Table", telegram_user_id=1001, is_active=True)
+        )
         session.add(Club(id=2, name="ClubGTO", telegram_user_id=1002, is_active=True))
         session.add(
             ClubPaymentMethod(
@@ -956,7 +962,9 @@ class DashboardManualDepositServiceTests(unittest.TestCase):
 
         self._get_db = _get_db
         session = self.Session()
-        session.add(Club(id=1, name="Round Table", telegram_user_id=1001, is_active=True))
+        session.add(
+            Club(id=1, name="Round Table", telegram_user_id=1001, is_active=True)
+        )
         session.add(
             ClubPaymentMethod(
                 id=10,
@@ -976,9 +984,7 @@ class DashboardManualDepositServiceTests(unittest.TestCase):
             )
         )
         session.add(ClubPaymentMethodClub(method_id=10, club_id=1))
-        session.add(
-            Group(chat_id=-1001, club_id=1, name="RT / 1111-1111 / Alice")
-        )
+        session.add(Group(chat_id=-1001, club_id=1, name="RT / 1111-1111 / Alice"))
         session.commit()
         session.close()
 
@@ -1069,13 +1075,16 @@ class DashboardManualDepositServiceTests(unittest.TestCase):
         session.commit()
         session.close()
 
-        with patch(
-            "bot.services.manual_deposit_requests.get_db",
-            side_effect=self._get_db,
-        ), patch(
-            "bot.services.union_instruction_expiry.get_db",
-            side_effect=AssertionError(
-                "cancel_union_instruction_expiry must reuse the open transaction"
+        with (
+            patch(
+                "bot.services.manual_deposit_requests.get_db",
+                side_effect=self._get_db,
+            ),
+            patch(
+                "bot.services.union_instruction_expiry.get_db",
+                side_effect=AssertionError(
+                    "cancel_union_instruction_expiry must reuse the open transaction"
+                ),
             ),
         ):
             updated = update_dashboard_manual_deposit_request(

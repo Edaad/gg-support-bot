@@ -53,14 +53,29 @@ async def _resolve_target_from_args(
         return None, None, None, None
 
     if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
-        return int(chat.id), (chat.title or "").strip() or "(untitled)", None, args_str or None
+        return (
+            int(chat.id),
+            (chat.title or "").strip() or "(untitled)",
+            None,
+            args_str or None,
+        )
 
     if not tokens:
-        return None, None, None, "Usage: /stageinactive <chat_id> [note]\nOr: /stageinactive row <id> [note]"
+        return (
+            None,
+            None,
+            None,
+            "Usage: /stageinactive <chat_id> [note]\nOr: /stageinactive row <id> [note]",
+        )
 
     if tokens[0].lower() == "row":
         if len(tokens) < 2 or not tokens[1].lstrip("-").isdigit():
-            return None, None, None, "Usage: /stageinactive row <outreach_row_id> [note]"
+            return (
+                None,
+                None,
+                None,
+                "Usage: /stageinactive row <outreach_row_id> [note]",
+            )
         row_id = int(tokens[1])
         note = " ".join(tokens[2:]).strip() or None
         return None, None, row_id, note
@@ -75,7 +90,9 @@ async def _resolve_target_from_args(
         tg_chat = await context.bot.get_chat(chat_id)
         title = (tg_chat.title or "").strip() or None
     except Exception as exc:
-        logger.warning("stageinactive: get_chat(%s) failed: %s", chat_id, type(exc).__name__)
+        logger.warning(
+            "stageinactive: get_chat(%s) failed: %s", chat_id, type(exc).__name__
+        )
 
     if not title:
         title = get_group_name(chat_id) or lookup_outreach_row_title(chat_id)

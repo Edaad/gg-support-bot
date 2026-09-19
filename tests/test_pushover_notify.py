@@ -10,21 +10,27 @@ from bot.services import pushover_notify as push
 
 class NotifyPushoverTests(unittest.IsolatedAsyncioTestCase):
     async def test_skips_when_token_unset(self) -> None:
-        with patch.dict(
-            "os.environ",
-            {push.PUSHOVER_APP_TOKEN_ENV: ""},
-            clear=False,
-        ), patch("bot.services.pushover_notify.httpx.AsyncClient") as client_cls:
+        with (
+            patch.dict(
+                "os.environ",
+                {push.PUSHOVER_APP_TOKEN_ENV: ""},
+                clear=False,
+            ),
+            patch("bot.services.pushover_notify.httpx.AsyncClient") as client_cls,
+        ):
             ok = await push.notify_pushover("hello", user="usr456", source="test")
         self.assertFalse(ok)
         client_cls.assert_not_called()
 
     async def test_skips_when_user_empty(self) -> None:
-        with patch.dict(
-            "os.environ",
-            {push.PUSHOVER_APP_TOKEN_ENV: "tok123"},
-            clear=False,
-        ), patch("bot.services.pushover_notify.httpx.AsyncClient") as client_cls:
+        with (
+            patch.dict(
+                "os.environ",
+                {push.PUSHOVER_APP_TOKEN_ENV: "tok123"},
+                clear=False,
+            ),
+            patch("bot.services.pushover_notify.httpx.AsyncClient") as client_cls,
+        ):
             ok = await push.notify_pushover("hello", user="  ", source="test")
         self.assertFalse(ok)
         client_cls.assert_not_called()
@@ -38,13 +44,16 @@ class NotifyPushoverTests(unittest.IsolatedAsyncioTestCase):
         client.__aenter__ = AsyncMock(return_value=client)
         client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch.dict(
-            "os.environ",
-            {push.PUSHOVER_APP_TOKEN_ENV: "tok123"},
-            clear=False,
-        ), patch(
-            "bot.services.pushover_notify.httpx.AsyncClient",
-            return_value=client,
+        with (
+            patch.dict(
+                "os.environ",
+                {push.PUSHOVER_APP_TOKEN_ENV: "tok123"},
+                clear=False,
+            ),
+            patch(
+                "bot.services.pushover_notify.httpx.AsyncClient",
+                return_value=client,
+            ),
         ):
             ok = await push.notify_pushover(
                 "Player waiting",
@@ -82,13 +91,16 @@ class NotifyPushoverTests(unittest.IsolatedAsyncioTestCase):
         client.__aenter__ = AsyncMock(return_value=client)
         client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch.dict(
-            "os.environ",
-            {push.PUSHOVER_APP_TOKEN_ENV: "tok123"},
-            clear=False,
-        ), patch(
-            "bot.services.pushover_notify.httpx.AsyncClient",
-            return_value=client,
+        with (
+            patch.dict(
+                "os.environ",
+                {push.PUSHOVER_APP_TOKEN_ENV: "tok123"},
+                clear=False,
+            ),
+            patch(
+                "bot.services.pushover_notify.httpx.AsyncClient",
+                return_value=client,
+            ),
         ):
             ok = await push.notify_pushover("hello", user="bad", source="test")
 
@@ -109,13 +121,16 @@ class NotifyPushoverTests(unittest.IsolatedAsyncioTestCase):
         client.__enter__ = MagicMock(return_value=client)
         client.__exit__ = MagicMock(return_value=False)
 
-        with patch.dict(
-            "os.environ",
-            {push.PUSHOVER_APP_TOKEN_ENV: "tok123"},
-            clear=False,
-        ), patch(
-            "bot.services.pushover_notify.httpx.Client",
-            return_value=client,
+        with (
+            patch.dict(
+                "os.environ",
+                {push.PUSHOVER_APP_TOKEN_ENV: "tok123"},
+                clear=False,
+            ),
+            patch(
+                "bot.services.pushover_notify.httpx.Client",
+                return_value=client,
+            ),
         ):
             ok = push.notify_pushover_sync("hi", user="usr456", source="test")
 

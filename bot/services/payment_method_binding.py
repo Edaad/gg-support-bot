@@ -19,13 +19,10 @@ from bot.services.payment_binding_events import (
     record_binding_event_in_session,
 )
 from db.models import (
-    CashAppPayerBinding,
     CashAppPayment,
-    PayPalPayerBinding,
     PayPalPayment,
     Club,
     ClubPaymentMethod,
-    ClubPaymentTier,
     ClubPaymentTierVariant,
     CryptoWalletBinding,
     GroupPaymentMethodBinding,
@@ -641,7 +638,9 @@ def allocate_setup_amount_cents(
     n = int(pending_count or 0)
     amount_cents = base_cents - n
     if amount_cents < 1:
-        raise ValueError("No available setup amounts for this variant (too many pending)")
+        raise ValueError(
+            "No available setup amounts for this variant (too many pending)"
+        )
     return amount_cents
 
 
@@ -674,13 +673,10 @@ def cancel_pending_attempts_for_chat(
 ) -> int:
     slug = (payment_method_slug or "").strip().lower()
     now = datetime.now(timezone.utc)
-    q = (
-        session.query(PaymentMethodBindAttempt)
-        .filter_by(
-            telegram_chat_id=int(telegram_chat_id),
-            payment_method_slug=slug,
-            status=ATTEMPT_STATUS_PENDING,
-        )
+    q = session.query(PaymentMethodBindAttempt).filter_by(
+        telegram_chat_id=int(telegram_chat_id),
+        payment_method_slug=slug,
+        status=ATTEMPT_STATUS_PENDING,
     )
     count = q.count()
     q.update(
@@ -726,7 +722,9 @@ def start_bind_attempt(
             bound_via = BOUND_VIA_MEMO_EMOJI
         else:
             if deposit_amount_cents is None:
-                raise ValueError("deposit_amount_cents required for special_amount bind")
+                raise ValueError(
+                    "deposit_amount_cents required for special_amount bind"
+                )
             amount_cents = allocate_setup_amount_cents(
                 session,
                 variant_id=int(variant_id),
@@ -1103,9 +1101,7 @@ def _variant_zelle_recipient_matches(
     return False
 
 
-def _variant_paypal_email_matches(
-    session, variant_id: int, paypal_email: str
-) -> bool:
+def _variant_paypal_email_matches(session, variant_id: int, paypal_email: str) -> bool:
     email = normalize_paypal_email(paypal_email)
     if not email:
         return False
@@ -1636,13 +1632,7 @@ def format_first_time_memo_instructions_message(
             f"{future_line}\n\n"
             f"{ack_line}"
         )
-    return (
-        f"{title}\n\n"
-        f"{copy_line}\n\n"
-        f"{code}\n\n"
-        f"{future_line}\n\n"
-        f"{ack_line}"
-    )
+    return f"{title}\n\n{copy_line}\n\n{code}\n\n{future_line}\n\n{ack_line}"
 
 
 def format_first_time_amount_instructions_message(
@@ -1660,7 +1650,9 @@ def format_first_time_amount_instructions_message(
         "go through faster."
     )
     title = _caps(f"One-time {method_label} setup")
-    amount_line = _caps("Send the exact amount shown below — not your full deposit amount.")
+    amount_line = _caps(
+        "Send the exact amount shown below — not your full deposit amount."
+    )
     do_not_send = _caps(f"Please do not send {chosen_display} (no rounding).")
 
     if use_html:
@@ -1671,12 +1663,7 @@ def format_first_time_amount_instructions_message(
             f"<b>{_caps(f'Please do not send {safe_chosen} (no rounding).')}</b>\n\n"
             f"{future_line}"
         )
-    return (
-        f"{title}\n\n"
-        f"{amount_line}\n\n"
-        f"{do_not_send}\n\n"
-        f"{future_line}"
-    )
+    return f"{title}\n\n{amount_line}\n\n{do_not_send}\n\n{future_line}"
 
 
 def format_first_time_special_amount_setup_message(
@@ -1692,7 +1679,9 @@ def format_first_time_special_amount_setup_message(
     setup_display = _format_amount_plain(int(setup_amount_cents))
     chosen_display = _format_amount_display(int(chosen_amount_cents))
     title = _caps(f"One-time {method_label} setup")
-    amount_line = _caps("Send the exact amount shown below — not your full deposit amount.")
+    amount_line = _caps(
+        "Send the exact amount shown below — not your full deposit amount."
+    )
     do_not_send = _caps(f"Please do not send {chosen_display} (no rounding).")
     future_line = (
         "This one-time step links your payment method so future deposits "
@@ -1771,7 +1760,9 @@ def format_first_time_payment_destination_message(
         else:
             recipient = phone_recipient or "—"
             if use_html:
-                destination = f"<b>{_caps('Zelle:')}</b> {html_module.escape(recipient)}"
+                destination = (
+                    f"<b>{_caps('Zelle:')}</b> {html_module.escape(recipient)}"
+                )
             else:
                 destination = f"{_caps('Zelle:')} {recipient}"
         return f"{destination}\n\n{closing}"
@@ -1780,7 +1771,9 @@ def format_first_time_payment_destination_message(
         url = extract_cashapp_url(variant_response_text) or "—"
         if use_html:
             safe_url = html_module.escape(url, quote=True)
-            destination = f'<b>{_caps("Cashapp:")}</b> <a href="{safe_url}">{safe_url}</a>'
+            destination = (
+                f'<b>{_caps("Cashapp:")}</b> <a href="{safe_url}">{safe_url}</a>'
+            )
         else:
             destination = f"{_caps('Cashapp:')} {url}"
         return f"{destination}\n\n{closing}"
@@ -1951,7 +1944,9 @@ def format_first_time_venmo_setup_message(
         "This is a one-time setup step for this payment method. Future deposits "
         "can be sent normally once your method is linked."
     )
-    post_screenshot = _caps("Post a screenshot when done. An agent will confirm and add your credits.")
+    post_screenshot = _caps(
+        "Post a screenshot when done. An agent will confirm and add your credits."
+    )
 
     if use_html:
         safe_setup = html_module.escape(setup_display)
@@ -2006,7 +2001,9 @@ def format_first_time_zelle_setup_message(
         "This is a one-time setup step for this payment method. Future deposits "
         "can be sent normally once your method is linked."
     )
-    post_screenshot = _caps("Post a screenshot when done. An agent will confirm and add your credits.")
+    post_screenshot = _caps(
+        "Post a screenshot when done. An agent will confirm and add your credits."
+    )
 
     if use_html:
         safe_setup = html_module.escape(setup_display)

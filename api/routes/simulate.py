@@ -8,7 +8,9 @@ from api.schemas import SimulateResponse, SimulateMethodOut, SubOptionRead
 from db.connection import get_db_dependency
 from db.models import Club, ClubPaymentMethod, ClubPaymentTier
 
-router = APIRouter(prefix="/api", tags=["simulate"], dependencies=[Depends(get_current_admin)])
+router = APIRouter(
+    prefix="/api", tags=["simulate"], dependencies=[Depends(get_current_admin)]
+)
 
 
 def _default_tier(method: ClubPaymentMethod) -> ClubPaymentTier | None:
@@ -19,7 +21,9 @@ def _default_tier(method: ClubPaymentMethod) -> ClubPaymentTier | None:
     return tiers[0] if tiers else None
 
 
-def _variant_preview(tier: ClubPaymentTier | None) -> tuple[str | None, str | None, str | None]:
+def _variant_preview(
+    tier: ClubPaymentTier | None,
+) -> tuple[str | None, str | None, str | None]:
     if tier is None:
         return None, None, None
     variants = sorted(tier.variants or [], key=lambda v: (v.sort_order, v.id))
@@ -63,7 +67,9 @@ def simulate_flow(
         response_text: str | None = None
         response_caption: str | None = None
         if not m.has_sub_options:
-            response_type, response_text, response_caption = _variant_preview(_default_tier(m))
+            response_type, response_text, response_caption = _variant_preview(
+                _default_tier(m)
+            )
         out.append(
             SimulateMethodOut(
                 id=m.id,

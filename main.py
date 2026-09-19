@@ -9,12 +9,11 @@ import json
 import argparse
 import psycopg2
 from urllib.parse import urlparse
-from typing import Dict, Set, Tuple, Optional, List
+from typing import Dict, Set, Optional
 
 from telegram import (
     Update,
     BotCommand,
-    ForceReply,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
@@ -810,11 +809,10 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
             f"[deposit] club_id={club_id} cmd={cmd_name} not found. Keys: {list(club_cmds.keys())}"
         )
         await update.message.reply_text(
-            f"This club hasn't set up that payment method yet."
+            "This club hasn't set up that payment method yet."
         )
         return ConversationHandler.END
 
-    user_name = update.effective_user.full_name or "Customer"
     try:
         await update.effective_chat.send_message(
             f"Deposit request for {amount_text or '(not specified)'} on {method_display}"

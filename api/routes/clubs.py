@@ -16,7 +16,9 @@ from api.schemas import (
 from db.connection import get_db_dependency
 from db.models import Club, ClubLinkedAccount
 
-router = APIRouter(prefix="/api/clubs", tags=["clubs"], dependencies=[Depends(get_current_admin)])
+router = APIRouter(
+    prefix="/api/clubs", tags=["clubs"], dependencies=[Depends(get_current_admin)]
+)
 
 
 def _club_to_read(club: Club) -> ClubRead:
@@ -107,7 +109,11 @@ def create_club(
     existing = db.query(Club).filter_by(telegram_user_id=body.telegram_user_id).first()
     if existing:
         raise HTTPException(409, "A club with that Telegram user ID already exists")
-    if db.query(ClubLinkedAccount).filter_by(telegram_user_id=body.telegram_user_id).first():
+    if (
+        db.query(ClubLinkedAccount)
+        .filter_by(telegram_user_id=body.telegram_user_id)
+        .first()
+    ):
         raise HTTPException(
             409, "That Telegram user ID is already linked to a club as a backup account"
         )
@@ -128,7 +134,9 @@ def list_linked_accounts(
     return [LinkedAccountRead.model_validate(a) for a in club.linked_accounts]
 
 
-@router.post("/{club_id}/linked-accounts", response_model=LinkedAccountRead, status_code=201)
+@router.post(
+    "/{club_id}/linked-accounts", response_model=LinkedAccountRead, status_code=201
+)
 def add_linked_account(
     club_id: int,
     body: LinkedAccountCreate,
@@ -194,7 +202,9 @@ def update_club(
                 raise HTTPException(
                     409, "Another club already uses this Telegram user ID as primary"
                 )
-            link = db.query(ClubLinkedAccount).filter_by(telegram_user_id=new_tid).first()
+            link = (
+                db.query(ClubLinkedAccount).filter_by(telegram_user_id=new_tid).first()
+            )
             if link:
                 if link.club_id != club_id:
                     raise HTTPException(

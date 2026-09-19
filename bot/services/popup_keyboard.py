@@ -19,7 +19,6 @@ from bot.services.club import (
     get_club_for_chat,
     get_group_name,
 )
-from bot.services.group_activity import is_support_sender
 from bot.services.player_details import gg_player_id_from_title
 from bot.services.support_group_chats import (
     fetch_player_telegram_user_id_for_chat,
@@ -487,7 +486,9 @@ def schedule_payment_window_then_idle(
         "chat_id": int(chat_id),
         "expires_at": expires_at.isoformat(),
         "stripe_session_id": str(stripe_session_id) if stripe_session_id else None,
-        "bind_attempt_id": int(bind_attempt_id) if bind_attempt_id is not None else None,
+        "bind_attempt_id": int(bind_attempt_id)
+        if bind_attempt_id is not None
+        else None,
         "reply_to_message_id": int(last_msg) if last_msg else None,
         "player_user_id": int(last_uid) if last_uid else None,
     }
@@ -709,9 +710,7 @@ async def _send_silent_markup(
         await bot.send_message(**kwargs)
         return True
     except Exception:
-        logger.warning(
-            "popup_keyboard send failed chat_id=%s", chat_id, exc_info=True
-        )
+        logger.warning("popup_keyboard send failed chat_id=%s", chat_id, exc_info=True)
         return False
 
 

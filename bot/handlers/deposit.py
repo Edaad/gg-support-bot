@@ -159,9 +159,7 @@ ACES_TABLE_JOIN_COPY = (
 )
 ACES_TABLE_JOIN_BUTTON = "I HAVE JOINED"
 
-CRYPTO_SUB_PICKER_NOTE = (
-    "Note: Bitcoin and Ethereum can take a while to come through."
-)
+CRYPTO_SUB_PICKER_NOTE = "Note: Bitcoin and Ethereum can take a while to come through."
 
 
 def sub_option_picker_text(method_name: str, method_slug: str | None) -> str:
@@ -261,6 +259,7 @@ _CHECKOUT_SETTING_KEYS = (
     "checkout_min_amount",
     "checkout_max_amount",
 )
+
 
 def _response_data_has_content(data: dict | None) -> bool:
     if not data:

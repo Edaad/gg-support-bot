@@ -236,7 +236,10 @@ async def transfer_dest_chosen(update: Update, context: ContextTypes.DEFAULT_TYP
         return TRANSFER_DEST
     await query.answer()
     if await handle_stale_flow_callback(
-        update, context, flow="transfer", handler="transfer_dest_chosen",
+        update,
+        context,
+        flow="transfer",
+        handler="transfer_dest_chosen",
         cleanup=_cleanup,
     ):
         return ConversationHandler.END

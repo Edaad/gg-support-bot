@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 from db.connection import get_db
 from db.models import PaymentBindingEvent
@@ -346,7 +345,9 @@ async def sync_payment_notification_edit(
     return edited_any
 
 
-def _payment_ids_with_notification_sync(session, *, payment_method_slug: str) -> set[int]:
+def _payment_ids_with_notification_sync(
+    session, *, payment_method_slug: str
+) -> set[int]:
     """Payment ids whose Telegram notification is known to show a bound group."""
     slug = (payment_method_slug or "").strip().lower()
     synced: set[int] = set()
@@ -395,7 +396,13 @@ def payments_missing_notification_sync(
     limit: int = 100,
 ) -> list[dict]:
     """Return bound payments with no persisted proof the Telegram message shows binding."""
-    from db.models import CashAppPayment, CryptoPayment, PayPalPayment, VenmoPayment, ZellePayment
+    from db.models import (
+        CashAppPayment,
+        CryptoPayment,
+        PayPalPayment,
+        VenmoPayment,
+        ZellePayment,
+    )
 
     slug = (payment_method_slug or "").strip().lower()
     model_map = {

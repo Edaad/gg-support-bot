@@ -46,7 +46,9 @@ def parse_groups_table_from_dump(dump_path: Path) -> list[BackupGroupRow]:
         raise FileNotFoundError(f"Backup not found: {dump_path}")
 
     if subprocess.run(["which", "pg_restore"], capture_output=True).returncode != 0:
-        raise SystemExit("pg_restore not found on PATH (install PostgreSQL client tools).")
+        raise SystemExit(
+            "pg_restore not found on PATH (install PostgreSQL client tools)."
+        )
 
     proc = subprocess.run(
         ["pg_restore", "--data-only", "-t", "groups", "-f", "-", str(dump_path)],
@@ -84,7 +86,11 @@ def parse_groups_table_from_dump(dump_path: Path) -> list[BackupGroupRow]:
 
 def basic_groups_from_backup(dump_path: Path) -> list[BackupGroupRow]:
     """Groups that were basic (not ``-100…``) in the backup snapshot."""
-    return [r for r in parse_groups_table_from_dump(dump_path) if is_legacy_basic_chat_id(r.chat_id)]
+    return [
+        r
+        for r in parse_groups_table_from_dump(dump_path)
+        if is_legacy_basic_chat_id(r.chat_id)
+    ]
 
 
 def resolve_affected_from_backup(
@@ -145,7 +151,9 @@ def resolve_affected_from_backup(
             if is_legacy_basic_chat_id(current_cid):
                 status = "not_migrated_yet"
             elif _is_supergroup_chat_id(current_cid):
-                status = "migrated" if current_cid != int(row.chat_id) else "unchanged_id"
+                status = (
+                    "migrated" if current_cid != int(row.chat_id) else "unchanged_id"
+                )
             else:
                 status = "unexpected_chat_id"
 
@@ -161,11 +169,7 @@ def resolve_affected_from_backup(
 
     if chat_id_filter is not None:
         cid = int(chat_id_filter)
-        out = [
-            r
-            for r in out
-            if r.current_chat_id == cid or r.old_chat_id == cid
-        ]
+        out = [r for r in out if r.current_chat_id == cid or r.old_chat_id == cid]
     return out
 
 

@@ -32,7 +32,9 @@ except ImportError:
 
 from sqlalchemy.orm import Session
 
-from api.payment_v2_helpers import upsert_default_variant_for_tier as upsert_default_variant
+from api.payment_v2_helpers import (
+    upsert_default_variant_for_tier as upsert_default_variant,
+)
 from db.connection import get_session
 from db.models import Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant
 
@@ -69,7 +71,9 @@ def upsert_method(session: Session, club_id: int) -> ClubPaymentMethod:
         .first()
     )
     if method is None:
-        method = ClubPaymentMethod(club_id=club_id, direction=DIRECTION, slug=METHOD_SLUG)
+        method = ClubPaymentMethod(
+            club_id=club_id, direction=DIRECTION, slug=METHOD_SLUG
+        )
         session.add(method)
 
     method.name = "Apple Pay"
@@ -110,11 +114,15 @@ def upsert_default_tier(session: Session, method_id: int) -> ClubPaymentTier:
     return tier
 
 
-def seed(session: Session) -> tuple[Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant]:
+def seed(
+    session: Session,
+) -> tuple[Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant]:
     club = find_clubgto_club(session)
     method = upsert_method(session, club.id)
     tier = upsert_default_tier(session, method.id)
-    variant = upsert_default_variant(session, tier, response_text=APPLEPAY_RESPONSE_TEXT)
+    variant = upsert_default_variant(
+        session, tier, response_text=APPLEPAY_RESPONSE_TEXT
+    )
     variant.weight = 100
     session.flush()
     return club, method, tier, variant
@@ -146,8 +154,12 @@ def verify_via_api(club_id: int) -> None:
 
     min_amount = method.get("min_amount")
     max_amount = method.get("max_amount")
-    if Decimal(str(min_amount)) != Decimal("20") or Decimal(str(max_amount)) != Decimal("100"):
-        raise SystemExit(f"Expected method min=20 max=100, got min={min_amount!r} max={max_amount!r}")
+    if Decimal(str(min_amount)) != Decimal("20") or Decimal(str(max_amount)) != Decimal(
+        "100"
+    ):
+        raise SystemExit(
+            f"Expected method min=20 max=100, got min={min_amount!r} max={max_amount!r}"
+        )
     if method.get("sort_order") != 2:
         raise SystemExit(f"Expected sort_order 2, got {method.get('sort_order')!r}")
 
@@ -165,12 +177,16 @@ def verify_via_api(club_id: int) -> None:
 
     tier = tiers[0]
     if tier.get("label") != DEFAULT_TIER_LABEL:
-        raise SystemExit(f"Expected tier label {DEFAULT_TIER_LABEL!r}, got {tier.get('label')!r}")
+        raise SystemExit(
+            f"Expected tier label {DEFAULT_TIER_LABEL!r}, got {tier.get('label')!r}"
+        )
 
     if Decimal(str(tier.get("min_amount"))) != Decimal("20"):
         raise SystemExit(f"Expected tier min_amount 20, got {tier.get('min_amount')!r}")
     if Decimal(str(tier.get("max_amount"))) != Decimal("100"):
-        raise SystemExit(f"Expected tier max_amount 100, got {tier.get('max_amount')!r}")
+        raise SystemExit(
+            f"Expected tier max_amount 100, got {tier.get('max_amount')!r}"
+        )
 
     if (tier.get("response_text") or "").strip():
         raise SystemExit("Expected empty tier response_text; copy lives on variant")
@@ -178,13 +194,19 @@ def verify_via_api(club_id: int) -> None:
     if not tier.get("use_group_checkout_link"):
         raise SystemExit("Expected use_group_checkout_link=true on tier")
     if tier.get("group_checkout_provider") != "stripe":
-        raise SystemExit(f"Expected group_checkout_provider=stripe, got {tier.get('group_checkout_provider')!r}")
+        raise SystemExit(
+            f"Expected group_checkout_provider=stripe, got {tier.get('group_checkout_provider')!r}"
+        )
     if tier.get("hyperlink_text") != "PAY HERE":
-        raise SystemExit(f"Expected hyperlink_text='PAY HERE', got {tier.get('hyperlink_text')!r}")
+        raise SystemExit(
+            f"Expected hyperlink_text='PAY HERE', got {tier.get('hyperlink_text')!r}"
+        )
 
     checkout_min = tier.get("checkout_min_amount")
     checkout_max = tier.get("checkout_max_amount")
-    if Decimal(str(checkout_min)) != Decimal("20") or Decimal(str(checkout_max)) != Decimal("100"):
+    if Decimal(str(checkout_min)) != Decimal("20") or Decimal(
+        str(checkout_max)
+    ) != Decimal("100"):
         raise SystemExit(
             f"Expected checkout min=20 max=100, got min={checkout_min!r} max={checkout_max!r}"
         )
@@ -195,7 +217,9 @@ def verify_via_api(club_id: int) -> None:
     if variants[0].get("label") != DEFAULT_TIER_LABEL:
         raise SystemExit(f"Expected variant label {DEFAULT_TIER_LABEL!r}")
     if variants[0].get("weight") != 100:
-        raise SystemExit(f"Expected variant weight 100, got {variants[0].get('weight')!r}")
+        raise SystemExit(
+            f"Expected variant weight 100, got {variants[0].get('weight')!r}"
+        )
     text = variants[0].get("response_text") or ""
     if "{{hyperlink}}" not in text:
         raise SystemExit("Expected {{hyperlink}} placeholder in variant response_text")
@@ -239,7 +263,9 @@ def main() -> None:
                 f"accumulated=null, sort_order=2)"
             )
             print(f"  tier: {DEFAULT_TIER_LABEL!r} (Stripe defaults on tier)")
-            print(f"  variant: {DEFAULT_TIER_LABEL!r} (weight=100, {{hyperlink}}, PAY HERE)")
+            print(
+                f"  variant: {DEFAULT_TIER_LABEL!r} (weight=100, {{hyperlink}}, PAY HERE)"
+            )
             print("  sub-options: 0")
             print("Re-run with --apply to commit and verify.")
     except Exception:

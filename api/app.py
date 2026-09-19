@@ -47,6 +47,7 @@ from api.webhook_ingest_audit import WebhookIngestMiddleware
 from db.connection import init_engine
 from db.models import Base
 
+
 def create_app() -> FastAPI:
     app = FastAPI(title="GG Support Dashboard API", version="1.0.0")
 
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
         role = resolve_role(body.password)
         if role is None:
             from fastapi import HTTPException
+
             raise HTTPException(401, "Invalid password")
         return TokenResponse(token=create_token(role), role=role)
 
@@ -92,7 +94,9 @@ def create_app() -> FastAPI:
     from api.routes.payment_quick_links import router as payment_quick_links_router
     from api.routes.owner_payments import router as owner_payments_router
     from api.routes.all_payments import router as all_payments_router
-    from api.routes.union_unified_payments import router as union_unified_payments_router
+    from api.routes.union_unified_payments import (
+        router as union_unified_payments_router,
+    )
     from api.routes.payments_export import router as payments_export_router
     from api.routes.deposit_funnel import router as deposit_funnel_router
     from api.routes.stripe_deposit import router as stripe_deposit_router
@@ -102,11 +106,15 @@ def create_app() -> FastAPI:
     from api.routes.paypal_payments import router as paypal_payments_router
     from api.routes.crypto_payments import router as crypto_payments_router
     from api.routes.v2_payment import router as v2_payment_router
-    from api.routes.manual_deposit_requests import router as manual_deposit_requests_router
+    from api.routes.manual_deposit_requests import (
+        router as manual_deposit_requests_router,
+    )
     from api.routes.union_methods import router as union_methods_router
     from api.routes.issue_reports import router as issue_reports_router
     from api.routes.audit import router as audit_router
-    from api.routes.early_rakeback_webhook import router as early_rakeback_webhook_router
+    from api.routes.early_rakeback_webhook import (
+        router as early_rakeback_webhook_router,
+    )
     from api.routes.group_chat_activity import router as group_chat_activity_router
     from api.routes.head_admin_escalation import router as head_admin_escalation_router
     from api.routes.escalation_events import router as escalation_events_router

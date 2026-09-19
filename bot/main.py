@@ -17,7 +17,9 @@ from telegram.ext import (
     filters,
 )
 
-warnings.filterwarnings("ignore", message=r".*CallbackQueryHandler.*", category=PTBUserWarning)
+warnings.filterwarnings(
+    "ignore", message=r".*CallbackQueryHandler.*", category=PTBUserWarning
+)
 
 from db.connection import init_engine
 from db.models import Base
@@ -100,11 +102,15 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
 
             schedule_migration_recovery_slack_summary_job(app)
 
-        from bot.services.inactive_group_outreach import setup_inactive_group_outreach_job
+        from bot.services.inactive_group_outreach import (
+            setup_inactive_group_outreach_job,
+        )
 
         setup_inactive_group_outreach_job(app)
 
-        from bot.services.inactive_group_outreach_dm import setup_inactive_group_outreach_dm_job
+        from bot.services.inactive_group_outreach_dm import (
+            setup_inactive_group_outreach_dm_job,
+        )
 
         setup_inactive_group_outreach_dm_job(app)
 
@@ -112,7 +118,9 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
 
         setup_group_photo_backfill_job(app)
 
-        from bot.services.issue_report_reminders import schedule_issue_report_reminder_job
+        from bot.services.issue_report_reminders import (
+            schedule_issue_report_reminder_job,
+        )
 
         schedule_issue_report_reminder_job(app)
 
@@ -147,7 +155,13 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
     Raises ``ImportError`` / ``ModuleNotFoundError`` if any handler module is missing.
     Used by deploy import smoke tests.
     """
-    from bot.handlers.start import start_handler, help_handler, whoami_handler, fileid_handler, fileid_photo_handler
+    from bot.handlers.start import (
+        start_handler,
+        help_handler,
+        whoami_handler,
+        fileid_handler,
+        fileid_photo_handler,
+    )
     from bot.handlers.referral import (
         my_referrals_handler,
         referral_hop_dm_handler,
@@ -175,7 +189,12 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
     from bot.handlers.bypass import bypass_handler, bypass_permanent_handler
     from bot.handlers.add import add_handler
     from bot.handlers.cash import cash_handler
-    from bot.handlers.track import on_new_chat_title, track_handler, info_handler, override_handler
+    from bot.handlers.track import (
+        on_new_chat_title,
+        track_handler,
+        info_handler,
+        override_handler,
+    )
     from bot.handlers.telemsg import telemsg_handler
     from bot.handlers.lookup import lookup_handler
     from bot.handlers.findgc import findgc_handler
@@ -331,7 +350,9 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         .get_updates_write_timeout(20.0)
         .get_updates_pool_timeout(20.0)
         .post_init(lambda app: _post_init_dm_gc_listener(app, test_mode=test_mode))
-        .post_shutdown(lambda app: _post_shutdown_dm_gc_listener(app, test_mode=test_mode))
+        .post_shutdown(
+            lambda app: _post_shutdown_dm_gc_listener(app, test_mode=test_mode)
+        )
         .build()
     )
 
@@ -366,11 +387,15 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         group=-4,
     )
     app.add_handler(
-        CallbackQueryHandler(h.bonus_draft_continue_handler, pattern=r"^bonus_draft:\d+$"),
+        CallbackQueryHandler(
+            h.bonus_draft_continue_handler, pattern=r"^bonus_draft:\d+$"
+        ),
         group=-4,
     )
     app.add_handler(
-        CallbackQueryHandler(h.bonus_draft_cancel_handler, pattern=r"^bonus_draft_cancel:\d+$"),
+        CallbackQueryHandler(
+            h.bonus_draft_cancel_handler, pattern=r"^bonus_draft_cancel:\d+$"
+        ),
         group=-4,
     )
 
@@ -501,7 +526,9 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(CommandHandler("cancel", h.flow_cancel_handler))
     app.add_handler(h.get_gc_handler())
 
-    app.add_handler(MessageHandler(filters.StatusUpdate.MIGRATE, h.on_chat_migrate_from))
+    app.add_handler(
+        MessageHandler(filters.StatusUpdate.MIGRATE, h.on_chat_migrate_from)
+    )
     app.add_handler(
         ChatMemberHandler(h.on_my_chat_member_updated, ChatMemberHandler.MY_CHAT_MEMBER)
     )
@@ -509,7 +536,9 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(
         ChatMemberHandler(h.on_other_chat_member_join, ChatMemberHandler.CHAT_MEMBER),
     )
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_TITLE, h.on_new_chat_title))
+    app.add_handler(
+        MessageHandler(filters.StatusUpdate.NEW_CHAT_TITLE, h.on_new_chat_title)
+    )
     app.add_handler(
         MessageHandler(
             filters.ChatType.GROUPS & filters.StatusUpdate.NEW_CHAT_MEMBERS,
@@ -565,12 +594,15 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         group=5,
     )
 
-    from bot.runtime_config import is_test_bot_worker, use_payment_v2
+    from bot.runtime_config import is_test_bot_worker
 
     if test_mode:
         print(
             "Test bot is running (BOT_USE_PAYMENT_V2=%s, BOT_TEST_WORKER=%s). Press Ctrl+C to stop."
-            % ("on" if use_payment_v2() else "off", "on" if is_test_bot_worker() else "off")
+            % (
+                "on" if use_payment_v2() else "off",
+                "on" if is_test_bot_worker() else "off",
+            )
         )
         print(
             "Tip: after /deposit, use Reply on the bot message to enter the amount "

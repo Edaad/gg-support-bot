@@ -13,7 +13,6 @@ from bot.services.union_method_types import (
     CLUB_SLUG_TO_UNION_TYPE,
     UNION_METHOD_TYPES,
     UNION_TYPE_SLUGS,
-    union_type_display_name,
     validate_union_method_type,
 )
 from db.connection import get_db
@@ -83,7 +82,9 @@ def pick_union_method(
     amount: Optional[Decimal],
 ) -> Optional[ClubPaymentMethod]:
     """First union pool in dashboard order with enough remaining capacity."""
-    methods = list_union_methods_for_club(club_id, method_type=method_type, active_only=True)
+    methods = list_union_methods_for_club(
+        club_id, method_type=method_type, active_only=True
+    )
     if not methods:
         return None
     with get_db() as session:

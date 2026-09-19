@@ -131,7 +131,9 @@ class SharedChatAddMemberTestCase(unittest.IsolatedAsyncioTestCase):
                 ),
                 patch(
                     "notification.handlers.bind_callbacks.resolve_bound_group",
-                    return_value=SimpleNamespace(ok=True, bound_group=bound, error=None),
+                    return_value=SimpleNamespace(
+                        ok=True, bound_group=bound, error=None
+                    ),
                 ),
                 patch(
                     "notification.handlers.bind_callbacks.crypto_scope_error",
@@ -146,7 +148,10 @@ class SharedChatAddMemberTestCase(unittest.IsolatedAsyncioTestCase):
 
         update.message.reply_text.assert_awaited_once()
         self.assertIn("Confirm add", update.message.reply_text.await_args.args[0])
-        self.assertNotIn(BIND_ADD_MEMBER_PENDING_KEY, context.application.bot_data.get(BIND_ADD_MEMBER_PENDING_KEY, {}))
+        self.assertNotIn(
+            BIND_ADD_MEMBER_PENDING_KEY,
+            context.application.bot_data.get(BIND_ADD_MEMBER_PENDING_KEY, {}),
+        )
 
 
 class ChatIdVariantPendingTestCase(unittest.TestCase):
@@ -244,7 +249,10 @@ class UnboundImmediateBindTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["group_title_input"], "AT / 6794-0359 / Pratul")
         mock_venmo_bind.assert_not_awaited()
         update.message.reply_text.assert_awaited_once()
-        self.assertIn("Bound to AT / 6794-0359 / Pratul", update.message.reply_text.await_args.args[0])
+        self.assertIn(
+            "Bound to AT / 6794-0359 / Pratul",
+            update.message.reply_text.await_args.args[0],
+        )
 
 
 if __name__ == "__main__":

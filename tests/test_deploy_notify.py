@@ -55,7 +55,9 @@ class DeployNotifyCooldownTestCase(unittest.TestCase):
     def test_is_deploy_notify_enabled_false_values(self):
         for value in ("0", "false", "no", "off"):
             with self.subTest(value=value):
-                with patch.dict(os.environ, {dn.DEPLOY_NOTIFY_ENABLED_ENV: value}, clear=False):
+                with patch.dict(
+                    os.environ, {dn.DEPLOY_NOTIFY_ENABLED_ENV: value}, clear=False
+                ):
                     self.assertFalse(dn.is_deploy_notify_enabled())
 
 
@@ -66,7 +68,9 @@ class DeployNotifySendTestCase(unittest.IsolatedAsyncioTestCase):
         mock_bot.shutdown = AsyncMock()
         mock_bot.send_message = AsyncMock()
 
-        with patch.dict(os.environ, {dn.TELEGRAM_BOT_TOKEN_ENV: "test-token"}, clear=False):
+        with patch.dict(
+            os.environ, {dn.TELEGRAM_BOT_TOKEN_ENV: "test-token"}, clear=False
+        ):
             with patch("bot.services.deploy_notify.Bot", return_value=mock_bot):
                 sent = await dn.notify_all_admin_user_ids("Deploy warning")
 
@@ -88,7 +92,9 @@ class DeployNotifySendTestCase(unittest.IsolatedAsyncioTestCase):
 
         mock_bot.send_message = AsyncMock(side_effect=_send)
 
-        with patch.dict(os.environ, {dn.TELEGRAM_BOT_TOKEN_ENV: "test-token"}, clear=False):
+        with patch.dict(
+            os.environ, {dn.TELEGRAM_BOT_TOKEN_ENV: "test-token"}, clear=False
+        ):
             with patch("bot.services.deploy_notify.Bot", return_value=mock_bot):
                 sent = await dn.notify_all_admin_user_ids("Deploy warning")
 

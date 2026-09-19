@@ -11,7 +11,10 @@ from typing import Literal
 from telethon.errors import SessionPasswordNeededError
 
 from bot.services.mtproto_group_create import get_mtproto_lock, make_client
-from bot.services.mtproto_session_db import clear_disk_login_session, snapshot_disk_session_to_database
+from bot.services.mtproto_session_db import (
+    clear_disk_login_session,
+    snapshot_disk_session_to_database,
+)
 from club_gc_settings import ClubGcConfig
 
 logger = logging.getLogger(__name__)
@@ -35,7 +38,11 @@ _MAX_QR_REFRESHES = 8
 
 def _seconds_until(expires_at: datetime) -> float:
     now = datetime.now(tz=timezone.utc)
-    exp = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=timezone.utc)
+    exp = (
+        expires_at
+        if expires_at.tzinfo is not None
+        else expires_at.replace(tzinfo=timezone.utc)
+    )
     return (exp - now).total_seconds()
 
 
@@ -108,9 +115,7 @@ async def start_qr_login(cfg: ClubGcConfig) -> QrLoginJob:
                         logger.info("MTProto QR login succeeded club=%s", cfg.club_key)
                     else:
                         job.status = "error"
-                        job.detail = (
-                            "Telegram accepted the QR login, but syncing the session to Postgres failed."
-                        )
+                        job.detail = "Telegram accepted the QR login, but syncing the session to Postgres failed."
                 except SessionPasswordNeededError:
                     job.status = "needs_password"
                     logger.info("MTProto QR login needs 2FA club=%s", cfg.club_key)

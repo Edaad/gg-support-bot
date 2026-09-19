@@ -6,7 +6,7 @@ from __future__ import annotations
 import unittest
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from bot.services import cashout_handle_validation as cv
 from bot.services import clubgg_deposit_api as api
@@ -68,9 +68,7 @@ class HandleValidationTests(unittest.TestCase):
 
     def test_crypto_accepts_address_tokens(self):
         self.assertEqual(
-            cv.validate_cashout_handle(
-                "crypto", "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
-            ),
+            cv.validate_cashout_handle("crypto", "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"),
             "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
         )
         # ETH addresses are case-sensitive (checksum) — preserved.
@@ -98,7 +96,9 @@ class HandleValidationTests(unittest.TestCase):
         )
         # The share link PayPal gives players today, not just the legacy short one.
         self.assertEqual(
-            cv.validate_cashout_handle("paypal", "https://www.paypal.com/paypalme/John"),
+            cv.validate_cashout_handle(
+                "paypal", "https://www.paypal.com/paypalme/John"
+            ),
             "https://www.paypal.com/paypalme/John",
         )
 
@@ -117,12 +117,15 @@ class HandleValidationTests(unittest.TestCase):
 class RunAutoClaimUnionOverrideTests(unittest.IsolatedAsyncioTestCase):
     async def _run(self, union):
         cfg = SimpleNamespace(timeout_sec=5)
-        with patch.object(api, "load_config", return_value=cfg), patch.object(
-            api, "get_auto_claim_enabled", return_value=True
-        ), patch.object(
-            api, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
-        ), patch.object(
-            api, "_health_ok", new=AsyncMock(return_value=(False, "down"))
+        with (
+            patch.object(api, "load_config", return_value=cfg),
+            patch.object(api, "get_auto_claim_enabled", return_value=True),
+            patch.object(
+                api, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
+            ),
+            patch.object(
+                api, "_health_ok", new=AsyncMock(return_value=(False, "down"))
+            ),
         ):
             return await api.run_auto_claim(
                 club_id=2,
@@ -166,7 +169,9 @@ class CashoutModePrecedenceTests(unittest.IsolatedAsyncioTestCase):
         context = self._ctx()
         patches = [
             patch.object(
-                co, "block_if_group_money_flow_active", new=AsyncMock(return_value=False)
+                co,
+                "block_if_group_money_flow_active",
+                new=AsyncMock(return_value=False),
             ),
             patch.object(co, "is_update_too_old", return_value=False),
             patch.object(co, "get_club_for_chat", return_value=7),

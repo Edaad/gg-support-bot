@@ -52,7 +52,10 @@ class ExpensesApiTestCase(unittest.TestCase):
         auth_mod._SECRET = None
         self.env_patch = patch.dict(
             os.environ,
-            {"DASHBOARD_PASSWORD": "admin-secret", "DASHBOARD_AM_PASSWORD": "am-secret"},
+            {
+                "DASHBOARD_PASSWORD": "admin-secret",
+                "DASHBOARD_AM_PASSWORD": "am-secret",
+            },
             clear=False,
         )
         self.env_patch.start()
@@ -63,10 +66,14 @@ class ExpensesApiTestCase(unittest.TestCase):
             connect_args={"check_same_thread": False},
             poolclass=StaticPool,
         )
-        Base.metadata.create_all(self.engine, tables=[Club.__table__, Expense.__table__])
+        Base.metadata.create_all(
+            self.engine, tables=[Club.__table__, Expense.__table__]
+        )
         self.Session = sessionmaker(bind=self.engine)
         session = self.Session()
-        session.add(Club(id=1, name="Round Table", telegram_user_id=1001, is_active=True))
+        session.add(
+            Club(id=1, name="Round Table", telegram_user_id=1001, is_active=True)
+        )
         session.add(Club(id=2, name="ClubGTO", telegram_user_id=1002, is_active=True))
         session.commit()
         session.close()
@@ -74,7 +81,9 @@ class ExpensesApiTestCase(unittest.TestCase):
         self.app = _make_app(self.Session)
         self.client = TestClient(self.app)
         self.admin_headers = {"Authorization": f"Bearer {create_token(ROLE_ADMIN)}"}
-        self.am_headers = {"Authorization": f"Bearer {create_token(ROLE_ACCOUNT_MANAGER)}"}
+        self.am_headers = {
+            "Authorization": f"Bearer {create_token(ROLE_ACCOUNT_MANAGER)}"
+        }
 
     def tearDown(self) -> None:
         import api.auth as auth_mod
@@ -123,7 +132,12 @@ class ExpensesApiTestCase(unittest.TestCase):
         listed = self.client.get(
             "/api/expenses",
             headers=self.admin_headers,
-            params={"club_id": 1, "pending": "true", "from": "2026-08-01", "to": "2026-08-31"},
+            params={
+                "club_id": 1,
+                "pending": "true",
+                "from": "2026-08-01",
+                "to": "2026-08-31",
+            },
         )
         self.assertEqual(listed.status_code, 200)
         rows = listed.json()

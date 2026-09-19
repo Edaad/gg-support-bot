@@ -41,7 +41,9 @@ def _row(**kwargs):
 
 class ManualDepositRequestsApiTestCase(unittest.TestCase):
     def setUp(self):
-        self.env_patch = patch.dict(os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False)
+        self.env_patch = patch.dict(
+            os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False
+        )
         self.env_patch.start()
         self.app = FastAPI()
         self.app.include_router(router)
@@ -64,12 +66,8 @@ class ManualDepositRequestsApiTestCase(unittest.TestCase):
     def _set_rows(self, rows: list) -> TestClient:
         total_amount = sum(Decimal(str(r.amount)) for r in rows)
         summary_row = SimpleNamespace(total_count=len(rows), total_amount=total_amount)
-        self.query.order_by.return_value.enable_eagerloads.return_value.with_entities.return_value.one.return_value = (
-            summary_row
-        )
-        self.query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = (
-            rows
-        )
+        self.query.order_by.return_value.enable_eagerloads.return_value.with_entities.return_value.one.return_value = summary_row
+        self.query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = rows
         return TestClient(self.app)
 
     def test_list_includes_summary(self):

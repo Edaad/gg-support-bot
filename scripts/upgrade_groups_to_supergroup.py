@@ -115,7 +115,11 @@ def _format_gc_context(
     parts.append(f"stored_chat_id={stored_chat_id}")
     if dialog_chat_id is not None:
         parts.append(f"dialog_chat_id={dialog_chat_id}")
-    if dialog_title and dialog_title.strip() and dialog_title.strip() != (title or "").strip():
+    if (
+        dialog_title
+        and dialog_title.strip()
+        and dialog_title.strip() != (title or "").strip()
+    ):
         parts.append(f"dialog_title={dialog_title!r}")
     if telegram_kind:
         parts.append(f"telegram={telegram_kind}")
@@ -295,7 +299,9 @@ def _backup_database(
     return dump_path
 
 
-def _remap_chat_id_with_retry(old_id: int, new_id: int, *, max_attempts: int = 3) -> dict[str, int]:
+def _remap_chat_id_with_retry(
+    old_id: int, new_id: int, *, max_attempts: int = 3
+) -> dict[str, int]:
     from sqlalchemy.exc import OperationalError
 
     last_err: Exception | None = None
@@ -509,7 +515,7 @@ async def _upgrade(
                         status = "admin_not_in_group"
                         _progress(
                             show_progress,
-                            f"  → skip: MTProto admin not in group | "
+                            "  → skip: MTProto admin not in group | "
                             + _format_gc_context(
                                 club_display_name=cfg.club_display_name,
                                 club_key=cfg.club_key,
@@ -542,7 +548,7 @@ async def _upgrade(
                     )
                     _progress(
                         show_progress,
-                        f"  → classified | "
+                        "  → classified | "
                         + _format_gc_context(
                             club_display_name=cfg.club_display_name,
                             club_key=cfg.club_key,
@@ -575,7 +581,7 @@ async def _upgrade(
                         status = "skipped_channel_not_group"
                         _progress(
                             show_progress,
-                            f"  → skip: not a group chat | "
+                            "  → skip: not a group chat | "
                             + _format_gc_context(
                                 club_display_name=cfg.club_display_name,
                                 club_key=cfg.club_key,
@@ -610,7 +616,7 @@ async def _upgrade(
                             status = "already_supergroup"
                             _progress(
                                 show_progress,
-                                f"  → skip: already supergroup on Telegram | "
+                                "  → skip: already supergroup on Telegram | "
                                 + _format_gc_context(
                                     club_display_name=cfg.club_display_name,
                                     club_key=cfg.club_key,
@@ -694,7 +700,7 @@ async def _upgrade(
                         status = f"skipped_{kind}"
                         _progress(
                             show_progress,
-                            f"  → skip | "
+                            "  → skip | "
                             + _format_gc_context(
                                 club_display_name=cfg.club_display_name,
                                 club_key=cfg.club_key,
@@ -810,7 +816,7 @@ async def _upgrade(
 
                         _progress(
                             show_progress,
-                            f"  → migrated | "
+                            "  → migrated | "
                             + _format_gc_context(
                                 club_display_name=cfg.club_display_name,
                                 club_key=cfg.club_key,
@@ -828,7 +834,7 @@ async def _upgrade(
                         would_migrate += 1
                         _progress(
                             show_progress,
-                            f"  → would migrate basic group | "
+                            "  → would migrate basic group | "
                             + _format_gc_context(
                                 club_display_name=cfg.club_display_name,
                                 club_key=cfg.club_key,
@@ -1031,7 +1037,9 @@ def main() -> None:
     else:
         _print_human(summary, rows)
 
-    if (summary.errors or summary.migrate_failed or summary.db_update_failed) and args.apply:
+    if (
+        summary.errors or summary.migrate_failed or summary.db_update_failed
+    ) and args.apply:
         sys.exit(2)
 
 

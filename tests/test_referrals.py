@@ -67,7 +67,9 @@ class ReferralHelpersTest(unittest.TestCase):
         self.assertFalse(ref.is_referral_start_payload("start_AbCdEfGhIjKl"))
 
     def test_build_url_and_message(self):
-        url = ref.build_referral_url(bot_username="PlayGGSupport", code="ref_AbCdEfGhIjKl")
+        url = ref.build_referral_url(
+            bot_username="PlayGGSupport", code="ref_AbCdEfGhIjKl"
+        )
         self.assertEqual(url, "https://t.me/PlayGGSupport?start=ref_AbCdEfGhIjKl")
         msg = ref.format_referral_link_message(url)
         self.assertIn("unique referral link", msg)
@@ -75,7 +77,9 @@ class ReferralHelpersTest(unittest.TestCase):
         self.assertIn(url, msg)
 
     def test_hop_and_existing_copy(self):
-        with patch.object(ref, "support_account_username", return_value="@ClubGTOAdmin"):
+        with patch.object(
+            ref, "support_account_username", return_value="@ClubGTOAdmin"
+        ):
             self.assertEqual(
                 ref.hop_message(4),
                 "Message @ClubGTOAdmin to get your support group.",
@@ -95,7 +99,9 @@ class ReferralHelpersTest(unittest.TestCase):
             "REFERRAL_SUPPORT_ACCOUNT_CREATOR_CLUB",
             "REFERRAL_SUPPORT_ACCOUNT_CLUB_GTO",
         }
-        clean_env = {key: value for key, value in environ.items() if key not in env_keys}
+        clean_env = {
+            key: value for key, value in environ.items() if key not in env_keys
+        }
         with patch.dict(environ, clean_env, clear=True):
             configs = build_club_gc_config()
 
@@ -114,15 +120,8 @@ class ReferralHelpersTest(unittest.TestCase):
 
     def test_format_my_referrals(self):
         self.assertEqual(
-            ref.format_my_referrals_messages(
-                ["5323-5255", "8190-5287", "2342-4223"]
-            ),
-            [
-                "You have referred 3 players:\n\n"
-                "• 5323-5255\n"
-                "• 8190-5287\n"
-                "• 2342-4223"
-            ],
+            ref.format_my_referrals_messages(["5323-5255", "8190-5287", "2342-4223"]),
+            ["You have referred 3 players:\n\n• 5323-5255\n• 8190-5287\n• 2342-4223"],
         )
         self.assertEqual(
             ref.format_my_referrals_messages([]),
@@ -148,16 +147,12 @@ class MyReferralsQueryTest(unittest.TestCase):
         ]
         session = MagicMock()
         query = session.query.return_value
-        query.join.return_value.filter.return_value.order_by.return_value.all.return_value = (
-            rows
-        )
+        query.join.return_value.filter.return_value.order_by.return_value.all.return_value = rows
         mock_get_db.return_value.__enter__.return_value = session
         mock_get_db.return_value.__exit__.return_value = False
 
         self.assertEqual(
-            ref.get_credited_referral_player_ids(
-                club_id=4, referrer_chat_id=-1001
-            ),
+            ref.get_credited_referral_player_ids(club_id=4, referrer_chat_id=-1001),
             ["5323-5255", "8190-5287"],
         )
         query.join.return_value.filter.assert_called_once()
@@ -168,7 +163,9 @@ class EnsureReferralLinkTest(unittest.TestCase):
     def test_returns_existing_stable_code(self, mock_get_db):
         existing = _link(code="ref_StableCode12")
         session = MagicMock()
-        session.query.return_value.filter.return_value.one_or_none.return_value = existing
+        session.query.return_value.filter.return_value.one_or_none.return_value = (
+            existing
+        )
         mock_get_db.return_value.__enter__.return_value = session
         mock_get_db.return_value.__exit__.return_value = False
 
@@ -183,11 +180,11 @@ class EnsureReferralLinkTest(unittest.TestCase):
 
     @patch.object(ref, "get_db")
     def test_retitle_updates_player_id_keeps_code(self, mock_get_db):
-        existing = _link(
-            code="ref_StableCode12", referrer_gg_player_id="1111-2222"
-        )
+        existing = _link(code="ref_StableCode12", referrer_gg_player_id="1111-2222")
         session = MagicMock()
-        session.query.return_value.filter.return_value.one_or_none.return_value = existing
+        session.query.return_value.filter.return_value.one_or_none.return_value = (
+            existing
+        )
         mock_get_db.return_value.__enter__.return_value = session
         mock_get_db.return_value.__exit__.return_value = False
 
@@ -228,13 +225,13 @@ class HandleStartPayloadTest(unittest.TestCase):
     @patch.object(ref, "get_db")
     @patch.object(ref, "_club_key_for_club_id", return_value="clubgto")
     @patch.object(ref, "support_account_username", return_value="@ClubGTOAdmin")
-    def test_second_click_ignored(
-        self, _user, _key, mock_get_db, mock_link, _sgc
-    ):
+    def test_second_click_ignored(self, _user, _key, mock_get_db, mock_link, _sgc):
         mock_link.return_value = _link(id=2, code="ref_SecondLink01")
         already = _attr(referral_link_id=1)
         session = MagicMock()
-        session.query.return_value.filter.return_value.one_or_none.return_value = already
+        session.query.return_value.filter.return_value.one_or_none.return_value = (
+            already
+        )
         mock_get_db.return_value.__enter__.return_value = session
         mock_get_db.return_value.__exit__.return_value = False
 
@@ -290,9 +287,7 @@ class ReferralStartHandlerTest(unittest.IsolatedAsyncioTestCase):
             player_telegram_user_id=555,
             player_username="player",
         )
-        update.message.reply_text.assert_awaited_once_with(
-            "existing GC success copy"
-        )
+        update.message.reply_text.assert_awaited_once_with("existing GC success copy")
 
     @patch.object(
         referral_handler,
@@ -418,9 +413,7 @@ class OnPlayerIdBoundTest(unittest.TestCase):
     @patch.object(ref, "get_db")
     def test_referrer_retitle_pings_referred(self, mock_get_db, mock_sgc):
         mock_sgc.return_value = SimpleNamespace(player_telegram_user_id=999)
-        link = _link(
-            referrer_chat_id=-1001, referrer_gg_player_id="1111-2222"
-        )
+        link = _link(referrer_chat_id=-1001, referrer_gg_player_id="1111-2222")
         credited = _attr(
             status=ref.STATUS_CREDITED,
             referred_chat_id=-2002,
@@ -518,9 +511,7 @@ class ReferralLinkHandlerTest(unittest.IsolatedAsyncioTestCase):
     async def test_silent_when_not_support_group(self, _sgc):
         update = SimpleNamespace(
             message=SimpleNamespace(reply_text=AsyncMock()),
-            effective_chat=SimpleNamespace(
-                id=-999, type="supergroup", title="Random"
-            ),
+            effective_chat=SimpleNamespace(id=-999, type="supergroup", title="Random"),
         )
         context = SimpleNamespace(bot=SimpleNamespace(username="bot"))
         await referral_handler.referral_link_handler(update, context)
@@ -574,22 +565,16 @@ class MyReferralsHandlerTest(unittest.IsolatedAsyncioTestCase):
     @patch.object(
         referral_handler,
         "fetch_support_group_chat_by_telegram_chat_id",
-        return_value=SimpleNamespace(
-            telegram_chat_title="GTO / 1111-2222 / Player"
-        ),
+        return_value=SimpleNamespace(telegram_chat_title="GTO / 1111-2222 / Player"),
     )
     @patch.object(referral_handler, "get_club_for_chat", return_value=4)
-    @patch.object(
-        referral_handler, "gg_player_id_from_title", return_value="1111-2222"
-    )
+    @patch.object(referral_handler, "gg_player_id_from_title", return_value="1111-2222")
     @patch.object(
         referral_handler,
         "get_credited_referral_player_ids",
         return_value=["5323-5255", "8190-5287"],
     )
-    async def test_lists_credited_referrals(
-        self, mock_get_ids, _title, _club, _sgc
-    ):
+    async def test_lists_credited_referrals(self, mock_get_ids, _title, _club, _sgc):
         update = SimpleNamespace(
             message=SimpleNamespace(reply_text=AsyncMock()),
             effective_chat=SimpleNamespace(
@@ -609,17 +594,11 @@ class MyReferralsHandlerTest(unittest.IsolatedAsyncioTestCase):
     @patch.object(
         referral_handler,
         "fetch_support_group_chat_by_telegram_chat_id",
-        return_value=SimpleNamespace(
-            telegram_chat_title="GTO / 1111-2222 / Player"
-        ),
+        return_value=SimpleNamespace(telegram_chat_title="GTO / 1111-2222 / Player"),
     )
     @patch.object(referral_handler, "get_club_for_chat", return_value=4)
-    @patch.object(
-        referral_handler, "gg_player_id_from_title", return_value="1111-2222"
-    )
-    @patch.object(
-        referral_handler, "get_credited_referral_player_ids", return_value=[]
-    )
+    @patch.object(referral_handler, "gg_player_id_from_title", return_value="1111-2222")
+    @patch.object(referral_handler, "get_credited_referral_player_ids", return_value=[])
     async def test_empty_state(self, _get_ids, _title, _club, _sgc):
         update = SimpleNamespace(
             message=SimpleNamespace(reply_text=AsyncMock()),

@@ -99,7 +99,9 @@ def _to_read(data: dict, club_names: dict[int, str]) -> StaffCashoutRecordRead:
         status=str(data.get("status") or "cleared"),
         created_at=data.get("created_at"),
         updated_at=data.get("updated_at"),
-        payments=[StaffCashoutPaymentRead.model_validate(p) for p in data.get("payments", [])],
+        payments=[
+            StaffCashoutPaymentRead.model_validate(p) for p in data.get("payments", [])
+        ],
         sends=[StaffCashoutSendRead.model_validate(s) for s in data.get("sends", [])],
     )
 
@@ -132,7 +134,9 @@ def list_cashout_records(
         raise HTTPException(403, "Admin only")
     effective_club_id, empty = resolve_gto_list_club_id(role, club_id, db)
     if empty:
-        return StaffCashoutRecordListResponse(items=[], total=0, limit=limit, offset=offset)
+        return StaffCashoutRecordListResponse(
+            items=[], total=0, limit=limit, offset=offset
+        )
     club_names = _club_name_map(db)
     try:
         rows, total = list_staff_cashout_records(
@@ -308,9 +312,7 @@ async def patch_cashout_slack_reminder(
         try:
             sent = await send_due_cashout_reminders()
             if sent:
-                logger.info(
-                    "cashout_slack_reminder: immediate send count=%s", sent
-                )
+                logger.info("cashout_slack_reminder: immediate send count=%s", sent)
         except Exception:
             logger.exception("cashout_slack_reminder: immediate send failed")
     return StaffCashoutSlackReminderRead(
@@ -481,7 +483,9 @@ def patch_cashout_record(
             group_title=updates.get("group_title"),
             amount=updates.get("amount"),
             sending=updates.get("sending") if "sending" in updates else None,
-            do_not_send=updates.get("do_not_send") if "do_not_send" in updates else None,
+            do_not_send=updates.get("do_not_send")
+            if "do_not_send" in updates
+            else None,
             audited=updates.get("audited") if "audited" in updates else None,
         )
     except CashoutRecordNotActive as exc:
@@ -513,7 +517,9 @@ def replace_payments(
     return _to_read(data, _club_name_map(db))
 
 
-@router.post("/{record_id}/payments", response_model=StaffCashoutRecordRead, status_code=201)
+@router.post(
+    "/{record_id}/payments", response_model=StaffCashoutRecordRead, status_code=201
+)
 def add_payment(
     record_id: int,
     body: StaffCashoutPaymentCreate,
@@ -530,7 +536,9 @@ def add_payment(
     return _to_read(data, _club_name_map(db))
 
 
-@router.patch("/{record_id}/payments/{payment_id}", response_model=StaffCashoutRecordRead)
+@router.patch(
+    "/{record_id}/payments/{payment_id}", response_model=StaffCashoutRecordRead
+)
 def patch_payment(
     record_id: int,
     payment_id: int,
@@ -549,7 +557,9 @@ def patch_payment(
     return _to_read(data, _club_name_map(db))
 
 
-@router.delete("/{record_id}/payments/{payment_id}", response_model=StaffCashoutRecordRead)
+@router.delete(
+    "/{record_id}/payments/{payment_id}", response_model=StaffCashoutRecordRead
+)
 def remove_payment(
     record_id: int,
     payment_id: int,
@@ -563,7 +573,9 @@ def remove_payment(
     return _to_read(data, _club_name_map(db))
 
 
-@router.post("/{record_id}/sends", response_model=StaffCashoutRecordRead, status_code=201)
+@router.post(
+    "/{record_id}/sends", response_model=StaffCashoutRecordRead, status_code=201
+)
 def add_send(
     record_id: int,
     body: StaffCashoutSendCreate,

@@ -8,11 +8,16 @@ from telegram.ext import ContextTypes
 
 from club_gc_settings import gc_mtproto_operator_telegram_user_ids
 from config import ADMIN_USER_IDS
-from bot.services.migration_recovery import format_whosnext_message, peek_next_recovery_rows
+from bot.services.migration_recovery import (
+    format_whosnext_message,
+    peek_next_recovery_rows,
+)
 
 
 def _can_use_whosnext(user_id: int) -> bool:
-    return user_id in ADMIN_USER_IDS or user_id in gc_mtproto_operator_telegram_user_ids()
+    return (
+        user_id in ADMIN_USER_IDS or user_id in gc_mtproto_operator_telegram_user_ids()
+    )
 
 
 async def whosnext_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

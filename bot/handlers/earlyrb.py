@@ -62,9 +62,7 @@ UNION_PROMPT = "Which club would you like to claim your early feeback in?"
 CANCELLED_COPY = "Early feeback cancelled."
 TIMEOUT_COPY = "This early feeback request timed out. Send /earlyrb to start again."
 ADDING_COPY = "Adding early feeback..."
-ADDING_IN_PROGRESS_COPY = (
-    "Adding is already in progress — this can't be cancelled."
-)
+ADDING_IN_PROGRESS_COPY = "Adding is already in progress — this can't be cancelled."
 AMOUNT_CHANGED_COPY = (
     "Your feeback changed while we were claiming it — here's the latest."
 )

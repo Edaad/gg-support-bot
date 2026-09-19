@@ -33,7 +33,11 @@ def main() -> None:
         print(f"{_LOG_PREFIX} import smoke ok", flush=True)
     except SystemExit as exc:
         if exc.code not in (0, None):
-            print(f"{_LOG_PREFIX} import smoke failed (release aborted)", file=sys.stderr, flush=True)
+            print(
+                f"{_LOG_PREFIX} import smoke failed (release aborted)",
+                file=sys.stderr,
+                flush=True,
+            )
             raise
         raise
     except Exception as exc:

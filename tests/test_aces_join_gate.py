@@ -18,9 +18,7 @@ PLAYER_ID = 8132930521
 
 def _union_callback_update(shorthand: str):
     chat = SimpleNamespace(id=CHAT_ID, type="supergroup")
-    message = SimpleNamespace(
-        chat=chat, date=datetime.now(timezone.utc), message_id=99
-    )
+    message = SimpleNamespace(chat=chat, date=datetime.now(timezone.utc), message_id=99)
     query = SimpleNamespace(
         data=f"depunion:{shorthand}",
         message=message,
@@ -89,7 +87,9 @@ class AcesJoinGateTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(dep, "_record_funnel_from_context"),
             patch.object(dep, "register_flow_callback_message"),
-            patch.object(dep, "_prompt_deposit_methods", new=AsyncMock(return_value=True)),
+            patch.object(
+                dep, "_prompt_deposit_methods", new=AsyncMock(return_value=True)
+            ),
         ]
         for p in patches:
             p.start()

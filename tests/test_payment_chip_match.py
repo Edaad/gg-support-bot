@@ -175,13 +175,16 @@ class RunMatchFailSafeTestCase(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_run_notifies_on_success(self) -> None:
-        with patch.object(
-            pcm,
-            "match_chip_add_sync",
-            return_value=(None, [], "Payment match — /add $1 · no match"),
-        ), patch.object(
-            pcm, "notify_payment_chip_match", new_callable=AsyncMock
-        ) as notify:
+        with (
+            patch.object(
+                pcm,
+                "match_chip_add_sync",
+                return_value=(None, [], "Payment match — /add $1 · no match"),
+            ),
+            patch.object(
+                pcm, "notify_payment_chip_match", new_callable=AsyncMock
+            ) as notify,
+        ):
             await pcm.run_payment_chip_match(
                 telegram_chat_id=-1,
                 amount_cents=100,
@@ -190,10 +193,13 @@ class RunMatchFailSafeTestCase(unittest.IsolatedAsyncioTestCase):
             notify.assert_awaited_once()
 
     async def test_notify_skips_telegram_when_disabled(self) -> None:
-        with patch.object(pcm, "_CHIP_MATCH_STAFF_NOTIFY_ENABLED", False), patch(
-            "bot.services.venmo_payments.send_telegram_notification",
-            new_callable=AsyncMock,
-        ) as send:
+        with (
+            patch.object(pcm, "_CHIP_MATCH_STAFF_NOTIFY_ENABLED", False),
+            patch(
+                "bot.services.venmo_payments.send_telegram_notification",
+                new_callable=AsyncMock,
+            ) as send,
+        ):
             await pcm.notify_payment_chip_match("Payment match — test")
             send.assert_not_awaited()
 
@@ -201,7 +207,9 @@ class RunMatchFailSafeTestCase(unittest.IsolatedAsyncioTestCase):
 class PersistCryptoMetadataTestCase(unittest.TestCase):
     def test_crypto_metadata_includes_tx_hash(self) -> None:
         session = MagicMock()
-        session.query.return_value.filter_by.return_value.one_or_none.return_value = None
+        session.query.return_value.filter_by.return_value.one_or_none.return_value = (
+            None
+        )
         nested = MagicMock()
         nested.__enter__ = MagicMock(return_value=None)
         nested.__exit__ = MagicMock(return_value=False)

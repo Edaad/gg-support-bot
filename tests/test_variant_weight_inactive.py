@@ -157,9 +157,7 @@ class DeliverabilityInactiveTests(unittest.TestCase):
         session = self._method_session(tiers=[tier], variant_q=variant_q)
 
         self.assertFalse(
-            club_payment_v2.club_deposit_method_deliverable(
-                session, 4, Decimal("250")
-            )
+            club_payment_v2.club_deposit_method_deliverable(session, 4, Decimal("250"))
         )
 
     def test_deliverable_with_active_variant(self):
@@ -178,9 +176,7 @@ class DeliverabilityInactiveTests(unittest.TestCase):
         session = self._method_session(tiers=[tier], variant_q=variant_q)
 
         self.assertTrue(
-            club_payment_v2.club_deposit_method_deliverable(
-                session, 4, Decimal("75")
-            )
+            club_payment_v2.club_deposit_method_deliverable(session, 4, Decimal("75"))
         )
 
     def test_checkout_only_tier_without_variants_still_deliverable(self):
@@ -199,14 +195,15 @@ class DeliverabilityInactiveTests(unittest.TestCase):
         session = self._method_session(tiers=[tier], variant_q=variant_q)
 
         self.assertTrue(
-            club_payment_v2.club_deposit_method_deliverable(
-                session, 4, Decimal("75")
-            )
+            club_payment_v2.club_deposit_method_deliverable(session, 4, Decimal("75"))
         )
 
 
 class GetMethodsForAmountInactiveTests(unittest.TestCase):
-    @patch("bot.services.club_payment_v2.club_deposit_method_deliverable", return_value=False)
+    @patch(
+        "bot.services.club_payment_v2.club_deposit_method_deliverable",
+        return_value=False,
+    )
     @patch("bot.services.club_payment_v2.get_db")
     def test_hides_method_when_tier_not_deliverable(self, mock_get_db, _deliverable):
         method = SimpleNamespace(

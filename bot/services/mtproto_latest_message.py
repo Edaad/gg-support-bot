@@ -125,7 +125,7 @@ def format_telethon_latest_check(
         )
 
     if not result.authorized:
-        lines.append(f"Session: not authorized")
+        lines.append("Session: not authorized")
         if result.error:
             lines.append(result.error)
         return "\n".join(lines)

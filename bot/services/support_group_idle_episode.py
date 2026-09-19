@@ -485,8 +485,7 @@ def _schedule_staff_unanswered(
     jq = _resolve_job_queue(job_queue)
     if jq is None:
         logger.warning(
-            "support_group_idle_episode: no job_queue for staff_unanswered "
-            "chat_id=%s",
+            "support_group_idle_episode: no job_queue for staff_unanswered chat_id=%s",
             chat_id,
         )
         return
@@ -725,9 +724,7 @@ async def on_player_reach_out(
         _schedule_hardcap(cid, job_queue=jq)
         _schedule_silence(cid, job_queue=jq)
         if slack_already_sent and burst:
-            _schedule_debounce(
-                cid, job_queue=jq, club_id=club_id, title=title
-            )
+            _schedule_debounce(cid, job_queue=jq, club_id=club_id, title=title)
         # Same 5m staff-unanswered latch as follow-up (skip gratitude-only).
         if slack_ok and not gratitude and body:
             arm_staff_unanswered_after_followup(
@@ -791,7 +788,6 @@ async def feed_or_open_episode(
         now=now,
         trigger_message=trigger_message,
     )
-
 
 
 def on_staff_human(
@@ -972,8 +968,7 @@ async def _idle_staff_unanswered_callback(context: ContextTypes.DEFAULT_TYPE) ->
     # Quiet chat: silence was deferred for this ping — close now if still quiet.
     last_at = state.get("last_human_at")
     if last_at is None or (
-        (now - last_at).total_seconds() + 0.5
-        >= float(idle_episode_silence_seconds())
+        (now - last_at).total_seconds() + 0.5 >= float(idle_episode_silence_seconds())
     ):
         close_episode(
             chat_id,
@@ -1049,18 +1044,14 @@ def restore_support_group_idle_episode_jobs(job_queue: Any | None = None) -> Non
             continue
         hardcap_remaining = hardcap_s - (now - started).total_seconds()
         if hardcap_remaining <= 0:
-            close_episode(
-                chat_id, job_queue=jq, close_reason=CLOSE_REASON_HARD_CAP
-            )
+            close_episode(chat_id, job_queue=jq, close_reason=CLOSE_REASON_HARD_CAP)
             continue
 
         last_at = state.get("last_human_at") or started
         silence_remaining = silence_s - (now - last_at).total_seconds()
         pending_staff_ua = _staff_unanswered_pending(state)
         if silence_remaining <= 0 and not pending_staff_ua:
-            close_episode(
-                chat_id, job_queue=jq, close_reason=CLOSE_REASON_SILENCE
-            )
+            close_episode(chat_id, job_queue=jq, close_reason=CLOSE_REASON_SILENCE)
             continue
 
         _schedule_hardcap(chat_id, job_queue=jq, when=hardcap_remaining)

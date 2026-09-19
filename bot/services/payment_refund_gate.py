@@ -96,9 +96,7 @@ def evaluate_refund_gate(
     if banned_hits:
         reasons.append(REASON_BANNED_MEMO)
     warn_whole_dollar = (
-        int(amount_cents) % 100 != 0
-        and not is_first_time_setup_bind
-        and not reasons
+        int(amount_cents) % 100 != 0 and not is_first_time_setup_bind and not reasons
     )
     return RefundGate(
         reasons=tuple(reasons),
@@ -227,7 +225,8 @@ def inject_refund_banner(text: str, gate: RefundGate) -> str:
     stripped = [
         line
         for line in lines
-        if "DO NOT ADD" not in line and not line.startswith("• Goods")
+        if "DO NOT ADD" not in line
+        and not line.startswith("• Goods")
         and not line.startswith("• Banned memo")
         and line != "⚠️ <b>DO NOT ADD</b> — refund required"
     ]
@@ -294,9 +293,7 @@ def format_player_refund_message(
         elif len(please) == 2:
             parts.append(f"Please {please[0]} and {please[1]}.")
         else:
-            parts.append(
-                "Please " + ", ".join(please[:-1]) + f", and {please[-1]}."
-            )
+            parts.append("Please " + ", ".join(please[:-1]) + f", and {please[-1]}.")
     return " ".join(parts)
 
 
@@ -409,9 +406,7 @@ async def maybe_create_payment_refund_issue_report(
                 return
             await create_issue_report(
                 session,
-                title=format_refund_issue_report_title(
-                    row, resolved, method_slug=slug
-                ),
+                title=format_refund_issue_report_title(row, resolved, method_slug=slug),
                 description=format_refund_issue_report_description(
                     row,
                     resolved,

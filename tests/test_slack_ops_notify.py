@@ -48,7 +48,9 @@ class TestNotifySlackOps(unittest.IsolatedAsyncioTestCase):
         },
     )
     @patch("bot.services.slack_ops_notify.httpx.AsyncClient")
-    async def test_posts_via_chat_post_message(self, mock_client_cls: MagicMock) -> None:
+    async def test_posts_via_chat_post_message(
+        self, mock_client_cls: MagicMock
+    ) -> None:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.raise_for_status = MagicMock()
@@ -64,7 +66,9 @@ class TestNotifySlackOps(unittest.IsolatedAsyncioTestCase):
         mock_client.post.assert_awaited_once()
         call_args = mock_client.post.await_args
         self.assertEqual(call_args.args[0], "https://slack.com/api/chat.postMessage")
-        self.assertEqual(call_args.kwargs["headers"]["Authorization"], "Bearer xoxb-test")
+        self.assertEqual(
+            call_args.kwargs["headers"]["Authorization"], "Bearer xoxb-test"
+        )
         payload = call_args.kwargs["json"]
         self.assertEqual(payload["channel"], "C123")
         self.assertIn("Migration Recovery", payload["text"])
@@ -105,7 +109,9 @@ class TestNotifySlackOps(unittest.IsolatedAsyncioTestCase):
 
     @patch.dict(os.environ, {"SLACK_OPS_WEBHOOK_URL": "https://hooks.slack.com/test"})
     @patch("bot.services.slack_ops_notify.httpx.AsyncClient")
-    async def test_webhook_only_when_bot_unset(self, mock_client_cls: MagicMock) -> None:
+    async def test_webhook_only_when_bot_unset(
+        self, mock_client_cls: MagicMock
+    ) -> None:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.raise_for_status = MagicMock()
@@ -129,7 +135,9 @@ class TestNotifySlackOps(unittest.IsolatedAsyncioTestCase):
         },
     )
     @patch("bot.services.slack_ops_notify.httpx.AsyncClient")
-    async def test_returns_false_on_http_error(self, mock_client_cls: MagicMock) -> None:
+    async def test_returns_false_on_http_error(
+        self, mock_client_cls: MagicMock
+    ) -> None:
         mock_client = AsyncMock()
         mock_client.__aenter__.return_value = mock_client
         mock_client.post = AsyncMock(side_effect=Exception("network"))

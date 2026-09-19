@@ -213,9 +213,7 @@ def _apply_from_csv_row(row: dict[str, Any]) -> dict[str, Any]:
 
     in_group = _csv_row_in_group(row)
     ids_raw = str(row.get("eligible_player_ids") or "").strip()
-    eligible_ids = tuple(
-        int(x.strip()) for x in ids_raw.split(",") if x.strip()
-    )
+    eligible_ids = tuple(int(x.strip()) for x in ids_raw.split(",") if x.strip())
     if in_group and eligible_ids:
         if maybe_finalize_recovery_row_from_membership(
             int(row["row_id"]),
@@ -272,7 +270,10 @@ def _apply_from_csv_row(row: dict[str, Any]) -> dict[str, Any]:
     if username:
         out["player_username"] = username
     out["bind_status"] = bind_status
-    out["player_id_updated"] = recovery_changed or bind_status in ("updated", "inserted")
+    out["player_id_updated"] = recovery_changed or bind_status in (
+        "updated",
+        "inserted",
+    )
     return out
 
 
@@ -338,7 +339,9 @@ def _load_recovery_rows(
                 group_title=str(r.group_title or ""),
                 telegram_chat_id=int(r.telegram_chat_id),
                 player_telegram_user_id=(
-                    int(r.player_telegram_user_id) if r.player_telegram_user_id else None
+                    int(r.player_telegram_user_id)
+                    if r.player_telegram_user_id
+                    else None
                 ),
                 player_username=str(r.player_username or ""),
                 readd_status=str(r.readd_status),
@@ -361,7 +364,11 @@ def _update_recovery_row_player(
     un = (player_username or "").strip() or None
     dn = (player_display_name or "").strip() or None
     with get_db() as session:
-        row = session.query(MigratedGroupRecovery).filter(MigratedGroupRecovery.id == int(row_id)).first()
+        row = (
+            session.query(MigratedGroupRecovery)
+            .filter(MigratedGroupRecovery.id == int(row_id))
+            .first()
+        )
         if row is None:
             return False
         changed = False
@@ -390,21 +397,14 @@ async def _scan_club_rows(
         is_client_authorized,
         make_client,
     )
-    from bot.services.mtproto_group_player import find_sole_player_participant
     from bot.services.support_group_chats import bind_player_for_gc_reuse
 
     cfg = CLUB_GC_CONFIG.get(club_key)
     if cfg is None:
-        return [
-            _error_csv_row(item, f"unknown_club:{club_key}")
-            for item in items
-        ]
+        return [_error_csv_row(item, f"unknown_club:{club_key}") for item in items]
 
     if not await is_client_authorized(cfg):
-        return [
-            _error_csv_row(item, "mtproto_unauthorized")
-            for item in items
-        ]
+        return [_error_csv_row(item, "mtproto_unauthorized") for item in items]
 
     out: list[dict[str, Any]] = []
     async with get_mtproto_lock(cfg.club_key):
@@ -412,10 +412,7 @@ async def _scan_club_rows(
         await client.connect()
         try:
             if not await client.is_user_authorized():
-                return [
-                    _error_csv_row(item, "mtproto_unauthorized")
-                    for item in items
-                ]
+                return [_error_csv_row(item, "mtproto_unauthorized") for item in items]
 
             me = await client.get_me()
             self_id = int(me.id) if me and getattr(me, "id", None) is not None else None
@@ -546,7 +543,10 @@ async def _scan_one_row(
                 player_username=username,
                 player_display_name=display,
             )
-            player_id_updated = recovery_changed or bind_status in ("updated", "inserted")
+            player_id_updated = recovery_changed or bind_status in (
+                "updated",
+                "inserted",
+            )
             base["player_telegram_user_id"] = pid
             if username:
                 base["player_username"] = username
@@ -585,7 +585,10 @@ def _apply_from_csv(
         err = str(row.get("check_error") or "").strip()
         in_group = _csv_row_in_group(row)
         sole_player = str(row.get("eligible_player_count") or "") == "1"
-        if only_would_update and str(row.get("player_id_updated") or "") != "would_update":
+        if (
+            only_would_update
+            and str(row.get("player_id_updated") or "") != "would_update"
+        ):
             if err or (not in_group and not sole_player):
                 out.append(row)
                 skipped += 1
@@ -677,7 +680,9 @@ async def main() -> int:
             return 0
         if args.apply:
             mode = "APPLY-FROM-CSV"
-            csv_rows = _apply_from_csv(csv_rows, only_would_update=args.only_would_update)
+            csv_rows = _apply_from_csv(
+                csv_rows, only_would_update=args.only_would_update
+            )
         else:
             mode = "CSV-STATS"
         label = f"Recovery player membership audit (tier {','.join(map(str, tiers))}, MTProto) — {mode}"
@@ -710,7 +715,11 @@ async def main() -> int:
             print(line)
         output_path = args.output or _default_output_path()
         csv_rows.sort(
-            key=lambda r: (str(r["club_key"]), int(r["priority_tier"]), int(r["row_id"]))
+            key=lambda r: (
+                str(r["club_key"]),
+                int(r["priority_tier"]),
+                int(r["row_id"]),
+            )
         )
         _write_csv(output_path, csv_rows)
         if args.slack:
@@ -756,7 +765,9 @@ async def main() -> int:
         )
         csv_rows.extend(club_csv)
 
-    csv_rows.sort(key=lambda r: (str(r["club_key"]), int(r["priority_tier"]), int(r["row_id"])))
+    csv_rows.sort(
+        key=lambda r: (str(r["club_key"]), int(r["priority_tier"]), int(r["row_id"]))
+    )
 
     label = f"Recovery player membership audit (tier {','.join(map(str, tiers))}, MTProto) — {mode}"
     stats_lines = _build_stats_lines(csv_rows, tiers=tiers, label=label)

@@ -101,4 +101,3 @@ class CashAppPaymentsApiTestCase(unittest.TestCase):
             headers={"X-Cashapp-Webhook-Secret": WEBHOOK_SECRET},
         )
         self.assertEqual(response.status_code, 422)
-

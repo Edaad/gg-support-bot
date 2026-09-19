@@ -56,9 +56,15 @@ class TestGcCommand(unittest.IsolatedAsyncioTestCase):
         )
 
     @patch("bot.handlers.group_create.fetch_support_group_chat_by_club_player")
-    @patch("bot.handlers.group_create.resolve_telegram_user_marker", new_callable=AsyncMock)
+    @patch(
+        "bot.handlers.group_create.resolve_telegram_user_marker", new_callable=AsyncMock
+    )
     @patch("bot.handlers.group_create.create_support_group", new_callable=AsyncMock)
-    @patch("bot.handlers.group_create.is_client_authorized", new_callable=AsyncMock, return_value=True)
+    @patch(
+        "bot.handlers.group_create.is_client_authorized",
+        new_callable=AsyncMock,
+        return_value=True,
+    )
     @patch("bot.handlers.group_create.get_tg_mtproto_credentials")
     @patch("bot.handlers.group_create.get_club_config_for_admin")
     async def test_player_gc_creates_and_persists_binding(
@@ -111,7 +117,9 @@ class TestGcCommand(unittest.IsolatedAsyncioTestCase):
                 "bot.handlers.group_create.persist_support_group_chat_row",
                 return_value=(42, None),
             ) as mock_persist,
-            patch("bot.handlers.group_create.ensure_group_chat_linked", return_value=True),
+            patch(
+                "bot.handlers.group_create.ensure_group_chat_linked", return_value=True
+            ),
             patch(
                 "bot.handlers.group_create.send_post_gc_intro_bundle",
                 new_callable=AsyncMock,
@@ -124,7 +132,9 @@ class TestGcCommand(unittest.IsolatedAsyncioTestCase):
         mock_create.assert_awaited_once()
         self.assertIs(mock_create.await_args.kwargs.get("player_user"), player)
         mock_persist.assert_called_once()
-        self.assertEqual(mock_persist.call_args.kwargs["player_telegram_user_id"], 7564317295)
+        self.assertEqual(
+            mock_persist.call_args.kwargs["player_telegram_user_id"], 7564317295
+        )
         reply = update.message.reply_text.await_args.args[0]
         self.assertIn("RT / / @carson", reply)
         self.assertIn("Player DM: sent.", reply)

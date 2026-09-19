@@ -16,7 +16,9 @@ def format_ambiguous_candidate_lines(candidates: list[CandidateGroup]) -> list[s
     return lines
 
 
-def inject_ambiguous_group_chat_line(text: str, candidates: list[CandidateGroup]) -> str:
+def inject_ambiguous_group_chat_line(
+    text: str, candidates: list[CandidateGroup]
+) -> str:
     """Replace unbound Group Chat line with ambiguous line + candidate list."""
     if not candidates:
         return text
@@ -133,7 +135,9 @@ def format_payment_notification(
     return append_creator_club_staff_footer(
         text,
         club_id=int(resolved_club_id) if resolved_club_id is not None else None,
-        telegram_chat_id=int(resolved_chat_id) if resolved_chat_id is not None else None,
+        telegram_chat_id=int(resolved_chat_id)
+        if resolved_chat_id is not None
+        else None,
         auto_bound=auto_bound,
         goods_or_services=goods_or_services,
         requires_refund=bool(getattr(gate, "requires_refund", False)),
@@ -171,7 +175,10 @@ def log_ingest_bind_delivery(
     notification_chat_id: int,
     notification_message_id: int,
 ) -> None:
-    from bot.services.payment_bind_logging import log_ingest_outcome, log_notification_post
+    from bot.services.payment_bind_logging import (
+        log_ingest_outcome,
+        log_notification_post,
+    )
 
     keyboard_kind = notification_keyboard_kind(
         notif_markup=notif_markup,

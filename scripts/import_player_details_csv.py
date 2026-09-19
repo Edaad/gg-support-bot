@@ -183,7 +183,9 @@ def load_csv(
             try:
                 club_ids = parse_club_ids(club_raw)
             except ValueError as e:
-                warnings.append(f"line {lineno}: bad club_id {club_raw!r} ({e}), skipped")
+                warnings.append(
+                    f"line {lineno}: bad club_id {club_raw!r} ({e}), skipped"
+                )
                 continue
 
             club_ids = list(dict.fromkeys(club_ids + extra_clubs_from_chat))
@@ -210,7 +212,9 @@ def fetch_club_ids(engine) -> set[int]:
     return {r[0] for r in rows}
 
 
-def apply_upserts(engine, agg: dict[tuple[str, int], set[int]], valid_clubs: set[int]) -> tuple[int, list[str]]:
+def apply_upserts(
+    engine, agg: dict[tuple[str, int], set[int]], valid_clubs: set[int]
+) -> tuple[int, list[str]]:
     """Returns (rows_written, skip_messages for unknown club_id)."""
     skipped: list[str] = []
     upsert = text(
@@ -233,7 +237,9 @@ def apply_upserts(engine, agg: dict[tuple[str, int], set[int]], valid_clubs: set
     with engine.begin() as conn:
         for (gg, cid), chats in sorted(agg.items()):
             if cid not in valid_clubs:
-                skipped.append(f"unknown club_id {cid} for gg_player_id {gg!r} ({len(chats)} chats)")
+                skipped.append(
+                    f"unknown club_id {cid} for gg_player_id {gg!r} ({len(chats)} chats)"
+                )
                 continue
             chat_list = sorted(chats)
             conn.execute(
@@ -277,7 +283,9 @@ def main() -> None:
     )
     print(f"Aggregated keys (gg_player_id, club_id): {len(agg)}")
     total_chats = sum(len(s) for s in agg.values())
-    print(f"Total chat id placements (with duplicates across keys counted per key): {total_chats}")
+    print(
+        f"Total chat id placements (with duplicates across keys counted per key): {total_chats}"
+    )
 
     if warns:
         print(f"\nWarnings ({len(warns)}):")

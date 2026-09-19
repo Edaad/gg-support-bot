@@ -18,7 +18,11 @@ from dotenv import load_dotenv
 from sqlalchemy import inspect, text
 
 from api.club_slug import slug_for_club_name
-from api.method_owner import METHOD_OWNER_ROUND_TABLE, METHOD_OWNER_VAUGHN, infer_method_owner_for_backfill
+from api.method_owner import (
+    METHOD_OWNER_ROUND_TABLE,
+    METHOD_OWNER_VAUGHN,
+    infer_method_owner_for_backfill,
+)
 from db.connection import get_db, init_engine
 from db.models import Club
 
@@ -174,11 +178,11 @@ def _preview_table(
         cols.append(memo_col)
     if alert_scope_col:
         cols.append(alert_scope_col)
-    rows = session.execute(
-        text(
-            f"SELECT {', '.join(cols)} FROM {table} ORDER BY id"
-        )
-    ).mappings().all()
+    rows = (
+        session.execute(text(f"SELECT {', '.join(cols)} FROM {table} ORDER BY id"))
+        .mappings()
+        .all()
+    )
     counts: Counter[str] = Counter()
     for row in rows:
         owner = infer_method_owner_for_backfill(
@@ -211,9 +215,11 @@ def _reclassify_table(
         cols.append(memo_col)
     if alert_scope_col:
         cols.append(alert_scope_col)
-    rows = session.execute(
-        text(f"SELECT {', '.join(cols)} FROM {table} ORDER BY id")
-    ).mappings().all()
+    rows = (
+        session.execute(text(f"SELECT {', '.join(cols)} FROM {table} ORDER BY id"))
+        .mappings()
+        .all()
+    )
     changes: Counter[str] = Counter()
     updated = 0
     for row in rows:
@@ -376,7 +382,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Add and backfill payment method_owner")
+    parser = argparse.ArgumentParser(
+        description="Add and backfill payment method_owner"
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -389,7 +397,11 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     if args.reclassify:
-        print("method_owner reclassify preview:" if args.dry_run else "method_owner reclassify:")
+        print(
+            "method_owner reclassify preview:"
+            if args.dry_run
+            else "method_owner reclassify:"
+        )
         reclassify_method_owner(dry_run=args.dry_run)
     elif args.dry_run:
         dry_run_backfill()

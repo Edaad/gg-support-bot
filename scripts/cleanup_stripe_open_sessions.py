@@ -16,17 +16,23 @@ from db.connection import init_engine
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--apply", action="store_true", help="Execute DELETE (default is dry-run)")
+    parser.add_argument(
+        "--apply", action="store_true", help="Execute DELETE (default is dry-run)"
+    )
     args = parser.parse_args()
 
     engine = init_engine()
     with engine.connect() as conn:
         count = conn.execute(
-            text("SELECT COUNT(*) FROM stripe_checkout_sessions WHERE status != 'complete'")
+            text(
+                "SELECT COUNT(*) FROM stripe_checkout_sessions WHERE status != 'complete'"
+            )
         ).scalar()
         print(f"Rows to delete (status != complete): {count}")
         if args.apply and count:
-            conn.execute(text("DELETE FROM stripe_checkout_sessions WHERE status != 'complete'"))
+            conn.execute(
+                text("DELETE FROM stripe_checkout_sessions WHERE status != 'complete'")
+            )
             conn.commit()
             print("Deleted.")
         elif not args.apply:

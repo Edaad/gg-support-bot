@@ -11,9 +11,7 @@ PHONE_INVALID_REPLY = (
 
 def normalize_phone_for_mtproto(raw: str) -> str:
     """Normalize for Telethon ``SendCode``: ``+<digits>`` after stripping spaces/separators."""
-    stripped = "".join(
-        ch for ch in (raw or "").strip() if ch not in " \t\n\r-().[]/"
-    )
+    stripped = "".join(ch for ch in (raw or "").strip() if ch not in " \t\n\r-().[]/")
     digits_all = "".join(ch for ch in stripped if ch.isdigit())
     if not digits_all:
         return ""

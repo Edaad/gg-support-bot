@@ -18,8 +18,7 @@ from db.connection import init_engine
 engine = init_engine()
 
 STATEMENTS = [
-    "ALTER TABLE groups ADD COLUMN IF NOT EXISTS aces_join_ack_at "
-    "TIMESTAMPTZ NULL;",
+    "ALTER TABLE groups ADD COLUMN IF NOT EXISTS aces_join_ack_at TIMESTAMPTZ NULL;",
 ]
 
 with engine.connect() as conn:

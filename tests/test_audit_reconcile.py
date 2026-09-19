@@ -43,7 +43,9 @@ from db.models import (
 
 class TradeRecordAggregationTestCase(unittest.TestCase):
     def test_sums_signed_amounts_per_player(self):
-        upload = TradeRecordUpload(id=1, club_slug="round-table", audit_date=date(2026, 6, 19))
+        upload = TradeRecordUpload(
+            id=1, club_slug="round-table", audit_date=date(2026, 6, 19)
+        )
         lines = [
             TradeRecordLine(
                 id=1,
@@ -68,18 +70,20 @@ class TradeRecordAggregationTestCase(unittest.TestCase):
             ),
         ]
         session = MagicMock()
-        session.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = (
-            lines
-        )
+        session.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = lines
 
-        by_player, _counts, unmatched, nicknames = aggregate_trade_record(session, upload=upload)
+        by_player, _counts, unmatched, nicknames = aggregate_trade_record(
+            session, upload=upload
+        )
         self.assertEqual(by_player["3011-9668"], Decimal("74.50"))
         self.assertEqual(by_player["3011-9999"], Decimal("50.00"))
         self.assertEqual(unmatched, [])
         self.assertEqual(nicknames, {})
 
     def test_collects_nickname_from_trade_lines(self):
-        upload = TradeRecordUpload(id=1, club_slug="round-table", audit_date=date(2026, 6, 19))
+        upload = TradeRecordUpload(
+            id=1, club_slug="round-table", audit_date=date(2026, 6, 19)
+        )
         lines = [
             TradeRecordLine(
                 id=1,
@@ -91,17 +95,19 @@ class TradeRecordAggregationTestCase(unittest.TestCase):
             ),
         ]
         session = MagicMock()
-        session.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = (
-            lines
-        )
+        session.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = lines
 
-        by_player, _counts, unmatched, nicknames = aggregate_trade_record(session, upload=upload)
+        by_player, _counts, unmatched, nicknames = aggregate_trade_record(
+            session, upload=upload
+        )
         self.assertEqual(by_player["3011-9668"], Decimal("100.00"))
         self.assertEqual(nicknames["3011-9668"], "AcePlayer")
         self.assertEqual(unmatched, [])
 
     def test_unmatched_trade_rows_without_gg_id(self):
-        upload = TradeRecordUpload(id=1, club_slug="round-table", audit_date=date(2026, 6, 19))
+        upload = TradeRecordUpload(
+            id=1, club_slug="round-table", audit_date=date(2026, 6, 19)
+        )
         lines = [
             TradeRecordLine(
                 id=1,
@@ -120,19 +126,23 @@ class TradeRecordAggregationTestCase(unittest.TestCase):
             ),
         ]
         session = MagicMock()
-        session.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = (
-            lines
-        )
+        session.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = lines
 
-        by_player, _counts, unmatched, _nicknames = aggregate_trade_record(session, upload=upload)
+        by_player, _counts, unmatched, _nicknames = aggregate_trade_record(
+            session, upload=upload
+        )
         self.assertEqual(by_player, {})
         self.assertEqual(len(unmatched), 1)
         self.assertEqual(unmatched[0].amount, Decimal("10.00"))
         self.assertEqual(unmatched[0].member_nickname, "Ghost")
 
     def test_combined_uploads_sum_per_player(self):
-        rt_upload = TradeRecordUpload(id=1, club_slug="round-table", audit_date=date(2026, 6, 19))
-        at_upload = TradeRecordUpload(id=2, club_slug="aces-table", audit_date=date(2026, 6, 19))
+        rt_upload = TradeRecordUpload(
+            id=1, club_slug="round-table", audit_date=date(2026, 6, 19)
+        )
+        at_upload = TradeRecordUpload(
+            id=2, club_slug="aces-table", audit_date=date(2026, 6, 19)
+        )
         rt_lines = [
             TradeRecordLine(
                 id=1,
@@ -163,6 +173,7 @@ class TradeRecordAggregationTestCase(unittest.TestCase):
         def query_model(model):
             q = MagicMock()
             if model is TradeRecordLine:
+
                 def filter_by(**kwargs):
                     inner = MagicMock()
                     uid = kwargs.get("upload_id")
@@ -331,6 +342,7 @@ class ReconcilePassFailTestCase(unittest.TestCase):
                 q.filter.return_value.first.return_value = self.club
                 return q
             if model is TradeRecordUpload:
+
                 def filter_by(**kwargs):
                     inner = MagicMock()
                     slug = kwargs.get("club_slug")
@@ -345,6 +357,7 @@ class ReconcilePassFailTestCase(unittest.TestCase):
                 q.filter_by.side_effect = filter_by
                 return q
             if model is TradeRecordLine:
+
                 def filter_by(**kwargs):
                     inner = MagicMock()
                     uid = kwargs.get("upload_id")
@@ -564,14 +577,19 @@ class MondaySettlementTestCase(unittest.TestCase):
     def test_settlement_fetch_blocked_on_http_error(self, mock_client_cls):
         import httpx
 
-        from api.gg_computer_settlement import SettlementFetchError, fetch_settlement_events
+        from api.gg_computer_settlement import (
+            SettlementFetchError,
+            fetch_settlement_events,
+        )
 
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__.return_value = mock_client
         mock_client.get.side_effect = httpx.ConnectError("connection refused")
 
         with self.assertRaises(SettlementFetchError):
-            fetch_settlement_events(club_slug="round-table", audit_date=date(2026, 6, 22))
+            fetch_settlement_events(
+                club_slug="round-table", audit_date=date(2026, 6, 22)
+            )
 
     def _mock_week_data_client(self, mock_client_cls, body: dict):
         mock_client = MagicMock()
@@ -634,7 +652,10 @@ class MondaySettlementTestCase(unittest.TestCase):
     @patch.dict(os.environ, {"GG_COMPUTER_BASE_URL": "http://gg-computer.test"})
     @patch("api.gg_computer_settlement.httpx.Client")
     def test_settlement_fetch_empty_entries_raises(self, mock_client_cls):
-        from api.gg_computer_settlement import SettlementFetchError, fetch_settlement_events
+        from api.gg_computer_settlement import (
+            SettlementFetchError,
+            fetch_settlement_events,
+        )
 
         self._mock_week_data_client(
             mock_client_cls,

@@ -21,7 +21,6 @@ from notification.payment_notification_routing import (
     ingest_notification_titles,
     notification_bucket_for_title,
     notification_destination_bucket,
-    resolve_ingest_notification_chat_id,
     resolve_ingest_notification_chat_ids,
     resolve_notification_chat_id,
     resolve_notification_chat_ids,
@@ -116,7 +115,9 @@ class ResolveNotificationChatIdTestCase(unittest.TestCase):
 
     @patch.dict(os.environ, _CHAT_ENV, clear=False)
     def test_cc_titles_use_creator_chat(self):
-        self.assertEqual(resolve_notification_chat_ids(["CC / 1-2 / A"]), [CREATOR_CHAT])
+        self.assertEqual(
+            resolve_notification_chat_ids(["CC / 1-2 / A"]), [CREATOR_CHAT]
+        )
 
     @patch.dict(os.environ, _CHAT_ENV, clear=False)
     def test_rt_titles_use_rt_chat(self):
@@ -145,8 +146,12 @@ class ResolveNotificationChatIdTestCase(unittest.TestCase):
 
     @patch.dict(os.environ, _CHAT_ENV, clear=False)
     def test_unknown_broadcasts_to_all_club_chats(self):
-        self.assertEqual(resolve_notification_chat_ids([]), [GTO_CHAT, RT_CHAT, CREATOR_CHAT])
-        self.assertEqual(resolve_notification_chat_ids(["nope"]), [GTO_CHAT, RT_CHAT, CREATOR_CHAT])
+        self.assertEqual(
+            resolve_notification_chat_ids([]), [GTO_CHAT, RT_CHAT, CREATOR_CHAT]
+        )
+        self.assertEqual(
+            resolve_notification_chat_ids(["nope"]), [GTO_CHAT, RT_CHAT, CREATOR_CHAT]
+        )
 
     @patch.dict(
         os.environ,
@@ -200,7 +205,9 @@ class ResolveIngestNotificationChatIdTestCase(unittest.TestCase):
     @patch.dict(os.environ, _CHAT_ENV, clear=False)
     def test_no_candidates_broadcast(self):
         self.assertEqual(
-            resolve_ingest_notification_chat_ids(auto_bound=False, ambiguous_candidates=[]),
+            resolve_ingest_notification_chat_ids(
+                auto_bound=False, ambiguous_candidates=[]
+            ),
             [GTO_CHAT, RT_CHAT, CREATOR_CHAT],
         )
 
@@ -282,9 +289,9 @@ class SendTelegramNotificationTestCase(unittest.IsolatedAsyncioTestCase):
 class PaymentNotificationHtmlToSlackTestCase(unittest.TestCase):
     def test_converts_bold_and_links(self):
         html_text = (
-            '🔔 Venmo Payment Notification\n'
+            "🔔 Venmo Payment Notification\n"
             'Group Chat: <a href="https://t.me/c/1/2">RT / 1-2 / p</a>\n'
-            'Amount: <b>$50.00</b>'
+            "Amount: <b>$50.00</b>"
         )
         slack = payment_notification_html_to_slack(html_text)
         self.assertIn("<https://t.me/c/1/2|RT / 1-2 / p>", slack)
@@ -361,9 +368,7 @@ class DeliverPaymentNotificationTestCase(unittest.IsolatedAsyncioTestCase):
         new_callable=AsyncMock,
     )
     @patch("bot.services.venmo_payments._telegram_api", new_callable=AsyncMock)
-    async def test_skips_slack_for_fully_automatic_auto_add(
-        self, mock_api, mock_slack
-    ):
+    async def test_skips_slack_for_fully_automatic_auto_add(self, mock_api, mock_slack):
         from bot.services.payment_auto_deposit import CREATOR_STAFF_FOOTER_AUTO
 
         mock_api.return_value = {

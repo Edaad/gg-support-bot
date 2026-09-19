@@ -82,7 +82,6 @@ class HeadAdminAllowlistTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         notify.assert_awaited_once()
 
-
     async def test_union_deposit_first_calls_head_admin(self) -> None:
         with patch(
             "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
@@ -147,12 +146,8 @@ class NotifyEscalationSlackFanoutTests(unittest.IsolatedAsyncioTestCase):
                         slack_text=expected,
                     )
         self.assertTrue(ok)
-        normal.assert_awaited_once_with(
-            expected, source=esc.REASON_UNION_DEPOSIT_FIRST
-        )
-        head.assert_awaited_once_with(
-            expected, reason=esc.REASON_UNION_DEPOSIT_FIRST
-        )
+        normal.assert_awaited_once_with(expected, source=esc.REASON_UNION_DEPOSIT_FIRST)
+        head.assert_awaited_once_with(expected, reason=esc.REASON_UNION_DEPOSIT_FIRST)
 
     async def test_rpa_fans_out_identical_text(self) -> None:
         with patch.object(esc, "_club_display_name", return_value="Round Table"):
@@ -179,12 +174,8 @@ class NotifyEscalationSlackFanoutTests(unittest.IsolatedAsyncioTestCase):
                         title="CC / 1 / Nick",
                     )
         self.assertTrue(ok)
-        normal.assert_awaited_once_with(
-            expected, source=esc.REASON_RPA_DEPOSIT_FAILED
-        )
-        head.assert_awaited_once_with(
-            expected, reason=esc.REASON_RPA_DEPOSIT_FAILED
-        )
+        normal.assert_awaited_once_with(expected, source=esc.REASON_RPA_DEPOSIT_FAILED)
+        head.assert_awaited_once_with(expected, reason=esc.REASON_RPA_DEPOSIT_FAILED)
 
     async def test_non_rpa_still_calls_maybe_notify_which_noops(self) -> None:
         with patch.object(esc, "_club_display_name", return_value="Round Table"):
@@ -207,9 +198,7 @@ class NotifyEscalationSlackFanoutTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         normal.assert_awaited_once()
         head.assert_awaited_once()
-        self.assertEqual(
-            head.await_args.kwargs["reason"], esc.REASON_CASHOUT_STARTED
-        )
+        self.assertEqual(head.await_args.kwargs["reason"], esc.REASON_CASHOUT_STARTED)
 
     async def test_head_admin_runs_even_if_normal_fails(self) -> None:
         with patch.object(esc, "_club_display_name", return_value="Round Table"):
@@ -239,9 +228,7 @@ class RpaGateTests(unittest.IsolatedAsyncioTestCase):
             with patch.object(
                 esc, "notify_escalation_slack", new_callable=AsyncMock
             ) as notify:
-                await esc.notify_rpa_deposit_failed(
-                    club_id=1, chat_id=99, title="G"
-                )
+                await esc.notify_rpa_deposit_failed(club_id=1, chat_id=99, title="G")
         notify.assert_not_awaited()
 
     async def test_rpa_cashout_skipped_when_club_toggle_off(self) -> None:
@@ -249,9 +236,7 @@ class RpaGateTests(unittest.IsolatedAsyncioTestCase):
             with patch.object(
                 esc, "notify_escalation_slack", new_callable=AsyncMock
             ) as notify:
-                await esc.notify_rpa_cashout_failed(
-                    club_id=1, chat_id=99, title="G"
-                )
+                await esc.notify_rpa_cashout_failed(club_id=1, chat_id=99, title="G")
         notify.assert_not_awaited()
 
     async def test_rpa_deposit_notifies_when_enabled(self) -> None:
@@ -259,13 +244,9 @@ class RpaGateTests(unittest.IsolatedAsyncioTestCase):
             with patch.object(
                 esc, "notify_escalation_slack", new_callable=AsyncMock
             ) as notify:
-                await esc.notify_rpa_deposit_failed(
-                    club_id=1, chat_id=99, title="G"
-                )
+                await esc.notify_rpa_deposit_failed(club_id=1, chat_id=99, title="G")
         notify.assert_awaited_once()
-        self.assertEqual(
-            notify.await_args.args[0], esc.REASON_RPA_DEPOSIT_FAILED
-        )
+        self.assertEqual(notify.await_args.args[0], esc.REASON_RPA_DEPOSIT_FAILED)
 
     async def test_rpa_deposit_uncertain_skipped_when_club_toggle_off(self) -> None:
         with patch.object(esc, "escalation_notification_enabled", return_value=False):
@@ -292,9 +273,7 @@ class RpaGateTests(unittest.IsolatedAsyncioTestCase):
                     detail="OCR mismatch on trade record amount: saw '', expected one of ['1']",
                 )
         notify.assert_awaited_once()
-        self.assertEqual(
-            notify.await_args.args[0], esc.REASON_RPA_DEPOSIT_UNCERTAIN
-        )
+        self.assertEqual(notify.await_args.args[0], esc.REASON_RPA_DEPOSIT_UNCERTAIN)
         self.assertEqual(
             notify.await_args.kwargs["message_text"],
             "OCR mismatch on trade record amount: saw '', expected one of ['1']",

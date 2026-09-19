@@ -38,9 +38,7 @@ _PAYMENT_MODELS = {
 }
 
 
-def _payment_at_for(
-    payment_method_slug: str, payment_id: int
-) -> datetime | None:
+def _payment_at_for(payment_method_slug: str, payment_id: int) -> datetime | None:
     model = _PAYMENT_MODELS.get(payment_method_slug)
     if model is None:
         return None

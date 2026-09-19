@@ -6,7 +6,7 @@ import os
 import unittest
 from contextlib import contextmanager
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from sqlalchemy.exc import IntegrityError
 
@@ -32,7 +32,9 @@ class FakeQuery:
             right = getattr(expr, "right", None)
             if left is not None and hasattr(left, "key"):
                 if left.key == "telegram_chat_id" and right is not None:
-                    self._telegram_chat_id = int(right.value if hasattr(right, "value") else right)
+                    self._telegram_chat_id = int(
+                        right.value if hasattr(right, "value") else right
+                    )
                 if left.key == "stripe_customer_id" and right is not None:
                     self._stripe_customer_id = str(
                         right.value if hasattr(right, "value") else right
@@ -168,7 +170,9 @@ class StripeDepositTestCase(unittest.TestCase):
         with (
             self._db(store),
             self._club_mocks(),
-            patch.object(sd.stripe.Customer, "create", return_value=customer) as cust_create,
+            patch.object(
+                sd.stripe.Customer, "create", return_value=customer
+            ) as cust_create,
             patch.object(sd.stripe.Product, "create", return_value=product),
             patch.object(sd.stripe.Price, "create", return_value=price) as price_create,
             patch.object(
@@ -196,7 +200,8 @@ class StripeDepositTestCase(unittest.TestCase):
             price_kwargs["custom_unit_amount"]["maximum"], sd.STRIPE_CHECKOUT_MAX_CENTS
         )
         self.assertEqual(
-            price_kwargs["custom_unit_amount"]["preset"], sd.STRIPE_CHECKOUT_PRESET_CENTS
+            price_kwargs["custom_unit_amount"]["preset"],
+            sd.STRIPE_CHECKOUT_PRESET_CENTS,
         )
 
     def test_checkout_session_uses_deposit_preset(self):
@@ -237,7 +242,9 @@ class StripeDepositTestCase(unittest.TestCase):
         with (
             self._db(store),
             self._club_mocks(),
-            patch.object(sd.stripe.Customer, "create", return_value=customer) as cust_create,
+            patch.object(
+                sd.stripe.Customer, "create", return_value=customer
+            ) as cust_create,
             patch.object(sd.stripe.Product, "create", return_value=product),
             patch.object(sd.stripe.Price, "create", return_value=price),
             patch.object(
@@ -272,7 +279,9 @@ class StripeDepositTestCase(unittest.TestCase):
         with (
             self._db(store),
             self._club_mocks(),
-            patch.object(sd.stripe.Customer, "create", return_value=customer) as cust_create,
+            patch.object(
+                sd.stripe.Customer, "create", return_value=customer
+            ) as cust_create,
             patch.object(sd.stripe.Product, "create", return_value=product),
             patch.object(sd.stripe.Price, "create", return_value=price),
             patch.object(
@@ -342,7 +351,9 @@ class StripeDepositTestCase(unittest.TestCase):
             patch.object(sd.stripe.Customer, "create", return_value=customer),
             patch.object(sd.stripe.Product, "create", return_value=product),
             patch.object(sd.stripe.Price, "create", return_value=price),
-            patch.object(sd.stripe.checkout.Session, "create", return_value=checkout) as session_create,
+            patch.object(
+                sd.stripe.checkout.Session, "create", return_value=checkout
+            ) as session_create,
         ):
             sd.create_stripe_checkout_session(
                 telegram_chat_id=CHAT_ID,
@@ -392,7 +403,9 @@ class StripeDepositTestCase(unittest.TestCase):
 
         with (
             self._db(store),
-            patch.object(sd.stripe.Customer, "create", return_value=customer) as cust_create,
+            patch.object(
+                sd.stripe.Customer, "create", return_value=customer
+            ) as cust_create,
         ):
             result = sd.get_or_create_stripe_customer(
                 telegram_chat_id=CHAT_ID,

@@ -344,16 +344,18 @@ class MatchTradeLinesTestCase(unittest.TestCase):
         self.assertEqual(rows[0].match_source, "GTO Crypto")
         rows_rt = match_trade_lines_to_ledger(
             [trade],
-            [_ledger(
-                occurred=self.t0,
-                amount_signed="-30",
-                source="deposit_crypto",
-                source_label="Crypto",
-                external_id="deposit_crypto:rt",
-                display_name="Wallet",
-                variant="USDT",
-                method_owner="round-table",
-            )],
+            [
+                _ledger(
+                    occurred=self.t0,
+                    amount_signed="-30",
+                    source="deposit_crypto",
+                    source_label="Crypto",
+                    external_id="deposit_crypto:rt",
+                    display_name="Wallet",
+                    variant="USDT",
+                    method_owner="round-table",
+                )
+            ],
             club_slug="round-table",
         ).rows
         self.assertEqual(rows_rt[0].method_owner, "round-table")
@@ -430,9 +432,7 @@ class MatchTradeLinesTestCase(unittest.TestCase):
         trade_at = datetime(
             2026, 9, 17, 18, 7, 45, tzinfo=timezone(timedelta(hours=-5))
         )
-        ledger_at = datetime(
-            2026, 9, 17, 18, 7, tzinfo=ZoneInfo("America/New_York")
-        )
+        ledger_at = datetime(2026, 9, 17, 18, 7, tzinfo=ZoneInfo("America/New_York"))
         trade = _trade(
             occurred=trade_at,
             amount="-51",
@@ -926,9 +926,7 @@ class CcAtAcesLedgerFallbackTestCase(unittest.TestCase):
             occurred=self.t0,
             club="aces-table",
         )
-        unmatched = match_trade_lines_to_ledger(
-            [at], [], club_slug="round-table"
-        ).rows
+        unmatched = match_trade_lines_to_ledger([at], [], club_slug="round-table").rows
         ledger = _ledger(
             occurred=self.t0,
             amount_signed="-50",

@@ -65,7 +65,9 @@ def _primary_tier(
     if len(min_matches) > 1:
         return min(
             min_matches,
-            key=lambda t: float(t.max_amount) if t.max_amount is not None else float("inf"),
+            key=lambda t: (
+                float(t.max_amount) if t.max_amount is not None else float("inf")
+            ),
         )
 
     method_max = method.max_amount
@@ -96,7 +98,9 @@ def _rotation_tier(tiers: list[PaymentMethodTier]) -> Optional[PaymentMethodTier
 
 def _is_rotation_variant_label(label: str) -> bool:
     key = (label or "").strip().lower()
-    return key in ROTATION_VARIANT_LABELS or bool(ROTATION_LABEL_RE.match((label or "").strip()))
+    return key in ROTATION_VARIANT_LABELS or bool(
+        ROTATION_LABEL_RE.match((label or "").strip())
+    )
 
 
 def _response_fields_from_method(method: PaymentMethod) -> dict:
@@ -105,8 +109,11 @@ def _response_fields_from_method(method: PaymentMethod) -> dict:
         "response_text": method.response_text,
         "response_file_id": method.response_file_id,
         "response_caption": method.response_caption,
-        "use_group_checkout_link": bool(getattr(method, "use_group_checkout_link", False)),
-        "group_checkout_provider": getattr(method, "group_checkout_provider", None) or "stripe",
+        "use_group_checkout_link": bool(
+            getattr(method, "use_group_checkout_link", False)
+        ),
+        "group_checkout_provider": getattr(method, "group_checkout_provider", None)
+        or "stripe",
         "hyperlink_text": getattr(method, "hyperlink_text", None) or "PAY HERE",
     }
 
@@ -132,11 +139,15 @@ def _copy_response_to_tier(
         and _tier_has_response(tier)
     ):
         tier.use_group_checkout_link = True
-        tier.group_checkout_provider = getattr(method, "group_checkout_provider", None) or "stripe"
+        tier.group_checkout_provider = (
+            getattr(method, "group_checkout_provider", None) or "stripe"
+        )
         tier.hyperlink_text = getattr(method, "hyperlink_text", None) or "PAY HERE"
         changed = True
     if changed and dry_run:
-        print(f"    [dry-run] would copy method response -> tier {tier.id} ({tier.label!r})")
+        print(
+            f"    [dry-run] would copy method response -> tier {tier.id} ({tier.label!r})"
+        )
     return changed
 
 
@@ -159,11 +170,7 @@ def _variant_copy_fields(src: MethodVariant) -> dict:
 
 
 def _labels_on_tier(session, tier_id: int) -> set[str]:
-    rows = (
-        session.query(MethodVariant.label)
-        .filter_by(tier_id=tier_id)
-        .all()
-    )
+    rows = session.query(MethodVariant.label).filter_by(tier_id=tier_id).all()
     return {(r[0] or "").strip().lower() for r in rows}
 
 
@@ -185,7 +192,9 @@ def _copy_method_variants(
     labels_by_tier: dict[int, set[str]] = {}
 
     for v in method_variants:
-        target = rotation if (_is_rotation_variant_label(v.label) and rotation) else primary
+        target = (
+            rotation if (_is_rotation_variant_label(v.label) and rotation) else primary
+        )
         if target.id not in labels_by_tier:
             labels_by_tier[target.id] = _labels_on_tier(session, target.id)
         key = (v.label or "").strip().lower()
@@ -268,13 +277,20 @@ def _ensure_default_tier(
 
 
 def migrate_method(session, method: PaymentMethod, *, dry_run: bool) -> dict:
-    stats = {"tiers_created": 0, "response_copied": 0, "variants_copied": 0, "variants_moved": 0}
+    stats = {
+        "tiers_created": 0,
+        "response_copied": 0,
+        "variants_copied": 0,
+        "variants_moved": 0,
+    }
     tiers = list(method.tiers or [])
     if not tiers:
         if not (
             _method_has_response(method)
             or bool(getattr(method, "use_group_checkout_link", False))
-            or session.query(MethodVariant).filter_by(method_id=method.id, tier_id=None).count()
+            or session.query(MethodVariant)
+            .filter_by(method_id=method.id, tier_id=None)
+            .count()
         ):
             return stats
         print(f"  method {method.id} {method.name!r}: no tiers — creating default")
@@ -291,7 +307,9 @@ def migrate_method(session, method: PaymentMethod, *, dry_run: bool) -> dict:
 
     if _copy_response_to_tier(primary, method, dry_run=dry_run):
         stats["response_copied"] += 1
-        print(f"  method {method.id} {method.name!r}: copied response/stripe -> tier {primary.id} ({primary.label!r})")
+        print(
+            f"  method {method.id} {method.name!r}: copied response/stripe -> tier {primary.id} ({primary.label!r})"
+        )
 
     rotation = _rotation_tier(tiers)
     stats["variants_copied"] += _copy_method_variants(
@@ -317,22 +335,40 @@ def migrate_method(session, method: PaymentMethod, *, dry_run: bool) -> dict:
 
 def main(argv: Optional[Iterable[str]] = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dry-run", action="store_true", help="Print actions without writing")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print actions without writing"
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
-    totals = {"methods": 0, "tiers_created": 0, "response_copied": 0, "variants_copied": 0, "variants_moved": 0}
+    totals = {
+        "methods": 0,
+        "tiers_created": 0,
+        "response_copied": 0,
+        "variants_copied": 0,
+        "variants_moved": 0,
+    }
 
     with get_db() as session:
         methods = (
             session.query(PaymentMethod)
-            .order_by(PaymentMethod.club_id, PaymentMethod.direction, PaymentMethod.sort_order, PaymentMethod.id)
+            .order_by(
+                PaymentMethod.club_id,
+                PaymentMethod.direction,
+                PaymentMethod.sort_order,
+                PaymentMethod.id,
+            )
             .all()
         )
         for method in methods:
             stats = migrate_method(session, method, dry_run=args.dry_run)
             if any(stats.values()):
                 totals["methods"] += 1
-                for k in ("tiers_created", "response_copied", "variants_copied", "variants_moved"):
+                for k in (
+                    "tiers_created",
+                    "response_copied",
+                    "variants_copied",
+                    "variants_moved",
+                ):
                     totals[k] += stats[k]
 
         if args.dry_run:

@@ -56,7 +56,10 @@ class ResolveGroupChatNotificationUrlTestCase(unittest.IsolatedAsyncioTestCase):
 
 
 class FormatGroupChatLinePreresolvedUrlTestCase(unittest.TestCase):
-    @patch("notification.formatting.linked_group_chat_hyperlinks_enabled", return_value=False)
+    @patch(
+        "notification.formatting.linked_group_chat_hyperlinks_enabled",
+        return_value=False,
+    )
     def test_preresolved_invite_url_ignored_when_hyperlinks_disabled(self, _mock):
         text = format_group_chat_line(
             group_title="GTO / 5155 / Player",

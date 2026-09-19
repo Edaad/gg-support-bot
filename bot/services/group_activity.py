@@ -100,14 +100,12 @@ def _state_from_row(row: object) -> ChatActivityState:
     return ChatActivityState(
         last_human_at=_as_utc(getattr(row, "escalation_last_human_at", None)),
         last_human_role=role,
-        idle_episode_fired=bool(
-            getattr(row, "escalation_idle_episode_fired", False)
-        ),
+        idle_episode_fired=bool(getattr(row, "escalation_idle_episode_fired", False)),
         deposit_instructions_pending=bool(
             getattr(row, "escalation_deposit_instructions_pending", False)
         ),
         deposit_method_slug=(
-            (getattr(row, "escalation_deposit_method_slug", None) or None)
+            getattr(row, "escalation_deposit_method_slug", None) or None
         ),
         deposit_sent_watch_armed=armed_at is not None,
         deposit_sent_armed_at=armed_at,

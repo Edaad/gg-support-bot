@@ -42,7 +42,9 @@ def build_sample_trade_record_xlsx(
         ws.cell(row=2, column=1, value="Club ID")
         ws.cell(row=2, column=2, value="983183")
         ws.cell(row=3, column=1, value="Period")
-        ws.cell(row=3, column=2, value=f"{d.isoformat()} ~ {d.isoformat()} ({period_tz})")
+        ws.cell(
+            row=3, column=2, value=f"{d.isoformat()} ~ {d.isoformat()} ({period_tz})"
+        )
         ws.cell(row=5, column=1, value="Date")
         ws.cell(row=5, column=7, value="Amount")
     else:
@@ -64,7 +66,9 @@ def build_sample_trade_record_xlsx(
 
     if include_second_row:
         row2 = DATA_START_ROW + 1
-        ws.cell(row=row2, column=COL_TIME, value=datetime(d.year, d.month, d.day, 15, 0, 0))
+        ws.cell(
+            row=row2, column=COL_TIME, value=datetime(d.year, d.month, d.day, 15, 0, 0)
+        )
         ws.cell(row=row2, column=COL_AMOUNT, value=-50)
         ws.cell(row=row2, column=COL_MANAGER_NICK, value="name021021")
         ws.cell(row=row2, column=COL_MEMBER_ID, value="3011-9668")

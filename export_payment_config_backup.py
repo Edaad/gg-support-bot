@@ -39,9 +39,17 @@ from db.models import (
 # (filename, model, order_by column names or None)
 EXPORT_TABLES: Sequence[tuple[str, type, Optional[tuple[str, ...]]]] = (
     ("clubs.csv", Club, ("id",)),
-    ("payment_methods.csv", PaymentMethod, ("club_id", "direction", "sort_order", "id")),
+    (
+        "payment_methods.csv",
+        PaymentMethod,
+        ("club_id", "direction", "sort_order", "id"),
+    ),
     ("payment_method_tiers.csv", PaymentMethodTier, ("method_id", "sort_order", "id")),
-    ("method_variants.csv", MethodVariant, ("method_id", "tier_id", "sort_order", "id")),
+    (
+        "method_variants.csv",
+        MethodVariant,
+        ("method_id", "tier_id", "sort_order", "id"),
+    ),
     ("payment_sub_options.csv", PaymentSubOption, ("method_id", "sort_order", "id")),
     ("custom_commands.csv", CustomCommand, ("club_id", "command_name")),
     ("groups.csv", Group, ("club_id", "chat_id")),
@@ -130,7 +138,9 @@ def export_all(session: Session, output_dir: Path) -> dict[str, int]:
         objects = _query_all(session, model, order_by)
         rows = [{col: getattr(obj, col) for col in columns} for obj in objects]
         counts[filename] = _write_csv(output_dir / filename, columns, rows)
-    counts["club_messages.csv"] = _export_club_messages(session, output_dir / "club_messages.csv")
+    counts["club_messages.csv"] = _export_club_messages(
+        session, output_dir / "club_messages.csv"
+    )
     return counts
 
 
@@ -143,11 +153,13 @@ def _write_manifest(output_dir: Path, counts: dict[str, int]) -> None:
     ]
     for name, n in sorted(counts.items()):
         lines.append(f"  {name}: {n} row(s)")
-    lines.extend([
-        "",
-        "Restore: use these CSVs as reference; re-import is manual or via a restore script.",
-        "Run before: python migrate_legacy_method_to_tiers.py",
-    ])
+    lines.extend(
+        [
+            "",
+            "Restore: use these CSVs as reference; re-import is manual or via a restore script.",
+            "Run before: python migrate_legacy_method_to_tiers.py",
+        ]
+    )
     (output_dir / "manifest.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

@@ -104,20 +104,32 @@ class FilterSanityTests(unittest.TestCase):
 
     def test_identical_non_zero_figures_are_suspect(self) -> None:
         fee = _fee(
-            rake_overall="1200", rake_filtered="1200", pnl_overall="-900", pnl_filtered="-900"
+            rake_overall="1200",
+            rake_filtered="1200",
+            pnl_overall="-900",
+            pnl_filtered="-900",
         )
         self.assertTrue(auto.date_filter_is_suspect(fee))
 
     def test_all_zero_is_not_suspect(self) -> None:
-        fee = _fee(rake_overall="0", rake_filtered="0", pnl_overall="0", pnl_filtered="0")
+        fee = _fee(
+            rake_overall="0", rake_filtered="0", pnl_overall="0", pnl_filtered="0"
+        )
         self.assertFalse(auto.date_filter_is_suspect(fee))
 
     def test_matching_rake_but_differing_pnl_is_fine(self) -> None:
-        fee = _fee(rake_overall="400", rake_filtered="400", pnl_overall="-900", pnl_filtered="-250")
+        fee = _fee(
+            rake_overall="400",
+            rake_filtered="400",
+            pnl_overall="-900",
+            pnl_filtered="-250",
+        )
         self.assertFalse(auto.date_filter_is_suspect(fee))
 
     def test_zero_rake_with_non_zero_matching_pnl_is_suspect(self) -> None:
-        fee = _fee(rake_overall="0", rake_filtered="0", pnl_overall="-900", pnl_filtered="-900")
+        fee = _fee(
+            rake_overall="0", rake_filtered="0", pnl_overall="-900", pnl_filtered="-900"
+        )
         self.assertTrue(auto.date_filter_is_suspect(fee))
 
 
@@ -129,7 +141,9 @@ class AmountFormattingTests(unittest.TestCase):
         self.assertEqual(auto.format_feeback_amount(Decimal("240.4"), 0), "$240")
 
     def test_thousands_separator(self) -> None:
-        self.assertEqual(auto.format_feeback_amount(Decimal("12345.6"), 2), "$12,345.60")
+        self.assertEqual(
+            auto.format_feeback_amount(Decimal("12345.6"), 2), "$12,345.60"
+        )
 
     def test_out_of_range_places_fall_back_to_two(self) -> None:
         self.assertEqual(auto.format_feeback_amount(Decimal("240"), 7), "$240.00")
@@ -165,7 +179,10 @@ class CheckFeeTests(unittest.IsolatedAsyncioTestCase):
     async def _check(self, fee):
         with patch.object(auto, "run_rake_check", AsyncMock(return_value=fee)):
             return await auto.check_fee(
-                club_id=1, chat_id=-100, group_title="RT / 8272-5942 / P", union_shorthand="RT"
+                club_id=1,
+                chat_id=-100,
+                group_title="RT / 8272-5942 / P",
+                union_shorthand="RT",
             )
 
     async def test_happy_path(self) -> None:
@@ -173,7 +190,9 @@ class CheckFeeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stage.kind, "ok")
 
     async def test_failed_job_escalates(self) -> None:
-        stage = await self._check(_fee(ok=False, status="fail", reason="range mismatch"))
+        stage = await self._check(
+            _fee(ok=False, status="fail", reason="range mismatch")
+        )
         self.assertEqual(stage.kind, "escalate")
         self.assertIn("range mismatch", stage.detail)
 
@@ -183,14 +202,21 @@ class CheckFeeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_suspect_filter_escalates_with_range(self) -> None:
         stage = await self._check(
-            _fee(rake_overall="400", rake_filtered="400", pnl_overall="-9", pnl_filtered="-9")
+            _fee(
+                rake_overall="400",
+                rake_filtered="400",
+                pnl_overall="-9",
+                pnl_filtered="-9",
+            )
         )
         self.assertEqual(stage.kind, "escalate")
         self.assertIn("2026-09-14", stage.detail)
 
     async def test_zero_fee_is_no_fee_not_a_quote(self) -> None:
         stage = await self._check(
-            _fee(rake_overall="5", rake_filtered="0", pnl_overall="-9", pnl_filtered="-1")
+            _fee(
+                rake_overall="5", rake_filtered="0", pnl_overall="-9", pnl_filtered="-1"
+            )
         )
         self.assertEqual(stage.kind, "no_fee")
 
@@ -203,8 +229,13 @@ class CheckFeeTests(unittest.IsolatedAsyncioTestCase):
         # "no fee this week" or an admin escalation over the date filter.
         for fee in (
             _fee(has_upline=True, rake_filtered="0"),
-            _fee(has_upline=True, rake_overall="400", rake_filtered="400",
-                 pnl_overall="-9", pnl_filtered="-9"),
+            _fee(
+                has_upline=True,
+                rake_overall="400",
+                rake_filtered="400",
+                pnl_overall="-9",
+                pnl_filtered="-9",
+            ),
         ):
             with self.subTest(rake_filtered=fee.rake_filtered):
                 stage = await self._check(fee)
@@ -218,10 +249,15 @@ class CheckFeeTests(unittest.IsolatedAsyncioTestCase):
 
 class QuoteStageTests(unittest.IsolatedAsyncioTestCase):
     async def _quote_stage(self, quote_result, *, max_amount=None):
-        with patch.object(
-            auto.elevate, "quote_early_rakeback", AsyncMock(return_value=quote_result)
-        ), patch.object(
-            auto, "get_early_rakeback_max_auto_amount", return_value=max_amount
+        with (
+            patch.object(
+                auto.elevate,
+                "quote_early_rakeback",
+                AsyncMock(return_value=quote_result),
+            ),
+            patch.object(
+                auto, "get_early_rakeback_max_auto_amount", return_value=max_amount
+            ),
         ):
             return await auto.quote_feeback(
                 club_id=1, target=_TARGET, gg_player_id="8272-5942", fee=_fee()
@@ -233,8 +269,9 @@ class QuoteStageTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_pl_is_sent_from_the_filtered_figures(self) -> None:
         mock = AsyncMock(return_value=elevate.QuoteResult(True, quote=_quote()))
-        with patch.object(auto.elevate, "quote_early_rakeback", mock), patch.object(
-            auto, "get_early_rakeback_max_auto_amount", return_value=None
+        with (
+            patch.object(auto.elevate, "quote_early_rakeback", mock),
+            patch.object(auto, "get_early_rakeback_max_auto_amount", return_value=None),
         ):
             await auto.quote_feeback(
                 club_id=1, target=_TARGET, gg_player_id="8272-5942", fee=_fee()
@@ -249,7 +286,9 @@ class QuoteStageTests(unittest.IsolatedAsyncioTestCase):
             elevate.QuoteResult(
                 True,
                 quote=_quote(
-                    eligible=False, reason=elevate.REASON_NOTHING_REMAINING, remaining="0"
+                    eligible=False,
+                    reason=elevate.REASON_NOTHING_REMAINING,
+                    remaining="0",
                 ),
             )
         )
@@ -284,7 +323,9 @@ class QuoteStageTests(unittest.IsolatedAsyncioTestCase):
         stage = await self._quote_stage(
             elevate.QuoteResult(
                 True,
-                quote=_quote(remaining="12", below_minimum=True, minimum="50", places=0),
+                quote=_quote(
+                    remaining="12", below_minimum=True, minimum="50", places=0
+                ),
             )
         )
         self.assertIn("($12)", stage.player_message)
@@ -351,14 +392,12 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(patch.stopall)
 
     async def _claim(self, *, dry_run=False, allow_requote=True):
-        with patch.object(
-            auto.elevate, "record_early_rakeback", self.record
-        ), patch.object(
-            auto.elevate, "delete_early_rakeback", self.delete
-        ), patch.object(auto, "run_auto_chip_add", self.chip_add), patch.object(
-            auto, "deposit_api_dry_run", return_value=dry_run
-        ), patch.object(
-            auto.asyncio, "sleep", AsyncMock()
+        with (
+            patch.object(auto.elevate, "record_early_rakeback", self.record),
+            patch.object(auto.elevate, "delete_early_rakeback", self.delete),
+            patch.object(auto, "run_auto_chip_add", self.chip_add),
+            patch.object(auto, "deposit_api_dry_run", return_value=dry_run),
+            patch.object(auto.asyncio, "sleep", AsyncMock()),
         ):
             return await auto.claim_feeback(
                 club_id=1,
@@ -386,9 +425,7 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stage.player_message, "$240.00 feeback added to your account!")
         self.timer.assert_called_once_with(1, -100, 555)
         self.record.assert_awaited_once()
-        self.assertEqual(
-            self.record.call_args.kwargs["idempotency_key"], "tg:-100:abc"
-        )
+        self.assertEqual(self.record.call_args.kwargs["idempotency_key"], "tg:-100:abc")
         self.assertEqual(self.chip_add.call_args.kwargs["amount"], Decimal("240"))
         self.assertEqual(self.chip_add.call_args.kwargs["union_shorthand"], "RT")
         self.assertEqual(self.chip_add.call_args.kwargs["label"], "Feeback")
@@ -420,7 +457,10 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_duplicate_replay_is_treated_as_recorded(self) -> None:
         self.record.return_value = elevate.RecordResult(
-            True, elevate.CODE_ALREADY_RECORDED, duplicate=True, amount_recorded=Decimal("240")
+            True,
+            elevate.CODE_ALREADY_RECORDED,
+            duplicate=True,
+            amount_recorded=Decimal("240"),
         )
         stage = await self._claim()
         self.assertEqual(stage.kind, "added")
@@ -453,7 +493,10 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_second_amount_mismatch_escalates(self) -> None:
         self.record.return_value = elevate.RecordResult(
-            False, elevate.CODE_AMOUNT_CHANGED, "Amount changed", quote=_quote(remaining="310")
+            False,
+            elevate.CODE_AMOUNT_CHANGED,
+            "Amount changed",
+            quote=_quote(remaining="310"),
         )
         stage = await self._claim(allow_requote=False)
 
@@ -482,9 +525,7 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stage.kind, "chips_failed")
         self.assertEqual(stage.player_message, auto.ADMIN_SHORTLY_COPY)
         self.delete.assert_awaited_once()
-        self.assertEqual(
-            self.delete.call_args.kwargs["idempotency_key"], "tg:-100:abc"
-        )
+        self.assertEqual(self.delete.call_args.kwargs["idempotency_key"], "tg:-100:abc")
         self.assertEqual(self.delete.call_args.kwargs["record_id"], "r1")
         # Rolled back: not a deposit, and not the "add chips by hand" alert.
         self.timer.assert_not_called()

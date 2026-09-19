@@ -81,4 +81,6 @@ if __name__ == "__main__":
         for stmt in LIFECYCLE_ALTER:
             conn.execute(text(stmt))
         conn.commit()
-        print("stripe_customers and stripe_checkout_sessions are ready (including lifecycle columns).")
+        print(
+            "stripe_customers and stripe_checkout_sessions are ready (including lifecycle columns)."
+        )

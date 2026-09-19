@@ -50,9 +50,7 @@ class CannedFallbackTestCase(unittest.IsolatedAsyncioTestCase):
 
         await earlyrb_entry(update, MagicMock())
 
-        mock_record.assert_called_once_with(
-            1, 111, update.effective_chat.id, "earlyrb"
-        )
+        mock_record.assert_called_once_with(1, 111, update.effective_chat.id, "earlyrb")
         update.message.reply_text.assert_called_once_with(EARLYRB_ELIGIBLE_MESSAGE)
 
     @patch("bot.handlers.earlyrb.auto_earlyrb_available", return_value=False)
@@ -69,9 +67,7 @@ class CannedFallbackTestCase(unittest.IsolatedAsyncioTestCase):
             update.message.reply_text.assert_called_once_with(EARLYRB_ELIGIBLE_MESSAGE)
 
     @patch("bot.handlers.earlyrb.auto_earlyrb_available", return_value=False)
-    @patch(
-        "bot.handlers.earlyrb.record_activity", side_effect=RuntimeError("db down")
-    )
+    @patch("bot.handlers.earlyrb.record_activity", side_effect=RuntimeError("db down"))
     @patch("bot.handlers.earlyrb.update_group_name")
     @patch("bot.handlers.earlyrb.get_club_for_chat", return_value=1)
     async def test_record_failure_does_not_send_success(
@@ -144,9 +140,7 @@ class RecheckThrottleTestCase(unittest.IsolatedAsyncioTestCase):
         state = await earlyrb_entry(update, MagicMock())
 
         self.assertEqual(state, ConversationHandler.END)
-        update.message.reply_text.assert_called_once_with(
-            "please wait a few minutes"
-        )
+        update.message.reply_text.assert_called_once_with("please wait a few minutes")
 
 
 class ClaimStatusMessageTests(unittest.IsolatedAsyncioTestCase):
@@ -183,16 +177,19 @@ class ClaimStatusMessageTests(unittest.IsolatedAsyncioTestCase):
             player_message="$12.00 feeback added to your account!",
             quote=None,
         )
-        with patch(
-            "bot.handlers.earlyrb.handle_stale_flow_callback",
-            AsyncMock(return_value=False),
-        ), patch(
-            "bot.services.early_rakeback_auto.claim_feeback",
-            AsyncMock(return_value=result),
-        ), patch(
-            "bot.services.early_rakeback_auto.create_claim_row", return_value=7
-        ), patch(
-            "bot.services.early_rakeback_auto.new_idempotency_key", return_value="k"
+        with (
+            patch(
+                "bot.handlers.earlyrb.handle_stale_flow_callback",
+                AsyncMock(return_value=False),
+            ),
+            patch(
+                "bot.services.early_rakeback_auto.claim_feeback",
+                AsyncMock(return_value=result),
+            ),
+            patch("bot.services.early_rakeback_auto.create_claim_row", return_value=7),
+            patch(
+                "bot.services.early_rakeback_auto.new_idempotency_key", return_value="k"
+            ),
         ):
             state = await earlyrb_claim(update, context)
 
@@ -224,8 +221,9 @@ class LookupCancelTests(unittest.IsolatedAsyncioTestCase):
             _cleanup(context)
             return SimpleNamespace(kind="ok", fee=MagicMock(), detail="")
 
-        with patch("bot.handlers.earlyrb.record_activity_for_chat"), patch(
-            "bot.services.early_rakeback_auto.check_fee", fee_then_cancel
+        with (
+            patch("bot.handlers.earlyrb.record_activity_for_chat"),
+            patch("bot.services.early_rakeback_auto.check_fee", fee_then_cancel),
         ):
             state = await _run_lookup(update, context)
 

@@ -75,10 +75,14 @@ class ExpenseCsvImportTestCase(unittest.TestCase):
             connect_args={"check_same_thread": False},
             poolclass=StaticPool,
         )
-        Base.metadata.create_all(self.engine, tables=[Club.__table__, Expense.__table__])
+        Base.metadata.create_all(
+            self.engine, tables=[Club.__table__, Expense.__table__]
+        )
         self.Session = sessionmaker(bind=self.engine)
         session = self.Session()
-        session.add(Club(id=1, name="Round Table", telegram_user_id=1001, is_active=True))
+        session.add(
+            Club(id=1, name="Round Table", telegram_user_id=1001, is_active=True)
+        )
         session.add(Club(id=2, name="ClubGTO", telegram_user_id=1002, is_active=True))
         session.commit()
         session.close()
@@ -97,7 +101,9 @@ class ExpenseCsvImportTestCase(unittest.TestCase):
                 "club": "Unknown Club",
             },
         )
-        outcomes = process_rows(session, [parsed], apply=False, club_map={"round table": 1})
+        outcomes = process_rows(
+            session, [parsed], apply=False, club_map={"round table": 1}
+        )
         self.assertEqual(outcomes[0].status, "error")
         session.close()
 

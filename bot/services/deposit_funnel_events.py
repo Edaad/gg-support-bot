@@ -126,7 +126,6 @@ def record_deposit_funnel_event(
         )
 
 
-
 def record_payment_funnel_from_ingest(
     *,
     telegram_chat_id: int | None,

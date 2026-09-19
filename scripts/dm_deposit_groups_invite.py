@@ -278,7 +278,9 @@ def _load_targets_from_csv(
     targets: list[DepositGroupTarget] = []
     with path.open(newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            chat_raw = (row.get("telegram_chat_id") or row.get("current_chat_id") or "").strip()
+            chat_raw = (
+                row.get("telegram_chat_id") or row.get("current_chat_id") or ""
+            ).strip()
             try:
                 chat_id = int(chat_raw)
             except (TypeError, ValueError):
@@ -329,9 +331,7 @@ def _load_targets_from_db(
     from api.payments_helpers import resolve_group_title
 
     init_engine()
-    club_key_by_id = {
-        int(cfg.link_club_id): key for key, cfg in CLUB_GC_CONFIG.items()
-    }
+    club_key_by_id = {int(cfg.link_club_id): key for key, cfg in CLUB_GC_CONFIG.items()}
     with get_db() as session:
         clubs = session.query(Club).all()
         club_name_by_id = {int(c.id): c.name for c in clubs}
@@ -345,19 +345,31 @@ def _load_targets_from_db(
             session.query(
                 VenmoPayment.telegram_chat_id,
                 VenmoPayment.club_id,
-            ).filter(VenmoPayment.telegram_chat_id.isnot(None), VenmoPayment.is_test.is_(False)),
+            ).filter(
+                VenmoPayment.telegram_chat_id.isnot(None),
+                VenmoPayment.is_test.is_(False),
+            ),
             session.query(
                 CashAppPayment.telegram_chat_id,
                 CashAppPayment.club_id,
-            ).filter(CashAppPayment.telegram_chat_id.isnot(None), CashAppPayment.is_test.is_(False)),
+            ).filter(
+                CashAppPayment.telegram_chat_id.isnot(None),
+                CashAppPayment.is_test.is_(False),
+            ),
             session.query(
                 ZellePayment.telegram_chat_id,
                 ZellePayment.club_id,
-            ).filter(ZellePayment.telegram_chat_id.isnot(None), ZellePayment.is_test.is_(False)),
+            ).filter(
+                ZellePayment.telegram_chat_id.isnot(None),
+                ZellePayment.is_test.is_(False),
+            ),
             session.query(
                 CryptoPayment.telegram_chat_id,
                 CryptoPayment.club_id,
-            ).filter(CryptoPayment.telegram_chat_id.isnot(None), CryptoPayment.is_test.is_(False)),
+            ).filter(
+                CryptoPayment.telegram_chat_id.isnot(None),
+                CryptoPayment.is_test.is_(False),
+            ),
         ]
         for q in sources:
             for chat_id, club_id in q.all():
@@ -372,8 +384,14 @@ def _load_targets_from_db(
             if chat_id_filter is not None and chat_id != int(chat_id_filter):
                 continue
             title, gg_player_id = resolve_group_title(session, chat_id)
-            club_id = sorted(agg[chat_id]["club_ids"])[0] if agg[chat_id]["club_ids"] else None
-            club_key = club_key_by_id.get(club_id or -1, "") if club_id is not None else ""
+            club_id = (
+                sorted(agg[chat_id]["club_ids"])[0]
+                if agg[chat_id]["club_ids"]
+                else None
+            )
+            club_key = (
+                club_key_by_id.get(club_id or -1, "") if club_id is not None else ""
+            )
             if club_key_filter and club_key != club_key_filter:
                 continue
             targets.append(
@@ -389,7 +407,9 @@ def _load_targets_from_db(
     return targets
 
 
-async def _send_player_dm(client, player_user_id: int, text: str) -> tuple[bool, str | None]:
+async def _send_player_dm(
+    client, player_user_id: int, text: str
+) -> tuple[bool, str | None]:
     try:
         player = await _call_with_flood_retry(
             lambda: client.get_entity(int(player_user_id)),
@@ -401,7 +421,9 @@ async def _send_player_dm(client, player_user_id: int, text: str) -> tuple[bool,
         )
         return True, None
     except Exception as e:
-        logger.warning("player DM failed user_id=%s: %s", player_user_id, type(e).__name__)
+        logger.warning(
+            "player DM failed user_id=%s: %s", player_user_id, type(e).__name__
+        )
         return False, type(e).__name__
 
 
@@ -562,7 +584,9 @@ async def _process_target_apply(
     update_invite_links: bool,
     player_map: dict[int, tuple[int | None, str | None, str | None]],
 ) -> DmResult:
-    from bot.services.player_support_dm_messages import PLAYER_MIGRATION_UPGRADE_INVITE_MESSAGE
+    from bot.services.player_support_dm_messages import (
+        PLAYER_MIGRATION_UPGRADE_INVITE_MESSAGE,
+    )
     from bot.services.support_group_chats import (
         fetch_invite_link_for_chat,
         fetch_support_group_chat_row_for_chat,
@@ -946,7 +970,9 @@ def main() -> None:
         help="Write could-not-DM rows here (default: backups/dm_deposit_groups_invite_failed_<ts>.csv).",
     )
     parser.add_argument("--json", action="store_true", help="JSON summary to stdout.")
-    parser.add_argument("--quiet", action="store_true", help="Only warnings/errors on stderr.")
+    parser.add_argument(
+        "--quiet", action="store_true", help="Only warnings/errors on stderr."
+    )
     args = parser.parse_args()
 
     if not args.json:

@@ -12,7 +12,6 @@ from bot.services.flow_sessions import (
     END_REASON_CHIPS_CREDITED,
     END_REASON_SUPERSEDED,
     FlowSessionInfo,
-    ResolvedDepositSession,
     abandon_flow_session,
     complete_flow_session,
     get_active_session,
@@ -160,12 +159,12 @@ class ResolveDepositSessionIdTest(unittest.TestCase):
 
     @patch("bot.services.flow_sessions.get_active_session")
     @patch("bot.services.flow_sessions.get_db")
-    def test_resolve_falls_back_to_active_session(
-        self, mock_get_db, mock_active
-    ):
+    def test_resolve_falls_back_to_active_session(self, mock_get_db, mock_active):
         session = MagicMock()
         mock_get_db.return_value.__enter__.return_value = session
-        session.query.return_value.filter_by.return_value.one_or_none.return_value = None
+        session.query.return_value.filter_by.return_value.one_or_none.return_value = (
+            None
+        )
         mock_active.return_value = FlowSessionInfo(
             session_uuid="active-sess",
             telegram_chat_id=-1004,

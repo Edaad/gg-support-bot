@@ -63,7 +63,9 @@ def normalize_nickname(value: str | None) -> str:
     return raw
 
 
-def entry_from_title(*, chat_id: int, club_id: int, title: str) -> GroupTitleEntry | None:
+def entry_from_title(
+    *, chat_id: int, club_id: int, title: str
+) -> GroupTitleEntry | None:
     """Return a scan entry or None if the title is excluded or unparseable."""
     cleaned = (title or "").strip()
     if not cleaned or is_analytics_excluded_group_title(cleaned):

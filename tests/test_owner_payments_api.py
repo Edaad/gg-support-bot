@@ -20,7 +20,7 @@ from api.payments_helpers import (
 )
 from api.routes.owner_payments import router
 from db.connection import get_db_dependency
-from db.models import CryptoPayment, VenmoPayment, ZellePayment
+from db.models import CryptoPayment, VenmoPayment
 
 TOKEN = create_token()
 
@@ -39,7 +39,9 @@ def _make_app(mock_db: MagicMock | None = None) -> FastAPI:
 
 class OwnerPaymentsApiTestCase(unittest.TestCase):
     def setUp(self):
-        self.env_patch = patch.dict(os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False)
+        self.env_patch = patch.dict(
+            os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False
+        )
         self.env_patch.start()
 
     def tearDown(self):

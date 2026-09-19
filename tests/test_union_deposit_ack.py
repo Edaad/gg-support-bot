@@ -34,11 +34,15 @@ class UnionDepositMessagesTests(unittest.TestCase):
         self.assertIn("<b>Special instructions</b>", html)
         self.assertIn("• This is <b>NOT</b> a recurring payment method", html)
         self.assertIn("• Please initiate a new deposit before sending again.", html)
-        self.assertIn("• Once the payment is sent, please send a <b>Screen Recording</b>", html)
+        self.assertIn(
+            "• Once the payment is sent, please send a <b>Screen Recording</b>", html
+        )
         self.assertIn("<b>confirmation email</b>", html)
         plain = build_union_special_instructions_text(html=False)
         self.assertIn("• This is NOT a recurring payment method", plain)
-        self.assertIn("• Once the payment is sent, please send a Screen Recording", plain)
+        self.assertIn(
+            "• Once the payment is sent, please send a Screen Recording", plain
+        )
         self.assertIn("confirmation email", plain)
 
     def test_instruction_excludes_recurring_footer(self):
@@ -57,7 +61,9 @@ class UnionDepositMessagesTests(unittest.TestCase):
         self.assertNotIn("recurring payment method", text)
 
     def test_instruction_html_tag_is_tap_to_copy(self):
-        from bot.services.union_deposit_instruction import build_union_deposit_instruction
+        from bot.services.union_deposit_instruction import (
+            build_union_deposit_instruction,
+        )
 
         method = SimpleNamespace(
             union_type="cashapp",
@@ -146,9 +152,7 @@ class UnionAckPendingTests(unittest.TestCase):
         )
         session = MagicMock()
         session.get.side_effect = [pending_row, complete_row]
-        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = (
-            complete_row
-        )
+        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = complete_row
         cm = MagicMock()
         cm.__enter__.return_value = session
         cm.__exit__.return_value = False
@@ -208,9 +212,7 @@ class UnionAckExpiryTests(unittest.IsolatedAsyncioTestCase):
             trade_record_checked=False,
         )
         session = MagicMock()
-        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = (
-            row
-        )
+        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = row
         cm = MagicMock()
         cm.__enter__.return_value = session
         cm.__exit__.return_value = False
@@ -233,15 +235,19 @@ class UnionAckExpiryTests(unittest.IsolatedAsyncioTestCase):
         ack_expires = datetime.now(timezone.utc) + timedelta(minutes=3)
         instr_expires = datetime.now(timezone.utc) + timedelta(minutes=8)
 
-        with patch(
-            "bot.services.union_instruction_expiry.list_pending_union_ack_expiries",
-            return_value=[(1, ack_expires)],
-        ), patch(
-            "bot.services.union_instruction_expiry.list_pending_union_instruction_expiries",
-            return_value=[(2, instr_expires)],
-        ), patch(
-            "bot.services.union_instruction_expiry._resolve_job_queue",
-            return_value=jq,
+        with (
+            patch(
+                "bot.services.union_instruction_expiry.list_pending_union_ack_expiries",
+                return_value=[(1, ack_expires)],
+            ),
+            patch(
+                "bot.services.union_instruction_expiry.list_pending_union_instruction_expiries",
+                return_value=[(2, instr_expires)],
+            ),
+            patch(
+                "bot.services.union_instruction_expiry._resolve_job_queue",
+                return_value=jq,
+            ),
         ):
             restore_union_deposit_expiries(jq)
 

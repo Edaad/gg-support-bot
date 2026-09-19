@@ -16,9 +16,7 @@ TIMEOUT_USER_MESSAGE = (
     "The job was cancelled. Send /cashout or run /cash in the group to start again."
 )
 
-GENERIC_ERROR_MESSAGE = (
-    "Something went wrong. Try again, or send /cancel to reset."
-)
+GENERIC_ERROR_MESSAGE = "Something went wrong. Try again, or send /cancel to reset."
 
 
 def user_facing_error(exc: BaseException | None) -> str:

@@ -96,7 +96,10 @@ def exclude_processed(
 
     out: list[PhotoBackfillCandidate] = []
     for row in candidates:
-        if any((row.club_key, cid) in processed_keys for cid in _variant_set(row.telegram_chat_id)):
+        if any(
+            (row.club_key, cid) in processed_keys
+            for cid in _variant_set(row.telegram_chat_id)
+        ):
             continue
         out.append(row)
     return out
@@ -111,7 +114,11 @@ def load_photo_backfill_batch(
     """Next unprocessed idle RT/CC support groups, oldest ``support_group_chats`` first."""
 
     from db.connection import get_db
-    from db.models import GroupPhotoBackfillRow, SupportGroupChat, SupportGroupIdleEpisodeState
+    from db.models import (
+        GroupPhotoBackfillRow,
+        SupportGroupChat,
+        SupportGroupIdleEpisodeState,
+    )
 
     with get_db() as session:
         idle_q = session.query(SupportGroupIdleEpisodeState.telegram_chat_id)
@@ -298,7 +305,9 @@ async def tick_async(
     if not is_group_photo_backfill_enabled():
         return summary
 
-    batch_size = int(limit) if limit is not None else get_group_photo_backfill_batch_size()
+    batch_size = (
+        int(limit) if limit is not None else get_group_photo_backfill_batch_size()
+    )
     pin = chat_id if chat_id is not None else get_group_photo_backfill_chat_id()
     delay = (
         float(delay_seconds)
@@ -322,7 +331,9 @@ async def tick_async(
         if cfg is None:
             logger.warning("group_photo_backfill: no MTProto config club=%s", club_key)
             for row in rows:
-                record_photo_backfill_outcome(row, status="error", error="no_mtproto_config")
+                record_photo_backfill_outcome(
+                    row, status="error", error="no_mtproto_config"
+                )
                 summary["error"] += 1
                 summary["considered"] += 1
             continue
@@ -354,7 +365,9 @@ async def tick_async(
                     row.telegram_chat_id,
                     status,
                 )
-                record_photo_backfill_outcome(row, status="error", error=type(exc).__name__)
+                record_photo_backfill_outcome(
+                    row, status="error", error=type(exc).__name__
+                )
                 summary["error"] += 1
                 continue
 

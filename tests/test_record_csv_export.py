@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import unittest
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 from unittest.mock import MagicMock
 

@@ -140,9 +140,12 @@ class CashoutUnionTests(_GateTestCase):
 
 class AcesHistoryTests(unittest.TestCase):
     def test_plain_cc_title_is_not_aces_history(self):
-        with patch(f"{MOD}.has_aces_join_ack", return_value=False), patch(
-            f"{MOD}.get_group_title_for_chat",
-            return_value=("CC / 1234-5678 / Player", CC_ID),
+        with (
+            patch(f"{MOD}.has_aces_join_ack", return_value=False),
+            patch(
+                f"{MOD}.get_group_title_for_chat",
+                return_value=("CC / 1234-5678 / Player", CC_ID),
+            ),
         ):
             self.assertFalse(has_aces_deposit_history(CHAT_ID))
 

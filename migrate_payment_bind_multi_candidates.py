@@ -108,10 +108,7 @@ def _backup_binding_tables(*, backup_dir: Path | None) -> Path:
     manifest_path.write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
 
     size_mb = dump_path.stat().st_size / (1024 * 1024)
-    print(
-        f"Backup complete: {dump_path} ({size_mb:.2f} MB). "
-        f"Manifest: {manifest_path}"
-    )
+    print(f"Backup complete: {dump_path} ({size_mb:.2f} MB). Manifest: {manifest_path}")
     print(
         "Restore binding tables with:\n"
         f"  pg_restore --data-only --no-owner --dbname=$DATABASE_URL {dump_path}"

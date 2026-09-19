@@ -78,7 +78,10 @@ class SearchMatchTestCase(unittest.TestCase):
         self.assertTrue(_matches_search(row, "sijan"))
         self.assertFalse(
             _matches_search(
-                {"group_title": "GTO / 2690-5329 / @Mrhulkx", "gg_player_id": "2690-5329"},
+                {
+                    "group_title": "GTO / 2690-5329 / @Mrhulkx",
+                    "gg_player_id": "2690-5329",
+                },
                 "sijan",
             )
         )
@@ -99,7 +102,10 @@ class SearchMatchTestCase(unittest.TestCase):
             "club_name": "Round Table",
             "payments": [
                 {"method_display_name": "Venmo", "payout_details": "@Johnny"},
-                {"method_display_name": "Zelle", "payout_details": "player@example.com"},
+                {
+                    "method_display_name": "Zelle",
+                    "payout_details": "player@example.com",
+                },
             ],
         }
         self.assertTrue(_matches_search(row, "johnny"))
@@ -232,7 +238,10 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
         def flush() -> None:
             for call in session.add.call_args_list:
                 obj = call[0][0]
-                if isinstance(obj, StaffCashoutRecord) and getattr(obj, "id", None) is None:
+                if (
+                    isinstance(obj, StaffCashoutRecord)
+                    and getattr(obj, "id", None) is None
+                ):
                     obj.id = 11
 
         session.flush.side_effect = flush
@@ -251,15 +260,20 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
         session.add.side_effect = track_add
 
         notify = MagicMock(return_value=1)
-        with patch("bot.services.staff_cashout_records.get_db", return_value=cm), patch(
-            "bot.services.staff_cashout_records._validate_method_choice",
-            return_value=(None, None, "Venmo", "@player"),
-        ), patch(
-            "bot.services.staff_cashout_records._record_to_dict",
-            return_value={"id": 11, "payments": [{"method_display_name": "Venmo"}]},
-        ), patch(
-            "bot.services.staff_cashout_pushover.notify_cashout_pushover_sync",
-            notify,
+        with (
+            patch("bot.services.staff_cashout_records.get_db", return_value=cm),
+            patch(
+                "bot.services.staff_cashout_records._validate_method_choice",
+                return_value=(None, None, "Venmo", "@player"),
+            ),
+            patch(
+                "bot.services.staff_cashout_records._record_to_dict",
+                return_value={"id": 11, "payments": [{"method_display_name": "Venmo"}]},
+            ),
+            patch(
+                "bot.services.staff_cashout_pushover.notify_cashout_pushover_sync",
+                notify,
+            ),
         ):
             from bot.services.staff_cashout_records import (
                 create_staff_cashout_record_manual,
@@ -315,16 +329,18 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
         record.created_at = None
         record.updated_at = None
         record.payments = []
-        record.money_sends = [MagicMock(
-            id=1,
-            cashout_record_id=1,
-            sender_name="A",
-            amount=Decimal("100"),
-            payment_method_id=None,
-            payment_sub_option_id=None,
-            method_display_name="Zelle",
-            created_at=None,
-        )]
+        record.money_sends = [
+            MagicMock(
+                id=1,
+                cashout_record_id=1,
+                sender_name="A",
+                amount=Decimal("100"),
+                payment_method_id=None,
+                payment_sub_option_id=None,
+                method_display_name="Zelle",
+                created_at=None,
+            )
+        ]
         session = MagicMock()
         session.get.return_value = record
         cm = MagicMock()
@@ -396,9 +412,10 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
         cm.__enter__.return_value = session
         cm.__exit__.return_value = False
 
-        with patch("bot.services.staff_cashout_records.get_db", return_value=cm), patch(
-            "bot.services.staff_cashout_records.get_method_by_id"
-        ) as mock_method:
+        with (
+            patch("bot.services.staff_cashout_records.get_db", return_value=cm),
+            patch("bot.services.staff_cashout_records.get_method_by_id") as mock_method,
+        ):
             from bot.services.staff_cashout_records import add_staff_cashout_payment
 
             add_staff_cashout_payment(
@@ -470,12 +487,15 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
 
 class CashoutRecordsApiTestCase(unittest.TestCase):
     def test_list_returns_records(self) -> None:
-        with patch(
-            "api.routes.cashout_records.list_staff_cashout_records",
-            return_value=([_sample_record()], 1),
-        ), patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={2: "Round Table"},
+        with (
+            patch(
+                "api.routes.cashout_records.list_staff_cashout_records",
+                return_value=([_sample_record()], 1),
+            ),
+            patch(
+                "api.routes.cashout_records._club_name_map",
+                return_value={2: "Round Table"},
+            ),
         ):
             client = TestClient(_make_api_app())
             resp = client.get("/api/cashout-records?status=active")
@@ -490,12 +510,15 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
             self.assertEqual(body["items"][0]["status"], "active")
 
     def test_list_passes_club_and_search(self) -> None:
-        with patch(
-            "api.routes.cashout_records.list_staff_cashout_records",
-            return_value=([], 0),
-        ) as mock_list, patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={},
+        with (
+            patch(
+                "api.routes.cashout_records.list_staff_cashout_records",
+                return_value=([], 0),
+            ) as mock_list,
+            patch(
+                "api.routes.cashout_records._club_name_map",
+                return_value={},
+            ),
         ):
             client = TestClient(_make_api_app())
             resp = client.get(
@@ -516,12 +539,15 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         created["chat_id"] = None
         created["recorded_by_telegram_user_id"] = None
         created["trigger"] = "dashboard"
-        with patch(
-            "api.routes.cashout_records.create_staff_cashout_record_manual",
-            return_value=created,
-        ) as create_mock, patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={2: "Round Table"},
+        with (
+            patch(
+                "api.routes.cashout_records.create_staff_cashout_record_manual",
+                return_value=created,
+            ) as create_mock,
+            patch(
+                "api.routes.cashout_records._club_name_map",
+                return_value={2: "Round Table"},
+            ),
         ):
             client = TestClient(_make_api_app())
             resp = client.post(
@@ -593,12 +619,15 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
             return ROLE_GTO
 
         app.dependency_overrides[get_current_admin] = override_gto
-        with patch(
-            "api.routes.cashout_records.get_staff_cashout_record",
-            return_value=_sample_record(),
-        ), patch(
-            "api.routes.cashout_records.assert_gto_record_club",
-            side_effect=HTTPException(403, "GTO club only"),
+        with (
+            patch(
+                "api.routes.cashout_records.get_staff_cashout_record",
+                return_value=_sample_record(),
+            ),
+            patch(
+                "api.routes.cashout_records.assert_gto_record_club",
+                side_effect=HTTPException(403, "GTO club only"),
+            ),
         ):
             client = TestClient(app)
             resp = client.delete("/api/cashout-records/1")
@@ -607,12 +636,15 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
     def test_patch_does_not_call_zapier(self) -> None:
         updated = _sample_record()
         updated["group_title"] = "RT / 2427-3267 / Sam"
-        with patch(
-            "api.routes.cashout_records.update_staff_cashout_record",
-            return_value=updated,
-        ), patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={2: "Round Table"},
+        with (
+            patch(
+                "api.routes.cashout_records.update_staff_cashout_record",
+                return_value=updated,
+            ),
+            patch(
+                "api.routes.cashout_records._club_name_map",
+                return_value={2: "Round Table"},
+            ),
         ):
             client = TestClient(_make_api_app())
             resp = client.patch(
@@ -624,7 +656,9 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
     def test_patch_amount_conflict_when_not_active(self) -> None:
         with patch(
             "api.routes.cashout_records.update_staff_cashout_record",
-            side_effect=CashoutRecordNotActive("Original amount can only be edited while active"),
+            side_effect=CashoutRecordNotActive(
+                "Original amount can only be edited while active"
+            ),
         ):
             client = TestClient(_make_api_app())
             resp = client.patch("/api/cashout-records/1", json={"amount": "600"})
@@ -646,17 +680,24 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         updated["sent"] = Decimal("600")
         updated["remaining"] = Decimal("-100")
         updated["status"] = "oversent"
-        with patch(
-            "api.routes.cashout_records.add_staff_cashout_send",
-            return_value=updated,
-        ), patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={2: "Round Table"},
+        with (
+            patch(
+                "api.routes.cashout_records.add_staff_cashout_send",
+                return_value=updated,
+            ),
+            patch(
+                "api.routes.cashout_records._club_name_map",
+                return_value={2: "Round Table"},
+            ),
         ):
             client = TestClient(_make_api_app())
             resp = client.post(
                 "/api/cashout-records/1/sends",
-                json={"sender_name": "Rtsupport", "amount": "600", "method_display_name": "Zelle"},
+                json={
+                    "sender_name": "Rtsupport",
+                    "amount": "600",
+                    "method_display_name": "Zelle",
+                },
             )
             self.assertEqual(resp.status_code, 201)
             self.assertEqual(resp.json()["status"], "oversent")
@@ -664,12 +705,15 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
     def test_delete_payment_ok(self) -> None:
         updated = _sample_record()
         updated["payments"] = []
-        with patch(
-            "api.routes.cashout_records.delete_staff_cashout_payment",
-            return_value=updated,
-        ), patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={2: "Round Table"},
+        with (
+            patch(
+                "api.routes.cashout_records.delete_staff_cashout_payment",
+                return_value=updated,
+            ),
+            patch(
+                "api.routes.cashout_records._club_name_map",
+                return_value={2: "Round Table"},
+            ),
         ):
             client = TestClient(_make_api_app())
             resp = client.delete("/api/cashout-records/1/payments/5")
@@ -758,7 +802,9 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         app = _make_api_app()
         app.dependency_overrides[get_current_admin] = lambda: ROLE_ACCOUNT_MANAGER
         client = TestClient(app)
-        resp = client.get("/api/cashout-records/sends/export?from=2026-07-22&to=2026-08-21")
+        resp = client.get(
+            "/api/cashout-records/sends/export?from=2026-07-22&to=2026-08-21"
+        )
         self.assertEqual(resp.status_code, 403)
 
     def test_money_sends_methods_admin_ok(self) -> None:
@@ -767,7 +813,9 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
             return_value=["Venmo", "Zelle"],
         ):
             client = TestClient(_make_api_app())
-            resp = client.get("/api/cashout-records/sends/methods?from=2026-07-22&to=2026-08-21")
+            resp = client.get(
+                "/api/cashout-records/sends/methods?from=2026-07-22&to=2026-08-21"
+            )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json(), ["Venmo", "Zelle"])
 
@@ -777,19 +825,24 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
             return_value=b"amount,sender_name\n",
         ):
             client = TestClient(_make_api_app())
-            resp = client.get("/api/cashout-records/sends/export?from=2026-07-22&to=2026-08-21")
+            resp = client.get(
+                "/api/cashout-records/sends/export?from=2026-07-22&to=2026-08-21"
+            )
         self.assertEqual(resp.status_code, 200)
         self.assertIn("text/csv", resp.headers.get("content-type", ""))
 
     def test_list_do_not_send_admin_ok(self) -> None:
         parked = _sample_record()
         parked["do_not_send"] = True
-        with patch(
-            "api.routes.cashout_records.list_staff_cashout_records",
-            return_value=([parked], 1),
-        ) as mock_list, patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={2: "Round Table"},
+        with (
+            patch(
+                "api.routes.cashout_records.list_staff_cashout_records",
+                return_value=([parked], 1),
+            ) as mock_list,
+            patch(
+                "api.routes.cashout_records._club_name_map",
+                return_value={2: "Round Table"},
+            ),
         ):
             client = TestClient(_make_api_app())
             resp = client.get("/api/cashout-records?status=do_not_send")
@@ -801,12 +854,15 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         second = _sample_record()
         second["id"] = 2
         second["group_title"] = "RT / 9999 / PageTwo"
-        with patch(
-            "api.routes.cashout_records.list_staff_cashout_records",
-            return_value=([second], 51),
-        ) as mock_list, patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={2: "Round Table"},
+        with (
+            patch(
+                "api.routes.cashout_records.list_staff_cashout_records",
+                return_value=([second], 51),
+            ) as mock_list,
+            patch(
+                "api.routes.cashout_records._club_name_map",
+                return_value={2: "Round Table"},
+            ),
         ):
             client = TestClient(_make_api_app())
             resp = client.get("/api/cashout-records?status=active&limit=50&offset=50")
@@ -829,12 +885,15 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
     def test_patch_do_not_send_admin_ok(self) -> None:
         updated = _sample_record()
         updated["do_not_send"] = True
-        with patch(
-            "api.routes.cashout_records.update_staff_cashout_record",
-            return_value=updated,
-        ) as mock_update, patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={2: "Round Table"},
+        with (
+            patch(
+                "api.routes.cashout_records.update_staff_cashout_record",
+                return_value=updated,
+            ) as mock_update,
+            patch(
+                "api.routes.cashout_records._club_name_map",
+                return_value={2: "Round Table"},
+            ),
         ):
             client = TestClient(_make_api_app())
             resp = client.patch("/api/cashout-records/1", json={"do_not_send": True})
@@ -852,12 +911,15 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
     def test_list_audited_admin_ok(self) -> None:
         audited = _sample_record()
         audited["audited"] = True
-        with patch(
-            "api.routes.cashout_records.list_staff_cashout_records",
-            return_value=([audited], 1),
-        ) as mock_list, patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={2: "Round Table"},
+        with (
+            patch(
+                "api.routes.cashout_records.list_staff_cashout_records",
+                return_value=([audited], 1),
+            ) as mock_list,
+            patch(
+                "api.routes.cashout_records._club_name_map",
+                return_value={2: "Round Table"},
+            ),
         ):
             client = TestClient(_make_api_app())
             resp = client.get("/api/cashout-records?audited=true")
@@ -875,12 +937,15 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
     def test_patch_audited_admin_ok(self) -> None:
         updated = _sample_record()
         updated["audited"] = True
-        with patch(
-            "api.routes.cashout_records.update_staff_cashout_record",
-            return_value=updated,
-        ) as mock_update, patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={2: "Round Table"},
+        with (
+            patch(
+                "api.routes.cashout_records.update_staff_cashout_record",
+                return_value=updated,
+            ) as mock_update,
+            patch(
+                "api.routes.cashout_records._club_name_map",
+                return_value={2: "Round Table"},
+            ),
         ):
             client = TestClient(_make_api_app())
             resp = client.patch("/api/cashout-records/1", json={"audited": True})
@@ -909,12 +974,17 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         self.assertEqual(resp.status_code, 403)
 
     def test_patch_audited_not_cleared_400(self) -> None:
-        with patch(
-            "api.routes.cashout_records.update_staff_cashout_record",
-            side_effect=ValueError("Audited can only be set when remaining is zero"),
-        ), patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={2: "Round Table"},
+        with (
+            patch(
+                "api.routes.cashout_records.update_staff_cashout_record",
+                side_effect=ValueError(
+                    "Audited can only be set when remaining is zero"
+                ),
+            ),
+            patch(
+                "api.routes.cashout_records._club_name_map",
+                return_value={2: "Round Table"},
+            ),
         ):
             client = TestClient(_make_api_app())
             resp = client.patch("/api/cashout-records/1", json={"audited": True})
@@ -925,15 +995,19 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         updated["sending"] = True
         app = _make_api_app()
         app.dependency_overrides[get_current_admin] = lambda: ROLE_ACCOUNT_MANAGER
-        with patch(
-            "api.routes.cashout_records.update_staff_cashout_record",
-            return_value=updated,
-        ) as mock_update, patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={2: "Round Table"},
-        ), patch(
-            "api.routes.cashout_records._load_and_assert_gto",
-            return_value=None,
+        with (
+            patch(
+                "api.routes.cashout_records.update_staff_cashout_record",
+                return_value=updated,
+            ) as mock_update,
+            patch(
+                "api.routes.cashout_records._club_name_map",
+                return_value={2: "Round Table"},
+            ),
+            patch(
+                "api.routes.cashout_records._load_and_assert_gto",
+                return_value=None,
+            ),
         ):
             client = TestClient(app)
             resp = client.patch("/api/cashout-records/1", json={"sending": True})
@@ -974,24 +1048,28 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         self.assertEqual(resp.status_code, 403)
 
     def test_patch_slack_reminder_on_fires_immediately(self) -> None:
-        with patch(
-            "bot.services.staff_cashout_slack_reminders.set_notify_control",
-            return_value={
-                "enabled": True,
-                "hours_enabled": True,
-                "hours_start": "08:00",
-                "hours_end": "23:00",
-                "enabled_at": None,
-                "updated_at": None,
-            },
-        ) as mock_set, patch(
-            "bot.services.staff_cashout_slack_reminders.cashout_staff_alerts_open",
-            return_value=True,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.send_due_cashout_reminders",
-            new_callable=AsyncMock,
-            return_value=2,
-        ) as mock_send:
+        with (
+            patch(
+                "bot.services.staff_cashout_slack_reminders.set_notify_control",
+                return_value={
+                    "enabled": True,
+                    "hours_enabled": True,
+                    "hours_start": "08:00",
+                    "hours_end": "23:00",
+                    "enabled_at": None,
+                    "updated_at": None,
+                },
+            ) as mock_set,
+            patch(
+                "bot.services.staff_cashout_slack_reminders.cashout_staff_alerts_open",
+                return_value=True,
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.send_due_cashout_reminders",
+                new_callable=AsyncMock,
+                return_value=2,
+            ) as mock_send,
+        ):
             client = TestClient(_make_api_app())
             resp = client.patch(
                 "/api/cashout-records/slack-reminder",
@@ -1003,24 +1081,28 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         mock_send.assert_awaited_once()
 
     def test_patch_slack_reminder_off_does_not_send(self) -> None:
-        with patch(
-            "bot.services.staff_cashout_slack_reminders.set_notify_control",
-            return_value={
-                "enabled": False,
-                "hours_enabled": True,
-                "hours_start": "08:00",
-                "hours_end": "23:00",
-                "enabled_at": None,
-                "updated_at": None,
-            },
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.cashout_staff_alerts_open",
-            return_value=True,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.send_due_cashout_reminders",
-            new_callable=AsyncMock,
-            return_value=0,
-        ) as mock_send:
+        with (
+            patch(
+                "bot.services.staff_cashout_slack_reminders.set_notify_control",
+                return_value={
+                    "enabled": False,
+                    "hours_enabled": True,
+                    "hours_start": "08:00",
+                    "hours_end": "23:00",
+                    "enabled_at": None,
+                    "updated_at": None,
+                },
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.cashout_staff_alerts_open",
+                return_value=True,
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.send_due_cashout_reminders",
+                new_callable=AsyncMock,
+                return_value=0,
+            ) as mock_send,
+        ):
             client = TestClient(_make_api_app())
             resp = client.patch(
                 "/api/cashout-records/slack-reminder",
@@ -1031,24 +1113,28 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         mock_send.assert_not_awaited()
 
     def test_patch_notify_hours_admin_ok(self) -> None:
-        with patch(
-            "bot.services.staff_cashout_slack_reminders.set_notify_control",
-            return_value={
-                "enabled": True,
-                "hours_enabled": True,
-                "hours_start": "09:00",
-                "hours_end": "22:00",
-                "enabled_at": None,
-                "updated_at": None,
-            },
-        ) as mock_set, patch(
-            "bot.services.staff_cashout_slack_reminders.cashout_staff_alerts_open",
-            return_value=True,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.send_due_cashout_reminders",
-            new_callable=AsyncMock,
-            return_value=0,
-        ) as mock_send:
+        with (
+            patch(
+                "bot.services.staff_cashout_slack_reminders.set_notify_control",
+                return_value={
+                    "enabled": True,
+                    "hours_enabled": True,
+                    "hours_start": "09:00",
+                    "hours_end": "22:00",
+                    "enabled_at": None,
+                    "updated_at": None,
+                },
+            ) as mock_set,
+            patch(
+                "bot.services.staff_cashout_slack_reminders.cashout_staff_alerts_open",
+                return_value=True,
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.send_due_cashout_reminders",
+                new_callable=AsyncMock,
+                return_value=0,
+            ) as mock_send,
+        ):
             client = TestClient(_make_api_app())
             resp = client.patch(
                 "/api/cashout-records/slack-reminder",
@@ -1087,12 +1173,15 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
         updated["group_title"] = "RT / 1 / X"
         app = _make_api_app()
         app.dependency_overrides[get_current_admin] = lambda: ROLE_ACCOUNT_MANAGER
-        with patch(
-            "api.routes.cashout_records.update_staff_cashout_record",
-            return_value=updated,
-        ), patch(
-            "api.routes.cashout_records._club_name_map",
-            return_value={2: "Round Table"},
+        with (
+            patch(
+                "api.routes.cashout_records.update_staff_cashout_record",
+                return_value=updated,
+            ),
+            patch(
+                "api.routes.cashout_records._club_name_map",
+                return_value={2: "Round Table"},
+            ),
         ):
             client = TestClient(app)
             resp = client.patch(
@@ -1116,33 +1205,44 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             "method_display_name": "Venmo",
             "payout_details": "@x",
         }
-        with patch(
-            "cashier.services.complete.get_job",
-            return_value=job,
-        ), patch(
-            "cashier.services.complete.create_staff_cashout_record_from_job",
-            return_value=99,
-        ) as mock_create, patch(
-            "cashier.services.complete.apply_low_deposit_cashout_hold",
-            return_value=None,
-        ) as mock_hold, patch(
-            "cashier.services.complete.notify_slack_escalation",
-            new=AsyncMock(return_value=True),
-        ) as mock_slack, patch(
-            "cashier.services.complete.notify_slack_head_admin_escalation",
-            new=AsyncMock(return_value=True),
-        ) as mock_head_admin, patch(
-            "cashier.services.complete.dm_staff",
-            new=AsyncMock(return_value=True),
-        ) as mock_dm, patch(
-            "cashier.services.complete.schedule_cash_flow_from_club",
-        ), patch(
-            "cashier.services.complete.record_activity_for_chat",
-        ), patch(
-            "cashier.services.complete.invalidate_pending_one_time_bypasses",
-        ), patch(
-            "cashier.services.complete.complete_job",
-            return_value=job,
+        with (
+            patch(
+                "cashier.services.complete.get_job",
+                return_value=job,
+            ),
+            patch(
+                "cashier.services.complete.create_staff_cashout_record_from_job",
+                return_value=99,
+            ) as mock_create,
+            patch(
+                "cashier.services.complete.apply_low_deposit_cashout_hold",
+                return_value=None,
+            ) as mock_hold,
+            patch(
+                "cashier.services.complete.notify_slack_escalation",
+                new=AsyncMock(return_value=True),
+            ) as mock_slack,
+            patch(
+                "cashier.services.complete.notify_slack_head_admin_escalation",
+                new=AsyncMock(return_value=True),
+            ) as mock_head_admin,
+            patch(
+                "cashier.services.complete.dm_staff",
+                new=AsyncMock(return_value=True),
+            ) as mock_dm,
+            patch(
+                "cashier.services.complete.schedule_cash_flow_from_club",
+            ),
+            patch(
+                "cashier.services.complete.record_activity_for_chat",
+            ),
+            patch(
+                "cashier.services.complete.invalidate_pending_one_time_bypasses",
+            ),
+            patch(
+                "cashier.services.complete.complete_job",
+                return_value=job,
+            ),
         ):
             from cashier.services.complete import complete_cashout_job
 
@@ -1180,36 +1280,48 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
         }
         club = MagicMock()
         club.name = "Round Table"
-        with patch(
-            "cashier.services.complete.get_job",
-            return_value=job,
-        ), patch(
-            "cashier.services.complete.create_staff_cashout_record_from_job",
-            return_value=99,
-        ), patch(
-            "cashier.services.complete.apply_low_deposit_cashout_hold",
-            return_value=hold,
-        ), patch(
-            "cashier.services.complete.notify_slack_escalation",
-            new=AsyncMock(return_value=True),
-        ) as mock_slack, patch(
-            "cashier.services.complete.notify_slack_head_admin_escalation",
-            new=AsyncMock(return_value=True),
-        ) as mock_head_admin, patch(
-            "cashier.services.complete.dm_staff",
-            new=AsyncMock(return_value=True),
-        ) as mock_dm, patch(
-            "cashier.services.complete.get_club_by_id",
-            return_value=club,
-        ), patch(
-            "cashier.services.complete.schedule_cash_flow_from_club",
-        ), patch(
-            "cashier.services.complete.record_activity_for_chat",
-        ), patch(
-            "cashier.services.complete.invalidate_pending_one_time_bypasses",
-        ), patch(
-            "cashier.services.complete.complete_job",
-            return_value=job,
+        with (
+            patch(
+                "cashier.services.complete.get_job",
+                return_value=job,
+            ),
+            patch(
+                "cashier.services.complete.create_staff_cashout_record_from_job",
+                return_value=99,
+            ),
+            patch(
+                "cashier.services.complete.apply_low_deposit_cashout_hold",
+                return_value=hold,
+            ),
+            patch(
+                "cashier.services.complete.notify_slack_escalation",
+                new=AsyncMock(return_value=True),
+            ) as mock_slack,
+            patch(
+                "cashier.services.complete.notify_slack_head_admin_escalation",
+                new=AsyncMock(return_value=True),
+            ) as mock_head_admin,
+            patch(
+                "cashier.services.complete.dm_staff",
+                new=AsyncMock(return_value=True),
+            ) as mock_dm,
+            patch(
+                "cashier.services.complete.get_club_by_id",
+                return_value=club,
+            ),
+            patch(
+                "cashier.services.complete.schedule_cash_flow_from_club",
+            ),
+            patch(
+                "cashier.services.complete.record_activity_for_chat",
+            ),
+            patch(
+                "cashier.services.complete.invalidate_pending_one_time_bypasses",
+            ),
+            patch(
+                "cashier.services.complete.complete_job",
+                return_value=job,
+            ),
         ):
             from cashier.services.complete import complete_cashout_job
 
@@ -1232,9 +1344,7 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
                 mock_slack.await_args.kwargs.get("source"),
                 "low_deposit_cashout",
             )
-            mock_head_admin.assert_awaited_once_with(
-                text, source="low_deposit_cashout"
-            )
+            mock_head_admin.assert_awaited_once_with(text, source="low_deposit_cashout")
             mock_dm.assert_awaited_once()
             self.assertEqual(mock_dm.await_args.args[0], 1)
             tg = mock_dm.await_args.args[1]
@@ -1249,9 +1359,7 @@ class CountDepositsForChatTestCase(unittest.TestCase):
         session = MagicMock()
         mock_get_db.return_value.__enter__.return_value = session
         mock_get_db.return_value.__exit__.return_value = False
-        session.query.return_value.filter_by.return_value.filter.return_value.count.return_value = (
-            3
-        )
+        session.query.return_value.filter_by.return_value.filter.return_value.count.return_value = 3
 
         from bot.services.club import count_deposits_for_chat
         from db.models import PlayerActivity
@@ -1282,7 +1390,9 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
             "bot.services.staff_cashout_records.get_db",
             return_value=self._session_cm(session),
         ):
-            from bot.services.staff_cashout_records import apply_low_deposit_cashout_hold
+            from bot.services.staff_cashout_records import (
+                apply_low_deposit_cashout_hold,
+            )
 
             self.assertIsNone(apply_low_deposit_cashout_hold(1))
             self.assertFalse(record.do_not_send)
@@ -1294,13 +1404,18 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
         session = MagicMock()
         session.get.return_value = record
 
-        with patch(
-            "bot.services.staff_cashout_records.get_db",
-            return_value=self._session_cm(session),
-        ), patch(
-            "bot.services.staff_cashout_records.count_deposits_for_chat",
-        ) as mock_count:
-            from bot.services.staff_cashout_records import apply_low_deposit_cashout_hold
+        with (
+            patch(
+                "bot.services.staff_cashout_records.get_db",
+                return_value=self._session_cm(session),
+            ),
+            patch(
+                "bot.services.staff_cashout_records.count_deposits_for_chat",
+            ) as mock_count,
+        ):
+            from bot.services.staff_cashout_records import (
+                apply_low_deposit_cashout_hold,
+            )
 
             self.assertIsNone(apply_low_deposit_cashout_hold(1))
             mock_count.assert_not_called()
@@ -1313,14 +1428,19 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
         session = MagicMock()
         session.get.return_value = record
 
-        with patch(
-            "bot.services.staff_cashout_records.get_db",
-            return_value=self._session_cm(session),
-        ), patch(
-            "bot.services.staff_cashout_records.count_deposits_for_chat",
-            return_value=2,
+        with (
+            patch(
+                "bot.services.staff_cashout_records.get_db",
+                return_value=self._session_cm(session),
+            ),
+            patch(
+                "bot.services.staff_cashout_records.count_deposits_for_chat",
+                return_value=2,
+            ),
         ):
-            from bot.services.staff_cashout_records import apply_low_deposit_cashout_hold
+            from bot.services.staff_cashout_records import (
+                apply_low_deposit_cashout_hold,
+            )
 
             self.assertIsNone(apply_low_deposit_cashout_hold(5))
             self.assertFalse(record.do_not_send)
@@ -1337,14 +1457,19 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
         session = MagicMock()
         session.get.return_value = record
 
-        with patch(
-            "bot.services.staff_cashout_records.get_db",
-            return_value=self._session_cm(session),
-        ), patch(
-            "bot.services.staff_cashout_records.count_deposits_for_chat",
-            return_value=0,
+        with (
+            patch(
+                "bot.services.staff_cashout_records.get_db",
+                return_value=self._session_cm(session),
+            ),
+            patch(
+                "bot.services.staff_cashout_records.count_deposits_for_chat",
+                return_value=0,
+            ),
         ):
-            from bot.services.staff_cashout_records import apply_low_deposit_cashout_hold
+            from bot.services.staff_cashout_records import (
+                apply_low_deposit_cashout_hold,
+            )
 
             hold = apply_low_deposit_cashout_hold(5)
         self.assertTrue(record.do_not_send)
@@ -1364,14 +1489,19 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
         session = MagicMock()
         session.get.return_value = record
 
-        with patch(
-            "bot.services.staff_cashout_records.get_db",
-            return_value=self._session_cm(session),
-        ), patch(
-            "bot.services.staff_cashout_records.count_deposits_for_chat",
-            return_value=1,
+        with (
+            patch(
+                "bot.services.staff_cashout_records.get_db",
+                return_value=self._session_cm(session),
+            ),
+            patch(
+                "bot.services.staff_cashout_records.count_deposits_for_chat",
+                return_value=1,
+            ),
         ):
-            from bot.services.staff_cashout_records import apply_low_deposit_cashout_hold
+            from bot.services.staff_cashout_records import (
+                apply_low_deposit_cashout_hold,
+            )
 
             hold = apply_low_deposit_cashout_hold(6)
         self.assertTrue(record.do_not_send)
@@ -1390,14 +1520,19 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
         session = MagicMock()
         session.get.return_value = record
 
-        with patch(
-            "bot.services.staff_cashout_records.get_db",
-            return_value=self._session_cm(session),
-        ), patch(
-            "bot.services.staff_cashout_records.count_deposits_for_chat",
-            side_effect=RuntimeError("db down"),
+        with (
+            patch(
+                "bot.services.staff_cashout_records.get_db",
+                return_value=self._session_cm(session),
+            ),
+            patch(
+                "bot.services.staff_cashout_records.count_deposits_for_chat",
+                side_effect=RuntimeError("db down"),
+            ),
         ):
-            from bot.services.staff_cashout_records import apply_low_deposit_cashout_hold
+            from bot.services.staff_cashout_records import (
+                apply_low_deposit_cashout_hold,
+            )
 
             hold = apply_low_deposit_cashout_hold(7)
         self.assertTrue(record.do_not_send)

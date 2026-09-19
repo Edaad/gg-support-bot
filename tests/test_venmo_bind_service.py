@@ -66,21 +66,27 @@ class VenmoBindByIdTestCase(unittest.IsolatedAsyncioTestCase):
                     "bot.services.venmo_payments.resolve_display_group_title",
                     return_value="RT / 1234 / Alice",
                 ):
-                    with patch(
-                        "bot.services.venmo_payments.infer_variant_id_for_venmo_handle",
-                        return_value=None,
-                    ), patch(
-                        "bot.services.venmo_payments.resolve_group_chat_url_for_payment",
-                        new=AsyncMock(return_value=None),
-                    ), patch(
-                        "bot.services.venmo_payments.record_payment_bound",
-                    ), patch(
-                        "bot.services.payment_method_binding.record_binding_event_in_session",
-                        return_value=1,
-                    ), patch(
-                        "bot.services.venmo_payments.sync_payment_notification_edit",
-                        new=AsyncMock(return_value=True),
-                    ) as mock_edit:
+                    with (
+                        patch(
+                            "bot.services.venmo_payments.infer_variant_id_for_venmo_handle",
+                            return_value=None,
+                        ),
+                        patch(
+                            "bot.services.venmo_payments.resolve_group_chat_url_for_payment",
+                            new=AsyncMock(return_value=None),
+                        ),
+                        patch(
+                            "bot.services.venmo_payments.record_payment_bound",
+                        ),
+                        patch(
+                            "bot.services.payment_method_binding.record_binding_event_in_session",
+                            return_value=1,
+                        ),
+                        patch(
+                            "bot.services.venmo_payments.sync_payment_notification_edit",
+                            new=AsyncMock(return_value=True),
+                        ) as mock_edit,
+                    ):
                         result = await bind_venmo_payment_by_id(
                             payment_id=1,
                             group_title_input="RT / 1234 / Alice",

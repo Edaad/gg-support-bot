@@ -99,7 +99,10 @@ class ScheduleIdleTests(unittest.TestCase):
         old_job = MagicMock()
         context = MagicMock()
         context.job_queue.get_jobs_by_name.return_value = [old_job]
-        context.chat_data = {"popup_kb_last_player_message_id": 9, "popup_kb_last_player_user_id": 5}
+        context.chat_data = {
+            "popup_kb_last_player_message_id": 9,
+            "popup_kb_last_player_user_id": 5,
+        }
 
         with patch.object(pk, "popup_keyboard_eligible", return_value=True):
             pk.schedule_popup_keyboard_idle(context, chat_id=-100)
@@ -120,7 +123,9 @@ class ScheduleIdleTests(unittest.TestCase):
 
         with patch.object(pk, "popup_keyboard_eligible", return_value=True):
             with patch.object(pk, "is_test_bot_worker", return_value=True):
-                with patch.object(pk, "fetch_player_telegram_user_id_for_chat", return_value=5):
+                with patch.object(
+                    pk, "fetch_player_telegram_user_id_for_chat", return_value=5
+                ):
                     pk.schedule_popup_keyboard_idle(context, chat_id=-100)
 
         kwargs = context.job_queue.run_once.call_args.kwargs
@@ -133,7 +138,9 @@ class ScheduleIdleTests(unittest.TestCase):
 
         with patch.object(pk, "popup_keyboard_eligible", return_value=True):
             with patch.object(pk, "is_test_bot_worker", return_value=False):
-                with patch.object(pk, "fetch_player_telegram_user_id_for_chat", return_value=5):
+                with patch.object(
+                    pk, "fetch_player_telegram_user_id_for_chat", return_value=5
+                ):
                     pk.schedule_popup_keyboard_idle(context, chat_id=-100)
 
         kwargs = context.job_queue.run_once.call_args.kwargs
@@ -196,7 +203,9 @@ class PaymentWindowGateTests(unittest.TestCase):
                 pk, "_payment_window_closed", return_value=(True, "stripe_complete")
             ):
                 with patch.object(pk, "schedule_popup_keyboard_idle") as idle:
-                    with patch.object(pk, "fetch_player_telegram_user_id_for_chat", return_value=5):
+                    with patch.object(
+                        pk, "fetch_player_telegram_user_id_for_chat", return_value=5
+                    ):
                         pk.schedule_payment_window_then_idle(
                             context,
                             chat_id=-100,
@@ -221,9 +230,7 @@ class PaymentWindowGateTests(unittest.TestCase):
             "player_user_id": 5,
         }
 
-        with patch.object(
-            pk, "_payment_window_closed", return_value=(True, "expired")
-        ):
+        with patch.object(pk, "_payment_window_closed", return_value=(True, "expired")):
             with patch.object(pk, "schedule_popup_keyboard_idle") as idle:
                 import asyncio
 
@@ -346,7 +353,9 @@ class UpsertIntegrityTests(unittest.TestCase):
     def test_test_bot_skips_db_upsert(self):
         with patch.object(pk, "is_test_bot_worker", return_value=True):
             with patch.object(pk, "update_support_group_chat_row") as upd:
-                with patch.object(pk, "fetch_support_group_chat_by_telegram_chat_id") as fetch:
+                with patch.object(
+                    pk, "fetch_support_group_chat_by_telegram_chat_id"
+                ) as fetch:
                     self.assertTrue(
                         pk.upsert_player_telegram_user_id(
                             -5234716365, 5821458817, username="jz034"
@@ -362,7 +371,9 @@ class InstallSkipTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(pk, "popup_keyboard_eligible", return_value=True):
             with patch.object(pk, "is_test_bot_worker", return_value=False):
                 with patch.object(
-                    pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+                    pk,
+                    "fetch_support_group_chat_by_telegram_chat_id",
+                    return_value=None,
                 ):
                     ok = await pk.install_popup_keyboard(bot, chat_id=-100)
         self.assertFalse(ok)
@@ -382,7 +393,9 @@ class InstallSkipTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(pk, "popup_keyboard_eligible", return_value=True):
             with patch.object(pk, "is_test_bot_worker", return_value=True):
                 with patch.object(
-                    pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+                    pk,
+                    "fetch_support_group_chat_by_telegram_chat_id",
+                    return_value=None,
                 ):
                     with patch.object(pk, "get_club_for_chat", return_value=None):
                         ok = await pk.install_popup_keyboard(
@@ -391,7 +404,6 @@ class InstallSkipTests(unittest.IsolatedAsyncioTestCase):
                         self.assertTrue(ok)
                         self.assertTrue(pk.get_popup_keyboard_installed(-100))
         pk.clear_installed_memory_for_tests()
-
 
     async def test_silent_strip_noop_when_not_installed(self):
         bot = AsyncMock()

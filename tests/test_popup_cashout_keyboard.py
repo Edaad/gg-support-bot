@@ -43,9 +43,7 @@ class CashoutShownOnPopupKeyboardTests(unittest.TestCase):
                 },
             ):
                 with patch.object(club_svc, "get_last_activity", return_value=last):
-                    self.assertFalse(
-                        club_svc.cashout_shown_on_popup_keyboard(2, -100)
-                    )
+                    self.assertFalse(club_svc.cashout_shown_on_popup_keyboard(2, -100))
 
     def test_outside_hours_shows_cashout(self):
         with patch.object(club_svc, "has_permanent_cashout_bypass", return_value=False):
@@ -61,9 +59,7 @@ class CashoutShownOnPopupKeyboardTests(unittest.TestCase):
                 },
             ):
                 with patch.object(club_svc, "_is_within_hours", return_value=False):
-                    self.assertTrue(
-                        club_svc.cashout_shown_on_popup_keyboard(2, -100)
-                    )
+                    self.assertTrue(club_svc.cashout_shown_on_popup_keyboard(2, -100))
 
     def test_permanent_bypass_shows_cashout_despite_cooldown(self):
         now = datetime.now(timezone.utc)
@@ -100,9 +96,7 @@ class CashoutShownOnPopupKeyboardTests(unittest.TestCase):
                 },
             ):
                 with patch.object(club_svc, "get_last_activity", return_value=last):
-                    with patch.object(
-                        club_svc, "check_and_consume_bypass"
-                    ) as consume:
+                    with patch.object(club_svc, "check_and_consume_bypass") as consume:
                         self.assertFalse(
                             club_svc.cashout_shown_on_popup_keyboard(2, -100)
                         )
@@ -142,7 +136,9 @@ class InstallDepositOnlyTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(pk, "popup_keyboard_eligible", return_value=True):
             with patch.object(pk, "is_test_bot_worker", return_value=True):
                 with patch.object(
-                    pk, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+                    pk,
+                    "fetch_support_group_chat_by_telegram_chat_id",
+                    return_value=None,
                 ):
                     with patch.object(pk, "get_club_for_chat", return_value=3):
                         with patch.object(

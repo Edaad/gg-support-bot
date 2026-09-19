@@ -24,8 +24,9 @@ class TestRunAutoClaimGating(unittest.IsolatedAsyncioTestCase):
 
     async def test_disabled_when_toggle_off(self):
         fake_cfg = object()
-        with patch.object(api, "load_config", return_value=fake_cfg), patch.object(
-            api, "get_auto_claim_enabled", return_value=False
+        with (
+            patch.object(api, "load_config", return_value=fake_cfg),
+            patch.object(api, "get_auto_claim_enabled", return_value=False),
         ):
             outcome = await api.run_auto_claim(
                 club_id=4,
@@ -39,8 +40,9 @@ class TestRunAutoClaimGating(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_player_id_when_title_unparseable(self):
         fake_cfg = object()
-        with patch.object(api, "load_config", return_value=fake_cfg), patch.object(
-            api, "get_auto_claim_enabled", return_value=True
+        with (
+            patch.object(api, "load_config", return_value=fake_cfg),
+            patch.object(api, "get_auto_claim_enabled", return_value=True),
         ):
             outcome = await api.run_auto_claim(
                 club_id=4,

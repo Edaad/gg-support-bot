@@ -13,7 +13,8 @@ if url.startswith("postgres://"):
 
 engine = create_engine(url)
 with engine.begin() as conn:
-    conn.execute(text("""
+    conn.execute(
+        text("""
         CREATE TABLE IF NOT EXISTS method_variants (
             id SERIAL PRIMARY KEY,
             method_id INTEGER NOT NULL REFERENCES payment_methods(id) ON DELETE CASCADE,
@@ -26,11 +27,14 @@ with engine.begin() as conn:
             response_caption TEXT,
             sort_order INTEGER DEFAULT 0
         )
-    """))
+    """)
+    )
     print("method_variants table created (or already exists).")
 
-    conn.execute(text("""
+    conn.execute(
+        text("""
         ALTER TABLE method_variants ADD COLUMN IF NOT EXISTS tier_id
         INTEGER REFERENCES payment_method_tiers(id) ON DELETE CASCADE
-    """))
+    """)
+    )
     print("tier_id column ensured on method_variants.")

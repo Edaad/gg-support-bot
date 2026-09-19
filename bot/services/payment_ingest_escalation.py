@@ -168,9 +168,7 @@ async def maybe_notify_payment_ingest_escalation(
 
         dedupe_key = ingest_dedupe_key(
             source_external_id=getattr(ctx, "source_external_id", None),
-            stripe_checkout_session_id=getattr(
-                ctx, "stripe_checkout_session_id", None
-            ),
+            stripe_checkout_session_id=getattr(ctx, "stripe_checkout_session_id", None),
             payment_id=getattr(ctx, "payment_id", None),
         )
         if recent_ingest_alert_exists(

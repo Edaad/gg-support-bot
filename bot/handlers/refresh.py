@@ -28,7 +28,9 @@ async def refresh_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     chat = update.effective_chat
     if chat.type != "private":
-        await update.message.reply_text("/refresh is only available in DM with the bot.")
+        await update.message.reply_text(
+            "/refresh is only available in DM with the bot."
+        )
         return
 
     args = [a.lower() for a in (context.args or [])]
@@ -44,9 +46,7 @@ async def refresh_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
-    await update.message.reply_text(
-        f"Restarting the bot (~1 min downtime)"
-    )
+    await update.message.reply_text("Restarting the bot (~1 min downtime)")
 
     try:
         await restart_all_dynos(triggered_by_user_id=uid)

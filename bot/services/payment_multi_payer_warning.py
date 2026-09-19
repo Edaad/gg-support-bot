@@ -121,9 +121,7 @@ def format_multi_payer_warning_text(
 
         safe_label = escape_notification_html(label)
         safe_title = escape_notification_html(title)
-        name_lines = "\n".join(
-            f"• {escape_notification_html(n)}" for n in payer_names
-        )
+        name_lines = "\n".join(f"• {escape_notification_html(n)}" for n in payer_names)
         return (
             "⚠️ <b>WARNING — DO NOT ADD CHIPS</b>\n\n"
             f"This group has payments from more than 2 different payers on {safe_label}.\n"

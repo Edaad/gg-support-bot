@@ -136,11 +136,15 @@ def _in_window(dt: datetime | None, cutoff: datetime) -> bool:
     return dt is not None and dt >= cutoff
 
 
-def _payment_ts(created_at: datetime | None, bound_at: datetime | None) -> datetime | None:
+def _payment_ts(
+    created_at: datetime | None, bound_at: datetime | None
+) -> datetime | None:
     return _as_utc(bound_at) or _as_utc(created_at)
 
 
-def _stripe_ts(created_at: datetime | None, completed_at: datetime | None) -> datetime | None:
+def _stripe_ts(
+    created_at: datetime | None, completed_at: datetime | None
+) -> datetime | None:
     return _max_ts(_as_utc(created_at), _as_utc(completed_at))
 
 
@@ -477,9 +481,7 @@ def _collect_activity(
         cutoff.isoformat(),
     )
     variant_to_current, _groups_by_current = _build_chat_maps(groups)
-    group_aggs: dict[int, GroupAgg] = {
-        g.current_chat_id: GroupAgg() for g in groups
-    }
+    group_aggs: dict[int, GroupAgg] = {g.current_chat_id: GroupAgg() for g in groups}
     user_aggs: dict[tuple[int, int, str], UserAgg] = {}
 
     def resolve_group(chat_id: int) -> tuple[int | None, GroupAgg | None]:
@@ -680,7 +682,9 @@ def _build_summary_rows(
                 "player_telegram_user_id": player_id or "",
                 "player_username": username or "",
                 f"active_in_past_{days}_days": "yes" if active else "no",
-                "player_in_group": membership.in_group if membership else "check_skipped",
+                "player_in_group": membership.in_group
+                if membership
+                else "check_skipped",
                 "player_membership_status": (membership.membership_status or "")
                 if membership
                 else "",
@@ -727,7 +731,6 @@ def _build_invite_target_rows(
 ) -> list[dict[str, Any]]:
     payment_count_key = f"payment_count_{days}d"
     total_usd_key = f"total_deposited_usd_{days}d"
-    active_key = f"active_in_past_{days}_days"
     out: list[dict[str, Any]] = []
     for row in summary_rows:
         if not _is_invite_dm_target(row, days=days):
@@ -807,7 +810,8 @@ def _build_user_rows(
                 "telegram_user_id": telegram_user_id,
                 "player_username": username or "",
                 "is_mapped_player": "yes"
-                if mapped_player_id is not None and int(mapped_player_id) == int(telegram_user_id)
+                if mapped_player_id is not None
+                and int(mapped_player_id) == int(telegram_user_id)
                 else "no",
                 "activity_type": activity_type,
                 "first_at": _format_ts(agg.first_at),
@@ -907,35 +911,43 @@ def run_report(
     user_rows = _build_user_rows(groups_by_current, user_aggs, player_map)
     if only_active:
         active_chat_ids = {
-            int(r["current_chat_id"]) for r in summary_rows if r.get(active_key) == "yes"
+            int(r["current_chat_id"])
+            for r in summary_rows
+            if r.get(active_key) == "yes"
         }
         summary_rows = [r for r in summary_rows if r.get(active_key) == "yes"]
-        user_rows = [r for r in user_rows if int(r["current_chat_id"]) in active_chat_ids]
+        user_rows = [
+            r for r in user_rows if int(r["current_chat_id"]) in active_chat_ids
+        ]
 
     out_summary = summary_path or _default_summary_csv()
     out_users = users_path or _default_users_csv()
     out_summary.parent.mkdir(parents=True, exist_ok=True)
     out_users.parent.mkdir(parents=True, exist_ok=True)
 
-    summary_fields = list(summary_rows[0].keys()) if summary_rows else [
-        "club_id",
-        "club_key",
-        "group_title",
-        "old_chat_id",
-        "current_chat_id",
-        "gg_player_id",
-        "player_telegram_user_id",
-        "player_username",
-        f"active_in_past_{days}_days",
-        "player_in_group",
-        "player_membership_status",
-        "player_membership_error",
-        "last_activity_at",
-        "activity_signals",
-        f"payment_count_{days}d",
-        f"total_deposited_usd_{days}d",
-        "active_user_count",
-    ]
+    summary_fields = (
+        list(summary_rows[0].keys())
+        if summary_rows
+        else [
+            "club_id",
+            "club_key",
+            "group_title",
+            "old_chat_id",
+            "current_chat_id",
+            "gg_player_id",
+            "player_telegram_user_id",
+            "player_username",
+            f"active_in_past_{days}_days",
+            "player_in_group",
+            "player_membership_status",
+            "player_membership_error",
+            "last_activity_at",
+            "activity_signals",
+            f"payment_count_{days}d",
+            f"total_deposited_usd_{days}d",
+            "active_user_count",
+        ]
+    )
     with out_summary.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=summary_fields)
         writer.writeheader()
@@ -962,9 +974,7 @@ def run_report(
     out_invite = invite_targets_path or _default_invite_targets_csv()
     _write_invite_targets_csv(out_invite, invite_target_rows)
 
-    player_in_group = sum(
-        1 for m in membership_by_chat.values() if m.in_group == "yes"
-    )
+    player_in_group = sum(1 for m in membership_by_chat.values() if m.in_group == "yes")
     player_not_in_group = sum(
         1 for m in membership_by_chat.values() if m.in_group == "no"
     )

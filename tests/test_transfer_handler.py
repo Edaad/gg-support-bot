@@ -86,9 +86,7 @@ def _text_update(text, user_id=PLAYER_ID):
 
 def _callback_update(data="trdest:AT", user_id=PLAYER_ID):
     chat = _chat()
-    message = SimpleNamespace(
-        chat=chat, date=datetime.now(timezone.utc), message_id=11
-    )
+    message = SimpleNamespace(chat=chat, date=datetime.now(timezone.utc), message_id=11)
     query = SimpleNamespace(
         data=data,
         message=message,
@@ -144,9 +142,7 @@ class EntryGatingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, tr.TRANSFER_DEST)
         text, kwargs = update.message.reply_text.await_args
         self.assertIn("transfer your chips to", text[0])
-        labels = [
-            row[0].text for row in kwargs["reply_markup"].inline_keyboard
-        ]
+        labels = [row[0].text for row in kwargs["reply_markup"].inline_keyboard]
         self.assertEqual(len(labels), 2)
         self.assertEqual(context.chat_data["transfer_user_id"], PLAYER_ID)
 
@@ -158,8 +154,9 @@ class EntryGatingTests(unittest.IsolatedAsyncioTestCase):
         update.message.reply_text.assert_not_awaited()
 
     async def test_club_without_unions_is_a_silent_no_op(self):
-        with patch.object(tr, "get_club_for_chat", return_value=4), patch.object(
-            tr, "deposit_unions_for_club", return_value=None
+        with (
+            patch.object(tr, "get_club_for_chat", return_value=4),
+            patch.object(tr, "deposit_unions_for_club", return_value=None),
         ):
             update = _command_update()
             result = await tr.transfer_entry(update, _context())
@@ -178,12 +175,15 @@ class EntryGatingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, ConversationHandler.END)
 
     async def test_setup_problem_escalates_before_anything_moves(self):
-        with patch.object(
-            tr, "transfer_blocked_reason", return_value="auto claim is disabled"
-        ), patch(
-            "bot.services.escalation_notification.notify_transfer_escalation",
-            AsyncMock(),
-        ) as mock_notify:
+        with (
+            patch.object(
+                tr, "transfer_blocked_reason", return_value="auto claim is disabled"
+            ),
+            patch(
+                "bot.services.escalation_notification.notify_transfer_escalation",
+                AsyncMock(),
+            ) as mock_notify,
+        ):
             update = _command_update()
             result = await tr.transfer_entry(update, _context())
 
@@ -276,8 +276,9 @@ class AmountAndRunTests(unittest.IsolatedAsyncioTestCase):
             await on_claimed()
             return result
 
-        with patch.object(tr, "build_transfer_plan", return_value=_plan()), patch.object(
-            tr, "run_transfer", AsyncMock(side_effect=fake_run)
+        with (
+            patch.object(tr, "build_transfer_plan", return_value=_plan()),
+            patch.object(tr, "run_transfer", AsyncMock(side_effect=fake_run)),
         ):
             out = await tr.transfer_amount_received(update, context)
 
@@ -301,12 +302,14 @@ class AmountAndRunTests(unittest.IsolatedAsyncioTestCase):
             reason="Add to Aces Table failed (fail).",
             claimed_amount=Decimal("200"),
         )
-        with patch.object(tr, "build_transfer_plan", return_value=_plan()), patch.object(
-            tr, "run_transfer", AsyncMock(return_value=failed)
-        ), patch(
-            "bot.services.escalation_notification.notify_transfer_escalation",
-            AsyncMock(),
-        ) as mock_notify:
+        with (
+            patch.object(tr, "build_transfer_plan", return_value=_plan()),
+            patch.object(tr, "run_transfer", AsyncMock(return_value=failed)),
+            patch(
+                "bot.services.escalation_notification.notify_transfer_escalation",
+                AsyncMock(),
+            ) as mock_notify,
+        ):
             out = await tr.transfer_amount_received(update, context)
 
         self.assertEqual(out, ConversationHandler.END)
@@ -337,9 +340,10 @@ class AmountAndRunTests(unittest.IsolatedAsyncioTestCase):
         ok = SimpleNamespace(
             ok=True, failed_leg=None, reason="", claimed_amount=Decimal("50")
         )
-        with patch.object(tr, "build_transfer_plan", return_value=_plan()), patch.object(
-            tr, "run_transfer", AsyncMock(return_value=ok)
-        ) as mock_run:
+        with (
+            patch.object(tr, "build_transfer_plan", return_value=_plan()),
+            patch.object(tr, "run_transfer", AsyncMock(return_value=ok)) as mock_run,
+        ):
             out = await tr.transfer_amount_received(update, context)
 
         self.assertEqual(out, ConversationHandler.END)
@@ -358,11 +362,12 @@ class AmountAndRunTests(unittest.IsolatedAsyncioTestCase):
         ok = SimpleNamespace(
             ok=True, failed_leg=None, reason="", claimed_amount=Decimal("50")
         )
-        with patch(
-            "bot.handlers.flow_staleness.ADMIN_USER_IDS", [ADMIN_ID]
-        ), patch.object(tr, "ADMIN_USER_IDS", [ADMIN_ID]), patch.object(
-            tr, "build_transfer_plan", return_value=_plan()
-        ), patch.object(tr, "run_transfer", AsyncMock(return_value=ok)) as mock_run:
+        with (
+            patch("bot.handlers.flow_staleness.ADMIN_USER_IDS", [ADMIN_ID]),
+            patch.object(tr, "ADMIN_USER_IDS", [ADMIN_ID]),
+            patch.object(tr, "build_transfer_plan", return_value=_plan()),
+            patch.object(tr, "run_transfer", AsyncMock(return_value=ok)) as mock_run,
+        ):
             out = await tr.transfer_amount_received(update, context)
 
         self.assertEqual(out, ConversationHandler.END)
@@ -381,9 +386,12 @@ class AmountAndRunTests(unittest.IsolatedAsyncioTestCase):
             transfer_admin_initiated=True,
             transfer_admin_user_id=ADMIN_ID,
         )
-        with patch(
-            "bot.handlers.flow_staleness.ADMIN_USER_IDS", [ADMIN_ID, other_admin]
-        ), patch.object(tr, "run_transfer", AsyncMock()) as mock_run:
+        with (
+            patch(
+                "bot.handlers.flow_staleness.ADMIN_USER_IDS", [ADMIN_ID, other_admin]
+            ),
+            patch.object(tr, "run_transfer", AsyncMock()) as mock_run,
+        ):
             out = await tr.transfer_amount_received(update, context)
 
         self.assertEqual(out, tr.TRANSFER_AMOUNT)
@@ -400,11 +408,14 @@ class AmountAndRunTests(unittest.IsolatedAsyncioTestCase):
         ok = SimpleNamespace(
             ok=True, failed_leg=None, reason="", claimed_amount=Decimal("75")
         )
-        with patch.object(tr, "is_creator_club", return_value=True), patch.object(
-            tr, "set_aces_join_ack"
-        ) as mock_ack, patch.object(
-            tr, "build_transfer_plan", return_value=_plan(CC_ID, "CC", "AT")
-        ), patch.object(tr, "run_transfer", AsyncMock(return_value=ok)):
+        with (
+            patch.object(tr, "is_creator_club", return_value=True),
+            patch.object(tr, "set_aces_join_ack") as mock_ack,
+            patch.object(
+                tr, "build_transfer_plan", return_value=_plan(CC_ID, "CC", "AT")
+            ),
+            patch.object(tr, "run_transfer", AsyncMock(return_value=ok)),
+        ):
             await tr.transfer_amount_received(update, context)
         mock_ack.assert_called_once_with(CHAT_ID)
 
@@ -419,11 +430,14 @@ class AmountAndRunTests(unittest.IsolatedAsyncioTestCase):
         ok = SimpleNamespace(
             ok=True, failed_leg=None, reason="", claimed_amount=Decimal("75")
         )
-        with patch.object(tr, "is_creator_club", return_value=True), patch.object(
-            tr, "set_aces_join_ack"
-        ) as mock_ack, patch.object(
-            tr, "build_transfer_plan", return_value=_plan(CC_ID, "AT", "CC")
-        ), patch.object(tr, "run_transfer", AsyncMock(return_value=ok)):
+        with (
+            patch.object(tr, "is_creator_club", return_value=True),
+            patch.object(tr, "set_aces_join_ack") as mock_ack,
+            patch.object(
+                tr, "build_transfer_plan", return_value=_plan(CC_ID, "AT", "CC")
+            ),
+            patch.object(tr, "run_transfer", AsyncMock(return_value=ok)),
+        ):
             await tr.transfer_amount_received(update, context)
         mock_ack.assert_not_called()
 
@@ -444,12 +458,14 @@ class OffScriptTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_player_chatter_escalates_once_and_ends(self):
         update = _text_update("do i get a bonus?")
-        with patch.object(tr, "build_transfer_plan", return_value=_plan()), patch.object(
-            tr, "is_club_staff", return_value=False
-        ), patch(
-            "bot.services.escalation_notification.notify_transfer_escalation",
-            AsyncMock(),
-        ) as mock_notify:
+        with (
+            patch.object(tr, "build_transfer_plan", return_value=_plan()),
+            patch.object(tr, "is_club_staff", return_value=False),
+            patch(
+                "bot.services.escalation_notification.notify_transfer_escalation",
+                AsyncMock(),
+            ) as mock_notify,
+        ):
             out = await tr.transfer_offscript(update, self._context())
 
         self.assertEqual(out, ConversationHandler.END)
@@ -468,8 +484,9 @@ class OffScriptTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_club_staff_message_is_ignored(self):
         update = _text_update("on it", user_id=STAFF_ID)
-        with patch.object(tr, "ADMIN_USER_IDS", []), patch.object(
-            tr, "is_club_staff", return_value=True
+        with (
+            patch.object(tr, "ADMIN_USER_IDS", []),
+            patch.object(tr, "is_club_staff", return_value=True),
         ):
             out = await tr.transfer_offscript(update, self._context())
         self.assertIsNone(out)
@@ -477,8 +494,9 @@ class OffScriptTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_other_player_message_is_ignored(self):
         update = _text_update("hi", user_id=777)
-        with patch.object(tr, "ADMIN_USER_IDS", []), patch.object(
-            tr, "is_club_staff", return_value=False
+        with (
+            patch.object(tr, "ADMIN_USER_IDS", []),
+            patch.object(tr, "is_club_staff", return_value=False),
         ):
             out = await tr.transfer_offscript(update, self._context())
         self.assertIsNone(out)

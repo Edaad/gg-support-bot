@@ -100,7 +100,9 @@ def resolve_bonus_player(
         else:
             zapier_name = f"{prefix} / {gg_player_id}"
 
-    player_details_id = _lookup_player_details_id(club_id=cid, gg_player_id=gg_player_id)
+    player_details_id = _lookup_player_details_id(
+        club_id=cid, gg_player_id=gg_player_id
+    )
 
     return BonusPlayerContext(
         group_title=title,

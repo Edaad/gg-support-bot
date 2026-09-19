@@ -10,7 +10,11 @@ from telegram.ext import ContextTypes
 
 from config import ADMIN_USER_IDS
 from club_gc_settings import get_club_config_for_admin, is_dm_gc_listener_enabled
-from bot.services.club import get_club_allows_admin_commands, get_club_for_chat, is_club_staff
+from bot.services.club import (
+    get_club_allows_admin_commands,
+    get_club_for_chat,
+    is_club_staff,
+)
 from bot.services.agent_debug_log import agent_debug_log
 from bot.services.mtproto_bot_fallback import telethon_missed_command_message
 from bot.services.mtproto_dm_gc_listener import _clients, get_dm_gc_listener_status
@@ -139,17 +143,13 @@ async def cash_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     amount = _parse_from_args(context.args or [])
     if amount is None:
-        await update.message.reply_text(
-            "Usage: /cash <amount> (Example: /cash 500)"
-        )
+        await update.message.reply_text("Usage: /cash <amount> (Example: /cash 500)")
         return
 
     if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
         # #region agent log
         _club_cfg = get_club_config_for_admin(admin_id)
-        _conn = {
-            getattr(c, "_gg_club_key", "?"): c.is_connected() for c in _clients
-        }
+        _conn = {getattr(c, "_gg_club_key", "?"): c.is_connected() for c in _clients}
         agent_debug_log(
             hypothesis_id="B",
             location="cash.py:cash_handler",

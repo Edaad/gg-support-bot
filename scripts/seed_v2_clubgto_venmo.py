@@ -111,7 +111,9 @@ def upsert_method(session: Session, club_id: int) -> ClubPaymentMethod:
         .first()
     )
     if method is None:
-        method = ClubPaymentMethod(club_id=club_id, direction=DIRECTION, slug=METHOD_SLUG)
+        method = ClubPaymentMethod(
+            club_id=club_id, direction=DIRECTION, slug=METHOD_SLUG
+        )
         session.add(method)
 
     method.name = "Venmo"
@@ -212,7 +214,9 @@ def upsert_photo_variant(
 
 def seed(
     session: Session,
-) -> tuple[Club, ClubPaymentMethod, list[ClubPaymentTier], list[ClubPaymentTierVariant]]:
+) -> tuple[
+    Club, ClubPaymentMethod, list[ClubPaymentTier], list[ClubPaymentTierVariant]
+]:
     club = find_clubgto_club(session)
     method = upsert_method(session, club.id)
     tier_under = upsert_under_tier(session, method.id)
@@ -273,7 +277,9 @@ def _tier_by_label(tiers: list[dict], label: str) -> dict:
 
 def _assert_photo_variant(variant: dict, *, label: str) -> None:
     if variant.get("label") != label:
-        raise SystemExit(f"Expected variant label {label!r}, got {variant.get('label')!r}")
+        raise SystemExit(
+            f"Expected variant label {label!r}, got {variant.get('label')!r}"
+        )
     if variant.get("response_type") != "photo":
         raise SystemExit(f"Expected response_type=photo on {label!r}")
     file_id = variant.get("response_file_id") or ""
@@ -306,9 +312,13 @@ def verify_via_api(club_id: int) -> None:
         raise SystemExit("Expected has_sub_options=false on Venmo method")
 
     if Decimal(str(method.get("min_amount"))) != Decimal("50"):
-        raise SystemExit(f"Expected method min_amount 50, got {method.get('min_amount')!r}")
+        raise SystemExit(
+            f"Expected method min_amount 50, got {method.get('min_amount')!r}"
+        )
     if method.get("max_amount") is not None:
-        raise SystemExit(f"Expected method max_amount NULL, got {method.get('max_amount')!r}")
+        raise SystemExit(
+            f"Expected method max_amount NULL, got {method.get('max_amount')!r}"
+        )
     if method.get("sort_order") != 5:
         raise SystemExit(f"Expected sort_order 5, got {method.get('sort_order')!r}")
 
@@ -329,18 +339,28 @@ def verify_via_api(club_id: int) -> None:
 
     for tier in (tier_under, tier_over):
         if (tier.get("response_text") or "").strip():
-            raise SystemExit(f"Expected empty tier response_text on {tier.get('label')!r}")
+            raise SystemExit(
+                f"Expected empty tier response_text on {tier.get('label')!r}"
+            )
         if tier.get("use_group_checkout_link"):
             raise SystemExit(f"Expected no Stripe on {tier.get('label')!r}")
 
     if Decimal(str(tier_under.get("min_amount"))) != Decimal("50"):
-        raise SystemExit(f"Expected Under tier min 50, got {tier_under.get('min_amount')!r}")
+        raise SystemExit(
+            f"Expected Under tier min 50, got {tier_under.get('min_amount')!r}"
+        )
     if Decimal(str(tier_under.get("max_amount"))) != Decimal("99"):
-        raise SystemExit(f"Expected Under tier max 99, got {tier_under.get('max_amount')!r}")
+        raise SystemExit(
+            f"Expected Under tier max 99, got {tier_under.get('max_amount')!r}"
+        )
     if Decimal(str(tier_over.get("min_amount"))) != Decimal("100"):
-        raise SystemExit(f"Expected Over tier min 100, got {tier_over.get('min_amount')!r}")
+        raise SystemExit(
+            f"Expected Over tier min 100, got {tier_over.get('min_amount')!r}"
+        )
     if tier_over.get("max_amount") is not None:
-        raise SystemExit(f"Expected Over tier max_amount NULL, got {tier_over.get('max_amount')!r}")
+        raise SystemExit(
+            f"Expected Over tier max_amount NULL, got {tier_over.get('max_amount')!r}"
+        )
 
     under_variants = tier_under.get("variants") or []
     if len(under_variants) != 1:
@@ -348,7 +368,9 @@ def verify_via_api(club_id: int) -> None:
     under_default = under_variants[0]
     _assert_photo_variant(under_default, label=VARIANT_UNDER_DEFAULT_LABEL)
     if under_default.get("weight") != 100:
-        raise SystemExit(f"Expected Under Default weight 100, got {under_default.get('weight')!r}")
+        raise SystemExit(
+            f"Expected Under Default weight 100, got {under_default.get('weight')!r}"
+        )
     caption = under_default.get("response_caption") or ""
     if "janseashells" not in caption:
         raise SystemExit("Expected janseashells in Under Default response_caption")
@@ -360,13 +382,17 @@ def verify_via_api(club_id: int) -> None:
         raise SystemExit(f"Expected 4 variants on Over tier, got {len(over_variants)}")
     by_label = {v.get("label"): v for v in over_variants}
     if set(by_label.keys()) != set(EXPECTED_OVER_VARIANTS.keys()):
-        raise SystemExit(f"Unexpected Over tier variant labels: {list(by_label.keys())}")
+        raise SystemExit(
+            f"Unexpected Over tier variant labels: {list(by_label.keys())}"
+        )
 
     for label, (weight, _sort) in EXPECTED_OVER_VARIANTS.items():
         variant = by_label[label]
         _assert_photo_variant(variant, label=label)
         if variant.get("weight") != weight:
-            raise SystemExit(f"Expected {label!r} weight {weight}, got {variant.get('weight')!r}")
+            raise SystemExit(
+                f"Expected {label!r} weight {weight}, got {variant.get('weight')!r}"
+            )
 
     jagger = by_label[VARIANT_JAGGER_LABEL]
     if not (jagger.get("response_text") or "").strip():
@@ -376,7 +402,11 @@ def verify_via_api(club_id: int) -> None:
     if (jagger.get("response_caption") or "").strip():
         raise SystemExit("Expected empty response_caption on Venmo (@jagger4444)")
 
-    for label in (VARIANT_CLUB_ROUND_LABEL, VARIANT_GODFATHER_LABEL, VARIANT_MICHAEL_LABEL):
+    for label in (
+        VARIANT_CLUB_ROUND_LABEL,
+        VARIANT_GODFATHER_LABEL,
+        VARIANT_MICHAEL_LABEL,
+    ):
         variant = by_label[label]
         cap = variant.get("response_caption") or ""
         if not cap.strip():

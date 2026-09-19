@@ -25,7 +25,10 @@ async def _send_notify_error(
         async with httpx.AsyncClient(timeout=15) as client:
             await client.post(
                 url,
-                json={"chat_id": staff_user_id, "text": f"Cashout notify failed\n\n{text}"},
+                json={
+                    "chat_id": staff_user_id,
+                    "text": f"Cashout notify failed\n\n{text}",
+                },
             )
     except Exception:
         logger.exception(

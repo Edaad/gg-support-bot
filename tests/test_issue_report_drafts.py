@@ -28,7 +28,9 @@ class TestDraftToContext(unittest.TestCase):
         )
 
         # Simulate detached session: ORM access would fail; context is safe.
-        draft.id = property(lambda self: (_ for _ in ()).throw(RuntimeError("detached")))
+        draft.id = property(
+            lambda self: (_ for _ in ()).throw(RuntimeError("detached"))
+        )
         self.assertEqual(ctx.id, 7)
 
 

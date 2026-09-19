@@ -23,7 +23,7 @@ from club_gc_settings import (
 )
 from bot.handlers.groups import send_post_gc_intro_bundle
 from bot.services.club import ensure_group_chat_linked
-from bot.services.club import find_group_chat_id_by_name, get_group_title_for_chat
+from bot.services.club import get_group_title_for_chat
 from bot.services.mtproto_group_create import (
     create_support_group,
     ensure_player_in_support_group,
@@ -32,10 +32,8 @@ from bot.services.mtproto_group_create import (
 )
 from bot.services.player_support_dm_messages import (
     PLAYER_ADDED_SUCCESS_MESSAGE,
-    PLAYER_EXISTING_GROUP_MESSAGE,
     PLAYER_EXISTING_INVITE_MESSAGE,
     PLAYER_INVITE_FALLBACK_MESSAGE,
-    PLAYER_RE_ADDED_MESSAGE,
 )
 from bot.services.agent_debug_log import agent_debug_log
 from bot.services.mtproto_club_health import (
@@ -57,15 +55,12 @@ from bot.services.mtproto_group_lmk import handle_group_lmk_outgoing
 from bot.services.support_group_chats import (
     fetch_outreach_pending_reply,
     fetch_support_group_chat_by_club_player,
-    fetch_support_group_chat_by_telegram_chat_id,
     persist_support_group_chat_row,
     pg_advisory_unlock_session,
     try_pg_advisory_lock_club_player,
     bind_player_for_gc_reuse,
     update_support_group_chat_row,
 )
-from db.connection import get_db
-from db.models import Club
 
 logger = logging.getLogger(__name__)
 
@@ -116,9 +111,7 @@ async def _report_club_health(
     status = kwargs.get("status")
     worker_connected = bool(kwargs.get("worker_connected"))
     session_valid = bool(kwargs.get("session_valid"))
-    is_healthy = (
-        status == STATUS_CONNECTED and worker_connected and session_valid
-    )
+    is_healthy = status == STATUS_CONNECTED and worker_connected and session_valid
     if is_healthy:
         clear_mtproto_disconnect_notify_cooldown(club_key)
         return
@@ -259,7 +252,9 @@ def _telethon_user_label(ent: Any) -> str:
     return f"user[id={uid}]"
 
 
-async def _send_player_dm_safe(client: TelegramClient, player: User, text: str) -> tuple[bool, str | None]:
+async def _send_player_dm_safe(
+    client: TelegramClient, player: User, text: str
+) -> tuple[bool, str | None]:
     try:
         await client.send_message(player, text)
         return True, None
@@ -563,7 +558,9 @@ async def _flow_new_group(
     if not outcome.player_direct_add_ok and cid:
         try:
             channel = await client.get_entity(int(cid))
-            from bot.services.group_chat_invite_links import resolve_support_group_invite_link
+            from bot.services.group_chat_invite_links import (
+                resolve_support_group_invite_link,
+            )
 
             invite_link_out, _link_source = await resolve_support_group_invite_link(
                 client,
@@ -661,9 +658,7 @@ async def _flow_new_group(
                 send_player_dm=send_player_dm,
             )
             if existing_link:
-                return PLAYER_EXISTING_INVITE_MESSAGE.format(
-                    invite_link=existing_link
-                )
+                return PLAYER_EXISTING_INVITE_MESSAGE.format(invite_link=existing_link)
         return None
 
     if pk is None:
@@ -684,7 +679,9 @@ async def _flow_new_group(
         )
         return
 
-    linked = ensure_group_chat_linked(cid, cfg.link_club_id, outcome.telegram_chat_title)
+    linked = ensure_group_chat_linked(
+        cid, cfg.link_club_id, outcome.telegram_chat_title
+    )
     if not linked:
         logger.warning(
             "dm_gc /gc failed: dashboard_group_link club_key=%s listener=%s chat_id=%s link_club_id=%s",
@@ -833,9 +830,7 @@ async def _run_gc_flow_for_player_client(
                 send_player_dm=send_player_dm,
             )
             if existing_link:
-                return PLAYER_EXISTING_INVITE_MESSAGE.format(
-                    invite_link=existing_link
-                )
+                return PLAYER_EXISTING_INVITE_MESSAGE.format(invite_link=existing_link)
         elif is_dm_gc_new_groups_enabled():
             return await _flow_new_group(
                 client,
@@ -956,7 +951,9 @@ async def _run_bind_flow_for_player(
             from telethon.tl import functions
             from telethon.utils import get_peer_id
 
-            checked = await event.client(functions.messages.CheckChatInviteRequest(hash_part))
+            checked = await event.client(
+                functions.messages.CheckChatInviteRequest(hash_part)
+            )
         except Exception:
             await _send_player_dm_safe(
                 event.client,
@@ -982,7 +979,9 @@ async def _run_bind_flow_for_player(
                 from telethon.tl import functions
                 from telethon.utils import get_peer_id
 
-                upd = await event.client(functions.messages.ImportChatInviteRequest(hash_part))
+                upd = await event.client(
+                    functions.messages.ImportChatInviteRequest(hash_part)
+                )
                 # Updates usually contain chats; pick first.
                 chats = getattr(upd, "chats", None) or []
                 if chats:
@@ -1011,8 +1010,14 @@ async def _run_bind_flow_for_player(
         uname = player.username.strip() if player.username else None
         dname = (f"{player.first_name or ''} {player.last_name or ''}").strip() or None
         title_attr = getattr(channel, "title", None)
-        entity_title = title_attr.strip() if isinstance(title_attr, str) and title_attr.strip() else None
-        ensure_group_chat_linked(int(chat_id), int(cfg.link_club_id), entity_title or "")
+        entity_title = (
+            title_attr.strip()
+            if isinstance(title_attr, str) and title_attr.strip()
+            else None
+        )
+        ensure_group_chat_linked(
+            int(chat_id), int(cfg.link_club_id), entity_title or ""
+        )
         title_now, _ = get_group_title_for_chat(int(chat_id))
         status, row_id = bind_player_for_gc_reuse(
             club_key=cfg.club_key,
@@ -1104,9 +1109,13 @@ async def handle_dm_gc_incoming(
 
     outreach_row = fetch_outreach_pending_reply(cfg.club_key, int(player.id))
     if outreach_row is not None:
-        from bot.services.inactive_group_outreach_reonboard import run_inactive_outreach_reonboard
+        from bot.services.inactive_group_outreach_reonboard import (
+            run_inactive_outreach_reonboard,
+        )
 
-        lock_sess, acquired = try_pg_advisory_lock_club_player(cfg.club_key, int(player.id))
+        lock_sess, acquired = try_pg_advisory_lock_club_player(
+            cfg.club_key, int(player.id)
+        )
         if not acquired:
             logger.warning(
                 "dm_gc inactive_outreach_reonboard: advisory_lock_busy club_key=%s player=%s",
@@ -1701,9 +1710,7 @@ async def _async_main(bot_token: str) -> None:
                     "cycle_num": cycle_num,
                     "exit_reason": exit_reason,
                     "restart_count": _listener_metrics.get("restart_count"),
-                    "connected_clients": sum(
-                        1 for c in _clients if c.is_connected()
-                    ),
+                    "connected_clients": sum(1 for c in _clients if c.is_connected()),
                     "total_clients": len(_clients),
                 },
             )
@@ -1713,7 +1720,9 @@ async def _async_main(bot_token: str) -> None:
             logger.info("dm_gc supervised listener stopping (reason=%s)", exit_reason)
             break
 
-        _listener_metrics["restart_count"] = int(_listener_metrics.get("restart_count") or 0) + 1
+        _listener_metrics["restart_count"] = (
+            int(_listener_metrics.get("restart_count") or 0) + 1
+        )
         restart_n = _listener_metrics["restart_count"]
         logger.warning(
             "dm_gc listener cycle #%s ended (%s); supervised restart #%s in %.0fs",
@@ -1737,7 +1746,9 @@ async def _async_main(bot_token: str) -> None:
 
 def start_listener_background(bot_token: str) -> None:
     if not is_dm_gc_listener_enabled():
-        _dm_gc_verbose_info("dm_gc listener disabled (GC_DM_GC_LISTENER_ENABLED is false/off)")
+        _dm_gc_verbose_info(
+            "dm_gc listener disabled (GC_DM_GC_LISTENER_ENABLED is false/off)"
+        )
         return
 
     _listener_stop.clear()

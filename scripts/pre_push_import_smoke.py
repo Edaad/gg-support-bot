@@ -36,8 +36,14 @@ def _import_release_script() -> None:
 def main(*, log_prefix: str = "[pre-push build]") -> int:
     steps = [
         ("api.app", lambda: importlib.import_module("api.app")),
-        ("bot.main.import_worker_handlers(test_mode=False)", lambda: _import_worker_handlers(test_mode=False)),
-        ("bot.main.import_worker_handlers(test_mode=True)", lambda: _import_worker_handlers(test_mode=True)),
+        (
+            "bot.main.import_worker_handlers(test_mode=False)",
+            lambda: _import_worker_handlers(test_mode=False),
+        ),
+        (
+            "bot.main.import_worker_handlers(test_mode=True)",
+            lambda: _import_worker_handlers(test_mode=True),
+        ),
         ("cashier.handlers.wizard.get_cashier_wizard_handler", _import_cashier_wizard),
         ("notification.main", lambda: importlib.import_module("notification.main")),
         ("scripts/notify_deploy_maintenance.py", _import_release_script),
@@ -53,5 +59,7 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as exc:
-        print(f"[pre-push build] python import failed: {exc}", file=sys.stderr, flush=True)
+        print(
+            f"[pre-push build] python import failed: {exc}", file=sys.stderr, flush=True
+        )
         raise SystemExit(1) from exc

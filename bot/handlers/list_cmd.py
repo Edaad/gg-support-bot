@@ -1,7 +1,11 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.services.club import get_club_for_chat, get_club_list_content, get_club_id_for_telegram_user
+from bot.services.club import (
+    get_club_for_chat,
+    get_club_list_content,
+    get_club_id_for_telegram_user,
+)
 
 
 async def _reply_long(message, text: str):

@@ -109,11 +109,7 @@ async def _show_confirm_amount(
 ) -> int:
     title = context.user_data.get("gc_group_title", "Unknown")
     amount = context.user_data["gc_amount"]
-    text = (
-        f"Confirm amount\n"
-        f"Group: {title}\n"
-        f"Amount: {_format_amount(amount)}"
-    )
+    text = f"Confirm amount\nGroup: {title}\nAmount: {_format_amount(amount)}"
     keyboard = InlineKeyboardMarkup(
         [
             [
@@ -127,7 +123,10 @@ async def _show_confirm_amount(
         try:
             await update.callback_query.edit_message_text(text, reply_markup=keyboard)
         except Exception:
-            logger.exception("wizard confirm amount edit failed job_id=%s", context.user_data.get("gc_job_id"))
+            logger.exception(
+                "wizard confirm amount edit failed job_id=%s",
+                context.user_data.get("gc_job_id"),
+            )
             await update.callback_query.message.reply_text(text, reply_markup=keyboard)
     elif update.callback_query:
         await update.callback_query.message.reply_text(text, reply_markup=keyboard)
@@ -140,7 +139,9 @@ async def cashout_dm_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_user:
         return ConversationHandler.END
     if update.effective_chat.type != "private":
-        await update.message.reply_text("Use /cashout in a private chat with GGCashier.")
+        await update.message.reply_text(
+            "Use /cashout in a private chat with GGCashier."
+        )
         return ConversationHandler.END
 
     _cleanup_user_data(context)
@@ -152,8 +153,7 @@ async def cashout_dm_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update.effective_user.id,
     )
     await update.message.reply_text(
-        "Paste the support group title\n"
-        "(Example: RT / 2427-3267 / Samin)"
+        "Paste the support group title\n(Example: RT / 2427-3267 / Samin)"
     )
     return GC_TITLE
 
@@ -547,9 +547,7 @@ async def _show_method_keyboard(update: Update, context: ContextTypes.DEFAULT_TY
     buttons = []
     row = []
     for m in methods:
-        row.append(
-            InlineKeyboardButton(m["name"], callback_data=f"gc_m:{m['id']}")
-        )
+        row.append(InlineKeyboardButton(m["name"], callback_data=f"gc_m:{m['id']}"))
         if len(row) == 2:
             buttons.append(row)
             row = []
@@ -602,27 +600,21 @@ async def method_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
             row = []
             for s in subs:
                 row.append(
-                    InlineKeyboardButton(
-                        s["name"], callback_data=f"gc_sub:{s['id']}"
-                    )
+                    InlineKeyboardButton(s["name"], callback_data=f"gc_sub:{s['id']}")
                 )
                 if len(row) == 2:
                     buttons.append(row)
                     row = []
             if row:
                 buttons.append(row)
-            buttons.append(
-                [InlineKeyboardButton("CANCEL", callback_data="gc_cancel")]
-            )
+            buttons.append([InlineKeyboardButton("CANCEL", callback_data="gc_cancel")])
             await query.edit_message_text(
                 f"You selected {method['name']}. Which option?",
                 reply_markup=InlineKeyboardMarkup(buttons),
             )
             return GC_SUB
 
-    display, slug = resolve_method_display(
-        method_id, context.user_data["gc_amount"]
-    )
+    display, slug = resolve_method_display(method_id, context.user_data["gc_amount"])
     context.user_data["gc_method_display_name"] = display
     context.user_data["gc_slug"] = slug
     logger.info(
@@ -887,14 +879,10 @@ def get_cashier_wizard_handler() -> ConversationHandler:
                 ),
             ],
             GC_METHOD: [
-                CallbackQueryHandler(
-                    method_chosen, pattern=r"^gc_(m:\d+|cancel)$"
-                ),
+                CallbackQueryHandler(method_chosen, pattern=r"^gc_(m:\d+|cancel)$"),
             ],
             GC_SUB: [
-                CallbackQueryHandler(
-                    sub_chosen, pattern=r"^gc_(sub:\d+|cancel)$"
-                ),
+                CallbackQueryHandler(sub_chosen, pattern=r"^gc_(sub:\d+|cancel)$"),
             ],
             GC_PAYOUT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, payout_received),

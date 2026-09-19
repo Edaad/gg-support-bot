@@ -10,13 +10,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from bot.services.union_deposit_messages import UNION_INSTRUCTION_EXPIRED_TEXT
 from bot.services.union_instruction_expiry import (
     cancel_union_instruction_expiry,
-    expire_union_ack_now,
     expire_union_instruction_now,
-    list_pending_union_ack_expiries,
     list_pending_union_instruction_expiries,
-    restore_union_deposit_expiries,
     restore_union_instruction_expiries,
-    schedule_union_ack_expiry,
     schedule_union_instruction_expiry,
     sweep_overdue_union_deposit_expiries,
 )
@@ -50,9 +46,7 @@ class UnionInstructionExpiryTests(unittest.TestCase):
             deposit_limit=Decimal("1000"),
         )
         session = MagicMock()
-        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = (
-            method
-        )
+        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = method
         captured: dict = {}
 
         def _add(row):
@@ -64,11 +58,12 @@ class UnionInstructionExpiryTests(unittest.TestCase):
         cm.__enter__.return_value = session
         cm.__exit__.return_value = False
 
-        with patch(
-            "bot.services.manual_deposit_requests.get_db", return_value=cm
-        ), patch(
-            "bot.services.manual_deposit_requests.capacity_allows",
-            return_value=True,
+        with (
+            patch("bot.services.manual_deposit_requests.get_db", return_value=cm),
+            patch(
+                "bot.services.manual_deposit_requests.capacity_allows",
+                return_value=True,
+            ),
         ):
             row = create_request_atomic(
                 club_id=1,
@@ -97,9 +92,7 @@ class UnionInstructionExpiryTests(unittest.TestCase):
             deposit_limit=Decimal("1000"),
         )
         session = MagicMock()
-        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = (
-            method
-        )
+        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = method
 
         def _add(row):
             row.id = 43
@@ -109,11 +102,12 @@ class UnionInstructionExpiryTests(unittest.TestCase):
         cm.__enter__.return_value = session
         cm.__exit__.return_value = False
 
-        with patch(
-            "bot.services.manual_deposit_requests.get_db", return_value=cm
-        ), patch(
-            "bot.services.manual_deposit_requests.capacity_allows",
-            return_value=True,
+        with (
+            patch("bot.services.manual_deposit_requests.get_db", return_value=cm),
+            patch(
+                "bot.services.manual_deposit_requests.capacity_allows",
+                return_value=True,
+            ),
         ):
             row = create_request_atomic(
                 club_id=1,
@@ -147,7 +141,9 @@ class UnionInstructionExpiryTests(unittest.TestCase):
 
         schedule_union_instruction_expiry(context, 9, expires_at=expires)
         jq.run_once.assert_called_once()
-        self.assertEqual(jq.run_once.call_args.kwargs["name"], "union_instruction_expire_9")
+        self.assertEqual(
+            jq.run_once.call_args.kwargs["name"], "union_instruction_expire_9"
+        )
 
         session = MagicMock()
         session.get.return_value = SimpleNamespace(instruction_expires_at=expires)
@@ -167,12 +163,15 @@ class UnionInstructionExpiryTests(unittest.TestCase):
         jq.get_jobs_by_name.return_value = []
         expires = datetime.now(timezone.utc) + timedelta(minutes=5)
 
-        with patch(
-            "bot.services.union_instruction_expiry.list_pending_union_instruction_expiries",
-            return_value=[(11, expires)],
-        ), patch(
-            "bot.services.union_instruction_expiry._resolve_job_queue",
-            return_value=jq,
+        with (
+            patch(
+                "bot.services.union_instruction_expiry.list_pending_union_instruction_expiries",
+                return_value=[(11, expires)],
+            ),
+            patch(
+                "bot.services.union_instruction_expiry._resolve_job_queue",
+                return_value=jq,
+            ),
         ):
             restore_union_instruction_expiries(jq)
 
@@ -190,9 +189,7 @@ class UnionInstructionExpiryTests(unittest.TestCase):
             trade_record_checked=False,
         )
         session = MagicMock()
-        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = (
-            row
-        )
+        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = row
         cm = MagicMock()
         cm.__enter__.return_value = session
         cm.__exit__.return_value = False
@@ -226,9 +223,7 @@ class UnionInstructionExpiryTests(unittest.TestCase):
             trade_record_checked=True,
         )
         session = MagicMock()
-        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = (
-            row
-        )
+        session.query.return_value.filter.return_value.with_for_update.return_value.one_or_none.return_value = row
         cm = MagicMock()
         cm.__enter__.return_value = session
         cm.__exit__.return_value = False
@@ -254,15 +249,19 @@ class UnionInstructionExpiryTests(unittest.TestCase):
         bot = AsyncMock()
         expire_mock = AsyncMock(return_value=True)
 
-        with patch(
-            "bot.services.union_instruction_expiry._list_overdue_union_ack_request_ids",
-            return_value=[],
-        ), patch(
-            "bot.services.union_instruction_expiry._list_overdue_union_instruction_request_ids",
-            return_value=[12],
-        ), patch(
-            "bot.services.union_instruction_expiry.expire_union_instruction_now",
-            expire_mock,
+        with (
+            patch(
+                "bot.services.union_instruction_expiry._list_overdue_union_ack_request_ids",
+                return_value=[],
+            ),
+            patch(
+                "bot.services.union_instruction_expiry._list_overdue_union_instruction_request_ids",
+                return_value=[12],
+            ),
+            patch(
+                "bot.services.union_instruction_expiry.expire_union_instruction_now",
+                expire_mock,
+            ),
         ):
             await sweep_overdue_union_deposit_expiries(bot)
 

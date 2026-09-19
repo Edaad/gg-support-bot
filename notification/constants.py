@@ -25,4 +25,3 @@ def linked_group_chat_hyperlinks_enabled() -> bool:
     """True when LINKED_GROUP_CHAT_HYPERLINKS_ENABLED is unset or truthy (default on)."""
     raw = (os.getenv(LINKED_GROUP_CHAT_HYPERLINKS_ENV) or "true").strip().lower()
     return raw in ("1", "true", "yes", "on")
-

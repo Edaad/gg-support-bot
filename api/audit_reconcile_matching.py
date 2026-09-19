@@ -350,9 +350,7 @@ def apply_cc_at_aces_ledger_fallback(
         )
 
     remaining = [
-        line
-        for idx, line in enumerate(cc_unmatched_ledger)
-        if idx not in used_ledger
+        line for idx, line in enumerate(cc_unmatched_ledger) if idx not in used_ledger
     ]
     return out, remaining
 

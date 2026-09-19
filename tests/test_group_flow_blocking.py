@@ -123,7 +123,9 @@ class GroupFlowBlockingEntryTestCase(unittest.IsolatedAsyncioTestCase):
             patch.object(fc, "deposit_flow_active", return_value=False),
             patch.object(fc, "cashout_flow_active", return_value=False),
             patch.object(fc, "get_active_dm_flow", return_value=None),
-            patch.object(fc, "clear_deposit_payment_wait", AsyncMock(return_value=True)) as clear,
+            patch.object(
+                fc, "clear_deposit_payment_wait", AsyncMock(return_value=True)
+            ) as clear,
         ):
             await fc.flow_cancel_handler(update, context)
 

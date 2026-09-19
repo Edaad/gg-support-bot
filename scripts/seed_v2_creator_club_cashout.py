@@ -31,7 +31,9 @@ except ImportError:
 
 from sqlalchemy.orm import Session
 
-from api.payment_v2_helpers import upsert_default_variant_for_tier as upsert_default_variant
+from api.payment_v2_helpers import (
+    upsert_default_variant_for_tier as upsert_default_variant,
+)
 from db.connection import get_session
 from db.models import (
     Club,
@@ -281,7 +283,9 @@ def _verify_crypto_method(method: dict) -> None:
         raise SystemExit(f"Expected tier label {DEFAULT_TIER_LABEL!r} on crypto")
 
     if (tiers[0].get("response_text") or "").strip():
-        raise SystemExit("Expected empty tier response_text on crypto; copy on sub-options")
+        raise SystemExit(
+            "Expected empty tier response_text on crypto; copy on sub-options"
+        )
 
     variants = tiers[0].get("variants") or []
     if variants:
@@ -295,7 +299,9 @@ def _verify_crypto_method(method: dict) -> None:
     if slugs != EXPECTED_CRYPTO_SLUGS:
         missing = EXPECTED_CRYPTO_SLUGS - slugs
         extra = slugs - EXPECTED_CRYPTO_SLUGS
-        raise SystemExit(f"Crypto sub-option slug mismatch: missing={missing}, extra={extra}")
+        raise SystemExit(
+            f"Crypto sub-option slug mismatch: missing={missing}, extra={extra}"
+        )
 
 
 def _verify_text_method(method: dict, slug: str) -> None:
@@ -322,7 +328,9 @@ def _verify_text_method(method: dict, slug: str) -> None:
         raise SystemExit(f"Expected tier label {DEFAULT_TIER_LABEL!r} on {slug}")
 
     if (tiers[0].get("response_text") or "").strip():
-        raise SystemExit(f"Expected empty tier response_text on {slug}; copy lives on variant")
+        raise SystemExit(
+            f"Expected empty tier response_text on {slug}; copy lives on variant"
+        )
 
     variants = tiers[0].get("variants") or []
     if len(variants) != 1:

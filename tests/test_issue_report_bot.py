@@ -18,7 +18,9 @@ from bot.handlers.issue_reports import (
 
 def _group_update(user_id: int = 100, chat_id: int = -123) -> Update:
     user = User(id=user_id, is_bot=False, first_name="AM")
-    chat = Chat(id=chat_id, type=ChatType.SUPERGROUP, title="RT AT / 3333-3333 / @jz034")
+    chat = Chat(
+        id=chat_id, type=ChatType.SUPERGROUP, title="RT AT / 3333-3333 / @jz034"
+    )
     message = Message(
         message_id=1,
         date=None,
@@ -33,7 +35,10 @@ def _group_update(user_id: int = 100, chat_id: int = -123) -> Update:
 
 
 class TestReportGroupStub(unittest.IsolatedAsyncioTestCase):
-    @patch("bot.handlers.issue_reports.notify_staff_issue_report_draft", new_callable=AsyncMock)
+    @patch(
+        "bot.handlers.issue_reports.notify_staff_issue_report_draft",
+        new_callable=AsyncMock,
+    )
     @patch("bot.handlers.issue_reports.create_draft")
     @patch("bot.handlers.issue_reports.get_db")
     @patch("bot.handlers.issue_reports.is_club_staff", return_value=True)
@@ -83,14 +88,19 @@ class TestEscalateEntry(unittest.IsolatedAsyncioTestCase):
 
 
 class TestReportEntry(unittest.IsolatedAsyncioTestCase):
-    @patch("bot.handlers.issue_reports._begin_dm_report_flow", new_callable=AsyncMock, return_value=0)
+    @patch(
+        "bot.handlers.issue_reports._begin_dm_report_flow",
+        new_callable=AsyncMock,
+        return_value=0,
+    )
     @patch("bot.handlers.issue_reports._can_use_issue_reports", return_value=True)
     async def test_dm_starts_wizard(self, _can, mock_begin) -> None:
-        from telegram.ext import ConversationHandler
 
         user = User(id=100, is_bot=False, first_name="AM")
         chat = Chat(id=100, type=ChatType.PRIVATE)
-        message = Message(message_id=1, date=None, chat=chat, from_user=user, text="/report")
+        message = Message(
+            message_id=1, date=None, chat=chat, from_user=user, text="/report"
+        )
         update = Update(update_id=1, message=message)
         update._effective_user = user
         update._effective_chat = chat

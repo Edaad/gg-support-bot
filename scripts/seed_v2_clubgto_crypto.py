@@ -191,7 +191,9 @@ def upsert_method(session: Session, club_id: int) -> ClubPaymentMethod:
         .first()
     )
     if method is None:
-        method = ClubPaymentMethod(club_id=club_id, direction=DIRECTION, slug=METHOD_SLUG)
+        method = ClubPaymentMethod(
+            club_id=club_id, direction=DIRECTION, slug=METHOD_SLUG
+        )
         session.add(method)
 
     method.name = "Crypto"
@@ -257,7 +259,9 @@ def upsert_sub_options(session: Session, method_id: int) -> list[ClubPaymentSubO
     return rows
 
 
-def seed(session: Session) -> tuple[Club, ClubPaymentMethod, ClubPaymentTier, list[ClubPaymentSubOption]]:
+def seed(
+    session: Session,
+) -> tuple[Club, ClubPaymentMethod, ClubPaymentTier, list[ClubPaymentSubOption]]:
     club = find_clubgto_club(session)
     method = upsert_method(session, club.id)
     tier = upsert_default_tier(session, method.id)
@@ -290,13 +294,17 @@ def verify_via_api(club_id: int) -> None:
         raise SystemExit("Expected has_sub_options=true on Crypto method")
 
     if Decimal(str(method.get("min_amount"))) != Decimal("20"):
-        raise SystemExit(f"Expected method min_amount 20, got {method.get('min_amount')!r}")
+        raise SystemExit(
+            f"Expected method min_amount 20, got {method.get('min_amount')!r}"
+        )
 
     tiers = method.get("tiers") or []
     if len(tiers) != 1:
         raise SystemExit(f"Expected 1 tier, got {len(tiers)}")
     if tiers[0].get("label") != DEFAULT_TIER_LABEL:
-        raise SystemExit(f"Expected tier label {DEFAULT_TIER_LABEL!r}, got {tiers[0].get('label')!r}")
+        raise SystemExit(
+            f"Expected tier label {DEFAULT_TIER_LABEL!r}, got {tiers[0].get('label')!r}"
+        )
 
     if (tiers[0].get("response_text") or "").strip():
         raise SystemExit("Expected empty tier response_text; copy lives on sub-options")
@@ -304,7 +312,9 @@ def verify_via_api(club_id: int) -> None:
     for tier in tiers:
         variants = tier.get("variants") or []
         if variants:
-            raise SystemExit(f"Expected 0 variants on tier {tier.get('label')!r}, got {len(variants)}")
+            raise SystemExit(
+                f"Expected 0 variants on tier {tier.get('label')!r}, got {len(variants)}"
+            )
 
     subs = method.get("sub_options") or []
     if len(subs) != 12:
@@ -325,7 +335,9 @@ def verify_via_api(club_id: int) -> None:
             raise SystemExit(f"Expected non-empty response_text on {slug!r}")
         expected_addr = SUB_OPTION_ADDRESSES.get(slug)
         if expected_addr and expected_addr not in text:
-            raise SystemExit(f"Expected address {expected_addr!r} in {slug!r} response_text")
+            raise SystemExit(
+                f"Expected address {expected_addr!r} in {slug!r} response_text"
+            )
 
     accumulated = method.get("accumulated_amount")
     if Decimal(str(accumulated)) != ACCUMULATED_AMOUNT:
@@ -357,7 +369,9 @@ def main() -> None:
                 f"tier_id={tier.id}, sub_options={len(subs)}"
             )
             verify_via_api(club.id)
-            print("API verification passed: 1 Default tier, 12 sub-options, 0 variants.")
+            print(
+                "API verification passed: 1 Default tier, 12 sub-options, 0 variants."
+            )
         else:
             session.rollback()
             print("Dry run (no changes committed). Would upsert:")
@@ -367,7 +381,9 @@ def main() -> None:
                 f"accumulated=${ACCUMULATED_AMOUNT:,.2f}, sort_order=0)"
             )
             print(f"  tier: {DEFAULT_TIER_LABEL!r} (min=$20, no response, no Stripe)")
-            print(f"  sub-options: {len(subs)} ({', '.join(row['slug'] for row in SUB_OPTIONS)})")
+            print(
+                f"  sub-options: {len(subs)} ({', '.join(row['slug'] for row in SUB_OPTIONS)})"
+            )
             print("  variants: 0")
             print("Re-run with --apply to commit and verify.")
     except Exception:

@@ -22,9 +22,7 @@ GROUP_TITLE_PROD = "RT / 6485-8168 / Angus Mcgoon"
 class PaymentBindCandidatesTestCase(unittest.TestCase):
     def test_list_candidate_groups_empty(self):
         session = MagicMock()
-        session.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = (
-            []
-        )
+        session.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = []
         result = list_candidate_groups(session, "venmo", payer_name="Moshe Toussoun")
         self.assertEqual(result, [])
 
@@ -45,7 +43,9 @@ class PaymentBindCandidatesTestCase(unittest.TestCase):
             "bot.services.venmo_payments.resolve_display_group_title",
             return_value="RT / 1 / A",
         ):
-            result = list_candidate_groups(session, "venmo", payer_name="Moshe Toussoun")
+            result = list_candidate_groups(
+                session, "venmo", payer_name="Moshe Toussoun"
+            )
         self.assertEqual(len(result), 1)
         self.assertIsInstance(result[0], CandidateGroup)
         self.assertEqual(result[0].telegram_chat_id, -1001)
@@ -58,7 +58,9 @@ class PaymentBindCandidatesTestCase(unittest.TestCase):
 
     def test_upsert_creates_new_row(self):
         session = MagicMock()
-        session.query.return_value.filter_by.return_value.one_or_none.return_value = None
+        session.query.return_value.filter_by.return_value.one_or_none.return_value = (
+            None
+        )
         upsert_candidate_on_bind(
             session,
             "venmo",

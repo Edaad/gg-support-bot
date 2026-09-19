@@ -40,7 +40,9 @@ def _make_app() -> FastAPI:
 
 class PaymentsApiTestCase(unittest.TestCase):
     def setUp(self):
-        self.env_patch = patch.dict(os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False)
+        self.env_patch = patch.dict(
+            os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False
+        )
         self.env_patch.start()
         self.client = TestClient(_make_app())
 
@@ -63,7 +65,9 @@ class PaymentsApiTestCase(unittest.TestCase):
         data = response.json()
         self.assertEqual(len(data), 6)
         ids = {row["id"] for row in data}
-        self.assertEqual(ids, {"stripe", "venmo", "zelle", "cashapp", "paypal", "crypto"})
+        self.assertEqual(
+            ids, {"stripe", "venmo", "zelle", "cashapp", "paypal", "crypto"}
+        )
 
     def test_venmo_payments_club_not_found(self):
         mock_db = MagicMock()
@@ -115,7 +119,9 @@ class PaymentsApiTestCase(unittest.TestCase):
             mock_db = MagicMock()
             mock_payment = MagicMock()
             mock_payment.id = 1
-            mock_db.query.return_value.filter.return_value.first.return_value = mock_payment
+            mock_db.query.return_value.filter.return_value.first.return_value = (
+                mock_payment
+            )
 
             app = FastAPI()
             app.include_router(router)
@@ -168,7 +174,9 @@ class PaymentsApiTestCase(unittest.TestCase):
         )
 
     def test_resolve_bound_via_filter_single_value(self):
-        self.assertEqual(_resolve_bound_via_filter("special_amount"), ("special_amount",))
+        self.assertEqual(
+            _resolve_bound_via_filter("special_amount"), ("special_amount",)
+        )
 
     def test_resolve_bound_via_filter_all_ignored(self):
         self.assertIsNone(_resolve_bound_via_filter(None))
@@ -179,7 +187,9 @@ class PaymentsApiTestCase(unittest.TestCase):
         self.assertTrue(is_analytics_excluded_group_title("RT / 9090-9999 / TEST"))
         self.assertTrue(is_analytics_excluded_group_title("CC / 8834-2222/ @jz034"))
         self.assertTrue(is_analytics_excluded_group_title("RT AT / 3333-3333 / @JZ034"))
-        self.assertFalse(is_analytics_excluded_group_title("RT / 1234-5678 / @realplayer"))
+        self.assertFalse(
+            is_analytics_excluded_group_title("RT / 1234-5678 / @realplayer")
+        )
         self.assertFalse(is_analytics_excluded_group_title("RT / 1234-5678 / Player"))
         self.assertFalse(is_analytics_excluded_group_title(None))
         self.assertFalse(is_analytics_excluded_group_title(""))
@@ -256,7 +266,9 @@ class PaymentsApiTestCase(unittest.TestCase):
             mock_db = MagicMock()
             mock_club = MagicMock()
             mock_club.name = "Round Table"
-            mock_db.query.return_value.filter.return_value.first.return_value = mock_club
+            mock_db.query.return_value.filter.return_value.first.return_value = (
+                mock_club
+            )
 
             app = FastAPI()
             app.include_router(router)

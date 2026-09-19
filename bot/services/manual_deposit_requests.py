@@ -16,7 +16,12 @@ from bot.services.union_method_types import (
     validate_union_method_type,
 )
 from db.connection import get_db
-from db.models import ClubPaymentMethod, ClubPaymentMethodClub, Group, ManualDepositRequest
+from db.models import (
+    ClubPaymentMethod,
+    ClubPaymentMethodClub,
+    Group,
+    ManualDepositRequest,
+)
 
 UnionDepositSlackVariant = Literal["first", "repeat_verified", "repeat_open"]
 ManualDepositSource = Literal["bot", "dashboard"]
@@ -189,9 +194,7 @@ def resolve_deposit_group(
         .one_or_none()
     )
     if not group:
-        raise ManualDepositValidationError(
-            "Group not found for this method's clubs."
-        )
+        raise ManualDepositValidationError("Group not found for this method's clubs.")
     return group
 
 
@@ -216,10 +219,14 @@ def create_dashboard_manual_deposit_request(
             .one_or_none()
         )
         if not method or not bool(getattr(method, "tracks_manual_requests", False)):
-            raise ManualDepositValidationError("Method is not a manual trade-request method.")
+            raise ManualDepositValidationError(
+                "Method is not a manual trade-request method."
+            )
         validate_manual_deposit_amount(method, amount_dec)
         if method.deposit_limit is None:
-            raise ManualDepositCapacityError("This payment method has no capacity limit set.")
+            raise ManualDepositCapacityError(
+                "This payment method has no capacity limit set."
+            )
         if not capacity_allows(
             session,
             method_id=int(method_id),
@@ -282,7 +289,9 @@ def update_dashboard_manual_deposit_request(
 
         method = session.get(ClubPaymentMethod, int(row.method_id))
         if not method or not bool(getattr(method, "tracks_manual_requests", False)):
-            raise ManualDepositValidationError("Method is not a manual trade-request method.")
+            raise ManualDepositValidationError(
+                "Method is not a manual trade-request method."
+            )
 
         if amount is not None:
             amount_dec = Decimal(str(amount))
@@ -383,9 +392,7 @@ def union_deposit_slack_variant(
             .all()
         )
     matching = [
-        row
-        for row in rows
-        if union_type_from_display_name(row[0] or "") == type_slug
+        row for row in rows if union_type_from_display_name(row[0] or "") == type_slug
     ]
     if not matching:
         return "first"
@@ -406,7 +413,6 @@ def create_request_atomic(
 ) -> ManualDepositRequest:
     """Lock method row, re-check capacity, insert request. Raises ManualDepositCapacityError."""
     from bot.services.union_instruction_expiry import instruction_expires_at_from_now
-    from bot.services.union_method_types import union_type_from_display_name
 
     amount_dec = Decimal(str(amount))
     if amount_dec <= 0:
@@ -422,9 +428,13 @@ def create_request_atomic(
         if not method or not bool(getattr(method, "tracks_manual_requests", False)):
             raise ValueError("Method is not a manual trade-request method")
         if not method.is_active:
-            raise ManualDepositCapacityError("This payment method is no longer available.")
+            raise ManualDepositCapacityError(
+                "This payment method is no longer available."
+            )
         if method.deposit_limit is None:
-            raise ManualDepositCapacityError("This payment method has no capacity limit set.")
+            raise ManualDepositCapacityError(
+                "This payment method has no capacity limit set."
+            )
         if not capacity_allows(
             session,
             method_id=int(method_id),
@@ -520,9 +530,13 @@ def get_union_ack_pending(
     with get_db() as session:
         row = session.get(ManualDepositRequest, int(request_id))
         if row is None:
-            raise UnionAckValidationError("This deposit request is no longer available.")
+            raise UnionAckValidationError(
+                "This deposit request is no longer available."
+            )
         if int(row.telegram_chat_id) != int(telegram_chat_id):
-            raise UnionAckValidationError("This deposit request is no longer available.")
+            raise UnionAckValidationError(
+                "This deposit request is no longer available."
+            )
         expected_user = row.initiated_by_telegram_user_id
         if expected_user is not None and initiated_by_telegram_user_id is not None:
             if int(expected_user) != int(initiated_by_telegram_user_id):
@@ -536,7 +550,9 @@ def get_union_ack_pending(
                 "These instructions expired. Use /deposit to start again."
             )
         if bool(row.trade_record_checked):
-            raise UnionAckValidationError("This deposit request is no longer available.")
+            raise UnionAckValidationError(
+                "This deposit request is no longer available."
+            )
         ack_expires = row.ack_expires_at
         if ack_expires is not None:
             exp = (
@@ -549,6 +565,8 @@ def get_union_ack_pending(
                     "These instructions expired. Use /deposit to start again."
                 )
         if row.ack_expires_at is None and row.ack_telegram_message_id is None:
-            raise UnionAckValidationError("This deposit request is no longer available.")
+            raise UnionAckValidationError(
+                "This deposit request is no longer available."
+            )
         session.expunge(row)
         return row

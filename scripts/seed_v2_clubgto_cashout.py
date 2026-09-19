@@ -31,7 +31,9 @@ except ImportError:
 
 from sqlalchemy.orm import Session
 
-from api.payment_v2_helpers import upsert_default_variant_for_tier as upsert_default_variant
+from api.payment_v2_helpers import (
+    upsert_default_variant_for_tier as upsert_default_variant,
+)
 from db.connection import get_session
 from db.models import (
     Club,
@@ -278,7 +280,9 @@ def _verify_crypto_method(method: dict) -> None:
 
     min_amount = method.get("min_amount")
     if min_amount is None or Decimal(str(min_amount)) != DEFAULT_MIN_AMOUNT:
-        raise SystemExit(f"Expected crypto min_amount={DEFAULT_MIN_AMOUNT}, got {min_amount!r}")
+        raise SystemExit(
+            f"Expected crypto min_amount={DEFAULT_MIN_AMOUNT}, got {min_amount!r}"
+        )
 
     if not _is_null_or_zero_accumulated(method.get("accumulated_amount")):
         raise SystemExit("Expected accumulated_amount=null/0 on crypto cashout method")
@@ -290,7 +294,9 @@ def _verify_crypto_method(method: dict) -> None:
         raise SystemExit(f"Expected tier label {DEFAULT_TIER_LABEL!r} on crypto")
 
     if (tiers[0].get("response_text") or "").strip():
-        raise SystemExit("Expected empty tier response_text on crypto; copy on sub-options")
+        raise SystemExit(
+            "Expected empty tier response_text on crypto; copy on sub-options"
+        )
 
     variants = tiers[0].get("variants") or []
     if variants:
@@ -304,7 +310,9 @@ def _verify_crypto_method(method: dict) -> None:
     if slugs != EXPECTED_CRYPTO_SLUGS:
         missing = EXPECTED_CRYPTO_SLUGS - slugs
         extra = slugs - EXPECTED_CRYPTO_SLUGS
-        raise SystemExit(f"Crypto sub-option slug mismatch: missing={missing}, extra={extra}")
+        raise SystemExit(
+            f"Crypto sub-option slug mismatch: missing={missing}, extra={extra}"
+        )
 
 
 def _verify_text_method(method: dict, slug: str) -> None:
@@ -316,7 +324,9 @@ def _verify_text_method(method: dict, slug: str) -> None:
 
     min_amount = method.get("min_amount")
     if min_amount is None or Decimal(str(min_amount)) != expected_min:
-        raise SystemExit(f"Expected {slug} min_amount={expected_min}, got {min_amount!r}")
+        raise SystemExit(
+            f"Expected {slug} min_amount={expected_min}, got {min_amount!r}"
+        )
 
     if not _is_null_or_zero_accumulated(method.get("accumulated_amount")):
         raise SystemExit(f"Expected accumulated_amount=null/0 on {slug} cashout method")
@@ -333,10 +343,14 @@ def _verify_text_method(method: dict, slug: str) -> None:
 
     tier_min = tiers[0].get("min_amount")
     if tier_min is None or Decimal(str(tier_min)) != expected_min:
-        raise SystemExit(f"Expected tier min_amount={expected_min} on {slug}, got {tier_min!r}")
+        raise SystemExit(
+            f"Expected tier min_amount={expected_min} on {slug}, got {tier_min!r}"
+        )
 
     if (tiers[0].get("response_text") or "").strip():
-        raise SystemExit(f"Expected empty tier response_text on {slug}; copy lives on variant")
+        raise SystemExit(
+            f"Expected empty tier response_text on {slug}; copy lives on variant"
+        )
 
     variants = tiers[0].get("variants") or []
     if len(variants) != 1:
@@ -369,7 +383,8 @@ def _method_payload(session: Session, method: ClubPaymentMethod) -> dict:
                 "min_amount": tier.min_amount,
                 "response_text": tier.response_text,
                 "variants": [
-                    {"label": v.label, "response_text": v.response_text} for v in variants
+                    {"label": v.label, "response_text": v.response_text}
+                    for v in variants
                 ],
             }
         )

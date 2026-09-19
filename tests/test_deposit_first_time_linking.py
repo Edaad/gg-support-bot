@@ -137,7 +137,9 @@ class PickDepositVariantTestCase(unittest.TestCase):
         with (
             patch.object(dep, "get_tier_for_amount", return_value=OVER_TIER),
             patch.object(dep, "get_chat_binding", return_value=binding),
-            patch.object(dep, "pick_variant", return_value={"variant_id": 99}) as pick_mock,
+            patch.object(
+                dep, "pick_variant", return_value={"variant_id": 99}
+            ) as pick_mock,
         ):
             dep._pick_deposit_variant_response(
                 4,
@@ -176,7 +178,9 @@ class FirstTimeSetupFromChoiceTestCase(unittest.IsolatedAsyncioTestCase):
                 new_callable=AsyncMock,
                 return_value=dep.ConversationHandler.END,
             ) as normal_mock,
-            patch.object(dep, "_send_first_time_method_setup", new_callable=AsyncMock) as setup_mock,
+            patch.object(
+                dep, "_send_first_time_method_setup", new_callable=AsyncMock
+            ) as setup_mock,
         ):
             result = await dep._run_first_time_method_setup_from_choice(
                 query,
@@ -267,7 +271,9 @@ class FirstTimeSetupFromChoiceTestCase(unittest.IsolatedAsyncioTestCase):
                 new_callable=AsyncMock,
                 return_value=dep.ConversationHandler.END,
             ) as normal_mock,
-            patch.object(dep, "_send_first_time_method_setup", new_callable=AsyncMock) as setup_mock,
+            patch.object(
+                dep, "_send_first_time_method_setup", new_callable=AsyncMock
+            ) as setup_mock,
         ):
             await dep._run_first_time_method_setup_from_choice(
                 query,
@@ -326,7 +332,12 @@ class DepositSetupAckTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         with (
-            patch.object(dep, "handle_stale_flow_callback", new_callable=AsyncMock, return_value=False),
+            patch.object(
+                dep,
+                "handle_stale_flow_callback",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
             patch.object(dep, "get_pending_bind_attempt", return_value=attempt),
             patch.object(
                 dep,

@@ -68,9 +68,7 @@ _ET = ZoneInfo("America/New_York")
 _HEADLINES = {
     REASON_PLAYER_IDLE: "A player just reached out.",
     REASON_PLAYER_IDLE_FOLLOWUP: "Player follow-up.",
-    REASON_PLAYER_IDLE_STAFF_UNANSWERED: (
-        "⚠️ 5 minutes have passed since follow-up."
-    ),
+    REASON_PLAYER_IDLE_STAFF_UNANSWERED: ("⚠️ 5 minutes have passed since follow-up."),
     REASON_CASHOUT_STARTED: "Cash out initiated.",
     REASON_DEPOSIT_SENT_TIMEOUT: (
         "5 minutes have passed since the player said they sent the payment — "
@@ -169,6 +167,7 @@ def deposit_sent_ack_copy(method_slug: str | None) -> str:
         return DEPOSIT_SENT_ACK_COPY_CRYPTO
     return DEPOSIT_SENT_ACK_COPY
 
+
 # While the 5m wait is armed: ignore expected payment acks / proofs.
 _DEPOSIT_FOLLOWUP_IGNORE_RE = re.compile(r"sent|done", re.IGNORECASE)
 
@@ -181,9 +180,7 @@ def register_escalation_notification_runtime(app: Any) -> None:
     try:
         restore_deposit_sent_watches(getattr(app, "job_queue", None))
     except Exception:
-        logger.warning(
-            "escalation: restore deposit sent watches failed", exc_info=True
-        )
+        logger.warning("escalation: restore deposit sent watches failed", exc_info=True)
     try:
         from bot.services.deposit_incomplete_watch import (
             restore_deposit_incomplete_watches,
@@ -459,9 +456,7 @@ def format_escalation_slack_text(
     if reason == REASON_DEPOSIT_SENT_UNBOUND:
         slug = (method_slug or "").strip().lower()
         if slug:
-            headline = (
-                f"Manual deposit request — no {slug} binding for this group."
-            )
+            headline = f"Manual deposit request — no {slug} binding for this group."
         else:
             headline = (
                 "Manual deposit request — no binding for the selected "
@@ -583,7 +578,10 @@ async def format_large_cashout_telegram_text(
     method_tag: str | None,
     requested_at: datetime | None,
 ) -> str:
-    from notification.formatting import format_player_id_line, resolve_and_format_group_chat_line
+    from notification.formatting import (
+        format_player_id_line,
+        resolve_and_format_group_chat_line,
+    )
 
     club = _club_display_name(club_id)
     group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
@@ -632,7 +630,10 @@ async def format_union_deposit_telegram_text(
     deposit_union: str | None = None,
 ) -> str:
     del variant, method_display_name
-    from notification.formatting import format_player_id_line, resolve_and_format_group_chat_line
+    from notification.formatting import (
+        format_player_id_line,
+        resolve_and_format_group_chat_line,
+    )
 
     club = _club_display_name(club_id)
     group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
@@ -713,9 +714,7 @@ async def notify_pool_pay_deposit_slack(
     """Slack AMs when a pool pay manual deposit is created."""
     if is_test_bot_worker():
         return False
-    if not escalation_notification_eligible(
-        int(chat_id), club_id=club_id, title=title
-    ):
+    if not escalation_notification_eligible(int(chat_id), club_id=club_id, title=title):
         return False
 
     pay_type = (pool_pay_type or "union_method").strip().lower()
@@ -761,9 +760,7 @@ async def notify_pool_pay_deposit_slack(
     from bot.services.manual_deposit_requests import UnionDepositSlackVariant
 
     v: UnionDepositSlackVariant = variant  # type: ignore[assignment]
-    reason = (
-        REASON_UNION_DEPOSIT_FIRST if v == "first" else REASON_UNION_DEPOSIT_REPEAT
-    )
+    reason = REASON_UNION_DEPOSIT_FIRST if v == "first" else REASON_UNION_DEPOSIT_REPEAT
     text = format_union_deposit_slack_text(
         variant=v,
         club_id=club_id,
@@ -1013,9 +1010,7 @@ async def notify_cashout_started(
     chat_id: int,
     title: str | None = None,
 ) -> None:
-    if not escalation_notification_eligible(
-        int(chat_id), club_id=club_id, title=title
-    ):
+    if not escalation_notification_eligible(int(chat_id), club_id=club_id, title=title):
         return
     await notify_escalation_slack(
         REASON_CASHOUT_STARTED,
@@ -1032,9 +1027,7 @@ async def notify_earlyrb_requested(
     title: str | None = None,
 ) -> None:
     """Slack when /earlyrb is allowed (no 24h block)."""
-    if not escalation_notification_eligible(
-        int(chat_id), club_id=club_id, title=title
-    ):
+    if not escalation_notification_eligible(int(chat_id), club_id=club_id, title=title):
         return
     await notify_escalation_slack(
         REASON_EARLYRB_REQUESTED,
@@ -1135,9 +1128,7 @@ async def notify_auto_cashout_escalation(
         if isinstance(claimed_amount, Decimal):
             amt = claimed_amount.quantize(Decimal("0.01"))
             amt_str = (
-                f"${int(amt):,}"
-                if amt == amt.to_integral_value()
-                else f"${amt:,.2f}"
+                f"${int(amt):,}" if amt == amt.to_integral_value() else f"${amt:,.2f}"
             )
         else:
             amt_str = f"${claimed_amount}"
@@ -1378,9 +1369,7 @@ async def notify_player_dm_reached_out(
     """Slack when an incoming player DM reuses an existing support group."""
     if not escalation_notification_enabled(club_id):
         return
-    contact = format_player_contact_label(
-        display_name=display_name, username=username
-    )
+    contact = format_player_contact_label(display_name=display_name, username=username)
     await notify_escalation_slack(
         REASON_PLAYER_DM_REACHED_OUT,
         club_id=club_id,
@@ -1449,9 +1438,7 @@ async def offer_deposit_sent_button(
 
     Returns True if the button was offered.
     """
-    if not escalation_notification_eligible(
-        int(chat_id), club_id=club_id, title=title
-    ):
+    if not escalation_notification_eligible(int(chat_id), club_id=club_id, title=title):
         return False
 
     slug = (method_slug or "").strip().lower() or None
@@ -1684,9 +1671,7 @@ async def handle_deposit_sent_player_followup(
     if should_ignore_deposit_sent_followup(message):
         return False
 
-    cancel_deposit_sent_watch(
-        chat_id, job_queue=getattr(context, "job_queue", None)
-    )
+    cancel_deposit_sent_watch(chat_id, job_queue=getattr(context, "job_queue", None))
     from bot.services.escalation_observability import trigger_message_from_telegram
 
     trigger = trigger_message_from_telegram(message)
@@ -1746,9 +1731,7 @@ async def handle_deposit_sent_claim(
             exc_info=True,
         )
 
-    if not escalation_notification_eligible(
-        chat_id, club_id=club_id, title=title
-    ):
+    if not escalation_notification_eligible(chat_id, club_id=club_id, title=title):
         ga.clear_deposit_instructions_pending(chat_id)
         return
 
@@ -1786,9 +1769,7 @@ async def handle_deposit_sent_claim(
         )
         return
 
-    schedule_deposit_sent_watch(
-        context, chat_id, club_id=club_id, title=title
-    )
+    schedule_deposit_sent_watch(context, chat_id, club_id=club_id, title=title)
 
 
 def get_deposit_sent_claim_handler() -> CallbackQueryHandler:

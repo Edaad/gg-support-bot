@@ -68,11 +68,18 @@ def list_broadcast_groups(
     if not club:
         raise HTTPException(404, "Club not found")
     assert_gto_club_id(role, club_id, db)
-    bgs = db.query(BroadcastGroup).filter_by(club_id=club_id).order_by(BroadcastGroup.name).all()
+    bgs = (
+        db.query(BroadcastGroup)
+        .filter_by(club_id=club_id)
+        .order_by(BroadcastGroup.name)
+        .all()
+    )
     return [_bg_to_read(bg, db) for bg in bgs]
 
 
-@router.post("/{club_id}/broadcast-groups", response_model=BroadcastGroupRead, status_code=201)
+@router.post(
+    "/{club_id}/broadcast-groups", response_model=BroadcastGroupRead, status_code=201
+)
 def create_broadcast_group(
     club_id: int,
     body: BroadcastGroupCreate,
@@ -123,7 +130,9 @@ def delete_broadcast_group(
     db.delete(bg)
 
 
-@router.post("/{club_id}/broadcast-groups/{bg_id}/members", response_model=BroadcastGroupRead)
+@router.post(
+    "/{club_id}/broadcast-groups/{bg_id}/members", response_model=BroadcastGroupRead
+)
 def add_member(
     club_id: int,
     bg_id: int,
@@ -135,9 +144,11 @@ def add_member(
     bg = db.query(BroadcastGroup).filter_by(id=bg_id, club_id=club_id).first()
     if not bg:
         raise HTTPException(404, "Broadcast group not found")
-    existing = db.query(BroadcastGroupMember).filter_by(
-        broadcast_group_id=bg_id, chat_id=body.chat_id
-    ).first()
+    existing = (
+        db.query(BroadcastGroupMember)
+        .filter_by(broadcast_group_id=bg_id, chat_id=body.chat_id)
+        .first()
+    )
     if existing:
         raise HTTPException(409, "Group chat already in this broadcast group")
     db.add(BroadcastGroupMember(broadcast_group_id=bg_id, chat_id=body.chat_id))
@@ -146,7 +157,10 @@ def add_member(
     return _bg_to_read(bg, db)
 
 
-@router.delete("/{club_id}/broadcast-groups/{bg_id}/members/{chat_id}", response_model=BroadcastGroupRead)
+@router.delete(
+    "/{club_id}/broadcast-groups/{bg_id}/members/{chat_id}",
+    response_model=BroadcastGroupRead,
+)
 def remove_member(
     club_id: int,
     bg_id: int,
@@ -158,9 +172,11 @@ def remove_member(
     bg = db.query(BroadcastGroup).filter_by(id=bg_id, club_id=club_id).first()
     if not bg:
         raise HTTPException(404, "Broadcast group not found")
-    member = db.query(BroadcastGroupMember).filter_by(
-        broadcast_group_id=bg_id, chat_id=chat_id
-    ).first()
+    member = (
+        db.query(BroadcastGroupMember)
+        .filter_by(broadcast_group_id=bg_id, chat_id=chat_id)
+        .first()
+    )
     if not member:
         raise HTTPException(404, "Member not found")
     db.delete(member)

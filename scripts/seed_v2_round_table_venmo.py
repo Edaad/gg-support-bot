@@ -96,7 +96,9 @@ def upsert_method(session: Session, club_id: int) -> ClubPaymentMethod:
         .first()
     )
     if method is None:
-        method = ClubPaymentMethod(club_id=club_id, direction=DIRECTION, slug=METHOD_SLUG)
+        method = ClubPaymentMethod(
+            club_id=club_id, direction=DIRECTION, slug=METHOD_SLUG
+        )
         session.add(method)
 
     method.name = "Venmo"
@@ -241,9 +243,13 @@ def verify_via_api(club_id: int) -> None:
         raise SystemExit("Expected has_sub_options=false on Venmo method")
 
     if Decimal(str(method.get("min_amount"))) != Decimal("100"):
-        raise SystemExit(f"Expected method min_amount 100, got {method.get('min_amount')!r}")
+        raise SystemExit(
+            f"Expected method min_amount 100, got {method.get('min_amount')!r}"
+        )
     if method.get("max_amount") is not None:
-        raise SystemExit(f"Expected method max_amount NULL, got {method.get('max_amount')!r}")
+        raise SystemExit(
+            f"Expected method max_amount NULL, got {method.get('max_amount')!r}"
+        )
 
     subs = method.get("sub_options") or []
     if subs:
@@ -255,12 +261,18 @@ def verify_via_api(club_id: int) -> None:
 
     tier = tiers[0]
     if tier.get("label") != DEFAULT_TIER_LABEL:
-        raise SystemExit(f"Expected tier label {DEFAULT_TIER_LABEL!r}, got {tier.get('label')!r}")
+        raise SystemExit(
+            f"Expected tier label {DEFAULT_TIER_LABEL!r}, got {tier.get('label')!r}"
+        )
 
     if Decimal(str(tier.get("min_amount"))) != Decimal("100"):
-        raise SystemExit(f"Expected tier min_amount 100, got {tier.get('min_amount')!r}")
+        raise SystemExit(
+            f"Expected tier min_amount 100, got {tier.get('min_amount')!r}"
+        )
     if tier.get("max_amount") is not None:
-        raise SystemExit(f"Expected tier max_amount NULL, got {tier.get('max_amount')!r}")
+        raise SystemExit(
+            f"Expected tier max_amount NULL, got {tier.get('max_amount')!r}"
+        )
 
     if (tier.get("response_text") or "").strip():
         raise SystemExit("Expected empty tier response_text; copy lives on variants")
@@ -279,7 +291,9 @@ def verify_via_api(club_id: int) -> None:
     for label, (weight, sort_order, url) in EXPECTED_VARIANTS.items():
         variant = by_label[label]
         if variant.get("weight") != weight:
-            raise SystemExit(f"Expected {label!r} weight {weight}, got {variant.get('weight')!r}")
+            raise SystemExit(
+                f"Expected {label!r} weight {weight}, got {variant.get('weight')!r}"
+            )
         if variant.get("sort_order") != sort_order:
             raise SystemExit(
                 f"Expected {label!r} sort_order {sort_order}, got {variant.get('sort_order')!r}"
@@ -336,7 +350,9 @@ def main() -> None:
             print(f"  tier: {DEFAULT_TIER_LABEL!r} ($100+, amount band only)")
             print("  variants:")
             for label, (weight, sort_order, url) in EXPECTED_VARIANTS.items():
-                print(f"    - {label!r} weight={weight} sort_order={sort_order} ({url})")
+                print(
+                    f"    - {label!r} weight={weight} sort_order={sort_order} ({url})"
+                )
             print("  sub-options: 0")
             print("Re-run with --apply to commit and verify.")
     except Exception:

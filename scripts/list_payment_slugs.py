@@ -80,7 +80,9 @@ def _fetch(*, club_id: int | None, direction: str | None) -> list[ClubRow]:
             methods_q = (
                 session.query(PaymentMethod)
                 .filter(PaymentMethod.club_id == club.id)
-                .order_by(PaymentMethod.direction, PaymentMethod.sort_order, PaymentMethod.id)
+                .order_by(
+                    PaymentMethod.direction, PaymentMethod.sort_order, PaymentMethod.id
+                )
             )
             if direction:
                 methods_q = methods_q.filter(PaymentMethod.direction == direction)
@@ -148,7 +150,9 @@ def _print_human(rows: list[ClubRow]) -> None:
             if m.has_sub_options:
                 flags.append("has_sub_options")
             flag_txt = ",".join(flags)
-            print(f"  [{m.direction}] method_id={m.id} slug={m.slug!r} name={m.name!r} ({flag_txt})")
+            print(
+                f"  [{m.direction}] method_id={m.id} slug={m.slug!r} name={m.name!r} ({flag_txt})"
+            )
             for s in m.sub_options:
                 sflag = "active" if s.is_active else "inactive"
                 print(f"    - sub_id={s.id} slug={s.slug!r} name={s.name!r} ({sflag})")
@@ -157,7 +161,9 @@ def _print_human(rows: list[ClubRow]) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="List payment method + sub-option slugs.")
-    p.add_argument("--club-id", type=int, default=None, help="Filter to a single clubs.id")
+    p.add_argument(
+        "--club-id", type=int, default=None, help="Filter to a single clubs.id"
+    )
     p.add_argument(
         "--direction",
         choices=("deposit", "cashout"),
@@ -177,4 +183,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

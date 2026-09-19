@@ -34,6 +34,7 @@ SEPARATOR = "\n---\n"
 
 # ── Request / Response schemas ────────────────────────────────────────────────
 
+
 class BroadcastRequest(BaseModel):
     response_type: str = "text"
     response_text: Optional[str] = None
@@ -69,6 +70,7 @@ def _job_to_read(job: BroadcastJob) -> BroadcastJobRead:
 
 
 # ── Telegram helpers ──────────────────────────────────────────────────────────
+
 
 def _get_bot() -> Bot:
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -106,11 +108,12 @@ async def _send_with_retry(bot: Bot, chat_id: int, data: dict) -> None:
         except RetryAfter as exc:
             await asyncio.sleep(exc.retry_after + 1)
         except TimedOut:
-            await asyncio.sleep(2 ** attempt)
+            await asyncio.sleep(2**attempt)
     await _send_to_chat(bot, chat_id, data)
 
 
 # ── Background worker ─────────────────────────────────────────────────────────
+
 
 async def _run_broadcast(job_id: int, chat_ids: List[int], message_data: dict) -> None:
     bot = Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
@@ -158,6 +161,7 @@ async def _run_broadcast(job_id: int, chat_ids: List[int], message_data: dict) -
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
+
 @router.post("/{club_id}/broadcast", response_model=BroadcastJobRead, status_code=202)
 async def broadcast(
     club_id: int,
@@ -171,16 +175,17 @@ async def broadcast(
     assert_gto_club_id(role, club_id, db)
 
     has_content = (
-        (body.response_type == "photo" and body.response_file_id)
-        or body.response_text
-    )
+        body.response_type == "photo" and body.response_file_id
+    ) or body.response_text
     if not has_content:
         raise HTTPException(400, "Provide at least response_text or a photo file ID")
 
     if body.broadcast_group_id:
-        bg = db.query(BroadcastGroup).filter_by(
-            id=body.broadcast_group_id, club_id=club_id
-        ).first()
+        bg = (
+            db.query(BroadcastGroup)
+            .filter_by(id=body.broadcast_group_id, club_id=club_id)
+            .first()
+        )
         if not bg:
             raise HTTPException(404, "Broadcast group not found")
         chat_ids = [m.chat_id for m in bg.members]
@@ -194,9 +199,7 @@ async def broadcast(
 
     # Block if there's already a running broadcast for this club
     running = (
-        db.query(BroadcastJob)
-        .filter_by(club_id=club_id, status="running")
-        .first()
+        db.query(BroadcastJob).filter_by(club_id=club_id, status="running").first()
     )
     if running:
         raise HTTPException(409, "A broadcast is already running for this club")

@@ -22,14 +22,22 @@ from api.schemas import (
     MtProtoSignInResponse,
     MtProtoSyncDiskResponse,
 )
-from bot.services.gc_phone import PHONE_INVALID_REPLY, normalize_phone_for_mtproto, phone_len_bounds_ok
+from bot.services.gc_phone import (
+    PHONE_INVALID_REPLY,
+    normalize_phone_for_mtproto,
+    phone_len_bounds_ok,
+)
 from bot.services.mtproto_group_create import (
     authenticate_mtproto_code,
     authenticate_mtproto_password,
     send_code_for_phone,
     send_code_user_message,
 )
-from bot.services.mtproto_qr_login import cancel_qr_login, get_qr_login_status, start_qr_login
+from bot.services.mtproto_qr_login import (
+    cancel_qr_login,
+    get_qr_login_status,
+    start_qr_login,
+)
 from bot.services.mtproto_session_db import clear_disk_login_session
 from bot.services.mtproto_club_health import (
     resolve_auxiliary_session_status,
@@ -165,7 +173,9 @@ async def mtproto_qr_start(body: MtProtoClubKeyBody):
         job = await start_qr_login(cfg)
     except Exception:
         logger.exception("mtproto_qr_start club=%s", cfg.club_key)
-        raise HTTPException(status_code=500, detail="QR login start failed (see server logs).") from None
+        raise HTTPException(
+            status_code=500, detail="QR login start failed (see server logs)."
+        ) from None
 
     return MtProtoQrStartResponse(
         ok=True,
@@ -198,7 +208,6 @@ async def mtproto_send_code(body: MtProtoSendCodeRequest):
     cfg = _cfg(body.club_key)
     phone = _resolve_phone(cfg, body.phone)
     try:
-
         phone_code_hash, delivery = await send_code_for_phone(cfg, phone)
     except PhoneNumberInvalidError:
         logger.warning("MTProto SendCode invalid phone club=%s", cfg.club_key)
@@ -207,7 +216,9 @@ async def mtproto_send_code(body: MtProtoSendCodeRequest):
         raise HTTPException(status_code=429, detail=str(e)) from e
     except Exception:
         logger.exception("mtproto_send_code")
-        raise HTTPException(status_code=500, detail="SendCode failed (see server logs).") from None
+        raise HTTPException(
+            status_code=500, detail="SendCode failed (see server logs)."
+        ) from None
 
     return MtProtoSendCodeResponse(
         ok=True,
@@ -232,7 +243,10 @@ async def mtproto_sign_in(body: MtProtoSignInRequest):
 
     h = body.phone_code_hash.strip()
     if len(h) < 8:
-        raise HTTPException(status_code=400, detail="Missing or invalid phone_code_hash — run send-code again.")
+        raise HTTPException(
+            status_code=400,
+            detail="Missing or invalid phone_code_hash — run send-code again.",
+        )
 
     try:
         await authenticate_mtproto_code(
@@ -263,7 +277,10 @@ async def mtproto_sign_in(body: MtProtoSignInRequest):
         raise HTTPException(status_code=400, detail=str(e) or type(e).__name__) from e
 
     if not await snapshot_disk_session_to_database(cfg):
-        logger.error("mtproto session DB snapshot failed club=%s (after OTP sign-in)", cfg.club_key)
+        logger.error(
+            "mtproto session DB snapshot failed club=%s (after OTP sign-in)",
+            cfg.club_key,
+        )
         raise HTTPException(
             status_code=500,
             detail=(
@@ -288,10 +305,14 @@ async def mtproto_cloud_password(body: MtProtoPasswordRequest):
         await authenticate_mtproto_password(cfg, password=pwd)
     except Exception as e:
         logger.warning("MTProto cloud password failure %s", type(e).__name__)
-        raise HTTPException(status_code=400, detail=str(e) or "Cloud Password not accepted.") from e
+        raise HTTPException(
+            status_code=400, detail=str(e) or "Cloud Password not accepted."
+        ) from e
 
     if not await snapshot_disk_session_to_database(cfg):
-        logger.error("mtproto session DB snapshot failed club=%s (after 2FA)", cfg.club_key)
+        logger.error(
+            "mtproto session DB snapshot failed club=%s (after 2FA)", cfg.club_key
+        )
         raise HTTPException(
             status_code=500,
             detail=(

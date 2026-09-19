@@ -42,7 +42,6 @@ import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger("dm_readd_failed_invite")
 
@@ -399,7 +398,9 @@ async def _process_target_apply(
     player_map: dict[int, tuple[int | None, str | None, str | None]],
     dialog_cache: dict[str, list[tuple[int, str]]],
 ) -> _ProcessOutcome:
-    from bot.services.player_support_dm_messages import PLAYER_MIGRATION_UPGRADE_INVITE_MESSAGE
+    from bot.services.player_support_dm_messages import (
+        PLAYER_MIGRATION_UPGRADE_INVITE_MESSAGE,
+    )
     from bot.services.support_group_chats import (
         fetch_invite_link_for_chat,
         fetch_support_group_chat_row_for_chat,
@@ -583,7 +584,9 @@ async def _process_target_apply(
                 )
             )
 
-        resolved_username = await _resolve_username(client, int(player_id), player_username)
+        resolved_username = await _resolve_username(
+            client, int(player_id), player_username
+        )
         dm_body = PLAYER_MIGRATION_UPGRADE_INVITE_MESSAGE.format(
             invite_link=invite_link.strip()
         )
@@ -599,7 +602,8 @@ async def _process_target_apply(
         update_support_group_chat_row(
             row.id,
             invite_link=invite_link,
-            player_dm_status="readd_failed_invite_dm" + ("_failed" if not dm_ok else ""),
+            player_dm_status="readd_failed_invite_dm"
+            + ("_failed" if not dm_ok else ""),
             last_error_message=f"player_dm:{dm_err}" if dm_err else "",
         )
 
@@ -799,7 +803,9 @@ def _print_human(
     print(f"Failed-invite CSV: {failed_csv_path} ({summary.failed_csv_rows} rows)")
 
     if failed_rows:
-        print(f"\n--- Could not add ({min(15, len(failed_rows))} of {len(failed_rows)}) ---")
+        print(
+            f"\n--- Could not add ({min(15, len(failed_rows))} of {len(failed_rows)}) ---"
+        )
         for row in failed_rows[:15]:
             user = row.player_username or row.player_telegram_user_id or "?"
             link = (row.invite_link or "")[:50]
@@ -879,7 +885,9 @@ def main() -> None:
         help="Pause between groups per club session (default: 2).",
     )
     parser.add_argument("--json", action="store_true", help="JSON summary to stdout.")
-    parser.add_argument("--quiet", action="store_true", help="Only warnings/errors on stderr.")
+    parser.add_argument(
+        "--quiet", action="store_true", help="Only warnings/errors on stderr."
+    )
     args = parser.parse_args()
 
     if not args.json:

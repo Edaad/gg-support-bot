@@ -121,7 +121,9 @@ def _player_labels(user) -> tuple[str | None, str | None]:
     return username, display
 
 
-async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[str, Any]]]:
+async def _scan(
+    club_key: str, *, apply: bool
+) -> tuple[ScanSummary, list[dict[str, Any]]]:
     from club_gc_settings import CLUB_GC_CONFIG
     from bot.services.mtproto_group_create import (
         get_mtproto_lock,
@@ -300,7 +302,11 @@ async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[s
                             skipped_conflict += 1
                         elif bind_status == "error":
                             errors += 1
-                        logger.info("  Bind result: %s%s", bind_status, f" row_id={bind_row_id}" if bind_row_id else "")
+                        logger.info(
+                            "  Bind result: %s%s",
+                            bind_status,
+                            f" row_id={bind_row_id}" if bind_row_id else "",
+                        )
                     else:
                         bind_status = "would_bind"
                         logger.info("  Would bind player_id=%s (dry-run)", pid)
@@ -401,7 +407,9 @@ async def _scan(club_key: str, *, apply: bool) -> tuple[ScanSummary, list[dict[s
 def _print_human(summary: ScanSummary, rows: list[dict[str, Any]]) -> None:
     s = summary
     mode = "APPLY" if s.apply_mode else "DRY-RUN"
-    print(f"GC player binding backfill ({mode}) — {s.club_display_name} [{s.mtproto_club_key}]")
+    print(
+        f"GC player binding backfill ({mode}) — {s.club_display_name} [{s.mtproto_club_key}]"
+    )
     print(
         f"Groups scanned: {s.group_dialogs} | sole player: {s.sole_player} | "
         f"ambiguous: {s.ambiguous} | no eligible player: {s.no_player}"

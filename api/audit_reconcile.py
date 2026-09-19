@@ -265,9 +265,9 @@ def _dedupe_ledger_events(events: list[LedgerEvent]) -> list[LedgerEvent]:
             order.append(eid)
             continue
         existing = by_external[eid]
-        home = _home_club_slug_from_detail(existing.detail) or _home_club_slug_from_detail(
-            event.detail
-        )
+        home = _home_club_slug_from_detail(
+            existing.detail
+        ) or _home_club_slug_from_detail(event.detail)
         if home and (existing.club_slug or "").strip().lower() != home:
             if (event.club_slug or "").strip().lower() == home:
                 by_external[eid] = event
@@ -292,9 +292,7 @@ def _ledger_events_for_club(
     )
     events.extend(
         _stamp_ledger_events(
-            fetch_early_rakeback_events(
-                session, club_slug=slug, audit_date=audit_date
-            ),
+            fetch_early_rakeback_events(session, club_slug=slug, audit_date=audit_date),
             club_slug=slug,
         )
     )
@@ -317,16 +315,16 @@ def _ledger_events_for_club(
         .first()
     )
     if snapshot is None:
-        warnings.append("No early rakeback snapshot for this club/date; early_rakeback = 0")
+        warnings.append(
+            "No early rakeback snapshot for this club/date; early_rakeback = 0"
+        )
 
     if is_monday_audit_date(slug, audit_date):
         try:
             settlement_events, settlement_warnings = fetch_netted_settlement_events(
                 session, club_slug=slug, audit_date=audit_date
             )
-            events.extend(
-                _stamp_ledger_events(settlement_events, club_slug=slug)
-            )
+            events.extend(_stamp_ledger_events(settlement_events, club_slug=slug))
             warnings.extend(settlement_warnings)
         except SettlementFetchError as exc:
             return events, str(exc)
@@ -386,14 +384,10 @@ def _ledger_events_for_clubs(
 
         if is_monday_audit_date(slug, audit_date):
             try:
-                settlement_events, settlement_warnings = (
-                    fetch_netted_settlement_events(
-                        session, club_slug=slug, audit_date=audit_date
-                    )
+                settlement_events, settlement_warnings = fetch_netted_settlement_events(
+                    session, club_slug=slug, audit_date=audit_date
                 )
-                events.extend(
-                    _stamp_ledger_events(settlement_events, club_slug=slug)
-                )
+                events.extend(_stamp_ledger_events(settlement_events, club_slug=slug))
                 warnings.extend(settlement_warnings)
             except SettlementFetchError as exc:
                 return events, str(exc)
@@ -438,9 +432,7 @@ def _early_rb_nicknames_for_club_date(
     if snapshot is None:
         return {}
     rows = (
-        session.query(EarlyRakebackLine)
-        .filter_by(snapshot_id=int(snapshot.id))
-        .all()
+        session.query(EarlyRakebackLine).filter_by(snapshot_id=int(snapshot.id)).all()
     )
     nicknames: dict[str, str] = {}
     for line in rows:
@@ -517,9 +509,7 @@ def _nicknames_for_reconcile(
                 session, club_slug=slug, audit_date=audit_date
             )
         )
-    merged.update(
-        _player_details_nicknames(session, club_id=club_id, gg_ids=gg_ids)
-    )
+    merged.update(_player_details_nicknames(session, club_id=club_id, gg_ids=gg_ids))
 
     result: dict[str, str | None] = {}
     for gg_id in gg_ids:
@@ -684,7 +674,9 @@ def _ledger_line_from_dict(raw: dict[str, Any]) -> LedgerLine:
         occurred_at = datetime.fromisoformat(str(occurred_raw).replace("Z", "+00:00"))
     club_slug_raw = raw.get("club_slug")
     club_slug = (
-        str(club_slug_raw).strip().lower() or None if club_slug_raw is not None else None
+        str(club_slug_raw).strip().lower() or None
+        if club_slug_raw is not None
+        else None
     )
     return LedgerLine(
         gg_player_id=raw.get("gg_player_id") or None,
@@ -736,7 +728,9 @@ def report_from_json(raw: str, *, run_id: int | None = None) -> AuditReconcileRe
             net_trade_record=_decimal(p["net_trade_record"]),
             net_ledger=_decimal(p["net_ledger"]),
             delta=_decimal(p["delta"]),
-            ledger_breakdown=_ledger_breakdown_from_dict(p.get("ledger_breakdown") or {}),
+            ledger_breakdown=_ledger_breakdown_from_dict(
+                p.get("ledger_breakdown") or {}
+            ),
             status=p["status"],
         )
         for p in data.get("players") or []
@@ -770,7 +764,10 @@ def report_from_json(raw: str, *, run_id: int | None = None) -> AuditReconcileRe
     return AuditReconcileReport(
         audit_date=date.fromisoformat(str(data["audit_date"])[:10]),
         club_slug=str(data["club_slug"]),
-        club_name=str(data.get("club_name") or CLUB_SLUG_TO_NAME.get(data["club_slug"], data["club_slug"])),
+        club_name=str(
+            data.get("club_name")
+            or CLUB_SLUG_TO_NAME.get(data["club_slug"], data["club_slug"])
+        ),
         status=data["status"],
         run_id=run_id,
         trade_upload_id=data.get("trade_upload_id"),

@@ -24,7 +24,9 @@ class CheckCashoutEligibilityHoursTests(unittest.TestCase):
         with patch.object(club_svc, "get_cooldown_settings", return_value=_settings()):
             with patch.object(club_svc, "check_and_consume_bypass", return_value=False):
                 with patch.object(club_svc, "_is_within_hours", return_value=False):
-                    with patch.object(club_svc, "_hours_range_str", return_value="8 AM - 11 PM"):
+                    with patch.object(
+                        club_svc, "_hours_range_str", return_value="8 AM - 11 PM"
+                    ):
                         ok, msg = club_svc.check_cashout_eligibility(1, -100)
         self.assertTrue(ok)
         self.assertIsNotNone(msg)

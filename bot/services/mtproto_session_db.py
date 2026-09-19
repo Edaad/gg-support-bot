@@ -35,9 +35,9 @@ def resolve_repo_path(rel_or_abs: str) -> Path:
 def clear_disk_login_session(cfg: ClubGcConfig) -> None:
     """Delete on-disk Telethon login scratch files (Dashboard OTP handshake only).
 
-    After ``AuthKeyDuplicatedError`` or a revoked Postgres row, the web dyno can still
-  have a stale ``.session`` SQLite file. Reusing it for ``SendCode`` can return HTTP 200
-    without delivering a code to the account's Telegram app.
+      After ``AuthKeyDuplicatedError`` or a revoked Postgres row, the web dyno can still
+    have a stale ``.session`` SQLite file. Reusing it for ``SendCode`` can return HTTP 200
+      without delivering a code to the account's Telegram app.
     """
 
     resolved = resolve_repo_path(cfg.mtproto_session)
@@ -182,14 +182,12 @@ async def snapshot_disk_session_to_database(cfg: ClubGcConfig) -> bool:
     await client.connect()
     try:
         if not await client.is_user_authorized():
-
             return False
         blob = export_authorization_string(client)
     finally:
         await client.disconnect()
 
     if not blob:
-
         return False
 
     await asyncio.to_thread(persist_session_string_for_club, cfg.club_key, blob)

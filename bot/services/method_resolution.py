@@ -8,8 +8,6 @@ from typing import Optional
 from bot.services.club import (
     get_method_by_id,
     get_sub_option_by_id,
-    get_tier_for_amount,
-    pick_variant,
 )
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from sqlalchemy import text
 
@@ -24,7 +24,9 @@ def slug_for_club_id(club_id: int) -> Optional[str]:
         return _slug_for_club_id_session(session, club_id)
 
 
-def set_gg_nickname(*, club_id: int, gg_player_id: str, nickname: Optional[str]) -> None:
+def set_gg_nickname(
+    *, club_id: int, gg_player_id: str, nickname: Optional[str]
+) -> None:
     stmt = text(
         """
         UPDATE player_details

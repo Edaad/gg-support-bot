@@ -114,7 +114,9 @@ def _load_affected(
 
     init_engine()
     dump_path = (backup_path or find_earliest_upgrade_backup(_REPO_ROOT)).resolve()
-    mtproto_club_ids = frozenset(int(cfg.link_club_id) for cfg in CLUB_GC_CONFIG.values())
+    mtproto_club_ids = frozenset(
+        int(cfg.link_club_id) for cfg in CLUB_GC_CONFIG.values()
+    )
     return resolve_affected_from_backup(
         dump_path,
         mtproto_club_ids=mtproto_club_ids,
@@ -192,11 +194,15 @@ def crossref_gap(
         active_path = active_csv_by_club[club_key]
         active_rows = _load_csv_rows(active_path)
 
-        club_deposit_rows = [r for r in deposit_rows if (r.get("club_key") or "").strip() == club_key]
-        club_active_rows = [r for r in active_rows if (r.get("club_key") or "").strip() == club_key]
-        excluded = _chat_id_variants_from_rows(club_deposit_rows) | _chat_id_variants_from_rows(
-            club_active_rows
-        )
+        club_deposit_rows = [
+            r for r in deposit_rows if (r.get("club_key") or "").strip() == club_key
+        ]
+        club_active_rows = [
+            r for r in active_rows if (r.get("club_key") or "").strip() == club_key
+        ]
+        excluded = _chat_id_variants_from_rows(
+            club_deposit_rows
+        ) | _chat_id_variants_from_rows(club_active_rows)
 
         migrated_count = sum(
             1

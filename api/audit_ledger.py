@@ -159,11 +159,7 @@ class LedgerBreakdown:
     @property
     def net(self) -> Decimal:
         return (
-            self.deposits
-            + self.early_rb
-            + self.bonuses
-            + self.monday
-            + self.cashouts
+            self.deposits + self.early_rb + self.bonuses + self.monday + self.cashouts
         )
 
 
@@ -429,9 +425,7 @@ def _fetch_manual_deposit_events(
             str(data.get("payer_name") or data.get("from_label") or "").strip() or None
         )
         tag_field = _MANUAL_DEPOSIT_TAG_FIELDS.get(source)
-        tag = (
-            str(data.get(tag_field) or "").strip() or None if tag_field else None
-        )
+        tag = str(data.get(tag_field) or "").strip() or None if tag_field else None
         if source == "deposit_zelle" and tag:
             tag = canonicalize_zelle_recipient(tag) or tag
         memo = str(data.get("memo") or "").strip() or None

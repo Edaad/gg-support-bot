@@ -31,7 +31,9 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
 
         deposit_module.get_deposit_method_names = MagicMock(return_value=["Venmo"])
 
-        with patch.object(deposit_module, "_should_skip_deposit_reminder", return_value=False):
+        with patch.object(
+            deposit_module, "_should_skip_deposit_reminder", return_value=False
+        ):
             with patch(
                 "bot.services.group_activity.deposit_sent_watch_armed",
                 return_value=False,
@@ -81,7 +83,9 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
                 "get_deposit_method_names",
                 return_value=["Venmo", "PayPal", "Zelle"],
             ),
-            patch.object(deposit_module, "_should_skip_deposit_reminder", return_value=False),
+            patch.object(
+                deposit_module, "_should_skip_deposit_reminder", return_value=False
+            ),
             patch(
                 "bot.services.group_activity.deposit_sent_watch_armed",
                 return_value=False,
@@ -135,7 +139,9 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
                     "Venmo",
                 ],
             ),
-            patch.object(deposit_module, "_should_skip_deposit_reminder", return_value=False),
+            patch.object(
+                deposit_module, "_should_skip_deposit_reminder", return_value=False
+            ),
             patch(
                 "bot.services.group_activity.deposit_sent_watch_armed",
                 return_value=False,
@@ -191,7 +197,9 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(deposit_module, "is_round_table_club", return_value=True),
             patch.object(deposit_module, "is_creator_club", return_value=False),
-            patch.object(deposit_module, "_should_skip_deposit_reminder", return_value=False),
+            patch.object(
+                deposit_module, "_should_skip_deposit_reminder", return_value=False
+            ),
             patch(
                 "bot.services.group_activity.deposit_sent_watch_armed",
                 return_value=False,
@@ -230,7 +238,9 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
         context.job = job
         context.bot = bot
 
-        with patch.object(deposit_module, "_should_skip_deposit_reminder", return_value=True):
+        with patch.object(
+            deposit_module, "_should_skip_deposit_reminder", return_value=True
+        ):
             with patch(
                 "bot.services.group_activity.deposit_sent_watch_armed",
                 return_value=False,
@@ -268,9 +278,13 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
         context.bot = bot
 
         with (
-            patch.object(deposit_module, "_chat_has_payment_bound_since", return_value=False),
             patch.object(
-                deposit_module, "_chat_has_stripe_checkout_completed_since", return_value=True
+                deposit_module, "_chat_has_payment_bound_since", return_value=False
+            ),
+            patch.object(
+                deposit_module,
+                "_chat_has_stripe_checkout_completed_since",
+                return_value=True,
             ),
             patch(
                 "bot.services.group_activity.deposit_sent_watch_armed",
@@ -305,11 +319,17 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
         context.bot = bot
 
         with (
-            patch.object(deposit_module, "_chat_has_payment_bound_since", return_value=False),
             patch.object(
-                deposit_module, "_chat_has_stripe_checkout_completed_since", return_value=False
+                deposit_module, "_chat_has_payment_bound_since", return_value=False
             ),
-            patch.object(deposit_module, "_chat_has_deposit_activity_since", return_value=True),
+            patch.object(
+                deposit_module,
+                "_chat_has_stripe_checkout_completed_since",
+                return_value=False,
+            ),
+            patch.object(
+                deposit_module, "_chat_has_deposit_activity_since", return_value=True
+            ),
             patch(
                 "bot.services.group_activity.deposit_sent_watch_armed",
                 return_value=False,
@@ -344,7 +364,9 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
         context.bot = bot
         deposit_module.get_deposit_method_names = MagicMock(return_value=[])
 
-        with patch.object(deposit_module, "_should_skip_deposit_reminder", return_value=False):
+        with patch.object(
+            deposit_module, "_should_skip_deposit_reminder", return_value=False
+        ):
             with patch(
                 "bot.services.group_activity.deposit_sent_watch_armed",
                 return_value=True,
@@ -455,9 +477,7 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
                 context
             )
 
-        clear_chase.assert_awaited_once_with(
-            bot, chat_id, job_queue=context.job_queue
-        )
+        clear_chase.assert_awaited_once_with(bot, chat_id, job_queue=context.job_queue)
 
     async def test_group_activity_cancels_on_bot_payment_received_message(self):
         chat_id = -100200
@@ -493,9 +513,13 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.object(deposit_module, "get_club_for_chat", return_value=2),
-            patch.object(deposit_module, "_can_cancel_reminder_as_staff", return_value=True),
+            patch.object(
+                deposit_module, "_can_cancel_reminder_as_staff", return_value=True
+            ),
         ):
-            await deposit_module.cancel_deposit_reminder_on_group_activity(update, context)
+            await deposit_module.cancel_deposit_reminder_on_group_activity(
+                update, context
+            )
 
         pending_job.schedule_removal.assert_called_once()
         self.assertNotIn(chat_id, deposit_module._PENDING_DEPOSIT_REMINDERS)
@@ -514,9 +538,13 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.object(deposit_module, "get_club_for_chat", return_value=2),
-            patch.object(deposit_module, "_can_cancel_reminder_as_staff", return_value=False),
+            patch.object(
+                deposit_module, "_can_cancel_reminder_as_staff", return_value=False
+            ),
         ):
-            await deposit_module.cancel_deposit_reminder_on_group_activity(update, context)
+            await deposit_module.cancel_deposit_reminder_on_group_activity(
+                update, context
+            )
 
         pending_job.schedule_removal.assert_not_called()
         self.assertIn(chat_id, deposit_module._PENDING_DEPOSIT_REMINDERS)
@@ -599,7 +627,9 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.object(mtproto_add_module, "get_club_for_chat", return_value=2),
-            patch.object(mtproto_add_module, "_delete_add_command_message", new=AsyncMock()),
+            patch.object(
+                mtproto_add_module, "_delete_add_command_message", new=AsyncMock()
+            ),
             patch.object(mtproto_add_module, "record_activity_for_chat"),
             patch.object(mtproto_add_module, "invalidate_pending_one_time_bypasses"),
             patch.object(
@@ -708,7 +738,9 @@ class DepositTimeoutSkipTests(unittest.IsolatedAsyncioTestCase):
         context.bot = bot
 
         with (
-            patch.object(deposit_module, "_should_skip_deposit_reminder", return_value=False),
+            patch.object(
+                deposit_module, "_should_skip_deposit_reminder", return_value=False
+            ),
             patch(
                 "bot.services.group_activity.deposit_sent_watch_armed",
                 return_value=False,

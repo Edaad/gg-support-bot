@@ -27,10 +27,27 @@ from db.models import CustomCommand
 ALLOWED = set(ADMIN_USER_IDS)
 CMD_NAME_RE = re.compile(r"^[A-Za-z0-9_]{1,32}$")
 RESERVED_CMDS = {
-    "start", "help", "whoami", "set", "cancel", "delete",
-    "mycmds", "deposit", "cashout", "list", "botwelcome",
-    "gc", "add", "cash", "refresh", "unbindmethod", "whosnext",
-    "stripe", "stageinactive", "unstageinactive", "stagedinactive",
+    "start",
+    "help",
+    "whoami",
+    "set",
+    "cancel",
+    "delete",
+    "mycmds",
+    "deposit",
+    "cashout",
+    "list",
+    "botwelcome",
+    "gc",
+    "add",
+    "cash",
+    "refresh",
+    "unbindmethod",
+    "whosnext",
+    "stripe",
+    "stageinactive",
+    "unstageinactive",
+    "stagedinactive",
     "sendinactive",
     "bonus",
     "earlyrb",
@@ -57,6 +74,7 @@ def _can_use_non_customer_custom_command(uid: int, club_id: int) -> bool:
 
 
 # ── /set conversation (primary club owner only; changes apply to whole club) ──
+
 
 async def set_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_user:
@@ -111,7 +129,9 @@ async def set_get_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     club_id = get_club_id_for_telegram_user(uid)
     if club_id is None:
-        await update.message.reply_text("You need a club set up first. Ask the admin to create one.")
+        await update.message.reply_text(
+            "You need a club set up first. Ask the admin to create one."
+        )
         context.user_data.pop("pending_cmd_name", None)
         return ConversationHandler.END
 
@@ -125,8 +145,11 @@ async def set_get_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if prev_group == media_group_id:
                 # Same album — append this file ID to the DB record
                 with get_db() as session:
-                    existing = session.query(CustomCommand).filter_by(
-                        club_id=club_id, command_name=name).first()
+                    existing = (
+                        session.query(CustomCommand)
+                        .filter_by(club_id=club_id, command_name=name)
+                        .first()
+                    )
                     if existing and existing.response_file_id:
                         existing.response_file_id += "," + photo.file_id
                         if caption:
@@ -136,37 +159,51 @@ async def set_get_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # First photo of a new album
             context.user_data["set_media_group_id"] = media_group_id
             with get_db() as session:
-                existing = session.query(CustomCommand).filter_by(
-                    club_id=club_id, command_name=name).first()
+                existing = (
+                    session.query(CustomCommand)
+                    .filter_by(club_id=club_id, command_name=name)
+                    .first()
+                )
                 if existing:
                     existing.response_type = "photo"
                     existing.response_file_id = photo.file_id
                     existing.response_caption = caption
                     existing.response_text = None
                 else:
-                    session.add(CustomCommand(
-                        club_id=club_id, command_name=name,
-                        response_type="photo", response_file_id=photo.file_id,
-                        response_caption=caption,
-                    ))
+                    session.add(
+                        CustomCommand(
+                            club_id=club_id,
+                            command_name=name,
+                            response_type="photo",
+                            response_file_id=photo.file_id,
+                            response_caption=caption,
+                        )
+                    )
             return SET_MESSAGE
 
         # Single photo (not part of an album)
         context.user_data.pop("set_media_group_id", None)
         with get_db() as session:
-            existing = session.query(CustomCommand).filter_by(
-                club_id=club_id, command_name=name).first()
+            existing = (
+                session.query(CustomCommand)
+                .filter_by(club_id=club_id, command_name=name)
+                .first()
+            )
             if existing:
                 existing.response_type = "photo"
                 existing.response_file_id = photo.file_id
                 existing.response_caption = caption
                 existing.response_text = None
             else:
-                session.add(CustomCommand(
-                    club_id=club_id, command_name=name,
-                    response_type="photo", response_file_id=photo.file_id,
-                    response_caption=caption,
-                ))
+                session.add(
+                    CustomCommand(
+                        club_id=club_id,
+                        command_name=name,
+                        response_type="photo",
+                        response_file_id=photo.file_id,
+                        response_caption=caption,
+                    )
+                )
         await update.message.reply_text(f"Saved /{name} (photo command).")
         context.user_data.pop("pending_cmd_name", None)
         return ConversationHandler.END
@@ -175,23 +212,31 @@ async def set_get_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # If we were collecting an album, this text ends the album flow
         if context.user_data.pop("set_media_group_id", None):
             await update.message.reply_text(
-                f"Saved /{name} (photo album). Send /cancel to stop, or send new content to replace.")
+                f"Saved /{name} (photo album). Send /cancel to stop, or send new content to replace."
+            )
             context.user_data.pop("pending_cmd_name", None)
             return ConversationHandler.END
 
         with get_db() as session:
-            existing = session.query(CustomCommand).filter_by(
-                club_id=club_id, command_name=name).first()
+            existing = (
+                session.query(CustomCommand)
+                .filter_by(club_id=club_id, command_name=name)
+                .first()
+            )
             if existing:
                 existing.response_type = "text"
                 existing.response_text = update.message.text
                 existing.response_file_id = None
                 existing.response_caption = None
             else:
-                session.add(CustomCommand(
-                    club_id=club_id, command_name=name,
-                    response_type="text", response_text=update.message.text,
-                ))
+                session.add(
+                    CustomCommand(
+                        club_id=club_id,
+                        command_name=name,
+                        response_type="text",
+                        response_text=update.message.text,
+                    )
+                )
         await update.message.reply_text(f"Saved /{name}.")
         context.user_data.pop("pending_cmd_name", None)
         return ConversationHandler.END
@@ -225,6 +270,7 @@ def get_set_handler() -> ConversationHandler:
 
 # ── /mycmds ───────────────────────────────────────────────────────────────────
 
+
 async def mycmds_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_user:
         return
@@ -238,7 +284,9 @@ async def mycmds_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with get_db() as session:
         cmds = session.query(CustomCommand).filter_by(club_id=club_id).all()
         if not cmds:
-            await update.message.reply_text("No custom commands yet. Use /set to create one.")
+            await update.message.reply_text(
+                "No custom commands yet. Use /set to create one."
+            )
             return
         lines = ["Your custom commands:"]
         for c in cmds:
@@ -251,6 +299,7 @@ async def mycmds_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ── /delete ───────────────────────────────────────────────────────────────────
+
 
 async def delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.effective_user:
@@ -272,7 +321,11 @@ async def delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You don't have a club set up yet.")
         return
     with get_db() as session:
-        cmd = session.query(CustomCommand).filter_by(club_id=club_id, command_name=name).first()
+        cmd = (
+            session.query(CustomCommand)
+            .filter_by(club_id=club_id, command_name=name)
+            .first()
+        )
         if cmd:
             session.delete(cmd)
             await update.message.reply_text(f"Deleted /{name}.")
@@ -299,17 +352,30 @@ async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if chat.type in ("group", "supergroup"):
         from bot.services.club import get_club_for_chat
+
         club_id = get_club_for_chat(chat.id)
     else:
         club_id = get_club_id_for_telegram_user(uid)
 
-    logger.info("command_router: cmd=%s uid=%s chat=%s chat_type=%s club_id=%s", cmd, uid, chat.id, chat.type, club_id)
+    logger.info(
+        "command_router: cmd=%s uid=%s chat=%s chat_type=%s club_id=%s",
+        cmd,
+        uid,
+        chat.id,
+        chat.type,
+        club_id,
+    )
 
     if club_id is None:
         return
 
     data = get_custom_command(club_id, cmd)
-    logger.info("command_router: get_custom_command(%s, %s) -> %s", club_id, cmd, "found" if data else "None")
+    logger.info(
+        "command_router: get_custom_command(%s, %s) -> %s",
+        club_id,
+        cmd,
+        "found" if data else "None",
+    )
     if not data:
         if cmd.isdigit():
             from bot.handlers.add import try_add_shorthand_command
@@ -320,9 +386,9 @@ async def command_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Unknown command. Use /mycmds or /set.")
         return
 
-    if not data.get("customer_visible", False) and not _can_use_non_customer_custom_command(
-        uid, club_id
-    ):
+    if not data.get(
+        "customer_visible", False
+    ) and not _can_use_non_customer_custom_command(uid, club_id):
         return
 
     await send_response_messages(update.message, data)

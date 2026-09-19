@@ -194,7 +194,9 @@ def process_rows(
                     pending=False,
                 )
             )
-        outcomes.append(RowOutcome(row.line_no, "ok", "insert" if apply else "would insert", row))
+        outcomes.append(
+            RowOutcome(row.line_no, "ok", "insert" if apply else "would insert", row)
+        )
     return outcomes
 
 
@@ -235,7 +237,9 @@ def main() -> int:
         action="store_true",
         help="Write to the database (otherwise dry run only)",
     )
-    parser.add_argument("--limit", type=int, default=None, help="Max data rows to process")
+    parser.add_argument(
+        "--limit", type=int, default=None, help="Max data rows to process"
+    )
     parser.add_argument(
         "--strict",
         action="store_true",

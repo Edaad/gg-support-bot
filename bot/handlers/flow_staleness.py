@@ -25,12 +25,10 @@ _DEFAULT_MAX_AGE_SECONDS = 120
 _NON_AMOUNT_TEXT_RE = re.compile(r"[a-zA-Z]")
 
 DEPOSIT_AMOUNT_PROMPT = (
-    "How much would you like to deposit?\n\n"
-    "Enter an amount, e.g. 200 or $200."
+    "How much would you like to deposit?\n\nEnter an amount, e.g. 200 or $200."
 )
 DEPOSIT_AMOUNT_INVALID_REPLY = (
-    "That doesn't look like a valid amount. "
-    "Enter numbers only, e.g. 200 or $200."
+    "That doesn't look like a valid amount. Enter numbers only, e.g. 200 or $200."
 )
 
 
@@ -95,7 +93,9 @@ def _flow_message_ids_key(flow: FlowName) -> str:
     return f"{flow}_flow_message_ids"
 
 
-def reset_flow_callback_messages(context: ContextTypes.DEFAULT_TYPE, *, flow: FlowName) -> None:
+def reset_flow_callback_messages(
+    context: ContextTypes.DEFAULT_TYPE, *, flow: FlowName
+) -> None:
     context.chat_data.pop(_flow_message_ids_key(flow), None)
 
 
@@ -148,9 +148,9 @@ def is_flow_callback_stale(
 ) -> bool:
     """True when an in-flow inline button should be rejected.
 
-  Active deposit/cashout sessions trust conversation_timeout instead of message
-  age, but only for callback messages registered during the current flow.
-  Orphan taps on older pickers are rejected even when a new session is active.
+    Active deposit/cashout sessions trust conversation_timeout instead of message
+    age, but only for callback messages registered during the current flow.
+    Orphan taps on older pickers are rejected even when a new session is active.
     """
     if update.callback_query is None:
         return is_update_too_old(update, now=now)

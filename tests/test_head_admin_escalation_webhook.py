@@ -85,9 +85,7 @@ class HeadAdminEscalationWebhookTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"ok": True})
-        notify.assert_awaited_once_with(
-            text, source="head_admin_escalation_webhook"
-        )
+        notify.assert_awaited_once_with(text, source="head_admin_escalation_webhook")
 
     def test_502_when_slack_fails(self) -> None:
         with patch(

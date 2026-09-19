@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import unittest
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from telegram import Chat, User
@@ -194,7 +193,9 @@ class TestCrossFlowBlocking(unittest.IsolatedAsyncioTestCase):
         update, context = _private_command_update(command_text="/report")
         context.user_data = {}
 
-        with patch.object(ir_mod, "_begin_dm_report_flow", new_callable=AsyncMock) as begin:
+        with patch.object(
+            ir_mod, "_begin_dm_report_flow", new_callable=AsyncMock
+        ) as begin:
             begin.return_value = ir_mod.IR_NOTIFY
             state = await report_entry(update, context)
 

@@ -171,7 +171,9 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
             command_admin_user_id=int(
                 os.getenv("GC_ADMIN_USER_ROUND_TABLE", "6713100304")
             ),
-            mtproto_session=_env_str("GC_SESSION_ROUND_TABLE", "sessions/round_table.session"),
+            mtproto_session=_env_str(
+                "GC_SESSION_ROUND_TABLE", "sessions/round_table.session"
+            ),
             mtproto_phone_number=_env_optional("MT_PROTO_PHONE_ROUND_TABLE"),
             group_title=_env_str("GC_GROUP_TITLE_ROUND_TABLE", "RT / New Player"),
             group_photo_path=_nullable_path(
@@ -183,7 +185,9 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
                 "GC_INITIAL_MSG_ROUND_TABLE",
                 "Group created. Invite link: {invite_link}",
             ),
-            link_club_id=_link_club_id_for_gc("GC_LINK_CLUB_ID_ROUND_TABLE", default_dashboard_id=2),
+            link_club_id=_link_club_id_for_gc(
+                "GC_LINK_CLUB_ID_ROUND_TABLE", default_dashboard_id=2
+            ),
             referral_support_account=_env_str(
                 "REFERRAL_SUPPORT_ACCOUNT_ROUND_TABLE", "@RoundTableSupport2"
             ),
@@ -194,7 +198,9 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
             command_admin_user_id=int(
                 os.getenv("GC_ADMIN_USER_CREATOR_CLUB", "8318575265")
             ),
-            mtproto_session=_env_str("GC_SESSION_CREATOR_CLUB", "sessions/creator_club.session"),
+            mtproto_session=_env_str(
+                "GC_SESSION_CREATOR_CLUB", "sessions/creator_club.session"
+            ),
             mtproto_phone_number=_env_optional("MT_PROTO_PHONE_CREATOR_CLUB"),
             group_title=_env_str("GC_GROUP_TITLE_CREATOR_CLUB", "CC / New Player"),
             group_photo_path=_nullable_path(
@@ -206,7 +212,9 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
                 "GC_INITIAL_MSG_CREATOR_CLUB",
                 "Group created. Invite link: {invite_link}",
             ),
-            link_club_id=_link_club_id_for_gc("GC_LINK_CLUB_ID_CREATOR_CLUB", default_dashboard_id=3),
+            link_club_id=_link_club_id_for_gc(
+                "GC_LINK_CLUB_ID_CREATOR_CLUB", default_dashboard_id=3
+            ),
             referral_support_account=_env_str(
                 "REFERRAL_SUPPORT_ACCOUNT_CREATOR_CLUB", "@CreatorClubSupport2"
             ),
@@ -214,7 +222,9 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
         "clubgto": ClubGcConfig(
             club_key="clubgto",
             club_display_name="ClubGTO",
-            command_admin_user_id=int(os.getenv("GC_ADMIN_USER_CLUB_GTO", "7516419496")),
+            command_admin_user_id=int(
+                os.getenv("GC_ADMIN_USER_CLUB_GTO", "7516419496")
+            ),
             mtproto_session=_env_str("GC_SESSION_CLUB_GTO", "sessions/clubgto.session"),
             mtproto_phone_number=_env_optional("MT_PROTO_PHONE_CLUB_GTO"),
             group_title=_env_str("GC_GROUP_TITLE_CLUB_GTO", "GTO / New Player"),
@@ -227,7 +237,9 @@ def build_club_gc_config() -> Mapping[str, ClubGcConfig]:
                 "GC_INITIAL_MSG_CLUB_GTO",
                 "Group created. Invite link: {invite_link}",
             ),
-            link_club_id=_link_club_id_for_gc("GC_LINK_CLUB_ID_CLUB_GTO", default_dashboard_id=4),
+            link_club_id=_link_club_id_for_gc(
+                "GC_LINK_CLUB_ID_CLUB_GTO", default_dashboard_id=4
+            ),
             referral_support_account=_env_str(
                 "REFERRAL_SUPPORT_ACCOUNT_CLUB_GTO", "@ClubGTOAdmin"
             ),
@@ -283,7 +295,11 @@ def resolve_link_join_cfg(cfg: ClubGcConfig) -> ClubGcConfig | None:
 
 
 def link_join_exclude_normalized(cfg: ClubGcConfig) -> frozenset[str]:
-    return frozenset(m.lower().strip().lstrip("@") for m in cfg.link_join_exclude_markers if m.strip())
+    return frozenset(
+        m.lower().strip().lstrip("@")
+        for m in cfg.link_join_exclude_markers
+        if m.strip()
+    )
 
 
 def get_mtproto_login_profiles() -> tuple[ClubGcConfig, ...]:
@@ -547,7 +563,9 @@ def get_migration_recovery_slack_summary_interval_sec() -> int:
 
 
 def get_migration_recovery_slack_summary_check_delay_sec() -> float:
-    return max(0.0, _env_float("GC_MIGRATION_RECOVERY_SLACK_SUMMARY_CHECK_DELAY_SEC", 0.1))
+    return max(
+        0.0, _env_float("GC_MIGRATION_RECOVERY_SLACK_SUMMARY_CHECK_DELAY_SEC", 0.1)
+    )
 
 
 def is_migration_recovery_slack_summary_enabled() -> bool:

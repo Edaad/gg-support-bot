@@ -103,7 +103,9 @@ class CronPauseResumeTest(unittest.IsolatedAsyncioTestCase):
                 new_callable=AsyncMock,
                 return_value=True,
             ) as slack,
-            patch.object(cron, "fetch_with_retries", new_callable=AsyncMock) as fetch_mock,
+            patch.object(
+                cron, "fetch_with_retries", new_callable=AsyncMock
+            ) as fetch_mock,
             patch(
                 "bot.services.mtproto_dm_gc_listener.set_planned_mtproto_pause"
             ) as set_pause,
@@ -122,9 +124,7 @@ class CronPauseResumeTest(unittest.IsolatedAsyncioTestCase):
                 cron,
                 "analyze_with_retries",
                 new_callable=AsyncMock,
-                return_value=SimpleNamespace(
-                    complete=2, failed=0, timed_out=0
-                ),
+                return_value=SimpleNamespace(complete=2, failed=0, timed_out=0),
             ) as analyze_mock,
         ):
             fetch_mock.return_value = summary
@@ -173,9 +173,7 @@ class CronPauseResumeTest(unittest.IsolatedAsyncioTestCase):
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("boom"),
             ),
-            patch(
-                "bot.services.mtproto_dm_gc_listener.set_planned_mtproto_pause"
-            ),
+            patch("bot.services.mtproto_dm_gc_listener.set_planned_mtproto_pause"),
             patch("bot.services.mtproto_dm_gc_listener.stop_listener_background"),
             patch(
                 "bot.services.mtproto_dm_gc_listener.start_listener_background"

@@ -189,8 +189,7 @@ _GROUP_MONEY_FLOW_COMMANDS: dict[GroupMoneyFlow, str] = {
 def format_group_flow_block_message(*, active: GroupMoneyFlow) -> str:
     cmd = _GROUP_MONEY_FLOW_COMMANDS.get(active, "/deposit")
     return (
-        f"You already have an active {cmd} in progress. "
-        "Send /cancel to abort it first."
+        f"You already have an active {cmd} in progress. Send /cancel to abort it first."
     )
 
 
@@ -332,7 +331,9 @@ def format_active_flow_block_message(
 
 def format_active_flow_same_flow_message(flow: DmFlowName) -> str:
     cmd = _DM_FLOW_COMMANDS[flow]
-    return f"You already have an active {cmd} in progress. Send /cancel to abort it first."
+    return (
+        f"You already have an active {cmd} in progress. Send /cancel to abort it first."
+    )
 
 
 async def block_if_dm_flow_active(
@@ -470,7 +471,9 @@ async def dm_flow_cancel_priority(
         raise ApplicationHandlerStop()
 
 
-async def flow_cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def flow_cancel_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Cancel deposit/cashout in this chat, or DM staff flows only in private."""
     if not update.message:
         return

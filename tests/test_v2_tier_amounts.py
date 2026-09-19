@@ -36,10 +36,18 @@ def _tier(id_, label, min_amount=None, max_amount=None, sort_order=0, **extra):
 
 class TierAmountBandTestCase(unittest.TestCase):
     def test_adjacent_bands_do_not_overlap(self):
-        self.assertFalse(amounts_overlap(Decimal("20"), Decimal("100"), Decimal("101"), Decimal("2000")))
+        self.assertFalse(
+            amounts_overlap(
+                Decimal("20"), Decimal("100"), Decimal("101"), Decimal("2000")
+            )
+        )
 
     def test_overlapping_bands_detected(self):
-        self.assertTrue(amounts_overlap(Decimal("20"), Decimal("150"), Decimal("101"), Decimal("2000")))
+        self.assertTrue(
+            amounts_overlap(
+                Decimal("20"), Decimal("150"), Decimal("101"), Decimal("2000")
+            )
+        )
 
     def test_tier_below_method_min_rejected(self):
         method = _method(min_amount=Decimal("20"), max_amount=Decimal("2000"))
@@ -119,7 +127,9 @@ class CheckoutAmountBoundsTestCase(unittest.TestCase):
             checkout_max_amount=None,
             variants=[variant],
         )
-        method = SimpleNamespace(min_amount=Decimal("100"), max_amount=Decimal("500"), tiers=[tier])
+        method = SimpleNamespace(
+            min_amount=Decimal("100"), max_amount=Decimal("500"), tiers=[tier]
+        )
         sync_method_envelope_side_effects(method)
         self.assertEqual(tier.min_amount, Decimal("100"))
         self.assertEqual(tier.max_amount, Decimal("400"))
@@ -147,7 +157,9 @@ class CheckoutAmountBoundsTestCase(unittest.TestCase):
             checkout_max_amount=None,
             variants=[],
         )
-        method = SimpleNamespace(min_amount=Decimal("20"), max_amount=Decimal("2000"), tiers=[default, over])
+        method = SimpleNamespace(
+            min_amount=Decimal("20"), max_amount=Decimal("2000"), tiers=[default, over]
+        )
         sync_method_envelope_side_effects(method)
         self.assertEqual(default.min_amount, Decimal("20"))
         self.assertEqual(default.max_amount, Decimal("100"))
@@ -176,7 +188,9 @@ class CheckoutAmountBoundsTestCase(unittest.TestCase):
             checkout_max_amount=None,
             variants=[],
         )
-        method = SimpleNamespace(min_amount=Decimal("50"), max_amount=Decimal("2000"), tiers=[default, over])
+        method = SimpleNamespace(
+            min_amount=Decimal("50"), max_amount=Decimal("2000"), tiers=[default, over]
+        )
         sync_method_envelope_side_effects(method)
         self.assertEqual(default.min_amount, Decimal("50"))
         self.assertEqual(default.max_amount, Decimal("100"))
@@ -195,7 +209,9 @@ class CheckoutAmountBoundsTestCase(unittest.TestCase):
             checkout_max_amount=Decimal("100"),
             variants=[],
         )
-        method = SimpleNamespace(min_amount=Decimal("20"), max_amount=Decimal("500"), tiers=[default])
+        method = SimpleNamespace(
+            min_amount=Decimal("20"), max_amount=Decimal("500"), tiers=[default]
+        )
         sync_method_envelope_side_effects(method)
         self.assertEqual(default.max_amount, Decimal("100"))
         self.assertEqual(default.checkout_max_amount, Decimal("100"))
@@ -210,7 +226,9 @@ class CheckoutAmountBoundsTestCase(unittest.TestCase):
             checkout_max_amount=Decimal("2000"),
             variants=[],
         )
-        method = SimpleNamespace(min_amount=Decimal("20"), max_amount=Decimal("500"), tiers=[default])
+        method = SimpleNamespace(
+            min_amount=Decimal("20"), max_amount=Decimal("500"), tiers=[default]
+        )
         sync_method_envelope_side_effects(method)
         self.assertEqual(default.max_amount, Decimal("500"))
         self.assertEqual(default.checkout_max_amount, Decimal("500"))
@@ -230,7 +248,9 @@ class TierCheckoutSyncTestCase(unittest.TestCase):
             checkout_max_amount=None,
             variants=[variant],
         )
-        method = SimpleNamespace(min_amount=Decimal("20"), max_amount=Decimal("10000"), tiers=[tier])
+        method = SimpleNamespace(
+            min_amount=Decimal("20"), max_amount=Decimal("10000"), tiers=[tier]
+        )
         sync_tier_checkout_bounds_to_variants(
             tier,
             method,
@@ -254,7 +274,9 @@ class TierCheckoutSyncTestCase(unittest.TestCase):
             checkout_max_amount=None,
             variants=[variant],
         )
-        method = SimpleNamespace(min_amount=Decimal("20"), max_amount=Decimal("10000"), tiers=[tier])
+        method = SimpleNamespace(
+            min_amount=Decimal("20"), max_amount=Decimal("10000"), tiers=[tier]
+        )
         sync_tier_checkout_bounds_to_variants(
             tier,
             method,

@@ -4,7 +4,9 @@ from telegram.ext import ContextTypes
 from bot.runtime_config import use_payment_v2
 
 
-async def _send_command_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _send_command_list(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     if not update.message or not update.effective_user:
         return
     lines = [

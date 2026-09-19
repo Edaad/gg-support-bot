@@ -179,7 +179,9 @@ def _metadata_from_sheet(ws) -> TradeRecordMetadata:
     if not club_text:
         raise TradeRecordParseError("Trade Record metadata rows 1–3 are empty")
     if not date_text:
-        raise TradeRecordParseError("Trade Record Period metadata is missing in rows 1–3")
+        raise TradeRecordParseError(
+            "Trade Record Period metadata is missing in rows 1–3"
+        )
 
     return TradeRecordMetadata(
         club_text=club_text,
@@ -274,7 +276,9 @@ def period_bounds_utc_from_metadata(
     combined = metadata.date_text.strip()
     dates_in_text = re.findall(r"(\d{4})-(\d{2})-(\d{2})", combined)
     if dates_in_text:
-        start_d = date(int(dates_in_text[0][0]), int(dates_in_text[0][1]), int(dates_in_text[0][2]))
+        start_d = date(
+            int(dates_in_text[0][0]), int(dates_in_text[0][1]), int(dates_in_text[0][2])
+        )
         last = dates_in_text[-1]
         end_d = date(int(last[0]), int(last[1]), int(last[2]))
     else:
@@ -282,9 +286,7 @@ def period_bounds_utc_from_metadata(
         end_d = start_d
 
     start_local = datetime(start_d.year, start_d.month, start_d.day, tzinfo=tz)
-    end_local = datetime(
-        end_d.year, end_d.month, end_d.day, 23, 59, 59, tzinfo=tz
-    )
+    end_local = datetime(end_d.year, end_d.month, end_d.day, 23, 59, 59, tzinfo=tz)
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 
 
@@ -440,6 +442,7 @@ def parse_trade_record_workbook(
         if nick:
             return nick
         return _cell_nickname(ws_raw.cell(row=row, column=col).value)
+
     metadata = _metadata_from_sheet(ws)
     audit_date = extract_audit_date_from_metadata(metadata)
     club_slug = resolve_club_slug_from_metadata(metadata)

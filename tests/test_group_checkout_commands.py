@@ -45,10 +45,18 @@ class DisabledStripeCommandTestCase(unittest.IsolatedAsyncioTestCase):
         update, message = _private_update("/stripe")
         context = SimpleNamespace()
 
-        with patch("bot.handlers.commands.get_club_id_for_telegram_user", return_value=2), patch(
-            "bot.handlers.commands.get_custom_command",
-            return_value={"response_type": "text", "response_text": "static stripe link"},
-        ) as get_cmd:
+        with (
+            patch(
+                "bot.handlers.commands.get_club_id_for_telegram_user", return_value=2
+            ),
+            patch(
+                "bot.handlers.commands.get_custom_command",
+                return_value={
+                    "response_type": "text",
+                    "response_text": "static stripe link",
+                },
+            ) as get_cmd,
+        ):
             await command_router(update, context)
 
         message.reply_text.assert_not_called()

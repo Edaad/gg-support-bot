@@ -104,7 +104,9 @@ async def report_reason(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     msg_text = context.user_data.get(_REPORT_MSG_TEXT_KEY, "")
     notif_chat_id = context.user_data.get(_REPORT_CHAT_ID_KEY)
     if msg_id is None or notif_chat_id is None:
-        await update.message.reply_text("Report session expired. Reply with /report again.")
+        await update.message.reply_text(
+            "Report session expired. Reply with /report again."
+        )
         return ConversationHandler.END
 
     user = update.effective_user

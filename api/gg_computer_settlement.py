@@ -153,7 +153,7 @@ def _aggregate_week_data_entries(
 
         player_id = raw.get("playerId")
         gg_id = (str(player_id).strip() if player_id is not None else "") or ""
-        nickname = (raw.get("nickname") or "")
+        nickname = raw.get("nickname") or ""
         if not isinstance(nickname, str):
             nickname = str(nickname) if nickname is not None else ""
         nickname = nickname.strip()
@@ -229,7 +229,9 @@ def fetch_settlement_events(
             res.raise_for_status()
             body = res.json()
     except httpx.HTTPError as exc:
-        raise SettlementFetchError(f"gg-computer settlement fetch failed: {exc}") from exc
+        raise SettlementFetchError(
+            f"gg-computer settlement fetch failed: {exc}"
+        ) from exc
 
     if not isinstance(body, dict):
         raise SettlementFetchError("Invalid gg-computer /week-data-rakebacks response")
@@ -313,8 +315,6 @@ def fetch_netted_settlement_events(
             f"Missing early RB snapshots for {club_slug.strip().lower()} "
             f"on {missing_s}; Monday settlement early-RB net may be high"
         )
-    netted, net_warnings = net_settlement_events_after_early_rb(
-        events, early_by_player
-    )
+    netted, net_warnings = net_settlement_events_after_early_rb(events, early_by_player)
     warnings.extend(net_warnings)
     return netted, warnings

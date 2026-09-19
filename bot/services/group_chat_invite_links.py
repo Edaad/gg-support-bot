@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from notification.chat_id import notification_group_chat_url, telegram_chat_id_variants
 from notification.formatting import resolve_notification_linked_chat_id
 from bot.services.support_group_chats import _normalize_invite_link
+
+if TYPE_CHECKING:
+    from telethon import TelegramClient
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +44,9 @@ async def _telegram_bot_api(
 async def _invite_link_from_get_chat(chat_id: int, *, token: str) -> str | None:
     """Return primary invite link from getChat when the bot is a member."""
     try:
-        data = await _telegram_bot_api("getChat", {"chat_id": int(chat_id)}, token=token)
+        data = await _telegram_bot_api(
+            "getChat", {"chat_id": int(chat_id)}, token=token
+        )
     except RuntimeError:
         return None
     result = data.get("result") or {}
@@ -55,7 +60,10 @@ async def export_invite_link_via_bot_api(chat_id: int) -> tuple[str | None, str 
         logger.warning("group_chat_invite: %s not set", SUPPORT_BOT_TOKEN_ENV)
         return None, "no_bot_token"
 
-    variants = sorted(telegram_chat_id_variants(int(chat_id)), key=lambda x: (0 if str(x).startswith("-100") else 1, x))
+    variants = sorted(
+        telegram_chat_id_variants(int(chat_id)),
+        key=lambda x: (0 if str(x).startswith("-100") else 1, x),
+    )
     last_reason = "export_failed"
     for cid in variants:
         cached = await _invite_link_from_get_chat(int(cid), token=token)

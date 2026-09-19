@@ -69,7 +69,9 @@ async def _run(club_key: str) -> None:
     if await snapshot_disk_session_to_database(cfg):
         print("Session saved to database (StringSession).")
     else:
-        print("Session on disk only; enable GC_MTPROTO_DB_SESSIONS or sync from dashboard.")
+        print(
+            "Session on disk only; enable GC_MTPROTO_DB_SESSIONS or sync from dashboard."
+        )
 
 
 def main() -> None:

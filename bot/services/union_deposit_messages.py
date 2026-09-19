@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import html
 from decimal import Decimal
 
 from bot.services.union_deposit_instruction import build_union_deposit_instruction
@@ -55,7 +54,12 @@ UNION_ACK_CALLBACK_PREFIX = "depum"
 
 
 def build_union_special_instructions_text(*, html: bool = True) -> str:
-    lines = [f"<b>{UNION_SPECIAL_INSTRUCTIONS_HEADER}</b>" if html else UNION_SPECIAL_INSTRUCTIONS_HEADER, ""]
+    lines = [
+        f"<b>{UNION_SPECIAL_INSTRUCTIONS_HEADER}</b>"
+        if html
+        else UNION_SPECIAL_INSTRUCTIONS_HEADER,
+        "",
+    ]
     lines.extend(_instruction_warning_bullets(html=html, bold_not=html))
     return "\n".join(lines)
 

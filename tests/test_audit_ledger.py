@@ -109,7 +109,10 @@ class ManualDepositEventsTestCase(unittest.TestCase):
 
 
 class AuditManualFiltersTestCase(unittest.TestCase):
-    @patch("api.audit_ledger.apply_analytics_payment_exclusion", side_effect=lambda s, q, c: q)
+    @patch(
+        "api.audit_ledger.apply_analytics_payment_exclusion",
+        side_effect=lambda s, q, c: q,
+    )
     @patch("api.audit_ledger._apply_crypto_paid_at_range")
     def test_crypto_filters_by_paid_at(self, mock_paid_range, _mock_excl):
         query = MagicMock()
@@ -128,7 +131,10 @@ class AuditManualFiltersTestCase(unittest.TestCase):
 
         mock_paid_range.assert_called_once_with(query, from_dt=from_dt, to_dt=to_dt)
 
-    @patch("api.audit_ledger.apply_analytics_payment_exclusion", side_effect=lambda s, q, c: q)
+    @patch(
+        "api.audit_ledger.apply_analytics_payment_exclusion",
+        side_effect=lambda s, q, c: q,
+    )
     @patch("api.audit_ledger._apply_crypto_paid_at_range")
     def test_zelle_filters_by_created_at(self, mock_paid_range, _mock_excl):
         query = MagicMock()

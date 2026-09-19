@@ -64,8 +64,7 @@ async def _notify_invoker_cash_failure(
         return
 
     text = (
-        f"[{cfg.club_display_name}] /cash was not processed (chat {chat_id}):\n"
-        f"{reason}"
+        f"[{cfg.club_display_name}] /cash was not processed (chat {chat_id}):\n{reason}"
     )[:4096]
     try:
         await bot.send_message(chat_id=int(invoker_user_id), text=text)

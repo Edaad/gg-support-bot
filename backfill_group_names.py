@@ -1,4 +1,5 @@
 """One-time script: backfill group names for all linked groups using the Telegram Bot API."""
+
 import asyncio
 import os
 
@@ -16,7 +17,7 @@ _SUPPORT_GROUP_TITLE_MAX = 5000
 
 
 async def backfill():
-    engine = init_engine()
+    init_engine()
     bot = Bot(token=BOT_TOKEN)
 
     with get_db() as session:

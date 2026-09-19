@@ -10,7 +10,13 @@ from fastapi import APIRouter, HTTPException, Request, Response
 router = APIRouter(tags=["weekly-stats-proxy"])
 
 _HOP_BY_HOP = frozenset(
-    {"connection", "content-encoding", "content-length", "keep-alive", "transfer-encoding"}
+    {
+        "connection",
+        "content-encoding",
+        "content-length",
+        "keep-alive",
+        "transfer-encoding",
+    }
 )
 
 

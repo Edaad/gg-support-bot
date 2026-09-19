@@ -202,7 +202,8 @@ async def run_transfer(
             await on_claimed()
         except Exception:
             logger.warning(
-                "transfer: on_claimed callback failed chat_id=%s", plan.chat_id,
+                "transfer: on_claimed callback failed chat_id=%s",
+                plan.chat_id,
                 exc_info=True,
             )
 

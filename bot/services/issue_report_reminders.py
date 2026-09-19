@@ -74,7 +74,9 @@ async def issue_report_reminder_job_callback(context) -> None:
 
 def schedule_issue_report_reminder_job(app) -> None:
     if app.job_queue is None:
-        logger.warning("issue_report_reminder: job_queue unavailable; reminders disabled")
+        logger.warning(
+            "issue_report_reminder: job_queue unavailable; reminders disabled"
+        )
         return
 
     app.job_queue.run_repeating(

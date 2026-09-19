@@ -96,7 +96,9 @@ async def notify_all_admin_user_ids(text: str) -> int:
 
     token = (os.getenv(TELEGRAM_BOT_TOKEN_ENV) or "").strip()
     if not token:
-        logger.warning("deploy_notify: %s is not set; skipping admin DMs", TELEGRAM_BOT_TOKEN_ENV)
+        logger.warning(
+            "deploy_notify: %s is not set; skipping admin DMs", TELEGRAM_BOT_TOKEN_ENV
+        )
         return 0
 
     bot = Bot(token=token)

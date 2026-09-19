@@ -67,9 +67,7 @@ def create_bonus_type(body: BonusTypeCreate, db: Session = Depends(get_db_depend
     name = body.name.strip()
     if not name:
         raise HTTPException(400, "Name is required")
-    existing = (
-        db.query(BonusType).filter(BonusType.name.ilike(name)).first()
-    )
+    existing = db.query(BonusType).filter(BonusType.name.ilike(name)).first()
     if existing:
         raise HTTPException(409, f"Bonus type {existing.name!r} already exists")
     bt = BonusType(**{**body.model_dump(), "name": name})
@@ -192,7 +190,9 @@ def update_bonus_record_api(
     _load_bonus_and_assert_gto(record_id, role, db)
     updates = body.model_dump(exclude_unset=True)
     if "club_id" in updates and updates["club_id"] is not None:
-        updates["club_id"] = require_gto_club_id_for_write(role, int(updates["club_id"]), db)
+        updates["club_id"] = require_gto_club_id_for_write(
+            role, int(updates["club_id"]), db
+        )
     try:
         data = update_bonus_record(record_id, **updates)
     except ValueError as e:

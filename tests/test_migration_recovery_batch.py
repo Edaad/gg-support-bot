@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -212,19 +211,37 @@ class TestComputeRecoverySlackStats(unittest.IsolatedAsyncioTestCase):
 
 class TestTickAsyncQuotaDrain(unittest.IsolatedAsyncioTestCase):
     @patch("bot.services.migration_recovery.record_migration_recovery_tick")
-    @patch("bot.services.migration_recovery._maybe_auto_disable_after_tick", new_callable=AsyncMock)
-    @patch("bot.services.migration_recovery.maybe_clear_expired_club_rate_limits", return_value=[])
-    @patch("bot.services.migration_recovery.is_round_table_elevate_recovery_enabled", return_value=False)
+    @patch(
+        "bot.services.migration_recovery._maybe_auto_disable_after_tick",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "bot.services.migration_recovery.maybe_clear_expired_club_rate_limits",
+        return_value=[],
+    )
+    @patch(
+        "bot.services.migration_recovery.is_round_table_elevate_recovery_enabled",
+        return_value=False,
+    )
     @patch("bot.services.migration_recovery.set_flood_wait_policy")
     @patch("bot.services.migration_recovery.set_flood_wait_observer")
-    @patch("bot.services.migration_recovery.get_migration_recovery_invite_delay_sec", return_value=0.0)
-    @patch("bot.services.migration_recovery.get_migration_recovery_batch_size", return_value=2)
+    @patch(
+        "bot.services.migration_recovery.get_migration_recovery_invite_delay_sec",
+        return_value=0.0,
+    )
+    @patch(
+        "bot.services.migration_recovery.get_migration_recovery_batch_size",
+        return_value=2,
+    )
     @patch("bot.services.migration_recovery.is_club_rate_limited", return_value=False)
     @patch(
         "bot.services.migration_recovery.migration_recovery_active_club_keys",
         return_value=("creator_club",),
     )
-    @patch("bot.services.migration_recovery.is_migration_recovery_enabled", return_value=True)
+    @patch(
+        "bot.services.migration_recovery.is_migration_recovery_enabled",
+        return_value=True,
+    )
     @patch("bot.services.migration_recovery._process_row", new_callable=AsyncMock)
     @patch("bot.services.migration_recovery.claim_next_pending_row")
     async def test_drains_already_in_until_direct_add_quota(
@@ -282,16 +299,19 @@ class TestTickAsyncQuotaDrain(unittest.IsolatedAsyncioTestCase):
             ("complete", already),
             ("complete", already),
             ("complete", added),
-            ("privacy_blocked", ReaddGroupResult(
-                chat_id=-1004,
-                club_id=3,
-                club_key="creator_club",
-                title="CC 4",
-                member_count_before=0,
-                member_count_after=None,
-                status="privacy_fallback",
-                privacy_blocked=["player:@p4"],
-            )),
+            (
+                "privacy_blocked",
+                ReaddGroupResult(
+                    chat_id=-1004,
+                    club_id=3,
+                    club_key="creator_club",
+                    title="CC 4",
+                    member_count_before=0,
+                    member_count_after=None,
+                    status="privacy_fallback",
+                    privacy_blocked=["player:@p4"],
+                ),
+            ),
         ]
 
         summary = await tick_async()
@@ -344,20 +364,41 @@ class TestFloodWaitAbortFromReaddResult(unittest.TestCase):
 
 class TestTickAsyncFloodWaitAbort(unittest.IsolatedAsyncioTestCase):
     @patch("bot.services.migration_recovery.record_migration_recovery_tick")
-    @patch("bot.services.migration_recovery._maybe_auto_disable_after_tick", new_callable=AsyncMock)
-    @patch("bot.services.migration_recovery.maybe_clear_expired_club_rate_limits", return_value=[])
-    @patch("bot.services.migration_recovery.is_round_table_elevate_recovery_enabled", return_value=False)
+    @patch(
+        "bot.services.migration_recovery._maybe_auto_disable_after_tick",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "bot.services.migration_recovery.maybe_clear_expired_club_rate_limits",
+        return_value=[],
+    )
+    @patch(
+        "bot.services.migration_recovery.is_round_table_elevate_recovery_enabled",
+        return_value=False,
+    )
     @patch("bot.services.migration_recovery.set_flood_wait_policy")
     @patch("bot.services.migration_recovery.set_flood_wait_observer")
-    @patch("bot.services.migration_recovery.get_migration_recovery_invite_delay_sec", return_value=0.0)
-    @patch("bot.services.migration_recovery.get_migration_recovery_batch_size", return_value=2)
+    @patch(
+        "bot.services.migration_recovery.get_migration_recovery_invite_delay_sec",
+        return_value=0.0,
+    )
+    @patch(
+        "bot.services.migration_recovery.get_migration_recovery_batch_size",
+        return_value=2,
+    )
     @patch("bot.services.migration_recovery.is_club_rate_limited", return_value=False)
     @patch(
         "bot.services.migration_recovery.migration_recovery_active_club_keys",
         return_value=("creator_club",),
     )
-    @patch("bot.services.migration_recovery.is_migration_recovery_enabled", return_value=True)
-    @patch("bot.services.migration_recovery._handle_rate_limit_abort", new_callable=AsyncMock)
+    @patch(
+        "bot.services.migration_recovery.is_migration_recovery_enabled",
+        return_value=True,
+    )
+    @patch(
+        "bot.services.migration_recovery._handle_rate_limit_abort",
+        new_callable=AsyncMock,
+    )
     @patch("bot.services.migration_recovery._process_row", new_callable=AsyncMock)
     @patch("bot.services.migration_recovery.claim_next_pending_row")
     async def test_flood_wait_aborts_tick_without_second_row(

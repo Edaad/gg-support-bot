@@ -126,7 +126,9 @@ class NormalizeUrlTestCase(unittest.TestCase):
             normalize_url("javascript:alert(1)")
         with self.assertRaises(ValueError):
             normalize_url("/relative")
-        self.assertEqual(normalize_url("https://example.com/x"), "https://example.com/x")
+        self.assertEqual(
+            normalize_url("https://example.com/x"), "https://example.com/x"
+        )
 
 
 class ApiAccessTestCase(unittest.TestCase):
@@ -159,9 +161,25 @@ class ApiAccessTestCase(unittest.TestCase):
 class GtoListFilterTestCase(unittest.TestCase):
     def test_gto_only_sees_all_clubs_or_clubgto(self) -> None:
         db = MagicMock()
-        all_clubs = MagicMock(id=1, title="A", url="https://a.test", method=None, club_id=None, sort_order=0)
-        gto = MagicMock(id=2, title="B", url="https://b.test", method="crypto", club_id=7, sort_order=1)
-        other = MagicMock(id=3, title="C", url="https://c.test", method=None, club_id=3, sort_order=2)
+        all_clubs = MagicMock(
+            id=1,
+            title="A",
+            url="https://a.test",
+            method=None,
+            club_id=None,
+            sort_order=0,
+        )
+        gto = MagicMock(
+            id=2,
+            title="B",
+            url="https://b.test",
+            method="crypto",
+            club_id=7,
+            sort_order=1,
+        )
+        other = MagicMock(
+            id=3, title="C", url="https://c.test", method=None, club_id=3, sort_order=2
+        )
         q = MagicMock()
         q.order_by.return_value.all.return_value = [all_clubs, gto, other]
         db.query.return_value = q

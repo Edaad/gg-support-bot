@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import unittest
-from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -78,33 +77,43 @@ class TestBonusFlow(unittest.IsolatedAsyncioTestCase):
     @patch.object(bonus_mod, "ADMIN_USER_IDS", {12345})
     async def test_group_title_advances_to_amount(self, _keyboard, _resolve, _club):
         update = _private_text_update(text="CC / 8190-5287 / Jacob")
-        context = SimpleNamespace(user_data={"bonus_step": "group_title", "bonus_admin_id": 12345})
+        context = SimpleNamespace(
+            user_data={"bonus_step": "group_title", "bonus_admin_id": 12345}
+        )
 
         with self.assertRaises(ApplicationHandlerStop):
             await bonus_mod.bonus_message_handler(update, context)
 
         self.assertEqual(context.user_data["bonus_step"], "amount")
-        self.assertEqual(context.user_data["bonus_group_title"], "CC / 8190-5287 / Jacob")
+        self.assertEqual(
+            context.user_data["bonus_group_title"], "CC / 8190-5287 / Jacob"
+        )
         update.message.reply_text.assert_awaited_once_with("Amount ($):")
 
     @patch.object(bonus_mod, "resolve_bonus_player", return_value=None)
     @patch.object(bonus_mod, "ADMIN_USER_IDS", {12345})
     async def test_invalid_group_title_rejected(self, _resolve):
         update = _private_text_update(text="bad title")
-        context = SimpleNamespace(user_data={"bonus_step": "group_title", "bonus_admin_id": 12345})
+        context = SimpleNamespace(
+            user_data={"bonus_step": "group_title", "bonus_admin_id": 12345}
+        )
 
         with self.assertRaises(ApplicationHandlerStop):
             await bonus_mod.bonus_message_handler(update, context)
 
         self.assertEqual(context.user_data["bonus_step"], "group_title")
         update.message.reply_text.assert_awaited_once()
-        self.assertIn("Invalid group title", update.message.reply_text.await_args.args[0])
+        self.assertIn(
+            "Invalid group title", update.message.reply_text.await_args.args[0]
+        )
 
     @patch.object(bonus_mod, "_club_name_for_id", return_value="Club CC")
     @patch.object(bonus_mod, "resolve_bonus_player", return_value=_sample_player_ctx())
     @patch.object(bonus_mod, "_type_keyboard_markup", return_value=MagicMock())
     @patch.object(bonus_mod, "ADMIN_USER_IDS", {12345})
-    async def test_group_title_not_blocked_by_stale_sendinactive_keys(self, _keyboard, _resolve, _club):
+    async def test_group_title_not_blocked_by_stale_sendinactive_keys(
+        self, _keyboard, _resolve, _club
+    ):
         update = _private_text_update(text="CC / 8190-5287 / Jacob")
         context = SimpleNamespace(
             user_data={
@@ -133,7 +142,9 @@ class TestBonusFlow(unittest.IsolatedAsyncioTestCase):
 class TestBonusReferralFlow(unittest.IsolatedAsyncioTestCase):
     @patch.object(bonus_mod, "_club_name_for_id", return_value="Club CC")
     @patch.object(bonus_mod, "_finalize_bonus_record", new_callable=AsyncMock)
-    async def test_non_referral_club_chosen_finalizes(self, mock_finalize, _club) -> None:
+    async def test_non_referral_club_chosen_finalizes(
+        self, mock_finalize, _club
+    ) -> None:
         update = _callback_update(data="bclub:1")
         context = SimpleNamespace(
             user_data={
@@ -224,7 +235,9 @@ class TestBonusReferralFlow(unittest.IsolatedAsyncioTestCase):
 
     @patch.object(bonus_mod, "_finalize_bonus_record", new_callable=AsyncMock)
     @patch.object(bonus_mod, "resolve_bonus_player", return_value=None)
-    async def test_invalid_referred_title_rejected(self, _resolve, mock_finalize) -> None:
+    async def test_invalid_referred_title_rejected(
+        self, _resolve, mock_finalize
+    ) -> None:
         update = _private_text_update(text="bad title")
         context = SimpleNamespace(
             user_data={
@@ -241,11 +254,15 @@ class TestBonusReferralFlow(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("bonus_metadata", context.user_data)
         mock_finalize.assert_not_called()
         update.message.reply_text.assert_awaited_once()
-        self.assertIn("Invalid group title", update.message.reply_text.await_args.args[0])
+        self.assertIn(
+            "Invalid group title", update.message.reply_text.await_args.args[0]
+        )
 
     @patch.object(bonus_mod, "_finalize_bonus_record", new_callable=AsyncMock)
     @patch.object(bonus_mod, "resolve_bonus_player")
-    async def test_same_player_by_gg_id_rejected(self, mock_resolve, mock_finalize) -> None:
+    async def test_same_player_by_gg_id_rejected(
+        self, mock_resolve, mock_finalize
+    ) -> None:
         mock_resolve.return_value = _referred_player_ctx()
         update = _private_text_update(text="RT / 1111-2222 / Friend")
         context = SimpleNamespace(
@@ -264,7 +281,9 @@ class TestBonusReferralFlow(unittest.IsolatedAsyncioTestCase):
 
     @patch.object(bonus_mod, "_finalize_bonus_record", new_callable=AsyncMock)
     @patch.object(bonus_mod, "resolve_bonus_player")
-    async def test_same_player_by_chat_id_rejected(self, mock_resolve, mock_finalize) -> None:
+    async def test_same_player_by_chat_id_rejected(
+        self, mock_resolve, mock_finalize
+    ) -> None:
         mock_resolve.return_value = _referred_player_ctx(chat_id=-123)
         update = _private_text_update(text="RT / 1111-2222 / Friend")
         context = SimpleNamespace(
@@ -283,7 +302,9 @@ class TestBonusReferralFlow(unittest.IsolatedAsyncioTestCase):
         update.message.reply_text.assert_awaited_once_with(bonus_mod._SAME_PLAYER_ERROR)
 
     @patch.object(bonus_mod, "_ask_referred_player", new_callable=AsyncMock)
-    @patch.object(bonus_mod, "_get_bonus_types", return_value=[{"id": 2, "name": "Referral"}])
+    @patch.object(
+        bonus_mod, "_get_bonus_types", return_value=[{"id": 2, "name": "Referral"}]
+    )
     async def test_referral_type_with_prefilled_club_asks_referred(
         self, _types, mock_ask
     ) -> None:

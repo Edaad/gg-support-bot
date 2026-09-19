@@ -151,7 +151,9 @@ def _cancel_jobs_by_name(job_queue: Any | None, name: str) -> None:
         for job in job_queue.get_jobs_by_name(name):
             job.schedule_removal()
     except Exception:
-        logger.debug("union deposit expiry: cancel job failed name=%s", name, exc_info=True)
+        logger.debug(
+            "union deposit expiry: cancel job failed name=%s", name, exc_info=True
+        )
 
 
 def cancel_union_ack_expiry(

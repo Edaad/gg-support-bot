@@ -26,7 +26,10 @@ from bot.services.club import (
     try_link_group_by_admin,
     update_group_name,
 )
-from bot.services.player_details import bind_chat_from_title, is_same_club_player_conflict_message
+from bot.services.player_details import (
+    bind_chat_from_title,
+    is_same_club_player_conflict_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +87,9 @@ def _bot_was_added(update: Update) -> bool:
     return new == "member" and old in ("left", "kicked")
 
 
-async def on_chat_migrate_from(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def on_chat_migrate_from(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Basic group upgraded to supergroup — remap DB only, no welcome bundle."""
 
     msg = update.effective_message
@@ -138,9 +143,7 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
         if legacy_id is not None:
             _mark_post_gc_bundle_window(chat_id)
             try:
-                try_silent_supergroup_remap(
-                    legacy_id, chat_id, chat_title=chat_title
-                )
+                try_silent_supergroup_remap(legacy_id, chat_id, chat_title=chat_title)
             except Exception:
                 logger.exception(
                     "silent supergroup remap failed %s -> %s title=%r",
@@ -195,7 +198,9 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
                     live_id = await _bot_call_chat(
                         context.bot,
                         live_id,
-                        lambda cid, t=piece: context.bot.send_message(chat_id=cid, text=t),
+                        lambda cid, t=piece: context.bot.send_message(
+                            chat_id=cid, text=t
+                        ),
                     )
         except Exception as e:
             print(f"Failed to send welcome to {live_id}: {e}")
@@ -282,18 +287,24 @@ async def auto_link_group(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         admins = await context.bot.get_chat_administrators(chat_id)
         admin_ids = [m.user.id for m in admins if not m.user.is_bot]
     except Exception as exc:
-        logger.warning("auto_link_group: could not fetch admins for %s: %s", chat_id, exc)
+        logger.warning(
+            "auto_link_group: could not fetch admins for %s: %s", chat_id, exc
+        )
         return
 
     club_id = try_link_group_by_admin(chat_id, admin_ids, chat_title=chat.title)
     if club_id:
         logger.info("auto_link_group: linked chat %s to club %s", chat_id, club_id)
     else:
-        logger.debug("auto_link_group: no matching club owner found among admins of %s", chat_id)
+        logger.debug(
+            "auto_link_group: no matching club owner found among admins of %s", chat_id
+        )
 
 
 def _mark_member_join_bundle_cooldown(chat_id: int) -> None:
-    _member_join_bundle_until[chat_id] = time.monotonic() + MEMBER_JOIN_BUNDLE_COOLDOWN_S
+    _member_join_bundle_until[chat_id] = (
+        time.monotonic() + MEMBER_JOIN_BUNDLE_COOLDOWN_S
+    )
 
 
 async def _bot_call_chat(bot, chat_id: int, send) -> int:
@@ -337,7 +348,9 @@ async def _send_member_join_preamble_and_pdf(chat_id: int, club_id: int, bot) ->
                     live_id = await _bot_call_chat(
                         bot,
                         live_id,
-                        lambda cid, text=chunk: bot.send_message(chat_id=cid, text=text),
+                        lambda cid, text=chunk: bot.send_message(
+                            chat_id=cid, text=text
+                        ),
                     )
             except Exception as e:
                 logger.warning(
@@ -376,7 +389,9 @@ async def _deliver_member_join_intro_messages(chat_id: int, club_id: int, bot) -
     _mark_member_join_bundle_cooldown(live_id)
 
 
-async def send_post_gc_intro_bundle(bot, chat_id: int, club_id: int, chat_title: str | None) -> None:
+async def send_post_gc_intro_bundle(
+    bot, chat_id: int, club_id: int, chat_title: str | None
+) -> None:
     """After MTProto ``/gc``: preamble+PDF → welcome → player-id hint."""
 
     _mark_post_gc_bundle_window(chat_id)
@@ -404,10 +419,14 @@ async def send_post_gc_intro_bundle(bot, chat_id: int, club_id: int, chat_title:
                     live_id = await _bot_call_chat(
                         bot,
                         live_id,
-                        lambda cid, text=chunk: bot.send_message(chat_id=cid, text=text),
+                        lambda cid, text=chunk: bot.send_message(
+                            chat_id=cid, text=text
+                        ),
                     )
         except Exception as e:
-            logger.warning("post_gc_intro: welcome send failed chat_id=%s: %s", live_id, e)
+            logger.warning(
+                "post_gc_intro: welcome send failed chat_id=%s: %s", live_id, e
+            )
 
     res = bind_chat_from_title(chat_id=live_id, title=chat_title)
     try:
@@ -438,7 +457,9 @@ async def send_post_gc_intro_bundle(bot, chat_id: int, club_id: int, chat_title:
     _join_intro_sent_at[live_id] = time.monotonic()
 
 
-async def _maybe_send_member_join_intro(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
+async def _maybe_send_member_join_intro(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int
+) -> None:
     """Standard club intro after a human joins — only when this chat is linked to a dashboard club."""
 
     club_id = get_club_for_chat(chat_id)
@@ -448,7 +469,9 @@ async def _maybe_send_member_join_intro(context: ContextTypes.DEFAULT_TYPE, chat
     from club_gc_settings import is_migration_recovery_skip_welcome_enabled
     from bot.services.migration_recovery import is_migrated_recovery_chat
 
-    if is_migration_recovery_skip_welcome_enabled() and is_migrated_recovery_chat(chat_id):
+    if is_migration_recovery_skip_welcome_enabled() and is_migrated_recovery_chat(
+        chat_id
+    ):
         logger.info(
             "Skipping member join intro (GC_MIGRATION_RECOVERY_SKIP_WELCOME) chat_id=%s",
             chat_id,
@@ -471,7 +494,9 @@ async def _maybe_send_member_join_intro(context: ContextTypes.DEFAULT_TYPE, chat
     await _deliver_member_join_intro_messages(chat_id, club_id, context.bot)
 
 
-async def on_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def on_new_chat_members(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
 
     chat = update.effective_chat
     msg = update.message
@@ -479,23 +504,19 @@ async def on_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not chat or chat.type not in ("group", "supergroup"):
         return
 
-
     if not msg or not msg.new_chat_members:
         return
 
     humans = [u for u in msg.new_chat_members if not u.is_bot]
     if not humans:
-
-
         return
 
     await _maybe_send_member_join_intro(context, chat.id)
 
 
-
-async def on_other_chat_member_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-
-
+async def on_other_chat_member_join(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Megagroups / supergroups: join notifications as ``chat_member`` updates."""
 
     cu = update.chat_member
@@ -503,11 +524,7 @@ async def on_other_chat_member_join(update: Update, context: ContextTypes.DEFAUL
     if not cu or not chat or chat.type not in ("group", "supergroup"):
         return
 
-
-
     if cu.new_chat_member.user.is_bot:
-
-
         return
 
     old = cu.old_chat_member.status

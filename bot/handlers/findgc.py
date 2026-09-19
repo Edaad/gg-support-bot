@@ -35,6 +35,4 @@ async def findgc_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
-    await update.message.reply_text(
-        f"Group: {title}\nChat ID: {chat_id}"
-    )
+    await update.message.reply_text(f"Group: {title}\nChat ID: {chat_id}")

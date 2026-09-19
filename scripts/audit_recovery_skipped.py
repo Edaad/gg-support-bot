@@ -135,11 +135,15 @@ async def run_audit(
                 "player_telegram_user_id": row.player_telegram_user_id or "",
                 "player_username": row.player_username or "",
                 "skip_reason": row.row_last_error or "",
-                "account_check": resolution.account_check if resolution else "uncheckable",
+                "account_check": resolution.account_check
+                if resolution
+                else "uncheckable",
                 "resolvable": "yes" if resolvable else "no",
                 "discovered_player_id": resolution.user_id if resolution else "",
                 "discovered_username": resolution.username if resolution else "",
-                "discovered_display_name": resolution.display_name if resolution else "",
+                "discovered_display_name": resolution.display_name
+                if resolution
+                else "",
             }
         )
     return out

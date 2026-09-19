@@ -130,10 +130,9 @@ def _load_rows(club_keys: tuple[str, ...], chat_id: int | None) -> list[Any]:
                     telegram_chat_id_variants(int(chat_id))
                 )
             )
-        rows = (
-            q.order_by(SupportGroupChat.club_key.asc(), SupportGroupChat.id.desc())
-            .all()
-        )
+        rows = q.order_by(
+            SupportGroupChat.club_key.asc(), SupportGroupChat.id.desc()
+        ).all()
         for row in rows:
             session.expunge(row)
 
@@ -452,7 +451,9 @@ def _print_human(summary: PhotoSummary, rows: list[dict[str, Any]]) -> None:
         print(
             f"DB has path: {summary.already_has_photo} | DB missing path: {summary.would_apply}"
         )
-        print("DB path is not live Telegram state — re-run without --db-only to check photos.")
+        print(
+            "DB path is not live Telegram state — re-run without --db-only to check photos."
+        )
     else:
         print(
             f"Already has photo: {summary.already_has_photo} | "

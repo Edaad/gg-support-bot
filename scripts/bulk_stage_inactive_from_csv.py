@@ -56,7 +56,9 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Force club_key when title/DB resolution fails (e.g. round_table).",
     )
-    parser.add_argument("--chat-id", type=int, default=None, help="Stage one chat id only.")
+    parser.add_argument(
+        "--chat-id", type=int, default=None, help="Stage one chat id only."
+    )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--skip", type=int, default=0)
     parser.add_argument(
@@ -70,7 +72,9 @@ def _parse_args() -> argparse.Namespace:
         default=int(ADMIN_USER_IDS[0]) if ADMIN_USER_IDS else 0,
         help="Telegram user id for staged_by_telegram_user_id (default: first ADMIN_USER_IDS).",
     )
-    parser.add_argument("--apply", action="store_true", help="Persist staging (default: dry-run).")
+    parser.add_argument(
+        "--apply", action="store_true", help="Persist staging (default: dry-run)."
+    )
     parser.add_argument(
         "--output",
         type=Path,

@@ -41,9 +41,7 @@ CREATOR_STAFF_FOOTER_AUTO = (
     "<b>Auto-add:</b> Fully automatic — chips will load and the player will be "
     "notified. No action needed unless you receive an error alert; then /add manually."
 )
-CREATOR_STAFF_FOOTER_MANUAL = (
-    "<b>Manual action required</b> — bind and /add as usual."
-)
+CREATOR_STAFF_FOOTER_MANUAL = "<b>Manual action required</b> — bind and /add as usual."
 CREATOR_STAFF_FOOTER_NO_RECENT_DEPOSIT = (
     "<b>Manual action required</b> — did not see /deposit in this group in the "
     f"last {DEPOSIT_COMMAND_WINDOW_MINUTES} minutes. Bind and /add as usual."
@@ -58,7 +56,9 @@ CREATOR_STAFF_FOOTER_RECENT_ADD = (
 def is_fully_automatic_staff_notification(text: str | None) -> bool:
     """True when the staff notification includes the fully automatic Auto-add footer."""
     body = text or ""
-    return "Auto-add:</b> Fully automatic" in body or "Auto-add: Fully automatic" in body
+    return (
+        "Auto-add:</b> Fully automatic" in body or "Auto-add: Fully automatic" in body
+    )
 
 
 def auto_deposit_ineligible_reason(

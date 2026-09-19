@@ -145,7 +145,9 @@ def crossref(
 
     init_engine()
     dump_path = (backup_path or find_earliest_upgrade_backup(_REPO_ROOT)).resolve()
-    mtproto_club_ids = frozenset(int(cfg.link_club_id) for cfg in CLUB_GC_CONFIG.values())
+    mtproto_club_ids = frozenset(
+        int(cfg.link_club_id) for cfg in CLUB_GC_CONFIG.values()
+    )
     affected = resolve_affected_from_backup(
         dump_path,
         mtproto_club_ids=mtproto_club_ids,

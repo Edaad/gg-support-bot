@@ -208,7 +208,9 @@ async def _resolve_exclude_user_ids(client, cfg, me_id: int) -> frozenset[int]:
             ent = await client.get_entity(lookup)
             exclude.add(int(ent.id))
         except Exception as exc:
-            logger.warning("Could not resolve exclude marker %s: %s", marker, type(exc).__name__)
+            logger.warning(
+                "Could not resolve exclude marker %s: %s", marker, type(exc).__name__
+            )
 
     return frozenset(exclude)
 
@@ -241,7 +243,9 @@ async def _last_external_message_at(
     return None, "support_only"
 
 
-def _annotate_duplicate_titles(rows: list[DialogActivityRow]) -> list[DialogActivityRow]:
+def _annotate_duplicate_titles(
+    rows: list[DialogActivityRow],
+) -> list[DialogActivityRow]:
     """Flag stale dialogs that share a title with a newer chat (common after supergroup migration)."""
 
     by_title: dict[str, list[DialogActivityRow]] = {}
@@ -258,8 +262,9 @@ def _annotate_duplicate_titles(rows: list[DialogActivityRow]) -> list[DialogActi
 
         newer = max(
             (peer for peer in peers if peer.chat_id != row.chat_id),
-            key=lambda peer: peer.last_message_at
-            or datetime.min.replace(tzinfo=timezone.utc),
+            key=lambda peer: (
+                peer.last_message_at or datetime.min.replace(tzinfo=timezone.utc)
+            ),
             default=None,
         )
         if newer is None:
@@ -301,7 +306,9 @@ async def _scan_dialogs(
 
     cfg = CLUB_GC_CONFIG.get(club_key)
     if cfg is None:
-        raise SystemExit(f"Unknown club_key: {club_key!r} (expected one of {CLUB_KEYS})")
+        raise SystemExit(
+            f"Unknown club_key: {club_key!r} (expected one of {CLUB_KEYS})"
+        )
 
     if not await is_client_authorized(cfg):
         raise SystemExit(
@@ -332,7 +339,9 @@ async def _scan_dialogs(
                 continue
             if groups_only and kind == "channel":
                 continue
-            if kind != "megagroup" and not (include_basic_groups and kind == "basic_group"):
+            if kind != "megagroup" and not (
+                include_basic_groups and kind == "basic_group"
+            ):
                 continue
 
             last_external, basis = await _last_external_message_at(

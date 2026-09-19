@@ -157,12 +157,22 @@ class TestDepositEntryStaleness(unittest.IsolatedAsyncioTestCase):
     @patch.object(dep, "get_club_simple_mode", return_value=None)
     @patch.object(dep, "_cancel_deposit_reminder")
     @patch.object(dep, "update_group_name")
-    @patch.object(dep, "_ask_deposit_amount", new_callable=AsyncMock, return_value=dep.DEPOSIT_AMOUNT)
+    @patch.object(
+        dep,
+        "_ask_deposit_amount",
+        new_callable=AsyncMock,
+        return_value=dep.DEPOSIT_AMOUNT,
+    )
     @patch.object(dep, "get_club_allows_admin_commands", return_value=True)
     @patch.object(dep, "get_club_for_chat", return_value=4)
     @patch.object(dep, "ADMIN_USER_IDS", {7516419496})
     @patch.object(dep, "is_test_bot_worker", return_value=False)
-    @patch.object(dep, "block_if_group_money_flow_active", new_callable=AsyncMock, return_value=False)
+    @patch.object(
+        dep,
+        "block_if_group_money_flow_active",
+        new_callable=AsyncMock,
+        return_value=False,
+    )
     @patch.object(dep.popup_keyboard_svc, "prepare_flow_entry_keyboard")
     @patch.object(dep, "record_activity")
     @patch.object(dep, "_init_deposit_flow_session", return_value="session-test")
@@ -199,7 +209,9 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, dep.DEPOSIT_AMOUNT)
         update.message.reply_text.assert_not_called()
 
-    @patch.object(dep, "filter_deposit_methods_for_chat", side_effect=lambda _cid, ms: ms)
+    @patch.object(
+        dep, "filter_deposit_methods_for_chat", side_effect=lambda _cid, ms: ms
+    )
     @patch.object(dep, "_prompt_deposit_methods", new_callable=AsyncMock)
     @patch.object(dep, "deposit_unions_for_chat", return_value=None)
     @patch.object(
@@ -224,7 +236,9 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
         update.message.reply_text.assert_not_called()
         self.assertNotIn("deposit_amount", context.chat_data)
 
-    @patch.object(dep, "filter_deposit_methods_for_chat", side_effect=lambda _cid, ms: ms)
+    @patch.object(
+        dep, "filter_deposit_methods_for_chat", side_effect=lambda _cid, ms: ms
+    )
     @patch.object(dep, "_prompt_deposit_methods", new_callable=AsyncMock)
     @patch.object(dep, "deposit_unions_for_chat", return_value=None)
     @patch.object(
@@ -240,7 +254,9 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.chat_data["deposit_amount"], Decimal("40"))
         self.assertEqual(context.chat_data["deposit_user_id"], 8132930521)
 
-    @patch.object(dep, "filter_deposit_methods_for_chat", side_effect=lambda _cid, ms: ms)
+    @patch.object(
+        dep, "filter_deposit_methods_for_chat", side_effect=lambda _cid, ms: ms
+    )
     @patch.object(dep, "_prompt_deposit_methods", new_callable=AsyncMock)
     @patch.object(dep, "deposit_unions_for_chat", return_value=None)
     @patch.object(
@@ -269,7 +285,9 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
         update = _message_update(age_seconds=5, text="two hundred", user_id=8132930521)
         result = await dep.deposit_amount_received(update, context)
         self.assertEqual(result, dep.DEPOSIT_AMOUNT)
-        update.message.reply_text.assert_awaited_once_with(fs.DEPOSIT_AMOUNT_INVALID_REPLY)
+        update.message.reply_text.assert_awaited_once_with(
+            fs.DEPOSIT_AMOUNT_INVALID_REPLY
+        )
         self.assertNotIn("deposit_amount", context.chat_data)
 
     async def test_stale_amount_update_is_silent(self):
@@ -279,7 +297,9 @@ class TestDepositAmountActorGating(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, ConversationHandler.END)
         update.message.reply_text.assert_not_called()
 
-    @patch.object(dep, "filter_deposit_methods_for_chat", side_effect=lambda _cid, ms: ms)
+    @patch.object(
+        dep, "filter_deposit_methods_for_chat", side_effect=lambda _cid, ms: ms
+    )
     @patch.object(dep, "get_lowest_minimum", return_value=Decimal("50"))
     @patch.object(dep, "get_methods_for_amount", return_value=[])
     async def test_below_minimum_cancels_and_prompts_deposit_again(self, *_mocks):
@@ -318,7 +338,12 @@ class TestCashoutAmountActorGating(unittest.IsolatedAsyncioTestCase):
     @patch.object(co, "check_cashout_eligibility", return_value=(True, ""))
     @patch.object(co, "is_club_staff", return_value=False)
     @patch.object(co, "get_cashout_max_amount", return_value=None)
-    @patch.object(co, "_show_method_keyboard", new_callable=AsyncMock, return_value=co.CASHOUT_CHOOSE)
+    @patch.object(
+        co,
+        "_show_method_keyboard",
+        new_callable=AsyncMock,
+        return_value=co.CASHOUT_CHOOSE,
+    )
     async def test_customer_amount_accepted(self, *_mocks):
         update = _message_update(age_seconds=5, text="40", user_id=8132930521)
         context = self._admin_context()
@@ -347,7 +372,9 @@ class TestCashoutSimpleMinAmount(unittest.IsolatedAsyncioTestCase):
     @patch.object(co, "get_lowest_minimum", return_value=Decimal("50"))
     @patch.object(co, "_send_simple_response", new_callable=AsyncMock)
     @patch.object(co, "record_activity")
-    async def test_below_minimum_is_rejected(self, record_activity, send_simple, *_mocks):
+    async def test_below_minimum_is_rejected(
+        self, record_activity, send_simple, *_mocks
+    ):
         update = _message_update(age_seconds=5, text="30", user_id=8132930521)
         context = self._context()
         result = await co.cashout_simple_amount_received(update, context)
@@ -364,7 +391,9 @@ class TestCashoutSimpleMinAmount(unittest.IsolatedAsyncioTestCase):
     @patch.object(co, "_send_simple_response", new_callable=AsyncMock)
     @patch.object(co, "record_activity")
     @patch.object(co, "_cleanup")
-    async def test_at_minimum_is_accepted(self, _cleanup, record_activity, send_simple, *_mocks):
+    async def test_at_minimum_is_accepted(
+        self, _cleanup, record_activity, send_simple, *_mocks
+    ):
         update = _message_update(age_seconds=5, text="50", user_id=8132930521)
         context = self._context()
         result = await co.cashout_simple_amount_received(update, context)
@@ -423,8 +452,22 @@ class TestFlowCallbackStaleness(unittest.TestCase):
 
 
 class TestDepositCallbackStaleness(unittest.IsolatedAsyncioTestCase):
-    @patch.object(dep, "get_method_by_id", return_value={"id": 29, "name": "Apple Pay", "slug": "applepay", "has_sub_options": False})
-    @patch.object(dep, "_run_normal_deposit_from_choice", new_callable=AsyncMock, return_value=ConversationHandler.END)
+    @patch.object(
+        dep,
+        "get_method_by_id",
+        return_value={
+            "id": 29,
+            "name": "Apple Pay",
+            "slug": "applepay",
+            "has_sub_options": False,
+        },
+    )
+    @patch.object(
+        dep,
+        "_run_normal_deposit_from_choice",
+        new_callable=AsyncMock,
+        return_value=ConversationHandler.END,
+    )
     async def test_orphan_method_callback_rejected(self, *_mocks):
         update = _callback_update(age_seconds=240)
         context = SimpleNamespace(
@@ -438,14 +481,30 @@ class TestDepositCallbackStaleness(unittest.IsolatedAsyncioTestCase):
         result = await dep.deposit_method_chosen(update, context)
         self.assertEqual(result, ConversationHandler.END)
         update.callback_query.answer.assert_awaited_once()
-        self.assertIn("expired", update.callback_query.answer.await_args.args[0].lower())
+        self.assertIn(
+            "expired", update.callback_query.answer.await_args.args[0].lower()
+        )
         dep._run_normal_deposit_from_choice.assert_not_awaited()
 
     @patch.object(dep, "is_deposit_method_allowed_for_chat", return_value=True)
     @patch.object(dep, "is_chat_method_bound", return_value=True)
     @patch.object(dep, "bind_mode_for_method", return_value=None)
-    @patch.object(dep, "get_method_by_id", return_value={"id": 29, "name": "Apple Pay", "slug": "applepay", "has_sub_options": False})
-    @patch.object(dep, "_run_normal_deposit_from_choice", new_callable=AsyncMock, return_value=ConversationHandler.END)
+    @patch.object(
+        dep,
+        "get_method_by_id",
+        return_value={
+            "id": 29,
+            "name": "Apple Pay",
+            "slug": "applepay",
+            "has_sub_options": False,
+        },
+    )
+    @patch.object(
+        dep,
+        "_run_normal_deposit_from_choice",
+        new_callable=AsyncMock,
+        return_value=ConversationHandler.END,
+    )
     async def test_current_session_method_callback_accepted(self, *_mocks):
         update = _callback_update(age_seconds=240)
         context = SimpleNamespace(

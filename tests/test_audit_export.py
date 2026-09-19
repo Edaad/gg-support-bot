@@ -62,31 +62,43 @@ class AuditExportFormattingTestCase(unittest.TestCase):
     def test_audit_day_window_utc_edt(self):
         start, end = audit_day_window_utc("2026-06-19")
         self.assertEqual(start, datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc))
-        self.assertEqual(end, datetime(2026, 6, 20, 3, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(
+            end, datetime(2026, 6, 20, 3, 59, 59, 999999, tzinfo=timezone.utc)
+        )
 
     def test_eastern_day_bounds_utc_edt(self):
         start, end = eastern_day_bounds_utc("2026-06-19")
         self.assertEqual(start, datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc))
-        self.assertEqual(end, datetime(2026, 6, 20, 3, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(
+            end, datetime(2026, 6, 20, 3, 59, 59, 999999, tzinfo=timezone.utc)
+        )
 
     def test_eastern_day_bounds_utc_est(self):
         start, end = eastern_day_bounds_utc("2026-01-15")
         self.assertEqual(start, datetime(2026, 1, 15, 4, 0, tzinfo=timezone.utc))
-        self.assertEqual(end, datetime(2026, 1, 16, 3, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(
+            end, datetime(2026, 1, 16, 3, 59, 59, 999999, tzinfo=timezone.utc)
+        )
 
     def test_eastern_day_bounds_utc_accepts_iso_prefix(self):
         start, end = eastern_day_bounds_utc("2026-06-19T00:00:00Z")
         self.assertEqual(start, datetime(2026, 6, 19, 4, 0, tzinfo=timezone.utc))
-        self.assertEqual(end, datetime(2026, 6, 20, 3, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(
+            end, datetime(2026, 6, 20, 3, 59, 59, 999999, tzinfo=timezone.utc)
+        )
 
     def test_eastern_audit_end_utc_edt(self):
         end = eastern_audit_end_utc("2026-06-21")
-        self.assertEqual(end, datetime(2026, 6, 22, 3, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(
+            end, datetime(2026, 6, 22, 3, 59, 59, 999999, tzinfo=timezone.utc)
+        )
 
     def test_payment_in_audit_day_uses_partner_window_for_round_table(self):
         session = MagicMock()
         ts = datetime(2026, 8, 31, 4, 17, 5, tzinfo=timezone.utc)
-        with patch("api.audit_export._slug_for_payment_club", return_value="round-table"):
+        with patch(
+            "api.audit_export._slug_for_payment_club", return_value="round-table"
+        ):
             self.assertTrue(
                 _payment_in_audit_day(
                     session,
@@ -98,7 +110,9 @@ class AuditExportFormattingTestCase(unittest.TestCase):
 
     def test_eastern_audit_end_utc_est(self):
         end = eastern_audit_end_utc("2026-01-15")
-        self.assertEqual(end, datetime(2026, 1, 16, 3, 59, 59, 999999, tzinfo=timezone.utc))
+        self.assertEqual(
+            end, datetime(2026, 1, 16, 3, 59, 59, 999999, tzinfo=timezone.utc)
+        )
 
     def test_fmt_stripe_audit_time_uses_ordinal_eastern(self):
         dt = datetime(2026, 6, 19, 4, 58, tzinfo=timezone.utc)
@@ -383,7 +397,9 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
             created_at=datetime(2026, 6, 17, tzinfo=timezone.utc),
         )
         data = build_crypto_payment_read(MagicMock(), payment)
-        self.assertEqual(data["alert_scope_label"], ALERT_SCOPE_LABELS[ALERT_SCOPE_CLUBGTO])
+        self.assertEqual(
+            data["alert_scope_label"], ALERT_SCOPE_LABELS[ALERT_SCOPE_CLUBGTO]
+        )
         self.assertIn("0xfrom", data["from_label"])
 
     @patch("api.audit_export._fetch_union_deposit_audit_rows_timed", return_value=[])
@@ -487,7 +503,15 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         ]
 
         def tagged_side_effect(
-            session, payment_cls, build_read, club_names, from_dt, to_dt, *, audit_date, tag_field
+            session,
+            payment_cls,
+            build_read,
+            club_names,
+            from_dt,
+            to_dt,
+            *,
+            audit_date,
+            tag_field,
         ):
             if payment_cls.__name__ == "ZellePayment":
                 return [
@@ -540,7 +564,15 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         )
 
         def tagged_side_effect(
-            session, payment_cls, build_read, club_names, from_dt, to_dt, *, audit_date, tag_field
+            session,
+            payment_cls,
+            build_read,
+            club_names,
+            from_dt,
+            to_dt,
+            *,
+            audit_date,
+            tag_field,
         ):
             if payment_cls.__name__ == "VenmoPayment":
                 return [
@@ -591,7 +623,15 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
         ]
 
         def tagged_side_effect(
-            session, payment_cls, build_read, club_names, from_dt, to_dt, *, audit_date, tag_field
+            session,
+            payment_cls,
+            build_read,
+            club_names,
+            from_dt,
+            to_dt,
+            *,
+            audit_date,
+            tag_field,
         ):
             if payment_cls.__name__ == "CryptoPayment":
                 return crypto_rows
@@ -657,7 +697,9 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
     @patch("api.audit_export._fetch_tagged_manual_rows", return_value=[])
     @patch("api.audit_export._fetch_bonus_rows", return_value=[])
     @patch("api.audit_export._club_name_map", return_value={1: "ClubGTO"})
-    def test_build_audit_workbook_merges_union_zelle_rows(self, _club_map, _bonus, _tagged, _stripe, _early_rb):
+    def test_build_audit_workbook_merges_union_zelle_rows(
+        self, _club_map, _bonus, _tagged, _stripe, _early_rb
+    ):
         from api.audit_export import _TimedTaggedManualAuditRow
 
         union_row = TaggedManualAuditRow(
@@ -681,12 +723,15 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
                 ]
             return []
 
-        with patch(
-            "api.audit_export._fetch_union_deposit_audit_rows_timed",
-            side_effect=union_side_effect,
-        ), patch(
-            "api.audit_export._fetch_tagged_manual_rows_timed",
-            return_value=[],
+        with (
+            patch(
+                "api.audit_export._fetch_union_deposit_audit_rows_timed",
+                side_effect=union_side_effect,
+            ),
+            patch(
+                "api.audit_export._fetch_tagged_manual_rows_timed",
+                return_value=[],
+            ),
         ):
             content = build_audit_workbook(MagicMock(), "2026-08-25")
 
@@ -699,7 +744,9 @@ class AuditExportWorkbookTestCase(unittest.TestCase):
 
 class AuditExportApiTestCase(unittest.TestCase):
     def setUp(self):
-        self.env_patch = patch.dict(os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False)
+        self.env_patch = patch.dict(
+            os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False
+        )
         self.env_patch.start()
         self.client = TestClient(_make_app())
 
@@ -736,7 +783,9 @@ class AuditExportApiTestCase(unittest.TestCase):
             response.headers["content-type"],
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-        self.assertIn("audit-export-2026-01-31.xlsx", response.headers["content-disposition"])
+        self.assertIn(
+            "audit-export-2026-01-31.xlsx", response.headers["content-disposition"]
+        )
         self.assertEqual(response.content, b"fake-xlsx")
         mock_build.assert_called_once()
 

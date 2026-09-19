@@ -12,10 +12,13 @@ from unittest.mock import patch
 from openpyxl import load_workbook
 
 from api.audit_ledger import LedgerBreakdown, LedgerLine
-from api.audit_reconcile import AuditReconcilePlayerResult, AuditReconcileReport, TradeLineForMatch
+from api.audit_reconcile import (
+    AuditReconcilePlayerResult,
+    AuditReconcileReport,
+    TradeLineForMatch,
+)
 from api.audit_reconcile_export import (
     CLUBGTO_CASHOUT_LABELING_ENABLED,
-    MATCHING_HEADERS,
     MATCHING_WIDTHS,
     UNRESOLVED_HEADERS,
     _CURRENCY_FORMAT,
@@ -187,14 +190,18 @@ class ReconcileExportTestCase(unittest.TestCase):
         )
         self.assertIn("[Red]", _CURRENCY_FORMAT)
         self.assertIsInstance(matching.cell(row=2, column=1).value, datetime)
-        self.assertEqual(matching.cell(row=2, column=1).number_format, _EXCEL_TIME_FORMAT)
+        self.assertEqual(
+            matching.cell(row=2, column=1).number_format, _EXCEL_TIME_FORMAT
+        )
         # 15:30 UTC in July → 11:30 America/New_York (EDT), not club UTC-5 10:30.
         self.assertEqual(
             matching.cell(row=2, column=1).value,
             datetime(2026, 7, 3, 11, 30),
         )
         self.assertIsInstance(matching.cell(row=2, column=8).value, datetime)
-        self.assertEqual(matching.cell(row=2, column=8).number_format, _EXCEL_TIME_FORMAT)
+        self.assertEqual(
+            matching.cell(row=2, column=8).number_format, _EXCEL_TIME_FORMAT
+        )
         self.assertEqual(
             matching.cell(row=2, column=8).value,
             datetime(2026, 7, 3, 11, 30),
@@ -230,10 +237,18 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(list(matching.tables), [])
         header_fill = matching.cell(row=1, column=1).fill.fgColor.rgb
         self.assertTrue(str(header_fill).endswith("306A54"))
-        self.assertEqual(matching.cell(row=1, column=1).font.name, _MATCHING_HEADER_FONT.name)
-        self.assertEqual(matching.cell(row=1, column=1).font.size, _MATCHING_HEADER_FONT.size)
-        self.assertEqual(matching.cell(row=2, column=5).font.name, _MATCHING_BODY_FONT.name)
-        self.assertEqual(matching.cell(row=2, column=5).font.size, _MATCHING_BODY_FONT.size)
+        self.assertEqual(
+            matching.cell(row=1, column=1).font.name, _MATCHING_HEADER_FONT.name
+        )
+        self.assertEqual(
+            matching.cell(row=1, column=1).font.size, _MATCHING_HEADER_FONT.size
+        )
+        self.assertEqual(
+            matching.cell(row=2, column=5).font.name, _MATCHING_BODY_FONT.name
+        )
+        self.assertEqual(
+            matching.cell(row=2, column=5).font.size, _MATCHING_BODY_FONT.size
+        )
         # First data row is not banded.
         self.assertNotEqual(
             (matching.cell(row=2, column=1).fill.fgColor or None)
@@ -249,9 +264,7 @@ class ReconcileExportTestCase(unittest.TestCase):
         validations = list(matching.data_validations.dataValidation)
         self.assertEqual(len(validations), 2)
         source_dv = next(
-            dv
-            for dv in validations
-            if "INDIRECT" not in (dv.formula1 or "")
+            dv for dv in validations if "INDIRECT" not in (dv.formula1 or "")
         )
         self.assertIn("F2:F2", source_dv.sqref)
         self.assertFalse((source_dv.formula1 or "").startswith("="))
@@ -262,9 +275,7 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertIn("J2:J2", variant_dv.sqref)
         self.assertIn("MATCH(", variant_dv.formula1)
         self.assertIn("ADDRESS(", variant_dv.formula1)
-        source_list = [
-            matching.cell(row=r, column=30).value for r in range(1, 50)
-        ]
+        source_list = [matching.cell(row=r, column=30).value for r in range(1, 50)]
         self.assertEqual(source_list[0], "Stripe")
         self.assertIn("Union Zelle", source_list)
         self.assertIn("Large cashout Zelle", source_list)
@@ -390,7 +401,13 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(
             set(rows),
             {
-                ("RT Zelle", "rt-zelle-inbox@example.com", 22.0, "Charlie Kim", "ClubGTO"),
+                (
+                    "RT Zelle",
+                    "rt-zelle-inbox@example.com",
+                    22.0,
+                    "Charlie Kim",
+                    "ClubGTO",
+                ),
                 ("Stripe", None, 15.0, "Gto Only", "ClubGTO"),
             },
         )
@@ -460,13 +477,13 @@ class ReconcileExportTestCase(unittest.TestCase):
         )
         wb = load_workbook(
             io.BytesIO(
-                build_all_clubs_matching_workbook(_all_clubs_reports(round_table=report))
+                build_all_clubs_matching_workbook(
+                    _all_clubs_reports(round_table=report)
+                )
             )
         )
         matching = wb["Round Table"]
-        source_list = [
-            matching.cell(row=r, column=30).value for r in range(1, 80)
-        ]
+        source_list = [matching.cell(row=r, column=30).value for r in range(1, 80)]
         source_list = [value for value in source_list if value]
         self.assertIn("Free Play", source_list)
         self.assertIn("Back to Club", source_list)
@@ -507,7 +524,9 @@ class ReconcileExportTestCase(unittest.TestCase):
         )
         wb = load_workbook(
             io.BytesIO(
-                build_all_clubs_matching_workbook(_all_clubs_reports(creator_club=report))
+                build_all_clubs_matching_workbook(
+                    _all_clubs_reports(creator_club=report)
+                )
             )
         )
         matching = wb["Creator Club"]
@@ -532,7 +551,9 @@ class ReconcileExportTestCase(unittest.TestCase):
         ]
         wb = load_workbook(
             io.BytesIO(
-                build_all_clubs_matching_workbook(_all_clubs_reports(round_table=report))
+                build_all_clubs_matching_workbook(
+                    _all_clubs_reports(round_table=report)
+                )
             )
         )
         matching = wb["Round Table"]
@@ -567,7 +588,9 @@ class ReconcileExportTestCase(unittest.TestCase):
         self.assertEqual(wb["ClubGTO"].cell(row=1, column=12).value, "Vaughn methods")
         self.assertIsNone(wb["Round Table"].cell(row=1, column=12).value)
         self.assertIsNone(wb["Aces Table"].cell(row=1, column=12).value)
-        self.assertEqual(wb["Creator Club"].cell(row=1, column=12).value, "Mateos methods")
+        self.assertEqual(
+            wb["Creator Club"].cell(row=1, column=12).value, "Mateos methods"
+        )
         self.assertEqual(wb["Round Table"].auto_filter.ref, "A1:J1")
         self.assertEqual(list(wb["Round Table"].tables), [])
         self.assertEqual(list(wb["Aces Table"].tables), [])
@@ -750,7 +773,9 @@ class ReconcileExportTestCase(unittest.TestCase):
         )
         wb = load_workbook(
             io.BytesIO(
-                build_all_clubs_matching_workbook(_all_clubs_reports(creator_club=report))
+                build_all_clubs_matching_workbook(
+                    _all_clubs_reports(creator_club=report)
+                )
             )
         )
         matching = wb["Creator Club"]
@@ -830,9 +855,7 @@ class ReconcileExportTestCase(unittest.TestCase):
                 trade_club_slug="aces-table",
             ),
         ]
-        cc_report = _empty_report(
-            club_slug="creator-club", club_name="Creator Club"
-        )
+        cc_report = _empty_report(club_slug="creator-club", club_name="Creator Club")
         cc_report.trade_lines = [
             TradeLineForMatch(
                 line_id=2,
@@ -876,9 +899,7 @@ class ReconcileExportTestCase(unittest.TestCase):
                 trade_club_slug="aces-table",
             ),
         ]
-        cc_report = _empty_report(
-            club_slug="creator-club", club_name="Creator Club"
-        )
+        cc_report = _empty_report(club_slug="creator-club", club_name="Creator Club")
         cc_report.ledger_lines = [
             LedgerLine(
                 gg_player_id="8879-5560",
@@ -934,9 +955,7 @@ class ReconcileExportTestCase(unittest.TestCase):
             ),
         ]
         rt_report.ledger_lines = [replace(cc_line, club_slug="aces-table")]
-        cc_report = _empty_report(
-            club_slug="creator-club", club_name="Creator Club"
-        )
+        cc_report = _empty_report(club_slug="creator-club", club_name="Creator Club")
         cc_report.ledger_lines = [cc_line]
         reports = {
             "round-table": rt_report,

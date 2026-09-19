@@ -193,9 +193,7 @@ class TestReferralGcFlow(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             text,
-            PLAYER_INVITE_FALLBACK_MESSAGE.format(
-                invite_link="https://t.me/+fresh"
-            ),
+            PLAYER_INVITE_FALLBACK_MESSAGE.format(invite_link="https://t.me/+fresh"),
         )
         client.send_message.assert_not_awaited()
 
@@ -234,9 +232,7 @@ class TestReferralGcFlow(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             text,
-            PLAYER_EXISTING_INVITE_MESSAGE.format(
-                invite_link="https://t.me/+existing"
-            ),
+            PLAYER_EXISTING_INVITE_MESSAGE.format(invite_link="https://t.me/+existing"),
         )
         self.assertFalse(existing_flow.await_args.kwargs["send_player_dm"])
 

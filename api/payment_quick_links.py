@@ -124,7 +124,9 @@ def create_quick_link(
     url = normalize_url(url)
     method = normalize_method(method)
     club_id = _resolve_club_id(db, club_id)
-    max_order = db.query(func.coalesce(func.max(PaymentQuickLink.sort_order), -1)).scalar()
+    max_order = db.query(
+        func.coalesce(func.max(PaymentQuickLink.sort_order), -1)
+    ).scalar()
     row = PaymentQuickLink(
         title=title,
         url=url,

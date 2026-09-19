@@ -48,7 +48,9 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _resolve_row_id(club_key: str, row_id: int | None, chat_id: int | None) -> int | None:
+def _resolve_row_id(
+    club_key: str, row_id: int | None, chat_id: int | None
+) -> int | None:
     from db.connection import get_db
     from db.models import InactiveGroupOutreachRow
 

@@ -31,7 +31,9 @@ def _format_binding_summary(bindings) -> str:
     return ", ".join(parts)
 
 
-async def unbindmethod_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def unbindmethod_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     if not update.message or not update.effective_chat or not update.effective_user:
         return
 

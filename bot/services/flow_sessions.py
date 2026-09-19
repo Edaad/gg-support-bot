@@ -105,7 +105,9 @@ def abandon_flow_session(session_uuid: str, *, end_reason: str) -> None:
         row.end_reason = end_reason
 
 
-def complete_flow_session(session_uuid: str, *, end_reason: str = END_REASON_CHIPS_CREDITED) -> None:
+def complete_flow_session(
+    session_uuid: str, *, end_reason: str = END_REASON_CHIPS_CREDITED
+) -> None:
     now = _utc_now()
     with get_db() as session:
         row = (
@@ -256,6 +258,8 @@ def resolve_deposit_session_id(
     return _funnel_context_for_session(session_id)
 
 
-def get_deposit_session_context(deposit_session_id: str) -> ResolvedDepositSession | None:
+def get_deposit_session_context(
+    deposit_session_id: str,
+) -> ResolvedDepositSession | None:
     """Load funnel context for a known deposit session UUID."""
     return _funnel_context_for_session(str(deposit_session_id))

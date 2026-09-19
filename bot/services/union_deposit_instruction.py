@@ -6,7 +6,10 @@ import html
 from decimal import Decimal
 from typing import Any, Optional
 
-from bot.services.union_method_types import union_type_display_name, validate_union_method_type
+from bot.services.union_method_types import (
+    union_type_display_name,
+    validate_union_method_type,
+)
 
 _FOOTER_LINES = (
     "Please put a random emoji in the payment caption when sending",

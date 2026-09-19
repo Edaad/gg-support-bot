@@ -56,9 +56,7 @@ class TestEntityResolutionFailureDetection(unittest.TestCase):
             row_has_entity_resolution_failure(
                 last_error=None,
                 readd_result={
-                    "failed": [
-                        "player:1:Could not find the input entity for PeerUser"
-                    ]
+                    "failed": ["player:1:Could not find the input entity for PeerUser"]
                 },
             )
         )
@@ -93,7 +91,9 @@ class TestClassifyEntityFailureRepair(unittest.TestCase):
 
 class TestAccountCheckFromResolvedUser(unittest.TestCase):
     def test_none_is_not_found(self) -> None:
-        self.assertEqual(account_check_from_resolved_user(None, expected_user_id=1), "not_found")
+        self.assertEqual(
+            account_check_from_resolved_user(None, expected_user_id=1), "not_found"
+        )
 
     def test_matching_id_is_alive(self) -> None:
         user = MagicMock(id=1779692689, deleted=False)

@@ -26,7 +26,9 @@ router = APIRouter(
 )
 
 
-def _export_filename(prefix: str, method: str, from_dt: str | None, to_dt: str | None) -> str:
+def _export_filename(
+    prefix: str, method: str, from_dt: str | None, to_dt: str | None
+) -> str:
     parts = [prefix, method]
     if from_dt:
         parts.append(from_dt[:10])
