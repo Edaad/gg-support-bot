@@ -19,6 +19,7 @@ from bot.services.club import (
     get_club_for_chat,
     get_group_name,
 )
+from bot.services.group_activity import is_support_sender as is_support_sender
 from bot.services.player_details import gg_player_id_from_title
 from bot.services.support_group_chats import (
     fetch_player_telegram_user_id_for_chat,
