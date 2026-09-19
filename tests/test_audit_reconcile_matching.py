@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from api.audit_ledger import LedgerLine
 from api.audit_reconcile import TradeLineForMatch
@@ -423,6 +424,56 @@ class MatchTradeLinesTestCase(unittest.TestCase):
             club_slug="aces-table",
         ).rows
         self.assertEqual(rows[0].match_amount, Decimal("100"))
+
+    def test_early_rb_matches_edt_vs_utc5_wall_clock(self):
+        """Gevs777: Early RB 6:07 PM ET ↔ ClubGTO −$51.00 at 6:07:45 PM UTC-5."""
+        trade_at = datetime(
+            2026, 9, 17, 18, 7, 45, tzinfo=timezone(timedelta(hours=-5))
+        )
+        ledger_at = datetime(
+            2026, 9, 17, 18, 7, tzinfo=ZoneInfo("America/New_York")
+        )
+        trade = _trade(
+            occurred=trade_at,
+            amount="-51",
+            gg_id="6632-8749",
+            nick="Gevs777",
+            club="clubgto",
+            manager="TrafficLight7",
+        )
+        ledger = _ledger(
+            occurred=ledger_at,
+            amount_signed="-51.13",
+            source="early_rakeback",
+            source_label="Early RB",
+            external_id="early_rakeback:gevs",
+            gg_id="6632-8749",
+            nick="Gevs777",
+        )
+        result = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="clubgto",
+        )
+        self.assertEqual(result.rows[0].match_source, "Early RB")
+        self.assertEqual(result.rows[0].match_name, "Gevs777")
+        self.assertEqual(result.unmatched_ledger, [])
+
+    def test_early_rb_outside_extended_window_blank(self):
+        trade = _trade(occurred=self.t0, amount="-51")
+        ledger = _ledger(
+            occurred=self.t0 + timedelta(hours=1, minutes=16),
+            amount_signed="-51.13",
+            source="early_rakeback",
+            source_label="Early RB",
+            external_id="early_rakeback:late",
+        )
+        rows = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="clubgto",
+        ).rows
+        self.assertEqual(rows[0].match_name, "")
 
     def test_early_rb_fractional_matches_floored_trade(self):
         """Early RB $18.60 (rounds to 19) ↔ ClubGG chips $18 within ±$1."""

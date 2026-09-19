@@ -13,6 +13,10 @@ from api.vaughn_methods import matching_source_label
 from bot.services.player_details import parse_group_title_parts
 
 MATCH_WINDOW = timedelta(minutes=15)
+# aon-beta Early RB timestamps are stored/displayed in America/New_York.
+# ClubGTO and Aces trade records use fixed UTC-5. During EDT those wall clocks
+# that look the same (6:07 PM ET vs 6:07 PM UTC-5) are 1 hour apart in UTC.
+EARLY_RB_MATCH_WINDOW = timedelta(hours=1, minutes=15)
 CHIP_TRANSFER_WINDOW = timedelta(minutes=10)
 CHIP_TRANSFER_PLAYER_LABEL = "Chip Transfer (Player)"
 CHIP_TRANSFER_RT_AT_LABEL = "Chip Transfer (RT↔AT)"
@@ -73,6 +77,12 @@ def _as_utc(dt: datetime | None) -> datetime | None:
 def _sort_key_occurred_at(occurred_at: datetime | None) -> datetime:
     """UTC-aware sort key so naive/aware ledger times can be compared."""
     return _as_utc(occurred_at) or datetime.max.replace(tzinfo=timezone.utc)
+
+
+def _match_window(ledger: LedgerLine) -> timedelta:
+    if ledger.source == "early_rakeback":
+        return EARLY_RB_MATCH_WINDOW
+    return MATCH_WINDOW
 
 
 def _signs_compatible(trade_amount: Decimal, ledger: LedgerLine) -> bool:
@@ -405,7 +415,7 @@ def _candidate_score(
     else:
         assert ledger_at is not None
         delta = abs(trade_at - ledger_at)
-        if delta > MATCH_WINDOW:
+        if delta > _match_window(ledger):
             return None
     trade_gid = (trade.member_gg_player_id or "").strip()
     ledger_gid = (ledger.gg_player_id or "").strip()
