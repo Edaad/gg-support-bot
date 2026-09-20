@@ -71,6 +71,95 @@ function draftToPayload(drafts: DraftCondition[]): ConditionIn[] {
   })
 }
 
+function AlertCard({
+  row,
+  onOpen,
+  onToggleActive,
+  onDelete,
+}: {
+  row: DepositAlert
+  onOpen: (row: DepositAlert) => void
+  onToggleActive: (row: DepositAlert, e: MouseEvent) => void
+  onDelete: (row: DepositAlert, e: MouseEvent) => void
+}) {
+  return (
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(row)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen(row)
+        }
+      }}
+      className={[
+        'rounded-xl border border-border bg-surface-raised p-4 text-left shadow-sm transition',
+        'hover:border-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+        row.is_active ? '' : 'opacity-60',
+      ].join(' ')}
+    >
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <PaymentMethodIcon slug={row.method} className="h-6 w-6" />
+            <h2 className="truncate text-base font-semibold text-ink">{row.name}</h2>
+          </div>
+          <p className="mt-1 truncate text-sm text-ink-muted">
+            {methodLabel(row.method)} · {row.variant}
+          </p>
+        </div>
+        <label
+          className="inline-flex shrink-0 items-center gap-2 text-xs text-ink-muted"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="sr-only">Active</span>
+          <input
+            type="checkbox"
+            checked={row.is_active}
+            onChange={() => {}}
+            onClick={(e) => onToggleActive(row, e)}
+            className="h-4 w-4 rounded border-border"
+          />
+          Active
+        </label>
+      </div>
+
+      <div className="mb-3 grid grid-cols-2 gap-3">
+        <div className="rounded-lg bg-control/60 px-3 py-2">
+          <p className="text-xs text-ink-muted">Volume this week</p>
+          <p className="text-lg font-semibold tabular-nums text-ink">
+            ${fmtMoney(row.week_volume_usd)}
+          </p>
+        </div>
+        <div className="rounded-lg bg-control/60 px-3 py-2">
+          <p className="text-xs text-ink-muted">Transactions</p>
+          <p className="text-lg font-semibold tabular-nums text-ink">{row.week_tx_count}</p>
+        </div>
+      </div>
+
+      <ul className="mb-3 space-y-1 text-sm text-ink-muted">
+        {(row.conditions || []).map((c) => (
+          <li key={c.type}>{c.summary || c.label || c.type}</li>
+        ))}
+      </ul>
+
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-ink-muted">
+          {row.alerted_this_week ? 'Alerted this week' : '\u00a0'}
+        </p>
+        <button
+          type="button"
+          className="btn-secondary-sm text-danger-ink"
+          onClick={(e) => onDelete(row, e)}
+        >
+          Delete
+        </button>
+      </div>
+    </article>
+  )
+}
+
 export default function Alerts({ token }: { token: string }) {
   const askConfirm = useConfirm()
   const [rows, setRows] = useState<DepositAlert[]>([])
@@ -142,6 +231,16 @@ export default function Alerts({ token }: { token: string }) {
   const weekLabel = useMemo(() => {
     const weekId = rows[0]?.week_id
     return weekId ? `Week of ${weekId} (Mon–Sun ET)` : 'This week (Mon–Sun ET)'
+  }, [rows])
+
+  const { activeRows, inactiveRows } = useMemo(() => {
+    const active: DepositAlert[] = []
+    const inactive: DepositAlert[] = []
+    for (const row of rows) {
+      if (row.is_active) active.push(row)
+      else inactive.push(row)
+    }
+    return { activeRows: active, inactiveRows: inactive }
   }, [rows])
 
   const openCreate = () => {
@@ -314,89 +413,48 @@ export default function Alerts({ token }: { token: string }) {
           No alerts yet. Add one for a deposit method destination.
         </p>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {rows.map((row) => (
-            <article
-              key={row.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => openEdit(row)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  openEdit(row)
-                }
-              }}
-              className={[
-                'rounded-xl border border-border bg-surface-raised p-4 text-left shadow-sm transition',
-                'hover:border-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                row.is_active ? '' : 'opacity-60',
-              ].join(' ')}
+        <>
+          {activeRows.length === 0 ? (
+            <p className="text-sm text-ink-muted">No active alerts.</p>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {activeRows.map((row) => (
+                <AlertCard
+                  key={row.id}
+                  row={row}
+                  onOpen={openEdit}
+                  onToggleActive={onToggleActive}
+                  onDelete={onDelete}
+                />
+              ))}
+            </div>
+          )}
+
+          {inactiveRows.length > 0 && (
+            <section
+              className="mt-10 border-t border-border pt-8"
+              aria-labelledby="inactive-alerts-heading"
             >
-              <div className="mb-3 flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <PaymentMethodIcon slug={row.method} className="h-6 w-6" />
-                    <h2 className="truncate text-base font-semibold text-ink">{row.name}</h2>
-                  </div>
-                  <p className="mt-1 truncate text-sm text-ink-muted">
-                    {methodLabel(row.method)} · {row.variant}
-                  </p>
-                </div>
-                <label
-                  className="inline-flex shrink-0 items-center gap-2 text-xs text-ink-muted"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <span className="sr-only">Active</span>
-                  <input
-                    type="checkbox"
-                    checked={row.is_active}
-                    onChange={() => {}}
-                    onClick={(e) => onToggleActive(row, e)}
-                    className="h-4 w-4 rounded border-border"
+              <h2
+                id="inactive-alerts-heading"
+                className="mb-4 text-lg font-semibold tracking-tight text-ink"
+              >
+                Inactive
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {inactiveRows.map((row) => (
+                  <AlertCard
+                    key={row.id}
+                    row={row}
+                    onOpen={openEdit}
+                    onToggleActive={onToggleActive}
+                    onDelete={onDelete}
                   />
-                  Active
-                </label>
-              </div>
-
-              <div className="mb-3 grid grid-cols-2 gap-3">
-                <div className="rounded-lg bg-control/60 px-3 py-2">
-                  <p className="text-xs text-ink-muted">Volume this week</p>
-                  <p className="text-lg font-semibold tabular-nums text-ink">
-                    ${fmtMoney(row.week_volume_usd)}
-                  </p>
-                </div>
-                <div className="rounded-lg bg-control/60 px-3 py-2">
-                  <p className="text-xs text-ink-muted">Transactions</p>
-                  <p className="text-lg font-semibold tabular-nums text-ink">
-                    {row.week_tx_count}
-                  </p>
-                </div>
-              </div>
-
-              <ul className="mb-3 space-y-1 text-sm text-ink-muted">
-                {(row.conditions || []).map((c) => (
-                  <li key={c.type}>
-                    {c.summary || c.label || c.type}
-                  </li>
                 ))}
-              </ul>
-
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-ink-muted">
-                  {row.alerted_this_week ? 'Alerted this week' : '\u00a0'}
-                </p>
-                <button
-                  type="button"
-                  className="btn-secondary-sm text-danger-ink"
-                  onClick={(e) => onDelete(row, e)}
-                >
-                  Delete
-                </button>
               </div>
-            </article>
-          ))}
-        </div>
+            </section>
+          )}
+        </>
       )}
 
       <Modal
