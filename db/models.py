@@ -3004,7 +3004,9 @@ class DepositMethodAlert(Base):
     name = Column(String(255), nullable=False)
     method = Column(String(32), nullable=False)
     variant = Column(String(255), nullable=False)
-    is_active = Column(Boolean, nullable=False, server_default=text("true"), default=True)
+    is_active = Column(
+        Boolean, nullable=False, server_default=text("true"), default=True
+    )
     conditions = Column(
         JSONB, nullable=False, server_default=text("'[]'"), default=list
     )
