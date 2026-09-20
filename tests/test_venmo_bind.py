@@ -324,7 +324,7 @@ class SetupAlreadyLinkedIngestTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.auto_bound)
         self.assertEqual(result.status, "unbound")
         complete_mock.assert_not_called()
-        cancel_mock.assert_called_once()
+        cancel_mock.assert_called_once_with(mock_session, attempt)
         self.assertEqual(send_mock.await_count, 2)
         warning_text = send_mock.await_args_list[0].args[0]
         self.assertIn("First-time setup warning", warning_text)

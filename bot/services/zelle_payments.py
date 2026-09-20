@@ -314,11 +314,7 @@ async def ingest_zelle_payment(
                         telegram_chat_id=int(existing_link.linked_chat_ids[0]),
                         exclude_payment_id=int(payment.id),
                     )
-                    cancel_setup_attempt_in_session(
-                        session,
-                        setup_attempt,
-                        zelle_payment_id=int(payment.id),
-                    )
+                    cancel_setup_attempt_in_session(session, setup_attempt)
                     setup_blocked_already_linked = True
                     setup_target_chat_id = int(setup_attempt.telegram_chat_id)
                     setup_target_title = live_title

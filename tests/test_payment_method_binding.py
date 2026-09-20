@@ -6,11 +6,13 @@ from unittest.mock import MagicMock, patch
 
 from api.payment_v2_helpers import validate_first_time_linking
 from bot.services.payment_method_binding import (
+    ATTEMPT_STATUS_CANCELLED,
     ATTEMPT_STATUS_PENDING,
     BIND_KIND_MEMO_EMOJI,
     BIND_KIND_SPECIAL_AMOUNT,
     allocate_setup_memo_code,
     allocate_setup_amount_cents,
+    cancel_setup_attempt_in_session,
     bind_mode_for_method,
     effective_min_cents,
     SETUP_MEMO_CODE_POOL,
@@ -710,6 +712,24 @@ class TestZelleRecipientHelpers(unittest.TestCase):
             memo="RIVER setup",
         )
         self.assertIsNone(wrong_recipient)
+
+
+class CancelSetupAttemptTests(unittest.TestCase):
+    def test_cancel_pending_attempt_without_payment_id(self):
+        attempt = MagicMock(status=ATTEMPT_STATUS_PENDING, completed_at=None)
+        ok = cancel_setup_attempt_in_session(MagicMock(), attempt)
+        self.assertTrue(ok)
+        self.assertEqual(attempt.status, ATTEMPT_STATUS_CANCELLED)
+        self.assertIsNotNone(attempt.completed_at)
+
+    def test_cancel_does_not_accept_payment_id_kwargs(self):
+        attempt = MagicMock(status=ATTEMPT_STATUS_PENDING)
+        with self.assertRaises(TypeError):
+            cancel_setup_attempt_in_session(
+                MagicMock(),
+                attempt,
+                venmo_payment_id=1,
+            )
 
 
 if __name__ == "__main__":
