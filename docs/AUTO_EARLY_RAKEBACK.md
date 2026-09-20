@@ -22,9 +22,12 @@ All player-facing copy says **fee** and **feeback**, never rake or rakeback.
    before any of the numbers matter.
 5. *"Calculating your remaining feeback for this week..."* — `GET bot/quote` on Elevate with
    the **filtered** rake and PnL.
-6. *"Your total remaining feeback for this week is: $X.XX — Would you like to claim?"*
-   with **Claim** / **Cancel**, plus *"Early feeback counts as a deposit and will reset
-   the cashout timer"*.
+6. *"You've already claimed $Y.YY of feeback this week."* (omitted when Elevate
+   reports zero or no total), then *"Your total remaining feeback for this week is:
+   $X.XX — Would you like to claim?"* with **Claim** / **Cancel**, plus *"Early
+   feeback counts as a deposit and will reset the cashout timer"*. If nothing is
+   left, the player sees the claimed total in *"You've already claimed all of your
+   feeback for this week ($Y.YY)."*
 7. On Claim: *"Adding early feeback..."*, then `POST bot/record` on Elevate, then
    `POST /deposit` on the RPA bot (`label` **Feeback**, so the VM notification
    reads *Feeback success*). That status message is replaced with

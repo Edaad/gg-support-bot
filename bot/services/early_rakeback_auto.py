@@ -107,14 +107,34 @@ def format_feeback_amount(amount: Decimal, decimal_places: int = 2) -> str:
     return f"${amount.quantize(quantum):,.{places}f}"
 
 
+def format_already_claimed_amount(quote: Any) -> Optional[str]:
+    """Elevate's ``totalAlreadyGiven`` for this week, or None when unknown/zero."""
+    claimed = getattr(quote, "total_already_given", None)
+    if claimed is None or claimed <= 0:
+        return None
+    return format_feeback_amount(claimed, quote.display_decimal_places)
+
+
 def format_claim_prompt(quote: Any) -> str:
     """The Claim / Cancel question shown once a quote clears every gate."""
     amount = format_feeback_amount(quote.remaining, quote.display_decimal_places)
+    claimed = format_already_claimed_amount(quote)
+    claimed_line = (
+        f"You've already claimed {claimed} of feeback this week.\n\n" if claimed else ""
+    )
     return (
+        f"{claimed_line}"
         f"Your total remaining feeback for this week is: {amount}\n\n"
         f"Would you like to claim?\n\n"
         f"{CASHOUT_TIMER_NOTICE}"
     )
+
+
+def format_nothing_remaining_copy(quote: Any) -> str:
+    claimed = format_already_claimed_amount(quote)
+    if claimed:
+        return f"You've already claimed all of your feeback for this week ({claimed})."
+    return NOTHING_REMAINING_COPY
 
 
 def date_filter_is_suspect(fee: Any) -> bool:
@@ -235,7 +255,9 @@ async def quote_feeback(
     if not quote.eligible:
         if quote.reason == elevate.REASON_NOTHING_REMAINING:
             return QuoteStage(
-                "nothing_remaining", quote, player_message=NOTHING_REMAINING_COPY
+                "nothing_remaining",
+                quote,
+                player_message=format_nothing_remaining_copy(quote),
             )
         return QuoteStage(
             "escalate", quote, detail=f"quote not eligible: {quote.reason}"

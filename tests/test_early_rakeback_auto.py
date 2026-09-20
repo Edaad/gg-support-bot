@@ -51,6 +51,7 @@ def _quote(
     minimum="50",
     places=2,
     warnings=(),
+    already_given="0",
 ):
     return elevate.Quote(
         eligible=eligible,
@@ -66,7 +67,9 @@ def _quote(
         source="custom_player",
         deal_type="flat",
         percentage=Decimal("60"),
-        total_already_given=Decimal("0"),
+        total_already_given=(
+            None if already_given is None else Decimal(already_given)
+        ),
         warnings=tuple(warnings),
     )
 
@@ -165,6 +168,22 @@ class ClaimPromptTests(unittest.TestCase):
 
         self.assertNotIn("24 hour", prompt)
         self.assertNotIn("once every", prompt)
+
+    def test_prompt_includes_already_claimed_when_elevate_has_a_total(self) -> None:
+        prompt = auto.format_claim_prompt(_quote(already_given="80"))
+
+        self.assertIn(
+            "You've already claimed $80.00 of feeback this week.", prompt
+        )
+        self.assertIn("Your total remaining feeback for this week is: $240.00", prompt)
+
+    def test_prompt_omits_already_claimed_when_nothing_has_been_taken(self) -> None:
+        prompt = auto.format_claim_prompt(_quote(already_given="0"))
+        self.assertNotIn("already claimed", prompt)
+
+    def test_prompt_omits_already_claimed_when_elevate_did_not_send_it(self) -> None:
+        prompt = auto.format_claim_prompt(_quote(already_given=None))
+        self.assertNotIn("already claimed", prompt)
 
 
 class IdempotencyKeyTests(unittest.TestCase):
@@ -294,6 +313,24 @@ class QuoteStageTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(stage.kind, "nothing_remaining")
         self.assertEqual(stage.player_message, auto.NOTHING_REMAINING_COPY)
+
+    async def test_nothing_remaining_includes_already_claimed(self) -> None:
+        stage = await self._quote_stage(
+            elevate.QuoteResult(
+                True,
+                quote=_quote(
+                    eligible=False,
+                    reason=elevate.REASON_NOTHING_REMAINING,
+                    remaining="0",
+                    already_given="80",
+                ),
+            )
+        )
+        self.assertEqual(stage.kind, "nothing_remaining")
+        self.assertEqual(
+            stage.player_message,
+            "You've already claimed all of your feeback for this week ($80.00).",
+        )
 
     async def test_not_listed_escalates(self) -> None:
         stage = await self._quote_stage(
