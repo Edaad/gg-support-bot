@@ -84,7 +84,8 @@ LABEL_DEPOSIT = "Deposit"
 LABEL_BONUS = "Bonus"
 LABEL_FEEBACK = "Feeback"
 LABEL_CASHOUT = "Cashout"
-LABEL_TRANSFER = "Transfer"
+LABEL_TRANSFER_CLAIM = "Transfer claim"
+LABEL_TRANSFER_ADD = "Transfer add"
 
 # Idempotency / double-fire guard shared across the PTB and Telethon event loops.
 _seen_lock = threading.Lock()
