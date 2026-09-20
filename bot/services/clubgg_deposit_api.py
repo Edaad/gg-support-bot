@@ -82,7 +82,7 @@ _PROBLEM_STATUSES = frozenset({"fail", "uncertain", "error", "cancelled"})
 # "<label> success" instead of the API defaults Add / Claim.
 LABEL_DEPOSIT = "Deposit"
 LABEL_BONUS = "Bonus"
-LABEL_FEEBACK = "Feeback"
+LABEL_FEEBACK = "Early Feeback"
 LABEL_CASHOUT = "Cashout"
 LABEL_TRANSFER_CLAIM = "Transfer claim"
 LABEL_TRANSFER_ADD = "Transfer add"

@@ -465,7 +465,7 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.record.call_args.kwargs["idempotency_key"], "tg:-100:abc")
         self.assertEqual(self.chip_add.call_args.kwargs["amount"], Decimal("240"))
         self.assertEqual(self.chip_add.call_args.kwargs["union_shorthand"], "RT")
-        self.assertEqual(self.chip_add.call_args.kwargs["label"], "Feeback")
+        self.assertEqual(self.chip_add.call_args.kwargs["label"], "Early Feeback")
         self.delete.assert_not_awaited()
         self.notify_added.assert_not_awaited()
 

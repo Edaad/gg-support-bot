@@ -29,8 +29,8 @@ All player-facing copy says **fee** and **feeback**, never rake or rakeback.
    left, the player sees the claimed total in *"You've already claimed all of your
    feeback for this week ($Y.YY)."*
 7. On Claim: *"Adding early feeback..."*, then `POST bot/record` on Elevate, then
-   `POST /deposit` on the RPA bot (`label` **Feeback**, so the VM notification
-   reads *Feeback success*). That status message is replaced with
+   `POST /deposit` on the RPA bot (`label` **Early Feeback**, so the VM
+   notification reads *Early Feeback success*). That status message is replaced with
    *"$X.XX feeback added to your account!"*
 
 Fee lookup and chip-add run as ConversationHandler **non-blocking** callbacks

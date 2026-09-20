@@ -670,7 +670,7 @@ class TestChipAddPostsLabels(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(ok)
         self.assertEqual(status, "success")
-        self.assertEqual(client.posts[0][1]["label"], "Feeback")
+        self.assertEqual(client.posts[0][1]["label"], "Early Feeback")
 
 
 class TestClaimPostsCashoutLabel(unittest.IsolatedAsyncioTestCase):
