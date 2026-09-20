@@ -55,6 +55,7 @@ const GTO_TOP_NAV: NavLinkItem[] = [
   { to: '/payments', label: 'Payments', icon: 'payments' },
   { to: '/cashout-records', label: 'Cashouts', icon: 'cashouts' },
   { to: '/bonuses', label: 'Bonuses', icon: 'bonuses' },
+  { to: RAKEBACK_URL, label: 'Rakeback', icon: 'rakeback', external: true },
 ]
 
 function topNavForRole(role: DashboardRole): NavLinkItem[] {
