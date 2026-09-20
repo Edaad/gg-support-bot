@@ -12,6 +12,14 @@ For shared concepts (first-time linking, ingest order, repeat payers), see [`VEN
 
 Repeat payers (`cashapp_payer_bindings`) auto-bind by **normalized payer name** only (handle is last-seen, not used for lookup).
 
+## Destination tag stickiness
+
+Native Cash App `$cashtag` instructions stick per support group after the bot first shows them in `/deposit` (same table/migration as Venmo — see [`VENMO_FLOW.md`](VENMO_FLOW.md) Part 4). Stripe checkout variants are never locked as a destination tag; if a sticky `$tag` is unavailable for the amount but Stripe is, Stripe is shown. `/unbindmethod` clears stickiness.
+
+```bash
+DATABASE_URL=... python migrate_deposit_destination_stickiness.py
+```
+
 ## Database tables
 
 | Table | Purpose |

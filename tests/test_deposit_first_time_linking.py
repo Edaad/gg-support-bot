@@ -90,13 +90,19 @@ def _merged_stripe_under():
 
 
 class PickDepositVariantTestCase(unittest.TestCase):
-    def test_weighted_pick_can_return_stripe_variant(self):
+    def test_weighted_pick_prefers_native_over_stripe(self):
         with (
             patch.object(dep, "get_tier_for_amount", return_value=OVER_TIER),
             patch.object(
                 dep,
-                "pick_variant",
-                return_value=dict(STRIPE_OVER_VARIANT),
+                "list_tier_variants",
+                return_value=[STRIPE_OVER_VARIANT, ACCOUNT_VARIANT],
+            ),
+            patch.object(dep, "get_destination_stickiness", return_value=None),
+            patch.object(
+                dep,
+                "_pick_weighted_variant_dicts",
+                return_value=dict(ACCOUNT_VARIANT),
             ) as pick_mock,
         ):
             response_data, tier = dep._pick_deposit_variant_response(
@@ -107,18 +113,24 @@ class PickDepositVariantTestCase(unittest.TestCase):
             )
 
         pick_mock.assert_called_once()
-        self.assertTrue(dep._stripe_checkout_enabled(response_data))
+        self.assertFalse(dep._stripe_checkout_enabled(response_data))
         self.assertEqual(tier, OVER_TIER)
 
-    def test_cashapp_normal_flow_ignores_sticky_binding(self):
+    def test_cashapp_ignores_linking_binding_variant_id(self):
         binding = SimpleNamespace(variant_id=21)
         with (
             patch.object(dep, "get_tier_for_amount", return_value=OVER_TIER),
+            patch.object(
+                dep,
+                "list_tier_variants",
+                return_value=[STRIPE_OVER_VARIANT, ACCOUNT_VARIANT],
+            ),
+            patch.object(dep, "get_destination_stickiness", return_value=None),
             patch.object(dep, "get_chat_binding", return_value=binding),
             patch.object(
                 dep,
-                "pick_variant",
-                return_value=dict(STRIPE_OVER_VARIANT),
+                "_pick_weighted_variant_dicts",
+                return_value=dict(ACCOUNT_VARIANT),
             ) as pick_mock,
         ):
             dep._pick_deposit_variant_response(
@@ -129,19 +141,36 @@ class PickDepositVariantTestCase(unittest.TestCase):
                 method_slug="cashapp",
             )
 
-        pick_mock.assert_called_once_with(4, tier_id=OVER_TIER["id"], variant_id=None)
+        # Cash App does not force linking variant_id; weighted among native only.
+        pick_mock.assert_called_once()
+        native_ids = [v["variant_id"] for v in pick_mock.call_args[0][0]]
+        self.assertEqual(native_ids, [21])
 
-    def test_venmo_still_uses_sticky_binding(self):
+    def test_venmo_still_uses_linking_binding_when_no_display_sticky(self):
         binding = SimpleNamespace(variant_id=99)
         venmo_method = {**METHOD, "slug": "venmo", "name": "Venmo"}
+        linked = {
+            "variant_id": 99,
+            "weight": 100,
+            "response_type": "text",
+            "response_text": "Venmo: https://venmo.com/u/linked",
+            "use_group_checkout_link": False,
+        }
+        other = {
+            "variant_id": 2,
+            "weight": 100,
+            "response_type": "text",
+            "response_text": "Venmo: https://venmo.com/u/other",
+            "use_group_checkout_link": False,
+        }
         with (
             patch.object(dep, "get_tier_for_amount", return_value=OVER_TIER),
+            patch.object(dep, "list_tier_variants", return_value=[linked, other]),
+            patch.object(dep, "get_destination_stickiness", return_value=None),
             patch.object(dep, "get_chat_binding", return_value=binding),
-            patch.object(
-                dep, "pick_variant", return_value={"variant_id": 99}
-            ) as pick_mock,
+            patch.object(dep, "_pick_weighted_variant_dicts") as pick_mock,
         ):
-            dep._pick_deposit_variant_response(
+            response_data, _tier = dep._pick_deposit_variant_response(
                 4,
                 venmo_method,
                 Decimal("150"),
@@ -149,7 +178,8 @@ class PickDepositVariantTestCase(unittest.TestCase):
                 method_slug="venmo",
             )
 
-        pick_mock.assert_called_once_with(4, tier_id=OVER_TIER["id"], variant_id=99)
+        pick_mock.assert_not_called()
+        self.assertEqual(response_data.get("variant_id"), 99)
 
 
 class FirstTimeSetupFromChoiceTestCase(unittest.IsolatedAsyncioTestCase):

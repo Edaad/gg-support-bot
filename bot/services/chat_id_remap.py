@@ -131,6 +131,7 @@ def remap_chat_id_in_db(old_id: int, new_id: int) -> dict[str, int]:
             ("crypto_wallet_bindings", ("telegram_chat_id",)),
             ("payment_method_bind_attempts", ("telegram_chat_id",)),
             ("group_payment_method_bindings", ("telegram_chat_id",)),
+            ("group_deposit_destination_stickiness", ("telegram_chat_id",)),
         ):
             for col in columns:
                 _remap_scalar_chat_col(table, col)

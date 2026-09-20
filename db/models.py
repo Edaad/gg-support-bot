@@ -2254,6 +2254,42 @@ class GroupPaymentMethodBinding(Base):
     )
 
 
+class GroupDepositDestinationStickiness(Base):
+    """First bot-shown native Venmo/Cash App destination tag for a support group.
+
+    Separate from ``group_payment_method_bindings`` so display stickiness does not
+    skip first-time deposit linking.
+    """
+
+    __tablename__ = "group_deposit_destination_stickiness"
+    __table_args__ = (
+        UniqueConstraint(
+            "telegram_chat_id",
+            "payment_method_slug",
+            name="uq_gdds_chat_method",
+        ),
+        Index("ix_gdds_telegram_chat_id", "telegram_chat_id"),
+        Index("ix_gdds_club_slug", "club_id", "payment_method_slug"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    payment_method_slug = Column(String(32), nullable=False)
+    destination_tag = Column(String(100), nullable=False)
+    variant_id = Column(
+        Integer,
+        ForeignKey("club_payment_tier_variants.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    shown_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    club = relationship("Club")
+    variant = relationship("ClubPaymentTierVariant")
+
+
 class PaymentNotificationPost(Base):
     """One Telegram staff notification message for a payment (fan-out copies)."""
 

@@ -547,6 +547,16 @@ This creates `payment_binding_events`, an append-only log of binds, group-link u
 heroku run -a YOUR_APP -- python scripts/audit_payment_notification_sync.py --method zelle
 ```
 
+## Venmo / Cash App destination stickiness
+
+After deploying display-tag stickiness (first bot-shown `@` / `$` per support group), run once:
+
+```bash
+heroku run -a YOUR_APP -- python migrate_deposit_destination_stickiness.py
+```
+
+Creates `group_deposit_destination_stickiness`. Cleared by `/unbindmethod` and dashboard unbind. See [`docs/VENMO_FLOW.md`](VENMO_FLOW.md) and [`docs/CASHAPP_PAYMENTS.md`](CASHAPP_PAYMENTS.md).
+
 ## Daily support-group activity tracking
 
 After deploying daily active-group instrumentation, run once on production Postgres:

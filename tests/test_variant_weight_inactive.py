@@ -238,18 +238,24 @@ class GetMethodsForAmountInactiveTests(unittest.TestCase):
 
 
 class DepositStickyInactiveTests(unittest.TestCase):
-    def test_venmo_sticky_inactive_falls_back_without_forcing_variant_id(self):
-        binding = SimpleNamespace(variant_id=99)
+    def test_venmo_display_sticky_inactive_does_not_fall_back_to_other_tag(self):
+        sticky = SimpleNamespace(destination_tag="@paused", variant_id=99)
         over_tier = {"id": 2, "label": "Over $100"}
         venmo_method = {"id": 4, "name": "Venmo", "slug": "venmo"}
-        active_pick = {"variant_id": 2, "response_type": "text", "response_text": "x"}
+        other = {
+            "variant_id": 2,
+            "weight": 100,
+            "response_type": "text",
+            "response_text": "Venmo: https://venmo.com/u/active",
+            "use_group_checkout_link": False,
+        }
 
         with (
             patch.object(dep, "get_tier_for_amount", return_value=over_tier),
-            patch.object(dep, "get_chat_binding", return_value=binding),
-            patch.object(dep, "pick_variant", return_value=active_pick) as pick_mock,
+            patch.object(dep, "list_tier_variants", return_value=[other]),
+            patch.object(dep, "get_destination_stickiness", return_value=sticky),
         ):
-            dep._pick_deposit_variant_response(
+            response_data, tier = dep._pick_deposit_variant_response(
                 4,
                 venmo_method,
                 Decimal("150"),
@@ -257,7 +263,8 @@ class DepositStickyInactiveTests(unittest.TestCase):
                 method_slug="venmo",
             )
 
-        pick_mock.assert_called_once_with(4, tier_id=2, variant_id=99)
+        self.assertIsNone(response_data)
+        self.assertEqual(tier, over_tier)
 
 
 class VariantWeightSchemaTests(unittest.TestCase):

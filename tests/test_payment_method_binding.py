@@ -153,11 +153,12 @@ class TestUnbind(unittest.TestCase):
             binding_q.delete.return_value = 0
             session.query.return_value.filter_by.return_value = binding_q
 
-            removed, cancelled = unbind_chat_from_all_methods(-1001)
+            removed, cancelled, stickiness_removed = unbind_chat_from_all_methods(-1001)
 
         self.assertEqual(removed, 2)
         self.assertEqual(cancelled, 1)
-        self.assertEqual(session.delete.call_count, 2)
+        self.assertEqual(stickiness_removed, 2)
+        self.assertEqual(session.delete.call_count, 4)
         self.assertEqual(binding_q.delete.call_count, 4)
         cancel_all_mock.assert_called_once()
 
