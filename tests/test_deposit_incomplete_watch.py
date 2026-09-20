@@ -9,7 +9,9 @@ class DepositIncompleteWatchTests(unittest.TestCase):
     def test_arm_upserts_row(self):
         armed_at = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
         session = MagicMock()
-        session.query.return_value.filter_by.return_value.one_or_none.return_value = None
+        session.query.return_value.filter_by.return_value.one_or_none.return_value = (
+            None
+        )
 
         with patch("bot.services.deposit_incomplete_watch.get_db") as mock_get_db:
             mock_get_db.return_value.__enter__.return_value = session
@@ -46,7 +48,9 @@ class DepositIncompleteWatchTests(unittest.TestCase):
 
         job_queue = MagicMock()
         with (
-            patch.object(diw, "list_armed_deposit_incomplete_watches", return_value=[row]),
+            patch.object(
+                diw, "list_armed_deposit_incomplete_watches", return_value=[row]
+            ),
             patch.object(diw, "payment_or_chips_seen_since_arm", return_value=True),
             patch.object(diw, "_deposit_reminder_seconds", return_value=600),
             patch.object(diw, "delete_deposit_incomplete_watch") as delete_mock,
@@ -66,7 +70,9 @@ class DepositIncompleteWatchTests(unittest.TestCase):
 
         job_queue = MagicMock()
         with (
-            patch.object(diw, "list_armed_deposit_incomplete_watches", return_value=[row]),
+            patch.object(
+                diw, "list_armed_deposit_incomplete_watches", return_value=[row]
+            ),
             patch.object(diw, "payment_or_chips_seen_since_arm", return_value=False),
             patch.object(diw, "_deposit_reminder_seconds", return_value=600),
             patch.object(diw, "_schedule_deposit_reminder_job") as schedule_mock,

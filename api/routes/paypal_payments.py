@@ -7,7 +7,10 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
 
 from api.method_owner import MethodOwnerSlug
-from api.webhook_ingest_audit import enrich_payment_ingest_success, set_webhook_ingest_error
+from api.webhook_ingest_audit import (
+    enrich_payment_ingest_success,
+    set_webhook_ingest_error,
+)
 from bot.services.paypal_payments import (
     WEBHOOK_SECRET_ENV,
     ingest_paypal_payment,

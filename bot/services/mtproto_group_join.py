@@ -155,7 +155,11 @@ async def promote_group_admin(
     marker = (user_marker or "").strip()
     if not marker:
         return False, "empty_marker"
-    lookup = marker if marker.startswith("@") or marker.lstrip("-").isdigit() else f"@{marker.lstrip('@')}"
+    lookup = (
+        marker
+        if marker.startswith("@") or marker.lstrip("-").isdigit()
+        else f"@{marker.lstrip('@')}"
+    )
 
     try:
         user_ent = await _with_single_flood_retry(
@@ -191,7 +195,9 @@ async def promote_group_admin(
         err = getattr(e, "message", None) or type(e).__name__
         if isinstance(e, RPCError):
             err = getattr(e, "message", err) or type(e).__name__
-        logger.info("promote_group_admin failed marker=%s: %s", lookup, type(e).__name__)
+        logger.info(
+            "promote_group_admin failed marker=%s: %s", lookup, type(e).__name__
+        )
         return False, str(err)[:500]
 
 
@@ -204,9 +210,7 @@ async def promote_megagroup_admin(
 ) -> tuple[bool, str | None]:
     """Deprecated alias for :func:`promote_group_admin`."""
 
-    return await promote_group_admin(
-        client, channel_entity, user_marker, rank=rank
-    )
+    return await promote_group_admin(client, channel_entity, user_marker, rank=rank)
 
 
 def _resolve_link_join_client(
@@ -242,9 +246,17 @@ async def run_link_join_and_promote(
     if group_entity is None:
         group_entity = channel_entity
     if group_entity is None:
-        return [], [], [
-            {"user": promote_marker, "reason": "missing_group_entity", "kind": "promote"}
-        ]
+        return (
+            [],
+            [],
+            [
+                {
+                    "user": promote_marker,
+                    "reason": "missing_group_entity",
+                    "kind": "promote",
+                }
+            ],
+        )
 
     link_joined: list[dict] = []
     promoted: list[dict] = []
@@ -257,7 +269,9 @@ async def run_link_join_and_promote(
         )
         return link_joined, promoted, failures
 
-    borrowed, owns_connection = _resolve_link_join_client(link_join_cfg, link_join_client)
+    borrowed, owns_connection = _resolve_link_join_client(
+        link_join_cfg, link_join_client
+    )
 
     async with get_mtproto_lock(link_join_cfg.club_key):
         join_client = borrowed

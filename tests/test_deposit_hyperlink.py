@@ -23,7 +23,9 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_stripe_hyperlink_placeholder_replaced_with_html_link(self):
         query = _deposit_query()
         chat = query.message.chat
-        context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
+        context = SimpleNamespace(
+            chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={}
+        )
 
         result = SimpleNamespace(
             checkout_url="https://checkout.stripe.com/test?x=1&y=2",
@@ -42,7 +44,9 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.object(dep, "stripe_configured", return_value=True),
-            patch.object(dep, "create_stripe_checkout_session", return_value=result) as create_session,
+            patch.object(
+                dep, "create_stripe_checkout_session", return_value=result
+            ) as create_session,
         ):
             ok = await dep._send_deposit_method_response(
                 query,
@@ -61,12 +65,17 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(query.edit_message_text.called)
         chat.send_message.assert_awaited()
         sent_text = chat.send_message.call_args.args[0]
-        self.assertIn('<a href="https://checkout.stripe.com/test?x=1&amp;y=2">PAY HERE</a>', sent_text)
+        self.assertIn(
+            '<a href="https://checkout.stripe.com/test?x=1&amp;y=2">PAY HERE</a>',
+            sent_text,
+        )
         self.assertEqual(chat.send_message.call_args.kwargs.get("parse_mode"), "HTML")
 
     async def test_stripe_checkout_when_provider_missing_defaults_stripe(self):
         query = _deposit_query()
-        context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
+        context = SimpleNamespace(
+            chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={}
+        )
 
         result = SimpleNamespace(
             checkout_url="https://checkout.stripe.com/test",
@@ -85,7 +94,9 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.object(dep, "stripe_configured", return_value=True),
-            patch.object(dep, "create_stripe_checkout_session", return_value=result) as create_session,
+            patch.object(
+                dep, "create_stripe_checkout_session", return_value=result
+            ) as create_session,
         ):
             ok = await dep._send_deposit_method_response(
                 query,
@@ -102,7 +113,9 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_tier_group_checkout_overrides_method(self):
         query = _deposit_query()
-        context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
+        context = SimpleNamespace(
+            chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={}
+        )
 
         result = SimpleNamespace(
             checkout_url="https://checkout.stripe.com/tier",
@@ -129,9 +142,13 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.object(dep, "stripe_configured", return_value=True),
-            patch.object(dep, "create_stripe_checkout_session", return_value=result) as create_session,
+            patch.object(
+                dep, "create_stripe_checkout_session", return_value=result
+            ) as create_session,
         ):
-            merged = dep._with_method_checkout_settings(response_data, method, tier=response_data)
+            merged = dep._with_method_checkout_settings(
+                response_data, method, tier=response_data
+            )
             ok = await dep._send_deposit_method_response(
                 query,
                 context,
@@ -147,11 +164,16 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
         create_session.assert_called_once()
         self.assertEqual(create_session.call_args.kwargs.get("checkout_min_usd"), 20)
         self.assertEqual(create_session.call_args.kwargs.get("checkout_max_usd"), 100)
-        self.assertEqual(create_session.call_args.kwargs.get("checkout_preset_usd"), dep.Decimal("100"))
+        self.assertEqual(
+            create_session.call_args.kwargs.get("checkout_preset_usd"),
+            dep.Decimal("100"),
+        )
 
     async def test_stripe_checkout_uses_dashboard_min_max(self):
         query = _deposit_query()
-        context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
+        context = SimpleNamespace(
+            chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={}
+        )
 
         result = SimpleNamespace(
             checkout_url="https://checkout.stripe.com/test",
@@ -172,7 +194,9 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.object(dep, "stripe_configured", return_value=True),
-            patch.object(dep, "create_stripe_checkout_session", return_value=result) as create_session,
+            patch.object(
+                dep, "create_stripe_checkout_session", return_value=result
+            ) as create_session,
         ):
             ok = await dep._send_deposit_method_response(
                 query,
@@ -192,7 +216,9 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_stripe_without_placeholder_sends_link_separately(self):
         query = _deposit_query()
         chat = query.message.chat
-        context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
+        context = SimpleNamespace(
+            chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={}
+        )
 
         result = SimpleNamespace(
             checkout_url="https://checkout.stripe.com/test",
@@ -248,7 +274,9 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_stripe_slug_without_group_checkout_uses_static_response(self):
         query = _deposit_query()
-        context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
+        context = SimpleNamespace(
+            chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={}
+        )
 
         response_data = {
             "response_type": "text",
@@ -279,7 +307,9 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_hyperlink_without_group_checkout_shows_player_safe_error(self):
         """{{hyperlink}} copy with checkout disabled must not leak ops config to players."""
         query = _deposit_query()
-        context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
+        context = SimpleNamespace(
+            chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={}
+        )
 
         response_data = {
             "response_type": "text",
@@ -316,7 +346,9 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_variant_group_checkout_overrides_tier(self):
         query = _deposit_query()
-        context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
+        context = SimpleNamespace(
+            chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={}
+        )
 
         result = SimpleNamespace(
             checkout_url="https://checkout.stripe.com/variant",
@@ -347,7 +379,9 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.object(dep, "stripe_configured", return_value=True),
-            patch.object(dep, "create_stripe_checkout_session", return_value=result) as create_session,
+            patch.object(
+                dep, "create_stripe_checkout_session", return_value=result
+            ) as create_session,
         ):
             merged = dep._with_method_checkout_settings(variant, method, tier=tier)
             ok = await dep._send_deposit_method_response(
@@ -368,7 +402,9 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_cashapp_below_100_uses_configured_variant_stripe(self):
         query = _deposit_query()
-        context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
+        context = SimpleNamespace(
+            chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={}
+        )
 
         result = SimpleNamespace(
             checkout_url="https://checkout.stripe.com/cashapp",
@@ -407,7 +443,9 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.object(dep, "stripe_configured", return_value=True),
-            patch.object(dep, "create_stripe_checkout_session", return_value=result) as create_session,
+            patch.object(
+                dep, "create_stripe_checkout_session", return_value=result
+            ) as create_session,
             patch.object(dep, "send_response_messages", AsyncMock()) as send_response,
         ):
             merged = dep._with_method_checkout_settings(variant, method, tier=tier)
@@ -431,7 +469,9 @@ class DepositHyperlinkTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_cashapp_over_100_does_not_use_stripe_without_group_checkout(self):
         query = _deposit_query()
-        context = SimpleNamespace(chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={})
+        context = SimpleNamespace(
+            chat_data={"deposit_chat_id": -100123, "deposit_club_id": 2}, bot_data={}
+        )
 
         response_data = {
             "response_type": "text",
@@ -487,7 +527,11 @@ class DepositResponseContentTestCase(unittest.TestCase):
             "• Once sent, send a screenshot!"
         )
         prepared = dep._prepare_deposit_response_data(
-            {"response_type": "photo", "response_file_id": "f1", "response_caption": caption},
+            {
+                "response_type": "photo",
+                "response_file_id": "f1",
+                "response_caption": caption,
+            },
             method_slug="cashapp",
         )
         self.assertEqual(prepared["response_caption"], caption)
@@ -544,7 +588,9 @@ class DepositResponseContentAsyncTestCase(unittest.IsolatedAsyncioTestCase):
             "response_text": "Zelle: 310-567-0961\n\nPost a screenshot when done.",
         }
 
-        with patch.object(dep, "send_response_messages", AsyncMock(return_value=[99])) as send_response:
+        with patch.object(
+            dep, "send_response_messages", AsyncMock(return_value=[99])
+        ) as send_response:
             ok = await dep._send_deposit_method_response(
                 query,
                 context,
@@ -564,4 +610,3 @@ class DepositResponseContentAsyncTestCase(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

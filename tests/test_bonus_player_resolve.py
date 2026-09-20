@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from bot.services.bonus_player_resolve import resolve_bonus_player
 
@@ -11,9 +11,14 @@ from bot.services.bonus_player_resolve import resolve_bonus_player
 class TestResolveBonusPlayer(unittest.TestCase):
     @patch("bot.services.player_details_nickname.try_refresh_nickname_after_bind")
     @patch("bot.services.bonus_player_resolve.build_zapier_name", return_value=None)
-    @patch("bot.services.bonus_player_resolve._lookup_player_details_id", return_value=42)
+    @patch(
+        "bot.services.bonus_player_resolve._lookup_player_details_id", return_value=42
+    )
     @patch("bot.services.bonus_player_resolve.bind_chat_to_player")
-    @patch("bot.services.bonus_player_resolve.resolve_club_id_from_shorthand", return_value=3)
+    @patch(
+        "bot.services.bonus_player_resolve.resolve_club_id_from_shorthand",
+        return_value=3,
+    )
     def test_resolves_with_chat_bind(
         self,
         _resolve_club,
@@ -42,7 +47,10 @@ class TestResolveBonusPlayer(unittest.TestCase):
             chat_id=-100123,
         )
 
-    @patch("bot.services.bonus_player_resolve.resolve_club_id_from_shorthand", return_value=3)
+    @patch(
+        "bot.services.bonus_player_resolve.resolve_club_id_from_shorthand",
+        return_value=3,
+    )
     def test_club_mismatch_returns_none(self, _resolve_club) -> None:
         ctx = resolve_bonus_player(
             group_title="CC / 8190-5287 / Jacob",
@@ -54,11 +62,21 @@ class TestResolveBonusPlayer(unittest.TestCase):
     def test_invalid_title_returns_none(self) -> None:
         self.assertIsNone(resolve_bonus_player(group_title="not a valid title"))
 
-    @patch("bot.services.bonus_player_resolve.build_zapier_name", return_value="CC / 8190-5287 / Jacob")
-    @patch("bot.services.bonus_player_resolve._lookup_player_details_id", return_value=7)
-    @patch("bot.services.bonus_player_resolve.resolve_club_id_from_shorthand", return_value=3)
+    @patch(
+        "bot.services.bonus_player_resolve.build_zapier_name",
+        return_value="CC / 8190-5287 / Jacob",
+    )
+    @patch(
+        "bot.services.bonus_player_resolve._lookup_player_details_id", return_value=7
+    )
+    @patch(
+        "bot.services.bonus_player_resolve.resolve_club_id_from_shorthand",
+        return_value=3,
+    )
     def test_standalone_without_chat_id(self, _resolve_club, _lookup, _zapier) -> None:
-        with patch("bot.services.bonus_player_resolve.bind_chat_to_player") as mock_bind:
+        with patch(
+            "bot.services.bonus_player_resolve.bind_chat_to_player"
+        ) as mock_bind:
             ctx = resolve_bonus_player(group_title="CC / 8190-5287 / Jacob")
         self.assertIsNotNone(ctx)
         mock_bind.assert_not_called()

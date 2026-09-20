@@ -15,8 +15,11 @@ from bot.handlers.deposit import (
     _notify_stripe_checkout_failure,
     _stripe_error_detail,
 )
-from bot.services.club import get_club_for_chat, get_methods_for_amount, update_group_name
-from bot.services.stripe_deposit import create_stripe_checkout_session, stripe_configured
+from bot.services.club import get_methods_for_amount, update_group_name
+from bot.services.stripe_deposit import (
+    create_stripe_checkout_session,
+    stripe_configured,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +124,10 @@ async def send_group_stripe_checkout(
 
     await update.message.reply_text(intro_text)
 
-    pay_html = pay_text_html.replace("{{hyperlink}}", f'<a href="{html.escape(result.checkout_url, quote=True)}">PAY HERE</a>')
+    pay_html = pay_text_html.replace(
+        "{{hyperlink}}",
+        f'<a href="{html.escape(result.checkout_url, quote=True)}">PAY HERE</a>',
+    )
     pay_plain = pay_text_plain.replace("{{hyperlink}}", result.checkout_url)
     try:
         await update.message.reply_text(

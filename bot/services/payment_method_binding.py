@@ -19,15 +19,13 @@ from bot.services.payment_binding_events import (
     record_binding_event_in_session,
 )
 from db.models import (
-    CashAppPayerBinding,
     CashAppPayment,
-    PayPalPayerBinding,
     PayPalPayment,
     Club,
     ClubPaymentMethod,
-    ClubPaymentTier,
     ClubPaymentTierVariant,
     CryptoWalletBinding,
+    GroupDepositDestinationStickiness,
     GroupPaymentMethodBinding,
     PaymentMethodBindAttempt,
     VenmoPayerBinding,
@@ -44,6 +42,7 @@ BIND_KIND_SPECIAL_AMOUNT = "special_amount"
 BIND_KIND_MEMO_EMOJI = "memo_emoji"
 
 _BINDABLE_METHOD_SLUGS = frozenset({"venmo", "zelle", "cashapp", "paypal"})
+_DESTINATION_STICKINESS_SLUGS = frozenset({"venmo", "cashapp"})
 
 # Zelle first-time linking uses exact setup amount only (no memo/caption code matching).
 _ZELLE_MEMO_FIRST_TIME_BINDING_ENABLED = False
@@ -259,6 +258,16 @@ class ChatMethodBinding:
 
 
 @dataclass(frozen=True)
+class DestinationStickiness:
+    id: int
+    telegram_chat_id: int
+    club_id: int
+    payment_method_slug: str
+    destination_tag: str
+    variant_id: Optional[int]
+
+
+@dataclass(frozen=True)
 class BindAttemptInfo:
     id: int
     telegram_chat_id: int
@@ -440,38 +449,47 @@ def unbind_chat_from_method(
 ) -> bool:
     """Remove a group's payment-method link and cancel pending setup for that slug."""
     slug = (payment_method_slug or "").strip().lower()
+    chat_id = int(telegram_chat_id)
+    removed = False
     with get_db() as session:
         row = (
             session.query(GroupPaymentMethodBinding)
             .filter_by(
-                telegram_chat_id=int(telegram_chat_id),
+                telegram_chat_id=chat_id,
                 payment_method_slug=slug,
             )
             .one_or_none()
         )
-        if row is None:
-            return False
-        session.delete(row)
-        cancel_pending_attempts_for_chat(
+        if row is not None:
+            session.delete(row)
+            removed = True
+            cancel_pending_attempts_for_chat(
+                session,
+                telegram_chat_id=chat_id,
+                payment_method_slug=slug,
+            )
+        sticky_removed = _delete_destination_stickiness_in_session(
             session,
-            telegram_chat_id=int(telegram_chat_id),
+            telegram_chat_id=chat_id,
             payment_method_slug=slug,
         )
-    logger.info(
-        "group_binding removed chat_id=%s slug=%s",
-        telegram_chat_id,
-        slug,
-    )
-    return True
+        removed = removed or sticky_removed > 0
+    if removed:
+        logger.info(
+            "group_binding removed chat_id=%s slug=%s",
+            telegram_chat_id,
+            slug,
+        )
+    return removed
 
 
-def unbind_chat_from_all_methods(telegram_chat_id: int) -> tuple[int, int]:
+def unbind_chat_from_all_methods(telegram_chat_id: int) -> tuple[int, int, int]:
     """Remove all payment-method links and cancel all pending setup attempts for a chat.
 
-    Also clears payer-name bindings and bind-attempt history for the chat so every
-    member can run first-time setup again.
+    Also clears payer-name bindings, bind-attempt history, and display destination
+    stickiness for the chat so every member can run first-time setup again.
 
-    Returns (bindings_removed, attempts_cancelled).
+    Returns (bindings_removed, attempts_cancelled, stickiness_removed).
     """
     chat_id = int(telegram_chat_id)
     with get_db() as session:
@@ -487,6 +505,10 @@ def unbind_chat_from_all_methods(telegram_chat_id: int) -> tuple[int, int]:
             session,
             telegram_chat_id=chat_id,
         )
+        stickiness_removed = _delete_destination_stickiness_in_session(
+            session,
+            telegram_chat_id=chat_id,
+        )
         session.query(VenmoPayerBinding).filter_by(telegram_chat_id=chat_id).delete(
             synchronize_session=False
         )
@@ -499,14 +521,16 @@ def unbind_chat_from_all_methods(telegram_chat_id: int) -> tuple[int, int]:
         session.query(PaymentMethodBindAttempt).filter_by(
             telegram_chat_id=chat_id,
         ).delete(synchronize_session=False)
-    if bindings_removed or attempts_cancelled:
+    if bindings_removed or attempts_cancelled or stickiness_removed:
         logger.info(
-            "group_bindings cleared chat_id=%s bindings_removed=%s attempts_cancelled=%s",
+            "group_bindings cleared chat_id=%s bindings_removed=%s "
+            "attempts_cancelled=%s stickiness_removed=%s",
             telegram_chat_id,
             bindings_removed,
             attempts_cancelled,
+            stickiness_removed,
         )
-    return bindings_removed, attempts_cancelled
+    return bindings_removed, attempts_cancelled, stickiness_removed
 
 
 def unbind_by_id(binding_id: int) -> bool:
@@ -523,6 +547,11 @@ def unbind_by_id(binding_id: int) -> bool:
         slug = str(row.payment_method_slug)
         session.delete(row)
         cancel_pending_attempts_for_chat(
+            session,
+            telegram_chat_id=chat_id,
+            payment_method_slug=slug,
+        )
+        _delete_destination_stickiness_in_session(
             session,
             telegram_chat_id=chat_id,
             payment_method_slug=slug,
@@ -555,6 +584,127 @@ def get_chat_binding(
             venmo_handle=row.venmo_handle,
             bound_via=str(row.bound_via),
         )
+
+
+def get_destination_stickiness(
+    telegram_chat_id: int, payment_method_slug: str
+) -> Optional[DestinationStickiness]:
+    slug = (payment_method_slug or "").strip().lower()
+    if slug not in _DESTINATION_STICKINESS_SLUGS:
+        return None
+    with get_db() as session:
+        row = (
+            session.query(GroupDepositDestinationStickiness)
+            .filter_by(
+                telegram_chat_id=int(telegram_chat_id),
+                payment_method_slug=slug,
+            )
+            .one_or_none()
+        )
+        if row is None:
+            return None
+        return DestinationStickiness(
+            id=int(row.id),
+            telegram_chat_id=int(row.telegram_chat_id),
+            club_id=int(row.club_id),
+            payment_method_slug=str(row.payment_method_slug),
+            destination_tag=str(row.destination_tag),
+            variant_id=int(row.variant_id) if row.variant_id else None,
+        )
+
+
+def ensure_destination_stickiness(
+    *,
+    telegram_chat_id: int,
+    club_id: int,
+    payment_method_slug: str,
+    destination_tag: str,
+    variant_id: int | None = None,
+) -> DestinationStickiness | None:
+    """Insert-if-absent display stickiness for a native Venmo/Cash App tag.
+
+    Never overwrites an existing destination_tag. Returns the row (existing or new),
+    or None when the slug/tag is invalid.
+    """
+    slug = (payment_method_slug or "").strip().lower()
+    if slug not in _DESTINATION_STICKINESS_SLUGS:
+        return None
+    tag = _normalize_binding_recipient(slug, destination_tag)
+    if not tag:
+        return None
+    chat_id = int(telegram_chat_id)
+    with get_db() as session:
+        existing = (
+            session.query(GroupDepositDestinationStickiness)
+            .filter_by(
+                telegram_chat_id=chat_id,
+                payment_method_slug=slug,
+            )
+            .one_or_none()
+        )
+        if existing is not None:
+            return DestinationStickiness(
+                id=int(existing.id),
+                telegram_chat_id=int(existing.telegram_chat_id),
+                club_id=int(existing.club_id),
+                payment_method_slug=str(existing.payment_method_slug),
+                destination_tag=str(existing.destination_tag),
+                variant_id=int(existing.variant_id) if existing.variant_id else None,
+            )
+        row = GroupDepositDestinationStickiness(
+            telegram_chat_id=chat_id,
+            club_id=int(club_id),
+            payment_method_slug=slug,
+            destination_tag=tag,
+            variant_id=int(variant_id) if variant_id is not None else None,
+        )
+        session.add(row)
+        session.flush()
+        row_id = getattr(row, "id", None)
+        if row_id is None:
+            # Identity not populated (e.g. unit-test mocks without flush side effects).
+            row_id = 0
+        logger.info(
+            "destination_stickiness locked chat_id=%s slug=%s tag=%r variant_id=%s",
+            chat_id,
+            slug,
+            tag,
+            variant_id,
+        )
+        return DestinationStickiness(
+            id=int(row_id),
+            telegram_chat_id=chat_id,
+            club_id=int(club_id),
+            payment_method_slug=slug,
+            destination_tag=tag,
+            variant_id=int(variant_id) if variant_id is not None else None,
+        )
+
+
+def count_destination_stickiness(telegram_chat_id: int) -> int:
+    with get_db() as session:
+        return (
+            session.query(GroupDepositDestinationStickiness)
+            .filter_by(telegram_chat_id=int(telegram_chat_id))
+            .count()
+        )
+
+
+def _delete_destination_stickiness_in_session(
+    session,
+    *,
+    telegram_chat_id: int,
+    payment_method_slug: str | None = None,
+) -> int:
+    q = session.query(GroupDepositDestinationStickiness).filter_by(
+        telegram_chat_id=int(telegram_chat_id),
+    )
+    if payment_method_slug is not None:
+        q = q.filter_by(payment_method_slug=(payment_method_slug or "").strip().lower())
+    rows = q.all()
+    for row in rows:
+        session.delete(row)
+    return len(rows)
 
 
 def chat_has_crypto_wallet_binding(telegram_chat_id: int) -> bool:
@@ -641,7 +791,9 @@ def allocate_setup_amount_cents(
     n = int(pending_count or 0)
     amount_cents = base_cents - n
     if amount_cents < 1:
-        raise ValueError("No available setup amounts for this variant (too many pending)")
+        raise ValueError(
+            "No available setup amounts for this variant (too many pending)"
+        )
     return amount_cents
 
 
@@ -674,13 +826,10 @@ def cancel_pending_attempts_for_chat(
 ) -> int:
     slug = (payment_method_slug or "").strip().lower()
     now = datetime.now(timezone.utc)
-    q = (
-        session.query(PaymentMethodBindAttempt)
-        .filter_by(
-            telegram_chat_id=int(telegram_chat_id),
-            payment_method_slug=slug,
-            status=ATTEMPT_STATUS_PENDING,
-        )
+    q = session.query(PaymentMethodBindAttempt).filter_by(
+        telegram_chat_id=int(telegram_chat_id),
+        payment_method_slug=slug,
+        status=ATTEMPT_STATUS_PENDING,
     )
     count = q.count()
     q.update(
@@ -726,7 +875,9 @@ def start_bind_attempt(
             bound_via = BOUND_VIA_MEMO_EMOJI
         else:
             if deposit_amount_cents is None:
-                raise ValueError("deposit_amount_cents required for special_amount bind")
+                raise ValueError(
+                    "deposit_amount_cents required for special_amount bind"
+                )
             amount_cents = allocate_setup_amount_cents(
                 session,
                 variant_id=int(variant_id),
@@ -1103,9 +1254,7 @@ def _variant_zelle_recipient_matches(
     return False
 
 
-def _variant_paypal_email_matches(
-    session, variant_id: int, paypal_email: str
-) -> bool:
+def _variant_paypal_email_matches(session, variant_id: int, paypal_email: str) -> bool:
     email = normalize_paypal_email(paypal_email)
     if not email:
         return False
@@ -1636,13 +1785,7 @@ def format_first_time_memo_instructions_message(
             f"{future_line}\n\n"
             f"{ack_line}"
         )
-    return (
-        f"{title}\n\n"
-        f"{copy_line}\n\n"
-        f"{code}\n\n"
-        f"{future_line}\n\n"
-        f"{ack_line}"
-    )
+    return f"{title}\n\n{copy_line}\n\n{code}\n\n{future_line}\n\n{ack_line}"
 
 
 def format_first_time_amount_instructions_message(
@@ -1660,7 +1803,9 @@ def format_first_time_amount_instructions_message(
         "go through faster."
     )
     title = _caps(f"One-time {method_label} setup")
-    amount_line = _caps("Send the exact amount shown below — not your full deposit amount.")
+    amount_line = _caps(
+        "Send the exact amount shown below — not your full deposit amount."
+    )
     do_not_send = _caps(f"Please do not send {chosen_display} (no rounding).")
 
     if use_html:
@@ -1671,12 +1816,7 @@ def format_first_time_amount_instructions_message(
             f"<b>{_caps(f'Please do not send {safe_chosen} (no rounding).')}</b>\n\n"
             f"{future_line}"
         )
-    return (
-        f"{title}\n\n"
-        f"{amount_line}\n\n"
-        f"{do_not_send}\n\n"
-        f"{future_line}"
-    )
+    return f"{title}\n\n{amount_line}\n\n{do_not_send}\n\n{future_line}"
 
 
 def format_first_time_special_amount_setup_message(
@@ -1692,7 +1832,9 @@ def format_first_time_special_amount_setup_message(
     setup_display = _format_amount_plain(int(setup_amount_cents))
     chosen_display = _format_amount_display(int(chosen_amount_cents))
     title = _caps(f"One-time {method_label} setup")
-    amount_line = _caps("Send the exact amount shown below — not your full deposit amount.")
+    amount_line = _caps(
+        "Send the exact amount shown below — not your full deposit amount."
+    )
     do_not_send = _caps(f"Please do not send {chosen_display} (no rounding).")
     future_line = (
         "This one-time step links your payment method so future deposits "
@@ -1771,7 +1913,9 @@ def format_first_time_payment_destination_message(
         else:
             recipient = phone_recipient or "—"
             if use_html:
-                destination = f"<b>{_caps('Zelle:')}</b> {html_module.escape(recipient)}"
+                destination = (
+                    f"<b>{_caps('Zelle:')}</b> {html_module.escape(recipient)}"
+                )
             else:
                 destination = f"{_caps('Zelle:')} {recipient}"
         return f"{destination}\n\n{closing}"
@@ -1780,7 +1924,9 @@ def format_first_time_payment_destination_message(
         url = extract_cashapp_url(variant_response_text) or "—"
         if use_html:
             safe_url = html_module.escape(url, quote=True)
-            destination = f'<b>{_caps("Cashapp:")}</b> <a href="{safe_url}">{safe_url}</a>'
+            destination = (
+                f'<b>{_caps("Cashapp:")}</b> <a href="{safe_url}">{safe_url}</a>'
+            )
         else:
             destination = f"{_caps('Cashapp:')} {url}"
         return f"{destination}\n\n{closing}"
@@ -1951,7 +2097,9 @@ def format_first_time_venmo_setup_message(
         "This is a one-time setup step for this payment method. Future deposits "
         "can be sent normally once your method is linked."
     )
-    post_screenshot = _caps("Post a screenshot when done. An agent will confirm and add your credits.")
+    post_screenshot = _caps(
+        "Post a screenshot when done. An agent will confirm and add your credits."
+    )
 
     if use_html:
         safe_setup = html_module.escape(setup_display)
@@ -2006,7 +2154,9 @@ def format_first_time_zelle_setup_message(
         "This is a one-time setup step for this payment method. Future deposits "
         "can be sent normally once your method is linked."
     )
-    post_screenshot = _caps("Post a screenshot when done. An agent will confirm and add your credits.")
+    post_screenshot = _caps(
+        "Post a screenshot when done. An agent will confirm and add your credits."
+    )
 
     if use_html:
         safe_setup = html_module.escape(setup_display)

@@ -15,7 +15,6 @@ from sqlalchemy import text
 from api.club_audit_timezone import SLUG_TO_POLICY, audit_timezone_for_slug
 from api.trade_record_parser import (
     TradeRecordMetadata,
-    extract_audit_date_from_metadata,
     resolve_club_slug_from_metadata,
 )
 from db.connection import init_engine

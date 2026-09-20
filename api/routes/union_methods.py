@@ -222,11 +222,11 @@ def _validate_club_ids(db: Session, club_ids: List[int]) -> List[Club]:
     return sorted(clubs, key=lambda c: int(c.id))
 
 
-def _sync_method_clubs(db: Session, method: ClubPaymentMethod, clubs: List[Club]) -> None:
+def _sync_method_clubs(
+    db: Session, method: ClubPaymentMethod, clubs: List[Club]
+) -> None:
     desired = {int(c.id) for c in clubs}
-    existing = {
-        int(mc.club_id): mc for mc in (method.method_clubs or [])
-    }
+    existing = {int(mc.club_id): mc for mc in (method.method_clubs or [])}
     for club_id, row in list(existing.items()):
         if club_id not in desired:
             db.delete(row)
@@ -252,7 +252,9 @@ def _stats_for_methods(
         .group_by(ManualDepositRequest.method_id)
         .all()
     )
-    used = {int(mid): Decimal(str(total)) for mid, total in used_only if mid is not None}
+    used = {
+        int(mid): Decimal(str(total)) for mid, total in used_only if mid is not None
+    }
     count_rows = (
         db.query(
             ManualDepositRequest.method_id,
@@ -348,7 +350,9 @@ def _to_read(
         if mc.club is not None:
             clubs.append(UnionMethodClubRead(id=int(mc.club.id), name=mc.club.name))
         else:
-            clubs.append(UnionMethodClubRead(id=int(mc.club_id), name=f"Club {mc.club_id}"))
+            clubs.append(
+                UnionMethodClubRead(id=int(mc.club_id), name=f"Club {mc.club_id}")
+            )
     method_type = _method_type_slug(method)
     account_name = getattr(method, "payment_account_name", None)
     deposit_union = getattr(method, "deposit_union", None)
@@ -479,7 +483,9 @@ def get_union_method(method_id: int, db: Session = Depends(get_db_dependency)):
 
 
 @router.post("", response_model=UnionMethodRead, status_code=201)
-def create_union_method(body: UnionMethodCreate, db: Session = Depends(get_db_dependency)):
+def create_union_method(
+    body: UnionMethodCreate, db: Session = Depends(get_db_dependency)
+):
     try:
         validated = UnionMethodCreate.model_validate(body.model_dump())
     except ValueError as exc:

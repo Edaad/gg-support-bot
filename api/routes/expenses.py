@@ -189,7 +189,12 @@ def update_expense(
     body: ExpenseUpdate,
     db: Session = Depends(get_db_dependency),
 ):
-    row = db.query(Expense).options(joinedload(Expense.club)).filter(Expense.id == expense_id).first()
+    row = (
+        db.query(Expense)
+        .options(joinedload(Expense.club))
+        .filter(Expense.id == expense_id)
+        .first()
+    )
     if not row:
         raise HTTPException(404, "Expense not found")
     data = body.model_dump(exclude_unset=True)

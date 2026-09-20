@@ -162,12 +162,16 @@ def assign_message_role(
     username = msg.get("username") if isinstance(msg.get("username"), str) else None
     sender = msg.get("sender_name") if isinstance(msg.get("sender_name"), str) else None
 
-    if _matches_known(username, set(bot_names)) or _matches_known(sender, set(bot_names)):
+    if _matches_known(username, set(bot_names)) or _matches_known(
+        sender, set(bot_names)
+    ):
         return "bot"
     # Player display name often equals the support-group title — prefer that over staff heuristics.
     if _matches_group_player(sender, group_name):
         return "customer"
-    if _matches_known(username, set(admin_names)) or _matches_known(sender, set(admin_names)):
+    if _matches_known(username, set(admin_names)) or _matches_known(
+        sender, set(admin_names)
+    ):
         return "admin"
     if _looks_like_staff_display(sender):
         return "admin"

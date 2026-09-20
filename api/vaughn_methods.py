@@ -55,6 +55,7 @@ def _owner_source_prefix(method_owner: str | None) -> str | None:
         return None
     return _OWNER_SOURCE_PREFIX.get(method_owner.strip().lower())
 
+
 VAUGHN_CASHOUT_SOURCE_LABELS: tuple[str, ...] = (
     "Vaughn Cashout Venmo",
     "Vaughn Cashout Cash App",
@@ -137,7 +138,9 @@ def matching_source_label(
     elif src in LEDGER_SOURCE_LABELS:
         base = LEDGER_SOURCE_LABELS[src]
     elif src.startswith("deposit_"):
-        base = src[len("deposit_") :].replace("-", " ").replace("_", " ").strip().title()
+        base = (
+            src[len("deposit_") :].replace("-", " ").replace("_", " ").strip().title()
+        )
     else:
         base = src
     if not base:

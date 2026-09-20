@@ -67,7 +67,9 @@ async def stripe_webhook(request: Request):
     audit_ctx = getattr(request.state, "webhook_ingest", None)
 
     if not (os.getenv(STRIPE_WEBHOOK_SECRET_ENV) or "").strip():
-        raise HTTPException(503, f"{STRIPE_WEBHOOK_SECRET_ENV} is not configured on the server")
+        raise HTTPException(
+            503, f"{STRIPE_WEBHOOK_SECRET_ENV} is not configured on the server"
+        )
 
     payload = await request.body()
     sig_header = request.headers.get("Stripe-Signature")

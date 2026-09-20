@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import date, datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from bot.services import group_chat_daily_activity as gcda
 
@@ -22,7 +22,9 @@ def _make_update(
     update = MagicMock()
     if has_message:
         update.message = MagicMock()
-        update.message.date = message_date or datetime(2026, 7, 16, 15, 0, tzinfo=timezone.utc)
+        update.message.date = message_date or datetime(
+            2026, 7, 16, 15, 0, tzinfo=timezone.utc
+        )
     else:
         update.message = None
     if has_chat:

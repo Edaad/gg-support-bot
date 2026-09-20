@@ -10,7 +10,12 @@ from sqlalchemy.orm import Session
 
 from api.auth import get_current_admin
 from api.gto_club import resolve_gto_list_club_id
-from api.routes.payments import _clamp_limit, _get_club_or_404, _parse_dt, _raise_db_schema_error
+from api.routes.payments import (
+    _clamp_limit,
+    _get_club_or_404,
+    _parse_dt,
+    _raise_db_schema_error,
+)
 from api.schemas_payments import OwnerPaymentSummary, UnifiedPaymentListResponse
 from api.unified_payments import (
     UnifiedPaymentFilters,

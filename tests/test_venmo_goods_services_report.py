@@ -37,7 +37,9 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
             goods_or_services=False,
         )
         mock_session = MagicMock()
-        mock_session.query.return_value.filter_by.return_value.one.return_value = payment
+        mock_session.query.return_value.filter_by.return_value.one.return_value = (
+            payment
+        )
         with (
             patch("bot.services.payment_refund_gate.get_db") as mock_get_db,
             patch(
@@ -65,7 +67,9 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
         )
         create_mock = AsyncMock()
         mock_session = MagicMock()
-        mock_session.query.return_value.filter_by.return_value.one.return_value = payment
+        mock_session.query.return_value.filter_by.return_value.one.return_value = (
+            payment
+        )
         with (
             patch("bot.services.payment_refund_gate.get_db") as mock_get_db,
             patch(
@@ -179,9 +183,7 @@ class VenmoGoodsServicesIssueReportTestCase(unittest.IsolatedAsyncioTestCase):
             goods_or_services=True,
         )
         mock_session = MagicMock()
-        mock_session.query.return_value.filter_by.return_value.one_or_none.return_value = (
-            existing
-        )
+        mock_session.query.return_value.filter_by.return_value.one_or_none.return_value = existing
 
         with (
             patch("bot.services.venmo_payments.get_db") as mock_get_db,

@@ -27,7 +27,9 @@ from db.models import InactiveGroupOutreachRow
 logger = logging.getLogger(__name__)
 
 
-async def _send_player_dm_safe(client, player: User, body: str) -> tuple[bool, str | None]:
+async def _send_player_dm_safe(
+    client, player: User, body: str
+) -> tuple[bool, str | None]:
     try:
         await client.send_message(player, body)
         return True, None
@@ -118,7 +120,9 @@ async def run_inactive_outreach_reonboard(
         )
         return False
 
-    remove_chat_id_from_club_bindings(club_id=int(cfg.link_club_id), chat_id=old_chat_id)
+    remove_chat_id_from_club_bindings(
+        club_id=int(cfg.link_club_id), chat_id=old_chat_id
+    )
 
     try:
         outcome = await create_support_group(
@@ -205,11 +209,16 @@ async def run_inactive_outreach_reonboard(
         )
         return False
 
-    linked = ensure_group_chat_linked(int(cid), cfg.link_club_id, outcome.telegram_chat_title)
+    linked = ensure_group_chat_linked(
+        int(cid), cfg.link_club_id, outcome.telegram_chat_title
+    )
     if linked and ptb_bot is not None:
         try:
             await send_post_gc_intro_bundle(
-                ptb_bot, int(cid), cfg.link_club_id, outcome.telegram_chat_title or title_override
+                ptb_bot,
+                int(cid),
+                cfg.link_club_id,
+                outcome.telegram_chat_title or title_override,
             )
         except Exception:
             logger.exception(

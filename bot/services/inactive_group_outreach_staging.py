@@ -295,7 +295,9 @@ def format_stage_success_message(result: StageResult) -> str:
     )
 
 
-def format_staged_list_message(rows: list[StagedGroupSummary], *, club_key: str | None) -> str:
+def format_staged_list_message(
+    rows: list[StagedGroupSummary], *, club_key: str | None
+) -> str:
     if not rows:
         scope = f" for {club_key}" if club_key else ""
         return f"No staged inactive groups{scope}."

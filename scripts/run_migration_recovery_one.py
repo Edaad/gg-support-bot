@@ -21,6 +21,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
@@ -35,9 +36,11 @@ except ImportError:
 
 logger = logging.getLogger("run_migration_recovery_one")
 
+if TYPE_CHECKING:
+    from bot.services.migration_recovery import RecoveryRow
 
-def _load_row(*, row_id: int | None) -> "RecoveryRow | None":
-    from sqlalchemy import select
+
+def _load_row(*, row_id: int | None) -> RecoveryRow | None:
 
     from bot.services.migration_recovery import RecoveryRow
     from db.connection import get_db, init_engine
@@ -103,7 +106,6 @@ def _assert_elevate_trial(row) -> None:
 async def _process_elevate_link_join(row, *, apply: bool) -> str:
     from club_gc_settings import get_club_gc_config_by_link_club_id
     from bot.services.migration_group_readd import (
-        ReaddGroupResult,
         elevate_join_recovery_group,
         readd_round_table_player_and_link,
     )
@@ -153,14 +155,18 @@ async def _process_elevate_link_join(row, *, apply: bool) -> str:
                 print(f"RT DRY-RUN status={rt_result.status} added={rt_result.added}")
                 print(f"already_member={rt_result.already_member}")
                 print(f"privacy={rt_result.privacy_blocked} failed={rt_result.failed}")
-                print(f"invite_link={'(would export)' if rt_result.invite_link else 'would_export:invite_link'}")
+                print(
+                    f"invite_link={'(would export)' if rt_result.invite_link else 'would_export:invite_link'}"
+                )
                 elevate = await elevate_join_recovery_group(
                     invite_link=rt_result.invite_link or "https://t.me/+dryrun",
                     dialog_chat_id=int(row.telegram_chat_id),
                     rt_client=rt_client,
                     apply=False,
                 )
-                print(f"Elevate DRY-RUN would_join={not elevate.dry_run} error={elevate.error}")
+                print(
+                    f"Elevate DRY-RUN would_join={not elevate.dry_run} error={elevate.error}"
+                )
                 return "dry_run"
 
             try:
@@ -334,7 +340,9 @@ async def _run(
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--row-id", type=int, help="Specific migrated_group_recovery.id")
+    parser.add_argument(
+        "--row-id", type=int, help="Specific migrated_group_recovery.id"
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--elevate-link-join",

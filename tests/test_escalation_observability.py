@@ -39,7 +39,10 @@ class _EventStore:
             self.events[int(row.id)] = row
         elif isinstance(row, obs.EscalationEpisode) or name == "EscalationEpisode":
             self.episodes[row.id] = row
-        elif isinstance(row, obs.EscalationDecisionLog) or name == "EscalationDecisionLog":
+        elif (
+            isinstance(row, obs.EscalationDecisionLog)
+            or name == "EscalationDecisionLog"
+        ):
             row.id = self._next_dec
             self._next_dec += 1
             self.decisions[int(row.id)] = row
@@ -260,7 +263,10 @@ class IdleEpisodeLinkTests(unittest.IsolatedAsyncioTestCase):
             "telegram_user_id": 1,
         }
         with patch.object(
-            ep, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
+            ep,
+            "notify_escalation_slack",
+            new_callable=AsyncMock,
+            return_value=(True, 1),
         ) as slack:
             with patch.object(
                 ep, "offer_idle_help_prompt", new_callable=AsyncMock, return_value=False

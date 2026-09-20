@@ -27,7 +27,9 @@ _CRYPTO_SLUG = "crypto"
 
 def _method_belongs_to_club(method: ClubPaymentMethod, club_id: int) -> bool:
     if bool(getattr(method, "tracks_manual_requests", False)):
-        return any(int(mc.club_id) == int(club_id) for mc in (method.method_clubs or []))
+        return any(
+            int(mc.club_id) == int(club_id) for mc in (method.method_clubs or [])
+        )
     return int(method.club_id) == int(club_id)
 
 
@@ -171,9 +173,7 @@ def filter_deposit_methods_for_chat(
             access = _access_map_for_chat(session, chat_id)
             # Prefer is_public on dict; fall back to DB for older callers.
             missing_ids = [
-                mid
-                for mid, m in zip(method_ids, methods)
-                if "is_public" not in m
+                mid for mid, m in zip(method_ids, methods) if "is_public" not in m
             ]
             public_by_id: dict[int, bool] = {}
             if missing_ids:
@@ -198,7 +198,9 @@ def filter_deposit_methods_for_chat(
             result.append(m)
             continue
         mid = int(m["id"])
-        is_public = bool(m["is_public"]) if "is_public" in m else public_by_id.get(mid, True)
+        is_public = (
+            bool(m["is_public"]) if "is_public" in m else public_by_id.get(mid, True)
+        )
         if method_visible_for_chat(
             is_public=is_public,
             access_type=access.get(mid),
@@ -448,10 +450,14 @@ def list_access_entries(
     actor_user_id: int, *, direction: MethodDirection = "deposit"
 ) -> List[AccessEntry]:
     with get_db() as session:
-        q = session.query(GroupDepositMethodAccess, ClubPaymentMethod).join(
-            ClubPaymentMethod,
-            ClubPaymentMethod.id == GroupDepositMethodAccess.club_payment_method_id,
-        ).filter(ClubPaymentMethod.direction == direction)
+        q = (
+            session.query(GroupDepositMethodAccess, ClubPaymentMethod)
+            .join(
+                ClubPaymentMethod,
+                ClubPaymentMethod.id == GroupDepositMethodAccess.club_payment_method_id,
+            )
+            .filter(ClubPaymentMethod.direction == direction)
+        )
         if actor_user_id not in ADMIN_USER_IDS:
             club_ids = _staff_club_ids(session, actor_user_id)
             if not club_ids:
@@ -512,7 +518,5 @@ def format_access_list(
     lines = [f"{label.capitalize()} method access:"]
     for e in rows:
         title = e.group_title or f"chat {e.telegram_chat_id}"
-        lines.append(
-            f"• {title}\n  {e.access_type} — {e.method_slug}"
-        )
+        lines.append(f"• {title}\n  {e.access_type} — {e.method_slug}")
     return "\n".join(lines)

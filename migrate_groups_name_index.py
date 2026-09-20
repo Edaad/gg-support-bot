@@ -12,9 +12,7 @@ from db.connection import init_engine
 
 engine = init_engine()
 
-INDEX = (
-    "CREATE INDEX IF NOT EXISTS ix_groups_club_id_name ON groups (club_id, name);"
-)
+INDEX = "CREATE INDEX IF NOT EXISTS ix_groups_club_id_name ON groups (club_id, name);"
 
 with engine.connect() as conn:
     conn.execute(text(INDEX))

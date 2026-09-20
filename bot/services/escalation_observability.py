@@ -351,4 +351,3 @@ def record_escalation_decision(
             exc_info=True,
         )
         return None
-

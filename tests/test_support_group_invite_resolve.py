@@ -86,9 +86,7 @@ class TestFlowExistingGroupInvite(unittest.IsolatedAsyncioTestCase):
             ),
             patch(
                 "bot.services.group_chat_invite_links.resolve_support_group_invite_link",
-                new=AsyncMock(
-                    return_value=("https://t.me/+existing", "stored_valid")
-                ),
+                new=AsyncMock(return_value=("https://t.me/+existing", "stored_valid")),
             ),
             patch("bot.services.mtproto_dm_gc_listener.update_support_group_chat_row"),
         ):

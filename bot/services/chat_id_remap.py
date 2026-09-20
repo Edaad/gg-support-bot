@@ -41,6 +41,7 @@ def remap_chat_id_in_db(old_id: int, new_id: int) -> dict[str, int]:
     counts: dict[str, int] = {}
 
     with get_db() as session:
+
         def _run(label: str, sql: str, extra: dict[str, Any] | None = None) -> None:
             params: dict[str, Any] = {"new_id": new_id, "old_id": old_id, **in_params}
             if extra:
@@ -88,7 +89,9 @@ def remap_chat_id_in_db(old_id: int, new_id: int) -> dict[str, int]:
             """,
         )
 
-        def _remap_scalar_chat_col(table: str, col: str, *, unique: bool = False) -> None:
+        def _remap_scalar_chat_col(
+            table: str, col: str, *, unique: bool = False
+        ) -> None:
             label = f"{table}.{col}"
             old_row = session.execute(
                 text(f"SELECT 1 FROM {table} WHERE {col} = :old_id LIMIT 1"),
@@ -102,7 +105,10 @@ def remap_chat_id_in_db(old_id: int, new_id: int) -> dict[str, int]:
                     {"new_id": new_id},
                 ).first()
                 if new_row:
-                    _run(f"{label}.delete_legacy", f"DELETE FROM {table} WHERE {col} = :old_id")
+                    _run(
+                        f"{label}.delete_legacy",
+                        f"DELETE FROM {table} WHERE {col} = :old_id",
+                    )
                     return
             _run(label, f"UPDATE {table} SET {col} = :new_id WHERE {col} = :old_id")
 
@@ -125,6 +131,7 @@ def remap_chat_id_in_db(old_id: int, new_id: int) -> dict[str, int]:
             ("crypto_wallet_bindings", ("telegram_chat_id",)),
             ("payment_method_bind_attempts", ("telegram_chat_id",)),
             ("group_payment_method_bindings", ("telegram_chat_id",)),
+            ("group_deposit_destination_stickiness", ("telegram_chat_id",)),
         ):
             for col in columns:
                 _remap_scalar_chat_col(table, col)

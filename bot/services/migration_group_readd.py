@@ -169,7 +169,11 @@ def load_player_rows_by_chat(
                 SupportGroupChat.player_username,
                 SupportGroupChat.club_key,
             )
-            .filter(SupportGroupChat.telegram_chat_id.in_(list(variants_to_canonical.keys())))
+            .filter(
+                SupportGroupChat.telegram_chat_id.in_(
+                    list(variants_to_canonical.keys())
+                )
+            )
             .order_by(SupportGroupChat.created_at.desc())
             .all()
         )
@@ -201,7 +205,11 @@ def load_player_display_names_by_chat(chat_ids: set[int]) -> dict[int, str | Non
                 SupportGroupChat.telegram_chat_id,
                 SupportGroupChat.player_display_name,
             )
-            .filter(SupportGroupChat.telegram_chat_id.in_(list(variants_to_canonical.keys())))
+            .filter(
+                SupportGroupChat.telegram_chat_id.in_(
+                    list(variants_to_canonical.keys())
+                )
+            )
             .order_by(SupportGroupChat.created_at.desc())
             .all()
         )
@@ -209,7 +217,7 @@ def load_player_display_names_by_chat(chat_ids: set[int]) -> dict[int, str | Non
         canonical = variants_to_canonical.get(int(raw_cid))
         if canonical is None or canonical in out:
             continue
-        out[canonical] = (display_name or None)
+        out[canonical] = display_name or None
     return out
 
 
@@ -348,8 +356,14 @@ async def invite_user_id(
     user_entity: Any | None = None,
 ) -> tuple[str, str | None]:
     """Return (status, reason). status: added | already_member | privacy | failed | dry_run."""
-    from telethon.errors.rpcerrorlist import UserAlreadyParticipantError, UserNotParticipantError
-    from telethon.tl.functions.channels import GetParticipantRequest, InviteToChannelRequest
+    from telethon.errors.rpcerrorlist import (
+        UserAlreadyParticipantError,
+        UserNotParticipantError,
+    )
+    from telethon.tl.functions.channels import (
+        GetParticipantRequest,
+        InviteToChannelRequest,
+    )
 
     if not apply:
         return "dry_run", None
@@ -504,7 +518,9 @@ async def readd_group(
 
             resolved_id = int(getattr(resolved_user, "id", player_id))
             display_name, at_username = format_telegram_user_display(resolved_user)
-            marker = at_username or (f"@{player_username}" if player_username else str(resolved_id))
+            marker = at_username or (
+                f"@{player_username}" if player_username else str(resolved_id)
+            )
             label = f"player:{marker}"
             result.resolved_player_id = resolved_id
             result.resolved_player_username = (at_username or "").lstrip("@") or None
@@ -537,7 +553,9 @@ async def readd_group(
                 invite_link = await export_invite_link(client, entity)
                 result.invite_link = invite_link
                 if invite_link and update_invite_links:
-                    from bot.services.support_group_chats import upsert_support_group_invite_link
+                    from bot.services.support_group_chats import (
+                        upsert_support_group_invite_link,
+                    )
 
                     upsert_support_group_invite_link(
                         club_key=cfg.club_key,
@@ -552,7 +570,9 @@ async def readd_group(
                 invite_link = await export_invite_link(client, entity)
                 result.invite_link = invite_link
                 if invite_link and update_invite_links:
-                    from bot.services.support_group_chats import upsert_support_group_invite_link
+                    from bot.services.support_group_chats import (
+                        upsert_support_group_invite_link,
+                    )
 
                     upsert_support_group_invite_link(
                         club_key=cfg.club_key,
@@ -582,7 +602,9 @@ async def readd_group(
         if player_id is not None:
             marker = f"@{player_username}" if player_username else str(player_id)
             targets.append(
-                ReaddTarget(kind="player", marker=marker, telegram_user_id=int(player_id))
+                ReaddTarget(
+                    kind="player", marker=marker, telegram_user_id=int(player_id)
+                )
             )
 
         if invite_staff:
@@ -596,7 +618,10 @@ async def readd_group(
         needs_invite_export = False
 
         for target in targets:
-            if target.telegram_user_id is not None and target.telegram_user_id in member_ids:
+            if (
+                target.telegram_user_id is not None
+                and target.telegram_user_id in member_ids
+            ):
                 result.already_member.append(f"{target.kind}:{target.marker}")
                 continue
             if target.telegram_user_id is not None:
@@ -635,7 +660,9 @@ async def readd_group(
             invite_link = await export_invite_link(client, entity)
             result.invite_link = invite_link
             if invite_link and update_invite_links:
-                from bot.services.support_group_chats import upsert_support_group_invite_link
+                from bot.services.support_group_chats import (
+                    upsert_support_group_invite_link,
+                )
 
                 upsert_support_group_invite_link(
                     club_key=cfg.club_key,

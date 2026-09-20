@@ -94,7 +94,9 @@ def upsert_method(session: Session, club_id: int) -> ClubPaymentMethod:
         .first()
     )
     if method is None:
-        method = ClubPaymentMethod(club_id=club_id, direction=DIRECTION, slug=METHOD_SLUG)
+        method = ClubPaymentMethod(
+            club_id=club_id, direction=DIRECTION, slug=METHOD_SLUG
+        )
         session.add(method)
 
     method.name = "Cashapp"
@@ -199,7 +201,9 @@ def upsert_variant(
 
 def seed(
     session: Session,
-) -> tuple[Club, ClubPaymentMethod, list[ClubPaymentTier], list[ClubPaymentTierVariant]]:
+) -> tuple[
+    Club, ClubPaymentMethod, list[ClubPaymentTier], list[ClubPaymentTierVariant]
+]:
     club = find_clubgto_club(session)
     method = upsert_method(session, club.id)
     tier_under = upsert_under_tier(session, method.id)
@@ -286,9 +290,13 @@ def verify_via_api(club_id: int) -> None:
         raise SystemExit("Expected has_sub_options=false on Cashapp method")
 
     if Decimal(str(method.get("min_amount"))) != Decimal("20"):
-        raise SystemExit(f"Expected method min_amount 20, got {method.get('min_amount')!r}")
+        raise SystemExit(
+            f"Expected method min_amount 20, got {method.get('min_amount')!r}"
+        )
     if Decimal(str(method.get("max_amount"))) != Decimal("2000"):
-        raise SystemExit(f"Expected method max_amount 2000, got {method.get('max_amount')!r}")
+        raise SystemExit(
+            f"Expected method max_amount 2000, got {method.get('max_amount')!r}"
+        )
     if method.get("sort_order") != 4:
         raise SystemExit(f"Expected sort_order 4, got {method.get('sort_order')!r}")
 
@@ -318,13 +326,21 @@ def verify_via_api(club_id: int) -> None:
         raise SystemExit("Expected use_group_checkout_link=false on Over $100 tier")
 
     if Decimal(str(tier_under.get("min_amount"))) != Decimal("20"):
-        raise SystemExit(f"Expected Under tier min 20, got {tier_under.get('min_amount')!r}")
+        raise SystemExit(
+            f"Expected Under tier min 20, got {tier_under.get('min_amount')!r}"
+        )
     if Decimal(str(tier_under.get("max_amount"))) != Decimal("100"):
-        raise SystemExit(f"Expected Under tier max 100, got {tier_under.get('max_amount')!r}")
+        raise SystemExit(
+            f"Expected Under tier max 100, got {tier_under.get('max_amount')!r}"
+        )
     if Decimal(str(tier_over.get("min_amount"))) != Decimal("101"):
-        raise SystemExit(f"Expected Over tier min 101, got {tier_over.get('min_amount')!r}")
+        raise SystemExit(
+            f"Expected Over tier min 101, got {tier_over.get('min_amount')!r}"
+        )
     if Decimal(str(tier_over.get("max_amount"))) != Decimal("2000"):
-        raise SystemExit(f"Expected Over tier max 2000, got {tier_over.get('max_amount')!r}")
+        raise SystemExit(
+            f"Expected Over tier max 2000, got {tier_over.get('max_amount')!r}"
+        )
 
     under_variants = tier_under.get("variants") or []
     if len(under_variants) != 1:
@@ -332,7 +348,9 @@ def verify_via_api(club_id: int) -> None:
     if under_variants[0].get("label") != VARIANT_UNDER_DEFAULT_LABEL:
         raise SystemExit(f"Expected variant {VARIANT_UNDER_DEFAULT_LABEL!r}")
     if under_variants[0].get("weight") != 100:
-        raise SystemExit(f"Expected Under variant weight 100, got {under_variants[0].get('weight')!r}")
+        raise SystemExit(
+            f"Expected Under variant weight 100, got {under_variants[0].get('weight')!r}"
+        )
     if "{{hyperlink}}" not in (under_variants[0].get("response_text") or ""):
         raise SystemExit("Expected {{hyperlink}} in Under tier Default variant")
 
@@ -341,16 +359,24 @@ def verify_via_api(club_id: int) -> None:
         raise SystemExit(f"Expected 2 variants on Over tier, got {len(over_variants)}")
     by_label = {v.get("label"): v for v in over_variants}
     if set(by_label.keys()) != {VARIANT_OVER_STRIPE_LABEL, VARIANT_OVER_ACCOUNT_LABEL}:
-        raise SystemExit(f"Unexpected Over tier variant labels: {list(by_label.keys())}")
+        raise SystemExit(
+            f"Unexpected Over tier variant labels: {list(by_label.keys())}"
+        )
 
     stripe_v = by_label[VARIANT_OVER_STRIPE_LABEL]
     account_v = by_label[VARIANT_OVER_ACCOUNT_LABEL]
     if stripe_v.get("weight") != 180:
-        raise SystemExit(f"Expected CashApp Stripe weight 180, got {stripe_v.get('weight')!r}")
+        raise SystemExit(
+            f"Expected CashApp Stripe weight 180, got {stripe_v.get('weight')!r}"
+        )
     if account_v.get("weight") != 25:
-        raise SystemExit(f"Expected Cashapp Account 1 weight 25, got {account_v.get('weight')!r}")
+        raise SystemExit(
+            f"Expected Cashapp Account 1 weight 25, got {account_v.get('weight')!r}"
+        )
     if not stripe_v.get("use_group_checkout_link"):
-        raise SystemExit("Expected use_group_checkout_link=true on CashApp Stripe variant")
+        raise SystemExit(
+            "Expected use_group_checkout_link=true on CashApp Stripe variant"
+        )
     if "{{hyperlink}}" not in (stripe_v.get("response_text") or ""):
         raise SystemExit("Expected {{hyperlink}} in CashApp Stripe variant")
     if account_v.get("use_group_checkout_link") is not False:
@@ -401,8 +427,12 @@ def main() -> None:
                 f"  method: Cashapp / {METHOD_SLUG} (deposit, $20–$2000, "
                 f"accumulated=null, sort_order=4)"
             )
-            print(f"  tier: {TIER_UNDER_LABEL!r} ($20–$100, Stripe on tier, 1 Default variant)")
-            print(f"  tier: {TIER_OVER_LABEL!r} ($101–$2000, no Stripe on tier, 2 variants 180/25)")
+            print(
+                f"  tier: {TIER_UNDER_LABEL!r} ($20–$100, Stripe on tier, 1 Default variant)"
+            )
+            print(
+                f"  tier: {TIER_OVER_LABEL!r} ($101–$2000, no Stripe on tier, 2 variants 180/25)"
+            )
             print("  excluded: hardcoded buy.stripe.com tier message")
             print("  sub-options: 0")
             print("Re-run with --apply to commit and verify.")

@@ -30,9 +30,7 @@ SLACK_ESCALATION_WEBHOOK_URL_ENV = "SLACK_ESCALATION_WEBHOOK_URL"
 SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID_ENV = "SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID"
 
 SLACK_CHAT_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage"
-SLACK_FILES_GET_UPLOAD_URL_EXTERNAL = (
-    "https://slack.com/api/files.getUploadURLExternal"
-)
+SLACK_FILES_GET_UPLOAD_URL_EXTERNAL = "https://slack.com/api/files.getUploadURLExternal"
 SLACK_FILES_COMPLETE_UPLOAD_EXTERNAL = (
     "https://slack.com/api/files.completeUploadExternal"
 )
@@ -339,8 +337,7 @@ async def notify_slack_issue_channel_plain(text: str, *, source: str) -> bool:
                 )
                 return True
             logger.warning(
-                "slack_issue_channel_plain: chat.postMessage failed error=%s "
-                "source=%s",
+                "slack_issue_channel_plain: chat.postMessage failed error=%s source=%s",
                 data.get("error"),
                 source,
             )

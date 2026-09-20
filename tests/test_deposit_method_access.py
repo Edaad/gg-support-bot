@@ -62,9 +62,7 @@ class TestFilterDepositMethodsForChat(unittest.TestCase):
         mock_cm.__enter__.return_value = session
         mock_cm.__exit__.return_value = False
 
-        with patch(
-            "bot.services.deposit_method_access.get_db", return_value=mock_cm
-        ):
+        with patch("bot.services.deposit_method_access.get_db", return_value=mock_cm):
             result = filter_deposit_methods_for_chat(-100, methods)
 
         slugs = [m["slug"] for m in result]
@@ -87,9 +85,7 @@ class TestFilterDepositMethodsForChat(unittest.TestCase):
         mock_cm.__enter__.return_value = session
         mock_cm.__exit__.return_value = False
 
-        with patch(
-            "bot.services.deposit_method_access.get_db", return_value=mock_cm
-        ):
+        with patch("bot.services.deposit_method_access.get_db", return_value=mock_cm):
             result = filter_deposit_methods_for_chat(-100, methods)
 
         self.assertEqual(len(result), 2)
@@ -147,42 +143,48 @@ class TestMethodsForAction(unittest.TestCase):
 
     def test_blacklist_menu(self):
         mock_cm, methods = self._patch_session([(1, "blacklist"), (3, "whitelist")])
-        with patch(
-            "bot.services.deposit_method_access.get_db", return_value=mock_cm
-        ), patch(
-            "bot.services.deposit_method_access._active_methods_for_club",
-            return_value=methods,
-        ), patch(
-            "bot.services.deposit_method_access._access_map_for_chat",
-            return_value={1: "blacklist", 3: "whitelist"},
+        with (
+            patch("bot.services.deposit_method_access.get_db", return_value=mock_cm),
+            patch(
+                "bot.services.deposit_method_access._active_methods_for_club",
+                return_value=methods,
+            ),
+            patch(
+                "bot.services.deposit_method_access._access_map_for_chat",
+                return_value={1: "blacklist", 3: "whitelist"},
+            ),
         ):
             result = methods_for_action(10, -100, "blacklist")
         self.assertEqual([m["slug"] for m in result], ["venmo"])
 
     def test_whitelist_menu(self):
         mock_cm, methods = self._patch_session([(1, "blacklist"), (3, "whitelist")])
-        with patch(
-            "bot.services.deposit_method_access.get_db", return_value=mock_cm
-        ), patch(
-            "bot.services.deposit_method_access._active_methods_for_club",
-            return_value=methods,
-        ), patch(
-            "bot.services.deposit_method_access._access_map_for_chat",
-            return_value={1: "blacklist", 3: "whitelist"},
+        with (
+            patch("bot.services.deposit_method_access.get_db", return_value=mock_cm),
+            patch(
+                "bot.services.deposit_method_access._active_methods_for_club",
+                return_value=methods,
+            ),
+            patch(
+                "bot.services.deposit_method_access._access_map_for_chat",
+                return_value={1: "blacklist", 3: "whitelist"},
+            ),
         ):
             result = methods_for_action(10, -100, "whitelist")
         self.assertEqual([m["slug"] for m in result], ["crypto"])
 
     def test_remove_menu(self):
         mock_cm, methods = self._patch_session([(1, "blacklist"), (3, "whitelist")])
-        with patch(
-            "bot.services.deposit_method_access.get_db", return_value=mock_cm
-        ), patch(
-            "bot.services.deposit_method_access._active_methods_for_club",
-            return_value=methods,
-        ), patch(
-            "bot.services.deposit_method_access._access_map_for_chat",
-            return_value={1: "blacklist", 3: "whitelist"},
+        with (
+            patch("bot.services.deposit_method_access.get_db", return_value=mock_cm),
+            patch(
+                "bot.services.deposit_method_access._active_methods_for_club",
+                return_value=methods,
+            ),
+            patch(
+                "bot.services.deposit_method_access._access_map_for_chat",
+                return_value={1: "blacklist", 3: "whitelist"},
+            ),
         ):
             result = methods_for_action(10, -100, "remove")
         self.assertEqual(
@@ -192,14 +194,16 @@ class TestMethodsForAction(unittest.TestCase):
 
     def test_cashout_direction_passed_to_query(self):
         mock_cm, methods = self._patch_session([])
-        with patch(
-            "bot.services.deposit_method_access.get_db", return_value=mock_cm
-        ), patch(
-            "bot.services.deposit_method_access._active_methods_for_club",
-            return_value=methods,
-        ) as active, patch(
-            "bot.services.deposit_method_access._access_map_for_chat",
-            return_value={},
+        with (
+            patch("bot.services.deposit_method_access.get_db", return_value=mock_cm),
+            patch(
+                "bot.services.deposit_method_access._active_methods_for_club",
+                return_value=methods,
+            ) as active,
+            patch(
+                "bot.services.deposit_method_access._access_map_for_chat",
+                return_value={},
+            ),
         ):
             methods_for_action(10, -100, "blacklist", direction="cashout")
         active.assert_called_once()
@@ -225,14 +229,16 @@ class TestMethodsForAction(unittest.TestCase):
             ),
         ]
         mock_cm, _ = self._patch_session([])
-        with patch(
-            "bot.services.deposit_method_access.get_db", return_value=mock_cm
-        ), patch(
-            "bot.services.deposit_method_access._active_methods_for_club",
-            return_value=methods,
-        ), patch(
-            "bot.services.deposit_method_access._access_map_for_chat",
-            return_value={},
+        with (
+            patch("bot.services.deposit_method_access.get_db", return_value=mock_cm),
+            patch(
+                "bot.services.deposit_method_access._active_methods_for_club",
+                return_value=methods,
+            ),
+            patch(
+                "bot.services.deposit_method_access._access_map_for_chat",
+                return_value={},
+            ),
         ):
             cashout = methods_for_action(10, -100, "whitelist", direction="cashout")
             deposit = methods_for_action(10, -100, "whitelist", direction="deposit")
@@ -274,7 +280,9 @@ class TestUpsertAccessReplacesType(unittest.TestCase):
 
         with (
             patch.object(dma, "get_db", return_value=mock_cm),
-            patch.object(dma, "get_group_title_for_chat", return_value=("RT / 1 / A", 5)),
+            patch.object(
+                dma, "get_group_title_for_chat", return_value=("RT / 1 / A", 5)
+            ),
         ):
             entry = dma.upsert_access(
                 telegram_chat_id=-100,
@@ -315,7 +323,9 @@ class TestUpsertAccessReplacesType(unittest.TestCase):
 
         with (
             patch.object(dma, "get_db", return_value=mock_cm),
-            patch.object(dma, "get_group_title_for_chat", return_value=("RT / 1 / A", 5)),
+            patch.object(
+                dma, "get_group_title_for_chat", return_value=("RT / 1 / A", 5)
+            ),
         ):
             entry = dma.upsert_access(
                 telegram_chat_id=-100,
@@ -412,7 +422,9 @@ class TestListAccessEntriesDirection(unittest.TestCase):
         with (
             patch.object(dma, "ADMIN_USER_IDS", {42}),
             patch.object(dma, "get_db", return_value=mock_cm),
-            patch.object(dma, "get_group_title_for_chat", return_value=("RT / 1 / A", 5)),
+            patch.object(
+                dma, "get_group_title_for_chat", return_value=("RT / 1 / A", 5)
+            ),
         ):
             rows = dma.list_access_entries(42, direction="cashout")
 
@@ -441,9 +453,7 @@ class TestFilterCashoutMethodsForChat(unittest.TestCase):
         mock_cm = MagicMock()
         mock_cm.__enter__.return_value = session
         mock_cm.__exit__.return_value = False
-        with patch(
-            "bot.services.deposit_method_access.get_db", return_value=mock_cm
-        ):
+        with patch("bot.services.deposit_method_access.get_db", return_value=mock_cm):
             result = filter_cashout_methods_for_chat(-100, self.methods)
         self.assertEqual([m["slug"] for m in result], ["zelle"])
 
@@ -461,9 +471,7 @@ class TestFilterCashoutMethodsForChat(unittest.TestCase):
         mock_cm = MagicMock()
         mock_cm.__enter__.return_value = session
         mock_cm.__exit__.return_value = False
-        with patch(
-            "bot.services.deposit_method_access.get_db", return_value=mock_cm
-        ):
+        with patch("bot.services.deposit_method_access.get_db", return_value=mock_cm):
             result = filter_cashout_methods_for_chat(-100, self.methods)
         self.assertEqual([m["slug"] for m in result], ["zelle", "crypto"])
 
@@ -483,9 +491,7 @@ class TestFilterCashoutMethodsForChat(unittest.TestCase):
         mock_cm = MagicMock()
         mock_cm.__enter__.return_value = session
         mock_cm.__exit__.return_value = False
-        with patch(
-            "bot.services.deposit_method_access.get_db", return_value=mock_cm
-        ):
+        with patch("bot.services.deposit_method_access.get_db", return_value=mock_cm):
             result = filter_cashout_methods_for_chat(-100, self.methods)
         self.assertEqual([m["slug"] for m in result], ["zelle", "crypto"])
         _bound.assert_not_called()
@@ -611,9 +617,7 @@ class TestChatHasBoundCryptoDeposit(unittest.TestCase):
         mock_cm = MagicMock()
         mock_cm.__enter__.return_value = session
         mock_cm.__exit__.return_value = False
-        with patch(
-            "bot.services.crypto_payments.get_db", return_value=mock_cm
-        ):
+        with patch("bot.services.crypto_payments.get_db", return_value=mock_cm):
             self.assertTrue(chat_has_bound_crypto_deposit(-100))
 
     def test_false_when_missing(self):
@@ -624,9 +628,7 @@ class TestChatHasBoundCryptoDeposit(unittest.TestCase):
         mock_cm = MagicMock()
         mock_cm.__enter__.return_value = session
         mock_cm.__exit__.return_value = False
-        with patch(
-            "bot.services.crypto_payments.get_db", return_value=mock_cm
-        ):
+        with patch("bot.services.crypto_payments.get_db", return_value=mock_cm):
             self.assertFalse(chat_has_bound_crypto_deposit(-100))
         exprs = session.query.return_value.filter.call_args[0]
         self.assertEqual(len(exprs), 2)
@@ -637,9 +639,7 @@ class TestChatHasBoundCryptoDeposit(unittest.TestCase):
 
         mock_cm = MagicMock()
         mock_cm.__enter__.side_effect = RuntimeError("db down")
-        with patch(
-            "bot.services.crypto_payments.get_db", return_value=mock_cm
-        ):
+        with patch("bot.services.crypto_payments.get_db", return_value=mock_cm):
             self.assertFalse(chat_has_bound_crypto_deposit(-100))
 
 

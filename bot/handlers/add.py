@@ -20,7 +20,10 @@ from bot.services.club import (
     record_activity_for_chat,
 )
 from bot.services.agent_debug_log import agent_debug_log
-from bot.services.mtproto_bot_fallback import bot_delete_message, telethon_missed_command_message
+from bot.services.mtproto_bot_fallback import (
+    bot_delete_message,
+    telethon_missed_command_message,
+)
 from bot.services.mtproto_dm_gc_listener import _clients, get_dm_gc_listener_status
 from bot.services.mtproto_group_add import (
     format_add_confirmation,
@@ -42,7 +45,9 @@ def _can_use_add(user_id: int, club_id: int) -> bool:
     return False
 
 
-def _parse_from_args(args: list[str]) -> tuple[Decimal, Decimal | None, str | None] | None:
+def _parse_from_args(
+    args: list[str],
+) -> tuple[Decimal, Decimal | None, str | None] | None:
     if not args:
         return None
     return parse_add_command("/add " + " ".join(args))
@@ -213,9 +218,7 @@ async def _execute_add(
             job_queue=getattr(context, "job_queue", None),
         )
     except Exception:
-        logger.debug(
-            "add: escalation cancel failed chat_id=%s", chat.id, exc_info=True
-        )
+        logger.debug("add: escalation cancel failed chat_id=%s", chat.id, exc_info=True)
 
     try:
         record_activity_for_chat(club_id, chat.id, "deposit")
@@ -231,9 +234,7 @@ async def _execute_add(
     if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
         # #region agent log
         _club_cfg = get_club_config_for_admin(admin_id)
-        _conn = {
-            getattr(c, "_gg_club_key", "?"): c.is_connected() for c in _clients
-        }
+        _conn = {getattr(c, "_gg_club_key", "?"): c.is_connected() for c in _clients}
         agent_debug_log(
             hypothesis_id="B",
             location="add.py:_execute_add",
@@ -471,9 +472,7 @@ async def handle_group_bonus_command(
     text = update.message.text or ""
     bonus_amount = parse_bonus_command(text)
     if bonus_amount is None:
-        await update.message.reply_text(
-            "Usage: /bonus <amount> (Example: /bonus 50)"
-        )
+        await update.message.reply_text("Usage: /bonus <amount> (Example: /bonus 50)")
         return
 
     await _execute_group_bonus(

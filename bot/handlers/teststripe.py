@@ -8,7 +8,10 @@ from telegram.ext import ContextTypes
 
 from config import ADMIN_USER_IDS
 from bot.services.club import get_club_for_chat, is_club_staff
-from bot.services.stripe_deposit import create_stripe_checkout_session, stripe_configured
+from bot.services.stripe_deposit import (
+    create_stripe_checkout_session,
+    stripe_configured,
+)
 
 logger = logging.getLogger(__name__)
 

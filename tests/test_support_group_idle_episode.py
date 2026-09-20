@@ -114,7 +114,10 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
     async def test_open_slacks_once_and_schedules_timers(self):
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
         with patch.object(
-            ep, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
+            ep,
+            "notify_escalation_slack",
+            new_callable=AsyncMock,
+            return_value=(True, 1),
         ) as slack:
             with patch.object(
                 ep, "offer_idle_help_prompt", new_callable=AsyncMock, return_value=False
@@ -145,7 +148,10 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
     async def test_open_gratitude_does_not_arm_staff_unanswered(self):
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
         with patch.object(
-            ep, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
+            ep,
+            "notify_escalation_slack",
+            new_callable=AsyncMock,
+            return_value=(True, 1),
         ):
             with patch.object(
                 ep, "offer_idle_help_prompt", new_callable=AsyncMock, return_value=False
@@ -167,7 +173,10 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
     async def test_feed_schedules_debounce(self):
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
         with patch.object(
-            ep, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
+            ep,
+            "notify_escalation_slack",
+            new_callable=AsyncMock,
+            return_value=(True, 1),
         ):
             with patch.object(
                 ep, "offer_idle_help_prompt", new_callable=AsyncMock, return_value=False
@@ -182,7 +191,10 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         self.jq.run_once.reset_mock()
         t1 = t0 + timedelta(seconds=10)
         with patch.object(
-            ep, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 2)
+            ep,
+            "notify_escalation_slack",
+            new_callable=AsyncMock,
+            return_value=(True, 2),
         ) as slack:
             result = await ep.on_player_reach_out(
                 1,
@@ -202,7 +214,10 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
     async def test_gratitude_feed_does_not_reset_silence(self):
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
         with patch.object(
-            ep, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
+            ep,
+            "notify_escalation_slack",
+            new_callable=AsyncMock,
+            return_value=(True, 1),
         ):
             with patch.object(
                 ep, "offer_idle_help_prompt", new_callable=AsyncMock, return_value=False
@@ -254,9 +269,7 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
             ep.is_gratitude_only_burst([{"text": "Thank you"}, {"text": "Thanks man"}])
         )
         self.assertFalse(
-            ep.is_gratitude_only_burst(
-                [{"text": "need chips"}, {"text": "thanks"}]
-            )
+            ep.is_gratitude_only_burst([{"text": "need chips"}, {"text": "thanks"}])
         )
         self.assertFalse(ep.is_gratitude_only_burst([]))
         self.assertTrue(ep.is_gratitude_only_message_text("Thank you"))

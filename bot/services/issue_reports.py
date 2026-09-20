@@ -142,7 +142,9 @@ def normalize_notify_tags(raw_tags: list[str] | None) -> list[str]:
     return deduped
 
 
-def validate_files(files: list[IssueReportFileInput], *, max_count: int | None = None) -> None:
+def validate_files(
+    files: list[IssueReportFileInput], *, max_count: int | None = None
+) -> None:
     limit = max_count if max_count is not None else MAX_ATTACHMENTS
     if len(files) > limit:
         raise IssueReportValidationError(f"At most {limit} screenshots allowed")
@@ -173,7 +175,9 @@ def _notify_labels(notify_tags: list[str] | None) -> str:
     return ", ".join(NOTIFY_LABELS.get(t, t) for t in notify_tags)
 
 
-def format_issue_report_slack_body(report: IssueReport, *, session: Session | None = None) -> str:
+def format_issue_report_slack_body(
+    report: IssueReport, *, session: Session | None = None
+) -> str:
     lines = [
         "Issue report",
         "",
@@ -286,10 +290,7 @@ def format_resolve_result(result: ResolveReportResult) -> str:
 
 def list_issue_reports(db: Session, *, limit: int = 50) -> list[IssueReport]:
     return (
-        db.query(IssueReport)
-        .order_by(IssueReport.created_at.desc())
-        .limit(limit)
-        .all()
+        db.query(IssueReport).order_by(IssueReport.created_at.desc()).limit(limit).all()
     )
 
 
@@ -532,7 +533,9 @@ async def resolve_report(
     )
 
     slack_body = format_resolution_slack_body(report)
-    file_bytes = [(a.filename, a.content, a.content_type) for a in resolution_attachments]
+    file_bytes = [
+        (a.filename, a.content, a.content_type) for a in resolution_attachments
+    ]
     notify_tags = list(report.notify_tags or [])
 
     if report.slack_message_ts:

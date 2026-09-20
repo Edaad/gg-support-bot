@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
+
 class LoginRequest(BaseModel):
     password: str
 
@@ -19,6 +20,7 @@ class TokenResponse(BaseModel):
 
 
 # ── Club ──────────────────────────────────────────────────────────────────────
+
 
 class ClubCreate(BaseModel):
     name: str
@@ -195,6 +197,7 @@ class LinkedAccountRead(BaseModel):
 
 # ── Payment Method ────────────────────────────────────────────────────────────
 
+
 class MethodCreate(BaseModel):
     direction: str
     name: str
@@ -306,6 +309,7 @@ class MethodRead(BaseModel):
 
 # ── Payment Method Tier ───────────────────────────────────────────────────────
 
+
 class TierCreate(BaseModel):
     label: str
     min_amount: Optional[Decimal] = None
@@ -355,6 +359,7 @@ class TierRead(BaseModel):
 
 # ── Method Variant (weighted rotation) ────────────────────────────────────────
 
+
 class VariantCreate(BaseModel):
     label: str
     weight: int = 1
@@ -388,6 +393,7 @@ class VariantUpdate(BaseModel):
 
 # ── Payment Sub-Option ────────────────────────────────────────────────────────
 
+
 class SubOptionCreate(BaseModel):
     name: str
     slug: str
@@ -411,6 +417,7 @@ class SubOptionUpdate(BaseModel):
 
 
 # ── Custom Command ────────────────────────────────────────────────────────────
+
 
 class CommandCreate(BaseModel):
     command_name: str
@@ -448,6 +455,7 @@ class CommandRead(BaseModel):
 
 # ── Group ─────────────────────────────────────────────────────────────────────
 
+
 class GroupRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -458,6 +466,7 @@ class GroupRead(BaseModel):
 
 
 # ── Simulate ──────────────────────────────────────────────────────────────────
+
 
 class SimulateMethodOut(BaseModel):
     id: int
@@ -479,6 +488,7 @@ class SimulateResponse(BaseModel):
 
 
 # ── `/gc` MTProto (Dashboard login for Telethon sessions) ──────────────────
+
 
 class GcMtProtoClubRead(BaseModel):
     club_key: str
@@ -546,6 +556,7 @@ class MtProtoQrStatusResponse(BaseModel):
 
 # ── Bonus Types & Records ─────────────────────────────────────────────────────
 
+
 class BonusTypeCreate(BaseModel):
     name: str
     is_active: bool = True
@@ -609,6 +620,7 @@ class BonusRecordUpdate(BaseModel):
 
 # ── Expenses (admin ledger) ───────────────────────────────────────────────────
 
+
 class ExpenseCreate(BaseModel):
     amount: Decimal
     expense_type: str
@@ -643,6 +655,7 @@ class ExpenseRead(BaseModel):
 
 
 # ── Staff cashout records ─────────────────────────────────────────────────────
+
 
 class StaffCashoutPaymentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -814,6 +827,7 @@ class StaffCashoutSendUpdate(BaseModel):
 
 
 # ── Issue reports ─────────────────────────────────────────────────────────────
+
 
 class IssueReportAttachmentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)

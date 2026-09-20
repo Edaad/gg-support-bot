@@ -22,8 +22,7 @@ from db.connection import init_engine
 DROP_WEIGHT_CONSTRAINTS = [
     "ALTER TABLE club_payment_tier_variants "
     "DROP CONSTRAINT IF EXISTS club_payment_tier_variants_weight_check;",
-    "ALTER TABLE club_payment_tier_variants "
-    "DROP CONSTRAINT IF EXISTS ck_cptv_weight;",
+    "ALTER TABLE club_payment_tier_variants DROP CONSTRAINT IF EXISTS ck_cptv_weight;",
 ]
 
 ADD_WEIGHT_CONSTRAINT = (
@@ -52,7 +51,11 @@ def main() -> None:
         conn.commit()
 
         rows = conn.execute(LIST_WEIGHT_CHECKS).fetchall()
-        if len(rows) == 1 and rows[0][0] == "ck_cptv_weight" and "weight >= 0" in rows[0][1]:
+        if (
+            len(rows) == 1
+            and rows[0][0] == "ck_cptv_weight"
+            and "weight >= 0" in rows[0][1]
+        ):
             print(
                 "club_payment_tier_variants weight constraint OK: "
                 "ck_cptv_weight CHECK (weight >= 0)."

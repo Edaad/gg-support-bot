@@ -19,7 +19,9 @@ from bot.services.group_chat_analysis_claude import (
     segment_messages,
 )
 from bot.services.group_chat_analysis_prompts import PROMPT_VERSION
-from bot.services.group_chat_transcript_fetch import STATUS_COMPLETE as TRANSCRIPT_COMPLETE
+from bot.services.group_chat_transcript_fetch import (
+    STATUS_COMPLETE as TRANSCRIPT_COMPLETE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +92,7 @@ def role_lists_for_club(club_id: int) -> tuple[list[str], list[str]]:
             if cleaned:
                 bots.append(cleaned)
                 bots.append(f"@{cleaned}")
+
     # Stable unique order
     def _uniq(items: list[str]) -> list[str]:
         seen: set[str] = set()
@@ -132,9 +135,7 @@ def list_analysis_targets(
             GroupChatDailyTranscript.status == TRANSCRIPT_COMPLETE,
         )
         if not force:
-            q = q.filter(
-                GroupChatDailyTranscript.analysis_status != ANALYSIS_COMPLETE
-            )
+            q = q.filter(GroupChatDailyTranscript.analysis_status != ANALYSIS_COMPLETE)
         if chat_id is not None:
             q = q.filter(GroupChatDailyTranscript.chat_id == int(chat_id))
         if club_id is not None:
@@ -234,7 +235,9 @@ def _load_transcript_messages(
             .one_or_none()
         )
         if row is None:
-            raise ValueError(f"transcript not found chat_id={chat_id} date={activity_date}")
+            raise ValueError(
+                f"transcript not found chat_id={chat_id} date={activity_date}"
+            )
         if row.status != TRANSCRIPT_COMPLETE:
             raise ValueError(f"transcript not complete status={row.status}")
         messages = row.messages if isinstance(row.messages, list) else []
@@ -404,7 +407,11 @@ async def analyze_with_retries(
     via ``GROUP_CHAT_ANALYSIS_CONCURRENCY``.
     """
 
-    limit = default_analysis_concurrency() if concurrency is None else max(0, int(concurrency))
+    limit = (
+        default_analysis_concurrency()
+        if concurrency is None
+        else max(0, int(concurrency))
+    )
     deadline = time.monotonic() + float(budget_seconds)
     summary = AnalysisRunSummary(activity_date=activity_date)
     pending = list_analysis_targets(

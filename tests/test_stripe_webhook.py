@@ -29,8 +29,14 @@ class FakeCheckoutQuery:
         for expr in args:
             left = getattr(expr, "left", None)
             right = getattr(expr, "right", None)
-            if left is not None and hasattr(left, "key") and left.key == "stripe_checkout_session_id":
-                self._session_id = str(right.value if hasattr(right, "value") else right)
+            if (
+                left is not None
+                and hasattr(left, "key")
+                and left.key == "stripe_checkout_session_id"
+            ):
+                self._session_id = str(
+                    right.value if hasattr(right, "value") else right
+                )
         return self
 
     def one_or_none(self):
@@ -174,8 +180,12 @@ class StripeWebhookApiTestCase(unittest.TestCase):
             "data": {"object": checkout_obj},
         }
         with (
-            patch.object(stripe_routes, "construct_stripe_webhook_event", return_value=event),
-            patch.object(stripe_routes, "apply_checkout_session_webhook_event", return_value=True) as apply_mock,
+            patch.object(
+                stripe_routes, "construct_stripe_webhook_event", return_value=event
+            ),
+            patch.object(
+                stripe_routes, "apply_checkout_session_webhook_event", return_value=True
+            ) as apply_mock,
             patch.object(
                 stripe_routes,
                 "notify_stripe_payment_completed",
@@ -197,7 +207,11 @@ class StripeNotifyPaymentCompletedTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_notify_stripe_payment_completed_posts_player_group_message(self):
         checkout_obj = _completed_checkout_payload()
         with (
-            patch.object(sd, "get_group_title_for_chat", return_value=("RT / 6485-8168 / Angus Mcgoon", CLUB_ID)),
+            patch.object(
+                sd,
+                "get_group_title_for_chat",
+                return_value=("RT / 6485-8168 / Angus Mcgoon", CLUB_ID),
+            ),
             patch.object(sd, "get_db") as mock_get_db,
             patch.object(sd, "_resolve_stripe_method_label", return_value="Stripe"),
             patch(
@@ -213,7 +227,11 @@ class StripeNotifyPaymentCompletedTestCase(unittest.IsolatedAsyncioTestCase):
             patch(
                 "bot.services.payment_auto_deposit.schedule_auto_deposit_from_payment",
             ),
-            patch.object(sd, "resolve_group_chat_notification_url", new=AsyncMock(return_value=None)),
+            patch.object(
+                sd,
+                "resolve_group_chat_notification_url",
+                new=AsyncMock(return_value=None),
+            ),
         ):
             mock_session = MagicMock()
             mock_club = MagicMock()

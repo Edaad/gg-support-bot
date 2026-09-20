@@ -313,7 +313,9 @@ def _detail_keyboard(report_id: int, *, status: str) -> InlineKeyboardMarkup:
     if status == "open":
         rows.append(
             [
-                InlineKeyboardButton("Resolve", callback_data=f"ir_triage:resolve:{report_id}"),
+                InlineKeyboardButton(
+                    "Resolve", callback_data=f"ir_triage:resolve:{report_id}"
+                ),
                 InlineKeyboardButton(
                     "Edit details", callback_data=f"ir_triage:edit:{report_id}"
                 ),
@@ -346,7 +348,9 @@ def _load_draft_into_user_data(
     context.user_data["ir_telegram_chat_id"] = draft.telegram_chat_id
 
 
-async def _report_group_stub(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _report_group_stub(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     assert update.message and update.effective_chat and update.effective_user
 
     chat = update.effective_chat
@@ -389,7 +393,9 @@ async def _report_group_stub(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
 
-async def _begin_dm_report_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def _begin_dm_report_flow(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     assert update.message and update.effective_user
 
     context.user_data["ir_admin_id"] = update.effective_user.id
@@ -449,7 +455,9 @@ async def report_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     return await _begin_dm_report_flow(update, context)
 
 
-async def draft_continue_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def draft_continue_entry(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     query = update.callback_query
     if not query or not query.data or not update.effective_user:
         return ConversationHandler.END
@@ -493,7 +501,9 @@ async def draft_continue_entry(update: Update, context: ContextTypes.DEFAULT_TYP
             draft_id,
             update.effective_user.id,
         )
-        await query.edit_message_text("Report draft expired. Send /report to start again.")
+        await query.edit_message_text(
+            "Report draft expired. Send /report to start again."
+        )
         return ConversationHandler.END
 
     if await block_if_dm_flow_active(update, context, starting="issue_report"):
@@ -730,7 +740,9 @@ async def submit_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     reporter_name = None
     if update.effective_user:
-        reporter_name = update.effective_user.full_name or update.effective_user.username
+        reporter_name = (
+            update.effective_user.full_name or update.effective_user.username
+        )
 
     try:
         with get_db() as session:
@@ -941,6 +953,7 @@ async def triage_followup_message(
             await update.message.reply_text(f"Evidence saved for report #{report_id}.")
             return
         if mode == _TRIAGE_MODE_RESOLVE_EVIDENCE:
+
             async def reply(text: str) -> None:
                 await update.message.reply_text(text)
 
@@ -951,7 +964,9 @@ async def triage_followup_message(
     if mode == _TRIAGE_MODE_RESOLVE_NOTES and update.message.text:
         notes = (update.message.text or "").strip()
         if not notes:
-            await update.message.reply_text("Please describe how the issue was resolved.")
+            await update.message.reply_text(
+                "Please describe how the issue was resolved."
+            )
             return
         context.user_data["ir_resolve_notes"] = notes
         context.user_data["ir_triage_mode"] = _TRIAGE_MODE_RESOLVE_EVIDENCE
@@ -1027,7 +1042,9 @@ def issue_report_awaiting_evidence(context: ContextTypes.DEFAULT_TYPE) -> bool:
     )
 
 
-async def issue_report_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def issue_report_cancel(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     return await report_cancel(update, context)
 
 
@@ -1128,7 +1145,9 @@ def register_issue_report_handlers(app) -> None:
     conv = get_report_conversation_handler()
     _report_conversation = conv
 
-    async def on_draft_continue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def on_draft_continue(
+        update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         try:
             result = await draft_continue_entry(update, context)
             sync_report_conv_state(conv, update, result)
@@ -1151,7 +1170,9 @@ def register_issue_report_handlers(app) -> None:
     # group=-1: after bonus/sendinactive/depositaccess (-4/-3/-2); see bot/main.py
     app.add_handler(
         MessageHandler(
-            filters.ChatType.PRIVATE & (filters.TEXT | filters.PHOTO) & ~filters.COMMAND,
+            filters.ChatType.PRIVATE
+            & (filters.TEXT | filters.PHOTO)
+            & ~filters.COMMAND,
             triage_followup_priority,
         ),
         group=-1,
@@ -1181,7 +1202,9 @@ def register_issue_report_handlers(app) -> None:
     )
     app.add_handler(
         MessageHandler(
-            filters.ChatType.PRIVATE & (filters.TEXT | filters.PHOTO) & ~filters.COMMAND,
+            filters.ChatType.PRIVATE
+            & (filters.TEXT | filters.PHOTO)
+            & ~filters.COMMAND,
             triage_followup_message,
             block=False,
         )

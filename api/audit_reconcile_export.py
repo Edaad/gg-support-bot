@@ -53,7 +53,7 @@ CLUBGTO_CASHOUT_LABELING_ENABLED = False
 _HEADER_FILL = PatternFill("solid", fgColor="38761D")
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _SECTION_FONT = Font(bold=True, size=12)
-_CURRENCY_FORMAT = '$#,##0.00;[Red]-$#,##0.00'
+_CURRENCY_FORMAT = "$#,##0.00;[Red]-$#,##0.00"
 
 # Matching sheet look (aligned to native Sheets "Table1" reference).
 _MATCHING_HEADER_FILL = PatternFill("solid", fgColor="306A54")
@@ -112,12 +112,15 @@ _MATCHING_SOURCE_COL = 6  # Source (after Nickname)
 _MATCHING_DOLLAR_COL = 9  # $
 _MATCHING_VARIANT_COL = 10  # Variant
 
-MATCHING_SOURCE_OPTIONS: tuple[str, ...] = tuple(
-    label for src, label in LEDGER_SOURCE_LABELS.items() if src != "cashout"
-) + CASHOUT_SOURCE_LABELS + UNION_MATCHING_SOURCE_OPTIONS + (
-    CHIP_TRANSFER_PLAYER_LABEL,
-    FREE_PLAY_LABEL,
-    BACK_TO_CLUB_LABEL,
+MATCHING_SOURCE_OPTIONS: tuple[str, ...] = (
+    tuple(label for src, label in LEDGER_SOURCE_LABELS.items() if src != "cashout")
+    + CASHOUT_SOURCE_LABELS
+    + UNION_MATCHING_SOURCE_OPTIONS
+    + (
+        CHIP_TRANSFER_PLAYER_LABEL,
+        FREE_PLAY_LABEL,
+        BACK_TO_CLUB_LABEL,
+    )
 )
 
 # Matching Source fills: one family color; GTO / Vaughn uses the darker shade.
@@ -442,8 +445,7 @@ def _add_matching_source_variant_dropdowns(
 
     lists_end_col = lists_start_col + len(source_columns) - 1
     header_range = (
-        f"${get_column_letter(lists_start_col)}$1:"
-        f"${get_column_letter(lists_end_col)}$1"
+        f"${get_column_letter(lists_start_col)}$1:${get_column_letter(lists_end_col)}$1"
     )
     list_end_row = max(2, 1 + max_option_rows)
 
@@ -468,7 +470,7 @@ def _add_matching_source_variant_dropdowns(
     first_source = f"${source_letter}{first_row}"
     col_expr = f"MATCH({first_source},{header_range},0)+{lists_start_col - 1}"
     variant_formula = (
-        f"=INDIRECT(ADDRESS(2,{col_expr})&\":\"&ADDRESS({list_end_row},{col_expr}))"
+        f'=INDIRECT(ADDRESS(2,{col_expr})&":"&ADDRESS({list_end_row},{col_expr}))'
     )
     dv_variant = DataValidation(
         type="list",
@@ -625,9 +627,7 @@ def _owner_sum_chips_formula(
     if not _owner_tag_scoped(tag):
         return f'=SUMPRODUCT(({src_col}="{source}")*ABS({amount_col}))'
     tag_col = _matching_data_col_range(_MATCHING_VARIANT_COL, first_row, last_row)
-    return (
-        f'=SUMPRODUCT(({src_col}="{source}")*({tag_col}="{tag}")*ABS({amount_col}))'
-    )
+    return f'=SUMPRODUCT(({src_col}="{source}")*({tag_col}="{tag}")*ABS({amount_col}))'
 
 
 def _owner_method_rows(
@@ -653,7 +653,10 @@ def _owner_method_rows(
             method_owner=line.method_owner,
         )
         if line.source == "deposit_zelle":
-            tag = normalize_zelle_recipient(line.variant or "") or (line.variant or "").strip()
+            tag = (
+                normalize_zelle_recipient(line.variant or "")
+                or (line.variant or "").strip()
+            )
             if tag:
                 zelle_rows[tag] = source_label
         elif line.source == "deposit_venmo":
@@ -794,9 +797,7 @@ def _write_matching_rows(
     row_idx = header_row + 1
     for matched in rows:
         trade = matched.trade
-        _write_excel_time_cell(
-            ws, row_idx, 1, time_club_slug, trade.occurred_at
-        )
+        _write_excel_time_cell(ws, row_idx, 1, time_club_slug, trade.occurred_at)
         ws.cell(row=row_idx, column=2, value=trade.manager_nickname or "")
         cell = ws.cell(
             row=row_idx,
@@ -997,7 +998,9 @@ def build_all_clubs_matching_workbook(
         )
         _set_column_widths(ws, MATCHING_WIDTHS)
 
-    consumed_global = _ledger_consumed_external_ids(rt_ledger, rt_match.unmatched_ledger)
+    consumed_global = _ledger_consumed_external_ids(
+        rt_ledger, rt_match.unmatched_ledger
+    )
     consumed_global |= _ledger_consumed_external_ids(
         cc_report.ledger_lines,
         cc_unmatched_ledger,

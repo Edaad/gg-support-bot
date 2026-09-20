@@ -44,7 +44,9 @@ def _payment_v2():
     return club_payment_v2
 
 
-def _club_id_for_telegram_user(session: Session, telegram_user_id: int) -> Optional[int]:
+def _club_id_for_telegram_user(
+    session: Session, telegram_user_id: int
+) -> Optional[int]:
     """Resolve club_id for a primary or linked Telegram user. None if inactive or unknown."""
     club = session.query(Club).filter_by(telegram_user_id=telegram_user_id).first()
     if club:
@@ -62,9 +64,11 @@ def _club_id_for_telegram_user(session: Session, telegram_user_id: int) -> Optio
 
 def get_club_by_telegram_id(telegram_user_id: int) -> Optional[Club]:
     with get_db() as session:
-        club = session.query(Club).filter_by(
-            telegram_user_id=telegram_user_id, is_active=True
-        ).first()
+        club = (
+            session.query(Club)
+            .filter_by(telegram_user_id=telegram_user_id, is_active=True)
+            .first()
+        )
         if club:
             session.expunge(club)
             return club
@@ -88,11 +92,7 @@ def _group_row_for_chat(session: Session, chat_id: int) -> Optional[Group]:
     if group:
         return group
     variants = telegram_chat_id_variants(cid)
-    return (
-        session.query(Group)
-        .filter(Group.chat_id.in_(variants))
-        .first()
-    )
+    return session.query(Group).filter(Group.chat_id.in_(variants)).first()
 
 
 def get_club_for_chat(chat_id: int) -> Optional[int]:
@@ -132,7 +132,9 @@ def get_club_by_id(club_id: int) -> Optional[Club]:
         return club
 
 
-def set_group_club(chat_id: int, telegram_user_id: int, chat_title: Optional[str] = None) -> Optional[int]:
+def set_group_club(
+    chat_id: int, telegram_user_id: int, chat_title: Optional[str] = None
+) -> Optional[int]:
     """Link a group to the club owned by telegram_user_id (primary or linked). Returns club_id or None."""
     with get_db() as session:
         club_id = _club_id_for_telegram_user(session, telegram_user_id)
@@ -201,21 +203,27 @@ def get_methods_for_amount(
                     continue
                 if m.max_amount is not None and amount > m.max_amount:
                     continue
-            result.append({
-                "id": m.id,
-                "name": m.name,
-                "slug": m.slug,
-                "min_amount": m.min_amount,
-                "max_amount": m.max_amount,
-                "has_sub_options": m.has_sub_options,
-                "response_type": m.response_type,
-                "response_text": m.response_text,
-                "response_file_id": m.response_file_id,
-                "response_caption": m.response_caption,
-                "use_group_checkout_link": bool(getattr(m, "use_group_checkout_link", False)),
-                "group_checkout_provider": getattr(m, "group_checkout_provider", None),
-                "hyperlink_text": getattr(m, "hyperlink_text", None),
-            })
+            result.append(
+                {
+                    "id": m.id,
+                    "name": m.name,
+                    "slug": m.slug,
+                    "min_amount": m.min_amount,
+                    "max_amount": m.max_amount,
+                    "has_sub_options": m.has_sub_options,
+                    "response_type": m.response_type,
+                    "response_text": m.response_text,
+                    "response_file_id": m.response_file_id,
+                    "response_caption": m.response_caption,
+                    "use_group_checkout_link": bool(
+                        getattr(m, "use_group_checkout_link", False)
+                    ),
+                    "group_checkout_provider": getattr(
+                        m, "group_checkout_provider", None
+                    ),
+                    "hyperlink_text": getattr(m, "hyperlink_text", None),
+                }
+            )
         return result
 
 
@@ -266,7 +274,9 @@ def get_method_by_id(method_id: int) -> Optional[dict]:
             "response_text": m.response_text,
             "response_file_id": m.response_file_id,
             "response_caption": m.response_caption,
-            "use_group_checkout_link": bool(getattr(m, "use_group_checkout_link", False)),
+            "use_group_checkout_link": bool(
+                getattr(m, "use_group_checkout_link", False)
+            ),
             "group_checkout_provider": getattr(m, "group_checkout_provider", None),
             "hyperlink_text": getattr(m, "hyperlink_text", None),
         }
@@ -428,7 +438,9 @@ def _legacy_variant_weight(v: MethodVariant) -> int:
     return int(v.weight) if v.weight is not None else 1
 
 
-def _pick_weighted_legacy_variant(variants: list[MethodVariant]) -> Optional[MethodVariant]:
+def _pick_weighted_legacy_variant(
+    variants: list[MethodVariant],
+) -> Optional[MethodVariant]:
     active = [v for v in variants if _legacy_variant_weight(v) > 0]
     if not active:
         return None
@@ -480,23 +492,19 @@ def pick_variant(
                 return None
             if _legacy_variant_weight(chosen) > 0 and (
                 tier_id is None
-                or (
-                    chosen.tier_id is not None and int(chosen.tier_id) == int(tier_id)
-                )
+                or (chosen.tier_id is not None and int(chosen.tier_id) == int(tier_id))
             ):
                 return _variant_response_dict(
                     chosen, tier_scoped=bool(chosen.tier_id), include_ids=True
                 )
 
         if tier_id is not None:
-            variants = (
-                session.query(MethodVariant)
-                .filter_by(tier_id=tier_id)
-                .all()
-            )
+            variants = session.query(MethodVariant).filter_by(tier_id=tier_id).all()
             chosen = _pick_weighted_legacy_variant(variants)
             if chosen is not None:
-                return _variant_response_dict(chosen, tier_scoped=True, include_ids=True)
+                return _variant_response_dict(
+                    chosen, tier_scoped=True, include_ids=True
+                )
 
         variants = (
             session.query(MethodVariant)
@@ -513,7 +521,9 @@ def get_custom_command(club_id: int, command_name: str) -> Optional[dict]:
     with get_db() as session:
         cmd = (
             session.query(CustomCommand)
-            .filter_by(club_id=club_id, command_name=command_name.lower(), is_active=True)
+            .filter_by(
+                club_id=club_id, command_name=command_name.lower(), is_active=True
+            )
             .first()
         )
         if not cmd:
@@ -787,7 +797,9 @@ def get_first_deposit_settings(club_id: int) -> dict:
             "referral_enabled": bool(club.referral_enabled),
             "bonus_enabled": bool(club.first_deposit_bonus_enabled),
             "bonus_pct": club.first_deposit_bonus_pct or 0,
-            "bonus_cap": Decimal(str(club.first_deposit_bonus_cap)) if club.first_deposit_bonus_cap is not None else None,
+            "bonus_cap": Decimal(str(club.first_deposit_bonus_cap))
+            if club.first_deposit_bonus_cap is not None
+            else None,
         }
 
 
@@ -804,7 +816,9 @@ def is_group_linked(chat_id: int) -> bool:
         return _group_row_for_chat(session, int(chat_id)) is not None
 
 
-def try_link_group_by_admin(chat_id: int, admin_user_ids: list[int], chat_title: Optional[str] = None) -> Optional[int]:
+def try_link_group_by_admin(
+    chat_id: int, admin_user_ids: list[int], chat_title: Optional[str] = None
+) -> Optional[int]:
     """Try to link a group to a club by matching any of the provided admin user IDs.
 
     Checks each admin against known club owners (primary + linked accounts).
@@ -820,7 +834,9 @@ def try_link_group_by_admin(chat_id: int, admin_user_ids: list[int], chat_title:
                     if chat_title:
                         existing.name = chat_title
                 else:
-                    session.add(Group(chat_id=chat_id, club_id=club_id, name=chat_title))
+                    session.add(
+                        Group(chat_id=chat_id, club_id=club_id, name=chat_title)
+                    )
                 return club_id
     return None
 
@@ -954,7 +970,9 @@ def record_activity_for_chat(
     """Record cooldown anchor for this support group (optional player id for audit)."""
     uid = telegram_user_id
     if uid is None:
-        from bot.services.support_group_chats import fetch_player_telegram_user_id_for_chat
+        from bot.services.support_group_chats import (
+            fetch_player_telegram_user_id_for_chat,
+        )
 
         uid = fetch_player_telegram_user_id_for_chat(chat_id) or 0
     record_activity(club_id, uid, chat_id, activity_type)
@@ -1066,9 +1084,7 @@ def chat_has_add_command_since(chat_id: int, since: datetime) -> bool:
         return row is not None
 
 
-def has_recent_add_command_in_chat(
-    chat_id: int, *, within_minutes: int = 10
-) -> bool:
+def has_recent_add_command_in_chat(chat_id: int, *, within_minutes: int = 10) -> bool:
     """True if /add was invoked in this group within the last N minutes."""
     since = datetime.now(timezone.utc) - timedelta(minutes=int(within_minutes))
     return chat_has_add_command_since(chat_id, since)
@@ -1269,9 +1285,7 @@ def cashout_shown_on_popup_keyboard(club_id: int, chat_id: int) -> bool:
         return True
 
 
-def check_cashout_eligibility(
-    club_id: int, chat_id: int
-) -> tuple[bool, Optional[str]]:
+def check_cashout_eligibility(club_id: int, chat_id: int) -> tuple[bool, Optional[str]]:
     """Check cooldown (hard) + business hours (advisory).
 
     Returns ``(eligible, message)``:

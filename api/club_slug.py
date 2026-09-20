@@ -61,9 +61,7 @@ def slug_for_club_name(name: str) -> str | None:
     if key in CLUB_LABEL_TO_SLUG:
         return CLUB_LABEL_TO_SLUG[key]
     matches = [
-        slug
-        for slug, full in CLUB_SLUG_TO_NAME.items()
-        if full.strip().lower() == key
+        slug for slug, full in CLUB_SLUG_TO_NAME.items() if full.strip().lower() == key
     ]
     if not matches:
         return None

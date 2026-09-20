@@ -64,10 +64,16 @@ class SolePlayerResult:
 def format_telegram_user_display(user: Any) -> tuple[str, str | None]:
     """Return ``(display_name, @username or None)`` for a Telethon user."""
     un = getattr(user, "username", None)
-    username = f"@{un.strip().lstrip('@')}" if isinstance(un, str) and un.strip() else None
+    username = (
+        f"@{un.strip().lstrip('@')}" if isinstance(un, str) and un.strip() else None
+    )
     fn = (getattr(user, "first_name", None) or "").strip()
     ln = (getattr(user, "last_name", None) or "").strip()
-    display = f"{fn} {ln}".strip() or (username or "").lstrip("@") or f"user {getattr(user, 'id', '?')}"
+    display = (
+        f"{fn} {ln}".strip()
+        or (username or "").lstrip("@")
+        or f"user {getattr(user, 'id', '?')}"
+    )
     return display, username
 
 
@@ -93,7 +99,9 @@ def is_eligible_player_user(
         return False
     if invite_usernames:
         un = getattr(user, "username", None)
-        key = un.strip().lower().lstrip("@") if isinstance(un, str) and un.strip() else ""
+        key = (
+            un.strip().lower().lstrip("@") if isinstance(un, str) and un.strip() else ""
+        )
         if key and key in invite_usernames:
             return False
     if uid_int in skip_operators:
@@ -112,7 +120,10 @@ async def _eligible_player_filter_context(
     invite_ids = await _resolve_invitee_user_ids(client, cfg)
     invite_usernames = frozenset(
         m.strip().lower().lstrip("@")
-        for m in (list(get_gc_users_to_add(cfg)) + ([cfg.bot_account] if cfg.bot_account else []))
+        for m in (
+            list(get_gc_users_to_add(cfg))
+            + ([cfg.bot_account] if cfg.bot_account else [])
+        )
         if isinstance(m, str) and m.strip()
     )
     skip_operators = frozenset(gc_mtproto_operator_telegram_user_ids())
@@ -129,9 +140,12 @@ async def find_latest_eligible_message_sender(
     limit: int = 50,
 ) -> Any | None:
     """Return the sender of the newest message from an eligible non-support human."""
-    invite_ids, invite_usernames, skip_operators, skip_dashboard_admins = (
-        await _eligible_player_filter_context(client, cfg, self_id=self_id)
-    )
+    (
+        invite_ids,
+        invite_usernames,
+        skip_operators,
+        skip_dashboard_admins,
+    ) = await _eligible_player_filter_context(client, cfg, self_id=self_id)
 
     async def scan():
         async for msg in client.iter_messages(channel_ent, limit=max(1, limit)):
@@ -170,9 +184,12 @@ async def collect_eligible_player_participants(
     self_id: int | None,
 ) -> list[Any]:
     """All non-bot player candidates after staff/operator exclusions (see ``find_sole_player_participant``)."""
-    invite_ids, invite_usernames, skip_operators, skip_dashboard_admins = (
-        await _eligible_player_filter_context(client, cfg, self_id=self_id)
-    )
+    (
+        invite_ids,
+        invite_usernames,
+        skip_operators,
+        skip_dashboard_admins,
+    ) = await _eligible_player_filter_context(client, cfg, self_id=self_id)
 
     candidates: list[Any] = []
 

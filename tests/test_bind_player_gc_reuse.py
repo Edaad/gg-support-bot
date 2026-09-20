@@ -11,7 +11,9 @@ from bot.services.support_group_chats import bind_player_for_gc_reuse
 
 class BindPlayerGcReuseTests(unittest.TestCase):
     @patch("bot.services.support_group_chats.update_support_group_chat_row")
-    @patch("bot.services.support_group_chats.fetch_support_group_chat_by_telegram_chat_id")
+    @patch(
+        "bot.services.support_group_chats.fetch_support_group_chat_by_telegram_chat_id"
+    )
     @patch("bot.services.support_group_chats.fetch_support_group_chat_by_club_player")
     def test_rebind_updates_chat_id_when_allowed(
         self,
@@ -19,7 +21,9 @@ class BindPlayerGcReuseTests(unittest.TestCase):
         mock_by_chat,
         mock_update,
     ) -> None:
-        mock_by_player.return_value = SimpleNamespace(id=2959, telegram_chat_id=-1004325999602)
+        mock_by_player.return_value = SimpleNamespace(
+            id=2959, telegram_chat_id=-1004325999602
+        )
         mock_by_chat.return_value = None
         mock_update.return_value = (True, None)
 
@@ -47,7 +51,9 @@ class BindPlayerGcReuseTests(unittest.TestCase):
 
     @patch("bot.services.support_group_chats.fetch_support_group_chat_by_club_player")
     def test_player_bound_elsewhere_without_rebind(self, mock_by_player) -> None:
-        mock_by_player.return_value = SimpleNamespace(id=2959, telegram_chat_id=-1004325999602)
+        mock_by_player.return_value = SimpleNamespace(
+            id=2959, telegram_chat_id=-1004325999602
+        )
 
         status, row_id = bind_player_for_gc_reuse(
             club_key="round_table",
@@ -60,14 +66,18 @@ class BindPlayerGcReuseTests(unittest.TestCase):
         self.assertEqual(status, "player_bound_elsewhere")
         self.assertEqual(row_id, 2959)
 
-    @patch("bot.services.support_group_chats.fetch_support_group_chat_by_telegram_chat_id")
+    @patch(
+        "bot.services.support_group_chats.fetch_support_group_chat_by_telegram_chat_id"
+    )
     @patch("bot.services.support_group_chats.fetch_support_group_chat_by_club_player")
     def test_rebind_blocked_when_target_chat_bound_to_other_player(
         self,
         mock_by_player,
         mock_by_chat,
     ) -> None:
-        mock_by_player.return_value = SimpleNamespace(id=2959, telegram_chat_id=-1004325999602)
+        mock_by_player.return_value = SimpleNamespace(
+            id=2959, telegram_chat_id=-1004325999602
+        )
         mock_by_chat.return_value = SimpleNamespace(
             id=4000,
             player_telegram_user_id=999,

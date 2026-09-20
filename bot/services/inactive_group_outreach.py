@@ -25,7 +25,6 @@ from bot.services.mtproto_group_activity import (
     compute_inactive_flags,
     merge_external_activity,
     merge_external_activity_results,
-    resolve_legacy_chat_id,
     resolve_legacy_chat_ids,
 )
 from bot.services.player_details import parse_tracking_title
@@ -440,7 +439,9 @@ def claim_pending_batch(club_key: str, limit: int) -> list[OutreachScanRow]:
                 club_key=str(r.club_key),
                 telegram_chat_id=int(r.telegram_chat_id),
                 group_title=str(r.group_title),
-                legacy_chat_id=int(r.legacy_chat_id) if r.legacy_chat_id is not None else None,
+                legacy_chat_id=int(r.legacy_chat_id)
+                if r.legacy_chat_id is not None
+                else None,
                 gg_player_id=str(r.gg_player_id) if r.gg_player_id else None,
             )
             for r in rows
@@ -572,7 +573,9 @@ async def seed_outreach_targets() -> int:
             continue
         client = get_listener_client(club_key)
         if client is None or not client.is_connected():
-            logger.warning("inactive_outreach: seed skipped club=%s (listener down)", club_key)
+            logger.warning(
+                "inactive_outreach: seed skipped club=%s (listener down)", club_key
+            )
             continue
 
         club_id = int(cfg.link_club_id)
@@ -716,8 +719,7 @@ async def _notify_completion_slack(*, failed: bool = False) -> None:
         f"<b>Inactive group outreach scan {status_label}</b>\n"
         f"targets={ctrl.targets_total} scanned={ctrl.rows_scanned}\n"
         f"inactive_90d={ctrl.inactive_90d_count} inactive_180d={ctrl.inactive_180d_count} "
-        f"entity_resolvable={ctrl.entity_resolvable_count}\n"
-        + "\n".join(club_lines)
+        f"entity_resolvable={ctrl.entity_resolvable_count}\n" + "\n".join(club_lines)
     )
     if ctrl.last_error:
         detail += f"\nlast_error: {html.escape(str(ctrl.last_error)[:500])}"

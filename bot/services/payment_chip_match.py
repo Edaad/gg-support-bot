@@ -72,7 +72,10 @@ def parse_payment_reference_at(
 
 
 def amount_within_tolerance(chip_amount_cents: int, payment_amount_cents: int) -> bool:
-    return abs(int(chip_amount_cents) - int(payment_amount_cents)) <= AMOUNT_TOLERANCE_CENTS
+    return (
+        abs(int(chip_amount_cents) - int(payment_amount_cents))
+        <= AMOUNT_TOLERANCE_CENTS
+    )
 
 
 def via_display(via: str) -> str:
@@ -88,7 +91,10 @@ def format_match_message(
     matched: PaymentCandidate | None,
     recent_unmatched: list[PaymentCandidate],
 ) -> str:
-    from bot.services.venmo_payments import escape_notification_html, format_amount_display
+    from bot.services.venmo_payments import (
+        escape_notification_html,
+        format_amount_display,
+    )
 
     amount = format_amount_display(int(amount_cents), bold=False)
     via_label = via_display(via)
@@ -240,7 +246,9 @@ def pick_best_candidate(
     prefer_payment_id: int | None = None,
 ) -> PaymentCandidate | None:
     """Pick unmatched → closest amount (±$1) → newest; prefer explicit payment if eligible."""
-    in_tol = [c for c in candidates if amount_within_tolerance(amount_cents, c.amount_cents)]
+    in_tol = [
+        c for c in candidates if amount_within_tolerance(amount_cents, c.amount_cents)
+    ]
     if not in_tol:
         return None
 
@@ -378,7 +386,9 @@ def match_chip_add_sync(
                 now=now_utc,
                 require_in_window=False,
             )
-            if any(c.method_slug == "stripe" and not c.group_title for c in all_unmatched):
+            if any(
+                c.method_slug == "stripe" and not c.group_title for c in all_unmatched
+            ):
                 from bot.services.venmo_payments import resolve_display_group_title
 
                 live_title = resolve_display_group_title(int(telegram_chat_id))
@@ -544,6 +554,4 @@ def amount_decimal_to_cents(amount: Decimal | int | float) -> int:
 
     if isinstance(amount, Decimal):
         return deposit_amount_to_cents(amount)
-    return int(
-        (Decimal(str(amount)) * Decimal(100)).quantize(Decimal("1"))
-    )
+    return int((Decimal(str(amount)) * Decimal(100)).quantize(Decimal("1")))

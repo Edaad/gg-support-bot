@@ -144,7 +144,11 @@ class TriageDecision:
 def _is_active_group(agg: GroupAgg | None) -> bool:
     if agg is None:
         return False
-    return bool(agg.signals) or agg.has_payment_activity or agg.has_identifiable_user_activity
+    return (
+        bool(agg.signals)
+        or agg.has_payment_activity
+        or agg.has_identifiable_user_activity
+    )
 
 
 def _activity_epoch(agg: GroupAgg | None) -> int:
@@ -372,16 +376,22 @@ def build_triage_csv_row(
         "readd_status": row.readd_status,
         "row_last_error": row.row_last_error or "",
         "old_tier": row.priority_tier,
-        "new_tier": decision.new_tier if decision.action == "promote" else row.priority_tier,
+        "new_tier": decision.new_tier
+        if decision.action == "promote"
+        else row.priority_tier,
         "old_rank": row.priority_rank,
-        "new_rank": decision.new_rank if decision.action == "promote" else row.priority_rank,
+        "new_rank": decision.new_rank
+        if decision.action == "promote"
+        else row.priority_rank,
         "action": decision.action,
         "last_activity_at": _format_ts(agg.last_activity_at if agg else None),
         "activity_signals": signals,
         "deposit_cents_in_window": decision.deposit_cents,
         "account_check": decision.account_check,
         "discovered_player_id": decision.discovered_player_id or "",
-        "would_apply": "yes" if (would_apply and apply) else ("would" if would_apply else "no"),
+        "would_apply": "yes"
+        if (would_apply and apply)
+        else ("would" if would_apply else "no"),
     }
 
 
@@ -469,7 +479,9 @@ def _load_recovery_rows(
     return out
 
 
-def _rows_to_migrated_groups(rows: list[RecoveryRowForTriage]) -> list[MigratedGroupRow]:
+def _rows_to_migrated_groups(
+    rows: list[RecoveryRowForTriage],
+) -> list[MigratedGroupRow]:
     return [
         MigratedGroupRow(
             club_id=int(r.club_id),
@@ -651,7 +663,9 @@ async def _check_accounts_for_club(
         try:
             if not await client.is_user_authorized():
                 for row in rows:
-                    out[row.row_id] = PlayerAccountResolution(account_check="uncheckable")
+                    out[row.row_id] = PlayerAccountResolution(
+                        account_check="uncheckable"
+                    )
                 return out
 
             me = await client.get_me()
@@ -677,7 +691,9 @@ async def _check_accounts_for_club(
                         row.telegram_chat_id,
                         error_label(e),
                     )
-                    out[row.row_id] = PlayerAccountResolution(account_check="uncheckable")
+                    out[row.row_id] = PlayerAccountResolution(
+                        account_check="uncheckable"
+                    )
                 if i % 25 == 0:
                     print(f"  {club_key}: account-checked {i}/{len(rows)}", flush=True)
                 if delay_sec > 0:
@@ -851,7 +867,6 @@ async def run_triage(
         return [], None
 
     tier3_rows = [r for r in rows if r.cohort == "tier3_pending"]
-    tier2_rows = [r for r in rows if r.cohort == "tier2_entity_failure"]
 
     days = int(months) * 30
     activity_by_chat: dict[int, GroupAgg] = {}
@@ -864,7 +879,9 @@ async def run_triage(
         by_club[row.club_key].append(row)
 
     account_resolutions: dict[int, PlayerAccountResolution] = {}
-    club_order = [club_filter] if club_filter else [k for k in CLUB_KEYS if k in by_club]
+    club_order = (
+        [club_filter] if club_filter else [k for k in CLUB_KEYS if k in by_club]
+    )
     for club_key in club_order:
         club_rows = by_club.get(club_key, [])
         if not club_rows:
@@ -875,7 +892,9 @@ async def run_triage(
             if row.cohort == "tier3_pending"
             and not _is_active_group(activity_by_chat.get(int(row.telegram_chat_id)))
         ]
-        tier2_repair = [row for row in club_rows if row.cohort == "tier2_entity_failure"]
+        tier2_repair = [
+            row for row in club_rows if row.cohort == "tier2_entity_failure"
+        ]
         check_rows = tier3_inactive + tier2_repair
         if check_rows:
             print(
@@ -930,9 +949,7 @@ async def run_triage(
                 )
 
         decisions.append((row, decision))
-        csv_rows.append(
-            build_triage_csv_row(row, decision, agg=agg, apply=apply)
-        )
+        csv_rows.append(build_triage_csv_row(row, decision, agg=agg, apply=apply))
 
     apply_counts = None
     if apply:

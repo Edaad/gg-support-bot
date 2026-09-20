@@ -25,7 +25,9 @@ _USAGE = (
 )
 
 
-async def checkplayer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def checkplayer_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     if not update.message or not update.effective_user:
         return
     if update.effective_user.id not in ADMIN_USER_IDS:

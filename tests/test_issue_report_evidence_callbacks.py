@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from telegram import Chat, User
 from telegram.constants import ChatType
-from telegram.ext import ApplicationHandlerStop, ConversationHandler
+from telegram.ext import ApplicationHandlerStop
 
 from bot.handlers.issue_reports import (
     IR_CONFIRM,
@@ -68,7 +68,6 @@ class TestReportEvidencePriority(unittest.IsolatedAsyncioTestCase):
         conv = get_report_conversation_handler()
         mod._report_conversation = conv
         update, context = _callback_update("ir_cancel")
-        query = update.callback_query
 
         with self.assertRaises(ApplicationHandlerStop):
             await report_evidence_priority(update, context)

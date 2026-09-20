@@ -10,6 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install deps
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+pip install -r requirements-dev.txt  # ruff; not used on Heroku
 
 # Run processes individually (load .env automatically)
 python run_api.py          # FastAPI on :8000, auto-reload
@@ -38,6 +39,17 @@ npm run lint     # ESLint
 ```bash
 python -m unittest discover -s tests -p 'test_*.py' -v
 ```
+
+### Lint / format (Python)
+
+```bash
+ruff check .            # lint (config: pyproject.toml)
+ruff check --fix .      # safe autofixes
+ruff format --check .   # would-reformat report
+ruff format .           # rewrite files
+```
+
+Pre-push runs `ruff check .` and `ruff format --check .` before tests.
 
 ## Architecture
 

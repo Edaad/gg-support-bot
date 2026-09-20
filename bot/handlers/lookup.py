@@ -7,12 +7,12 @@ from telegram.ext import ContextTypes
 
 from config import ADMIN_USER_IDS
 from bot.services.club import find_group_chat_id_by_name, get_club_for_chat
-from bot.services.player_details import parse_tracking_title, resolve_club_id_from_shorthand
-
-_USAGE = (
-    "Usage: /lookup gc <group title>\n"
-    "Example: /lookup gc RT / 2427-3267 / Samin"
+from bot.services.player_details import (
+    parse_tracking_title,
+    resolve_club_id_from_shorthand,
 )
+
+_USAGE = "Usage: /lookup gc <group title>\nExample: /lookup gc RT / 2427-3267 / Samin"
 
 
 def _parse_title_args(args: list[str]) -> str:
@@ -58,9 +58,7 @@ async def lookup_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     chat_id = find_group_chat_id_by_name(club_id, title)
     if chat_id is None:
-        await update.message.reply_text(
-            f"No linked group found with title:\n{title}"
-        )
+        await update.message.reply_text(f"No linked group found with title:\n{title}")
         return
 
     await update.message.reply_text(f"Group chat id: {chat_id}")

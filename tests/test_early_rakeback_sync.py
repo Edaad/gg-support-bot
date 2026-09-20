@@ -73,6 +73,7 @@ class EarlyRakebackSyncTestCase(unittest.TestCase):
                 return q
 
             if model is EarlyRakebackSnapshot:
+
                 def filter_by(**kwargs):
                     inner = MagicMock()
                     matches = [
@@ -154,9 +155,7 @@ class EarlyRakebackSyncTestCase(unittest.TestCase):
         self.assertEqual(club.skips[0].nickname, "Unknown")
         self.assertEqual(club.skips[0].reason, SKIP_REASON_MISSING_GG_PLAYER_ID)
         self.assertEqual(club.skips[0].count, 1)
-        stored_skips = parse_skipped_nicknames_json(
-            self.snapshots[0].skipped_nicknames
-        )
+        stored_skips = parse_skipped_nicknames_json(self.snapshots[0].skipped_nicknames)
         self.assertEqual(len(stored_skips), 1)
         self.assertEqual(stored_skips[0].reason, SKIP_REASON_MISSING_GG_PLAYER_ID)
         self.assertIn("unmapped", report.warnings[0].lower())

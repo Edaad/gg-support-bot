@@ -14,7 +14,9 @@ ADMIN_ID = ADMIN_USER_IDS[0]
 NON_ADMIN_ID = 999999999
 
 
-def _make_update(*, user_id: int, chat_type: str = "private", args: list[str] | None = None):
+def _make_update(
+    *, user_id: int, chat_type: str = "private", args: list[str] | None = None
+):
     update = MagicMock()
     update.message = MagicMock()
     update.message.reply_text = AsyncMock()
@@ -53,7 +55,9 @@ class HerokuRestartServiceTestCase(unittest.IsolatedAsyncioTestCase):
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("bot.services.heroku_restart.httpx.AsyncClient", return_value=mock_client):
+        with patch(
+            "bot.services.heroku_restart.httpx.AsyncClient", return_value=mock_client
+        ):
             app_name = await hr.restart_all_dynos(triggered_by_user_id=ADMIN_ID)
 
         self.assertEqual(app_name, "gg-support-bot-2025")
@@ -78,7 +82,9 @@ class HerokuRestartServiceTestCase(unittest.IsolatedAsyncioTestCase):
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("bot.services.heroku_restart.httpx.AsyncClient", return_value=mock_client):
+        with patch(
+            "bot.services.heroku_restart.httpx.AsyncClient", return_value=mock_client
+        ):
             with self.assertRaises(RuntimeError) as ctx:
                 await hr.restart_all_dynos()
         self.assertIn("403", str(ctx.exception))
@@ -96,7 +102,9 @@ class RefreshHandlerTestCase(unittest.IsolatedAsyncioTestCase):
         update.message.reply_text.assert_not_awaited()
 
     async def test_group_chat_rejected(self):
-        update, context = _make_update(user_id=ADMIN_ID, chat_type="group", args=["confirm"])
+        update, context = _make_update(
+            user_id=ADMIN_ID, chat_type="group", args=["confirm"]
+        )
         with patch(
             "bot.handlers.refresh.restart_all_dynos",
             new=AsyncMock(),
@@ -162,8 +170,12 @@ class RefreshHandlerTestCase(unittest.IsolatedAsyncioTestCase):
             await refresh_handler(update, context)
 
         self.assertEqual(update.message.reply_text.await_count, 2)
-        self.assertIn("Restarting", update.message.reply_text.await_args_list[0].args[0])
-        self.assertIn("failed", update.message.reply_text.await_args_list[1].args[0].lower())
+        self.assertIn(
+            "Restarting", update.message.reply_text.await_args_list[0].args[0]
+        )
+        self.assertIn(
+            "failed", update.message.reply_text.await_args_list[1].args[0].lower()
+        )
 
 
 if __name__ == "__main__":

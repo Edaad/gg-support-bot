@@ -87,9 +87,7 @@ async def mtproto_scan_recovery_rows(
 
     cfg = CLUB_GC_CONFIG.get(club_key)
     if cfg is None:
-        err = RecoveryMembershipResult(
-            0, (), False, error=f"unknown_club:{club_key}"
-        )
+        err = RecoveryMembershipResult(0, (), False, error=f"unknown_club:{club_key}")
         return {int(r.id): err for r in rows}
 
     if not await is_client_authorized(cfg):
@@ -102,7 +100,9 @@ async def mtproto_scan_recovery_rows(
         await client.connect()
         try:
             if not await client.is_user_authorized():
-                err = RecoveryMembershipResult(0, (), False, error="mtproto_unauthorized")
+                err = RecoveryMembershipResult(
+                    0, (), False, error="mtproto_unauthorized"
+                )
                 return {int(r.id): err for r in rows}
 
             me = await client.get_me()

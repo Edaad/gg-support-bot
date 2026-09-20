@@ -22,7 +22,9 @@ from api.auth import (
 
 class ResolveRoleTests(unittest.TestCase):
     def test_admin_password(self):
-        with patch.dict(os.environ, {"DASHBOARD_PASSWORD": "admin-secret"}, clear=False):
+        with patch.dict(
+            os.environ, {"DASHBOARD_PASSWORD": "admin-secret"}, clear=False
+        ):
             # Reset cached secret if tests touch _get_secret elsewhere
             import api.auth as auth_mod
 
@@ -32,7 +34,10 @@ class ResolveRoleTests(unittest.TestCase):
     def test_am_password(self):
         with patch.dict(
             os.environ,
-            {"DASHBOARD_PASSWORD": "admin-secret", "DASHBOARD_AM_PASSWORD": "am-secret"},
+            {
+                "DASHBOARD_PASSWORD": "admin-secret",
+                "DASHBOARD_AM_PASSWORD": "am-secret",
+            },
             clear=False,
         ):
             import api.auth as auth_mod

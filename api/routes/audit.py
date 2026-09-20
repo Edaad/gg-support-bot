@@ -63,7 +63,12 @@ from api.gto_weekly_audit import (
 
 _PARTNER_WEEKLY_CLUBS = frozenset({"clubgto", "creator-club"})
 from db.connection import get_db_dependency
-from db.models import AuditReconcileRun, EarlyRakebackSnapshot, TradeRecordLine, TradeRecordUpload
+from db.models import (
+    AuditReconcileRun,
+    EarlyRakebackSnapshot,
+    TradeRecordLine,
+    TradeRecordUpload,
+)
 
 router = APIRouter(
     prefix="/api/audit",
@@ -283,9 +288,7 @@ async def upload_all_trade_records(
         parsed_with_names.append((filename, parsed))
 
     try:
-        by_slug = validate_all_clubs_trade_uploads(
-            [p for _, p in parsed_with_names]
-        )
+        by_slug = validate_all_clubs_trade_uploads([p for _, p in parsed_with_names])
     except TradeRecordValidationError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -381,9 +384,7 @@ def sync_early_rakeback(
         club_slugs = [slug]
 
     try:
-        report = sync_early_rakeback_for_date(
-            db, parsed_date, club_slugs=club_slugs
-        )
+        report = sync_early_rakeback_for_date(db, parsed_date, club_slugs=club_slugs)
     except AonBetaConfigError as exc:
         raise HTTPException(503, str(exc)) from exc
 
@@ -404,7 +405,9 @@ def sync_early_rakeback(
     return EarlyRakebackSyncReport(**sync_report_to_dict(report))
 
 
-@router.get("/early-rakeback/snapshots", response_model=list[EarlyRakebackSnapshotSummary])
+@router.get(
+    "/early-rakeback/snapshots", response_model=list[EarlyRakebackSnapshotSummary]
+)
 def list_early_rakeback_snapshots(
     club_slug: str | None = Query(None),
     audit_date: str | None = Query(None),
@@ -422,11 +425,7 @@ def list_early_rakeback_snapshots(
     if audit_date:
         q = q.filter(EarlyRakebackSnapshot.audit_date == _parse_audit_date(audit_date))
 
-    rows = (
-        q.order_by(EarlyRakebackSnapshot.synced_at.desc())
-        .limit(limit)
-        .all()
-    )
+    rows = q.order_by(EarlyRakebackSnapshot.synced_at.desc()).limit(limit).all()
 
     out: list[EarlyRakebackSnapshotSummary] = []
     for snap in rows:
@@ -441,9 +440,7 @@ def list_early_rakeback_snapshots(
                 lines_fetched=int(snap.lines_fetched or 0),
                 lines_stored=int(snap.lines_stored or 0),
                 lines_skipped_unmapped=int(snap.lines_skipped_unmapped or 0),
-                skipped_nicknames=[
-                    skip.nickname for skip in skips if skip.nickname
-                ],
+                skipped_nicknames=[skip.nickname for skip in skips if skip.nickname],
                 skips=[
                     {
                         "nickname": skip.nickname,
@@ -492,13 +489,9 @@ def get_reconcile_report(
         raise HTTPException(400, f"Unknown club slug: {club_slug!r}")
     parsed_date = _parse_audit_date(audit_date)
 
-    report = load_stored_reconcile_report(
-        db, club_slug=slug, audit_date=parsed_date
-    )
+    report = load_stored_reconcile_report(db, club_slug=slug, audit_date=parsed_date)
     if report is None:
-        raise HTTPException(
-            404, "No reconcile run stored for this club and audit date"
-        )
+        raise HTTPException(404, "No reconcile run stored for this club and audit date")
     return _report_to_schema(report)
 
 
@@ -520,11 +513,7 @@ def list_reconcile_runs(
     if audit_date:
         q = q.filter(AuditReconcileRun.audit_date == _parse_audit_date(audit_date))
 
-    rows = (
-        q.order_by(AuditReconcileRun.created_at.desc())
-        .limit(limit)
-        .all()
-    )
+    rows = q.order_by(AuditReconcileRun.created_at.desc()).limit(limit).all()
 
     out: list[AuditReconcileRunSummary] = []
     for run in rows:

@@ -79,7 +79,11 @@ def _make_create_session(club, bonus_type=None):
         if model is Club:
             return club if ident == 1 else None
         if model is BonusType:
-            return bonus_type if bonus_type is not None and ident == bonus_type.id else None
+            return (
+                bonus_type
+                if bonus_type is not None and ident == bonus_type.id
+                else None
+            )
         return None
 
     session.get.side_effect = getter
@@ -123,12 +127,18 @@ class BonusRecordServiceTestCase(unittest.TestCase):
         club = _club()
         bt = _bonus_type()
         session = _make_create_session(club, bt)
-        with patch("bot.services.bonus_records.get_db", return_value=_session_cm(session)), patch(
-            "bot.services.bonus_records.resolve_bonus_player",
-            return_value=_sample_player_ctx(),
-        ), patch(
-            "bot.services.bonus_records.build_zapier_name",
-            return_value="CC / 8190-5287 / Jacob",
+        with (
+            patch(
+                "bot.services.bonus_records.get_db", return_value=_session_cm(session)
+            ),
+            patch(
+                "bot.services.bonus_records.resolve_bonus_player",
+                return_value=_sample_player_ctx(),
+            ),
+            patch(
+                "bot.services.bonus_records.build_zapier_name",
+                return_value="CC / 8190-5287 / Jacob",
+            ),
         ):
             from bot.services.bonus_records import create_bonus_record
 
@@ -153,12 +163,18 @@ class BonusRecordServiceTestCase(unittest.TestCase):
         bt = _bonus_type()
         session = _make_create_session(club, bt)
         when = datetime(2026, 6, 1, 15, 30, tzinfo=timezone.utc)
-        with patch("bot.services.bonus_records.get_db", return_value=_session_cm(session)), patch(
-            "bot.services.bonus_records.resolve_bonus_player",
-            return_value=_sample_player_ctx(),
-        ), patch(
-            "bot.services.bonus_records.build_zapier_name",
-            return_value="CC / 8190-5287 / Jacob",
+        with (
+            patch(
+                "bot.services.bonus_records.get_db", return_value=_session_cm(session)
+            ),
+            patch(
+                "bot.services.bonus_records.resolve_bonus_player",
+                return_value=_sample_player_ctx(),
+            ),
+            patch(
+                "bot.services.bonus_records.build_zapier_name",
+                return_value="CC / 8190-5287 / Jacob",
+            ),
         ):
             from bot.services.bonus_records import create_bonus_record
 
@@ -176,12 +192,18 @@ class BonusRecordServiceTestCase(unittest.TestCase):
         club = _club()
         bt = _bonus_type()
         session = _make_create_session(club, bt)
-        with patch("bot.services.bonus_records.get_db", return_value=_session_cm(session)), patch(
-            "bot.services.bonus_records.resolve_bonus_player",
-            return_value=None,
-        ), patch(
-            "bot.services.bonus_records.build_zapier_name",
-            return_value=None,
+        with (
+            patch(
+                "bot.services.bonus_records.get_db", return_value=_session_cm(session)
+            ),
+            patch(
+                "bot.services.bonus_records.resolve_bonus_player",
+                return_value=None,
+            ),
+            patch(
+                "bot.services.bonus_records.build_zapier_name",
+                return_value=None,
+            ),
         ):
             from bot.services.bonus_records import create_bonus_record
 
@@ -200,7 +222,9 @@ class BonusRecordServiceTestCase(unittest.TestCase):
     def test_other_requires_description(self) -> None:
         club = _club()
         session = _make_create_session(club)
-        with patch("bot.services.bonus_records.get_db", return_value=_session_cm(session)):
+        with patch(
+            "bot.services.bonus_records.get_db", return_value=_session_cm(session)
+        ):
             from bot.services.bonus_records import create_bonus_record
 
             with self.assertRaises(ValueError) as ctx:
@@ -236,12 +260,18 @@ class BonusRecordServiceTestCase(unittest.TestCase):
         record.created_at = None
         session = MagicMock()
         session.get.return_value = record
-        with patch("bot.services.bonus_records.get_db", return_value=_session_cm(session)), patch(
-            "bot.services.bonus_records.resolve_bonus_player",
-            return_value=None,
-        ), patch(
-            "bot.services.bonus_records.build_zapier_name",
-            return_value=None,
+        with (
+            patch(
+                "bot.services.bonus_records.get_db", return_value=_session_cm(session)
+            ),
+            patch(
+                "bot.services.bonus_records.resolve_bonus_player",
+                return_value=None,
+            ),
+            patch(
+                "bot.services.bonus_records.build_zapier_name",
+                return_value=None,
+            ),
         ):
             from bot.services.bonus_records import update_bonus_record
             from datetime import datetime, timezone
@@ -255,7 +285,9 @@ class BonusRecordServiceTestCase(unittest.TestCase):
         record = MagicMock()
         session = MagicMock()
         session.get.return_value = record
-        with patch("bot.services.bonus_records.get_db", return_value=_session_cm(session)):
+        with patch(
+            "bot.services.bonus_records.get_db", return_value=_session_cm(session)
+        ):
             from bot.services.bonus_records import delete_bonus_record
 
             ok = delete_bonus_record(1)

@@ -32,7 +32,9 @@ except ImportError:
 from sqlalchemy.orm import Session
 
 from api.payment_v2_helpers import clear_tier_response
-from api.payment_v2_helpers import upsert_default_variant_for_tier as upsert_default_variant
+from api.payment_v2_helpers import (
+    upsert_default_variant_for_tier as upsert_default_variant,
+)
 from db.connection import get_session
 from db.models import Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant
 
@@ -67,7 +69,9 @@ def upsert_method(session: Session, club_id: int) -> ClubPaymentMethod:
         .first()
     )
     if method is None:
-        method = ClubPaymentMethod(club_id=club_id, direction=DIRECTION, slug=METHOD_SLUG)
+        method = ClubPaymentMethod(
+            club_id=club_id, direction=DIRECTION, slug=METHOD_SLUG
+        )
         session.add(method)
 
     method.name = "Zelle"
@@ -132,7 +136,9 @@ def upsert_over_tier(session: Session, method_id: int) -> ClubPaymentTier:
 
 def seed(
     session: Session,
-) -> tuple[Club, ClubPaymentMethod, list[ClubPaymentTier], list[ClubPaymentTierVariant]]:
+) -> tuple[
+    Club, ClubPaymentMethod, list[ClubPaymentTier], list[ClubPaymentTierVariant]
+]:
     club = find_clubgto_club(session)
     method = upsert_method(session, club.id)
     tier_under = upsert_under_tier(session, method.id)
@@ -140,7 +146,9 @@ def seed(
 
     variants = []
     for tier in (tier_under, tier_over):
-        variant = upsert_default_variant(session, tier, response_text=ZELLE_RESPONSE_TEXT)
+        variant = upsert_default_variant(
+            session, tier, response_text=ZELLE_RESPONSE_TEXT
+        )
         variant.weight = 100
         variant.sort_order = 0
         variants.append(variant)
@@ -181,9 +189,13 @@ def verify_via_api(club_id: int) -> None:
         raise SystemExit("Expected has_sub_options=false on Zelle method")
 
     if Decimal(str(method.get("min_amount"))) != Decimal("20"):
-        raise SystemExit(f"Expected method min_amount 20, got {method.get('min_amount')!r}")
+        raise SystemExit(
+            f"Expected method min_amount 20, got {method.get('min_amount')!r}"
+        )
     if method.get("max_amount") is not None:
-        raise SystemExit(f"Expected method max_amount NULL, got {method.get('max_amount')!r}")
+        raise SystemExit(
+            f"Expected method max_amount NULL, got {method.get('max_amount')!r}"
+        )
     if method.get("sort_order") != 1:
         raise SystemExit(f"Expected sort_order 1, got {method.get('sort_order')!r}")
 
@@ -204,18 +216,30 @@ def verify_via_api(club_id: int) -> None:
 
     for tier in (tier_under, tier_over):
         if (tier.get("response_text") or "").strip():
-            raise SystemExit(f"Expected empty tier response_text on {tier.get('label')!r}")
+            raise SystemExit(
+                f"Expected empty tier response_text on {tier.get('label')!r}"
+            )
         if tier.get("use_group_checkout_link"):
-            raise SystemExit(f"Expected use_group_checkout_link=false on {tier.get('label')!r}")
+            raise SystemExit(
+                f"Expected use_group_checkout_link=false on {tier.get('label')!r}"
+            )
 
     if Decimal(str(tier_under.get("min_amount"))) != Decimal("20"):
-        raise SystemExit(f"Expected Under tier min 20, got {tier_under.get('min_amount')!r}")
+        raise SystemExit(
+            f"Expected Under tier min 20, got {tier_under.get('min_amount')!r}"
+        )
     if Decimal(str(tier_under.get("max_amount"))) != Decimal("399"):
-        raise SystemExit(f"Expected Under tier max 399, got {tier_under.get('max_amount')!r}")
+        raise SystemExit(
+            f"Expected Under tier max 399, got {tier_under.get('max_amount')!r}"
+        )
     if Decimal(str(tier_over.get("min_amount"))) != Decimal("400"):
-        raise SystemExit(f"Expected Over tier min 400, got {tier_over.get('min_amount')!r}")
+        raise SystemExit(
+            f"Expected Over tier min 400, got {tier_over.get('min_amount')!r}"
+        )
     if tier_over.get("max_amount") is not None:
-        raise SystemExit(f"Expected Over tier max_amount NULL, got {tier_over.get('max_amount')!r}")
+        raise SystemExit(
+            f"Expected Over tier max_amount NULL, got {tier_over.get('max_amount')!r}"
+        )
 
     for tier in (tier_under, tier_over):
         variants = tier.get("variants") or []
@@ -227,10 +251,14 @@ def verify_via_api(club_id: int) -> None:
         if variant.get("label") != DEFAULT_VARIANT_LABEL:
             raise SystemExit(f"Expected variant {DEFAULT_VARIANT_LABEL!r}")
         if variant.get("weight") != 100:
-            raise SystemExit(f"Expected variant weight 100, got {variant.get('weight')!r}")
+            raise SystemExit(
+                f"Expected variant weight 100, got {variant.get('weight')!r}"
+            )
         text = variant.get("response_text") or ""
         if not text.strip():
-            raise SystemExit(f"Expected non-empty response_text on {tier.get('label')!r}")
+            raise SystemExit(
+                f"Expected non-empty response_text on {tier.get('label')!r}"
+            )
         if "310-567-0961" not in text:
             raise SystemExit("Expected 310-567-0961 in Default variant response_text")
 
@@ -272,7 +300,9 @@ def main() -> None:
             )
             print(f"  tier: {TIER_UNDER_LABEL!r} ($20–$399, amount band only)")
             print(f"  tier: {TIER_OVER_LABEL!r} ($400+, amount band only)")
-            print(f"  variants: 2x {DEFAULT_VARIANT_LABEL!r} (weight=100, Zelle instructions)")
+            print(
+                f"  variants: 2x {DEFAULT_VARIANT_LABEL!r} (weight=100, Zelle instructions)"
+            )
             print("  sub-options: 0")
             print("Re-run with --apply to commit and verify.")
     except Exception:

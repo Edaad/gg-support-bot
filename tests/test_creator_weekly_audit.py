@@ -101,7 +101,9 @@ class CreatorWeeklyAuditUnitTestCase(unittest.TestCase):
             f"reconcile-all-clubs-{(MONDAY + timedelta(days=i)).isoformat()}.xlsx"
             for i in range(7)
         ]
-        self.assertEqual(validate_upload_set(MONDAY, names), expected_week_dates(MONDAY))
+        self.assertEqual(
+            validate_upload_set(MONDAY, names), expected_week_dates(MONDAY)
+        )
 
     def test_output_filename(self):
         self.assertEqual(output_filename(MONDAY), "Creator Audit Aug10_16-2026.xlsx")

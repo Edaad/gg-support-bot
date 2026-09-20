@@ -20,7 +20,6 @@ from bot.services.player_details import parse_group_title_parts
 from bot.services.venmo_payments import (
     escape_notification_html,
     format_amount_display,
-    send_telegram_notification,
 )
 from db.connection import get_db
 from db.models import Club, ClubPaymentMethod, StripeCheckoutSession, StripeCustomer
@@ -308,9 +307,7 @@ def create_stripe_checkout_session(
         group_title=effective_title,
     )
 
-    success_url = (
-        os.getenv(STRIPE_SUCCESS_URL_ENV) or DEFAULT_SUCCESS_URL
-    ).strip()
+    success_url = (os.getenv(STRIPE_SUCCESS_URL_ENV) or DEFAULT_SUCCESS_URL).strip()
     cancel_url = (os.getenv(STRIPE_CANCEL_URL_ENV) or DEFAULT_CANCEL_URL).strip()
 
     session_metadata: dict[str, str] = {
@@ -340,7 +337,11 @@ def create_stripe_checkout_session(
         max_cents=max_cents,
         preset_cents=preset_cents,
     )
-    logger.info("stripe: creating checkout session customer=%s price=%s", stripe_customer_id, price_id)
+    logger.info(
+        "stripe: creating checkout session customer=%s price=%s",
+        stripe_customer_id,
+        price_id,
+    )
     checkout = stripe.checkout.Session.create(
         customer=stripe_customer_id,
         mode="payment",
@@ -515,7 +516,9 @@ def record_completed_checkout_payment(
             db.add(row)
             db.flush()
         except IntegrityError:
-            logger.info("stripe webhook: duplicate insert for session %s (ignored)", session_id)
+            logger.info(
+                "stripe webhook: duplicate insert for session %s (ignored)", session_id
+            )
             return False
 
     logger.info(
@@ -586,7 +589,9 @@ def format_stripe_payment_notification_text(
     return append_creator_club_staff_footer(
         body,
         club_id=int(club_id) if club_id is not None else None,
-        telegram_chat_id=int(telegram_chat_id) if telegram_chat_id is not None else None,
+        telegram_chat_id=int(telegram_chat_id)
+        if telegram_chat_id is not None
+        else None,
         auto_bound=True,
         group_title=group_title,
     )
@@ -678,7 +683,9 @@ async def notify_stripe_payment_completed(checkout_obj: dict[str, Any]) -> None:
     )
 
 
-def construct_stripe_webhook_event(payload: bytes, sig_header: str | None) -> dict[str, Any]:
+def construct_stripe_webhook_event(
+    payload: bytes, sig_header: str | None
+) -> dict[str, Any]:
     """Verify Stripe-Signature and return parsed webhook event."""
     secret = (os.getenv(STRIPE_WEBHOOK_SECRET_ENV) or "").strip()
     if not secret:

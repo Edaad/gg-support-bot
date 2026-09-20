@@ -521,9 +521,7 @@ async def claim_feeback(
         await notify_earlyrb_auto_failed(
             club_id=club_id, chat_id=chat_id, title=group_title, detail=detail
         )
-        return ClaimStage(
-            "escalate", detail=detail, player_message=ADMIN_SHORTLY_COPY
-        )
+        return ClaimStage("escalate", detail=detail, player_message=ADMIN_SHORTLY_COPY)
 
     amount = record.amount_recorded or quote.remaining
     update_claim_row(

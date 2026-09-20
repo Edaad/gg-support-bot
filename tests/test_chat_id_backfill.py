@@ -13,7 +13,10 @@ from bot.services.chat_id_backfill import (
     entry_from_title,
     match_player_to_chats,
 )
-from bot.services.player_details import parse_group_title_parts, shorthand_tokens_for_club_resolve
+from bot.services.player_details import (
+    parse_group_title_parts,
+    shorthand_tokens_for_club_resolve,
+)
 
 
 class ChatIdBackfillTests(unittest.TestCase):
@@ -163,8 +166,12 @@ class ChatIdBackfillTests(unittest.TestCase):
         assert parsed is not None
         self.assertEqual(parsed.shorthands, frozenset({"CC", "AT"}))
         self.assertEqual(format_title_prefix_segment(set(parsed.shorthands)), "CC AT")
-        self.assertEqual(parse_tracking_title("CC AT / 8879-5560 / V"), ("CC AT", "8879-5560"))
-        self.assertEqual(parse_tracking_title("AT CC / 8879-5560 / V"), ("CC AT", "8879-5560"))
+        self.assertEqual(
+            parse_tracking_title("CC AT / 8879-5560 / V"), ("CC AT", "8879-5560")
+        )
+        self.assertEqual(
+            parse_tracking_title("AT CC / 8879-5560 / V"), ("CC AT", "8879-5560")
+        )
         self.assertEqual(shorthand_tokens_for_club_resolve("CC AT")[0], "CC")
         self.assertEqual(shorthand_tokens_for_club_resolve("AT CC")[0], "CC")
 

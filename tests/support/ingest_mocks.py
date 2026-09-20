@@ -14,9 +14,7 @@ CLEAR_DEPOSIT_CHASE = (
     "bot.services.escalation_notification.clear_deposit_chase_after_payment"
 )
 CANCEL_DEPOSIT_REMINDER = "bot.handlers.deposit.cancel_deposit_reminder_for_chat"
-ON_PAYMENT_WINDOW_CLOSED = (
-    "bot.services.popup_keyboard.on_payment_window_closed"
-)
+ON_PAYMENT_WINDOW_CLOSED = "bot.services.popup_keyboard.on_payment_window_closed"
 NOTIFY_PLAYER_GROUP = (
     "bot.services.payment_group_notify.notify_player_group_payment_received"
 )

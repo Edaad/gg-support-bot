@@ -17,7 +17,12 @@ from bot.handlers.flow_cancel import (
     clear_active_flow,
     mark_active_flow,
 )
-from bot.services.bonus_drafts import cancel_draft, draft_to_context, get_pending_draft, mark_draft_submitted
+from bot.services.bonus_drafts import (
+    cancel_draft,
+    draft_to_context,
+    get_pending_draft,
+    mark_draft_submitted,
+)
 from bot.services.bonus_player_resolve import BonusPlayerContext, resolve_bonus_player
 from db.connection import get_db
 from db.models import BonusType, BonusRecord, Club
@@ -28,11 +33,11 @@ BONUS_STEP_KEY = "bonus_step"
 BONUS_TIMEOUT_SECONDS = 300
 REFERRAL_TYPE_NAME = "Referral"
 
-_TEXT_STEPS = frozenset({"group_title", "amount", "description", "referred_group_title"})
-
-_GROUP_TITLE_PROMPT = (
-    "Enter group title (e.g. CC / 8190-5287 / Jacob):"
+_TEXT_STEPS = frozenset(
+    {"group_title", "amount", "description", "referred_group_title"}
 )
+
+_GROUP_TITLE_PROMPT = "Enter group title (e.g. CC / 8190-5287 / Jacob):"
 _GROUP_TITLE_INVALID = (
     "Invalid group title. Use format: CLUB / PLAYER_ID / NAME\n"
     "Example: CC / 8190-5287 / Jacob"
@@ -180,7 +185,9 @@ def _timeout_job_name(user_id: int) -> str:
     return f"bonus_timeout_{user_id}"
 
 
-def _cancel_bonus_timeout(context: ContextTypes.DEFAULT_TYPE, user_id: int | None) -> None:
+def _cancel_bonus_timeout(
+    context: ContextTypes.DEFAULT_TYPE, user_id: int | None
+) -> None:
     if not user_id or not context.job_queue:
         return
     try:
@@ -208,7 +215,9 @@ def _schedule_bonus_timeout(
             name=_timeout_job_name(user_id),
         )
     except Exception:
-        logger.warning("Failed to schedule bonus timeout user_id=%s", user_id, exc_info=True)
+        logger.warning(
+            "Failed to schedule bonus timeout user_id=%s", user_id, exc_info=True
+        )
 
 
 async def _bonus_timeout_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -218,7 +227,9 @@ async def _bonus_timeout_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     if not chat_id:
         return
     try:
-        await context.bot.send_message(chat_id=chat_id, text="Bonus recording timed out.")
+        await context.bot.send_message(
+            chat_id=chat_id, text="Bonus recording timed out."
+        )
     except Exception:
         pass
     _cleanup(context)
@@ -249,10 +260,7 @@ def _cleanup(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 def _is_bonus_admin(update: Update) -> bool:
-    return bool(
-        update.effective_user
-        and update.effective_user.id in ADMIN_USER_IDS
-    )
+    return bool(update.effective_user and update.effective_user.id in ADMIN_USER_IDS)
 
 
 def _is_bonus_actor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -449,7 +457,9 @@ async def bonus_draft_cancel_handler(
     raise ApplicationHandlerStop()
 
 
-async def bonus_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def bonus_message_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """High-priority private text handler while /bonus is in progress."""
     if not update.message or not update.effective_chat or not update.effective_user:
         return
@@ -458,7 +468,12 @@ async def bonus_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     # Other DM flows own later handler groups; only stop propagation when we act.
     active = context.user_data.get(ACTIVE_FLOW_KEY)
-    if active in ("inactive_outreach_send", "deposit_access", "issue_report", "support_note"):
+    if active in (
+        "inactive_outreach_send",
+        "deposit_access",
+        "issue_report",
+        "support_note",
+    ):
         return
 
     step = context.user_data.get(BONUS_STEP_KEY)
@@ -467,7 +482,12 @@ async def bonus_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if not _is_bonus_actor(update, context):
         return
 
-    logger.info("bonus step=%s user_id=%s text=%r", step, update.effective_user.id, (update.message.text or "")[:40])
+    logger.info(
+        "bonus step=%s user_id=%s text=%r",
+        step,
+        update.effective_user.id,
+        (update.message.text or "")[:40],
+    )
 
     if step == "group_title":
         await _handle_group_title(update, context)
@@ -481,7 +501,9 @@ async def bonus_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
     raise ApplicationHandlerStop()
 
 
-async def bonus_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def bonus_callback_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """High-priority callback handler for bonus type/club buttons."""
     query = update.callback_query
     if not query or not query.data or not update.effective_user:
@@ -501,7 +523,9 @@ async def bonus_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         raise ApplicationHandlerStop()
 
 
-async def _handle_group_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_group_title(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     assert update.message
     title = (update.message.text or "").strip()
     if not title:
@@ -534,7 +558,9 @@ async def _handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if amount <= 0:
             raise InvalidOperation()
     except (InvalidOperation, Exception):
-        await update.message.reply_text("Please enter a valid dollar amount (e.g. 50 or 100.00).")
+        await update.message.reply_text(
+            "Please enter a valid dollar amount (e.g. 50 or 100.00)."
+        )
         return
 
     context.user_data["bonus_amount"] = amount
@@ -546,7 +572,9 @@ async def _handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
 
-async def _handle_type_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_type_chosen(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     query = update.callback_query
     assert query and query.data
 
@@ -573,7 +601,9 @@ async def _handle_type_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE
         await _ask_club(query.message.chat, context)
 
 
-async def _handle_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_description(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     assert update.message
     desc = (update.message.text or "").strip()
     if not desc:
@@ -611,7 +641,9 @@ async def _ask_club(chat, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
-async def _handle_club_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_club_chosen(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     query = update.callback_query
     assert query and query.data
 

@@ -67,11 +67,15 @@ def main() -> None:
 
             for variant_id, label in rows:
                 session.execute(
-                    text("UPDATE method_variants SET tier_id = :over_id WHERE id = :vid"),
+                    text(
+                        "UPDATE method_variants SET tier_id = :over_id WHERE id = :vid"
+                    ),
                     {"over_id": over[0], "vid": variant_id},
                 )
                 moved += 1
-                print(f"  {club} / {method_name}: {label!r} -> {over[1]} (tier {over[0]})")
+                print(
+                    f"  {club} / {method_name}: {label!r} -> {over[1]} (tier {over[0]})"
+                )
 
     print(f"Done. Moved {moved} variant(s).")
 

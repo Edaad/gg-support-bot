@@ -74,7 +74,9 @@ def main() -> None:
         action="store_true",
         help="Include all tiers (default: club recovery tier scope only).",
     )
-    parser.add_argument("--apply", action="store_true", help="Write changes to Postgres.")
+    parser.add_argument(
+        "--apply", action="store_true", help="Write changes to Postgres."
+    )
     args = parser.parse_args()
 
     rows = _query_rows(

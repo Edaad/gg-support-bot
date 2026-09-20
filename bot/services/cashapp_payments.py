@@ -8,7 +8,6 @@ from decimal import Decimal
 from typing import Optional
 
 from api.method_owner import resolve_ingest_method_owner
-from bot.services.club import get_group_title_for_chat
 from bot.services.group_chat_invite_links import resolve_group_chat_url_for_payment
 from bot.services.payment_binding_events import (
     record_payment_bound,
@@ -38,16 +37,14 @@ from bot.services.venmo_payments import (
     IngestResult,
     escape_notification_html,
     format_amount_display,
-    normalize_payer_name,
     parse_amount_cents,
     resolve_bound_group,
     resolve_display_group_title,
-    send_telegram_notification,
     TEST_NOTIFICATION_BANNER,
     _format_deposit_timestamp,
 )
 from db.connection import get_db
-from db.models import CashAppPayerBinding, CashAppPayment
+from db.models import CashAppPayment
 from notification.formatting import (
     format_group_chat_line,
     format_player_id_line,
@@ -342,7 +339,9 @@ async def ingest_cashapp_payment(
             )
         if setup_attempt is not None:
             setup_attempt_id = int(setup_attempt.id)
-            live_title = resolve_display_group_title(int(setup_attempt.telegram_chat_id))
+            live_title = resolve_display_group_title(
+                int(setup_attempt.telegram_chat_id)
+            )
             club_id_setup = int(setup_attempt.club_id)
             setup_club_id = club_id_setup
             if not live_title:
@@ -373,11 +372,7 @@ async def ingest_cashapp_payment(
                         telegram_chat_id=int(existing_link.linked_chat_ids[0]),
                         exclude_payment_id=int(payment.id),
                     )
-                    cancel_setup_attempt_in_session(
-                        session,
-                        setup_attempt,
-                        cashapp_payment_id=int(payment.id),
-                    )
+                    cancel_setup_attempt_in_session(session, setup_attempt)
                     setup_blocked_already_linked = True
                     setup_target_chat_id = int(setup_attempt.telegram_chat_id)
                     setup_target_title = live_title
@@ -455,7 +450,10 @@ async def ingest_cashapp_payment(
         session.flush()
         session.expunge(payment)
 
-    from notification.bind_keyboards import candidate_picker_markup, setup_blocked_markup
+    from notification.bind_keyboards import (
+        candidate_picker_markup,
+        setup_blocked_markup,
+    )
     from notification.payment_bind_helpers import format_payment_notification
 
     group_chat_url = await resolve_group_chat_url_for_payment(
@@ -476,7 +474,9 @@ async def ingest_cashapp_payment(
         from bot.services.payment_bind_candidates import candidate_chat_ids
 
         with get_db() as session:
-            existing_ids = candidate_chat_ids(session, "cashapp", payer_name=payment.payer_name)
+            existing_ids = candidate_chat_ids(
+                session, "cashapp", payer_name=payment.payer_name
+            )
         notif_markup = setup_blocked_markup(
             "cashapp",
             int(payment.id),
@@ -519,7 +519,9 @@ async def ingest_cashapp_payment(
         reply_markup=notif_markup,
         bind_chat_ids=bind_chat_ids,
     )
-    from notification.payment_notification_posts import record_payment_notification_posts
+    from notification.payment_notification_posts import (
+        record_payment_notification_posts,
+    )
 
     record_payment_notification_posts(
         payment_method_slug="cashapp",
@@ -612,6 +614,14 @@ async def ingest_cashapp_payment(
         memo_in_notification,
         notif_chat_id,
     )
+    from bot.services.deposit_method_alerts import maybe_evaluate_after_ingest
+
+    await maybe_evaluate_after_ingest(
+        method="cashapp",
+        variant=handle,
+        created=created,
+        is_test=bool(test),
+    )
     return IngestResult(
         payment_id=payment_id,
         status=status,
@@ -686,7 +696,9 @@ async def bind_cashapp_payment_by_id(
             bound_by_telegram_user_id=bound_by_telegram_user_id,
         )
 
-        live_title = resolve_display_group_title(group.telegram_chat_id) or group.group_title
+        live_title = (
+            resolve_display_group_title(group.telegram_chat_id) or group.group_title
+        )
         if payment.notification_chat_id and payment.notification_message_id:
             notif_chat_id = int(payment.notification_chat_id)
             notif_message_id = int(payment.notification_message_id)

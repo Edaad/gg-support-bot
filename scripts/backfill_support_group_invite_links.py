@@ -332,7 +332,9 @@ async def _export_invite_links_for_dialogs(
                     entity = await client.get_entity(cid)
                     out[cid] = await _export_invite_link_backfill(client, entity)
                     if out[cid]:
-                        logger.info("Exported invite link: %s (chat_id=%s)", gc_name, cid)
+                        logger.info(
+                            "Exported invite link: %s (chat_id=%s)", gc_name, cid
+                        )
                     else:
                         logger.warning(
                             "Export invite failed: %s (chat_id=%s)",
@@ -362,7 +364,6 @@ async def _backfill(
     from club_gc_settings import CLUB_GC_CONFIG, get_club_gc_config_by_link_club_id
     from bot.services.support_group_chats import (
         fetch_invite_link_for_chat,
-        upsert_support_group_invite_link,
     )
     from db.connection import init_engine
 
@@ -500,8 +501,7 @@ async def _backfill(
 
         export_ids = sorted({dialog_chat_id for _, dialog_chat_id, _ in pending})
         dialog_titles = {
-            int(dialog_chat_id): title_out
-            for _, dialog_chat_id, title_out in pending
+            int(dialog_chat_id): title_out for _, dialog_chat_id, title_out in pending
         }
         logger.info(
             "Exporting invite links for %s matched groups (club_key=%s)",
@@ -650,10 +650,15 @@ def _print_human(summary: BackfillSummary, rows: list[dict[str, Any]]) -> None:
     if actionable:
         print(f"--- Invite links ({len(actionable)}) ---")
         for r in actionable:
-            print(f"  groups_chat_id={r['groups_chat_id']} dialog_chat_id={r['dialog_chat_id']}")
+            print(
+                f"  groups_chat_id={r['groups_chat_id']} dialog_chat_id={r['dialog_chat_id']}"
+            )
             print(f"    title: {r['title']}")
             print(f"    link: {r.get('invite_link')}")
-            print(f"    status: {r['status']}" + (f" row_id={r['row_id']}" if r.get("row_id") else ""))
+            print(
+                f"    status: {r['status']}"
+                + (f" row_id={r['row_id']}" if r.get("row_id") else "")
+            )
         print()
 
     skipped = [r for r in rows if r.get("status") == "admin_not_in_group"]

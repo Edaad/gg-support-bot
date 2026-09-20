@@ -29,8 +29,9 @@ def _lookup(club_id):
 @contextlib.contextmanager
 def _patched_clubs():
     """Both modules resolve clubs independently, so both need stubbing."""
-    with patch(f"{MOD}.get_club_by_id", side_effect=_lookup), patch(
-        f"{UNIONS_MOD}.get_club_by_id", side_effect=_lookup
+    with (
+        patch(f"{MOD}.get_club_by_id", side_effect=_lookup),
+        patch(f"{UNIONS_MOD}.get_club_by_id", side_effect=_lookup),
     ):
         yield
 
@@ -93,9 +94,10 @@ class RunTransferTests(unittest.IsolatedAsyncioTestCase):
             )
 
     async def _run(self, *, claim, add=None, on_claimed=None):
-        with patch(f"{MOD}.run_auto_claim", AsyncMock(**claim)) as mock_claim, patch(
-            f"{MOD}.run_auto_chip_add", AsyncMock(**(add or {}))
-        ) as mock_add:
+        with (
+            patch(f"{MOD}.run_auto_claim", AsyncMock(**claim)) as mock_claim,
+            patch(f"{MOD}.run_auto_chip_add", AsyncMock(**(add or {}))) as mock_add,
+        ):
             result = await ct.run_transfer(
                 plan=self.plan,
                 amount=Decimal("200"),
@@ -185,11 +187,14 @@ class RunTransferTests(unittest.IsolatedAsyncioTestCase):
         order = []
         on_claimed = AsyncMock(side_effect=lambda: order.append("said"))
 
-        with patch(
-            f"{MOD}.run_auto_claim", AsyncMock(return_value=_claim())
-        ), patch(
-            f"{MOD}.run_auto_chip_add",
-            AsyncMock(side_effect=lambda **_kw: order.append("added") or (True, "ok")),
+        with (
+            patch(f"{MOD}.run_auto_claim", AsyncMock(return_value=_claim())),
+            patch(
+                f"{MOD}.run_auto_chip_add",
+                AsyncMock(
+                    side_effect=lambda **_kw: order.append("added") or (True, "ok")
+                ),
+            ),
         ):
             await ct.run_transfer(
                 plan=self.plan,
@@ -220,25 +225,28 @@ class RunTransferTests(unittest.IsolatedAsyncioTestCase):
 class BlockedReasonTests(unittest.TestCase):
     def test_missing_api_config_blocks(self):
         with patch(f"{MOD}.load_config", return_value=None):
-            self.assertIn("deposit API", ct.transfer_blocked_reason(RT_ID, "RT / 1-2 /"))
+            self.assertIn(
+                "deposit API", ct.transfer_blocked_reason(RT_ID, "RT / 1-2 /")
+            )
 
     def test_auto_claim_disabled_blocks(self):
-        with patch(f"{MOD}.load_config", return_value=object()), patch(
-            f"{MOD}.get_auto_claim_enabled", return_value=False
+        with (
+            patch(f"{MOD}.load_config", return_value=object()),
+            patch(f"{MOD}.get_auto_claim_enabled", return_value=False),
         ):
             self.assertIn("auto claim", ct.transfer_blocked_reason(RT_ID, "x"))
 
     def test_unreadable_title_blocks(self):
-        with patch(f"{MOD}.load_config", return_value=object()), patch(
-            f"{MOD}.get_auto_claim_enabled", return_value=True
+        with (
+            patch(f"{MOD}.load_config", return_value=object()),
+            patch(f"{MOD}.get_auto_claim_enabled", return_value=True),
         ):
-            self.assertIn(
-                "player id", ct.transfer_blocked_reason(RT_ID, "no ids here")
-            )
+            self.assertIn("player id", ct.transfer_blocked_reason(RT_ID, "no ids here"))
 
     def test_ready_group_is_not_blocked(self):
-        with patch(f"{MOD}.load_config", return_value=object()), patch(
-            f"{MOD}.get_auto_claim_enabled", return_value=True
+        with (
+            patch(f"{MOD}.load_config", return_value=object()),
+            patch(f"{MOD}.get_auto_claim_enabled", return_value=True),
         ):
             self.assertIsNone(
                 ct.transfer_blocked_reason(RT_ID, "RT AT / 1234-5678 / Player")

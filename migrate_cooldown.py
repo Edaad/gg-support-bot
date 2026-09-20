@@ -1,4 +1,5 @@
 """One-time migration: add cashout cooldown columns to clubs table."""
+
 from db.connection import init_engine
 from sqlalchemy import text
 

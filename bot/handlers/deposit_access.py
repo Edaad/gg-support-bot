@@ -28,9 +28,7 @@ from bot.services.venmo_payments import resolve_bound_group
 
 logger = logging.getLogger(__name__)
 
-_GROUP_TITLE_PROMPT = (
-    "Enter group title (e.g. RT / 6485-8168 / Angus Mcgoon):"
-)
+_GROUP_TITLE_PROMPT = "Enter group title (e.g. RT / 6485-8168 / Angus Mcgoon):"
 
 _PREFIX: dict[MethodDirection, str] = {"deposit": "da", "cashout": "ca"}
 _FLOW: dict[MethodDirection, str] = {
@@ -355,7 +353,10 @@ async def depositaccess_callback_handler(
             _cleanup(context, direction)
             return
         methods = methods_for_action(
-            int(club_id), int(chat_id), action, direction=direction  # type: ignore[arg-type]
+            int(club_id),
+            int(chat_id),
+            action,
+            direction=direction,  # type: ignore[arg-type]
         )
         if not methods:
             empty_msgs = {
@@ -390,7 +391,10 @@ async def depositaccess_callback_handler(
             _cleanup(context, direction)
             return
         methods = methods_for_action(
-            int(club_id), int(chat_id), action, direction=direction  # type: ignore[arg-type]
+            int(club_id),
+            int(chat_id),
+            action,
+            direction=direction,  # type: ignore[arg-type]
         )
         chosen = next((m for m in methods if int(m["id"]) == method_id), None)
         if not chosen:
@@ -408,15 +412,9 @@ async def depositaccess_callback_handler(
         slug = chosen["slug"]
         if action == "remove":
             existing = chosen.get("access_type", "entry")
-            summary = (
-                f"Remove {existing} for {slug} "
-                f"on group:\n{title}?"
-            )
+            summary = f"Remove {existing} for {slug} on group:\n{title}?"
         else:
-            summary = (
-                f"{action.capitalize()} {slug} "
-                f"for group:\n{title}?"
-            )
+            summary = f"{action.capitalize()} {slug} for group:\n{title}?"
         await query.edit_message_text(
             summary, reply_markup=_confirm_keyboard(direction)
         )
@@ -431,12 +429,7 @@ async def depositaccess_callback_handler(
         club_id = context.user_data.get(_ud(direction, "club_id"))
         title = context.user_data.get(_ud(direction, "group_title"), "?")
         uid = context.user_data.get(_ud(direction, "admin_id"))
-        if (
-            action is None
-            or method_id is None
-            or chat_id is None
-            or club_id is None
-        ):
+        if action is None or method_id is None or chat_id is None or club_id is None:
             await query.edit_message_text(f"Session expired. Use {cmd} again.")
             _cleanup(context, direction)
             return

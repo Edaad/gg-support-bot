@@ -43,7 +43,19 @@ Heroku-style split: `web` runs Uvicorn, `worker` runs the support bot, `cashier`
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+pip install -r requirements-dev.txt   # ruff (lint + format); not used on Heroku
 ```
+
+Python lint and format (config in `pyproject.toml`):
+
+```bash
+ruff check .            # lint (does not rewrite)
+ruff check --fix .      # apply safe autofixes
+ruff format --check .   # would-reformat report
+ruff format .           # rewrite files
+```
+
+Pre-push runs `ruff check .` and `ruff format --check .` before tests and the dashboard build.
 
 ### 2. Database
 

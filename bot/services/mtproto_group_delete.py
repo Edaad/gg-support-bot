@@ -42,8 +42,11 @@ logger = logging.getLogger(__name__)
 
 _DELETE_CONFIRM_RE = re.compile(r"^/delete(?:@\w+)?\s+confirm\s*$", re.IGNORECASE)
 
+
 def _kick_ban_rights() -> ChatBannedRights:
-    until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=30)
+    until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
+        seconds=30
+    )
     return ChatBannedRights(until_date=until, view_messages=True)
 
 
@@ -61,8 +64,7 @@ async def _notify_delete_failure(
 ) -> None:
     admin_id = int(cfg.command_admin_user_id)
     text = (
-        f"[{cfg.club_display_name}] /delete confirm failed (chat {chat_id}):\n"
-        f"{reason}"
+        f"[{cfg.club_display_name}] /delete confirm failed (chat {chat_id}):\n{reason}"
     )[:4096]
     try:
         await client.send_message(admin_id, text)
@@ -250,9 +252,7 @@ async def _erase_group_chat(
         return "Could not resolve MTProto self id."
 
     try:
-        kicked, kick_failed = await _kick_all_participants(
-            client, entity, self_id
-        )
+        kicked, kick_failed = await _kick_all_participants(client, entity, self_id)
         logger.info(
             "group_delete: kicks club=%s chat_id=%s kicked=%s failed=%s",
             cfg.club_key,

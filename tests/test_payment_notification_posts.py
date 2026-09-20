@@ -20,7 +20,9 @@ CC_CHAT = -1003333333333333
 class RecordAndFindPostsTestCase(unittest.TestCase):
     def test_record_and_find_secondary_fanout_copy(self) -> None:
         session = MagicMock()
-        session.query.return_value.filter_by.return_value.one_or_none.return_value = None
+        session.query.return_value.filter_by.return_value.one_or_none.return_value = (
+            None
+        )
         ctx = MagicMock()
         ctx.__enter__ = MagicMock(return_value=session)
         ctx.__exit__ = MagicMock(return_value=False)

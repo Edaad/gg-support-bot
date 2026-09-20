@@ -115,7 +115,9 @@ def is_gc_group_title(title: str | None) -> bool:
     return bool(" / ".join(parts[2:]).strip())
 
 
-def merge_union_prefix(current_title: str | None, chosen_shorthand: str) -> Optional[str]:
+def merge_union_prefix(
+    current_title: str | None, chosen_shorthand: str
+) -> Optional[str]:
     """Return new group title if deposit union shorthand should be merged into prefix."""
     chosen = (chosen_shorthand or "").strip().upper()
     if chosen not in ROUND_TABLE_UNION_SHORTHANDS:
@@ -243,7 +245,9 @@ def bind_chat_from_title(*, chat_id: int, title: str | None) -> BindResult:
     shorthand, gg_player_id = parsed
     club_id = resolve_club_id_from_shorthand(shorthand)
     if not club_id:
-        return BindResult(ok=False, gg_player_id=gg_player_id, error="Unknown club shorthand.")
+        return BindResult(
+            ok=False, gg_player_id=gg_player_id, error="Unknown club shorthand."
+        )
 
     conflict = check_same_club_player_conflict(
         club_id=club_id, gg_player_id=gg_player_id, chat_id=chat_id
@@ -262,10 +266,14 @@ def bind_chat_from_title(*, chat_id: int, title: str | None) -> BindResult:
     return BindResult(ok=True, gg_player_id=gg_player_id, club_id=club_id)
 
 
-def override_chat_for_player(*, club_id: int, gg_player_id: str, chat_id: int) -> OverrideResult:
+def override_chat_for_player(
+    *, club_id: int, gg_player_id: str, chat_id: int
+) -> OverrideResult:
     """Make *chat_id* the only tracked group for this player in the club (replaces other chats)."""
     if not _GG_RE.match(gg_player_id):
-        return OverrideResult(ok=False, error="Invalid player id format (example: 1111-2222).")
+        return OverrideResult(
+            ok=False, error="Invalid player id format (example: 1111-2222)."
+        )
     cid = int(chat_id)
     club = int(club_id)
     previous = get_existing_chat_ids(club_id=club, gg_player_id=gg_player_id) or []
@@ -389,4 +397,3 @@ def remove_chat_id_from_club_bindings(*, club_id: int, chat_id: int) -> None:
         session.execute(remove_stmt, {"chat_id": cid, "club_id": club})
         session.execute(delete_group_stmt, {"chat_id": cid})
         session.commit()
-

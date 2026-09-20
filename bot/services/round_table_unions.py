@@ -58,10 +58,9 @@ _HOME_UNION_BY_CLUB_NAME: dict[str, str] = {
 }
 
 _UNION_BY_SHORTHAND: dict[str, RoundTableUnion] = {
-    u["shorthand"]: u
-    for unions in _UNIONS_BY_CLUB_NAME.values()
-    for u in unions
+    u["shorthand"]: u for unions in _UNIONS_BY_CLUB_NAME.values() for u in unions
 }
+
 
 def _club_name_key(club_id: int) -> str:
     club = get_club_by_id(club_id)

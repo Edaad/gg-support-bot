@@ -99,12 +99,16 @@ def get_latest_pending_draft(
 
 
 def mark_draft_submitted(session: Session, draft_id: int) -> None:
-    draft = session.query(IssueReportDraft).filter(IssueReportDraft.id == draft_id).first()
+    draft = (
+        session.query(IssueReportDraft).filter(IssueReportDraft.id == draft_id).first()
+    )
     if draft:
         draft.status = "submitted"
 
 
 def cancel_draft(session: Session, draft_id: int) -> None:
-    draft = session.query(IssueReportDraft).filter(IssueReportDraft.id == draft_id).first()
+    draft = (
+        session.query(IssueReportDraft).filter(IssueReportDraft.id == draft_id).first()
+    )
     if draft and draft.status == "pending":
         draft.status = "cancelled"

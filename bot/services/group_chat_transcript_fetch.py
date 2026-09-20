@@ -69,7 +69,7 @@ def previous_et_activity_date(now: datetime | None = None) -> date:
     current = now or datetime.now(timezone.utc)
     if current.tzinfo is None:
         current = current.replace(tzinfo=timezone.utc)
-    return (current.astimezone(EST).date() - timedelta(days=1))
+    return current.astimezone(EST).date() - timedelta(days=1)
 
 
 def _message_date_utc(msg_date: datetime) -> datetime:
@@ -435,7 +435,10 @@ async def _fetch_club_chats(
         if not await is_client_authorized(cfg):
             err = f"MTProto session not authorized for club={cfg.club_key}"
             for t in targets:
-                if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+                if (
+                    deadline_monotonic is not None
+                    and time.monotonic() >= deadline_monotonic
+                ):
                     results.append(
                         ChatFetchResult(
                             chat_id=t.chat_id,
@@ -471,8 +474,7 @@ async def _fetch_club_chats(
         try:
             if not await client.is_user_authorized():
                 err = (
-                    f"MTProto session not authorized after connect "
-                    f"club={cfg.club_key}"
+                    f"MTProto session not authorized after connect club={cfg.club_key}"
                 )
                 for t in targets:
                     _mark_attempt_start(
@@ -548,9 +550,7 @@ async def fetch_transcripts_for_activity_date(
     ``chat_id`` / ``club_id`` support one-group validation before enabling the cron.
     """
 
-    targets = list_activity_targets(
-        activity_date, chat_id=chat_id, club_id=club_id
-    )
+    targets = list_activity_targets(activity_date, chat_id=chat_id, club_id=club_id)
     summary = TranscriptRunSummary(activity_date=activity_date)
     if not targets:
         return summary
@@ -609,17 +609,12 @@ async def fetch_transcripts_for_activity_date(
 
 
 def _recount_summary(summary: TranscriptRunSummary) -> None:
-    summary.complete = sum(
-        1 for r in summary.results if r.status == STATUS_COMPLETE
-    )
-    summary.failed = sum(
-        1 for r in summary.results if r.status != STATUS_COMPLETE
-    )
+    summary.complete = sum(1 for r in summary.results if r.status == STATUS_COMPLETE)
+    summary.failed = sum(1 for r in summary.results if r.status != STATUS_COMPLETE)
     summary.timed_out = sum(
         1
         for r in summary.results
-        if r.status != STATUS_COMPLETE
-        and (r.error or "").startswith("timed out")
+        if r.status != STATUS_COMPLETE and (r.error or "").startswith("timed out")
     )
 
 

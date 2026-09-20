@@ -64,7 +64,7 @@ MISSING_DATA = "Missing data"
 
 _HEADER_FILL = PatternFill("solid", fgColor="38761D")
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
-_CURRENCY_FORMAT = '$#,##0.00;[Red]-$#,##0.00'
+_CURRENCY_FORMAT = "$#,##0.00;[Red]-$#,##0.00"
 _PROCESSED_TABLE = "ProcessedData"
 _PROCESSED_COL_COUNT = len(PROCESSED_HEADERS)
 
@@ -255,12 +255,12 @@ def parse_creator_club_rows(
     day = audit_date
     if day is None:
         if not filename:
-            raise CreatorWeeklyAuditError("audit_date is required when filename is empty.")
+            raise CreatorWeeklyAuditError(
+                "audit_date is required when filename is empty."
+            )
         day = date_from_filename(filename)
     if CREATOR_CLUB_SHEET not in workbook.sheetnames:
-        raise CreatorWeeklyAuditError(
-            f"{label}: missing sheet {CREATOR_CLUB_SHEET!r}."
-        )
+        raise CreatorWeeklyAuditError(f"{label}: missing sheet {CREATOR_CLUB_SHEET!r}.")
     ws = workbook[CREATOR_CLUB_SHEET]
     headers = _header_map(ws)
     missing = [h for h in MATCHING_HEADERS if h not in headers]
@@ -278,14 +278,18 @@ def parse_creator_club_rows(
             continue
         rows.append(
             MatchingRow(
-                trade_time=_cell_datetime(ws.cell(row_idx, headers["Trade Time"]).value),
+                trade_time=_cell_datetime(
+                    ws.cell(row_idx, headers["Trade Time"]).value
+                ),
                 manager=_cell_str(ws.cell(row_idx, headers["Manager"]).value),
                 amount=_cell_number(ws.cell(row_idx, headers["Amount"]).value),
                 player_id=_cell_str(ws.cell(row_idx, headers["Player ID"]).value),
                 nickname=_cell_str(ws.cell(row_idx, headers["Nickname"]).value),
                 source=_cell_str(ws.cell(row_idx, headers["Source"]).value),
                 name=_cell_str(ws.cell(row_idx, headers["Name"]).value),
-                match_time=_cell_datetime(ws.cell(row_idx, headers["Match Time"]).value),
+                match_time=_cell_datetime(
+                    ws.cell(row_idx, headers["Match Time"]).value
+                ),
                 match_amount=_cell_number(ws.cell(row_idx, headers["$"]).value),
                 variant=_cell_str(ws.cell(row_idx, headers["Variant"]).value),
                 audit_date=day,
@@ -395,7 +399,9 @@ def fetch_mateos_payment_rails(
         "venmo": [],
         "crypto": [],
     }
-    configs: list[tuple[str, type, Callable, Callable[[dict], str], Callable[[dict], str]]] = [
+    configs: list[
+        tuple[str, type, Callable, Callable[[dict], str], Callable[[dict], str]]
+    ] = [
         (
             "zelle",
             ZellePayment,
@@ -701,7 +707,9 @@ def build_creator_weekly_audit_from_uploads(
         else:
             raw = payload
         if not isinstance(raw, (bytes, bytearray)):
-            raise CreatorWeeklyAuditError(f"{Path(name).name}: could not read file bytes.")
+            raise CreatorWeeklyAuditError(
+                f"{Path(name).name}: could not read file bytes."
+            )
         files.append((name, bytes(raw)))
     content = build_creator_weekly_audit_workbook(monday_date, files, session=session)
     return content, output_filename(monday_date)

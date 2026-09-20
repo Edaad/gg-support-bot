@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -37,18 +36,13 @@ class TestNormalizeTags(unittest.TestCase):
 
 class TestValidateFiles(unittest.TestCase):
     def test_rejects_too_many(self) -> None:
-        files = [
-            IssueReportFileInput("a.png", "image/png", b"x")
-            for _ in range(6)
-        ]
+        files = [IssueReportFileInput("a.png", "image/png", b"x") for _ in range(6)]
         with self.assertRaises(IssueReportValidationError):
             validate_files(files)
 
     def test_rejects_bad_type(self) -> None:
         with self.assertRaises(IssueReportValidationError):
-            validate_files(
-                [IssueReportFileInput("a.pdf", "application/pdf", b"x")]
-            )
+            validate_files([IssueReportFileInput("a.pdf", "application/pdf", b"x")])
 
     def test_rejects_oversized(self) -> None:
         with self.assertRaises(IssueReportValidationError):

@@ -24,9 +24,7 @@ class TestShouldSkipClubOnboarding(unittest.TestCase):
 
     def test_ops_title_allows(self) -> None:
         self.assertFalse(
-            groups.should_skip_club_onboarding(
-                1, "Round Table Support & GG Support"
-            )
+            groups.should_skip_club_onboarding(1, "Round Table Support & GG Support")
         )
 
     def test_valid_gc_title_allows(self) -> None:
@@ -35,15 +33,9 @@ class TestShouldSkipClubOnboarding(unittest.TestCase):
         )
 
     def test_empty_player_id_gc_title_allows(self) -> None:
-        self.assertFalse(
-            groups.should_skip_club_onboarding(1, "RT / / @username")
-        )
-        self.assertFalse(
-            groups.should_skip_club_onboarding(1, "CC / / John")
-        )
-        self.assertFalse(
-            groups.should_skip_club_onboarding(1, "GTO / / @ho3ennn")
-        )
+        self.assertFalse(groups.should_skip_club_onboarding(1, "RT / / @username"))
+        self.assertFalse(groups.should_skip_club_onboarding(1, "CC / / John"))
+        self.assertFalse(groups.should_skip_club_onboarding(1, "GTO / / @ho3ennn"))
 
     def test_allowlisted_skips_even_with_gc_title(self) -> None:
         os.environ[wge.WATCH_GROUP_ESCALATION_CHAT_IDS_ENV] = "42"
@@ -66,9 +58,16 @@ class TestMaybeSendMemberJoinIntro(unittest.IsolatedAsyncioTestCase):
 
         context.bot.send_message.assert_not_called()
 
-    @patch("bot.handlers.groups._deliver_member_join_intro_messages", new_callable=AsyncMock)
-    @patch("bot.services.migration_recovery.is_migrated_recovery_chat", return_value=True)
-    @patch("club_gc_settings.is_migration_recovery_skip_welcome_enabled", return_value=True)
+    @patch(
+        "bot.handlers.groups._deliver_member_join_intro_messages",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "bot.services.migration_recovery.is_migrated_recovery_chat", return_value=True
+    )
+    @patch(
+        "club_gc_settings.is_migration_recovery_skip_welcome_enabled", return_value=True
+    )
     @patch("bot.handlers.groups.get_club_for_chat", return_value=4)
     async def test_skips_when_skip_welcome_on_and_chat_in_table(
         self,
@@ -83,9 +82,17 @@ class TestMaybeSendMemberJoinIntro(unittest.IsolatedAsyncioTestCase):
 
         mock_deliver.assert_not_awaited()
 
-    @patch("bot.handlers.groups._deliver_member_join_intro_messages", new_callable=AsyncMock)
-    @patch("bot.services.migration_recovery.is_migrated_recovery_chat", return_value=True)
-    @patch("club_gc_settings.is_migration_recovery_skip_welcome_enabled", return_value=False)
+    @patch(
+        "bot.handlers.groups._deliver_member_join_intro_messages",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "bot.services.migration_recovery.is_migrated_recovery_chat", return_value=True
+    )
+    @patch(
+        "club_gc_settings.is_migration_recovery_skip_welcome_enabled",
+        return_value=False,
+    )
     @patch("bot.handlers.groups.get_club_for_chat", return_value=4)
     async def test_sends_when_skip_welcome_off_even_if_chat_in_table(
         self,
@@ -100,9 +107,16 @@ class TestMaybeSendMemberJoinIntro(unittest.IsolatedAsyncioTestCase):
 
         mock_deliver.assert_awaited_once_with(CHAT_ID, 4, context.bot)
 
-    @patch("bot.handlers.groups._deliver_member_join_intro_messages", new_callable=AsyncMock)
-    @patch("bot.services.migration_recovery.is_migrated_recovery_chat", return_value=False)
-    @patch("club_gc_settings.is_migration_recovery_skip_welcome_enabled", return_value=True)
+    @patch(
+        "bot.handlers.groups._deliver_member_join_intro_messages",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "bot.services.migration_recovery.is_migrated_recovery_chat", return_value=False
+    )
+    @patch(
+        "club_gc_settings.is_migration_recovery_skip_welcome_enabled", return_value=True
+    )
     @patch("bot.handlers.groups.get_club_for_chat", return_value=4)
     async def test_sends_when_skip_welcome_on_but_chat_not_in_table(
         self,
@@ -126,7 +140,9 @@ class TestOnMyChatMemberOnboarding(unittest.IsolatedAsyncioTestCase):
 
     @patch("bot.handlers.groups.set_group_club", return_value=2)
     @patch("bot.handlers.groups.is_group_linked", return_value=False)
-    @patch("bot.handlers.groups._send_member_join_preamble_and_pdf", new_callable=AsyncMock)
+    @patch(
+        "bot.handlers.groups._send_member_join_preamble_and_pdf", new_callable=AsyncMock
+    )
     @patch("bot.handlers.groups.get_club_welcome", return_value=None)
     @patch("bot.handlers.groups.bind_chat_from_title")
     async def test_ops_title_runs_onboarding(
@@ -157,7 +173,9 @@ class TestOnMyChatMemberOnboarding(unittest.IsolatedAsyncioTestCase):
 
     @patch("bot.handlers.groups.set_group_club", return_value=2)
     @patch("bot.handlers.groups.is_group_linked", return_value=False)
-    @patch("bot.handlers.groups._send_member_join_preamble_and_pdf", new_callable=AsyncMock)
+    @patch(
+        "bot.handlers.groups._send_member_join_preamble_and_pdf", new_callable=AsyncMock
+    )
     @patch("bot.handlers.groups.get_club_welcome", return_value=None)
     @patch("bot.handlers.groups.bind_chat_from_title")
     async def test_empty_player_id_gc_title_runs_onboarding(

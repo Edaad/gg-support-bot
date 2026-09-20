@@ -43,9 +43,7 @@ class GetLastActivityTestCase(unittest.TestCase):
         ts = datetime(2026, 7, 13, 12, 0, 0)  # naive → treated as UTC
         activity = MagicMock()
         activity.created_at = ts
-        session.query.return_value.filter.return_value.order_by.return_value.first.return_value = (
-            activity
-        )
+        session.query.return_value.filter.return_value.order_by.return_value.first.return_value = activity
 
         got = get_last_activity(1, -100)
 

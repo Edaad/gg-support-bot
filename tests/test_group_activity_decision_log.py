@@ -53,7 +53,9 @@ class GroupActivityDecisionLogTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(handler, "get_club_for_chat", return_value=4),
             patch.object(handler.pk, "popup_keyboard_eligible", return_value=True),
-            patch.object(handler.esc, "escalation_notification_eligible", return_value=False),
+            patch.object(
+                handler.esc, "escalation_notification_eligible", return_value=False
+            ),
             patch.object(handler.ga, "is_support_sender", return_value=False),
             patch.object(handler.pk, "is_flow_command_text", return_value=False),
             patch.object(handler.ga, "record_human_message"),
@@ -62,11 +64,15 @@ class GroupActivityDecisionLogTests(unittest.IsolatedAsyncioTestCase):
             patch.object(handler, "deposit_flow_active", return_value=False),
             patch.object(handler, "cashout_flow_active", return_value=False),
             patch.object(handler, "transfer_flow_active", return_value=False),
-            patch.object(handler.pk, "silent_strip_if_installed", new_callable=AsyncMock),
+            patch.object(
+                handler.pk, "silent_strip_if_installed", new_callable=AsyncMock
+            ),
             patch.object(handler.pk, "payment_window_gate_pending", return_value=False),
             patch.object(handler.pk, "schedule_popup_keyboard_idle"),
             patch.object(handler, "record_escalation_decision", side_effect=_capture),
-            patch.object(handler.idle_ep, "consume_expected_flow_input", return_value=False),
+            patch.object(
+                handler.idle_ep, "consume_expected_flow_input", return_value=False
+            ),
         ):
             await handler.group_activity_handler(update, context)
 
@@ -82,12 +88,18 @@ class GroupActivityDecisionLogTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(handler, "get_club_for_chat", return_value=4),
             patch.object(handler.pk, "popup_keyboard_eligible", return_value=False),
-            patch.object(handler.esc, "escalation_notification_eligible", return_value=True),
+            patch.object(
+                handler.esc, "escalation_notification_eligible", return_value=True
+            ),
             patch.object(handler.ga, "is_support_sender", return_value=True),
             patch.object(handler.pk, "is_flow_command_text", return_value=False),
             patch.object(handler.ga, "record_human_message"),
             patch.object(handler.idle_ep, "episode_is_open", return_value=False),
-            patch.object(handler, "record_escalation_decision", side_effect=lambda **k: recorded.append(k) or 1),
+            patch.object(
+                handler,
+                "record_escalation_decision",
+                side_effect=lambda **k: recorded.append(k) or 1,
+            ),
         ):
             await handler.group_activity_handler(update, context)
 
@@ -101,7 +113,9 @@ class GroupActivityDecisionLogTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(handler, "get_club_for_chat", return_value=4),
             patch.object(handler.pk, "popup_keyboard_eligible", return_value=False),
-            patch.object(handler.esc, "escalation_notification_eligible", return_value=True),
+            patch.object(
+                handler.esc, "escalation_notification_eligible", return_value=True
+            ),
             patch.object(handler.ga, "is_support_sender", return_value=False),
             patch.object(handler.pk, "is_flow_command_text", return_value=False),
             patch.object(handler.ga, "record_human_message"),
@@ -110,9 +124,15 @@ class GroupActivityDecisionLogTests(unittest.IsolatedAsyncioTestCase):
             patch.object(handler, "deposit_flow_active", return_value=True),
             patch.object(handler, "cashout_flow_active", return_value=False),
             patch.object(handler, "transfer_flow_active", return_value=False),
-            patch.object(handler.idle_ep, "consume_expected_flow_input", return_value=True),
+            patch.object(
+                handler.idle_ep, "consume_expected_flow_input", return_value=True
+            ),
             patch.object(handler.pk, "cancel_popup_keyboard_idle"),
-            patch.object(handler, "record_escalation_decision", side_effect=lambda **k: recorded.append(k) or 1),
+            patch.object(
+                handler,
+                "record_escalation_decision",
+                side_effect=lambda **k: recorded.append(k) or 1,
+            ),
         ):
             await handler.group_activity_handler(update, context)
 
@@ -131,7 +151,9 @@ class GroupActivityDecisionLogTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(handler, "get_club_for_chat", return_value=4),
             patch.object(handler.pk, "popup_keyboard_eligible", return_value=False),
-            patch.object(handler.esc, "escalation_notification_eligible", return_value=True),
+            patch.object(
+                handler.esc, "escalation_notification_eligible", return_value=True
+            ),
             patch.object(handler.ga, "is_support_sender", return_value=False),
             patch.object(handler.pk, "is_flow_command_text", return_value=False),
             patch.object(handler.ga, "record_human_message"),
@@ -140,7 +162,9 @@ class GroupActivityDecisionLogTests(unittest.IsolatedAsyncioTestCase):
             patch.object(handler, "deposit_flow_active", return_value=False),
             patch.object(handler, "cashout_flow_active", return_value=False),
             patch.object(handler, "transfer_flow_active", return_value=False),
-            patch.object(handler.idle_ep, "consume_expected_flow_input", return_value=False),
+            patch.object(
+                handler.idle_ep, "consume_expected_flow_input", return_value=False
+            ),
             patch.object(
                 handler.esc,
                 "handle_deposit_sent_player_followup",
@@ -153,14 +177,20 @@ class GroupActivityDecisionLogTests(unittest.IsolatedAsyncioTestCase):
                 new_callable=AsyncMock,
                 return_value=False,
             ),
-            patch.object(handler.esc, "is_valid_deposit_flow_answer", return_value=False),
+            patch.object(
+                handler.esc, "is_valid_deposit_flow_answer", return_value=False
+            ),
             patch.object(
                 handler.idle_ep,
                 "on_player_reach_out",
                 new_callable=AsyncMock,
                 return_value=result,
             ),
-            patch.object(handler, "record_escalation_decision", side_effect=lambda **k: recorded.append(k) or 1),
+            patch.object(
+                handler,
+                "record_escalation_decision",
+                side_effect=lambda **k: recorded.append(k) or 1,
+            ),
         ):
             await handler.group_activity_handler(update, context)
 
@@ -179,7 +209,9 @@ class GroupActivityDecisionLogTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(handler, "get_club_for_chat", return_value=4),
             patch.object(handler.pk, "popup_keyboard_eligible", return_value=False),
-            patch.object(handler.esc, "escalation_notification_eligible", return_value=True),
+            patch.object(
+                handler.esc, "escalation_notification_eligible", return_value=True
+            ),
             patch.object(handler.ga, "is_support_sender", return_value=False),
             patch.object(handler.pk, "is_flow_command_text", return_value=False),
             patch.object(handler.ga, "record_human_message"),
@@ -188,7 +220,9 @@ class GroupActivityDecisionLogTests(unittest.IsolatedAsyncioTestCase):
             patch.object(handler, "deposit_flow_active", return_value=False),
             patch.object(handler, "cashout_flow_active", return_value=False),
             patch.object(handler, "transfer_flow_active", return_value=False),
-            patch.object(handler.idle_ep, "consume_expected_flow_input", return_value=False),
+            patch.object(
+                handler.idle_ep, "consume_expected_flow_input", return_value=False
+            ),
             patch.object(
                 handler.esc,
                 "handle_deposit_sent_player_followup",
@@ -201,14 +235,20 @@ class GroupActivityDecisionLogTests(unittest.IsolatedAsyncioTestCase):
                 new_callable=AsyncMock,
                 return_value=False,
             ),
-            patch.object(handler.esc, "is_valid_deposit_flow_answer", return_value=False),
+            patch.object(
+                handler.esc, "is_valid_deposit_flow_answer", return_value=False
+            ),
             patch.object(
                 handler.idle_ep,
                 "on_player_reach_out",
                 new_callable=AsyncMock,
                 return_value=result,
             ),
-            patch.object(handler, "record_escalation_decision", side_effect=lambda **k: recorded.append(k) or 1),
+            patch.object(
+                handler,
+                "record_escalation_decision",
+                side_effect=lambda **k: recorded.append(k) or 1,
+            ),
         ):
             await handler.group_activity_handler(update, context)
 
@@ -224,7 +264,9 @@ class GroupActivityDecisionLogTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(handler, "get_club_for_chat", return_value=4),
             patch.object(handler.pk, "popup_keyboard_eligible", return_value=False),
-            patch.object(handler.esc, "escalation_notification_eligible", return_value=True),
+            patch.object(
+                handler.esc, "escalation_notification_eligible", return_value=True
+            ),
             patch.object(handler.ga, "is_support_sender", return_value=False),
             patch.object(handler.pk, "is_flow_command_text", return_value=False),
             patch.object(handler.ga, "record_human_message"),
@@ -233,7 +275,9 @@ class GroupActivityDecisionLogTests(unittest.IsolatedAsyncioTestCase):
             patch.object(handler, "deposit_flow_active", return_value=False),
             patch.object(handler, "cashout_flow_active", return_value=False),
             patch.object(handler, "transfer_flow_active", return_value=False),
-            patch.object(handler.idle_ep, "consume_expected_flow_input", return_value=False),
+            patch.object(
+                handler.idle_ep, "consume_expected_flow_input", return_value=False
+            ),
             patch.object(
                 handler.esc,
                 "handle_deposit_sent_player_followup",
@@ -246,7 +290,11 @@ class GroupActivityDecisionLogTests(unittest.IsolatedAsyncioTestCase):
                 new_callable=AsyncMock,
                 return_value=result,
             ) as feed,
-            patch.object(handler, "record_escalation_decision", side_effect=lambda **k: recorded.append(k) or 1),
+            patch.object(
+                handler,
+                "record_escalation_decision",
+                side_effect=lambda **k: recorded.append(k) or 1,
+            ),
         ):
             await handler.group_activity_handler(update, context)
 

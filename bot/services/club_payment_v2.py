@@ -70,7 +70,9 @@ def _variant_weight(v: ClubPaymentTierVariant) -> int:
     return int(v.weight) if v.weight is not None else 1
 
 
-def _active_variants(variants: list[ClubPaymentTierVariant]) -> list[ClubPaymentTierVariant]:
+def _active_variants(
+    variants: list[ClubPaymentTierVariant],
+) -> list[ClubPaymentTierVariant]:
     return [v for v in variants if _variant_weight(v) > 0]
 
 
@@ -84,7 +86,9 @@ def _pick_weighted_variant(
     return random.choices(active, weights=weights, k=1)[0]
 
 
-def _variant_response_dict(v: ClubPaymentTierVariant, *, include_ids: bool = False) -> dict:
+def _variant_response_dict(
+    v: ClubPaymentTierVariant, *, include_ids: bool = False
+) -> dict:
     link = v.use_group_checkout_link
     provider = v.group_checkout_provider
     if link is True and not provider:

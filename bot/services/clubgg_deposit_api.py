@@ -148,14 +148,13 @@ def load_config() -> Optional[_Config]:
         alert_chat_id=_env_int_optional("GG_DEPOSIT_API_ALERT_CHAT_ID"),
         alert_on_success=_env_bool("GG_DEPOSIT_API_ALERT_ON_SUCCESS", False),
         expected_host=(os.getenv("GG_DEPOSIT_API_EXPECTED_HOST") or "").strip() or None,
-        expected_profile=(os.getenv("GG_DEPOSIT_API_EXPECTED_PROFILE") or "").strip() or None,
+        expected_profile=(os.getenv("GG_DEPOSIT_API_EXPECTED_PROFILE") or "").strip()
+        or None,
         union_max_age_hours=_env_float("GG_DEPOSIT_API_UNION_MAX_AGE_HOURS", 24.0),
         timeout_sec=_env_float("GG_DEPOSIT_API_TIMEOUT_SEC", 10.0),
         poll_interval_sec=_env_float("GG_DEPOSIT_API_POLL_INTERVAL_SEC", 3.0),
         poll_timeout_sec=_env_float("GG_DEPOSIT_API_POLL_TIMEOUT_SEC", 180.0),
-        rake_poll_timeout_sec=_env_float(
-            "GG_DEPOSIT_API_RAKE_POLL_TIMEOUT_SEC", 420.0
-        ),
+        rake_poll_timeout_sec=_env_float("GG_DEPOSIT_API_RAKE_POLL_TIMEOUT_SEC", 420.0),
     )
 
 
@@ -193,7 +192,9 @@ def request_id_for(chat_id: int, message_id: int, *, part: str = "base") -> str:
     return request_id_with_part(base, part=part)
 
 
-def request_id_for_payment(method_slug: str, payment_id: int, *, part: str = "base") -> str:
+def request_id_for_payment(
+    method_slug: str, payment_id: int, *, part: str = "base"
+) -> str:
     """Idempotency key for payment-ingest auto chip-add (distinct from /add message ids)."""
     base = f"payment-{method_slug}-{int(payment_id)}"
     return request_id_with_part(base, part=part)
@@ -268,7 +269,9 @@ async def _health_ok(cfg: _Config, client: httpx.AsyncClient) -> tuple[bool, str
         data = resp.json()
     except Exception:
         return False, "health returned non-JSON"
-    if (cfg.expected_host or cfg.expected_profile) and data.get("expected_match") is False:
+    if (cfg.expected_host or cfg.expected_profile) and data.get(
+        "expected_match"
+    ) is False:
         return (
             False,
             "identity mismatch: live machine is "
@@ -519,7 +522,9 @@ async def _maybe_notify_rpa_deposit_problem(
     """Escalate deposit RPA problem; uncertain gets its own Slack reason + detail."""
     if (status or "").lower() == "uncertain":
         try:
-            from bot.services.escalation_notification import notify_rpa_deposit_uncertain
+            from bot.services.escalation_notification import (
+                notify_rpa_deposit_uncertain,
+            )
 
             await notify_rpa_deposit_uncertain(
                 club_id=int(club_id),
@@ -803,7 +808,9 @@ async def run_auto_claim(
 
         title = group_title
         if not title:
-            title, _cid = await asyncio.to_thread(get_group_title_for_chat, int(chat_id))
+            title, _cid = await asyncio.to_thread(
+                get_group_title_for_chat, int(chat_id)
+            )
         player_id = gg_player_id_from_title(title)
         if not player_id:
             return ClaimOutcome(
@@ -960,7 +967,9 @@ async def run_rake_check(
 
         title = group_title
         if not title:
-            title, _cid = await asyncio.to_thread(get_group_title_for_chat, int(chat_id))
+            title, _cid = await asyncio.to_thread(
+                get_group_title_for_chat, int(chat_id)
+            )
         player_id = gg_player_id_from_title(title)
         if not player_id:
             return RakeOutcome(

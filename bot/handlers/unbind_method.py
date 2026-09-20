@@ -31,7 +31,9 @@ def _format_binding_summary(bindings) -> str:
     return ", ".join(parts)
 
 
-async def unbindmethod_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def unbindmethod_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     if not update.message or not update.effective_chat or not update.effective_user:
         return
 
@@ -64,12 +66,14 @@ async def unbindmethod_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     update_group_name(chat.id, chat.title)
 
     bindings_before = list_chat_method_bindings(chat.id)
-    bindings_removed, attempts_cancelled = unbind_chat_from_all_methods(chat.id)
+    bindings_removed, attempts_cancelled, stickiness_removed = (
+        unbind_chat_from_all_methods(chat.id)
+    )
 
-    if bindings_removed == 0 and attempts_cancelled == 0:
+    if bindings_removed == 0 and attempts_cancelled == 0 and stickiness_removed == 0:
         await update.message.reply_text(
-            "This group has no payment-method links or pending setup attempts. "
-            "Nothing to unbind."
+            "This group has no payment-method links, destination stickiness, "
+            "or pending setup attempts. Nothing to unbind."
         )
         return
 
@@ -77,6 +81,11 @@ async def unbindmethod_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     lines = ["Unbound all payment methods for this group."]
     if cleared:
         lines.append(f"Cleared: {cleared}")
+    if stickiness_removed:
+        lines.append(
+            f"Cleared {stickiness_removed} sticky destination tag"
+            f"{'' if stickiness_removed == 1 else 's'}."
+        )
     if attempts_cancelled:
         lines.append(
             f"Cancelled {attempts_cancelled} pending setup attempt"
@@ -88,11 +97,12 @@ async def unbindmethod_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     logger.info(
         "unbindmethod ok chat_id=%s club_id=%s user_id=%s bindings_removed=%s "
-        "attempts_cancelled=%s",
+        "attempts_cancelled=%s stickiness_removed=%s",
         chat.id,
         club_id,
         user_id,
         bindings_removed,
         attempts_cancelled,
+        stickiness_removed,
     )
     await update.message.reply_text("\n".join(lines))

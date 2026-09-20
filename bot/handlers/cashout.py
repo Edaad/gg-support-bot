@@ -272,9 +272,7 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
             cashout_chat_id = context.chat_data.get("cashout_chat_id")
             if club_id and cashout_chat_id:
                 if not is_club_staff(uid, club_id):
-                    eligible, msg = check_cashout_eligibility(
-                        club_id, cashout_chat_id
-                    )
+                    eligible, msg = check_cashout_eligibility(club_id, cashout_chat_id)
                     if not eligible:
                         await update.message.reply_text(msg)
                         _cleanup_after_flow(context)
@@ -342,9 +340,7 @@ async def cashout_simple_amount_received(
             cashout_chat_id = context.chat_data.get("cashout_chat_id")
             if club_id and cashout_chat_id:
                 if not is_club_staff(uid, club_id):
-                    eligible, msg = check_cashout_eligibility(
-                        club_id, cashout_chat_id
-                    )
+                    eligible, msg = check_cashout_eligibility(club_id, cashout_chat_id)
                     if not eligible:
                         await update.message.reply_text(msg)
                         _cleanup_after_flow(context)
@@ -513,9 +509,7 @@ async def cashout_auto_amount_received(update, context):
             club_id0 = context.chat_data.get("cashout_club_id")
             cashout_chat_id = context.chat_data.get("cashout_chat_id")
             if club_id0 and cashout_chat_id and not is_club_staff(uid, club_id0):
-                eligible, msg = check_cashout_eligibility(
-                    club_id0, cashout_chat_id
-                )
+                eligible, msg = check_cashout_eligibility(club_id0, cashout_chat_id)
                 if not eligible:
                     await update.message.reply_text(msg)
                     _cleanup_after_flow(context)
@@ -583,7 +577,9 @@ def _auto_eligible_methods(update, club_id, amount):
 
 def _cashout_unions_for_flow(context, club_id=None):
     """Union choices for the group running this cashout, or None for no picker."""
-    club_id = club_id if club_id is not None else context.chat_data.get("cashout_club_id")
+    club_id = (
+        club_id if club_id is not None else context.chat_data.get("cashout_club_id")
+    )
     if not club_id:
         return None
     chat_id = context.chat_data.get("cashout_chat_id")

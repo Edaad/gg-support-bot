@@ -13,7 +13,11 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from api.auth import ROLE_GTO, get_current_admin
-from api.gto_club import assert_gto_club_id, assert_gto_record_club, resolve_gto_list_club_id
+from api.gto_club import (
+    assert_gto_club_id,
+    assert_gto_record_club,
+    resolve_gto_list_club_id,
+)
 from api.audit_export import build_audit_workbook
 from api.payments_helpers import (
     apply_analytics_chat_exclusion,
@@ -141,10 +145,18 @@ _MIGRATION_HINT = (
     "Run: python migrate_stripe_deposit_tracking.py && "
     "python migrate_stripe_checkout_session_lifecycle.py (or heroku run … on the web dyno)"
 )
-_VENMO_MIGRATION_HINT = "Run: python migrate_venmo_payments.py (or heroku run … on the web dyno)"
-_ZELLE_MIGRATION_HINT = "Run: python migrate_zelle_payments.py (or heroku run … on the web dyno)"
-_CASHAPP_MIGRATION_HINT = "Run: python migrate_cashapp_payments.py (or heroku run … on the web dyno)"
-_PAYPAL_MIGRATION_HINT = "Run: python migrate_paypal_payments.py (or heroku run … on the web dyno)"
+_VENMO_MIGRATION_HINT = (
+    "Run: python migrate_venmo_payments.py (or heroku run … on the web dyno)"
+)
+_ZELLE_MIGRATION_HINT = (
+    "Run: python migrate_zelle_payments.py (or heroku run … on the web dyno)"
+)
+_CASHAPP_MIGRATION_HINT = (
+    "Run: python migrate_cashapp_payments.py (or heroku run … on the web dyno)"
+)
+_PAYPAL_MIGRATION_HINT = (
+    "Run: python migrate_paypal_payments.py (or heroku run … on the web dyno)"
+)
 _CRYPTO_MIGRATION_HINT = (
     "Run: python migrate_crypto_payments.py and migrate_crypto_wallet_bindings.py "
     "(or heroku run … on the web dyno)"
@@ -152,9 +164,7 @@ _CRYPTO_MIGRATION_HINT = (
 _BINDINGS_MIGRATION_HINT = (
     "Run: python migrate_payment_method_bindings.py (or heroku run … on the web dyno)"
 )
-_AUTO_DEPOSIT_EVENTS_MIGRATION_HINT = (
-    "Run: python migrate_payment_auto_deposit_events.py (or heroku run … on the web dyno)"
-)
+_AUTO_DEPOSIT_EVENTS_MIGRATION_HINT = "Run: python migrate_payment_auto_deposit_events.py (or heroku run … on the web dyno)"
 
 BOUND_VIA_FILTER_ALIASES: dict[str, tuple[str, ...]] = {
     "manual": ("manual_notification", "manual_dashboard"),
@@ -219,7 +229,9 @@ def _assert_payment_club(model, payment_id: int, db: Session) -> None:
     row = db.query(model).filter(model.id == payment_id).first()
     if row is None:
         return
-    assert_gto_record_club(_payments_role.get() or "", getattr(row, "club_id", None), db)
+    assert_gto_record_club(
+        _payments_role.get() or "", getattr(row, "club_id", None), db
+    )
 
 
 def _apply_optional_club(club_id: int | None, db: Session) -> int | None:
@@ -309,9 +321,7 @@ def _auto_deposit_events_query(
     if status and status.strip().lower() != "all":
         st = status.strip().lower()
         if st == "eligible":
-            q = q.filter(
-                PaymentAutoDepositEvent.status.in_(("succeeded", "failed"))
-            )
+            q = q.filter(PaymentAutoDepositEvent.status.in_(("succeeded", "failed")))
         else:
             q = q.filter(PaymentAutoDepositEvent.status == st)
     if skip_reason and skip_reason.strip():
@@ -411,7 +421,10 @@ def list_stripe_methods(
     db: Session = Depends(get_db_dependency),
 ):
     _get_club_or_404(db, club_id)
-    return [StripeMethodOptionRead.model_validate(row) for row in list_stripe_deposit_methods(db, club_id)]
+    return [
+        StripeMethodOptionRead.model_validate(row)
+        for row in list_stripe_deposit_methods(db, club_id)
+    ]
 
 
 @router.get("/stripe/customers", response_model=StripeCustomerListResponse)
@@ -462,7 +475,9 @@ def list_stripe_customers(
             )
         )
 
-    return StripeCustomerListResponse(items=items, total=total, limit=limit, offset=offset)
+    return StripeCustomerListResponse(
+        items=items, total=total, limit=limit, offset=offset
+    )
 
 
 @router.get("/stripe/sessions", response_model=StripeCheckoutSessionListResponse)
@@ -473,10 +488,14 @@ def list_stripe_sessions(
         description="Completed payments only (open/unpaid are not stored).",
     ),
     method_id: int | None = Query(None),
-    manual_only: bool = Query(False, description="Sessions from /stripe (no payment_method_id)"),
+    manual_only: bool = Query(
+        False, description="Sessions from /stripe (no payment_method_id)"
+    ),
     from_dt: str | None = Query(None, alias="from"),
     to_dt: str | None = Query(None, alias="to"),
-    q: str | None = Query(None, description="Search group title, player, or Stripe customer"),
+    q: str | None = Query(
+        None, description="Search group title, player, or Stripe customer"
+    ),
     limit: int = Query(_DEFAULT_LIMIT),
     offset: int = Query(0),
     db: Session = Depends(get_db_dependency),
@@ -499,7 +518,9 @@ def list_stripe_sessions(
         )
         total = base.count()
         rows = (
-            base.order_by(StripeCheckoutSession.created_at.desc(), StripeCheckoutSession.id.desc())
+            base.order_by(
+                StripeCheckoutSession.created_at.desc(), StripeCheckoutSession.id.desc()
+            )
             .offset(offset)
             .limit(limit)
             .all()
@@ -528,7 +549,9 @@ def list_stripe_sessions(
             row.telegram_chat_id,
             fallback_gg_player_id=cust.gg_player_id if cust else None,
         )
-        method_name, method_slug = resolve_method_display(db, club_id, row.payment_method_id)
+        method_name, method_slug = resolve_method_display(
+            db, club_id, row.payment_method_id
+        )
         items.append(
             StripeCheckoutSessionRead(
                 id=row.id,
@@ -548,15 +571,21 @@ def list_stripe_sessions(
                 group_title=title,
                 gg_player_id=gg_id,
                 gg_nickname=lookup_gg_nickname(db, club_id, gg_id),
-                stripe_dashboard_url=stripe_dashboard_session_url(row.stripe_checkout_session_id),
-                stripe_payment_url=stripe_dashboard_payment_url(row.stripe_payment_intent_id),
+                stripe_dashboard_url=stripe_dashboard_session_url(
+                    row.stripe_checkout_session_id
+                ),
+                stripe_payment_url=stripe_dashboard_payment_url(
+                    row.stripe_payment_intent_id
+                ),
                 created_at=row.created_at,
                 completed_at=row.completed_at,
                 updated_at=row.updated_at,
             )
         )
 
-    return StripeCheckoutSessionListResponse(items=items, total=total, limit=limit, offset=offset)
+    return StripeCheckoutSessionListResponse(
+        items=items, total=total, limit=limit, offset=offset
+    )
 
 
 @router.get("/venmo/payments", response_model=VenmoPaymentListResponse)
@@ -596,8 +625,13 @@ def list_venmo_payments(
     except ProgrammingError as exc:
         _raise_db_schema_error(exc)
 
-    items = [VenmoPaymentRead.model_validate(build_venmo_payment_read(db, row)) for row in rows]
-    return VenmoPaymentListResponse(items=items, total=total, limit=limit, offset=offset)
+    items = [
+        VenmoPaymentRead.model_validate(build_venmo_payment_read(db, row))
+        for row in rows
+    ]
+    return VenmoPaymentListResponse(
+        items=items, total=total, limit=limit, offset=offset
+    )
 
 
 @router.get("/venmo/payers", response_model=VenmoPayerListResponse)
@@ -639,7 +673,9 @@ def list_venmo_payers(
             )
         )
 
-    return VenmoPayerListResponse(items=items, total=int(total), limit=limit, offset=offset)
+    return VenmoPayerListResponse(
+        items=items, total=int(total), limit=limit, offset=offset
+    )
 
 
 @router.post("/venmo/payments/{payment_id}/bind", response_model=VenmoBindResponse)
@@ -658,13 +694,17 @@ async def bind_venmo_payment(
         group_title_input=group_title,
     )
     if not result.ok or result.bound_group is None:
-        return VenmoBindResponse(ok=False, error=result.error or "Could not bind payment.")
+        return VenmoBindResponse(
+            ok=False, error=result.error or "Could not bind payment."
+        )
 
     group = result.bound_group
     payment = db.query(VenmoPayment).filter(VenmoPayment.id == payment_id).first()
     payment_read = None
     if payment is not None:
-        payment_read = VenmoPaymentRead.model_validate(build_venmo_payment_read(db, payment))
+        payment_read = VenmoPaymentRead.model_validate(
+            build_venmo_payment_read(db, payment)
+        )
 
     return VenmoBindResponse(
         ok=True,
@@ -712,8 +752,13 @@ def list_zelle_payments(
     except ProgrammingError as exc:
         _raise_db_schema_error(exc)
 
-    items = [ZellePaymentRead.model_validate(build_zelle_payment_read(db, row)) for row in rows]
-    return ZellePaymentListResponse(items=items, total=total, limit=limit, offset=offset)
+    items = [
+        ZellePaymentRead.model_validate(build_zelle_payment_read(db, row))
+        for row in rows
+    ]
+    return ZellePaymentListResponse(
+        items=items, total=total, limit=limit, offset=offset
+    )
 
 
 @router.get("/zelle/payers", response_model=ZellePayerListResponse)
@@ -755,7 +800,9 @@ def list_zelle_payers(
             )
         )
 
-    return ZellePayerListResponse(items=items, total=int(total), limit=limit, offset=offset)
+    return ZellePayerListResponse(
+        items=items, total=int(total), limit=limit, offset=offset
+    )
 
 
 @router.get("/zelle/summary", response_model=ZellePaymentSummaryResponse)
@@ -834,13 +881,17 @@ async def bind_zelle_payment(
         group_title_input=group_title,
     )
     if not result.ok or result.bound_group is None:
-        return ZelleBindResponse(ok=False, error=result.error or "Could not bind payment.")
+        return ZelleBindResponse(
+            ok=False, error=result.error or "Could not bind payment."
+        )
 
     group = result.bound_group
     payment = db.query(ZellePayment).filter(ZellePayment.id == payment_id).first()
     payment_read = None
     if payment is not None:
-        payment_read = ZellePaymentRead.model_validate(build_zelle_payment_read(db, payment))
+        payment_read = ZellePaymentRead.model_validate(
+            build_zelle_payment_read(db, payment)
+        )
 
     return ZelleBindResponse(
         ok=True,
@@ -889,9 +940,12 @@ def list_cashapp_payments(
         _raise_db_schema_error(exc)
 
     items = [
-        CashAppPaymentRead.model_validate(build_cashapp_payment_read(db, row)) for row in rows
+        CashAppPaymentRead.model_validate(build_cashapp_payment_read(db, row))
+        for row in rows
     ]
-    return CashAppPaymentListResponse(items=items, total=total, limit=limit, offset=offset)
+    return CashAppPaymentListResponse(
+        items=items, total=total, limit=limit, offset=offset
+    )
 
 
 @router.get("/cashapp/payers", response_model=CashAppPayerListResponse)
@@ -933,7 +987,9 @@ def list_cashapp_payers(
             )
         )
 
-    return CashAppPayerListResponse(items=items, total=int(total), limit=limit, offset=offset)
+    return CashAppPayerListResponse(
+        items=items, total=int(total), limit=limit, offset=offset
+    )
 
 
 @router.post("/cashapp/payments/{payment_id}/bind", response_model=CashAppBindResponse)
@@ -952,7 +1008,9 @@ async def bind_cashapp_payment(
         group_title_input=group_title,
     )
     if not result.ok or result.bound_group is None:
-        return CashAppBindResponse(ok=False, error=result.error or "Could not bind payment.")
+        return CashAppBindResponse(
+            ok=False, error=result.error or "Could not bind payment."
+        )
 
     group = result.bound_group
     payment = db.query(CashAppPayment).filter(CashAppPayment.id == payment_id).first()
@@ -1009,9 +1067,12 @@ def list_paypal_payments(
         _raise_db_schema_error(exc)
 
     items = [
-        PayPalPaymentRead.model_validate(build_paypal_payment_read(db, row)) for row in rows
+        PayPalPaymentRead.model_validate(build_paypal_payment_read(db, row))
+        for row in rows
     ]
-    return PayPalPaymentListResponse(items=items, total=total, limit=limit, offset=offset)
+    return PayPalPaymentListResponse(
+        items=items, total=total, limit=limit, offset=offset
+    )
 
 
 @router.get("/paypal/payers", response_model=PayPalPayerListResponse)
@@ -1053,7 +1114,9 @@ def list_paypal_payers(
             )
         )
 
-    return PayPalPayerListResponse(items=items, total=int(total), limit=limit, offset=offset)
+    return PayPalPayerListResponse(
+        items=items, total=int(total), limit=limit, offset=offset
+    )
 
 
 @router.post("/paypal/payments/{payment_id}/bind", response_model=PayPalBindResponse)
@@ -1072,7 +1135,9 @@ async def bind_paypal_payment(
         group_title_input=group_title,
     )
     if not result.ok or result.bound_group is None:
-        return PayPalBindResponse(ok=False, error=result.error or "Could not bind payment.")
+        return PayPalBindResponse(
+            ok=False, error=result.error or "Could not bind payment."
+        )
 
     group = result.bound_group
     payment = db.query(PayPalPayment).filter(PayPalPayment.id == payment_id).first()
@@ -1129,8 +1194,13 @@ def list_crypto_payments(
     except ProgrammingError as exc:
         _raise_db_schema_error(exc)
 
-    items = [CryptoPaymentRead.model_validate(build_crypto_payment_read(db, row)) for row in rows]
-    return CryptoPaymentListResponse(items=items, total=total, limit=limit, offset=offset)
+    items = [
+        CryptoPaymentRead.model_validate(build_crypto_payment_read(db, row))
+        for row in rows
+    ]
+    return CryptoPaymentListResponse(
+        items=items, total=total, limit=limit, offset=offset
+    )
 
 
 @router.post("/crypto/payments/{payment_id}/bind", response_model=CryptoBindResponse)
@@ -1149,13 +1219,17 @@ async def bind_crypto_payment(
         group_title_input=group_title,
     )
     if not result.ok or result.bound_group is None:
-        return CryptoBindResponse(ok=False, error=result.error or "Could not bind payment.")
+        return CryptoBindResponse(
+            ok=False, error=result.error or "Could not bind payment."
+        )
 
     group = result.bound_group
     payment = db.query(CryptoPayment).filter(CryptoPayment.id == payment_id).first()
     payment_read = None
     if payment is not None:
-        payment_read = CryptoPaymentRead.model_validate(build_crypto_payment_read(db, payment))
+        payment_read = CryptoPaymentRead.model_validate(
+            build_crypto_payment_read(db, payment)
+        )
 
     return CryptoBindResponse(
         ok=True,
@@ -1226,9 +1300,11 @@ def list_group_bindings(
         vid = int(row.variant_id) if row.variant_id else None
         vlabel: str | None = None
         if vid is not None and vid not in variant_labels:
-            variant = db.query(ClubPaymentTierVariant).filter(
-                ClubPaymentTierVariant.id == vid
-            ).first()
+            variant = (
+                db.query(ClubPaymentTierVariant)
+                .filter(ClubPaymentTierVariant.id == vid)
+                .first()
+            )
             variant_labels[vid] = variant.label if variant else None
         if vid is not None:
             vlabel = variant_labels.get(vid)
@@ -1347,13 +1423,17 @@ def bindings_summary(
             func.count(PaymentMethodBindAttempt.id),
         ).filter(PaymentMethodBindAttempt.payment_method_slug == slug)
         if club_id is not None:
-            bind_kind_q = bind_kind_q.filter(PaymentMethodBindAttempt.club_id == club_id)
+            bind_kind_q = bind_kind_q.filter(
+                PaymentMethodBindAttempt.club_id == club_id
+            )
         if dt_from is not None:
             bind_kind_q = bind_kind_q.filter(
                 PaymentMethodBindAttempt.created_at >= dt_from
             )
         if dt_to is not None:
-            bind_kind_q = bind_kind_q.filter(PaymentMethodBindAttempt.created_at <= dt_to)
+            bind_kind_q = bind_kind_q.filter(
+                PaymentMethodBindAttempt.created_at <= dt_to
+            )
         if exclude_test_chats:
             bind_kind_q = apply_analytics_chat_exclusion(
                 db, bind_kind_q, PaymentMethodBindAttempt.telegram_chat_id
@@ -1364,7 +1444,8 @@ def bindings_summary(
         raise
 
     bindings_by_via = [
-        BindingViaCount(bound_via=str(row[0]), count=int(row[1])) for row in binding_q.all()
+        BindingViaCount(bound_via=str(row[0]), count=int(row[1]))
+        for row in binding_q.all()
     ]
     total_bound = sum(row.count for row in bindings_by_via)
     attempts_by_bind_kind = [
@@ -1473,7 +1554,9 @@ def list_bind_attempts(
                 variant_id=int(row.variant_id),
                 bind_kind=str(getattr(row, "bind_kind", None) or row.bound_via),
                 amount_cents=amount_cents,
-                amount_usd=cents_to_usd(amount_cents) if amount_cents is not None else None,
+                amount_usd=cents_to_usd(amount_cents)
+                if amount_cents is not None
+                else None,
                 setup_emoji=getattr(row, "setup_emoji", None),
                 status=str(row.status),
                 bound_via=str(row.bound_via),
@@ -1535,15 +1618,12 @@ def auto_deposits_summary(
         failed = case((PaymentAutoDepositEvent.status == "failed", 1), else_=0)
         skipped = case((PaymentAutoDepositEvent.status == "skipped", 1), else_=0)
 
-        total, succ, fail, skip = (
-            base_q.with_entities(
-                func.count(PaymentAutoDepositEvent.id),
-                func.sum(succeeded),
-                func.sum(failed),
-                func.sum(skipped),
-            )
-            .one()
-        )
+        total, succ, fail, skip = base_q.with_entities(
+            func.count(PaymentAutoDepositEvent.id),
+            func.sum(succeeded),
+            func.sum(failed),
+            func.sum(skipped),
+        ).one()
         total = int(total or 0)
         succ = int(succ or 0)
         fail = int(fail or 0)

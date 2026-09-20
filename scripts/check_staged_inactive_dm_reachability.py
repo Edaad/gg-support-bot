@@ -27,7 +27,6 @@ import asyncio
 import csv
 import logging
 import sys
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -101,8 +100,12 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip staged rows that already have account_check set (resume helper).",
     )
-    parser.add_argument("--delay", type=float, default=0.25, help="Seconds between rows.")
-    parser.add_argument("--apply", action="store_true", help="Persist player fields to DB.")
+    parser.add_argument(
+        "--delay", type=float, default=0.25, help="Seconds between rows."
+    )
+    parser.add_argument(
+        "--apply", action="store_true", help="Persist player fields to DB."
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -190,7 +193,9 @@ async def _contact_flags(client, player_id: int) -> tuple[bool | None, bool | No
             return None, None
         raise
 
-    return bool(getattr(user, "contact", False)), bool(getattr(user, "mutual_contact", False))
+    return bool(getattr(user, "contact", False)), bool(
+        getattr(user, "mutual_contact", False)
+    )
 
 
 async def _check_one_row(
@@ -231,7 +236,9 @@ async def _check_one_row(
             player_map=player_map,
         )
     except Exception as exc:
-        logger.exception("resolve failed row_id=%s chat=%s", row.id, row.telegram_chat_id)
+        logger.exception(
+            "resolve failed row_id=%s chat=%s", row.id, row.telegram_chat_id
+        )
         resolution = {
             "player_telegram_user_id": None,
             "player_username": None,
@@ -267,7 +274,9 @@ async def _check_one_row(
         "player_source": str(resolution.get("player_source") or ""),
         "account_check": str(resolution.get("account_check") or ""),
         "entity_resolvable": "true" if resolution.get("entity_resolvable") else "false",
-        "in_contacts": "" if in_contacts is None else ("true" if in_contacts else "false"),
+        "in_contacts": ""
+        if in_contacts is None
+        else ("true" if in_contacts else "false"),
         "mutual_contact": ""
         if mutual_contact is None
         else ("true" if mutual_contact else "false"),
@@ -301,7 +310,9 @@ async def _run(args: argparse.Namespace) -> int:
         )
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    out_path = args.output or (_REPO_ROOT / "backups" / f"staged_dm_reachability_{ts}.csv")
+    out_path = args.output or (
+        _REPO_ROOT / "backups" / f"staged_dm_reachability_{ts}.csv"
+    )
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     client = make_client(cfg)
@@ -335,18 +346,26 @@ async def _run(args: argparse.Namespace) -> int:
                 result_rows.append(out)
                 writer.writerow(out)
                 csv_file.flush()
-                counts[out["dm_reachability"]] = counts.get(out["dm_reachability"], 0) + 1
+                counts[out["dm_reachability"]] = (
+                    counts.get(out["dm_reachability"], 0) + 1
+                )
 
                 if args.apply:
                     persist_row_scan(
                         row.id,
                         {
-                            "player_telegram_user_id": resolution.get("player_telegram_user_id"),
+                            "player_telegram_user_id": resolution.get(
+                                "player_telegram_user_id"
+                            ),
                             "player_username": resolution.get("player_username"),
-                            "player_display_name": resolution.get("player_display_name"),
+                            "player_display_name": resolution.get(
+                                "player_display_name"
+                            ),
                             "player_source": resolution.get("player_source"),
                             "account_check": resolution.get("account_check"),
-                            "entity_resolvable": bool(resolution.get("entity_resolvable")),
+                            "entity_resolvable": bool(
+                                resolution.get("entity_resolvable")
+                            ),
                         },
                     )
 
@@ -379,7 +398,9 @@ async def _run(args: argparse.Namespace) -> int:
             print(f"  {key}: {counts[key]}")
     print(f"Wrote {out_path}")
     if not args.apply:
-        print("Pass --apply to persist player fields on outreach rows.", file=sys.stderr)
+        print(
+            "Pass --apply to persist player fields on outreach rows.", file=sys.stderr
+        )
     return 0
 
 

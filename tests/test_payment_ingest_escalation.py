@@ -52,9 +52,7 @@ class IsTestIngestTestCase(unittest.TestCase):
         self.assertTrue(pie.is_test_ingest(is_test=True, request_body=None))
 
     def test_body_test_true(self):
-        self.assertTrue(
-            pie.is_test_ingest(is_test=None, request_body={"test": True})
-        )
+        self.assertTrue(pie.is_test_ingest(is_test=None, request_body={"test": True}))
 
     def test_production(self):
         self.assertFalse(

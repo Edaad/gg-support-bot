@@ -171,7 +171,9 @@ def _ticket_to_read(
     )
 
 
-def _enrich_tickets(db: Session, rows: list[GroupChatTicket]) -> list[GroupChatTicketRead]:
+def _enrich_tickets(
+    db: Session, rows: list[GroupChatTicket]
+) -> list[GroupChatTicketRead]:
     if not rows:
         return []
 
@@ -261,9 +263,7 @@ def list_group_chat_transcripts(
     if status is not None:
         status_norm = status.strip().lower()
         if status_norm not in ("pending", "complete", "failed"):
-            raise HTTPException(
-                400, "status must be one of: pending, complete, failed"
-            )
+            raise HTTPException(400, "status must be one of: pending, complete, failed")
         q = q.filter(GroupChatDailyTranscript.status == status_norm)
     rows = q.order_by(
         GroupChatDailyTranscript.club_id,
@@ -322,8 +322,12 @@ def list_group_chat_tickets(
 
 @router.get("/api/group-chat-tickets/export")
 def export_group_chat_tickets_csv(
-    from_date: str = Query(..., alias="from", description="YYYY-MM-DD (ET activity_date, inclusive)"),
-    to_date: str = Query(..., alias="to", description="YYYY-MM-DD (ET activity_date, inclusive)"),
+    from_date: str = Query(
+        ..., alias="from", description="YYYY-MM-DD (ET activity_date, inclusive)"
+    ),
+    to_date: str = Query(
+        ..., alias="to", description="YYYY-MM-DD (ET activity_date, inclusive)"
+    ),
     club_id: Optional[int] = Query(None),
     category: Optional[str] = Query(None),
     min_frt_seconds: Optional[int] = Query(
@@ -377,11 +381,7 @@ def get_group_chat_ticket_messages(
     if transcript is None:
         raise HTTPException(404, "Transcript not found")
 
-    group = (
-        db.query(Group)
-        .filter(Group.chat_id == int(ticket.chat_id))
-        .one_or_none()
-    )
+    group = db.query(Group).filter(Group.chat_id == int(ticket.chat_id)).one_or_none()
     group_name = (
         str(group.name).strip()
         if group is not None and (group.name or "").strip()

@@ -14,7 +14,11 @@ from bot.services.payment_bind_candidates import (
     bind_scope_mismatch_error,
     candidates_for_payment,
 )
-from bot.services.payment_bind_logging import format_payment_row, log_callback, log_callback_result
+from bot.services.payment_bind_logging import (
+    format_payment_row,
+    log_callback,
+    log_callback_result,
+)
 from bot.services.venmo_payments import resolve_bound_group, resolve_display_group_title
 from db.connection import get_db
 from notification.bind_actions import (
@@ -23,7 +27,6 @@ from notification.bind_actions import (
     confirm_reset_candidates,
     crypto_scope_error,
     load_payment,
-    refresh_unbound_notification,
 )
 from notification.bind_keyboards import (
     confirm_add_candidate_markup,
@@ -32,7 +35,6 @@ from notification.bind_keyboards import (
     candidate_picker_markup,
     to_inline_keyboard,
 )
-from notification.chat_id import telegram_chat_ids_match
 from notification.payment_bind_helpers import (
     format_payment_notification,
     inject_pending_confirm_group_line,
@@ -102,11 +104,14 @@ def set_add_member_pending(
     )
 
 
-def clear_add_member_pending(context: ContextTypes.DEFAULT_TYPE, *, chat_id: int) -> None:
+def clear_add_member_pending(
+    context: ContextTypes.DEFAULT_TYPE, *, chat_id: int
+) -> None:
     key = _canonical_notification_chat_id(chat_id)
     if key is None:
         return
     _pending_store(context).pop(key, None)
+
 
 # Reassign / add-candidate flows post buttons on a separate bot reply, not the
 # original notification message — do not apply notification message_id stale check.
@@ -138,7 +143,9 @@ async def _safe_finish_reply_message(message, text: str) -> None:
         raise
 
 
-async def _safe_edit_notification_message(message, text: str, *, reply_markup=None) -> None:
+async def _safe_edit_notification_message(
+    message, text: str, *, reply_markup=None
+) -> None:
     """Edit notification body (HTML) and keyboard; ignore harmless Telegram errors."""
     try:
         kwargs: dict = {"text": text, "parse_mode": "HTML"}
@@ -294,7 +301,9 @@ async def payment_bind_callback_handler(
 
     if action == "s" and target_chat_id is not None:
         title = resolve_display_group_title(int(target_chat_id)) or "selected group"
-        scope_err = crypto_scope_error(method_slug, payment, _club_id_for_chat(int(target_chat_id)))
+        scope_err = crypto_scope_error(
+            method_slug, payment, _club_id_for_chat(int(target_chat_id))
+        )
         if scope_err:
             await query.answer(scope_err, show_alert=True)
             return
@@ -365,7 +374,9 @@ async def payment_bind_callback_handler(
 
     if action in ("r", "c") and target_chat_id is not None:
         if action == "r":
-            scope_err = crypto_scope_error(method_slug, payment, _club_id_for_chat(int(target_chat_id)))
+            scope_err = crypto_scope_error(
+                method_slug, payment, _club_id_for_chat(int(target_chat_id))
+            )
             if scope_err:
                 await query.answer(scope_err, show_alert=True)
                 return
@@ -411,7 +422,9 @@ async def payment_bind_callback_handler(
         return
 
     if action == "a" and target_chat_id is not None:
-        scope_err = crypto_scope_error(method_slug, payment, _club_id_for_chat(int(target_chat_id)))
+        scope_err = crypto_scope_error(
+            method_slug, payment, _club_id_for_chat(int(target_chat_id))
+        )
         if scope_err:
             await query.answer(scope_err, show_alert=True)
             return
@@ -419,7 +432,6 @@ async def payment_bind_callback_handler(
         if bind_scope_err:
             await query.answer(bind_scope_err, show_alert=True)
             return
-        current = resolve_display_group_title(int(payment.telegram_chat_id)) if payment.telegram_chat_id else "Unbound"
         await query.answer()
         await message.edit_reply_markup(
             reply_markup=to_inline_keyboard(
@@ -456,7 +468,9 @@ async def payment_bind_callback_handler(
     if action == "rs":
         await query.answer()
         await message.edit_reply_markup(
-            reply_markup=to_inline_keyboard(confirm_reset_markup(method_slug, payment_id))
+            reply_markup=to_inline_keyboard(
+                confirm_reset_markup(method_slug, payment_id)
+            )
         )
         return
 
@@ -582,7 +596,9 @@ async def payment_bind_add_member_reply_handler(
     await update.message.reply_text(
         f"Confirm add {group.group_title} as possible match?",
         reply_markup=to_inline_keyboard(
-            confirm_add_candidate_markup(method_slug, payment_id, group.telegram_chat_id)
+            confirm_add_candidate_markup(
+                method_slug, payment_id, group.telegram_chat_id
+            )
         ),
     )
 

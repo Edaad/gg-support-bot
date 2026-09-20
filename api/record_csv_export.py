@@ -337,8 +337,7 @@ def build_cashout_records_csv(
 
     start, end = et_range_to_utc_naive(from_day, to_day)
     club_names = {
-        int(row.id): str(row.name)
-        for row in session.query(Club.id, Club.name).all()
+        int(row.id): str(row.name) for row in session.query(Club.id, Club.name).all()
     }
 
     query = (
@@ -363,11 +362,10 @@ def build_cashout_records_csv(
     for record in query.all():
         payments = sorted(record.payments, key=lambda p: (p.sort_order or 0, p.id or 0))
         sends = sorted(record.money_sends, key=lambda s: s.created_at or datetime.min)
-        send_dicts = [
-            {"amount": s.amount}
-            for s in sends
-        ]
-        ledger = compute_ledger(bool(record.tracks_money_sent), record.amount, send_dicts)
+        send_dicts = [{"amount": s.amount} for s in sends]
+        ledger = compute_ledger(
+            bool(record.tracks_money_sent), record.amount, send_dicts
+        )
         row_status = str(ledger.get("status") or "cleared")
         if status is not None and row_status != status:
             continue
@@ -477,8 +475,7 @@ def build_bonus_records_csv(
 ) -> bytes:
     start, end = et_range_to_utc_naive(from_day, to_day)
     club_names = {
-        int(row.id): str(row.name)
-        for row in session.query(Club.id, Club.name).all()
+        int(row.id): str(row.name) for row in session.query(Club.id, Club.name).all()
     }
 
     query = (
@@ -536,8 +533,7 @@ def build_group_chat_tickets_csv(
     """Return (content, filename, media_type). Zip when include_messages is set."""
 
     club_names = {
-        int(row.id): str(row.name)
-        for row in session.query(Club.id, Club.name).all()
+        int(row.id): str(row.name) for row in session.query(Club.id, Club.name).all()
     }
 
     query = (
@@ -563,7 +559,11 @@ def build_group_chat_tickets_csv(
     if not tickets:
         tickets_csv = rows_to_csv_bytes(TICKET_CSV_HEADER, [])
         if not include_messages:
-            return tickets_csv, f"group-chat-tickets-{stem}.csv", "text/csv; charset=utf-8"
+            return (
+                tickets_csv,
+                f"group-chat-tickets-{stem}.csv",
+                "text/csv; charset=utf-8",
+            )
         empty_msgs = rows_to_csv_bytes(TICKET_MESSAGE_CSV_HEADER, [])
         zipped = zip_csv_files(
             {
@@ -667,7 +667,11 @@ def build_group_chat_tickets_csv(
                 group_name=group_name or None,
             )
             for msg in sliced:
-                src = msg_index.get(int(msg["id"]), {}) if msg.get("id") is not None else {}
+                src = (
+                    msg_index.get(int(msg["id"]), {})
+                    if msg.get("id") is not None
+                    else {}
+                )
                 message_rows.append(
                     [
                         ticket.id,
@@ -677,7 +681,9 @@ def build_group_chat_tickets_csv(
                         ticket.ticket_index,
                         msg.get("id"),
                         msg.get("date") or "",
-                        msg.get("sender_id") if msg.get("sender_id") is not None else "",
+                        msg.get("sender_id")
+                        if msg.get("sender_id") is not None
+                        else "",
                         msg.get("sender_name") or "",
                         msg.get("username") or "",
                         bool(msg.get("is_bot")),

@@ -21,7 +21,13 @@ from bot.services.player_support_notes import (
     resolve_issues_for_player,
     validate_gg_player_id,
 )
-from db.models import Base, Club, ClubLinkedAccount, PlayerSupportIssue, PlayerSupportNote
+from db.models import (
+    Base,
+    Club,
+    ClubLinkedAccount,
+    PlayerSupportIssue,
+    PlayerSupportNote,
+)
 
 
 class TestValidateGgPlayerId(unittest.TestCase):
@@ -87,7 +93,9 @@ class SupportNotesDbTestCase(unittest.TestCase):
         self.assertEqual(issue2.id, issue.id)
 
     @patch("bot.services.player_support_notes.get_db")
-    def test_list_open_issues_sorted_by_latest_note(self, mock_get_db: MagicMock) -> None:
+    def test_list_open_issues_sorted_by_latest_note(
+        self, mock_get_db: MagicMock
+    ) -> None:
         session = self._session()
         mock_get_db.return_value.__enter__.return_value = session
         mock_get_db.return_value.__exit__.return_value = False

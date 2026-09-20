@@ -101,7 +101,9 @@ def main() -> int:
 
         if err:
             failures += 1
-            print(f"[{slug}] error={err} updated={updated} missing={missing} skipped={skipped}")
+            print(
+                f"[{slug}] error={err} updated={updated} missing={missing} skipped={skipped}"
+            )
         else:
             print(f"[{slug}] ok updated={updated} missing={missing} skipped={skipped}")
 

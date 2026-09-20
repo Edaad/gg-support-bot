@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable, Optional
+from typing import Callable
 
 from sqlalchemy.exc import IntegrityError
 
@@ -18,11 +18,9 @@ from bot.services.payment_bind_candidates import (
     upsert_candidate_on_bind,
 )
 from bot.services.payment_binding_events import (
-    record_payment_bound,
     sync_payment_notification_edit,
 )
 from bot.services.payment_group_notify import notify_player_group_payment_received
-from bot.services.payment_method_binding import BOUND_VIA_MANUAL_NOTIFICATION
 from bot.services.venmo_payments import (
     BoundGroup,
     resolve_bound_group,
@@ -216,7 +214,9 @@ async def confirm_bind_payment(
     if bind_scope_err:
         return False, bind_scope_err
 
-    scope_err = crypto_scope_error(method_slug, payment, _club_id_for_chat(int(target_chat_id)))
+    scope_err = crypto_scope_error(
+        method_slug, payment, _club_id_for_chat(int(target_chat_id))
+    )
     if scope_err:
         logger.warning(
             "payment_bind: confirm_bind scope_rejected method=%s payment_id=%s error=%r",
@@ -228,7 +228,9 @@ async def confirm_bind_payment(
 
     was_unbound = payment.telegram_chat_id is None
 
-    if payment.telegram_chat_id is not None and int(payment.telegram_chat_id) == int(target_chat_id):
+    if payment.telegram_chat_id is not None and int(payment.telegram_chat_id) == int(
+        target_chat_id
+    ):
         logger.info(
             "payment_bind: confirm_bind noop_already_bound method=%s payment_id=%s chat_id=%s",
             method_slug,
@@ -313,7 +315,9 @@ async def confirm_add_candidate(
         actor_telegram_user_id,
         format_payment_row(payment),
     )
-    resolved = resolve_bound_group(resolve_display_group_title(int(target_chat_id)) or "")
+    resolved = resolve_bound_group(
+        resolve_display_group_title(int(target_chat_id)) or ""
+    )
     if not resolved.ok or resolved.bound_group is None:
         live_title = resolve_display_group_title(int(target_chat_id))
         if not live_title:
@@ -373,7 +377,11 @@ async def confirm_add_candidate(
     notif_msg_id = getattr(payment, "notification_message_id", None)
     if notif_chat_id and notif_msg_id:
         with get_db() as session:
-            fresh = session.query(_PAYMENT_MODELS[method_slug]).filter_by(id=payment_id).one()
+            fresh = (
+                session.query(_PAYMENT_MODELS[method_slug])
+                .filter_by(id=payment_id)
+                .one()
+            )
             candidates = candidates_for_payment(
                 session,
                 fresh,
@@ -428,7 +436,9 @@ async def confirm_reset_candidates(
     notif_chat_id = getattr(payment, "notification_chat_id", None)
     notif_msg_id = getattr(payment, "notification_message_id", None)
     if notif_chat_id and notif_msg_id:
-        group_chat_url = await resolve_group_chat_url_for_payment(payment, group_title=None)
+        group_chat_url = await resolve_group_chat_url_for_payment(
+            payment, group_title=None
+        )
         text = format_payment_notification(
             method_slug,
             payment,

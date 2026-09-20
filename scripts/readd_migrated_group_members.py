@@ -34,8 +34,7 @@ import csv
 import json
 import logging
 import sys
-import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -61,7 +60,6 @@ from scripts.backup_groups_reader import (  # noqa: E402
 )
 from bot.services.migration_group_readd import (  # noqa: E402
     ReaddGroupResult,
-    call_with_flood_retry as _call_with_flood_retry,
     error_label as _error_label,
     load_player_rows_by_chat as _load_player_rows_by_chat,
     participant_count as _participant_count,
@@ -208,7 +206,9 @@ def _affected_groups_from_backup(
     )
 
 
-def _migrated_linked_rows(affected: list[AffectedMigratedGroup]) -> list[LinkedGroupRow]:
+def _migrated_linked_rows(
+    affected: list[AffectedMigratedGroup],
+) -> list[LinkedGroupRow]:
     rows: list[LinkedGroupRow] = []
     for item in affected:
         if item.status != "migrated" or item.current_chat_id is None:
@@ -276,7 +276,9 @@ def list_affected_groups(
             raise SystemExit(f"Unknown club_key: {club_key_filter!r}")
         club_id_filter = int(cfg.link_club_id)
 
-    mtproto_club_ids = frozenset(int(cfg.link_club_id) for cfg in CLUB_GC_CONFIG.values())
+    mtproto_club_ids = frozenset(
+        int(cfg.link_club_id) for cfg in CLUB_GC_CONFIG.values()
+    )
     basics = basic_groups_from_backup(backup_path)
     if club_id_filter is not None:
         basics = [b for b in basics if b.club_id == int(club_id_filter)]
@@ -327,7 +329,9 @@ async def _readd(
             raise SystemExit(f"Unknown club_key: {club_key_filter!r}")
         club_id_filter = int(cfg.link_club_id)
 
-    mtproto_club_ids = frozenset(int(cfg.link_club_id) for cfg in CLUB_GC_CONFIG.values())
+    mtproto_club_ids = frozenset(
+        int(cfg.link_club_id) for cfg in CLUB_GC_CONFIG.values()
+    )
     basics = basic_groups_from_backup(backup_path)
     if club_id_filter is not None:
         basics = [b for b in basics if b.club_id == int(club_id_filter)]
@@ -421,11 +425,17 @@ async def _readd(
             await client.connect()
             try:
                 if not await client.is_user_authorized():
-                    raise RuntimeError(f"Telethon not authorized (club_key={cfg.club_key})")
+                    raise RuntimeError(
+                        f"Telethon not authorized (club_key={cfg.club_key})"
+                    )
                 me = await client.get_me()
-                listener_user_id = int(me.id) if me and getattr(me, "id", None) else None
+                listener_user_id = (
+                    int(me.id) if me and getattr(me, "id", None) else None
+                )
 
-                pending: list[tuple[LinkedGroupRow, int, int | None, str | None, int]] = []
+                pending: list[
+                    tuple[LinkedGroupRow, int, int | None, str | None, int]
+                ] = []
                 for g in club_groups:
                     found = _find_dialog_for_group(g.chat_id, dialogs)
                     if found is None:
@@ -474,9 +484,13 @@ async def _readd(
                     )
 
                 total = len(pending)
-                for i, (g, dialog_chat_id, player_id, player_username, count_before) in enumerate(
-                    pending
-                ):
+                for i, (
+                    g,
+                    dialog_chat_id,
+                    player_id,
+                    player_username,
+                    count_before,
+                ) in enumerate(pending):
                     if i > 0 and invite_delay_seconds > 0:
                         await asyncio.sleep(invite_delay_seconds)
 
@@ -546,7 +560,9 @@ async def _readd(
     return summary, results, privacy_rows
 
 
-def _print_human(summary: ReaddSummary, results: list[ReaddGroupResult], csv_path: Path | None) -> None:
+def _print_human(
+    summary: ReaddSummary, results: list[ReaddGroupResult], csv_path: Path | None
+) -> None:
     mode = "APPLY" if summary.apply_mode else "DRY-RUN"
     print(f"\nRe-add migrated members ({mode}) — summary")
     print(f"Backup: {summary.backup_path}")

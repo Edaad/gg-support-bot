@@ -88,7 +88,9 @@ def main() -> int:
                 print(f"  warning: {warning}")
 
         total_stored = sum(r.total_lines_stored for r in reports)
-        print(f"\nTotal lines stored across {len(reports)} audit day(s): {total_stored}")
+        print(
+            f"\nTotal lines stored across {len(reports)} audit day(s): {total_stored}"
+        )
 
         if args.apply:
             session.commit()

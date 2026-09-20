@@ -33,7 +33,9 @@ class TestParseSendinactiveArgs(unittest.TestCase):
         self.assertIsNone(err)
 
     def test_limit_with_club(self) -> None:
-        club, row_id, limit, err = _parse_start_args("/sendinactive round_table limit 1")
+        club, row_id, limit, err = _parse_start_args(
+            "/sendinactive round_table limit 1"
+        )
         self.assertEqual(club, "round_table")
         self.assertEqual(limit, 1)
         self.assertIsNone(err)
@@ -77,68 +79,74 @@ class _FakeDmSession:
 
 
 class TestSendinactivePriorityHandler(unittest.IsolatedAsyncioTestCase):
-  async def test_compose_handler_runs_when_step_compose(self) -> None:
-      update = MagicMock()
-      update.message = MagicMock()
-      update.message.text = "Hello inactive players"
-      update.effective_chat = MagicMock()
-      update.effective_chat.type = ChatType.PRIVATE
-      update.effective_user = MagicMock()
-      update.effective_user.id = 493310710
+    async def test_compose_handler_runs_when_step_compose(self) -> None:
+        update = MagicMock()
+        update.message = MagicMock()
+        update.message.text = "Hello inactive players"
+        update.effective_chat = MagicMock()
+        update.effective_chat.type = ChatType.PRIVATE
+        update.effective_user = MagicMock()
+        update.effective_user.id = 493310710
 
-      context = MagicMock()
-      context.user_data = {IO_STEP_KEY: "compose", "io_recipient_count": 1}
+        context = MagicMock()
+        context.user_data = {IO_STEP_KEY: "compose", "io_recipient_count": 1}
 
-      with patch(
-          "bot.handlers.inactive_outreach_send._can_use_sendinactive",
-          return_value=True,
-      ), patch(
-          "bot.handlers.inactive_outreach_send.sendinactive_compose",
-          new_callable=AsyncMock,
-      ) as mock_compose:
-          from telegram.ext import ApplicationHandlerStop
+        with (
+            patch(
+                "bot.handlers.inactive_outreach_send._can_use_sendinactive",
+                return_value=True,
+            ),
+            patch(
+                "bot.handlers.inactive_outreach_send.sendinactive_compose",
+                new_callable=AsyncMock,
+            ) as mock_compose,
+        ):
+            from telegram.ext import ApplicationHandlerStop
 
-          with self.assertRaises(ApplicationHandlerStop):
-              await sendinactive_message_handler(update, context)
-          mock_compose.assert_awaited_once_with(update, context)
+            with self.assertRaises(ApplicationHandlerStop):
+                await sendinactive_message_handler(update, context)
+            mock_compose.assert_awaited_once_with(update, context)
 
-  async def test_compose_handler_skipped_when_bonus_is_active_flow(self) -> None:
-      from bot.handlers.flow_cancel import ACTIVE_FLOW_KEY
+    async def test_compose_handler_skipped_when_bonus_is_active_flow(self) -> None:
+        from bot.handlers.flow_cancel import ACTIVE_FLOW_KEY
 
-      update = MagicMock()
-      update.message = MagicMock()
-      update.message.text = "LPONLOCK"
-      update.effective_chat = MagicMock()
-      update.effective_chat.type = ChatType.PRIVATE
-      update.effective_user = MagicMock()
-      update.effective_user.id = 493310710
+        update = MagicMock()
+        update.message = MagicMock()
+        update.message.text = "LPONLOCK"
+        update.effective_chat = MagicMock()
+        update.effective_chat.type = ChatType.PRIVATE
+        update.effective_user = MagicMock()
+        update.effective_user.id = 493310710
 
-      context = MagicMock()
-      context.user_data = {
-          ACTIVE_FLOW_KEY: "bonus",
-          IO_STEP_KEY: "compose",
-          "io_club_key": "round_table",
-      }
+        context = MagicMock()
+        context.user_data = {
+            ACTIVE_FLOW_KEY: "bonus",
+            IO_STEP_KEY: "compose",
+            "io_club_key": "round_table",
+        }
 
-      with patch(
-          "bot.handlers.inactive_outreach_send._can_use_sendinactive",
-          return_value=True,
-      ), patch(
-          "bot.handlers.inactive_outreach_send.sendinactive_compose",
-          new_callable=AsyncMock,
-      ) as mock_compose:
-          await sendinactive_message_handler(update, context)
-          mock_compose.assert_not_called()
+        with (
+            patch(
+                "bot.handlers.inactive_outreach_send._can_use_sendinactive",
+                return_value=True,
+            ),
+            patch(
+                "bot.handlers.inactive_outreach_send.sendinactive_compose",
+                new_callable=AsyncMock,
+            ) as mock_compose,
+        ):
+            await sendinactive_message_handler(update, context)
+            mock_compose.assert_not_called()
 
-  def test_flow_active_during_compose(self) -> None:
-      context = MagicMock()
-      context.user_data = {IO_STEP_KEY: "compose"}
-      self.assertTrue(sendinactive_flow_active(context))
+    def test_flow_active_during_compose(self) -> None:
+        context = MagicMock()
+        context.user_data = {IO_STEP_KEY: "compose"}
+        self.assertTrue(sendinactive_flow_active(context))
 
-  def test_compose_active_with_club_key_only(self) -> None:
-      context = MagicMock()
-      context.user_data = {"io_club_key": "round_table"}
-      self.assertTrue(sendinactive_compose_active(context))
+    def test_compose_active_with_club_key_only(self) -> None:
+        context = MagicMock()
+        context.user_data = {"io_club_key": "round_table"}
+        self.assertTrue(sendinactive_compose_active(context))
 
 
 class TestArmDmCampaign(unittest.TestCase):

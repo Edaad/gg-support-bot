@@ -24,7 +24,6 @@ from bot.services.zelle_payments import bind_zelle_payment_from_reply
 from db.connection import get_db
 from notification.bind_actions import crypto_scope_error
 from notification.bind_keyboards import reassign_or_add_markup, to_inline_keyboard
-from notification.chat_id import telegram_chat_ids_match
 from notification.handlers.bind_callbacks import (
     get_add_member_pending,
     payment_bind_add_member_reply_handler,
@@ -32,10 +31,11 @@ from notification.handlers.bind_callbacks import (
 from notification.payment_lookup import find_payment_by_notification
 from notification.payment_notification_routing import (
     canonical_notification_chat_id,
-    configured_notification_chat_ids,
+    configured_bind_notification_chat_ids,
 )
 
 logger = logging.getLogger(__name__)
+
 
 def _bind_reply_func(method_slug: str):
     return {
@@ -154,9 +154,7 @@ async def payment_bind_reply_handler(
             from db.models import CryptoPayment
 
             crypto_payment = (
-                session.query(CryptoPayment)
-                .filter_by(id=ref.payment_id)
-                .one_or_none()
+                session.query(CryptoPayment).filter_by(id=ref.payment_id).one_or_none()
             )
             scope_err = (
                 crypto_scope_error(ref.method_slug, crypto_payment, new_group.club_id)
@@ -210,7 +208,9 @@ async def payment_bind_reply_handler(
             else None,
         )
         candidate_count = len(candidates)
-        bound_title = resolve_display_group_title(int(bound_chat_id)) if bound_chat_id else None
+        bound_title = (
+            resolve_display_group_title(int(bound_chat_id)) if bound_chat_id else None
+        )
         if not bound_title:
             bound_title = getattr(fresh, "bound_group_title_at_bind", None)
         payment_row = format_payment_row(fresh)

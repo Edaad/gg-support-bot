@@ -18,7 +18,6 @@ from api.routes.deposit_funnel import (
 )
 from bot.services.deposit_funnel_events import (
     STEP_AMOUNT_ENTERED,
-    STEP_CHIPS_CONFIRMED,
     STEP_CHIPS_CREDITED,
     STEP_DEPOSIT_STARTED,
     STEP_INSTRUCTIONS_SENT,
@@ -142,7 +141,9 @@ class DepositFunnelEventsServiceTest(unittest.TestCase):
     def test_record_event_idempotent(self, mock_get_db):
         session = MagicMock()
         mock_get_db.return_value.__enter__.return_value = session
-        session.query.return_value.filter_by.return_value.one_or_none.return_value = None
+        session.query.return_value.filter_by.return_value.one_or_none.return_value = (
+            None
+        )
         session_id = new_deposit_session_id()
         record_deposit_funnel_event(
             deposit_session_id=session_id,
@@ -250,8 +251,12 @@ class DepositFunnelApiTest(unittest.TestCase):
         self.assertIn("chips_credited", step_ids)
         self.assertNotIn("referral_completed", step_ids)
         self.assertNotIn("union_chosen", step_ids)
-        started_row = next(row for row in data["steps"] if row["step"] == "deposit_started")
-        chips_row = next(row for row in data["steps"] if row["step"] == "chips_credited")
+        started_row = next(
+            row for row in data["steps"] if row["step"] == "deposit_started"
+        )
+        chips_row = next(
+            row for row in data["steps"] if row["step"] == "chips_credited"
+        )
         instructions_row = next(
             row for row in data["steps"] if row["step"] == "instructions_sent"
         )
@@ -305,7 +310,9 @@ class DepositFunnelApiTest(unittest.TestCase):
     @patch("api.routes.deposit_funnel._compute_step_latencies")
     @patch("api.routes.deposit_funnel._step_counts_for_sessions")
     @patch("api.routes.deposit_funnel._started_session_ids", return_value={"sess-1"})
-    @patch("api.routes.deposit_funnel._full_auto_e2e_session_ids", return_value={"sess-1"})
+    @patch(
+        "api.routes.deposit_funnel._full_auto_e2e_session_ids", return_value={"sess-1"}
+    )
     def test_latency_summary_returns_avg_seconds(
         self, _mock_e2e, _mock_started, mock_counts, mock_latencies
     ):
@@ -332,7 +339,9 @@ class DepositFunnelApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["started"], 1)
-        amount_row = next(row for row in data["steps"] if row["step"] == STEP_AMOUNT_ENTERED)
+        amount_row = next(
+            row for row in data["steps"] if row["step"] == STEP_AMOUNT_ENTERED
+        )
         self.assertAlmostEqual(amount_row["avg_latency_seconds"], 30.0)
 
     def test_events_list_pagination(self):
@@ -361,7 +370,9 @@ class DepositFunnelApiTest(unittest.TestCase):
         club = MagicMock()
         club.name = "ClubGTO"
         mock_db.query.side_effect = lambda model: (
-            events_q if model is DepositFunnelEvent else MagicMock(
+            events_q
+            if model is DepositFunnelEvent
+            else MagicMock(
                 filter=MagicMock(
                     return_value=MagicMock(first=MagicMock(return_value=club))
                 )

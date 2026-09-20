@@ -33,7 +33,9 @@ def draft_to_context(draft: BonusDraft) -> BonusDraftContext:
         telegram_chat_id=draft.telegram_chat_id,
         gg_player_id=draft.gg_player_id,
         player_details_id=(
-            int(draft.player_details_id) if draft.player_details_id is not None else None
+            int(draft.player_details_id)
+            if draft.player_details_id is not None
+            else None
         ),
         amount=Decimal(str(draft.amount)),
     )

@@ -23,7 +23,10 @@ from bot.handlers.flow_cancel import (
     mark_active_flow,
 )
 from bot.services.club import get_club_for_chat, is_any_club_staff, is_club_staff
-from bot.services.player_details import gg_player_id_from_title, resolve_club_id_from_shorthand
+from bot.services.player_details import (
+    gg_player_id_from_title,
+    resolve_club_id_from_shorthand,
+)
 from bot.services.player_support_notes import (
     SupportNoteValidationError,
     add_note,
@@ -262,7 +265,9 @@ async def note_club_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     try:
         club_id = int(query.data.split(":", 1)[1])
     except ValueError:
-        await query.edit_message_text("Invalid club selection. Send /note to try again.")
+        await query.edit_message_text(
+            "Invalid club selection. Send /note to try again."
+        )
         return ConversationHandler.END
 
     context.user_data["support_note_club_id"] = club_id
@@ -306,7 +311,9 @@ async def note_next_steps(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     gg_player_id = context.user_data.get("support_note_gg_player_id")
     admin_id = context.user_data.get("support_note_admin_id")
     if club_id is None or not gg_player_id or admin_id is None:
-        await update.message.reply_text("Note setup expired. Send /note to start again.")
+        await update.message.reply_text(
+            "Note setup expired. Send /note to start again."
+        )
         _cleanup_note_flow(context)
         return ConversationHandler.END
 
@@ -318,7 +325,9 @@ async def note_next_steps(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             actions_taken=str(context.user_data.get("support_note_actions") or ""),
             next_steps=text,
             created_by_telegram_user_id=int(admin_id),
-            source_telegram_chat_id=context.user_data.get("support_note_source_chat_id"),
+            source_telegram_chat_id=context.user_data.get(
+                "support_note_source_chat_id"
+            ),
             telegram_chat_id=context.user_data.get("support_note_source_chat_id"),
         )
     except SupportNoteValidationError as exc:
@@ -340,14 +349,18 @@ async def note_next_steps(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return ConversationHandler.END
 
 
-async def support_note_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def support_note_cancel(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     if update.message:
         await update.message.reply_text("Support note cancelled.")
     _cleanup_note_flow(context)
     return ConversationHandler.END
 
 
-async def support_note_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def support_note_timeout(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     if update.message:
         try:
             await update.message.reply_text("Support note timed out.")
@@ -399,7 +412,9 @@ async def resolve_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     args = context.args or []
     if not args:
-        await update.message.reply_text("Usage: /resolve PLAYER_ID\nExample: /resolve 8190-5287")
+        await update.message.reply_text(
+            "Usage: /resolve PLAYER_ID\nExample: /resolve 8190-5287"
+        )
         return
 
     try:

@@ -118,7 +118,9 @@ def _get_variant(db: Session, variant_id: int) -> ClubPaymentTierVariant:
 
 
 @router.get("/clubs/{club_id}/methods", response_model=List[ClubPaymentMethodRead])
-def list_methods(club_id: int, direction: str | None = None, db: Session = Depends(get_db_dependency)):
+def list_methods(
+    club_id: int, direction: str | None = None, db: Session = Depends(get_db_dependency)
+):
     club = db.query(Club).get(club_id)
     if not club:
         raise HTTPException(404, "Club not found")
@@ -134,8 +136,14 @@ def list_methods(club_id: int, direction: str | None = None, db: Session = Depen
     ]
 
 
-@router.post("/clubs/{club_id}/methods", response_model=ClubPaymentMethodRead, status_code=201)
-def create_method(club_id: int, body: ClubPaymentMethodCreate, db: Session = Depends(get_db_dependency)):
+@router.post(
+    "/clubs/{club_id}/methods", response_model=ClubPaymentMethodRead, status_code=201
+)
+def create_method(
+    club_id: int,
+    body: ClubPaymentMethodCreate,
+    db: Session = Depends(get_db_dependency),
+):
     club = db.query(Club).get(club_id)
     if not club:
         raise HTTPException(404, "Club not found")
@@ -178,7 +186,11 @@ def get_method(method_id: int, db: Session = Depends(get_db_dependency)):
 
 
 @router.put("/methods/{method_id}", response_model=ClubPaymentMethodRead)
-def update_method(method_id: int, body: ClubPaymentMethodUpdate, db: Session = Depends(get_db_dependency)):
+def update_method(
+    method_id: int,
+    body: ClubPaymentMethodUpdate,
+    db: Session = Depends(get_db_dependency),
+):
     method = _get_method(db, method_id)
     data = body.model_dump(exclude_unset=True)
     if bool(getattr(method, "tracks_manual_requests", False)) or data.get(
@@ -190,7 +202,11 @@ def update_method(method_id: int, body: ClubPaymentMethodUpdate, db: Session = D
         )
     for field, value in data.items():
         setattr(method, field, value)
-    if method.min_amount is not None and method.max_amount is not None and method.min_amount > method.max_amount:
+    if (
+        method.min_amount is not None
+        and method.max_amount is not None
+        and method.min_amount > method.max_amount
+    ):
         raise HTTPException(400, "Method min amount cannot be greater than max amount.")
     try:
         apply_manual_trade_request_constraints(method)
@@ -229,7 +245,9 @@ def delete_method(method_id: int, db: Session = Depends(get_db_dependency)):
     db.delete(method)
 
 
-@router.post("/methods/{method_id}/reset-accumulated", response_model=ClubPaymentMethodRead)
+@router.post(
+    "/methods/{method_id}/reset-accumulated", response_model=ClubPaymentMethodRead
+)
 def reset_accumulated(method_id: int, db: Session = Depends(get_db_dependency)):
     method = _get_method(db, method_id)
     method.accumulated_amount = 0
@@ -259,13 +277,17 @@ def list_tiers(method_id: int, db: Session = Depends(get_db_dependency)):
     return [ClubPaymentTierRead.model_validate(t) for t in tiers]
 
 
-@router.post("/methods/{method_id}/tiers", response_model=ClubPaymentTierRead, status_code=201)
-def create_tier(method_id: int, body: ClubPaymentTierCreate, db: Session = Depends(get_db_dependency)):
+@router.post(
+    "/methods/{method_id}/tiers", response_model=ClubPaymentTierRead, status_code=201
+)
+def create_tier(
+    method_id: int,
+    body: ClubPaymentTierCreate,
+    db: Session = Depends(get_db_dependency),
+):
     method = _get_method(db, method_id)
     if bool(getattr(method, "tracks_manual_requests", False)):
-        raise HTTPException(
-            400, "Union methods do not use amount tiers."
-        )
+        raise HTTPException(400, "Union methods do not use amount tiers.")
     tier_data = body.model_dump()
     if method_needs_variants(method):
         tier_data = strip_response_from_tier_payload(tier_data)
@@ -287,7 +309,9 @@ def create_tier(method_id: int, body: ClubPaymentTierCreate, db: Session = Depen
 
 
 @router.put("/tiers/{tier_id}", response_model=ClubPaymentTierRead)
-def update_tier(tier_id: int, body: ClubPaymentTierUpdate, db: Session = Depends(get_db_dependency)):
+def update_tier(
+    tier_id: int, body: ClubPaymentTierUpdate, db: Session = Depends(get_db_dependency)
+):
     tier = _get_tier(db, tier_id)
     method = _get_method(db, tier.method_id)
     data = body.model_dump(exclude_unset=True)
@@ -316,14 +340,21 @@ def update_tier(tier_id: int, body: ClubPaymentTierUpdate, db: Session = Depends
     merged_checkout_min = data.get("checkout_min_amount", tier.checkout_min_amount)
     merged_checkout_max = data.get("checkout_max_amount", tier.checkout_max_amount)
     if {"checkout_min_amount", "checkout_max_amount"}.intersection(data.keys()):
-        validate_checkout_amount_bounds(method, merged_checkout_min, merged_checkout_max)
+        validate_checkout_amount_bounds(
+            method, merged_checkout_min, merged_checkout_max
+        )
 
     prior_min = tier.min_amount
     prior_max = tier.max_amount
     prior_checkout_min = tier.checkout_min_amount
     prior_checkout_max = tier.checkout_max_amount
     primary = is_primary_tier(tier, siblings)
-    amount_fields = {"min_amount", "max_amount", "checkout_min_amount", "checkout_max_amount"}
+    amount_fields = {
+        "min_amount",
+        "max_amount",
+        "checkout_min_amount",
+        "checkout_max_amount",
+    }
 
     for field, value in data.items():
         setattr(tier, field, value)
@@ -346,10 +377,12 @@ def update_tier(tier_id: int, body: ClubPaymentTierUpdate, db: Session = Depends
             prior_checkout_max=prior_checkout_max,
             lock_variant_checkout_min=primary,
         )
-        tier.checkout_min_amount, tier.checkout_max_amount = clamp_checkout_amount_bounds(
-            method,
-            tier.checkout_min_amount,
-            tier.checkout_max_amount,
+        tier.checkout_min_amount, tier.checkout_max_amount = (
+            clamp_checkout_amount_bounds(
+                method,
+                tier.checkout_min_amount,
+                tier.checkout_max_amount,
+            )
         )
 
     db.flush()
@@ -374,15 +407,25 @@ def delete_tier(tier_id: int, db: Session = Depends(get_db_dependency)):
 # ── Tier variants ───────────────────────────────────────────────────────────
 
 
-@router.get("/tiers/{tier_id}/variants", response_model=List[ClubPaymentTierVariantRead])
+@router.get(
+    "/tiers/{tier_id}/variants", response_model=List[ClubPaymentTierVariantRead]
+)
 def list_tier_variants(tier_id: int, db: Session = Depends(get_db_dependency)):
     tier = _get_tier(db, tier_id)
     variants = sorted(tier.variants, key=lambda v: (v.sort_order, v.id))
     return [ClubPaymentTierVariantRead.model_validate(v) for v in variants]
 
 
-@router.post("/tiers/{tier_id}/variants", response_model=ClubPaymentTierVariantRead, status_code=201)
-def create_tier_variant(tier_id: int, body: ClubPaymentTierVariantCreate, db: Session = Depends(get_db_dependency)):
+@router.post(
+    "/tiers/{tier_id}/variants",
+    response_model=ClubPaymentTierVariantRead,
+    status_code=201,
+)
+def create_tier_variant(
+    tier_id: int,
+    body: ClubPaymentTierVariantCreate,
+    db: Session = Depends(get_db_dependency),
+):
     tier = _get_tier(db, tier_id)
     method = _get_method(db, tier.method_id)
     if body.weight < 0:
@@ -390,7 +433,9 @@ def create_tier_variant(tier_id: int, body: ClubPaymentTierVariantCreate, db: Se
     variant_data = body.model_dump()
     if is_primary_tier(tier, list(method.tiers or [])):
         variant_data["checkout_min_amount"] = None
-    validate_checkout_amount_bounds(method, variant_data["checkout_min_amount"], variant_data["checkout_max_amount"])
+    validate_checkout_amount_bounds(
+        method, variant_data["checkout_min_amount"], variant_data["checkout_max_amount"]
+    )
     ensure_legacy_tier_before_new_variant(db, tier)
     variant = ClubPaymentTierVariant(
         method_id=tier.method_id,
@@ -404,7 +449,11 @@ def create_tier_variant(tier_id: int, body: ClubPaymentTierVariantCreate, db: Se
 
 
 @router.put("/variants/{variant_id}", response_model=ClubPaymentTierVariantRead)
-def update_variant(variant_id: int, body: ClubPaymentTierVariantUpdate, db: Session = Depends(get_db_dependency)):
+def update_variant(
+    variant_id: int,
+    body: ClubPaymentTierVariantUpdate,
+    db: Session = Depends(get_db_dependency),
+):
     variant = _get_variant(db, variant_id)
     method = _get_method(db, variant.method_id)
     tier = _get_tier(db, variant.tier_id)
@@ -416,7 +465,9 @@ def update_variant(variant_id: int, body: ClubPaymentTierVariantUpdate, db: Sess
     merged_checkout_min = data.get("checkout_min_amount", variant.checkout_min_amount)
     merged_checkout_max = data.get("checkout_max_amount", variant.checkout_max_amount)
     if {"checkout_min_amount", "checkout_max_amount"}.intersection(data.keys()):
-        validate_checkout_amount_bounds(method, merged_checkout_min, merged_checkout_max)
+        validate_checkout_amount_bounds(
+            method, merged_checkout_min, merged_checkout_max
+        )
     if "tier_id" in data:
         new_tier_id = data["tier_id"]
         if new_tier_id is not None:
@@ -445,20 +496,28 @@ def delete_variant(variant_id: int, db: Session = Depends(get_db_dependency)):
 # ── Sub-options ─────────────────────────────────────────────────────────────
 
 
-@router.get("/methods/{method_id}/sub-options", response_model=List[ClubPaymentSubOptionRead])
+@router.get(
+    "/methods/{method_id}/sub-options", response_model=List[ClubPaymentSubOptionRead]
+)
 def list_sub_options(method_id: int, db: Session = Depends(get_db_dependency)):
     method = _get_method(db, method_id)
     subs = sorted(method.sub_options, key=lambda s: (s.sort_order, s.id))
     return [ClubPaymentSubOptionRead.model_validate(s) for s in subs]
 
 
-@router.post("/methods/{method_id}/sub-options", response_model=ClubPaymentSubOptionRead, status_code=201)
-def create_sub_option(method_id: int, body: ClubPaymentSubOptionCreate, db: Session = Depends(get_db_dependency)):
+@router.post(
+    "/methods/{method_id}/sub-options",
+    response_model=ClubPaymentSubOptionRead,
+    status_code=201,
+)
+def create_sub_option(
+    method_id: int,
+    body: ClubPaymentSubOptionCreate,
+    db: Session = Depends(get_db_dependency),
+):
     method = _get_method(db, method_id)
     if bool(getattr(method, "tracks_manual_requests", False)):
-        raise HTTPException(
-            400, "Union methods do not use sub-options."
-        )
+        raise HTTPException(400, "Union methods do not use sub-options.")
     sub = ClubPaymentSubOption(method_id=method_id, **body.model_dump())
     db.add(sub)
     db.flush()
@@ -467,7 +526,11 @@ def create_sub_option(method_id: int, body: ClubPaymentSubOptionCreate, db: Sess
 
 
 @router.put("/sub-options/{sub_option_id}", response_model=ClubPaymentSubOptionRead)
-def update_sub_option(sub_option_id: int, body: ClubPaymentSubOptionUpdate, db: Session = Depends(get_db_dependency)):
+def update_sub_option(
+    sub_option_id: int,
+    body: ClubPaymentSubOptionUpdate,
+    db: Session = Depends(get_db_dependency),
+):
     sub = db.query(ClubPaymentSubOption).get(sub_option_id)
     if not sub:
         raise HTTPException(404, "Sub-option not found")

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.services.migration_group_readd import (
@@ -13,8 +12,6 @@ from bot.services.migration_group_readd import (
     readd_group,
 )
 from bot.services.migration_recovery import (
-    RecoveryRow,
-    count_elevate_pending_rows,
     elevate_joined_in_payload,
     find_oldest_elevate_pending_row,
     map_readd_status_with_elevate,
@@ -138,10 +135,18 @@ class TestFindElevatePendingRow(unittest.TestCase):
 
 
 class TestReaddExportInviteAlways(unittest.IsolatedAsyncioTestCase):
-    @patch("bot.services.migration_group_readd.export_invite_link", new_callable=AsyncMock)
+    @patch(
+        "bot.services.migration_group_readd.export_invite_link", new_callable=AsyncMock
+    )
     @patch("bot.services.migration_group_readd.invite_user_id", new_callable=AsyncMock)
-    @patch("bot.services.migration_group_readd.resolve_player_entity_for_readd", new_callable=AsyncMock)
-    @patch("bot.services.migration_group_readd.call_with_flood_retry", new_callable=AsyncMock)
+    @patch(
+        "bot.services.migration_group_readd.resolve_player_entity_for_readd",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "bot.services.migration_group_readd.call_with_flood_retry",
+        new_callable=AsyncMock,
+    )
     async def test_export_invite_link_always_on_success(
         self,
         mock_flood: AsyncMock,
@@ -183,11 +188,20 @@ class TestReaddExportInviteAlways(unittest.IsolatedAsyncioTestCase):
 
 
 class TestElevateJoinRecoveryGroup(unittest.IsolatedAsyncioTestCase):
-    @patch("bot.services.migration_group_readd.participant_user_ids", new_callable=AsyncMock)
-    @patch("bot.services.mtproto_group_join.join_chat_via_invite_link", new_callable=AsyncMock)
+    @patch(
+        "bot.services.migration_group_readd.participant_user_ids",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "bot.services.mtproto_group_join.join_chat_via_invite_link",
+        new_callable=AsyncMock,
+    )
     @patch("bot.services.mtproto_group_create.make_client")
     @patch("club_gc_settings.get_mtproto_session_config")
-    @patch("bot.services.migration_group_readd.call_with_flood_retry", new_callable=AsyncMock)
+    @patch(
+        "bot.services.migration_group_readd.call_with_flood_retry",
+        new_callable=AsyncMock,
+    )
     async def test_elevate_join_success(
         self,
         mock_flood: AsyncMock,

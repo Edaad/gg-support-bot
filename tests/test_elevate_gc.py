@@ -110,7 +110,10 @@ class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
     @patch("club_gc_settings._elevate_creator_round_table_enabled", return_value=True)
     @patch("bot.services.mtproto_group_create.resolve_link_join_cfg")
     @patch("bot.services.mtproto_group_create.resolve_group_creator_cfg")
-    @patch("bot.services.mtproto_group_join.run_link_join_and_promote", new_callable=AsyncMock)
+    @patch(
+        "bot.services.mtproto_group_join.run_link_join_and_promote",
+        new_callable=AsyncMock,
+    )
     @patch("bot.services.mtproto_group_create.make_client")
     @patch("bot.services.mtproto_group_create.get_mtproto_lock")
     async def test_link_join_and_promote_after_create(
@@ -221,8 +224,13 @@ class TestCreateSupportMegagroupElevate(unittest.IsolatedAsyncioTestCase):
 
 
 class TestRunLinkJoinAndPromote(unittest.IsolatedAsyncioTestCase):
-    @patch("bot.services.mtproto_group_join.promote_group_admin", new_callable=AsyncMock)
-    @patch("bot.services.mtproto_group_join.join_chat_via_invite_link", new_callable=AsyncMock)
+    @patch(
+        "bot.services.mtproto_group_join.promote_group_admin", new_callable=AsyncMock
+    )
+    @patch(
+        "bot.services.mtproto_group_join.join_chat_via_invite_link",
+        new_callable=AsyncMock,
+    )
     @patch("bot.services.mtproto_group_join.make_client")
     @patch("bot.services.mtproto_group_join.get_mtproto_lock")
     async def test_promote_uses_creator_channel_entity(

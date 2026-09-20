@@ -44,7 +44,11 @@ def candidate_picker_markup(
                 {
                     "text": _button_label(candidate.group_title),
                     "callback_data": _cb(
-                        "pb", "s", short, str(payment_id), str(candidate.telegram_chat_id)
+                        "pb",
+                        "s",
+                        short,
+                        str(payment_id),
+                        str(candidate.telegram_chat_id),
                     ),
                 }
             ]

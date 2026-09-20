@@ -1,6 +1,6 @@
 # pre-push-build-hook-start
-# Run Python import smoke + tests + dashboard production build before git push.
-# Graphify sync runs only after both succeed (see graphify-pre-push-hook below).
+# Run ruff + Python import smoke + tests + dashboard production build before git push.
+# Graphify sync runs only after these succeed (see graphify-pre-push-hook below).
 # Installed by: scripts/install-graphify-hooks.sh
 
 [ "${BUILD_SKIP_HOOK:-0}" = "1" ] && exit 0
@@ -18,6 +18,21 @@ if [ -z "$PYTHON" ]; then
   echo "[pre-push build] python not found; push aborted." >&2
   exit 1
 fi
+
+echo "[pre-push build] running ruff check..."
+"$PYTHON" -m ruff check . || {
+  echo "[pre-push build] ruff check failed; push aborted (graphify skipped)." >&2
+  echo "[pre-push build] Install: pip install -r requirements-dev.txt" >&2
+  exit 1
+}
+
+echo "[pre-push build] running ruff format --check..."
+"$PYTHON" -m ruff format --check . || {
+  echo "[pre-push build] ruff format check failed; run: ruff format ." >&2
+  echo "[pre-push build] push aborted (graphify skipped)." >&2
+  exit 1
+}
+echo "[pre-push build] ruff ok"
 
 echo "[pre-push build] checking Python imports (scripts/pre_push_import_smoke.py)..."
 "$PYTHON" scripts/pre_push_import_smoke.py || {

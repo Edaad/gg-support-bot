@@ -57,9 +57,7 @@ def schedule_save_player_contact_named_group(
 
     cfg = get_club_gc_config_by_link_club_id(int(club_id))
     if not cfg:
-        logger.debug(
-            "contact_save: no ClubGcConfig for dashboard club_id=%s", club_id
-        )
+        logger.debug("contact_save: no ClubGcConfig for dashboard club_id=%s", club_id)
         return
 
     try:

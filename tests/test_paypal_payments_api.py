@@ -101,4 +101,3 @@ class PayPalPaymentsApiTestCase(unittest.TestCase):
             headers={"X-Paypal-Webhook-Secret": WEBHOOK_SECRET},
         )
         self.assertEqual(response.status_code, 422)
-

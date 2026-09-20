@@ -66,9 +66,8 @@ async def check_players_in_group(cfg: ClubGcConfig, chat_id: int) -> CheckPlayer
             self_id = int(me.id) if me and getattr(me, "id", None) is not None else None
             entity = await client.get_entity(cid)
             live_title = getattr(entity, "title", None)
-            group_title = (
-                (stored_title or "").strip()
-                or (live_title.strip() if isinstance(live_title, str) else None)
+            group_title = (stored_title or "").strip() or (
+                live_title.strip() if isinstance(live_title, str) else None
             )
 
             users = await collect_eligible_player_participants(

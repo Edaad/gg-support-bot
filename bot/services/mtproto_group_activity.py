@@ -119,9 +119,12 @@ async def last_eligible_player_message_at(
         is_eligible_player_user,
     )
 
-    invite_ids, invite_usernames, skip_operators, skip_dashboard_admins = (
-        await _eligible_player_filter_context(client, cfg, self_id=self_id)
-    )
+    (
+        invite_ids,
+        invite_usernames,
+        skip_operators,
+        skip_dashboard_admins,
+    ) = await _eligible_player_filter_context(client, cfg, self_id=self_id)
 
     async def sender_is_eligible(msg: Any) -> bool:
         if getattr(msg, "out", False):
@@ -201,7 +204,9 @@ def merge_external_activity(
         elif supergroup.activity_basis == "support_only" or leg_basis == "support_only":
             merged_basis = "support_only"
         else:
-            merged_basis = supergroup.activity_basis if leg_basis == "none" else leg_basis
+            merged_basis = (
+                supergroup.activity_basis if leg_basis == "none" else leg_basis
+            )
         return MergedExternalActivity(
             None,
             merged_basis,
@@ -367,8 +372,9 @@ def annotate_duplicate_titles(
 
         newer = max(
             (peer for peer in peers if peer.chat_id != row.chat_id),
-            key=lambda peer: peer.last_message_at
-            or datetime.min.replace(tzinfo=timezone.utc),
+            key=lambda peer: (
+                peer.last_message_at or datetime.min.replace(tzinfo=timezone.utc)
+            ),
             default=None,
         )
         if newer is None:

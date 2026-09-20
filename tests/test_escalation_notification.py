@@ -57,7 +57,9 @@ class SilenceDetectionTests(unittest.TestCase):
         """Virgin / post-migrate state: first player message may escalate."""
         silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 obs = ga.record_human_message(
                     1, role="player", now=t0, silence_seconds=silence
@@ -68,7 +70,9 @@ class SilenceDetectionTests(unittest.TestCase):
     def test_null_last_human_staff_does_not_fire(self):
         silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 obs = ga.record_human_message(
                     1, role="staff", now=t0, silence_seconds=silence
@@ -78,9 +82,13 @@ class SilenceDetectionTests(unittest.TestCase):
     def test_player_after_silence_fires_once(self):
         silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
-                ga.record_human_message(1, role="player", now=t0, silence_seconds=silence)
+                ga.record_human_message(
+                    1, role="player", now=t0, silence_seconds=silence
+                )
                 t1 = t0 + timedelta(seconds=silence + 1)
                 obs = ga.record_human_message(
                     1, role="player", now=t1, silence_seconds=silence
@@ -95,9 +103,13 @@ class SilenceDetectionTests(unittest.TestCase):
     def test_staff_then_player_without_silence_no_fire(self):
         silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
-                ga.record_human_message(1, role="staff", now=t0, silence_seconds=silence)
+                ga.record_human_message(
+                    1, role="staff", now=t0, silence_seconds=silence
+                )
                 t1 = t0 + timedelta(seconds=30)
                 obs = ga.record_human_message(
                     1, role="player", now=t1, silence_seconds=silence
@@ -107,9 +119,13 @@ class SilenceDetectionTests(unittest.TestCase):
     def test_staff_then_silence_then_player_fires(self):
         silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
-                ga.record_human_message(1, role="staff", now=t0, silence_seconds=silence)
+                ga.record_human_message(
+                    1, role="staff", now=t0, silence_seconds=silence
+                )
                 t1 = t0 + timedelta(seconds=silence + 1)
                 obs = ga.record_human_message(
                     1, role="player", now=t1, silence_seconds=silence
@@ -119,9 +135,13 @@ class SilenceDetectionTests(unittest.TestCase):
     def test_episode_resets_after_silence(self):
         silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
-                ga.record_human_message(1, role="player", now=t0, silence_seconds=silence)
+                ga.record_human_message(
+                    1, role="player", now=t0, silence_seconds=silence
+                )
                 t1 = t0 + timedelta(seconds=silence + 1)
                 self.assertTrue(
                     ga.record_human_message(
@@ -138,9 +158,13 @@ class SilenceDetectionTests(unittest.TestCase):
     def test_reset_idle_episode_clears_flag(self):
         silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
-                ga.record_human_message(1, role="player", now=t0, silence_seconds=silence)
+                ga.record_human_message(
+                    1, role="player", now=t0, silence_seconds=silence
+                )
                 t1 = t0 + timedelta(seconds=silence + 1)
                 self.assertTrue(
                     ga.record_human_message(
@@ -155,9 +179,13 @@ class SilenceDetectionTests(unittest.TestCase):
         """After deny arm, next free text fires without waiting another silence window."""
         silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
-                ga.record_human_message(1, role="player", now=t0, silence_seconds=silence)
+                ga.record_human_message(
+                    1, role="player", now=t0, silence_seconds=silence
+                )
                 t1 = t0 + timedelta(seconds=silence + 1)
                 self.assertTrue(
                     ga.record_human_message(
@@ -185,7 +213,9 @@ class SilenceDetectionTests(unittest.TestCase):
     def test_flow_command_does_not_consume_idle_episode(self):
         silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 t1 = t0 + timedelta(seconds=silence + 1)
                 obs = ga.record_human_message(
@@ -199,16 +229,23 @@ class SilenceDetectionTests(unittest.TestCase):
                 self.assertFalse(ga.get_chat_activity_state(1).idle_episode_fired)
                 self.assertTrue(
                     ga.record_human_message(
-                        1, role="player", now=t1 + timedelta(seconds=1), silence_seconds=silence
+                        1,
+                        role="player",
+                        now=t1 + timedelta(seconds=1),
+                        silence_seconds=silence,
                     ).should_fire_idle
                 )
 
     def test_post_deposit_pending_fires_without_silence(self):
         silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
-                ga.record_human_message(1, role="staff", now=t0, silence_seconds=silence)
+                ga.record_human_message(
+                    1, role="staff", now=t0, silence_seconds=silence
+                )
                 ga.mark_post_deposit_idle_pending(1)
                 self.assertTrue(ga.post_deposit_idle_pending(1))
                 t1 = t0 + timedelta(seconds=30)
@@ -222,7 +259,9 @@ class SilenceDetectionTests(unittest.TestCase):
         """Holden case: staff Added chips after payment; player question still idles."""
         silence = ga.ESCALATION_SILENCE_SECONDS
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 ga.mark_post_deposit_idle_pending(1)
                 t_staff = t0 + timedelta(seconds=10)
@@ -286,7 +325,9 @@ class EscalationCopyTests(unittest.TestCase):
                 message_text=long,
             )
         self.assertIn("…", text)
-        self.assertLessEqual(len(text.split("\n")[-1]), esc.SLACK_MESSAGE_BODY_MAX_CHARS)
+        self.assertLessEqual(
+            len(text.split("\n")[-1]), esc.SLACK_MESSAGE_BODY_MAX_CHARS
+        )
 
     def test_cashout_copy(self):
         with patch.object(esc, "_club_display_name", return_value="Aces"):
@@ -366,9 +407,7 @@ class EscalationCopyTests(unittest.TestCase):
                 chat_id=-100,
                 title="GTO / 4661-4582 / Btwn",
             )
-        self.assertIn(
-            "*Welcome the new player who just joined the group chat.*", text
-        )
+        self.assertIn("*Welcome the new player who just joined the group chat.*", text)
         self.assertIn("Club: ClubGTO", text)
         self.assertIn("`GTO / 4661-4582 / Btwn`", text)
 
@@ -535,10 +574,13 @@ class EscalationCopyTests(unittest.TestCase):
 
 class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
     async def test_union_deposit_telegram_copy(self):
-        with patch.object(esc, "_club_display_name", return_value="Round Table"), patch(
-            "notification.formatting.resolve_and_format_group_chat_line",
-            new_callable=AsyncMock,
-            return_value="Group Chat: RT / 1234-5678 / Player",
+        with (
+            patch.object(esc, "_club_display_name", return_value="Round Table"),
+            patch(
+                "notification.formatting.resolve_and_format_group_chat_line",
+                new_callable=AsyncMock,
+                return_value="Group Chat: RT / 1234-5678 / Player",
+            ),
         ):
             text = await esc.format_union_deposit_telegram_text(
                 variant="first",
@@ -559,10 +601,13 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Forward the evidence to", text)
 
     async def test_union_deposit_telegram_copy_tmt(self):
-        with patch.object(esc, "_club_display_name", return_value="Round Table"), patch(
-            "notification.formatting.resolve_and_format_group_chat_line",
-            new_callable=AsyncMock,
-            return_value="Group Chat: RT / 1234-5678 / Player",
+        with (
+            patch.object(esc, "_club_display_name", return_value="Round Table"),
+            patch(
+                "notification.formatting.resolve_and_format_group_chat_line",
+                new_callable=AsyncMock,
+                return_value="Group Chat: RT / 1234-5678 / Player",
+            ),
         ):
             text = await esc.format_union_deposit_telegram_text(
                 variant="first",
@@ -581,10 +626,13 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("#2 Aces Table : Settlements/Support", text)
 
     async def test_union_deposit_telegram_copy_massiv(self):
-        with patch.object(esc, "_club_display_name", return_value="Aces Table"), patch(
-            "notification.formatting.resolve_and_format_group_chat_line",
-            new_callable=AsyncMock,
-            return_value="Group Chat: AT / 1234-5678 / Player",
+        with (
+            patch.object(esc, "_club_display_name", return_value="Aces Table"),
+            patch(
+                "notification.formatting.resolve_and_format_group_chat_line",
+                new_callable=AsyncMock,
+                return_value="Group Chat: AT / 1234-5678 / Player",
+            ),
         ):
             text = await esc.format_union_deposit_telegram_text(
                 variant="first",
@@ -617,8 +665,9 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(ok)
 
     async def test_skips_when_not_eligible(self):
-        with patch.object(esc, "is_test_bot_worker", return_value=False), patch.object(
-            esc, "escalation_notification_eligible", return_value=False
+        with (
+            patch.object(esc, "is_test_bot_worker", return_value=False),
+            patch.object(esc, "escalation_notification_eligible", return_value=False),
         ):
             ok = await esc.notify_union_deposit_request_slack(
                 variant="first",
@@ -633,24 +682,32 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(ok)
 
     async def test_first_uses_first_reason(self):
-        with patch.object(esc, "is_test_bot_worker", return_value=False), patch.object(
-            esc, "escalation_notification_eligible", return_value=True
-        ), patch.object(
-            esc,
-            "format_union_deposit_slack_text",
-            return_value="First-time union deposit body",
-        ), patch.object(
-            esc,
-            "format_union_deposit_telegram_text",
-            new_callable=AsyncMock,
-            return_value="<b>First-time union deposit body</b>",
-        ), patch.object(
-            esc,
-            "_notify_union_deposit_payment_chats",
-            new_callable=AsyncMock,
-        ) as payment_chats, patch.object(
-            esc, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
-        ) as notify:
+        with (
+            patch.object(esc, "is_test_bot_worker", return_value=False),
+            patch.object(esc, "escalation_notification_eligible", return_value=True),
+            patch.object(
+                esc,
+                "format_union_deposit_slack_text",
+                return_value="First-time union deposit body",
+            ),
+            patch.object(
+                esc,
+                "format_union_deposit_telegram_text",
+                new_callable=AsyncMock,
+                return_value="<b>First-time union deposit body</b>",
+            ),
+            patch.object(
+                esc,
+                "_notify_union_deposit_payment_chats",
+                new_callable=AsyncMock,
+            ) as payment_chats,
+            patch.object(
+                esc,
+                "notify_escalation_slack",
+                new_callable=AsyncMock,
+                return_value=(True, 1),
+            ) as notify,
+        ):
             ok = await esc.notify_union_deposit_request_slack(
                 variant="first",
                 club_id=2,
@@ -671,24 +728,32 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_repeat_uses_repeat_reason(self):
-        with patch.object(esc, "is_test_bot_worker", return_value=False), patch.object(
-            esc, "escalation_notification_eligible", return_value=True
-        ), patch.object(
-            esc,
-            "format_union_deposit_slack_text",
-            return_value="Repeat union deposit body",
-        ), patch.object(
-            esc,
-            "format_union_deposit_telegram_text",
-            new_callable=AsyncMock,
-            return_value="<b>Repeat union deposit body</b>",
-        ), patch.object(
-            esc,
-            "_notify_union_deposit_payment_chats",
-            new_callable=AsyncMock,
-        ), patch.object(
-            esc, "notify_escalation_slack", new_callable=AsyncMock, return_value=(True, 1)
-        ) as notify:
+        with (
+            patch.object(esc, "is_test_bot_worker", return_value=False),
+            patch.object(esc, "escalation_notification_eligible", return_value=True),
+            patch.object(
+                esc,
+                "format_union_deposit_slack_text",
+                return_value="Repeat union deposit body",
+            ),
+            patch.object(
+                esc,
+                "format_union_deposit_telegram_text",
+                new_callable=AsyncMock,
+                return_value="<b>Repeat union deposit body</b>",
+            ),
+            patch.object(
+                esc,
+                "_notify_union_deposit_payment_chats",
+                new_callable=AsyncMock,
+            ),
+            patch.object(
+                esc,
+                "notify_escalation_slack",
+                new_callable=AsyncMock,
+                return_value=(True, 1),
+            ) as notify,
+        ):
             await esc.notify_union_deposit_request_slack(
                 variant="repeat_verified",
                 club_id=2,
@@ -702,14 +767,17 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(notify.await_args.args[0], esc.REASON_UNION_DEPOSIT_REPEAT)
 
     async def test_payment_chat_routing_uses_group_title(self):
-        with patch(
-            "notification.payment_notification_routing.resolve_notification_chat_ids",
-            return_value=[-9001],
-        ) as resolve, patch(
-            "notification.payment_notification_delivery.deliver_payment_notification",
-            new_callable=AsyncMock,
-            return_value=[(-9001, 42)],
-        ) as deliver:
+        with (
+            patch(
+                "notification.payment_notification_routing.resolve_notification_chat_ids",
+                return_value=[-9001],
+            ) as resolve,
+            patch(
+                "notification.payment_notification_delivery.deliver_payment_notification",
+                new_callable=AsyncMock,
+                return_value=[(-9001, 42)],
+            ) as deliver,
+        ):
             await esc._notify_union_deposit_payment_chats(
                 telegram_text="<b>Union deposit</b>",
                 group_title="GTO / 1 / x",
@@ -725,9 +793,7 @@ class UnionDepositSlackNotifyTests(unittest.IsolatedAsyncioTestCase):
 class PlayerContactLabelTests(unittest.TestCase):
     def test_name_and_username(self):
         self.assertEqual(
-            esc.format_player_contact_label(
-                display_name="Btwn", username="btwn"
-            ),
+            esc.format_player_contact_label(display_name="Btwn", username="btwn"),
             "Btwn (@btwn)",
         )
 
@@ -768,9 +834,7 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
             "deposit_club_id": 1,
             "deposit_awaiting_amount": True,
         }
-        self.assertTrue(
-            esc.is_valid_deposit_flow_answer(context, self._text_msg("33"))
-        )
+        self.assertTrue(esc.is_valid_deposit_flow_answer(context, self._text_msg("33")))
 
     def test_amount_still_valid_after_handler_stores_amount(self):
         """group_activity runs after deposit_amount_received mutates chat_data."""
@@ -806,7 +870,9 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
             "deposit_club_id": 1,
             "deposit_amount": 33,
         }
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 with patch.object(
                     esc, "notify_escalation_slack", new_callable=AsyncMock
@@ -817,15 +883,11 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
                         club_id=3,
                         title="CC / 2514-2282 / Nick",
                         message_text="Is 30 Venmo available for deposit",
-                        message=self._text_msg(
-                            "Is 30 Venmo available for deposit"
-                        ),
+                        message=self._text_msg("Is 30 Venmo available for deposit"),
                     )
         self.assertTrue(consumed)
         notify.assert_awaited_once()
-        self.assertEqual(
-            notify.await_args.args[0], esc.REASON_DEPOSIT_PLAYER_MESSAGE
-        )
+        self.assertEqual(notify.await_args.args[0], esc.REASON_DEPOSIT_PLAYER_MESSAGE)
 
     async def test_valid_amount_does_not_escalate(self):
         context = MagicMock()
@@ -833,7 +895,9 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
             "deposit_club_id": 1,
             "deposit_awaiting_amount": True,
         }
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 with patch.object(
                     esc, "notify_escalation_slack", new_callable=AsyncMock
@@ -856,7 +920,9 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
             "deposit_club_id": 1,
             "deposit_amount": 100,
         }
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 with patch.object(
                     esc, "notify_escalation_slack", new_callable=AsyncMock
@@ -871,9 +937,7 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
                     )
         self.assertTrue(consumed)
         notify.assert_awaited_once()
-        self.assertEqual(
-            notify.await_args.args[0], esc.REASON_DEPOSIT_PLAYER_MESSAGE
-        )
+        self.assertEqual(notify.await_args.args[0], esc.REASON_DEPOSIT_PLAYER_MESSAGE)
 
     async def test_amount_entry_message_id_does_not_escalate(self):
         """Same update that stored deposit_amount must not Slack via group_activity."""
@@ -885,7 +949,9 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
         }
         msg = self._text_msg("100")
         msg.message_id = 55
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 with patch.object(
                     esc, "notify_escalation_slack", new_callable=AsyncMock
@@ -904,7 +970,9 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
     async def test_armed_wait_defers_to_followup_path(self):
         context = MagicMock()
         context.chat_data = {"deposit_club_id": 1, "deposit_amount": 33}
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 ga.mark_deposit_sent_watch_armed(99)
                 with patch.object(
@@ -927,7 +995,9 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
             "deposit_club_id": 1,
             "deposit_amount": 33,
         }
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 with patch.object(
                     esc, "notify_escalation_slack", new_callable=AsyncMock
@@ -954,7 +1024,9 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
         msg.caption = None
         msg.photo = [object()]
         msg.message_id = 10
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 with patch.object(
                     esc, "notify_escalation_slack", new_callable=AsyncMock
@@ -990,13 +1062,9 @@ class DepositFollowupIgnoreTests(unittest.TestCase):
         self.assertTrue(
             esc.should_ignore_deposit_sent_followup(self._text_msg("Sent!"))
         )
+        self.assertTrue(esc.should_ignore_deposit_sent_followup(self._text_msg("done")))
         self.assertTrue(
-            esc.should_ignore_deposit_sent_followup(self._text_msg("done"))
-        )
-        self.assertTrue(
-            esc.should_ignore_deposit_sent_followup(
-                self._text_msg("I already sent it")
-            )
+            esc.should_ignore_deposit_sent_followup(self._text_msg("I already sent it"))
         )
 
     def test_flag_other_text(self):
@@ -1041,7 +1109,9 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_followup_escalates_when_armed(self):
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 ga.mark_deposit_sent_watch_armed(5)
                 context = MagicMock()
@@ -1066,7 +1136,9 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                         )
 
     async def test_followup_ignores_sent_keeps_armed(self):
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 ga.mark_deposit_sent_watch_armed(5)
                 context = MagicMock()
@@ -1101,7 +1173,9 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
             audio=None,
             sticker=None,
         )
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 ga.mark_deposit_sent_watch_armed(5)
                 context = MagicMock()
@@ -1123,7 +1197,9 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                         self.assertTrue(ga.deposit_sent_watch_armed(5))
 
     async def test_followup_noop_when_not_armed(self):
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             context = MagicMock()
             consumed = await esc.handle_deposit_sent_player_followup(
                 context, 5, club_id=1, title="G"
@@ -1131,7 +1207,9 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(consumed)
 
     async def test_claim_unbound_instant_slack(self):
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 ga.mark_deposit_instructions_pending(9, method_slug="zelle")
                 query = AsyncMock()
@@ -1180,10 +1258,14 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("transaction hash", esc.DEPOSIT_SENT_ACK_COPY_CRYPTO.lower())
         self.assertEqual(esc.deposit_sent_ack_copy("zelle"), esc.DEPOSIT_SENT_ACK_COPY)
         self.assertEqual(esc.deposit_sent_ack_copy(None), esc.DEPOSIT_SENT_ACK_COPY)
-        self.assertEqual(esc.deposit_sent_ack_copy("CRYPTO"), esc.DEPOSIT_SENT_ACK_COPY_CRYPTO)
+        self.assertEqual(
+            esc.deposit_sent_ack_copy("CRYPTO"), esc.DEPOSIT_SENT_ACK_COPY_CRYPTO
+        )
 
     async def test_claim_bound_schedules_watch(self):
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 ga.mark_deposit_instructions_pending(11, method_slug="zelle")
                 query = AsyncMock()
@@ -1207,7 +1289,9 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                             "bot.services.payment_method_binding.chat_has_deposit_method_binding",
                             return_value=True,
                         ):
-                            with patch.object(esc, "schedule_deposit_sent_watch") as sched:
+                            with patch.object(
+                                esc, "schedule_deposit_sent_watch"
+                            ) as sched:
                                 await esc.handle_deposit_sent_claim(update, context)
                                 sched.assert_called_once()
                 self.assertEqual(
@@ -1217,7 +1301,9 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_claim_crypto_wallet_binding_schedules_watch(self):
         """Crypto bound via crypto_wallet_bindings must not Slack unbound."""
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 ga.mark_deposit_instructions_pending(12, method_slug="crypto")
                 query = AsyncMock()
@@ -1264,7 +1350,9 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     async def test_timeout_skips_when_payment_seen(self):
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 armed = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
                 ga.mark_deposit_sent_watch_armed(7, armed_at=armed)
@@ -1281,12 +1369,13 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                             cancel.assert_called_once()
                             notify.assert_not_awaited()
 
-
     async def test_offer_button_allows_stripe(self):
         bot = MagicMock()
         bot.edit_message_reply_markup = AsyncMock()
         bot.send_message = AsyncMock()
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 with patch.object(
                     esc, "escalation_notification_eligible", return_value=True
@@ -1307,7 +1396,9 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
     async def test_payment_clears_chase_and_strips_button(self):
         bot = MagicMock()
         bot.edit_message_reply_markup = AsyncMock()
-        with patch.object(ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
             with patch.object(ga, "_persist_activity_state"):
                 ga.mark_deposit_instructions_pending(55, method_slug="zelle")
                 ga.set_deposit_sent_button_message_id(55, 99)
@@ -1384,9 +1475,7 @@ class EscalationEligibilityTests(unittest.TestCase):
             patch.object(esc, "get_group_name", return_value="Random chat"),
         ):
             self.assertFalse(
-                esc.escalation_notification_eligible(
-                    1, club_id=4, title="Random chat"
-                )
+                esc.escalation_notification_eligible(1, club_id=4, title="Random chat")
             )
 
     def test_club_flag_off(self):

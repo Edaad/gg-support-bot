@@ -134,14 +134,18 @@ class RefundIssueReportDescriptionTests(unittest.TestCase):
 class RefundCopyTests(unittest.TestCase):
     def test_injects_staff_banner(self):
         gate = evaluate_refund_gate(amount_cents=5025, memo="poker")
-        text = inject_refund_banner("🔔 Venmo Payment Notification\nGroup Chat: Unbound", gate)
+        text = inject_refund_banner(
+            "🔔 Venmo Payment Notification\nGroup Chat: Unbound", gate
+        )
         self.assertIn("DO NOT ADD", text)
         self.assertNotIn("Non-whole-dollar amount", text)
         self.assertIn("Banned memo (poker)", text)
 
     def test_cents_only_has_no_staff_block(self):
         gate = evaluate_refund_gate(amount_cents=5025, method_slug="zelle")
-        text = inject_refund_banner("🔔 Zelle Payment Notification\nGroup Chat: Unbound", gate)
+        text = inject_refund_banner(
+            "🔔 Zelle Payment Notification\nGroup Chat: Unbound", gate
+        )
         self.assertNotIn("DO NOT ADD", text)
         self.assertTrue(gate.warn_whole_dollar)
 

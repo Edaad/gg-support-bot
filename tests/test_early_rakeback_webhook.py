@@ -41,7 +41,9 @@ class EarlyRakebackWebhookApiTestCase(unittest.TestCase):
     def tearDown(self):
         self.env_patch.stop()
 
-    @patch("api.routes.early_rakeback_webhook.trigger_early_rakeback_sync_for_occurred_at")
+    @patch(
+        "api.routes.early_rakeback_webhook.trigger_early_rakeback_sync_for_occurred_at"
+    )
     def test_webhook_triggers_sync(self, mock_trigger):
         mock_trigger.return_value = EarlyRakebackSyncReport(
             audit_date=date(2026, 7, 3),
@@ -73,7 +75,9 @@ class EarlyRakebackWebhookApiTestCase(unittest.TestCase):
         mock_trigger.assert_called_once()
         args, kwargs = mock_trigger.call_args
         self.assertEqual(args[1], "round-table")
-        self.assertEqual(kwargs["occurred_at"], datetime(2026, 7, 3, 20, 58, 9, tzinfo=timezone.utc))
+        self.assertEqual(
+            kwargs["occurred_at"], datetime(2026, 7, 3, 20, 58, 9, tzinfo=timezone.utc)
+        )
         self.mock_db.commit.assert_called_once()
 
     def test_webhook_rejects_bad_key(self):

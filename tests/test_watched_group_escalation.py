@@ -76,13 +76,17 @@ class AllowlistTests(unittest.TestCase):
         os.environ.pop(wge.WATCH_GROUP_ESCALATION_CHAT_IDS_ENV, None)
         self.assertEqual(wge.watched_escalation_chat_ids(), frozenset())
 
-    @patch.object(wge, "fetch_support_group_chat_by_telegram_chat_id", return_value=object())
+    @patch.object(
+        wge, "fetch_support_group_chat_by_telegram_chat_id", return_value=object()
+    )
     def test_support_gc_skipped(self, _fetch):
         os.environ[wge.WATCH_GROUP_ESCALATION_CHAT_IDS_ENV] = "99"
         self.assertTrue(wge.is_env_allowlisted_chat(99))
         self.assertFalse(wge.is_watched_escalation_chat(99))
 
-    @patch.object(wge, "fetch_support_group_chat_by_telegram_chat_id", return_value=None)
+    @patch.object(
+        wge, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+    )
     def test_watched_when_allowlisted_non_support(self, _fetch):
         os.environ[wge.WATCH_GROUP_ESCALATION_CHAT_IDS_ENV] = "99"
         self.assertTrue(wge.is_watched_escalation_chat(99))
@@ -90,7 +94,12 @@ class AllowlistTests(unittest.TestCase):
 
 class IgnoreSenderTests(unittest.TestCase):
     def test_union_automation_accounts(self):
-        for username in ("rtaccountant", "widget_stick", "@RTAccountant", "Widget_Stick"):
+        for username in (
+            "rtaccountant",
+            "widget_stick",
+            "@RTAccountant",
+            "Widget_Stick",
+        ):
             user = SimpleNamespace(username=username, is_bot=False)
             self.assertTrue(wge.is_ignored_watched_sender(user), username)
 
@@ -105,7 +114,9 @@ class IgnoreSenderTests(unittest.TestCase):
 
 class FormatTests(unittest.TestCase):
     def test_format_sender_with_username(self):
-        user = SimpleNamespace(full_name="Ada Lovelace", first_name="Ada", username="ada")
+        user = SimpleNamespace(
+            full_name="Ada Lovelace", first_name="Ada", username="ada"
+        )
         self.assertEqual(wge.format_sender_label(user), "Ada Lovelace (@ada)")
 
     def test_format_sender_without_username(self):

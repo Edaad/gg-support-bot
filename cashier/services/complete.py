@@ -77,9 +77,7 @@ def _format_low_deposit_hold_telegram(hold: dict[str, Any]) -> str:
     for label, value in _hold_message_fields(hold):
         safe_label = html.escape(label)
         if label == "Group":
-            lines.append(
-                f"<b>{safe_label}</b>: <code>{html.escape(str(value))}</code>"
-            )
+            lines.append(f"<b>{safe_label}</b>: <code>{html.escape(str(value))}</code>")
         else:
             lines.append(f"<b>{safe_label}</b>: {html.escape(str(value))}")
     return "\n".join(lines)
@@ -88,9 +86,7 @@ def _format_low_deposit_hold_telegram(hold: dict[str, Any]) -> str:
 async def _notify_low_deposit_hold(hold: dict[str, Any], job: dict[str, Any]) -> None:
     slack_text = _format_low_deposit_hold_slack(hold)
     await notify_slack_escalation(slack_text, source="low_deposit_cashout")
-    await notify_slack_head_admin_escalation(
-        slack_text, source="low_deposit_cashout"
-    )
+    await notify_slack_head_admin_escalation(slack_text, source="low_deposit_cashout")
     staff_user_id = job.get("initiated_by")
     if staff_user_id is None:
         logger.warning(
@@ -141,8 +137,7 @@ async def complete_cashout_job(job_id: int) -> tuple[bool, Optional[str]]:
                 await _notify_low_deposit_hold(hold, job)
         except Exception:
             logger.exception(
-                "complete_cashout_job: low_deposit_hold failed job_id=%s "
-                "record_id=%s",
+                "complete_cashout_job: low_deposit_hold failed job_id=%s record_id=%s",
                 job_id,
                 record_id,
             )

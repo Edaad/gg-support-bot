@@ -11,7 +11,10 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from club_gc_settings import INACTIVE_OUTREACH_CLUB_KEYS, gc_mtproto_operator_telegram_user_ids
+from club_gc_settings import (
+    INACTIVE_OUTREACH_CLUB_KEYS,
+    gc_mtproto_operator_telegram_user_ids,
+)
 from config import ADMIN_USER_IDS
 from bot.handlers.flow_cancel import (
     ACTIVE_FLOW_KEY,
@@ -78,7 +81,9 @@ def _confirm_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def _parse_start_args(text: str | None) -> tuple[str, int | None, int | None, str | None]:
+def _parse_start_args(
+    text: str | None,
+) -> tuple[str, int | None, int | None, str | None]:
     """Return (club_key, row_id, limit, error)."""
 
     parts = (text or "").strip().split(maxsplit=1)
@@ -98,7 +103,12 @@ def _parse_start_args(text: str | None) -> tuple[str, int | None, int | None, st
         tok = tokens[idx].lower()
         if tok == "row":
             if idx + 1 >= len(tokens) or not tokens[idx + 1].isdigit():
-                return club_key, None, None, "Usage: /sendinactive [club_key] row <outreach_row_id>"
+                return (
+                    club_key,
+                    None,
+                    None,
+                    "Usage: /sendinactive [club_key] row <outreach_row_id>",
+                )
             row_id = int(tokens[idx + 1])
             idx += 2
             continue
@@ -116,7 +126,9 @@ def _parse_start_args(text: str | None) -> tuple[str, int | None, int | None, st
     return club_key, row_id, limit, None
 
 
-async def sendinactive_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def sendinactive_entry(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     message = update.message
     user = update.effective_user
     chat = update.effective_chat
@@ -128,7 +140,9 @@ async def sendinactive_entry(update: Update, context: ContextTypes.DEFAULT_TYPE)
         raise ApplicationHandlerStop()
 
     if not _can_use_sendinactive(user.id):
-        await message.reply_text("You are not authorized to send inactive outreach DMs.")
+        await message.reply_text(
+            "You are not authorized to send inactive outreach DMs."
+        )
         raise ApplicationHandlerStop()
 
     if is_dm_batch_running():
@@ -150,7 +164,9 @@ async def sendinactive_entry(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         raise ApplicationHandlerStop()
 
-    if await block_if_dm_flow_active(update, context, starting="inactive_outreach_send"):
+    if await block_if_dm_flow_active(
+        update, context, starting="inactive_outreach_send"
+    ):
         raise ApplicationHandlerStop()
 
     _cleanup_send_flow(context)
@@ -227,7 +243,9 @@ async def sendinactive_callback_handler(
     raise ApplicationHandlerStop()
 
 
-async def sendinactive_compose(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def sendinactive_compose(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     message = update.message
     if not message:
         return
@@ -261,7 +279,9 @@ async def sendinactive_compose(update: Update, context: ContextTypes.DEFAULT_TYP
     await message.reply_text(preview, reply_markup=_confirm_keyboard())
 
 
-async def sendinactive_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def sendinactive_confirm(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     query = update.callback_query
     if not query:
         return
@@ -312,7 +332,9 @@ async def sendinactive_confirm(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
-async def sendinactive_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def sendinactive_cancel(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     _cleanup_send_flow(context)
     if update.message:
         await update.message.reply_text("Inactive outreach send cancelled.")

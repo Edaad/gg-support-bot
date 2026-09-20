@@ -145,7 +145,9 @@ def _load_failed_csv(path: Path) -> dict[int, dict[str, str]]:
                 chat_id = int(raw)
             except ValueError:
                 continue
-            merged[chat_id] = {k: row.get(k, "") or "" for k in FAILED_CSV_FIELDS_WITH_AT}
+            merged[chat_id] = {
+                k: row.get(k, "") or "" for k in FAILED_CSV_FIELDS_WITH_AT
+            }
     return merged
 
 
@@ -228,7 +230,9 @@ def main() -> None:
         help="Write per-group results here (default: backups/dm_affected_gap_invite_<ts>.csv).",
     )
     parser.add_argument("--json", action="store_true", help="JSON summary to stdout.")
-    parser.add_argument("--quiet", action="store_true", help="Only warnings/errors on stderr.")
+    parser.add_argument(
+        "--quiet", action="store_true", help="Only warnings/errors on stderr."
+    )
     args = parser.parse_args()
 
     if not args.json:

@@ -5,7 +5,10 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
-from bot.services.inactive_group_outreach_dm import claim_dm_batch, count_dm_eligible_recipients
+from bot.services.inactive_group_outreach_dm import (
+    claim_dm_batch,
+    count_dm_eligible_recipients,
+)
 from db.models import InactiveGroupOutreachRow
 
 

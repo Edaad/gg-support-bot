@@ -85,4 +85,6 @@ if __name__ == "__main__":
         for stmt in ALTER_COLUMNS:
             conn.execute(text(stmt))
         conn.commit()
-        print("zelle_payments, zelle_payer_bindings, and zelle_payment_id column are ready.")
+        print(
+            "zelle_payments, zelle_payer_bindings, and zelle_payment_id column are ready."
+        )

@@ -108,9 +108,7 @@ class Club(Base):
     custom_commands = relationship(
         "CustomCommand", back_populates="club", cascade="all, delete-orphan"
     )
-    groups = relationship(
-        "Group", back_populates="club", cascade="all, delete-orphan"
-    )
+    groups = relationship("Group", back_populates="club", cascade="all, delete-orphan")
     linked_accounts = relationship(
         "ClubLinkedAccount", back_populates="club", cascade="all, delete-orphan"
     )
@@ -131,9 +129,7 @@ class PaymentQuickLink(Base):
     title = Column(String(120), nullable=False)
     url = Column(Text, nullable=False)
     method = Column(String(32), nullable=True)
-    club_id = Column(
-        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=True
-    )
+    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=True)
     sort_order = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
@@ -192,11 +188,15 @@ class PaymentMethod(Base):
         "PaymentSubOption", back_populates="method", cascade="all, delete-orphan"
     )
     tiers = relationship(
-        "PaymentMethodTier", back_populates="method", cascade="all, delete-orphan",
+        "PaymentMethodTier",
+        back_populates="method",
+        cascade="all, delete-orphan",
         order_by="PaymentMethodTier.sort_order",
     )
     variants = relationship(
-        "MethodVariant", back_populates="method", cascade="all, delete-orphan",
+        "MethodVariant",
+        back_populates="method",
+        cascade="all, delete-orphan",
         order_by="MethodVariant.sort_order",
     )
 
@@ -211,7 +211,9 @@ class MethodVariant(Base):
         Integer, ForeignKey("payment_methods.id", ondelete="CASCADE"), nullable=False
     )
     tier_id = Column(
-        Integer, ForeignKey("payment_method_tiers.id", ondelete="CASCADE"), nullable=True
+        Integer,
+        ForeignKey("payment_method_tiers.id", ondelete="CASCADE"),
+        nullable=True,
     )
     label = Column(String(100), nullable=False)
     weight = Column(Integer, nullable=False, default=1)
@@ -232,9 +234,7 @@ class MethodVariant(Base):
 
 class PaymentSubOption(Base):
     __tablename__ = "payment_sub_options"
-    __table_args__ = (
-        UniqueConstraint("method_id", "slug", name="uq_method_slug"),
-    )
+    __table_args__ = (UniqueConstraint("method_id", "slug", name="uq_method_slug"),)
 
     id = Column(Integer, primary_key=True)
     method_id = Column(
@@ -273,7 +273,9 @@ class PaymentMethodTier(Base):
 
     method = relationship("PaymentMethod", back_populates="tiers")
     variants = relationship(
-        "MethodVariant", back_populates="tier", cascade="all, delete-orphan",
+        "MethodVariant",
+        back_populates="tier",
+        cascade="all, delete-orphan",
         order_by="MethodVariant.sort_order",
     )
 
@@ -286,17 +288,27 @@ class ClubPaymentMethod(Base):
 
     __tablename__ = "club_payment_methods"
     __table_args__ = (
-        UniqueConstraint("club_id", "direction", "slug", name="uq_cpm_club_direction_slug"),
+        UniqueConstraint(
+            "club_id", "direction", "slug", name="uq_cpm_club_direction_slug"
+        ),
         CheckConstraint("direction IN ('deposit', 'cashout')", name="ck_cpm_direction"),
         CheckConstraint(
             "min_amount IS NULL OR max_amount IS NULL OR min_amount <= max_amount",
             name="ck_cpm_amount_range",
         ),
-        Index("ix_cpm_club_direction_active", "club_id", "direction", "is_active", "sort_order"),
+        Index(
+            "ix_cpm_club_direction_active",
+            "club_id",
+            "direction",
+            "is_active",
+            "sort_order",
+        ),
     )
 
     id = Column(Integer, primary_key=True)
-    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
     direction = Column(String(10), nullable=False)
     name = Column(String(50), nullable=False)
     slug = Column(String(50), nullable=False)
@@ -317,7 +329,10 @@ class ClubPaymentMethod(Base):
     )
     union_type = Column(String(20), nullable=True)
     pool_pay_type = Column(
-        String(20), nullable=False, server_default=text("'union_method'"), default="union_method"
+        String(20),
+        nullable=False,
+        server_default=text("'union_method'"),
+        default="union_method",
     )
     deposit_union = Column(String(20), nullable=True)
     method_tag = Column(String(200), nullable=True)
@@ -403,7 +418,9 @@ class ClubPaymentTier(Base):
 
     id = Column(Integer, primary_key=True)
     method_id = Column(
-        Integer, ForeignKey("club_payment_methods.id", ondelete="CASCADE"), nullable=False
+        Integer,
+        ForeignKey("club_payment_methods.id", ondelete="CASCADE"),
+        nullable=False,
     )
     label = Column(String(50), nullable=False)
     min_amount = Column(Numeric(12, 2), nullable=True)
@@ -444,7 +461,9 @@ class ClubPaymentTierVariant(Base):
 
     id = Column(Integer, primary_key=True)
     method_id = Column(
-        Integer, ForeignKey("club_payment_methods.id", ondelete="CASCADE"), nullable=False
+        Integer,
+        ForeignKey("club_payment_methods.id", ondelete="CASCADE"),
+        nullable=False,
     )
     tier_id = Column(
         Integer, ForeignKey("club_payment_tiers.id", ondelete="CASCADE"), nullable=False
@@ -474,11 +493,15 @@ class ClubPaymentTierVariant(Base):
 
 class ClubPaymentSubOption(Base):
     __tablename__ = "club_payment_sub_options"
-    __table_args__ = (UniqueConstraint("method_id", "slug", name="uq_cpso_method_slug"),)
+    __table_args__ = (
+        UniqueConstraint("method_id", "slug", name="uq_cpso_method_slug"),
+    )
 
     id = Column(Integer, primary_key=True)
     method_id = Column(
-        Integer, ForeignKey("club_payment_methods.id", ondelete="CASCADE"), nullable=False
+        Integer,
+        ForeignKey("club_payment_methods.id", ondelete="CASCADE"),
+        nullable=False,
     )
     name = Column(String(50), nullable=False)
     slug = Column(String(50), nullable=False)
@@ -510,7 +533,9 @@ class ManualDepositRequest(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
     method_id = Column(
         Integer,
         ForeignKey("club_payment_methods.id", ondelete="SET NULL"),
@@ -539,7 +564,9 @@ class ManualDepositRequest(Base):
     source = Column(
         String(20), nullable=False, server_default=text("'bot'"), default="bot"
     )
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     club = relationship("Club")
     method = relationship("ClubPaymentMethod", back_populates="manual_deposit_requests")
@@ -638,7 +665,9 @@ class ReferralLink(Base):
 
     club = relationship("Club")
     attributions = relationship(
-        "ReferralAttribution", back_populates="referral_link", cascade="all, delete-orphan"
+        "ReferralAttribution",
+        back_populates="referral_link",
+        cascade="all, delete-orphan",
     )
 
 
@@ -723,7 +752,9 @@ class PlayerActivity(Base):
     )
     telegram_user_id = Column(BigInteger, nullable=False)
     chat_id = Column(BigInteger, nullable=False)
-    activity_type = Column(String(10), nullable=False)  # deposit, cashout, earlyrb, dep_cmd, add_cmd
+    activity_type = Column(
+        String(10), nullable=False
+    )  # deposit, cashout, earlyrb, dep_cmd, add_cmd
     cancelled = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
 
@@ -738,7 +769,9 @@ class CooldownBypass(Base):
         Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
     )
     chat_id = Column(BigInteger, nullable=False)
-    telegram_user_id = Column(BigInteger, nullable=True)  # legacy; unused for eligibility
+    telegram_user_id = Column(
+        BigInteger, nullable=True
+    )  # legacy; unused for eligibility
     bypass_type = Column(String(20), nullable=False)  # "one_time" or "permanent"
     used = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
@@ -892,7 +925,9 @@ class BonusDraft(Base):
 
     id = Column(Integer, primary_key=True)
     staff_telegram_user_id = Column(BigInteger, nullable=False)
-    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
     group_title = Column(String(512), nullable=True)
     telegram_chat_id = Column(BigInteger, nullable=True)
     player_username = Column(String(255), nullable=True)
@@ -936,7 +971,9 @@ class MtProtoClubHealth(Base):
     status = Column(String(32), nullable=False, default="unknown")
     status_detail = Column(Text, nullable=True)
     telegram_user_id = Column(BigInteger, nullable=True)
-    checked_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    checked_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class CashierCashoutJob(Base):
@@ -977,7 +1014,9 @@ class StaffCashoutRecord(Base):
 
     __tablename__ = "staff_cashout_records"
     __table_args__ = (
-        UniqueConstraint("cashier_job_id", name="uq_staff_cashout_records_cashier_job_id"),
+        UniqueConstraint(
+            "cashier_job_id", name="uq_staff_cashout_records_cashier_job_id"
+        ),
         Index("ix_staff_cashout_records_club_id", "club_id"),
         Index("ix_staff_cashout_records_created_at", "created_at"),
         Index(
@@ -1015,9 +1054,7 @@ class StaffCashoutRecord(Base):
     last_slack_reminder_at = Column(DateTime, nullable=True)
     create_notified_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     club = relationship("Club")
     cashier_job = relationship("CashierCashoutJob")
@@ -1059,7 +1096,9 @@ class StaffCashoutNotifyRecipient(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
     pushover_user_key = Column(String(64), nullable=False)
-    methods = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list)
+    methods = Column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -1125,7 +1164,9 @@ class SupportGroupChat(Base):
         Index("ix_support_group_chats_telegram_chat_id", "telegram_chat_id"),
         Index("ix_support_group_chats_created_by", "created_by_telegram_user_id"),
         Index("ix_support_group_chats_created_at", "created_at"),
-        Index("ix_support_group_chats_player_telegram_user_id", "player_telegram_user_id"),
+        Index(
+            "ix_support_group_chats_player_telegram_user_id", "player_telegram_user_id"
+        ),
         Index(
             "uq_support_group_chats_club_player",
             "club_key",
@@ -1200,9 +1241,16 @@ class MigratedGroupRecovery(Base):
 
     __tablename__ = "migrated_group_recovery"
     __table_args__ = (
-        Index("ix_migrated_group_recovery_claim", "readd_status", "priority_tier", "priority_rank"),
+        Index(
+            "ix_migrated_group_recovery_claim",
+            "readd_status",
+            "priority_tier",
+            "priority_rank",
+        ),
         Index("ix_migrated_group_recovery_club_key", "club_key"),
-        UniqueConstraint("telegram_chat_id", name="uq_migrated_group_recovery_telegram_chat_id"),
+        UniqueConstraint(
+            "telegram_chat_id", name="uq_migrated_group_recovery_telegram_chat_id"
+        ),
     )
 
     id = Column(Integer, primary_key=True)
@@ -1925,7 +1973,9 @@ class GroupChatDailyTranscript(Base):
         Index("ix_gcdt_activity_date", "activity_date"),
         Index("ix_gcdt_status", "status"),
         Index("ix_gcdt_analysis_status", "analysis_status"),
-        Index("ix_gcdt_activity_date_analysis_status", "activity_date", "analysis_status"),
+        Index(
+            "ix_gcdt_activity_date_analysis_status", "activity_date", "analysis_status"
+        ),
     )
 
     id = Column(Integer, primary_key=True)
@@ -2154,9 +2204,7 @@ class GroupDepositMethodAccess(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     club = relationship("Club")
-    method = relationship(
-        "ClubPaymentMethod", back_populates="deposit_method_access"
-    )
+    method = relationship("ClubPaymentMethod", back_populates="deposit_method_access")
 
 
 class GroupPaymentMethodBinding(Base):
@@ -2204,6 +2252,42 @@ class GroupPaymentMethodBinding(Base):
         "PaymentMethodBindAttempt",
         foreign_keys=[first_bind_attempt_id],
     )
+
+
+class GroupDepositDestinationStickiness(Base):
+    """First bot-shown native Venmo/Cash App destination tag for a support group.
+
+    Separate from ``group_payment_method_bindings`` so display stickiness does not
+    skip first-time deposit linking.
+    """
+
+    __tablename__ = "group_deposit_destination_stickiness"
+    __table_args__ = (
+        UniqueConstraint(
+            "telegram_chat_id",
+            "payment_method_slug",
+            name="uq_gdds_chat_method",
+        ),
+        Index("ix_gdds_telegram_chat_id", "telegram_chat_id"),
+        Index("ix_gdds_club_slug", "club_id", "payment_method_slug"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    payment_method_slug = Column(String(32), nullable=False)
+    destination_tag = Column(String(100), nullable=False)
+    variant_id = Column(
+        Integer,
+        ForeignKey("club_payment_tier_variants.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    shown_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    club = relationship("Club")
+    variant = relationship("ClubPaymentTierVariant")
 
 
 class PaymentNotificationPost(Base):
@@ -2299,7 +2383,9 @@ class IssueReport(Base):
     reporter_name = Column(String(255), nullable=True)
     reporter_source = Column(String(32), nullable=False, server_default="api")
     reporter_telegram_user_id = Column(BigInteger, nullable=True)
-    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
     group_title = Column(String(512), nullable=True)
     telegram_chat_id = Column(BigInteger, nullable=True)
     slack_message_ts = Column(String(64), nullable=True)
@@ -2354,7 +2440,9 @@ class IssueReportDraft(Base):
 
     id = Column(Integer, primary_key=True)
     staff_telegram_user_id = Column(BigInteger, nullable=False)
-    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
     group_title = Column(String(512), nullable=True)
     telegram_chat_id = Column(BigInteger, nullable=True)
     status = Column(String(32), nullable=False, server_default="pending")
@@ -2701,7 +2789,9 @@ class WatchedGroupEscalationState(Base):
     episode_started_at = Column(DateTime(timezone=True), nullable=True)
     last_message_at = Column(DateTime(timezone=True), nullable=True)
     escalated_at = Column(DateTime(timezone=True), nullable=True)
-    burst_json = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list)
+    burst_json = Column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -2719,9 +2809,13 @@ class EscalationEpisode(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True)
     telegram_chat_id = Column(BigInteger, nullable=False)
-    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
     group_title = Column(Text, nullable=True)
-    opened_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    opened_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     closed_at = Column(DateTime(timezone=True), nullable=True)
     close_reason = Column(String(32), nullable=True)
     trigger_messages = Column(
@@ -2741,9 +2835,13 @@ class EscalationEvent(Base):
     )
 
     id = Column(BigInteger, primary_key=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     reason = Column(String(64), nullable=False)
-    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
     telegram_chat_id = Column(BigInteger, nullable=False)
     group_title = Column(Text, nullable=True)
     episode_id = Column(
@@ -2751,7 +2849,9 @@ class EscalationEvent(Base):
         ForeignKey("escalation_episodes.id", ondelete="SET NULL"),
         nullable=True,
     )
-    slack_ok = Column(Boolean, nullable=False, server_default=text("false"), default=False)
+    slack_ok = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
     head_admin_fanout = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
@@ -2772,10 +2872,14 @@ class EscalationDecisionLog(Base):
     )
 
     id = Column(BigInteger, primary_key=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     decision = Column(String(16), nullable=False)
     reason = Column(String(64), nullable=False)
-    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
     telegram_chat_id = Column(BigInteger, nullable=False)
     group_title = Column(Text, nullable=True)
     telegram_user_id = Column(BigInteger, nullable=True)
@@ -2805,7 +2909,9 @@ class SupportGroupIdleEpisodeState(Base):
     title = Column(Text, nullable=True)
     episode_started_at = Column(DateTime(timezone=True), nullable=True)
     last_human_at = Column(DateTime(timezone=True), nullable=True)
-    burst_json = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list)
+    burst_json = Column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
+    )
     history_episode_id = Column(
         UUID(as_uuid=True),
         ForeignKey("escalation_episodes.id", ondelete="SET NULL"),
@@ -2879,3 +2985,36 @@ class WebhookIngestRequest(Base):
     request_body = Column(JSONB, nullable=True)
     response_json = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class DepositMethodAlert(Base):
+    """Named weekly deposit threshold alert for a method + destination variant."""
+
+    __tablename__ = "deposit_method_alerts"
+    __table_args__ = (
+        CheckConstraint(
+            "method IN ('venmo', 'zelle', 'cashapp', 'paypal', 'crypto')",
+            name="ck_dma_method",
+        ),
+        Index("ix_dma_method_variant", "method", "variant"),
+        Index("ix_dma_is_active", "is_active"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False)
+    method = Column(String(32), nullable=False)
+    variant = Column(String(255), nullable=False)
+    is_active = Column(
+        Boolean, nullable=False, server_default=text("true"), default=True
+    )
+    conditions = Column(
+        JSONB, nullable=False, server_default=text("'[]'"), default=list
+    )
+    last_fired_week_id = Column(String(10), nullable=True)
+    last_fired_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )

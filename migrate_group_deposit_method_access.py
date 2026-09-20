@@ -46,9 +46,7 @@ def main() -> None:
             s = stmt.strip()
             if s:
                 session.execute(text(s))
-    print(
-        "club_payment_methods.is_public and group_deposit_method_access are ready."
-    )
+    print("club_payment_methods.is_public and group_deposit_method_access are ready.")
 
 
 if __name__ == "__main__":

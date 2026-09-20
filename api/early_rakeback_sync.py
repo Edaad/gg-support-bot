@@ -93,9 +93,7 @@ def _merge_skips(
         for s in left
     ]
     for skip in right:
-        _record_skip(
-            out, reason=skip.reason, nickname=skip.nickname, count=skip.count
-        )
+        _record_skip(out, reason=skip.reason, nickname=skip.nickname, count=skip.count)
     return out
 
 
@@ -162,9 +160,7 @@ def _format_skip_warning(club_name: str, skips: list[EarlyRakebackSkip]) -> str:
     suffix = "…" if len(skips) > 10 else ""
     return (
         f"{club_name}: {total} Early RB record(s) are unmapped (no GG player ID) "
-        f"— still included in the export: "
-        + ", ".join(parts)
-        + suffix
+        f"— still included in the export: " + ", ".join(parts) + suffix
     )
 
 

@@ -24,7 +24,10 @@ from db.models import (
 import logging
 
 from api.payments_helpers import is_analytics_excluded_group_title
-from bot.services.payment_bind_logging import log_binding_table_write, log_candidate_list
+from bot.services.payment_bind_logging import (
+    log_binding_table_write,
+    log_candidate_list,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +175,10 @@ def list_candidate_groups(
         return candidates
 
     if slug == "crypto":
-        from bot.services.crypto_payments import alert_scope_for_club_id, normalize_from_address
+        from bot.services.crypto_payments import (
+            alert_scope_for_club_id,
+            normalize_from_address,
+        )
 
         normalized_addr = normalize_from_address(from_address or "")
         scope = (alert_scope or "").strip()
@@ -424,7 +430,7 @@ def reset_all_candidates(
         return int(deleted)
 
     if slug == "crypto":
-        from bot.services.crypto_payments import alert_scope_for_club_id, normalize_from_address
+        from bot.services.crypto_payments import normalize_from_address
 
         normalized_addr = normalize_from_address(from_address or "")
         scope = (alert_scope or "").strip()

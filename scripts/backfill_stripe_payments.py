@@ -149,14 +149,18 @@ def enrich_checkout_dict(
     return checkout
 
 
-def fetch_checkout_for_payment_intent(payment_intent_id: str) -> Optional[dict[str, Any]]:
+def fetch_checkout_for_payment_intent(
+    payment_intent_id: str,
+) -> Optional[dict[str, Any]]:
     """Load a completed checkout session dict from Stripe for a PaymentIntent id."""
     pi_id = (payment_intent_id or "").strip()
     if not pi_id.startswith("pi_"):
         return None
 
     pi = stripe.PaymentIntent.retrieve(pi_id)
-    cs_id = getattr(pi, "checkout_session", None) or (pi.get("checkout_session") if isinstance(pi, dict) else None)
+    cs_id = getattr(pi, "checkout_session", None) or (
+        pi.get("checkout_session") if isinstance(pi, dict) else None
+    )
 
     if cs_id:
         session = stripe.checkout.Session.retrieve(str(cs_id))
@@ -167,7 +171,11 @@ def fetch_checkout_for_payment_intent(payment_intent_id: str) -> Optional[dict[s
     if data:
         return _session_dict(data[0])
 
-    cust_id = str(getattr(pi, "customer", None) or (pi.get("customer") if isinstance(pi, dict) else "") or "").strip()
+    cust_id = str(
+        getattr(pi, "customer", None)
+        or (pi.get("customer") if isinstance(pi, dict) else "")
+        or ""
+    ).strip()
     if not cust_id:
         return None
 
@@ -175,12 +183,19 @@ def fetch_checkout_for_payment_intent(payment_intent_id: str) -> Optional[dict[s
     if amount is None and isinstance(pi, dict):
         amount = pi.get("amount_received") or pi.get("amount")
 
-    meta = getattr(pi, "metadata", None) or (pi.get("metadata") if isinstance(pi, dict) else {}) or {}
+    meta = (
+        getattr(pi, "metadata", None)
+        or (pi.get("metadata") if isinstance(pi, dict) else {})
+        or {}
+    )
     return {
         "id": f"backfill_{pi_id}",
         "customer": cust_id,
         "amount_total": int(amount or 0),
-        "currency": str(getattr(pi, "currency", None) or (pi.get("currency") if isinstance(pi, dict) else "usd")),
+        "currency": str(
+            getattr(pi, "currency", None)
+            or (pi.get("currency") if isinstance(pi, dict) else "usd")
+        ),
         "payment_intent": pi_id,
         "metadata": dict(meta),
         "status": "complete",
@@ -228,7 +243,11 @@ def backfill_one(
 
     enriched = enrich_checkout_dict(checkout, db, group_title=group_title)
     meta = enriched.get("metadata") or {}
-    if not meta.get("telegram_chat_id") or not meta.get("club_id") or not enriched.get("customer"):
+    if (
+        not meta.get("telegram_chat_id")
+        or not meta.get("club_id")
+        or not enriched.get("customer")
+    ):
         return "failed", "missing chat_id/club_id/customer (add group_title column?)"
 
     if dry_run:
@@ -243,7 +262,9 @@ def backfill_one(
     return "skipped", "record_completed_checkout_payment returned false (duplicate?)"
 
 
-def _rows_from_header_matrix(header: list[str], data_rows: list[list[str]]) -> list[dict[str, str]]:
+def _rows_from_header_matrix(
+    header: list[str], data_rows: list[list[str]]
+) -> list[dict[str, str]]:
     norm_headers = [_normalize_header(h) for h in header]
     out: list[dict[str, str]] = []
     for cells in data_rows:
@@ -319,7 +340,9 @@ def iter_csv_targets(rows: list[dict[str, str]]):
             yield pi, cs, title
 
 
-def backfill_from_stripe_range(*, created_gte: int, created_lte: Optional[int], dry_run: bool) -> int:
+def backfill_from_stripe_range(
+    *, created_gte: int, created_lte: Optional[int], dry_run: bool
+) -> int:
     """List paid checkout sessions from Stripe and backfill any missing from DB."""
     params: dict[str, Any] = {
         "limit": 100,
@@ -334,7 +357,9 @@ def backfill_from_stripe_range(*, created_gte: int, created_lte: Optional[int], 
         starting_after = None
         while True:
             if starting_after:
-                page = stripe.checkout.Session.list(**params, starting_after=starting_after)
+                page = stripe.checkout.Session.list(
+                    **params, starting_after=starting_after
+                )
             else:
                 page = stripe.checkout.Session.list(**params)
             for session in page.data:
@@ -379,7 +404,9 @@ def main() -> int:
         "--created-gte",
         help="With --from-stripe: ISO date or unix ts for Session.created lower bound",
     )
-    parser.add_argument("--created-lte", help="Optional upper bound for Session.created")
+    parser.add_argument(
+        "--created-lte", help="Optional upper bound for Session.created"
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -400,7 +427,10 @@ def main() -> int:
 
     if args.from_stripe:
         if not args.created_gte:
-            print("--from-stripe requires --created-gte (e.g. 2026-05-01)", file=sys.stderr)
+            print(
+                "--from-stripe requires --created-gte (e.g. 2026-05-01)",
+                file=sys.stderr,
+            )
             return 1
         raw = args.created_gte.strip()
         try:
@@ -420,7 +450,9 @@ def main() -> int:
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
                 lte = int(dt.timestamp())
-        return backfill_from_stripe_range(created_gte=gte, created_lte=lte, dry_run=dry_run)
+        return backfill_from_stripe_range(
+            created_gte=gte, created_lte=lte, dry_run=dry_run
+        )
 
     targets: list[tuple[str, str, Optional[str]]] = []
     if args.csv:
@@ -432,7 +464,9 @@ def main() -> int:
         targets.append(("", cs.strip(), None))
 
     if not targets:
-        parser.error("Provide --csv, --payment-intent, --checkout-session, or --from-stripe")
+        parser.error(
+            "Provide --csv, --payment-intent, --checkout-session, or --from-stripe"
+        )
 
     inserted = skipped = failed = 0
     with get_db() as db:
@@ -448,7 +482,9 @@ def main() -> int:
                 failed += 1
                 continue
 
-            status, detail = backfill_one(db, checkout, group_title=group_title, dry_run=dry_run)
+            status, detail = backfill_one(
+                db, checkout, group_title=group_title, dry_run=dry_run
+            )
             label = pi or cs or checkout.get("id", "?")
             print(f"[{status}] {label} — {detail}")
             if status in ("inserted", "would_insert"):

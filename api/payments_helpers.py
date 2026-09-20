@@ -397,7 +397,9 @@ def _apply_created_at_range(query, payment_cls, *, from_dt, to_dt):
     return query
 
 
-def _apply_manual_payment_club_filters(query, payment_cls, *, club_id: int, status: str | None):
+def _apply_manual_payment_club_filters(
+    query, payment_cls, *, club_id: int, status: str | None
+):
     status_norm = (status or "all").strip().lower()
     if status_norm == "bound":
         return query.filter(
@@ -431,9 +433,7 @@ def apply_venmo_payment_filters(
         query, VenmoPayment, club_id=club_id, status=status
     )
 
-    query = _apply_created_at_range(
-        query, VenmoPayment, from_dt=from_dt, to_dt=to_dt
-    )
+    query = _apply_created_at_range(query, VenmoPayment, from_dt=from_dt, to_dt=to_dt)
 
     if q and q.strip():
         term = q.strip()
@@ -535,9 +535,7 @@ def apply_zelle_payment_filters(
         query, ZellePayment, club_id=club_id, status=status
     )
 
-    query = _apply_created_at_range(
-        query, ZellePayment, from_dt=from_dt, to_dt=to_dt
-    )
+    query = _apply_created_at_range(query, ZellePayment, from_dt=from_dt, to_dt=to_dt)
 
     if q and q.strip():
         term = q.strip()
@@ -610,9 +608,7 @@ def apply_zelle_summary_filters(
         query = _apply_manual_payment_club_filters(
             query, ZellePayment, club_id=club_id, status="all"
         )
-    query = _apply_created_at_range(
-        query, ZellePayment, from_dt=from_dt, to_dt=to_dt
-    )
+    query = _apply_created_at_range(query, ZellePayment, from_dt=from_dt, to_dt=to_dt)
     return query
 
 
@@ -636,15 +632,13 @@ def compute_zelle_payment_summary(
     )
 
     total_payments = int(base.count())
-    bound_count = int(
-        base.filter(ZellePayment.telegram_chat_id.isnot(None)).count()
-    )
-    unbound_count = int(
-        base.filter(ZellePayment.telegram_chat_id.is_(None)).count()
-    )
+    bound_count = int(base.filter(ZellePayment.telegram_chat_id.isnot(None)).count())
+    unbound_count = int(base.filter(ZellePayment.telegram_chat_id.is_(None)).count())
     auto_bound_count = int(base.filter(ZellePayment.auto_bound.is_(True)).count())
     total_amount_cents = int(
-        base.with_entities(func.coalesce(func.sum(ZellePayment.amount_cents), 0)).scalar()
+        base.with_entities(
+            func.coalesce(func.sum(ZellePayment.amount_cents), 0)
+        ).scalar()
         or 0
     )
 
@@ -701,9 +695,7 @@ def apply_cashapp_payment_filters(
         query, CashAppPayment, club_id=club_id, status=status
     )
 
-    query = _apply_created_at_range(
-        query, CashAppPayment, from_dt=from_dt, to_dt=to_dt
-    )
+    query = _apply_created_at_range(query, CashAppPayment, from_dt=from_dt, to_dt=to_dt)
 
     if q and q.strip():
         term = q.strip()
@@ -739,7 +731,9 @@ def list_cashapp_payer_aggregates(session: Session, club_id: int, q: str | None)
         session.query(
             CashAppPayment.payer_name,
             CashAppPayment.cashapp_handle,
-            func.coalesce(func.sum(CashAppPayment.amount_cents), 0).label("total_cents"),
+            func.coalesce(func.sum(CashAppPayment.amount_cents), 0).label(
+                "total_cents"
+            ),
             func.count(CashAppPayment.id).label("payment_count"),
             func.max(CashAppPayment.created_at).label("last_payment_at"),
             func.max(CashAppPayment.telegram_chat_id).label("telegram_chat_id"),
@@ -803,9 +797,7 @@ def apply_paypal_payment_filters(
         query, PayPalPayment, club_id=club_id, status=status
     )
 
-    query = _apply_created_at_range(
-        query, PayPalPayment, from_dt=from_dt, to_dt=to_dt
-    )
+    query = _apply_created_at_range(query, PayPalPayment, from_dt=from_dt, to_dt=to_dt)
 
     if q and q.strip():
         term = q.strip()
@@ -946,9 +938,7 @@ def apply_crypto_payment_filters(
         query, CryptoPayment, club_id=club_id, status=status
     )
 
-    query = _apply_crypto_paid_at_range(
-        query, from_dt=from_dt, to_dt=to_dt
-    )
+    query = _apply_crypto_paid_at_range(query, from_dt=from_dt, to_dt=to_dt)
 
     if q and q.strip():
         term = q.strip()
@@ -1027,7 +1017,9 @@ OWNER_VARIANT_COLUMNS: dict[str, str] = {
 }
 
 OWNER_METHODS_BY_OWNER: dict[str, frozenset[str]] = {
-    "round-table": frozenset({"stripe", "venmo", "zelle", "cashapp", "paypal", "crypto"}),
+    "round-table": frozenset(
+        {"stripe", "venmo", "zelle", "cashapp", "paypal", "crypto"}
+    ),
     "vaughn": frozenset({"venmo", "zelle", "crypto"}),
     "mateos": frozenset({"venmo", "zelle"}),
 }
@@ -1146,9 +1138,7 @@ def apply_owner_ingest_filters(
         variant_col = getattr(payment_cls, variant_col_name)
         query = query.filter(variant_col == variant.strip())
     if payment_cls is CryptoPayment:
-        query = _apply_crypto_paid_at_range(
-            query, from_dt=from_dt, to_dt=to_dt
-        )
+        query = _apply_crypto_paid_at_range(query, from_dt=from_dt, to_dt=to_dt)
     else:
         query = _apply_created_at_range(
             query, payment_cls, from_dt=from_dt, to_dt=to_dt
@@ -1162,7 +1152,8 @@ def owner_stripe_search_clause(term: str):
     pattern = f"%{term.strip()}%"
     customer_match = exists(
         select(1).where(
-            StripeCustomer.stripe_customer_id == StripeCheckoutSession.stripe_customer_id,
+            StripeCustomer.stripe_customer_id
+            == StripeCheckoutSession.stripe_customer_id,
             or_(
                 StripeCustomer.stripe_customer_id.ilike(pattern),
                 StripeCustomer.gg_player_id.ilike(pattern),
@@ -1273,5 +1264,7 @@ def distinct_owner_stripe_variants(
             key = str(method_id)
             label = name or slug or key
         seen[key] = label
-    return [{"id": key, "label": label} for key, label in sorted(seen.items(), key=lambda x: x[1].lower())]
-
+    return [
+        {"id": key, "label": label}
+        for key, label in sorted(seen.items(), key=lambda x: x[1].lower())
+    ]

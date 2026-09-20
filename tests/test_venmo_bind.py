@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from bot.services import venmo_payments as vp
-from db.models import VenmoPayerBinding, VenmoPayment
+from db.models import VenmoPayment
 from notification.payment_lookup import PaymentRef
 from tests.support.ingest_mocks import start_payment_ingest_mocks, stop_patchers
 
@@ -19,7 +19,9 @@ NOTIF_MSG_ID = 12345
 
 class VenmoPaymentsHelpersTestCase(unittest.TestCase):
     def test_normalize_payer_name(self):
-        self.assertEqual(vp.normalize_payer_name("  Moshe   Toussoun "), "moshe toussoun")
+        self.assertEqual(
+            vp.normalize_payer_name("  Moshe   Toussoun "), "moshe toussoun"
+        )
 
     def test_normalize_venmo_handle(self):
         self.assertEqual(vp.normalize_venmo_handle("godfather4444"), "@godfather4444")
@@ -165,7 +167,9 @@ class VenmoPaymentsHelpersTestCase(unittest.TestCase):
         )
         self.assertIn("First-time setup warning", text)
         self.assertIn(GROUP_TITLE, text)
-        self.assertIn("Auto-bind attempt from RT / 9999-0000 / New Setup blocked.", text)
+        self.assertIn(
+            "Auto-bind attempt from RT / 9999-0000 / New Setup blocked.", text
+        )
         self.assertIn("Player ID: <code>6485-8168</code>", text)
         self.assertIn("Last deposit: Jun 04, 2026 07:27 PM EST", text)
         self.assertIn("left unbound for manual review", text)
@@ -279,9 +283,7 @@ class SetupAlreadyLinkedIngestTestCase(unittest.IsolatedAsyncioTestCase):
             patch(
                 "bot.services.venmo_payments.resolve_display_group_title",
                 side_effect=lambda cid: (
-                    GROUP_TITLE
-                    if cid == CHAT_ID
-                    else "RT / 9999-0000 / New Setup"
+                    GROUP_TITLE if cid == CHAT_ID else "RT / 9999-0000 / New Setup"
                 ),
             ),
             patch(
@@ -322,7 +324,7 @@ class SetupAlreadyLinkedIngestTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.auto_bound)
         self.assertEqual(result.status, "unbound")
         complete_mock.assert_not_called()
-        cancel_mock.assert_called_once()
+        cancel_mock.assert_called_once_with(mock_session, attempt)
         self.assertEqual(send_mock.await_count, 2)
         warning_text = send_mock.await_args_list[0].args[0]
         self.assertIn("First-time setup warning", warning_text)
@@ -332,9 +334,17 @@ class SetupAlreadyLinkedIngestTestCase(unittest.IsolatedAsyncioTestCase):
 
 
 class ResolveBoundGroupTestCase(unittest.TestCase):
-    @patch("bot.services.venmo_payments.find_group_chat_id_by_name", return_value=CHAT_ID)
-    @patch("bot.services.venmo_payments.resolve_club_id_from_shorthand", return_value=CLUB_ID)
-    @patch("bot.services.venmo_payments.parse_tracking_title", return_value=("RT", "6485-8168"))
+    @patch(
+        "bot.services.venmo_payments.find_group_chat_id_by_name", return_value=CHAT_ID
+    )
+    @patch(
+        "bot.services.venmo_payments.resolve_club_id_from_shorthand",
+        return_value=CLUB_ID,
+    )
+    @patch(
+        "bot.services.venmo_payments.parse_tracking_title",
+        return_value=("RT", "6485-8168"),
+    )
     @patch(
         "bot.services.venmo_payments.resolve_display_group_title",
         return_value=GROUP_TITLE,
@@ -347,8 +357,14 @@ class ResolveBoundGroupTestCase(unittest.TestCase):
         self.assertEqual(result.bound_group.group_title, GROUP_TITLE)
 
     @patch("bot.services.venmo_payments.find_group_chat_id_by_name", return_value=None)
-    @patch("bot.services.venmo_payments.resolve_club_id_from_shorthand", return_value=CLUB_ID)
-    @patch("bot.services.venmo_payments.parse_tracking_title", return_value=("RT", "6485-8168"))
+    @patch(
+        "bot.services.venmo_payments.resolve_club_id_from_shorthand",
+        return_value=CLUB_ID,
+    )
+    @patch(
+        "bot.services.venmo_payments.parse_tracking_title",
+        return_value=("RT", "6485-8168"),
+    )
     def test_resolve_bound_group_not_found(self, *_mocks):
         result = vp.resolve_bound_group(GROUP_TITLE)
         self.assertFalse(result.ok)
@@ -678,7 +694,9 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             refund_gate=ANY,
             payment_method_slug="venmo",
         )
-        payment_text = send_mock.await_args.kwargs.get("text") or send_mock.await_args.args[0]
+        payment_text = (
+            send_mock.await_args.kwargs.get("text") or send_mock.await_args.args[0]
+        )
         self.assertIn(AMBIGUOUS_GROUP_CHAT_LINE, payment_text)
         markup = send_mock.await_args.kwargs.get("reply_markup")
         self.assertIsNotNone(markup)
@@ -807,7 +825,10 @@ class VenmoBindFlowTestCase(unittest.IsolatedAsyncioTestCase):
             logs.output,
         )
         self.assertTrue(
-            any("Jungwook Youn" in msg and "Aravindh Soundararajan" in msg for msg in logs.output),
+            any(
+                "Jungwook Youn" in msg and "Aravindh Soundararajan" in msg
+                for msg in logs.output
+            ),
             logs.output,
         )
 

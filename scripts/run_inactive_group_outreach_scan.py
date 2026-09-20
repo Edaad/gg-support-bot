@@ -35,10 +35,16 @@ CLUB_KEYS = ("round_table", "creator_club", "clubgto")
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run inactive group outreach scan locally.")
+    parser = argparse.ArgumentParser(
+        description="Run inactive group outreach scan locally."
+    )
     parser.add_argument("--club-key", choices=CLUB_KEYS, default="round_table")
-    parser.add_argument("--chat-id", type=int, default=None, help="Scan one supergroup chat id.")
-    parser.add_argument("--row-id", type=int, default=None, help="Scan one DB outreach row by id.")
+    parser.add_argument(
+        "--chat-id", type=int, default=None, help="Scan one supergroup chat id."
+    )
+    parser.add_argument(
+        "--row-id", type=int, default=None, help="Scan one DB outreach row by id."
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -60,7 +66,6 @@ async def _run_scan(args: argparse.Namespace) -> int:
         persist_row_scan,
         scan_outreach_row,
     )
-    from bot.services.migration_group_readd import load_player_rows_by_chat
     from bot.services.migration_group_readd import load_player_rows_by_chat
     from bot.services.mtproto_group_create import is_client_authorized, make_client
     from db.connection import get_db

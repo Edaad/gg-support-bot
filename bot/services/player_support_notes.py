@@ -210,7 +210,9 @@ def get_player_note_history(gg_player_id: str) -> list[NoteHistoryEntry]:
     with get_db() as session:
         rows = (
             session.query(PlayerSupportNote, PlayerSupportIssue)
-            .join(PlayerSupportIssue, PlayerSupportNote.issue_id == PlayerSupportIssue.id)
+            .join(
+                PlayerSupportIssue, PlayerSupportNote.issue_id == PlayerSupportIssue.id
+            )
             .filter(PlayerSupportIssue.gg_player_id == gg_player_id)
             .order_by(PlayerSupportNote.created_at.desc())
             .all()

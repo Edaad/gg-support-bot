@@ -96,7 +96,11 @@ def _load_deposits_csv(path: Path) -> dict[int, int]:
 def _is_active_group(agg: GroupAgg | None) -> bool:
     if agg is None:
         return False
-    return bool(agg.signals) or agg.has_payment_activity or agg.has_identifiable_user_activity
+    return (
+        bool(agg.signals)
+        or agg.has_payment_activity
+        or agg.has_identifiable_user_activity
+    )
 
 
 def _activity_epoch(agg: GroupAgg | None) -> int:
@@ -118,7 +122,11 @@ def build_seed_candidates(
     player_map = load_player_rows_by_chat(chat_ids)
     display_map = load_player_display_names_by_chat(chat_ids)
 
-    tier_buckets: dict[int, list[tuple[MigratedGroupRow, int, int]]] = {1: [], 2: [], 3: []}
+    tier_buckets: dict[int, list[tuple[MigratedGroupRow, int, int]]] = {
+        1: [],
+        2: [],
+        3: [],
+    }
 
     for group in groups:
         chat_id = int(group.current_chat_id)
@@ -129,9 +137,7 @@ def build_seed_candidates(
             deposit_cents=deposit_cents,
             active_in_past_30_days=active,
         )
-        tier_buckets[tier].append(
-            (group, deposit_cents, _activity_epoch(agg))
-        )
+        tier_buckets[tier].append((group, deposit_cents, _activity_epoch(agg)))
 
     def sort_key_tier1(item: tuple[MigratedGroupRow, int, int]) -> tuple:
         _g, dep, _act = item
@@ -153,7 +159,9 @@ def build_seed_candidates(
     candidates: list[SeedCandidate] = []
     for group, deposit_cents, activity_epoch, tier, seq in sorted_items:
         chat_id = int(group.current_chat_id)
-        player_id, player_username, _club_key = player_map.get(chat_id, (None, None, None))
+        player_id, player_username, _club_key = player_map.get(
+            chat_id, (None, None, None)
+        )
         rank = compute_priority_rank(
             priority_tier=tier,
             deposit_cents=deposit_cents,
@@ -229,7 +237,9 @@ def _load_affected(
 ) -> list[AffectedMigratedGroup]:
     from club_gc_settings import CLUB_GC_CONFIG
 
-    mtproto_club_ids = frozenset(int(cfg.link_club_id) for cfg in CLUB_GC_CONFIG.values())
+    mtproto_club_ids = frozenset(
+        int(cfg.link_club_id) for cfg in CLUB_GC_CONFIG.values()
+    )
     club_id_filter: int | None = None
     if club_key_filter:
         cfg = CLUB_GC_CONFIG.get(club_key_filter)
@@ -267,7 +277,12 @@ def run_seed(
     )
     groups = _migrated_groups(affected, club_key_filter=club_key_filter)
     if not groups:
-        return {"groups": 0, "inserted": 0, "skipped": 0, "message": "no migrated groups"}
+        return {
+            "groups": 0,
+            "inserted": 0,
+            "skipped": 0,
+            "message": "no migrated groups",
+        }
 
     activity_by_chat, _user_aggs = _collect_activity(groups, days=int(days))
     deposit_by_chat = _load_deposits_csv(deposits_csv)
@@ -317,12 +332,19 @@ def print_status() -> None:
     for club_key in ("round_table", "creator_club", "clubgto"):
         print(f"  {club_key}: {queue_by_club.get(club_key, 0)}")
     if is_round_table_elevate_recovery_enabled():
-        print(f"Elevate-pending (RT tier 1+2, has link): {count_elevate_pending_rows()}")
+        print(
+            f"Elevate-pending (RT tier 1+2, has link): {count_elevate_pending_rows()}"
+        )
     if is_migration_recovery_auto_disabled():
         print("Auto-disable: SET (recovery cron will not run until cleared)")
     else:
         print("Auto-disable: not set")
-    for club_key in ("round_table", "creator_club", "clubgto", ELEVATE_CATCHUP_PAUSE_KEY):
+    for club_key in (
+        "round_table",
+        "creator_club",
+        "clubgto",
+        ELEVATE_CATCHUP_PAUSE_KEY,
+    ):
         resume_at = get_club_rate_limit_resume_at(club_key)
         if resume_at is not None:
             print(f"Rate-limit pause {club_key}: until {resume_at.isoformat()}")
@@ -332,16 +354,24 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--backup", type=Path, help="Pre-migration pg_dump path.")
-    parser.add_argument("--affected-csv", type=Path, help="Pre-generated affected-groups CSV.")
+    parser.add_argument(
+        "--affected-csv", type=Path, help="Pre-generated affected-groups CSV."
+    )
     parser.add_argument(
         "--deposits-csv",
         type=Path,
         default=_REPO_ROOT / "gc_deposits_by_group.csv",
         help="Deposit totals CSV (default: gc_deposits_by_group.csv).",
     )
-    parser.add_argument("--days", type=int, default=30, help="Activity window for tier 2.")
-    parser.add_argument("--club-key", choices=["round_table", "creator_club", "clubgto"])
-    parser.add_argument("--status", action="store_true", help="Print table counts and exit.")
+    parser.add_argument(
+        "--days", type=int, default=30, help="Activity window for tier 2."
+    )
+    parser.add_argument(
+        "--club-key", choices=["round_table", "creator_club", "clubgto"]
+    )
+    parser.add_argument(
+        "--status", action="store_true", help="Print table counts and exit."
+    )
     parser.add_argument(
         "--clear-auto-disable",
         action="store_true",
@@ -350,7 +380,9 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.clear_auto_disable:
-        from bot.services.migration_recovery import clear_migration_recovery_auto_disable
+        from bot.services.migration_recovery import (
+            clear_migration_recovery_auto_disable,
+        )
 
         if clear_migration_recovery_auto_disable():
             print("Cleared migration recovery auto-disable flag.")
@@ -362,7 +394,11 @@ def main() -> None:
         print_status()
         return
 
-    backup_path = args.backup.resolve() if args.backup else find_earliest_upgrade_backup(_REPO_ROOT).resolve()
+    backup_path = (
+        args.backup.resolve()
+        if args.backup
+        else find_earliest_upgrade_backup(_REPO_ROOT).resolve()
+    )
     stats = run_seed(
         backup_path=backup_path,
         affected_csv=args.affected_csv,

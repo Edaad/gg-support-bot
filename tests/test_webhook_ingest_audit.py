@@ -80,7 +80,11 @@ class DeriveOutcomeTestCase(unittest.TestCase):
             source="venmo",
             http_status_code=200,
             ctx=WebhookIngestContext(
-                response_json={"status": "unbound", "auto_bound": False, "created": True}
+                response_json={
+                    "status": "unbound",
+                    "auto_bound": False,
+                    "created": True,
+                }
             ),
         )
         self.assertEqual(outcome, OUTCOME_SUCCESS_CREATED)
@@ -90,7 +94,11 @@ class DeriveOutcomeTestCase(unittest.TestCase):
             source="venmo",
             http_status_code=200,
             ctx=WebhookIngestContext(
-                response_json={"status": "unbound", "auto_bound": False, "created": False}
+                response_json={
+                    "status": "unbound",
+                    "auto_bound": False,
+                    "created": False,
+                }
             ),
         )
         self.assertEqual(outcome, OUTCOME_SUCCESS_DUPLICATE)

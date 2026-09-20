@@ -152,17 +152,19 @@ def migrate():
                     command_name=cmd_name,
                     response_type=rtype,
                     response_text=cmd_data.get("content") if rtype == "text" else None,
-                    response_file_id=cmd_data.get("file_id") if rtype == "photo" else None,
-                    response_caption=cmd_data.get("caption") if rtype == "photo" else None,
+                    response_file_id=cmd_data.get("file_id")
+                    if rtype == "photo"
+                    else None,
+                    response_caption=cmd_data.get("caption")
+                    if rtype == "photo"
+                    else None,
                     is_active=True,
                 )
                 session.add(cc)
 
             print(f"  Migrated club {uid} (id={club.id})")
 
-        uid_to_club = {
-            c.telegram_user_id: c.id for c in session.query(Club).all()
-        }
+        uid_to_club = {c.telegram_user_id: c.id for c in session.query(Club).all()}
         for chat_id, club_uid in legacy_groups.items():
             club_id = uid_to_club.get(club_uid)
             if club_id is None:

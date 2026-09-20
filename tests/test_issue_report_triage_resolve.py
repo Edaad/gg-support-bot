@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from telegram import Chat, Update, User
 from telegram.constants import ChatType
-from telegram.ext import ApplicationHandlerStop, ConversationHandler
+from telegram.ext import ApplicationHandlerStop
 
 from bot.handlers.issue_reports import (
     _TRIAGE_MODE_RESOLVE_EVIDENCE,

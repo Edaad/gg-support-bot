@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from telethon import TelegramClient, utils
-from telethon.errors import FloodWaitError, RPCError, SessionPasswordNeededError
+from telethon.errors import FloodWaitError, RPCError
 from telethon.errors.rpcerrorlist import UserAlreadyParticipantError
 from telethon.sessions import StringSession
 from telethon.tl.functions.channels import (
@@ -17,7 +17,11 @@ from telethon.tl.functions.channels import (
     GetParticipantRequest,
     InviteToChannelRequest,
 )
-from telethon.tl.functions.messages import AddChatUserRequest, CreateChatRequest, EditChatPhotoRequest
+from telethon.tl.functions.messages import (
+    AddChatUserRequest,
+    CreateChatRequest,
+    EditChatPhotoRequest,
+)
 from telethon.tl.types import (
     Channel,
     Chat,
@@ -56,6 +60,8 @@ def _assert_not_web_dyno(operation: str) -> None:
             "This reuses the worker's production session from a different IP and causes "
             "AuthKeyDuplicatedError. Read session status from the DB instead."
         )
+
+
 FLOODWAIT_MAX_SECONDS = 120
 
 # Telegram channel / megagroup title limit (characters).
@@ -128,7 +134,7 @@ def build_support_megagroup_title(cfg: ClubGcConfig, player_user) -> str:
     reserve = len(prefix) + len(sep)
     max_label = _TITLE_MAX_CHARS - reserve
     if max_label < 4:
-        return title[: _TITLE_MAX_CHARS]
+        return title[:_TITLE_MAX_CHARS]
     shortened = label[:max_label].rstrip()
     return f"{prefix}{sep}{shortened}"[:_TITLE_MAX_CHARS]
 
@@ -175,7 +181,9 @@ async def _with_single_flood_retry(tag: str, coro_factory):
                 raise RuntimeError(
                     f"Telegram rate limits: please wait ~{e.seconds}s and try /gc again."
                 ) from e
-            logger.info("%s FloodWait %ss, sleeping then retry=%s", tag, e.seconds, attempt)
+            logger.info(
+                "%s FloodWait %ss, sleeping then retry=%s", tag, e.seconds, attempt
+            )
             await asyncio.sleep(float(e.seconds) + 1.0)
             if attempt == 1:
                 raise RuntimeError(f"Still rate limited after retry ({tag}).") from e
@@ -253,7 +261,9 @@ async def send_code_for_phone(cfg: ClubGcConfig, phone: str) -> tuple[str, str]:
 
             hash_value = getattr(sent, "phone_code_hash", None)
             if not hash_value:
-                raise RuntimeError("Telegram returned no phone_code_hash (cannot continue login).")
+                raise RuntimeError(
+                    "Telegram returned no phone_code_hash (cannot continue login)."
+                )
             delivery = _send_code_delivery_key(sent)
             logger.info(
                 "MTProto SendCode succeeded club=%s delivery=%s",
@@ -313,7 +323,9 @@ async def authenticate_mtproto_password(cfg: ClubGcConfig, *, password: str) -> 
                 ) from e
             authorized = await client.is_user_authorized()
             if not authorized:
-                raise RuntimeError("2FA succeeded but MTProto session is still not authorized.")
+                raise RuntimeError(
+                    "2FA succeeded but MTProto session is still not authorized."
+                )
 
         finally:
             await client.disconnect()
@@ -391,7 +403,11 @@ async def reload_group_entity_after_invites(
     except Exception:
         new_id = chat_id_big
 
-    if new_id is not None and chat_id_big is not None and int(new_id) != int(chat_id_big):
+    if (
+        new_id is not None
+        and chat_id_big is not None
+        and int(new_id) != int(chat_id_big)
+    ):
         logger.info(
             "support group migrated after invites %s -> %s",
             chat_id_big,
@@ -752,7 +768,11 @@ async def resolve_telegram_user_marker(
     if not raw:
         return None, "empty_marker"
 
-    lookup = raw if raw.startswith("@") or raw.lstrip("-").isdigit() else f"@{raw.lstrip('@')}"
+    lookup = (
+        raw
+        if raw.startswith("@") or raw.lstrip("-").isdigit()
+        else f"@{raw.lstrip('@')}"
+    )
 
     async with get_mtproto_lock(cfg.club_key):
         client = make_client(cfg)
@@ -770,13 +790,19 @@ async def resolve_telegram_user_marker(
                 return None, "is_bot"
             return ent, None
         except Exception as e:
-            logger.info("resolve_telegram_user_marker failed marker=%s: %s", lookup, type(e).__name__)
+            logger.info(
+                "resolve_telegram_user_marker failed marker=%s: %s",
+                lookup,
+                type(e).__name__,
+            )
             return None, type(e).__name__
         finally:
             await client.disconnect()
 
 
-async def send_player_dm_via_club(cfg: ClubGcConfig, player_user, text: str) -> tuple[bool, str | None]:
+async def send_player_dm_via_club(
+    cfg: ClubGcConfig, player_user, text: str
+) -> tuple[bool, str | None]:
     """DM a player from the club MTProto account (best-effort)."""
 
     body = (text or "").strip()
@@ -811,13 +837,13 @@ async def create_support_group(
     title_override: str | None = None,
 ) -> MtProtoGroupOutcome:
     """
-    Create a basic Telegram group for ``cfg`` via MTProto, invite users + bot,
-    optional photo + inner message.
+      Create a basic Telegram group for ``cfg`` via MTProto, invite users + bot,
+      optional photo + inner message.
 
-    When ``player_user`` is set (Telethon User), that account is seeded into the
-  new group at creation time (best-effort).
+      When ``player_user`` is set (Telethon User), that account is seeded into the
+    new group at creation time (best-effort).
 
-    Caller must ensure session is authenticated.
+      Caller must ensure session is authenticated.
     """
 
     added_ok: list[dict] = []
@@ -924,7 +950,9 @@ async def create_support_group(
             except Exception:
                 chat_id_big = None
 
-            title_attr = getattr(group_ent, "title", None) or getattr(chat, "title", None)
+            title_attr = getattr(group_ent, "title", None) or getattr(
+                chat, "title", None
+            )
             if isinstance(title_attr, str) and title_attr.strip():
                 title_out = title_attr.strip()
 
@@ -958,11 +986,17 @@ async def create_support_group(
                         added_ok.append({"user": pm, "kind": "player"})
                     else:
                         failed_ok.append(
-                            {"user": pm, "reason": err_ent or "unknown", "kind": "player"}
+                            {
+                                "user": pm,
+                                "reason": err_ent or "unknown",
+                                "kind": "player",
+                            }
                         )
 
             for marker in invite_targets:
-                if player_user is not None and _marker_matches_user(marker, player_user):
+                if player_user is not None and _marker_matches_user(
+                    marker, player_user
+                ):
                     continue
                 if _marker_matches_user(marker, seed_user):
                     continue
@@ -980,7 +1014,9 @@ async def create_support_group(
                 if ok:
                     added_ok.append({"user": marker, "kind": kind})
                 else:
-                    failed_ok.append({"user": marker, "reason": err or "unknown", "kind": kind})
+                    failed_ok.append(
+                        {"user": marker, "reason": err or "unknown", "kind": kind}
+                    )
 
             group_ent, chat_id_big = await reload_group_entity_after_invites(
                 client, group_ent, chat_id_big
@@ -998,10 +1034,13 @@ async def create_support_group(
                 invite_link = await _export_invite_link(client, group_ent)
                 invite_link = normalize_invite_link(invite_link)
             except Exception as e:
-
                 warnings_local.append(f"invite export failed: {type(e).__name__}")
                 failed_ok.append(
-                    {"user": "__invite_link__", "reason": repr(e)[1:200], "kind": "invite"}
+                    {
+                        "user": "__invite_link__",
+                        "reason": repr(e)[1:200],
+                        "kind": "invite",
+                    }
                 )
 
             tmpl = cfg.initial_group_message_template
@@ -1018,8 +1057,9 @@ async def create_support_group(
                 )
                 initial_sent = True
             except Exception as e:
-
-                warnings_local.append(f"failed to send inner message ({type(e).__name__})")
+                warnings_local.append(
+                    f"failed to send inner message ({type(e).__name__})"
+                )
                 failed_ok.append(
                     {
                         "user": "__inner_message__",
@@ -1052,7 +1092,9 @@ async def create_support_group(
         link_join_failures.extend(fail)
 
     group_ok_out = chat_id_big is not None
-    ghint = None if chat_id_big is not None else "missing Telegram chat id after creation"
+    ghint = (
+        None if chat_id_big is not None else "missing Telegram chat id after creation"
+    )
     group_photo_final = (not cfg.group_photo_path) or photo_ok
 
     return MtProtoGroupOutcome(

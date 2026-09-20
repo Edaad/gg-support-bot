@@ -69,7 +69,9 @@ def _resolve_club_targets(
     all_clubs: bool,
 ) -> list[tuple[int, str]]:
     if sum(bool(x) for x in (club_id is not None, club_slug, all_clubs)) != 1:
-        raise SystemExit("Specify exactly one of --club-id, --club-slug, or --all-clubs")
+        raise SystemExit(
+            "Specify exactly one of --club-id, --club-slug, or --all-clubs"
+        )
 
     if club_slug:
         with get_db() as session:
@@ -126,7 +128,9 @@ def _resolve_title(session, chat_id: int) -> tuple[str | None, int | None]:
     return None, None
 
 
-def _scan_group_entries(session, club_id: int) -> tuple[list[GroupTitleEntry], int, int]:
+def _scan_group_entries(
+    session, club_id: int
+) -> tuple[list[GroupTitleEntry], int, int]:
     scanned = 0
     excluded = 0
     entries: list[GroupTitleEntry] = []
@@ -135,7 +139,9 @@ def _scan_group_entries(session, club_id: int) -> tuple[list[GroupTitleEntry], i
         if not title:
             continue
         scanned += 1
-        effective_club_id = resolved_club_id if resolved_club_id is not None else int(club_id)
+        effective_club_id = (
+            resolved_club_id if resolved_club_id is not None else int(club_id)
+        )
         if effective_club_id != int(club_id):
             continue
         entry = entry_from_title(
@@ -209,7 +215,11 @@ def _run_club(
             nickname_index=nick_index,
             nickname_fallback=nickname_fallback,
         )
-        if apply and result.status == MatchStatus.WOULD_BIND and result.matched_chat_ids:
+        if (
+            apply
+            and result.status == MatchStatus.WOULD_BIND
+            and result.matched_chat_ids
+        ):
             bind_chat_to_player(
                 club_id=result.club_id,
                 gg_player_id=result.gg_player_id,
@@ -231,7 +241,9 @@ def _run_club(
         players_considered=len(results),
         bound=sum(1 for r in results if r.status == MatchStatus.BOUND),
         would_bind=sum(1 for r in results if r.status == MatchStatus.WOULD_BIND),
-        already_had_chat=sum(1 for r in results if r.status == MatchStatus.ALREADY_BOUND),
+        already_had_chat=sum(
+            1 for r in results if r.status == MatchStatus.ALREADY_BOUND
+        ),
         ambiguous=sum(1 for r in results if r.status == MatchStatus.AMBIGUOUS),
         unmatched=sum(1 for r in results if r.status == MatchStatus.UNMATCHED),
     )

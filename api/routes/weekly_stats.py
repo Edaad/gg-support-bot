@@ -39,7 +39,9 @@ def sync_player_nicknames_from_gg_computer(
 ):
     """After gg-computer weekly sync, copy Mongo nicknames into Postgres player_details.gg_nickname."""
     club_id = resolve_club_id(db, club_slug)
-    result = refresh_nicknames_for_club(club_id=club_id, club_slug=club_slug.strip().lower())
+    result = refresh_nicknames_for_club(
+        club_id=club_id, club_slug=club_slug.strip().lower()
+    )
     return SyncNicknamesResponse(
         updated=int(result.get("updated", 0)),
         missing=int(result.get("missing", 0)),
@@ -76,7 +78,9 @@ class WeeklyPlayerMessageBody(BaseModel):
     club_slug: str = Field(..., min_length=1)
     gg_player_id: str = Field(..., min_length=1)
     message: str = Field(..., min_length=1, max_length=4096)
-    chat_id: int = Field(..., description="Telegram group chat id (must be in player_details.chat_ids)")
+    chat_id: int = Field(
+        ..., description="Telegram group chat id (must be in player_details.chat_ids)"
+    )
 
 
 class WeeklyPlayerMessageResponse(BaseModel):

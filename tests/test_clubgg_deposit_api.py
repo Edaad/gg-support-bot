@@ -98,35 +98,23 @@ class TestRoundTableUnionResolution(unittest.TestCase):
         )
 
     def test_resolve_clubgg_club_name_round_table(self) -> None:
-        self.assertEqual(
-            resolve_clubgg_club_name("Round Table", "RT"), "Round Table"
-        )
-        self.assertEqual(
-            resolve_clubgg_club_name("Round Table", "AT"), "Aces Table"
-        )
+        self.assertEqual(resolve_clubgg_club_name("Round Table", "RT"), "Round Table")
+        self.assertEqual(resolve_clubgg_club_name("Round Table", "AT"), "Aces Table")
         self.assertIsNone(resolve_clubgg_club_name("Round Table", None))
 
     def test_resolve_clubgg_club_name_non_union_clubs(self) -> None:
         self.assertEqual(resolve_clubgg_club_name("ClubGTO", None), "ClubGTO")
-        self.assertEqual(
-            resolve_clubgg_club_name("Creator Club", None), "Creator Club"
-        )
+        self.assertEqual(resolve_clubgg_club_name("Creator Club", None), "Creator Club")
 
 
 class TestCreatorClubAcesUnionResolution(unittest.TestCase):
     """Creator Club players may route chips to Aces Table (Massiv)."""
 
     def test_resolve_clubgg_club_name_creator_club(self) -> None:
-        self.assertEqual(
-            resolve_clubgg_club_name("Creator Club", "AT"), "Aces Table"
-        )
-        self.assertEqual(
-            resolve_clubgg_club_name("Creator Club", "CC"), "Creator Club"
-        )
+        self.assertEqual(resolve_clubgg_club_name("Creator Club", "AT"), "Aces Table")
+        self.assertEqual(resolve_clubgg_club_name("Creator Club", "CC"), "Creator Club")
         # Unknown/garbage union must never silently reroute to Aces.
-        self.assertEqual(
-            resolve_clubgg_club_name("Creator Club", "XX"), "Creator Club"
-        )
+        self.assertEqual(resolve_clubgg_club_name("Creator Club", "XX"), "Creator Club")
 
     def test_cc_only_title_stays_creator_club(self) -> None:
         self.assertEqual(
@@ -209,12 +197,8 @@ class TestCreatorClubUnionConfig(unittest.TestCase):
 
     def test_labels(self) -> None:
         self.assertEqual(union_label_for_shorthand("CC"), "Creator Club (TMT Union)")
-        self.assertEqual(
-            union_label_for_shorthand("AT"), "Aces Table (Massiv Union)"
-        )
-        self.assertEqual(
-            union_label_for_shorthand("RT"), "Round Table (TMT Union)"
-        )
+        self.assertEqual(union_label_for_shorthand("AT"), "Aces Table (Massiv Union)")
+        self.assertEqual(union_label_for_shorthand("RT"), "Round Table (TMT Union)")
         self.assertIsNone(union_label_for_shorthand("XX"))
 
 
@@ -247,18 +231,20 @@ class TestChipAddUnionOverride(unittest.IsolatedAsyncioTestCase):
 
     async def _union_used(self, *, title, stored_union, **kwargs):
         cfg = SimpleNamespace(union_max_age_hours=24.0)
-        with patch.object(api, "load_config", return_value=cfg), patch.object(
-            api, "_claim_request", return_value=True
-        ), patch.object(
-            api, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
-        ), patch.object(
-            api, "get_last_deposit_union", return_value=(stored_union, None)
-        ), patch.object(
-            api, "resolve_clubgg_club_name", return_value=None
-        ) as mock_resolve, patch.object(
-            api, "_send_alert", AsyncMock()
-        ), patch.object(
-            api, "_maybe_notify_rpa_deposit_failed", AsyncMock()
+        with (
+            patch.object(api, "load_config", return_value=cfg),
+            patch.object(api, "_claim_request", return_value=True),
+            patch.object(
+                api, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
+            ),
+            patch.object(
+                api, "get_last_deposit_union", return_value=(stored_union, None)
+            ),
+            patch.object(
+                api, "resolve_clubgg_club_name", return_value=None
+            ) as mock_resolve,
+            patch.object(api, "_send_alert", AsyncMock()),
+            patch.object(api, "_maybe_notify_rpa_deposit_failed", AsyncMock()),
         ):
             ok, status = await api.run_auto_chip_add(
                 club_id=2,
@@ -360,12 +346,13 @@ class TestRunRakeCheck(unittest.IsolatedAsyncioTestCase):
         )
 
     async def _run(self, client, *, title="RT / 8272-5942 / Player", **kwargs):
-        with patch.object(api, "load_config", return_value=self._cfg()), patch.object(
-            api, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
-        ), patch.object(
-            api, "_health_ok", AsyncMock(return_value=(True, "ok"))
-        ), patch.object(
-            api.httpx, "AsyncClient", return_value=client
+        with (
+            patch.object(api, "load_config", return_value=self._cfg()),
+            patch.object(
+                api, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
+            ),
+            patch.object(api, "_health_ok", AsyncMock(return_value=(True, "ok"))),
+            patch.object(api.httpx, "AsyncClient", return_value=client),
         ):
             return await api.run_rake_check(
                 club_id=2,
@@ -483,9 +470,7 @@ class TestRunRakeCheck(unittest.IsolatedAsyncioTestCase):
 
     async def test_unknown_club_error_detail(self) -> None:
         client = _FakeAsyncClient(
-            post_response=_FakeResponse(
-                422, {"error": "unknown_club", "club": "Nope"}
-            )
+            post_response=_FakeResponse(422, {"error": "unknown_club", "club": "Nope"})
         )
         outcome = await self._run(client)
 
@@ -558,7 +543,9 @@ class _CapturingClient:
     async def post(self, url, **kwargs):
         body = kwargs.get("json") or {}
         self.posts.append((url, body))
-        return _FakeResponse(202, {"job_id": body.get("request_id") or "j", "status": "success"})
+        return _FakeResponse(
+            202, {"job_id": body.get("request_id") or "j", "status": "success"}
+        )
 
     async def get(self, url, **_kwargs):
         return _FakeResponse(200, {"ok": True})
@@ -645,18 +632,16 @@ class TestChipAddPostsLabels(unittest.IsolatedAsyncioTestCase):
         )
 
     async def _run(self, client, **kwargs):
-        with patch.object(api, "load_config", return_value=self._cfg()), patch.object(
-            api, "_claim_request", return_value=True
-        ), patch.object(
-            api, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
-        ), patch.object(
-            api, "get_last_deposit_union", return_value=(None, None)
-        ), patch.object(
-            api, "_health_ok", AsyncMock(return_value=(True, "ok"))
-        ), patch.object(
-            api, "_send_alert", AsyncMock()
-        ), patch.object(
-            api.httpx, "AsyncClient", return_value=client
+        with (
+            patch.object(api, "load_config", return_value=self._cfg()),
+            patch.object(api, "_claim_request", return_value=True),
+            patch.object(
+                api, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
+            ),
+            patch.object(api, "get_last_deposit_union", return_value=(None, None)),
+            patch.object(api, "_health_ok", AsyncMock(return_value=(True, "ok"))),
+            patch.object(api, "_send_alert", AsyncMock()),
+            patch.object(api.httpx, "AsyncClient", return_value=client),
         ):
             return await api.run_auto_chip_add(
                 club_id=2,
@@ -672,7 +657,9 @@ class TestChipAddPostsLabels(unittest.IsolatedAsyncioTestCase):
         ok, status = await self._run(client, bonus=Decimal("50"))
         self.assertTrue(ok)
         self.assertEqual(status, "success")
-        self.assertEqual([body["label"] for _url, body in client.posts], ["Deposit", "Bonus"])
+        self.assertEqual(
+            [body["label"] for _url, body in client.posts], ["Deposit", "Bonus"]
+        )
         self.assertEqual(client.posts[0][1]["amount"], "500")
         self.assertEqual(client.posts[1][1]["amount"], "50")
 
@@ -699,14 +686,14 @@ class TestClaimPostsCashoutLabel(unittest.IsolatedAsyncioTestCase):
             poll_interval_sec=0.0,
             poll_timeout_sec=180.0,
         )
-        with patch.object(api, "load_config", return_value=cfg), patch.object(
-            api, "get_auto_claim_enabled", return_value=True
-        ), patch.object(
-            api, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
-        ), patch.object(
-            api, "_health_ok", AsyncMock(return_value=(True, "ok"))
-        ), patch.object(
-            api.httpx, "AsyncClient", return_value=client
+        with (
+            patch.object(api, "load_config", return_value=cfg),
+            patch.object(api, "get_auto_claim_enabled", return_value=True),
+            patch.object(
+                api, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
+            ),
+            patch.object(api, "_health_ok", AsyncMock(return_value=(True, "ok"))),
+            patch.object(api.httpx, "AsyncClient", return_value=client),
         ):
             outcome = await api.run_auto_claim(
                 club_id=2,

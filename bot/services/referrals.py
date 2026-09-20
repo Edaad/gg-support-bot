@@ -117,7 +117,9 @@ def format_my_referrals_messages(
     current = header
     for player_id in player_ids:
         line = f"• {player_id}"
-        candidate = f"{current}\n\n{line}" if current == header else f"{current}\n{line}"
+        candidate = (
+            f"{current}\n\n{line}" if current == header else f"{current}\n{line}"
+        )
         if len(candidate) <= max_chars:
             current = candidate
             continue
@@ -213,9 +215,7 @@ def ensure_referral_link(
             # Code collision or concurrent insert for same chat — retry.
             continue
 
-    logger.error(
-        "referral ensure_link failed club_id=%s chat_id=%s", cid, chat_id
-    )
+    logger.error("referral ensure_link failed club_id=%s chat_id=%s", cid, chat_id)
     return None
 
 
@@ -255,7 +255,9 @@ def handle_start_payload(
             return StartResult(
                 kind="existing",
                 text=existing_player_message(
-                    existing.invite_link if isinstance(existing.invite_link, str) else None
+                    existing.invite_link
+                    if isinstance(existing.invite_link, str)
+                    else None
                 ),
                 club_id=int(link.club_id),
             )
@@ -420,9 +422,7 @@ def on_player_id_bound(
                 messages.append(
                     GroupMessage(
                         chat_id=int(attr.referred_chat_id),
-                        text=(
-                            f"Referred by was {prev_referrer} and now is {new_id}."
-                        ),
+                        text=(f"Referred by was {prev_referrer} and now is {new_id}."),
                     )
                 )
 

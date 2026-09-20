@@ -165,7 +165,9 @@ class AnalyzeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             patch.object(analysis, "_replace_tickets", return_value=1) as replace,
             patch.object(analysis, "_mark_analysis_complete") as mark_ok,
             patch.object(analysis, "_mark_analysis_failed") as mark_fail,
-            patch.object(analysis, "get_anthropic_model", return_value="claude-sonnet-4-5"),
+            patch.object(
+                analysis, "get_anthropic_model", return_value="claude-sonnet-4-5"
+            ),
         ):
             result = await analysis.analyze_transcript_for_chat(
                 activity_date=date(2026, 7, 17),
@@ -235,9 +237,7 @@ class ListTargetsForceTest(unittest.TestCase):
             ctx.__enter__.return_value = session
             ctx.__exit__.return_value = None
             get_db.return_value = ctx
-            targets = analysis.list_analysis_targets(
-                date(2026, 7, 17), force=True
-            )
+            targets = analysis.list_analysis_targets(date(2026, 7, 17), force=True)
 
         self.assertEqual(len(targets), 1)
         self.assertEqual(targets[0].chat_id, -1)
@@ -568,9 +568,7 @@ class TicketRestTest(unittest.TestCase):
 
         group_q = MagicMock()
         group_q.filter.return_value = group_q
-        group_q.all.return_value = [
-            SimpleNamespace(chat_id=-1001, name="Player Group")
-        ]
+        group_q.all.return_value = [SimpleNamespace(chat_id=-1001, name="Player Group")]
 
         transcript_q = MagicMock()
         transcript_q.filter.return_value = transcript_q
@@ -610,9 +608,7 @@ class TicketRestTest(unittest.TestCase):
         self.assertEqual(body[0]["duration_seconds"], 300)
         self.assertEqual(body[0]["duration_source"], "resolution")
         self.assertEqual(body[0]["frt_seconds"], 120)
-        self.assertEqual(
-            body[0]["customer_first_message"], "2026-07-17T14:00:00+00:00"
-        )
+        self.assertEqual(body[0]["customer_first_message"], "2026-07-17T14:00:00+00:00")
 
     def test_list_tickets_for_chat(self):
         self._mock_enrich_queries([])

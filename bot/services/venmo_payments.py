@@ -43,7 +43,7 @@ from bot.services.payment_method_binding import (
     match_pending_venmo_setup_in_session,
     record_group_binding_in_session,
 )
-from db.models import VenmoPayerBinding, VenmoPayment
+from db.models import VenmoPayment
 from notification.formatting import (
     format_group_chat_line,
     format_player_id_line,
@@ -335,7 +335,9 @@ async def maybe_create_venmo_goods_services_issue_report(
     is_first_time_setup_bind: bool | None = None,
 ) -> None:
     """Auto-create a deposit issue report for Venmo refund-required payments."""
-    from bot.services.payment_refund_gate import maybe_create_payment_refund_issue_report
+    from bot.services.payment_refund_gate import (
+        maybe_create_payment_refund_issue_report,
+    )
 
     await maybe_create_payment_refund_issue_report(
         "venmo",
@@ -489,7 +491,9 @@ def find_payment_by_notification_message(
     if ref is None or ref.method_slug != "venmo":
         return None
     with get_db() as session:
-        return session.query(VenmoPayment).filter_by(id=int(ref.payment_id)).one_or_none()
+        return (
+            session.query(VenmoPayment).filter_by(id=int(ref.payment_id)).one_or_none()
+        )
 
 
 async def ingest_venmo_payment(
@@ -592,7 +596,9 @@ async def ingest_venmo_payment(
             )
         if setup_attempt is not None:
             setup_attempt_id = int(setup_attempt.id)
-            live_title = resolve_display_group_title(int(setup_attempt.telegram_chat_id))
+            live_title = resolve_display_group_title(
+                int(setup_attempt.telegram_chat_id)
+            )
             club_id_setup = int(setup_attempt.club_id)
             setup_club_id = club_id_setup
             if not live_title:
@@ -624,11 +630,7 @@ async def ingest_venmo_payment(
                         telegram_chat_id=int(existing_link.linked_chat_ids[0]),
                         exclude_payment_id=int(payment.id),
                     )
-                    cancel_setup_attempt_in_session(
-                        session,
-                        setup_attempt,
-                        venmo_payment_id=int(payment.id),
-                    )
+                    cancel_setup_attempt_in_session(session, setup_attempt)
                     setup_blocked_already_linked = True
                     setup_target_chat_id = int(setup_attempt.telegram_chat_id)
                     setup_target_title = live_title
@@ -714,7 +716,10 @@ async def ingest_venmo_payment(
         session.flush()
         session.expunge(payment)
 
-    from notification.bind_keyboards import candidate_picker_markup, setup_blocked_markup
+    from notification.bind_keyboards import (
+        candidate_picker_markup,
+        setup_blocked_markup,
+    )
     from notification.payment_bind_helpers import format_payment_notification
     from bot.services.payment_refund_gate import (
         evaluate_refund_gate,
@@ -754,7 +759,9 @@ async def ingest_venmo_payment(
         from bot.services.payment_bind_candidates import candidate_chat_ids
 
         with get_db() as session:
-            existing_ids = candidate_chat_ids(session, "venmo", payer_name=payment.payer_name)
+            existing_ids = candidate_chat_ids(
+                session, "venmo", payer_name=payment.payer_name
+            )
         show_add = int(setup_target_chat_id) not in existing_ids
         notif_markup = setup_blocked_markup(
             "venmo",
@@ -814,7 +821,9 @@ async def ingest_venmo_payment(
         reply_markup=notif_markup,
         bind_chat_ids=bind_chat_ids,
     )
-    from notification.payment_notification_posts import record_payment_notification_posts
+    from notification.payment_notification_posts import (
+        record_payment_notification_posts,
+    )
 
     record_payment_notification_posts(
         payment_method_slug="venmo",
@@ -927,6 +936,14 @@ async def ingest_venmo_payment(
         amount_cents,
         auto_bound,
     )
+    from bot.services.deposit_method_alerts import maybe_evaluate_after_ingest
+
+    await maybe_evaluate_after_ingest(
+        method="venmo",
+        variant=handle,
+        created=created,
+        is_test=bool(test),
+    )
     return IngestResult(
         payment_id=payment_id,
         status=status,
@@ -955,7 +972,9 @@ async def bind_venmo_payment_by_id(
     previous_telegram_chat_id: Optional[int] = None
 
     with get_db() as session:
-        payment = session.query(VenmoPayment).filter_by(id=int(payment_id)).one_or_none()
+        payment = (
+            session.query(VenmoPayment).filter_by(id=int(payment_id)).one_or_none()
+        )
         if payment is None:
             return BindResult(ok=False, error="Payment not found.")
 
@@ -999,7 +1018,9 @@ async def bind_venmo_payment_by_id(
             bound_by_telegram_user_id=bound_by_telegram_user_id,
         )
 
-        live_title = resolve_display_group_title(group.telegram_chat_id) or group.group_title
+        live_title = (
+            resolve_display_group_title(group.telegram_chat_id) or group.group_title
+        )
         if payment.notification_chat_id and payment.notification_message_id:
             notif_chat_id = int(payment.notification_chat_id)
             notif_message_id = int(payment.notification_message_id)

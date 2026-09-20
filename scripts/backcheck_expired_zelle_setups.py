@@ -40,7 +40,10 @@ from bot.services.payment_method_binding import (
     _variant_zelle_recipient_matches,
     record_group_binding_in_session,
 )
-from bot.services.venmo_payments import normalize_payer_name, resolve_display_group_title
+from bot.services.venmo_payments import (
+    normalize_payer_name,
+    resolve_display_group_title,
+)
 from bot.services.zelle_payments import _apply_binding_to_payment, _upsert_payer_binding
 from db.connection import get_db
 from db.models import GroupPaymentMethodBinding, PaymentMethodBindAttempt, ZellePayment
@@ -127,10 +130,14 @@ def _classify(
     return "ambiguous", matches[0]
 
 
-def _complete_attempt(session, attempt: PaymentMethodBindAttempt, payment: ZellePayment) -> None:
+def _complete_attempt(
+    session, attempt: PaymentMethodBindAttempt, payment: ZellePayment
+) -> None:
     attempt.status = ATTEMPT_STATUS_SUCCEEDED
     attempt.zelle_payment_id = int(payment.id)
-    attempt.completed_at = payment.bound_at or payment.created_at or datetime.now(timezone.utc)
+    attempt.completed_at = (
+        payment.bound_at or payment.created_at or datetime.now(timezone.utc)
+    )
 
 
 def _bind_payment_to_attempt(
@@ -140,7 +147,9 @@ def _bind_payment_to_attempt(
     payment: ZellePayment,
     group_title: str,
 ) -> None:
-    live_title = resolve_display_group_title(int(attempt.telegram_chat_id)) or group_title
+    live_title = (
+        resolve_display_group_title(int(attempt.telegram_chat_id)) or group_title
+    )
     _apply_binding_to_payment(
         payment,
         telegram_chat_id=int(attempt.telegram_chat_id),
@@ -279,7 +288,9 @@ def main() -> None:
     if args.csv:
         args.csv.parent.mkdir(parents=True, exist_ok=True)
         with args.csv.open("w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=list(rows_out[0].keys()) if rows_out else [])
+            writer = csv.DictWriter(
+                f, fieldnames=list(rows_out[0].keys()) if rows_out else []
+            )
             writer.writeheader()
             writer.writerows(rows_out)
         print(f"Wrote {len(rows_out)} rows to {args.csv}")

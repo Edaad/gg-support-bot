@@ -55,9 +55,16 @@ class TestMaybeStartBonusRecordingFromAdd(unittest.IsolatedAsyncioTestCase):
             )
         mock_get_db.assert_not_called()
 
-    @patch("bot.services.bonus_from_add.notify_staff_bonus_draft", new_callable=AsyncMock, return_value=True)
+    @patch(
+        "bot.services.bonus_from_add.notify_staff_bonus_draft",
+        new_callable=AsyncMock,
+        return_value=True,
+    )
     @patch("bot.services.bonus_from_add.create_draft")
-    @patch("bot.services.bonus_from_add.resolve_bonus_player", return_value=_sample_player_ctx())
+    @patch(
+        "bot.services.bonus_from_add.resolve_bonus_player",
+        return_value=_sample_player_ctx(),
+    )
     @patch("bot.services.bonus_from_add.get_db")
     async def test_creates_draft_and_notifies(
         self,
@@ -207,13 +214,17 @@ class TestBonusDraftContinue(unittest.IsolatedAsyncioTestCase):
 class TestBonusActorPermissions(unittest.IsolatedAsyncioTestCase):
     async def test_non_admin_actor_allowed_when_admin_id_matches(self) -> None:
         update = SimpleNamespace(effective_user=SimpleNamespace(id=999))
-        context = SimpleNamespace(user_data={"bonus_admin_id": 999, "bonus_step": "group_title"})
+        context = SimpleNamespace(
+            user_data={"bonus_admin_id": 999, "bonus_step": "group_title"}
+        )
         self.assertTrue(bonus_mod._is_bonus_actor(update, context))
 
     @patch.object(bonus_mod, "_club_name_for_id", return_value="Club CC")
     @patch.object(bonus_mod, "resolve_bonus_player", return_value=_sample_player_ctx())
     @patch.object(bonus_mod, "_type_keyboard_markup", return_value=MagicMock())
-    async def test_message_handler_accepts_staff_actor(self, _keyboard, _resolve, _club) -> None:
+    async def test_message_handler_accepts_staff_actor(
+        self, _keyboard, _resolve, _club
+    ) -> None:
         update = SimpleNamespace(
             message=SimpleNamespace(
                 text="CC / 8190-5287 / Jacob",
@@ -250,7 +261,11 @@ class TestBonusPrefilledClubFinalize(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-        with patch.object(bonus_mod, "_get_bonus_types", return_value=[{"id": 2, "name": "Deposit Match"}]):
+        with patch.object(
+            bonus_mod,
+            "_get_bonus_types",
+            return_value=[{"id": 2, "name": "Deposit Match"}],
+        ):
             with self.assertRaises(ApplicationHandlerStop):
                 await bonus_mod.bonus_callback_handler(update, context)
 
@@ -260,7 +275,9 @@ class TestBonusPrefilledClubFinalize(unittest.IsolatedAsyncioTestCase):
 
 class TestGroupBonusCommand(unittest.IsolatedAsyncioTestCase):
     def _group_update(self, *, text: str, user_id: int = 100):
-        chat = SimpleNamespace(id=-1001, type="supergroup", title="CC / 8190-5287 / Jacob")
+        chat = SimpleNamespace(
+            id=-1001, type="supergroup", title="CC / 8190-5287 / Jacob"
+        )
         message = SimpleNamespace(
             text=text,
             message_id=9,

@@ -70,7 +70,11 @@ def main() -> None:
         ).fetchall()
         payment_by_id = {r[0]: r[1] for r in all_payments}
         payment_updates = _collect_updates(
-            [(i, payment_by_id[i]) for i in payment_by_id if _target_for(payment_by_id[i])],
+            [
+                (i, payment_by_id[i])
+                for i in payment_by_id
+                if _target_for(payment_by_id[i])
+            ],
         )
 
         payer_rows = conn.execute(
@@ -99,7 +103,7 @@ def main() -> None:
             print(f"{table}: {len(updates)} row(s) to update")
             by_target: dict[str, int] = defaultdict(int)
             for u in updates:
-                by_target[f"{_label_key(u['from'])} -> {u['to']}"] += 1
+                by_target[f"{_zelle_bank_label_key(u['from'])} -> {u['to']}"] += 1
             for label, count in sorted(by_target.items()):
                 print(f"  {label}: {count}")
 

@@ -112,16 +112,24 @@ class ClubAuditTimezoneTestCase(unittest.TestCase):
     def test_audit_date_for_occurred_at_midnight_is_same_day(self):
         # 00:30 UTC-4 on July 4 → audit day July 4
         ts = datetime(2026, 7, 4, 4, 30, tzinfo=timezone.utc)
-        self.assertEqual(audit_date_for_occurred_at(ts, "round-table"), date(2026, 7, 4))
+        self.assertEqual(
+            audit_date_for_occurred_at(ts, "round-table"), date(2026, 7, 4)
+        )
 
     def test_audit_date_for_occurred_at_after_midnight_same_day(self):
         ts = datetime(2026, 7, 4, 5, 0, tzinfo=timezone.utc)
-        self.assertEqual(audit_date_for_occurred_at(ts, "round-table"), date(2026, 7, 4))
+        self.assertEqual(
+            audit_date_for_occurred_at(ts, "round-table"), date(2026, 7, 4)
+        )
 
     def test_clubgto_aug_28_excludes_aug_29_grace_hour_payments(self):
         audit_d = date(2026, 8, 28)
-        in_window = datetime(2026, 8, 29, 4, 30, tzinfo=timezone.utc)  # Aug 28 11:30 PM UTC-5
-        after_window = datetime(2026, 8, 29, 5, 30, tzinfo=timezone.utc)  # Aug 29 12:30 AM UTC-5
+        in_window = datetime(
+            2026, 8, 29, 4, 30, tzinfo=timezone.utc
+        )  # Aug 28 11:30 PM UTC-5
+        after_window = datetime(
+            2026, 8, 29, 5, 30, tzinfo=timezone.utc
+        )  # Aug 29 12:30 AM UTC-5
         self.assertTrue(occurred_at_in_audit_day(in_window, "clubgto", audit_d))
         self.assertFalse(occurred_at_in_audit_day(after_window, "clubgto", audit_d))
         self.assertEqual(
@@ -208,7 +216,9 @@ class PartnerAuditDayWindowTestCase(unittest.TestCase):
         self.assertTrue(occurred_at_in_partner_audit_day(ts, "creator-club", audit_d))
         self.assertTrue(occurred_at_in_partner_audit_day(ts, "aces-table", audit_d))
         after_clubgto = datetime(2026, 8, 31, 5, 30, tzinfo=timezone.utc)
-        self.assertFalse(occurred_at_in_partner_audit_day(after_clubgto, "clubgto", audit_d))
+        self.assertFalse(
+            occurred_at_in_partner_audit_day(after_clubgto, "clubgto", audit_d)
+        )
 
 
 if __name__ == "__main__":

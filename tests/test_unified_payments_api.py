@@ -11,14 +11,18 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from openpyxl import load_workbook
 
 from api.auth import create_token, get_current_admin
 from api.routes.all_payments import router as all_payments_router
 from api.routes.owner_payments import router as owner_payments_router
 from api.routes.payments_export import router as payments_export_router
 from api.schemas_payments import OwnerPaymentSummary, UnifiedPaymentRowRead
-from api.unified_payments import PaymentSourceSpec, _ingest_occurred_at, _merge_rows, resolve_sources
+from api.unified_payments import (
+    PaymentSourceSpec,
+    _ingest_occurred_at,
+    _merge_rows,
+    resolve_sources,
+)
 from db.connection import get_db_dependency
 
 TOKEN = create_token()
@@ -33,7 +37,9 @@ class IngestOccurredAtTests(unittest.TestCase):
                 "created_at": "2026-09-05T05:48:24.165413+00:00",
             },
         )
-        self.assertEqual(occurred, datetime(2026, 8, 14, 0, 17, 21, tzinfo=timezone.utc))
+        self.assertEqual(
+            occurred, datetime(2026, 8, 14, 0, 17, 21, tzinfo=timezone.utc)
+        )
 
     def test_falls_back_to_created_at_when_paid_at_missing(self):
         created = "2026-09-05T05:48:24.165413+00:00"
@@ -120,16 +126,24 @@ class UnifiedPaymentsHelperTestCase(unittest.TestCase):
         self.assertTrue(any(s.kind == "stripe" for s in sources))
 
     def test_merge_rows_orders_by_time_desc(self):
-        older = _sample_row(row_id=1, occurred_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
-        newer = _sample_row(row_id=2, occurred_at=datetime(2026, 1, 2, tzinfo=timezone.utc))
+        older = _sample_row(
+            row_id=1, occurred_at=datetime(2026, 1, 1, tzinfo=timezone.utc)
+        )
+        newer = _sample_row(
+            row_id=2, occurred_at=datetime(2026, 1, 2, tzinfo=timezone.utc)
+        )
         merged = _merge_rows(
             [
                 (
-                    PaymentSourceSpec(kind="venmo", owner_slug="round-table", method_slug="venmo"),
+                    PaymentSourceSpec(
+                        kind="venmo", owner_slug="round-table", method_slug="venmo"
+                    ),
                     [older],
                 ),
                 (
-                    PaymentSourceSpec(kind="venmo", owner_slug="vaughn", method_slug="venmo"),
+                    PaymentSourceSpec(
+                        kind="venmo", owner_slug="vaughn", method_slug="venmo"
+                    ),
                     [newer],
                 ),
             ],
@@ -142,7 +156,9 @@ class UnifiedPaymentsHelperTestCase(unittest.TestCase):
 
 class UnifiedPaymentsApiTestCase(unittest.TestCase):
     def setUp(self):
-        self.env_patch = patch.dict(os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False)
+        self.env_patch = patch.dict(
+            os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False
+        )
         self.env_patch.start()
 
     def tearDown(self):

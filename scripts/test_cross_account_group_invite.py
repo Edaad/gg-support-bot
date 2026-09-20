@@ -67,7 +67,9 @@ async def _run(
     print(f"Mode: {'APPLY' if apply else 'DRY-RUN'}")
 
     if not apply:
-        print("\nDry-run only. Re-run with --apply to create the group and invite RT support.")
+        print(
+            "\nDry-run only. Re-run with --apply to create the group and invite RT support."
+        )
         return 0
 
     client = make_client(cfg)
@@ -79,7 +81,9 @@ async def _run(
 
         me = await client.get_me()
         me_label = (
-            f"@{me.username}" if getattr(me, "username", None) else f"id={getattr(me, 'id', '?')}"
+            f"@{me.username}"
+            if getattr(me, "username", None)
+            else f"id={getattr(me, 'id', '?')}"
         )
         print(f"Connected as {me_label}")
 

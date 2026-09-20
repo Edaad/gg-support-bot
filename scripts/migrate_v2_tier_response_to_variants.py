@@ -43,7 +43,9 @@ from db.models import ClubPaymentMethod, ClubPaymentTier
 def migrate(session: Session) -> dict[str, int]:
     methods = (
         session.query(ClubPaymentMethod)
-        .options(joinedload(ClubPaymentMethod.tiers).joinedload(ClubPaymentTier.variants))
+        .options(
+            joinedload(ClubPaymentMethod.tiers).joinedload(ClubPaymentTier.variants)
+        )
         .all()
     )
     stats = {

@@ -164,7 +164,6 @@ def _load_db_context(chat_ids: list[int], *, activity_days: int) -> DbContext:
     from db.models import (
         CashierCashoutJob,
         Group,
-        GroupPaymentMethodBinding,
         InactiveGroupOutreachRow,
         MigratedGroupRecovery,
         PaymentMethodBindAttempt,
@@ -359,9 +358,7 @@ async def _telegram_fields(
 
     try:
         entity = await client.get_entity(int(chat_id))
-        fields["telegram_public_username"] = (
-            getattr(entity, "username", None) or ""
-        )
+        fields["telegram_public_username"] = getattr(entity, "username", None) or ""
         fields["telegram_participants_count"] = await participant_count(client, entity)
 
         me = await client.get_me()
@@ -382,7 +379,10 @@ async def _telegram_fields(
 
 
 def _title_fields(title: str) -> dict[str, str]:
-    from bot.services.player_details import parse_group_title_parts, parse_tracking_title
+    from bot.services.player_details import (
+        parse_group_title_parts,
+        parse_tracking_title,
+    )
 
     parsed = parse_group_title_parts(title)
     tracking = parse_tracking_title(title)
@@ -530,7 +530,9 @@ async def _run(args: argparse.Namespace) -> int:
 
         for idx, item in enumerate(rows, start=1):
             if idx % 25 == 0 or idx == 1:
-                logger.info("Telegram enrich %d/%d: %s", idx, len(rows), item.title[:50])
+                logger.info(
+                    "Telegram enrich %d/%d: %s", idx, len(rows), item.title[:50]
+                )
             telegram = await _telegram_fields(
                 client,
                 cfg,

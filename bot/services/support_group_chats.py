@@ -287,7 +287,6 @@ def persist_support_group_chat_row(
         logger.exception("support_group_chats IntegrityError")
         return None, type(e).__name__
     except Exception as e:
-
         hint = type(e).__name__
         logger.exception("support_group_chats insert failed (%s)", hint)
         return None, hint
@@ -478,7 +477,9 @@ def bind_player_for_gc_reuse(
     return ("inserted", pk)
 
 
-def try_pg_advisory_lock_club_player(club_key: str, player_telegram_user_id: int) -> tuple[Any, bool]:
+def try_pg_advisory_lock_club_player(
+    club_key: str, player_telegram_user_id: int
+) -> tuple[Any, bool]:
     """Acquire session-level advisory lock. Returns (session, acquired). Caller must unlock and close."""
     import zlib
 
@@ -500,7 +501,9 @@ def try_pg_advisory_lock_club_player(club_key: str, player_telegram_user_id: int
         raise
 
 
-def pg_advisory_unlock_session(session, club_key: str, player_telegram_user_id: int) -> None:
+def pg_advisory_unlock_session(
+    session, club_key: str, player_telegram_user_id: int
+) -> None:
     import zlib
 
     from sqlalchemy import text
@@ -510,7 +513,9 @@ def pg_advisory_unlock_session(session, club_key: str, player_telegram_user_id: 
     k1 = zlib.crc32(club_key.encode("utf-8")) & 0x7FFFFFFF
     k2 = abs(int(player_telegram_user_id)) & 0x7FFFFFFF
     try:
-        session.execute(text("SELECT pg_advisory_unlock(:k1, :k2)"), {"k1": k1, "k2": k2})
+        session.execute(
+            text("SELECT pg_advisory_unlock(:k1, :k2)"), {"k1": k1, "k2": k2}
+        )
         session.commit()
     finally:
         session.close()
@@ -536,7 +541,9 @@ def supersede_support_group_chat_binding(
         )
         if row is None:
             return False
-        note = (reason or f"superseded inactive outreach chat {telegram_chat_id}")[:2000]
+        note = (reason or f"superseded inactive outreach chat {telegram_chat_id}")[
+            :2000
+        ]
         row.player_telegram_user_id = None
         row.player_dm_status = "superseded_inactive_outreach"
         row.last_error_message = note
@@ -554,7 +561,8 @@ def fetch_outreach_pending_reply(club_key: str, player_telegram_user_id: int):
             session.query(InactiveGroupOutreachRow)
             .filter(
                 InactiveGroupOutreachRow.club_key == club_key,
-                InactiveGroupOutreachRow.player_telegram_user_id == int(player_telegram_user_id),
+                InactiveGroupOutreachRow.player_telegram_user_id
+                == int(player_telegram_user_id),
                 InactiveGroupOutreachRow.dm_status == "sent",
             )
             .order_by(InactiveGroupOutreachRow.dm_sent_at.desc().nullslast())

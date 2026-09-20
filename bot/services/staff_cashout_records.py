@@ -9,10 +9,19 @@ from typing import Any, Optional
 
 from sqlalchemy import exists, or_
 
-from bot.services.club import count_deposits_for_chat, get_method_by_id, get_sub_option_by_id
+from bot.services.club import (
+    count_deposits_for_chat,
+    get_method_by_id,
+    get_sub_option_by_id,
+)
 from bot.services.player_details import parse_tracking_title
 from db.connection import get_db
-from db.models import Club, StaffCashoutMoneySend, StaffCashoutPayment, StaffCashoutRecord
+from db.models import (
+    Club,
+    StaffCashoutMoneySend,
+    StaffCashoutPayment,
+    StaffCashoutRecord,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +73,9 @@ def _send_to_dict(row: StaffCashoutMoneySend) -> dict[str, Any]:
     }
 
 
-def compute_ledger(tracks_money_sent: bool, original: Any, sends: list[dict[str, Any]]) -> dict[str, Any]:
+def compute_ledger(
+    tracks_money_sent: bool, original: Any, sends: list[dict[str, Any]]
+) -> dict[str, Any]:
     original_amt = _as_decimal(original)
     if not tracks_money_sent:
         return {
@@ -90,8 +101,13 @@ def compute_ledger(tracks_money_sent: bool, original: Any, sends: list[dict[str,
 
 
 def _record_to_dict(record: StaffCashoutRecord) -> dict[str, Any]:
-    payments = [_payment_to_dict(p) for p in sorted(record.payments, key=lambda p: p.sort_order)]
-    sends = [_send_to_dict(s) for s in sorted(record.money_sends, key=lambda r: r.created_at or datetime.min)]
+    payments = [
+        _payment_to_dict(p) for p in sorted(record.payments, key=lambda p: p.sort_order)
+    ]
+    sends = [
+        _send_to_dict(s)
+        for s in sorted(record.money_sends, key=lambda r: r.created_at or datetime.min)
+    ]
     tracks = bool(record.tracks_money_sent)
     ledger = compute_ledger(tracks, record.amount, sends)
     return {
@@ -423,7 +439,9 @@ def update_staff_cashout_record(
             return None
         current = _record_to_dict(record)
         if amount is not None and current["status"] != "active":
-            raise CashoutRecordNotActive("Original amount can only be edited while active")
+            raise CashoutRecordNotActive(
+                "Original amount can only be edited while active"
+            )
         if group_title is not None:
             record.group_title = group_title
             record.gg_player_id = _gg_player_id_from_title(group_title)
@@ -544,7 +562,9 @@ def update_staff_cashout_payment(
         return _record_dict_reloaded(session, record)
 
 
-def delete_staff_cashout_payment(record_id: int, payment_id: int) -> Optional[dict[str, Any]]:
+def delete_staff_cashout_payment(
+    record_id: int, payment_id: int
+) -> Optional[dict[str, Any]]:
     with get_db() as session:
         record = session.get(StaffCashoutRecord, int(record_id))
         if not record:
@@ -557,7 +577,9 @@ def delete_staff_cashout_payment(record_id: int, payment_id: int) -> Optional[di
         return _record_dict_reloaded(session, record)
 
 
-def add_staff_cashout_send(record_id: int, pdata: dict[str, Any]) -> Optional[dict[str, Any]]:
+def add_staff_cashout_send(
+    record_id: int, pdata: dict[str, Any]
+) -> Optional[dict[str, Any]]:
     with get_db() as session:
         record = session.get(StaffCashoutRecord, int(record_id))
         if not record:
@@ -609,7 +631,11 @@ def update_staff_cashout_send(
             if amount <= 0:
                 raise ValueError("Amount must be greater than zero")
             row.amount = amount
-        method_id = row.payment_method_id if "payment_method_id" not in pdata else pdata.get("payment_method_id")
+        method_id = (
+            row.payment_method_id
+            if "payment_method_id" not in pdata
+            else pdata.get("payment_method_id")
+        )
         sub_id = (
             row.payment_sub_option_id
             if "payment_sub_option_id" not in pdata
@@ -620,7 +646,14 @@ def update_staff_cashout_send(
             if "method_display_name" not in pdata
             else pdata.get("method_display_name")
         )
-        if any(k in pdata for k in ("payment_method_id", "payment_sub_option_id", "method_display_name")):
+        if any(
+            k in pdata
+            for k in (
+                "payment_method_id",
+                "payment_sub_option_id",
+                "method_display_name",
+            )
+        ):
             method_id, sub_id, display, _d = _validate_method_choice(
                 payment_method_id=method_id,
                 payment_sub_option_id=sub_id,
@@ -698,8 +731,7 @@ def list_staff_cashout_records(
                     StaffCashoutRecord.gg_player_id.ilike(like),
                     Club.name.ilike(like),
                     exists().where(
-                        StaffCashoutPayment.cashout_record_id
-                        == StaffCashoutRecord.id,
+                        StaffCashoutPayment.cashout_record_id == StaffCashoutRecord.id,
                         StaffCashoutPayment.payout_details.ilike(like),
                     ),
                 )
@@ -753,12 +785,9 @@ def _filter_money_send_query(
     method_display_name: Optional[str] = None,
     q: Optional[str] = None,
 ):
-    query = (
-        session.query(StaffCashoutMoneySend, StaffCashoutRecord)
-        .join(
-            StaffCashoutRecord,
-            StaffCashoutMoneySend.cashout_record_id == StaffCashoutRecord.id,
-        )
+    query = session.query(StaffCashoutMoneySend, StaffCashoutRecord).join(
+        StaffCashoutRecord,
+        StaffCashoutMoneySend.cashout_record_id == StaffCashoutRecord.id,
     )
     if club_id is not None:
         query = query.filter(StaffCashoutRecord.club_id == int(club_id))
@@ -829,12 +858,9 @@ def list_money_send_method_names(
 ) -> list[str]:
     """Distinct method_display_name values in the club/date window (for filter dropdown)."""
     with get_db() as session:
-        query = (
-            session.query(StaffCashoutMoneySend.method_display_name)
-            .join(
-                StaffCashoutRecord,
-                StaffCashoutMoneySend.cashout_record_id == StaffCashoutRecord.id,
-            )
+        query = session.query(StaffCashoutMoneySend.method_display_name).join(
+            StaffCashoutRecord,
+            StaffCashoutMoneySend.cashout_record_id == StaffCashoutRecord.id,
         )
         if club_id is not None:
             query = query.filter(StaffCashoutRecord.club_id == int(club_id))

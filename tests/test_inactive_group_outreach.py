@@ -183,13 +183,16 @@ class TestPlayerOnlyActivity(unittest.IsolatedAsyncioTestCase):
         client.iter_messages = MagicMock(return_value=self._async_iter([]))
         cfg = MagicMock()
 
-        with patch(
-            "bot.services.mtproto_group_player._eligible_player_filter_context",
-            new_callable=AsyncMock,
-            return_value=(frozenset({42}), frozenset(), frozenset(), frozenset()),
-        ), patch(
-            "bot.services.mtproto_group_player.is_eligible_player_user",
-            return_value=False,
+        with (
+            patch(
+                "bot.services.mtproto_group_player._eligible_player_filter_context",
+                new_callable=AsyncMock,
+                return_value=(frozenset({42}), frozenset(), frozenset(), frozenset()),
+            ),
+            patch(
+                "bot.services.mtproto_group_player.is_eligible_player_user",
+                return_value=False,
+            ),
         ):
             result = await last_eligible_player_message_at(
                 client, MagicMock(), cfg, self_id=1, history_limit=50
@@ -223,28 +226,34 @@ class TestPlayerSourcePriority(unittest.IsolatedAsyncioTestCase):
                 return await result
             return result
 
-        with patch(
-            "bot.services.inactive_group_outreach.resolve_legacy_chat_ids",
-            return_value=[-456],
-        ), patch(
-            "bot.services.inactive_group_outreach._multi_chat_activity",
-            new_callable=AsyncMock,
-            return_value=(
-                ExternalActivityResult(None, "support_only"),
-                ExternalActivityResult(
-                    datetime(2025, 1, 1, tzinfo=timezone.utc),
-                    "external",
+        with (
+            patch(
+                "bot.services.inactive_group_outreach.resolve_legacy_chat_ids",
+                return_value=[-456],
+            ),
+            patch(
+                "bot.services.inactive_group_outreach._multi_chat_activity",
+                new_callable=AsyncMock,
+                return_value=(
+                    ExternalActivityResult(None, "support_only"),
+                    ExternalActivityResult(
+                        datetime(2025, 1, 1, tzinfo=timezone.utc),
+                        "external",
+                    ),
                 ),
             ),
-        ), patch(
-            "bot.services.inactive_group_outreach._discover_player_from_messages",
-            new_callable=AsyncMock,
-        ) as mock_discover, patch(
-            "bot.services.migration_group_readd.call_with_flood_retry",
-            side_effect=_fake_flood,
-        ), patch(
-            "scripts.triage_recovery_tier3_pending.account_check_from_resolved_user",
-            return_value="alive",
+            patch(
+                "bot.services.inactive_group_outreach._discover_player_from_messages",
+                new_callable=AsyncMock,
+            ) as mock_discover,
+            patch(
+                "bot.services.migration_group_readd.call_with_flood_retry",
+                side_effect=_fake_flood,
+            ),
+            patch(
+                "scripts.triage_recovery_tier3_pending.account_check_from_resolved_user",
+                return_value="alive",
+            ),
         ):
             mock_discover.return_value = MagicMock(id=111)
             resolved_user = MagicMock(id=999, deleted=False)
@@ -285,31 +294,37 @@ class TestPlayerSourcePriority(unittest.IsolatedAsyncioTestCase):
 
         scan_user = MagicMock(id=111, deleted=False)
 
-        with patch(
-            "bot.services.inactive_group_outreach.resolve_legacy_chat_ids",
-            return_value=[-456],
-        ), patch(
-            "bot.services.inactive_group_outreach._multi_chat_activity",
-            new_callable=AsyncMock,
-            return_value=(
-                ExternalActivityResult(None, "support_only"),
-                ExternalActivityResult(
-                    datetime(2025, 1, 1, tzinfo=timezone.utc),
-                    "external",
+        with (
+            patch(
+                "bot.services.inactive_group_outreach.resolve_legacy_chat_ids",
+                return_value=[-456],
+            ),
+            patch(
+                "bot.services.inactive_group_outreach._multi_chat_activity",
+                new_callable=AsyncMock,
+                return_value=(
+                    ExternalActivityResult(None, "support_only"),
+                    ExternalActivityResult(
+                        datetime(2025, 1, 1, tzinfo=timezone.utc),
+                        "external",
+                    ),
                 ),
             ),
-        ), patch(
-            "bot.services.inactive_group_outreach._discover_player_from_messages",
-            new_callable=AsyncMock,
-            return_value=scan_user,
-        ) as mock_discover, patch(
-            "bot.services.migration_group_readd.call_with_flood_retry",
-            side_effect=_fake_flood,
-        ), patch(
-            "scripts.triage_recovery_tier3_pending.account_check_from_resolved_user",
-            side_effect=lambda user, **_: "not_found"
-            if getattr(user, "id", None) == 999
-            else "alive",
+            patch(
+                "bot.services.inactive_group_outreach._discover_player_from_messages",
+                new_callable=AsyncMock,
+                return_value=scan_user,
+            ) as mock_discover,
+            patch(
+                "bot.services.migration_group_readd.call_with_flood_retry",
+                side_effect=_fake_flood,
+            ),
+            patch(
+                "scripts.triage_recovery_tier3_pending.account_check_from_resolved_user",
+                side_effect=lambda user, **_: (
+                    "not_found" if getattr(user, "id", None) == 999 else "alive"
+                ),
+            ),
         ):
             dead_user = MagicMock(id=999, deleted=False)
             alive_user = MagicMock(id=111, deleted=False)

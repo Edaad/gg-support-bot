@@ -167,7 +167,9 @@ async def run_group_chat_transcript_extraction(
 
 async def group_chat_transcript_job_callback(context) -> None:
     if not is_group_transcript_cron_enabled():
-        logger.info("group_transcript_cron: skipped (GROUP_TRANSCRIPT_CRON_ENABLED off)")
+        logger.info(
+            "group_transcript_cron: skipped (GROUP_TRANSCRIPT_CRON_ENABLED off)"
+        )
         return
 
     bot = getattr(context, "bot", None)

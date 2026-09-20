@@ -38,7 +38,9 @@ ScopeSlug = Literal["all", "owner", "union"]
 OwnerSlug = Literal["round-table", "vaughn", "mateos"]
 
 ALL_OWNERS: tuple[str, ...] = ("round-table", "vaughn", "mateos")
-UNION_METHOD_TYPES: frozenset[str] = frozenset({"zelle", "cashapp", "applepay", "venmo"})
+UNION_METHOD_TYPES: frozenset[str] = frozenset(
+    {"zelle", "cashapp", "applepay", "venmo"}
+)
 
 OWNER_LABELS: dict[str, str] = {
     "round-table": "RT",
@@ -165,7 +167,11 @@ def resolve_sources(
 
 
 def _sort_key(occurred_at: datetime, source_kind: str, row_id: int) -> tuple:
-    ts = occurred_at.timestamp() if occurred_at.tzinfo else occurred_at.replace(tzinfo=None).timestamp()
+    ts = (
+        occurred_at.timestamp()
+        if occurred_at.tzinfo
+        else occurred_at.replace(tzinfo=None).timestamp()
+    )
     return (-ts, source_kind, -row_id)
 
 
@@ -192,10 +198,7 @@ def _ingest_to_unified(
 ) -> UnifiedPaymentRowRead:
     occurred_at = _ingest_occurred_at(method_slug, read_payload)
     status = read_payload.get("status")
-    can_bind = (
-        method_slug != "stripe"
-        and status == "unbound"
-    )
+    can_bind = method_slug != "stripe" and status == "unbound"
     variant = None
     if method_slug == "stripe":
         variant = read_payload.get("method_name")
@@ -224,9 +227,7 @@ def _union_to_unified(db: Session, row: ManualDepositRequest) -> UnifiedPaymentR
     method_slug = (row.method_slug or "").strip().lower()
     title, gg_id = resolve_group_title(db, int(row.telegram_chat_id))
     group_title = row.group_title or title
-    gg_nickname = (
-        lookup_gg_nickname(db, int(row.club_id), gg_id) if gg_id else None
-    )
+    gg_nickname = lookup_gg_nickname(db, int(row.club_id), gg_id) if gg_id else None
     amount = Decimal(str(row.amount))
     read_model = manual_deposit_to_read(row)
     return UnifiedPaymentRowRead(

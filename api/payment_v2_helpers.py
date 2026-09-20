@@ -37,10 +37,14 @@ def amounts_overlap(
     max_b: Optional[Decimal],
 ) -> bool:
     """True if some deposit amount could match both bands (inclusive bounds)."""
-    return _bound_low(min_a) <= _bound_high(max_b) and _bound_low(min_b) <= _bound_high(max_a)
+    return _bound_low(min_a) <= _bound_high(max_b) and _bound_low(min_b) <= _bound_high(
+        max_a
+    )
 
 
-def primary_tier_for_method(siblings: Sequence[ClubPaymentTier]) -> Optional[ClubPaymentTier]:
+def primary_tier_for_method(
+    siblings: Sequence[ClubPaymentTier],
+) -> Optional[ClubPaymentTier]:
     ordered = sorted(siblings, key=lambda t: (t.sort_order, t.id))
     if not ordered:
         return None
@@ -65,22 +69,38 @@ def validate_tier_amount_band(
     if tier_min is not None and tier_max is not None and tier_min > tier_max:
         raise HTTPException(400, "Tier min amount cannot be greater than max amount.")
 
-    if tier_min is not None and method.min_amount is not None and tier_min < method.min_amount:
+    if (
+        tier_min is not None
+        and method.min_amount is not None
+        and tier_min < method.min_amount
+    ):
         raise HTTPException(
             400,
             f"Tier min ${tier_min} is below method absolute minimum ${method.min_amount}.",
         )
-    if tier_max is not None and method.max_amount is not None and tier_max > method.max_amount:
+    if (
+        tier_max is not None
+        and method.max_amount is not None
+        and tier_max > method.max_amount
+    ):
         raise HTTPException(
             400,
             f"Tier max ${tier_max} is above method absolute maximum ${method.max_amount}.",
         )
-    if tier_min is not None and method.max_amount is not None and tier_min > method.max_amount:
+    if (
+        tier_min is not None
+        and method.max_amount is not None
+        and tier_min > method.max_amount
+    ):
         raise HTTPException(
             400,
             f"Tier min ${tier_min} is above method absolute maximum ${method.max_amount}.",
         )
-    if tier_max is not None and method.min_amount is not None and tier_max < method.min_amount:
+    if (
+        tier_max is not None
+        and method.min_amount is not None
+        and tier_max < method.min_amount
+    ):
         raise HTTPException(
             400,
             f"Tier max ${tier_max} is below method absolute minimum ${method.min_amount}.",
@@ -121,25 +141,45 @@ def validate_checkout_amount_bounds(
     checkout_max: Optional[Decimal],
 ) -> None:
     """Ensure optional checkout min/max fit the method absolute envelope."""
-    if checkout_min is not None and checkout_max is not None and checkout_min > checkout_max:
+    if (
+        checkout_min is not None
+        and checkout_max is not None
+        and checkout_min > checkout_max
+    ):
         raise HTTPException(400, "Checkout min cannot be greater than checkout max.")
 
-    if checkout_min is not None and method.min_amount is not None and checkout_min < method.min_amount:
+    if (
+        checkout_min is not None
+        and method.min_amount is not None
+        and checkout_min < method.min_amount
+    ):
         raise HTTPException(
             400,
             f"Checkout min ${checkout_min} is below method absolute minimum ${method.min_amount}.",
         )
-    if checkout_max is not None and method.max_amount is not None and checkout_max > method.max_amount:
+    if (
+        checkout_max is not None
+        and method.max_amount is not None
+        and checkout_max > method.max_amount
+    ):
         raise HTTPException(
             400,
             f"Checkout max ${checkout_max} is above method absolute maximum ${method.max_amount}.",
         )
-    if checkout_min is not None and method.max_amount is not None and checkout_min > method.max_amount:
+    if (
+        checkout_min is not None
+        and method.max_amount is not None
+        and checkout_min > method.max_amount
+    ):
         raise HTTPException(
             400,
             f"Checkout min ${checkout_min} is above method absolute maximum ${method.max_amount}.",
         )
-    if checkout_max is not None and method.min_amount is not None and checkout_max < method.min_amount:
+    if (
+        checkout_max is not None
+        and method.min_amount is not None
+        and checkout_max < method.min_amount
+    ):
         raise HTTPException(
             400,
             f"Checkout max ${checkout_max} is below method absolute minimum ${method.min_amount}.",
@@ -256,10 +296,12 @@ def sync_tier_checkout_bounds_to_variants(
         if _inherited_checkout_value(variant.checkout_max_amount, prior_eff_max):
             variant.checkout_max_amount = new_eff_max
 
-        variant.checkout_min_amount, variant.checkout_max_amount = clamp_checkout_amount_bounds(
-            method,
-            variant.checkout_min_amount,
-            variant.checkout_max_amount,
+        variant.checkout_min_amount, variant.checkout_max_amount = (
+            clamp_checkout_amount_bounds(
+                method,
+                variant.checkout_min_amount,
+                variant.checkout_max_amount,
+            )
         )
 
 
@@ -288,10 +330,12 @@ def sync_method_envelope_side_effects(method: ClubPaymentMethod) -> None:
         tier.checkout_max_amount = _follow_if_matched(
             tier.checkout_max_amount, prior_max, tier.max_amount
         )
-        tier.checkout_min_amount, tier.checkout_max_amount = clamp_checkout_amount_bounds(
-            method,
-            tier.checkout_min_amount,
-            tier.checkout_max_amount,
+        tier.checkout_min_amount, tier.checkout_max_amount = (
+            clamp_checkout_amount_bounds(
+                method,
+                tier.checkout_min_amount,
+                tier.checkout_max_amount,
+            )
         )
         for variant in tier.variants or []:
             variant.checkout_min_amount = _follow_if_matched(
@@ -300,10 +344,12 @@ def sync_method_envelope_side_effects(method: ClubPaymentMethod) -> None:
             variant.checkout_max_amount = _follow_if_matched(
                 variant.checkout_max_amount, prior_max, tier.max_amount
             )
-            variant.checkout_min_amount, variant.checkout_max_amount = clamp_checkout_amount_bounds(
-                method,
-                variant.checkout_min_amount,
-                variant.checkout_max_amount,
+            variant.checkout_min_amount, variant.checkout_max_amount = (
+                clamp_checkout_amount_bounds(
+                    method,
+                    variant.checkout_min_amount,
+                    variant.checkout_max_amount,
+                )
             )
 
 
@@ -327,14 +373,19 @@ def validate_first_time_linking(method: ClubPaymentMethod) -> None:
     if slug == "zelle" and mode == "memo_emoji":
         raise ValueError("Memo first-time linking is not supported for Zelle.")
     if mode not in _FIRST_TIME_BIND_MODES:
-        raise ValueError("Select a verification method when first-time linking is enabled.")
+        raise ValueError(
+            "Select a verification method when first-time linking is enabled."
+        )
 
 
 def apply_manual_trade_request_constraints(method: ClubPaymentMethod) -> None:
     """Normalize + validate flagged pool pay methods. Raises ValueError."""
     from bot.services.deposit_union_types import validate_deposit_union
     from bot.services.pool_pay_types import pool_pay_type_from_method
-    from bot.services.union_method_types import union_type_display_name, validate_union_method_type
+    from bot.services.union_method_types import (
+        union_type_display_name,
+        validate_union_method_type,
+    )
 
     tracks = bool(getattr(method, "tracks_manual_requests", False))
     if not tracks:
@@ -371,14 +422,10 @@ def apply_manual_trade_request_constraints(method: ClubPaymentMethod) -> None:
     method.is_public = True
     for tier in getattr(method, "tiers", None) or []:
         if bool(getattr(tier, "use_group_checkout_link", False)):
-            raise ValueError(
-                "Union methods cannot use Stripe/group checkout."
-            )
+            raise ValueError("Union methods cannot use Stripe/group checkout.")
         for variant_row in getattr(tier, "variants", None) or []:
             if bool(getattr(variant_row, "use_group_checkout_link", False)):
-                raise ValueError(
-                    "Union methods cannot use Stripe/group checkout."
-                )
+                raise ValueError("Union methods cannot use Stripe/group checkout.")
 
 
 def method_needs_variants(method: ClubPaymentMethod) -> bool:
@@ -433,7 +480,9 @@ def create_default_variant_from_tier(
         response_file_id=tier.response_file_id,
         response_caption=tier.response_caption,
         use_group_checkout_link=True if tier.use_group_checkout_link else None,
-        group_checkout_provider=tier.group_checkout_provider if tier.use_group_checkout_link else None,
+        group_checkout_provider=tier.group_checkout_provider
+        if tier.use_group_checkout_link
+        else None,
         hyperlink_text=tier.hyperlink_text if tier.use_group_checkout_link else None,
         checkout_min_amount=tier.checkout_min_amount,
         checkout_max_amount=tier.checkout_max_amount,

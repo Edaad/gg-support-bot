@@ -13,7 +13,12 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from config import ADMIN_USER_IDS
-from bot.services.club import get_club_for_chat, get_group_name, is_club_staff, update_group_name
+from bot.services.club import (
+    get_club_for_chat,
+    get_group_name,
+    is_club_staff,
+    update_group_name,
+)
 from bot.services.mtproto_track_contact import schedule_save_player_contact_named_group
 from bot.services.player_details import (
     parse_tracking_title,
@@ -45,7 +50,9 @@ def _club_id_for_contact_sync(chat) -> int | None:
     return get_club_for_chat(chat.id)
 
 
-async def _bind_from_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> tuple[bool, str | None]:
+async def _bind_from_title(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> tuple[bool, str | None]:
     """Try to parse + bind. Returns (success, gg_player_id_if_success)."""
     chat = update.effective_chat
     if not chat or chat.type not in ("group", "supergroup"):
@@ -155,7 +162,7 @@ async def override_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if not _can_manage_player_tracking(update.effective_user.id, club_id):
         return
 
-    args = (context.args or [])
+    args = context.args or []
     gg_player_id = args[0].strip() if args else gg_player_id_from_title(chat.title)
     if not gg_player_id:
         await update.message.reply_text(
@@ -281,4 +288,3 @@ async def info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     else:
         joined = ", ".join(players)
         await update.message.reply_text(f"Tracking player IDs: {joined}")
-

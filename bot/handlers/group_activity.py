@@ -85,9 +85,7 @@ async def group_activity_handler(
     if club_id is None:
         return
 
-    popup_on = pk.popup_keyboard_eligible(
-        chat.id, club_id=club_id, title=chat.title
-    )
+    popup_on = pk.popup_keyboard_eligible(chat.id, club_id=club_id, title=chat.title)
     esc_on = esc.escalation_notification_eligible(
         chat.id, club_id=club_id, title=chat.title
     )
@@ -98,9 +96,7 @@ async def group_activity_handler(
     role = "staff" if is_staff else "player"
     flow_cmd = pk.is_flow_command_text(message.text)
     # Keep last-human timestamps for popup / legacy columns; idle fire is episode-based.
-    ga.record_human_message(
-        chat.id, role=role, allow_idle_fire=False
-    )
+    ga.record_human_message(chat.id, role=role, allow_idle_fire=False)
 
     jq = getattr(context, "job_queue", None)
     mid = getattr(message, "message_id", None)
@@ -121,9 +117,7 @@ async def group_activity_handler(
 
     if is_staff:
         if esc_on and idle_ep.episode_is_open(chat.id):
-            idle_ep.on_staff_human(
-                chat.id, job_queue=jq, title=chat.title
-            )
+            idle_ep.on_staff_human(chat.id, job_queue=jq, title=chat.title)
             _record_decision(
                 decision=DECISION_SKIPPED,
                 reason=REASON_STAFF_CLEARED_BURST,
@@ -148,9 +142,7 @@ async def group_activity_handler(
                 trigger=trigger,
             )
     else:
-        pk.upsert_player_telegram_user_id(
-            chat.id, user.id, username=user.username
-        )
+        pk.upsert_player_telegram_user_id(chat.id, user.id, username=user.username)
         pk.remember_player_message(
             context,
             user_id=user.id,
@@ -232,12 +224,7 @@ async def group_activity_handler(
             skip_episode = True
             skip_reason = REASON_FLOW_CMD
 
-        if (
-            esc_on
-            and skip_episode
-            and not deposit_consumed
-            and skip_reason is not None
-        ):
+        if esc_on and skip_episode and not deposit_consumed and skip_reason is not None:
             _record_decision(
                 decision=DECISION_SKIPPED,
                 reason=skip_reason,
@@ -250,12 +237,7 @@ async def group_activity_handler(
                 trigger=trigger,
             )
 
-        if (
-            esc_on
-            and not skip_episode
-            and not flow_cmd
-            and not deposit_consumed
-        ):
+        if esc_on and not skip_episode and not flow_cmd and not deposit_consumed:
             result = await idle_ep.on_player_reach_out(
                 chat.id,
                 club_id=club_id,
@@ -324,14 +306,10 @@ async def group_activity_handler(
         or cashout_flow_active(context)
         or transfer_flow_active(context)
     ):
-        pk.cancel_popup_keyboard_idle(
-            chat.id, job_queue=jq
-        )
+        pk.cancel_popup_keyboard_idle(chat.id, job_queue=jq)
         return
 
-    if pk.payment_window_gate_pending(
-        chat.id, job_queue=jq
-    ):
+    if pk.payment_window_gate_pending(chat.id, job_queue=jq):
         return
 
     pk.schedule_popup_keyboard_idle(context, chat.id)

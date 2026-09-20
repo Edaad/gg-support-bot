@@ -63,7 +63,10 @@ class TestInviteUserId(unittest.IsolatedAsyncioTestCase):
         side_effect=_passthrough_flood_retry,
     )
     async def test_already_member_skips_invite(self, _mock_flood: MagicMock) -> None:
-        from telethon.tl.functions.channels import GetParticipantRequest, InviteToChannelRequest
+        from telethon.tl.functions.channels import (
+            GetParticipantRequest,
+            InviteToChannelRequest,
+        )
 
         mock_user = MagicMock()
         mock_user.id = 123
@@ -99,7 +102,10 @@ class TestInviteUserId(unittest.IsolatedAsyncioTestCase):
     )
     async def test_not_member_invites_once(self, _mock_flood: MagicMock) -> None:
         from telethon.errors.rpcerrorlist import UserNotParticipantError
-        from telethon.tl.functions.channels import GetParticipantRequest, InviteToChannelRequest
+        from telethon.tl.functions.channels import (
+            GetParticipantRequest,
+            InviteToChannelRequest,
+        )
 
         mock_user = MagicMock()
         mock_user.id = 456
@@ -135,7 +141,10 @@ class TestInviteUserId(unittest.IsolatedAsyncioTestCase):
     )
     async def test_user_entity_skips_get_entity(self, mock_flood: MagicMock) -> None:
         from telethon.errors.rpcerrorlist import UserNotParticipantError
-        from telethon.tl.functions.channels import GetParticipantRequest, InviteToChannelRequest
+        from telethon.tl.functions.channels import (
+            GetParticipantRequest,
+            InviteToChannelRequest,
+        )
 
         mock_user = MagicMock()
         mock_user.id = 321
@@ -174,7 +183,10 @@ class TestInviteUserId(unittest.IsolatedAsyncioTestCase):
     )
     async def test_flood_wait_abort_propagates(self, _mock_flood: MagicMock) -> None:
         from telethon.errors.rpcerrorlist import UserNotParticipantError
-        from telethon.tl.functions.channels import GetParticipantRequest, InviteToChannelRequest
+        from telethon.tl.functions.channels import (
+            GetParticipantRequest,
+            InviteToChannelRequest,
+        )
 
         from bot.services.migration_group_readd import FloodWaitAbortError
 
@@ -417,7 +429,9 @@ class TestResolvePlayerEntityForReadd(unittest.IsolatedAsyncioTestCase):
         _mock_flood: MagicMock,
         mock_find_sender: AsyncMock,
     ) -> None:
-        entity_err = ValueError("Could not find the input entity for PeerUser(user_id=1)")
+        entity_err = ValueError(
+            "Could not find the input entity for PeerUser(user_id=1)"
+        )
         sender = _mock_resolved_player(player_id=99, username="fromchat")
         mock_find_sender.return_value = sender
         client = AsyncMock()
@@ -449,7 +463,9 @@ class TestResolvePlayerEntityForReadd(unittest.IsolatedAsyncioTestCase):
         _mock_flood: MagicMock,
         mock_find_sender: AsyncMock,
     ) -> None:
-        entity_err = ValueError("Could not find the input entity for PeerUser(user_id=1)")
+        entity_err = ValueError(
+            "Could not find the input entity for PeerUser(user_id=1)"
+        )
         sender = _mock_resolved_player(player_id=1779692689, username="derek")
         current_ent = MagicMock()
         old_ent = MagicMock()
@@ -522,7 +538,10 @@ class TestPersistResolvedPlayer(unittest.TestCase):
         )
         self.assertFalse(should_persist_resolved_player(result, stored_player_id=111))
 
-    @patch("bot.services.migration_recovery.persist_resolved_recovery_player", return_value=True)
+    @patch(
+        "bot.services.migration_recovery.persist_resolved_recovery_player",
+        return_value=True,
+    )
     def test_maybe_persist_calls_helper(self, mock_persist: MagicMock) -> None:
         result = ReaddGroupResult(
             chat_id=-1001,
@@ -567,8 +586,13 @@ class TestPersistResolvedPlayer(unittest.TestCase):
 
 class TestMigrationRecoveryProcessRow(unittest.IsolatedAsyncioTestCase):
     @patch("bot.services.migration_recovery.maybe_persist_resolved_player_from_readd")
-    @patch("bot.services.migration_recovery._notify_rt_ops_if_needed", new_callable=AsyncMock)
-    @patch("bot.services.migration_recovery.notify_readd_admin_dm", new_callable=AsyncMock)
+    @patch(
+        "bot.services.migration_recovery._notify_rt_ops_if_needed",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "bot.services.migration_recovery.notify_readd_admin_dm", new_callable=AsyncMock
+    )
     @patch("bot.services.migration_recovery.finalize_row", return_value="complete")
     @patch("bot.services.migration_recovery.readd_group", new_callable=AsyncMock)
     @patch("bot.services.mtproto_dm_gc_listener.get_listener_client")
@@ -621,14 +645,22 @@ class TestMigrationRecoveryProcessRow(unittest.IsolatedAsyncioTestCase):
         mock_persist.assert_called_once()
 
     @patch("bot.services.migration_recovery.maybe_persist_resolved_player_from_readd")
-    @patch("bot.services.migration_recovery._notify_rt_ops_if_needed", new_callable=AsyncMock)
-    @patch("bot.services.migration_recovery.notify_readd_admin_dm", new_callable=AsyncMock)
+    @patch(
+        "bot.services.migration_recovery._notify_rt_ops_if_needed",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "bot.services.migration_recovery.notify_readd_admin_dm", new_callable=AsyncMock
+    )
     @patch("bot.services.migration_recovery.finalize_row", return_value="complete")
     @patch(
         "bot.services.migration_recovery.readd_round_table_player_and_link",
         new_callable=AsyncMock,
     )
-    @patch("bot.services.migration_recovery.is_round_table_elevate_recovery_enabled", return_value=True)
+    @patch(
+        "bot.services.migration_recovery.is_round_table_elevate_recovery_enabled",
+        return_value=True,
+    )
     @patch("bot.services.mtproto_dm_gc_listener.get_listener_client")
     @patch("bot.services.migration_recovery.get_club_gc_config_by_link_club_id")
     async def test_process_row_elevate_rt_omits_invite_staff_kwarg(

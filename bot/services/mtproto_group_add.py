@@ -155,7 +155,9 @@ def format_bonus_confirmation(amount: Decimal) -> str:
     return f"Added {_format_chips(amount)} as a bonus!"
 
 
-async def _send_add_confirmation_once(cfg: ClubGcConfig, chat_id: int, text: str) -> None:
+async def _send_add_confirmation_once(
+    cfg: ClubGcConfig, chat_id: int, text: str
+) -> None:
     async with get_mtproto_lock(cfg.club_key):
         client = make_client(cfg)
         await client.connect()

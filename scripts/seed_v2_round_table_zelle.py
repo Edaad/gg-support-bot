@@ -34,7 +34,9 @@ from sqlalchemy.orm import Session
 from db.connection import get_session
 from db.models import Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant
 
-from api.payment_v2_helpers import upsert_default_variant_for_tier as upsert_default_variant
+from api.payment_v2_helpers import (
+    upsert_default_variant_for_tier as upsert_default_variant,
+)
 
 CLUB_NAME = "Round Table"
 METHOD_SLUG = "zelle"
@@ -67,7 +69,9 @@ def upsert_method(session: Session, club_id: int) -> ClubPaymentMethod:
         .first()
     )
     if method is None:
-        method = ClubPaymentMethod(club_id=club_id, direction=DIRECTION, slug=METHOD_SLUG)
+        method = ClubPaymentMethod(
+            club_id=club_id, direction=DIRECTION, slug=METHOD_SLUG
+        )
         session.add(method)
 
     method.name = "Zelle"
@@ -108,7 +112,9 @@ def upsert_default_tier(session: Session, method_id: int) -> ClubPaymentTier:
     return tier
 
 
-def seed(session: Session) -> tuple[Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant]:
+def seed(
+    session: Session,
+) -> tuple[Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant]:
     club = find_round_table_club(session)
     method = upsert_method(session, club.id)
     tier = upsert_default_tier(session, method.id)
@@ -150,7 +156,9 @@ def verify_via_api(club_id: int) -> None:
 
     tier = tiers[0]
     if tier.get("label") != DEFAULT_TIER_LABEL:
-        raise SystemExit(f"Expected tier label {DEFAULT_TIER_LABEL!r}, got {tier.get('label')!r}")
+        raise SystemExit(
+            f"Expected tier label {DEFAULT_TIER_LABEL!r}, got {tier.get('label')!r}"
+        )
 
     min_amount = tier.get("min_amount")
     if min_amount is None or Decimal(str(min_amount)) != Decimal("50"):
@@ -197,7 +205,9 @@ def main() -> None:
                 f"tier_id={tier.id}, variant_id={variant.id}"
             )
             verify_via_api(club.id)
-            print("API verification passed: 1 Default tier, 1 Default variant, 0 sub-options.")
+            print(
+                "API verification passed: 1 Default tier, 1 Default variant, 0 sub-options."
+            )
         else:
             session.rollback()
             print("Dry run (no changes committed). Would upsert:")

@@ -82,7 +82,9 @@ def persist_club_health(
             row.telegram_user_id = telegram_user_id
             row.checked_at = now
     except Exception:
-        logger.warning("mtproto club health persist failed club=%s", club_key, exc_info=True)
+        logger.warning(
+            "mtproto club health persist failed club=%s", club_key, exc_info=True
+        )
 
 
 def load_club_health(club_key: str) -> ClubHealthSnapshot | None:
@@ -112,7 +114,9 @@ def load_club_health(club_key: str) -> ClubHealthSnapshot | None:
         logger.warning("mtproto club health read failed: %s", e)
         return None
     except Exception:
-        logger.warning("mtproto club health read failed club=%s", club_key, exc_info=True)
+        logger.warning(
+            "mtproto club health read failed club=%s", club_key, exc_info=True
+        )
         return None
 
 

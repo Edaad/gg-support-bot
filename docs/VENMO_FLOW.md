@@ -182,11 +182,19 @@ For **every** POST to `/api/venmo/payments`:
 
 | Action | Behavior |
 |--------|----------|
-| `/deposit` + Venmo | Normal instructions; same Venmo handle/variant as linked during setup or manual bind |
+| `/deposit` + Venmo | Normal instructions; sticky **destination tag** from first bot-shown native handle (same `@` across variants). Stripe N/A for Venmo. |
 | New payment from same payer | Usually auto-binds to last group via payer binding |
 | New payment, new payer, linked group | Payment may still need manual bind unless setup or payer binding applies |
-| `/unbindmethod` | Clears group link; `/deposit` triggers setup again if enabled |
+| `/unbindmethod` | Clears group link **and** display destination stickiness; `/deposit` may assign a new tag and triggers setup again if enabled |
 | **Analytics** (`/analytics`) | Filter bound GCs by club and source (`memo_emoji`, `manual`, etc.) |
+
+### Destination tag stickiness (Venmo / Cash App)
+
+Separate from payment-method **linking** (`group_payment_method_bindings`). Table `group_deposit_destination_stickiness` stores the first `@` / `$` tag the bot showed in `/deposit` instructions (or first-time setup destination after ack). Later deposits keep that tag when any active native variant still has it. Cash App prefers native `$cashtag` over Stripe whenever a native variant exists for the amount; Stripe does not lock a tag. Staff `/unbindmethod` clears stickiness.
+
+```bash
+DATABASE_URL=... python migrate_deposit_destination_stickiness.py
+```
 
 ---
 

@@ -66,7 +66,9 @@ class AutoDepositIneligibleReasonTestCase(unittest.TestCase):
             )
 
     def test_toggle_off(self) -> None:
-        with patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=False):
+        with patch.object(
+            pad, "get_auto_deposit_on_payment_enabled", return_value=False
+        ):
             self.assertEqual(
                 pad.auto_deposit_ineligible_reason(
                     club_id=CLUB_ID_CREATOR,
@@ -203,7 +205,12 @@ class MaybeAutoDepositGatingTestCase(unittest.IsolatedAsyncioTestCase):
             patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
             patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
             patch.object(pad, "has_recent_add_command_in_chat", return_value=False),
-            patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock, return_value=(True, "success")) as mock_run,
+            patch.object(
+                pad,
+                "run_auto_chip_add",
+                new_callable=AsyncMock,
+                return_value=(True, "success"),
+            ) as mock_run,
             patch.object(pad, "record_auto_deposit_event"),
             patch.object(pad, "record_activity_for_chat"),
             patch.object(pad, "invalidate_pending_one_time_bypasses"),
@@ -222,7 +229,9 @@ class MaybeAutoDepositGatingTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_skips_when_auto_deposit_on_payment_disabled(self) -> None:
         with (
-            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=False),
+            patch.object(
+                pad, "get_auto_deposit_on_payment_enabled", return_value=False
+            ),
             patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock) as mock_run,
             patch.object(pad, "record_auto_deposit_event") as mock_record_event,
         ):
@@ -313,12 +322,23 @@ class MaybeAutoDepositSuccessTestCase(unittest.IsolatedAsyncioTestCase):
             patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
             patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
             patch.object(pad, "has_recent_add_command_in_chat", return_value=False),
-            patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock, return_value=(True, "success")) as mock_run,
-            patch.object(pad, "_run_payment_chip_match_after_attempt", new_callable=AsyncMock),
+            patch.object(
+                pad,
+                "run_auto_chip_add",
+                new_callable=AsyncMock,
+                return_value=(True, "success"),
+            ) as mock_run,
+            patch.object(
+                pad, "_run_payment_chip_match_after_attempt", new_callable=AsyncMock
+            ),
             patch.object(pad, "record_auto_deposit_event") as mock_record_event,
             patch.object(pad, "record_activity_for_chat") as mock_record,
-            patch.object(pad, "invalidate_pending_one_time_bypasses") as mock_invalidate,
-            patch.object(pad, "_send_add_confirmation", new_callable=AsyncMock) as mock_confirm,
+            patch.object(
+                pad, "invalidate_pending_one_time_bypasses"
+            ) as mock_invalidate,
+            patch.object(
+                pad, "_send_add_confirmation", new_callable=AsyncMock
+            ) as mock_confirm,
         ):
             await pad.maybe_auto_deposit_from_payment(
                 club_id=CLUB_ID_CREATOR,
@@ -355,10 +375,14 @@ class MaybeAutoDepositSuccessTestCase(unittest.IsolatedAsyncioTestCase):
                 new_callable=AsyncMock,
                 return_value=(False, "failed"),
             ),
-            patch.object(pad, "_run_payment_chip_match_after_attempt", new_callable=AsyncMock),
+            patch.object(
+                pad, "_run_payment_chip_match_after_attempt", new_callable=AsyncMock
+            ),
             patch.object(pad, "record_auto_deposit_event") as mock_record_event,
             patch.object(pad, "record_activity_for_chat") as mock_record,
-            patch.object(pad, "_send_add_confirmation", new_callable=AsyncMock) as mock_confirm,
+            patch.object(
+                pad, "_send_add_confirmation", new_callable=AsyncMock
+            ) as mock_confirm,
         ):
             await pad.maybe_auto_deposit_from_payment(
                 club_id=CLUB_ID_CREATOR,
@@ -434,7 +458,11 @@ class SendAddConfirmationTestCase(unittest.IsolatedAsyncioTestCase):
                 "_send_add_confirmation_once",
                 new_callable=AsyncMock,
             ) as mock_mtproto,
-            patch.object(pad, "format_add_confirmation", return_value="Added 50 credits, good luck!!"),
+            patch.object(
+                pad,
+                "format_add_confirmation",
+                return_value="Added 50 credits, good luck!!",
+            ),
         ):
             await pad._send_add_confirmation(
                 club_id=CLUB_ID_CREATOR,
@@ -442,14 +470,20 @@ class SendAddConfirmationTestCase(unittest.IsolatedAsyncioTestCase):
                 amount=Decimal(50),
                 group_title="CC / 1234-5678 / Jacob",
             )
-        mock_mtproto.assert_awaited_once_with(cfg, CHAT_ID, "Added 50 credits, good luck!!")
+        mock_mtproto.assert_awaited_once_with(
+            cfg, CHAT_ID, "Added 50 credits, good luck!!"
+        )
 
     async def test_bot_fallback_when_mtproto_unavailable(self) -> None:
         mock_bot = MagicMock()
         mock_bot.send_message = AsyncMock()
         with (
             patch.object(pad, "get_club_gc_config_by_link_club_id", return_value=None),
-            patch.object(pad, "format_add_confirmation", return_value="Added 50 credits, good luck!!"),
+            patch.object(
+                pad,
+                "format_add_confirmation",
+                return_value="Added 50 credits, good luck!!",
+            ),
             patch.object(pad, "support_bot_tokens_to_try", return_value=["token"]),
             patch.object(pad, "Bot", return_value=mock_bot),
         ):
@@ -534,7 +568,9 @@ class CreatorStaffFooterTestCase(unittest.TestCase):
         self.assertEqual(footer, pad.CREATOR_STAFF_FOOTER_RECENT_ADD)
 
     def test_manual_footer_when_not_auto_bound(self) -> None:
-        with patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True):
+        with patch.object(
+            pad, "get_auto_deposit_on_payment_enabled", return_value=True
+        ):
             footer = pad.format_creator_club_staff_footer(
                 club_id=CLUB_ID_CREATOR,
                 telegram_chat_id=CHAT_ID,
@@ -543,7 +579,9 @@ class CreatorStaffFooterTestCase(unittest.TestCase):
         self.assertEqual(footer, pad.CREATOR_STAFF_FOOTER_MANUAL)
 
     def test_manual_footer_when_goods_and_services(self) -> None:
-        with patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True):
+        with patch.object(
+            pad, "get_auto_deposit_on_payment_enabled", return_value=True
+        ):
             footer = pad.format_creator_club_staff_footer(
                 club_id=CLUB_ID_CREATOR,
                 telegram_chat_id=CHAT_ID,
@@ -553,7 +591,9 @@ class CreatorStaffFooterTestCase(unittest.TestCase):
         self.assertEqual(footer, pad.CREATOR_STAFF_FOOTER_MANUAL)
 
     def test_manual_footer_when_auto_deposit_disabled(self) -> None:
-        with patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=False):
+        with patch.object(
+            pad, "get_auto_deposit_on_payment_enabled", return_value=False
+        ):
             footer = pad.format_creator_club_staff_footer(
                 club_id=CLUB_ID_CREATOR,
                 telegram_chat_id=CHAT_ID,
@@ -563,7 +603,9 @@ class CreatorStaffFooterTestCase(unittest.TestCase):
         self.assertIsNone(footer)
 
     def test_no_footer_when_toggle_off(self) -> None:
-        with patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=False):
+        with patch.object(
+            pad, "get_auto_deposit_on_payment_enabled", return_value=False
+        ):
             footer = pad.format_creator_club_staff_footer(
                 club_id=CLUB_ID_RT,
                 telegram_chat_id=CHAT_ID,
@@ -598,7 +640,9 @@ class CreatorStaffFooterTestCase(unittest.TestCase):
 
     def test_append_unchanged_when_toggle_off(self) -> None:
         body = "🔔 Venmo Payment Notification"
-        with patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=False):
+        with patch.object(
+            pad, "get_auto_deposit_on_payment_enabled", return_value=False
+        ):
             out = pad.append_creator_club_staff_footer(
                 body,
                 club_id=CLUB_ID_CLUBGTO,

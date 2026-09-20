@@ -9,7 +9,6 @@ from decimal import Decimal
 from typing import Optional
 
 from api.method_owner import resolve_ingest_method_owner
-from bot.services.club import get_group_title_for_chat
 from bot.services.group_chat_invite_links import resolve_group_chat_url_for_payment
 from bot.services.payment_binding_events import (
     record_payment_bound,
@@ -31,13 +30,12 @@ from bot.services.venmo_payments import (
     parse_amount_cents,
     resolve_bound_group,
     resolve_display_group_title,
-    send_telegram_notification,
     TEST_NOTIFICATION_BANNER,
 )
 from sqlalchemy.exc import IntegrityError
 
 from db.connection import get_db
-from db.models import Club, CryptoPayment, CryptoWalletBinding
+from db.models import Club, CryptoPayment
 from notification.formatting import (
     format_group_chat_line,
     format_player_id_line,
@@ -71,6 +69,7 @@ def chat_has_bound_crypto_deposit(chat_id: int) -> bool:
             chat_id,
         )
         return False
+
 
 ALERT_NAME_CLUBGTO = "ClubGTO Crypto Payment"
 ALERT_NAME_RT_AT_CC = "RT/AT/CC Crypto Payment"
@@ -233,11 +232,11 @@ def format_notification_text(
     )
     tx_hash = (payment.transaction_hash or "").strip()
     if tx_hash:
-        lines.append(
-            f"Tx: <code>{escape_notification_html(tx_hash)}</code>"
-        )
+        lines.append(f"Tx: <code>{escape_notification_html(tx_hash)}</code>")
     if payment.paid_at:
-        lines.append(f"Paid: {escape_notification_html(format_paid_at_display(payment.paid_at))}")
+        lines.append(
+            f"Paid: {escape_notification_html(format_paid_at_display(payment.paid_at))}"
+        )
 
     body = "\n".join(lines)
     if getattr(payment, "is_test", False):
@@ -300,7 +299,9 @@ def find_crypto_payment_by_notification_message(
     if ref is None or ref.method_slug != "crypto":
         return None
     with get_db() as session:
-        return session.query(CryptoPayment).filter_by(id=int(ref.payment_id)).one_or_none()
+        return (
+            session.query(CryptoPayment).filter_by(id=int(ref.payment_id)).one_or_none()
+        )
 
 
 async def ingest_crypto_payment(
@@ -479,7 +480,9 @@ async def ingest_crypto_payment(
         reply_markup=notif_markup,
         bind_chat_ids=bind_chat_ids,
     )
-    from notification.payment_notification_posts import record_payment_notification_posts
+    from notification.payment_notification_posts import (
+        record_payment_notification_posts,
+    )
 
     record_payment_notification_posts(
         payment_method_slug="crypto",
@@ -558,6 +561,14 @@ async def ingest_crypto_payment(
         alert_scope,
         auto_bound,
     )
+    from bot.services.deposit_method_alerts import maybe_evaluate_after_ingest
+
+    await maybe_evaluate_after_ingest(
+        method="crypto",
+        variant=to_addr,
+        created=True,
+        is_test=bool(test),
+    )
     return IngestResult(
         payment_id=payment_id,
         status=status,
@@ -619,7 +630,9 @@ async def bind_crypto_payment_by_id(
             bound_by_telegram_user_id=bound_by_telegram_user_id,
         )
 
-        live_title = resolve_display_group_title(group.telegram_chat_id) or group.group_title
+        live_title = (
+            resolve_display_group_title(group.telegram_chat_id) or group.group_title
+        )
         if payment.notification_chat_id and payment.notification_message_id:
             notif_chat_id = int(payment.notification_chat_id)
             notif_message_id = int(payment.notification_message_id)

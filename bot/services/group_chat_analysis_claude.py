@@ -38,7 +38,10 @@ def _require_api_key() -> str:
 
 def _extract_tool_input(response: Any, tool_name: str) -> dict[str, Any]:
     for block in getattr(response, "content", None) or ():
-        if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == tool_name:
+        if (
+            getattr(block, "type", None) == "tool_use"
+            and getattr(block, "name", None) == tool_name
+        ):
             raw = getattr(block, "input", None)
             if isinstance(raw, dict):
                 return raw

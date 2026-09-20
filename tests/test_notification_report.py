@@ -89,7 +89,9 @@ class TestReportEntry(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(state, ConversationHandler.END)
         update.message.reply_text.assert_awaited_once()
-        self.assertIn("Reply to the notification", update.message.reply_text.await_args.args[0])
+        self.assertIn(
+            "Reply to the notification", update.message.reply_text.await_args.args[0]
+        )
 
     @patch.dict(os.environ, _REPORT_CLUB_ENV, clear=False)
     async def test_starts_conversation_when_reply_present(self) -> None:
@@ -100,7 +102,9 @@ class TestReportEntry(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(state, REPORT_REASON)
         self.assertEqual(context.user_data["report_notification_message_id"], 42)
-        self.assertIn("Payment Notification", context.user_data["report_notification_text"])
+        self.assertIn(
+            "Payment Notification", context.user_data["report_notification_text"]
+        )
         update.message.reply_text.assert_awaited_once_with(
             "Reply to this message with what was wrong.",
             reply_markup=ForceReply(selective=True),

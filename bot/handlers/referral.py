@@ -23,7 +23,9 @@ from bot.services.referrals import (
     is_referral_start_payload,
     pending_hop_for_user,
 )
-from bot.services.support_group_chats import fetch_support_group_chat_by_telegram_chat_id
+from bot.services.support_group_chats import (
+    fetch_support_group_chat_by_telegram_chat_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +40,9 @@ _BLOCKING_DM_FLOWS = frozenset(
 )
 
 
-async def referral_link_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def referral_link_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Post the group's unique referral deep link. Silent outside support groups."""
     if not update.message or not update.effective_chat:
         return

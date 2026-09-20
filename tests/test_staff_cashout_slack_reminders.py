@@ -268,9 +268,7 @@ class ListDueTests(unittest.TestCase):
 
         session.query.side_effect = query_side_effect
 
-        with patch(
-            "bot.services.staff_cashout_slack_reminders.get_db"
-        ) as get_db:
+        with patch("bot.services.staff_cashout_slack_reminders.get_db") as get_db:
             get_db.return_value.__enter__.return_value = session
             get_db.return_value.__exit__.return_value = False
             due = rem.list_due_cashout_reminders(now=now)
@@ -318,9 +316,7 @@ class ListDueTests(unittest.TestCase):
 
         session.query.side_effect = query_side_effect
 
-        with patch(
-            "bot.services.staff_cashout_slack_reminders.get_db"
-        ) as get_db:
+        with patch("bot.services.staff_cashout_slack_reminders.get_db") as get_db:
             get_db.return_value.__enter__.return_value = session
             get_db.return_value.__exit__.return_value = False
             due = rem.list_due_cashout_reminders(now=now)
@@ -356,9 +352,7 @@ class ListDueTests(unittest.TestCase):
 
         session.query.side_effect = query_side_effect
 
-        with patch(
-            "bot.services.staff_cashout_slack_reminders.get_db"
-        ) as get_db:
+        with patch("bot.services.staff_cashout_slack_reminders.get_db") as get_db:
             get_db.return_value.__enter__.return_value = session
             get_db.return_value.__exit__.return_value = False
             due = rem.list_due_cashout_reminders(now=now)
@@ -380,9 +374,7 @@ class ListDueTests(unittest.TestCase):
         q.filter.return_value = q
         q.first.return_value = control
 
-        with patch(
-            "bot.services.staff_cashout_slack_reminders.get_db"
-        ) as get_db:
+        with patch("bot.services.staff_cashout_slack_reminders.get_db") as get_db:
             get_db.return_value.__enter__.return_value = session
             get_db.return_value.__exit__.return_value = False
             self.assertEqual(rem.list_due_cashout_reminders(now=now), [])
@@ -434,27 +426,33 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
         q.filter.return_value = q
         q.first.return_value = row1
 
-        with patch(
-            "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
-            return_value=due,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.send_pending_create_notifies",
-            return_value=0,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.get_slack_reminder_enabled",
-            return_value=True,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.dashboard_public_base_url",
-            return_value="https://dash.example",
-        ), patch(
-            "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
-            notify,
-        ), patch(
-            "bot.services.staff_cashout_pushover.notify_cashout_pushover_async",
-            pushover,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.get_db"
-        ) as get_db:
+        with (
+            patch(
+                "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
+                return_value=due,
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.send_pending_create_notifies",
+                return_value=0,
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.get_slack_reminder_enabled",
+                return_value=True,
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.dashboard_public_base_url",
+                return_value="https://dash.example",
+            ),
+            patch(
+                "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+                notify,
+            ),
+            patch(
+                "bot.services.staff_cashout_pushover.notify_cashout_pushover_async",
+                pushover,
+            ),
+            patch("bot.services.staff_cashout_slack_reminders.get_db") as get_db,
+        ):
             get_db.return_value.__enter__.return_value = session
             get_db.return_value.__exit__.return_value = False
             sent = await rem.send_due_cashout_reminders()
@@ -494,27 +492,33 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
         q.filter.return_value = q
         q.first.return_value = row1
 
-        with patch(
-            "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
-            return_value=due,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.send_pending_create_notifies",
-            return_value=0,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.get_slack_reminder_enabled",
-            return_value=True,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.dashboard_public_base_url",
-            return_value="https://dash.example",
-        ), patch(
-            "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
-            notify,
-        ), patch(
-            "bot.services.staff_cashout_pushover.notify_cashout_pushover_async",
-            pushover,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.get_db"
-        ) as get_db:
+        with (
+            patch(
+                "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
+                return_value=due,
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.send_pending_create_notifies",
+                return_value=0,
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.get_slack_reminder_enabled",
+                return_value=True,
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.dashboard_public_base_url",
+                return_value="https://dash.example",
+            ),
+            patch(
+                "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+                notify,
+            ),
+            patch(
+                "bot.services.staff_cashout_pushover.notify_cashout_pushover_async",
+                pushover,
+            ),
+            patch("bot.services.staff_cashout_slack_reminders.get_db") as get_db,
+        ):
             get_db.return_value.__enter__.return_value = session
             get_db.return_value.__exit__.return_value = False
             sent = await rem.send_due_cashout_reminders()
@@ -534,27 +538,33 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
         notify = AsyncMock(return_value=False)
         pushover = AsyncMock(return_value=1)
 
-        with patch(
-            "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
-            return_value=due,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.send_pending_create_notifies",
-            return_value=0,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.get_slack_reminder_enabled",
-            return_value=True,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.dashboard_public_base_url",
-            return_value="https://dash.example",
-        ), patch(
-            "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
-            notify,
-        ), patch(
-            "bot.services.staff_cashout_pushover.notify_cashout_pushover_async",
-            pushover,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.get_db"
-        ) as get_db:
+        with (
+            patch(
+                "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
+                return_value=due,
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.send_pending_create_notifies",
+                return_value=0,
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.get_slack_reminder_enabled",
+                return_value=True,
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.dashboard_public_base_url",
+                return_value="https://dash.example",
+            ),
+            patch(
+                "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+                notify,
+            ),
+            patch(
+                "bot.services.staff_cashout_pushover.notify_cashout_pushover_async",
+                pushover,
+            ),
+            patch("bot.services.staff_cashout_slack_reminders.get_db") as get_db,
+        ):
             sent = await rem.send_due_cashout_reminders()
 
         self.assertEqual(sent, 0)
@@ -563,19 +573,24 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
         get_db.assert_not_called()
 
     async def test_toggle_off_sends_nothing(self) -> None:
-        with patch(
-            "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
-            return_value=[],
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.send_pending_create_notifies",
-            return_value=0,
-        ), patch(
-            "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
-            new_callable=AsyncMock,
-        ) as notify, patch(
-            "bot.services.staff_cashout_pushover.notify_cashout_pushover_async",
-            new_callable=AsyncMock,
-        ) as pushover:
+        with (
+            patch(
+                "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
+                return_value=[],
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.send_pending_create_notifies",
+                return_value=0,
+            ),
+            patch(
+                "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+                new_callable=AsyncMock,
+            ) as notify,
+            patch(
+                "bot.services.staff_cashout_pushover.notify_cashout_pushover_async",
+                new_callable=AsyncMock,
+            ) as pushover,
+        ):
             sent = await rem.send_due_cashout_reminders()
         self.assertEqual(sent, 0)
         notify.assert_not_awaited()
@@ -600,27 +615,33 @@ class SendDueTests(unittest.IsolatedAsyncioTestCase):
         q.filter.return_value = q
         q.first.return_value = row1
 
-        with patch(
-            "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
-            return_value=due,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.send_pending_create_notifies",
-            return_value=0,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.get_slack_reminder_enabled",
-            return_value=False,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.dashboard_public_base_url",
-            return_value="https://dash.example",
-        ), patch(
-            "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
-            notify,
-        ), patch(
-            "bot.services.staff_cashout_pushover.notify_cashout_pushover_async",
-            pushover,
-        ), patch(
-            "bot.services.staff_cashout_slack_reminders.get_db"
-        ) as get_db:
+        with (
+            patch(
+                "bot.services.staff_cashout_slack_reminders.list_due_cashout_reminders",
+                return_value=due,
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.send_pending_create_notifies",
+                return_value=0,
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.get_slack_reminder_enabled",
+                return_value=False,
+            ),
+            patch(
+                "bot.services.staff_cashout_slack_reminders.dashboard_public_base_url",
+                return_value="https://dash.example",
+            ),
+            patch(
+                "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+                notify,
+            ),
+            patch(
+                "bot.services.staff_cashout_pushover.notify_cashout_pushover_async",
+                pushover,
+            ),
+            patch("bot.services.staff_cashout_slack_reminders.get_db") as get_db,
+        ):
             get_db.return_value.__enter__.return_value = session
             get_db.return_value.__exit__.return_value = False
             sent = await rem.send_due_cashout_reminders()

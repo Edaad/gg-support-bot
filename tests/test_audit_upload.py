@@ -21,7 +21,9 @@ TOKEN = create_token()
 
 class AuditUploadAllApiTestCase(unittest.TestCase):
     def setUp(self):
-        self.env_patch = patch.dict(os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False)
+        self.env_patch = patch.dict(
+            os.environ, {"DASHBOARD_PASSWORD": "changeme"}, clear=False
+        )
         self.env_patch.start()
         self.mock_db = MagicMock()
         self.upload_rows: list[TradeRecordUpload] = []
@@ -39,6 +41,7 @@ class AuditUploadAllApiTestCase(unittest.TestCase):
                 return q
 
             if model is TradeRecordUpload:
+
                 def filter_by(**kwargs):
                     q = MagicMock()
                     q.first.return_value = self._existing_upload(**kwargs)
@@ -124,15 +127,21 @@ class AuditUploadAllApiTestCase(unittest.TestCase):
             ),
             (
                 "AT-21.xlsx",
-                build_sample_trade_record_xlsx(club_label="Aces Table", audit_date=audit_date),
+                build_sample_trade_record_xlsx(
+                    club_label="Aces Table", audit_date=audit_date
+                ),
             ),
             (
                 "GTO-21.xlsx",
-                build_sample_trade_record_xlsx(club_label="ClubGTO", audit_date=audit_date),
+                build_sample_trade_record_xlsx(
+                    club_label="ClubGTO", audit_date=audit_date
+                ),
             ),
             (
                 "CC-21.xlsx",
-                build_sample_trade_record_xlsx(club_label="Creator Club", audit_date=audit_date),
+                build_sample_trade_record_xlsx(
+                    club_label="Creator Club", audit_date=audit_date
+                ),
             ),
         ]
         response = self.client.post(

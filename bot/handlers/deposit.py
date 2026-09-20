@@ -3,6 +3,7 @@
 import asyncio
 import html
 import logging
+import random
 import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -31,6 +32,7 @@ from bot.services.club import (
     get_club_simple_mode,
     get_tier_for_amount,
     get_lowest_minimum,
+    list_tier_variants,
     record_activity,
     pick_variant,
     is_first_deposit,
@@ -97,10 +99,14 @@ from bot.services.payment_method_binding import (
     BIND_KIND_MEMO_EMOJI,
     BIND_KIND_SPECIAL_AMOUNT,
     bind_mode_for_method,
+    ensure_destination_stickiness,
+    extract_cashapp_handle_from_text,
+    extract_venmo_handle_from_text,
     format_first_time_memo_instructions_message,
     format_first_time_payment_destination_message,
     format_first_time_special_amount_setup_message,
     get_chat_binding,
+    get_destination_stickiness,
     is_chat_method_bound,
     get_pending_bind_attempt,
     deposit_amount_to_cents,
@@ -159,9 +165,7 @@ ACES_TABLE_JOIN_COPY = (
 )
 ACES_TABLE_JOIN_BUTTON = "I HAVE JOINED"
 
-CRYPTO_SUB_PICKER_NOTE = (
-    "Note: Bitcoin and Ethereum can take a while to come through."
-)
+CRYPTO_SUB_PICKER_NOTE = "Note: Bitcoin and Ethereum can take a while to come through."
 
 
 def sub_option_picker_text(method_name: str, method_slug: str | None) -> str:
@@ -261,6 +265,7 @@ _CHECKOUT_SETTING_KEYS = (
     "checkout_min_amount",
     "checkout_max_amount",
 )
+
 
 def _response_data_has_content(data: dict | None) -> bool:
     if not data:
@@ -587,6 +592,114 @@ def _merged_deposit_variant_response(
     return _with_method_checkout_settings(merged, method, tier=tier)
 
 
+def _variant_is_stripe_checkout(variant: dict) -> bool:
+    if not variant.get("use_group_checkout_link"):
+        return False
+    provider = (variant.get("group_checkout_provider") or "stripe").strip().lower()
+    return provider == "stripe"
+
+
+def _variant_destination_tag(method_slug: str, variant: dict) -> str | None:
+    text = "\n".join(
+        filter(
+            None,
+            [
+                variant.get("response_text"),
+                variant.get("response_caption"),
+            ],
+        )
+    )
+    slug = (method_slug or "").strip().lower()
+    if slug == "cashapp":
+        return extract_cashapp_handle_from_text(text)
+    if slug == "venmo":
+        return extract_venmo_handle_from_text(text)
+    return None
+
+
+def _pick_weighted_variant_dicts(variants: list[dict]) -> dict | None:
+    active = [v for v in variants if int(v.get("weight") or 0) > 0]
+    if not active:
+        return None
+    weights = [max(1, int(v.get("weight") or 1)) for v in active]
+    return random.choices(active, weights=weights, k=1)[0]
+
+
+def _pick_venmo_cashapp_destination_response(
+    method_id: int,
+    method: dict,
+    *,
+    chat_id: int | None,
+    method_slug: str,
+    tier: dict,
+) -> tuple[dict | None, dict | None]:
+    """Prefer native destination tags; stick to first bot-shown tag per group."""
+    slug = (method_slug or "").strip().lower()
+    variants = list_tier_variants(method_id, int(tier["id"]))
+    active = [v for v in variants if int(v.get("weight") or 0) > 0]
+    native = [v for v in active if not _variant_is_stripe_checkout(v)]
+    stripe_variants = [v for v in active if _variant_is_stripe_checkout(v)]
+
+    sticky_tag: str | None = None
+    if chat_id is not None:
+        sticky = get_destination_stickiness(int(chat_id), slug)
+        if sticky and sticky.destination_tag:
+            sticky_tag = sticky.destination_tag
+
+    if sticky_tag:
+        matching = [
+            v for v in native if _variant_destination_tag(slug, v) == sticky_tag
+        ]
+        if matching:
+            chosen = _pick_weighted_variant_dicts(matching)
+            if chosen:
+                return (
+                    _merged_deposit_variant_response(chosen, method, tier=tier),
+                    tier,
+                )
+        if slug == "cashapp" and stripe_variants:
+            chosen = _pick_weighted_variant_dicts(stripe_variants)
+            if chosen:
+                return (
+                    _merged_deposit_variant_response(chosen, method, tier=tier),
+                    tier,
+                )
+        return None, tier
+
+    if native:
+        if slug == "venmo" and chat_id is not None:
+            binding = get_chat_binding(int(chat_id), slug)
+            if binding and binding.variant_id:
+                linked = next(
+                    (
+                        v
+                        for v in native
+                        if int(v.get("variant_id") or 0) == int(binding.variant_id)
+                    ),
+                    None,
+                )
+                if linked:
+                    return (
+                        _merged_deposit_variant_response(linked, method, tier=tier),
+                        tier,
+                    )
+        chosen = _pick_weighted_variant_dicts(native)
+        if chosen:
+            return (
+                _merged_deposit_variant_response(chosen, method, tier=tier),
+                tier,
+            )
+
+    if slug == "cashapp" and stripe_variants:
+        chosen = _pick_weighted_variant_dicts(stripe_variants)
+        if chosen:
+            return (
+                _merged_deposit_variant_response(chosen, method, tier=tier),
+                tier,
+            )
+    return None, tier
+
+
 def _pick_deposit_variant_response(
     method_id: int,
     method: dict,
@@ -599,14 +712,22 @@ def _pick_deposit_variant_response(
     tier = (
         get_tier_for_amount(method_id, amount) if isinstance(amount, Decimal) else None
     )
-    sticky_variant_id: int | None = None
     slug_norm = (method_slug or "").strip().lower()
-    if slug_norm in ("venmo", "zelle", "cashapp", "paypal") and chat_id is not None:
+
+    if slug_norm in ("venmo", "cashapp") and tier is not None:
+        return _pick_venmo_cashapp_destination_response(
+            method_id,
+            method,
+            chat_id=chat_id,
+            method_slug=slug_norm,
+            tier=tier,
+        )
+
+    sticky_variant_id: int | None = None
+    if slug_norm in ("zelle", "paypal") and chat_id is not None:
         binding = get_chat_binding(int(chat_id), slug_norm)
         if binding and binding.variant_id:
             sticky_variant_id = binding.variant_id
-    if slug_norm == "cashapp":
-        sticky_variant_id = None
 
     if tier:
         response_data = pick_variant(
@@ -623,6 +744,85 @@ def _pick_deposit_variant_response(
         return _merged_deposit_variant_response(response_data, method), None
     merged = _merge_response_layers(method, method)
     return _with_method_checkout_settings(merged, method), None
+
+
+def _destination_stickiness_blocks_method(
+    *,
+    chat_id: int | None,
+    method: dict,
+    amount: Decimal,
+) -> bool:
+    """True when Venmo/Cash App should be hidden for this chat+amount."""
+    if chat_id is None:
+        return False
+    slug = (method.get("slug") or "").strip().lower()
+    if slug not in ("venmo", "cashapp"):
+        return False
+    method_id = method.get("id")
+    if method_id is None:
+        return False
+    response_data, _tier = _pick_deposit_variant_response(
+        int(method_id),
+        method,
+        amount,
+        chat_id=int(chat_id),
+        method_slug=slug,
+    )
+    return response_data is None
+
+
+def filter_methods_for_destination_stickiness(
+    chat_id: int | None,
+    methods: list[dict],
+    amount: Decimal,
+) -> list[dict]:
+    if chat_id is None or not methods:
+        return methods
+    return [
+        m
+        for m in methods
+        if not _destination_stickiness_blocks_method(
+            chat_id=int(chat_id),
+            method=m,
+            amount=amount,
+        )
+    ]
+
+
+def _maybe_lock_destination_stickiness(
+    *,
+    chat_id: int | None,
+    club_id: int | None,
+    method_slug: str | None,
+    response_data: dict | None,
+) -> None:
+    """Lock native Venmo/Cash App tag after the bot shows destination instructions."""
+    if chat_id is None or club_id is None or not response_data:
+        return
+    slug = (method_slug or "").strip().lower()
+    if slug not in ("venmo", "cashapp"):
+        return
+    if _stripe_checkout_enabled(response_data):
+        return
+    tag = _variant_destination_tag(slug, response_data)
+    if not tag:
+        return
+    variant_id = response_data.get("variant_id")
+    try:
+        ensure_destination_stickiness(
+            telegram_chat_id=int(chat_id),
+            club_id=int(club_id),
+            payment_method_slug=slug,
+            destination_tag=tag,
+            variant_id=int(variant_id) if variant_id is not None else None,
+        )
+    except Exception:
+        logger.exception(
+            "destination_stickiness lock failed chat_id=%s slug=%s tag=%r",
+            chat_id,
+            slug,
+            tag,
+        )
 
 
 async def _deposit_send_html_or_plain(
@@ -704,6 +904,12 @@ async def _send_first_time_payment_destination(
     _track_deposit_info_messages(
         int(chat_id),
         await send_response_messages(chat, response_data),
+    )
+    _maybe_lock_destination_stickiness(
+        chat_id=int(chat_id),
+        club_id=club_id,
+        method_slug=method_slug,
+        response_data=response_data,
     )
     bot_obj = bot
     if bot_obj is None and hasattr(chat, "get_bot"):
@@ -1772,6 +1978,9 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
     try:
         methods = get_methods_for_amount(club_id, "deposit", amount)
         methods = filter_deposit_methods_for_chat(update.effective_chat.id, methods)
+        methods = filter_methods_for_destination_stickiness(
+            update.effective_chat.id, methods, amount
+        )
     except Exception:
         logger.exception(
             "deposit_amount_received: failed loading methods club_id=%s amount=%s v2=%s",
@@ -2062,6 +2271,9 @@ async def _prompt_deposit_methods(
     )
     if chat_id is not None:
         methods = filter_deposit_methods_for_chat(int(chat_id), methods)
+        methods = filter_methods_for_destination_stickiness(
+            int(chat_id), methods, amount
+        )
     if not methods:
         text = _no_deposit_methods_message(club_id, amount)
         if edit_message is not None:
@@ -2633,6 +2845,12 @@ async def deposit_union_type_chosen(update: Update, context: ContextTypes.DEFAUL
 
     club_slug = UNION_METHOD_TYPES[type_slug]["club_slug"]
     filtered = get_methods_for_amount(int(club_id), "deposit", amount)
+    chat_id = query.message.chat.id if query.message else None
+    if chat_id is not None:
+        filtered = filter_deposit_methods_for_chat(int(chat_id), filtered)
+        filtered = filter_methods_for_destination_stickiness(
+            int(chat_id), filtered, amount
+        )
     club_method = next(
         (
             m
@@ -3295,6 +3513,12 @@ async def _send_deposit_method_response(
         return False
 
     await _send_response(query, response_data, amount, display_name)
+    _maybe_lock_destination_stickiness(
+        chat_id=int(chat_id) if chat_id is not None else None,
+        club_id=int(club_id) if club_id is not None else None,
+        method_slug=slug,
+        response_data=response_data,
+    )
     if chat_id is not None and not bool(
         (method or {}).get("tracks_manual_requests")
         or context.chat_data.get("deposit_tracks_manual_requests")

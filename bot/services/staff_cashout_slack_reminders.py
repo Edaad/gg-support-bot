@@ -101,9 +101,7 @@ def _hours_open_for_control(
 ) -> bool:
     if not bool(getattr(row, "hours_enabled", True)):
         return True
-    return is_within_est_window(
-        now, _control_hours_start(row), _control_hours_end(row)
-    )
+    return is_within_est_window(now, _control_hours_start(row), _control_hours_end(row))
 
 
 def _control_to_dict(row: StaffCashoutSlackReminderControl) -> dict[str, Any]:
@@ -156,8 +154,10 @@ def format_cashout_slack_reminder(
         "",
         f"Remaining: {format_remaining_money(remaining)}",
     ]
-    url = dashboard_url if dashboard_url is not None else cashout_record_dashboard_url(
-        record_id
+    url = (
+        dashboard_url
+        if dashboard_url is not None
+        else cashout_record_dashboard_url(record_id)
     )
     if url:
         lines.append(f"<{url}|Open cashout>")
@@ -349,9 +349,7 @@ def list_due_cashout_reminders(
                 continue
             if not _is_due(
                 created_at=record.created_at,
-                last_slack_reminder_at=getattr(
-                    record, "last_slack_reminder_at", None
-                ),
+                last_slack_reminder_at=getattr(record, "last_slack_reminder_at", None),
                 enabled_at=enabled_at,
                 now=now_naive,
                 create_notified_at=getattr(record, "create_notified_at", None),

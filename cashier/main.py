@@ -15,7 +15,9 @@ from telegram.ext import (
 )
 from telegram.warnings import PTBUserWarning
 
-warnings.filterwarnings("ignore", message=r".*CallbackQueryHandler.*", category=PTBUserWarning)
+warnings.filterwarnings(
+    "ignore", message=r".*CallbackQueryHandler.*", category=PTBUserWarning
+)
 
 from cashier.chat_reply import reply_exception
 from db.connection import init_engine
@@ -47,7 +49,9 @@ def _configure_worker_logging() -> None:
     root.setLevel(level)
 
 
-async def _log_all_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _log_all_callbacks(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Verbose-only: log every callback_query before other handlers run."""
     from cashier.debug_log import is_cashier_verbose, log_update
 
@@ -85,7 +89,9 @@ async def _on_job_continue(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     try:
         result = await job_callback_entry(update, context)
         sync_wizard_state(wizard, update, result)
-        log_conversation_state(wizard, update, "after_gc_job_continue", new_state=result)
+        log_conversation_state(
+            wizard, update, "after_gc_job_continue", new_state=result
+        )
         logger.info("gc_job handled new_state=%s", result)
     except Exception as exc:
         try:
@@ -115,7 +121,9 @@ async def _on_job_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         try:
             sync_wizard_state(wizard, update, None)
         except Exception:
-            logger.exception("sync_wizard_state failed during gc_job_cancel error recovery")
+            logger.exception(
+                "sync_wizard_state failed during gc_job_cancel error recovery"
+            )
         await reply_exception(update, context, exc, prefix="Cancel failed")
 
 
@@ -136,7 +144,12 @@ async def _on_unhandled_error(
     except Exception:
         logger.exception("GGCashier could not send error message to chat")
     wizard = context.application.bot_data.get("cashier_wizard")
-    if wizard and isinstance(update, Update) and update.effective_user and update.effective_chat:
+    if (
+        wizard
+        and isinstance(update, Update)
+        and update.effective_user
+        and update.effective_chat
+    ):
         try:
             key = wizard._get_key(update)
             wizard._conversations.pop(key, None)
@@ -172,9 +185,7 @@ def run_cashier(token: str | None = None):
     app.bot_data["cashier_wizard"] = wizard_handler
 
     if verbose:
-        app.add_handler(
-            TypeHandler(Update, _log_all_callbacks), group=-1
-        )
+        app.add_handler(TypeHandler(Update, _log_all_callbacks), group=-1)
         logger.info("GGCashier verbose callback logging enabled (group=-1)")
 
     app.add_handler(CallbackQueryHandler(_on_job_continue, pattern=r"^gc_job:\d+$"))

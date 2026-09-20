@@ -67,7 +67,6 @@ def count_dm_eligible_recipients(
     limit: int | None = None,
 ) -> int:
     from db.connection import get_db
-    from db.models import InactiveGroupOutreachRow
 
     with get_db() as session:
         query = _eligible_query(session, club_key, row_id=row_id)
@@ -108,7 +107,7 @@ def arm_dm_campaign(
     """Persist campaign message and mark eligible rows pending. Returns (ok, error, count)."""
 
     from db.connection import get_db
-    from db.models import InactiveGroupOutreachControl, InactiveGroupOutreachRow
+    from db.models import InactiveGroupOutreachRow
 
     body = (message or "").strip()
     if not body:
@@ -171,7 +170,9 @@ def claim_dm_batch(club_key: str, limit: int) -> list[DmOutreachRow]:
                 group_title=str(r.group_title),
                 player_telegram_user_id=int(r.player_telegram_user_id),
                 player_username=str(r.player_username) if r.player_username else None,
-                player_display_name=str(r.player_display_name) if r.player_display_name else None,
+                player_display_name=str(r.player_display_name)
+                if r.player_display_name
+                else None,
             )
             for r in rows
         ]
@@ -259,10 +260,7 @@ async def _notify_staff_dm_complete(
 ) -> None:
     if ptb_bot is None or staff_user_id is None:
         return
-    text = (
-        f"Inactive outreach DM batch finished.\n"
-        f"sent={sent} failed={failed}"
-    )
+    text = f"Inactive outreach DM batch finished.\nsent={sent} failed={failed}"
     try:
         await ptb_bot.send_message(int(staff_user_id), text)
     except Exception:
@@ -276,10 +274,7 @@ async def _notify_staff_dm_complete(
 async def _notify_completion_slack(*, sent: int, failed: int) -> None:
     from bot.services.slack_ops_notify import notify_slack_ops
 
-    detail = (
-        f"<b>Inactive outreach DM batch complete</b>\n"
-        f"sent={sent} failed={failed}"
-    )
+    detail = f"<b>Inactive outreach DM batch complete</b>\nsent={sent} failed={failed}"
     await notify_slack_ops(detail, source="inactive_outreach_dm")
 
 
@@ -289,7 +284,10 @@ async def _send_one_dm(
     row: DmOutreachRow,
     message: str,
 ) -> tuple[bool, str | None]:
-    from bot.services.migration_group_readd import call_with_flood_retry, is_entity_resolution_error
+    from bot.services.migration_group_readd import (
+        call_with_flood_retry,
+        is_entity_resolution_error,
+    )
 
     player_id = int(row.player_telegram_user_id)
 
@@ -376,7 +374,9 @@ async def tick_async(ptb_bot=None) -> dict[str, int]:
         remove_inactive_outreach_dm_job()
         await _notify_completion_slack(sent=sent, failed=failed)
         await _notify_staff_dm_complete(ptb_bot, staff_id, sent=sent, failed=failed)
-        logger.info("inactive_outreach_dm: batch complete sent=%s failed=%s", sent, failed)
+        logger.info(
+            "inactive_outreach_dm: batch complete sent=%s failed=%s", sent, failed
+        )
 
     return summary
 

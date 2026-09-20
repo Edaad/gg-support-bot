@@ -64,7 +64,7 @@ class VenmoPaymentsApiTestCase(unittest.TestCase):
                     "payer_name": "Moshe Toussoun",
                     "amount": "200.00",
                     "venmo_handle": "@godfather4444",
-                "method_owner": "round-table",
+                    "method_owner": "round-table",
                     "goods_or_services": False,
                 },
                 headers={"X-Venmo-Webhook-Secret": WEBHOOK_SECRET},
@@ -95,7 +95,7 @@ class VenmoPaymentsApiTestCase(unittest.TestCase):
                     "payer_name": "Moshe Toussoun",
                     "amount": "150.00",
                     "venmo_handle": "@godfather4444",
-                "method_owner": "round-table",
+                    "method_owner": "round-table",
                 },
                 headers={"X-Venmo-Webhook-Secret": WEBHOOK_SECRET},
             )
