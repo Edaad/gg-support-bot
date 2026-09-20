@@ -2985,3 +2985,34 @@ class WebhookIngestRequest(Base):
     request_body = Column(JSONB, nullable=True)
     response_json = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class DepositMethodAlert(Base):
+    """Named weekly deposit threshold alert for a method + destination variant."""
+
+    __tablename__ = "deposit_method_alerts"
+    __table_args__ = (
+        CheckConstraint(
+            "method IN ('venmo', 'zelle', 'cashapp', 'paypal', 'crypto')",
+            name="ck_dma_method",
+        ),
+        Index("ix_dma_method_variant", "method", "variant"),
+        Index("ix_dma_is_active", "is_active"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False)
+    method = Column(String(32), nullable=False)
+    variant = Column(String(255), nullable=False)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"), default=True)
+    conditions = Column(
+        JSONB, nullable=False, server_default=text("'[]'"), default=list
+    )
+    last_fired_week_id = Column(String(10), nullable=True)
+    last_fired_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )

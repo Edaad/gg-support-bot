@@ -614,6 +614,14 @@ async def ingest_cashapp_payment(
         memo_in_notification,
         notif_chat_id,
     )
+    from bot.services.deposit_method_alerts import maybe_evaluate_after_ingest
+
+    await maybe_evaluate_after_ingest(
+        method="cashapp",
+        variant=handle,
+        created=created,
+        is_test=bool(test),
+    )
     return IngestResult(
         payment_id=payment_id,
         status=status,

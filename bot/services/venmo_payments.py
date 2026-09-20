@@ -936,6 +936,14 @@ async def ingest_venmo_payment(
         amount_cents,
         auto_bound,
     )
+    from bot.services.deposit_method_alerts import maybe_evaluate_after_ingest
+
+    await maybe_evaluate_after_ingest(
+        method="venmo",
+        variant=handle,
+        created=created,
+        is_test=bool(test),
+    )
     return IngestResult(
         payment_id=payment_id,
         status=status,

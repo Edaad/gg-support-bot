@@ -561,6 +561,14 @@ async def ingest_crypto_payment(
         alert_scope,
         auto_bound,
     )
+    from bot.services.deposit_method_alerts import maybe_evaluate_after_ingest
+
+    await maybe_evaluate_after_ingest(
+        method="crypto",
+        variant=to_addr,
+        created=True,
+        is_test=bool(test),
+    )
     return IngestResult(
         payment_id=payment_id,
         status=status,

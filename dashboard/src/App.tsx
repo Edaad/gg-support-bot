@@ -12,6 +12,7 @@ import CashoutRecordDetail from './pages/CashoutRecordDetail'
 import Payments from './pages/Payments'
 import ManualDepositRequests from './pages/ManualDepositRequests'
 import Audit from './pages/Audit'
+import Alerts from './pages/Alerts'
 import Layout from './components/Layout'
 import { ConfirmProvider } from './components/ConfirmProvider'
 import {
@@ -95,6 +96,7 @@ export default function App() {
                 element={<ManualDepositRequests token={token} />}
               />
               <Route path="/audit" element={<Audit token={token} />} />
+              <Route path="/alerts" element={<Alerts token={token} />} />
               <Route
                 path="/analytics"
                 element={

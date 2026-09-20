@@ -562,6 +562,14 @@ async def ingest_paypal_payment(
     )
 
     status = "bound" if auto_bound else "unbound"
+    from bot.services.deposit_method_alerts import maybe_evaluate_after_ingest
+
+    await maybe_evaluate_after_ingest(
+        method="paypal",
+        variant=email,
+        created=created,
+        is_test=bool(test),
+    )
     return IngestResult(
         payment_id=payment_id,
         status=status,

@@ -489,6 +489,7 @@ heroku run -a YOUR_APP -- python migrate_bonus_records_dashboard.py
 heroku run -a YOUR_APP -- python migrate_bonus_records_metadata.py
 heroku run -a YOUR_APP -- python migrate_bonus_records_issued_at.py
 heroku run -a YOUR_APP -- python migrate_expenses.py
+heroku run -a YOUR_APP -- python migrate_deposit_method_alerts.py
 # optional: backfill completed cashier jobs into staff_cashout_records
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py
 heroku run -a YOUR_APP -- python scripts/backfill_staff_cashout_records.py --apply
@@ -505,6 +506,8 @@ heroku config:set PUSHOVER_APP_TOKEN=... -a YOUR_APP
 Dashboard **Cashout records** and **Bonuses** pages include CSV export (inclusive ET date range: cashouts on `created_at`, bonuses on `issued_at`). JWT API: `GET /api/cashout-records/export?from=…&to=…` and `GET /api/bonus/records/export?from=…&to=…`.
 
 Dashboard **Expenses** (admin only) uses `expenses` and XLSX export: `GET /api/expenses/export?from=…&to=…` (plus optional `club_id`, `pending`, `q`).
+
+Dashboard **Alerts** (admin only, under More) watches weekly Eastern Mon–Sun volume / transaction counts for a deposit method + destination variant. Fires once per alert per week to `SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`. Table: `deposit_method_alerts`.
 
 Dashboard **Payments** admin settings (gear next to Export) stores quick-access hyperlinks in `payment_quick_links`. Each link has a title, URL, and optional method/club visibility so it only appears between the filters and the table when those filters match (`all` / empty = no restriction).
 
