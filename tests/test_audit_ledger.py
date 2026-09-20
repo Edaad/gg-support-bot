@@ -14,7 +14,9 @@ from api.audit_ledger import (
     cashout_method_token,
     cashout_source_label,
     fetch_cashout_events,
+    gg_player_id_match_key,
     LedgerEvent,
+    nickname_for_gg_player_id,
     payment_in_audit_day_for_club,
 )
 from db.models import CryptoPayment, ZellePayment
@@ -202,6 +204,40 @@ class BuildLedgerLinesSourceLabelTestCase(unittest.TestCase):
         ]
         lines = build_ledger_lines(events)
         self.assertEqual(lines[0].source_label, "Cashout")
+
+
+class GgPlayerIdMatchKeyTestCase(unittest.TestCase):
+    def test_hyphenated_and_digits_only_share_a_key(self):
+        self.assertEqual(gg_player_id_match_key("1055-4566"), "10554566")
+        self.assertEqual(gg_player_id_match_key("10554566"), "10554566")
+        self.assertEqual(gg_player_id_match_key(" 1055-4566 "), "10554566")
+        self.assertEqual(gg_player_id_match_key(None), "")
+        self.assertEqual(gg_player_id_match_key(""), "")
+
+    def test_nickname_lookup_ignores_hyphen(self):
+        nicknames = {"1055-4566": "HunnidPrblms"}
+        self.assertEqual(
+            nickname_for_gg_player_id(nicknames, "10554566"),
+            "HunnidPrblms",
+        )
+        self.assertEqual(
+            nickname_for_gg_player_id(nicknames, "1055-4566"),
+            "HunnidPrblms",
+        )
+        self.assertIsNone(nickname_for_gg_player_id(nicknames, "9999-0000"))
+
+    def test_build_ledger_lines_nickname_without_hyphen(self):
+        events = [
+            LedgerEvent(
+                "early_rakeback",
+                "10554566",
+                Decimal("27.41"),
+                None,
+                "early_rakeback:1",
+            ),
+        ]
+        lines = build_ledger_lines(events, {"1055-4566": "HunnidPrblms"})
+        self.assertEqual(lines[0].member_nickname, "HunnidPrblms")
 
 
 class PaymentInAuditDayForClubTestCase(unittest.TestCase):

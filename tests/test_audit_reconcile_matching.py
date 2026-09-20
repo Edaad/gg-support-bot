@@ -459,6 +459,50 @@ class MatchTradeLinesTestCase(unittest.TestCase):
         self.assertEqual(result.rows[0].match_name, "Gevs777")
         self.assertEqual(result.unmatched_ledger, [])
 
+    def test_early_rb_matches_unhyphenated_gg_id(self):
+        """aon-beta stores 10554566; ClubGG trades use 1055-4566."""
+        trade = _trade(
+            occurred=self.t0,
+            amount="-27.41",
+            gg_id="1055-4566",
+            nick="HunnidPrblms",
+        )
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-27.41",
+            source="early_rakeback",
+            source_label="Early RB",
+            external_id="early_rakeback:hunnid",
+            gg_id="10554566",
+            nick="HunnidPrblms",
+        )
+        result = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="aces-table",
+        )
+        self.assertEqual(result.rows[0].match_source, "Early RB")
+        self.assertEqual(result.rows[0].match_name, "HunnidPrblms")
+        self.assertEqual(result.unmatched_ledger, [])
+
+    def test_hyphen_mismatch_still_rejects_different_players(self):
+        trade = _trade(occurred=self.t0, amount="-27.41", gg_id="1055-4566")
+        ledger = _ledger(
+            occurred=self.t0,
+            amount_signed="-27.41",
+            source="early_rakeback",
+            source_label="Early RB",
+            external_id="early_rakeback:other",
+            gg_id="99998888",
+        )
+        result = match_trade_lines_to_ledger(
+            [trade],
+            [ledger],
+            club_slug="aces-table",
+        )
+        self.assertEqual(result.rows[0].match_source, "")
+        self.assertEqual(result.unmatched_ledger, [ledger])
+
     def test_early_rb_outside_extended_window_blank(self):
         trade = _trade(occurred=self.t0, amount="-51")
         ledger = _ledger(

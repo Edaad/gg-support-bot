@@ -122,6 +122,33 @@ DEPOSIT_METHOD_ORDER: tuple[str, ...] = (
     "deposit_crypto",
 )
 
+
+def gg_player_id_match_key(raw: str | None) -> str:
+    """Digit-only GG id so ``1055-4566`` and ``10554566`` compare equal."""
+    return "".join(ch for ch in (raw or "") if ch.isdigit())
+
+
+def nickname_for_gg_player_id(
+    nicknames: dict[str, str | None],
+    gg_player_id: str | None,
+) -> str | None:
+    """Look up a nickname, treating hyphenated and digit-only GG ids as the same."""
+    gid = (gg_player_id or "").strip()
+    if not gid:
+        return None
+    nick = (nicknames.get(gid) or "").strip()
+    if nick:
+        return nick
+    key = gg_player_id_match_key(gid)
+    if not key:
+        return None
+    for stored_id, stored_nick in nicknames.items():
+        text = (stored_nick or "").strip()
+        if text and gg_player_id_match_key(stored_id) == key:
+            return text
+    return None
+
+
 # Audit-export Tag column fields for Matching Variant.
 _MANUAL_DEPOSIT_TAG_FIELDS: dict[str, str] = {
     "deposit_zelle": "zelle_recipient",
@@ -248,7 +275,9 @@ def build_ledger_lines(
         lines.append(
             LedgerLine(
                 gg_player_id=gid,
-                member_nickname=nickname_map.get(gid) if gid else None,
+                member_nickname=(
+                    nickname_for_gg_player_id(nickname_map, gid) if gid else None
+                ),
                 source=event.source,
                 source_label=(
                     (event.source_label or "").strip()

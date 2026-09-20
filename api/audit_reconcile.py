@@ -20,6 +20,7 @@ from api.audit_ledger import (
     fetch_cashout_events,
     fetch_deposit_events,
     fetch_early_rakeback_events,
+    nickname_for_gg_player_id,
 )
 from api.club_slug import (
     CLUB_SLUG_TO_NAME,
@@ -513,7 +514,7 @@ def _nicknames_for_reconcile(
 
     result: dict[str, str | None] = {}
     for gg_id in gg_ids:
-        nick = merged.get(gg_id)
+        nick = nickname_for_gg_player_id(merged, gg_id)
         if not nick:
             fallback = lookup_gg_nickname(session, club_id, gg_id)
             if fallback and fallback.strip() != gg_id:

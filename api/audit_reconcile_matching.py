@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
-from api.audit_ledger import LedgerLine
+from api.audit_ledger import LedgerLine, gg_player_id_match_key
 from api.audit_reconcile import TradeLineForMatch
 from api.club_audit_timezone import zone_for_payment_display
 from api.vaughn_methods import matching_source_label
@@ -415,8 +415,8 @@ def _candidate_score(
         delta = abs(trade_at - ledger_at)
         if delta > _match_window(ledger):
             return None
-    trade_gid = (trade.member_gg_player_id or "").strip()
-    ledger_gid = (ledger.gg_player_id or "").strip()
+    trade_gid = gg_player_id_match_key(trade.member_gg_player_id)
+    ledger_gid = gg_player_id_match_key(ledger.gg_player_id)
     if trade_gid and ledger_gid and trade_gid != ledger_gid:
         return None
     same_player = 0 if (trade_gid and ledger_gid) else 1
