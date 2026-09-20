@@ -70,11 +70,7 @@ async def unbindmethod_handler(
         unbind_chat_from_all_methods(chat.id)
     )
 
-    if (
-        bindings_removed == 0
-        and attempts_cancelled == 0
-        and stickiness_removed == 0
-    ):
+    if bindings_removed == 0 and attempts_cancelled == 0 and stickiness_removed == 0:
         await update.message.reply_text(
             "This group has no payment-method links, destination stickiness, "
             "or pending setup attempts. Nothing to unbind."

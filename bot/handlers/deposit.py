@@ -595,9 +595,7 @@ def _merged_deposit_variant_response(
 def _variant_is_stripe_checkout(variant: dict) -> bool:
     if not variant.get("use_group_checkout_link"):
         return False
-    provider = (
-        (variant.get("group_checkout_provider") or "stripe").strip().lower()
-    )
+    provider = (variant.get("group_checkout_provider") or "stripe").strip().lower()
     return provider == "stripe"
 
 
@@ -650,9 +648,7 @@ def _pick_venmo_cashapp_destination_response(
 
     if sticky_tag:
         matching = [
-            v
-            for v in native
-            if _variant_destination_tag(slug, v) == sticky_tag
+            v for v in native if _variant_destination_tag(slug, v) == sticky_tag
         ]
         if matching:
             chosen = _pick_weighted_variant_dicts(matching)
