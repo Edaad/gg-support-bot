@@ -196,15 +196,16 @@ def conditions_from_api(raw: list | None) -> list[dict]:
 
 
 def conditions_met(conditions: list[dict], stats: WeekStats) -> bool:
+    """True when any condition is met."""
     if not conditions:
         return False
     for cond in conditions:
         spec = CONDITION_REGISTRY.get(str(cond.get("type") or ""))
         if spec is None:
-            return False
-        if not spec.is_met(cond, stats):
-            return False
-    return True
+            continue
+        if spec.is_met(cond, stats):
+            return True
+    return False
 
 
 def week_stats_for(
