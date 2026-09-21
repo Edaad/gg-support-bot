@@ -19,8 +19,9 @@ from api.routes.payments_export import router as payments_export_router
 from api.schemas_payments import OwnerPaymentSummary, UnifiedPaymentRowRead
 from api.unified_payments import (
     PaymentSourceSpec,
+    _candidate,
     _ingest_occurred_at,
-    _merge_rows,
+    _merge_candidates,
     resolve_sources,
 )
 from db.connection import get_db_dependency
@@ -125,33 +126,22 @@ class UnifiedPaymentsHelperTestCase(unittest.TestCase):
         self.assertTrue(all(s.kind != "union_manual" for s in sources))
         self.assertTrue(any(s.kind == "stripe" for s in sources))
 
-    def test_merge_rows_orders_by_time_desc(self):
-        older = _sample_row(
-            row_id=1, occurred_at=datetime(2026, 1, 1, tzinfo=timezone.utc)
+    def test_merge_candidates_orders_by_time_desc(self):
+        older = _candidate(
+            PaymentSourceSpec(
+                kind="venmo", owner_slug="round-table", method_slug="venmo"
+            ),
+            1,
+            datetime(2026, 1, 1, tzinfo=timezone.utc),
         )
-        newer = _sample_row(
-            row_id=2, occurred_at=datetime(2026, 1, 2, tzinfo=timezone.utc)
+        newer = _candidate(
+            PaymentSourceSpec(kind="venmo", owner_slug="vaughn", method_slug="venmo"),
+            2,
+            datetime(2026, 1, 2, tzinfo=timezone.utc),
         )
-        merged = _merge_rows(
-            [
-                (
-                    PaymentSourceSpec(
-                        kind="venmo", owner_slug="round-table", method_slug="venmo"
-                    ),
-                    [older],
-                ),
-                (
-                    PaymentSourceSpec(
-                        kind="venmo", owner_slug="vaughn", method_slug="venmo"
-                    ),
-                    [newer],
-                ),
-            ],
-            offset=0,
-            limit=10,
-        )
-        self.assertEqual(merged[0].id, 2)
-        self.assertEqual(merged[1].id, 1)
+        merged = _merge_candidates([older, newer], offset=0, limit=10)
+        self.assertEqual(merged[0].row_id, 2)
+        self.assertEqual(merged[1].row_id, 1)
 
 
 class UnifiedPaymentsApiTestCase(unittest.TestCase):
