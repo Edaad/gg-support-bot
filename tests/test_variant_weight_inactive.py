@@ -238,7 +238,7 @@ class GetMethodsForAmountInactiveTests(unittest.TestCase):
 
 
 class DepositStickyInactiveTests(unittest.TestCase):
-    def test_venmo_display_sticky_inactive_does_not_fall_back_to_other_tag(self):
+    def test_venmo_display_sticky_inactive_falls_back_to_other_tag(self):
         sticky = SimpleNamespace(destination_tag="@paused", variant_id=99)
         over_tier = {"id": 2, "label": "Over $100"}
         venmo_method = {"id": 4, "name": "Venmo", "slug": "venmo"}
@@ -254,6 +254,8 @@ class DepositStickyInactiveTests(unittest.TestCase):
             patch.object(dep, "get_tier_for_amount", return_value=over_tier),
             patch.object(dep, "list_tier_variants", return_value=[other]),
             patch.object(dep, "get_destination_stickiness", return_value=sticky),
+            patch.object(dep, "list_method_variants", return_value=[]),
+            patch.object(dep, "_pick_weighted_variant_dicts", return_value=dict(other)),
         ):
             response_data, tier = dep._pick_deposit_variant_response(
                 4,
@@ -263,8 +265,11 @@ class DepositStickyInactiveTests(unittest.TestCase):
                 method_slug="venmo",
             )
 
-        self.assertIsNone(response_data)
+        self.assertEqual(response_data.get("variant_id"), 2)
         self.assertEqual(tier, over_tier)
+        self.assertEqual(
+            response_data[dep._STICKINESS_FALLBACK_KEY]["shown"], "@active"
+        )
 
 
 class VariantWeightSchemaTests(unittest.TestCase):

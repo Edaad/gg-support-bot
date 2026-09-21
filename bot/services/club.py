@@ -475,6 +475,30 @@ def list_tier_variants(method_id: int, tier_id: int) -> list[dict]:
         return out
 
 
+def list_method_variants(method_id: int) -> list[dict]:
+    """All variants for a method, including weight 0, with tier ids."""
+    v2 = _payment_v2()
+    if v2:
+        return v2.list_method_variants(method_id)
+    with get_db() as session:
+        variants = (
+            session.query(MethodVariant)
+            .filter_by(method_id=int(method_id))
+            .order_by(
+                MethodVariant.tier_id,
+                MethodVariant.sort_order,
+                MethodVariant.id,
+            )
+            .all()
+        )
+        out: list[dict] = []
+        for variant in variants:
+            data = _variant_response_dict(variant, tier_scoped=True, include_ids=True)
+            data["weight"] = _legacy_variant_weight(variant)
+            out.append(data)
+        return out
+
+
 def pick_variant(
     method_id: int,
     tier_id: Optional[int] = None,

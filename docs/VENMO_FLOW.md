@@ -190,10 +190,11 @@ For **every** POST to `/api/venmo/payments`:
 
 ### Destination tag stickiness (Venmo / Cash App)
 
-Separate from payment-method **linking** (`group_payment_method_bindings`). Table `group_deposit_destination_stickiness` stores the first `@` / `$` tag the bot showed in `/deposit` instructions (or first-time setup destination after ack). Later deposits keep that tag when any active native variant still has it. Cash App prefers native `$cashtag` over Stripe whenever a native variant exists for the amount; Stripe does not lock a tag. Staff `/unbindmethod` clears stickiness.
+Separate from payment-method **linking** (`group_payment_method_bindings`). Table `group_deposit_destination_stickiness` stores the first `@` / `$` tag the bot showed in `/deposit` instructions (or first-time setup destination after ack). Later deposits keep that tag when any active native variant still has it. If the locked tag is missing, weight 0, or not in the amount’s tier, the bot shows another **native** variant in that tier (weighted), else Cash App Stripe, and posts **one** head-admin Slack warning (`SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`) while that break lasts. If the tier has no other variant, the method is omitted from `/deposit` (no Slack). Stripe is never stored as the lock. Staff `/unbindmethod` clears stickiness and the warning dedupe.
 
 ```bash
 DATABASE_URL=... python migrate_deposit_destination_stickiness.py
+DATABASE_URL=... python migrate_deposit_destination_stickiness_fallback.py
 ```
 
 ---

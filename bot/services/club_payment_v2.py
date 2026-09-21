@@ -362,6 +362,27 @@ def list_tier_variants(method_id: int, tier_id: int) -> list[dict]:
         return out
 
 
+def list_method_variants(method_id: int) -> list[dict]:
+    """All variants for a method, including weight 0, with tier ids."""
+    with get_db() as session:
+        variants = (
+            session.query(ClubPaymentTierVariant)
+            .filter_by(method_id=int(method_id))
+            .order_by(
+                ClubPaymentTierVariant.tier_id,
+                ClubPaymentTierVariant.sort_order,
+                ClubPaymentTierVariant.id,
+            )
+            .all()
+        )
+        out: list[dict] = []
+        for variant in variants:
+            data = _variant_response_dict(variant, include_ids=True)
+            data["weight"] = _variant_weight(variant)
+            out.append(data)
+        return out
+
+
 def pick_variant(
     method_id: int,
     tier_id: Optional[int] = None,

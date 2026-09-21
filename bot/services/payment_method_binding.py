@@ -265,6 +265,7 @@ class DestinationStickiness:
     payment_method_slug: str
     destination_tag: str
     variant_id: Optional[int]
+    fallback_warned_reason: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -586,6 +587,19 @@ def get_chat_binding(
         )
 
 
+def _destination_stickiness_from_row(row) -> DestinationStickiness:
+    warned = getattr(row, "fallback_warned_reason", None)
+    return DestinationStickiness(
+        id=int(row.id),
+        telegram_chat_id=int(row.telegram_chat_id),
+        club_id=int(row.club_id),
+        payment_method_slug=str(row.payment_method_slug),
+        destination_tag=str(row.destination_tag),
+        variant_id=int(row.variant_id) if row.variant_id else None,
+        fallback_warned_reason=str(warned) if warned else None,
+    )
+
+
 def get_destination_stickiness(
     telegram_chat_id: int, payment_method_slug: str
 ) -> Optional[DestinationStickiness]:
@@ -603,14 +617,7 @@ def get_destination_stickiness(
         )
         if row is None:
             return None
-        return DestinationStickiness(
-            id=int(row.id),
-            telegram_chat_id=int(row.telegram_chat_id),
-            club_id=int(row.club_id),
-            payment_method_slug=str(row.payment_method_slug),
-            destination_tag=str(row.destination_tag),
-            variant_id=int(row.variant_id) if row.variant_id else None,
-        )
+        return _destination_stickiness_from_row(row)
 
 
 def ensure_destination_stickiness(
@@ -643,14 +650,7 @@ def ensure_destination_stickiness(
             .one_or_none()
         )
         if existing is not None:
-            return DestinationStickiness(
-                id=int(existing.id),
-                telegram_chat_id=int(existing.telegram_chat_id),
-                club_id=int(existing.club_id),
-                payment_method_slug=str(existing.payment_method_slug),
-                destination_tag=str(existing.destination_tag),
-                variant_id=int(existing.variant_id) if existing.variant_id else None,
-            )
+            return _destination_stickiness_from_row(existing)
         row = GroupDepositDestinationStickiness(
             telegram_chat_id=chat_id,
             club_id=int(club_id),
@@ -678,7 +678,65 @@ def ensure_destination_stickiness(
             payment_method_slug=slug,
             destination_tag=tag,
             variant_id=int(variant_id) if variant_id is not None else None,
+            fallback_warned_reason=None,
         )
+
+
+def claim_destination_stickiness_fallback_warning(
+    telegram_chat_id: int,
+    payment_method_slug: str,
+    reason: str,
+) -> bool:
+    """True when this lock+reason has not been warned yet (then records it).
+
+    Same group + method + lock + reason stays silent. A new reason, or X
+    becoming usable again then breaking later, warns once more.
+    """
+    slug = (payment_method_slug or "").strip().lower()
+    if slug not in _DESTINATION_STICKINESS_SLUGS:
+        return False
+    reason_norm = (reason or "").strip()
+    if not reason_norm:
+        return False
+    with get_db() as session:
+        row = (
+            session.query(GroupDepositDestinationStickiness)
+            .filter_by(
+                telegram_chat_id=int(telegram_chat_id),
+                payment_method_slug=slug,
+            )
+            .one_or_none()
+        )
+        if row is None:
+            return False
+        existing = (getattr(row, "fallback_warned_reason", None) or "").strip()
+        if existing == reason_norm:
+            return False
+        row.fallback_warned_reason = reason_norm
+        return True
+
+
+def clear_destination_stickiness_fallback_warning(
+    telegram_chat_id: int,
+    payment_method_slug: str,
+) -> None:
+    """Clear the once-warning when the locked destination is usable again."""
+    slug = (payment_method_slug or "").strip().lower()
+    if slug not in _DESTINATION_STICKINESS_SLUGS:
+        return
+    with get_db() as session:
+        row = (
+            session.query(GroupDepositDestinationStickiness)
+            .filter_by(
+                telegram_chat_id=int(telegram_chat_id),
+                payment_method_slug=slug,
+            )
+            .one_or_none()
+        )
+        if row is None:
+            return
+        if getattr(row, "fallback_warned_reason", None):
+            row.fallback_warned_reason = None
 
 
 def count_destination_stickiness(telegram_chat_id: int) -> int:

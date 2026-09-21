@@ -2285,6 +2285,7 @@ class GroupDepositDestinationStickiness(Base):
         nullable=True,
     )
     shown_at = Column(DateTime(timezone=True), server_default=func.now())
+    fallback_warned_reason = Column(Text, nullable=True)
 
     club = relationship("Club")
     variant = relationship("ClubPaymentTierVariant")

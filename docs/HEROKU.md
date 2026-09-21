@@ -556,9 +556,10 @@ After deploying display-tag stickiness (first bot-shown `@` / `$` per support gr
 
 ```bash
 heroku run -a YOUR_APP -- python migrate_deposit_destination_stickiness.py
+heroku run -a YOUR_APP -- python migrate_deposit_destination_stickiness_fallback.py
 ```
 
-Creates `group_deposit_destination_stickiness`. Cleared by `/unbindmethod` and dashboard unbind. See [`docs/VENMO_FLOW.md`](VENMO_FLOW.md) and [`docs/CASHAPP_PAYMENTS.md`](CASHAPP_PAYMENTS.md).
+Creates `group_deposit_destination_stickiness` and adds `fallback_warned_reason` (one head-admin Slack per lock+reason while a bound destination is replaced). Cleared by `/unbindmethod` and dashboard unbind. See [`docs/VENMO_FLOW.md`](VENMO_FLOW.md) and [`docs/CASHAPP_PAYMENTS.md`](CASHAPP_PAYMENTS.md).
 
 ## Daily support-group activity tracking
 
