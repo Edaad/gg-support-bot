@@ -13,7 +13,9 @@ from bot.services.club_payment_v2 import (
 
 class HiddenClubDepositMethodsTestCase(unittest.TestCase):
     def test_hidden_slugs(self):
-        self.assertEqual(_HIDDEN_CLUB_DEPOSIT_SLUGS, frozenset({"applepay", "debitcard"}))
+        self.assertEqual(
+            _HIDDEN_CLUB_DEPOSIT_SLUGS, frozenset({"applepay", "debitcard"})
+        )
 
     def test_club_applepay_and_debitcard_hidden(self):
         self.assertTrue(
