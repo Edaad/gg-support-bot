@@ -1292,6 +1292,28 @@ def cashout_shown_on_popup_keyboard(club_id: int, chat_id: int) -> bool:
         return True
 
 
+def _outside_hours_range(settings: dict) -> Optional[str]:
+    if not settings.get("hours_enabled"):
+        return None
+    now_est = datetime.now(timezone.utc).astimezone(EST)
+    if _is_within_hours(now_est, settings["hours_start"], settings["hours_end"]):
+        return None
+    return _hours_range_str(settings)
+
+
+def cashout_outside_hours_range(club_id: int) -> Optional[str]:
+    """Formatted hours range if cashout hours are on and now is outside them.
+
+    Returns e.g. ``'8 AM - 11 PM'``, or ``None`` when hours are off / within
+    the window / club missing. Independent of cooldown so it is safe to call
+    after a cashout has already been recorded.
+    """
+    settings = get_cooldown_settings(club_id)
+    if not settings:
+        return None
+    return _outside_hours_range(settings)
+
+
 def check_cashout_eligibility(club_id: int, chat_id: int) -> tuple[bool, Optional[str]]:
     """Check cooldown (hard) + business hours (advisory).
 
@@ -1306,7 +1328,6 @@ def check_cashout_eligibility(club_id: int, chat_id: int) -> tuple[bool, Optiona
 
     now_utc = datetime.now(timezone.utc)
     now_est = now_utc.astimezone(EST)
-    hours_on = settings["hours_enabled"]
     cooldown_on = settings["cooldown_enabled"]
 
     # ── Cooldown hard gate ────────────────────────────────────────────────
@@ -1338,10 +1359,8 @@ def check_cashout_eligibility(club_id: int, chat_id: int) -> tuple[bool, Optiona
                     )
 
     # ── Outside hours → allow with advisory notice ────────────────────────
-    if hours_on and not _is_within_hours(
-        now_est, settings["hours_start"], settings["hours_end"]
-    ):
-        hours_range = _hours_range_str(settings)
+    hours_range = _outside_hours_range(settings)
+    if hours_range:
         return True, (
             f"Cashouts submitted now are processed during business hours "
             f"({hours_range} EST). You can continue — we'll handle payout when hours open."

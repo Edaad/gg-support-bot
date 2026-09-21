@@ -66,5 +66,28 @@ class CheckCashoutEligibilityHoursTests(unittest.TestCase):
         self.assertNotIn("processed during business hours", msg)
 
 
+class CashoutOutsideHoursRangeTests(unittest.TestCase):
+    def test_outside_hours_returns_range(self):
+        with patch.object(club_svc, "get_cooldown_settings", return_value=_settings()):
+            with patch.object(club_svc, "_is_within_hours", return_value=False):
+                with patch.object(
+                    club_svc, "_hours_range_str", return_value="8 AM - 11 PM"
+                ):
+                    self.assertEqual(
+                        club_svc.cashout_outside_hours_range(1), "8 AM - 11 PM"
+                    )
+
+    def test_within_hours_returns_none(self):
+        with patch.object(club_svc, "get_cooldown_settings", return_value=_settings()):
+            with patch.object(club_svc, "_is_within_hours", return_value=True):
+                self.assertIsNone(club_svc.cashout_outside_hours_range(1))
+
+    def test_hours_disabled_returns_none(self):
+        with patch.object(
+            club_svc, "get_cooldown_settings", return_value=_settings(hours=False)
+        ):
+            self.assertIsNone(club_svc.cashout_outside_hours_range(1))
+
+
 if __name__ == "__main__":
     unittest.main()

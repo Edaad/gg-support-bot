@@ -222,5 +222,21 @@ class CashoutModePrecedenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("cashout_auto", context.chat_data)
 
 
+class AutoCashoutConfirmationTests(unittest.TestCase):
+    def test_within_hours_says_shortly(self):
+        self.assertEqual(
+            co._auto_cashout_confirmation(2000, "Venmo"),
+            "Your cashout of $2000 via Venmo is being processed. "
+            "You'll receive it shortly!",
+        )
+
+    def test_outside_hours_says_processed_during_business_hours(self):
+        self.assertEqual(
+            co._auto_cashout_confirmation(2000, "Venmo", hours_range="8 AM - 11 PM"),
+            "Your cashout of $2000 via Venmo will be processed "
+            "during business hours (8 AM - 11 PM EST).",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

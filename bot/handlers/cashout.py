@@ -28,6 +28,7 @@ from bot.services.club import (
     record_activity,
     cancel_last_cashout_activity,
     check_cashout_eligibility,
+    cashout_outside_hours_range,
     is_club_staff,
     pick_variant,
     get_cashout_max_amount,
@@ -878,6 +879,18 @@ async def cashout_auto_handle_received(update, context):
     return await _auto_run_claim(update, context)
 
 
+def _auto_cashout_confirmation(amount, display, *, hours_range=None) -> str:
+    if hours_range:
+        return (
+            f"Your cashout of ${amount} via {display} will be processed "
+            f"during business hours ({hours_range} EST)."
+        )
+    return (
+        f"Your cashout of ${amount} via {display} is being processed. "
+        f"You'll receive it shortly!"
+    )
+
+
 async def _auto_finalize(update, context, *, payout_details):
     club_id = context.chat_data.get("cashout_club_id")
     chat_id = context.chat_data.get("cashout_chat_id")
@@ -934,9 +947,13 @@ async def _auto_finalize(update, context, *, payout_details):
 
     if chat is not None:
         try:
+            hours_range = (
+                cashout_outside_hours_range(int(club_id))
+                if club_id is not None
+                else None
+            )
             await chat.send_message(
-                f"Your cashout of ${amount} via {display} is being processed. "
-                f"You'll receive it shortly!"
+                _auto_cashout_confirmation(amount, display, hours_range=hours_range)
             )
         except Exception:
             pass
