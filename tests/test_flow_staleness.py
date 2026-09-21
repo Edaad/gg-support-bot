@@ -457,9 +457,10 @@ class TestDepositCallbackStaleness(unittest.IsolatedAsyncioTestCase):
         "get_method_by_id",
         return_value={
             "id": 29,
-            "name": "Apple Pay",
-            "slug": "applepay",
+            "name": "Cash App",
+            "slug": "cashapp",
             "has_sub_options": False,
+            "tracks_manual_requests": False,
         },
     )
     @patch.object(
@@ -494,9 +495,10 @@ class TestDepositCallbackStaleness(unittest.IsolatedAsyncioTestCase):
         "get_method_by_id",
         return_value={
             "id": 29,
-            "name": "Apple Pay",
-            "slug": "applepay",
+            "name": "Cash App",
+            "slug": "cashapp",
             "has_sub_options": False,
+            "tracks_manual_requests": False,
         },
     )
     @patch.object(
