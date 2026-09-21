@@ -336,6 +336,7 @@ class StripeDepositTestCase(unittest.TestCase):
         kwargs = session_create.call_args.kwargs
         self.assertEqual(kwargs["client_reference_id"], str(CHAT_ID))
         self.assertEqual(kwargs["mode"], "payment")
+        self.assertEqual(kwargs["payment_method_types"], ["cashapp"])
         self.assertIn("telegram_chat_id", kwargs["metadata"])
         self.assertEqual(kwargs["metadata"]["telegram_chat_id"], str(CHAT_ID))
         self.assertEqual(kwargs["metadata"]["club_id"], str(CLUB_ID))

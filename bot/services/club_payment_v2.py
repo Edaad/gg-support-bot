@@ -18,6 +18,23 @@ from db.models import (
     ClubPaymentTierVariant,
 )
 
+# Club Stripe rails retired in favor of Cash App Pay Checkout only.
+# Union applepay (tracks_manual_requests) is not filtered.
+_HIDDEN_CLUB_DEPOSIT_SLUGS = frozenset({"applepay", "debitcard"})
+
+
+def is_hidden_club_deposit_method(method: dict | ClubPaymentMethod) -> bool:
+    """True for non-union club applepay/debitcard (hidden from /deposit)."""
+    if isinstance(method, dict):
+        slug = (method.get("slug") or "").strip().lower()
+        if method.get("tracks_manual_requests"):
+            return False
+    else:
+        slug = (getattr(method, "slug", None) or "").strip().lower()
+        if bool(getattr(method, "tracks_manual_requests", False)):
+            return False
+    return slug in _HIDDEN_CLUB_DEPOSIT_SLUGS
+
 
 def _method_dict(m: ClubPaymentMethod) -> dict:
     return {
@@ -242,7 +259,9 @@ def get_methods_for_amount(
         result = [
             _method_dict(m)
             for m in normal
-            if _passes_amount_and_capacity(m) and _passes_deposit_deliverability(m)
+            if not is_hidden_club_deposit_method(m)
+            and _passes_amount_and_capacity(m)
+            and _passes_deposit_deliverability(m)
         ]
         result.extend(
             _method_dict(m)

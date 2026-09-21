@@ -48,6 +48,7 @@ from bot.services.club import (
 )
 from bot.services.mtproto_group_rename import rename_support_group_title
 from bot.services.player_details import merge_union_prefix
+from bot.services.club_payment_v2 import is_hidden_club_deposit_method
 from bot.services.deposit_method_access import (
     filter_deposit_methods_for_chat,
     is_deposit_method_allowed_for_chat,
@@ -2893,7 +2894,7 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
 
     method_id = int(data.split(":")[1])
     method = get_method_by_id(method_id)
-    if not method:
+    if not method or is_hidden_club_deposit_method(method):
         await query.edit_message_text("That method is no longer available.")
         return ConversationHandler.END
 

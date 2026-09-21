@@ -195,6 +195,9 @@ def get_methods_for_amount(
         methods = q.all()
         result = []
         for m in methods:
+            slug = (m.slug or "").strip().lower()
+            if slug in ("applepay", "debitcard"):
+                continue
             if m.deposit_limit is not None and m.accumulated_amount is not None:
                 if m.accumulated_amount >= m.deposit_limit:
                     continue
@@ -240,7 +243,11 @@ def get_deposit_method_names(club_id: int) -> list[str]:
             .order_by(PaymentMethod.sort_order)
             .all()
         )
-        return [m.name for m in methods]
+        return [
+            m.name
+            for m in methods
+            if (m.slug or "").strip().lower() not in ("applepay", "debitcard")
+        ]
 
 
 def record_method_deposit(method_id: int, amount: Decimal) -> None:
