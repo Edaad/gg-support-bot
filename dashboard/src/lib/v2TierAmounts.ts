@@ -1,7 +1,10 @@
-import type { V2Tier } from '../api/v2Client'
+import { DEFAULT_TIER_LABEL, type V2Tier } from '../api/v2Client'
 
 export const PRIMARY_TIER_MIN_TIP =
-  'The default tier minimum cannot be changed here. To use a higher minimum, add a new amount tier.'
+  'The default tier is the fallback and starts at the method minimum. Add an amount tier to route a specific band elsewhere.'
+
+export const FALLBACK_TIER_HINT =
+  'The default tier catches every amount no other tier claims, so other tiers may sit inside its band and are matched first.'
 
 const STRIPE_CHECKOUT_METHOD_SLUGS = new Set(['applepay', 'debitcard', 'stripe'])
 
@@ -63,8 +66,14 @@ export function validateTierAmountBand(
     return `Tier max $${tierMax} is below method absolute minimum $${absoluteMin}.`
   }
 
+  // The 'Default' tier covers whatever no specific tier claims, so it is exempt
+  // from overlap checks in both directions (mirrors the API).
+  if ((options?.tierLabel || '').trim() === DEFAULT_TIER_LABEL) return null
+  const fallbackId = siblings.find((t) => t.label === DEFAULT_TIER_LABEL)?.id ?? null
+
   for (const sibling of siblings) {
     if (options?.excludeTierId != null && sibling.id === options.excludeTierId) continue
+    if (fallbackId != null && sibling.id === fallbackId) continue
     if (amountsOverlap(tierMin, tierMax, sibling.min_amount, sibling.max_amount)) {
       const sMin = sibling.min_amount != null ? `$${sibling.min_amount}` : '—'
       const sMax = sibling.max_amount != null ? `$${sibling.max_amount}` : '—'
@@ -105,6 +114,30 @@ export function validateCheckoutAmountBounds(
   }
   if (checkoutMax != null && absoluteMin != null && checkoutMax < absoluteMin) {
     return `Checkout max $${checkoutMax} is below method absolute minimum $${absoluteMin}.`
+  }
+  return null
+}
+
+export function validateVariantCheckoutBounds(
+  absoluteMin: number | null | undefined,
+  absoluteMax: number | null | undefined,
+  tierMin: number | null | undefined,
+  tierMax: number | null | undefined,
+  checkoutMin: number | null | undefined,
+  checkoutMax: number | null | undefined,
+): string | null {
+  const envelopeError = validateCheckoutAmountBounds(
+    absoluteMin,
+    absoluteMax,
+    checkoutMin,
+    checkoutMax,
+  )
+  if (envelopeError) return envelopeError
+  if (checkoutMin != null && tierMin != null && checkoutMin < tierMin) {
+    return `Checkout min $${checkoutMin} is below the tier minimum $${tierMin}.`
+  }
+  if (checkoutMax != null && tierMax != null && checkoutMax > tierMax) {
+    return `Checkout max $${checkoutMax} is above the tier maximum $${tierMax}.`
   }
   return null
 }

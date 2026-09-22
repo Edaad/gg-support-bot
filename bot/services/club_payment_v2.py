@@ -10,6 +10,7 @@ import random
 from decimal import Decimal
 from typing import List, Optional
 
+from bot.services.payment_tier_order import select_tier_for_amount
 from db.connection import get_db
 from db.models import (
     ClubPaymentMethod,
@@ -153,36 +154,30 @@ def club_deposit_method_deliverable(
     )
     if not tiers:
         return False
-    amt = Decimal(str(amount))
-    for tier in tiers:
-        if tier.min_amount is not None and amt < Decimal(str(tier.min_amount)):
-            continue
-        if tier.max_amount is not None and amt > Decimal(str(tier.max_amount)):
-            continue
-        if has_sub_options:
-            active_sub_count = (
-                session.query(ClubPaymentSubOption)
-                .filter_by(method_id=int(method_id), is_active=True)
-                .count()
-            )
-            return active_sub_count > 0
-
-        variant_count = (
-            session.query(ClubPaymentTierVariant)
-            .filter_by(tier_id=int(tier.id))
-            .count()
-        )
-        active_variant_count = (
-            session.query(ClubPaymentTierVariant)
-            .filter_by(tier_id=int(tier.id))
-            .filter(ClubPaymentTierVariant.weight > 0)
-            .count()
-        )
-        if active_variant_count > 0:
-            return True
-        if variant_count == 0 and bool(tier.use_group_checkout_link):
-            return True
+    tier = select_tier_for_amount(tiers, amount)
+    if tier is None:
         return False
+    if has_sub_options:
+        active_sub_count = (
+            session.query(ClubPaymentSubOption)
+            .filter_by(method_id=int(method_id), is_active=True)
+            .count()
+        )
+        return active_sub_count > 0
+
+    variant_count = (
+        session.query(ClubPaymentTierVariant).filter_by(tier_id=int(tier.id)).count()
+    )
+    active_variant_count = (
+        session.query(ClubPaymentTierVariant)
+        .filter_by(tier_id=int(tier.id))
+        .filter(ClubPaymentTierVariant.weight > 0)
+        .count()
+    )
+    if active_variant_count > 0:
+        return True
+    if variant_count == 0 and bool(tier.use_group_checkout_link):
+        return True
     return False
 
 
@@ -339,13 +334,8 @@ def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
             .order_by(ClubPaymentTier.sort_order, ClubPaymentTier.id)
             .all()
         )
-        for t in tiers:
-            if t.min_amount is not None and amount < t.min_amount:
-                continue
-            if t.max_amount is not None and amount > t.max_amount:
-                continue
-            return _tier_dict(t)
-    return None
+        tier = select_tier_for_amount(tiers, amount)
+        return _tier_dict(tier) if tier is not None else None
 
 
 def list_tier_variants(method_id: int, tier_id: int) -> list[dict]:

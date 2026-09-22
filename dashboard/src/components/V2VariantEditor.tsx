@@ -9,7 +9,7 @@ import {
 import ResponseEditor from './ResponseEditor'
 import { useConfirm } from './ConfirmProvider'
 import {
-  validateCheckoutAmountBounds,
+  validateVariantCheckoutBounds,
   PRIMARY_TIER_MIN_TIP,
   showVariantCheckoutBounds,
   formatLockedAmountValue,
@@ -23,6 +23,8 @@ import {
 } from '../lib/venmoVariantFields'
 
 function variantSavePayload(form: Partial<V2Variant>, isVenmo: boolean): Partial<V2Variant> {
+  // Checkout link fields are edited on the tier, so they are omitted here to
+  // leave any per-variant override untouched.
   const base: Partial<V2Variant> = {
     label: form.label?.trim(),
     weight: form.weight ?? 1,
@@ -32,9 +34,6 @@ function variantSavePayload(form: Partial<V2Variant>, isVenmo: boolean): Partial
     response_caption: form.response_caption ?? '',
     checkout_min_amount: form.checkout_min_amount ?? null,
     checkout_max_amount: form.checkout_max_amount ?? null,
-    use_group_checkout_link: null,
-    group_checkout_provider: null,
-    hyperlink_text: null,
   }
   if (isVenmo) {
     const mode = (form.venmo_response_mode || 'default') as VenmoResponseMode
@@ -53,6 +52,18 @@ function venmoModeLabel(mode: string | null | undefined): string {
   return ''
 }
 
+/** Why a variant would send nothing to the player, or null when it is usable. */
+function variantSetupWarning(v: V2Variant, isVenmo: boolean): string | null {
+  if (isVenmo) {
+    if (!v.venmo_tag || !v.venmo_link) return 'Missing Venmo tag or link'
+    if (v.venmo_response_mode === 'default') return null
+  }
+  if (v.response_type === 'photo') {
+    return v.response_file_id || v.response_caption ? null : 'No photo or caption'
+  }
+  return (v.response_text || '').trim() ? null : 'No player message'
+}
+
 export default function V2VariantEditor({
   token,
   tierId,
@@ -64,6 +75,8 @@ export default function V2VariantEditor({
   tierStripeEnabled = false,
   isPrimaryTier = false,
   refreshKey = 0,
+  tierMin,
+  tierMax,
 }: {
   token: string
   tierId: number
@@ -75,6 +88,8 @@ export default function V2VariantEditor({
   tierStripeEnabled?: boolean
   isPrimaryTier?: boolean
   refreshKey?: number
+  tierMin?: number | null
+  tierMax?: number | null
 }) {
   const askConfirm = useConfirm()
   const variantLabelId = useId()
@@ -162,9 +177,11 @@ export default function V2VariantEditor({
       const existing = editId ? variants.find((v) => v.id === editId) : null
       payload.checkout_min_amount = existing?.checkout_min_amount ?? null
     }
-    const boundsError = validateCheckoutAmountBounds(
+    const boundsError = validateVariantCheckoutBounds(
       absoluteMin,
       absoluteMax,
+      tierMin,
+      tierMax,
       payload.checkout_min_amount,
       payload.checkout_max_amount,
     )
@@ -272,6 +289,16 @@ export default function V2VariantEditor({
               {isVenmo && v.venmo_tag && (
                 <span className="text-xs text-ink-muted">{v.venmo_tag}</span>
               )}
+              {variantSetupWarning(v, isVenmo) && (
+                <span className="rounded bg-warning-bg px-1.5 py-0.5 text-xs font-medium text-warning-ink">
+                  {variantSetupWarning(v, isVenmo)}
+                </span>
+              )}
+              {v.use_group_checkout_link === false && tierStripeEnabled && (
+                <span className="rounded bg-control px-1.5 py-0.5 text-xs font-medium text-ink-muted">
+                  Checkout off for this variant
+                </span>
+              )}
               {(v.checkout_min_amount != null || v.checkout_max_amount != null) && (
                 <span className="text-xs text-ink-muted">
                   {v.checkout_min_amount != null && v.checkout_max_amount != null
@@ -320,6 +347,13 @@ export default function V2VariantEditor({
           {requiresVariants
             ? 'Add at least one variant — required for this tier.'
             : 'No variants yet.'}
+        </p>
+      )}
+
+      {variants.length > 0 && activeVariants.length === 0 && (
+        <p className="mt-2 rounded bg-warning-bg px-2 py-1.5 text-xs text-warning-ink" role="status">
+          Every variant has weight 0, so this tier is skipped and the method is hidden from players
+          in this amount band.
         </p>
       )}
 
