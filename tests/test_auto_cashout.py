@@ -244,9 +244,7 @@ class HandleFormatHintTests(unittest.IsolatedAsyncioTestCase):
         context = self._ctx(slug)
         with (
             patch.object(co, "is_update_too_old", return_value=False),
-            patch(
-                "bot.services.support_group_idle_episode.mark_expected_flow_input"
-            ),
+            patch("bot.services.support_group_idle_episode.mark_expected_flow_input"),
             patch.object(co, "_auto_escalate", new=AsyncMock()) as escalate,
             patch.object(co, "_auto_run_claim", new=AsyncMock()) as claim,
         ):
