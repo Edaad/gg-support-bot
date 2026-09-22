@@ -355,6 +355,8 @@ Weighted rotation **inside a tier** (`tier_id` NOT NULL). **Required:** every ti
 | `use_group_checkout_link` | `NULL` = inherit tier; `true`/`false` = override |
 | `group_checkout_provider`, `hyperlink_text` | Stripe when override is enabled |
 | `checkout_min_amount`, `checkout_max_amount` | Optional checkout bounds |
+| `venmo_tag`, `venmo_link` | Venmo-only destination (`@user` + `https://venmo.com/u/user`); required on save for Venmo variants |
+| `venmo_response_mode` | Venmo-only: `default` (cover-memo template), `text`, or `photo` |
 
 #### `club_payment_sub_options`
 
