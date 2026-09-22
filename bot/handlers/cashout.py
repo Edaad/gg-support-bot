@@ -428,6 +428,18 @@ _AUTO_HANDLE_PROMPTS = {
     "crypto": "Please reply with your {asset} wallet address.",
 }
 
+# Bad Venmo/Cash App replies stay on the handle step. Other methods still escalate.
+_HANDLE_FORMAT_HINTS = {
+    "venmo": (
+        "This doesn't look like a proper Venmo tag or link.\n"
+        "@sadib-ahmad — this is what your Venmo tag should look like"
+    ),
+    "cashapp": (
+        "This doesn't look like a proper Cash App tag or link.\n"
+        "$sadib-ahmad — this is what your Cash App tag should look like"
+    ),
+}
+
 
 def _auto_target_id(context):
     return context.chat_data.get("cashout_user_id")
@@ -868,6 +880,10 @@ async def cashout_auto_handle_received(update, context):
     text = update.message.text or ""
     normalized = validate_cashout_handle(slug, text)
     if not normalized:
+        hint = _HANDLE_FORMAT_HINTS.get((slug or "").strip().lower())
+        if hint:
+            await update.message.reply_text(hint)
+            return CASHOUT_AUTO_HANDLE
         return await _auto_escalate(
             update,
             context,
