@@ -118,6 +118,9 @@ def _variant_response_dict(
         "hyperlink_text": v.hyperlink_text,
         "checkout_min_amount": v.checkout_min_amount,
         "checkout_max_amount": v.checkout_max_amount,
+        "venmo_tag": getattr(v, "venmo_tag", None),
+        "venmo_link": getattr(v, "venmo_link", None),
+        "venmo_response_mode": getattr(v, "venmo_response_mode", None),
     }
     if link is not None:
         data["use_group_checkout_link"] = bool(link)

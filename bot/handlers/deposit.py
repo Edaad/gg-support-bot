@@ -117,6 +117,10 @@ from bot.services.payment_method_binding import (
     start_bind_attempt,
 )
 from bot.services.payment_method_binding import expire_attempt as expire_bind_attempt
+from bot.services.venmo_variant_fields import (
+    build_default_venmo_response_text,
+    validate_venmo_link,
+)
 from bot.services.flow_sessions import (
     END_REASON_CANCELLED,
     END_REASON_TIMEOUT,
@@ -327,16 +331,40 @@ def _zelle_venmo_destination_fallback(
         or response_data.get("response_caption")
         or ""
     ).strip()
-    if not raw:
+    venmo_link = (response_data.get("venmo_link") or "").strip() or None
+    if slug == "venmo" and not raw and not venmo_link:
+        return None
+    if slug != "venmo" and not raw:
         return None
     text = format_first_time_payment_destination_message(
         payment_method_slug=slug,
         variant_response_text=raw,
         use_html=False,
+        venmo_link=venmo_link,
     )
     if not text.strip():
         return None
     return {"response_type": "text", "response_text": text}
+
+
+def _apply_venmo_default_response(response_data: dict, amount) -> dict:
+    """Replace outgoing payload with the cover-memo template when mode is default."""
+    mode = (response_data.get("venmo_response_mode") or "").strip().lower()
+    if mode != "default":
+        return response_data
+    link = (response_data.get("venmo_link") or "").strip()
+    if not link:
+        return response_data
+    try:
+        text = build_default_venmo_response_text(link, amount)
+    except ValueError:
+        return response_data
+    out = dict(response_data)
+    out["response_type"] = "text"
+    out["response_text"] = text
+    out["response_file_id"] = ""
+    out["response_caption"] = ""
+    return out
 
 
 def _prepare_deposit_response_data(
@@ -625,16 +653,21 @@ def _variants_with_tier_checkout(variants: list[dict], tier: dict) -> list[dict]
 
 
 def _variant_destination_tag(method_slug: str, variant: dict) -> str | None:
+    slug = (method_slug or "").strip().lower()
+    if slug == "venmo":
+        tag = (variant.get("venmo_tag") or "").strip()
+        if tag:
+            return extract_venmo_handle_from_text(tag) or tag.lower()
     text = "\n".join(
         filter(
             None,
             [
                 variant.get("response_text"),
                 variant.get("response_caption"),
+                variant.get("venmo_link") if slug == "venmo" else None,
             ],
         )
     )
-    slug = (method_slug or "").strip().lower()
     if slug == "cashapp":
         return extract_cashapp_handle_from_text(text)
     if slug == "venmo":
@@ -1134,7 +1167,29 @@ async def _send_first_time_payment_destination(
     club_id: int | None = None,
     method_slug: str | None = None,
 ) -> bool:
-    if not _response_data_has_content(response_data):
+    slug = (method_slug or "").strip().lower()
+    mode = (response_data.get("venmo_response_mode") or "").strip().lower()
+    send_data = response_data
+    if slug == "venmo" and mode == "default":
+        link = (response_data.get("venmo_link") or "").strip()
+        raw = (
+            response_data.get("response_text")
+            or response_data.get("response_caption")
+            or ""
+        ).strip()
+        if link and not raw:
+            try:
+                link = validate_venmo_link(link)
+            except ValueError:
+                link = link
+            dest = format_first_time_payment_destination_message(
+                payment_method_slug="venmo",
+                variant_response_text="",
+                use_html=False,
+                venmo_link=link,
+            )
+            send_data = {"response_type": "text", "response_text": dest}
+    if not _response_data_has_content(send_data):
         logger.warning(
             "first_time_destination: empty dashboard response chat_id=%s",
             chat_id,
@@ -1142,7 +1197,7 @@ async def _send_first_time_payment_destination(
         return False
     _track_deposit_info_messages(
         int(chat_id),
-        await send_response_messages(chat, response_data),
+        await send_response_messages(chat, send_data),
     )
     _maybe_lock_destination_stickiness(
         chat_id=int(chat_id),
@@ -3547,6 +3602,8 @@ async def _send_deposit_method_response(
         method=method,
         tier=tier,
     )
+    if (method_slug or "").strip().lower() == "venmo":
+        response_data = _apply_venmo_default_response(response_data, amount)
     slug = (method_slug or "").strip().lower()
     use_stripe_checkout = _stripe_checkout_enabled(response_data)
     if (

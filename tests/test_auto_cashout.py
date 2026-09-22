@@ -222,6 +222,91 @@ class CashoutModePrecedenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("cashout_auto", context.chat_data)
 
 
+class HandleFormatHintTests(unittest.IsolatedAsyncioTestCase):
+    def _update(self, text, user_id=555):
+        message = SimpleNamespace(text=text, reply_text=AsyncMock())
+        return SimpleNamespace(
+            message=message,
+            effective_user=SimpleNamespace(id=user_id),
+            effective_chat=SimpleNamespace(id=-100),
+        )
+
+    def _ctx(self, slug):
+        return SimpleNamespace(
+            chat_data={
+                "cashout_user_id": 555,
+                "cashout_current_method": {"slug": slug, "name": slug},
+            }
+        )
+
+    async def _receive(self, slug, text):
+        update = self._update(text)
+        context = self._ctx(slug)
+        with (
+            patch.object(co, "is_update_too_old", return_value=False),
+            patch("bot.services.support_group_idle_episode.mark_expected_flow_input"),
+            patch.object(co, "_auto_escalate", new=AsyncMock()) as escalate,
+            patch.object(co, "_auto_run_claim", new=AsyncMock()) as claim,
+        ):
+            state = await co.cashout_auto_handle_received(update, context)
+        return state, context, update, escalate, claim
+
+    async def test_bad_venmo_stays_and_shows_example(self):
+        state, _context, update, escalate, claim = await self._receive(
+            "venmo", "john doe"
+        )
+        self.assertEqual(state, co.CASHOUT_AUTO_HANDLE)
+        escalate.assert_not_awaited()
+        claim.assert_not_awaited()
+        sent = update.message.reply_text.await_args.args[0]
+        self.assertEqual(
+            sent,
+            "This doesn't look like a proper Venmo tag or link.\n"
+            "@sadib-ahmad — this is what your Venmo tag should look like",
+        )
+
+    async def test_bad_cashapp_stays_and_shows_example(self):
+        state, _context, update, escalate, claim = await self._receive(
+            "cashapp", "not a tag"
+        )
+        self.assertEqual(state, co.CASHOUT_AUTO_HANDLE)
+        escalate.assert_not_awaited()
+        claim.assert_not_awaited()
+        sent = update.message.reply_text.await_args.args[0]
+        self.assertIn("$sadib-ahmad", sent)
+        self.assertIn("Cash App tag or link", sent)
+
+    async def test_venmo_link_still_claims(self):
+        state, context, update, escalate, claim = await self._receive(
+            "venmo", "https://venmo.com/u/jane"
+        )
+        claim.assert_awaited_once()
+        escalate.assert_not_awaited()
+        update.message.reply_text.assert_not_awaited()
+        self.assertEqual(
+            context.chat_data["cashout_auto_payout_details"],
+            "https://venmo.com/u/jane",
+        )
+        self.assertIs(state, claim.return_value)
+
+    async def test_cashapp_tag_still_claims(self):
+        _state, context, update, escalate, claim = await self._receive(
+            "cashapp", "send to $Johnny"
+        )
+        claim.assert_awaited_once()
+        escalate.assert_not_awaited()
+        update.message.reply_text.assert_not_awaited()
+        self.assertEqual(context.chat_data["cashout_auto_payout_details"], "$johnny")
+
+    async def test_bad_zelle_still_escalates(self):
+        state, _context, update, escalate, _claim = await self._receive(
+            "zelle", "please call me"
+        )
+        escalate.assert_awaited_once()
+        update.message.reply_text.assert_not_awaited()
+        self.assertIs(state, escalate.return_value)
+
+
 class AutoCashoutConfirmationTests(unittest.TestCase):
     def test_within_hours_says_shortly(self):
         self.assertEqual(

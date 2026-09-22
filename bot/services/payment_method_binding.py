@@ -383,11 +383,9 @@ def variant_venmo_handle(variant_id: int) -> Optional[str]:
         variant = session.query(ClubPaymentTierVariant).get(int(variant_id))
         if not variant:
             return None
-        for field in (variant.response_text, variant.response_caption):
-            handle = extract_venmo_handle_from_text(field)
-            if handle:
-                return handle
-    return None
+        from bot.services.venmo_variant_fields import stored_venmo_tag
+
+        return stored_venmo_tag(variant)
 
 
 def variant_response_text_by_id(variant_id: int) -> Optional[dict]:
@@ -1170,9 +1168,9 @@ def match_pending_venmo_setup_in_session(
         variant = session.query(ClubPaymentTierVariant).get(int(attempt.variant_id))
         if not variant:
             continue
-        variant_handle = extract_venmo_handle_from_text(variant.response_text)
-        if not variant_handle:
-            variant_handle = extract_venmo_handle_from_text(variant.response_caption)
+        from bot.services.venmo_variant_fields import stored_venmo_tag
+
+        variant_handle = stored_venmo_tag(variant)
         if variant_handle and variant_handle == handle:
             return attempt
     return None
@@ -1290,9 +1288,9 @@ def _variant_venmo_handle_matches(session, variant_id: int, venmo_handle: str) -
     variant = session.query(ClubPaymentTierVariant).get(int(variant_id))
     if not variant:
         return False
-    variant_handle = extract_venmo_handle_from_text(variant.response_text)
-    if not variant_handle:
-        variant_handle = extract_venmo_handle_from_text(variant.response_caption)
+    from bot.services.venmo_variant_fields import stored_venmo_tag
+
+    variant_handle = stored_venmo_tag(variant)
     return bool(variant_handle and variant_handle == handle)
 
 
@@ -1948,6 +1946,7 @@ def format_first_time_payment_destination_message(
     payment_method_slug: str,
     variant_response_text: str | None,
     use_html: bool = True,
+    venmo_link: str | None = None,
 ) -> str:
     """Post-ack payment destination + send/screenshot reminder."""
     slug = (payment_method_slug or "").strip().lower()
@@ -1998,7 +1997,7 @@ def format_first_time_payment_destination_message(
             destination = f"{_caps('PayPal email:')} {email}"
         return f"{destination}\n\n{closing}"
 
-    url = extract_venmo_url(variant_response_text) or "—"
+    url = (venmo_link or "").strip() or extract_venmo_url(variant_response_text) or "—"
     if use_html:
         safe_url = html_module.escape(url, quote=True)
         destination = f'<b>{_caps("Venmo:")}</b> <a href="{safe_url}">{safe_url}</a>'
@@ -2012,6 +2011,7 @@ def format_first_time_memo_setup_message(
     payment_method_slug: str,
     variant_response_text: str | None,
     use_html: bool = True,
+    venmo_link: str | None = None,
 ) -> str:
     """First-time setup copy for memo/caption code binding (Venmo or Zelle)."""
     slug = (payment_method_slug or "").strip().lower()
@@ -2102,7 +2102,7 @@ def format_first_time_memo_setup_message(
             f"{after_send}"
         )
 
-    url = extract_venmo_url(variant_response_text) or "—"
+    url = (venmo_link or "").strip() or extract_venmo_url(variant_response_text) or "—"
     if use_html:
         safe_url = html_module.escape(url, quote=True)
         return (
@@ -2145,11 +2145,12 @@ def format_first_time_venmo_setup_message(
     chosen_amount_cents: int,
     variant_response_text: str | None,
     use_html: bool = True,
+    venmo_link: str | None = None,
 ) -> str:
     """Build first-time Venmo setup copy. Default is Telegram HTML (parse_mode=HTML)."""
     setup_display = _format_amount_display(int(setup_amount_cents))
     chosen_display = _format_amount_display(int(chosen_amount_cents))
-    url = extract_venmo_url(variant_response_text) or "—"
+    url = (venmo_link or "").strip() or extract_venmo_url(variant_response_text) or "—"
     body_middle = _caps(
         "The exact amount helps us match your payment to this chat faster. "
         "This is a one-time setup step for this payment method. Future deposits "
@@ -2247,7 +2248,7 @@ def infer_variant_id_for_venmo_handle(
     club_id: int,
     venmo_handle: str,
 ) -> Optional[int]:
-    """Match handle to a club Venmo variant response text."""
+    """Match handle to a club Venmo variant (stored tag, then response text)."""
     handle = _normalize_venmo_handle(venmo_handle)
     if not handle:
         return None
@@ -2266,11 +2267,12 @@ def infer_variant_id_for_venmo_handle(
             .filter_by(method_id=int(method.id))
             .all()
         )
+        from bot.services.venmo_variant_fields import stored_venmo_tag
+
         for v in variants:
-            for field in (v.response_text, v.response_caption):
-                h = extract_venmo_handle_from_text(field)
-                if h and h.lstrip("@").lower() == needle:
-                    return int(v.id)
+            h = stored_venmo_tag(v)
+            if h and h.lstrip("@").lower() == needle:
+                return int(v.id)
     return None
 
 
