@@ -483,6 +483,9 @@ class ClubPaymentTierVariant(Base):
     venmo_tag = Column(String(32), nullable=True)
     venmo_link = Column(String(128), nullable=True)
     venmo_response_mode = Column(String(16), nullable=True)
+    cashapp_tag = Column(String(32), nullable=True)
+    cashapp_link = Column(String(128), nullable=True)
+    cashapp_response_mode = Column(String(16), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),

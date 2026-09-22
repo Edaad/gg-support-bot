@@ -61,6 +61,9 @@ class ClubPaymentTierVariantCreate(BaseModel):
     venmo_tag: Optional[str] = None
     venmo_link: Optional[str] = None
     venmo_response_mode: Optional[str] = None
+    cashapp_tag: Optional[str] = None
+    cashapp_link: Optional[str] = None
+    cashapp_response_mode: Optional[str] = None
     sort_order: int = 0
 
 
@@ -79,6 +82,9 @@ class ClubPaymentTierVariantUpdate(BaseModel):
     venmo_tag: Optional[str] = None
     venmo_link: Optional[str] = None
     venmo_response_mode: Optional[str] = None
+    cashapp_tag: Optional[str] = None
+    cashapp_link: Optional[str] = None
+    cashapp_response_mode: Optional[str] = None
     sort_order: Optional[int] = None
     tier_id: Optional[int] = None
 
@@ -103,6 +109,9 @@ class ClubPaymentTierVariantRead(BaseModel):
     venmo_tag: Optional[str] = None
     venmo_link: Optional[str] = None
     venmo_response_mode: Optional[str] = None
+    cashapp_tag: Optional[str] = None
+    cashapp_link: Optional[str] = None
+    cashapp_response_mode: Optional[str] = None
     sort_order: int
 
 

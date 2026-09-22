@@ -117,6 +117,10 @@ from bot.services.payment_method_binding import (
     start_bind_attempt,
 )
 from bot.services.payment_method_binding import expire_attempt as expire_bind_attempt
+from bot.services.cashapp_variant_fields import (
+    build_default_cashapp_response_text,
+    validate_cashapp_link,
+)
 from bot.services.venmo_variant_fields import (
     build_default_venmo_response_text,
     validate_venmo_link,
@@ -357,6 +361,27 @@ def _apply_venmo_default_response(response_data: dict, amount) -> dict:
         return response_data
     try:
         text = build_default_venmo_response_text(link, amount)
+    except ValueError:
+        return response_data
+    out = dict(response_data)
+    out["response_type"] = "text"
+    out["response_text"] = text
+    out["response_file_id"] = ""
+    out["response_caption"] = ""
+    out["parse_mode"] = "HTML"
+    return out
+
+
+def _apply_cashapp_default_response(response_data: dict, amount) -> dict:
+    """Replace outgoing payload with the cover-memo template when mode is default."""
+    mode = (response_data.get("cashapp_response_mode") or "").strip().lower()
+    if mode != "default":
+        return response_data
+    link = (response_data.get("cashapp_link") or "").strip()
+    if not link:
+        return response_data
+    try:
+        text = build_default_cashapp_response_text(link, amount)
     except ValueError:
         return response_data
     out = dict(response_data)
@@ -659,6 +684,10 @@ def _variant_destination_tag(method_slug: str, variant: dict) -> str | None:
         tag = (variant.get("venmo_tag") or "").strip()
         if tag:
             return extract_venmo_handle_from_text(tag) or tag.lower()
+    if slug == "cashapp":
+        tag = (variant.get("cashapp_tag") or "").strip()
+        if tag:
+            return extract_cashapp_handle_from_text(tag) or tag.lower()
     text = "\n".join(
         filter(
             None,
@@ -666,6 +695,7 @@ def _variant_destination_tag(method_slug: str, variant: dict) -> str | None:
                 variant.get("response_text"),
                 variant.get("response_caption"),
                 variant.get("venmo_link") if slug == "venmo" else None,
+                variant.get("cashapp_link") if slug == "cashapp" else None,
             ],
         )
     )
@@ -1188,6 +1218,26 @@ async def _send_first_time_payment_destination(
                 variant_response_text="",
                 use_html=False,
                 venmo_link=link,
+            )
+            send_data = {"response_type": "text", "response_text": dest}
+    cashapp_mode = (response_data.get("cashapp_response_mode") or "").strip().lower()
+    if slug == "cashapp" and cashapp_mode == "default":
+        link = (response_data.get("cashapp_link") or "").strip()
+        raw = (
+            response_data.get("response_text")
+            or response_data.get("response_caption")
+            or ""
+        ).strip()
+        if link and not raw:
+            try:
+                link = validate_cashapp_link(link)
+            except ValueError:
+                link = link
+            dest = format_first_time_payment_destination_message(
+                payment_method_slug="cashapp",
+                variant_response_text="",
+                use_html=False,
+                cashapp_link=link,
             )
             send_data = {"response_type": "text", "response_text": dest}
     if not _response_data_has_content(send_data):
@@ -3605,6 +3655,8 @@ async def _send_deposit_method_response(
     )
     if (method_slug or "").strip().lower() == "venmo":
         response_data = _apply_venmo_default_response(response_data, amount)
+    if (method_slug or "").strip().lower() == "cashapp":
+        response_data = _apply_cashapp_default_response(response_data, amount)
     slug = (method_slug or "").strip().lower()
     use_stripe_checkout = _stripe_checkout_enabled(response_data)
     if (

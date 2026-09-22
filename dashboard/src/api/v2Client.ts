@@ -68,6 +68,9 @@ export interface V2Variant {
   venmo_tag: string | null
   venmo_link: string | null
   venmo_response_mode: string | null
+  cashapp_tag: string | null
+  cashapp_link: string | null
+  cashapp_response_mode: string | null
   sort_order: number
 }
 

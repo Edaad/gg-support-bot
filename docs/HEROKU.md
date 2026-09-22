@@ -560,6 +560,16 @@ heroku run -a YOUR_APP -- python migrate_venmo_variant_fields.py
 
 Adds `venmo_tag`, `venmo_link`, and `venmo_response_mode` on `club_payment_tier_variants`, and backfills link/tag from existing response text/caption when a single Venmo URL is present. Existing variants stay on `text` or `photo` (never auto-switched to `default`).
 
+## Cash App variant link / tag / default response
+
+After deploying Cash App variant destination fields, run once:
+
+```bash
+heroku run -a YOUR_APP -- python migrate_cashapp_variant_fields.py
+```
+
+Adds `cashapp_tag`, `cashapp_link`, and `cashapp_response_mode` on `club_payment_tier_variants`, and backfills link/tag from existing response text/caption when a single Cash App cashtag is present on a native (non-checkout) variant. Existing variants stay on `text` or `photo` (never auto-switched to `default`). Stripe checkout variants skip link/tag backfill.
+
 ## Venmo / Cash App destination stickiness
 
 After deploying display-tag stickiness (first bot-shown `@` / `$` per support group), run once:

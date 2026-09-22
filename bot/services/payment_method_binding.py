@@ -1333,11 +1333,10 @@ def _variant_cashapp_handle_matches(
     variant = session.query(ClubPaymentTierVariant).get(int(variant_id))
     if not variant:
         return False
-    for field in (variant.response_text, variant.response_caption):
-        variant_handle = extract_cashapp_handle_from_text(field)
-        if variant_handle and variant_handle == handle:
-            return True
-    return False
+    from bot.services.cashapp_variant_fields import stored_cashapp_tag
+
+    variant_handle = stored_cashapp_tag(variant)
+    return bool(variant_handle and variant_handle == handle)
 
 
 def match_pending_memo_setup_in_session(
@@ -1947,6 +1946,7 @@ def format_first_time_payment_destination_message(
     variant_response_text: str | None,
     use_html: bool = True,
     venmo_link: str | None = None,
+    cashapp_link: str | None = None,
 ) -> str:
     """Post-ack payment destination + send/screenshot reminder."""
     slug = (payment_method_slug or "").strip().lower()
@@ -1978,7 +1978,11 @@ def format_first_time_payment_destination_message(
         return f"{destination}\n\n{closing}"
 
     if slug == "cashapp":
-        url = extract_cashapp_url(variant_response_text) or "—"
+        url = (
+            (cashapp_link or "").strip()
+            or extract_cashapp_url(variant_response_text)
+            or "—"
+        )
         if use_html:
             safe_url = html_module.escape(url, quote=True)
             destination = (
@@ -2340,7 +2344,7 @@ def infer_variant_id_for_cashapp_handle(
     club_id: int,
     cashapp_handle: str,
 ) -> Optional[int]:
-    """Match handle to a club Cash App variant response text."""
+    """Match handle to a club Cash App variant (stored tag or response text)."""
     handle = _normalize_cashapp_handle(cashapp_handle)
     if not handle:
         return None
@@ -2359,11 +2363,12 @@ def infer_variant_id_for_cashapp_handle(
             .filter_by(method_id=int(method.id))
             .all()
         )
+        from bot.services.cashapp_variant_fields import stored_cashapp_tag
+
         for v in variants:
-            for field in (v.response_text, v.response_caption):
-                h = extract_cashapp_handle_from_text(field)
-                if h and h.lstrip("$").lower() == needle:
-                    return int(v.id)
+            h = stored_cashapp_tag(v)
+            if h and h.lstrip("$").lower() == needle:
+                return int(v.id)
     return None
 
 
