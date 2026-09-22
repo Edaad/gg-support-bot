@@ -63,9 +63,7 @@ class ValidateVenmoFieldsTests(unittest.TestCase):
         self.assertIn("same account", str(ctx.exception))
 
     def test_tag_link_ok(self):
-        tag, link = validate_venmo_tag_and_link(
-            "@Alice", "https://venmo.com/u/Alice"
-        )
+        tag, link = validate_venmo_tag_and_link("@Alice", "https://venmo.com/u/Alice")
         self.assertEqual(tag, "@alice")
         self.assertEqual(link, "https://venmo.com/u/alice")
 
