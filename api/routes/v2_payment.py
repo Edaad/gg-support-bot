@@ -45,6 +45,11 @@ from api.schemas_v2 import (
     ClubPaymentTierVariantRead,
     ClubPaymentTierVariantUpdate,
 )
+from bot.services.cashapp_variant_fields import (
+    response_type_for_cashapp_mode,
+    validate_cashapp_response_mode,
+    validate_cashapp_tag_and_link,
+)
 from bot.services.venmo_variant_fields import (
     response_type_for_venmo_mode,
     validate_venmo_response_mode,
@@ -134,9 +139,84 @@ def _apply_venmo_variant_fields(
     return out
 
 
+def _cashapp_variant_is_checkout(
+    data: dict,
+    *,
+    existing: ClubPaymentTierVariant | None,
+    tier: ClubPaymentTier,
+) -> bool:
+    """True when the variant (or inherited tier) uses Stripe group checkout."""
+    if "use_group_checkout_link" in data:
+        link = data.get("use_group_checkout_link")
+    elif existing is not None:
+        link = existing.use_group_checkout_link
+    else:
+        link = None
+    if link is True:
+        return True
+    if link is False:
+        return False
+    return bool(tier.use_group_checkout_link)
+
+
+def _apply_cashapp_variant_fields(
+    method: ClubPaymentMethod,
+    data: dict,
+    *,
+    tier: ClubPaymentTier,
+    existing: ClubPaymentTierVariant | None = None,
+    creating: bool = False,
+) -> dict:
+    """Validate/normalize Cash App destination fields; clear for other methods.
+
+    Stripe checkout variants clear these fields and skip validation.
+    """
+    out = dict(data)
+    is_cashapp = (method.slug or "").strip().lower() == "cashapp"
+    if not is_cashapp:
+        for key in ("cashapp_tag", "cashapp_link", "cashapp_response_mode"):
+            if key in out:
+                out[key] = None
+        return out
+
+    if _cashapp_variant_is_checkout(out, existing=existing, tier=tier):
+        out["cashapp_tag"] = None
+        out["cashapp_link"] = None
+        out["cashapp_response_mode"] = None
+        return out
+
+    mode_raw = out.get("cashapp_response_mode")
+    if mode_raw is None and creating:
+        mode_raw = "default"
+    elif mode_raw is None and existing is not None:
+        mode_raw = existing.cashapp_response_mode or "text"
+
+    try:
+        mode = validate_cashapp_response_mode(mode_raw)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    out["cashapp_response_mode"] = mode
+    out["response_type"] = response_type_for_cashapp_mode(mode)
+
+    tag = out.get("cashapp_tag")
+    link = out.get("cashapp_link")
+    if tag is None and existing is not None and "cashapp_tag" not in data:
+        tag = existing.cashapp_tag
+    if link is None and existing is not None and "cashapp_link" not in data:
+        link = existing.cashapp_link
+
+    try:
+        norm_tag, norm_link = validate_cashapp_tag_and_link(tag, link)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    out["cashapp_tag"] = norm_tag
+    out["cashapp_link"] = norm_link
+    return out
+
+
 def _seeds_empty_variant_unusable(method: ClubPaymentMethod) -> bool:
-    """Venmo variants need a tag and link, so an auto-seeded blank one is unusable."""
-    return (method.slug or "").strip().lower() == "venmo"
+    """Venmo/Cash App need destination fields, so an auto-seeded blank one is unusable."""
+    return (method.slug or "").strip().lower() in ("venmo", "cashapp")
 
 
 def _get_method(db: Session, method_id: int) -> ClubPaymentMethod:
@@ -505,6 +585,9 @@ def create_tier_variant(
         variant_data["checkout_max_amount"],
     )
     variant_data = _apply_venmo_variant_fields(method, variant_data, creating=True)
+    variant_data = _apply_cashapp_variant_fields(
+        method, variant_data, tier=tier, creating=True
+    )
     ensure_legacy_tier_before_new_variant(db, tier)
     variant = ClubPaymentTierVariant(
         method_id=tier.method_id,
@@ -549,6 +632,17 @@ def update_variant(
         k in data for k in ("venmo_tag", "venmo_link", "venmo_response_mode")
     ):
         data = _apply_venmo_variant_fields(method, data, existing=variant)
+    # Cash App: re-validate native destination; checkout variants clear fields.
+    if (method.slug or "").strip().lower() == "cashapp" or any(
+        k in data
+        for k in (
+            "cashapp_tag",
+            "cashapp_link",
+            "cashapp_response_mode",
+            "use_group_checkout_link",
+        )
+    ):
+        data = _apply_cashapp_variant_fields(method, data, tier=tier, existing=variant)
     for field, value in data.items():
         setattr(variant, field, value)
     db.flush()

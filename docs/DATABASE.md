@@ -357,6 +357,8 @@ Weighted rotation **inside a tier** (`tier_id` NOT NULL). **Required:** every ti
 | `checkout_min_amount`, `checkout_max_amount` | Optional checkout bounds |
 | `venmo_tag`, `venmo_link` | Venmo-only destination (`@user` + `https://venmo.com/u/user`); required on save for Venmo variants |
 | `venmo_response_mode` | Venmo-only: `default` (cover-memo template), `text`, or `photo` |
+| `cashapp_tag`, `cashapp_link` | Native Cash App destination (`$cashtag` + `https://cash.app/$cashtag`); required on save for non-checkout Cash App variants |
+| `cashapp_response_mode` | Cash App-only: `default` (cover-memo template), `text`, or `photo`; unused on Stripe checkout variants |
 
 #### `club_payment_sub_options`
 

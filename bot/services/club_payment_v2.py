@@ -122,6 +122,9 @@ def _variant_response_dict(
         "venmo_tag": getattr(v, "venmo_tag", None),
         "venmo_link": getattr(v, "venmo_link", None),
         "venmo_response_mode": getattr(v, "venmo_response_mode", None),
+        "cashapp_tag": getattr(v, "cashapp_tag", None),
+        "cashapp_link": getattr(v, "cashapp_link", None),
+        "cashapp_response_mode": getattr(v, "cashapp_response_mode", None),
     }
     if link is not None:
         data["use_group_checkout_link"] = bool(link)
