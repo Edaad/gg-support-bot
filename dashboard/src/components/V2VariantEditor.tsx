@@ -427,6 +427,7 @@ export default function V2VariantEditor({
                   </pre>
                   <p className="mt-1 text-xs text-ink-muted">
                     Memo is chosen from the deposit amount when the player runs /deposit.
+                    In Telegram the memo is tap-to-copy.
                   </p>
                 </div>
               )}

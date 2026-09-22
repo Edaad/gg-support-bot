@@ -2,8 +2,9 @@
 """Seed Creator Club deposit Venmo into greenfield club_payment_* tables.
 
 Idempotent upserts by (club_id, direction, slug), (method_id, tier label),
-and (tier_id, variant label). One Default tier, four weighted variants — all
-player copy on variants.
+and (tier_id, variant label). One Default tier, four weighted variants —
+destination on venmo_tag/venmo_link with venmo_response_mode=default
+(cover-memo template).
 
 Usage (dry run — no writes):
     python scripts/seed_v2_creator_club_venmo.py
@@ -79,6 +80,10 @@ EXPECTED_VARIANTS: dict[str, tuple[int, int, str]] = {
 }
 
 
+def _tag_from_link(link: str) -> str:
+    return f"@{link.rstrip('/').rsplit('/', 1)[-1].lower()}"
+
+
 def find_creator_club(session: Session) -> Club:
     matches = session.query(Club).filter(Club.name == CLUB_NAME).all()
     if not matches:
@@ -143,6 +148,7 @@ def upsert_variant(
     label: str,
     weight: int,
     sort_order: int,
+    venmo_link: str,
     response_text: str,
 ) -> ClubPaymentTierVariant:
     variant = (
@@ -169,6 +175,9 @@ def upsert_variant(
     variant.hyperlink_text = None
     variant.checkout_min_amount = None
     variant.checkout_max_amount = None
+    variant.venmo_link = venmo_link
+    variant.venmo_tag = _tag_from_link(venmo_link)
+    variant.venmo_response_mode = "default"
     session.flush()
     return variant
 
@@ -180,39 +189,23 @@ def seed(
     method = upsert_method(session, club.id)
     tier = upsert_default_tier(session, method.id)
 
+    label_to_text = {
+        VARIANT_ACCOUNT_1_LABEL: VENMO_ACCOUNT_1_TEXT,
+        VARIANT_ACCOUNT_2_LABEL: VENMO_ACCOUNT_2_TEXT,
+        VARIANT_VENMO_3_LABEL: VENMO_3_TEXT,
+        VARIANT_VENMO_4_LABEL: VENMO_4_TEXT,
+    }
     variants = [
         upsert_variant(
             session,
             tier,
-            label=VARIANT_ACCOUNT_1_LABEL,
-            weight=35,
-            sort_order=0,
-            response_text=VENMO_ACCOUNT_1_TEXT,
-        ),
-        upsert_variant(
-            session,
-            tier,
-            label=VARIANT_ACCOUNT_2_LABEL,
-            weight=35,
-            sort_order=1,
-            response_text=VENMO_ACCOUNT_2_TEXT,
-        ),
-        upsert_variant(
-            session,
-            tier,
-            label=VARIANT_VENMO_3_LABEL,
-            weight=15,
-            sort_order=2,
-            response_text=VENMO_3_TEXT,
-        ),
-        upsert_variant(
-            session,
-            tier,
-            label=VARIANT_VENMO_4_LABEL,
-            weight=15,
-            sort_order=3,
-            response_text=VENMO_4_TEXT,
-        ),
+            label=label,
+            weight=weight,
+            sort_order=sort_order,
+            venmo_link=url,
+            response_text=label_to_text[label],
+        )
+        for label, (weight, sort_order, url) in EXPECTED_VARIANTS.items()
     ]
 
     return club, method, tier, variants
@@ -300,11 +293,21 @@ def verify_via_api(club_id: int) -> None:
             raise SystemExit(
                 f"Expected {label!r} sort_order {sort_order}, got {variant.get('sort_order')!r}"
             )
-        text = variant.get("response_text") or ""
-        if not text.strip():
-            raise SystemExit(f"Expected non-empty response_text on {label!r}")
-        if url not in text:
-            raise SystemExit(f"Expected {url!r} in {label!r} response_text")
+        if variant.get("venmo_response_mode") != "default":
+            raise SystemExit(
+                f"Expected {label!r} venmo_response_mode=default, "
+                f"got {variant.get('venmo_response_mode')!r}"
+            )
+        if variant.get("venmo_link") != url:
+            raise SystemExit(
+                f"Expected {label!r} venmo_link {url!r}, got {variant.get('venmo_link')!r}"
+            )
+        expected_tag = _tag_from_link(url)
+        if variant.get("venmo_tag") != expected_tag:
+            raise SystemExit(
+                f"Expected {label!r} venmo_tag {expected_tag!r}, "
+                f"got {variant.get('venmo_tag')!r}"
+            )
 
     accumulated = method.get("accumulated_amount")
     if Decimal(str(accumulated)) != ACCUMULATED_AMOUNT:

@@ -364,6 +364,7 @@ def _apply_venmo_default_response(response_data: dict, amount) -> dict:
     out["response_text"] = text
     out["response_file_id"] = ""
     out["response_caption"] = ""
+    out["parse_mode"] = "HTML"
     return out
 
 

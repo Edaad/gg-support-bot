@@ -97,9 +97,14 @@ class DefaultTemplateTests(unittest.TestCase):
         )
         self.assertIn("Venmo: https://venmo.com/u/club-round", text)
         self.assertIn("friends and family", text)
-        self.assertIn("(Venmo only)", text)
-        self.assertIn("Please put Electric bill split in the payment caption", text)
-        self.assertIn("send a screenshot", text)
+        self.assertNotIn("(Venmo only)", text)
+        self.assertIn(
+            "Please put <code>Electric bill split</code> in the payment caption",
+            text,
+        )
+        self.assertIn("Once sent, please send us a screenshot", text)
+        self.assertNotIn("within 2 minutes", text)
+        self.assertIn("\n\n•", text)
         self.assertNotIn("{memo}", text)
         self.assertNotIn("{link}", text)
 
