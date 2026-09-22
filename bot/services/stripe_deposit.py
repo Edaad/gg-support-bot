@@ -350,6 +350,8 @@ def create_stripe_checkout_session(
         cancel_url=cancel_url,
         metadata=session_metadata,
         line_items=[{"price": price_id, "quantity": 1}],
+        # Cash App Pay only — no card / Apple Pay / Google Pay wallets.
+        payment_method_types=["cashapp"],
     )
     session_id = str(checkout.id)
     checkout_url = str(checkout.url or "")

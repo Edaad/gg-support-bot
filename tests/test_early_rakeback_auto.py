@@ -67,9 +67,7 @@ def _quote(
         source="custom_player",
         deal_type="flat",
         percentage=Decimal("60"),
-        total_already_given=(
-            None if already_given is None else Decimal(already_given)
-        ),
+        total_already_given=(None if already_given is None else Decimal(already_given)),
         warnings=tuple(warnings),
     )
 
@@ -173,9 +171,7 @@ class ClaimPromptTests(unittest.TestCase):
     def test_prompt_includes_already_claimed_when_elevate_has_a_total(self) -> None:
         prompt = auto.format_claim_prompt(_quote(already_given="80"))
 
-        self.assertIn(
-            "You've already claimed $80.00 of feeback this week.", prompt
-        )
+        self.assertIn("You've already claimed $80.00 of feeback this week.", prompt)
         self.assertIn("Your total remaining feeback for this week is: $240.00", prompt)
 
     def test_prompt_omits_already_claimed_when_nothing_has_been_taken(self) -> None:

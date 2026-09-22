@@ -1,4 +1,4 @@
-import { useId, useState, useEffect } from 'react'
+import { useId, useState, useEffect, useMemo } from 'react'
 import {
   listV2TierVariants,
   createV2TierVariant,
@@ -14,9 +14,16 @@ import {
   showVariantCheckoutBounds,
   formatLockedAmountValue,
 } from '../lib/v2TierAmounts'
+import {
+  type VenmoResponseMode,
+  VENMO_DEFAULT_TEMPLATE,
+  responseTypeForVenmoMode,
+  textContainsVenmoLink,
+  validateVenmoTagAndLink,
+} from '../lib/venmoVariantFields'
 
-function variantSavePayload(form: Partial<V2Variant>): Partial<V2Variant> {
-  return {
+function variantSavePayload(form: Partial<V2Variant>, isVenmo: boolean): Partial<V2Variant> {
+  const base: Partial<V2Variant> = {
     label: form.label?.trim(),
     weight: form.weight ?? 1,
     response_type: form.response_type || 'text',
@@ -29,6 +36,21 @@ function variantSavePayload(form: Partial<V2Variant>): Partial<V2Variant> {
     group_checkout_provider: null,
     hyperlink_text: null,
   }
+  if (isVenmo) {
+    const mode = (form.venmo_response_mode || 'default') as VenmoResponseMode
+    base.venmo_tag = form.venmo_tag ?? ''
+    base.venmo_link = form.venmo_link ?? ''
+    base.venmo_response_mode = mode
+    base.response_type = responseTypeForVenmoMode(mode)
+  }
+  return base
+}
+
+function venmoModeLabel(mode: string | null | undefined): string {
+  if (mode === 'default') return 'Use default'
+  if (mode === 'photo') return 'Photo'
+  if (mode === 'text') return 'Custom text'
+  return ''
 }
 
 export default function V2VariantEditor({
@@ -59,11 +81,18 @@ export default function V2VariantEditor({
   const variantWeightId = useId()
   const variantMinId = useId()
   const variantMaxId = useId()
+  const venmoTagId = useId()
+  const venmoLinkId = useId()
+  const venmoModeId = useId()
   const [variants, setVariants] = useState<V2Variant[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [form, setForm] = useState<Partial<V2Variant>>({})
   const [saveError, setSaveError] = useState('')
+  const [linkWarning, setLinkWarning] = useState('')
+
+  const isVenmo = (methodSlug || '').trim().toLowerCase() === 'venmo'
+  const venmoMode = (form.venmo_response_mode || 'default') as VenmoResponseMode
 
   const load = async () => {
     const rows = await listV2TierVariants(token, tierId).catch(() => [] as V2Variant[])
@@ -84,18 +113,51 @@ export default function V2VariantEditor({
     setForm({})
     setShowAdd(false)
     setEditId(null)
+    setLinkWarning('')
   }
 
   const openAddForm = () => {
     resetForm()
-    setForm(requiresVariants && variants.length === 0 ? { label: 'Default' } : {})
+    const base: Partial<V2Variant> =
+      requiresVariants && variants.length === 0 ? { label: 'Default' } : {}
+    if (isVenmo) {
+      base.venmo_response_mode = 'default'
+      base.response_type = 'text'
+    }
+    setForm(base)
     setShowAdd(true)
   }
 
   const handleSave = async () => {
     if (!form.label?.trim()) return
     setSaveError('')
-    const payload = variantSavePayload(form)
+    setLinkWarning('')
+
+    const nextForm = { ...form }
+    if (isVenmo) {
+      const checked = validateVenmoTagAndLink(form.venmo_tag || '', form.venmo_link || '')
+      if ('error' in checked) {
+        setSaveError(checked.error)
+        return
+      }
+      const mode = (form.venmo_response_mode || 'default') as VenmoResponseMode
+      if (mode === 'text' || mode === 'photo') {
+        const body =
+          mode === 'photo'
+            ? `${form.response_caption || ''}\n${form.response_text || ''}`
+            : form.response_text || ''
+        if (!textContainsVenmoLink(body, checked.link)) {
+          setLinkWarning(
+            'Warning: the player message does not include this Venmo link. Saving anyway.',
+          )
+        }
+      }
+      nextForm.venmo_tag = checked.tag
+      nextForm.venmo_link = checked.link
+      setForm(nextForm)
+    }
+
+    const payload = variantSavePayload(nextForm, isVenmo)
     if (isPrimaryTier) {
       const existing = editId ? variants.find((v) => v.id === editId) : null
       payload.checkout_min_amount = existing?.checkout_min_amount ?? null
@@ -125,8 +187,14 @@ export default function V2VariantEditor({
 
   const handleEdit = (v: V2Variant) => {
     setEditId(v.id)
-    setForm({ ...v })
+    setForm({
+      ...v,
+      venmo_response_mode:
+        v.venmo_response_mode ||
+        (v.response_type === 'photo' ? 'photo' : isVenmo ? 'text' : null),
+    })
     setSaveError('')
+    setLinkWarning('')
     setShowAdd(true)
   }
 
@@ -148,6 +216,19 @@ export default function V2VariantEditor({
       setSaveError(err instanceof Error ? err.message : 'Could not delete variant.')
     }
   }
+
+  const setVenmoMode = (mode: VenmoResponseMode) => {
+    setForm({
+      ...form,
+      venmo_response_mode: mode,
+      response_type: responseTypeForVenmoMode(mode),
+    })
+  }
+
+  const defaultPreview = useMemo(() => {
+    const link = (form.venmo_link || '').trim() || 'https://venmo.com/u/example'
+    return VENMO_DEFAULT_TEMPLATE(link)
+  }, [form.venmo_link])
 
   const activeVariants = variants.filter((v) => v.weight > 0)
   const totalWeight = activeVariants.reduce((sum, v) => sum + v.weight, 0)
@@ -183,6 +264,14 @@ export default function V2VariantEditor({
                   {pct(v.weight)}% (weight: {v.weight})
                 </span>
               )}
+              {isVenmo && venmoModeLabel(v.venmo_response_mode) && (
+                <span className="rounded bg-control px-1.5 py-0.5 text-xs font-medium text-ink-muted">
+                  {venmoModeLabel(v.venmo_response_mode)}
+                </span>
+              )}
+              {isVenmo && v.venmo_tag && (
+                <span className="text-xs text-ink-muted">{v.venmo_tag}</span>
+              )}
               {(v.checkout_min_amount != null || v.checkout_max_amount != null) && (
                 <span className="text-xs text-ink-muted">
                   {v.checkout_min_amount != null && v.checkout_max_amount != null
@@ -193,10 +282,16 @@ export default function V2VariantEditor({
                 </span>
               )}
             </div>
-            {v.response_type === 'text' && v.response_text && (
+            {v.venmo_response_mode === 'default' ? (
+              <p className="mt-0.5 max-w-md truncate text-xs text-ink-muted">
+                Default cover-memo template
+              </p>
+            ) : v.response_type === 'text' && v.response_text ? (
               <p className="mt-0.5 max-w-md truncate text-xs text-ink-muted">{v.response_text}</p>
+            ) : null}
+            {v.response_type === 'photo' && v.venmo_response_mode !== 'default' && (
+              <p className="mt-0.5 text-xs text-ink-muted">Photo response</p>
             )}
-            {v.response_type === 'photo' && <p className="mt-0.5 text-xs text-ink-muted">Photo response</p>}
           </div>
           <div className="row-actions sm:shrink-0">
             <button
@@ -277,13 +372,98 @@ export default function V2VariantEditor({
             </div>
           </div>
 
-          <ResponseEditor
-            type={form.response_type || 'text'}
-            text={form.response_text || ''}
-            fileId={form.response_file_id || ''}
-            caption={form.response_caption || ''}
-            onChange={(field, value) => setForm({ ...form, [field]: value })}
-          />
+          {isVenmo && (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label htmlFor={venmoTagId} className="label-field-xs">
+                    Venmo tag
+                  </label>
+                  <input
+                    id={venmoTagId}
+                    value={form.venmo_tag || ''}
+                    onChange={(e) => setForm({ ...form, venmo_tag: e.target.value })}
+                    className="input-field-sm"
+                    placeholder="@username"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor={venmoLinkId} className="label-field-xs">
+                    Venmo link
+                  </label>
+                  <input
+                    id={venmoLinkId}
+                    value={form.venmo_link || ''}
+                    onChange={(e) => setForm({ ...form, venmo_link: e.target.value })}
+                    className="input-field-sm"
+                    placeholder="https://venmo.com/u/username"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor={venmoModeId} className="label-field-xs">
+                  Response
+                </label>
+                <select
+                  id={venmoModeId}
+                  value={venmoMode}
+                  onChange={(e) => setVenmoMode(e.target.value as VenmoResponseMode)}
+                  className="input-field-sm"
+                >
+                  <option value="default">Use default</option>
+                  <option value="text">Custom text</option>
+                  <option value="photo">Photo</option>
+                </select>
+              </div>
+
+              {venmoMode === 'default' && (
+                <div>
+                  <p className="label-field-xs">Default message preview</p>
+                  <pre className="mt-1 whitespace-pre-wrap rounded-lg border border-border bg-control/40 p-3 text-xs text-ink-muted">
+                    {defaultPreview}
+                  </pre>
+                  <p className="mt-1 text-xs text-ink-muted">
+                    Memo is chosen from the deposit amount when the player runs /deposit.
+                  </p>
+                </div>
+              )}
+
+              {venmoMode === 'text' && (
+                <ResponseEditor
+                  type="text"
+                  text={form.response_text || ''}
+                  fileId={form.response_file_id || ''}
+                  caption={form.response_caption || ''}
+                  hideTypeSelect
+                  onChange={(field, value) => setForm({ ...form, [field]: value })}
+                />
+              )}
+
+              {venmoMode === 'photo' && (
+                <ResponseEditor
+                  type="photo"
+                  text={form.response_text || ''}
+                  fileId={form.response_file_id || ''}
+                  caption={form.response_caption || ''}
+                  hideTypeSelect
+                  onChange={(field, value) => setForm({ ...form, [field]: value })}
+                />
+              )}
+            </>
+          )}
+
+          {!isVenmo && (
+            <ResponseEditor
+              type={form.response_type || 'text'}
+              text={form.response_text || ''}
+              fileId={form.response_file_id || ''}
+              caption={form.response_caption || ''}
+              onChange={(field, value) => setForm({ ...form, [field]: value })}
+            />
+          )}
 
           {showCheckoutBounds && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -339,6 +519,11 @@ export default function V2VariantEditor({
             </div>
           )}
 
+          {linkWarning && (
+            <p className="text-xs text-warning-ink" role="status">
+              {linkWarning}
+            </p>
+          )}
           {saveError && (
             <p className="text-xs text-danger-ink" role="alert">
               {saveError}

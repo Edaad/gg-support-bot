@@ -550,15 +550,26 @@ This creates `payment_binding_events`, an append-only log of binds, group-link u
 heroku run -a YOUR_APP -- python scripts/audit_payment_notification_sync.py --method zelle
 ```
 
+## Venmo variant link / tag / default response
+
+After deploying Venmo variant destination fields, run once:
+
+```bash
+heroku run -a YOUR_APP -- python migrate_venmo_variant_fields.py
+```
+
+Adds `venmo_tag`, `venmo_link`, and `venmo_response_mode` on `club_payment_tier_variants`, and backfills link/tag from existing response text/caption when a single Venmo URL is present. Existing variants stay on `text` or `photo` (never auto-switched to `default`).
+
 ## Venmo / Cash App destination stickiness
 
 After deploying display-tag stickiness (first bot-shown `@` / `$` per support group), run once:
 
 ```bash
 heroku run -a YOUR_APP -- python migrate_deposit_destination_stickiness.py
+heroku run -a YOUR_APP -- python migrate_deposit_destination_stickiness_fallback.py
 ```
 
-Creates `group_deposit_destination_stickiness`. Cleared by `/unbindmethod` and dashboard unbind. See [`docs/VENMO_FLOW.md`](VENMO_FLOW.md) and [`docs/CASHAPP_PAYMENTS.md`](CASHAPP_PAYMENTS.md).
+Creates `group_deposit_destination_stickiness` and adds `fallback_warned_reason` (one head-admin Slack per lock+reason while a bound destination is replaced). Cleared by `/unbindmethod` and dashboard unbind. See [`docs/VENMO_FLOW.md`](VENMO_FLOW.md) and [`docs/CASHAPP_PAYMENTS.md`](CASHAPP_PAYMENTS.md).
 
 ## Daily support-group activity tracking
 

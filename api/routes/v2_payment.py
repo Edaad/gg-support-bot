@@ -43,6 +43,11 @@ from api.schemas_v2 import (
     ClubPaymentTierVariantRead,
     ClubPaymentTierVariantUpdate,
 )
+from bot.services.venmo_variant_fields import (
+    response_type_for_venmo_mode,
+    validate_venmo_response_mode,
+    validate_venmo_tag_and_link,
+)
 from db.connection import get_db_dependency
 from db.models import (
     Club,
@@ -80,6 +85,51 @@ def _method_query(db: Session):
 
 def _read_method(method: ClubPaymentMethod) -> ClubPaymentMethodRead:
     return ClubPaymentMethodRead.model_validate(method)
+
+
+def _apply_venmo_variant_fields(
+    method: ClubPaymentMethod,
+    data: dict,
+    *,
+    existing: ClubPaymentTierVariant | None = None,
+    creating: bool = False,
+) -> dict:
+    """Validate/normalize Venmo destination fields; clear them for other methods."""
+    out = dict(data)
+    is_venmo = (method.slug or "").strip().lower() == "venmo"
+    if not is_venmo:
+        for key in ("venmo_tag", "venmo_link", "venmo_response_mode"):
+            if key in out:
+                out[key] = None
+        return out
+
+    mode_raw = out.get("venmo_response_mode")
+    if mode_raw is None and creating:
+        mode_raw = "default"
+    elif mode_raw is None and existing is not None:
+        mode_raw = existing.venmo_response_mode or "text"
+
+    try:
+        mode = validate_venmo_response_mode(mode_raw)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    out["venmo_response_mode"] = mode
+    out["response_type"] = response_type_for_venmo_mode(mode)
+
+    tag = out.get("venmo_tag")
+    link = out.get("venmo_link")
+    if tag is None and existing is not None and "venmo_tag" not in data:
+        tag = existing.venmo_tag
+    if link is None and existing is not None and "venmo_link" not in data:
+        link = existing.venmo_link
+
+    try:
+        norm_tag, norm_link = validate_venmo_tag_and_link(tag, link)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    out["venmo_tag"] = norm_tag
+    out["venmo_link"] = norm_link
+    return out
 
 
 def _get_method(db: Session, method_id: int) -> ClubPaymentMethod:
@@ -436,6 +486,7 @@ def create_tier_variant(
     validate_checkout_amount_bounds(
         method, variant_data["checkout_min_amount"], variant_data["checkout_max_amount"]
     )
+    variant_data = _apply_venmo_variant_fields(method, variant_data, creating=True)
     ensure_legacy_tier_before_new_variant(db, tier)
     variant = ClubPaymentTierVariant(
         method_id=tier.method_id,
@@ -475,6 +526,11 @@ def update_variant(
             if tier.method_id != variant.method_id:
                 raise HTTPException(400, "Invalid tier for this variant")
             data["method_id"] = tier.method_id
+    # Venmo: always re-validate destination (required fields must stay set).
+    if (method.slug or "").strip().lower() == "venmo" or any(
+        k in data for k in ("venmo_tag", "venmo_link", "venmo_response_mode")
+    ):
+        data = _apply_venmo_variant_fields(method, data, existing=variant)
     for field, value in data.items():
         setattr(variant, field, value)
     db.flush()

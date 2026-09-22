@@ -539,7 +539,7 @@ export default function Alerts({ token }: { token: string }) {
 
           <div>
             <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="label-field-xs mb-0">Conditions (all must be true)</p>
+              <p className="label-field-xs mb-0">Conditions (any one is enough)</p>
               <button
                 type="button"
                 className="btn-secondary-sm"

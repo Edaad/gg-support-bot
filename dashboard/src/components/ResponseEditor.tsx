@@ -6,9 +6,17 @@ interface Props {
   fileId: string
   caption: string
   onChange: (field: string, value: string) => void
+  hideTypeSelect?: boolean
 }
 
-export default function ResponseEditor({ type, text, fileId, caption, onChange }: Props) {
+export default function ResponseEditor({
+  type,
+  text,
+  fileId,
+  caption,
+  onChange,
+  hideTypeSelect = false,
+}: Props) {
   const typeId = useId()
   const fileIdFieldId = useId()
   const captionId = useId()
@@ -17,18 +25,20 @@ export default function ResponseEditor({ type, text, fileId, caption, onChange }
 
   return (
     <div className="space-y-3">
-      <div>
-        <label htmlFor={typeId} className="label-field-xs">Response type</label>
-        <select
-          id={typeId}
-          value={type || 'text'}
-          onChange={(e) => onChange('response_type', e.target.value)}
-          className="input-field-sm"
-        >
-          <option value="text">Text</option>
-          <option value="photo">Photo</option>
-        </select>
-      </div>
+      {!hideTypeSelect && (
+        <div>
+          <label htmlFor={typeId} className="label-field-xs">Response type</label>
+          <select
+            id={typeId}
+            value={type || 'text'}
+            onChange={(e) => onChange('response_type', e.target.value)}
+            className="input-field-sm"
+          >
+            <option value="text">Text</option>
+            <option value="photo">Photo</option>
+          </select>
+        </div>
+      )}
 
       {isPhoto && (
         <>

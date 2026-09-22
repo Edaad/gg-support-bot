@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from api.payments_helpers import (
     OWNER_INGEST_METHODS,
@@ -65,6 +66,15 @@ class PaymentSourceSpec:
     owner_slug: str | None = None
     method_slug: str | None = None
     union_method_type: str | None = None
+
+
+@dataclass(frozen=True)
+class PaymentCandidate:
+    """Sort key + identity for one row, before it is loaded and enriched."""
+
+    sort_key: tuple
+    spec: PaymentSourceSpec
+    row_id: int
 
 
 @dataclass
@@ -259,13 +269,23 @@ def _owner_read_helpers():
     return _build_stripe_session_read, _BUILD_READ_BY_METHOD, _READ_MODEL_BY_METHOD
 
 
-def _fetch_stripe_rows(
+def _candidate(
+    spec: PaymentSourceSpec, row_id: int, occurred_at: datetime
+) -> PaymentCandidate:
+    source_key = spec.union_method_type or spec.method_slug or spec.kind
+    return PaymentCandidate(
+        sort_key=_sort_key(occurred_at, source_key, row_id),
+        spec=spec,
+        row_id=row_id,
+    )
+
+
+def _fetch_stripe_keys(
     db: Session,
     spec: PaymentSourceSpec,
     filters: UnifiedPaymentFilters,
     fetch_limit: int,
-) -> tuple[int, int, list[UnifiedPaymentRowRead]]:
-    build_stripe_read, _, _ = _owner_read_helpers()
+) -> tuple[int, int, list[PaymentCandidate]]:
     base = db.query(StripeCheckoutSession)
     base = apply_owner_stripe_filters(
         base,
@@ -279,41 +299,38 @@ def _fetch_stripe_rows(
         base, StripeCheckoutSession.amount_cents
     )
     rows = (
-        base.order_by(
+        base.with_entities(
+            StripeCheckoutSession.id,
+            StripeCheckoutSession.created_at,
+            StripeCheckoutSession.completed_at,
+        )
+        .order_by(
             StripeCheckoutSession.created_at.desc(),
             StripeCheckoutSession.id.desc(),
         )
         .limit(fetch_limit)
         .all()
     )
-    owner_slug = spec.owner_slug or "round-table"
-    items = []
-    for row in rows:
-        read = build_stripe_read(db, row)
-        payload = read.model_dump(mode="json")
-        items.append(
-            _ingest_to_unified(
-                db, method_slug="stripe", owner_slug=owner_slug, read_payload=payload
-            )
-        )
-    return total_count, total_amount_cents, items
+    candidates = [
+        _candidate(spec, int(row.id), row.completed_at or row.created_at)
+        for row in rows
+    ]
+    return total_count, total_amount_cents, candidates
 
 
-def _fetch_ingest_rows(
+def _fetch_ingest_keys(
     db: Session,
     spec: PaymentSourceSpec,
     filters: UnifiedPaymentFilters,
     fetch_limit: int,
-) -> tuple[int, int, list[UnifiedPaymentRowRead]]:
-    _, build_read_by_method, read_model_by_method = _owner_read_helpers()
+) -> tuple[int, int, list[PaymentCandidate]]:
     method_slug = spec.method_slug or spec.kind
-    owner_slug = spec.owner_slug or ""
     payment_cls = OWNER_INGEST_METHODS[method_slug]
     base = db.query(payment_cls)
     base = apply_owner_ingest_filters(
         base,
         payment_cls,
-        method_owner=owner_slug,
+        method_owner=spec.owner_slug or "",
         variant=filters.variant,
         from_dt=filters.from_dt,
         to_dt=filters.to_dt,
@@ -323,37 +340,34 @@ def _fetch_ingest_rows(
     total_count, total_amount_cents = aggregate_owner_payment_query(
         base, payment_cls.amount_cents
     )
+    columns = [payment_cls.id, payment_cls.created_at]
+    if method_slug == "crypto":
+        columns.append(payment_cls.paid_at)
     rows = (
-        base.order_by(payment_cls.created_at.desc(), payment_cls.id.desc())
+        base.with_entities(*columns)
+        .order_by(payment_cls.created_at.desc(), payment_cls.id.desc())
         .limit(fetch_limit)
         .all()
     )
-    build_read = build_read_by_method[method_slug]
-    read_model = read_model_by_method[method_slug]
-    items = []
+    candidates = []
     for row in rows:
-        payload = read_model.model_validate(build_read(db, row)).model_dump(mode="json")
-        items.append(
-            _ingest_to_unified(
-                db,
-                method_slug=method_slug,
-                owner_slug=owner_slug,
-                read_payload=payload,
+        if method_slug == "crypto":
+            occurred_at = (
+                crypto_occurred_at(
+                    {"paid_at": row.paid_at, "created_at": row.created_at}
+                )
+                or row.created_at
             )
-        )
-    return total_count, total_amount_cents, items
+        else:
+            occurred_at = row.created_at
+        candidates.append(_candidate(spec, int(row.id), occurred_at))
+    return total_count, total_amount_cents, candidates
 
 
-def _fetch_union_rows(
-    db: Session,
-    spec: PaymentSourceSpec,
-    filters: UnifiedPaymentFilters,
-    fetch_limit: int,
-) -> tuple[int, int, list[UnifiedPaymentRowRead]]:
-    union_type = spec.union_method_type or ""
-    query = union_list_query(
+def _union_query(db: Session, spec: PaymentSourceSpec, filters: UnifiedPaymentFilters):
+    return union_list_query(
         db,
-        method_type=union_type,
+        method_type=spec.union_method_type or "",
         deposit_union=filters.deposit_union,
         pool_pay_type="union_method",
         trade_record_checked=True,
@@ -363,47 +377,113 @@ def _fetch_union_rows(
         q=filters.q,
         club_id=filters.club_id,
     )
+
+
+def _fetch_union_keys(
+    db: Session,
+    spec: PaymentSourceSpec,
+    filters: UnifiedPaymentFilters,
+    fetch_limit: int,
+) -> tuple[int, int, list[PaymentCandidate]]:
+    query = _union_query(db, spec, filters)
     summary = union_list_summary(query)
     total_count = int(summary.total_count)
     total_amount_cents = _amount_to_cents(summary.total_amount)
     rows = (
-        query.order_by(
+        query.enable_eagerloads(False)
+        .with_entities(ManualDepositRequest.id, ManualDepositRequest.created_at)
+        .order_by(
             ManualDepositRequest.created_at.desc(),
             ManualDepositRequest.id.desc(),
         )
         .limit(fetch_limit)
         .all()
     )
-    items = [_union_to_unified(db, row) for row in rows]
-    return total_count, total_amount_cents, items
+    candidates = [_candidate(spec, int(row.id), row.created_at) for row in rows]
+    return total_count, total_amount_cents, candidates
 
 
-def _fetch_source_page(
+def _fetch_source_keys(
     db: Session,
     spec: PaymentSourceSpec,
     filters: UnifiedPaymentFilters,
     fetch_limit: int,
-) -> tuple[int, int, list[UnifiedPaymentRowRead]]:
+) -> tuple[int, int, list[PaymentCandidate]]:
+    """Per-source totals plus sort keys only -- no row bodies, no enrichment."""
     if spec.kind == "stripe":
-        return _fetch_stripe_rows(db, spec, filters, fetch_limit)
+        return _fetch_stripe_keys(db, spec, filters, fetch_limit)
     if spec.kind == "union_manual":
-        return _fetch_union_rows(db, spec, filters, fetch_limit)
-    return _fetch_ingest_rows(db, spec, filters, fetch_limit)
+        return _fetch_union_keys(db, spec, filters, fetch_limit)
+    return _fetch_ingest_keys(db, spec, filters, fetch_limit)
 
 
-def _merge_rows(
-    per_source: list[tuple[PaymentSourceSpec, list[UnifiedPaymentRowRead]]],
-    offset: int,
-    limit: int,
-) -> list[UnifiedPaymentRowRead]:
-    tagged: list[tuple[tuple, UnifiedPaymentRowRead]] = []
-    for spec, rows in per_source:
-        source_key = spec.union_method_type or spec.method_slug or spec.kind
-        for row in rows:
-            tagged.append((_sort_key(row.occurred_at, source_key, row.id), row))
-    tagged.sort(key=lambda item: item[0])
-    merged = [row for _, row in tagged]
-    return merged[offset : offset + limit]
+def _hydrate_stripe(
+    db: Session, spec: PaymentSourceSpec, ids: list[int]
+) -> dict[int, UnifiedPaymentRowRead]:
+    build_stripe_read, _, _ = _owner_read_helpers()
+    rows = (
+        db.query(StripeCheckoutSession).filter(StripeCheckoutSession.id.in_(ids)).all()
+    )
+    owner_slug = spec.owner_slug or "round-table"
+    return {
+        int(row.id): _ingest_to_unified(
+            db,
+            method_slug="stripe",
+            owner_slug=owner_slug,
+            read_payload=build_stripe_read(db, row).model_dump(mode="json"),
+        )
+        for row in rows
+    }
+
+
+def _hydrate_ingest(
+    db: Session, spec: PaymentSourceSpec, ids: list[int]
+) -> dict[int, UnifiedPaymentRowRead]:
+    _, build_read_by_method, read_model_by_method = _owner_read_helpers()
+    method_slug = spec.method_slug or spec.kind
+    payment_cls = OWNER_INGEST_METHODS[method_slug]
+    rows = db.query(payment_cls).filter(payment_cls.id.in_(ids)).all()
+    build_read = build_read_by_method[method_slug]
+    read_model = read_model_by_method[method_slug]
+    hydrated = {}
+    for row in rows:
+        payload = read_model.model_validate(build_read(db, row)).model_dump(mode="json")
+        hydrated[int(row.id)] = _ingest_to_unified(
+            db,
+            method_slug=method_slug,
+            owner_slug=spec.owner_slug or "",
+            read_payload=payload,
+        )
+    return hydrated
+
+
+def _hydrate_union(
+    db: Session, spec: PaymentSourceSpec, ids: list[int]
+) -> dict[int, UnifiedPaymentRowRead]:
+    rows = (
+        db.query(ManualDepositRequest)
+        .options(joinedload(ManualDepositRequest.club))
+        .filter(ManualDepositRequest.id.in_(ids))
+        .all()
+    )
+    return {int(row.id): _union_to_unified(db, row) for row in rows}
+
+
+def _hydrate_source(
+    db: Session, spec: PaymentSourceSpec, ids: list[int]
+) -> dict[int, UnifiedPaymentRowRead]:
+    if spec.kind == "stripe":
+        return _hydrate_stripe(db, spec, ids)
+    if spec.kind == "union_manual":
+        return _hydrate_union(db, spec, ids)
+    return _hydrate_ingest(db, spec, ids)
+
+
+def _merge_candidates(
+    candidates: list[PaymentCandidate], offset: int, limit: int
+) -> list[PaymentCandidate]:
+    candidates.sort(key=lambda candidate: candidate.sort_key)
+    return candidates[offset : offset + limit]
 
 
 def aggregate_unified_summary(
@@ -414,7 +494,7 @@ def aggregate_unified_summary(
     total_count = 0
     total_amount_cents = 0
     for spec in sources:
-        count, amount_cents, _ = _fetch_source_page(db, spec, filters, fetch_limit=0)
+        count, amount_cents, _ = _fetch_source_keys(db, spec, filters, fetch_limit=0)
         total_count += count
         total_amount_cents += amount_cents
     return OwnerPaymentSummary(
@@ -445,16 +525,29 @@ def fetch_unified_page(
         return [], 0, empty
 
     fetch_limit = offset + limit
-    per_source: list[tuple[PaymentSourceSpec, list[UnifiedPaymentRowRead]]] = []
+    candidates: list[PaymentCandidate] = []
     total_count = 0
     total_amount_cents = 0
     for spec in sources:
-        count, amount_cents, rows = _fetch_source_page(db, spec, filters, fetch_limit)
+        count, amount_cents, keys = _fetch_source_keys(db, spec, filters, fetch_limit)
         total_count += count
         total_amount_cents += amount_cents
-        per_source.append((spec, rows))
+        candidates.extend(keys)
 
-    items = _merge_rows(per_source, offset, limit)
+    page = _merge_candidates(candidates, offset, limit)
+    ids_by_spec: dict[PaymentSourceSpec, list[int]] = defaultdict(list)
+    for candidate in page:
+        ids_by_spec[candidate.spec].append(candidate.row_id)
+    hydrated: dict[tuple[PaymentSourceSpec, int], UnifiedPaymentRowRead] = {}
+    for spec, ids in ids_by_spec.items():
+        for row_id, row in _hydrate_source(db, spec, ids).items():
+            hydrated[(spec, row_id)] = row
+
+    items = [
+        hydrated[(candidate.spec, candidate.row_id)]
+        for candidate in page
+        if (candidate.spec, candidate.row_id) in hydrated
+    ]
     summary = OwnerPaymentSummary(
         total_count=total_count,
         total_amount_cents=total_amount_cents,

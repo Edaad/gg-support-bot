@@ -82,7 +82,7 @@ class EasternWeekBoundsTests(unittest.TestCase):
 
 
 class ConditionsRegistryTests(unittest.TestCase):
-    def test_volume_and_count_gte(self):
+    def test_volume_or_count_gte(self):
         conditions = conditions_from_api(
             [
                 {"type": CONDITION_WEEKLY_VOLUME, "threshold_usd": 1000},
@@ -93,11 +93,14 @@ class ConditionsRegistryTests(unittest.TestCase):
         self.assertTrue(
             conditions_met(conditions, WeekStats(volume_cents=100000, tx_count=10))
         )
-        self.assertFalse(
+        self.assertTrue(
             conditions_met(conditions, WeekStats(volume_cents=99999, tx_count=10))
         )
-        self.assertFalse(
+        self.assertTrue(
             conditions_met(conditions, WeekStats(volume_cents=100000, tx_count=9))
+        )
+        self.assertFalse(
+            conditions_met(conditions, WeekStats(volume_cents=99999, tx_count=9))
         )
 
     def test_rejects_empty(self):

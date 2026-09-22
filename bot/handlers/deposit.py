@@ -33,6 +33,7 @@ from bot.services.club import (
     get_tier_for_amount,
     get_lowest_minimum,
     list_tier_variants,
+    list_method_variants,
     record_activity,
     pick_variant,
     is_first_deposit,
@@ -48,6 +49,7 @@ from bot.services.club import (
 )
 from bot.services.mtproto_group_rename import rename_support_group_title
 from bot.services.player_details import merge_union_prefix
+from bot.services.club_payment_v2 import is_hidden_club_deposit_method
 from bot.services.deposit_method_access import (
     filter_deposit_methods_for_chat,
     is_deposit_method_allowed_for_chat,
@@ -99,6 +101,8 @@ from bot.services.payment_method_binding import (
     BIND_KIND_MEMO_EMOJI,
     BIND_KIND_SPECIAL_AMOUNT,
     bind_mode_for_method,
+    claim_destination_stickiness_fallback_warning,
+    clear_destination_stickiness_fallback_warning,
     ensure_destination_stickiness,
     extract_cashapp_handle_from_text,
     extract_venmo_handle_from_text,
@@ -113,6 +117,10 @@ from bot.services.payment_method_binding import (
     start_bind_attempt,
 )
 from bot.services.payment_method_binding import expire_attempt as expire_bind_attempt
+from bot.services.venmo_variant_fields import (
+    build_default_venmo_response_text,
+    validate_venmo_link,
+)
 from bot.services.flow_sessions import (
     END_REASON_CANCELLED,
     END_REASON_TIMEOUT,
@@ -323,16 +331,40 @@ def _zelle_venmo_destination_fallback(
         or response_data.get("response_caption")
         or ""
     ).strip()
-    if not raw:
+    venmo_link = (response_data.get("venmo_link") or "").strip() or None
+    if slug == "venmo" and not raw and not venmo_link:
+        return None
+    if slug != "venmo" and not raw:
         return None
     text = format_first_time_payment_destination_message(
         payment_method_slug=slug,
         variant_response_text=raw,
         use_html=False,
+        venmo_link=venmo_link,
     )
     if not text.strip():
         return None
     return {"response_type": "text", "response_text": text}
+
+
+def _apply_venmo_default_response(response_data: dict, amount) -> dict:
+    """Replace outgoing payload with the cover-memo template when mode is default."""
+    mode = (response_data.get("venmo_response_mode") or "").strip().lower()
+    if mode != "default":
+        return response_data
+    link = (response_data.get("venmo_link") or "").strip()
+    if not link:
+        return response_data
+    try:
+        text = build_default_venmo_response_text(link, amount)
+    except ValueError:
+        return response_data
+    out = dict(response_data)
+    out["response_type"] = "text"
+    out["response_text"] = text
+    out["response_file_id"] = ""
+    out["response_caption"] = ""
+    return out
 
 
 def _prepare_deposit_response_data(
@@ -599,17 +631,43 @@ def _variant_is_stripe_checkout(variant: dict) -> bool:
     return provider == "stripe"
 
 
+def _variants_with_tier_checkout(variants: list[dict], tier: dict) -> list[dict]:
+    """Apply tier Stripe flags onto variants that omit use_group_checkout_link.
+
+    ClubGTO Under $100 Cash App sets checkout on the tier while the Default
+    variant leaves the flag null. Without this, stickiness classifies that
+    variant as native (no cashtag) and blocks Cash App for sticky chats.
+    """
+    out: list[dict] = []
+    for variant in variants:
+        enriched = dict(variant)
+        if enriched.get("use_group_checkout_link") is None and tier.get(
+            "use_group_checkout_link"
+        ):
+            enriched["use_group_checkout_link"] = True
+            enriched["group_checkout_provider"] = (
+                tier.get("group_checkout_provider") or "stripe"
+            )
+        out.append(enriched)
+    return out
+
+
 def _variant_destination_tag(method_slug: str, variant: dict) -> str | None:
+    slug = (method_slug or "").strip().lower()
+    if slug == "venmo":
+        tag = (variant.get("venmo_tag") or "").strip()
+        if tag:
+            return extract_venmo_handle_from_text(tag) or tag.lower()
     text = "\n".join(
         filter(
             None,
             [
                 variant.get("response_text"),
                 variant.get("response_caption"),
+                variant.get("venmo_link") if slug == "venmo" else None,
             ],
         )
     )
-    slug = (method_slug or "").strip().lower()
     if slug == "cashapp":
         return extract_cashapp_handle_from_text(text)
     if slug == "venmo":
@@ -625,6 +683,197 @@ def _pick_weighted_variant_dicts(variants: list[dict]) -> dict | None:
     return random.choices(active, weights=weights, k=1)[0]
 
 
+_STICKINESS_FALLBACK_KEY = "_stickiness_fallback"
+
+
+def _format_amount_band_value(value) -> str:
+    d = Decimal(str(value))
+    if d == d.to_integral_value():
+        return f"${int(d)}"
+    return f"${d.quantize(Decimal('0.01'))}"
+
+
+def _format_tier_band(tier: dict) -> str:
+    label = (tier.get("label") or "").strip() or "this amount tier"
+    min_a = tier.get("min_amount")
+    max_a = tier.get("max_amount")
+    if min_a is not None and max_a is not None:
+        return (
+            f"{label} ({_format_amount_band_value(min_a)}"
+            f"–{_format_amount_band_value(max_a)})"
+        )
+    if min_a is not None:
+        return f"{label} ({_format_amount_band_value(min_a)}+)"
+    if max_a is not None:
+        return f"{label} (up to {_format_amount_band_value(max_a)})"
+    return label
+
+
+def _shown_destination_label(slug: str, variant: dict) -> str:
+    if _variant_is_stripe_checkout(variant):
+        return "Stripe"
+    tag = _variant_destination_tag(slug, variant)
+    if tag:
+        return tag
+    return (variant.get("variant_label") or "alternative").strip() or "alternative"
+
+
+def _native_tag_matches(slug: str, variant: dict, sticky_tag: str) -> bool:
+    if _variant_is_stripe_checkout(variant):
+        return False
+    return _variant_destination_tag(slug, variant) == sticky_tag
+
+
+def _diagnose_sticky_unavailable_reason(
+    *,
+    slug: str,
+    sticky_tag: str,
+    method_id: int,
+    tier: dict,
+    current_variants: list[dict],
+) -> str:
+    band = _format_tier_band(tier)
+    in_tier = [v for v in current_variants if _native_tag_matches(slug, v, sticky_tag)]
+    if in_tier:
+        return f"weight 0 (inactive) in {band}"
+    other: list[dict] = []
+    try:
+        other = list_method_variants(int(method_id))
+    except Exception:
+        logger.exception(
+            "stickiness fallback: list_method_variants failed method_id=%s",
+            method_id,
+        )
+    current_id = int(tier["id"]) if tier.get("id") is not None else None
+    for variant in other:
+        if current_id is not None and int(variant.get("tier_id") or 0) == current_id:
+            continue
+        if _native_tag_matches(slug, variant, sticky_tag):
+            return f"not in the amount tier {band}"
+    return "does not exist"
+
+
+def _attach_stickiness_fallback(
+    response_data: dict,
+    *,
+    bound_tag: str,
+    shown: str,
+    reason: str,
+    method_slug: str,
+) -> dict:
+    out = dict(response_data)
+    out[_STICKINESS_FALLBACK_KEY] = {
+        "bound_tag": bound_tag,
+        "shown": shown,
+        "reason": reason,
+        "method_slug": method_slug,
+    }
+    return out
+
+
+def _clear_stickiness_fallback_warning_safe(chat_id: int, slug: str) -> None:
+    try:
+        clear_destination_stickiness_fallback_warning(int(chat_id), slug)
+    except Exception:
+        logger.exception(
+            "destination_stickiness clear fallback warning failed chat_id=%s slug=%s",
+            chat_id,
+            slug,
+        )
+
+
+def _format_stickiness_fallback_slack(
+    *,
+    method_slug: str,
+    bound_tag: str,
+    shown: str,
+    reason: str,
+    chat_id: int | None,
+    title: str | None,
+    amount,
+) -> str:
+    method_name = "Cash App" if method_slug == "cashapp" else "Venmo"
+    group = (title or "").strip() or "(no title)"
+    lines = [
+        ":warning: Deposit destination fallback",
+        "",
+        f"Bound to `{bound_tag}` but shown `{shown}`.",
+        f"Bound `{bound_tag}` was {reason}.",
+        "",
+        f"Method: {method_name}",
+        f"Group: `{group}`",
+    ]
+    if chat_id is not None:
+        lines.append(f"Chat id: `{chat_id}`")
+    if isinstance(amount, Decimal):
+        lines.append(f"Amount: {_format_amount_band_value(amount)}")
+    return "\n".join(lines)
+
+
+async def _maybe_notify_destination_stickiness_fallback(
+    response_data: dict | None,
+    *,
+    chat_id: int | None,
+    method_slug: str | None,
+    amount=None,
+    title: str | None = None,
+) -> None:
+    """Head-admin Slack once when a bound destination is replaced by Y."""
+    meta = (response_data or {}).get(_STICKINESS_FALLBACK_KEY)
+    if not isinstance(meta, dict):
+        return
+    if chat_id is None:
+        return
+    slug = (meta.get("method_slug") or method_slug or "").strip().lower()
+    bound_tag = (meta.get("bound_tag") or "").strip()
+    shown = (meta.get("shown") or "").strip()
+    reason = (meta.get("reason") or "").strip()
+    if not slug or not bound_tag or not shown or not reason:
+        return
+    try:
+        should_warn = claim_destination_stickiness_fallback_warning(
+            int(chat_id), slug, reason
+        )
+    except Exception:
+        logger.exception(
+            "destination_stickiness claim fallback warning failed chat_id=%s slug=%s",
+            chat_id,
+            slug,
+        )
+        return
+    if not should_warn:
+        return
+    group_title = (title or "").strip() or None
+    if not group_title:
+        try:
+            from bot.services.club import get_group_name
+
+            group_title = get_group_name(int(chat_id))
+        except Exception:
+            group_title = None
+    text = _format_stickiness_fallback_slack(
+        method_slug=slug,
+        bound_tag=bound_tag,
+        shown=shown,
+        reason=reason,
+        chat_id=int(chat_id),
+        title=group_title,
+        amount=amount,
+    )
+    try:
+        from bot.services.slack_ops_notify import notify_slack_head_admin_escalation
+
+        await notify_slack_head_admin_escalation(
+            text, source="deposit_destination_fallback"
+        )
+    except Exception:
+        logger.exception(
+            "destination_stickiness fallback slack failed chat_id=%s slug=%s",
+            chat_id,
+            slug,
+        )
+
+
 def _pick_venmo_cashapp_destination_response(
     method_id: int,
     method: dict,
@@ -636,7 +885,8 @@ def _pick_venmo_cashapp_destination_response(
     """Prefer native destination tags; stick to first bot-shown tag per group."""
     slug = (method_slug or "").strip().lower()
     variants = list_tier_variants(method_id, int(tier["id"]))
-    active = [v for v in variants if int(v.get("weight") or 0) > 0]
+    all_variants = _variants_with_tier_checkout(variants, tier)
+    active = [v for v in all_variants if int(v.get("weight") or 0) > 0]
     native = [v for v in active if not _variant_is_stripe_checkout(v)]
     stripe_variants = [v for v in active if _variant_is_stripe_checkout(v)]
 
@@ -653,17 +903,39 @@ def _pick_venmo_cashapp_destination_response(
         if matching:
             chosen = _pick_weighted_variant_dicts(matching)
             if chosen:
+                if chat_id is not None:
+                    _clear_stickiness_fallback_warning_safe(int(chat_id), slug)
                 return (
                     _merged_deposit_variant_response(chosen, method, tier=tier),
                     tier,
                 )
-        if slug == "cashapp" and stripe_variants:
+        other_native = [
+            v for v in native if _variant_destination_tag(slug, v) != sticky_tag
+        ]
+        chosen = None
+        if other_native:
+            chosen = _pick_weighted_variant_dicts(other_native)
+        elif slug == "cashapp" and stripe_variants:
             chosen = _pick_weighted_variant_dicts(stripe_variants)
-            if chosen:
-                return (
-                    _merged_deposit_variant_response(chosen, method, tier=tier),
-                    tier,
-                )
+        if chosen:
+            merged = _merged_deposit_variant_response(chosen, method, tier=tier)
+            reason = _diagnose_sticky_unavailable_reason(
+                slug=slug,
+                sticky_tag=sticky_tag,
+                method_id=method_id,
+                tier=tier,
+                current_variants=all_variants,
+            )
+            return (
+                _attach_stickiness_fallback(
+                    merged,
+                    bound_tag=sticky_tag,
+                    shown=_shown_destination_label(slug, chosen),
+                    reason=reason,
+                    method_slug=slug,
+                ),
+                tier,
+            )
         return None, tier
 
     if native:
@@ -895,7 +1167,29 @@ async def _send_first_time_payment_destination(
     club_id: int | None = None,
     method_slug: str | None = None,
 ) -> bool:
-    if not _response_data_has_content(response_data):
+    slug = (method_slug or "").strip().lower()
+    mode = (response_data.get("venmo_response_mode") or "").strip().lower()
+    send_data = response_data
+    if slug == "venmo" and mode == "default":
+        link = (response_data.get("venmo_link") or "").strip()
+        raw = (
+            response_data.get("response_text")
+            or response_data.get("response_caption")
+            or ""
+        ).strip()
+        if link and not raw:
+            try:
+                link = validate_venmo_link(link)
+            except ValueError:
+                link = link
+            dest = format_first_time_payment_destination_message(
+                payment_method_slug="venmo",
+                variant_response_text="",
+                use_html=False,
+                venmo_link=link,
+            )
+            send_data = {"response_type": "text", "response_text": dest}
+    if not _response_data_has_content(send_data):
         logger.warning(
             "first_time_destination: empty dashboard response chat_id=%s",
             chat_id,
@@ -903,13 +1197,19 @@ async def _send_first_time_payment_destination(
         return False
     _track_deposit_info_messages(
         int(chat_id),
-        await send_response_messages(chat, response_data),
+        await send_response_messages(chat, send_data),
     )
     _maybe_lock_destination_stickiness(
         chat_id=int(chat_id),
         club_id=club_id,
         method_slug=method_slug,
         response_data=response_data,
+    )
+    await _maybe_notify_destination_stickiness_fallback(
+        response_data,
+        chat_id=int(chat_id),
+        method_slug=method_slug,
+        title=getattr(chat, "title", None),
     )
     bot_obj = bot
     if bot_obj is None and hasattr(chat, "get_bot"):
@@ -2893,7 +3193,7 @@ async def deposit_method_chosen(update: Update, context: ContextTypes.DEFAULT_TY
 
     method_id = int(data.split(":")[1])
     method = get_method_by_id(method_id)
-    if not method:
+    if not method or is_hidden_club_deposit_method(method):
         await query.edit_message_text("That method is no longer available.")
         return ConversationHandler.END
 
@@ -3302,6 +3602,8 @@ async def _send_deposit_method_response(
         method=method,
         tier=tier,
     )
+    if (method_slug or "").strip().lower() == "venmo":
+        response_data = _apply_venmo_default_response(response_data, amount)
     slug = (method_slug or "").strip().lower()
     use_stripe_checkout = _stripe_checkout_enabled(response_data)
     if (
@@ -3518,6 +3820,13 @@ async def _send_deposit_method_response(
         club_id=int(club_id) if club_id is not None else None,
         method_slug=slug,
         response_data=response_data,
+    )
+    await _maybe_notify_destination_stickiness_fallback(
+        response_data,
+        chat_id=int(chat_id) if chat_id is not None else None,
+        method_slug=slug,
+        amount=amount,
+        title=getattr(query.message.chat, "title", None) if query.message else None,
     )
     if chat_id is not None and not bool(
         (method or {}).get("tracks_manual_requests")

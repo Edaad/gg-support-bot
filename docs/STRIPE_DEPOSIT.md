@@ -2,6 +2,8 @@
 
 When a deposit method has **Use group specific link** enabled with provider **Stripe**, the bot creates a **unique Stripe Checkout Session** per request. The player **chooses the amount on the Stripe checkout page** within the method’s dashboard **Min/Max Amount** (defaults $20–$100 if unset). One **Stripe Customer** (`cus_…`) is reused per Telegram group chat.
 
+Checkout Sessions are created with **Cash App Pay only** (`payment_method_types=["cashapp"]`) — cards, Apple Pay, and Google Pay are not offered on the Stripe page. Cash App Pay must be enabled in the [Stripe Dashboard payment methods](https://dashboard.stripe.com/settings/payment_methods) or Session.create will fail. Club Apple Pay and Debit Card methods are hidden from `/deposit`; players reach Stripe via Cash App Stripe variants. Union Apple Pay is unchanged.
+
 ## Stable customer (no guest checkout)
 
 Every bot-generated Checkout Session is created with `customer=<stored stripe_customer_id>` from `stripe_customers` for that `telegram_chat_id`. The bot does **not** use guest checkout or `customer_creation="always"` on normal deposit links.

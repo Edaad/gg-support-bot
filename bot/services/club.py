@@ -195,6 +195,9 @@ def get_methods_for_amount(
         methods = q.all()
         result = []
         for m in methods:
+            slug = (m.slug or "").strip().lower()
+            if slug in ("applepay", "debitcard"):
+                continue
             if m.deposit_limit is not None and m.accumulated_amount is not None:
                 if m.accumulated_amount >= m.deposit_limit:
                     continue
@@ -240,7 +243,11 @@ def get_deposit_method_names(club_id: int) -> list[str]:
             .order_by(PaymentMethod.sort_order)
             .all()
         )
-        return [m.name for m in methods]
+        return [
+            m.name
+            for m in methods
+            if (m.slug or "").strip().lower() not in ("applepay", "debitcard")
+        ]
 
 
 def record_method_deposit(method_id: int, amount: Decimal) -> None:
@@ -458,6 +465,30 @@ def list_tier_variants(method_id: int, tier_id: int) -> list[dict]:
             session.query(MethodVariant)
             .filter_by(method_id=int(method_id), tier_id=int(tier_id))
             .order_by(MethodVariant.sort_order, MethodVariant.id)
+            .all()
+        )
+        out: list[dict] = []
+        for variant in variants:
+            data = _variant_response_dict(variant, tier_scoped=True, include_ids=True)
+            data["weight"] = _legacy_variant_weight(variant)
+            out.append(data)
+        return out
+
+
+def list_method_variants(method_id: int) -> list[dict]:
+    """All variants for a method, including weight 0, with tier ids."""
+    v2 = _payment_v2()
+    if v2:
+        return v2.list_method_variants(method_id)
+    with get_db() as session:
+        variants = (
+            session.query(MethodVariant)
+            .filter_by(method_id=int(method_id))
+            .order_by(
+                MethodVariant.tier_id,
+                MethodVariant.sort_order,
+                MethodVariant.id,
+            )
             .all()
         )
         out: list[dict] = []
@@ -1285,6 +1316,28 @@ def cashout_shown_on_popup_keyboard(club_id: int, chat_id: int) -> bool:
         return True
 
 
+def _outside_hours_range(settings: dict) -> Optional[str]:
+    if not settings.get("hours_enabled"):
+        return None
+    now_est = datetime.now(timezone.utc).astimezone(EST)
+    if _is_within_hours(now_est, settings["hours_start"], settings["hours_end"]):
+        return None
+    return _hours_range_str(settings)
+
+
+def cashout_outside_hours_range(club_id: int) -> Optional[str]:
+    """Formatted hours range if cashout hours are on and now is outside them.
+
+    Returns e.g. ``'8 AM - 11 PM'``, or ``None`` when hours are off / within
+    the window / club missing. Independent of cooldown so it is safe to call
+    after a cashout has already been recorded.
+    """
+    settings = get_cooldown_settings(club_id)
+    if not settings:
+        return None
+    return _outside_hours_range(settings)
+
+
 def check_cashout_eligibility(club_id: int, chat_id: int) -> tuple[bool, Optional[str]]:
     """Check cooldown (hard) + business hours (advisory).
 
@@ -1299,7 +1352,6 @@ def check_cashout_eligibility(club_id: int, chat_id: int) -> tuple[bool, Optiona
 
     now_utc = datetime.now(timezone.utc)
     now_est = now_utc.astimezone(EST)
-    hours_on = settings["hours_enabled"]
     cooldown_on = settings["cooldown_enabled"]
 
     # ── Cooldown hard gate ────────────────────────────────────────────────
@@ -1331,10 +1383,8 @@ def check_cashout_eligibility(club_id: int, chat_id: int) -> tuple[bool, Optiona
                     )
 
     # ── Outside hours → allow with advisory notice ────────────────────────
-    if hours_on and not _is_within_hours(
-        now_est, settings["hours_start"], settings["hours_end"]
-    ):
-        hours_range = _hours_range_str(settings)
+    hours_range = _outside_hours_range(settings)
+    if hours_range:
         return True, (
             f"Cashouts submitted now are processed during business hours "
             f"({hours_range} EST). You can continue — we'll handle payout when hours open."

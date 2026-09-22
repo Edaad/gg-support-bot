@@ -18,6 +18,23 @@ from db.models import (
     ClubPaymentTierVariant,
 )
 
+# Club Stripe rails retired in favor of Cash App Pay Checkout only.
+# Union applepay (tracks_manual_requests) is not filtered.
+_HIDDEN_CLUB_DEPOSIT_SLUGS = frozenset({"applepay", "debitcard"})
+
+
+def is_hidden_club_deposit_method(method: dict | ClubPaymentMethod) -> bool:
+    """True for non-union club applepay/debitcard (hidden from /deposit)."""
+    if isinstance(method, dict):
+        slug = (method.get("slug") or "").strip().lower()
+        if method.get("tracks_manual_requests"):
+            return False
+    else:
+        slug = (getattr(method, "slug", None) or "").strip().lower()
+        if bool(getattr(method, "tracks_manual_requests", False)):
+            return False
+    return slug in _HIDDEN_CLUB_DEPOSIT_SLUGS
+
 
 def _method_dict(m: ClubPaymentMethod) -> dict:
     return {
@@ -101,6 +118,9 @@ def _variant_response_dict(
         "hyperlink_text": v.hyperlink_text,
         "checkout_min_amount": v.checkout_min_amount,
         "checkout_max_amount": v.checkout_max_amount,
+        "venmo_tag": getattr(v, "venmo_tag", None),
+        "venmo_link": getattr(v, "venmo_link", None),
+        "venmo_response_mode": getattr(v, "venmo_response_mode", None),
     }
     if link is not None:
         data["use_group_checkout_link"] = bool(link)
@@ -242,7 +262,9 @@ def get_methods_for_amount(
         result = [
             _method_dict(m)
             for m in normal
-            if _passes_amount_and_capacity(m) and _passes_deposit_deliverability(m)
+            if not is_hidden_club_deposit_method(m)
+            and _passes_amount_and_capacity(m)
+            and _passes_deposit_deliverability(m)
         ]
         result.extend(
             _method_dict(m)
@@ -333,6 +355,27 @@ def list_tier_variants(method_id: int, tier_id: int) -> list[dict]:
             session.query(ClubPaymentTierVariant)
             .filter_by(method_id=int(method_id), tier_id=int(tier_id))
             .order_by(ClubPaymentTierVariant.sort_order, ClubPaymentTierVariant.id)
+            .all()
+        )
+        out: list[dict] = []
+        for variant in variants:
+            data = _variant_response_dict(variant, include_ids=True)
+            data["weight"] = _variant_weight(variant)
+            out.append(data)
+        return out
+
+
+def list_method_variants(method_id: int) -> list[dict]:
+    """All variants for a method, including weight 0, with tier ids."""
+    with get_db() as session:
+        variants = (
+            session.query(ClubPaymentTierVariant)
+            .filter_by(method_id=int(method_id))
+            .order_by(
+                ClubPaymentTierVariant.tier_id,
+                ClubPaymentTierVariant.sort_order,
+                ClubPaymentTierVariant.id,
+            )
             .all()
         )
         out: list[dict] = []

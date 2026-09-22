@@ -28,6 +28,7 @@ from bot.services.club import (
     record_activity,
     cancel_last_cashout_activity,
     check_cashout_eligibility,
+    cashout_outside_hours_range,
     is_club_staff,
     pick_variant,
     get_cashout_max_amount,
@@ -425,6 +426,18 @@ _AUTO_HANDLE_PROMPTS = {
     "zelle": "Please reply with your Zelle phone number or email.",
     "paypal": "Please reply with your PayPal email or PayPal.me link.",
     "crypto": "Please reply with your {asset} wallet address.",
+}
+
+# Bad Venmo/Cash App replies stay on the handle step. Other methods still escalate.
+_HANDLE_FORMAT_HINTS = {
+    "venmo": (
+        "This doesn't look like a proper Venmo tag or link.\n"
+        "@sadib-ahmad — this is what your Venmo tag should look like"
+    ),
+    "cashapp": (
+        "This doesn't look like a proper Cash App tag or link.\n"
+        "$sadib-ahmad — this is what your Cash App tag should look like"
+    ),
 }
 
 
@@ -867,6 +880,10 @@ async def cashout_auto_handle_received(update, context):
     text = update.message.text or ""
     normalized = validate_cashout_handle(slug, text)
     if not normalized:
+        hint = _HANDLE_FORMAT_HINTS.get((slug or "").strip().lower())
+        if hint:
+            await update.message.reply_text(hint)
+            return CASHOUT_AUTO_HANDLE
         return await _auto_escalate(
             update,
             context,
@@ -876,6 +893,18 @@ async def cashout_auto_handle_received(update, context):
     # never waits on ClubGG before being asked for their payout details.
     context.chat_data["cashout_auto_payout_details"] = normalized
     return await _auto_run_claim(update, context)
+
+
+def _auto_cashout_confirmation(amount, display, *, hours_range=None) -> str:
+    if hours_range:
+        return (
+            f"Your cashout of ${amount} via {display} will be processed "
+            f"during business hours ({hours_range} EST)."
+        )
+    return (
+        f"Your cashout of ${amount} via {display} is being processed. "
+        f"You'll receive it shortly!"
+    )
 
 
 async def _auto_finalize(update, context, *, payout_details):
@@ -934,9 +963,13 @@ async def _auto_finalize(update, context, *, payout_details):
 
     if chat is not None:
         try:
+            hours_range = (
+                cashout_outside_hours_range(int(club_id))
+                if club_id is not None
+                else None
+            )
             await chat.send_message(
-                f"Your cashout of ${amount} via {display} is being processed. "
-                f"You'll receive it shortly!"
+                _auto_cashout_confirmation(amount, display, hours_range=hours_range)
             )
         except Exception:
             pass

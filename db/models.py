@@ -480,6 +480,9 @@ class ClubPaymentTierVariant(Base):
     hyperlink_text = Column(String(64), nullable=True)
     checkout_min_amount = Column(Numeric(12, 2), nullable=True)
     checkout_max_amount = Column(Numeric(12, 2), nullable=True)
+    venmo_tag = Column(String(32), nullable=True)
+    venmo_link = Column(String(128), nullable=True)
+    venmo_response_mode = Column(String(16), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),
@@ -2285,6 +2288,7 @@ class GroupDepositDestinationStickiness(Base):
         nullable=True,
     )
     shown_at = Column(DateTime(timezone=True), server_default=func.now())
+    fallback_warned_reason = Column(Text, nullable=True)
 
     club = relationship("Club")
     variant = relationship("ClubPaymentTierVariant")
