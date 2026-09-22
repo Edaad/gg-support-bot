@@ -138,18 +138,19 @@ class FilterSanityTests(unittest.TestCase):
 
 class AmountFormattingTests(unittest.TestCase):
     def test_two_decimal_places(self) -> None:
-        self.assertEqual(auto.format_feeback_amount(Decimal("240.5"), 2), "$240.50")
+        self.assertEqual(auto.format_feeback_amount(Decimal("240.5")), "$240.50")
 
-    def test_zero_decimal_places(self) -> None:
-        self.assertEqual(auto.format_feeback_amount(Decimal("240.4"), 0), "$240")
+    def test_does_not_round_to_whole_dollars(self) -> None:
+        self.assertEqual(auto.format_feeback_amount(Decimal("19.5")), "$19.50")
+        self.assertEqual(auto.format_feeback_amount(Decimal("19.4")), "$19.40")
 
     def test_thousands_separator(self) -> None:
         self.assertEqual(
-            auto.format_feeback_amount(Decimal("12345.6"), 2), "$12,345.60"
+            auto.format_feeback_amount(Decimal("12345.6")), "$12,345.60"
         )
 
-    def test_out_of_range_places_fall_back_to_two(self) -> None:
-        self.assertEqual(auto.format_feeback_amount(Decimal("240"), 7), "$240.00")
+    def test_sub_cent_quantizes_to_cents(self) -> None:
+        self.assertEqual(auto.format_feeback_amount(Decimal("240.004")), "$240.00")
 
 
 class ClaimPromptTests(unittest.TestCase):
@@ -356,17 +357,23 @@ class QuoteStageTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("below the $50.00 minimum", stage.player_message)
         self.assertIn("over $50.00", stage.player_message)
 
-    async def test_below_minimum_respects_zero_decimal_places(self) -> None:
+    async def test_below_minimum_shows_cents_even_when_elevate_displays_dollars(
+        self,
+    ) -> None:
         stage = await self._quote_stage(
             elevate.QuoteResult(
                 True,
                 quote=_quote(
-                    remaining="12", below_minimum=True, minimum="50", places=0
+                    remaining="19.5",
+                    below_minimum=True,
+                    minimum="20",
+                    places=0,
                 ),
             )
         )
-        self.assertIn("($12)", stage.player_message)
-        self.assertIn("below the $50 minimum", stage.player_message)
+        self.assertIn("($19.50)", stage.player_message)
+        self.assertIn("below the $20.00 minimum", stage.player_message)
+        self.assertNotIn("($20)", stage.player_message)
 
     async def test_over_max_is_gated(self) -> None:
         stage = await self._quote_stage(

@@ -48,7 +48,7 @@ wait aborts the prompt; once chips are actually being added, cancel is refused.
 | Overall and filtered figures identical and non-zero | An Admin will be with you shortly. | `earlyrb_auto_failed` with the date range |
 | Filtered fee is zero or negative | You don't have any fee recorded for this week yet. | — |
 | Elevate says `nothing_remaining` | You've already claimed all of your feeback for this week. | — |
-| Elevate says below minimum | Sorry! Your remaining feeback ($X) … below the $Y minimum … | — |
+| Elevate says below minimum | Sorry! Your remaining feeback ($X.XX) … below the $Y.YY minimum … | — |
 | Remaining over the club's max | An Admin will be with you shortly. | `earlyrb_auto_over_max` (+ head admins) |
 | Quote or record errors | An Admin will be with you shortly. | `earlyrb_auto_failed` |
 | Recorded, chips failed, Elevate rolled back | An Admin will be with you shortly. | `earlyrb_auto_failed` |
@@ -77,7 +77,9 @@ the `no_upline_tag` template calibrated on each VM's profile.
 
 **The minimum comes only from Elevate.** `quote.minimumThreshold` / `belowMinimum` is the
 single gate, so there is no minimum field on the dashboard. Set each club's
-`earlyRakebackThreshold` on Elevate.
+`earlyRakebackThreshold` on Elevate. Player copy always shows cents (`$19.50`), even
+when Elevate's `displayDecimalPlaces` is 0 — otherwise a $19.50 remainder rounds to
+`$20` and looks equal to a `$20` minimum.
 
 **There is no daily limit.** A player may claim as often as they have feeback remaining.
 Elevate is the real guard: once the week's feeback is taken, the next quote comes back

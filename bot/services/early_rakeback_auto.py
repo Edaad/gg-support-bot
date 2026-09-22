@@ -100,11 +100,14 @@ def resolve_club_target(
     )
 
 
-def format_feeback_amount(amount: Decimal, decimal_places: int = 2) -> str:
-    """Player-facing money, at the precision Elevate says this club displays."""
-    places = decimal_places if decimal_places in (0, 1, 2) else 2
-    quantum = Decimal(1).scaleb(-places)
-    return f"${amount.quantize(quantum):,.{places}f}"
+def format_feeback_amount(amount: Decimal) -> str:
+    """Player-facing money, always to the cent.
+
+    Elevate may send ``displayDecimalPlaces: 0`` so a club's dashboard shows
+    whole dollars. Rounding player copy the same way turns $19.50 into $20 and
+    makes a below-minimum remainder look equal to the $20 threshold.
+    """
+    return f"${amount.quantize(Decimal('0.01')):,.2f}"
 
 
 def format_already_claimed_amount(quote: Any) -> Optional[str]:
@@ -112,12 +115,12 @@ def format_already_claimed_amount(quote: Any) -> Optional[str]:
     claimed = getattr(quote, "total_already_given", None)
     if claimed is None or claimed <= 0:
         return None
-    return format_feeback_amount(claimed, quote.display_decimal_places)
+    return format_feeback_amount(claimed)
 
 
 def format_claim_prompt(quote: Any) -> str:
     """The Claim / Cancel question shown once a quote clears every gate."""
-    amount = format_feeback_amount(quote.remaining, quote.display_decimal_places)
+    amount = format_feeback_amount(quote.remaining)
     claimed = format_already_claimed_amount(quote)
     claimed_line = (
         f"You've already claimed {claimed} of feeback this week.\n\n" if claimed else ""
@@ -265,10 +268,8 @@ async def quote_feeback(
 
     if quote.below_minimum:
         minimum = quote.minimum_threshold or Decimal("0")
-        remaining_str = format_feeback_amount(
-            quote.remaining, quote.display_decimal_places
-        )
-        minimum_str = format_feeback_amount(minimum, quote.display_decimal_places)
+        remaining_str = format_feeback_amount(quote.remaining)
+        minimum_str = format_feeback_amount(minimum)
         return QuoteStage(
             "below_minimum",
             quote,
@@ -492,12 +493,10 @@ async def claim_feeback(
     allow_requote: bool = True,
 ) -> ClaimStage:
     """Record the feeback on Elevate, then add the chips. Never raises."""
-    decimals = quote.display_decimal_places
-
     if deposit_api_dry_run():
         # Recording for real while no chips can move would leave a ledger entry
         # we then have to roll back, so a dry-run rollout stops before Elevate.
-        amount_str = format_feeback_amount(quote.remaining, decimals)
+        amount_str = format_feeback_amount(quote.remaining)
         update_claim_row(
             claim_id, status="chips_added", chip_add_status="dry_run", detail="dry run"
         )
@@ -566,7 +565,7 @@ async def claim_feeback(
         union_shorthand=target.union_shorthand,
         label=LABEL_FEEBACK,
     )
-    amount_str = format_feeback_amount(amount, decimals)
+    amount_str = format_feeback_amount(amount)
 
     if ok:
         reset_cashout_timer(club_id, chat_id, user_id)
