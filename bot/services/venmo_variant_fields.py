@@ -7,6 +7,7 @@ or ``photo``. Matching prefers the stored tag over scraping response copy.
 
 from __future__ import annotations
 
+import html
 import random
 import re
 from decimal import Decimal
@@ -51,13 +52,15 @@ MEMO_MEDIUM: tuple[str, ...] = (
 
 MEMO_HIGH: tuple[str, ...] = ("My share of rent",)
 
+# Telegram HTML: memo is wrapped in <code> so players can tap to copy.
 _DEFAULT_TEMPLATE = (
     "Venmo: {link}\n"
-    "• Ensure the payment is for friends and family. "
-    "Anything else will be refunded (Venmo only)\n"
-    "• Please put {memo} in the payment caption when sending.\n"
-    "• Once sent, please send a screenshot, and an agent will confirm "
-    "the transaction and add your chips within 2 minutes!"
+    "\n"
+    "• Ensure the payment is for friends and family. Anything else will be refunded\n"
+    "\n"
+    "• Please put <code>{memo}</code> in the payment caption when sending.\n"
+    "\n"
+    "• Once sent, please send us a screenshot"
 )
 
 
@@ -183,10 +186,13 @@ def build_default_venmo_response_text(
     *,
     memo: str | None = None,
 ) -> str:
-    """Player-facing default deposit copy with link and amount-based memo."""
+    """Player-facing default deposit copy (Telegram HTML) with link and memo."""
     norm_link = validate_venmo_link(link)
     phrase = memo if memo is not None else pick_venmo_memo(amount)
-    return _DEFAULT_TEMPLATE.format(link=norm_link, memo=phrase)
+    return _DEFAULT_TEMPLATE.format(
+        link=html.escape(norm_link),
+        memo=html.escape(phrase),
+    )
 
 
 def stored_venmo_tag(variant) -> Optional[str]:

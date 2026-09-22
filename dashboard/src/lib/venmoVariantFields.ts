@@ -13,9 +13,12 @@ export const VENMO_DEFAULT_TEMPLATE = (
   memo: string = VENMO_SAMPLE_MEMO,
 ) =>
   `Venmo: ${link}\n` +
-  `• Ensure the payment is for friends and family. Anything else will be refunded (Venmo only)\n` +
+  `\n` +
+  `• Ensure the payment is for friends and family. Anything else will be refunded\n` +
+  `\n` +
   `• Please put ${memo} in the payment caption when sending.\n` +
-  `• Once sent, please send a screenshot, and an agent will confirm the transaction and add your chips within 2 minutes!`
+  `\n` +
+  `• Once sent, please send us a screenshot`
 
 export function normalizeVenmoTag(raw: string): string {
   let s = raw.trim().toLowerCase()
