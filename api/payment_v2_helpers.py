@@ -8,10 +8,14 @@ from typing import Optional, Sequence
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from bot.services.payment_tier_order import (
+    DEFAULT_TIER_LABEL,
+    fallback_tier,
+    primary_tier,
+)
 from db.models import ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant
 
 DEFAULT_VARIANT_LABEL = "Default"
-DEFAULT_TIER_LABEL = "Default"
 
 RESPONSE_UPDATE_FIELDS = frozenset(
     {"response_type", "response_text", "response_file_id", "response_caption"}
@@ -45,15 +49,32 @@ def amounts_overlap(
 def primary_tier_for_method(
     siblings: Sequence[ClubPaymentTier],
 ) -> Optional[ClubPaymentTier]:
-    ordered = sorted(siblings, key=lambda t: (t.sort_order, t.id))
-    if not ordered:
-        return None
-    return next((t for t in ordered if t.label == DEFAULT_TIER_LABEL), ordered[0])
+    return primary_tier(siblings)
 
 
 def is_primary_tier(tier: ClubPaymentTier, siblings: Sequence[ClubPaymentTier]) -> bool:
     primary = primary_tier_for_method(siblings)
     return primary is not None and int(tier.id) == int(primary.id)
+
+
+def validate_tier_label(
+    label: Optional[str],
+    siblings: Sequence[ClubPaymentTier],
+    *,
+    exclude_tier_id: Optional[int] = None,
+) -> None:
+    """Only one tier per method may be labelled 'Default' (it is the fallback)."""
+    if (label or "").strip() != DEFAULT_TIER_LABEL:
+        return
+    for sibling in siblings:
+        if exclude_tier_id is not None and sibling.id == exclude_tier_id:
+            continue
+        if (sibling.label or "").strip() == DEFAULT_TIER_LABEL:
+            raise HTTPException(
+                400,
+                f"This method already has a {DEFAULT_TIER_LABEL!r} tier. "
+                "Give this tier a different label.",
+            )
 
 
 def validate_tier_amount_band(
@@ -65,7 +86,12 @@ def validate_tier_amount_band(
     exclude_tier_id: Optional[int] = None,
     tier_label: Optional[str] = None,
 ) -> None:
-    """Ensure tier band fits method envelope and does not overlap sibling tiers."""
+    """Ensure tier band fits the method envelope and does not overlap specific tiers.
+
+    The fallback ('Default') tier is exempt from overlap checks in both
+    directions: it covers whatever no specific tier claims, and specific tiers
+    are matched ahead of it.
+    """
     if tier_min is not None and tier_max is not None and tier_min > tier_max:
         raise HTTPException(400, "Tier min amount cannot be greater than max amount.")
 
@@ -106,8 +132,14 @@ def validate_tier_amount_band(
             f"Tier max ${tier_max} is below method absolute minimum ${method.min_amount}.",
         )
 
+    if (tier_label or "").strip() == DEFAULT_TIER_LABEL:
+        return
+    fallback = fallback_tier(siblings)
+
     for sibling in siblings:
         if exclude_tier_id is not None and sibling.id == exclude_tier_id:
+            continue
+        if fallback is not None and int(sibling.id) == int(fallback.id):
             continue
         if amounts_overlap(tier_min, tier_max, sibling.min_amount, sibling.max_amount):
             sib_min = sibling.min_amount
@@ -183,6 +215,29 @@ def validate_checkout_amount_bounds(
         raise HTTPException(
             400,
             f"Checkout max ${checkout_max} is below method absolute minimum ${method.min_amount}.",
+        )
+
+
+def validate_variant_checkout_bounds(
+    method: ClubPaymentMethod,
+    tier: ClubPaymentTier,
+    checkout_min: Optional[Decimal],
+    checkout_max: Optional[Decimal],
+) -> None:
+    """Variant checkout bounds must fit the method envelope and the tier band."""
+    validate_checkout_amount_bounds(method, checkout_min, checkout_max)
+
+    band_lo = effective_tier_checkout_min(tier)
+    band_hi = effective_tier_checkout_max(tier)
+    if checkout_min is not None and band_lo is not None and checkout_min < band_lo:
+        raise HTTPException(
+            400,
+            f"Checkout min ${checkout_min} is below the tier minimum ${band_lo}.",
+        )
+    if checkout_max is not None and band_hi is not None and checkout_max > band_hi:
+        raise HTTPException(
+            400,
+            f"Checkout max ${checkout_max} is above the tier maximum ${band_hi}.",
         )
 
 
@@ -319,6 +374,13 @@ def sync_method_envelope_side_effects(method: ClubPaymentMethod) -> None:
         prior_max = tier.max_amount
         if primary is not None and int(tier.id) == int(primary.id):
             tier.min_amount = method.min_amount
+            # Never collapse the fallback into a single-amount band.
+            if (
+                tier.max_amount is not None
+                and tier.min_amount is not None
+                and tier.max_amount < tier.min_amount
+            ):
+                tier.max_amount = method.max_amount
         tier.min_amount, tier.max_amount = clamp_bounds_to_method_envelope(
             method,
             tier.min_amount,

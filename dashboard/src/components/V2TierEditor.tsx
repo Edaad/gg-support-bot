@@ -16,6 +16,7 @@ import { useConfirm } from './ConfirmProvider'
 import {
   methodEnvelopeLabel,
   PRIMARY_TIER_MIN_TIP,
+  FALLBACK_TIER_HINT,
   formatLockedAmountValue,
   validateTierAmountBand,
 } from '../lib/v2TierAmounts'
@@ -121,6 +122,16 @@ export default function V2TierEditor({
   const handleSave = async () => {
     if (!form.label?.trim()) return
     setSaveError('')
+    const label = form.label.trim()
+    if (
+      label === DEFAULT_TIER_LABEL &&
+      tiers.some((t) => t.id !== editId && t.label === DEFAULT_TIER_LABEL)
+    ) {
+      setSaveError(
+        `This method already has a ${DEFAULT_TIER_LABEL} tier. Give this tier a different label.`,
+      )
+      return
+    }
     const payload = { ...form }
     delete payload.response_type
     delete payload.response_text
@@ -198,7 +209,7 @@ export default function V2TierEditor({
         {embedded && (
           <p className="text-xs text-ink-muted sm:max-w-md">
             {needsVariants
-              ? 'Each tier needs at least one variant. Bands must fit method limits and cannot overlap other tiers.'
+              ? 'Each tier needs at least one variant. Bands must fit method limits and cannot overlap another specific tier.'
               : 'Configure amount bands per tier. Sub-options carry player messages for this method.'}
           </p>
         )}
@@ -305,6 +316,8 @@ export default function V2TierEditor({
                       tierStripeEnabled={Boolean(t.use_group_checkout_link)}
                       absoluteMin={absoluteMin}
                       absoluteMax={absoluteMax}
+                      tierMin={t.checkout_min_amount ?? t.min_amount}
+                      tierMax={t.checkout_max_amount ?? t.max_amount}
                       isPrimaryTier={primary}
                       refreshKey={variantRefreshKey}
                     />
@@ -339,7 +352,8 @@ export default function V2TierEditor({
 
           <div className="rounded-lg bg-bg px-3 py-2 text-xs text-ink-muted">
             Method envelope: {methodEnvelopeLabel(absoluteMin, absoluteMax)} (from Details). Tier
-            min/max must stay within this range and cannot overlap existing tiers.
+            min/max must stay within this range and cannot overlap another specific tier.{' '}
+            {FALLBACK_TIER_HINT}
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>

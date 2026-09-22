@@ -15,7 +15,10 @@ from api.payment_v2_helpers import (
     validate_all_method_tiers,
     validate_checkout_amount_bounds,
     validate_tier_amount_band,
+    validate_tier_label,
+    validate_variant_checkout_bounds,
 )
+from bot.services.payment_tier_order import select_tier_for_amount, tiers_in_match_order
 from fastapi import HTTPException
 
 
@@ -86,18 +89,161 @@ class TierAmountBandTestCase(unittest.TestCase):
             tier_label="Default",
         )
 
-    def test_default_tier_overlap_rejected(self):
+    def test_default_tier_may_overlap_specific_tier(self):
+        """The fallback tier covers what no specific tier claims, so overlap is fine."""
         method = _method(min_amount=Decimal("20"), max_amount=Decimal("2000"))
         siblings = [_tier(2, "Mid", Decimal("100"), Decimal("500"))]
+        validate_tier_amount_band(
+            method,
+            Decimal("50"),
+            Decimal("150"),
+            siblings,
+            tier_label="Default",
+        )
+
+    def test_specific_tier_may_sit_inside_unbounded_default(self):
+        method = _method(min_amount=Decimal("100"), max_amount=None)
+        default = _tier(13, "Default", Decimal("100"), None)
+        method.tiers = [default]
+        validate_tier_amount_band(
+            method,
+            Decimal("100"),
+            Decimal("9999"),
+            method.tiers,
+            tier_label="$100+",
+        )
+
+    def test_specific_tiers_still_cannot_overlap_each_other(self):
+        method = _method(min_amount=Decimal("100"), max_amount=None)
+        siblings = [
+            _tier(13, "Default", Decimal("100"), None),
+            _tier(232, "$100+", Decimal("100"), Decimal("9999")),
+        ]
         with self.assertRaises(HTTPException) as ctx:
             validate_tier_amount_band(
                 method,
-                Decimal("50"),
-                Decimal("150"),
+                Decimal("500"),
+                Decimal("800"),
                 siblings,
-                tier_label="Default",
+                tier_label="$500-800",
             )
-        self.assertIn("overlaps", str(ctx.exception.detail).lower())
+        self.assertIn("$100+", str(ctx.exception.detail))
+
+    def test_live_overlap_no_longer_blocks_method_save(self):
+        """Round Table / Creator Club Venmo shape: Default 100+ alongside $100-9999."""
+        default = _tier(
+            13,
+            "Default",
+            Decimal("100"),
+            None,
+            checkout_min_amount=None,
+            checkout_max_amount=None,
+            variants=[],
+        )
+        over = _tier(
+            232,
+            "$100+",
+            Decimal("100"),
+            Decimal("9999"),
+            checkout_min_amount=Decimal("100"),
+            checkout_max_amount=Decimal("9999"),
+            variants=[],
+        )
+        method = SimpleNamespace(
+            min_amount=Decimal("50"), max_amount=None, tiers=[default, over]
+        )
+        sync_method_envelope_side_effects(method)
+        validate_all_method_tiers(method)
+        self.assertEqual(default.min_amount, Decimal("50"))
+
+    def test_second_default_tier_rejected(self):
+        siblings = [_tier(13, "Default", Decimal("100"), None)]
+        with self.assertRaises(HTTPException) as ctx:
+            validate_tier_label("Default", siblings)
+        self.assertIn("already has", str(ctx.exception.detail))
+        validate_tier_label("Default", siblings, exclude_tier_id=13)
+        validate_tier_label("$100+", siblings)
+
+    def test_raising_method_min_past_default_max_does_not_collapse_band(self):
+        default = _tier(
+            1,
+            "Default",
+            Decimal("100"),
+            Decimal("499"),
+            checkout_min_amount=None,
+            checkout_max_amount=None,
+            variants=[],
+        )
+        method = SimpleNamespace(
+            min_amount=Decimal("600"), max_amount=Decimal("5000"), tiers=[default]
+        )
+        sync_method_envelope_side_effects(method)
+        self.assertEqual(default.min_amount, Decimal("600"))
+        self.assertEqual(default.max_amount, Decimal("5000"))
+
+
+class TierMatchOrderTestCase(unittest.TestCase):
+    def _venmo_tiers(self):
+        return [
+            _tier(13, "Default", Decimal("100"), None),
+            _tier(232, "$100+", Decimal("100"), Decimal("9999")),
+        ]
+
+    def test_specific_tier_wins_over_fallback(self):
+        tiers = self._venmo_tiers()
+        self.assertEqual(select_tier_for_amount(tiers, Decimal("150")).label, "$100+")
+
+    def test_fallback_catches_amount_outside_specific_bands(self):
+        tiers = self._venmo_tiers()
+        self.assertEqual(
+            select_tier_for_amount(tiers, Decimal("12000")).label, "Default"
+        )
+
+    def test_no_tier_below_every_band(self):
+        tiers = self._venmo_tiers()
+        self.assertIsNone(select_tier_for_amount(tiers, Decimal("50")))
+
+    def test_fallback_is_last_in_match_order(self):
+        tiers = self._venmo_tiers()
+        self.assertEqual(
+            [t.label for t in tiers_in_match_order(tiers)], ["$100+", "Default"]
+        )
+
+    def test_sort_order_breaks_ties_between_specific_tiers(self):
+        tiers = [
+            _tier(1, "Default", Decimal("20"), None),
+            _tier(2, "Mid", Decimal("100"), Decimal("500"), sort_order=2),
+            _tier(3, "Narrow", Decimal("100"), Decimal("200"), sort_order=1),
+        ]
+        self.assertEqual(select_tier_for_amount(tiers, Decimal("150")).label, "Narrow")
+
+
+class VariantCheckoutBoundsTestCase(unittest.TestCase):
+    def test_variant_checkout_below_tier_min_rejected(self):
+        method = _method(min_amount=Decimal("50"), max_amount=Decimal("9999"))
+        tier = _tier(
+            1,
+            "$500+",
+            Decimal("500"),
+            Decimal("1000"),
+            checkout_min_amount=None,
+            checkout_max_amount=None,
+        )
+        with self.assertRaises(HTTPException) as ctx:
+            validate_variant_checkout_bounds(method, tier, Decimal("100"), None)
+        self.assertIn("below the tier minimum", str(ctx.exception.detail))
+
+    def test_variant_checkout_inside_tier_band_allowed(self):
+        method = _method(min_amount=Decimal("50"), max_amount=Decimal("9999"))
+        tier = _tier(
+            1,
+            "$500+",
+            Decimal("500"),
+            Decimal("1000"),
+            checkout_min_amount=None,
+            checkout_max_amount=None,
+        )
+        validate_variant_checkout_bounds(method, tier, Decimal("600"), Decimal("900"))
 
 
 class CheckoutAmountBoundsTestCase(unittest.TestCase):

@@ -28,6 +28,8 @@ from api.payment_v2_helpers import (
     validate_all_method_tiers,
     validate_checkout_amount_bounds,
     validate_tier_amount_band,
+    validate_tier_label,
+    validate_variant_checkout_bounds,
 )
 from api.schemas_v2 import (
     ClubPaymentMethodCreate,
@@ -132,6 +134,11 @@ def _apply_venmo_variant_fields(
     return out
 
 
+def _seeds_empty_variant_unusable(method: ClubPaymentMethod) -> bool:
+    """Venmo variants need a tag and link, so an auto-seeded blank one is unusable."""
+    return (method.slug or "").strip().lower() == "venmo"
+
+
 def _get_method(db: Session, method_id: int) -> ClubPaymentMethod:
     method = _method_query(db).filter(ClubPaymentMethod.id == method_id).first()
     if not method:
@@ -223,7 +230,7 @@ def create_method(
         )
         db.add(tier)
         db.flush()
-        if not method.has_sub_options:
+        if not method.has_sub_options and not _seeds_empty_variant_unusable(method):
             create_empty_default_variant(db, tier)
             db.flush()
     method = _get_method(db, method.id)
@@ -341,6 +348,7 @@ def create_tier(
     tier_data = body.model_dump()
     if method_needs_variants(method):
         tier_data = strip_response_from_tier_payload(tier_data)
+    validate_tier_label(tier_data.get("label"), method.tiers)
     validate_tier_amount_band(
         method,
         tier_data.get("min_amount"),
@@ -351,7 +359,7 @@ def create_tier(
     tier = ClubPaymentTier(method_id=method_id, **tier_data)
     db.add(tier)
     db.flush()
-    if method_needs_variants(method):
+    if method_needs_variants(method) and not _seeds_empty_variant_unusable(method):
         create_empty_default_variant(db, tier)
         db.flush()
     db.refresh(tier)
@@ -379,6 +387,7 @@ def update_tier(
     merged_min = data.get("min_amount", tier.min_amount)
     merged_max = data.get("max_amount", tier.max_amount)
     merged_label = data.get("label", tier.label)
+    validate_tier_label(merged_label, siblings, exclude_tier_id=tier.id)
     validate_tier_amount_band(
         method,
         merged_min,
@@ -443,6 +452,7 @@ def update_tier(
 @router.delete("/tiers/{tier_id}", status_code=204)
 def delete_tier(tier_id: int, db: Session = Depends(get_db_dependency)):
     tier = _get_tier(db, tier_id)
+    method = _get_method(db, tier.method_id)
     remaining = (
         db.query(ClubPaymentTier)
         .filter_by(method_id=tier.method_id)
@@ -451,6 +461,11 @@ def delete_tier(tier_id: int, db: Session = Depends(get_db_dependency)):
     )
     if remaining == 0:
         raise HTTPException(400, "Cannot delete the last tier on a method")
+    if is_primary_tier(tier, list(method.tiers or [])):
+        raise HTTPException(
+            400,
+            "Cannot delete the fallback tier. Delete the other tiers first.",
+        )
     db.delete(tier)
 
 
@@ -483,8 +498,11 @@ def create_tier_variant(
     variant_data = body.model_dump()
     if is_primary_tier(tier, list(method.tiers or [])):
         variant_data["checkout_min_amount"] = None
-    validate_checkout_amount_bounds(
-        method, variant_data["checkout_min_amount"], variant_data["checkout_max_amount"]
+    validate_variant_checkout_bounds(
+        method,
+        tier,
+        variant_data["checkout_min_amount"],
+        variant_data["checkout_max_amount"],
     )
     variant_data = _apply_venmo_variant_fields(method, variant_data, creating=True)
     ensure_legacy_tier_before_new_variant(db, tier)
@@ -516,8 +534,8 @@ def update_variant(
     merged_checkout_min = data.get("checkout_min_amount", variant.checkout_min_amount)
     merged_checkout_max = data.get("checkout_max_amount", variant.checkout_max_amount)
     if {"checkout_min_amount", "checkout_max_amount"}.intersection(data.keys()):
-        validate_checkout_amount_bounds(
-            method, merged_checkout_min, merged_checkout_max
+        validate_variant_checkout_bounds(
+            method, tier, merged_checkout_min, merged_checkout_max
         )
     if "tier_id" in data:
         new_tier_id = data["tier_id"]
