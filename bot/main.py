@@ -22,7 +22,7 @@ warnings.filterwarnings(
 )
 
 from db.connection import init_engine
-from db.models import Base
+from db.schema_guard import ensure_schema_at_head
 
 
 def _configure_worker_logging() -> None:
@@ -315,7 +315,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
 
 
 def run_bot(token: str | None = None, *, test_mode: bool = False):
-    from bot.runtime_config import resolve_test_bot_token, use_payment_v2
+    from bot.runtime_config import resolve_test_bot_token
 
     if test_mode:
         token = token or resolve_test_bot_token()
@@ -331,7 +331,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     _configure_worker_logging()
 
     engine = init_engine()
-    Base.metadata.create_all(engine)
+    ensure_schema_at_head(engine)
 
     h = import_worker_handlers(test_mode=test_mode)
 
@@ -598,11 +598,8 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
 
     if test_mode:
         print(
-            "Test bot is running (BOT_USE_PAYMENT_V2=%s, BOT_TEST_WORKER=%s). Press Ctrl+C to stop."
-            % (
-                "on" if use_payment_v2() else "off",
-                "on" if is_test_bot_worker() else "off",
-            )
+            "Test bot is running (BOT_TEST_WORKER=%s). Press Ctrl+C to stop."
+            % ("on" if is_test_bot_worker() else "off",)
         )
         print(
             "Tip: after /deposit, use Reply on the bot message to enter the amount "

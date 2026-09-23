@@ -175,8 +175,7 @@ the canned request.
    only need to exist for the web dyno's audit sync.
 7. Run the migrations:
    ```bash
-   heroku run -a gg-support-bot-2025 -- python migrate_auto_early_rakeback.py
-   heroku run -a gg-support-bot-2025 -- python migrate_escalate_auto_early_rakeback.py
+alembic upgrade head   # runs automatically in the Heroku release phase
    ```
 8. Enable the toggle and set the max for **one** club, keep `GG_DEPOSIT_API_DRY_RUN=true`, and
    test one known group end to end before turning dry run off. Tick **Escalate after auto

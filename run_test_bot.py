@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 """Run the support bot with a separate test BotFather token (local / staging).
 
-Uses club_payment_* (v2) config — same default as production (BOT_USE_PAYMENT_V2=1).
 Does not start the MTProto dm_gc listener — safe to run beside production worker.
 
 Set in .env:
@@ -24,8 +23,6 @@ try:
 except ImportError:
     pass
 
-# Test bot reads v2 payment tables unless explicitly overridden in .env
-os.environ.setdefault("BOT_USE_PAYMENT_V2", "1")
 os.environ.setdefault("BOT_TEST_WORKER", "1")
 
 from bot.main import run_bot

@@ -1,6 +1,6 @@
 # Database schema and business logic
 
-This document describes the relational model in [`db/models.py`](../db/models.py), how pieces relate, and how the **bot** and **dashboard API** use them. Tables are created automatically via SQLAlchemy `Base.metadata.create_all` when the API or bot starts (no separate migration runner in normal operation).
+This document describes the relational model in [`db/models.py`](../db/models.py), how pieces relate, and how the **bot** and **dashboard API** use them. Schema changes are managed with Alembic; see [Schema migrations (Alembic)](#schema-migrations-alembic).
 
 Typical deployment uses **PostgreSQL** (`DATABASE_URL`). Types below match the SQLAlchemy declarations; exact SQL types may vary slightly by dialect.
 
@@ -11,15 +11,16 @@ Typical deployment uses **PostgreSQL** (`DATABASE_URL`). Types below match the S
 ```mermaid
 erDiagram
     clubs ||--o{ club_linked_accounts : "backup admins"
-    clubs ||--o{ payment_methods : "deposit or cashout"
+    clubs ||--o{ club_payment_methods : "deposit or cashout"
     clubs ||--o{ groups : "telegram groups"
     clubs ||--o{ player_details : "GG player chats"
     clubs ||--o{ custom_commands : "slash commands"
     clubs ||--o{ broadcast_jobs : "mass messages"
     clubs ||--o{ player_activities : "cooldown timeline"
     clubs ||--o{ cooldown_bypasses : "per player"
-    payment_methods ||--o{ payment_sub_options : "e.g. crypto networks"
-    payment_methods ||--o{ payment_method_tiers : "amount bands"
+    club_payment_methods ||--o{ club_payment_sub_options : "e.g. crypto networks"
+    club_payment_methods ||--o{ club_payment_tiers : "amount bands"
+    club_payment_tiers ||--o{ club_payment_tier_variants : "weighted rotation"
 ```
 
 ---
@@ -45,8 +46,8 @@ One row per **club** (poker/gaming room operator). The **primary** Telegram iden
 | `cashout_cooldown_hours` | int | Hours after last **deposit or cashout** before another cashout is allowed. |
 | `cashout_hours_enabled` | bool | When on, outside the daily window the bot shows an **advisory** that payouts are processed during hours (cashout still accepted). Interpreted in **America/New_York**. |
 | `cashout_hours_start` / `cashout_hours_end` | string(5) | e.g. `08:00`–`23:00` local to that timezone. |
-| `aces_option_min_deposits` | int, not null, default 0 | **Creator Club only.** Deposits a group must already have (non-cancelled `player_activities` `deposit` rows) before `/deposit` offers the Creator Club / Aces Table picker. `0` = always offer. Groups that already deposit to Aces Table keep the picker regardless (see [`migrate_aces_option_min_deposits.py`](../migrate_aces_option_min_deposits.py)). |
-| `enable_transfer` | bool, not null, default false | Enables `/transfer`, moving chips between the club's two unions (Round Table `RT<->AT`, Creator Club `CC<->AT`). Also needs the deposit API and `auto_claim_enabled`; single-union clubs ignore it (see [`migrate_enable_transfer.py`](../migrate_enable_transfer.py) and [`docs/TRANSFER.md`](TRANSFER.md)). |
+| `aces_option_min_deposits` | int, not null, default 0 | **Creator Club only.** Deposits a group must already have (non-cancelled `player_activities` `deposit` rows) before `/deposit` offers the Creator Club / Aces Table picker. `0` = always offer. Groups that already deposit to Aces Table keep the picker regardless. |
+| `enable_transfer` | bool, not null, default false | Enables `/transfer`, moving chips between the club's two unions (Round Table `RT<->AT`, Creator Club `CC<->AT`). Also needs the deposit API and `auto_claim_enabled`; single-union clubs ignore it (see [`docs/TRANSFER.md`](TRANSFER.md)). |
 | `is_active` | bool | Inactive clubs are excluded from owner resolution in bot queries. |
 | `created_at` | datetime | Server default `now()`. |
 
@@ -69,62 +70,6 @@ One row per **club** (poker/gaming room operator). The **primary** Telegram iden
 
 ---
 
-### `payment_methods`
-
-Configurable **deposit** and **cashout** rails per club. `direction` is either `deposit` or `cashout`. The bot filters methods by **entered amount** against `min_amount` / `max_amount`, then shows inline keyboards; responses can be plain text or Telegram **photo** (`response_file_id`, `response_caption`).
-
-| Column | Type | Business meaning |
-|--------|------|------------------|
-| `id` | integer PK | |
-| `club_id` | FK → `clubs.id` CASCADE | |
-| `direction` | string(10) | `deposit` or `cashout` (DB check constraint). |
-| `name`, `slug` | string(50) | **Unique `(club_id, direction, slug)`**. `slug` is for internal reference; labels use `name`. |
-| `min_amount`, `max_amount` | numeric(12,2), nullable | Optional band; method hidden if amount is out of range. |
-| `has_sub_options` | bool | If true, bot may show `payment_sub_options` after method pick. |
-| `response_type`, `response_text`, `response_file_id`, `response_caption` | | Default response when **no tier** matches and **no** sub-option path (or tier fallback). |
-| `is_active` | bool | Inactive methods hidden from flows and simulate API. |
-| `sort_order` | int | Ordering in UI and keyboards (reorder API). |
-| `created_at` | datetime | |
-
-**Business logic:**
-
-- **Tiers** (`payment_method_tiers`): For a given amount, the bot selects the matching tier (if any) and uses that row’s response instead of the method default. Used for amount-dependent instructions.
-- **Sub-options** (`payment_sub_options`): If `has_sub_options` and options exist, user picks a sub-option; response comes from that row. Typical for multiple networks under one “Crypto” method.
-
-Deposit flow records **`player_activities`** with `activity_type = 'deposit'` after a successful completion. Cashout does the same with `'cashout'`.
-
----
-
-### `payment_sub_options`
-
-Sub-choices under one **payment method** (e.g. USDT vs BTC). Unique **`(method_id, slug)`**.
-
-| Column | Type | Business meaning |
-|--------|------|------------------|
-| `id` | integer PK | |
-| `method_id` | FK → `payment_methods.id` CASCADE | |
-| `name`, `slug` | string(50) | |
-| `response_*` | | Same pattern as method. |
-| `is_active` | bool | |
-| `sort_order` | int | |
-
----
-
-### `payment_method_tiers`
-
-Optional **amount bands** for a method. Each tier has `label`, optional min/max, and its own `response_*`. The bot picks the tier whose bounds contain the user’s amount (see `get_tier_for_amount` in [`bot/services/club.py`](../bot/services/club.py)).
-
-| Column | Type | Business meaning |
-|--------|------|------------------|
-| `id` | integer PK | |
-| `method_id` | FK → `payment_methods.id` CASCADE | |
-| `label` | string(50) | Shown in internal logic / display name assembly. |
-| `min_amount`, `max_amount` | numeric(12,2), nullable | |
-| `response_*` | | |
-| `sort_order` | int | |
-
----
-
 ### `groups`
 
 Maps a **Telegram group/supergroup** (`chat_id` = Telegram chat id) to exactly one **club**. When the bot is added to a group, the linking user must be the club’s **primary** or a **linked** account; the row is created or updated.
@@ -136,12 +81,12 @@ Maps a **Telegram group/supergroup** (`chat_id` = Telegram chat id) to exactly o
 | `name` | string(255), nullable | **Current Telegram group title** — updated on every `NEW_CHAT_TITLE` event, and refreshed on `/deposit` / `/cashout`. Intended lookup key `(club_id, name)` → `chat_id` for downstream integrations (`find_group_chat_id_by_name` in [`bot/services/club.py`](../bot/services/club.py)). |
 | `first_deposit_claimed` | bool | Promo / first-deposit tracking. |
 | `last_deposit_union`, `last_deposit_union_at` | string(2) / timestamptz, nullable | Customer's last `/deposit` union pick — `RT`/`AT` for Round Table, `CC`/`AT` for Creator Club. Routes auto chip-adding when the group title names both unions (`RT AT`, `CC AT`). |
-| `aces_join_ack_at` | timestamptz, nullable | Set once a Creator Club player completes an Aces Table deposit, so the one-time join link is only shown before their first one (see [`migrate_aces_join_ack.py`](../migrate_aces_join_ack.py)). |
+| `aces_join_ack_at` | timestamptz, nullable | Set once a Creator Club player completes an Aces Table deposit, so the one-time join link is only shown before their first one. |
 | `added_at` | datetime | |
 
-**Indexes:** `ix_groups_club_id_name` on `(club_id, name)` for title lookup (see [`migrate_groups_name_index.py`](../migrate_groups_name_index.py)).
+**Indexes:** `ix_groups_club_id_name` on `(club_id, name)` for title lookup.
 
-**Title sync:** [`update_group_name()`](../bot/services/club.py) keeps `groups.name` in sync and also updates `support_group_chats.telegram_chat_title` for any row with the same `telegram_chat_id`. Triggered from [`on_new_chat_title`](../bot/handlers/track.py) on every rename (even when player bind fails). Run [`backfill_group_names.py`](../backfill_group_names.py) once after deploy to fix historical stale titles.
+**Title sync:** [`update_group_name()`](../bot/services/club.py) keeps `groups.name` in sync and also updates `support_group_chats.telegram_chat_title` for any row with the same `telegram_chat_id`. Triggered from [`on_new_chat_title`](../bot/handlers/track.py) on every rename (even when player bind fails).
 
 **Business logic:** `/deposit` and `/cashout` only run in groups that have a row here. **Broadcast** sends to **all** `chat_id`s for the club’s `groups`. There is no per-group override table; everything is club-level.
 
@@ -162,8 +107,6 @@ Stable deep-link codes for player support groups. One row per **`(club_id, refer
 
 **Constraints:** `uq_referral_links_club_chat` — unique `(club_id, referrer_chat_id)`; `uq_referral_links_club_player` — unique `(club_id, referrer_gg_player_id)`.
 
-**Migration:** [`migrate_referral_tables.py`](../migrate_referral_tables.py).
-
 ### `referral_attributions`
 
 First-click attribution: clicker Telegram user → referrer link for one club. Status: `pending` (clicked, no titled bind yet), `credited` (new group titled with a new player id; both groups acked), `closed_duplicate` (title bind hit same-club player-id conflict).
@@ -181,8 +124,6 @@ First-click attribution: clicker Telegram user → referrer link for one club. S
 | `created_at` / `updated_at` | timestamptz | |
 
 **Constraints:** `uq_referral_attr_club_clicker` — unique `(club_id, clicker_telegram_user_id)` (first click wins); partial unique `uq_referral_attr_club_referred_chat` on `(club_id, referred_chat_id)` where chat id is set.
-
-**Migration:** same [`migrate_referral_tables.py`](../migrate_referral_tables.py).
 
 ### `player_details`
 
@@ -202,9 +143,7 @@ Maps an external **GG player id** to a **club** and a list of **Telegram group c
 
 **No FK to `groups`:** PostgreSQL cannot attach a foreign key to individual elements of an array. Whether each id exists in `groups` must be enforced in **application code** (or custom triggers). Deleting a `groups` row does **not** remove that `chat_id` from arrays automatically.
 
-**Migration:** [`migrate_player_details.py`](../migrate_player_details.py) (`DATABASE_URL=... python migrate_player_details.py`). Nickname column: [`migrate_player_details_gg_nickname.py`](../migrate_player_details_gg_nickname.py). New deploys also get the table from `Base.metadata.create_all` once the model exists.
-
-**Nickname sync:** After gg-computer `POST /process-week/sync`, call [`POST /api/weekly-stats/sync-nicknames`](../docs/API.md) or run [`scripts/backfill_player_details_gg_nickname.py`](../scripts/backfill_player_details_gg_nickname.py). Bot bind (`/track`, title change) best-effort refreshes one row via `GET /player-details`.
+**Nickname sync:** After gg-computer `POST /process-week/sync`, call [`POST /api/weekly-stats/sync-nicknames`](../docs/API.md). Bot bind (`/track`, title change) best-effort refreshes one row via `GET /player-details`.
 
 **Bulk import (CSV):** [`scripts/import_player_details_csv.py`](../scripts/import_player_details_csv.py) reads `chat_id`, `gg_player_id`, `club_id` (supports `[n]` and `"[2, 3]"`). It aggregates rows, merges `chat_ids` on duplicate `(gg_player_id, club_id)`, and uses `ON CONFLICT` to merge with existing DB rows. **Strict validation:** `gg_player_id` must match `^[0-9]{1,48}-[0-9]{1,48}$`; `chat_id` must be negative (Telegram group chats) unless `--allow-nonnegative-chat-id`; `club_id` must be in `[1, 1000000]`; control characters and CSV formula prefixes (`=`, `+`, `@` on non-chat columns) are stripped. Run **dry run** first (default): `python scripts/import_player_details_csv.py --csv player_data_mapped.csv`. To write: `DATABASE_URL=... python scripts/import_player_details_csv.py --csv player_data_mapped.csv --apply`. Rows with unknown `club_id` in the DB or invalid fields are skipped (warnings printed).
 
@@ -269,7 +208,7 @@ Per **support group chat** exceptions for cooldown only (business hours are advi
 | `used` | bool | For one-time bypass after use. |
 | `created_at` | datetime | |
 
-**Business logic:** Granted via `/bypass` and `/bypasspermanent` in the support group (no reply required); see [`bot/handlers/bypass.py`](../bot/handlers/bypass.py). Run [`migrate_cooldown_bypass_chat_id.py`](../migrate_cooldown_bypass_chat_id.py) on existing DBs; re-grant bypasses per group after migration.
+**Business logic:** Granted via `/bypass` and `/bypasspermanent` in the support group (no reply required); see [`bot/handlers/bypass.py`](../bot/handlers/bypass.py).
 
 ---
 
@@ -292,12 +231,12 @@ Club-defined **slash commands** (without the leading slash in the column) with o
 
 ## Payment config (v2)
 
-Dashboard **Deposit Methods** and **Cashout Methods** tabs edit `club_payment_*` via `/api/v2`. Legacy `/api/clubs/.../methods` CRUD routes are removed. The support bot reads v2 by default ([`bot/services/club_payment_v2.py`](../bot/services/club_payment_v2.py)); set `BOT_USE_PAYMENT_V2=0` to fall back to legacy `payment_*` tables.
+Dashboard **Deposit Methods** and **Cashout Methods** tabs edit `club_payment_*` via `/api/v2`. Legacy `/api/clubs/.../methods` CRUD routes are removed. The support bot reads these tables through [`bot/services/club_payment_v2.py`](../bot/services/club_payment_v2.py).
 
 ### Principles
 
 - **No legacy columns** — v2 tables have no `legacy_*` fields and no FKs to old payment tables.
-- **Greenfield data** — config is authored in the dashboard payment tabs, via `/api/v2`, or seed scripts; no auto-copy from legacy.
+- **Greenfield data** — config is authored in the dashboard payment tabs or via `/api/v2`.
 - **UI-aligned model** — method = envelope; tier = amount band + default message + Stripe; variant = rotation inside a tier; sub-option = crypto branches.
 
 ```mermaid
@@ -387,31 +326,13 @@ Pydantic schemas: [`api/schemas_v2.py`](../api/schemas_v2.py). Router: [`api/rou
 ### Data-entry workflow
 
 1. Draft per-club config (methods, tiers, variants, copy, Stripe) — e.g. from ChatGPT prompts using CSV exports in `backups/` as human reference only.
-2. Enter data in dashboard **Deposit Methods** / **Cashout Methods**, call `/api/v2` directly, or run a one-shot seed script (e.g. `python scripts/seed_v2_round_table_crypto.py --apply` for Round Table deposit Crypto, `python scripts/seed_v2_creator_club_crypto.py --apply` for Creator Club deposit Crypto (11 sub-options),
-`python scripts/seed_v2_clubgto_crypto.py --apply` for ClubGTO deposit Crypto (12 sub-options — includes BEP20/BNB; no SOL-token variants), `python scripts/seed_v2_clubgto_zelle.py --apply` for ClubGTO deposit Zelle — 2 tiers (Under 399 / Over $400), 1 Default variant each (weight 100), `python scripts/seed_v2_clubgto_applepay.py --apply` for ClubGTO deposit Apple Pay — 1 Default tier with Stripe, 1 Default variant (weight 100), `python scripts/seed_v2_clubgto_debitcard.py --apply` for ClubGTO deposit Debit Card — same Stripe pattern, `python scripts/seed_v2_clubgto_cashapp.py --apply` for ClubGTO deposit Cashapp — 2 tiers and 3 variants (180/25 on Over), `python scripts/seed_v2_clubgto_venmo.py --apply` for ClubGTO deposit Venmo — 2 tiers and 5 photo variants (35/35/15/15 on Over), `python scripts/seed_v2_creator_club_zelle.py --apply` for Creator Club Zelle, `python scripts/seed_v2_creator_club_applepay.py --apply` for Creator Club Apple Pay, `python scripts/seed_v2_creator_club_debitcard.py --apply` for Creator Club Debit Card, `python scripts/seed_v2_creator_club_cashapp.py --apply` for Creator Club Cashapp — 2 tiers and 3 variants (80/20 on Over), `python scripts/seed_v2_creator_club_venmo.py --apply` for Creator Club Venmo — 1 Default tier and 4 weighted variants, `python scripts/seed_v2_round_table_zelle.py --apply` for Round Table Zelle, `python scripts/seed_v2_round_table_applepay.py --apply` for Round Table Apple Pay, `python scripts/seed_v2_round_table_debitcard.py --apply` for Round Table Debit Card, `python scripts/seed_v2_round_table_cashapp.py --apply` for Round Table Cashapp — 2 tiers and 3 variants, `python scripts/seed_v2_round_table_venmo.py --apply` for Round Table Venmo — 1 Default tier and 4 weighted variants, or `python scripts/seed_v2_round_table_cashout.py --apply` for Round Table cashout — Crypto (11 sub-options) + Cashapp/Zelle/Venmo (1 Default tier + variant each), `python scripts/seed_v2_creator_club_cashout.py --apply` for Creator Club cashout — same 4-method pattern, `python scripts/seed_v2_clubgto_cashout.py --apply` for ClubGTO cashout — Crypto (12 sub-options incl. BEP20) + Cashapp / Zelle / Venmo (min $50)). Crypto methods store player copy on **sub-options**; non-sub-option methods store copy on **tier variants** (≥ 1 per tier), not on tier `response_*`.
-3. If upgrading existing v2 rows that still have tier-level copy, run `python scripts/migrate_v2_tier_response_to_variants.py --apply` once to move messages into Default variants.
-4. Save and reload to validate structure (Details + Amount tiers tabs).
-5. Bot worker uses v2 by default; set `BOT_USE_PAYMENT_V2=0` only if rolling back to legacy tables.
-
-### Migration script
-
-For existing PostgreSQL databases, run once:
-
-```bash
-DATABASE_URL=... python migrate_club_payment_v2.py
-```
-
-New deploys also get tables from `Base.metadata.create_all` once the models exist in [`db/models.py`](../db/models.py).
-
----
+2. Enter data in dashboard **Deposit Methods** / **Cashout Methods** or call `/api/v2` directly. Crypto methods store player copy on **sub-options**; non-sub-option methods store copy on **tier variants** (≥ 1 per tier), not on tier `response_*`.
+3. Save and reload to validate structure (Details + Amount tiers tabs).
 
 ## Constraints summary
 
 | Constraint | Table |
 |------------|--------|
-| `uq_club_direction_slug` | `payment_methods` — unique `(club_id, direction, slug)` |
-| `ck_direction` | `payment_methods` — `direction IN ('deposit', 'cashout')` |
-| `uq_method_slug` | `payment_sub_options` — unique `(method_id, slug)` |
 | `uq_club_command` | `custom_commands` — unique `(club_id, command_name)` |
 | `uq_player_details_gg_player_club` | `player_details` — unique `(gg_player_id, club_id)` |
 | `uq_referral_links_club_chat` | `referral_links` — unique `(club_id, referrer_chat_id)` |
@@ -423,10 +344,45 @@ Foreign keys generally use **ON DELETE CASCADE** from `clubs` so child rows disa
 
 ---
 
+## Schema migrations (Alembic)
+
+Schema changes are tracked with [Alembic](https://alembic.sqlalchemy.org/) in [`migrations/`](../migrations/). Each database records its revision in `alembic_version`.
+
+| Revision | What it does |
+|----------|--------------|
+| `0001_baseline` | Prod schema as of 2026-09-23; replaces the old root `migrate_*.py` scripts. Prod was stamped at this revision, not upgraded. |
+| `0002_missing_indexes` | Indexes the old scripts defined but prod never received (`player_activities`, `bonus_records`, `issue_report_attachments`). |
+| `0003_bypass_chat_id_not_null` | Deletes pre-per-group `cooldown_bypasses` rows (`chat_id IS NULL`) and sets `chat_id NOT NULL`. |
+| `0004_drop_legacy_tables` | Drops the v1 `payment_*` / `method_variants` tables, the old `main.py` bot tables (`group_club`, `user_commands`) and the unused `glide_audit_lines`. |
+
+**How migrations run**
+
+- The Heroku release phase ([`scripts/heroku_release.py`](../scripts/heroku_release.py)) runs `alembic upgrade head` after the import smoke. A failure aborts the deploy; the previous release keeps serving.
+- The API, bot, cashier and notification processes refuse to boot unless the database is at head ([`db/schema_guard.py`](../db/schema_guard.py)). Nothing calls `create_all` at startup; unit tests still use it on SQLite.
+- Locally: `DATABASE_URL=... alembic upgrade head`. Inspect with `alembic current` and `alembic history`.
+
+**Adding a schema change**
+
+1. Update [`db/models.py`](../db/models.py).
+2. `alembic revision -m "short description" --rev-id 0005_short_name` (revision ids must fit `alembic_version`: at most 32 characters).
+3. Write `upgrade()` with [`migrations/helpers.py`](../migrations/helpers.py) (`add_column`, `create_index`, `add_constraint`, `set_not_null`, `drop_*`, `execute_data`, ...), never raw `op.*`. Every helper is a no-op when its target already exists or is already gone, so a revision can be re-run safely. `alembic revision --autogenerate` output is a useful checklist but must be rewritten with the helpers.
+4. Leave `downgrade()` raising `NotImplementedError` (forward-only). To undo a change, write a new revision.
+5. Run `python scripts/check_migrations.py` (also part of the pre-push hook). It checks revision rules, upgrades a throwaway PostgreSQL 17 database twice and runs `alembic check` so models and migrations cannot drift. Needs `brew install postgresql@17` (or `PG17_BIN`).
+
+**Rules**
+
+- **Compatible with the previous release.** Old dynos keep serving while the release phase migrates, and `heroku rollback` never reverts the database. Use expand/contract: add columns and tables in one deploy; drop what the code no longer uses in a later deploy.
+- **Data steps stay small.** A revision may include deterministic SQL tied to its schema change (e.g. fill a column before `SET NOT NULL`). Backfills that call Telegram or Stripe, read CSVs or run long stay as dry-run-by-default scripts in `scripts/`.
+
+**Checking prod**
+
+`DATABASE_URL=<prod> python scripts/check_prod_schema_parity.py` diffs a read-only schema dump of prod against a freshly migrated database (`--revision <rev>` to compare with an older revision).
+
+---
+
 ## Operational notes
 
-- **Schema changes:** New columns may be added with manual SQL or small scripts (e.g. [`migrate_cooldown.py`](../migrate_cooldown.py), [`migrate_player_details.py`](../migrate_player_details.py)) if `create_all` already ran without them.
-- **Legacy:** Root [`main.py`](../main.py) uses older tables (`user_commands`, `group_club`); migration from that layout is described in [`db/migrate.py`](../db/migrate.py). The running bot uses [`bot/`](../bot/) and the models above.
+- **Schema changes:** see [Schema migrations (Alembic)](#schema-migrations-alembic).
 
 ---
 

@@ -286,7 +286,7 @@ async def mtproto_sign_in(body: MtProtoSignInRequest):
             detail=(
                 "Telegram accepted the login, but syncing the Telethon session to Postgres failed "
                 "(the bot worker will not share an ephemeral filesystem with this dyno). "
-                "See server logs. Ensure DATABASE_URL works and migrations / create_all ran."
+                "See server logs. Ensure DATABASE_URL works and `alembic upgrade head` ran."
             ),
         )
 

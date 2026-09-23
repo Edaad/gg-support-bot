@@ -52,10 +52,8 @@ At most one **open** issue per club + player id (enforced by a partial unique in
 Run once on each environment:
 
 ```bash
-DATABASE_URL=... python migrate_player_support_notes.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
-
-On Heroku: `heroku run -a YOUR_APP -- python migrate_player_support_notes.py`
 
 ## Code
 

@@ -1,7 +1,6 @@
-"""Read deposit/cashout config from greenfield club_payment_* tables.
+"""Read deposit/cashout config from the club_payment_* tables.
 
-Used by default (BOT_USE_PAYMENT_V2 defaults to on; set 0 for legacy payment_*).
-Returns the same dict shapes as bot.services.club legacy helpers.
+bot.services.club delegates its payment-method helpers here.
 """
 
 from __future__ import annotations

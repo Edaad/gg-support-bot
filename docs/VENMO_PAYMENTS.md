@@ -14,8 +14,6 @@ Venmo Confirm Zaps POST payment details to this API. The **notification bot** (`
 
 Repeat payers (`venmo_payer_bindings`) can have **multiple group candidates** per normalized payer name. **One candidate** → auto-bind at ingest (unchanged). **Two or more** → payment stays unbound; staff use inline buttons on the notification (Confirm / Back). Replying to an already-bound notification with a **different** group title no longer silently rebinds — the bot offers Reassign or Add as possible user, each with confirm.
 
-Run `DATABASE_URL=... python migrate_payment_bind_multi_candidates.py` after deploy to allow multiple rows per payer/wallet identity.
-
 ## Player group confirmation (auto-bind only)
 
 When a payment **auto-binds** to a support group at ingest (repeat payer, setup amount, or memo match), the **support bot** (`TELEGRAM_BOT_TOKEN`) posts in that GC:
@@ -62,8 +60,6 @@ Candidate lookup is **scoped by test mode**: `test: true` ingest only considers 
 3. Expect **Group Chat: Unbound — select group below** with inline buttons for the test groups only.
 4. Confirm via buttons; the notification edits to the bound test group.
 
-Run `migrate_payment_bind_multi_candidates.py` if you have not already (see [VENMO_GROUP_BINDING.md](VENMO_GROUP_BINDING.md)).
-
 ## Database tables
 
 | Table | Purpose |
@@ -71,14 +67,6 @@ Run `migrate_payment_bind_multi_candidates.py` if you have not already (see [VEN
 | `venmo_payments` | One row per Venmo payment; binding keyed by `telegram_chat_id` |
 | `venmo_payer_bindings` | Normalized payer name → last bound support group (`venmo_handle` = last seen recipient) |
 
-Migration:
-
-```bash
-DATABASE_URL=... python migrate_venmo_payments.py
-DATABASE_URL=... python migrate_venmo_payer_name_only.py
-```
-
-`migrate_venmo_payer_name_only.py` dedupes payer rows and switches repeat-payer lookup to name-only (run once after deploy).
 
 ## Environment
 
@@ -272,8 +260,6 @@ Add `"test": true` only on your duplicate test Zap.
 - Saves it on `venmo_payments.memo`
 - Shows **Memo:** in the staff Telegram notification (after Amount)
 - Uses it for **memo code** first-time group binding when the memo contains the setup code from `/deposit`
-
-Run `python migrate_payment_method_bind_memo.py` once if `venmo_payments.memo` is not on your database yet.
 
 ## Code references
 

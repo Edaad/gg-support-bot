@@ -15,13 +15,13 @@ pip install -r requirements-dev.txt  # ruff; not used on Heroku
 # Run processes individually (load .env automatically)
 python run_api.py          # FastAPI on :8000, auto-reload
 python run_bot.py          # Support bot (long-polling)
-python run_test_bot.py     # Test bot (TELEGRAM_TEST_BOT_TOKEN; v2 payment config)
+python run_test_bot.py     # Test bot (TELEGRAM_TEST_BOT_TOKEN)
 python run_cashier.py      # GGCashier staff wizard bot
 
-# One-off DB migrations (run with DATABASE_URL set)
-python migrate_support_group_chats.py
-python migrate_support_group_chats_player_dm.py
-python migrate_cashier_jobs.py
+# Schema migrations (Alembic; the Heroku release phase runs `upgrade head` on deploy)
+alembic upgrade head
+alembic revision -m "short description" --rev-id 0005_short_name   # write upgrade() with migrations/helpers.py
+python scripts/check_migrations.py   # revision rules + throwaway Postgres upgrade + alembic check (pre-push)
 ```
 
 ### Dashboard (React + Vite)
@@ -77,15 +77,15 @@ Three independent long-running processes (see `Procfile`):
 
 ### API (`api/`)
 
-- `api/app.py` — FastAPI app factory; calls `Base.metadata.create_all` on startup (tables auto-created)
+- `api/app.py` — FastAPI app factory; refuses to boot unless the DB is at the Alembic head (`db/schema_guard.py`)
 - `api/auth.py` — shared-password JWT auth (`DASHBOARD_PASSWORD`)
 - `api/routes/` — one router per resource; all protected by JWT bearer token
 
 ### Database (`db/`)
 
-- `db/models.py` — all SQLAlchemy 2.0 models (`Club`, `PaymentMethod`, `MethodVariant`, `PaymentSubOption`, `PaymentMethodTier`, `Group`, `PlayerDetails`, `CashierCashoutJob`, `SupportGroupChat`, etc.)
+- `db/models.py` — all SQLAlchemy 2.0 models (`Club`, `ClubPaymentMethod`, `ClubPaymentTier`, `ClubPaymentTierVariant`, `Group`, `PlayerDetails`, `CashierCashoutJob`, `SupportGroupChat`, etc.)
 - `db/connection.py` — `get_db()` context manager and `get_db_dependency()` for FastAPI
-- No migration framework; schema changes use standalone `migrate_*.py` scripts at the repo root
+- Alembic in `migrations/` (`0001_baseline` = prod schema as of 2026-09-23). Revisions use the guarded helpers in `migrations/helpers.py` (re-runnable), are forward-only, and must stay compatible with the previous release. See `docs/DATABASE.md` → Schema migrations.
 
 ### Dashboard (`dashboard/`)
 
@@ -96,10 +96,6 @@ React 19 + Vite + Tailwind 4 SPA. JWT token stored in `localStorage`. In product
 - `config.py` — `ADMIN_USER_IDS` (global operator IDs), `CLUB_SHORTHAND_TO_NAME`, `GC_USERS_TO_INVITE`
 - `club_gc_settings.py` — per-club MTProto config (`CLUB_GC_CONFIG`), session paths, staff invite lists, `GC_*` env knobs
 - `.env` / `.env.example` — all runtime secrets; loaded via `python-dotenv` in each entrypoint
-
-### Legacy
-
-`main.py` at the repo root is an older monolithic bot script. It is **not used** — the live code is under `bot/` and `api/`.
 
 ## graphify
 

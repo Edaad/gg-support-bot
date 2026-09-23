@@ -1,16 +1,8 @@
-"""Bot runtime flags (payment backend, test mode)."""
+"""Bot runtime flags (test mode)."""
 
 from __future__ import annotations
 
 import os
-
-
-def use_payment_v2() -> bool:
-    """Return True unless BOT_USE_PAYMENT_V2 is explicitly disabled (0/false/no/off)."""
-    raw = os.getenv("BOT_USE_PAYMENT_V2", "1").strip().lower()
-    if raw in ("0", "false", "no", "off"):
-        return False
-    return raw in ("1", "true", "yes", "on")
 
 
 def resolve_test_bot_token() -> str | None:
