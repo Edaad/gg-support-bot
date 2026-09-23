@@ -25,6 +25,7 @@ import PaymentDetailModal from '../components/payments/PaymentDetailModal'
 import ExportIconButton from '../components/ExportIconButton'
 import PaymentsExportModal from '../components/payments/PaymentsExportModal'
 import PaymentsQuickLinksModal from '../components/PaymentsQuickLinksModal'
+import PaymentsTableSkeleton from '../components/payments/PaymentsTableSkeleton'
 import UnifiedPaymentTable from '../components/payments/UnifiedPaymentTable'
 import { bindableFromUnified } from '../components/payments/types'
 import { GTO_CLUB_NAME, type DashboardRole } from '../lib/rbac'
@@ -64,7 +65,7 @@ export default function Payments({
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
 
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
   const [exportOpen, setExportOpen] = useState(false)
@@ -123,9 +124,14 @@ export default function Payments({
   }, [loadQuickLinks])
 
   useEffect(() => {
-    const t = window.setTimeout(() => setAppliedSearch(search.trim()), 300)
+    const next = search.trim()
+    if (next === appliedSearch) return
+    const t = window.setTimeout(() => {
+      setLoading(true)
+      setAppliedSearch(next)
+    }, 300)
     return () => window.clearTimeout(t)
-  }, [search])
+  }, [search, appliedSearch])
 
   useEffect(() => {
     setPage(0)
@@ -133,6 +139,7 @@ export default function Payments({
   }, [appliedSearch, method, clubFilter])
 
   const loadRows = useCallback(() => {
+    let cancelled = false
     setLoading(true)
     setErr('')
     listUnifiedPayments(token, {
@@ -141,17 +148,24 @@ export default function Payments({
       offset: page * PAGE_SIZE,
     })
       .then((res) => {
+        if (cancelled) return
         setUnifiedRows(res.items)
         setTotal(res.total)
       })
       .catch((e: unknown) => {
+        if (cancelled) return
         setErr(e instanceof Error ? e.message : 'Could not load payments.')
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [token, unifiedListParams, page])
 
   useEffect(() => {
-    loadRows()
+    return loadRows()
   }, [loadRows])
 
   const openBindModal = (row: BindableRow, methodForBind: Exclude<OwnerMethod, 'stripe'>) => {
@@ -213,6 +227,7 @@ export default function Payments({
   }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const resultsPending = loading || search.trim() !== appliedSearch
   const visibleQuickLinks = quickLinks.filter((link) =>
     quickLinkVisible(link, effectiveMethod, clubFilter, isGto),
   )
@@ -242,7 +257,10 @@ export default function Payments({
           <select
             id={methodSelectId}
             value={effectiveMethod}
-            onChange={(e) => setMethod(e.target.value as MethodFilter)}
+            onChange={(e) => {
+              setLoading(true)
+              setMethod(e.target.value as MethodFilter)
+            }}
             className="input-field-sm min-w-[10rem]"
           >
             {methods.map((m) => (
@@ -259,7 +277,10 @@ export default function Payments({
           <select
             id={clubSelectId}
             value={clubFilter}
-            onChange={(e) => setClubFilter(e.target.value)}
+            onChange={(e) => {
+              setLoading(true)
+              setClubFilter(e.target.value)
+            }}
             className="input-field-sm min-w-[12rem]"
             disabled={isGto}
           >
@@ -326,7 +347,9 @@ export default function Payments({
         </p>
       )}
 
-      {unifiedRows.length === 0 && !loading ? (
+      {resultsPending ? (
+        <PaymentsTableSkeleton showAsset={effectiveMethod === 'crypto'} />
+      ) : unifiedRows.length === 0 ? (
         <p className="text-sm text-ink-muted">No payments match the selected filters.</p>
       ) : (
         <UnifiedPaymentTable
@@ -337,7 +360,7 @@ export default function Payments({
         />
       )}
 
-      {total > PAGE_SIZE && (
+      {!resultsPending && total > PAGE_SIZE && (
         <div className="mt-4 flex items-center justify-between text-sm text-ink-muted">
           <span>
             {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
@@ -346,7 +369,10 @@ export default function Payments({
             <button
               type="button"
               disabled={page === 0}
-              onClick={() => setPage((p) => p - 1)}
+              onClick={() => {
+                setLoading(true)
+                setPage((p) => p - 1)
+              }}
               className="btn-secondary-sm disabled:opacity-40"
             >
               Previous
@@ -354,7 +380,10 @@ export default function Payments({
             <button
               type="button"
               disabled={page + 1 >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => {
+                setLoading(true)
+                setPage((p) => p + 1)
+              }}
               className="btn-secondary-sm disabled:opacity-40"
             >
               Next
@@ -362,8 +391,6 @@ export default function Payments({
           </div>
         </div>
       )}
-
-      {loading && <p className="mt-4 text-sm text-ink-muted">Loading…</p>}
 
       <PaymentDetailModal
         open={detailRow != null}
