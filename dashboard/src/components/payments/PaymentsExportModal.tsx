@@ -52,6 +52,9 @@ type Props = {
   initialMethod: MethodFilter
   initialClubFilter: string
   initialSearch: string
+  /** When provided (including empty string for all-time), seed export dates from the page. */
+  initialFromDate?: string
+  initialToDate?: string
   lockClub?: boolean
 }
 
@@ -74,6 +77,8 @@ export default function PaymentsExportModal({
   initialMethod,
   initialClubFilter,
   initialSearch,
+  initialFromDate,
+  initialToDate,
   lockClub = false,
 }: Props) {
   const searchId = useId()
@@ -166,10 +171,12 @@ export default function PaymentsExportModal({
     setUnionFilter('all')
     setClubFilter(initialClubFilter)
     setSearch(initialSearch)
-    setFromDate(latestMondayEasternDateString())
-    setToDate(easternCalendarDateString())
+    setFromDate(
+      initialFromDate !== undefined ? initialFromDate : latestMondayEasternDateString(),
+    )
+    setToDate(initialToDate !== undefined ? initialToDate : easternCalendarDateString())
     setErr('')
-  }, [open, initialMethod, initialClubFilter, initialSearch])
+  }, [open, initialMethod, initialClubFilter, initialSearch, initialFromDate, initialToDate])
 
   useEffect(() => {
     if (method !== effectiveMethod) setMethod(effectiveMethod)

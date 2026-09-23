@@ -1257,6 +1257,7 @@ export type UnifiedPaymentListParams = {
   method?: OwnerMethod | 'all' | 'zelle' | 'cashapp' | 'applepay' | 'venmo'
   depositUnion?: 'tmt' | 'massiv'
   clubId?: number
+  variant?: string
   from?: string
   to?: string
   q?: string
@@ -1268,6 +1269,7 @@ function unifiedPaymentsPath(params: UnifiedPaymentListParams): string {
   const method = params.method ?? 'all'
   const q = new URLSearchParams({ method })
   if (params.clubId != null) q.set('club_id', String(params.clubId))
+  if (params.variant?.trim()) q.set('variant', params.variant.trim())
   if (params.from) q.set('from', params.from)
   if (params.to) q.set('to', params.to)
   if (params.q?.trim()) q.set('q', params.q.trim())
@@ -1291,10 +1293,27 @@ export function listUnifiedPayments(token: string, params: UnifiedPaymentListPar
   return request<UnifiedPaymentList>(unifiedPaymentsPath(params), {}, token)
 }
 
+export function listAllPaymentVariants(
+  token: string,
+  params: {
+    method: string
+    clubId?: number
+    from?: string
+    to?: string
+  },
+) {
+  const q = new URLSearchParams({ method: params.method })
+  if (params.clubId != null) q.set('club_id', String(params.clubId))
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  return request<{ items: OwnerVariantOption[] }>(`/all/variants?${q}`, {}, token)
+}
+
 function unifiedExportPath(params: UnifiedPaymentListParams): string {
   const method = params.method ?? 'all'
   const q = new URLSearchParams({ method })
   if (params.clubId != null) q.set('club_id', String(params.clubId))
+  if (params.variant?.trim()) q.set('variant', params.variant.trim())
   if (params.from) q.set('from', params.from)
   if (params.to) q.set('to', params.to)
   if (params.q?.trim()) q.set('q', params.q.trim())

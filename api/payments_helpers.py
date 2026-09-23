@@ -1213,6 +1213,7 @@ def distinct_owner_ingest_variants(
     method_owner: str,
     from_dt: datetime | None,
     to_dt: datetime | None,
+    club_id: int | None = None,
 ) -> list[str]:
     variant_col_name = None
     for method_slug, cls in OWNER_INGEST_METHODS.items():
@@ -1228,6 +1229,18 @@ def distinct_owner_ingest_variants(
         variant_col.isnot(None),
         variant_col != "",
     )
+    if club_id is not None:
+        if payment_cls is CryptoPayment:
+            club = session.query(Club).filter(Club.id == int(club_id)).first()
+            from bot.services.crypto_payments import alert_scope_for_club_name
+
+            alert_scope = alert_scope_for_club_name(club.name) if club else None
+            if alert_scope is None:
+                return []
+            query = query.filter(CryptoPayment.alert_scope == alert_scope)
+        query = _apply_manual_payment_club_filters(
+            query, payment_cls, club_id=int(club_id), status="all"
+        )
     if payment_cls is CryptoPayment:
         query = _apply_crypto_paid_at_range(query, from_dt=from_dt, to_dt=to_dt)
     else:
@@ -1244,23 +1257,28 @@ def distinct_owner_stripe_variants(
     *,
     from_dt: datetime | None,
     to_dt: datetime | None,
+    club_id: int | None = None,
 ) -> list[dict]:
     query = session.query(
         StripeCheckoutSession.payment_method_id,
         StripeCheckoutSession.club_id,
     ).filter(StripeCheckoutSession.status == "complete")
+    if club_id is not None:
+        query = query.filter(StripeCheckoutSession.club_id == int(club_id))
     if from_dt is not None:
         query = query.filter(StripeCheckoutSession.created_at >= from_dt)
     if to_dt is not None:
         query = query.filter(StripeCheckoutSession.created_at <= to_dt)
     rows = query.distinct().all()
     seen: dict[str, str] = {}
-    for method_id, club_id in rows:
+    for method_id, row_club_id in rows:
         if method_id is None:
             key = "manual"
             label = "Manual (/stripe)"
         else:
-            name, slug = resolve_method_display(session, int(club_id), int(method_id))
+            name, slug = resolve_method_display(
+                session, int(row_club_id), int(method_id)
+            )
             key = str(method_id)
             label = name or slug or key
         seen[key] = label

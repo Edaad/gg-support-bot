@@ -6,9 +6,11 @@ import {
   bindPayPalPayment,
   bindVenmoPayment,
   bindZellePayment,
+  listAllPaymentVariants,
   listPaymentQuickLinks,
   listUnifiedPayments,
   type OwnerMethod,
+  type OwnerVariantOption,
   type PaymentQuickLinkT,
   type UnifiedPaymentListParams,
   type UnifiedPaymentRow,
@@ -24,10 +26,18 @@ import {
 import PaymentDetailModal from '../components/payments/PaymentDetailModal'
 import ExportIconButton from '../components/ExportIconButton'
 import PaymentsExportModal from '../components/payments/PaymentsExportModal'
+import PaymentTotalsCard from '../components/payments/PaymentTotalsCard'
 import PaymentsQuickLinksModal from '../components/PaymentsQuickLinksModal'
 import PaymentsTableSkeleton from '../components/payments/PaymentsTableSkeleton'
 import UnifiedPaymentTable from '../components/payments/UnifiedPaymentTable'
 import { bindableFromUnified } from '../components/payments/types'
+import {
+  easternCalendarDateString,
+  easternDayEndIso,
+  easternDayStartIso,
+  formatAppliedEasternDateRange,
+  latestMondayEasternDateString,
+} from '../lib/easternTime'
 import { GTO_CLUB_NAME, type DashboardRole } from '../lib/rbac'
 
 function quickLinkVisible(
@@ -42,6 +52,14 @@ function quickLinkVisible(
   return methodOk && clubOk && gtoOk
 }
 
+function defaultFromDate() {
+  return latestMondayEasternDateString()
+}
+
+function defaultToDate() {
+  return easternCalendarDateString()
+}
+
 export default function Payments({
   token,
   role,
@@ -52,6 +70,9 @@ export default function Payments({
   const methodSelectId = useId()
   const clubSelectId = useId()
   const searchId = useId()
+  const fromId = useId()
+  const toId = useId()
+  const variantId = useId()
   const isGto = role === 'gto'
   const isAdmin = role === 'admin'
 
@@ -61,8 +82,18 @@ export default function Payments({
   const [search, setSearch] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
 
+  const [fromDate, setFromDate] = useState(() => (isAdmin ? defaultFromDate() : ''))
+  const [toDate, setToDate] = useState(() => (isAdmin ? defaultToDate() : ''))
+  const [appliedFromDate, setAppliedFromDate] = useState(() => (isAdmin ? defaultFromDate() : ''))
+  const [appliedToDate, setAppliedToDate] = useState(() => (isAdmin ? defaultToDate() : ''))
+  const [variant, setVariant] = useState('')
+  const [variantOptions, setVariantOptions] = useState<OwnerVariantOption[]>([])
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false)
+
   const [unifiedRows, setUnifiedRows] = useState<UnifiedPaymentRow[]>([])
   const [total, setTotal] = useState(0)
+  const [summaryUsd, setSummaryUsd] = useState(0)
+  const [summaryCount, setSummaryCount] = useState(0)
   const [page, setPage] = useState(0)
 
   const [loading, setLoading] = useState(true)
@@ -82,11 +113,25 @@ export default function Payments({
   const clubIdNum = clubFilter ? Number(clubFilter) : undefined
   const methods = useMemo(() => methodsForOwnerTab('all'), [])
   const effectiveMethod = methods.includes(method) ? method : ALL_METHOD
+  const variantDisabled = !isAdmin || effectiveMethod === ALL_METHOD
+
+  const dateError =
+    isAdmin && fromDate && toDate && fromDate > toDate
+      ? 'From must be on or before to.'
+      : ''
 
   const clubNameById = useMemo(
     () => Object.fromEntries(clubs.map((c) => [c.id, c.name])),
     [clubs],
   )
+
+  const dateParams = useMemo(() => {
+    if (!isAdmin) return {}
+    const base: { from?: string; to?: string } = {}
+    if (appliedFromDate) base.from = easternDayStartIso(appliedFromDate)
+    if (appliedToDate) base.to = easternDayEndIso(appliedToDate)
+    return base
+  }, [isAdmin, appliedFromDate, appliedToDate])
 
   const unifiedListParams = useMemo((): UnifiedPaymentListParams => {
     const methodParam =
@@ -97,9 +142,19 @@ export default function Payments({
       scope: 'all',
       method: methodParam,
       clubId: clubIdNum,
+      variant: isAdmin && !variantDisabled && variant ? variant : undefined,
       q: appliedSearch || undefined,
+      ...dateParams,
     }
-  }, [effectiveMethod, clubIdNum, appliedSearch])
+  }, [
+    effectiveMethod,
+    clubIdNum,
+    appliedSearch,
+    isAdmin,
+    variantDisabled,
+    variant,
+    dateParams,
+  ])
 
   useEffect(() => {
     listClubs(token)
@@ -134,9 +189,41 @@ export default function Payments({
   }, [search, appliedSearch])
 
   useEffect(() => {
+    if (!isAdmin || dateError) return
+    setAppliedFromDate(fromDate)
+    setAppliedToDate(toDate)
+  }, [isAdmin, fromDate, toDate, dateError])
+
+  useEffect(() => {
     setPage(0)
     setDetailRow(null)
-  }, [appliedSearch, method, clubFilter])
+  }, [appliedSearch, method, clubFilter, appliedFromDate, appliedToDate, variant])
+
+  useEffect(() => {
+    setVariant('')
+  }, [method])
+
+  useEffect(() => {
+    if (!isAdmin || variantDisabled) {
+      setVariantOptions([])
+      return
+    }
+    let cancelled = false
+    listAllPaymentVariants(token, {
+      method: String(effectiveMethod),
+      clubId: clubIdNum,
+      ...dateParams,
+    })
+      .then((res) => {
+        if (!cancelled) setVariantOptions(res.items)
+      })
+      .catch(() => {
+        if (!cancelled) setVariantOptions([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isAdmin, variantDisabled, token, effectiveMethod, clubIdNum, dateParams])
 
   const loadRows = useCallback(() => {
     let cancelled = false
@@ -151,6 +238,8 @@ export default function Payments({
         if (cancelled) return
         setUnifiedRows(res.items)
         setTotal(res.total)
+        setSummaryUsd(Number(res.summary.total_amount_usd))
+        setSummaryCount(res.summary.total_count)
       })
       .catch((e: unknown) => {
         if (cancelled) return
@@ -226,11 +315,40 @@ export default function Payments({
     }
   }
 
+  const resetMoreFilters = () => {
+    const from = defaultFromDate()
+    const to = defaultToDate()
+    setFromDate(from)
+    setToDate(to)
+    setVariant('')
+  }
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const resultsPending = loading || search.trim() !== appliedSearch
   const visibleQuickLinks = quickLinks.filter((link) =>
     quickLinkVisible(link, effectiveMethod, clubFilter, isGto),
   )
+
+  const variantLabel =
+    variantOptions.find((opt) => opt.value === variant)?.label ?? variant
+
+  const totalsContextLabel = useMemo(() => {
+    const parts = [formatAppliedEasternDateRange(appliedFromDate, appliedToDate)]
+    if (effectiveMethod !== ALL_METHOD) {
+      parts.push(METHOD_LABELS[effectiveMethod])
+    }
+    if (variant) {
+      parts.push(variantLabel)
+    }
+    return parts.join(' · ')
+  }, [appliedFromDate, appliedToDate, effectiveMethod, variant, variantLabel])
+
+  const moreFiltersActive =
+    isAdmin &&
+    (variant !== '' ||
+      fromDate !== defaultFromDate() ||
+      toDate !== defaultToDate() ||
+      Boolean(dateError))
 
   return (
     <div>
@@ -292,6 +410,16 @@ export default function Payments({
             ))}
           </select>
         </div>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setMoreFiltersOpen((open) => !open)}
+            className="btn-secondary-sm"
+          >
+            {moreFiltersOpen ? 'Hide filters' : 'More filters'}
+            {!moreFiltersOpen && moreFiltersActive ? ' (active)' : ''}
+          </button>
+        )}
         <ExportIconButton onClick={() => setExportOpen(true)} />
         {isAdmin && (
           <button
@@ -319,6 +447,71 @@ export default function Payments({
         )}
       </div>
 
+      {isAdmin && moreFiltersOpen && (
+        <div className="mb-6 grid gap-3 rounded-xl border border-border bg-surface p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label htmlFor={fromId} className="label-field-xs">
+              From (ET)
+            </label>
+            <input
+              id={fromId}
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="input-field-sm w-full"
+            />
+          </div>
+          <div>
+            <label htmlFor={toId} className="label-field-xs">
+              To (ET)
+            </label>
+            <input
+              id={toId}
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="input-field-sm w-full"
+            />
+          </div>
+          <div>
+            <label htmlFor={variantId} className="label-field-xs">
+              Variant
+            </label>
+            <select
+              id={variantId}
+              value={variant}
+              disabled={variantDisabled}
+              onChange={(e) => {
+                setLoading(true)
+                setVariant(e.target.value)
+              }}
+              className="input-field-sm w-full disabled:opacity-50"
+            >
+              <option value="">
+                {variantDisabled ? 'Pick a method first' : 'All variants'}
+              </option>
+              {variantOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+              {variant &&
+                !variantOptions.some((opt) => opt.value === variant) && (
+                  <option value={variant}>{variant}</option>
+                )}
+            </select>
+          </div>
+          <div className="flex items-end">
+            <button type="button" onClick={resetMoreFilters} className="btn-secondary-sm">
+              Reset
+            </button>
+          </div>
+          {dateError ? (
+            <p className="text-sm text-danger-ink sm:col-span-2 lg:col-span-4">{dateError}</p>
+          ) : null}
+        </div>
+      )}
+
       {visibleQuickLinks.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-x-4 gap-y-2">
           {visibleQuickLinks.map((link) => (
@@ -333,6 +526,15 @@ export default function Payments({
             </a>
           ))}
         </div>
+      )}
+
+      {isAdmin && (
+        <PaymentTotalsCard
+          totalUsd={summaryUsd}
+          totalCount={summaryCount}
+          contextLabel={totalsContextLabel}
+          loading={resultsPending}
+        />
       )}
 
       {successMsg && (
@@ -419,6 +621,8 @@ export default function Payments({
         initialMethod={effectiveMethod}
         initialClubFilter={clubFilter}
         initialSearch={appliedSearch}
+        initialFromDate={isAdmin ? appliedFromDate : undefined}
+        initialToDate={isAdmin ? appliedToDate : undefined}
         lockClub={isGto}
       />
 
