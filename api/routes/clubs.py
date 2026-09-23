@@ -73,7 +73,7 @@ def _club_to_read(club: Club) -> ClubRead:
         first_deposit_bonus_cap=club.first_deposit_bonus_cap,
         is_active=club.is_active,
         created_at=club.created_at,
-        method_count=len(club.payment_methods),
+        method_count=len(club.club_payment_methods),
         group_count=len(club.groups),
         linked_account_count=len(club.linked_accounts),
     )
