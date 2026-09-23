@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { type DashboardRole } from '../lib/rbac'
 import {
@@ -15,6 +15,46 @@ import V2MethodEditor from '../components/V2MethodEditor'
 import ResponseEditor from '../components/ResponseEditor'
 import { useConfirm } from '../components/ConfirmProvider'
 import EasternInstant from '../components/EasternInstant'
+
+function ClubSection({
+  title,
+  children,
+  defaultOpen = false,
+}: {
+  title: string
+  children: ReactNode
+  defaultOpen?: boolean
+}) {
+  const [narrow, setNarrow] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)')
+    const apply = () => setNarrow(mq.matches)
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
+  if (!narrow) {
+    return (
+      <div className="rounded-xl border border-border bg-surface p-6">
+        <h3 className="mb-4 font-semibold">{title}</h3>
+        {children}
+      </div>
+    )
+  }
+  return (
+    <details
+      className="rounded-xl border border-border bg-surface px-4 py-2"
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
+      <summary className="min-h-11 cursor-pointer list-none font-semibold text-ink">
+        {title}
+      </summary>
+      <div className="mt-3 pb-2">{children}</div>
+    </details>
+  )
+}
 
 const TABS = ['General', 'Deposit Methods', 'Cashout Methods', 'Custom Commands', 'Broadcast', 'Groups'] as const
 type Tab = (typeof TABS)[number]
@@ -37,6 +77,7 @@ export default function ClubDetail({
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [loadError, setLoadError] = useState('')
+  const tabListRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setLoadError('')
@@ -47,6 +88,11 @@ export default function ClubDetail({
         setLoadError(e instanceof Error ? e.message : 'Could not load club')
       })
   }, [clubId, token])
+
+  useEffect(() => {
+    const el = tabListRef.current?.querySelector<HTMLElement>(`#${clubTabId(tab)}`)
+    el?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' })
+  }, [tab])
 
   if (loadError) return <div className="py-12 text-center text-sm text-danger-ink">{loadError}</div>
   if (!club) return <div className="py-12 text-center text-ink-muted">Loading...</div>
@@ -71,9 +117,10 @@ export default function ClubDetail({
       </div>
 
       <div
+        ref={tabListRef}
         role="tablist"
         aria-label="Club sections"
-        className="mb-6 flex gap-1 overflow-x-auto rounded-lg bg-surface p-1"
+        className="tab-scroller mb-6"
       >
         {TABS.map((t) => (
           <button
@@ -191,8 +238,7 @@ function LinkedAccountsSection({
   }
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-6">
-      <h3 className="mb-2 font-semibold">Linked Telegram accounts (backup)</h3>
+    <ClubSection title="Linked Telegram accounts (backup)">
       <p className="mb-4 text-xs text-ink-muted">
         Primary owner ID is set in Club Info above. Backups can add the bot to groups and use the same club: in groups they
         can run admin-only custom commands (not visible to customers) alongside the primary. Only the{' '}
@@ -216,7 +262,7 @@ function LinkedAccountsSection({
               <button
                 type="button"
                 onClick={() => remove(a.id)}
-                className="text-xs text-danger-ink hover:text-danger-ink"
+                className="action-chip text-danger-ink hover:bg-danger-bg"
               >
                 Remove
               </button>
@@ -237,7 +283,7 @@ function LinkedAccountsSection({
           Add backup account
         </button>
       </div>
-    </div>
+    </ClubSection>
   )
 }
 
@@ -258,8 +304,7 @@ function GeneralTab({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-border bg-surface p-6">
-        <h3 className="mb-4 font-semibold">Club Info</h3>
+      <ClubSection title="Club Info" defaultOpen>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-muted">Name</label>
@@ -275,11 +320,12 @@ function GeneralTab({
               value={form.telegram_user_id || ''}
               onChange={(e) => setField('telegram_user_id', Number(e.target.value))}
               className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+              inputMode="numeric"
             />
           </div>
         </div>
         <div className="mt-4 space-y-3">
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="check-hit">
             <input
               type="checkbox"
               checked={form.allow_multi_cashout ?? true}
@@ -292,7 +338,7 @@ function GeneralTab({
             When enabled, players can select multiple cashout methods in one session.
             When disabled, they pick one method and the cashout is submitted immediately.
           </p>
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="check-hit">
             <input
               type="checkbox"
               checked={form.allow_admin_commands ?? true}
@@ -305,7 +351,7 @@ function GeneralTab({
             When enabled, admin users can start /deposit and /cashout for customers — the
             bot will prompt and listen for the customer's response instead of the admin's.
           </p>
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="check-hit">
             <input
               type="checkbox"
               checked={form.auto_chip_adding_enabled ?? false}
@@ -314,7 +360,7 @@ function GeneralTab({
             />
             Auto chip adding on /add
           </label>
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="check-hit">
             <input
               type="checkbox"
               checked={form.auto_deposit_on_payment_enabled ?? false}
@@ -328,7 +374,7 @@ function GeneralTab({
             player, and start the cashout cooldown — without a manual /add. Off by default;
             enable per club when ready.
           </p>
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="check-hit">
             <input
               type="checkbox"
               checked={form.auto_claim_enabled ?? false}
@@ -337,7 +383,7 @@ function GeneralTab({
             />
             Auto claim on /cash
           </label>
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="check-hit">
             <input
               type="checkbox"
               checked={form.enable_popup_keyboard ?? false}
@@ -351,7 +397,7 @@ function GeneralTab({
             after quiet periods. Free messages dismiss it. Off by default for the main bot;
             TestGGSupportBot always has this on for its GC groups.
           </p>
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="check-hit">
             <input
               type="checkbox"
               checked={form.enable_escalation_notification ?? false}
@@ -365,7 +411,7 @@ function GeneralTab({
             Slack alert. Allowed /cashout and deposit payment-chase events also post to Slack.
             Off by default.
           </p>
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="check-hit">
             <input
               type="checkbox"
               checked={form.enable_auto_cashout ?? false}
@@ -380,7 +426,7 @@ function GeneralTab({
             posts "an agent will be with you shortly" and escalates. Requires the deposit API
             and Auto claim on /cash. Off by default.
           </p>
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="check-hit">
             <input
               type="checkbox"
               checked={form.enable_transfer ?? false}
@@ -396,7 +442,7 @@ function GeneralTab({
             agent will be with you shortly" and escalates. Requires the deposit API and Auto
             claim on /cash. Clubs without unions ignore this. Off by default.
           </p>
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="check-hit">
             <input
               type="checkbox"
               checked={form.enable_auto_early_rakeback ?? false}
@@ -473,7 +519,7 @@ function GeneralTab({
               </p>
             </div>
           )}
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="check-hit">
             <input
               type="checkbox"
               checked={form.is_active ?? true}
@@ -483,7 +529,7 @@ function GeneralTab({
             Active
           </label>
         </div>
-      </div>
+      </ClubSection>
 
       <LinkedAccountsSection
         token={token}
@@ -492,9 +538,8 @@ function GeneralTab({
         onChanged={onClubRefresh}
       />
 
-      <div className="rounded-xl border border-border bg-surface p-6">
-        <h3 className="mb-4 font-semibold">Cashout Cooldown</h3>
-        <label className="flex items-center gap-2 text-sm text-ink">
+      <ClubSection title="Cashout Cooldown">
+              <label className="check-hit">
           <input
             type="checkbox"
             checked={form.cashout_cooldown_enabled ?? false}
@@ -521,7 +566,7 @@ function GeneralTab({
               <p className="mt-1 text-xs text-ink-muted">Hours a player must wait between deposit/cashout and their next cashout.</p>
             </div>
             <div>
-              <label className="flex items-center gap-2 text-sm text-ink">
+              <label className="check-hit">
                 <input
                   type="checkbox"
                   checked={form.cashout_hours_enabled ?? false}
@@ -536,7 +581,7 @@ function GeneralTab({
               </p>
             </div>
             {form.cashout_hours_enabled && (
-              <div className="flex gap-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-ink-muted">Open time (EST)</label>
                   <input
@@ -559,15 +604,15 @@ function GeneralTab({
             )}
           </div>
         )}
-      </div>
+      </ClubSection>
 
-      <div className="rounded-xl border border-border bg-surface p-6">
-        <h3 className="mb-4 font-semibold">Cashout Limits</h3>
+      <ClubSection title="Cashout Limits">
         <div className="space-y-5">
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-muted">Hard limit — Maximum cashout amount ($)</label>
             <input
               type="number"
+              inputMode="decimal"
               min={0}
               step="0.01"
               value={form.cashout_max_amount ?? ''}
@@ -583,6 +628,7 @@ function GeneralTab({
             <label className="mb-1 block text-xs font-medium text-ink-muted">Soft limit — Instant cashout threshold ($)</label>
             <input
               type="number"
+              inputMode="decimal"
               min={0}
               step="0.01"
               value={form.cashout_soft_limit ?? ''}
@@ -596,13 +642,12 @@ function GeneralTab({
             </p>
           </div>
         </div>
-      </div>
+      </ClubSection>
 
-      <div className="rounded-xl border border-border bg-surface p-6">
-        <h3 className="mb-4 font-semibold">First Deposit Settings</h3>
+      <ClubSection title="First Deposit Settings">
         <div className="space-y-5">
           <div>
-            <label className="flex items-center gap-2 text-sm text-ink">
+            <label className="check-hit">
               <input
                 type="checkbox"
                 checked={form.referral_enabled ?? false}
@@ -616,7 +661,7 @@ function GeneralTab({
             </p>
           </div>
           <div>
-            <label className="flex items-center gap-2 text-sm text-ink">
+            <label className="check-hit">
               <input
                 type="checkbox"
                 checked={form.first_deposit_bonus_enabled ?? false}
@@ -634,6 +679,7 @@ function GeneralTab({
               <label className="mb-1 block text-xs font-medium text-ink-muted">Bonus percentage (%)</label>
               <input
                 type="number"
+                inputMode="decimal"
                 min={1}
                 max={100}
                 value={form.first_deposit_bonus_pct ?? 0}
@@ -648,6 +694,7 @@ function GeneralTab({
               <label className="mb-1 block text-xs font-medium text-ink-muted">Bonus cap ($)</label>
               <input
                 type="number"
+                inputMode="decimal"
                 min={0}
                 step="0.01"
                 value={form.first_deposit_bonus_cap ?? ''}
@@ -661,11 +708,10 @@ function GeneralTab({
             </div>
           </>)}
         </div>
-      </div>
+      </ClubSection>
 
-      <div className="rounded-xl border border-border bg-surface p-6">
-        <h3 className="mb-4 font-semibold">Deposit Simple Mode</h3>
-        <label className="flex items-center gap-2 text-sm text-ink">
+      <ClubSection title="Deposit Simple Mode">
+              <label className="check-hit">
           <input
             type="checkbox"
             checked={form.deposit_simple_mode ?? false}
@@ -686,11 +732,10 @@ function GeneralTab({
             onChange={(field, value) => setField(field.replace('response_', 'deposit_simple_'), value)}
           />
         )}
-      </div>
+      </ClubSection>
 
-      <div className="rounded-xl border border-border bg-surface p-6">
-        <h3 className="mb-4 font-semibold">Cashout Simple Mode</h3>
-        <label className="flex items-center gap-2 text-sm text-ink">
+      <ClubSection title="Cashout Simple Mode">
+              <label className="check-hit">
           <input
             type="checkbox"
             checked={form.cashout_simple_mode ?? false}
@@ -711,10 +756,9 @@ function GeneralTab({
             onChange={(field, value) => setField(field.replace('response_', 'cashout_simple_'), value)}
           />
         )}
-      </div>
+      </ClubSection>
 
-      <div className="rounded-xl border border-border bg-surface p-6">
-        <h3 className="mb-4 font-semibold">Welcome Message</h3>
+      <ClubSection title="Welcome Message">
         <p className="mb-3 text-xs text-ink-muted">Sent when the bot is added to a group by this club's owner.</p>
         <ResponseEditor
           type={form.welcome_type || 'text'}
@@ -723,10 +767,9 @@ function GeneralTab({
           caption={form.welcome_caption || ''}
           onChange={(field, value) => setField(field.replace('response_', 'welcome_'), value)}
         />
-      </div>
+      </ClubSection>
 
-      <div className="rounded-xl border border-border bg-surface p-6">
-        <h3 className="mb-4 font-semibold">Member join (players)</h3>
+      <ClubSection title="Member join (players)">
         <p className="mb-3 text-xs text-ink-muted">
           Saving stores settings only—the bot sends on the next qualifying event (player join, leave/rejoin, or when GG
           Support is added). For a{' '}
@@ -766,10 +809,9 @@ function GeneralTab({
             placeholder="Shown under the document in Telegram (optional)"
           />
         </div>
-      </div>
+      </ClubSection>
 
-      <div className="rounded-xl border border-border bg-surface p-6">
-        <h3 className="mb-4 font-semibold">List Content</h3>
+      <ClubSection title="List Content">
         <p className="mb-3 text-xs text-ink-muted">Shown when someone uses /list in the group.</p>
         <ResponseEditor
           type={form.list_type || 'text'}
@@ -778,15 +820,17 @@ function GeneralTab({
           caption={form.list_caption || ''}
           onChange={(field, value) => setField(field.replace('response_', 'list_'), value)}
         />
-      </div>
+      </ClubSection>
 
+      <div className="sticky-save sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
       <button
         onClick={() => onSave(form)}
         disabled={saving}
-        className="btn-primary py-2.5 disabled:opacity-50"
+        className="btn-primary w-full py-2.5 disabled:opacity-50 sm:w-auto"
       >
         {saving ? 'Saving…' : 'Save changes'}
       </button>
+      </div>
     </div>
   )
 }
@@ -896,7 +940,7 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
           Create named groups of chats to target broadcasts to specific subsets instead of all groups.
         </p>
 
-        <div className="mb-4 flex gap-2">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row">
           <input
             value={newBgName}
             onChange={(e) => setNewBgName(e.target.value)}
@@ -930,7 +974,7 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
                   <div className="flex gap-2">
                     <button
                       onClick={() => setManagingBg(managingBg === bg.id ? null : bg.id)}
-                      className="text-xs text-accent hover:text-accent-hover"
+                      className="action-chip text-accent hover:bg-accent/10 hover:text-accent-hover"
                     >
                       {managingBg === bg.id ? 'Close' : 'Manage'}
                     </button>
@@ -948,7 +992,7 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
                         if (form.broadcast_group_id === bg.id) setForm(f => ({ ...f, broadcast_group_id: null }))
                         loadBgs()
                       }}
-                      className="text-xs text-danger-ink hover:text-danger-ink"
+                      className="action-chip text-danger-ink hover:bg-danger-bg"
                     >
                       Delete
                     </button>
@@ -969,7 +1013,7 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
                                 const updated = await removeBroadcastGroupMember(token, clubId, bg.id, m.chat_id)
                                 setBgs(prev => prev.map(b => b.id === bg.id ? updated : b))
                               }}
-                              className="text-xs text-danger-ink hover:text-danger-ink"
+                              className="action-chip text-danger-ink hover:bg-danger-bg"
                             >
                               Remove
                             </button>
@@ -1098,7 +1142,7 @@ function BroadcastTab({ token, clubId, groupCount }: { token: string; clubId: nu
           </div>
         )}
 
-        <div className="mt-4 flex gap-3">
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <button
             onClick={handleSend}
             disabled={starting || (job?.status === 'running') || targetCount === 0}
@@ -1222,7 +1266,7 @@ function CommandsTab({ token, clubId }: { token: string; clubId: number }) {
             onChange={(field, value) => setForm({ ...form, [field]: value })}
           />
           <div className="mt-4">
-            <label className="flex items-center gap-2 text-sm text-ink">
+            <label className="check-hit">
               <input
                 type="checkbox"
                 checked={form.customer_visible ?? false}
@@ -1235,7 +1279,7 @@ function CommandsTab({ token, clubId }: { token: string; clubId: number }) {
               Off by default. When enabled, non-admin users can also use this command.
             </p>
           </div>
-          <div className="mt-4 flex gap-2">
+          <div className="form-actions mt-4">
             <button type="button" onClick={handleSave} className="btn-primary">
               {editId ? 'Save command' : 'Add command'}
             </button>
@@ -1264,7 +1308,19 @@ function GroupsTab({ token, clubId }: { token: string; clubId: number }) {
       {groups.length === 0 ? (
         <p className="py-6 text-center text-sm text-ink-muted">No groups linked yet.</p>
       ) : (
-        <div className="table-scroll">
+        <>
+        <div className="space-y-2 sm:hidden">
+          {groups.map((g) => (
+            <article key={g.chat_id} className="row-card-static">
+              <h3 className="truncate text-base font-semibold text-ink">{g.name || '—'}</h3>
+              <p className="mt-0.5 font-mono text-sm text-ink-muted">{g.chat_id}</p>
+              <p className="mt-1 text-xs text-ink-muted">
+                Added <EasternInstant value={g.added_at} variant="date" />
+              </p>
+            </article>
+          ))}
+        </div>
+        <div className="table-scroll hidden sm:block">
           <table>
             <thead className="bg-surface text-ink-muted">
               <tr>
@@ -1286,6 +1342,7 @@ function GroupsTab({ token, clubId }: { token: string; clubId: number }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   )

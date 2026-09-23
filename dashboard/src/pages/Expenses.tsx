@@ -10,6 +10,7 @@ import {
   type ExpenseT,
 } from '../api/client'
 import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
+import FilterExtras from '../components/FilterExtras'
 import ExportIconButton from '../components/ExportIconButton'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
@@ -220,8 +221,8 @@ export default function Expenses({ token }: { token: string }) {
         </button>
       </div>
 
-      <div className="mb-6 flex flex-wrap items-end gap-3">
-        <div className="min-w-[16rem] flex-1">
+      <div className="filter-stack mb-6">
+        <div className="filter-stack__search">
           <label className="label-field-xs" htmlFor="expense-search">
             Search
           </label>
@@ -234,6 +235,7 @@ export default function Expenses({ token }: { token: string }) {
             className="input-field-sm w-full"
           />
         </div>
+        <FilterExtras>
         <div>
           <label className="label-field-xs" htmlFor="expense-club">
             Club
@@ -292,6 +294,7 @@ export default function Expenses({ token }: { token: string }) {
           />
         </div>
         <ExportIconButton onClick={openExport} />
+        </FilterExtras>
       </div>
 
       {error && (
@@ -305,8 +308,53 @@ export default function Expenses({ token }: { token: string }) {
       ) : rows.length === 0 ? (
         <p className="text-sm text-ink-muted">No matching expenses.</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border">
-          <table className="min-w-full text-left text-sm">
+        <>
+        <div className="space-y-2 sm:hidden">
+          {rows.map((r) => (
+            <article key={r.id} className="row-card-static">
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <h3 className="truncate text-base font-semibold text-ink">
+                    {r.expense_type}
+                  </h3>
+                  <p className="mt-0.5 truncate text-sm text-ink-muted">
+                    {r.club_name || '—'}
+                    {' · '}
+                    <EasternInstant value={r.expense_date} variant="date" />
+                    {r.description ? ` · ${r.description}` : ''}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-base font-semibold tabular-nums text-ink">
+                    {fmtMoney(Number(r.amount))}
+                  </p>
+                  <p className="mt-0.5 text-xs text-ink-muted">
+                    {r.pending ? 'Pending' : 'Cleared'}
+                  </p>
+                </div>
+              </div>
+              <div className="card-actions-primary mt-3">
+                <button
+                  type="button"
+                  className="btn-primary min-h-11 px-4 text-sm"
+                  onClick={() => openEdit(r)}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className="btn-danger-outline min-h-11 px-4 text-sm"
+                  disabled={saving}
+                  onClick={() => remove(r)}
+                >
+                  Delete
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="table-scroll hidden sm:block">
+          <table className="min-w-[40rem] text-left text-sm">
             <thead className="border-b border-border bg-surface-raised text-ink-muted">
               <tr>
                 <th className="px-4 py-3 font-medium">Date</th>
@@ -367,6 +415,7 @@ export default function Expenses({ token }: { token: string }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       <Modal

@@ -22,6 +22,7 @@ import CashoutDestinationList, {
 import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
 import CashoutNotifyConfigModal from '../components/CashoutNotifyConfigModal'
 import { useConfirm } from '../components/ConfirmProvider'
+import FilterExtras from '../components/FilterExtras'
 import ExportIconButton from '../components/ExportIconButton'
 import Modal from '../components/Modal'
 import {
@@ -95,7 +96,7 @@ function CashoutCardMenu({
         aria-expanded={open}
         disabled={saving}
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-lg leading-none text-ink-muted hover:bg-control hover:text-ink disabled:opacity-40"
+        className="menu-hit hover:bg-control hover:text-ink disabled:opacity-40"
       >
         ⋯
       </button>
@@ -267,7 +268,7 @@ function MoneySentRowMenu({
         aria-label="Row actions"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="rounded-md px-2 py-1 text-lg leading-none text-ink-muted hover:bg-control hover:text-ink"
+        className="menu-hit hover:bg-control hover:text-ink"
       >
         ⋯
       </button>
@@ -747,7 +748,7 @@ export default function CashoutRecords({
         </div>
       </div>
 
-      <div className="mb-6 flex gap-1 overflow-x-auto rounded-lg bg-surface p-1">
+      <div className="tab-scroller mb-6">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -755,8 +756,8 @@ export default function CashoutRecords({
             onClick={() => setTab(t.id)}
             className={
               tab === t.id
-                ? 'rounded-md bg-accent/12 px-4 py-2 text-sm font-medium text-accent'
-                : 'rounded-md px-4 py-2 text-sm font-medium text-ink-muted hover:bg-control hover:text-ink'
+                ? 'shrink-0 rounded-md bg-accent/12 px-4 py-2 text-sm font-medium text-accent'
+                : 'shrink-0 rounded-md px-4 py-2 text-sm font-medium text-ink-muted hover:bg-control hover:text-ink'
             }
           >
             {t.label}
@@ -764,8 +765,8 @@ export default function CashoutRecords({
         ))}
       </div>
 
-      <div className="mb-6 flex flex-wrap items-end gap-3">
-        <div className="min-w-[16rem] flex-1">
+      <div className="filter-stack mb-6">
+        <div className="filter-stack__search">
           <label className="label-field-xs" htmlFor="cashout-search">
             Search
           </label>
@@ -780,6 +781,7 @@ export default function CashoutRecords({
             className="input-field-sm w-full"
           />
         </div>
+        <FilterExtras>
         <div>
           <label className="label-field-xs" htmlFor="cashout-club">
             Club
@@ -868,6 +870,7 @@ export default function CashoutRecords({
           </>
         )}
         <ExportIconButton onClick={openExport} />
+        </FilterExtras>
       </div>
 
       {error && (
@@ -887,8 +890,34 @@ export default function CashoutRecords({
           </p>
         ) : (
           <>
-            <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-              <table className="min-w-full text-left text-sm">
+            <div className="space-y-2 sm:hidden">
+              {sends.map((s) => (
+                <article key={s.id} className="row-card-static">
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate text-base font-semibold text-ink">
+                        {s.group_title}
+                      </h3>
+                      <p className="mt-0.5 truncate text-sm text-ink-muted">
+                        {s.sender_name}
+                        {' · '}
+                        {s.method_display_name}
+                        {' · '}
+                        <EasternInstant value={s.created_at} />
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-start gap-1">
+                      <p className="text-base font-semibold tabular-nums text-ink">
+                        {fmtMoney(s.amount)}
+                      </p>
+                      <MoneySentRowMenu recordId={s.cashout_record_id} onOpen={openRecord} />
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className="table-scroll hidden sm:block">
+              <table className="min-w-[40rem] text-left text-sm">
                 <thead>
                   <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-ink-muted">
                     <th className="px-4 py-3">Amount</th>

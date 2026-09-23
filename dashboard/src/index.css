@@ -225,6 +225,58 @@
     @apply mb-1 block text-xs font-medium text-ink-muted;
   }
 
+  .row-card {
+    @apply cursor-pointer rounded-2xl border border-border bg-surface px-4 py-3 shadow-sm transition hover:border-accent/40 hover:bg-surface-raised;
+  }
+
+  .row-card-static {
+    @apply rounded-2xl border border-border bg-surface px-4 py-3 shadow-sm;
+  }
+
+  .filter-stack {
+    @apply flex flex-col gap-3;
+  }
+
+  .filter-stack__search {
+    @apply w-full min-w-0;
+  }
+
+  .filter-stack__extras {
+    @apply flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end;
+  }
+
+  .tab-scroller {
+    @apply relative flex gap-1 overflow-x-auto scroll-px-2 rounded-lg bg-surface p-1;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .tab-scroller::after {
+    content: '';
+    pointer-events: none;
+    position: sticky;
+    right: -0.25rem;
+    top: 0;
+    bottom: 0;
+    z-index: 1;
+    width: 1.5rem;
+    flex-shrink: 0;
+    background: linear-gradient(to right, transparent, var(--surface));
+  }
+
+  .menu-hit {
+    @apply inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-lg leading-none text-ink-muted;
+  }
+
+  .check-hit {
+    @apply inline-flex min-h-11 cursor-pointer items-center gap-3 text-sm text-ink;
+  }
+
+  .sticky-save {
+    @apply sticky z-30 border-t border-border bg-bg/95 py-3 backdrop-blur-sm;
+    bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
+  }
+
   .panel {
     @apply rounded-xl border border-border bg-surface p-6;
   }
@@ -481,14 +533,53 @@
     padding-inline: 0.875rem;
   }
 
+  .btn-primary-sm,
+  .btn-secondary-sm,
+  .btn-danger,
+  .btn-danger-outline {
+    min-height: 2.75rem;
+  }
+
+  .chip-success,
+  .chip-warning,
+  .chip-neutral,
+  .chip-accent {
+    min-height: 2.75rem;
+  }
+
   .method-drag-hint {
     display: none;
+  }
+
+  .theme-toggle-seg {
+    min-height: 2.75rem;
   }
 }
 
 @media (max-width: 639px) {
   .form-actions .btn-primary,
-  .form-actions .btn-secondary {
+  .form-actions .btn-secondary,
+  .form-actions .btn-primary-sm,
+  .form-actions .btn-secondary-sm {
     @apply w-full justify-center;
+  }
+
+  .input-field-sm,
+  select.input-field-sm,
+  textarea.input-field-sm,
+  input.input-field-sm {
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  .sticky-save {
+    margin-left: -1rem;
+    margin-right: -1rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .panel {
+    @apply p-4;
   }
 }

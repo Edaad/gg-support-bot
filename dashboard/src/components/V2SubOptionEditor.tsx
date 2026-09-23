@@ -176,7 +176,7 @@ export default function V2SubOptionEditor({
               />
             </div>
           </div>
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="check-hit">
             <input
               type="checkbox"
               checked={form.is_active ?? true}

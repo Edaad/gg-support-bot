@@ -493,6 +493,7 @@ export default function V2VariantEditor({
               <input
                 id={variantWeightId}
                 type="number"
+                inputMode="numeric"
                 min={0}
                 value={form.weight ?? 1}
                 onChange={(e) => setForm({ ...form, weight: Math.max(0, Number(e.target.value) || 0) })}
@@ -697,6 +698,7 @@ export default function V2VariantEditor({
                   <input
                     id={variantMinId}
                     type="number"
+                    inputMode="decimal"
                     value={form.checkout_min_amount ?? ''}
                     onChange={(e) =>
                       setForm({
@@ -717,6 +719,7 @@ export default function V2VariantEditor({
                 </label>
                 <input
                   id={variantMaxId}
+                  inputMode="decimal"
                   type="number"
                   value={form.checkout_max_amount ?? ''}
                   onChange={(e) =>

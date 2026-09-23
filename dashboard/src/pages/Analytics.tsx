@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { listClubs, type Club } from '../api/client'
 import {
@@ -7,6 +7,7 @@ import {
   type BoundViaFilter,
   type LinkingMethodSlug,
 } from '../api/paymentsClient'
+import FilterExtras from '../components/FilterExtras'
 import PaymentMethodLinkingAnalytics from '../components/PaymentMethodLinkingAnalytics'
 import AutoDepositAnalytics from '../components/AutoDepositAnalytics'
 import DepositFunnelAnalytics from '../components/DepositFunnelAnalytics'
@@ -93,6 +94,14 @@ export default function Analytics({ token }: { token: string }) {
   const [appliedTo, setAppliedTo] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
   const section = sectionFromSearch(searchParams.get('section'))
+  const tabListRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = tabListRef.current?.querySelector<HTMLElement>(
+      `#${analyticsSectionTabId(section)}`,
+    )
+    el?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' })
+  }, [section])
   const setSection = (id: AnalyticsSection) => {
     if (id === 'deposit_funnel') {
       setSearchParams({}, { replace: true })
@@ -195,9 +204,10 @@ export default function Analytics({ token }: { token: string }) {
       <h1 className="mb-4 text-2xl font-bold text-ink text-balance">Analytics</h1>
 
       <div
+        ref={tabListRef}
         role="tablist"
         aria-label="Analytics sections"
-        className="mb-6 flex gap-1 overflow-x-auto rounded-lg bg-surface p-1"
+        className="tab-scroller mb-6"
       >
         {ANALYTICS_SECTIONS.map((opt) => (
           <button
@@ -219,7 +229,7 @@ export default function Analytics({ token }: { token: string }) {
 
       {!isStandaloneAnalyticsSection(section) && (
         <form
-          className="mb-6 flex flex-wrap items-end gap-4"
+          className="filter-stack mb-6"
           onSubmit={(e) => {
             e.preventDefault()
             applyFilters()
@@ -247,6 +257,7 @@ export default function Analytics({ token }: { token: string }) {
             </select>
           </div>
 
+          <FilterExtras>
           <div>
             <label htmlFor={methodSelectId} className="label-field-xs">
               Method
@@ -366,6 +377,7 @@ export default function Analytics({ token }: { token: string }) {
           <button type="submit" className="btn-primary min-h-11">
             Apply filters
           </button>
+          </FilterExtras>
         </form>
       )}
 

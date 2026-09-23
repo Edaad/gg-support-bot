@@ -41,8 +41,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {pending && (
         <Modal open title={pending.title} onClose={() => finish(false)}>
           <p className="mb-6 text-sm text-ink-muted">{pending.message}</p>
-          <div className="flex flex-wrap justify-end gap-2">
-            <button type="button" onClick={() => finish(false)} className="btn-secondary">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+            <button type="button" onClick={() => finish(false)} className="btn-secondary w-full sm:w-auto">
               {pending.cancelLabel ?? 'Cancel'}
             </button>
             <button
@@ -51,8 +51,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
               onClick={() => finish(true)}
               className={
                 pending.destructive
-                  ? 'rounded-lg border border-danger-ink bg-danger-bg px-4 py-2 text-sm font-medium text-danger-ink transition hover:opacity-90'
-                  : 'btn-primary'
+                  ? 'w-full rounded-lg border border-danger-ink bg-danger-bg px-4 py-2 text-sm font-medium text-danger-ink transition hover:opacity-90 sm:w-auto'
+                  : 'btn-primary w-full sm:w-auto'
               }
             >
               {pending.confirmLabel ?? (pending.destructive ? 'Confirm' : 'Continue')}

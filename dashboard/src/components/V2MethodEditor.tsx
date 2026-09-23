@@ -199,6 +199,7 @@ function MethodDetailsForm({
           <input
             id={minAmountFieldId}
             type="number"
+            inputMode="decimal"
             min={0}
             step="0.01"
             value={form.min_amount ?? ''}
@@ -216,6 +217,7 @@ function MethodDetailsForm({
           <input
             id={maxAmountFieldId}
             type="number"
+            inputMode="decimal"
             min={0}
             step="0.01"
             value={form.max_amount ?? ''}
@@ -227,7 +229,7 @@ function MethodDetailsForm({
           />
         </div>
         <div className="sm:col-span-2">
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="check-hit">
             <input
               type="checkbox"
               checked={form.has_sub_options ?? false}
@@ -238,7 +240,7 @@ function MethodDetailsForm({
           </label>
         </div>
         <div className="sm:col-span-2">
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="check-hit">
             <input
               type="checkbox"
               checked={form.is_active ?? true}
@@ -249,7 +251,7 @@ function MethodDetailsForm({
           </label>
         </div>
         <div className="sm:col-span-2 space-y-1">
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="check-hit">
             <input
               type="checkbox"
               checked={form.is_public ?? true}
@@ -279,6 +281,7 @@ function MethodDetailsForm({
             <input
               id={depositLimitFieldId}
               type="number"
+              inputMode="decimal"
               min={0}
               step="0.01"
               value={form.deposit_limit ?? ''}

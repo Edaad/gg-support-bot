@@ -223,8 +223,68 @@ export default function ManualDepositRequestsTable({
       {rows.length === 0 ? (
         <p className="text-sm text-ink-muted">No deposits yet.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="min-w-full text-left text-sm">
+        <>
+        <div className="space-y-2 sm:hidden">
+          {rows.map((row) => (
+            <article key={row.id} className="row-card-static">
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <h3 className="truncate text-base font-semibold text-ink">
+                    {row.group_title || '—'}
+                  </h3>
+                  <p className="mt-0.5 truncate text-sm text-ink-muted">
+                    {showClubColumn ? `${row.club?.name || '—'} · ` : ''}
+                    {row.variant_name}
+                    {showMethodColumns ? ` · ${row.method_name}` : ''}
+                    {' · '}
+                    <EasternInstant value={row.created_at} />
+                  </p>
+                </div>
+                <p className="shrink-0 text-base font-semibold tabular-nums text-ink">
+                  {formatUsd(row.amount)}
+                </p>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <label className="check-hit flex-1">
+                  <input
+                    type="checkbox"
+                    checked={row.trade_record_checked}
+                    disabled={busyId === row.id}
+                    onChange={() => {
+                      void onToggle(row)
+                    }}
+                    className="h-4 w-4 rounded border-border bg-control text-accent focus:ring-accent"
+                  />
+                  <span className="text-sm text-ink-muted">
+                    {row.trade_record_checked ? 'Trade record checked' : 'Trade record'}
+                  </span>
+                </label>
+                {allowEdit && row.method_id != null ? (
+                  <button
+                    type="button"
+                    disabled={busyId === row.id}
+                    onClick={() => setEditRow(row)}
+                    className="action-chip"
+                  >
+                    Edit
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={busyId === row.id}
+                  onClick={() => {
+                    void onDelete(row)
+                  }}
+                  className="action-chip text-danger-ink hover:bg-danger-bg"
+                >
+                  Delete
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="table-scroll hidden sm:block">
+          <table className="min-w-[48rem] text-left text-sm">
             <thead className="bg-surface-raised text-xs uppercase text-ink-muted">
               <tr>
                 <th className="px-3 py-2 font-medium">Group</th>
@@ -310,6 +370,7 @@ export default function ManualDepositRequestsTable({
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {allowEdit && editRow && editMethodId != null ? (

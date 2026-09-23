@@ -110,7 +110,7 @@ function AlertCard({
           </p>
         </div>
         <label
-          className="inline-flex shrink-0 items-center gap-2 text-xs text-ink-muted"
+          className="check-hit shrink-0 pb-0 text-xs text-ink-muted"
           onClick={(e) => e.stopPropagation()}
         >
           <span className="sr-only">Active</span>

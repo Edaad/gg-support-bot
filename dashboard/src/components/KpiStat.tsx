@@ -88,8 +88,12 @@ export default memo(function KpiStat({
       aria-labelledby={labelId}
       aria-describedby={describedBy}
       className="kpi-stat"
-      onMouseEnter={openTip}
-      onMouseLeave={closeTip}
+      onMouseEnter={() => {
+        if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) openTip()
+      }}
+      onMouseLeave={() => {
+        if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) closeTip()
+      }}
     >
       <div className="kpi-stat__label-row">
         <span id={labelId} className="min-w-0 break-words">
