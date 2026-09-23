@@ -1,8 +1,6 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.runtime_config import use_payment_v2
-
 
 async def _send_command_list(
     update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -15,15 +13,10 @@ async def _send_command_list(
         "• /deposit — Make a deposit",
         "• /cashout — Request a cashout",
         "• /list — View the club's list",
+        "",
+        "Staff:",
+        "• /unbindmethod — Clear all payment-method links for this group",
     ]
-    if use_payment_v2():
-        lines.extend(
-            [
-                "",
-                "Staff:",
-                "• /unbindmethod — Clear all payment-method links for this group",
-            ]
-        )
     lines.extend(
         [
             "",

@@ -125,9 +125,6 @@ class Club(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
 
-    payment_methods = relationship(
-        "PaymentMethod", back_populates="club", cascade="all, delete-orphan"
-    )
     custom_commands = relationship(
         "CustomCommand", back_populates="club", cascade="all, delete-orphan"
     )
@@ -173,141 +170,6 @@ class ClubLinkedAccount(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     club = relationship("Club", back_populates="linked_accounts")
-
-
-class PaymentMethod(Base):
-    __tablename__ = "payment_methods"
-    __table_args__ = (
-        UniqueConstraint("club_id", "direction", "slug", name="uq_club_direction_slug"),
-        CheckConstraint("direction IN ('deposit', 'cashout')", name="ck_direction"),
-    )
-
-    id = Column(Integer, primary_key=True)
-    club_id = Column(
-        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
-    )
-    direction = Column(String(10), nullable=False)
-    name = Column(String(50), nullable=False)
-    slug = Column(String(50), nullable=False)
-    min_amount = Column(Numeric(12, 2), nullable=True)
-    max_amount = Column(Numeric(12, 2), nullable=True)
-    has_sub_options = Column(Boolean, default=False)
-    response_type = Column(String(10), default="text")
-    response_text = Column(Text)
-    response_file_id = Column(Text)
-    response_caption = Column(Text)
-    # Deposit methods can optionally embed a per-group generated link (currently Stripe Checkout) into response_text.
-    use_group_checkout_link = Column(
-        Boolean, default=False, server_default=text("false")
-    )
-    group_checkout_provider = Column(String(32), nullable=True)
-    hyperlink_text = Column(String(64), nullable=True)
-    is_active = Column(Boolean, default=True)
-    sort_order = Column(Integer, default=0)
-    deposit_limit = Column(Numeric(12, 2), nullable=True)
-    accumulated_amount = Column(Numeric(12, 2), default=0, server_default=text("0"))
-    created_at = Column(DateTime, server_default=func.now())
-
-    club = relationship("Club", back_populates="payment_methods")
-    sub_options = relationship(
-        "PaymentSubOption", back_populates="method", cascade="all, delete-orphan"
-    )
-    tiers = relationship(
-        "PaymentMethodTier",
-        back_populates="method",
-        cascade="all, delete-orphan",
-        order_by="PaymentMethodTier.sort_order",
-    )
-    variants = relationship(
-        "MethodVariant",
-        back_populates="method",
-        cascade="all, delete-orphan",
-        order_by="MethodVariant.sort_order",
-    )
-
-
-class MethodVariant(Base):
-    """Weighted response variants for a payment method or tier (load-balancing / rotation)."""
-
-    __tablename__ = "method_variants"
-
-    id = Column(Integer, primary_key=True)
-    method_id = Column(
-        Integer, ForeignKey("payment_methods.id", ondelete="CASCADE"), nullable=False
-    )
-    tier_id = Column(
-        Integer,
-        ForeignKey("payment_method_tiers.id", ondelete="CASCADE"),
-        nullable=True,
-    )
-    label = Column(String(100), nullable=False)
-    weight = Column(Integer, nullable=False, default=1)
-    response_type = Column(String(10), default="text")
-    response_text = Column(Text)
-    response_file_id = Column(Text)
-    response_caption = Column(Text)
-    min_amount = Column(Numeric(12, 2), nullable=True)
-    max_amount = Column(Numeric(12, 2), nullable=True)
-    use_group_checkout_link = Column(Boolean, nullable=True)
-    group_checkout_provider = Column(String(32), nullable=True)
-    hyperlink_text = Column(String(64), nullable=True)
-    sort_order = Column(Integer, default=0)
-
-    method = relationship("PaymentMethod", back_populates="variants")
-    tier = relationship("PaymentMethodTier", back_populates="variants")
-
-
-class PaymentSubOption(Base):
-    __tablename__ = "payment_sub_options"
-    __table_args__ = (UniqueConstraint("method_id", "slug", name="uq_method_slug"),)
-
-    id = Column(Integer, primary_key=True)
-    method_id = Column(
-        Integer, ForeignKey("payment_methods.id", ondelete="CASCADE"), nullable=False
-    )
-    name = Column(String(50), nullable=False)
-    slug = Column(String(50), nullable=False)
-    response_type = Column(String(10), default="text")
-    response_text = Column(Text)
-    response_file_id = Column(Text)
-    response_caption = Column(Text)
-    is_active = Column(Boolean, default=True)
-    sort_order = Column(Integer, default=0)
-
-    method = relationship("PaymentMethod", back_populates="sub_options")
-
-
-class PaymentMethodTier(Base):
-    __tablename__ = "payment_method_tiers"
-
-    id = Column(Integer, primary_key=True)
-    method_id = Column(
-        Integer, ForeignKey("payment_methods.id", ondelete="CASCADE"), nullable=False
-    )
-    label = Column(String(50), nullable=False)
-    min_amount = Column(Numeric(12, 2), nullable=True)
-    max_amount = Column(Numeric(12, 2), nullable=True)
-    response_type = Column(String(10), default="text")
-    response_text = Column(Text)
-    response_file_id = Column(Text)
-    response_caption = Column(Text)
-    use_group_checkout_link = Column(
-        Boolean, default=False, server_default=text("false")
-    )
-    group_checkout_provider = Column(String(32), nullable=True)
-    hyperlink_text = Column(String(64), nullable=True)
-    sort_order = Column(Integer, default=0)
-
-    method = relationship("PaymentMethod", back_populates="tiers")
-    variants = relationship(
-        "MethodVariant",
-        back_populates="tier",
-        cascade="all, delete-orphan",
-        order_by="MethodVariant.sort_order",
-    )
-
-
-# ── V2 payment config (greenfield; parallel to legacy payment_methods) ─────────
 
 
 class ClubPaymentMethod(Base):
@@ -851,6 +713,16 @@ class PlayerActivity(Base):
     """Tracks completed deposits and cashouts per player per club for cooldown logic."""
 
     __tablename__ = "player_activities"
+    __table_args__ = (
+        Index(
+            "ix_player_activities_club_chat_type",
+            "club_id",
+            "chat_id",
+            "activity_type",
+            "cancelled",
+            text("created_at DESC"),
+        ),
+    )
 
     id = Column(Integer, primary_key=True)
     club_id = Column(
@@ -961,6 +833,8 @@ class BonusRecord(Base):
         Index("ix_bonus_records_gg_player_id", "gg_player_id"),
         Index("ix_bonus_records_player_details_id", "player_details_id"),
         Index("ix_bonus_records_issued_at", "issued_at"),
+        Index("ix_bonus_records_created_at", "created_at"),
+        Index("ix_bonus_records_club_id", "club_id"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -2735,6 +2609,9 @@ class IssueReportAttachment(Base):
     """Screenshot attached to an issue report."""
 
     __tablename__ = "issue_report_attachments"
+    __table_args__ = (
+        Index("ix_issue_report_attachments_report_id", "issue_report_id"),
+    )
 
     id = Column(Integer, primary_key=True)
     issue_report_id = Column(
@@ -3096,27 +2973,6 @@ class AuditReconcileRun(Base):
     club = relationship("Club")
     trade_upload = relationship("TradeRecordUpload")
     early_rb_snapshot = relationship("EarlyRakebackSnapshot")
-
-
-class GlideAuditLine(Base):
-    """Optional snapshot of Glide RT Hub rows used in reconcile."""
-
-    __tablename__ = "glide_audit_lines"
-    __table_args__ = (
-        Index("ix_glide_audit_lines_club_slug", "club_slug"),
-        Index("ix_glide_audit_lines_audit_date", "audit_date"),
-    )
-
-    id = Column(Integer, primary_key=True)
-    club_slug = Column(String(64), nullable=False)
-    audit_date = Column(Date, nullable=False)
-    glide_row_id = Column(String(128), nullable=False)
-    gg_player_id = Column(String(255), nullable=True)
-    amount_usd = Column(Numeric(14, 2), nullable=False)
-    event_type = Column(String(64), nullable=True)
-    occurred_at = Column(DateTime(timezone=True), nullable=True)
-    raw_json = Column(Text, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
 
 
 class WatchedGroupEscalationState(Base):
