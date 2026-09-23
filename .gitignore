@@ -5,10 +5,14 @@ __pycache__/
 .ruff_cache/
 .env
 
-# Local editor, agent, and skill tooling
+# Local editor, agent, and skill tooling.
+# The migration rule is tracked; everything else under .cursor/ stays local.
 .agents/skills/impeccable/
 .claude/
-.cursor/
+.cursor/*
+!.cursor/rules/
+.cursor/rules/*
+!.cursor/rules/no-auto-migrations.mdc
 .impeccable/live/
 .vscode/
 *.json.tmp
