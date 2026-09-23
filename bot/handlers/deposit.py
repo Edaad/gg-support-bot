@@ -140,7 +140,7 @@ from bot.services.deposit_funnel_events import (
     STEP_UNION_CHOSEN,
     record_deposit_funnel_event,
 )
-from bot.runtime_config import is_test_bot_worker, use_payment_v2
+from bot.runtime_config import is_test_bot_worker
 from db.connection import get_db
 from db.models import (
     CashAppPayment,
@@ -2093,7 +2093,6 @@ async def deposit_amount_priority_handler(
 def _no_deposit_methods_message(club_id: int | None, amount: Decimal) -> str:
     if club_id is None:
         return f"No deposit methods available for ${amount}."
-    backend = "v2 club_payment_*" if use_payment_v2() else "legacy payment_methods"
     lowest = get_lowest_minimum(club_id, "deposit")
     if lowest is not None and amount < lowest:
         return (
@@ -2102,8 +2101,8 @@ def _no_deposit_methods_message(club_id: int | None, amount: Decimal) -> str:
         )
     return (
         f"No deposit methods available for ${amount}.\n"
-        f"(club_id={club_id}, backend={backend})\n"
-        "Add methods in the dashboard or run a v2 seed script."
+        f"(club_id={club_id})\n"
+        "Add methods in the dashboard."
     )
 
 
@@ -2334,10 +2333,9 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         )
     except Exception:
         logger.exception(
-            "deposit_amount_received: failed loading methods club_id=%s amount=%s v2=%s",
+            "deposit_amount_received: failed loading methods club_id=%s amount=%s",
             club_id,
             amount,
-            use_payment_v2(),
         )
         await update.message.reply_text(
             "Could not load deposit methods. Check bot logs and DATABASE_URL."
@@ -2345,12 +2343,11 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         return ConversationHandler.END
 
     logger.info(
-        "deposit_amount_received chat_id=%s club_id=%s amount=%s methods=%s v2=%s test=%s",
+        "deposit_amount_received chat_id=%s club_id=%s amount=%s methods=%s test=%s",
         update.effective_chat.id,
         club_id,
         amount,
         [m.get("slug") for m in methods],
-        use_payment_v2(),
         is_test_bot_worker(),
     )
 

@@ -28,7 +28,9 @@ router = APIRouter(
     dependencies=[Depends(get_current_admin)],
 )
 
-_MIGRATION_HINT = "Run: python migrate_payment_quick_links.py"
+_MIGRATION_HINT = (
+    "Run: alembic upgrade head (the Heroku release phase does this on deploy)"
+)
 
 
 def _schema_error() -> HTTPException:

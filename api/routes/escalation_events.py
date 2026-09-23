@@ -27,7 +27,7 @@ router = APIRouter(
 _DEFAULT_LIMIT = 50
 _MAX_LIMIT = 200
 _MIGRATION_HINT = (
-    "Run: python migrate_escalation_observability.py (or heroku run … on the web dyno)"
+    "Run: alembic upgrade head (the Heroku release phase does this on deploy)"
 )
 
 

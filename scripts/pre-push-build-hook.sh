@@ -47,6 +47,12 @@ echo "[pre-push build] running Python tests (python -m unittest discover -s test
 }
 echo "[pre-push build] python tests ok"
 
+echo "[pre-push build] checking migrations (scripts/check_migrations.py)..."
+"$PYTHON" scripts/check_migrations.py || {
+  echo "[pre-push build] migration check failed; push aborted (graphify skipped)." >&2
+  exit 1
+}
+
 if ! command -v npm >/dev/null 2>&1; then
   echo "[pre-push build] npm not found; push aborted." >&2
   exit 1

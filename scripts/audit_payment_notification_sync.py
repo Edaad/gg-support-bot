@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """List bound payments whose Telegram notification may be out of sync.
 
-Requires payment_binding_events (migrate_payment_binding_events.py). Payments
-ingested before that migration will appear here until re-synced or backfilled.
+Requires the payment_binding_events table. Payments
+ingested before it existed will appear here until re-synced or backfilled.
 
 Usage:
     DATABASE_URL=... python scripts/audit_payment_notification_sync.py

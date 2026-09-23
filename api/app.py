@@ -45,7 +45,7 @@ from fastapi.responses import FileResponse
 
 from api.webhook_ingest_audit import WebhookIngestMiddleware
 from db.connection import init_engine
-from db.models import Base
+from db.schema_guard import ensure_schema_at_head
 
 
 def create_app() -> FastAPI:
@@ -63,7 +63,7 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     def on_startup():
         engine = init_engine()
-        Base.metadata.create_all(engine)
+        ensure_schema_at_head(engine)
 
     # ── Auth route (no token required) ────────────────────────────────────
     from api.auth import resolve_role, create_token

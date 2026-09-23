@@ -142,29 +142,15 @@ _DEFAULT_LIMIT = 50
 _MAX_LIMIT = 200
 
 _MIGRATION_HINT = (
-    "Run: python migrate_stripe_deposit_tracking.py && "
-    "python migrate_stripe_checkout_session_lifecycle.py (or heroku run … on the web dyno)"
+    "Run: alembic upgrade head (the Heroku release phase does this on deploy)"
 )
-_VENMO_MIGRATION_HINT = (
-    "Run: python migrate_venmo_payments.py (or heroku run … on the web dyno)"
-)
-_ZELLE_MIGRATION_HINT = (
-    "Run: python migrate_zelle_payments.py (or heroku run … on the web dyno)"
-)
-_CASHAPP_MIGRATION_HINT = (
-    "Run: python migrate_cashapp_payments.py (or heroku run … on the web dyno)"
-)
-_PAYPAL_MIGRATION_HINT = (
-    "Run: python migrate_paypal_payments.py (or heroku run … on the web dyno)"
-)
-_CRYPTO_MIGRATION_HINT = (
-    "Run: python migrate_crypto_payments.py and migrate_crypto_wallet_bindings.py "
-    "(or heroku run … on the web dyno)"
-)
-_BINDINGS_MIGRATION_HINT = (
-    "Run: python migrate_payment_method_bindings.py (or heroku run … on the web dyno)"
-)
-_AUTO_DEPOSIT_EVENTS_MIGRATION_HINT = "Run: python migrate_payment_auto_deposit_events.py (or heroku run … on the web dyno)"
+_VENMO_MIGRATION_HINT = _MIGRATION_HINT
+_ZELLE_MIGRATION_HINT = _MIGRATION_HINT
+_CASHAPP_MIGRATION_HINT = _MIGRATION_HINT
+_PAYPAL_MIGRATION_HINT = _MIGRATION_HINT
+_CRYPTO_MIGRATION_HINT = _MIGRATION_HINT
+_BINDINGS_MIGRATION_HINT = _MIGRATION_HINT
+_AUTO_DEPOSIT_EVENTS_MIGRATION_HINT = _MIGRATION_HINT
 
 BOUND_VIA_FILTER_ALIASES: dict[str, tuple[str, ...]] = {
     "manual": ("manual_notification", "manual_dashboard"),

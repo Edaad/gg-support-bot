@@ -21,7 +21,7 @@ warnings.filterwarnings(
 
 from cashier.chat_reply import reply_exception
 from db.connection import init_engine
-from db.models import Base
+from db.schema_guard import ensure_schema_at_head
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +175,7 @@ def run_cashier(token: str | None = None):
     )
 
     engine = init_engine()
-    Base.metadata.create_all(engine)
+    ensure_schema_at_head(engine)
 
     from cashier.handlers.wizard import get_cashier_wizard_handler
 
