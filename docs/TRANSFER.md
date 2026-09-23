@@ -115,7 +115,7 @@ would gate it before any chips move.
 ## Migration
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_enable_transfer.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 > Run this before or with the deploy. The model declares `clubs.enable_transfer`,

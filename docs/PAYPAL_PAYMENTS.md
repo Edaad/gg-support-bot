@@ -22,7 +22,7 @@ Repeat payers (`paypal_payer_bindings`) auto-bind by **normalized payer name** o
 Migration (run once after deploy):
 
 ```bash
-DATABASE_URL=... python migrate_paypal_payments.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 ## Environment
@@ -96,7 +96,7 @@ Variant response text should include the receiving email, e.g. `PayPal Email: pa
 
 ## Zapier cutover
 
-1. Deploy code and run `migrate_paypal_payments.py`
+1. Deploy code (the release phase applies the schema)
 2. Set `PAYPAL_ZAPIER_WEBHOOK_SECRET` on the web dyno
 3. Update the PayPal Zap: replace the Telegram step with POST to `/api/paypal/payments`
 4. **Retire** the old Zap that posted directly to Telegram (avoids duplicate notifications)

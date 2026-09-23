@@ -24,11 +24,8 @@ Live group title at confirm time comes from **`groups.name`** (or `support_group
 Migrations:
 
 ```bash
-DATABASE_URL=... python migrate_stripe_deposit_tracking.py
-DATABASE_URL=... python migrate_stripe_checkout_session_lifecycle.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
-
-New installs also get tables from API startup `create_all`.
 
 ## Environment (bot + API)
 

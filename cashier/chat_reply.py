@@ -30,12 +30,12 @@ def user_facing_error(exc: BaseException | None) -> str:
     ):
         return (
             "Database setup incomplete (cashier_cashout_jobs table missing). "
-            "Run: python migrate_cashier_jobs.py"
+            "Run: alembic upgrade head"
         )
     if "foreignkeyviolation" in lower or "foreign key constraint" in lower:
         return (
             "Payment method could not be saved on this cashout job (database FK mismatch). "
-            "Run: python migrate_cashier_jobs_drop_method_fks.py"
+            "Run: alembic upgrade head"
         )
         return "Database connection error. Try again in a moment."
     if "query is too old" in lower or "query id is invalid" in lower:

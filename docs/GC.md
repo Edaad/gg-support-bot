@@ -14,7 +14,7 @@ Key point: **the group is created by a club’s Telegram user account via MTProt
 - **Incoming:** When anyone **DMs the club MTProto account** (private chat, non-bot), the handler creates or reuses the support group for `(club_key, player_telegram_user_id)` and DMs the player (same flow as `/gc`). Disable per club with **`GC_DM_GC_AUTO_DISABLED_CLUBS=round_table`** or **`GC_DM_GC_AUTO_ROUND_TABLE=false`**; disable all clubs with **`GC_DM_GC_AUTO_ENABLED=false`**. Staff outgoing `/gc` is unchanged.
 - **Outgoing:** If an outgoing private message text is **exactly** `/gc`, the handler deletes that message, resolves the **player** from the DM peer, and runs the same create/reuse flow.
 - The player receives a **global** DM template (see [`bot/services/player_support_dm_messages.py`](../bot/services/player_support_dm_messages.py)).
-- Metadata is written to **`support_group_chats`** (run [`migrate_support_group_chats_player_dm.py`](../migrate_support_group_chats_player_dm.py) on existing DBs).
+- Metadata is written to **`support_group_chats`**.
 
 **Testing:** Authorize the club’s MTProto session (Dashboard **Telegram login** or [`scripts/mtproto_login_cli.py`](../scripts/mtproto_login_cli.py)), run a single `python run_bot.py` worker (listener is on unless `GC_DM_GC_LISTENER_ENABLED=false`), have a player DM the club support account (or send `/gc` from staff in a player DM), and confirm the group + DB row appear.
 
@@ -166,7 +166,6 @@ Protected HTTP API (JWT), implemented in [`api/routes/gc_mtproto.py`](../api/rou
 ### Postgres table
 
 - Model [`MtProtoSessionCredential`](../db/models.py).
-- Migration: [`migrate_mtproto_session_credentials.py`](../migrate_mtproto_session_credentials.py) (tables are also ensured by startup `create_all`).
 - Rows hold **secrets** (same sensitivity as committing `*.session` files). Rotate if leaked.
 - **`GC_MTPROTO_DB_SESSIONS=false`** — skip Postgres (file-only Telethon paths; suited to single-machine dev).
 
@@ -212,14 +211,7 @@ Table: `support_group_chats`
 
 - SQLAlchemy model: `SupportGroupChat` in [`db/models.py`](../db/models.py)
 - Insert helper: [`bot/services/support_group_chats.py`](../bot/services/support_group_chats.py)
-- Migration scripts: [`migrate_support_group_chats.py`](../migrate_support_group_chats.py), [`migrate_support_group_chats_player_dm.py`](../migrate_support_group_chats_player_dm.py)
-
-To create / extend the table in an existing database:
-
-```bash
-DATABASE_URL=postgresql://... python migrate_support_group_chats.py
-DATABASE_URL=postgresql://... python migrate_support_group_chats_player_dm.py
-```
+- Schema: managed by Alembic (see [DATABASE.md](DATABASE.md#schema-migrations-alembic))
 
 ## Inactive group outreach scan (entity resolution only)
 
@@ -232,7 +224,7 @@ One-shot worker batch job that scans all three clubs' support megagroups for **l
 **Enable on worker:**
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_inactive_group_outreach.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 heroku config:set GC_INACTIVE_OUTREACH_SCAN_ENABLED=true -a YOUR_APP
 heroku restart worker -a YOUR_APP
 ```
@@ -254,7 +246,7 @@ After reviewing inactive groups (CSV, Telegram, or outreach scan), staff can que
 **Migration** (run once before using commands):
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_inactive_group_outreach_staging.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 **Commands** (global admins + MTProto operators):
@@ -276,7 +268,7 @@ Implementation: [`bot/services/inactive_group_outreach_staging.py`](../bot/servi
 **Migrations** (run once):
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_inactive_group_outreach_dm.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 **Enable worker DM batch** (after migration):
@@ -308,7 +300,7 @@ Worker JobQueue job that sets club photos on unique **Round Table / Creator Club
 Implementation: [`bot/services/group_photo_backfill.py`](../bot/services/group_photo_backfill.py). Default on after deploy (`GC_GROUP_PHOTO_BACKFILL_ENABLED`).
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_group_photo_backfill.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 Knobs: `GC_GROUP_PHOTO_BACKFILL_BATCH_SIZE` (default `10`), `GC_GROUP_PHOTO_BACKFILL_INTERVAL_SEC` (default `3600`), `GC_GROUP_PHOTO_BACKFILL_DELAY_SEC` (default `2`), `GC_GROUP_PHOTO_BACKFILL_FIRST_DELAY_SEC` (default `300`). Pin one chat with `GC_GROUP_PHOTO_BACKFILL_CHAT_ID` for a single-group test.

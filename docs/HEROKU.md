@@ -84,6 +84,19 @@ heroku webhooks:add -a gg-support-bot-2025 \
 
 Inspect deliveries: `heroku webhooks:deliveries -a gg-support-bot-2025`.
 
+## Schema migrations (release phase)
+
+The `release` process ([`scripts/heroku_release.py`](../scripts/heroku_release.py)) runs the import smoke, then `alembic upgrade head`, then the deploy notification. If the migration fails, the release fails and the previous release keeps serving. Web, worker, cashier and notification dynos refuse to boot unless the database is at the Alembic head. Revisions must stay compatible with the previous release (old dynos serve during the release phase; `heroku rollback` does not revert the database). Details: [DATABASE.md](DATABASE.md#schema-migrations-alembic).
+
+**One-time cutover** (existing prod database, before the first Alembic deploy):
+
+```bash
+heroku pg:backups:capture -a YOUR_APP
+DATABASE_URL=$(heroku config:get DATABASE_URL -a YOUR_APP) python scripts/check_prod_schema_parity.py --revision 0001_baseline
+heroku run -a YOUR_APP -- alembic stamp 0001_baseline
+# then deploy; the release phase applies the revisions after the baseline
+```
+
 ## Deploy maintenance notifications
 
 Each Heroku deploy runs the **`release`** Procfile phase before new dynos go live. That phase:
@@ -95,11 +108,7 @@ Each Heroku deploy runs the **`release`** Procfile phase before new dynos go liv
 - **Cooldown:** at most one notification per hour; rapid redeploys within the hour are skipped (logged as `deploy_notify: skipped (cooldown)`).
 - **Admins must have `/start`'d the support bot** in DM to receive messages.
 
-The release script auto-creates `deploy_notify_state` if missing (`CREATE TABLE IF NOT EXISTS`). You only need the manual migration when running outside release (e.g. local testing):
-
-```bash
-heroku run -a YOUR_APP -- python migrate_deploy_notify_state.py
-```
+`deploy_notify_state` is part of the Alembic schema; the release phase migrates before it notifies.
 
 **Config vars** (optional):
 
@@ -185,12 +194,7 @@ After a basic-group → supergroup upgrade drops members, the worker can drain a
 **One-time setup** (run against production Postgres):
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_migrated_group_recovery.py
-heroku run -a YOUR_APP -- python migrate_migration_recovery_control.py
-heroku run -a YOUR_APP -- python migrate_migration_recovery_last_tick.py
-heroku run -a YOUR_APP -- python migrate_migration_recovery_slack_summary_last.py
-heroku run -a YOUR_APP -- python migrate_migration_recovery_rate_limit_resume.py
-heroku run -a YOUR_APP -- python migrate_migration_recovery_club_rate_limit.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 heroku run -a YOUR_APP -- python scripts/seed_migrated_group_recovery.py
 ```
 
@@ -283,9 +287,7 @@ Scans all three clubs' support megagroups for **last non-support player message*
 **Migration:**
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_inactive_group_outreach.py
-heroku run -a YOUR_APP -- python migrate_inactive_group_outreach_staging.py
-heroku run -a YOUR_APP -- python migrate_inactive_group_outreach_dm.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 **Enable** on the worker dyno:
@@ -339,12 +341,6 @@ Local single-group debug: [`scripts/run_inactive_group_outreach_scan.py`](../scr
 ## Group photo backfill (hourly, active RT/CC only)
 
 Sets club photos on **Round Table and Creator Club** support groups that appear in `support_group_idle_episode_state` (the escalation tracker) and currently have no Telegram photo. **10 groups per hour.** Reuses the worker's live MTProto listener — no `heroku run` and no `GC_MTPROTO_ENABLED=false`. `/gc` and other Telethon work stay up.
-
-**Migration** (optional — worker `create_all` also creates the table):
-
-```bash
-heroku run -a YOUR_APP -- python migrate_group_photo_backfill.py
-```
 
 On by default after deploy. Optional knobs:
 
@@ -436,28 +432,25 @@ heroku config:set SLACK_OPS_MENTION='<@UYOUR_SLACK_USER_ID>' -a YOUR_APP   # opt
 
 **Optional fallback:** Incoming Webhook (`SLACK_OPS_WEBHOOK_URL`) if bot post fails or you have not set bot token yet.
 
-**Issue reports (account managers):** Tickets are stored in Postgres (`issue_reports`). Create via `POST /api/issue-reports` (multipart) or `python scripts/create_issue_report.py`. Slack posts use a **dedicated** app/channel (`SLACK_ISSUE_REPORT_BOT_TOKEN` + `SLACK_ISSUE_REPORT_CHANNEL_ID`, or `SLACK_ISSUE_REPORT_WEBHOOK_URL`). Optional audience mentions via `ISSUE_REPORT_TAG_MENTIONS` JSON (e.g. `{"head_admin":"<!subteam^S_HEAD>","engineer":"<!subteam^S_ENG>"}`). Bot scopes: `chat:write`, `files:write`. Run `python migrate_issue_reports.py` once after deploy.
+**Issue reports (account managers):** Tickets are stored in Postgres (`issue_reports`). Create via `POST /api/issue-reports` (multipart) or `python scripts/create_issue_report.py`. Slack posts use a **dedicated** app/channel (`SLACK_ISSUE_REPORT_BOT_TOKEN` + `SLACK_ISSUE_REPORT_CHANNEL_ID`, or `SLACK_ISSUE_REPORT_WEBHOOK_URL`). Optional audience mentions via `ISSUE_REPORT_TAG_MENTIONS` JSON (e.g. `{"head_admin":"<!subteam^S_HEAD>","engineer":"<!subteam^S_ENG>"}`). Bot scopes: `chat:write`, `files:write`.
 
 **Escalation notification (player idle / cashout / deposit chase):** Club dashboard toggle **Escalation notification**. Slack uses a **dedicated** channel (`SLACK_ESCALATION_BOT_TOKEN` + `SLACK_ESCALATION_CHANNEL_ID`, or `SLACK_ESCALATION_WEBHOOK_URL`). RPA deposit/cashout failures and UNCERTAIN outcomes also fan out identically to a head-admin channel (`SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`, same bot token). External Make/Zapier can also `POST /api/head-admin-escalation` with header `X-Head-Admin-Escalation-Webhook-Secret` and body `{"message":"..."}` to that channel (`HEAD_ADMIN_ESCALATION_WEBHOOK_SECRET`). See [`docs/ESCALATION_NOTIFICATION.md`](ESCALATION_NOTIFICATION.md). Run once:
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_enable_escalation_notification.py
-heroku run -a YOUR_APP -- python migrate_escalation_activity_state.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 # After deploy that adds post-deposit idle: next player free text after payment/chips
-heroku run -a YOUR_APP -- python migrate_escalation_post_deposit_idle.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 # Support-group idle episodes (1m burst / 5m silence / 30m hard cap)
-heroku run -a YOUR_APP -- python migrate_support_group_idle_episode_state.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 # Staff-unanswered after follow-up (issue-report channel ping)
-heroku run -a YOUR_APP -- python migrate_support_group_idle_staff_unanswered.py
-heroku run -a YOUR_APP -- python migrate_escalation_observability.py
-heroku run -a YOUR_APP -- python migrate_escalation_decision_log.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 heroku config:set SLACK_ESCALATION_BOT_TOKEN=xoxb-... -a YOUR_APP
 heroku config:set SLACK_ESCALATION_CHANNEL_ID=C... -a YOUR_APP
 heroku config:set SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID=C... -a YOUR_APP
 heroku config:set HEAD_ADMIN_ESCALATION_WEBHOOK_SECRET=generate-a-long-random-string -a YOUR_APP
 # Watch non-support groups (listen-only → head-admin Slack). Privacy Mode off required.
 heroku config:set WATCH_GROUP_ESCALATION_CHAT_IDS=-100123,-100456 -a YOUR_APP
-heroku run -a YOUR_APP -- python migrate_watched_group_escalation_state.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 ```bash
@@ -468,31 +461,15 @@ heroku config:set ISSUE_REPORT_TAG_MENTIONS='{"head_admin":"<!subteam^S_HEAD>","
 
 Include an `account_managers` key (Slack user-group mention for `@accmanagers`) so the nightly transcript cron can ping AMs on start/finish.
 
-**Issue reports (AMs):** `/escalate` (group) and `/report` (DM) — see [`docs/ISSUE_REPORTS_BOT.md`](ISSUE_REPORTS_BOT.md). Run `python migrate_issue_reports_v2.py`, `python migrate_issue_report_drafts.py`, and `python migrate_issue_reports_resolve.py` once after deploy.
+**Issue reports (AMs):** `/escalate` (group) and `/report` (DM) — see [`docs/ISSUE_REPORTS_BOT.md`](ISSUE_REPORTS_BOT.md).
 
 **Staff cashout records + bonus tables:** Editable GGCashier cashout history lives in `staff_cashout_records` / `staff_cashout_payments`; money-sent ledger is `staff_cashout_money_sends`. `/bonus` (private DM) uses `bonus_records`. `/add` with a bonus amount, or `/bonus <amount>` in a linked support group, DMs staff a **Continue bonus** wizard (pending rows in `bonus_drafts`). Run once after deploy:
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_staff_cashout_records.py
-heroku run -a YOUR_APP -- python migrate_staff_cashout_ledger.py
-heroku run -a YOUR_APP -- python migrate_staff_cashout_do_not_send.py
-heroku run -a YOUR_APP -- python migrate_staff_cashout_sending.py
-heroku run -a YOUR_APP -- python migrate_staff_cashout_audited.py
-heroku run -a YOUR_APP -- python migrate_staff_cashout_list_indexes.py
-heroku run -a YOUR_APP -- python migrate_staff_cashout_slack_reminder.py
-heroku run -a YOUR_APP -- python migrate_staff_cashout_notify_recipients.py
-heroku run -a YOUR_APP -- python migrate_staff_cashout_notify_hours.py
-heroku run -a YOUR_APP -- python migrate_bonus_records.py
-heroku run -a YOUR_APP -- python migrate_bonus_drafts.py
-heroku run -a YOUR_APP -- python migrate_bonus_records_player_details.py
-heroku run -a YOUR_APP -- python migrate_bonus_records_dashboard.py
-heroku run -a YOUR_APP -- python migrate_bonus_records_metadata.py
-heroku run -a YOUR_APP -- python migrate_bonus_records_issued_at.py
-heroku run -a YOUR_APP -- python migrate_expenses.py
-heroku run -a YOUR_APP -- python migrate_deposit_method_alerts.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
-Dashboard **Cashout records** admin **Configure notifications** modal holds the **5 min Slack reminder** toggle, **active cashout hours** (EST, default 8:00 AM–11:00 PM), and Pushover recipients (name, user key, method ticks). Method-filtered Pushover fires on create and on the 5-minute overdue cadence regardless of the Slack switch. When Slack is on, overdue Active cashouts also post to `SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`. Outside active hours, initial and urgent staff alerts are held and resume when the window opens (a 1 AM cashout gets its first alert at open). Checking **Sending** on a record pauses those 5-minute Slack/Pushover pings (`migrate_staff_cashout_sending.py`). Requires `migrate_staff_cashout_slack_reminder.py`, `migrate_staff_cashout_notify_recipients.py`, and `migrate_staff_cashout_notify_hours.py`. Set `DASHBOARD_PUBLIC_URL` (e.g. `https://gg-support-bot-2025-6f96168018cf.herokuapp.com`) for **Open cashout** links; if unset, the link is omitted. Worker polls every 30s; per-record overdue cadence is 5 minutes (clock starts when the initial create alert is sent). Turning the Slack toggle on during open hours fires overdue Slack immediately.
+Dashboard **Cashout records** admin **Configure notifications** modal holds the **5 min Slack reminder** toggle, **active cashout hours** (EST, default 8:00 AM–11:00 PM), and Pushover recipients (name, user key, method ticks). Method-filtered Pushover fires on create and on the 5-minute overdue cadence regardless of the Slack switch. When Slack is on, overdue Active cashouts also post to `SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`. Outside active hours, initial and urgent staff alerts are held and resume when the window opens (a 1 AM cashout gets its first alert at open). Checking **Sending** on a record pauses those 5-minute Slack/Pushover pings. Set `DASHBOARD_PUBLIC_URL` (e.g. `https://gg-support-bot-2025-6f96168018cf.herokuapp.com`) for **Open cashout** links; if unset, the link is omitted. Worker polls every 30s; per-record overdue cadence is 5 minutes (clock starts when the initial create alert is sent). Turning the Slack toggle on during open hours fires overdue Slack immediately.
 
 Pushover needs `PUSHOVER_APP_TOKEN` only; recipient keys and Venmo/Zelle/Crypto/Cash App/PayPal prefs are stored in `staff_cashout_notify_recipients` (Other/custom methods notify everyone with a key). Priority `1`. If the app token is unset or no recipients match, Slack-only for overdue.
 
@@ -509,13 +486,13 @@ Dashboard **Alerts** (admin only, under More) watches weekly Eastern Mon–Sun v
 Dashboard **Payments** admin settings (gear next to Export) stores quick-access hyperlinks in `payment_quick_links`. Each link has a title, URL, and optional method/club visibility so it only appears between the filters and the table when those filters match (`all` / empty = no restriction).
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_payment_quick_links.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 **Referral deep links:** `/referral_link` in titled support groups; clickers hop via bot DM then club support account. Tables `referral_links` + `referral_attributions`:
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_referral_tables.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 Set app-wide (worker + notification dynos). Restart after deploy: `heroku restart worker notification -a YOUR_APP`
@@ -525,7 +502,7 @@ Set app-wide (worker + notification dynos). Restart after deploy: `heroku restar
 After deploying `method_owner` on manual payment ingest, run once on production Postgres:
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_payment_method_owner.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 Adds `method_owner` to `venmo_payments`, `zelle_payments`, `cashapp_payments`, `paypal_payments`, and `crypto_payments`; backfills existing rows from Vaughn heuristics; adds `(method_owner, created_at)` indexes.
@@ -537,8 +514,7 @@ Zapier ingests must send `method_owner` on every POST (`round-table`, `vaughn`, 
 After deploying binding-event tracking, run once on production Postgres:
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_payment_binding_events.py
-heroku run -a YOUR_APP -- python migrate_payment_notification_posts.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 This creates `payment_binding_events`, an append-only log of binds, group-link updates, notification sends, and notification edit outcomes. Find payments whose Telegram message may be stale:
@@ -552,7 +528,7 @@ heroku run -a YOUR_APP -- python scripts/audit_payment_notification_sync.py --me
 After deploying Venmo variant destination fields, run once:
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_venmo_variant_fields.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 Adds `venmo_tag`, `venmo_link`, and `venmo_response_mode` on `club_payment_tier_variants`, and backfills link/tag from existing response text/caption when a single Venmo URL is present. Existing variants stay on `text` or `photo` (never auto-switched to `default`).
@@ -562,7 +538,7 @@ Adds `venmo_tag`, `venmo_link`, and `venmo_response_mode` on `club_payment_tier_
 After deploying Cash App variant destination fields, run once:
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_cashapp_variant_fields.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 Adds `cashapp_tag`, `cashapp_link`, and `cashapp_response_mode` on `club_payment_tier_variants`, and backfills link/tag from existing response text/caption when a single Cash App cashtag is present on a native (non-checkout) variant. Existing variants stay on `text` or `photo` (never auto-switched to `default`). Stripe checkout variants skip link/tag backfill.
@@ -572,8 +548,7 @@ Adds `cashapp_tag`, `cashapp_link`, and `cashapp_response_mode` on `club_payment
 After deploying display-tag stickiness (first bot-shown `@` / `$` per support group), run once:
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_deposit_destination_stickiness.py
-heroku run -a YOUR_APP -- python migrate_deposit_destination_stickiness_fallback.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 Creates `group_deposit_destination_stickiness` and adds `fallback_warned_reason` (one head-admin Slack per lock+reason while a bound destination is replaced). Cleared by `/unbindmethod` and dashboard unbind. See [`docs/VENMO_FLOW.md`](VENMO_FLOW.md) and [`docs/CASHAPP_PAYMENTS.md`](CASHAPP_PAYMENTS.md).
@@ -583,7 +558,7 @@ Creates `group_deposit_destination_stickiness` and adds `fallback_warned_reason`
 After deploying daily active-group instrumentation, run once on production Postgres:
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_group_chat_daily_activity.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 The production bot worker records one rollup row per club-linked support group per America/New_York calendar day when a non-bot message arrives. Query active groups for a day:
@@ -606,7 +581,7 @@ Stores previous-day conversation history (JSONB) for each active support group. 
 After deploy, run the migration once:
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_group_chat_daily_transcripts.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 Feature flag (default **off**). Enable only after validating one chat:
@@ -631,7 +606,7 @@ After extract resumes MTProto and posts the “commands available” Slack notic
 After deploy, run:
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_group_chat_tickets.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 heroku config:set ANTHROPIC_API_KEY=sk-ant-... -a YOUR_APP
 # optional model override (default claude-sonnet-4-5):
 # heroku config:set ANTHROPIC_MODEL=claude-sonnet-4-5 -a YOUR_APP
@@ -676,8 +651,7 @@ Optional: `GROUP_CHAT_ANALYSIS_CONCURRENCY=10` (default `0` = unlimited).
 After deploying the union method redesign, run **in order** (wipes existing union methods and deposit rows, then adds new columns):
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_union_methods_clean_slate.py
-heroku run -a YOUR_APP -- python migrate_union_method_shape.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 Recreate union methods in the dashboard (Type, Union, Internal identifier, Method tag, optional Method name). Bot instructions are generated from those fields; no free-text player message column.
@@ -685,7 +659,7 @@ Recreate union methods in the dashboard (Type, Union, Internal identifier, Metho
 After deploying the union deposit ack-step flow:
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_union_deposit_ack.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 Adds durable ack-state columns on `manual_deposit_requests` (ack message id, ack/instruction expiry timestamps, initiating player id).
@@ -693,7 +667,7 @@ Adds durable ack-state columns on `manual_deposit_requests` (ack message id, ack
 After deploying Pool Pay (union method + large cashout categories, structured slugs):
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_pool_pay.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 This adds `pool_pay_type` on pool-pay methods, backfills existing rows as `union_method`, and rewrites slugs to `{type}-union-{old_slug}` (e.g. `main-zelle-rt` → `zelle-union-main-zelle-rt`). Manage methods on the **Pool Pay** dashboard (`/api/pool-pay`).
@@ -703,7 +677,7 @@ This adds `pool_pay_type` on pool-pay methods, backfills existing rows as `union
 After deploying deposit method public/blacklist/whitelist (cashout access reuses the same table — no extra migrate):
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_group_deposit_method_access.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 Adds `club_payment_methods.is_public` (default true) and `group_deposit_method_access`. Staff manage rows via bot DM `/depositaccess` / `/listdepositaccess` and `/cashoutaccess` / `/listcashoutaccess`; flip Public in Club Detail → Deposit Methods or Cashout Methods.
@@ -715,12 +689,8 @@ Player `/cashout` hides the `crypto` method unless that support group has a boun
 After deploying the Payments dashboard feature, run migrations on production once:
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_stripe_deposit_tracking.py
-# or, if tables exist but Payments returns 500:
-heroku run -a YOUR_APP -- python migrate_stripe_checkout_session_lifecycle.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
-
-`migrate_stripe_deposit_tracking.py` now includes lifecycle columns (`completed_at`, `updated_at`, `stripe_payment_intent_id`) when run on an existing install.
 
 Also set `STRIPE_WEBHOOK_SECRET` on the **web** dyno and register `https://YOUR_APP.herokuapp.com/api/stripe/webhook` in Stripe (event: `checkout.session.completed`). See [`docs/STRIPE_DEPOSIT.md`](STRIPE_DEPOSIT.md).
 
@@ -736,7 +706,7 @@ Run the migration once after deploy (adds `clubs.auto_chip_adding_enabled` and
 `groups.last_deposit_union` / `last_deposit_union_at`):
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_auto_chip_adding.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 Set on the **worker** dyno (see `.env.example` for the full list):
@@ -799,8 +769,7 @@ just fail the claim and escalate. Round Table always offers both.
 Run the migrations once after deploy:
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_aces_join_ack.py            # groups.aces_join_ack_at
-heroku run -a YOUR_APP -- python migrate_aces_option_min_deposits.py # clubs.aces_option_min_deposits
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 > **Run these before or immediately with the deploy.** The models declare both
@@ -828,7 +797,7 @@ the deposit API configured **and** Auto claim on /cash enabled for the club. See
 Run the migration once after deploy (adds `clubs.enable_auto_cashout`):
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_enable_auto_cashout.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 **Rollout / single-group test (do this before enabling widely):** enable
@@ -870,8 +839,7 @@ Run the migrations once after deploy (adds `clubs.enable_auto_early_rakeback`,
 the `early_rakeback_claims` table):
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_auto_early_rakeback.py
-heroku run -a YOUR_APP -- python migrate_escalate_auto_early_rakeback.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 **Manual setup first:** the "Members / rake check" card must be calibrated on every
@@ -912,7 +880,7 @@ Creator Club groups so automated `/cashout` can pay those chips out.
 Run the migration once after deploy (adds `clubs.enable_transfer`):
 
 ```bash
-heroku run -a YOUR_APP -- python migrate_enable_transfer.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 > **Run this before or with the deploy.** The model declares the column, so until

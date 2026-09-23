@@ -22,12 +22,7 @@ Each club has a **primary** Telegram user ID on the club record (`Telegram User 
 
 ## Database / deployment
 
-The `club_linked_accounts` table is created automatically when:
-
-- The **API** starts (`Base.metadata.create_all` in [`api/app.py`](../api/app.py)), or  
-- The **bot worker** starts ([`bot/main.py`](../bot/main.py)).
-
-**Heroku:** Deploy the new code, then restart web and worker dynos. If `create_all` does not run (e.g. API only), ensure at least one process runs migrations or create the table manually:
+The `club_linked_accounts` table is part of the Alembic schema (see [DATABASE.md](DATABASE.md#schema-migrations-alembic)); the Heroku release phase applies it on deploy. For reference, its shape:
 
 ```sql
 CREATE TABLE club_linked_accounts (
@@ -38,8 +33,6 @@ CREATE TABLE club_linked_accounts (
 );
 CREATE INDEX ix_club_linked_accounts_club_id ON club_linked_accounts (club_id);
 ```
-
-(Exact SQL may match your dialect; SQLAlchemy’s `create_all` is preferred.)
 
 ## API
 

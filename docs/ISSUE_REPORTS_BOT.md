@@ -64,9 +64,7 @@ Slack messages show **For:** Head admin, Engineer, etc., plus subteam/user menti
 ## Migrations
 
 ```bash
-DATABASE_URL=... python migrate_issue_reports_v2.py
-DATABASE_URL=... python migrate_issue_report_drafts.py
-DATABASE_URL=... python migrate_issue_reports_resolve.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 Open tickets get a **Slack reminder every 2 hours** until resolved (thread reply when possible).

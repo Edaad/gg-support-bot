@@ -43,7 +43,7 @@ _DEFAULT_LIMIT = 50
 _MAX_LIMIT = 200
 
 _MIGRATION_HINT = (
-    "Run: python migrate_deposit_funnel_events.py (or heroku run … on the web dyno)"
+    "Run: alembic upgrade head (the Heroku release phase does this on deploy)"
 )
 
 _STEP_LABELS: dict[str, str] = {

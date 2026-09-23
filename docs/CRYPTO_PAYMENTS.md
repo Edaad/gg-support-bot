@@ -35,10 +35,7 @@ Unknown `alert_name` values are rejected at ingest with HTTP 400.
 Migrations:
 
 ```bash
-DATABASE_URL=... python migrate_crypto_payments.py
-DATABASE_URL=... python migrate_crypto_wallet_bindings.py
-DATABASE_URL=... python migrate_payment_bind_multi_candidates.py
-DATABASE_URL=... python migrate_payment_chip_matches.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 The wallet-bindings migration backfills from existing bound `crypto_payments` rows (most recent bind per address+scope).
@@ -135,7 +132,7 @@ When staff runs `/add` in a linked support group (Bot API or MTProto), or paymen
 This is a **match link only** — not confirmation that ClubGG RPA settled.
 
 ```bash
-DATABASE_URL=... python migrate_payment_chip_matches.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 ## Manual bind

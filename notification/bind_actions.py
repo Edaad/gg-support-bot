@@ -369,7 +369,7 @@ async def confirm_add_candidate(
             return (
                 False,
                 "Cannot add a second group for this payer until "
-                "migrate_payment_bind_multi_candidates.py has been run.",
+                "`alembic upgrade head` has been run.",
             )
         return False, "Could not add candidate (database constraint)."
 

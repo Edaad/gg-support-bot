@@ -67,10 +67,7 @@ Clears **all** `group_payment_method_bindings` for that chat, **all** `venmo_pay
 Migrations:
 
 ```bash
-DATABASE_URL=... python migrate_payment_method_bindings.py
-DATABASE_URL=... python migrate_payment_method_bind_memo.py
-DATABASE_URL=... python migrate_club_payment_first_time_linking.py
-DATABASE_URL=... python migrate_payment_bind_multi_candidates.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 ## Observability (dashboard + API)
