@@ -143,9 +143,7 @@ class AmountFormattingTests(unittest.TestCase):
         self.assertEqual(auto.format_feeback_amount(Decimal("19.4")), "$19.40")
 
     def test_thousands_separator(self) -> None:
-        self.assertEqual(
-            auto.format_feeback_amount(Decimal("12345.6")), "$12,345.60"
-        )
+        self.assertEqual(auto.format_feeback_amount(Decimal("12345.6")), "$12,345.60")
 
     def test_sub_cent_quantizes_to_cents(self) -> None:
         self.assertEqual(auto.format_feeback_amount(Decimal("240.004")), "$240.00")
