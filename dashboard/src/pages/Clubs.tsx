@@ -143,7 +143,49 @@ function ClubsAdmin({ token }: { token: string }) {
         </form>
       )}
 
-      <div className="table-scroll">
+      <div className="space-y-2 sm:hidden">
+        {clubs.map((c) => (
+          <article key={c.id} className="row-card-static">
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <h3 className="truncate text-base font-semibold">
+                  <Link to={`/clubs/${c.id}`} className="link-accent">
+                    {c.name}
+                  </Link>
+                </h3>
+                <p className="mt-0.5 text-sm text-ink-muted">
+                  {c.is_active ? 'Active' : 'Inactive'}
+                  {' · '}
+                  {c.method_count} methods
+                  {' · '}
+                  {c.group_count} groups
+                </p>
+              </div>
+            </div>
+            <div className="card-actions-primary mt-3">
+              <Link
+                to={`/clubs/${c.id}/test`}
+                className="action-chip action-chip-equal justify-center text-ink-muted"
+              >
+                Test
+              </Link>
+              <button
+                type="button"
+                onClick={() => handleDelete(c.id, c.name)}
+                className="action-chip action-chip-equal justify-center text-danger-ink"
+              >
+                Delete
+              </button>
+            </div>
+          </article>
+        ))}
+        {clubs.length === 0 && (
+          <p className="px-1 py-6 text-center text-sm text-ink-muted">
+            No clubs yet. Create one to get started.
+          </p>
+        )}
+      </div>
+      <div className="table-scroll hidden sm:block">
         <table>
           <thead className="bg-surface text-ink-muted">
             <tr>

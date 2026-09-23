@@ -19,6 +19,63 @@ function cryptoMethodLabel(row: UnifiedPaymentRow): string {
   return asset ? `Crypto - ${asset}` : row.method_label
 }
 
+function PaymentCard({
+  row,
+  clubNameById,
+  onRowClick,
+  showAsset,
+}: {
+  row: UnifiedPaymentRow
+  clubNameById: Record<number, string>
+  onRowClick: (row: UnifiedPaymentRow) => void
+  showAsset: boolean
+}) {
+  const methodName =
+    row.source === 'crypto' && !showAsset ? cryptoMethodLabel(row) : row.method_label
+  const groupLabel =
+    row.status === 'unbound' ? 'Unbound' : row.group_title || '—'
+  return (
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={() => onRowClick(row)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onRowClick(row)
+        }
+      }}
+      className="row-card"
+    >
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-base font-semibold text-ink">
+            {groupLabel}
+          </h3>
+          <p className="mt-0.5 truncate text-sm text-ink-muted">
+            {fmtClub(row.club_id, clubNameById)}
+            {' · '}
+            {methodName}
+            {showAsset && row.source === 'crypto'
+              ? ` · ${cryptoAssetFromDetail(row.detail) || '—'}`
+              : ''}
+            {' · '}
+            <EasternInstant value={row.occurred_at} />
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-base font-semibold tabular-nums text-ink">
+            ${fmtMoney(row.amount_usd)}
+          </p>
+          <p className="mt-0.5 text-xs capitalize text-ink-muted">
+            {fmtUnifiedStatus(row.status)}
+          </p>
+        </div>
+      </div>
+    </article>
+  )
+}
+
 export default function UnifiedPaymentTable({
   rows,
   clubNameById,
@@ -26,7 +83,19 @@ export default function UnifiedPaymentTable({
   showAsset = false,
 }: Props) {
   return (
-    <div className="table-scroll">
+    <>
+      <div className="space-y-2 sm:hidden">
+        {rows.map((row) => (
+          <PaymentCard
+            key={`${row.source}-${row.id}`}
+            row={row}
+            clubNameById={clubNameById}
+            onRowClick={onRowClick}
+            showAsset={showAsset}
+          />
+        ))}
+      </div>
+      <div className="table-scroll hidden sm:block">
       <table className="min-w-[72rem] text-left">
         <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
           <tr>
@@ -85,6 +154,7 @@ export default function UnifiedPaymentTable({
           })}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   )
 }

@@ -17,6 +17,7 @@ import {
 } from '../api/client'
 import { easternCalendarDateString } from '../lib/easternTime'
 import Modal from '../components/Modal'
+import FilterExtras from '../components/FilterExtras'
 import { LabeledSelect, LabeledTextarea } from '../components/Field'
 
 function fmtMoney(n: number): string {
@@ -123,8 +124,6 @@ export default function WeeklyStats({
   const [bulkModalOpen, setBulkModalOpen] = useState(false)
   const [bulkModalText, setBulkModalText] = useState('')
   const [bulkModalErr, setBulkModalErr] = useState('')
-
-  const [filtersOpen, setFiltersOpen] = useState(false)
 
   const hasActiveFilters = useMemo(
     () => Object.keys(appliedFilters).length > 0,
@@ -398,124 +397,110 @@ export default function WeeklyStats({
         </div>
       )}
 
-      <div className="mb-6 flex flex-wrap items-end gap-4 rounded-xl border border-border bg-surface p-4">
-        <div>
-          <label htmlFor={clubSelectId} className="mb-1 block text-xs font-medium text-ink-muted">
-            Club
-          </label>
-          <select
-            id={clubSelectId}
-            value={slug ?? ''}
-            onChange={(e) => setSlug(e.target.value || null)}
-            disabled={!slug || loadingSync}
-            className="input-field-sm"
-          >
-            {CLUB_OPTIONS.map((c) => (
-              <option key={c.slug} value={c.slug}>
-                {c.label}
-              </option>
-            ))}
-          </select>
+      <div className="filter-stack mb-6">
+        <div className="filter-stack__search">
+          {slug ? (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                id={searchId}
+                type="search"
+                value={playerSearch}
+                onChange={(e) => setPlayerSearch(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && applyPlayerSearch()}
+                placeholder="Search nickname, GG ID, agent…"
+                className="input-field-sm min-w-0 flex-1"
+              />
+              <button type="button" onClick={applyPlayerSearch} className="btn-primary-sm">
+                Search
+              </button>
+            </div>
+          ) : null}
         </div>
-        <div>
-          <label htmlFor={fromDateId} className="mb-1 block text-xs font-medium text-ink-muted">
-            From
-          </label>
-          <input
-            id={fromDateId}
-            type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            className="input-field-sm"
-          />
-        </div>
-        <div>
-          <label htmlFor={toDateId} className="mb-1 block text-xs font-medium text-ink-muted">
-            To
-          </label>
-          <input
-            id={toDateId}
-            type="date"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-            className="input-field-sm"
-          />
-        </div>
-        {loadingSync && (
-          <p className="text-xs text-ink-muted">Backfilling previous weeks and nicknames…</p>
-        )}
+        <FilterExtras summary={hasActiveFilters ? 'Filters (active)' : 'Filters'}>
+          <div>
+            <label htmlFor={clubSelectId} className="mb-1 block text-xs font-medium text-ink-muted">
+              Club
+            </label>
+            <select
+              id={clubSelectId}
+              value={slug ?? ''}
+              onChange={(e) => setSlug(e.target.value || null)}
+              disabled={!slug || loadingSync}
+              className="input-field-sm"
+            >
+              {CLUB_OPTIONS.map((c) => (
+                <option key={c.slug} value={c.slug}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor={fromDateId} className="mb-1 block text-xs font-medium text-ink-muted">
+              From
+            </label>
+            <input
+              id={fromDateId}
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="input-field-sm"
+            />
+          </div>
+          <div>
+            <label htmlFor={toDateId} className="mb-1 block text-xs font-medium text-ink-muted">
+              To
+            </label>
+            <input
+              id={toDateId}
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="input-field-sm"
+            />
+          </div>
+          {(
+            [
+              ['minProfit', 'Min profit'],
+              ['maxProfit', 'Max profit'],
+              ['minRake', 'Min rake'],
+              ['maxRake', 'Max rake'],
+              ['minRakeback', 'Min rakeback'],
+              ['maxRakeback', 'Max rakeback'],
+            ] as const
+          ).map(([key, label]) => (
+            <div key={key}>
+              <label className="mb-1 block text-xs text-ink-muted">{label}</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                step="any"
+                value={filterInputs[key]}
+                onChange={(e) => setFilterInputs((f) => ({ ...f, [key]: e.target.value }))}
+                className="input-field-sm"
+              />
+            </div>
+          ))}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <button type="button" onClick={applyFilters} className="btn-primary">
+              Apply filters
+            </button>
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="btn-secondary"
+            >
+              Clear
+            </button>
+          </div>
+          {loadingSync && (
+            <p className="text-xs text-ink-muted">Backfilling previous weeks and nicknames…</p>
+          )}
+        </FilterExtras>
       </div>
 
       {slug && (
         <>
-          <div className="mb-4 flex flex-wrap gap-2">
-            <input
-              id={searchId}
-              type="search"
-              value={playerSearch}
-              onChange={(e) => setPlayerSearch(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && applyPlayerSearch()}
-              placeholder="Search nickname, GG ID, agent…"
-              className="input-field-sm min-w-[16rem] flex-1"
-            />
-            <button type="button" onClick={applyPlayerSearch} className="btn-primary-sm">
-              Search
-            </button>
-          </div>
-
-          <div className="mb-4">
-            <button
-              type="button"
-              onClick={() => setFiltersOpen((open) => !open)}
-              className="rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium text-ink hover:bg-surface-raised"
-            >
-              {filtersOpen ? 'Hide filters' : 'Show filters'}
-              {!filtersOpen && hasActiveFilters ? ' (active)' : ''}
-            </button>
-
-            {filtersOpen && (
-              <div className="mt-3 grid gap-3 rounded-xl border border-border bg-surface p-4 sm:grid-cols-2 lg:grid-cols-3">
-                {(
-                  [
-                    ['minProfit', 'Min profit'],
-                    ['maxProfit', 'Max profit'],
-                    ['minRake', 'Min rake'],
-                    ['maxRake', 'Max rake'],
-                    ['minRakeback', 'Min rakeback'],
-                    ['maxRakeback', 'Max rakeback'],
-                  ] as const
-                ).map(([key, label]) => (
-                  <div key={key}>
-                    <label className="mb-1 block text-xs text-ink-muted">{label}</label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={filterInputs[key]}
-                      onChange={(e) => setFilterInputs((f) => ({ ...f, [key]: e.target.value }))}
-                      className="w-full rounded border border-border bg-surface-raised px-2 py-1.5 text-sm text-ink"
-                    />
-                  </div>
-                ))}
-                <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3">
-                  <button
-                    type="button"
-                    onClick={applyFilters}
-                    className="btn-primary"
-                  >
-                    Apply filters
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    className="rounded-lg border border-border px-4 py-2 text-sm text-ink hover:bg-surface-raised"
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
           <div className="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm text-ink-muted">
             <span>
               {allRows != null ? (
@@ -556,7 +541,61 @@ export default function WeeklyStats({
             </div>
           )}
 
-          <div className="table-scroll">
+          {loadingPlayers && (
+            <p className="py-8 text-center text-sm text-ink-muted sm:hidden">Loading players…</p>
+          )}
+          {!loadingPlayers && allRows && pageRows.length === 0 && (
+            <p className="py-8 text-center text-sm text-ink-muted sm:hidden">No data for this selection.</p>
+          )}
+          <div className="space-y-2 sm:hidden">
+            {pageRows.map((row, i) => (
+              <article
+                key={`${row.weekId}-${row.gg_id ?? row.nickname}-${i}`}
+                className="row-card-static"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate text-base font-semibold text-ink">{row.nickname}</h3>
+                    <p className="mt-0.5 truncate text-sm text-ink-muted">
+                      {row.startDate}–{row.endDate}
+                      {' · '}
+                      {row.gg_id ?? 'no GG ID'}
+                      {row.agent ? ` · ${row.agent}` : ''}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p
+                      className={`text-base font-semibold tabular-nums ${
+                        row.profit < 0 ? 'text-danger-ink' : 'text-success-ink'
+                      }`}
+                    >
+                      {fmtProfit(row.profit)}
+                    </p>
+                    <p className="mt-0.5 text-xs text-ink-muted">
+                      RB ${fmtMoney(row.rakeback)} ({rbPercent(row)})
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    disabled={!row.gg_id}
+                    title={
+                      !row.gg_id
+                        ? 'GG ID missing on this stats row — cannot message until gg-computer includes it'
+                        : 'Send to linked group chat'
+                    }
+                    onClick={() => void openSend(row)}
+                    className="btn-primary-sm w-full disabled:cursor-not-allowed disabled:bg-control disabled:text-ink-muted"
+                  >
+                    Send message
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <div className="table-scroll hidden sm:block">
             <table className="min-w-[48rem]">
               <thead className="bg-surface text-ink-muted">
                 <tr>
@@ -637,7 +676,7 @@ export default function WeeklyStats({
                 type="button"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="rounded border border-border px-4 py-2 text-sm disabled:opacity-40"
+                className="btn-secondary-sm disabled:opacity-40"
               >
                 Previous
               </button>
@@ -645,7 +684,7 @@ export default function WeeklyStats({
                 type="button"
                 disabled={page >= pageCount}
                 onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-                className="rounded border border-border px-4 py-2 text-sm disabled:opacity-40"
+                className="btn-secondary-sm disabled:opacity-40"
               >
                 Next
               </button>

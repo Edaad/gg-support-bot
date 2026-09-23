@@ -222,7 +222,42 @@ function navLinkClass(active: boolean): string {
   ].join(' ')
 }
 
-function MoreNav({ pathname }: { pathname: string }) {
+function MoreMenuLinks({
+  pathname,
+  onSelect,
+  itemClassName,
+}: {
+  pathname: string
+  onSelect?: () => void
+  itemClassName?: string
+}) {
+  return (
+    <>
+      {ADMIN_MORE_NAV.map((n) => {
+        const active = isNavActive(pathname, n.to, n.exact)
+        return (
+          <Link
+            key={n.to}
+            to={n.to}
+            role="menuitem"
+            aria-current={active ? 'page' : undefined}
+            onClick={onSelect}
+            className={[
+              'flex min-h-11 items-center gap-1.5 px-3 py-2 text-sm font-medium',
+              focusRing,
+              active ? 'bg-accent/12 text-accent' : 'text-ink hover:bg-control',
+              itemClassName ?? '',
+            ].join(' ')}
+          >
+            {navItemLabel(n)}
+          </Link>
+        )
+      })}
+    </>
+  )
+}
+
+function MoreNavDesktop({ pathname }: { pathname: string }) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -297,29 +332,99 @@ function MoreNav({ pathname }: { pathname: string }) {
           className="fixed z-50 w-48 rounded-lg border border-border bg-surface-raised py-1 shadow-lg"
           style={{ top: pos.top, left: pos.left }}
         >
-          {ADMIN_MORE_NAV.map((n) => {
-            const active = isNavActive(pathname, n.to, n.exact)
-            return (
-              <Link
-                key={n.to}
-                to={n.to}
-                role="menuitem"
-                aria-current={active ? 'page' : undefined}
-                onClick={() => setOpen(false)}
-                className={[
-                  'flex items-center gap-1.5 px-3 py-2 text-sm font-medium',
-                  focusRing,
-                  active
-                    ? 'bg-accent/12 text-accent'
-                    : 'text-ink hover:bg-control',
-                ].join(' ')}
-              >
-                {navItemLabel(n)}
-              </Link>
-            )
-          })}
+          <MoreMenuLinks pathname={pathname} onSelect={() => setOpen(false)} />
         </div>
       )}
+    </>
+  )
+}
+
+function MoreSheet({
+  open,
+  onClose,
+  pathname,
+}: {
+  open: boolean
+  onClose: () => void
+  pathname: string
+}) {
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-50 sm:hidden" role="presentation">
+      <button
+        type="button"
+        aria-label="Close more menu"
+        className="absolute inset-0 bg-black/50"
+        onClick={onClose}
+      />
+      <div
+        role="menu"
+        aria-label="More"
+        className="absolute inset-x-0 bottom-0 rounded-t-xl border border-border bg-surface-raised pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 shadow-xl"
+      >
+        <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-border" aria-hidden="true" />
+        <MoreMenuLinks
+          pathname={pathname}
+          onSelect={onClose}
+          itemClassName="px-4"
+        />
+      </div>
+    </div>
+  )
+}
+
+function NavItems({
+  items,
+  pathname,
+  className,
+  onNavigate,
+}: {
+  items: NavLinkItem[]
+  pathname: string
+  className?: string
+  onNavigate?: () => void
+}) {
+  return (
+    <>
+      {items.map((n) => {
+        if (n.external) {
+          return (
+            <a
+              key={n.to}
+              href={n.to}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={className ?? navLinkClass(false)}
+            >
+              {navItemLabel(n)}
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          )
+        }
+        const active = isNavActive(pathname, n.to, n.exact)
+        return (
+          <Link
+            key={n.to}
+            to={n.to}
+            aria-current={active ? 'page' : undefined}
+            onClick={onNavigate}
+            className={className ?? navLinkClass(active)}
+            aria-label={n.icon === 'telegram' ? 'Telegram Bot' : undefined}
+          >
+            {navItemLabel(n)}
+          </Link>
+        )
+      })}
     </>
   )
 }
@@ -334,6 +439,19 @@ export default function Layout({
   const { pathname } = useLocation()
   const isAdmin = role === 'admin'
   const topItems = topNavForRole(role)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreActive = isMoreNavActive(pathname)
+
+  useEffect(() => {
+    setMoreOpen(false)
+  }, [pathname])
+
+  const bottomTabClass = (active: boolean) =>
+    [
+      'flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1 text-[10px] font-medium leading-tight',
+      focusRing,
+      active ? 'bg-accent/12 text-accent' : 'text-ink-muted',
+    ].join(' ')
 
   return (
     <div className="min-h-screen bg-bg text-ink">
@@ -359,7 +477,7 @@ export default function Layout({
               title="Settings"
               aria-current={pathname === '/settings' ? 'page' : undefined}
               className={[
-                'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-raised transition',
+                'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-raised transition sm:h-10 sm:w-10',
                 focusRing,
                 pathname === '/settings'
                   ? 'bg-accent/12 text-accent'
@@ -384,48 +502,72 @@ export default function Layout({
           </div>
 
           <nav
-            className="-mx-4 flex gap-1 overflow-x-auto border-t border-border px-4 py-2 sm:mx-0 sm:border-t-0 sm:px-0 sm:pb-3 sm:pt-0"
+            className="-mx-4 hidden gap-1 overflow-x-auto border-t border-border px-4 py-2 sm:mx-0 sm:flex sm:border-t-0 sm:px-0 sm:pb-3 sm:pt-0"
             aria-label="Main"
           >
-            {topItems.map((n) => {
-              if (n.external) {
-                return (
-                  <a
-                    key={n.to}
-                    href={n.to}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={navLinkClass(false)}
-                  >
-                    {navItemLabel(n)}
-                    <span className="sr-only"> (opens in a new tab)</span>
-                  </a>
-                )
-              }
-              const active = isNavActive(pathname, n.to, n.exact)
-              return (
-                <Link
-                  key={n.to}
-                  to={n.to}
-                  aria-current={active ? 'page' : undefined}
-                  className={navLinkClass(active)}
-                  aria-label={n.icon === 'telegram' ? 'Telegram Bot' : undefined}
-                >
-                  {navItemLabel(n)}
-                </Link>
-              )
-            })}
-            {isAdmin && <MoreNav pathname={pathname} />}
+            <NavItems items={topItems} pathname={pathname} />
+            {isAdmin && <MoreNavDesktop pathname={pathname} />}
           </nav>
         </div>
       </header>
 
       <main
         id="main-content"
-        className="mx-auto max-w-6xl px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-8"
+        className="mx-auto max-w-6xl px-4 py-6 pb-[max(5.5rem,calc(4.25rem+env(safe-area-inset-bottom)))] sm:px-6 sm:py-8 sm:pb-[max(1.5rem,env(safe-area-inset-bottom))]"
       >
         {children}
       </main>
+
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] sm:hidden"
+        aria-label="Main"
+      >
+        <div className="flex items-stretch gap-0.5 px-1 py-1">
+          {topItems.map((n) => {
+            if (n.external) {
+              return (
+                <a
+                  key={n.to}
+                  href={n.to}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={bottomTabClass(false)}
+                >
+                  <NavIcon name={n.icon} />
+                  <span className="max-w-full truncate">{n.label}</span>
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+              )
+            }
+            const active = isNavActive(pathname, n.to, n.exact)
+            return (
+              <Link
+                key={n.to}
+                to={n.to}
+                aria-current={active ? 'page' : undefined}
+                aria-label={n.icon === 'telegram' ? 'Telegram Bot' : n.label}
+                className={bottomTabClass(active)}
+              >
+                <NavIcon name={n.icon} />
+                <span className="max-w-full truncate">{n.label}</span>
+              </Link>
+            )
+          })}
+          {isAdmin && (
+            <button
+              type="button"
+              aria-expanded={moreOpen}
+              aria-haspopup="menu"
+              onClick={() => setMoreOpen((v) => !v)}
+              className={bottomTabClass(moreActive || moreOpen)}
+            >
+              <NavIcon name="more" />
+              <span>More</span>
+            </button>
+          )}
+        </div>
+      </nav>
+      <MoreSheet open={moreOpen} onClose={() => setMoreOpen(false)} pathname={pathname} />
     </div>
   )
 }

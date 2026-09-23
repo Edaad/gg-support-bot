@@ -166,30 +166,32 @@ No glassmorphism, no gradient borders, no left accent stripes on alerts.
 
 ## Components
 
-**App shell:** Sticky header on `surface`, 1px `border` bottom. Logo in `ink`; nav links `ink-muted` with `bg-accent/12 text-accent` for active route. Horizontal scroll nav on small screens with `nav-touch` min-height on coarse pointers. Skip link visible on focus.
+**App shell:** Sticky header on `surface`, 1px `border` bottom. Logo in `ink`; Settings gear on the right. **Phone (`<640px`):** compact top bar (title + Settings) and a fixed bottom tab bar using the same role nav items/icons, `bg-accent/12 text-accent` when active, plus an admin **More** bottom sheet. Safe-area padding on the bottom bar; main content clears it. **`sm+`:** horizontal top nav with `nav-touch` min-height on coarse pointers. Skip link visible on focus.
 
-**Theme toggle:** Segmented control (System / Light / Dark) in nav; active segment uses `accent` fill.
+**Theme toggle:** Segmented control (System / Light / Dark) on Settings; active segment uses `accent` fill. Coarse pointers use 44px segments.
 
-**Buttons:** Primary (`btn-primary`, `btn-primary-sm`), secondary bordered/ghost (`btn-secondary`, `btn-secondary-sm`), destructive (`btn-danger`, `btn-danger-outline`). Verb + object labels.
+**Buttons:** Primary (`btn-primary`, `btn-primary-sm`), secondary bordered/ghost (`btn-secondary`, `btn-secondary-sm`), destructive (`btn-danger`, `btn-danger-outline`). Verb + object labels. Coarse pointers: `btn-*-sm` and danger buttons are `min-h-11`.
 
-**Forms:** Labels via `label-field` / `label-field-xs`. Inputs via `input-field` / `input-field-sm`. Focus ring `accent`.
+**Forms:** Labels via `label-field` / `label-field-xs`. Inputs via `input-field` / `input-field-sm`. Phone: `.input-field-sm` is 16px to avoid iOS zoom. Focus ring `accent`. Extra filters sit in `FilterExtras` (disclosure on phone, inline on `sm+`).
 
-**Panels:** Single `.panel` per results region; avoid nested `.panel-nested` stacks. Use `border-t border-border pt-6` to separate sections inside one panel.
+**Panels:** Single `.panel` per results region; avoid nested `.panel-nested` stacks. Use `border-t border-border pt-6` to separate sections inside one panel. Phone panels use `p-4`.
 
-**Analytics / KPIs:** `KpiStat` component with optional drill-down (dotted underline on clickable values). Grid layout via `.kpi-grid` (`auto-fit`, min 8.5rem columns). Section headers use `.section-label` (quiet, muted). Breakdown counts use `.chip-neutral`, `.chip-accent`, `.chip-success`, `.chip-warning`. Drill-down lists open in `Modal` (native `<dialog>`), paginated at 50 rows.
+**Analytics / KPIs:** `KpiStat` component with optional drill-down (dotted underline on clickable values). Help tip toggles on tap (and hover on desktop). Grid layout via `.kpi-grid` (`auto-fit`, min 8.5rem columns). Section headers use `.section-label` (quiet, muted). Breakdown counts use `.chip-neutral`, `.chip-accent`, `.chip-success`, `.chip-warning`. Drill-down lists open in `Modal` (native `<dialog>`), paginated at 50 rows.
 
-**Tables:** `.table-scroll` wrapper with border; min-width 40rem for horizontal scroll on narrow viewports.
+**Tables:** `.table-scroll` wrapper with border; min-width 40rem for horizontal scroll on `sm+`. Phone list views use `.row-card` / `.row-card-static` (same shape as cashout cards). Overflow menus use `.menu-hit` (44px).
+
+**Modals:** Phone: bottom sheet, sticky Close, height follows `visualViewport`. Desktop: centered `max-w-lg` / `max-w-3xl`.
 
 **Alerts:** `.alert-danger`, `.alert-success`, `.alert-warning` full-width tinted bars.
 
-**Tabs:** `.tab-bar` with `.tab-active` / `.tab-inactive` or `.tab-active-accent` for accent-filled active tab.
+**Tabs:** `.tab-bar` with `.tab-active` / `.tab-inactive` or `.tab-active-accent` for accent-filled active tab. Overflowing strips use `.tab-scroller` with a right-edge fade.
 
 ### Sidecar (not in frontmatter)
 
 - Focus: `focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2`
 - Transition: `color, background-color, border-color 150ms ease-out` (disabled when reduced motion)
 - Nav/content max width: `max-w-6xl` centered
-- Z-index: header `z-40`, modal backdrop `z-50`, KPI tooltip `z-20`
+- Z-index: header `z-40`, bottom nav `z-40`, more sheet / modal `z-50`, KPI tooltip `z-20`
 - Route code-splitting: Analytics lazy-loaded via `React.lazy` + `Suspense`
 - Chart tokens (`--chart-1` … `--chart-6`) reserved for future data viz; not yet used in UI
 

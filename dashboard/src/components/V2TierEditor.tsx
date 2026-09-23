@@ -374,6 +374,7 @@ export default function V2TierEditor({
                 <input
                   id={tierMinId}
                   type="number"
+                  inputMode="decimal"
                   min={absoluteMin ?? undefined}
                   max={absoluteMax ?? undefined}
                   value={form.min_amount ?? ''}
@@ -392,6 +393,7 @@ export default function V2TierEditor({
               <input
                 id={tierMaxId}
                 type="number"
+                inputMode="decimal"
                 min={absoluteMin ?? undefined}
                 max={absoluteMax ?? undefined}
                 value={form.max_amount ?? ''}
@@ -419,7 +421,7 @@ export default function V2TierEditor({
                     Configure player copy in variants after {editId ? 'saving' : 'creating'} this tier.
                   </div>
                 </div>
-                <label className="flex items-center gap-2 text-sm text-ink">
+                <label className="check-hit">
                   <input
                     type="checkbox"
                     checked={form.use_group_checkout_link || false}

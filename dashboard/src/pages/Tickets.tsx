@@ -6,6 +6,7 @@ import {
   type GroupChatTicketT,
   type TicketCategory,
 } from '../api/ticketsClient'
+import FilterExtras from '../components/FilterExtras'
 import KpiStat from '../components/KpiStat'
 import DateRangeCsvExport from '../components/DateRangeCsvExport'
 import TicketDetailModal from '../components/TicketDetailModal'
@@ -132,22 +133,25 @@ export default function Tickets({
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="block text-xs font-medium text-ink-muted">
-            Date (ET)
-            <input
-              type="date"
-              value={activityDate}
-              onChange={(e) => setActivityDate(e.target.value)}
-              className="mt-1 block rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
-            />
-          </label>
+        <div className="filter-stack w-full sm:w-auto">
+          <div className="filter-stack__search">
+            <label className="block text-xs font-medium text-ink-muted">
+              Date (ET)
+              <input
+                type="date"
+                value={activityDate}
+                onChange={(e) => setActivityDate(e.target.value)}
+                className="input-field-sm mt-1"
+              />
+            </label>
+          </div>
+          <FilterExtras>
           <label className="block text-xs font-medium text-ink-muted">
             Club
             <select
               value={clubId}
               onChange={(e) => setClubId(e.target.value)}
-              className="mt-1 block min-w-[10rem] rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+              className="input-field-sm mt-1 min-w-[10rem]"
             >
               <option value="">All</option>
               {clubs.map((c) => (
@@ -162,7 +166,7 @@ export default function Tickets({
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="mt-1 block min-w-[10rem] rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+              className="input-field-sm mt-1 min-w-[10rem]"
             >
               <option value="">All</option>
               {TICKET_CATEGORIES.map((c) => (
@@ -177,19 +181,22 @@ export default function Tickets({
             <input
               type="number"
               min={1}
+              inputMode="numeric"
               value={overMinutes}
               onChange={(e) => setOverMinutes(Math.max(1, Number(e.target.value) || 1))}
-              className="mt-1 block w-24 rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+              className="input-field-sm mt-1 w-24"
             />
           </label>
-          <label className="flex items-center gap-2 pb-2 text-sm text-ink">
+          <label className="check-hit pb-0">
             <input
               type="checkbox"
               checked={overOnly}
               onChange={(e) => setOverOnly(e.target.checked)}
+              className="h-4 w-4"
             />
             Over / no reply only
           </label>
+          </FilterExtras>
         </div>
       </div>
 
@@ -270,7 +277,52 @@ export default function Tickets({
                 : 'No tickets for this day.'}
             </p>
           ) : (
-            <div className="table-scroll">
+            <>
+            <div className="space-y-2 sm:hidden">
+              {visibleTickets.map((t) => (
+                <article
+                  key={t.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelected(t)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setSelected(t)
+                    }
+                  }}
+                  className="row-card"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate text-base font-semibold text-ink">
+                        {t.group_name || `chat ${t.chat_id}`}
+                      </h3>
+                      <p className="mt-0.5 truncate text-sm text-ink-muted">
+                        {t.club_name || `Club ${t.club_id}`}
+                        {' · '}
+                        {t.category}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p
+                        className={`text-sm tabular-nums ${
+                          ticketIsOverFrt(t, overMinutes)
+                            ? 'font-medium text-warning-ink'
+                            : 'text-ink'
+                        }`}
+                      >
+                        {formatFrt(t)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-ink-muted tabular-nums">
+                        {formatDurationSeconds(t.duration_seconds)}
+                      </p>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className="table-scroll hidden sm:block">
               <table className="min-w-[40rem] text-left">
                 <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
                   <tr>
@@ -324,6 +376,7 @@ export default function Tickets({
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </>
       )}

@@ -11,6 +11,7 @@ import {
   type Club,
 } from '../api/client'
 import { fmtMoney, parseMoney } from '../components/CashoutMethodFields'
+import FilterExtras from '../components/FilterExtras'
 import ExportIconButton from '../components/ExportIconButton'
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
@@ -90,7 +91,7 @@ function BonusRowMenu({
           }
           setOpen(next)
         }}
-        className="rounded-md px-2 py-1 text-lg leading-none text-ink-muted hover:bg-control hover:text-ink"
+        className="menu-hit hover:bg-control hover:text-ink"
       >
         ⋯
       </button>
@@ -406,8 +407,8 @@ export default function Bonuses({
         </div>
       </div>
 
-      <div className="mb-6 flex flex-wrap items-end gap-3">
-        <div className="min-w-[16rem] flex-1">
+      <div className="filter-stack mb-6">
+        <div className="filter-stack__search">
           <label className="label-field-xs" htmlFor="bonus-search">
             Search
           </label>
@@ -420,6 +421,7 @@ export default function Bonuses({
             className="input-field-sm w-full"
           />
         </div>
+        <FilterExtras>
         <div>
           <label className="label-field-xs" htmlFor="bonus-club">
             Club
@@ -459,6 +461,7 @@ export default function Bonuses({
           </select>
         </div>
         <ExportIconButton onClick={openExport} />
+        </FilterExtras>
       </div>
 
       {error && (
@@ -479,7 +482,54 @@ export default function Bonuses({
           {clubFilter || typeFilter || needle ? 'No matching bonuses.' : 'No bonus records yet.'}
         </p>
       ) : (
-        <div className="table-scroll">
+        <>
+        <div className="space-y-2 sm:hidden">
+          {visible.map((r) => (
+            <article
+              key={r.id}
+              className="row-card"
+              role="button"
+              tabIndex={0}
+              onClick={() => openEdit(r)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  openEdit(r)
+                }
+              }}
+            >
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <h3 className="truncate text-base font-semibold text-ink">
+                    {r.group_title || r.player_username || '—'}
+                  </h3>
+                  <p className="mt-0.5 truncate text-sm text-ink-muted">
+                    {r.club_name || '—'}
+                    {' · '}
+                    {r.bonus_type_name || 'Other'}
+                    {' · '}
+                    <EasternInstant value={r.issued_at} />
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-start gap-1">
+                  <p className="text-base font-semibold tabular-nums text-ink">
+                    {fmtMoney(Number(r.amount))}
+                  </p>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <BonusRowMenu
+                      disabled={saving}
+                      onEdit={() => openEdit(r)}
+                      onDelete={() => {
+                        void remove(r)
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="table-scroll hidden sm:block">
           <table className="min-w-[56rem] text-left">
             <thead className="border-b border-border bg-surface text-xs uppercase text-ink-muted">
               <tr>
@@ -540,6 +590,7 @@ export default function Bonuses({
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       <Modal

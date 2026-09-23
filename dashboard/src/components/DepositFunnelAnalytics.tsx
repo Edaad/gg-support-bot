@@ -256,12 +256,12 @@ export default function DepositFunnelAnalytics({
 
       {drilldown && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="deposit-funnel-drilldown-title"
         >
-          <div className="panel max-h-[80vh] w-full max-w-3xl overflow-hidden">
+          <div className="panel flex max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-xl sm:rounded-xl">
             <div className="mb-4 flex items-center justify-between gap-4 border-b border-border pb-3">
               <h2 id="deposit-funnel-drilldown-title" className="text-lg font-semibold text-ink">
                 {drilldown.label}
@@ -279,7 +279,7 @@ export default function DepositFunnelAnalytics({
             ) : events.length === 0 ? (
               <p className="text-sm text-ink-muted">No events for this step.</p>
             ) : (
-              <div className="max-h-[60vh] overflow-auto">
+              <div className="table-scroll max-h-[60vh]">
                 <table className="w-full text-left text-sm">
                   <thead className="sticky top-0 bg-surface text-ink-muted">
                     <tr>

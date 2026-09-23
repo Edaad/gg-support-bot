@@ -18,6 +18,7 @@ from api.audit_reconcile_export import MATCHING_HEADERS
 from api.auth import create_token, get_current_admin
 from api.gto_weekly_audit import (
     BonusRailRow,
+    CashoutRailRow,
     GtoWeeklyAuditError,
     PaymentRailRow,
     _clubgto_excel_time,
@@ -26,6 +27,7 @@ from api.gto_weekly_audit import (
     date_from_filename,
     expected_week_dates,
     fetch_clubgto_bonus_rails,
+    fetch_vaughn_cashout_rails,
     output_filename,
     parse_clubgto_rows,
     rail_bucket,
@@ -274,20 +276,23 @@ class GtoWeeklyAuditUnitTestCase(unittest.TestCase):
             "starship5vllc@gmail.com",
         )
 
+    @patch("api.gto_weekly_audit.fetch_vaughn_cashout_rails", return_value=[])
     @patch("api.gto_weekly_audit.fetch_clubgto_bonus_rails", return_value=[])
     @patch(
         "api.gto_weekly_audit.fetch_vaughn_payment_rails",
         return_value=_empty_payment_rails(),
     )
-    def test_build_workbook_processed(self, _mock_payments, _mock_bonuses):
+    def test_build_workbook_processed(
+        self, _mock_payments, _mock_bonuses, _mock_cashouts
+    ):
         files = _week_files(MONDAY, row_factory=_processed_row_factory)
         content = build_gto_weekly_audit_workbook(
             MONDAY, files, session=_mock_session()
         )
         wb = load_workbook(io.BytesIO(content))
         self.assertEqual(
-            wb.sheetnames[:5],
-            ["Processed", "Zelle", "Venmo", "Crypto", "Bonuses"],
+            wb.sheetnames[:6],
+            ["Processed", "Zelle", "Venmo", "Crypto", "Bonuses", "Cashouts"],
         )
 
         processed = wb["Processed"]
@@ -327,9 +332,12 @@ class GtoWeeklyAuditUnitTestCase(unittest.TestCase):
             pivot_parts = [n for n in z.namelist() if "pivotTables/" in n]
             self.assertTrue(pivot_parts, "expected pivot table part in output")
 
+    @patch("api.gto_weekly_audit.fetch_vaughn_cashout_rails")
     @patch("api.gto_weekly_audit.fetch_clubgto_bonus_rails")
     @patch("api.gto_weekly_audit.fetch_vaughn_payment_rails")
-    def test_build_workbook_rails_from_db(self, mock_payments, mock_bonuses):
+    def test_build_workbook_rails_from_db(
+        self, mock_payments, mock_bonuses, mock_cashouts
+    ):
         day1 = MONDAY + timedelta(days=1)
         mock_payments.return_value = {
             "zelle": [
@@ -373,6 +381,17 @@ class GtoWeeklyAuditUnitTestCase(unittest.TestCase):
                 occurred_at=datetime(2026, 8, 10, 8, 0),
                 player="danplayer",
                 amount_usd=5.0,
+                bonus_type="Referral",
+            ),
+        ]
+        mock_cashouts.return_value = [
+            CashoutRailRow(
+                audit_date=MONDAY,
+                occurred_at=datetime(2026, 8, 10, 14, 0),
+                name="Vaughn GTO",
+                amount_usd=75.0,
+                method="Venmo",
+                sent_to="GTO / 1111-0001 / Alice",
             ),
         ]
 
@@ -401,8 +420,17 @@ class GtoWeeklyAuditUnitTestCase(unittest.TestCase):
 
         bonuses = wb["Bonuses"]
         self.assertEqual(bonuses.cell(2, 2).value, "danplayer")
-        self.assertEqual(bonuses.cell(2, 4).value, MONDAY.isoformat())
+        self.assertEqual(bonuses.cell(2, 4).value, "Referral")
+        self.assertEqual(bonuses.cell(2, 5).value, MONDAY.isoformat())
         self.assertEqual(bonuses.cell(3, 3).value, 5.0)
+
+        cashouts = wb["Cashouts"]
+        self.assertEqual(cashouts.cell(2, 2).value, "Vaughn GTO")
+        self.assertEqual(cashouts.cell(2, 3).value, 75.0)
+        self.assertEqual(cashouts.cell(2, 4).value, "Venmo")
+        self.assertEqual(cashouts.cell(2, 5).value, "GTO / 1111-0001 / Alice")
+        self.assertEqual(cashouts.cell(2, 6).value, MONDAY.isoformat())
+        self.assertEqual(cashouts.cell(3, 3).value, 75.0)
 
 
 class GtoWeeklyAuditFetchTestCase(unittest.TestCase):
@@ -532,14 +560,19 @@ class GtoWeeklyAuditFetchTestCase(unittest.TestCase):
     @patch("api.gto_weekly_audit.payment_in_audit_day_for_club", return_value=True)
     @patch("api.gto_weekly_audit.resolve_club_id", return_value=2)
     def test_fetch_clubgto_bonus_rails(self, _mock_club_id, _mock_audit_day):
+        bonus_type = MagicMock()
+        bonus_type.name = "First Deposit"
         record = MagicMock()
         record.club_id = 2
         record.player_username = "bonus_player"
         record.amount = Decimal("12.50")
         record.created_at = datetime(2026, 8, 10, 16, 0, tzinfo=timezone.utc)
         record.issued_at = datetime(2026, 8, 10, 16, 0, tzinfo=timezone.utc)
+        record.bonus_type = bonus_type
+        record.custom_description = None
 
         query = MagicMock()
+        query.options.return_value = query
         query.filter.return_value = query
         query.order_by.return_value = query
         query.all.return_value = [record]
@@ -550,6 +583,51 @@ class GtoWeeklyAuditFetchTestCase(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].player, "bonus_player")
         self.assertEqual(rows[0].amount_usd, 12.5)
+        self.assertEqual(rows[0].audit_date, MONDAY)
+        self.assertEqual(rows[0].bonus_type, "First Deposit")
+
+    @patch("api.gto_weekly_audit.audit_day_window_utc")
+    def test_fetch_vaughn_cashout_rails_filters_sender(self, mock_window):
+        from_dt = datetime(2026, 8, 10, 5, 0, tzinfo=timezone.utc)
+        to_dt = datetime(2026, 8, 11, 4, 59, 59, 999999, tzinfo=timezone.utc)
+        mock_window.return_value = (from_dt, to_dt)
+
+        vaughn_send = MagicMock()
+        vaughn_send.id = 1
+        vaughn_send.sender_name = "Vaughn GTO"
+        vaughn_send.amount = Decimal("50.00")
+        vaughn_send.method_display_name = "Zelle"
+        vaughn_send.created_at = datetime(2026, 8, 10, 16, 0)
+
+        other_send = MagicMock()
+        other_send.id = 2
+        other_send.sender_name = "RT Support"
+        other_send.amount = Decimal("10.00")
+        other_send.method_display_name = "Venmo"
+        other_send.created_at = datetime(2026, 8, 10, 17, 0)
+
+        vaughn_record = MagicMock()
+        vaughn_record.group_title = "GTO / 1000 / Player"
+        other_record = MagicMock()
+        other_record.group_title = "RT / 2000 / Other"
+
+        query = MagicMock()
+        query.join.return_value = query
+        query.filter.return_value = query
+        query.order_by.return_value = query
+        query.all.return_value = [
+            (vaughn_send, vaughn_record),
+            (other_send, other_record),
+        ]
+        session = MagicMock()
+        session.query.return_value = query
+
+        rows = fetch_vaughn_cashout_rails(session, [MONDAY])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].name, "Vaughn GTO")
+        self.assertEqual(rows[0].amount_usd, 50.0)
+        self.assertEqual(rows[0].method, "Zelle")
+        self.assertEqual(rows[0].sent_to, "GTO / 1000 / Player")
         self.assertEqual(rows[0].audit_date, MONDAY)
 
 
@@ -618,12 +696,13 @@ class PartnerWeeklyAuditApiTestCase(unittest.TestCase):
             for name, raw in files
         ]
 
+    @patch("api.gto_weekly_audit.fetch_vaughn_cashout_rails", return_value=[])
     @patch("api.gto_weekly_audit.fetch_clubgto_bonus_rails", return_value=[])
     @patch(
         "api.gto_weekly_audit.fetch_vaughn_payment_rails",
         return_value=_empty_payment_rails(),
     )
-    def test_export_gto_ok(self, _mock_payments, _mock_bonuses):
+    def test_export_gto_ok(self, _mock_payments, _mock_bonuses, _mock_cashouts):
         files = _week_files(MONDAY)
         res = self.client.post(
             "/api/audit/partner-weekly-audit/export",
@@ -638,13 +717,17 @@ class PartnerWeeklyAuditApiTestCase(unittest.TestCase):
         )
         wb = load_workbook(io.BytesIO(res.content))
         self.assertEqual(wb.sheetnames[0], "Processed")
+        self.assertIn("Cashouts", wb.sheetnames)
 
+    @patch("api.creator_weekly_audit.fetch_mateos_cashout_rails", return_value=[])
     @patch("api.creator_weekly_audit.fetch_creator_club_bonus_rails", return_value=[])
     @patch(
         "api.creator_weekly_audit.fetch_mateos_payment_rails",
         return_value=_empty_payment_rails(),
     )
-    def test_export_creator_club_ok(self, _mock_payments, _mock_bonuses):
+    def test_export_creator_club_ok(
+        self, _mock_payments, _mock_bonuses, _mock_cashouts
+    ):
         files = _creator_week_files(MONDAY)
         res = self.client.post(
             "/api/audit/partner-weekly-audit/export",
@@ -659,6 +742,7 @@ class PartnerWeeklyAuditApiTestCase(unittest.TestCase):
         )
         wb = load_workbook(io.BytesIO(res.content))
         self.assertEqual(wb.sheetnames[0], "Processed")
+        self.assertIn("Cashouts", wb.sheetnames)
 
     def test_export_invalid_club(self):
         files = _week_files(MONDAY)

@@ -127,7 +127,7 @@ export default function V2TierStripePanel({
           <div>
             <div className="text-sm font-medium text-ink">Per-group Stripe checkout</div>
           </div>
-          <label className="flex shrink-0 items-center gap-2 text-sm text-ink">
+          <label className="check-hit shrink-0">
             <input
               type="checkbox"
               checked={groupLinkEnabled}
@@ -180,6 +180,7 @@ export default function V2TierStripePanel({
                   <input
                     id={checkoutMinId}
                     type="number"
+                    inputMode="decimal"
                     value={form.checkout_min_amount ?? ''}
                     onChange={(e) =>
                       setForm((f) => ({
@@ -201,6 +202,7 @@ export default function V2TierStripePanel({
                 <input
                   id={checkoutMaxId}
                   type="number"
+                  inputMode="decimal"
                   value={form.checkout_max_amount ?? ''}
                   onChange={(e) =>
                     setForm((f) => ({

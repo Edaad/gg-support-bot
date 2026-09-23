@@ -15,6 +15,7 @@ import {
   type UnifiedPaymentListParams,
   type UnifiedPaymentRow,
 } from '../api/paymentsClient'
+import FilterExtras from '../components/FilterExtras'
 import BindPaymentModal, { type BindableRow } from '../components/payments/BindPaymentModal'
 import {
   ALL_METHOD,
@@ -354,8 +355,8 @@ export default function Payments({
     <div>
       <h1 className="mb-6 text-2xl font-bold">Payments</h1>
 
-      <div className="mb-6 flex flex-wrap items-end gap-3">
-        <div className="min-w-[14rem] flex-1">
+      <div className="filter-stack mb-6">
+        <div className="filter-stack__search">
           <label htmlFor={searchId} className="label-field-xs">
             Search
           </label>
@@ -368,6 +369,7 @@ export default function Payments({
             className="input-field-sm w-full"
           />
         </div>
+        <FilterExtras>
         <div>
           <label htmlFor={methodSelectId} className="label-field-xs">
             Method
@@ -425,7 +427,7 @@ export default function Payments({
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-raised text-ink transition hover:bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-raised text-ink transition hover:bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
             aria-label="Payment settings"
             title="Payment settings"
           >
@@ -445,6 +447,7 @@ export default function Payments({
             </svg>
           </button>
         )}
+        </FilterExtras>
       </div>
 
       {isAdmin && moreFiltersOpen && (

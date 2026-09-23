@@ -30,7 +30,7 @@ export default function ThemeToggle() {
           onClick={() => setPref(opt.value)}
           aria-pressed={pref === opt.value}
           className={[
-            'min-h-9 min-w-[2.75rem] rounded-md px-2.5 text-xs font-medium transition',
+            'theme-toggle-seg min-h-9 min-w-[2.75rem] rounded-md px-2.5 text-xs font-medium transition',
             focusRing,
             pref === opt.value
               ? 'bg-accent text-on-accent'

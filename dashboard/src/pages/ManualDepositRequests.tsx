@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import FilterExtras from '../components/FilterExtras'
 import ManualDepositRequestsTable from '../components/ManualDepositRequestsTable'
 import ManualDepositRequestModal from '../components/ManualDepositRequestModal'
 import { useConfirm } from '../components/ConfirmProvider'
@@ -1048,8 +1049,8 @@ export default function ManualDepositRequests({ token }: { token: string }) {
 
       {pageView === 'deposits' && !creating && (
         <section className="panel space-y-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="sm:col-span-2 lg:col-span-4">
+          <div className="filter-stack">
+            <div className="filter-stack__search sm:col-span-2 lg:col-span-4">
               <label className="label-field-xs" htmlFor="um-deposits-q">
                 Search
               </label>
@@ -1061,6 +1062,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                 placeholder="Group, amount, club, identifier, or method tag"
               />
             </div>
+            <FilterExtras>
             <div>
               <label className="label-field-xs" htmlFor="um-deposits-union">
                 Union
@@ -1151,6 +1153,7 @@ export default function ManualDepositRequests({ token }: { token: string }) {
                 <option value="checked">Checked</option>
               </select>
             </div>
+            </FilterExtras>
           </div>
           <ManualDepositRequestsTable
             token={token}
