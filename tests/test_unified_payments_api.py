@@ -183,6 +183,42 @@ class UnifiedPaymentsApiTestCase(unittest.TestCase):
         self.assertEqual(body["items"][0]["owner_label"], "Union")
         self.assertIsNone(body["items"][0]["status"])
 
+    @patch("api.routes.all_payments.fetch_unified_page")
+    def test_all_payments_forwards_variant(self, mock_fetch):
+        mock_fetch.return_value = (
+            [],
+            0,
+            OwnerPaymentSummary(
+                total_count=0,
+                total_amount_cents=0,
+                total_amount_usd=Decimal("0"),
+            ),
+        )
+        client = TestClient(_make_app(all_payments_router))
+        response = client.get(
+            "/api/payments/all/payments?method=venmo&variant=@alice",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+        self.assertEqual(response.status_code, 200)
+        filters = mock_fetch.call_args.kwargs["filters"]
+        self.assertEqual(filters.variant, "@alice")
+
+    def test_all_payments_method_all_rejects_variant(self):
+        client = TestClient(_make_app(all_payments_router))
+        response = client.get(
+            "/api/payments/all/payments?method=all&variant=foo",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_all_variants_rejects_method_all(self):
+        client = TestClient(_make_app(all_payments_router))
+        response = client.get(
+            "/api/payments/all/variants?method=all",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+        self.assertEqual(response.status_code, 400)
+
     @patch("api.routes.owner_payments.fetch_unified_page")
     def test_owner_method_all_returns_unified(self, mock_fetch):
         mock_fetch.return_value = (

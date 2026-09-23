@@ -16,10 +16,16 @@ from api.routes.payments import (
     _parse_dt,
     _raise_db_schema_error,
 )
-from api.schemas_payments import OwnerPaymentSummary, UnifiedPaymentListResponse
+from api.schemas_payments import (
+    OwnerPaymentSummary,
+    OwnerVariantListResponse,
+    OwnerVariantOptionRead,
+    UnifiedPaymentListResponse,
+)
 from api.unified_payments import (
     UnifiedPaymentFilters,
     fetch_unified_page,
+    list_all_scope_variant_options,
     validate_unified_method_for_scope,
 )
 from db.connection import get_db_dependency
@@ -36,6 +42,7 @@ _DEFAULT_LIMIT = 50
 @router.get("/payments", response_model=UnifiedPaymentListResponse)
 def list_all_payments(
     method: str = Query("all"),
+    variant: str | None = Query(None),
     deposit_union: str | None = Query(None),
     from_dt: str | None = Query(None, alias="from"),
     to_dt: str | None = Query(None, alias="to"),
@@ -70,6 +77,7 @@ def list_all_payments(
         _get_club_or_404(db, club_id)
 
     filters = UnifiedPaymentFilters(
+        variant=variant,
         from_dt=parsed_from,
         to_dt=parsed_to,
         q=q,
@@ -99,4 +107,42 @@ def list_all_payments(
         limit=limit,
         offset=offset,
         summary=summary,
+    )
+
+
+@router.get("/variants", response_model=OwnerVariantListResponse)
+def list_all_variants(
+    method: str = Query(...),
+    from_dt: str | None = Query(None, alias="from"),
+    to_dt: str | None = Query(None, alias="to"),
+    club_id: int | None = Query(None),
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    parsed_from = _parse_dt(from_dt)
+    parsed_to = _parse_dt(to_dt)
+    club_id, empty = resolve_gto_list_club_id(role, club_id, db)
+    if empty:
+        return OwnerVariantListResponse(items=[])
+    if club_id is not None:
+        _get_club_or_404(db, club_id)
+
+    try:
+        options = list_all_scope_variant_options(
+            db,
+            method,
+            from_dt=parsed_from,
+            to_dt=parsed_to,
+            club_id=club_id,
+        )
+    except HTTPException:
+        raise
+    except ProgrammingError as exc:
+        _raise_db_schema_error(exc)
+
+    return OwnerVariantListResponse(
+        items=[
+            OwnerVariantOptionRead(value=row["value"], label=row["label"])
+            for row in options
+        ]
     )

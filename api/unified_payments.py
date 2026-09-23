@@ -603,6 +603,76 @@ def fetch_all_unified_rows(
     return all_rows, summary
 
 
+def list_all_scope_variant_options(
+    db: Session,
+    method: str,
+    *,
+    from_dt: datetime | None = None,
+    to_dt: datetime | None = None,
+    club_id: int | None = None,
+) -> list[dict[str, str]]:
+    """Distinct variant options for All-scope payments (cross-owner + union)."""
+    from api.payments_helpers import (
+        distinct_owner_ingest_variants,
+        distinct_owner_stripe_variants,
+    )
+
+    method_slug = validate_unified_method_for_scope("all", method)
+    if method_slug == "all":
+        raise HTTPException(
+            400, "Use method=all on the payments endpoint, not variants."
+        )
+
+    seen: dict[str, str] = {}
+
+    if method_slug == "stripe":
+        for row in distinct_owner_stripe_variants(
+            db, from_dt=from_dt, to_dt=to_dt, club_id=club_id
+        ):
+            seen[row["id"]] = row["label"]
+    elif method_slug in OWNER_INGEST_METHODS:
+        payment_cls = OWNER_INGEST_METHODS[method_slug]
+        for owner_slug in ALL_OWNERS:
+            if method_slug not in OWNER_METHODS_BY_OWNER[owner_slug]:
+                continue
+            for value in distinct_owner_ingest_variants(
+                db,
+                payment_cls,
+                method_owner=owner_slug,
+                from_dt=from_dt,
+                to_dt=to_dt,
+                club_id=club_id,
+            ):
+                seen[value] = value
+
+    if method_slug in UNION_METHOD_TYPES:
+        query = union_list_query(
+            db,
+            method_type=method_slug,
+            deposit_union=None,
+            pool_pay_type="union_method",
+            trade_record_checked=True,
+            from_dt=from_dt,
+            to_dt=to_dt,
+            club_id=club_id,
+        )
+        rows = (
+            query.with_entities(ManualDepositRequest.variant_name)
+            .distinct()
+            .order_by(ManualDepositRequest.variant_name.asc())
+            .all()
+        )
+        for row in rows:
+            if row[0]:
+                value = str(row[0])
+                seen[value] = value
+
+    return [
+        {"value": key, "label": label}
+        for key, label in sorted(seen.items(), key=lambda x: x[1].lower())
+    ]
+
+
 def validate_unified_method_for_scope(scope: ScopeSlug, method: str) -> str:
     method_slug = (method or "all").strip().lower()
     if method_slug == "all":
