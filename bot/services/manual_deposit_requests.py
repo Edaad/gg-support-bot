@@ -118,31 +118,6 @@ def capacity_allows(
     return current + Decimal(str(amount)) <= limit
 
 
-def capacity_allows_for_update(
-    session: Session,
-    *,
-    method_id: int,
-    new_amount: Decimal,
-    exclude_request_id: int,
-    deposit_limit: Optional[Decimal] = None,
-) -> bool:
-    limit = deposit_limit
-    if limit is None:
-        method = session.query(ClubPaymentMethod).get(int(method_id))
-        if not method or method.deposit_limit is None:
-            return False
-        limit = Decimal(str(method.deposit_limit))
-    else:
-        limit = Decimal(str(limit))
-    if limit <= 0:
-        return False
-    current = sum_for_method(session, int(method_id))
-    row = session.get(ManualDepositRequest, int(exclude_request_id))
-    old_amount = Decimal(str(row.amount)) if row else Decimal("0")
-    adjusted = current - old_amount + Decimal(str(new_amount))
-    return adjusted <= limit
-
-
 def method_club_ids(session: Session, method_id: int) -> set[int]:
     rows = (
         session.query(ClubPaymentMethodClub.club_id)
@@ -152,10 +127,17 @@ def method_club_ids(session: Session, method_id: int) -> set[int]:
     return {int(r[0]) for r in rows}
 
 
-def validate_manual_deposit_amount(method: ClubPaymentMethod, amount: Decimal) -> None:
+def validate_manual_deposit_amount(
+    method: ClubPaymentMethod,
+    amount: Decimal,
+    *,
+    enforce_bounds: bool = True,
+) -> None:
     amount_dec = Decimal(str(amount))
     if amount_dec <= 0:
         raise ManualDepositValidationError("Amount must be positive.")
+    if not enforce_bounds:
+        return
     if method.min_amount is not None and amount_dec < Decimal(str(method.min_amount)):
         raise ManualDepositValidationError(
             f"Amount is below the minimum (${Decimal(str(method.min_amount)):,.2f})."
@@ -206,7 +188,11 @@ def create_dashboard_manual_deposit_request(
     created_at: Optional[datetime] = None,
     trade_record_checked: bool = False,
 ) -> ManualDepositRequest:
-    """Dashboard create: capacity + min/max; inactive methods allowed."""
+    """Dashboard create. Skips min/max and capacity; inactive methods allowed.
+
+    The pool pay add-deposit form confirms when the new total would exceed
+    the pool limit. Player deposits still go through ``create_request_atomic``.
+    """
     amount_dec = Decimal(str(amount))
     when = created_at or datetime.now(timezone.utc)
     validate_manual_deposit_created_at(when)
@@ -222,19 +208,10 @@ def create_dashboard_manual_deposit_request(
             raise ManualDepositValidationError(
                 "Method is not a manual trade-request method."
             )
-        validate_manual_deposit_amount(method, amount_dec)
+        validate_manual_deposit_amount(method, amount_dec, enforce_bounds=False)
         if method.deposit_limit is None:
             raise ManualDepositCapacityError(
                 "This payment method has no capacity limit set."
-            )
-        if not capacity_allows(
-            session,
-            method_id=int(method_id),
-            amount=amount_dec,
-            deposit_limit=Decimal(str(method.deposit_limit)),
-        ):
-            raise ManualDepositCapacityError(
-                "This payment method is at capacity for that amount."
             )
 
         group = resolve_deposit_group(
@@ -274,7 +251,7 @@ def update_dashboard_manual_deposit_request(
     created_at: Optional[datetime] = None,
     trade_record_checked: Optional[bool] = None,
 ) -> ManualDepositRequest:
-    """Dashboard partial update with capacity re-check on amount change."""
+    """Dashboard partial update. Amount changes skip min/max and capacity."""
     with get_db() as session:
         row = (
             session.query(ManualDepositRequest)
@@ -295,20 +272,10 @@ def update_dashboard_manual_deposit_request(
 
         if amount is not None:
             amount_dec = Decimal(str(amount))
-            validate_manual_deposit_amount(method, amount_dec)
+            validate_manual_deposit_amount(method, amount_dec, enforce_bounds=False)
             if method.deposit_limit is None:
                 raise ManualDepositCapacityError(
                     "This payment method has no capacity limit set."
-                )
-            if not capacity_allows_for_update(
-                session,
-                method_id=int(row.method_id),
-                new_amount=amount_dec,
-                exclude_request_id=int(row.id),
-                deposit_limit=Decimal(str(method.deposit_limit)),
-            ):
-                raise ManualDepositCapacityError(
-                    "This payment method is at capacity for that amount."
                 )
             row.amount = amount_dec
 

@@ -1026,7 +1026,46 @@ class DashboardManualDepositServiceTests(unittest.TestCase):
         self.assertEqual(row.group_title, "RT / 1111-1111 / Alice")
         self.assertEqual(row.club_id, 1)
 
-    def test_update_amount_rejects_above_max(self):
+    def test_create_dashboard_skips_min_and_capacity(self):
+        from db.models import ClubPaymentMethod, ManualDepositRequest
+
+        when = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+        session = self.Session()
+        method = session.get(ClubPaymentMethod, 10)
+        assert method is not None
+        method.min_amount = Decimal("500")
+        method.deposit_limit = Decimal("1000")
+        session.add(
+            ManualDepositRequest(
+                club_id=1,
+                method_id=10,
+                method_name="Zelle",
+                method_slug="zelle-union",
+                variant_name="pay@zelle",
+                group_title="RT / 1111-1111 / Alice",
+                telegram_chat_id=-1001,
+                amount=Decimal("700"),
+                trade_record_checked=True,
+                source="dashboard",
+                created_at=when,
+            )
+        )
+        session.commit()
+        session.close()
+
+        with patch(
+            "bot.services.manual_deposit_requests.get_db",
+            side_effect=self._get_db,
+        ):
+            row = create_dashboard_manual_deposit_request(
+                method_id=10,
+                amount=Decimal("400"),
+                telegram_chat_id=-1001,
+                created_at=when,
+            )
+        self.assertEqual(row.amount, Decimal("400"))
+
+    def test_update_amount_allows_above_max(self):
         when = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
         with patch(
             "bot.services.manual_deposit_requests.get_db",
@@ -1042,11 +1081,11 @@ class DashboardManualDepositServiceTests(unittest.TestCase):
             "bot.services.manual_deposit_requests.get_db",
             side_effect=self._get_db,
         ):
-            with self.assertRaises(ManualDepositValidationError):
-                update_dashboard_manual_deposit_request(
-                    request_id=int(row.id),
-                    amount=Decimal("700"),
-                )
+            updated = update_dashboard_manual_deposit_request(
+                request_id=int(row.id),
+                amount=Decimal("700"),
+            )
+        self.assertEqual(updated.amount, Decimal("700"))
 
     def test_update_marks_trade_record_checked_clears_pending_expiry(self):
         from db.models import ManualDepositRequest

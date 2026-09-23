@@ -35,6 +35,8 @@ type Props = {
   allowEdit?: boolean
   minAmount?: number | string | null
   maxAmount?: number | string | null
+  usedSum?: number | string | null
+  depositLimit?: number | string | null
   onMutated?: () => void
   refreshKey?: number
 }
@@ -60,6 +62,8 @@ export default function ManualDepositRequestsTable({
   allowEdit = false,
   minAmount,
   maxAmount,
+  usedSum,
+  depositLimit,
   onMutated,
   refreshKey = 0,
 }: Props) {
@@ -316,6 +320,8 @@ export default function ManualDepositRequestsTable({
           methodId={editMethodId}
           minAmount={minAmount}
           maxAmount={maxAmount}
+          usedSum={usedSum}
+          depositLimit={depositLimit}
           row={editRow}
           onClose={() => setEditRow(null)}
           onSaved={(saved) => {

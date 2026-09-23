@@ -18,9 +18,44 @@ type Props = {
   methodId: number
   minAmount?: number | string | null
   maxAmount?: number | string | null
+  usedSum?: number | string | null
+  depositLimit?: number | string | null
   row?: ManualDepositRequestRow | null
   onClose: () => void
   onSaved: (row: ManualDepositRequestRow) => void
+}
+
+function toMoney(value: number | string | null | undefined): number | null {
+  if (value == null || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function formatUsd(amount: number): string {
+  return amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+}
+
+/** How far this amount would push the pool past its limit. Null when it fits.
+
+`previousAmount` is the row already included in `usedSum` (edit). A save that
+does not increase the current overage does not warn.
+*/
+function capacityOverage(
+  amount: number,
+  usedSum: number | string | null | undefined,
+  depositLimit: number | string | null | undefined,
+  previousAmount?: number | string | null,
+): { newTotal: number; exceeding: number } | null {
+  const used = toMoney(usedSum)
+  const limit = toMoney(depositLimit)
+  if (used == null || limit == null) return null
+  const previous = toMoney(previousAmount) ?? 0
+  const editing = previousAmount != null && previousAmount !== ''
+  const newTotal = (editing ? used - previous : used) + amount
+  const exceeding = newTotal - limit
+  if (exceeding <= 0.009) return null
+  if (editing && exceeding <= used - limit + 0.009) return null
+  return { newTotal, exceeding }
 }
 
 function formatLimitHint(
@@ -44,6 +79,8 @@ export default function ManualDepositRequestModal({
   methodId,
   minAmount,
   maxAmount,
+  usedSum,
+  depositLimit,
   row,
   onClose,
   onSaved,
@@ -54,10 +91,15 @@ export default function ManualDepositRequestModal({
   const [tradeChecked, setTradeChecked] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [overCapacity, setOverCapacity] = useState<{
+    newTotal: number
+    exceeding: number
+  } | null>(null)
 
   useEffect(() => {
     if (!open) return
     setError('')
+    setOverCapacity(null)
     if (mode === 'edit' && row) {
       setAmount(String(row.amount))
       setChatId(row.telegram_chat_id)
@@ -95,6 +137,19 @@ export default function ManualDepositRequestModal({
     if (Number.isNaN(createdUtc.getTime())) {
       setError('Enter a valid requested date and time.')
       return
+    }
+
+    if (!overCapacity) {
+      const over = capacityOverage(
+        amountNum,
+        usedSum,
+        depositLimit,
+        mode === 'edit' ? row?.amount : null,
+      )
+      if (over) {
+        setOverCapacity(over)
+        return
+      }
     }
 
     setBusy(true)
@@ -146,7 +201,10 @@ export default function ManualDepositRequestModal({
             className="input-field-sm w-full"
             value={amount}
             disabled={busy}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => {
+              setAmount(e.target.value)
+              setOverCapacity(null)
+            }}
           />
         </div>
 
@@ -184,6 +242,13 @@ export default function ManualDepositRequestModal({
           Trade record checked
         </label>
 
+        {overCapacity ? (
+          <div className="rounded-lg bg-warning-bg px-3 py-2 text-sm text-warning-ink" role="status">
+            New total sent would be {formatUsd(overCapacity.newTotal)}, exceeding by{' '}
+            {formatUsd(overCapacity.exceeding)}. Are you sure?
+          </div>
+        ) : null}
+
         {error ? (
           <div className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger-ink" role="alert">
             {error}
@@ -192,7 +257,13 @@ export default function ManualDepositRequestModal({
 
         <div className="flex flex-wrap gap-2 pt-1">
           <button type="button" disabled={busy} className="btn-primary-sm" onClick={() => void submit()}>
-            {mode === 'create' ? 'Add deposit' : 'Save changes'}
+            {overCapacity
+              ? mode === 'create'
+                ? 'Add anyway'
+                : 'Save anyway'
+              : mode === 'create'
+                ? 'Add deposit'
+                : 'Save changes'}
           </button>
           <button type="button" disabled={busy} className="btn-secondary-sm" onClick={onClose}>
             Cancel

@@ -1016,6 +1016,8 @@ export default function ManualDepositRequests({ token }: { token: string }) {
               allowEdit
               minAmount={selected.min_amount}
               maxAmount={selected.max_amount}
+              usedSum={selected.used_sum}
+              depositLimit={selected.deposit_limit}
               refreshKey={depositsRefreshKey}
               onMutated={() => {
                 void load()
@@ -1031,6 +1033,8 @@ export default function ManualDepositRequests({ token }: { token: string }) {
               methodId={selected.id}
               minAmount={selected.min_amount}
               maxAmount={selected.max_amount}
+              usedSum={selected.used_sum}
+              depositLimit={selected.deposit_limit}
               onClose={() => setCreateOpen(false)}
               onSaved={() => {
                 setCreateOpen(false)
