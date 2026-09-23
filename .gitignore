@@ -4,6 +4,13 @@ __pycache__/
 *.pyo
 .ruff_cache/
 .env
+
+# Local editor, agent, and skill tooling
+.agents/skills/impeccable/
+.claude/
+.cursor/
+.impeccable/live/
+.vscode/
 *.json.tmp
 user_commands.json
 group_club.json
