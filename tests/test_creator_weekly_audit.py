@@ -13,12 +13,14 @@ from openpyxl import Workbook, load_workbook
 from api.audit_reconcile_export import MATCHING_HEADERS
 from api.creator_weekly_audit import (
     BonusRailRow,
+    CashoutRailRow,
     CreatorWeeklyAuditError,
     PaymentRailRow,
     _fetch_mateos_payments_for_day,
     build_creator_weekly_audit_workbook,
     expected_week_dates,
     fetch_creator_club_bonus_rails,
+    fetch_mateos_cashout_rails,
     output_filename,
     parse_creator_club_rows,
     validate_upload_set,
@@ -132,28 +134,34 @@ class CreatorWeeklyAuditUnitTestCase(unittest.TestCase):
             parse_creator_club_rows(wb, filename="reconcile-all-clubs-2026-08-10.xlsx")
         self.assertIn("missing required headers", str(ctx.exception))
 
+    @patch("api.creator_weekly_audit.fetch_mateos_cashout_rails", return_value=[])
     @patch("api.creator_weekly_audit.fetch_creator_club_bonus_rails", return_value=[])
     @patch(
         "api.creator_weekly_audit.fetch_mateos_payment_rails",
         return_value=_empty_payment_rails(),
     )
-    def test_build_workbook_processed(self, _mock_payments, _mock_bonuses):
+    def test_build_workbook_processed(
+        self, _mock_payments, _mock_bonuses, _mock_cashouts
+    ):
         files = _creator_week_files(MONDAY)
         content = build_creator_weekly_audit_workbook(
             MONDAY, files, session=_mock_session()
         )
         wb = load_workbook(io.BytesIO(content))
         self.assertEqual(
-            wb.sheetnames[:5],
-            ["Processed", "Zelle", "Venmo", "Crypto", "Bonuses"],
+            wb.sheetnames[:6],
+            ["Processed", "Zelle", "Venmo", "Crypto", "Bonuses", "Cashouts"],
         )
         processed = wb["Processed"]
         self.assertIn("ProcessedData", processed.tables)
         self.assertEqual(processed.cell(2, 6).value, "Mateos Zelle")
 
+    @patch("api.creator_weekly_audit.fetch_mateos_cashout_rails")
     @patch("api.creator_weekly_audit.fetch_creator_club_bonus_rails")
     @patch("api.creator_weekly_audit.fetch_mateos_payment_rails")
-    def test_build_workbook_rails_from_db(self, mock_payments, mock_bonuses):
+    def test_build_workbook_rails_from_db(
+        self, mock_payments, mock_bonuses, mock_cashouts
+    ):
         day1 = MONDAY + timedelta(days=1)
         mock_payments.return_value = {
             "zelle": [
@@ -182,6 +190,17 @@ class CreatorWeeklyAuditUnitTestCase(unittest.TestCase):
                 occurred_at=datetime(2026, 8, 10, 8, 0),
                 player="cc_player",
                 amount_usd=5.0,
+                bonus_type="Other — reload",
+            ),
+        ]
+        mock_cashouts.return_value = [
+            CashoutRailRow(
+                audit_date=MONDAY,
+                occurred_at=datetime(2026, 8, 10, 14, 0),
+                name="Mateos",
+                amount_usd=80.0,
+                method="Venmo",
+                sent_to="CC / 1111-0001 / Alice",
             ),
         ]
 
@@ -193,7 +212,16 @@ class CreatorWeeklyAuditUnitTestCase(unittest.TestCase):
 
         self.assertEqual(wb["Zelle"].cell(2, 2).value, "Alice Payer")
         self.assertEqual(wb["Venmo"].cell(2, 4).value, "@mateos-handle")
-        self.assertEqual(wb["Bonuses"].cell(2, 2).value, "cc_player")
+        bonuses = wb["Bonuses"]
+        self.assertEqual(bonuses.cell(2, 2).value, "cc_player")
+        self.assertEqual(bonuses.cell(2, 4).value, "Other — reload")
+        self.assertEqual(bonuses.cell(2, 5).value, MONDAY.isoformat())
+        cashouts = wb["Cashouts"]
+        self.assertEqual(cashouts.cell(2, 2).value, "Mateos")
+        self.assertEqual(cashouts.cell(2, 3).value, 80.0)
+        self.assertEqual(cashouts.cell(2, 4).value, "Venmo")
+        self.assertEqual(cashouts.cell(2, 5).value, "CC / 1111-0001 / Alice")
+        self.assertEqual(cashouts.cell(2, 6).value, MONDAY.isoformat())
 
 
 class CreatorWeeklyAuditFetchTestCase(unittest.TestCase):
@@ -309,8 +337,11 @@ class CreatorWeeklyAuditFetchTestCase(unittest.TestCase):
         record.amount = Decimal("12.50")
         record.created_at = datetime(2026, 8, 10, 16, 0, tzinfo=timezone.utc)
         record.issued_at = datetime(2026, 8, 10, 16, 0, tzinfo=timezone.utc)
+        record.bonus_type = None
+        record.custom_description = "reload"
 
         query = MagicMock()
+        query.options.return_value = query
         query.filter.return_value = query
         query.order_by.return_value = query
         query.all.return_value = [record]
@@ -321,6 +352,81 @@ class CreatorWeeklyAuditFetchTestCase(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].player, "bonus_player")
         self.assertEqual(rows[0].amount_usd, 12.5)
+        self.assertEqual(rows[0].audit_date, MONDAY)
+        self.assertEqual(rows[0].bonus_type, "Other — reload")
+
+    @patch("api.creator_weekly_audit.partner_audit_day_window_utc")
+    def test_fetch_mateos_cashout_rails_filters_sender(self, mock_window):
+        from_dt = datetime(2026, 8, 10, 4, 0, tzinfo=timezone.utc)
+        to_dt = datetime(2026, 8, 11, 4, 59, 59, 999999, tzinfo=timezone.utc)
+        mock_window.return_value = (from_dt, to_dt)
+
+        mateos_send = MagicMock()
+        mateos_send.id = 1
+        mateos_send.sender_name = "Mateos"
+        mateos_send.amount = Decimal("80.00")
+        mateos_send.method_display_name = "Venmo"
+        mateos_send.created_at = datetime(2026, 8, 10, 16, 0)
+
+        other_send = MagicMock()
+        other_send.id = 2
+        other_send.sender_name = "RT Support"
+        other_send.amount = Decimal("10.00")
+        other_send.method_display_name = "Zelle"
+        other_send.created_at = datetime(2026, 8, 10, 17, 0)
+
+        mateos_record = MagicMock()
+        mateos_record.group_title = "CC / 1000 / Player"
+        other_record = MagicMock()
+        other_record.group_title = "RT / 2000 / Other"
+
+        query = MagicMock()
+        query.join.return_value = query
+        query.filter.return_value = query
+        query.order_by.return_value = query
+        query.all.return_value = [
+            (mateos_send, mateos_record),
+            (other_send, other_record),
+        ]
+        session = MagicMock()
+        session.query.return_value = query
+
+        rows = fetch_mateos_cashout_rails(session, [MONDAY])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].name, "Mateos")
+        self.assertEqual(rows[0].amount_usd, 80.0)
+        self.assertEqual(rows[0].method, "Venmo")
+        self.assertEqual(rows[0].sent_to, "CC / 1000 / Player")
+        self.assertEqual(rows[0].audit_date, MONDAY)
+
+    @patch("api.creator_weekly_audit.partner_audit_day_window_utc")
+    def test_fetch_mateos_cashout_rails_keeps_earlier_day(self, mock_window):
+        window = (
+            datetime(2026, 8, 10, 4, 0, tzinfo=timezone.utc),
+            datetime(2026, 8, 12, 4, 59, 59, tzinfo=timezone.utc),
+        )
+        mock_window.return_value = window
+
+        send = MagicMock()
+        send.id = 9
+        send.sender_name = "Mateos"
+        send.amount = Decimal("40.00")
+        send.method_display_name = "Zelle"
+        send.created_at = datetime(2026, 8, 11, 4, 30)
+        record = MagicMock()
+        record.group_title = "CC / 9 / Player"
+
+        query = MagicMock()
+        query.join.return_value = query
+        query.filter.return_value = query
+        query.order_by.return_value = query
+        query.all.return_value = [(send, record)]
+        session = MagicMock()
+        session.query.return_value = query
+
+        tuesday = MONDAY + timedelta(days=1)
+        rows = fetch_mateos_cashout_rails(session, [MONDAY, tuesday])
+        self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].audit_date, MONDAY)
 
 
