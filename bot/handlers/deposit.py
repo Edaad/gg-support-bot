@@ -1615,14 +1615,15 @@ async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None
     text = (
         "Hey! Just checking in \u2014 if you haven\u2019t completed your deposit yet, "
         "feel free to reach out and we\u2019ll help you get it done!\n\n"
-        "You can also start a new deposit anytime with /deposit."
+        "You can also start a new deposit anytime with /deposit.\n\n"
+        "We also have <b>automated feeback</b> \u2014 just type /earlyrb."
     )
     if method_list:
-        text += f"\n\nWe offer: {method_list}."
+        text += f"\n\nWe offer: {html.escape(method_list)}."
     text += "\n\nDeposits are available 24/7!"
 
     try:
-        await context.bot.send_message(chat_id=chat_id, text=text)
+        await context.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
     except Exception:
         logger.warning(
             "Failed to send deposit reminder to chat_id=%s", chat_id, exc_info=True
