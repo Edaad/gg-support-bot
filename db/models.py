@@ -13,13 +13,24 @@ from sqlalchemy import (
     CheckConstraint,
     Index,
     LargeBinary,
+    MetaData,
     text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
 
-Base = declarative_base()
+# Mirrors Postgres's own default constraint names so existing prod names stay valid.
+Base = declarative_base(
+    metadata=MetaData(
+        naming_convention={
+            "ix": "ix_%(column_0_label)s",
+            "uq": "%(table_name)s_%(column_0_N_name)s_key",
+            "fk": "%(table_name)s_%(column_0_N_name)s_fkey",
+            "pk": "%(table_name)s_pkey",
+        }
+    )
+)
 
 
 class Club(Base):
@@ -39,8 +50,8 @@ class Club(Base):
     list_text = Column(Text)
     list_file_id = Column(Text)
     list_caption = Column(Text)
-    allow_multi_cashout = Column(Boolean, default=True)
-    allow_admin_commands = Column(Boolean, default=True)
+    allow_multi_cashout = Column(Boolean, default=True, server_default=text("true"))
+    allow_admin_commands = Column(Boolean, default=True, server_default=text("true"))
     auto_chip_adding_enabled = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
@@ -78,26 +89,38 @@ class Club(Base):
     aces_option_min_deposits = Column(
         Integer, nullable=False, server_default=text("0"), default=0
     )
-    deposit_simple_mode = Column(Boolean, default=False)
-    deposit_simple_type = Column(String(10), default="text")
+    deposit_simple_mode = Column(Boolean, default=False, server_default=text("false"))
+    deposit_simple_type = Column(
+        String(10), default="text", server_default=text("'text'")
+    )
     deposit_simple_text = Column(Text)
     deposit_simple_file_id = Column(Text)
     deposit_simple_caption = Column(Text)
-    cashout_simple_mode = Column(Boolean, default=False)
-    cashout_simple_type = Column(String(10), default="text")
+    cashout_simple_mode = Column(Boolean, default=False, server_default=text("false"))
+    cashout_simple_type = Column(
+        String(10), default="text", server_default=text("'text'")
+    )
     cashout_simple_text = Column(Text)
     cashout_simple_file_id = Column(Text)
     cashout_simple_caption = Column(Text)
-    cashout_cooldown_enabled = Column(Boolean, default=False)
-    cashout_cooldown_hours = Column(Integer, default=24)
-    cashout_hours_enabled = Column(Boolean, default=False)
-    cashout_hours_start = Column(String(5), default="08:00")
-    cashout_hours_end = Column(String(5), default="23:00")
+    cashout_cooldown_enabled = Column(
+        Boolean, default=False, server_default=text("false")
+    )
+    cashout_cooldown_hours = Column(Integer, default=24, server_default=text("24"))
+    cashout_hours_enabled = Column(Boolean, default=False, server_default=text("false"))
+    cashout_hours_start = Column(
+        String(5), default="08:00", server_default=text("'08:00'")
+    )
+    cashout_hours_end = Column(
+        String(5), default="23:00", server_default=text("'23:00'")
+    )
     cashout_max_amount = Column(Numeric(12, 2), nullable=True)
     cashout_soft_limit = Column(Numeric(12, 2), nullable=True)
-    referral_enabled = Column(Boolean, default=False)
-    first_deposit_bonus_enabled = Column(Boolean, default=False)
-    first_deposit_bonus_pct = Column(Integer, default=0)
+    referral_enabled = Column(Boolean, default=False, server_default=text("false"))
+    first_deposit_bonus_enabled = Column(
+        Boolean, default=False, server_default=text("false")
+    )
+    first_deposit_bonus_pct = Column(Integer, default=0, server_default=text("0"))
     first_deposit_bonus_cap = Column(Numeric(12, 2), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
@@ -174,13 +197,15 @@ class PaymentMethod(Base):
     response_file_id = Column(Text)
     response_caption = Column(Text)
     # Deposit methods can optionally embed a per-group generated link (currently Stripe Checkout) into response_text.
-    use_group_checkout_link = Column(Boolean, default=False)
+    use_group_checkout_link = Column(
+        Boolean, default=False, server_default=text("false")
+    )
     group_checkout_provider = Column(String(32), nullable=True)
     hyperlink_text = Column(String(64), nullable=True)
     is_active = Column(Boolean, default=True)
     sort_order = Column(Integer, default=0)
     deposit_limit = Column(Numeric(12, 2), nullable=True)
-    accumulated_amount = Column(Numeric(12, 2), default=0)
+    accumulated_amount = Column(Numeric(12, 2), default=0, server_default=text("0"))
     created_at = Column(DateTime, server_default=func.now())
 
     club = relationship("Club", back_populates="payment_methods")
@@ -266,7 +291,9 @@ class PaymentMethodTier(Base):
     response_text = Column(Text)
     response_file_id = Column(Text)
     response_caption = Column(Text)
-    use_group_checkout_link = Column(Boolean, default=False)
+    use_group_checkout_link = Column(
+        Boolean, default=False, server_default=text("false")
+    )
     group_checkout_provider = Column(String(32), nullable=True)
     hyperlink_text = Column(String(64), nullable=True)
     sort_order = Column(Integer, default=0)
@@ -291,7 +318,10 @@ class ClubPaymentMethod(Base):
         UniqueConstraint(
             "club_id", "direction", "slug", name="uq_cpm_club_direction_slug"
         ),
-        CheckConstraint("direction IN ('deposit', 'cashout')", name="ck_cpm_direction"),
+        CheckConstraint(
+            "direction IN ('deposit', 'cashout')",
+            name="club_payment_methods_direction_check",
+        ),
         CheckConstraint(
             "min_amount IS NULL OR max_amount IS NULL OR min_amount <= max_amount",
             name="ck_cpm_amount_range",
@@ -303,6 +333,14 @@ class ClubPaymentMethod(Base):
             "is_active",
             "sort_order",
         ),
+        Index(
+            "uq_cpm_union_deposit_slug",
+            "slug",
+            unique=True,
+            postgresql_where=text(
+                "tracks_manual_requests = true AND direction::text = 'deposit'::text"
+            ),
+        ).ddl_if(dialect="postgresql"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -314,15 +352,23 @@ class ClubPaymentMethod(Base):
     slug = Column(String(50), nullable=False)
     min_amount = Column(Numeric(12, 2), nullable=True)
     max_amount = Column(Numeric(12, 2), nullable=True)
-    has_sub_options = Column(Boolean, nullable=False, default=False)
-    is_active = Column(Boolean, nullable=False, default=True)
+    has_sub_options = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    is_active = Column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
     is_public = Column(
         Boolean, nullable=False, server_default=text("true"), default=True
     )
-    sort_order = Column(Integer, nullable=False, default=0)
+    sort_order = Column(Integer, nullable=False, default=0, server_default=text("0"))
     deposit_limit = Column(Numeric(12, 2), nullable=True)
-    accumulated_amount = Column(Numeric(12, 2), nullable=False, default=0)
-    first_time_linking_enabled = Column(Boolean, nullable=False, default=False)
+    accumulated_amount = Column(
+        Numeric(12, 2), nullable=False, default=0, server_default=text("0")
+    )
+    first_time_linking_enabled = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     first_time_bind_mode = Column(String(32), nullable=True)
     tracks_manual_requests = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
@@ -338,11 +384,14 @@ class ClubPaymentMethod(Base):
     method_tag = Column(String(200), nullable=True)
     payment_account_name = Column(String(200), nullable=True)
     manual_request_variant_name = Column(String(100), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+        nullable=False,
     )
 
     club = relationship("Club", back_populates="club_payment_methods")
@@ -399,7 +448,9 @@ class ClubPaymentMethodClub(Base):
     club_id = Column(
         Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
     )
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     method = relationship("ClubPaymentMethod", back_populates="method_clubs")
     club = relationship("Club")
@@ -425,21 +476,31 @@ class ClubPaymentTier(Base):
     label = Column(String(50), nullable=False)
     min_amount = Column(Numeric(12, 2), nullable=True)
     max_amount = Column(Numeric(12, 2), nullable=True)
-    sort_order = Column(Integer, nullable=False, default=0)
-    response_type = Column(String(10), nullable=False, default="text")
+    sort_order = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    response_type = Column(
+        String(10),
+        nullable=False,
+        default="text",
+        server_default=text("'text'"),
+    )
     response_text = Column(Text)
     response_file_id = Column(Text)
     response_caption = Column(Text)
-    use_group_checkout_link = Column(Boolean, nullable=False, default=False)
+    use_group_checkout_link = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     group_checkout_provider = Column(String(32), nullable=True)
     hyperlink_text = Column(String(64), nullable=True)
     checkout_min_amount = Column(Numeric(12, 2), nullable=True)
     checkout_max_amount = Column(Numeric(12, 2), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+        nullable=False,
     )
 
     method = relationship("ClubPaymentMethod", back_populates="tiers")
@@ -469,9 +530,14 @@ class ClubPaymentTierVariant(Base):
         Integer, ForeignKey("club_payment_tiers.id", ondelete="CASCADE"), nullable=False
     )
     label = Column(String(100), nullable=False)
-    weight = Column(Integer, nullable=False, default=1)
-    sort_order = Column(Integer, nullable=False, default=0)
-    response_type = Column(String(10), nullable=False, default="text")
+    weight = Column(Integer, nullable=False, default=1, server_default=text("1"))
+    sort_order = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    response_type = Column(
+        String(10),
+        nullable=False,
+        default="text",
+        server_default=text("'text'"),
+    )
     response_text = Column(Text)
     response_file_id = Column(Text)
     response_caption = Column(Text)
@@ -486,11 +552,14 @@ class ClubPaymentTierVariant(Base):
     cashapp_tag = Column(String(32), nullable=True)
     cashapp_link = Column(String(128), nullable=True)
     cashapp_response_mode = Column(String(16), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+        nullable=False,
     )
 
     method = relationship("ClubPaymentMethod", back_populates="variants")
@@ -511,17 +580,27 @@ class ClubPaymentSubOption(Base):
     )
     name = Column(String(50), nullable=False)
     slug = Column(String(50), nullable=False)
-    response_type = Column(String(10), nullable=False, default="text")
+    response_type = Column(
+        String(10),
+        nullable=False,
+        default="text",
+        server_default=text("'text'"),
+    )
     response_text = Column(Text)
     response_file_id = Column(Text)
     response_caption = Column(Text)
-    is_active = Column(Boolean, nullable=False, default=True)
-    sort_order = Column(Integer, nullable=False, default=0)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_active = Column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    sort_order = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+        nullable=False,
     )
 
     method = relationship("ClubPaymentMethod", back_populates="sub_options")
@@ -536,6 +615,22 @@ class ManualDepositRequest(Base):
         Index("ix_mdr_club_created", "club_id", "created_at"),
         Index("ix_mdr_checked_created", "trade_record_checked", "created_at"),
         Index("ix_mdr_method_slug", "method_slug"),
+        Index(
+            "ix_mdr_instruction_expires_pending",
+            "instruction_expires_at",
+            postgresql_where=text(
+                "instruction_expires_at IS NOT NULL AND instruction_expired_at IS NULL "
+                "AND trade_record_checked = false"
+            ),
+        ),
+        Index(
+            "ix_mdr_ack_expires_pending",
+            "ack_expires_at",
+            postgresql_where=text(
+                "ack_expires_at IS NOT NULL AND ack_expired_at IS NULL "
+                "AND acknowledged_at IS NULL AND trade_record_checked = false"
+            ),
+        ),
     )
 
     id = Column(Integer, primary_key=True)
@@ -587,7 +682,7 @@ class Group(Base):
         Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
     )
     name = Column(String(255), nullable=True)
-    first_deposit_claimed = Column(Boolean, default=False)
+    first_deposit_claimed = Column(Boolean, default=False, server_default=text("false"))
     # Last customer-chosen deposit union ("RT"/"AT" for Round Table, "CC"/"AT" for
     # Creator Club), used to route auto chip-adding to the correct ClubGG club.
     last_deposit_union = Column(String(2), nullable=True)
@@ -711,7 +806,12 @@ class ReferralAttribution(Base):
     clicker_telegram_user_id = Column(BigInteger, nullable=False)
     referred_gg_player_id = Column(String(255), nullable=True)
     referred_chat_id = Column(BigInteger, nullable=True)
-    status = Column(String(32), nullable=False, default="pending")
+    status = Column(
+        String(32),
+        nullable=False,
+        default="pending",
+        server_default=text("'pending'"),
+    )
     credited_at = Column(DateTime(timezone=True), nullable=True)
     acked_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -798,7 +898,7 @@ class CustomCommand(Base):
     response_text = Column(Text)
     response_file_id = Column(Text)
     response_caption = Column(Text)
-    customer_visible = Column(Boolean, default=False)
+    customer_visible = Column(Boolean, default=False, server_default=text("false"))
     is_active = Column(Boolean, default=True)
 
     club = relationship("Club", back_populates="custom_commands")
@@ -945,7 +1045,9 @@ class BonusDraft(Base):
     )
     amount = Column(Numeric(12, 2), nullable=False)
     status = Column(String(32), nullable=False, server_default="pending")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     expires_at = Column(DateTime(timezone=True), nullable=False)
 
     club = relationship("Club")
@@ -972,13 +1074,25 @@ class MtProtoClubHealth(Base):
     __tablename__ = "mtproto_club_health"
 
     club_key = Column(String(64), primary_key=True)
-    worker_connected = Column(Boolean, nullable=False, default=False)
-    session_valid = Column(Boolean, nullable=False, default=False)
-    status = Column(String(32), nullable=False, default="unknown")
+    worker_connected = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    session_valid = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    status = Column(
+        String(32),
+        nullable=False,
+        default="unknown",
+        server_default=text("'unknown'"),
+    )
     status_detail = Column(Text, nullable=True)
     telegram_user_id = Column(BigInteger, nullable=True)
     checked_at = Column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
 
@@ -1053,10 +1167,18 @@ class StaffCashoutRecord(Base):
     amount = Column(Numeric(12, 2), nullable=False)
     recorded_by_telegram_user_id = Column(BigInteger, nullable=True)
     trigger = Column(String(20), nullable=False)  # group_cash | dm_cashout | dashboard
-    tracks_money_sent = Column(Boolean, nullable=False, default=False)
-    sending = Column(Boolean, nullable=False, default=False)
-    do_not_send = Column(Boolean, nullable=False, default=False)
-    audited = Column(Boolean, nullable=False, default=False)
+    tracks_money_sent = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    sending = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    do_not_send = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    audited = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     last_slack_reminder_at = Column(DateTime, nullable=True)
     create_notified_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
@@ -1078,19 +1200,46 @@ class StaffCashoutRecord(Base):
     )
 
 
+class DeployNotifyState(Base):
+    """Singleton row: cooldown for the Heroku release-phase admin deploy DM."""
+
+    __tablename__ = "deploy_notify_state"
+    __table_args__ = (CheckConstraint("id = 1", name="deploy_notify_state_id_check"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=False)
+    last_notified_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class StaffCashoutSlackReminderControl(Base):
     """Singleton row: page-level 5-minute head-admin Slack reminder for Active cashouts."""
 
     __tablename__ = "staff_cashout_slack_reminder_control"
 
-    id = Column(Integer, primary_key=True, default=1)
-    enabled = Column(Boolean, nullable=False, default=False)
+    id = Column(Integer, primary_key=True, default=1, server_default=text("1"))
+    enabled = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     enabled_at = Column(DateTime(timezone=True), nullable=True)
-    hours_enabled = Column(Boolean, nullable=False, default=True)
-    hours_start = Column(String(5), nullable=False, default="08:00")
-    hours_end = Column(String(5), nullable=False, default="23:00")
+    hours_enabled = Column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    hours_start = Column(
+        String(5),
+        nullable=False,
+        default="08:00",
+        server_default=text("'08:00'"),
+    )
+    hours_end = Column(
+        String(5),
+        nullable=False,
+        default="23:00",
+        server_default=text("'23:00'"),
+    )
     updated_at = Column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
 
@@ -1105,9 +1254,14 @@ class StaffCashoutNotifyRecipient(Base):
     methods = Column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
     )
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
 
@@ -1196,7 +1350,9 @@ class SupportGroupChat(Base):
     added_users = Column(JSONB, nullable=True)
     failed_users = Column(JSONB, nullable=True)
     group_photo_path = Column(Text, nullable=True)
-    initial_group_message_sent = Column(Boolean, nullable=False, default=False)
+    initial_group_message_sent = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     player_dm_status = Column(Text, nullable=True)
     last_error_message = Column(Text, nullable=True)
     popup_keyboard_installed = Column(
@@ -1217,11 +1373,14 @@ class SupportGroupChat(Base):
     escalation_post_deposit_idle_pending = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+        nullable=False,
     )
 
 
@@ -1305,23 +1464,36 @@ class InactiveGroupOutreachControl(Base):
 
     __tablename__ = "inactive_group_outreach_control"
 
-    id = Column(Integer, primary_key=True, default=1)
-    scan_status = Column(String(32), nullable=False, default="idle")
+    id = Column(Integer, primary_key=True, default=1, server_default=text("1"))
+    scan_status = Column(
+        String(32),
+        nullable=False,
+        default="idle",
+        server_default=text("'idle'"),
+    )
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
-    targets_total = Column(Integer, nullable=False, default=0)
-    rows_scanned = Column(Integer, nullable=False, default=0)
-    inactive_90d_count = Column(Integer, nullable=False, default=0)
-    inactive_180d_count = Column(Integer, nullable=False, default=0)
-    entity_resolvable_count = Column(Integer, nullable=False, default=0)
+    targets_total = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    rows_scanned = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    inactive_90d_count = Column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    inactive_180d_count = Column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    entity_resolvable_count = Column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     last_error = Column(Text, nullable=True)
     last_tick_at = Column(DateTime(timezone=True), nullable=True)
     dm_campaign_message = Column(Text, nullable=True)
     dm_batch_status = Column(String(32), nullable=True)
     dm_campaign_started_at = Column(DateTime(timezone=True), nullable=True)
     dm_campaign_started_by_telegram_user_id = Column(BigInteger, nullable=True)
-    dm_sent_count = Column(Integer, nullable=False, default=0)
-    dm_failed_count = Column(Integer, nullable=False, default=0)
+    dm_sent_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    dm_failed_count = Column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
 
 
 class InactiveGroupOutreachRow(Base):
@@ -1361,17 +1533,30 @@ class InactiveGroupOutreachRow(Base):
     last_external_legacy_at = Column(DateTime(timezone=True), nullable=True)
     activity_basis_legacy = Column(String(32), nullable=True)
     activity_merged_from = Column(String(16), nullable=True)
-    inactive_90d = Column(Boolean, nullable=False, default=False)
-    inactive_180d = Column(Boolean, nullable=False, default=False)
-    duplicate_title = Column(Boolean, nullable=False, default=False)
+    inactive_90d = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    inactive_180d = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    duplicate_title = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     newer_same_title_chat_id = Column(BigInteger, nullable=True)
     player_telegram_user_id = Column(BigInteger, nullable=True)
     player_username = Column(Text, nullable=True)
     player_display_name = Column(Text, nullable=True)
     player_source = Column(String(32), nullable=True)
     account_check = Column(String(16), nullable=True)
-    entity_resolvable = Column(Boolean, nullable=False, default=False)
-    scan_status = Column(String(16), nullable=False, default="pending")
+    entity_resolvable = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    scan_status = Column(
+        String(16),
+        nullable=False,
+        default="pending",
+        server_default=text("'pending'"),
+    )
     scan_error = Column(Text, nullable=True)
     scanned_at = Column(DateTime(timezone=True), nullable=True)
     dm_status = Column(String(32), nullable=True)
@@ -1385,11 +1570,14 @@ class InactiveGroupOutreachRow(Base):
     reonboard_new_chat_id = Column(BigInteger, nullable=True)
     reonboard_error = Column(Text, nullable=True)
     old_group_erased_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+        nullable=False,
     )
 
 
@@ -1410,11 +1598,14 @@ class StripeCustomer(Base):
     stripe_customer_id = Column(String(255), unique=True, nullable=False)
     gg_player_id = Column(String(255), nullable=True)
     player_display_name = Column(String(255), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+        nullable=False,
     )
 
     club = relationship("Club")
@@ -1437,7 +1628,11 @@ class StripeCheckoutSession(Base):
             "ix_stripe_checkout_sessions_stripe_checkout_session_id",
             "stripe_checkout_session_id",
         ),
-        Index("ix_stripe_checkout_sessions_club_created", "club_id", "created_at"),
+        Index(
+            "ix_stripe_checkout_sessions_club_created",
+            "club_id",
+            text("created_at DESC"),
+        ),
         Index("ix_stripe_checkout_sessions_club_status", "club_id", "status"),
         Index("ix_stripe_checkout_deposit_session_id", "deposit_session_id"),
     )
@@ -1455,11 +1650,23 @@ class StripeCheckoutSession(Base):
         Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
     )
     amount_cents = Column(Integer, nullable=False)
-    currency = Column(String(10), nullable=False, default="usd")
-    status = Column(String(20), nullable=False, default="open")
+    currency = Column(
+        String(10),
+        nullable=False,
+        default="usd",
+        server_default=text("'usd'"),
+    )
+    status = Column(
+        String(20),
+        nullable=False,
+        default="open",
+        server_default=text("'open'"),
+    )
     payment_method_id = Column(Integer, nullable=True)
     stripe_payment_intent_id = Column(String(255), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     completed_at = Column(DateTime(timezone=True), nullable=True)
     updated_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -1491,7 +1698,9 @@ class VenmoPayment(Base):
     payer_name = Column(String(255), nullable=False)
     amount_cents = Column(Integer, nullable=False)
     venmo_handle = Column(String(100), nullable=False)
-    goods_or_services = Column(Boolean, nullable=False, default=False)
+    goods_or_services = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     paid_at = Column(String(255), nullable=True)
     source_external_id = Column(String(255), unique=True, nullable=True)
     telegram_chat_id = Column(BigInteger, nullable=True)
@@ -1502,15 +1711,22 @@ class VenmoPayment(Base):
     notification_chat_id = Column(BigInteger, nullable=True)
     notification_message_id = Column(BigInteger, nullable=True)
     bound_by_telegram_user_id = Column(BigInteger, nullable=True)
-    auto_bound = Column(Boolean, nullable=False, default=False)
-    is_test = Column(Boolean, nullable=False, default=False)
+    auto_bound = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    is_test = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     bound_at = Column(DateTime(timezone=True), nullable=True)
     memo = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+        nullable=False,
     )
 
     club = relationship("Club")
@@ -1521,10 +1737,11 @@ class VenmoPayerBinding(Base):
 
     __tablename__ = "venmo_payer_bindings"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_venmo_payer_bindings_payer_chat",
             "payer_name_normalized",
             "telegram_chat_id",
-            name="uq_venmo_payer_bindings_payer_chat",
+            unique=True,
         ),
         Index("ix_venmo_payer_bindings_telegram_chat_id", "telegram_chat_id"),
     )
@@ -1537,7 +1754,9 @@ class VenmoPayerBinding(Base):
         Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
     )
     bound_group_title_at_bind = Column(String(255), nullable=True)
-    last_bound_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_bound_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     last_bound_by_telegram_user_id = Column(BigInteger, nullable=True)
 
     club = relationship("Club")
@@ -1573,15 +1792,22 @@ class CashAppPayment(Base):
     notification_chat_id = Column(BigInteger, nullable=True)
     notification_message_id = Column(BigInteger, nullable=True)
     bound_by_telegram_user_id = Column(BigInteger, nullable=True)
-    auto_bound = Column(Boolean, nullable=False, default=False)
-    is_test = Column(Boolean, nullable=False, default=False)
+    auto_bound = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    is_test = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     bound_at = Column(DateTime(timezone=True), nullable=True)
     memo = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+        nullable=False,
     )
 
     club = relationship("Club")
@@ -1592,10 +1818,11 @@ class CashAppPayerBinding(Base):
 
     __tablename__ = "cashapp_payer_bindings"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_cashapp_payer_bindings_payer_chat",
             "payer_name_normalized",
             "telegram_chat_id",
-            name="uq_cashapp_payer_bindings_payer_chat",
+            unique=True,
         ),
         Index("ix_cashapp_payer_bindings_telegram_chat_id", "telegram_chat_id"),
     )
@@ -1608,7 +1835,9 @@ class CashAppPayerBinding(Base):
         Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
     )
     bound_group_title_at_bind = Column(String(255), nullable=True)
-    last_bound_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_bound_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     last_bound_by_telegram_user_id = Column(BigInteger, nullable=True)
 
     club = relationship("Club")
@@ -1644,15 +1873,22 @@ class PayPalPayment(Base):
     notification_chat_id = Column(BigInteger, nullable=True)
     notification_message_id = Column(BigInteger, nullable=True)
     bound_by_telegram_user_id = Column(BigInteger, nullable=True)
-    auto_bound = Column(Boolean, nullable=False, default=False)
-    is_test = Column(Boolean, nullable=False, default=False)
+    auto_bound = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    is_test = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     bound_at = Column(DateTime(timezone=True), nullable=True)
     memo = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+        nullable=False,
     )
 
     club = relationship("Club")
@@ -1663,10 +1899,11 @@ class PayPalPayerBinding(Base):
 
     __tablename__ = "paypal_payer_bindings"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_paypal_payer_bindings_payer_chat",
             "payer_name_normalized",
             "telegram_chat_id",
-            name="uq_paypal_payer_bindings_payer_chat",
+            unique=True,
         ),
         Index("ix_paypal_payer_bindings_telegram_chat_id", "telegram_chat_id"),
     )
@@ -1679,7 +1916,9 @@ class PayPalPayerBinding(Base):
         Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
     )
     bound_group_title_at_bind = Column(String(255), nullable=True)
-    last_bound_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_bound_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     last_bound_by_telegram_user_id = Column(BigInteger, nullable=True)
 
     club = relationship("Club")
@@ -1742,6 +1981,7 @@ class CryptoPayment(Base):
         Index("ix_crypto_payments_telegram_chat_id", "telegram_chat_id"),
         Index("ix_crypto_payments_created_at", "created_at"),
         Index("ix_crypto_payments_method_owner_created", "method_owner", "created_at"),
+        Index("ix_crypto_payments_alert_scope", "alert_scope"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -1766,14 +2006,21 @@ class CryptoPayment(Base):
     notification_chat_id = Column(BigInteger, nullable=True)
     notification_message_id = Column(BigInteger, nullable=True)
     bound_by_telegram_user_id = Column(BigInteger, nullable=True)
-    auto_bound = Column(Boolean, nullable=False, default=False)
-    is_test = Column(Boolean, nullable=False, default=False)
+    auto_bound = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    is_test = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     bound_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+        nullable=False,
     )
 
     club = relationship("Club")
@@ -1784,11 +2031,12 @@ class CryptoWalletBinding(Base):
 
     __tablename__ = "crypto_wallet_bindings"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_crypto_wallet_bindings_address_scope_chat",
             "from_address_normalized",
             "alert_scope",
             "telegram_chat_id",
-            name="uq_crypto_wallet_bindings_address_scope_chat",
+            unique=True,
         ),
         Index("ix_crypto_wallet_bindings_telegram_chat_id", "telegram_chat_id"),
     )
@@ -1812,10 +2060,11 @@ class ZellePayerBinding(Base):
 
     __tablename__ = "zelle_payer_bindings"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_zelle_payer_bindings_payer_chat",
             "payer_name_normalized",
             "telegram_chat_id",
-            name="uq_zelle_payer_bindings_payer_chat",
+            unique=True,
         ),
         Index("ix_zelle_payer_bindings_telegram_chat_id", "telegram_chat_id"),
     )
@@ -1858,16 +2107,24 @@ class PaymentAutoDepositEvent(Base):
     )
     telegram_chat_id = Column(BigInteger, nullable=True)
     amount_cents = Column(Integer, nullable=False)
-    auto_bound = Column(Boolean, nullable=False, default=False)
-    goods_or_services = Column(Boolean, nullable=False, default=False)
+    auto_bound = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    goods_or_services = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     group_title = Column(String(255), nullable=True)
     gg_player_id = Column(String(64), nullable=True)
-    club_auto_deposit_enabled = Column(Boolean, nullable=False, default=False)
+    club_auto_deposit_enabled = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     status = Column(String(32), nullable=False)
     skip_reason = Column(String(64), nullable=True)
     chip_add_status = Column(String(32), nullable=True)
     payment_at = Column(DateTime(timezone=True), nullable=False)
-    recorded_at = Column(DateTime(timezone=True), server_default=func.now())
+    recorded_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     club = relationship("Club")
 
@@ -1884,6 +2141,15 @@ class PaymentChipMatch(Base):
         ),
         Index("ix_pcm_telegram_chat_id", "telegram_chat_id"),
         Index("ix_pcm_matched_at", "matched_at"),
+        Index(
+            "uq_pcm_crypto_tx_hash",
+            text("(metadata ->> 'transaction_hash'::text)"),
+            unique=True,
+            postgresql_where=text(
+                "(metadata ->> 'transaction_hash'::text) IS NOT NULL "
+                "AND btrim(metadata ->> 'transaction_hash'::text) <> ''::text"
+            ),
+        ).ddl_if(dialect="postgresql"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -1896,7 +2162,9 @@ class PaymentChipMatch(Base):
     amount_cents = Column(Integer, nullable=False)
     via = Column(String(32), nullable=False)
     actor_telegram_user_id = Column(BigInteger, nullable=True)
-    matched_at = Column(DateTime(timezone=True), server_default=func.now())
+    matched_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     metadata_json = Column("metadata", JSONB, nullable=True)
 
     club = relationship("Club")
@@ -1925,7 +2193,9 @@ class BotFlowSession(Base):
         Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
     )
     telegram_user_id = Column(BigInteger, nullable=True)
-    started_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     ended_at = Column(DateTime(timezone=True), nullable=True)
     end_reason = Column(String(32), nullable=True)
 
@@ -1952,14 +2222,19 @@ class GroupChatDailyActivity(Base):
     club_id = Column(
         Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
     )
-    non_bot_message_count = Column(Integer, nullable=False, default=1)
+    non_bot_message_count = Column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
     first_message_at = Column(DateTime(timezone=True), nullable=False)
     last_message_at = Column(DateTime(timezone=True), nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+        nullable=False,
     )
 
     club = relationship("Club")
@@ -1990,21 +2265,36 @@ class GroupChatDailyTranscript(Base):
     club_id = Column(
         Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
     )
-    status = Column(String(16), nullable=False, default="pending")
-    message_count = Column(Integer, nullable=False, default=0)
+    status = Column(
+        String(16),
+        nullable=False,
+        default="pending",
+        server_default=text("'pending'"),
+    )
+    message_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
     messages = Column(JSONB, nullable=True)
     error = Column(Text, nullable=True)
-    attempt_count = Column(Integer, nullable=False, default=0)
+    attempt_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
     fetched_at = Column(DateTime(timezone=True), nullable=True)
-    analysis_status = Column(String(16), nullable=False, default="pending")
+    analysis_status = Column(
+        String(16),
+        nullable=False,
+        default="pending",
+        server_default=text("'pending'"),
+    )
     analysis_error = Column(Text, nullable=True)
-    analysis_attempt_count = Column(Integer, nullable=False, default=0)
+    analysis_attempt_count = Column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     analyzed_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+        nullable=False,
     )
 
     club = relationship("Club")
@@ -2042,11 +2332,14 @@ class GroupChatTicket(Base):
     summary = Column(Text, nullable=True)
     prompt_version = Column(String(32), nullable=False)
     model = Column(String(128), nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+        nullable=False,
     )
 
     club = relationship("Club")
@@ -2078,10 +2371,16 @@ class DepositFunnelEvent(Base):
     telegram_chat_id = Column(BigInteger, nullable=False)
     method_slug = Column(String(32), nullable=True)
     amount_cents = Column(Integer, nullable=True)
-    is_first_deposit = Column(Boolean, nullable=False, default=False)
-    requires_method_setup = Column(Boolean, nullable=False, default=False)
+    is_first_deposit = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    requires_method_setup = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     metadata_json = Column("metadata", JSONB, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     club = relationship("Club")
 
@@ -2138,7 +2437,12 @@ class PaymentMethodBindAttempt(Base):
         nullable=False,
     )
     deposit_session_id = Column(String(64), nullable=True)
-    bind_kind = Column(String(32), nullable=False, default="special_amount")
+    bind_kind = Column(
+        String(32),
+        nullable=False,
+        default="special_amount",
+        server_default=text("'special_amount'"),
+    )
     amount_cents = Column(Integer, nullable=True)
     setup_emoji = Column(String(32), nullable=True)
     status = Column(String(20), nullable=False, default="pending")
@@ -2312,6 +2616,11 @@ class PaymentNotificationPost(Base):
             "payment_method_slug",
             "payment_id",
         ),
+        Index(
+            "ix_pnp_notification_msg",
+            "notification_chat_id",
+            "notification_message_id",
+        ),
     )
 
     id = Column(Integer, primary_key=True)
@@ -2319,7 +2628,9 @@ class PaymentNotificationPost(Base):
     payment_id = Column(Integer, nullable=False)
     notification_chat_id = Column(BigInteger, nullable=False)
     notification_message_id = Column(BigInteger, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class PaymentBindingEvent(Base):
@@ -2378,7 +2689,12 @@ class IssueReport(Base):
     """Account-manager issue report ticket."""
 
     __tablename__ = "issue_reports"
-    __table_args__ = (Index("ix_issue_reports_created_at", "created_at"),)
+    __table_args__ = (
+        Index("ix_issue_reports_created_at", "created_at"),
+        Index("ix_issue_reports_status", "status"),
+        Index("ix_issue_reports_club_id", "club_id"),
+        Index("ix_issue_reports_last_slack_reminder_at", "last_slack_reminder_at"),
+    )
 
     id = Column(Integer, primary_key=True)
     title = Column(String(255), nullable=False)
@@ -2453,7 +2769,9 @@ class IssueReportDraft(Base):
     group_title = Column(String(512), nullable=True)
     telegram_chat_id = Column(BigInteger, nullable=True)
     status = Column(String(32), nullable=False, server_default="pending")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     expires_at = Column(DateTime(timezone=True), nullable=False)
 
     club = relationship("Club")
@@ -2485,11 +2803,14 @@ class PlayerSupportIssue(Base):
     telegram_chat_id = Column(BigInteger, nullable=True)
     resolved_at = Column(DateTime(timezone=True), nullable=True)
     resolved_by_telegram_user_id = Column(BigInteger, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+        nullable=False,
     )
 
     club = relationship("Club")
@@ -2521,7 +2842,9 @@ class PlayerSupportNote(Base):
     next_steps = Column(Text, nullable=False)
     created_by_telegram_user_id = Column(BigInteger, nullable=False)
     source_telegram_chat_id = Column(BigInteger, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     issue = relationship("PlayerSupportIssue", back_populates="notes")
 
@@ -2613,9 +2936,11 @@ class EarlyRakebackSnapshot(Base):
     audit_date = Column(Date, nullable=False)
     fetch_from_utc = Column(DateTime(timezone=True), nullable=False)
     fetch_to_utc = Column(DateTime(timezone=True), nullable=False)
-    lines_fetched = Column(Integer, nullable=False, default=0)
-    lines_stored = Column(Integer, nullable=False, default=0)
-    lines_skipped_unmapped = Column(Integer, nullable=False, default=0)
+    lines_fetched = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    lines_stored = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    lines_skipped_unmapped = Column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     skipped_nicknames = Column(Text, nullable=True)
     synced_at = Column(DateTime, server_default=func.now())
 
@@ -2753,10 +3078,18 @@ class AuditReconcileRun(Base):
         ForeignKey("early_rakeback_snapshots.id", ondelete="SET NULL"),
         nullable=True,
     )
-    players_matched = Column(Integer, nullable=False, default=0)
-    players_failed = Column(Integer, nullable=False, default=0)
-    unmatched_trade_count = Column(Integer, nullable=False, default=0)
-    unmatched_ledger_count = Column(Integer, nullable=False, default=0)
+    players_matched = Column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    players_failed = Column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    unmatched_trade_count = Column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    unmatched_ledger_count = Column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     report_json = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
 
@@ -2991,7 +3324,9 @@ class WebhookIngestRequest(Base):
     error_message = Column(Text, nullable=True)
     request_body = Column(JSONB, nullable=True)
     response_json = Column(JSONB, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class DepositMethodAlert(Base):
