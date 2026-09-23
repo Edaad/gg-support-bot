@@ -22,7 +22,7 @@ warnings.filterwarnings(
 )
 
 from db.connection import init_engine
-from db.models import Base
+from db.schema_guard import ensure_schema_at_head
 
 
 def _configure_worker_logging() -> None:
@@ -331,7 +331,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     _configure_worker_logging()
 
     engine = init_engine()
-    Base.metadata.create_all(engine)
+    ensure_schema_at_head(engine)
 
     h = import_worker_handlers(test_mode=test_mode)
 

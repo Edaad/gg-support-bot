@@ -21,7 +21,7 @@ warnings.filterwarnings(
 )
 
 from db.connection import init_engine
-from db.models import Base
+from db.schema_guard import ensure_schema_at_head
 from notification.constants import (
     NOTIFICATION_BOT_TOKEN_ENV,
     PAYMENT_NOTIFICATION_CHAT_ID_CREATOR_CLUB_ENV,
@@ -91,7 +91,7 @@ def run_notification_bot(token: str | None = None) -> None:
 
     _configure_worker_logging()
     engine = init_engine()
-    Base.metadata.create_all(engine)
+    ensure_schema_at_head(engine)
 
     app = ApplicationBuilder().token(token).build()
 
