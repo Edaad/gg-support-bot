@@ -316,7 +316,6 @@ Column: `player_details.gg_nickname` (nullable `varchar(255)`). Migration: [`mig
 |---------|--------|
 | Weekly stats page sync | `POST /api/weekly-stats/sync-nicknames` after `POST /process-week/sync` |
 | Bot bind (`/track`, title change, `/override`) | Best-effort `GET /player-details` → update one row |
-| Manual backfill | [`scripts/backfill_player_details_gg_nickname.py`](../scripts/backfill_player_details_gg_nickname.py) |
 
 Slug → Postgres `clubs.id`: [`api/club_slug.py`](../api/club_slug.py) (same mapping as [`dashboard/src/config/clubMap.ts`](../dashboard/src/config/clubMap.ts)).
 
