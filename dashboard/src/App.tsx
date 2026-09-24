@@ -7,6 +7,7 @@ import FlowSimulator from './pages/FlowSimulator'
 import Settings from './pages/Settings'
 import Bonuses from './pages/Bonuses'
 import Expenses from './pages/Expenses'
+import Sends from './pages/Sends'
 import CashoutRecords from './pages/CashoutRecords'
 import CashoutRecordDetail from './pages/CashoutRecordDetail'
 import Payments from './pages/Payments'
@@ -88,6 +89,7 @@ export default function App() {
               <Route path="/bonuses/types" element={<Navigate to="/bonuses" replace />} />
               <Route path="/bonuses" element={<Bonuses token={token} role={role} />} />
               <Route path="/expenses" element={<Expenses token={token} />} />
+              <Route path="/outbound-sends" element={<Sends token={token} />} />
               <Route path="/cashout-records" element={<CashoutRecords token={token} role={role} />} />
               <Route path="/cashout-records/:id" element={<CashoutRecordDetail token={token} role={role} />} />
               <Route path="/payments" element={<Payments token={token} role={role} />} />

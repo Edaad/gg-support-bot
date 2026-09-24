@@ -88,6 +88,120 @@ def tag_matches_deposit_variant(db: Session, *, method: str, tag: str) -> bool:
     return any(normalizer(row[0]) == tag for row in rows)
 
 
+def _prepared_fields(
+    *,
+    method: str,
+    tag: str,
+    method_owner: str,
+    recipient: str,
+    amount: str | int | float,
+    source_external_id: str,
+    paid_at: str | None,
+) -> dict:
+    method_slug = normalize_method(method)
+    stored_tag = normalize_tag(method_slug, tag)
+    return {
+        "method": method_slug,
+        "tag": stored_tag,
+        "method_owner": normalize_method_owner(method_owner),
+        "recipient": normalize_recipient(recipient),
+        "amount_cents": parse_positive_amount_cents(amount),
+        "source_external_id": normalize_source_external_id(source_external_id),
+        "paid_at": (paid_at or "").strip() or None,
+    }
+
+
+def _flush_or_duplicate(db: Session) -> None:
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise ValueError("source_external_id already exists") from None
+
+
+def _reject_duplicate_source_id(
+    db: Session, source_id: str, *, exclude_id: int | None = None
+) -> None:
+    query = db.query(OutboundSend).filter(OutboundSend.source_external_id == source_id)
+    if exclude_id is not None:
+        query = query.filter(OutboundSend.id != exclude_id)
+    if query.one_or_none() is not None:
+        raise ValueError("source_external_id already exists")
+
+
+def create_outbound_send(
+    db: Session,
+    *,
+    method: str,
+    tag: str,
+    method_owner: str,
+    recipient: str,
+    amount: str | int | float,
+    source_external_id: str,
+    paid_at: str | None = None,
+) -> OutboundSend:
+    fields = _prepared_fields(
+        method=method,
+        tag=tag,
+        method_owner=method_owner,
+        recipient=recipient,
+        amount=amount,
+        source_external_id=source_external_id,
+        paid_at=paid_at,
+    )
+    _reject_duplicate_source_id(db, fields["source_external_id"])
+    matched = tag_matches_deposit_variant(
+        db, method=fields["method"], tag=fields["tag"]
+    )
+    row = OutboundSend(tag_matched=matched, **fields)
+    db.add(row)
+    _flush_or_duplicate(db)
+    return row
+
+
+def update_outbound_send(
+    db: Session,
+    send_id: int,
+    *,
+    method: str,
+    tag: str,
+    method_owner: str,
+    recipient: str,
+    amount: str | int | float,
+    source_external_id: str,
+    paid_at: str | None = None,
+) -> OutboundSend:
+    row = db.get(OutboundSend, send_id)
+    if row is None:
+        raise LookupError("outbound send not found")
+    fields = _prepared_fields(
+        method=method,
+        tag=tag,
+        method_owner=method_owner,
+        recipient=recipient,
+        amount=amount,
+        source_external_id=source_external_id,
+        paid_at=paid_at,
+    )
+    _reject_duplicate_source_id(db, fields["source_external_id"], exclude_id=send_id)
+    matched = tag_matches_deposit_variant(
+        db, method=fields["method"], tag=fields["tag"]
+    )
+    for key, value in fields.items():
+        setattr(row, key, value)
+    row.tag_matched = matched
+    _flush_or_duplicate(db)
+    return row
+
+
+def delete_outbound_send(db: Session, send_id: int) -> None:
+    row = db.get(OutboundSend, send_id)
+    if row is None:
+        raise LookupError("outbound send not found")
+    db.delete(row)
+    db.flush()
+
+
 def ingest_outbound_send(
     db: Session,
     *,
@@ -150,7 +264,9 @@ def list_outbound_sends(
         method_slug = normalize_method(method)
         query = query.filter(OutboundSend.method == method_slug)
     if tag and tag.strip():
-        query = query.filter(OutboundSend.tag == _filter_tag(method_slug, tag))
+        stored_tag = _filter_tag(method_slug, tag)
+        if stored_tag is not None:
+            query = query.filter(OutboundSend.tag == stored_tag)
     if from_dt is not None:
         query = query.filter(OutboundSend.created_at >= from_dt)
     if to_dt is not None:
@@ -165,15 +281,18 @@ def list_outbound_sends(
     return items, total
 
 
-def _filter_tag(method: str | None, raw: str) -> str:
+def _filter_tag(method: str | None, raw: str) -> str | None:
+    """Return a stored tag, or None when the filter is only a prefix."""
     if method == "cashapp":
-        return normalize_tag("cashapp", raw)
-    if method == "venmo":
-        return normalize_tag("venmo", raw)
-    text = raw.strip()
-    if text.startswith("$"):
-        return normalize_tag("cashapp", text)
-    return normalize_tag("venmo", text)
+        chosen = "cashapp"
+    elif method == "venmo":
+        chosen = "venmo"
+    else:
+        chosen = "cashapp" if raw.strip().startswith("$") else "venmo"
+    try:
+        return normalize_tag(chosen, raw)
+    except ValueError:
+        return None
 
 
 def _result(row: OutboundSend, *, created: bool) -> OutboundSendResult:

@@ -8,12 +8,15 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from api.auth import get_current_admin
+from api.auth import require_admin
 from api.method_owner import MethodOwnerSlug
 from api.outbound_sends import (
+    create_outbound_send,
+    delete_outbound_send,
     ingest_outbound_send,
     list_outbound_sends,
     parse_positive_amount_cents,
+    update_outbound_send,
 )
 from api.webhook_ingest_audit import (
     enrich_outbound_ingest_success,
@@ -152,7 +155,7 @@ def list_sends(
     to_dt: str | None = Query(None, alias="to"),
     limit: int = Query(_DEFAULT_LIMIT),
     offset: int = Query(0),
-    _role: str = Depends(get_current_admin),
+    _role: str = Depends(require_admin),
 ):
     limit = max(1, min(limit, _MAX_LIMIT))
     offset = max(0, offset)
@@ -178,3 +181,67 @@ def list_sends(
         limit=limit,
         offset=offset,
     )
+
+
+def _admin_write(
+    body: OutboundSendIngestBody, *, send_id: int | None
+) -> OutboundSendRead:
+    try:
+        with get_db() as db:
+            if send_id is None:
+                row = create_outbound_send(
+                    db,
+                    method=body.method,
+                    tag=body.tag,
+                    method_owner=body.method_owner,
+                    recipient=body.recipient,
+                    amount=body.amount,
+                    source_external_id=body.source_external_id,
+                    paid_at=body.paid_at,
+                )
+            else:
+                row = update_outbound_send(
+                    db,
+                    send_id,
+                    method=body.method,
+                    tag=body.tag,
+                    method_owner=body.method_owner,
+                    recipient=body.recipient,
+                    amount=body.amount,
+                    source_external_id=body.source_external_id,
+                    paid_at=body.paid_at,
+                )
+            return _to_read(row)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/admin", response_model=OutboundSendRead)
+def admin_create_send(
+    body: OutboundSendIngestBody,
+    _role: str = Depends(require_admin),
+):
+    return _admin_write(body, send_id=None)
+
+
+@router.patch("/{send_id}", response_model=OutboundSendRead)
+def admin_update_send(
+    send_id: int,
+    body: OutboundSendIngestBody,
+    _role: str = Depends(require_admin),
+):
+    return _admin_write(body, send_id=send_id)
+
+
+@router.delete("/{send_id}", status_code=204)
+def admin_delete_send(
+    send_id: int,
+    _role: str = Depends(require_admin),
+):
+    try:
+        with get_db() as db:
+            delete_outbound_send(db, send_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e

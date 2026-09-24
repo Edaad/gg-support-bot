@@ -298,6 +298,70 @@ export const updateExpense = (
 export const deleteExpense = (token: string, id: number) =>
   request<void>(`/expenses/${id}`, { method: 'DELETE' }, token)
 
+export type OutboundSendT = {
+  id: number
+  method: string
+  tag: string
+  method_owner: string
+  recipient: string
+  amount_cents: number
+  tag_matched: boolean
+  source_external_id: string
+  paid_at: string | null
+  created_at: string
+}
+
+export type OutboundSendListT = {
+  items: OutboundSendT[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export type OutboundSendWrite = {
+  method: string
+  tag: string
+  method_owner: string
+  recipient: string
+  amount: string
+  source_external_id: string
+  paid_at?: string | null
+}
+
+export type OutboundSendListOpts = {
+  method?: string
+  tag?: string
+  from?: string
+  to?: string
+  limit?: number
+  offset?: number
+}
+
+function outboundSendQuery(opts?: OutboundSendListOpts): string {
+  const params = new URLSearchParams()
+  if (opts?.method) params.set('method', opts.method)
+  if (opts?.tag) params.set('tag', opts.tag)
+  if (opts?.from) params.set('from', opts.from)
+  if (opts?.to) params.set('to', opts.to)
+  if (opts?.limit != null) params.set('limit', String(opts.limit))
+  if (opts?.offset != null) params.set('offset', String(opts.offset))
+  return params.toString()
+}
+
+export const listOutboundSends = (token: string, opts?: OutboundSendListOpts) => {
+  const qs = outboundSendQuery(opts)
+  return request<OutboundSendListT>(`/outbound-sends${qs ? `?${qs}` : ''}`, {}, token)
+}
+
+export const createOutboundSend = (token: string, data: OutboundSendWrite) =>
+  request<OutboundSendT>('/outbound-sends/admin', { method: 'POST', body: JSON.stringify(data) }, token)
+
+export const updateOutboundSend = (token: string, id: number, data: OutboundSendWrite) =>
+  request<OutboundSendT>(`/outbound-sends/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token)
+
+export const deleteOutboundSend = (token: string, id: number) =>
+  request<void>(`/outbound-sends/${id}`, { method: 'DELETE' }, token)
+
 export async function downloadExpensesXlsx(token: string, opts?: ExpenseListOpts): Promise<void> {
   const qs = expenseQueryParams(opts)
   const res = await fetch(apiUrl(`/api/expenses/export${qs ? `?${qs}` : ''}`), {

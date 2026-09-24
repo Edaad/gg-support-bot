@@ -18,6 +18,7 @@ type NavIconName =
   | 'audit'
   | 'pool-pay'
   | 'alerts'
+  | 'sends'
 
 type NavLinkItem = {
   to: string
@@ -38,6 +39,7 @@ const ADMIN_TOP_NAV: NavLinkItem[] = [
 ]
 
 const ADMIN_MORE_NAV: NavLinkItem[] = [
+  { to: '/outbound-sends', label: 'Sends', icon: 'sends' },
   { to: '/expenses', label: 'Expenses', icon: 'expenses' },
   { to: '/analytics', label: 'Analytics', icon: 'analytics' },
   { to: '/audit', label: 'Audit', icon: 'audit' },
@@ -154,6 +156,14 @@ function NavIcon({ name }: { name: NavIconName }) {
         <rect width="7" height="7" x="14" y="3" rx="1" />
         <rect width="7" height="7" x="14" y="14" rx="1" />
         <rect width="7" height="7" x="3" y="14" rx="1" />
+      </StrokeIcon>
+    )
+  }
+  if (name === 'sends') {
+    return (
+      <StrokeIcon>
+        <path d="M12 19V5" />
+        <path d="m5 12 7-7 7 7" />
       </StrokeIcon>
     )
   }

@@ -6,17 +6,25 @@ import os
 import unittest
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from api.auth import create_token
 from api.routes.outbound_sends import WEBHOOK_SECRET_ENV, router
-from api.outbound_sends import ingest_outbound_send, list_outbound_sends
+from api.outbound_sends import (
+    _flush_or_duplicate,
+    create_outbound_send,
+    delete_outbound_send,
+    ingest_outbound_send,
+    list_outbound_sends,
+    update_outbound_send,
+)
 from db.models import (
     Base,
     Club,
@@ -174,6 +182,89 @@ class OutboundSendServiceTestCase(unittest.TestCase):
         empty, empty_total = list_outbound_sends(self.session, method="cashapp")
         self.assertEqual(empty_total, 0)
         self.assertEqual(empty, [])
+        prefix, prefix_total = list_outbound_sends(self.session, tag="$")
+        self.assertEqual(prefix_total, total)
+        self.assertEqual(len(prefix), len(items))
+
+    def test_admin_create_update_delete(self):
+        row = create_outbound_send(
+            self.session,
+            method="venmo",
+            tag="Jagger4444",
+            method_owner="round-table",
+            recipient="Player",
+            amount="10",
+            source_external_id="admin-1",
+        )
+        self.session.commit()
+        self.assertTrue(row.tag_matched)
+        self.assertEqual(row.tag, "@jagger4444")
+
+        with self.assertRaises(ValueError):
+            create_outbound_send(
+                self.session,
+                method="venmo",
+                tag="@jagger4444",
+                method_owner="round-table",
+                recipient="Other",
+                amount=5,
+                source_external_id="admin-1",
+            )
+
+        updated = update_outbound_send(
+            self.session,
+            int(row.id),
+            method="cashapp",
+            tag="adamaole",
+            method_owner="vaughn",
+            recipient="Edited",
+            amount="12.50",
+            source_external_id="admin-1",
+            paid_at="yesterday",
+        )
+        self.session.commit()
+        self.assertEqual(updated.tag, "$adamaole")
+        self.assertFalse(updated.tag_matched)
+        self.assertEqual(updated.amount_cents, 1250)
+        self.assertEqual(updated.recipient, "Edited")
+        self.assertIsNotNone(updated.created_at)
+
+        other = create_outbound_send(
+            self.session,
+            method="venmo",
+            tag="@jagger4444",
+            method_owner="round-table",
+            recipient="Other",
+            amount=3,
+            source_external_id="admin-2",
+        )
+        self.session.commit()
+        with self.assertRaises(ValueError):
+            update_outbound_send(
+                self.session,
+                int(other.id),
+                method="venmo",
+                tag="@jagger4444",
+                method_owner="round-table",
+                recipient="Other",
+                amount=3,
+                source_external_id="admin-1",
+            )
+
+        delete_outbound_send(self.session, int(row.id))
+        delete_outbound_send(self.session, int(other.id))
+        self.session.commit()
+        _items, total = list_outbound_sends(self.session)
+        self.assertEqual(total, 0)
+        with self.assertRaises(LookupError):
+            delete_outbound_send(self.session, int(row.id))
+
+    def test_unique_index_conflict_is_a_value_error(self):
+        db = MagicMock()
+        db.flush.side_effect = IntegrityError("insert", {}, Exception("dup"))
+        with self.assertRaises(ValueError):
+            _flush_or_duplicate(db)
+        db.rollback.assert_called_once()
 
 
 class OutboundSendApiTestCase(unittest.TestCase):
@@ -250,6 +341,82 @@ class OutboundSendApiTestCase(unittest.TestCase):
         self.assertEqual(data["total"], 1)
         self.assertEqual(data["items"][0]["tag"], "@jagger4444")
         self.assertEqual(data["items"][0]["amount_cents"], 5000)
+        session.close()
+
+    def test_non_admin_cannot_list_or_write(self):
+        headers = {"Authorization": f"Bearer {create_token('account_manager')}"}
+        self.assertEqual(
+            self.client.get("/api/outbound-sends", headers=headers).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.post(
+                "/api/outbound-sends/admin", json=_payload(), headers=headers
+            ).status_code,
+            403,
+        )
+
+    def test_admin_create_update_duplicate_and_delete(self):
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(
+            engine,
+            tables=[
+                Club.__table__,
+                ClubPaymentMethod.__table__,
+                ClubPaymentTier.__table__,
+                ClubPaymentTierVariant.__table__,
+                Base.metadata.tables["outbound_sends"],
+            ],
+        )
+        session = sessionmaker(bind=engine)()
+
+        @contextmanager
+        def fake_db():
+            try:
+                yield session
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
+
+        headers = {"Authorization": f"Bearer {create_token()}"}
+        with patch("api.routes.outbound_sends.get_db", fake_db):
+            created = self.client.post(
+                "/api/outbound-sends/admin",
+                json=_payload(),
+                headers=headers,
+            )
+            self.assertEqual(created.status_code, 200)
+            send_id = created.json()["id"]
+            duplicate = self.client.post(
+                "/api/outbound-sends/admin",
+                json=_payload(),
+                headers=headers,
+            )
+            self.assertEqual(duplicate.status_code, 400)
+            updated = self.client.patch(
+                f"/api/outbound-sends/{send_id}",
+                json={**_payload(), "recipient": "Edited", "amount": 12},
+                headers=headers,
+            )
+            self.assertEqual(updated.status_code, 200)
+            self.assertEqual(updated.json()["recipient"], "Edited")
+            self.assertEqual(updated.json()["amount_cents"], 1200)
+            missing = self.client.patch(
+                "/api/outbound-sends/999",
+                json=_payload(),
+                headers=headers,
+            )
+            self.assertEqual(missing.status_code, 404)
+            deleted = self.client.delete(
+                f"/api/outbound-sends/{send_id}",
+                headers=headers,
+            )
+            self.assertEqual(deleted.status_code, 204)
         session.close()
 
 
