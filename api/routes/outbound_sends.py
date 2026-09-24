@@ -5,12 +5,20 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from api.auth import get_current_admin
 from api.method_owner import MethodOwnerSlug
-from api.outbound_sends import ingest_outbound_send, list_outbound_sends
+from api.outbound_sends import (
+    ingest_outbound_send,
+    list_outbound_sends,
+    parse_positive_amount_cents,
+)
+from api.webhook_ingest_audit import (
+    enrich_outbound_ingest_success,
+    set_webhook_ingest_error,
+)
 from db.connection import get_db
 from db.models import OutboundSend
 
@@ -92,6 +100,7 @@ def _to_read(row: OutboundSend) -> OutboundSendRead:
 
 @router.post("", response_model=OutboundSendIngestResponse)
 def ingest_send(
+    request: Request,
     body: OutboundSendIngestBody,
     x_outbound_webhook_secret: str | None = Header(None, alias=LOOKUP_HEADER),
 ):
@@ -109,7 +118,24 @@ def ingest_send(
                 paid_at=body.paid_at,
             )
     except ValueError as e:
+        set_webhook_ingest_error(request, str(e))
         raise HTTPException(400, str(e)) from e
+    amount_cents = None
+    try:
+        amount_cents = parse_positive_amount_cents(body.amount)
+    except ValueError:
+        amount_cents = None
+    enrich_outbound_ingest_success(
+        request,
+        source_external_id=body.source_external_id,
+        payment_id=result.id,
+        method_owner=body.method_owner,
+        recipient=body.recipient,
+        amount_cents=amount_cents,
+        created=result.created,
+        tag_matched=result.tag_matched,
+        warning=result.warning,
+    )
     return OutboundSendIngestResponse(
         id=result.id,
         created=result.created,

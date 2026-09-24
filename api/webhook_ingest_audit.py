@@ -24,6 +24,7 @@ WEBHOOK_INGEST_PATHS: dict[str, str] = {
     "/api/paypal/payments": "paypal",
     "/api/crypto/payments": "crypto",
     "/api/stripe/webhook": "stripe",
+    "/api/outbound-sends": "outbound",
 }
 
 OUTCOME_AUTH_FAILED = "auth_failed"
@@ -230,11 +231,41 @@ def enrich_payment_ingest_success(
     }
 
 
+def enrich_outbound_ingest_success(
+    request: Request,
+    *,
+    source_external_id: str | None,
+    payment_id: int,
+    method_owner: str,
+    recipient: str,
+    amount_cents: int | None,
+    created: bool,
+    tag_matched: bool,
+    warning: str | None,
+) -> None:
+    ctx = getattr(request.state, "webhook_ingest", None)
+    if ctx is None:
+        return
+    ctx.source_external_id = source_external_id
+    ctx.payment_id = payment_id
+    ctx.method_owner = method_owner
+    ctx.payer_summary = recipient
+    ctx.amount_cents = amount_cents
+    ctx.response_json = {
+        "id": payment_id,
+        "created": created,
+        "tag_matched": tag_matched,
+        "warning": warning,
+    }
+
+
 class WebhookIngestMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
         source = source_for_path(path)
         if source is None:
+            return await call_next(request)
+        if source == "outbound" and request.method.upper() != "POST":
             return await call_next(request)
 
         started = time.perf_counter()
