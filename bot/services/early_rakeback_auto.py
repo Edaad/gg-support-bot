@@ -186,9 +186,11 @@ async def check_fee(
             f"fee lookup {fee.status}: {fee.reason or 'no filtered fee returned'}",
         )
 
-    # An agency member's feeback is their agent's to pay out, so eligibility is
-    # settled before the week's numbers matter. An upline the bot could not read
-    # is nobody's answer: say nothing to the player and let an admin look.
+    # A missing upline flag is nobody's answer: say nothing to the player and
+    # let an admin look. A confirmed upline is not a final no — the handler asks
+    # Elevate whether a custom deal or a non-excluded standard-rate downline
+    # should still be paid. That check runs before "no fee this week" or the
+    # date-filter sanity check so those never hide an agency refusal.
     if fee.has_upline is None:
         return FeeStage(
             "escalate",
@@ -292,6 +294,101 @@ async def quote_feeback(
         )
 
     return QuoteStage("eligible", quote)
+
+
+CUSTOM_DEAL_SOURCES = frozenset({"custom_player", "custom_agent", "custom_super_agent"})
+_AGENCY_STOP_REASONS = frozenset(
+    {
+        elevate.AGENCY_REASON_NO_WEEK_HISTORY,
+        elevate.AGENCY_REASON_NO_AGENT_OR_SUPER_AGENT,
+    }
+)
+
+
+def quote_is_custom_deal(quote: Any) -> bool:
+    """True when Elevate applied a listed custom deal, not the club's standard rate."""
+    if quote is None:
+        return False
+    source = (getattr(quote, "source", None) or "").strip().lower()
+    return source in CUSTOM_DEAL_SOURCES or source.startswith("custom_")
+
+
+def agency_lookup_blocks_claim(agency: Any) -> bool:
+    """True when /agency says this upline member should not receive early feeback."""
+    if agency is None:
+        return True
+    if getattr(agency, "excluded", False):
+        return True
+    reason = (getattr(agency, "reason", None) or "").strip()
+    if reason in _AGENCY_STOP_REASONS:
+        return True
+    return not bool(getattr(agency, "found", False))
+
+
+@dataclass(frozen=True)
+class UplineGate:
+    """Elevate's answer for a ClubGG-upline member.
+
+    ``kind`` is allow | block | escalate.
+    """
+
+    kind: str
+    detail: str = ""
+
+
+async def gate_upline_claim(
+    *,
+    club_slug: str,
+    gg_player_id: str,
+    quote: Any = None,
+) -> UplineGate:
+    """ClubGG already showed an upline. Decide allow / contact-agent / escalate.
+
+    A custom quote skips /agency — custom wins even with no week history.
+    Otherwise /agency blocks excluded members and anyone Elevate has no
+    agent/SA (or no week) for.
+    """
+    if quote_is_custom_deal(quote):
+        source = getattr(quote, "source", None)
+        logger.info(
+            "earlyrb_auto: upline custom deal slug=%s player=%s source=%s",
+            club_slug,
+            gg_player_id,
+            source,
+        )
+        return UplineGate("allow", f"custom deal source={source}")
+
+    result = await elevate.lookup_early_rakeback_agency(
+        club_slug=club_slug, gg_player_id=gg_player_id
+    )
+    if not result.ok:
+        return UplineGate(
+            "escalate",
+            f"agency lookup failed ({result.error_code}): {result.detail}",
+        )
+    agency = result.agency
+    if agency_lookup_blocks_claim(agency):
+        reasons = ",".join(getattr(agency, "exclude_reasons", ()) or ())
+        reason = getattr(agency, "reason", "") if agency is not None else ""
+        excluded = bool(getattr(agency, "excluded", False)) if agency else False
+        detail = f"agency stop reason={reason or '-'} excluded={excluded}"
+        if reasons:
+            detail = f"{detail} {reasons}"
+        logger.info(
+            "earlyrb_auto: upline blocked slug=%s player=%s %s",
+            club_slug,
+            gg_player_id,
+            detail,
+        )
+        return UplineGate("block", detail)
+
+    logger.info(
+        "earlyrb_auto: upline allowed slug=%s player=%s reason=%s",
+        club_slug,
+        gg_player_id,
+        getattr(agency, "reason", None),
+    )
+    return UplineGate("allow", f"agency allow reason={getattr(agency, 'reason', '')}")
 
 
 def new_idempotency_key(chat_id: int) -> str:

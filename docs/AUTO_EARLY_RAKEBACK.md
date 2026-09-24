@@ -7,7 +7,7 @@ three systems:
 |---|---|
 | gg-support bot (this repo) | Drives the conversation, gates on club settings, persists the claim |
 | ClubGG RPA bot | `POST /rake` reads this week's fee, `POST /deposit` adds the chips |
-| Elevate (aon-beta) | `bot/quote` says what is owed, `bot/record` writes it to the ledger |
+| Elevate (aon-beta) | `bot/agency` pre-checks an upline, `bot/quote` says what is owed, `bot/record` writes it to the ledger |
 
 All player-facing copy says **fee** and **feeback**, never rake or rakeback.
 
@@ -18,10 +18,14 @@ All player-facing copy says **fee** and **feeback**, never rake or rakeback.
 3. If the club has two unions, *"Which club would you like to claim your early feeback in?"*
    Single-union clubs skip straight through.
 4. *"Finding your total fee for this week..."* — `POST /rake` on the RPA bot, Monday to
-   today in US Eastern. The same call reports `has_upline`, which decides eligibility
-   before any of the numbers matter.
-5. *"Calculating your remaining feeback for this week..."* — `GET bot/quote` on Elevate with
-   the **filtered** rake and PnL.
+   today in US Eastern. The same call reports `has_upline`. Missing still escalates; false
+   continues as before. True does **not** stop here — Elevate may still pay a custom deal
+   or a non-excluded standard-rate downline.
+5. For members with no ClubGG upline: *"Calculating your remaining feeback for this
+   week..."* then `GET bot/quote` with the **filtered** rake and PnL. An upline member
+   is quoted first without extra copy so we can see whether the deal is custom
+   (`source` `custom_player` / `custom_agent` / `custom_super_agent`). If it is not,
+   `GET bot/agency` decides whether they still get the agency refusal.
 6. *"You've already claimed $Y.YY of feeback this week."* (omitted when Elevate
    reports zero or no total), then *"Your total remaining feeback for this week is:
    $X.XX — Would you like to claim?"* with **Claim** / **Cancel**, plus *"Early
@@ -43,7 +47,8 @@ wait aborts the prompt; once chips are actually being added, cancel is refused.
 | Situation | Player sees | Staff see |
 |---|---|---|
 | RPA job not `success`, or no filtered fee | An Admin will be with you shortly. | `earlyrb_auto_failed` |
-| `has_upline` is true | Unfortunately, members under an agency … contact your agent … | — |
+| `has_upline` is true, no custom deal, and `/agency` is excluded / `no_week_history` / `no_agent_or_super_agent` | Unfortunately, members under an agency … contact your agent … | — |
+| `has_upline` is true, custom deal or `/agency` has agent/SA and is not excluded | Same as a no-upline claim (quote, Claim, chips) | Same as that path |
 | `has_upline` missing from the response | An Admin will be with you shortly. | `earlyrb_auto_failed` |
 | Overall and filtered figures identical and non-zero | An Admin will be with you shortly. | `earlyrb_auto_failed` with the date range |
 | Filtered fee is zero or negative | You don't have any fee recorded for this week yet. | — |
@@ -63,17 +68,34 @@ anything succeeded, so a later `/earlyrb` can quote freshly. If the delete itsel
 fails, Slack `earlyrb_chips_not_added` (+ head admins) fires — that row has
 everything needed to add the chips by hand, and a re-record would double-pay.
 
-**Members under an agency are turned away, not escalated.** `/rake` reports `has_upline`
-(true for anyone below an agent or super agent, always false for a super agent itself);
-their feeback is their agent's to pay, so the bot says so and stops. The check runs ahead
-of the fee and date-filter checks, so an agency member never gets "no fee this week" or an
-admin escalation when the real answer is "ineligible". The `role` field is read into the
-log line only — `has_upline` alone decides.
+**ClubGG's upline tag is the first cut, not the last.** `/rake` reports `has_upline`
+(true for anyone below an agent or super agent, always false for a super agent itself).
+Missing still escalates rather than guessing. When it is true, the bot asks Elevate
+before refusing:
+
+1. One `/quote` first (rake must be > 0). If `source` is `custom_player` /
+   `custom_agent` / `custom_super_agent`, continue and add — custom wins even when
+   `/agency` has no week history.
+2. Otherwise `GET bot/agency`. Stop with the current agency copy when the player,
+   their agent, or their super agent is excluded, or when the reason is
+   `no_week_history` or `no_agent_or_super_agent` (ClubGG is the truth; Elevate has
+   nothing to override it). No Slack.
+3. If Elevate has an agent/SA and they are not excluded, quote and add — including
+   the club's **standard rate**. That is the new path.
+
+Zero filtered fee skips `/quote` (`rake` must be > 0) and uses `/agency` only: blocked
+members still get the agency copy, allowed members get "no fee this week". A suspect
+date filter on an allowed upline member still escalates, so we never pay on numbers
+that look unapplied; a blocked one still gets the agency copy instead of an admin ping.
+
+The `role` field is read into the log line only. Player copy is unchanged except we
+now pay some people the old gate turned away.
 
 An RPA build that does not return `has_upline` at all leaves it `None`, which escalates
-rather than defaulting either way: reading a missing field as "no upline" would pay agency
-members, and reading it as "has upline" would tell honest players something false. Requires
-the `no_upline_tag` template calibrated on each VM's profile.
+rather than defaulting either way: reading a missing field as "no upline" would pay
+agency members we cannot judge, and reading it as "has upline" would tell honest
+players something false. Requires the `no_upline_tag` template calibrated on each VM's
+profile.
 
 **The minimum comes only from Elevate.** `quote.minimumThreshold` / `belowMinimum` is the
 single gate, so there is no minimum field on the dashboard. Set each club's
@@ -165,8 +187,8 @@ the canned request.
 2. Deploy a ClubGG deposit-bot build exposing `POST /rake` and prove it with a curl for one
    known player. Check the response carries `data.has_upline` — an older build without it
    sends every request to an admin.
-3. Deploy `bot/quote` + `bot/record` on aon-beta; confirm its `INTERNAL_API_KEY` matches
-   `AON_BETA_INTERNAL_API_KEY`.
+3. Deploy `bot/agency` + `bot/quote` + `bot/record` on aon-beta; confirm its
+   `INTERNAL_API_KEY` matches `AON_BETA_INTERNAL_API_KEY`.
 4. Confirm Elevate has club slugs `round-table`, `aces-table`, `creator-club`, `clubgto`.
 5. Set each club's `earlyRakebackThreshold` on Elevate (the only minimum), and confirm
    `earlyRakebackResetMode` lines up with a Monday-EST week — ClubGG's `/rake` window is fixed

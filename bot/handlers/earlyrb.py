@@ -293,20 +293,25 @@ async def _run_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     if fee_stage.kind == "escalate":
-        await auto.escalate_fee_stage(
+        return await _escalate_lookup(
+            chat,
+            context,
             club_id=club_id,
             chat_id=chat_id,
-            group_title=title,
+            title=title,
             detail=fee_stage.detail,
         )
-        await chat.send_message(auto.ADMIN_SHORTLY_COPY)
-        _cleanup(context)
-        return ConversationHandler.END
 
     if fee_stage.kind == "has_upline":
-        await chat.send_message(auto.UPLINE_INELIGIBLE_COPY)
-        _cleanup(context)
-        return ConversationHandler.END
+        return await _run_upline_lookup(
+            update,
+            context,
+            club_id=club_id,
+            chat_id=chat_id,
+            title=title,
+            union=union,
+            fee=fee_stage.fee,
+        )
 
     if fee_stage.kind == "no_fee":
         await chat.send_message(auto.NO_FEE_COPY)
@@ -314,20 +319,10 @@ async def _run_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     fee = fee_stage.fee
-    club = get_club_by_id(club_id)
-    target = auto.resolve_club_target(club.name if club else None, union)
+    target = await _resolve_target_or_escalate(
+        chat, context, club_id=club_id, chat_id=chat_id, title=title, union=union
+    )
     if target is None:
-        await auto.escalate_fee_stage(
-            club_id=club_id,
-            chat_id=chat_id,
-            group_title=title,
-            detail=(
-                f"could not map club {club.name if club else None!r} / union "
-                f"{union!r} to a ClubGG club and Elevate slug"
-            ),
-        )
-        await chat.send_message(auto.ADMIN_SHORTLY_COPY)
-        _cleanup(context)
         return ConversationHandler.END
 
     await chat.send_message(auto.CALCULATING_COPY)
@@ -343,16 +338,188 @@ async def _run_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _session_is(context, club_id, chat_id):
         return ConversationHandler.END
 
-    if quote_stage.kind == "escalate":
-        await auto.escalate_fee_stage(
+    return await _present_quote_stage(
+        update,
+        context,
+        club_id=club_id,
+        chat_id=chat_id,
+        title=title,
+        fee=fee,
+        target=target,
+        quote_stage=quote_stage,
+    )
+
+
+async def _escalate_lookup(
+    chat,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    club_id: int,
+    chat_id: int,
+    title,
+    detail: str,
+):
+    from bot.services import early_rakeback_auto as auto
+
+    await auto.escalate_fee_stage(
+        club_id=club_id,
+        chat_id=chat_id,
+        group_title=title,
+        detail=detail,
+    )
+    await chat.send_message(auto.ADMIN_SHORTLY_COPY)
+    _cleanup(context)
+    return ConversationHandler.END
+
+
+async def _resolve_target_or_escalate(
+    chat,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    club_id: int,
+    chat_id: int,
+    title,
+    union,
+):
+    from bot.services import early_rakeback_auto as auto
+
+    club = get_club_by_id(club_id)
+    target = auto.resolve_club_target(club.name if club else None, union)
+    if target is not None:
+        return target
+    await auto.escalate_fee_stage(
+        club_id=club_id,
+        chat_id=chat_id,
+        group_title=title,
+        detail=(
+            f"could not map club {club.name if club else None!r} / union "
+            f"{union!r} to a ClubGG club and Elevate slug"
+        ),
+    )
+    await chat.send_message(auto.ADMIN_SHORTLY_COPY)
+    _cleanup(context)
+    return None
+
+
+async def _run_upline_lookup(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    club_id: int,
+    chat_id: int,
+    title,
+    union,
+    fee,
+):
+    """ClubGG showed an upline: quote for custom, else /agency, then maybe claim."""
+    from bot.services import early_rakeback_auto as auto
+
+    chat = update.effective_chat
+    target = await _resolve_target_or_escalate(
+        chat, context, club_id=club_id, chat_id=chat_id, title=title, union=union
+    )
+    if target is None:
+        return ConversationHandler.END
+
+    rake = fee.rake_filtered
+    quote = None
+    quote_stage = None
+    if rake is not None and rake > 0:
+        quote_stage = await auto.quote_feeback(
+            club_id=club_id,
+            target=target,
+            gg_player_id=fee.player_id,
+            fee=fee,
+            nickname=None,
+        )
+        if not _session_is(context, club_id, chat_id):
+            return ConversationHandler.END
+        if quote_stage.kind == "escalate" and quote_stage.quote is None:
+            return await _escalate_lookup(
+                chat,
+                context,
+                club_id=club_id,
+                chat_id=chat_id,
+                title=title,
+                detail=quote_stage.detail,
+            )
+        quote = quote_stage.quote
+
+    gate = await auto.gate_upline_claim(
+        club_slug=target.elevate_slug,
+        gg_player_id=fee.player_id,
+        quote=quote,
+    )
+    if not _session_is(context, club_id, chat_id):
+        return ConversationHandler.END
+    if gate.kind == "escalate":
+        return await _escalate_lookup(
+            chat,
+            context,
             club_id=club_id,
             chat_id=chat_id,
-            group_title=title,
-            detail=quote_stage.detail,
+            title=title,
+            detail=gate.detail,
         )
-        await chat.send_message(auto.ADMIN_SHORTLY_COPY)
+    if gate.kind == "block":
+        await chat.send_message(auto.UPLINE_INELIGIBLE_COPY)
         _cleanup(context)
         return ConversationHandler.END
+
+    if rake is None or rake <= 0:
+        await chat.send_message(auto.NO_FEE_COPY)
+        _cleanup(context)
+        return ConversationHandler.END
+
+    if auto.date_filter_is_suspect(fee):
+        return await _escalate_lookup(
+            chat,
+            context,
+            club_id=club_id,
+            chat_id=chat_id,
+            title=title,
+            detail=(
+                "week filter looks unapplied — overall and filtered figures are "
+                f"identical (fee {fee.rake_overall}, PnL {fee.pnl_overall}) for "
+                f"range {fee.range_start} to {fee.range_end}"
+            ),
+        )
+
+    return await _present_quote_stage(
+        update,
+        context,
+        club_id=club_id,
+        chat_id=chat_id,
+        title=title,
+        fee=fee,
+        target=target,
+        quote_stage=quote_stage,
+    )
+
+
+async def _present_quote_stage(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    club_id: int,
+    chat_id: int,
+    title,
+    fee,
+    target,
+    quote_stage,
+):
+    from bot.services import early_rakeback_auto as auto
+
+    chat = update.effective_chat
+    if quote_stage.kind == "escalate":
+        return await _escalate_lookup(
+            chat,
+            context,
+            club_id=club_id,
+            chat_id=chat_id,
+            title=title,
+            detail=quote_stage.detail,
+        )
 
     if quote_stage.kind == "over_max":
         await auto.escalate_over_max(

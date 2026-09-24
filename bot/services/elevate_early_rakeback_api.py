@@ -1,6 +1,7 @@
 """Async client for the Elevate (aon-beta) early rakeback bot API.
 
-Three endpoints, always used in this order: ``bot/quote`` says what a member is
+Four endpoints. ``bot/agency`` is a read-only pre-check for members ClubGG tagged
+with an upline. The money path is unchanged: ``bot/quote`` says what a member is
 owed for a rake figure, ``bot/record`` writes it to the early rakeback ledger,
 and ``DELETE bot/record`` undoes that write if the downstream chip deposit
 fails. The rakeback maths lives entirely on the Elevate side — we never compute
@@ -29,6 +30,11 @@ REASON_OK = "ok"
 REASON_NOT_LISTED_STANDARD_DISABLED = "not_listed_standard_disabled"
 REASON_NON_POSITIVE_AMOUNT = "non_positive_amount"
 REASON_NOTHING_REMAINING = "nothing_remaining"
+
+# Agency reason codes.
+AGENCY_REASON_OK = "ok"
+AGENCY_REASON_NO_WEEK_HISTORY = "no_week_history"
+AGENCY_REASON_NO_AGENT_OR_SUPER_AGENT = "no_agent_or_super_agent"
 
 # Record outcome codes we branch on.
 CODE_OK = "ok"
@@ -93,6 +99,44 @@ class RecordResult:
     record_id: Optional[str] = None
     entry_id: Optional[str] = None
     quote: Optional[Quote] = None
+
+
+@dataclass(frozen=True)
+class AgencyPerson:
+    """An agent or super-agent ID from ``bot/agency``."""
+
+    gg_id: Optional[str] = None
+    display_id: Optional[str] = None
+    nickname: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class Agency:
+    """A successful ``bot/agency`` response."""
+
+    found: bool
+    reason: str
+    excluded: bool
+    gg_id: Optional[str] = None
+    display_id: Optional[str] = None
+    nickname: Optional[str] = None
+    week_start: Optional[str] = None
+    week_end: Optional[str] = None
+    agent: Optional[AgencyPerson] = None
+    super_agent: Optional[AgencyPerson] = None
+    standard_player_rate_enabled: bool = False
+    exclude_reasons: tuple[str, ...] = ()
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
+class AgencyResult:
+    """Outcome of an agency lookup. ``agency`` is set only when ``ok``."""
+
+    ok: bool
+    error_code: str = ""
+    detail: str = ""
+    agency: Optional[Agency] = None
 
 
 @dataclass(frozen=True)
@@ -185,11 +229,112 @@ def _parse_quote(data: dict[str, Any]) -> Quote:
     )
 
 
+def _parse_agency_person(raw: Any) -> Optional[AgencyPerson]:
+    if not isinstance(raw, dict):
+        return None
+    return AgencyPerson(
+        gg_id=raw.get("ggId"),
+        display_id=raw.get("displayId"),
+        nickname=raw.get("nickname"),
+    )
+
+
+def _parse_agency(data: dict[str, Any]) -> Agency:
+    reasons = data.get("excludeReasons")
+    return Agency(
+        found=bool(data.get("found")),
+        reason=str(data.get("reason") or ""),
+        excluded=bool(data.get("excluded")),
+        gg_id=data.get("ggId"),
+        display_id=data.get("displayId"),
+        nickname=data.get("nickname"),
+        week_start=data.get("weekStart"),
+        week_end=data.get("weekEnd"),
+        agent=_parse_agency_person(data.get("agent")),
+        super_agent=_parse_agency_person(data.get("superAgent")),
+        standard_player_rate_enabled=bool(data.get("standardPlayerRateEnabled")),
+        exclude_reasons=(
+            tuple(str(r) for r in reasons) if isinstance(reasons, list) else ()
+        ),
+        raw=data,
+    )
+
+
 def _error_detail(data: dict[str, Any], status_code: int) -> tuple[str, str]:
     """Return (code, human detail) from an Elevate error body."""
     code = str(data.get("code") or data.get("error") or f"http_{status_code}")
     detail = str(data.get("error") or data.get("code") or f"HTTP {status_code}")
     return code, detail
+
+
+async def lookup_early_rakeback_agency(
+    *,
+    club_slug: str,
+    gg_player_id: str,
+) -> AgencyResult:
+    """GET ``/{club_slug}/early-rakeback/bot/agency``. Never raises.
+
+    Read-only: who this ClubGG ID sat under in the newest processed week they
+    appear in, and whether the club's standard-player excludes would pay them 0.
+    Does not quote or record.
+    """
+    cfg = load_config()
+    if cfg is None:
+        return AgencyResult(False, "not_configured", "Elevate API not configured")
+
+    slug = club_slug.strip().lower()
+    params = {"gg_player_id": gg_player_id}
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(cfg.timeout_sec)) as client:
+            resp = await client.get(
+                f"{cfg.base_url}/{slug}/early-rakeback/bot/agency",
+                params=params,
+                headers=_headers(cfg),
+            )
+    except Exception as exc:
+        logger.warning(
+            "early_rb_agency: request failed slug=%s player=%s err=%s",
+            slug,
+            gg_player_id,
+            type(exc).__name__,
+        )
+        return AgencyResult(
+            False, "request_failed", f"request failed: {type(exc).__name__}"
+        )
+
+    try:
+        data = resp.json()
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+
+    if resp.status_code != 200:
+        code, detail = _error_detail(data, resp.status_code)
+        logger.warning(
+            "early_rb_agency: HTTP %s slug=%s player=%s code=%s",
+            resp.status_code,
+            slug,
+            gg_player_id,
+            code,
+        )
+        return AgencyResult(False, code, detail)
+
+    agency = _parse_agency(data)
+    logger.info(
+        "early_rb_agency: slug=%s player=%s found=%s reason=%s excluded=%s "
+        "excludes=%s week=%s..%s",
+        slug,
+        gg_player_id,
+        agency.found,
+        agency.reason,
+        agency.excluded,
+        ",".join(agency.exclude_reasons) or "-",
+        agency.week_start or "-",
+        agency.week_end or "-",
+    )
+    return AgencyResult(True, agency=agency)
 
 
 async def quote_early_rakeback(

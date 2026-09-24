@@ -440,6 +440,116 @@ class DeleteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.code, "request_failed")
 
 
+class AgencyTests(unittest.IsolatedAsyncioTestCase):
+    async def _lookup(self, response):
+        client = _FakeAsyncClient(response)
+        with (
+            patch.object(api, "load_config", return_value=_cfg()),
+            patch.object(api.httpx, "AsyncClient", return_value=client),
+        ):
+            result = await api.lookup_early_rakeback_agency(
+                club_slug="ClubGTO",
+                gg_player_id="3814-6937",
+            )
+        return result, client
+
+    async def test_excluded_super_agent_downline_is_parsed(self) -> None:
+        payload = {
+            "ggId": "38146937",
+            "displayId": "3814-6937",
+            "nickname": "SokoBachi",
+            "found": True,
+            "reason": "ok",
+            "weekStart": "2026-09-14",
+            "weekEnd": "2026-09-20",
+            "agent": None,
+            "superAgent": {
+                "ggId": "98166298",
+                "displayId": "9816-6298",
+                "nickname": "MrFreeze888",
+            },
+            "standardPlayerRateEnabled": True,
+            "excluded": True,
+            "excludeReasons": ["excluded_by_super_agent"],
+        }
+        result, client = await self._lookup(_FakeResponse(200, payload))
+
+        self.assertTrue(result.ok)
+        agency = result.agency
+        self.assertTrue(agency.found)
+        self.assertEqual(agency.reason, api.AGENCY_REASON_OK)
+        self.assertTrue(agency.excluded)
+        self.assertEqual(agency.exclude_reasons, ("excluded_by_super_agent",))
+        self.assertIsNone(agency.agent)
+        self.assertEqual(agency.super_agent.gg_id, "98166298")
+        self.assertTrue(agency.standard_player_rate_enabled)
+
+        method, url, kwargs = client.calls[0]
+        self.assertEqual(method, "GET")
+        self.assertEqual(url, "https://aon.test/api/clubgto/early-rakeback/bot/agency")
+        self.assertEqual(kwargs["headers"], {"X-Internal-Api-Key": "secret"})
+        self.assertEqual(kwargs["params"]["gg_player_id"], "3814-6937")
+
+    async def test_no_week_history(self) -> None:
+        payload = {
+            "ggId": "38146937",
+            "displayId": "3814-6937",
+            "nickname": None,
+            "found": False,
+            "reason": "no_week_history",
+            "weekStart": None,
+            "weekEnd": None,
+            "agent": None,
+            "superAgent": None,
+            "standardPlayerRateEnabled": True,
+            "excluded": False,
+            "excludeReasons": [],
+        }
+        result, _client = await self._lookup(_FakeResponse(200, payload))
+        self.assertTrue(result.ok)
+        self.assertFalse(result.agency.found)
+        self.assertEqual(result.agency.reason, api.AGENCY_REASON_NO_WEEK_HISTORY)
+
+    async def test_documented_error_codes(self) -> None:
+        cases = [
+            (400, {"error": "gg_player_id missing", "code": "invalid_player_id"}),
+            (404, {"error": "Unknown club", "code": "club_not_found"}),
+            (401, {"error": "Invalid internal API key"}),
+        ]
+        for status, payload in cases:
+            result, _client = await self._lookup(_FakeResponse(status, payload))
+            self.assertFalse(result.ok, payload)
+            self.assertTrue(result.error_code)
+
+    async def test_transport_failure_never_raises(self) -> None:
+        class _Boom:
+            async def __aenter__(self):
+                raise RuntimeError("boom")
+
+            async def __aexit__(self, *_exc):
+                return False
+
+        with (
+            patch.object(api, "load_config", return_value=_cfg()),
+            patch.object(api.httpx, "AsyncClient", return_value=_Boom()),
+        ):
+            result = await api.lookup_early_rakeback_agency(
+                club_slug="clubgto",
+                gg_player_id="3814-6937",
+            )
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "request_failed")
+
+    async def test_not_configured(self) -> None:
+        with patch.object(api, "load_config", return_value=None):
+            result = await api.lookup_early_rakeback_agency(
+                club_slug="clubgto",
+                gg_player_id="3814-6937",
+            )
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "not_configured")
+
+
 class ConfigTests(unittest.TestCase):
     def test_configured_flag(self) -> None:
         with patch.object(api, "load_config", return_value=_cfg()):

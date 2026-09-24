@@ -233,6 +233,243 @@ class LookupCancelTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(CALCULATING_COPY, sent)
 
 
+class UplineLookupTests(unittest.IsolatedAsyncioTestCase):
+    def _make(self):
+        chat = MagicMock()
+        chat.send_message = AsyncMock()
+        update = MagicMock()
+        update.effective_chat = chat
+        context = MagicMock()
+        context.chat_data = {
+            "earlyrb_club_id": 1,
+            "earlyrb_chat_id": -100,
+            "earlyrb_user_id": 111,
+            "earlyrb_title": "RT / 8272-5942 / P",
+            "earlyrb_union_shorthand": "RT",
+        }
+        return update, context, chat
+
+    def _fee(self, **kwargs):
+        from decimal import Decimal
+
+        from bot.services.clubgg_deposit_api import RakeOutcome
+
+        defaults = dict(
+            ok=True,
+            status="success",
+            reason="",
+            player_id="8272-5942",
+            clubgg_club="Round Table",
+            rake_overall=Decimal("1200"),
+            rake_filtered=Decimal("400"),
+            pnl_overall=Decimal("-900"),
+            pnl_filtered=Decimal("-250"),
+            range_start="2026-09-14",
+            range_end="2026-09-17",
+            has_upline=True,
+            job_id="job-1",
+        )
+        defaults.update(kwargs)
+        return RakeOutcome(**defaults)
+
+    def _stack(self, *, fee, quote_stage=None, gate=None):
+        from contextlib import ExitStack
+
+        from bot.handlers.earlyrb import EARLYRB_CONFIRM
+        from bot.services.early_rakeback_auto import (
+            ClubTarget,
+            FeeStage,
+            QuoteStage,
+            UplineGate,
+        )
+
+        if quote_stage is None:
+            quote_stage = QuoteStage(
+                "eligible",
+                SimpleNamespace(source="standard_player", remaining=12, nickname="P"),
+            )
+        if gate is None:
+            gate = UplineGate("block")
+
+        stack = ExitStack()
+        stack.enter_context(patch("bot.handlers.earlyrb.record_activity_for_chat"))
+        stack.enter_context(
+            patch(
+                "bot.services.early_rakeback_auto.check_fee",
+                AsyncMock(return_value=FeeStage("has_upline", fee)),
+            )
+        )
+        mocks = {
+            "quote": stack.enter_context(
+                patch(
+                    "bot.services.early_rakeback_auto.quote_feeback",
+                    AsyncMock(return_value=quote_stage),
+                )
+            ),
+            "gate": stack.enter_context(
+                patch(
+                    "bot.services.early_rakeback_auto.gate_upline_claim",
+                    AsyncMock(return_value=gate),
+                )
+            ),
+        }
+        stack.enter_context(
+            patch(
+                "bot.handlers.earlyrb.get_club_by_id",
+                return_value=SimpleNamespace(name="Round Table"),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "bot.services.early_rakeback_auto.resolve_club_target",
+                return_value=ClubTarget("Round Table", "round-table", "RT"),
+            )
+        )
+        stack.enter_context(
+            patch("bot.services.early_rakeback_auto.escalate_fee_stage", AsyncMock())
+        )
+        stack.enter_context(
+            patch(
+                "bot.handlers.earlyrb._prompt_claim",
+                AsyncMock(return_value=EARLYRB_CONFIRM),
+            )
+        )
+        return stack, mocks
+
+    async def test_blocked_upline_gets_the_agency_copy(self) -> None:
+        from bot.handlers.earlyrb import _run_lookup
+        from bot.services.early_rakeback_auto import UPLINE_INELIGIBLE_COPY
+
+        update, context, chat = self._make()
+        stack, _mocks = self._stack(fee=self._fee())
+        with stack:
+            state = await _run_lookup(update, context)
+
+        self.assertEqual(state, ConversationHandler.END)
+        sent = [c.args[0] for c in chat.send_message.await_args_list]
+        self.assertIn(UPLINE_INELIGIBLE_COPY, sent)
+
+    async def test_allowed_upline_prompts_claim(self) -> None:
+        from bot.handlers.earlyrb import EARLYRB_CONFIRM, _run_lookup
+        from bot.services.early_rakeback_auto import (
+            QuoteStage,
+            UPLINE_INELIGIBLE_COPY,
+            UplineGate,
+        )
+
+        update, context, chat = self._make()
+        quote = SimpleNamespace(source="custom_player", remaining=12, nickname="P")
+        stack, _mocks = self._stack(
+            fee=self._fee(),
+            quote_stage=QuoteStage("eligible", quote),
+            gate=UplineGate("allow"),
+        )
+        with stack:
+            state = await _run_lookup(update, context)
+
+        self.assertEqual(state, EARLYRB_CONFIRM)
+        sent = [c.args[0] for c in chat.send_message.await_args_list]
+        self.assertNotIn(UPLINE_INELIGIBLE_COPY, sent)
+
+    async def test_zero_fee_allowed_is_no_fee(self) -> None:
+        from decimal import Decimal
+
+        from bot.handlers.earlyrb import _run_lookup
+        from bot.services.early_rakeback_auto import NO_FEE_COPY, UplineGate
+
+        update, context, chat = self._make()
+        stack, mocks = self._stack(
+            fee=self._fee(rake_filtered=Decimal("0")),
+            gate=UplineGate("allow"),
+        )
+        with stack:
+            state = await _run_lookup(update, context)
+
+        self.assertEqual(state, ConversationHandler.END)
+        sent = [c.args[0] for c in chat.send_message.await_args_list]
+        self.assertIn(NO_FEE_COPY, sent)
+        mocks["quote"].assert_not_awaited()
+
+    async def test_zero_fee_blocked_is_still_agency_copy(self) -> None:
+        from decimal import Decimal
+
+        from bot.handlers.earlyrb import _run_lookup
+        from bot.services.early_rakeback_auto import UPLINE_INELIGIBLE_COPY, UplineGate
+
+        update, context, chat = self._make()
+        stack, _mocks = self._stack(
+            fee=self._fee(rake_filtered=Decimal("0")),
+            gate=UplineGate("block"),
+        )
+        with stack:
+            state = await _run_lookup(update, context)
+
+        self.assertEqual(state, ConversationHandler.END)
+        sent = [c.args[0] for c in chat.send_message.await_args_list]
+        self.assertIn(UPLINE_INELIGIBLE_COPY, sent)
+
+    async def test_quote_http_failure_escalates_without_agency(self) -> None:
+        from bot.handlers.earlyrb import _run_lookup
+        from bot.services.early_rakeback_auto import ADMIN_SHORTLY_COPY, QuoteStage
+
+        update, context, chat = self._make()
+        stack, mocks = self._stack(
+            fee=self._fee(),
+            quote_stage=QuoteStage(
+                "escalate", detail="quote failed (request_failed): x"
+            ),
+        )
+        with stack:
+            state = await _run_lookup(update, context)
+
+        self.assertEqual(state, ConversationHandler.END)
+        sent = [c.args[0] for c in chat.send_message.await_args_list]
+        self.assertIn(ADMIN_SHORTLY_COPY, sent)
+        mocks["gate"].assert_not_awaited()
+
+    async def test_suspect_dates_on_allowed_upline_escalate(self) -> None:
+        from decimal import Decimal
+
+        from bot.handlers.earlyrb import _run_lookup
+        from bot.services.early_rakeback_auto import ADMIN_SHORTLY_COPY, UplineGate
+
+        update, context, chat = self._make()
+        fee = self._fee(
+            rake_overall=Decimal("400"),
+            rake_filtered=Decimal("400"),
+            pnl_overall=Decimal("-9"),
+            pnl_filtered=Decimal("-9"),
+        )
+        stack, _mocks = self._stack(fee=fee, gate=UplineGate("allow"))
+        with stack:
+            state = await _run_lookup(update, context)
+
+        self.assertEqual(state, ConversationHandler.END)
+        sent = [c.args[0] for c in chat.send_message.await_args_list]
+        self.assertIn(ADMIN_SHORTLY_COPY, sent)
+
+    async def test_suspect_dates_on_blocked_upline_stay_agency_copy(self) -> None:
+        from decimal import Decimal
+
+        from bot.handlers.earlyrb import _run_lookup
+        from bot.services.early_rakeback_auto import UPLINE_INELIGIBLE_COPY, UplineGate
+
+        update, context, chat = self._make()
+        fee = self._fee(
+            rake_overall=Decimal("400"),
+            rake_filtered=Decimal("400"),
+            pnl_overall=Decimal("-9"),
+            pnl_filtered=Decimal("-9"),
+        )
+        stack, _mocks = self._stack(fee=fee, gate=UplineGate("block"))
+        with stack:
+            state = await _run_lookup(update, context)
+
+        self.assertEqual(state, ConversationHandler.END)
+        sent = [c.args[0] for c in chat.send_message.await_args_list]
+        self.assertIn(UPLINE_INELIGIBLE_COPY, sent)
+
+
 class CancelDuringAddTests(unittest.IsolatedAsyncioTestCase):
     async def test_cancel_during_chip_add_is_refused(self) -> None:
         update = MagicMock()

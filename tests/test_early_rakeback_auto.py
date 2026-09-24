@@ -52,6 +52,7 @@ def _quote(
     places=2,
     warnings=(),
     already_given="0",
+    source="custom_player",
 ):
     return elevate.Quote(
         eligible=eligible,
@@ -64,11 +65,37 @@ def _quote(
         display_id="8272-5942",
         nickname="SomePlayer",
         member_type="player",
-        source="custom_player",
+        source=source,
         deal_type="flat",
         percentage=Decimal("60"),
         total_already_given=(None if already_given is None else Decimal(already_given)),
         warnings=tuple(warnings),
+    )
+
+
+def _agency(
+    *,
+    found=True,
+    reason="ok",
+    excluded=False,
+    exclude_reasons=(),
+    standard=True,
+):
+    return elevate.Agency(
+        found=found,
+        reason=reason,
+        excluded=excluded,
+        gg_id="38146937",
+        display_id="3814-6937",
+        nickname="SokoBachi",
+        week_start="2026-09-14",
+        week_end="2026-09-20",
+        agent=None,
+        super_agent=elevate.AgencyPerson(
+            gg_id="98166298", display_id="9816-6298", nickname="MrFreeze888"
+        ),
+        standard_player_rate_enabled=standard,
+        exclude_reasons=tuple(exclude_reasons),
     )
 
 
@@ -259,6 +286,99 @@ class CheckFeeTests(unittest.IsolatedAsyncioTestCase):
         stage = await self._check(_fee(has_upline=None))
         self.assertEqual(stage.kind, "escalate")
         self.assertIn("has_upline", stage.detail)
+
+
+class CustomDealTests(unittest.TestCase):
+    def test_listed_custom_sources(self) -> None:
+        for source in auto.CUSTOM_DEAL_SOURCES:
+            self.assertTrue(auto.quote_is_custom_deal(_quote(source=source)), source)
+
+    def test_standard_rate_is_not_custom(self) -> None:
+        self.assertFalse(auto.quote_is_custom_deal(_quote(source="standard_player")))
+        self.assertFalse(auto.quote_is_custom_deal(_quote(source=None)))
+        self.assertFalse(auto.quote_is_custom_deal(None))
+
+
+class AgencyBlockTests(unittest.TestCase):
+    def test_excluded_blocks_even_when_reason_is_ok(self) -> None:
+        self.assertTrue(
+            auto.agency_lookup_blocks_claim(
+                _agency(excluded=True, exclude_reasons=("excluded_by_super_agent",))
+            )
+        )
+
+    def test_no_week_history_blocks(self) -> None:
+        self.assertTrue(
+            auto.agency_lookup_blocks_claim(
+                _agency(found=False, reason=elevate.AGENCY_REASON_NO_WEEK_HISTORY)
+            )
+        )
+
+    def test_no_agent_or_super_agent_blocks(self) -> None:
+        self.assertTrue(
+            auto.agency_lookup_blocks_claim(
+                _agency(
+                    found=False, reason=elevate.AGENCY_REASON_NO_AGENT_OR_SUPER_AGENT
+                )
+            )
+        )
+
+    def test_found_false_blocks(self) -> None:
+        self.assertTrue(
+            auto.agency_lookup_blocks_claim(_agency(found=False, reason="ok"))
+        )
+
+    def test_agent_and_not_excluded_allows(self) -> None:
+        self.assertFalse(auto.agency_lookup_blocks_claim(_agency()))
+
+    def test_missing_agency_blocks(self) -> None:
+        self.assertTrue(auto.agency_lookup_blocks_claim(None))
+
+
+class UplineGateTests(unittest.IsolatedAsyncioTestCase):
+    async def _gate(self, *, quote=None, agency_result=None):
+        lookup = AsyncMock(return_value=agency_result)
+        with patch.object(auto.elevate, "lookup_early_rakeback_agency", lookup):
+            gate = await auto.gate_upline_claim(
+                club_slug="round-table",
+                gg_player_id="8272-5942",
+                quote=quote,
+            )
+        return gate, lookup
+
+    async def test_custom_quote_skips_agency(self) -> None:
+        gate, lookup = await self._gate(quote=_quote(source="custom_agent"))
+        self.assertEqual(gate.kind, "allow")
+        lookup.assert_not_awaited()
+
+    async def test_standard_quote_blocks_when_excluded(self) -> None:
+        gate, lookup = await self._gate(
+            quote=_quote(source="standard_player"),
+            agency_result=elevate.AgencyResult(
+                True,
+                agency=_agency(excluded=True, exclude_reasons=("excluded_by_agent",)),
+            ),
+        )
+        self.assertEqual(gate.kind, "block")
+        lookup.assert_awaited_once()
+
+    async def test_no_quote_allows_non_excluded_agent(self) -> None:
+        gate, lookup = await self._gate(
+            quote=None,
+            agency_result=elevate.AgencyResult(True, agency=_agency()),
+        )
+        self.assertEqual(gate.kind, "allow")
+        lookup.assert_awaited_once()
+
+    async def test_agency_transport_failure_escalates(self) -> None:
+        gate, _lookup = await self._gate(
+            quote=_quote(source="standard_player"),
+            agency_result=elevate.AgencyResult(
+                False, "request_failed", "request failed: TimeoutException"
+            ),
+        )
+        self.assertEqual(gate.kind, "escalate")
+        self.assertIn("request_failed", gate.detail)
 
 
 class QuoteStageTests(unittest.IsolatedAsyncioTestCase):
